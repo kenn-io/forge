@@ -238,8 +238,8 @@ export interface KataCreateRecurrenceInput {
 export interface KataRecurrenceTemplateUpdateInput {
   title?: string | undefined;
   body?: string | undefined;
-  owner?: string | undefined;
-  priority?: number | undefined;
+  owner?: string | null | undefined;
+  priority?: number | null | undefined;
   labels?: string[] | undefined;
   metadata?: KataTaskMetadata | undefined;
 }

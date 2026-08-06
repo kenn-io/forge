@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { untrack } from "svelte";
   import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import { FilterDropdown } from "@kenn-io/kit-ui";
@@ -12,6 +14,7 @@
     type NodeTypes,
   } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
+  import { getAppRuntime } from "../../app/runtime-context.js";
 
   import type {
     KataReachableGraphEdge,
@@ -71,6 +74,7 @@
     onBack,
     onSelectIssue,
   }: Props = $props();
+  const runtime = getAppRuntime();
 
   const graphPreferencesStorageKey = "kenn-forge:kata:reachableGraphPreferences/v1";
   const defaultGraphPreferences: KataGraphPreferences = {
@@ -114,7 +118,6 @@
       || layoutMode !== defaultGraphPreferences.layoutMode
       || graphDirectionOverride !== defaultGraphPreferences.layoutDirection,
   );
-  let layoutRun = 0;
   const elkDefaultLayoutOptions = {
     "elk.algorithm": "layered",
     "elk.edgeRouting": "ORTHOGONAL",
@@ -486,7 +489,6 @@
     const edges = graph.layoutEdges;
     const mode = layoutMode;
     const direction = effectiveLayoutDirection;
-    const run = ++layoutRun;
     if (mode === "compact" || nodes.length === 0) {
       layoutedPositions = new Map();
       layoutedKey = key;
@@ -499,29 +501,37 @@
       nodeCount: nodes.length,
       edgeCount: edges.length,
     });
-    elk
-      .layout(elkGraph(nodes, edges, direction))
-      .then((layoutedGraph) => {
-        if (run !== layoutRun) return;
-        layoutedPositions = elkPositions(layoutedGraph);
-        layoutedKey = key;
-        recordKataGraphDebugEvent("graph-layout-complete", {
-          layoutMode: mode,
-          layoutDirection: direction,
-          nodeCount: nodes.length,
-          edgeCount: edges.length,
-        });
-      })
-      .catch((error: unknown) => {
-        if (run !== layoutRun) return;
-        layoutedPositions = new Map();
-        layoutedKey = key;
-        recordKataGraphDebugEvent("graph-layout-error", {
-          layoutMode: mode,
-          layoutDirection: direction,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
+    const execution = untrack(() => runtime.runCommand(
+      Effect.tryPromise({
+        try: () => elk.layout(elkGraph(nodes, edges, direction)),
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.tap((layoutedGraph) => Effect.sync(() => {
+          layoutedPositions = elkPositions(layoutedGraph);
+          layoutedKey = key;
+          recordKataGraphDebugEvent("graph-layout-complete", {
+            layoutMode: mode,
+            layoutDirection: direction,
+            nodeCount: nodes.length,
+            edgeCount: edges.length,
+          });
+        })),
+      ),
+      {
+        operation: "layout Kata reachable graph",
+        safeContext: { direction, nodeCount: nodes.length },
+        onFailure: (error) => {
+          layoutedPositions = new Map();
+          layoutedKey = key;
+          recordKataGraphDebugEvent("graph-layout-error", {
+            layoutMode: mode,
+            layoutDirection: direction,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        },
+      },
+    ));
+    return execution.interrupt;
   });
 
   $effect(() => {

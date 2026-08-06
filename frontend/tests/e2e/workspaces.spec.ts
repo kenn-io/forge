@@ -25,6 +25,8 @@ const contextMenuWorkspace = {
   tmux_session: "kenn-forge-ws-context-menu",
   tmux_pane_title: null,
   tmux_working: false,
+  tmux_activity_source: "unknown",
+  tmux_last_output_at: null,
   status: "ready",
   created_at: "2026-06-18T12:00:00Z",
   item_last_activity_at: "2026-06-18T14:00:00Z",

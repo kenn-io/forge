@@ -1,12 +1,20 @@
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
 
 import { currentInteractionTraceId } from "./traceContext.js";
 import {
-  beginWorkspaceSwitch,
+  beginWorkspaceSwitch as beginWorkspaceSwitchProgram,
   cancelWorkspaceSwitch,
   createWorkspaceSwitchPaneTimer,
   recordWorkspaceSwitchPhase,
 } from "./workspaceSwitchTiming.js";
+
+let runtime: OwnedAppRuntime;
+
+function beginWorkspaceSwitch(workspaceId: string, hostKey: string | undefined): string {
+  return beginWorkspaceSwitchProgram(runtime, workspaceId, hostKey);
+}
 
 function measures(phase: string): PerformanceEntry[] {
   return performance.getEntriesByName(`workspace-switch:${phase}`, "measure");
@@ -14,15 +22,17 @@ function measures(phase: string): PerformanceEntry[] {
 
 describe("workspace switch timing", () => {
   beforeEach(() => {
+    runtime = makeAppRuntime();
     cancelWorkspaceSwitch();
     performance.clearMarks();
     performance.clearMeasures();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cancelWorkspaceSwitch();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   test("records phases for the live switch with the workspace in the detail", () => {
@@ -168,11 +178,12 @@ describe("workspace switch timing", () => {
     expect(currentInteractionTraceId()).toBeNull();
   });
 
-  test("first paint ends the interaction trace and clears its fallback", () => {
+  test("first paint ends the interaction trace and clears its fallback", async () => {
     vi.useFakeTimers();
     beginWorkspaceSwitch("ws-1", undefined);
 
     expect(createWorkspaceSwitchPaneTimer().record("first-paint")).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(currentInteractionTraceId()).toBeNull();
     expect(vi.getTimerCount()).toBe(0);

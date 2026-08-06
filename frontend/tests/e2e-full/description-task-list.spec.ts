@@ -103,7 +103,7 @@ test.describe("PR description task list", () => {
     }
   });
 
-  test("checkbox clicks toggle locally and persist on reload", async ({ page }) => {
+  test("checkbox clicks persist when navigation happens before the debounce", async ({ page }) => {
     const server = await openPullDetail(page);
     try {
       const body = page.locator(".body-section .markdown-body");
@@ -132,8 +132,10 @@ test.describe("PR description task list", () => {
       await cb1.click();
       await expect(cb1).toBeChecked({ checked: cb1Expected });
 
+      await page.getByRole("button", { name: "Activity", exact: true }).click();
+      await expect(page).toHaveURL(/\/$/);
       await persisted;
-      await page.reload();
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
       const reloadedBody = page.locator(".body-section .markdown-body");
       await reloadedBody.waitFor({ state: "visible" });
 

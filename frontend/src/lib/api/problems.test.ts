@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  isProblem,
-  problemCapability,
-  problemConflictReason,
-  problemRetryAfter,
-  ProblemCodes,
-  readProblem,
-} from "./problems";
+import { isProblem, problemCapability, problemConflictReason, problemRetryAfter, ProblemCodes } from "./problems";
 
 describe("isProblem", () => {
   it("accepts a body with a known code", () => {
@@ -33,51 +26,6 @@ describe("isProblem", () => {
 
   it("rejects objects whose code is unknown", () => {
     expect(isProblem({ code: "frobnicated" })).toBe(false);
-  });
-});
-
-describe("readProblem", () => {
-  function jsonResponse(body: unknown, init: ResponseInit & { contentType?: string } = {}): Response {
-    const headers = new Headers(init.headers);
-    headers.set("content-type", init.contentType ?? "application/problem+json");
-    return new Response(JSON.stringify(body), {
-      status: init.status ?? 409,
-      statusText: init.statusText,
-      headers,
-    });
-  }
-
-  it("returns null for ok responses", async () => {
-    const response = new Response("{}", { status: 200 });
-    expect(await readProblem(response)).toBeNull();
-  });
-
-  it("returns null for non-json bodies", async () => {
-    const response = new Response("oops", {
-      status: 500,
-      headers: { "content-type": "text/plain" },
-    });
-    expect(await readProblem(response)).toBeNull();
-  });
-
-  it("decodes a problem+json body", async () => {
-    const response = jsonResponse({
-      type: "about:blank",
-      title: "Conflict",
-      status: 409,
-      detail: "Unsupported provider capability",
-      code: ProblemCodes.unsupportedCapability,
-      details: { capability: "merge_mutation", provider: "gitlab" },
-    });
-    const problem = await readProblem(response);
-    expect(problem).not.toBeNull();
-    expect(problem?.code).toBe(ProblemCodes.unsupportedCapability);
-    expect(problem?.details?.["capability"]).toBe("merge_mutation");
-  });
-
-  it("returns null when the body is a different shape", async () => {
-    const response = jsonResponse({ status: "ok" }, { status: 500 });
-    expect(await readProblem(response)).toBeNull();
   });
 });
 

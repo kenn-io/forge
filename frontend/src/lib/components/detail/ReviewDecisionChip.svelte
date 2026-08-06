@@ -1,6 +1,11 @@
 <script lang="ts">
   import type { PREvent } from "../../api/types.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
   import { Chip, type ChipTone } from "@kenn-io/kit-ui";
+  import { onDestroy } from "svelte";
+
+  const runtime = getAppRuntime();
 
   interface Props {
     decision: string;
@@ -11,6 +16,7 @@
 
   let popupOpen = $state(false);
   let wrapEl = $state<HTMLDivElement>();
+  let focusoutExecution: AppExecution<void, never> | undefined;
 
   const approvers = $derived.by(() =>
     approversFromReviewEvents(events ?? []),
@@ -84,18 +90,25 @@
 
   function onDocumentMousedown(e: MouseEvent): void {
     if (!popupOpen) return;
-    const target = e.target as Node;
+    const target = e.target;
+    if (!(target instanceof Node)) return;
     if (!wrapEl?.contains(target)) closePopup();
   }
 
   function onFocusout(): void {
-    queueMicrotask(() => {
-      if (!popupOpen) return;
-      const active = document.activeElement;
-      if (active && wrapEl?.contains(active)) return;
-      closePopup();
-    });
+    focusoutExecution?.interrupt();
+    focusoutExecution = runtime.runMicrotask(
+      () => {
+        if (!popupOpen) return;
+        const active = document.activeElement;
+        if (active && wrapEl?.contains(active)) return;
+        closePopup();
+      },
+      { operation: "close unfocused review decision", safeContext: {} },
+    );
   }
+
+  onDestroy(() => focusoutExecution?.interrupt());
 </script>
 
 <svelte:window onkeydown={onKeydown} />

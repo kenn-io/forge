@@ -46,7 +46,7 @@ const kataAuxiliary = vi.hoisted(() => {
 });
 
 const modePalette = vi.hoisted(() => ({
-  search: vi.fn(async (query: string) => ({
+  search: vi.fn((query: string, _deps: unknown) => ({
     query,
     tasks: { ok: true as const, rows: [], truncated: false },
     docs: { ok: true as const, rows: [], truncated: false },
@@ -179,9 +179,12 @@ vi.mock("./lib/features/kata/kataAuxiliaryAuthority.svelte.js", () => ({
 vi.mock("./lib/api/docs/api.js", () => ({
   createDocsAPI: () => ({}),
 }));
-vi.mock("./lib/stores/keyboard/mode-palette-search.js", () => ({
-  searchModePalette: modePalette.search,
-}));
+vi.mock("./lib/stores/keyboard/mode-palette-search.js", async () => {
+  const { Effect } = await import("effect");
+  return {
+    searchModePalette: (query: string, deps: unknown) => Effect.succeed(modePalette.search(query, deps)),
+  };
+});
 vi.mock("./lib/utils/appStartup.js", () => ({
   runAppStartup: (
     _runtime: OwnedAppRuntime,
@@ -240,6 +243,12 @@ function testAppRuntime(onDispose: () => void): OwnedAppRuntime {
     runCommand: <A, E>(): AppExecution<A, E> => ({
       interrupt: () => {},
       await: Effect.never,
+      exit: new Promise(() => {}),
+    }),
+    runMicrotask: (): AppExecution<void, never> => ({
+      interrupt: () => {},
+      await: Effect.never,
+      exit: new Promise(() => {}),
     }),
   };
 }
@@ -447,14 +456,14 @@ describe("App feature routes", () => {
     await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
     await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("home"));
 
-    const modeSearch = appSurfaceProps.palette?.modeSearch as ((query: string) => Promise<unknown>) | undefined;
+    const modeSearch = appSurfaceProps.palette?.modeSearch as ((query: string) => Effect.Effect<unknown>) | undefined;
     expect(modeSearch).toBeTypeOf("function");
-    await modeSearch?.("linked task");
+    if (modeSearch) await Effect.runPromise(modeSearch("linked task"));
 
     expect(kataAuxiliary.create).toHaveBeenCalledOnce();
     expect(modePalette.search).toHaveBeenCalledWith("linked task", {
       kata: kataAuxiliary.instance,
-      docs: expect.any(Object),
+      docs: {},
     });
 
     const { setActiveKataDaemon } = await import("./lib/stores/active-kata-daemon.svelte.js");

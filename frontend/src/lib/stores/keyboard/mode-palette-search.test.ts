@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { MODE_SEARCH_DISPLAY_LIMIT, searchModePalette } from "./mode-palette-search.js";
@@ -38,40 +39,42 @@ function docs(overrides: Partial<Pick<DocsAPI, "searchAll">> = {}): Pick<DocsAPI
 
 describe("searchModePalette", () => {
   it("filters open and closed task rows from the accepted global-all snapshot", async () => {
-    const result = await searchModePalette("budget", {
-      kata: kata([
-        task(),
-        task({
-          id: 2,
-          uid: "issue-budget-closed",
-          short_id: "budget-closed",
-          qualified_id: "Finances#budget-closed",
-          title: "Archive annual budget",
-          status: "closed",
-        }),
-        task({ id: 3, uid: "issue-other", short_id: "other", qualified_id: "Finances#other", title: "Unrelated" }),
-      ]),
-      docs: docs({
-        searchAll: vi.fn(
-          async (): Promise<Awaited<ReturnType<DocsAPI["searchAll"]>>> => ({
-            query: "budget",
-            truncated: false,
-            hits: [
-              {
-                folder: "notes",
-                folder_name: "Notes",
-                name: "budget.md",
-                rel_path: "finance/budget.md",
-                score: 10,
-                hit_type: "body",
-                line: 4,
-                snippet: { text: "monthly budget", matches: [{ start: 8, end: 14 }] },
-              },
-            ],
+    const result = await Effect.runPromise(
+      searchModePalette("budget", {
+        kata: kata([
+          task(),
+          task({
+            id: 2,
+            uid: "issue-budget-closed",
+            short_id: "budget-closed",
+            qualified_id: "Finances#budget-closed",
+            title: "Archive annual budget",
+            status: "closed",
           }),
-        ),
+          task({ id: 3, uid: "issue-other", short_id: "other", qualified_id: "Finances#other", title: "Unrelated" }),
+        ]),
+        docs: docs({
+          searchAll: vi.fn(
+            async (): Promise<Awaited<ReturnType<DocsAPI["searchAll"]>>> => ({
+              query: "budget",
+              truncated: false,
+              hits: [
+                {
+                  folder: "notes",
+                  folder_name: "Notes",
+                  name: "budget.md",
+                  rel_path: "finance/budget.md",
+                  score: 10,
+                  hit_type: "body",
+                  line: 4,
+                  snippet: { text: "monthly budget", matches: [{ start: 8, end: 14 }] },
+                },
+              ],
+            }),
+          ),
+        }),
       }),
-    });
+    );
 
     expect(
       result.tasks.ok && result.tasks.rows.map((row) => ({ uid: row.uid, status: row.status, daemon: row.daemon_id })),
@@ -97,14 +100,16 @@ describe("searchModePalette", () => {
   });
 
   it("returns docs errors without losing snapshot task matches", async () => {
-    const result = await searchModePalette("budget", {
-      kata: kata([task()]),
-      docs: docs({
-        searchAll: async () => {
-          throw new Error("docs search failed");
-        },
+    const result = await Effect.runPromise(
+      searchModePalette("budget", {
+        kata: kata([task()]),
+        docs: docs({
+          searchAll: async () => {
+            throw new Error("docs search failed");
+          },
+        }),
       }),
-    });
+    );
 
     expect(result.tasks).toMatchObject({ ok: true, truncated: false });
     expect(result.docs).toEqual({ ok: false, error: "docs search failed" });
@@ -119,12 +124,14 @@ describe("searchModePalette", () => {
       score: 10 - index,
       hit_type: "filename" as const,
     }));
-    const result = await searchModePalette("budget", {
-      kata: kata(),
-      docs: docs({
-        searchAll: async () => ({ query: "budget", truncated: false, hits }),
+    const result = await Effect.runPromise(
+      searchModePalette("budget", {
+        kata: kata(),
+        docs: docs({
+          searchAll: async () => ({ query: "budget", truncated: false, hits }),
+        }),
       }),
-    });
+    );
 
     expect(result.docs).toMatchObject({ ok: true, truncated: true });
     if (result.docs.ok) {

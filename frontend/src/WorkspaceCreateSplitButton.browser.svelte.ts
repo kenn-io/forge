@@ -5,9 +5,9 @@ import "./app.css";
 
 import { setThemeMode } from "@kenn-io/kit-ui";
 import type { LaunchTarget } from "./lib/api/types.js";
-import NewWorkspaceDialog from "./lib/components/terminal/NewWorkspaceDialog.svelte";
 import { STORES_KEY } from "./lib/context.js";
 import { createMockApiFetch, jsonResponse } from "./test/mockApiFetch.js";
+import NewWorkspaceDialogRuntimeHarness from "./test/NewWorkspaceDialogRuntimeHarness.svelte";
 
 const launchTargets: LaunchTarget[] = [
   {
@@ -47,7 +47,7 @@ describe("workspace create split button in the New workspace dialog", () => {
     globalThis.fetch = api.fetch;
     const onCreated = vi.fn();
 
-    render(NewWorkspaceDialog, {
+    render(NewWorkspaceDialogRuntimeHarness, {
       props: { open: true, onClose: vi.fn(), onCreated },
       context: new Map([
         [
@@ -88,7 +88,7 @@ describe("workspace create split button in the New workspace dialog", () => {
     globalThis.fetch = createMockApiFetch().fetch;
     setThemeMode("dark");
 
-    render(NewWorkspaceDialog, {
+    render(NewWorkspaceDialogRuntimeHarness, {
       props: { open: true, onClose: vi.fn(), onCreated: vi.fn() },
       context: new Map([
         [

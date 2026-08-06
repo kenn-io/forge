@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { flushSync, tick } from "svelte";
+  import { Effect } from "effect";
+  import { flushSync, tick, untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import type { InlineDockMode } from "../../workspace-inline.js";
   import SessionTerminalPool from "./SessionTerminalPool.svelte";
   import SessionTerminalSlot from "./SessionTerminalSlot.svelte";
@@ -30,6 +33,7 @@
     isSidebarToggleEnabled = false,
     onToggleSidebar = undefined,
   }: Props = $props();
+  const appRuntime = getAppRuntime();
 
   let hostWrapper = $state<HTMLElement | null>(null);
   let parkingNode = $state<HTMLElement | null>(null);
@@ -110,14 +114,14 @@
       clearPendingHostFocus();
       return;
     }
-    let cancelled = false;
-    void (async () => {
-      await tick();
-      if (cancelled) return;
-      destination.appendChild(wrapper);
-      const reveal = () => {
-        if (cancelled) return;
-        if (wrapper.getBoundingClientRect().height > 0) {
+    const execution = untrack(() =>
+      appRuntime.runCommand(
+        Effect.gen(function* () {
+          yield* Effect.promise(() => tick());
+          destination.appendChild(wrapper);
+          while (wrapper.getBoundingClientRect().height <= 0) {
+            yield* nextAnimationFrame;
+          }
           const shouldFocus = consumePendingHostFocus();
           // flushSync (safe here: this callback runs outside any active
           // Svelte effect) forces the `inert` attribute removal to land in
@@ -129,15 +133,15 @@
             attachedVisible = true;
           });
           if (shouldFocus) wrapper.focus();
-          return;
-        }
-        requestAnimationFrame(reveal);
-      };
-      requestAnimationFrame(reveal);
-    })();
-    return () => {
-      cancelled = true;
-    };
+        }),
+        {
+          operation: "attach hosted workspace terminal",
+          safeContext: {},
+          onFailure: () => {},
+        },
+      ),
+    );
+    return execution.interrupt;
   });
 </script>
 

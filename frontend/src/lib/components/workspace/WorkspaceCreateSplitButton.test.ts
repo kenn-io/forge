@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { LaunchTarget } from "../../api/types.js";
-import WorkspaceCreateSplitButton from "./WorkspaceCreateSplitButton.svelte";
+import WorkspaceCreateSplitButton from "./WorkspaceCreateSplitButtonRuntimeHarness.svelte";
 
 const targets: LaunchTarget[] = [
   {

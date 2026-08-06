@@ -1,6 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { layer } from "@effect/vitest";
+import { Effect } from "effect";
+import { beforeEach, describe, expect, vi } from "vite-plus/test";
 
-import { cloneProject, listUserRepositories, registerExistingProject } from "./project-intake.ts";
+import { GeneratedApiLive } from "./generated-api.js";
+import {
+  cloneProject,
+  listUserRepositories,
+  projectIntakeFailureMessage,
+  registerExistingProject,
+} from "./project-intake.ts";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -8,13 +16,21 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./runtime.ts", () => ({
-  apiErrorMessage: (error: { detail?: string; title?: string } | undefined, fallback: string) =>
-    error?.detail ?? error?.title ?? fallback,
-  client: {
+  createRuntimeClient: () => ({
     GET: mocks.get,
     POST: mocks.post,
-  },
+  }),
 }));
+
+function project(id: string) {
+  return {
+    created_at: "2026-08-04T00:00:00Z",
+    display_name: "repo",
+    id,
+    local_path: "/repo",
+    updated_at: "2026-08-04T00:00:00Z",
+  };
+}
 
 describe("project-intake api", () => {
   beforeEach(() => {
@@ -22,140 +38,167 @@ describe("project-intake api", () => {
     mocks.post.mockReset();
   });
 
-  it("validates an existing path before registering the root", async () => {
-    mocks.get.mockResolvedValue({
-      data: { is_valid: true, root_path: "/repo" },
-      error: undefined,
-    });
-    mocks.post.mockResolvedValue({
-      data: { id: "prj_1" },
-      error: undefined,
-    });
+  layer(GeneratedApiLive)((it) => {
+    it.effect("validates an existing path before registering the root", () =>
+      Effect.gen(function* () {
+        mocks.get.mockResolvedValue({
+          data: { is_valid: true, root_path: "/repo" },
+          response: new Response(),
+        });
+        mocks.post.mockResolvedValue({
+          data: project("prj_1"),
+          response: new Response(),
+        });
 
-    await expect(registerExistingProject("/repo/subdir")).resolves.toMatchObject({
-      id: "prj_1",
-    });
+        const result = yield* registerExistingProject("/repo/subdir");
 
-    expect(mocks.get).toHaveBeenCalledWith("/filesystem/validate-repo", {
-      params: { query: { path: "/repo/subdir" } },
-    });
-    expect(mocks.post).toHaveBeenCalledWith("/projects", { body: { local_path: "/repo" } });
-  });
+        expect(result).toMatchObject({ id: "prj_1" });
+        expect(mocks.get).toHaveBeenCalledWith("/filesystem/validate-repo", {
+          params: { query: { path: "/repo/subdir" } },
+          signal: expect.any(AbortSignal),
+        });
+        expect(mocks.post).toHaveBeenCalledWith("/projects", {
+          body: { local_path: "/repo" },
+          signal: expect.any(AbortSignal),
+        });
+      }),
+    );
 
-  it("uses fleet routes when registering on a host", async () => {
-    mocks.get.mockResolvedValue({
-      data: { is_valid: true, root_path: "/srv/repo" },
-      error: undefined,
-    });
-    mocks.post.mockResolvedValue({
-      data: { id: "prj_remote" },
-      error: undefined,
-    });
+    it.effect("uses fleet routes when registering on a host", () =>
+      Effect.gen(function* () {
+        mocks.get.mockResolvedValue({
+          data: { is_valid: true, root_path: "/srv/repo" },
+          response: new Response(),
+        });
+        mocks.post.mockResolvedValue({
+          data: project("prj_remote"),
+          response: new Response(),
+        });
 
-    await expect(registerExistingProject("/srv/repo/pkg", { hostKey: "epyc" })).resolves.toMatchObject({
-      id: "prj_remote",
-    });
+        const result = yield* registerExistingProject("/srv/repo/pkg", { hostKey: "epyc" });
 
-    expect(mocks.get).toHaveBeenCalledWith("/fleet/hosts/{host_key}/filesystem/validate-repo", {
-      params: {
-        path: { host_key: "epyc" },
-        query: { path: "/srv/repo/pkg" },
-      },
-    });
-    expect(mocks.post).toHaveBeenCalledWith("/fleet/hosts/{host_key}/projects", {
-      params: { path: { host_key: "epyc" } },
-      body: { local_path: "/srv/repo" },
-    });
-  });
+        expect(result).toMatchObject({ id: "prj_remote" });
+        expect(mocks.get).toHaveBeenCalledWith("/fleet/hosts/{host_key}/filesystem/validate-repo", {
+          params: {
+            path: { host_key: "epyc" },
+            query: { path: "/srv/repo/pkg" },
+          },
+          signal: expect.any(AbortSignal),
+        });
+        expect(mocks.post).toHaveBeenCalledWith("/fleet/hosts/{host_key}/projects", {
+          params: { path: { host_key: "epyc" } },
+          body: { local_path: "/srv/repo" },
+          signal: expect.any(AbortSignal),
+        });
+      }),
+    );
 
-  it("rejects invalid repository paths before registering", async () => {
-    mocks.get.mockResolvedValue({
-      data: { is_valid: false, message: "Not a git repository" },
-      error: undefined,
-    });
+    it.effect("rejects invalid repository paths before registering", () =>
+      Effect.gen(function* () {
+        mocks.get.mockResolvedValue({
+          data: { is_valid: false, message: "Not a git repository" },
+          response: new Response(),
+        });
 
-    await expect(registerExistingProject("/tmp")).rejects.toThrow("Not a git repository");
-    expect(mocks.post).not.toHaveBeenCalled();
-  });
+        const message = yield* registerExistingProject("/tmp").pipe(
+          Effect.match({
+            onFailure: projectIntakeFailureMessage,
+            onSuccess: () => "unexpected success",
+          }),
+        );
 
-  it("posts clone body with an optional branch", async () => {
-    mocks.post.mockResolvedValue({
-      data: { id: "prj_clone" },
-      error: undefined,
-    });
+        expect(message).toBe("Not a git repository");
+        expect(mocks.post).not.toHaveBeenCalled();
+      }),
+    );
 
-    await expect(cloneProject(" git@github.com:octo/repo.git ", " /tmp/repo ", " main ")).resolves.toMatchObject({
-      id: "prj_clone",
-    });
+    it.effect("posts clone body with an optional branch", () =>
+      Effect.gen(function* () {
+        mocks.post.mockResolvedValue({
+          data: project("prj_clone"),
+          response: new Response(),
+        });
 
-    expect(mocks.post).toHaveBeenCalledWith("/projects/clone", {
-      body: {
-        url: "git@github.com:octo/repo.git",
-        path: "/tmp/repo",
-        branch: "main",
-      },
-    });
-  });
+        const result = yield* cloneProject(" git@github.com:octo/repo.git ", " /tmp/repo ", " main ");
 
-  it("uses the fleet clone route when cloning on a host", async () => {
-    mocks.post.mockResolvedValue({
-      data: { id: "prj_remote_clone" },
-      error: undefined,
-    });
+        expect(result).toMatchObject({ id: "prj_clone" });
+        expect(mocks.post).toHaveBeenCalledWith("/projects/clone", {
+          body: {
+            url: "git@github.com:octo/repo.git",
+            path: "/tmp/repo",
+            branch: "main",
+          },
+          signal: expect.any(AbortSignal),
+        });
+      }),
+    );
 
-    await expect(
-      cloneProject("git@github.com:octo/repo.git", "/srv/repo", undefined, { hostKey: "epyc" }),
-    ).resolves.toMatchObject({ id: "prj_remote_clone" });
+    it.effect("uses the fleet clone route when cloning on a host", () =>
+      Effect.gen(function* () {
+        mocks.post.mockResolvedValue({
+          data: project("prj_remote_clone"),
+          response: new Response(),
+        });
 
-    expect(mocks.post).toHaveBeenCalledWith("/fleet/hosts/{host_key}/projects/clone", {
-      params: { path: { host_key: "epyc" } },
-      body: {
-        url: "git@github.com:octo/repo.git",
-        path: "/srv/repo",
-      },
-    });
-  });
+        const result = yield* cloneProject("git@github.com:octo/repo.git", "/srv/repo", undefined, { hostKey: "epyc" });
 
-  it("normalizes a null repository list", async () => {
-    mocks.get.mockResolvedValue({
-      data: { repositories: null },
-      error: undefined,
-    });
+        expect(result).toMatchObject({ id: "prj_remote_clone" });
+        expect(mocks.post).toHaveBeenCalledWith("/fleet/hosts/{host_key}/projects/clone", {
+          params: { path: { host_key: "epyc" } },
+          body: {
+            url: "git@github.com:octo/repo.git",
+            path: "/srv/repo",
+          },
+          signal: expect.any(AbortSignal),
+        });
+      }),
+    );
 
-    await expect(listUserRepositories()).resolves.toEqual([]);
-  });
+    it.effect("normalizes a null repository list", () =>
+      Effect.gen(function* () {
+        mocks.get.mockResolvedValue({
+          data: { repositories: null },
+          response: new Response(),
+        });
 
-  it("keeps the requested provider host on every discovered repository", async () => {
-    mocks.get.mockResolvedValue({
-      data: {
-        repositories: [
+        expect(yield* listUserRepositories()).toEqual([]);
+      }),
+    );
+    it.effect("keeps the requested provider host on every discovered repository", () =>
+      Effect.gen(function* () {
+        mocks.get.mockResolvedValue({
+          data: {
+            repositories: [
+              {
+                name_with_owner: "acme/forge",
+                ssh_url: "git@ghe.example.com:acme/forge.git",
+                default_branch: "main",
+              },
+            ],
+          },
+          error: undefined,
+        });
+
+        expect(yield* listUserRepositories({ provider: "github", platformHost: "ghe.example.com" })).toEqual([
           {
             name_with_owner: "acme/forge",
             ssh_url: "git@ghe.example.com:acme/forge.git",
             default_branch: "main",
+            provider: "github",
+            platform_host: "ghe.example.com",
           },
-        ],
-      },
-      error: undefined,
-    });
-
-    await expect(listUserRepositories({ provider: "github", platformHost: "ghe.example.com" })).resolves.toEqual([
-      {
-        name_with_owner: "acme/forge",
-        ssh_url: "git@ghe.example.com:acme/forge.git",
-        default_branch: "main",
-        provider: "github",
-        platform_host: "ghe.example.com",
-      },
-    ]);
-    expect(mocks.get).toHaveBeenCalledWith("/platform/user-repositories", {
-      params: {
-        query: {
-          provider: "github",
-          platform_host: "ghe.example.com",
-          limit: 1000,
-        },
-      },
-    });
+        ]);
+        expect(mocks.get).toHaveBeenCalledWith("/platform/user-repositories", {
+          params: {
+            query: {
+              provider: "github",
+              platform_host: "ghe.example.com",
+              limit: 1000,
+            },
+          },
+          signal: expect.any(AbortSignal),
+        });
+      }),
+    );
   });
 });

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
@@ -165,6 +166,37 @@ func TestAppStateRegistryWaitsForInFlightHandlersAfterSwap(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		require.Fail("old state did not drain after handler returned")
 	}
+}
+
+func TestAppStateRegistryWaitsForAsyncStateCleanup(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		registry := newAppStateRegistry(nil)
+		release := make(chan struct{})
+		registry.closeAsync(func() {
+			<-release
+		})
+
+		waited := make(chan struct{})
+		go func() {
+			registry.waitForClosers()
+			close(waited)
+		}()
+
+		synctest.Wait()
+		select {
+		case <-waited:
+			require.Fail(t, "state registry returned before async cleanup finished")
+		default:
+		}
+
+		close(release)
+		synctest.Wait()
+		select {
+		case <-waited:
+		default:
+			require.Fail(t, "state registry did not return after async cleanup finished")
+		}
+	})
 }
 
 // TestDefaultRoborevEndpointIsUnbindable pins the e2e server's

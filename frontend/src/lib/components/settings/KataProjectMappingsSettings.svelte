@@ -2,13 +2,12 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import { Cause, Effect, Exit, Option } from "effect";
+  import { Effect } from "effect";
   import { Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { onDestroy, onMount, untrack } from "svelte";
   import { Button, Chip, SelectDropdown } from "@kenn-io/kit-ui";
   import type { KataProjectRepoMapping } from "../../api/types.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { updateSettings } from "../../api/settings.js";
   import { fetchKataDaemons, type KataDaemonInfo } from "../../api/kata/daemons.js";
   import {
     getKataProjectMappings,
@@ -17,6 +16,8 @@
   } from "../../api/kata/workspaces.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
 
   interface Props {
     mappings?: KataProjectRepoMapping[] | undefined;
@@ -56,8 +57,9 @@
   let diagnosticsError = $state<string | null>(null);
   let diagnosticsEnabled = false;
   let previousEnabled = false;
-  let diagnosticsRequest = 0;
-  let interruptDiagnostics: (() => void) | undefined;
+  let diagnosticsGeneration = 0;
+  let diagnosticsExecution: AppExecution<void, never> | undefined;
+  let saveExecution: AppExecution<void, never> | undefined;
   // svelte-ignore state_referenced_locally
   let currentMappings = $state(normalizeMappings(mappings));
   // svelte-ignore state_referenced_locally
@@ -108,13 +110,15 @@
   });
 
   onDestroy(() => {
-    diagnosticsRequest += 1;
-    interruptDiagnostics?.();
+    diagnosticsExecution?.interrupt();
+    saveExecution?.interrupt();
   });
 
   $effect(() => {
     if (!diagnosticsEnabled) return;
     if (!enabled) {
+      diagnosticsExecution?.interrupt();
+      diagnosticsExecution = undefined;
       diagnostics = null;
       diagnosticsError = null;
       diagnosticsLoading = false;
@@ -123,51 +127,75 @@
     }
     if (!previousEnabled) {
       previousEnabled = true;
-      untrack(() => void loadDiagnostics());
+      untrack(loadDiagnostics);
     }
   });
 
-  async function loadDiagnostics(daemonID = selectedDaemonID): Promise<void> {
-    const request = ++diagnosticsRequest;
-    interruptDiagnostics?.();
-    diagnosticsLoading = true;
+  function diagnosticsProgram(daemonID: string, currentDaemons: readonly KataDaemonInfo[]) {
+    return Effect.gen(function* () {
+      const roster = currentDaemons.length === 0 ? yield* fetchKataDaemons() : currentDaemons;
+      const effectiveID = daemonID || roster.find((daemon) => daemon.default)?.id || roster[0]?.id || "";
+      const nextDiagnostics = yield* getKataProjectMappings(effectiveID || undefined);
+      return { roster, effectiveID, diagnostics: nextDiagnostics };
+    });
+  }
+
+  function failureMessage(failure: unknown, fallback: string): string {
+    if (failure instanceof Error && failure.message !== "") return failure.message;
+    if (typeof failure === "object" && failure !== null && "problem" in failure) {
+      const problem = failure.problem;
+      if (typeof problem === "object" && problem !== null) {
+        if ("detail" in problem && typeof problem.detail === "string") return problem.detail;
+        if ("title" in problem && typeof problem.title === "string") return problem.title;
+      }
+    }
+    return fallback;
+  }
+
+  function applyDiagnosticsFailure(failure: unknown): void {
+    diagnosticsError = failureMessage(failure, "Couldn't load Kata project mappings.");
+    diagnostics = null;
+    diagnosticsLoading = false;
+  }
+
+  function applyDiagnosticsSuccess(result: {
+    readonly roster: readonly KataDaemonInfo[];
+    readonly effectiveID: string;
+    readonly diagnostics: KataProjectMappingsResponse;
+  }): void {
+    daemons = [...result.roster];
+    selectedDaemonID = result.effectiveID;
+    diagnostics = result.diagnostics;
     diagnosticsError = null;
-    const currentDaemons = daemons;
-    const execution = appRuntime.runCommand(
-      Effect.gen(function* () {
-        const roster = currentDaemons.length === 0 ? yield* fetchKataDaemons() : currentDaemons;
-        const effectiveID = daemonID || roster.find((daemon) => daemon.default)?.id || roster[0]?.id || "";
-        const nextDiagnostics = yield* getKataProjectMappings(effectiveID || undefined);
-        return { roster, effectiveID, diagnostics: nextDiagnostics };
-      }),
+    diagnosticsLoading = false;
+  }
+
+  function startDiagnostics(
+    daemonID: string,
+    currentDaemons: readonly KataDaemonInfo[],
+    showLoading: boolean,
+  ): void {
+    diagnosticsExecution?.interrupt();
+    diagnosticsGeneration += 1;
+    if (showLoading) diagnosticsLoading = true;
+    diagnosticsError = null;
+    diagnosticsExecution = appRuntime.runCommand(
+      diagnosticsProgram(daemonID, currentDaemons).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) => Effect.sync(() => applyDiagnosticsFailure(failure)),
+          onSuccess: (result) => Effect.sync(() => applyDiagnosticsSuccess(result)),
+        }),
+      ),
       {
         operation: "load Kata project mappings",
         safeContext: { daemonId: daemonID },
         onFailure: () => {},
       },
     );
-    interruptDiagnostics = execution.interrupt;
-    try {
-      const exit = await Effect.runPromise(execution.await);
-      if (request !== diagnosticsRequest) return;
-      if (Exit.isFailure(exit)) {
-        const failure = Cause.findErrorOption(exit.cause);
-        if (Option.isSome(failure)) throw failure.value;
-        throw new Error(Cause.pretty(exit.cause));
-      }
-      daemons = exit.value.roster;
-      selectedDaemonID = exit.value.effectiveID;
-      diagnostics = exit.value.diagnostics;
-    } catch (err) {
-      if (request !== diagnosticsRequest) return;
-      diagnosticsError = err instanceof Error ? err.message : String(err);
-      diagnostics = null;
-    } finally {
-      if (request === diagnosticsRequest) {
-        diagnosticsLoading = false;
-        interruptDiagnostics = undefined;
-      }
-    }
+  }
+
+  function loadDiagnostics(daemonID = selectedDaemonID): void {
+    startDiagnostics(daemonID, daemons, true);
   }
 
   function nextDraftID(): string {
@@ -301,21 +329,44 @@
     return draft.projectUID.trim() || `mapping ${index + 1}`;
   }
 
-  async function save(): Promise<void> {
+  function save(): void {
     if (!canSave) return;
     saving = true;
-    try {
-      const settings = await updateSettings({ kata_projects: pendingMappings });
-      const nextMappings = settings.kata_projects ?? [];
-      currentMappings = normalizeMappings(nextMappings);
-      drafts = draftsFromMappings(currentMappings);
-      onUpdate(nextMappings);
-      await loadDiagnostics();
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      saving = false;
-    }
+    const mappingsToSave = pendingMappings;
+    const daemonID = selectedDaemonID;
+    const currentDaemons = daemons;
+    const diagnosticsGenerationAtSave = diagnosticsGeneration;
+    saveExecution = appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.persist(() => ({ kata_projects: mappingsToSave }));
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              showFlash(settingsErrorMessage(failure), { tone: "danger" });
+            }),
+          onSuccess: (settings) =>
+            Effect.sync(() => {
+              const nextMappings = settings.kata_projects ?? [];
+              currentMappings = normalizeMappings(nextMappings);
+              drafts = draftsFromMappings(currentMappings);
+              onUpdate(nextMappings);
+              if (diagnosticsGeneration === diagnosticsGenerationAtSave && selectedDaemonID === daemonID) {
+                startDiagnostics(daemonID, currentDaemons, false);
+              }
+            }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          saving = false;
+        })),
+      ),
+      {
+        operation: "save Kata project mappings",
+        safeContext: { daemonId: daemonID },
+        onFailure: () => {},
+      },
+    );
   }
 </script>
 
@@ -334,7 +385,7 @@
             title="Kata mapping daemon"
             value={selectedDaemonID}
             options={daemonOptions}
-            onchange={(value) => { void loadDiagnostics(value); }}
+            onchange={loadDiagnostics}
             disabled={diagnosticsLoading}
           />
         </div>
@@ -516,7 +567,7 @@
       tone="info"
       surface="solid"
       type="button"
-      onclick={() => void save()}
+      onclick={save}
       disabled={!canSave}
     >
       Save Kata mappings

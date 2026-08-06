@@ -1,20 +1,33 @@
 import { flushSync, mount, unmount } from "svelte";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 import { STORES_KEY } from "../../context.js";
-import XtermTerminalPane from "./XtermTerminalPane.svelte";
+import XtermTerminalPaneTestHarness from "./XtermTerminalPaneTestHarness.svelte";
 
 describe("XtermTerminalPane focus", () => {
+  let runtime: OwnedAppRuntime;
+
+  beforeEach(() => {
+    runtime = makeAppRuntime();
+  });
+
+  afterEach(async () => {
+    await Effect.runPromise(runtime.disposeEffect);
+  });
+
   it("moves keyboard focus into the terminal when it is created active", async () => {
     const target = document.createElement("div");
     target.style.width = "600px";
     target.style.height = "400px";
     document.body.appendChild(target);
     const props = $state({
+      runtime,
       websocketPath: "/api/v1/workspaces/ws-1/runtime/sessions/s1/attach",
       active: true,
     });
-    const component = mount(XtermTerminalPane, {
+    const component = mount(XtermTerminalPaneTestHarness, {
       target,
       props,
       context: new Map([[STORES_KEY, { settings: createSettingsStore() }]]),
@@ -41,11 +54,12 @@ describe("XtermTerminalPane focus", () => {
     document.body.appendChild(button);
     button.focus();
     const props = $state({
+      runtime,
       websocketPath: "/api/v1/workspaces/ws-1/runtime/sessions/s1/attach",
       active: true,
       autoFocus: false,
     });
-    const component = mount(XtermTerminalPane, {
+    const component = mount(XtermTerminalPaneTestHarness, {
       target,
       props,
       context: new Map([[STORES_KEY, { settings: createSettingsStore() }]]),
@@ -70,10 +84,11 @@ describe("XtermTerminalPane focus", () => {
     const button = document.createElement("button");
     document.body.appendChild(button);
     const props = $state({
+      runtime,
       websocketPath: "/api/v1/workspaces/ws-1/runtime/sessions/s1/attach",
       active: false,
     });
-    const component = mount(XtermTerminalPane, {
+    const component = mount(XtermTerminalPaneTestHarness, {
       target,
       props,
       context: new Map([[STORES_KEY, { settings: createSettingsStore() }]]),
@@ -106,10 +121,11 @@ describe("XtermTerminalPane focus", () => {
     const button = document.createElement("button");
     document.body.appendChild(button);
     const props = $state({
+      runtime,
       websocketPath: "/api/v1/workspaces/ws-1/runtime/sessions/s1/attach",
       active: true,
     });
-    const component = mount(XtermTerminalPane, {
+    const component = mount(XtermTerminalPaneTestHarness, {
       target,
       props,
       context: new Map([[STORES_KEY, { settings: createSettingsStore() }]]),
@@ -147,10 +163,11 @@ describe("XtermTerminalPane focus", () => {
     expect(document.activeElement).toBe(dialogInput);
 
     const props = $state({
+      runtime,
       websocketPath: "/api/v1/workspaces/ws-1/runtime/sessions/s1/attach",
       active: true,
     });
-    const component = mount(XtermTerminalPane, {
+    const component = mount(XtermTerminalPaneTestHarness, {
       target,
       props,
       context: new Map([[STORES_KEY, { settings: createSettingsStore() }]]),

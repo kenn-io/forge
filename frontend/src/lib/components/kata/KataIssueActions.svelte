@@ -1,16 +1,23 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
   import Modal from "../shared/Modal.svelte";
 
   interface Props {
     issue: KataTaskDetail;
-    onCloseIssue: (reason: CloseReason, message: string) => boolean | Promise<boolean>;
-    onReopenIssue: () => void | Promise<void>;
+    onCloseIssue: (reason: CloseReason, message: string) => KataCommand<boolean>;
+    onReopenIssue: () => KataCommand<boolean>;
   }
 
   let { issue, onCloseIssue, onReopenIssue }: Props = $props();
+
+  const runtime = getAppRuntime();
 
   type CloseReason = "done" | "wontfix" | "duplicate" | "superseded";
 
@@ -31,6 +38,8 @@
   let pending = $state(false);
   let completeMessageInput: HTMLTextAreaElement | null = $state(null);
   let trackedUID = $state<string | null>(null);
+  let actionExecution: AppExecution<void, never> | null = null;
+  let focusExecution: AppExecution<void, never> | null = null;
 
   $effect(() => {
     if (issue.issue.uid === trackedUID) return;
@@ -45,7 +54,15 @@
     completeReason = "done";
     completeMessage = "";
     completeOpen = true;
-    queueMicrotask(() => completeMessageInput?.focus());
+    focusExecution?.interrupt();
+    focusExecution = runtime.runCommand(
+      Effect.yieldNow.pipe(Effect.andThen(Effect.sync(() => completeMessageInput?.focus()))),
+      {
+        operation: "focus Kata completion note",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   function closeCompleteDialog(): void {
@@ -53,37 +70,57 @@
     completeOpen = false;
   }
 
-  async function completeIssue(): Promise<void> {
+  function completeIssue(): void {
     if (pending) return;
     pending = true;
-    try {
-      const ok = await onCloseIssue(completeReason, completeMessage);
-      if (ok) {
-        completeOpen = false;
-        completeMessage = "";
-        completeReason = "done";
-      }
-    } finally {
-      pending = false;
-    }
+    actionExecution = runtime.runCommand(
+      onCloseIssue(completeReason, completeMessage).pipe(
+        Effect.tap((ok) =>
+          Effect.sync(() => {
+            if (!ok) return;
+            completeOpen = false;
+            completeMessage = "";
+            completeReason = "done";
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => (pending = false))),
+        Effect.asVoid,
+      ),
+      {
+        operation: "complete Kata task",
+        safeContext: { issueUid: issue.issue.uid },
+        onFailure: () => {},
+      },
+    );
   }
 
-  async function reopenIssue(): Promise<void> {
+  function reopenIssue(): void {
     if (pending) return;
     pending = true;
-    try {
-      await onReopenIssue();
-    } finally {
-      pending = false;
-    }
+    actionExecution = runtime.runCommand(
+      onReopenIssue().pipe(
+        Effect.ensuring(Effect.sync(() => (pending = false))),
+        Effect.asVoid,
+      ),
+      {
+        operation: "reopen Kata task",
+        safeContext: { issueUid: issue.issue.uid },
+        onFailure: () => {},
+      },
+    );
   }
 
   function handleCompleteKeydown(event: KeyboardEvent): void {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
-      void completeIssue();
+      completeIssue();
     }
   }
+
+  onDestroy(() => {
+    actionExecution?.interrupt();
+    focusExecution?.interrupt();
+  });
 </script>
 
 {#if issue.issue.status === "closed"}

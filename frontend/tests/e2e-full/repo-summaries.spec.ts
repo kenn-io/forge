@@ -285,7 +285,7 @@ test.describe("repository summaries", () => {
       await expect(title).toHaveValue("Retry interrupted issue creation");
       await expect(create).toBeDisabled();
 
-      await dialog.getByRole("checkbox", { name: "I checked the issue list and want to retry." }).click();
+      await dialog.getByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }).click();
       await expect(create).toBeEnabled();
       await create.click();
       await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/\d+$/);

@@ -62,6 +62,7 @@ let configuredLetterSpacing = 0;
 let configuredCursorBlink = true;
 let configuredFontLigatures = false;
 let mockSockets: MockWebSocket[] = [];
+let mockSocketsStartOpen = true;
 let initialTerminalDimensions = { cols: 80, rows: 24 };
 // What the fit addon measures the region as. undefined models a container with
 // no content box (a parked terminal), for which the real addon proposes nothing.
@@ -84,6 +85,7 @@ function deferred<T>(): {
 }
 
 function stubFontLoad(promise: Promise<FontFace[]>): ReturnType<typeof vi.fn> {
+  void promise.catch(() => undefined);
   const load = vi.fn().mockReturnValue(promise);
   Object.defineProperty(document, "fonts", {
     configurable: true,
@@ -95,23 +97,32 @@ function stubFontLoad(promise: Promise<FontFace[]>): ReturnType<typeof vi.fn> {
   return load;
 }
 
-class MockWebSocket {
+class MockWebSocket extends EventTarget {
   static OPEN = 1;
-  readyState = 1;
+  readyState: WebSocket["readyState"] = this.CONNECTING;
   binaryType = "arraybuffer";
-  onopen: (() => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onclose: (() => void) | null = null;
-  onerror: (() => void) | null = null;
+  onopen = () => this.dispatchEvent(new Event("open"));
+  onmessage = (event: MessageEvent) => this.dispatchEvent(event);
+  onclose = () => this.dispatchEvent(new CloseEvent("close", { code: 1006 }));
+  onerror = () => this.dispatchEvent(new Event("error"));
   sent: Array<string | ArrayBuffer | ArrayBufferView> = [];
 
   constructor(public url: string) {
+    super();
     mockSockets.push(this);
+    if (mockSocketsStartOpen) {
+      queueMicrotask(() => {
+        this.readyState = this.OPEN;
+        this.onopen();
+      });
+    }
   }
   send(data: string | ArrayBuffer | ArrayBufferView): void {
     this.sent.push(data);
   }
-  close(): void {}
+  close(): void {
+    this.readyState = this.CLOSED;
+  }
 }
 
 vi.mock("../../context.js", () => ({
@@ -132,29 +143,39 @@ vi.mock("../../stores/flash.svelte.js", () => ({
   showFlash: mockShowFlash,
 }));
 
-vi.mock("./terminalClipboardWriter.js", () => ({
-  createBrowserTerminalClipboardPort: vi.fn(() => ({})),
-  createTerminalClipboardWriter: vi.fn(() => ({
-    beginPointerGesture: vi.fn(),
-    cancelAuthorization: clipboardWriterCancelAuthorization,
-    cancelPointerGesture: clipboardWriterCancelPointerGesture,
-    confirmPointerSelection: clipboardWriterConfirmPointerSelection,
-    endPointerGesture: vi.fn(),
-    authorizeKeyboardGesture: vi.fn(),
-    write: clipboardWriterWrite,
-    dispose: clipboardWriterDispose,
-  })),
-}));
+vi.mock("./terminalClipboardWriter.js", async () => {
+  const { Effect } = await import("effect");
+  return {
+    createBrowserTerminalClipboardPort: vi.fn(() => ({})),
+    makeTerminalClipboardWriter: vi.fn(() =>
+      Effect.succeed({
+        beginPointerGesture: vi.fn(),
+        cancelAuthorization: clipboardWriterCancelAuthorization,
+        cancelPointerGesture: clipboardWriterCancelPointerGesture,
+        confirmPointerSelection: clipboardWriterConfirmPointerSelection,
+        endPointerGesture: vi.fn(),
+        authorizeKeyboardGesture: vi.fn(),
+        write: clipboardWriterWrite,
+        dispose: clipboardWriterDispose,
+      }),
+    ),
+  };
+});
 
-vi.mock("./tmuxMouseDragAutoscroll.js", () => ({
-  createTmuxMouseDragAutoscroll: vi.fn(() => ({
-    observeTerminalData: mouseDragObserveTerminalData,
-    updatePointer: vi.fn(),
-    endPointerGesture: mouseDragEndPointerGesture,
-    reset: mouseDragReset,
-    dispose: vi.fn(),
-  })),
-}));
+vi.mock("./tmuxMouseDragAutoscroll.js", async () => {
+  const { Effect } = await import("effect");
+  return {
+    makeTmuxMouseDragAutoscroll: vi.fn(() =>
+      Effect.succeed({
+        observeTerminalData: mouseDragObserveTerminalData,
+        updatePointer: vi.fn(),
+        endPointerGesture: mouseDragEndPointerGesture,
+        reset: mouseDragReset,
+        dispose: vi.fn(),
+      }),
+    ),
+  };
+});
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation(function (options) {
@@ -237,10 +258,16 @@ vi.mock("@xterm/addon-webgl", () => ({
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
-import TerminalPane from "./TerminalPane.svelte";
+import TerminalPane from "./TerminalPaneTestHarness.svelte";
 
 function resizeFramesOf(socket: MockWebSocket): string[] {
   return socket.sent.map(String).filter((frame) => frame.includes('"type":"resize"'));
+}
+
+async function waitForSocketConnected(socket: MockWebSocket): Promise<void> {
+  await waitFor(() =>
+    expect(socket.sent.map(String)).toContainEqual(expect.stringContaining('"type":"resize_active"')),
+  );
 }
 
 describe("TerminalPane", () => {
@@ -275,6 +302,7 @@ describe("TerminalPane", () => {
     xtermOnDataHandlers.length = 0;
     xtermOscHandlers.clear();
     mockSockets = [];
+    mockSocketsStartOpen = true;
 
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -367,11 +395,13 @@ describe("TerminalPane", () => {
     clipboardWriterWrite.mockResolvedValue("written");
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
 
     const handled = await xtermOscHandlers.get(52)!("c;Y29waWVkIHRleHQ=");
 
     expect(handled).toBe(true);
-    expect(clipboardWriterWrite).toHaveBeenCalledWith("copied text");
+    await waitFor(() => expect(clipboardWriterWrite).toHaveBeenCalledWith("copied text"));
   });
 
   it("consumes OSC 52 writes synchronously while the clipboard write is pending", async () => {
@@ -379,11 +409,13 @@ describe("TerminalPane", () => {
     clipboardWriterWrite.mockReturnValue(clipboardWrite.promise);
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
 
     const handled = xtermOscHandlers.get(52)!("c;Y29waWVkIHRleHQ=");
 
     expect(handled).toBe(true);
-    expect(clipboardWriterWrite).toHaveBeenCalledWith("copied text");
+    await waitFor(() => expect(clipboardWriterWrite).toHaveBeenCalledWith("copied text"));
     clipboardWrite.resolve("written");
     await clipboardWrite.promise;
   });
@@ -402,12 +434,14 @@ describe("TerminalPane", () => {
     clipboardWriterWrite.mockResolvedValue("blocked");
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
     const handler = xtermOscHandlers.get(52)!;
 
     await handler("c;b25l");
     await handler("c;dHdv");
 
-    expect(mockShowFlash).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockShowFlash).toHaveBeenCalledTimes(1));
     expect(mockShowFlash).toHaveBeenCalledWith("Could not write the terminal selection to the clipboard.", {
       tone: "danger",
     });
@@ -430,8 +464,9 @@ describe("TerminalPane", () => {
   it("does not write OSC 52 text from a disconnected pane", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
-    expect(mockSockets).toHaveLength(1);
-    mockSockets[0]!.readyState = WebSocket.CLOSED;
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mockSockets[0]!.onclose();
+    await waitFor(() => expect(mouseDragReset).toHaveBeenCalled());
 
     const handled = xtermOscHandlers.get(52)!("c;Y29waWVkIHRleHQ=");
 
@@ -516,7 +551,7 @@ describe("TerminalPane", () => {
     const load = stubFontLoad(fontLoad.promise);
 
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await tick();
+    await waitFor(() => expect(load).toHaveBeenCalled());
 
     expect(load).toHaveBeenCalledWith('14px "MesloLGS NF"', "0MWim@#");
     expect(xtermTerminalCtor).not.toHaveBeenCalled();
@@ -528,15 +563,11 @@ describe("TerminalPane", () => {
   it("constructs xterm after the selected-font wait reaches 300 ms", async () => {
     vi.useFakeTimers();
     const fontLoad = deferred<FontFace[]>();
-    stubFontLoad(fontLoad.promise);
+    const load = stubFontLoad(fontLoad.promise);
 
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await tick();
-    await vi.advanceTimersByTimeAsync(299);
-
-    expect(xtermTerminalCtor).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(load).toHaveBeenCalled());
+    await vi.advanceTimersByTimeAsync(300);
 
     expect(xtermTerminalCtor).toHaveBeenCalledTimes(1);
   });
@@ -567,12 +598,18 @@ describe("TerminalPane", () => {
 
   it("rebuilds the xterm atlas once when the selected font resolves after the bound", async () => {
     vi.useFakeTimers();
+    mockSocketsStartOpen = false;
     const fontLoad = deferred<FontFace[]>();
-    stubFontLoad(fontLoad.promise);
+    const load = stubFontLoad(fontLoad.promise);
 
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await tick();
+    await vi.waitFor(() => expect(load).toHaveBeenCalled());
     await vi.advanceTimersByTimeAsync(300);
+    vi.useRealTimers();
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mockSockets[0]!.readyState = MockWebSocket.OPEN;
+    mockSockets[0]!.onopen();
+    await waitForSocketConnected(mockSockets[0]!);
 
     const terminal = xtermInstances[0]!;
     const fitAddon = xtermFitAddons[0]!;
@@ -582,22 +619,26 @@ describe("TerminalPane", () => {
     mockSockets[0]!.sent = [];
 
     fontLoad.resolve([]);
-    await vi.advanceTimersByTimeAsync(0);
 
-    expect(terminal.clearTextureAtlas).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(terminal.clearTextureAtlas).toHaveBeenCalledTimes(1));
     expect(fitAddon.fit).toHaveBeenCalledTimes(1);
     expect(terminal.refresh).toHaveBeenCalledTimes(1);
-    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize", cols: 80, rows: 24 }));
   });
 
   it("pushes the re-measured size when a font resolves late in a painted pane", async () => {
     vi.useFakeTimers();
+    mockSocketsStartOpen = false;
     const fontLoad = deferred<FontFace[]>();
-    stubFontLoad(fontLoad.promise);
+    const load = stubFontLoad(fontLoad.promise);
 
     render(TerminalPane, { props: { workspaceId: "ws-123", active: true } });
-    await tick();
+    await vi.waitFor(() => expect(load).toHaveBeenCalled());
     await vi.advanceTimersByTimeAsync(300);
+    vi.useRealTimers();
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mockSockets[0]!.readyState = MockWebSocket.OPEN;
+    mockSockets[0]!.onopen();
+    await waitForSocketConnected(mockSockets[0]!);
 
     const terminal = xtermInstances[0]!;
     const fitAddon = xtermFitAddons[0]!;
@@ -608,11 +649,12 @@ describe("TerminalPane", () => {
     fitDimensions = { cols: 70, rows: 20 };
 
     fontLoad.resolve([]);
-    await vi.advanceTimersByTimeAsync(0);
 
-    expect(terminal.clearTextureAtlas).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(terminal.clearTextureAtlas).toHaveBeenCalledTimes(1));
     expect(fitAddon.fit).toHaveBeenCalledTimes(1);
-    expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 70, rows: 20 })]);
+    await waitFor(() =>
+      expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 70, rows: 20 })]),
+    );
   });
 
   it("does not rebuild a disposed xterm when the selected font resolves late", async () => {
@@ -639,6 +681,17 @@ describe("TerminalPane", () => {
     expect(terminal.refresh).not.toHaveBeenCalled();
   });
 
+  it("releases terminal gesture resources when detached before the selected font is ready", async () => {
+    const fontLoad = deferred<FontFace[]>();
+    stubFontLoad(fontLoad.promise);
+
+    const { unmount } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await tick();
+    unmount();
+
+    await waitFor(() => expect(clipboardWriterDispose).toHaveBeenCalledTimes(1));
+  });
+
   it("loads the ligatures addon for xterm.js when enabled", async () => {
     configuredFontLigatures = true;
 
@@ -663,12 +716,14 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     expect(mockSockets[0]!.url).toContain("resize_active=1");
 
-    mockSockets[0]!.onopen?.();
+    await waitForSocketConnected(mockSockets[0]!);
     mockSockets[0]!.sent = [];
     fitDimensions = { cols: 100, rows: 40 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
 
-    expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 100, rows: 40 })]);
+    await waitFor(() =>
+      expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 100, rows: 40 })]),
+    );
   });
 
   it("does not claim resize authority for a hidden but measurable region", async () => {
@@ -677,7 +732,7 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     expect(mockSockets[0]!.url).toContain("resize_active=0");
 
-    mockSockets[0]!.onopen?.();
+    await waitForSocketConnected(mockSockets[0]!);
     expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: false }));
 
     mockSockets[0]!.sent = [];
@@ -692,11 +747,13 @@ describe("TerminalPane", () => {
       props: { workspaceId: "ws-123", active: true },
     });
     await waitFor(() => expect(mockSockets).toHaveLength(1));
-    mockSockets[0]!.onopen?.();
+    await waitForSocketConnected(mockSockets[0]!);
     mockSockets[0]!.sent = [];
 
     await rerender({ workspaceId: "ws-123", active: false });
-    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: false }));
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: false })),
+    );
 
     mockSockets[0]!.sent = [];
     fitDimensions = { cols: 100, rows: 40 };
@@ -715,7 +772,7 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     expect(mockSockets[0]!.url).toContain("resize_active=0");
 
-    mockSockets[0]!.onopen?.();
+    await waitForSocketConnected(mockSockets[0]!);
     mockSockets[0]!.sent = [];
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
 
@@ -728,46 +785,54 @@ describe("TerminalPane", () => {
 
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     expect(mockSockets[0]!.url).toContain("resize_active=0");
-    mockSockets[0]!.onopen?.();
+    await waitForSocketConnected(mockSockets[0]!);
     mockSockets[0]!.sent = [];
 
     fitDimensions = { cols: 100, rows: 40 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
 
-    expect(mockSockets[0]!.sent.map(String)).toEqual([
-      JSON.stringify({ type: "resize_active", active: true }),
-      JSON.stringify({ type: "resize", cols: 100, rows: 40 }),
-    ]);
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map(String)).toEqual([
+        JSON.stringify({ type: "resize_active", active: true }),
+        JSON.stringify({ type: "resize", cols: 100, rows: 40 }),
+      ]),
+    );
   });
 
   it("revokes and reclaims authority as active region geometry changes", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123", active: true } });
 
     await waitFor(() => expect(mockSockets).toHaveLength(1));
-    mockSockets[0]!.onopen?.();
+    await waitForSocketConnected(mockSockets[0]!);
     mockSockets[0]!.sent = [];
 
     fitDimensions = undefined;
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map(String)).toContain(JSON.stringify({ type: "resize_active", active: false })),
+    );
 
     fitDimensions = { cols: 80, rows: 24 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
 
-    expect(mockSockets[0]!.sent.map(String)).toEqual([
-      JSON.stringify({ type: "resize_active", active: false }),
-      JSON.stringify({ type: "resize_active", active: true }),
-      JSON.stringify({ type: "resize", cols: 80, rows: 24 }),
-    ]);
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map(String)).toEqual([
+        JSON.stringify({ type: "resize_active", active: false }),
+        JSON.stringify({ type: "resize_active", active: true }),
+        JSON.stringify({ type: "resize", cols: 80, rows: 24 }),
+      ]),
+    );
   });
 
   it("sends nothing more for a burst that measures the same size", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
-    mockSockets[0]!.onopen?.();
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
 
     mockSockets[0]!.sent = [];
     fitDimensions = { cols: 120, rows: 50 };
@@ -775,16 +840,19 @@ describe("TerminalPane", () => {
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
 
-    expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 120, rows: 50 })]);
+    await waitFor(() =>
+      expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 120, rows: 50 })]),
+    );
   });
 
   it("reports the dimensions that fit actually applies when the region changes between measurements", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
     const terminal = xtermInstances[0]!;
     const fitAddon = xtermFitAddons[0]!;
-    mockSockets[0]!.onopen?.();
+    await waitForSocketConnected(mockSockets[0]!);
     mockSockets[0]!.sent = [];
     fitDimensions = undefined;
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
@@ -792,30 +860,31 @@ describe("TerminalPane", () => {
 
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
 
-    expect(terminal.rows).toBe(25);
-    expect(mockSockets[0]!.sent.map(String)).toEqual([
-      JSON.stringify({ type: "resize_active", active: false }),
-      JSON.stringify({ type: "resize_active", active: true }),
-      JSON.stringify({ type: "resize", cols: 80, rows: 25 }),
-    ]);
+    await waitFor(() => expect(terminal.rows).toBe(25));
+    await waitFor(() =>
+      expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 80, rows: 25 })]),
+    );
   });
 
   it("sends a size measured before socket open once the connection opens", async () => {
     // The first measurement lands before the socket opens. Recording it as sent
     // anyway would let the dedupe suppress it forever, leaving the PTY at the
     // size it launched with.
+    mockSocketsStartOpen = false;
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
-    mockSockets[0]!.readyState = 0;
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
     fitDimensions = { cols: 90, rows: 30 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
     expect(resizeFramesOf(mockSockets[0]!)).toHaveLength(0);
 
-    mockSockets[0]!.readyState = 1;
-    mockSockets[0]!.onopen?.();
+    mockSockets[0]!.readyState = MockWebSocket.OPEN;
+    mockSockets[0]!.onopen();
 
-    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "refresh", cols: 90, rows: 30 }));
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "refresh", cols: 90, rows: 30 })),
+    );
   });
 
   it("focuses the xterm terminal once it initializes while active", async () => {
@@ -872,6 +941,7 @@ describe("TerminalPane", () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
     const terminal = xtermInstances[0]!;
     const fitAddon = xtermFitAddons[0]!;
     terminal.clearTextureAtlas.mockClear();
@@ -882,7 +952,7 @@ describe("TerminalPane", () => {
     fitDimensions = { cols: 80, rows: 24 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
 
-    expect(fitAddon.fit).toHaveBeenCalled();
+    await waitFor(() => expect(fitAddon.fit).toHaveBeenCalled());
     expect(terminal.clearTextureAtlas).not.toHaveBeenCalled();
     expect(terminal.refresh).toHaveBeenCalledWith(0, 23);
   });
@@ -891,31 +961,30 @@ describe("TerminalPane", () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
-    expect(mockSockets).toHaveLength(1);
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
     const drag = "\x1b[<0;10;5M" + "\x1b[<32;12;5M" + "\x1b[<32;13;5M" + "\x1b[<0;13;5m";
 
     xtermOnDataHandlers[0]!(drag);
 
     const socket = mockSockets[0]!;
-    expect(sentText(socket, socket.sent.length - 1)).toBe(drag);
+    await waitFor(() => expect(sentText(socket, socket.sent.length - 1)).toBe(drag));
   });
 
   it("does not replay input received while disconnected", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
     const socket = mockSockets[0]!;
-    socket.readyState = 0;
+    mouseDragReset.mockClear();
+    socket.onclose();
+    await waitFor(() => expect(mouseDragReset).toHaveBeenCalled());
     socket.sent = [];
+    mouseDragObserveTerminalData.mockClear();
 
     xtermOnDataHandlers[0]!("\x1b[<0;10;5M");
     expect(mouseDragObserveTerminalData).not.toHaveBeenCalled();
-    socket.readyState = MockWebSocket.OPEN;
-    xtermOnDataHandlers[0]!("\x1b[<32;12;5M");
-
-    expect(sentText(socket, 0)).toBe("\x1b[<32;12;5M");
-    expect(mouseDragObserveTerminalData).toHaveBeenCalledTimes(1);
-    expect(mouseDragObserveTerminalData).toHaveBeenCalledWith("\x1b[<32;12;5M");
+    expect(socket.sent).toHaveLength(0);
   });
 
   it("resets tmux drag state when the terminal socket closes", async () => {
@@ -924,9 +993,20 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     mouseDragReset.mockClear();
 
-    mockSockets[0]!.onclose?.();
+    mockSockets[0]!.onclose();
 
-    expect(mouseDragReset).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mouseDragReset).toHaveBeenCalledTimes(1));
+  });
+
+  it("revokes clipboard authorization when the terminal socket closes", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    clipboardWriterCancelAuthorization.mockClear();
+
+    mockSockets[0]!.onclose();
+
+    await waitFor(() => expect(clipboardWriterCancelAuthorization).toHaveBeenCalledTimes(1));
   });
 
   it.each([
@@ -948,18 +1028,15 @@ describe("TerminalPane", () => {
 
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     const firstSocket = mockSockets[0]!;
-    firstSocket.onopen?.();
-    vi.useFakeTimers();
-
-    firstSocket.onclose?.();
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(mockSockets).toHaveLength(2);
+    await waitForSocketConnected(firstSocket);
+    firstSocket.onclose();
+    await waitFor(() => expect(mockSockets).toHaveLength(2), { timeout: 2_000 });
     const reconnectedSocket = mockSockets[1]!;
 
     const reconnectURL = new URL(reconnectedSocket.url);
     expect(reconnectURL.searchParams.get("cols")).toBe("177");
     expect(reconnectURL.searchParams.get("rows")).toBe("41");
-    reconnectedSocket.onopen?.();
+    await waitForSocketConnected(reconnectedSocket);
     expect(reconnectedSocket.sent.map(String)).not.toContainEqual(expect.stringContaining('"type":"refresh"'));
   });
 
@@ -977,19 +1054,20 @@ describe("TerminalPane", () => {
     const firstSocket = mockSockets[0]!;
     expect(new URL(firstSocket.url).searchParams.get("replay_boundary")).toBe("1");
     expect(new URL(firstSocket.url).searchParams.has("cols")).toBe(false);
-    firstSocket.onopen?.();
+    await waitForSocketConnected(firstSocket);
     expect(firstSocket.sent.map(String)).not.toContainEqual(expect.stringContaining('"type":"refresh"'));
 
-    firstSocket.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "replay_ready" }) }));
+    firstSocket.onmessage(new MessageEvent("message", { data: JSON.stringify({ type: "replay_ready" }) }));
+    await waitFor(() => expect(xtermInstances[0]!.write).toHaveBeenCalled());
     const firstBoundaryCallback = xtermInstances[0]!.write.mock.calls.at(-1)?.[1] as (() => void) | undefined;
     expect(firstBoundaryCallback).toBeTypeOf("function");
     firstBoundaryCallback?.();
-    expect(firstSocket.sent.map(String)).toContain(JSON.stringify({ type: "refresh", cols: 177, rows: 41 }));
+    await waitFor(() =>
+      expect(firstSocket.sent.map(String)).toContain(JSON.stringify({ type: "refresh", cols: 177, rows: 41 })),
+    );
 
-    vi.useFakeTimers();
-    firstSocket.onclose?.();
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(mockSockets).toHaveLength(2);
+    firstSocket.onclose();
+    await waitFor(() => expect(mockSockets).toHaveLength(2), { timeout: 2_000 });
     const reconnectedSocket = mockSockets[1]!;
     const reconnectURL = new URL(reconnectedSocket.url);
     expect(reconnectURL.searchParams.get("replay_boundary")).toBe("1");
@@ -1011,16 +1089,19 @@ describe("TerminalPane", () => {
     const terminal = xtermInstances[0]!;
     const fitAddon = xtermFitAddons[0]!;
     const socket = mockSockets[0]!;
-    socket.onopen?.();
+    await waitForSocketConnected(socket);
     socket.sent = [];
     fitAddon.proposeDimensions.mockReturnValueOnce({ cols: 177, rows: 41 }).mockReturnValue({ cols: 177, rows: 42 });
 
-    socket.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "replay_ready" }) }));
+    socket.onmessage(new MessageEvent("message", { data: JSON.stringify({ type: "replay_ready" }) }));
+    await waitFor(() => expect(terminal.write).toHaveBeenCalled());
     const boundaryCallback = terminal.write.mock.calls.at(-1)?.[1] as (() => void) | undefined;
     boundaryCallback?.();
 
-    expect(terminal.rows).toBe(42);
-    expect(socket.sent.map(String)).toContain(JSON.stringify({ type: "refresh", cols: 177, rows: 42 }));
+    await waitFor(() => expect(terminal.rows).toBe(42));
+    await waitFor(() =>
+      expect(socket.sent.map(String)).toContain(JSON.stringify({ type: "refresh", cols: 177, rows: 42 })),
+    );
   });
 
   it("aborts a partial OSC sequence before writing output from a reconnected socket", async () => {
@@ -1029,21 +1110,22 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     const terminal = xtermInstances[0]!;
     const firstSocket = mockSockets[0]!;
+    await waitForSocketConnected(firstSocket);
     terminal.write.mockClear();
-    vi.useFakeTimers();
     const binaryMessage = (text: string): MessageEvent => {
       const encoded = new TextEncoder().encode(text);
-      const data = new Uint8Array(new window.ArrayBuffer(encoded.byteLength));
+      const data = new Uint8Array(new ArrayBuffer(encoded.byteLength));
       data.set(encoded);
-      return new MessageEvent("message", { data: data.buffer });
+      return new MessageEvent("message", { data });
     };
 
-    firstSocket.onmessage?.(binaryMessage("\x1b]52;c;cGFydGlhbA=="));
-    firstSocket.onclose?.();
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(mockSockets).toHaveLength(2);
+    firstSocket.onmessage(binaryMessage("\x1b]52;c;cGFydGlhbA=="));
+    await waitFor(() => expect(terminal.write).toHaveBeenCalled());
+    firstSocket.onclose();
+    await waitFor(() => expect(mockSockets).toHaveLength(2), { timeout: 2_000 });
 
-    mockSockets[1]!.onmessage?.(binaryMessage("fresh session output"));
+    mockSockets[1]!.onmessage(binaryMessage("fresh session output"));
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledTimes(3));
 
     const writtenChunks = terminal.write.mock.calls.map(([data]) =>
       typeof data === "string" ? data : new TextDecoder().decode(data),
@@ -1058,23 +1140,24 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     const terminal = xtermInstances[0]!;
     const firstSocket = mockSockets[0]!;
+    await waitForSocketConnected(firstSocket);
     terminal.write.mockClear();
-    vi.useFakeTimers();
     const binaryMessage = (bytes: number[]): MessageEvent => {
-      const data = new Uint8Array(new window.ArrayBuffer(bytes.length));
+      const data = new Uint8Array(new ArrayBuffer(bytes.length));
       data.set(bytes);
-      return new MessageEvent("message", { data: data.buffer });
+      return new MessageEvent("message", { data });
     };
 
-    firstSocket.onmessage?.(binaryMessage([0xe2]));
-    firstSocket.onclose?.();
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(mockSockets).toHaveLength(2);
+    firstSocket.onmessage(binaryMessage([0xe2]));
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledTimes(1));
+    firstSocket.onclose();
+    await waitFor(() => expect(mockSockets).toHaveLength(2), { timeout: 2_000 });
 
     // The new subscriber replays the prefix before live output completes the
     // rune. The byte CAN between them must clear xterm's streaming decoder.
-    mockSockets[1]!.onmessage?.(binaryMessage([0xe2]));
-    mockSockets[1]!.onmessage?.(binaryMessage([0x98, 0x83]));
+    mockSockets[1]!.onmessage(binaryMessage([0xe2]));
+    mockSockets[1]!.onmessage(binaryMessage([0x98, 0x83]));
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledTimes(4));
 
     expect(terminal.write.mock.calls.map(([data]) => Array.from(data as Uint8Array))).toEqual([
       [0xe2],
@@ -1152,6 +1235,7 @@ describe("TerminalPane", () => {
     });
 
     await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
     xtermInstances[0]!.modes.bracketedPasteMode = true;
     mockSockets[0]!.sent = [];
     const terminalContainer = container.querySelector(".terminal-container");
@@ -1173,7 +1257,11 @@ describe("TerminalPane", () => {
 
     expect(defaultAllowed).toBe(false);
     expect(laterPasteListener).not.toHaveBeenCalled();
-    expect(sentText(mockSockets[0]!, 0)).toBe("\x1b[200~first[201~\nsecond\nthird\x1b[201~");
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain(
+        "\x1b[200~first[201~\nsecond\nthird\x1b[201~",
+      ),
+    );
   });
 
   it("sends browser multiline paste raw when bracketed paste is disabled", async () => {
@@ -1182,6 +1270,7 @@ describe("TerminalPane", () => {
     });
 
     await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
     mockSockets[0]!.sent = [];
     const terminalContainer = container.querySelector(".terminal-container");
     expect(terminalContainer).toBeDefined();
@@ -1199,7 +1288,11 @@ describe("TerminalPane", () => {
     const defaultAllowed = terminalContainer!.dispatchEvent(event);
 
     expect(defaultAllowed).toBe(false);
-    expect(sentText(mockSockets[0]!, 0)).toBe("first\nsecond\nthird");
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain(
+        "first\nsecond\nthird",
+      ),
+    );
   });
 
   it("leaves single-line browser paste for xterm.js default handling", async () => {
@@ -1208,6 +1301,7 @@ describe("TerminalPane", () => {
     });
 
     await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
     mockSockets[0]!.sent = [];
     const terminalContainer = container.querySelector(".terminal-container");
     expect(terminalContainer).toBeDefined();

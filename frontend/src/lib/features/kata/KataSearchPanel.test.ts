@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { describe, expect, test, vi } from "vite-plus/test";
 
 import type { KataProjectSummary, KataTaskSearchFilters } from "../../api/kata/taskTypes.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import KataSearchPanel from "./KataSearchPanel.svelte";
 
 const filters: KataTaskSearchFilters = {
@@ -17,10 +19,12 @@ describe("KataSearchPanel", () => {
     const changes: KataTaskSearchFilters[] = [];
     const onChange = vi.fn((next: KataTaskSearchFilters) => {
       changes.push(next);
+      return Effect.succeed(true);
     });
 
-    const { rerender } = render(KataSearchPanel, {
+    const { rerender } = render(AppRuntimeHarness, {
       props: {
+        component: KataSearchPanel,
         filters,
         projects,
         onChange,
@@ -28,8 +32,8 @@ describe("KataSearchPanel", () => {
     });
     const applyLatest = async () => {
       const next = changes[changes.length - 1];
-      expect(next).toBeTruthy();
-      await rerender({ filters: next!, projects, onChange });
+      if (next === undefined) throw new Error("Kata filters were not published");
+      await rerender({ filters: next, projects, onChange });
     };
 
     await fireEvent.input(screen.getByLabelText("Search tasks"), { target: { value: "rent" } });
@@ -58,8 +62,8 @@ describe("KataSearchPanel", () => {
   });
 
   test("emits the Ready status filter", async () => {
-    const onChange = vi.fn();
-    render(KataSearchPanel, { props: { filters, projects, onChange } });
+    const onChange = vi.fn(() => Effect.succeed(true));
+    render(AppRuntimeHarness, { props: { component: KataSearchPanel, filters, projects, onChange } });
 
     await fireEvent.click(screen.getByRole("combobox", { name: "Status: Open" }));
     await fireEvent.click(screen.getByRole("option", { name: "Ready" }));
@@ -71,10 +75,12 @@ describe("KataSearchPanel", () => {
     const changes: KataTaskSearchFilters[] = [];
     const onChange = vi.fn((next: KataTaskSearchFilters) => {
       changes.push(next);
+      return Effect.succeed(true);
     });
 
-    render(KataSearchPanel, {
+    render(AppRuntimeHarness, {
       props: {
+        component: KataSearchPanel,
         filters,
         projects,
         onChange,

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
 
 import type { Folder } from "../../api/docs/types";
 import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
@@ -10,14 +11,16 @@ const folders: Folder[] = [
   { id: "inbox", name: "Inbox", path: "/inbox" },
 ];
 
-const searchReferences: KataTaskReferenceSearch = vi.fn(async () => ({
-  server_instance_id: "server-a",
-  daemon_id: "home",
-  generation: 7,
-  invalidation_epoch: 2,
-  fetched_at: "2026-07-20T12:00:00Z",
-  references: [],
-}));
+const searchReferences: KataTaskReferenceSearch = vi.fn(() =>
+  Effect.succeed({
+    server_instance_id: "server-a",
+    daemon_id: "home",
+    generation: 7,
+    invalidation_epoch: 2,
+    fetched_at: "2026-07-20T12:00:00Z",
+    references: [],
+  }),
+);
 
 describe("buildDocsIssueCompletionOptions", () => {
   it("uses a live folder binding as the reference-search daemon", () => {

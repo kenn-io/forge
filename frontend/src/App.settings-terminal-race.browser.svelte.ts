@@ -125,7 +125,7 @@ describe("terminal settings response races", () => {
     expect(settingsStore.getTerminalSettings().font_size).toBe(13);
   });
 
-  it("preserves a pending zoom when a stale settings hydration resolves", async () => {
+  it("cancels a departed settings hydration without discarding a pending zoom", async () => {
     await page.viewport(1280, 900);
     let delaySettingsHydration = false;
     let releaseSettingsHydration: (() => void) | undefined;
@@ -201,10 +201,7 @@ describe("terminal settings response races", () => {
     await vi.waitFor(() => expect(releaseZoomSave).toBeTypeOf("function"), WAIT);
 
     releaseSettingsHydration!();
-    await vi.waitFor(
-      () => expect(settingsStore.getTerminalSettings().font_family).toBe('"Hydrated Font", monospace'),
-      WAIT,
-    );
+    expect(settingsStore.getTerminalSettings().font_family).toBe("");
     expect(settingsStore.getTerminalSettings().font_size).toBe(13);
 
     releaseZoomSave!();

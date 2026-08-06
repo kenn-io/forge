@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect";
-import type { ProblemBody } from "./problems.js";
+import { isProblem, type ProblemBody } from "./problems.js";
 import { createRuntimeClient } from "./runtime.js";
-import { ApiProblemError, TransientTransportError } from "./effect-errors.js";
+import { ApiProblemError, InvalidExternalPayload, TransientTransportError } from "./effect-errors.js";
 
 export type GeneratedClient = ReturnType<typeof createRuntimeClient>;
 
@@ -29,6 +29,31 @@ export const executeGeneratedRequest = Effect.fn("GeneratedApi.execute")(functio
     return result.data;
   }
   return yield* Effect.fail(new ApiProblemError({ operation, problem: result.error }));
+});
+
+type OpaqueGeneratedRequestResult<A> =
+  | { readonly data: A; readonly error?: never; readonly response: Response }
+  | { readonly data?: never; readonly error: unknown; readonly response: Response };
+
+export const executeOpaqueGeneratedApiRequest = Effect.fn("GeneratedApi.executeOpaque")(function* <A>(
+  operation: string,
+  request: (client: GeneratedClient, signal: AbortSignal) => Promise<OpaqueGeneratedRequestResult<A>>,
+) {
+  const api = yield* GeneratedApi;
+  const result = yield* Effect.tryPromise({
+    try: (signal) => request(api.client, signal),
+    catch: (cause) => TransientTransportError.make({ operation, cause }),
+  });
+  if ("data" in result) return result.data;
+  if (isProblem(result.error)) {
+    return yield* Effect.fail(new ApiProblemError({ operation, problem: result.error }));
+  }
+  return yield* Effect.fail(
+    InvalidExternalPayload.make({
+      operation: `decode ${operation} error response`,
+      cause: result.error,
+    }),
+  );
 });
 
 export class GeneratedApi extends Context.Service<

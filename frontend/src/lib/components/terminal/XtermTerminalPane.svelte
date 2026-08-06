@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { Deferred, Effect, Queue } from "effect";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { makeAnimationFrameScheduler, nextAnimationFrame } from "../../browser/animation-frame.js";
+  import { observeResize } from "../../browser/observers.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { Terminal } from "@xterm/xterm";
@@ -20,7 +23,8 @@
   import { parseOsc52ClipboardWrite } from "./osc52Clipboard.js";
   import {
     createBrowserTerminalClipboardPort,
-    createTerminalClipboardWriter,
+    makeTerminalClipboardWriter,
+    type TerminalClipboardWriter,
   } from "./terminalClipboardWriter.js";
   import {
     buildTerminalFontFamily,
@@ -32,7 +36,16 @@
     clearSharedTerminalTextureAtlas,
     registerTerminalTextureAtlasParticipant,
   } from "./sharedTerminalTextureAtlas.js";
-  import { createTmuxMouseDragAutoscroll } from "./tmuxMouseDragAutoscroll.js";
+  import {
+    makeTmuxMouseDragAutoscroll,
+    type TmuxMouseDragAutoscroll,
+  } from "./tmuxMouseDragAutoscroll.js";
+  import {
+    makeTerminalSessionController,
+    type TerminalMessageDecision,
+    type TerminalSessionController,
+  } from "./terminal-session.js";
+  import { terminalAttachment } from "./terminal-attachment.js";
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
@@ -58,26 +71,26 @@
     onExit,
     initialStatus,
   }: TerminalPaneProps = $props();
+  const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
 
   const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
   const terminalLinkUsesMetaKey = /Mac/.test(navigator.platform);
   const terminalLinkModifierLabel = terminalLinkUsesMetaKey ? "Cmd" : "Ctrl";
 
-  let containerEl: HTMLDivElement;
+  let containerEl: HTMLElement;
   let terminal: Terminal | null = $state(null);
   let hoveredTerminalLink: string | null = $state(null);
   let fitAddon: FitAddon | null = null;
   let ligaturesAddon: LigaturesAddon | null = null;
   let webglAddon: WebglAddon | null = null;
-  let ws: WebSocket | null = null;
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let restartTimer: ReturnType<typeof setTimeout> | null = null;
-  let reconnectDelay = 1000;
-  let resizeObserver: ResizeObserver | null = null;
+  let terminalSession: TerminalSessionController | null = null;
+  let connectionGeneration = 0;
   let unregisterTextureAtlasParticipant: (() => void) | null = null;
-  let refreshFrame: number | null = null;
-  let resizeFrame: number | null = null;
+  let requestTerminalRefresh = (): void => {};
+  let requestTerminalResize = (): void => {};
+  let requestFirstPaint = (): void => {};
+  let publishClipboardWrite = (_text: string): void => {};
   // What the PTY was last told. Resends are skipped against this, so a
   // ResizeObserver burst costs one frame, not one per callback.
   let sentCols = 0;
@@ -92,23 +105,14 @@
   let appliedCursorBlink = true;
   let appliedFontLigatures = false;
   let disposed = false;
-  let exited = false;
   let sawFirstBytes = false;
   let clipboardFailureReported = false;
   let activePointerId: number | null = null;
   let pointerOrigin: { clientX: number; clientY: number } | null = null;
   let explicitFocusRequested = false;
   const encoder = new TextEncoder();
-  const clipboardWriter = createTerminalClipboardWriter(
-    createBrowserTerminalClipboardPort(),
-    { onPointerGestureTimeout: cancelTerminalPointerGesture },
-  );
-  const mouseDragAutoscroll = createTmuxMouseDragAutoscroll({
-    send(data) {
-      if (disabled || ws?.readyState !== WebSocket.OPEN) return;
-      ws.send(encoder.encode(data));
-    },
-  });
+  let clipboardWriter: TerminalClipboardWriter | undefined;
+  let mouseDragAutoscroll: TmuxMouseDragAutoscroll | undefined;
   // Binds this pane to the workspace switch that was live at creation;
   // panes surviving from a previous workspace record nothing.
   const switchTimer = createWorkspaceSwitchPaneTimer();
@@ -125,7 +129,6 @@
     explicitFocusRequested = true;
   }
 
-  const MAX_RECONNECT_DELAY = 30000;
   const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
   const TERMINAL_FONT_WAIT_MS = 300;
@@ -152,11 +155,9 @@
   function handleOsc52Clipboard(data: string): boolean {
     const result = parseOsc52ClipboardWrite(data);
     if (result.status === "rejected") return true;
-    if (disposed || disabled || ws?.readyState !== WebSocket.OPEN) return true;
+    if (disposed || disabled || !terminalSession?.isConnected()) return true;
 
-    void clipboardWriter.write(result.text).then((outcome) => {
-      if (outcome === "blocked") reportClipboardFailure();
-    });
+    publishClipboardWrite(result.text);
     return true;
   }
 
@@ -210,7 +211,7 @@
     if (hoveredTerminalLink !== null && terminalLinkModifierPressed(event)) return;
     activePointerId = event.pointerId;
     pointerOrigin = { clientX: event.clientX, clientY: event.clientY };
-    clipboardWriter.beginPointerGesture();
+    clipboardWriter?.beginPointerGesture();
     try {
       containerEl.setPointerCapture(event.pointerId);
     } catch {
@@ -223,8 +224,8 @@
     activePointerId = null;
     pointerOrigin = null;
     releaseTerminalPointerCapture(event.pointerId);
-    clipboardWriter.endPointerGesture();
-    mouseDragAutoscroll.endPointerGesture();
+    clipboardWriter?.endPointerGesture();
+    mouseDragAutoscroll?.endPointerGesture();
   }
 
   function releaseTerminalPointerCapture(pointerId: number): void {
@@ -245,8 +246,8 @@
     if (capturedPointerId !== null) {
       releaseTerminalPointerCapture(capturedPointerId);
     }
-    clipboardWriter.cancelPointerGesture();
-    mouseDragAutoscroll.endPointerGesture();
+    clipboardWriter?.cancelPointerGesture();
+    mouseDragAutoscroll?.endPointerGesture();
   }
 
   function handleTerminalPointerCancel(event: PointerEvent): void {
@@ -257,13 +258,13 @@
     if (activePointerId !== event.pointerId) return;
     activePointerId = null;
     pointerOrigin = null;
-    clipboardWriter.cancelPointerGesture();
-    mouseDragAutoscroll.endPointerGesture();
+    clipboardWriter?.cancelPointerGesture();
+    mouseDragAutoscroll?.endPointerGesture();
   }
 
   function cancelTerminalClipboardAuthorization(): void {
     cancelTerminalPointerGesture();
-    clipboardWriter.cancelAuthorization();
+    clipboardWriter?.cancelAuthorization();
   }
 
   function handleTerminalFocusOut(event: FocusEvent): void {
@@ -298,7 +299,7 @@
 
   function handleTerminalKeyDown(event: KeyboardEvent): void {
     if (disposed || disabled || event.isComposing || !event.isTrusted) return;
-    clipboardWriter.authorizeKeyboardGesture();
+    clipboardWriter?.authorizeKeyboardGesture();
   }
 
   function hasPointerSelectionIntent(event: PointerEvent): boolean {
@@ -320,12 +321,12 @@
   function handleWindowPointerMove(event: PointerEvent): void {
     if (disposed || disabled || !terminal) return;
     if (activePointerId === event.pointerId && hasPointerSelectionIntent(event)) {
-      clipboardWriter.confirmPointerSelection();
+      clipboardWriter?.confirmPointerSelection();
       pointerOrigin = null;
     }
     const screen = containerEl.querySelector<HTMLElement>(".xterm-screen");
     const bounds = (screen ?? containerEl).getBoundingClientRect();
-    mouseDragAutoscroll.updatePointer({
+    mouseDragAutoscroll?.updatePointer({
       clientX: event.clientX,
       clientY: event.clientY,
       bounds,
@@ -369,6 +370,10 @@
   function defaultWebsocketPath(): string {
     if (!workspaceId) return "";
     return workspaceTmuxWebSocketPath(workspaceId);
+  }
+
+  function terminalSupportsReplayBoundary(): boolean {
+    return supportsReplayBoundary(websocketPath ?? defaultWebsocketPath());
   }
 
   function appendConnectionParams(
@@ -448,8 +453,8 @@
 
   function sendResizeActive(nextActive: boolean): boolean {
     if (sentResizeActive === nextActive) return false;
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "resize_active", active: nextActive }));
+    if (terminalSession?.isConnected()) {
+      terminalSession.send(JSON.stringify({ type: "resize_active", active: nextActive }));
       sentResizeActive = nextActive;
       return true;
     }
@@ -461,8 +466,8 @@
     cols: number,
     rows: number,
   ): boolean {
-    if (!resizeReady || ws?.readyState !== WebSocket.OPEN) return false;
-    ws.send(JSON.stringify({ type, cols, rows }));
+    if (!resizeReady || !terminalSession?.isConnected()) return false;
+    terminalSession.send(JSON.stringify({ type, cols, rows }));
     return true;
   }
 
@@ -527,23 +532,11 @@
   }
 
   function scheduleTerminalRefresh(): void {
-    if (refreshFrame !== null) {
-      cancelAnimationFrame(refreshFrame);
-    }
-    refreshFrame = requestAnimationFrame(() => {
-      refreshFrame = null;
-      refreshVisibleTerminal();
-    });
+    requestTerminalRefresh();
   }
 
   function scheduleTerminalResize(): void {
-    if (resizeFrame !== null) {
-      cancelAnimationFrame(resizeFrame);
-    }
-    resizeFrame = requestAnimationFrame(() => {
-      resizeFrame = null;
-      resizeVisibleTerminal();
-    });
+    requestTerminalResize();
   }
 
   /**
@@ -608,7 +601,7 @@
       event.stopImmediatePropagation();
       return;
     }
-    if (ws?.readyState !== WebSocket.OPEN) return;
+    if (!terminalSession?.isConnected()) return;
 
     const pastedText =
       event.clipboardData?.getData("text/plain") ||
@@ -618,7 +611,7 @@
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    ws.send(
+    terminalSession.send(
       encoder.encode(
         createTerminalPastePayload(
           pastedText,
@@ -628,166 +621,106 @@
     );
   }
 
-  function connect(): void {
-    if (disposed || !terminal) return;
-
-    mouseDragAutoscroll.reset();
-    const cols = terminal.cols;
-    const rows = terminal.rows;
-    const replayBoundary = supportsReplayBoundary(websocketPath);
-    const url = buildWsUrl(replayBoundary ? null : { cols, rows }, replayBoundary);
-    if (!url) return;
-    const socket = new WebSocket(url);
-    socket.binaryType = "arraybuffer";
-    sentResizeActive = null;
-    resizeReady = !replayBoundary;
-    ws = socket;
-
-    socket.onopen = () => {
-      switchTimer.record("socket-open");
-      reconnectDelay = 1000;
-      sendResizeActive(resizeAuthorityRegionSize() !== null);
-      const size = resizeAuthorityRegionSize();
-      if (resizeReady && size && (size.cols !== sentCols || size.rows !== sentRows)) {
-        scheduleTerminalRefresh();
+  function decodeTerminalControlMessage(data: string): { type: string; code?: number } | null {
+    try {
+      const value: unknown = JSON.parse(data);
+      if (typeof value !== "object" || value === null || !("type" in value) || typeof value.type !== "string") {
+        return null;
       }
-    };
+      if ("code" in value && typeof value.code === "number") {
+        return { type: value.type, code: value.code };
+      }
+      return { type: value.type };
+    } catch {
+      return null;
+    }
+  }
 
-    socket.onmessage = (ev: MessageEvent) => {
-      if (!terminal) return;
-      if (ev.data instanceof ArrayBuffer) {
-        const bytes = new Uint8Array(ev.data);
-        if (!sawFirstBytes) {
-          sawFirstBytes = true;
-          // first-paint must describe the same pane as first-bytes, so
-          // only the pane whose first-bytes actually recorded chains
-          // the paint measurement. The write callback fires once the
-          // payload is parsed; the double animation frame lands after
-          // the frame showing that content has painted.
-          if (switchTimer.record("first-bytes", { byteLength: bytes.byteLength })) {
-            terminal.write(bytes, () => {
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                  switchTimer.record("first-paint");
-                });
-              });
-            });
-          } else {
-            terminal.write(bytes);
-          }
+  function handleTerminalMessage(data: string | Uint8Array): TerminalMessageDecision {
+    if (!terminal) return "continue";
+    if (data instanceof Uint8Array) {
+      if (!sawFirstBytes) {
+        sawFirstBytes = true;
+        if (switchTimer.record("first-bytes", { byteLength: data.byteLength })) {
+          terminal.write(data, () => {
+            requestFirstPaint();
+          });
         } else {
-          terminal.write(bytes);
+          terminal.write(data);
         }
-      } else if (typeof ev.data === "string") {
-        try {
-          const msg = JSON.parse(ev.data) as {
-            type: string;
-            code?: number;
-          };
-          if (msg.type === "replay_ready" && replayBoundary) {
-            cancelPendingTerminalSequence(() => {
-              if (disposed || ws !== socket) return;
-              resizeReady = true;
-              scheduleTerminalRefresh();
-            });
-          } else if (msg.type === "exited") {
-            cancelPendingTerminalSequence();
-            onExit?.(msg.code ?? 0);
-            exited = true;
-            if (reconnectOnExit) {
-              terminal.write(
-                "\r\n\x1b[90m[Process exited — reconnecting...]\x1b[0m\r\n",
-              );
-              scheduleSessionRestart();
-            } else {
-              terminal.write(
-                "\r\n\x1b[90m[Process exited]\x1b[0m\r\n",
-              );
-            }
-          }
-        } catch {
-          // Non-JSON text frame; ignore.
-        }
+      } else {
+        terminal.write(data);
       }
-    };
+      return "continue";
+    }
 
-    socket.onclose = () => {
-      cancelPendingTerminalSequence();
-      mouseDragAutoscroll.reset();
-      scheduleReconnect();
-    };
+    const message = decodeTerminalControlMessage(data);
+    if (message === null) return "continue";
+    if (message.type === "replay_ready" && terminalSupportsReplayBoundary()) {
+      const generation = connectionGeneration;
+      cancelPendingTerminalSequence(() => {
+        if (disposed || generation !== connectionGeneration || !terminalSession?.isConnected()) return;
+        resizeReady = true;
+        scheduleTerminalRefresh();
+      });
+      return "continue";
+    }
+    if (message.type !== "exited") return "continue";
 
-    socket.onerror = () => {
-      socket.close();
-    };
+    cancelPendingTerminalSequence();
+    onExit?.(message.code ?? 0);
+    if (reconnectOnExit) {
+      terminal.write("\r\n\x1b[90m[Process exited — reconnecting...]\x1b[0m\r\n");
+      return "restart";
+    }
+    terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
+    return "stop";
   }
 
-  function scheduleSessionRestart(): void {
-    if (disposed) return;
-    if (restartTimer) clearTimeout(restartTimer);
-    restartTimer = setTimeout(() => {
-      restartTimer = null;
-      if (disposed) return;
-      // Close stale socket so its onclose handler
-      // cannot schedule a duplicate reconnect.
-      if (ws) {
+  function createTerminalSession(): TerminalSessionController {
+    return makeTerminalSessionController({
+      initialStatus,
+      url: () => {
+        if (disposed || !terminal) return undefined;
+        mouseDragAutoscroll?.reset();
+        const replayBoundary = terminalSupportsReplayBoundary();
+        sentResizeActive = null;
+        resizeReady = !replayBoundary;
+        return buildWsUrl(
+          replayBoundary ? null : { cols: terminal.cols, rows: terminal.rows },
+          replayBoundary,
+        ) ?? undefined;
+      },
+      onOpen: () => {
+        connectionGeneration += 1;
+        switchTimer.record("socket-open");
+        sendResizeActive(resizeAuthorityRegionSize() !== null);
+        const size = resizeAuthorityRegionSize();
+        if (resizeReady && size && (size.cols !== sentCols || size.rows !== sentRows)) {
+          scheduleTerminalRefresh();
+        }
+      },
+      onMessage: handleTerminalMessage,
+      onDisconnected: () => {
         cancelPendingTerminalSequence();
-        ws.onclose = null;
-        ws.onerror = null;
-        ws.onmessage = null;
-        ws.close();
-        ws = null;
-      }
-      exited = false;
-      reconnectDelay = 1000;
-      connect();
-    }, 2000);
-  }
-
-  function scheduleReconnect(): void {
-    if (disposed || exited) return;
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      reconnectDelay = Math.min(
-        reconnectDelay * 2,
-        MAX_RECONNECT_DELAY,
-      );
-      connect();
-    }, reconnectDelay);
+        clipboardWriter?.cancelAuthorization();
+        mouseDragAutoscroll?.reset();
+      },
+    });
   }
 
   function cleanup(): void {
     disposed = true;
     pointerOrigin = null;
-    clipboardWriter.dispose();
-    mouseDragAutoscroll.dispose();
-    if (resizeObserver) {
-      resizeObserver.disconnect();
-      resizeObserver = null;
-    }
-    if (reconnectTimer !== null) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    if (restartTimer !== null) {
-      clearTimeout(restartTimer);
-      restartTimer = null;
-    }
-    if (refreshFrame !== null) {
-      cancelAnimationFrame(refreshFrame);
-      refreshFrame = null;
-    }
-    if (resizeFrame !== null) {
-      cancelAnimationFrame(resizeFrame);
-      resizeFrame = null;
-    }
-    if (ws) {
-      ws.onclose = null;
-      ws.onerror = null;
-      ws.onmessage = null;
-      ws.close();
-      ws = null;
-    }
+    clipboardWriter?.dispose();
+    clipboardWriter = undefined;
+    mouseDragAutoscroll?.dispose();
+    mouseDragAutoscroll = undefined;
+    terminalSession = null;
+    requestTerminalRefresh = () => {};
+    requestTerminalResize = () => {};
+    requestFirstPaint = () => {};
+    publishClipboardWrite = () => {};
     containerEl?.removeEventListener("paste", handleTerminalPaste, true);
     if (terminal) {
       unregisterTextureAtlasParticipant?.();
@@ -849,16 +782,63 @@
     if (active) scheduleTerminalRefresh();
   });
 
-  onMount(() => {
-    let started = false;
-    let fontWaitTimedOut = false;
-    let lateFontRebuilt = false;
-    let fontWaitTimer: ReturnType<typeof setTimeout> | null = null;
+  const FONT_LOADED: "loaded" = "loaded";
+  const FONT_FAILED: "failed" = "failed";
+  const FONT_TIMED_OUT: "timed-out" = "timed-out";
 
-    function start(): void {
-      if (started || disposed) return;
-      started = true;
+  function openTerminalPane(node: HTMLElement) {
+    return Effect.gen(function* () {
+      containerEl = node;
+      yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+      clipboardWriter = yield* makeTerminalClipboardWriter(
+        createBrowserTerminalClipboardPort(),
+        { onPointerGestureTimeout: cancelTerminalPointerGesture },
+      );
+      mouseDragAutoscroll = yield* makeTmuxMouseDragAutoscroll({
+        send(data) {
+          if (disabled || !terminalSession?.isConnected()) return;
+          terminalSession.send(encoder.encode(data));
+        },
+      });
+      const refreshScheduler = yield* makeAnimationFrameScheduler(Effect.sync(refreshVisibleTerminal));
+      const resizeScheduler = yield* makeAnimationFrameScheduler(Effect.sync(resizeVisibleTerminal));
+      const firstPaintScheduler = yield* makeAnimationFrameScheduler(
+        nextAnimationFrame.pipe(
+          Effect.andThen(Effect.sync(() => switchTimer.record("first-paint"))),
+          Effect.asVoid,
+        ),
+      );
+      requestTerminalRefresh = refreshScheduler.schedule;
+      requestTerminalResize = resizeScheduler.schedule;
+      requestFirstPaint = firstPaintScheduler.schedule;
 
+      const writer = clipboardWriter;
+      const clipboardWrites = yield* Queue.bounded<string>(16);
+      yield* Effect.addFinalizer(() => Queue.shutdown(clipboardWrites));
+      publishClipboardWrite = (text) => {
+        if (!Queue.offerUnsafe(clipboardWrites, text)) reportClipboardFailure();
+      };
+      yield* Effect.forkScoped(
+        Effect.forever(
+          Queue.take(clipboardWrites).pipe(
+            Effect.flatMap((text) =>
+              Effect.tryPromise({
+                try: () => writer.write(text),
+                catch: (cause) => cause,
+              }).pipe(
+                Effect.match({
+                  onFailure: () => reportClipboardFailure(),
+                  onSuccess: (outcome) => {
+                    if (outcome === "blocked") reportClipboardFailure();
+                  },
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      function startTerminal(): void {
       const term = new Terminal({
         theme: {
           background: "#0d1117",
@@ -932,97 +912,96 @@
 
       term.onData((data: string) => {
         if (disabled) return;
-        if (ws?.readyState === WebSocket.OPEN) {
-          ws.send(encoder.encode(data));
-          mouseDragAutoscroll.observeTerminalData(data);
+        if (terminalSession?.isConnected()) {
+          terminalSession.send(encoder.encode(data));
+          mouseDragAutoscroll?.observeTerminalData(data);
         }
       });
 
       term.onBinary((data: string) => {
         if (disabled) return;
-        if (ws?.readyState === WebSocket.OPEN) {
+        if (terminalSession?.isConnected()) {
           const buf = new Uint8Array(data.length);
           for (let i = 0; i < data.length; i++) {
             buf[i] = data.charCodeAt(i) & 0xff;
           }
-          ws.send(buf.buffer);
+          terminalSession.send(buf);
         }
       });
-
-      resizeObserver = new ResizeObserver(() => {
-        scheduleTerminalResize();
-      });
-      resizeObserver.observe(containerEl);
-
-      if (!isAttachableInitialStatus(initialStatus)) {
-        exited = true;
-        term.write(
-          `\r\n\x1b[90m[${initialStatusMessage(initialStatus)}]\x1b[0m\r\n`,
-        );
-        return;
       }
-      connect();
-    }
 
-    function finishInitialFontWait(detail?: Record<string, unknown>): void {
-      if (started || disposed) return;
-      if (fontWaitTimer !== null) {
-        clearTimeout(fontWaitTimer);
-        fontWaitTimer = null;
-      }
-      switchTimer.record("fonts-ready", detail);
-      start();
-    }
-
-    const fontSet = document.fonts;
-    if (typeof fontSet?.load !== "function") {
-      switchTimer.record("fonts-ready", { unsupported: true });
-      start();
-      return cleanup;
-    }
-
-    // Loading only the selected terminal face avoids making xterm wait
-    // for unrelated page fonts. The bound keeps terminal construction
-    // moving when the face is slow or unavailable; a late completion
-    // then repairs the fallback metrics once, provided the pane lives.
-    const fontDescriptor = `${terminalFontSize}px ${primaryTerminalFontFamily(terminalFontFamily)}`;
-    let selectedFontLoad: Promise<FontFace[]>;
-    try {
-      selectedFontLoad = fontSet.load(fontDescriptor, TERMINAL_FONT_LOAD_GLYPHS);
-    } catch {
-      finishInitialFontWait({ error: true });
-      return cleanup;
-    }
-    void selectedFontLoad.then(
-      () => {
-        if (!started) {
-          finishInitialFontWait();
+      const startOwnedTerminal = Effect.gen(function* () {
+        yield* Effect.sync(startTerminal);
+        yield* observeResize(containerEl, () => scheduleTerminalResize());
+        if (!isAttachableInitialStatus(initialStatus)) {
+          terminal?.write(
+            `\r\n\x1b[90m[${initialStatusMessage(initialStatus)}]\x1b[0m\r\n`,
+          );
           return;
         }
-        if (!fontWaitTimedOut || lateFontRebuilt || disposed || !terminal) return;
+        const session = createTerminalSession();
+        terminalSession = session;
+        yield* Effect.forkScoped(session.program);
+      });
 
-        lateFontRebuilt = true;
-        clearSharedTerminalTextureAtlas(terminal);
-        // New metrics mean a new measurement; resizeVisibleTerminal re-fits,
-        // repaints, and pushes the size only if the region now works out
-        // differently.
-        resizeVisibleTerminal();
-      },
-      () => finishInitialFontWait({ error: true }),
-    );
-    fontWaitTimer = setTimeout(() => {
-      fontWaitTimer = null;
-      fontWaitTimedOut = true;
-      finishInitialFontWait({ timedOut: true });
-    }, TERMINAL_FONT_WAIT_MS);
-
-    return () => {
-      if (fontWaitTimer !== null) {
-        clearTimeout(fontWaitTimer);
-        fontWaitTimer = null;
+      const fontSet = document.fonts;
+      if (typeof fontSet?.load !== "function") {
+        switchTimer.record("fonts-ready", { unsupported: true });
+        yield* startOwnedTerminal;
+        return yield* Effect.never;
       }
-      cleanup();
-    };
+
+      // Loading only the selected terminal face avoids making xterm wait
+      // for unrelated page fonts. The bound keeps terminal construction
+      // moving when the face is slow or unavailable; a late completion
+      // then repairs the fallback metrics once, provided the pane lives.
+      const fontDescriptor = `${terminalFontSize}px ${primaryTerminalFontFamily(terminalFontFamily)}`;
+      const fontCompletion = yield* Deferred.make<"loaded" | "failed">();
+      yield* Effect.forkScoped(
+        Effect.tryPromise({
+          try: () => fontSet.load(fontDescriptor, TERMINAL_FONT_LOAD_GLYPHS),
+          catch: (cause) => cause,
+        }).pipe(
+          Effect.match({
+            onFailure: () => FONT_FAILED,
+            onSuccess: () => FONT_LOADED,
+          }),
+          Effect.flatMap((result) => Deferred.succeed(fontCompletion, result)),
+        ),
+      );
+      const fontResult = yield* Effect.race(
+        Deferred.await(fontCompletion),
+        Effect.sleep(`${TERMINAL_FONT_WAIT_MS} millis`).pipe(Effect.as(FONT_TIMED_OUT)),
+      );
+      switchTimer.record(
+        "fonts-ready",
+        fontResult === FONT_FAILED
+          ? { error: true }
+          : fontResult === FONT_TIMED_OUT
+            ? { timedOut: true }
+            : undefined,
+      );
+      yield* startOwnedTerminal;
+
+      if (fontResult === FONT_TIMED_OUT && (yield* Deferred.await(fontCompletion)) === FONT_LOADED) {
+        yield* Effect.sync(() => {
+          if (disposed || !terminal) return;
+          clearSharedTerminalTextureAtlas(terminal);
+          // New metrics mean a new measurement; resizeVisibleTerminal re-fits,
+          // repaints, and pushes the size only if the region now works out
+          // differently.
+          resizeVisibleTerminal();
+        });
+      }
+      return yield* Effect.never;
+    });
+  }
+
+  const attachTerminalPane = terminalAttachment(runtime, {
+    open: openTerminalPane,
+    onFailure: () => {
+      if (!disposed) showFlash("Could not connect to the terminal session.", { tone: "danger" });
+    },
   });
 </script>
 
@@ -1040,6 +1019,7 @@
 <div
   class="terminal-container"
   bind:this={containerEl}
+  {@attach attachTerminalPane}
   onpointerdowncapture={handleTerminalPointerDown}
   onlostpointercapture={handleTerminalLostPointerCapture}
   onkeydowncapture={handleTerminalKeyDown}

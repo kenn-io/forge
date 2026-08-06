@@ -202,7 +202,7 @@ describe("createLogStore", () => {
 
   it("claims the newest public log lease before scheduled work begins", () => {
     const scheduledRuntime = {
-      runCommand: () => ({ interrupt: () => {}, await: Effect.never }),
+      runCommand: () => ({ interrupt: () => {}, await: Effect.never, exit: new Promise(() => {}) }),
     } satisfies AppRuntime;
     const store = createRuntimeLogStore({ baseUrl: "http://roborev.test", runtime: scheduledRuntime });
 
@@ -223,7 +223,7 @@ describe("createLogStore", () => {
           runDelayedStart = () => {
             liveRuntime.runCommand(program, options);
           };
-          return { interrupt: () => {}, await: Effect.never };
+          return { interrupt: () => {}, await: Effect.never, exit: new Promise(() => {}) };
         }
         return liveRuntime.runCommand(program, options);
       },

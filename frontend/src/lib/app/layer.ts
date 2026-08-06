@@ -4,6 +4,8 @@ import { GeneratedApiLive } from "../api/generated-api.js";
 import type { GeneratedApi } from "../api/generated-api.js";
 import { EventSourceFactoryLive } from "../browser/event-source.js";
 import { BrowserObserversLive } from "../browser/observers.js";
+import { AnimationFramesLive } from "../browser/animation-frame.js";
+import { MicrotasksLive } from "../browser/microtask.js";
 import { LocalStorageLive, SessionStorageLive } from "../browser/storage.js";
 import { StreamingFetchLive } from "../browser/streaming-fetch.js";
 import { WebSocketLive } from "../browser/web-socket.js";
@@ -24,17 +26,27 @@ import { RoborevWorkflowLive } from "../stores/roborev/roborev-workflow.js";
 import { RepoBrowserWorkflowLive } from "../stores/repo-browser-workflow.js";
 import { StartupWorkflowLive } from "./startup-workflow.js";
 import { KataWorkflowLive } from "../features/kata/kata-workflow.js";
+import { PierreDiffWorkerPoolLive } from "../components/diff/pierre-worker-pool.js";
+import { WorkspaceListWorkflowLive } from "../components/terminal/workspace-list-workflow.js";
+import { ProjectMutationWorkflowLive } from "../components/terminal/project-mutation-workflow.js";
+import { WorkspaceRuntimeWorkflowLive } from "../components/terminal/workspace-runtime-workflow.js";
+import { RepoSummaryWorkflowLive } from "../components/repositories/repo-summary-workflow.js";
+import { ToolingStatusWorkflowLive } from "../stores/tooling-status-workflow.js";
 
 export function makeAppLiveLayer(generatedApiLayer: Layer.Layer<GeneratedApi>) {
   const browserBoundaryLive = Layer.mergeAll(
     generatedApiLayer,
+    AnimationFramesLive,
     EventSourceFactoryLive,
     BrowserObserversLive,
     LocalStorageLive,
+    MicrotasksLive,
     SessionStorageLive,
     StreamingFetchLive,
     WebSocketLive,
     Clipboard.layer,
+    PierreDiffWorkerPoolLive,
+    WorkspaceListWorkflowLive,
   );
 
   const startupLive = Layer.provideMerge(StartupWorkflowLive, browserBoundaryLive);
@@ -54,6 +66,10 @@ export function makeAppLiveLayer(generatedApiLayer: Layer.Layer<GeneratedApi>) {
     RoborevWorkflowLive,
     RepoBrowserWorkflowLive,
     KataWorkflowLive,
+    ProjectMutationWorkflowLive,
+    WorkspaceRuntimeWorkflowLive,
+    RepoSummaryWorkflowLive,
+    ToolingStatusWorkflowLive,
   );
   const applicationWorkflowsLive = Layer.mergeAll(SettingsWorkflowLive, providerWorkflowsLive);
 

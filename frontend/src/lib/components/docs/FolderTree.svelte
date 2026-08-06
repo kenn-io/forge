@@ -12,9 +12,7 @@
     onSearchChange?: (value: string | null) => void;
     // Called when the user finishes an inline rename (Enter / blur).
     // Should perform the actual filesystem rename and refresh the tree.
-    // Returning a rejected promise lets the library surface the failure
-    // back to the inline input.
-    onFileRename?: (from: string, to: string) => Promise<void>;
+    onFileRename?: (from: string, to: string) => void;
   }
 
   let {
@@ -48,19 +46,13 @@
       // for now.
       //
       // @pierre/trees calls onRename synchronously and moves the item
-      // in its local model immediately. If the backend rejects (server
-      // error, name collision, unsupported extension), we'd leave the
-      // tree showing a phantom file. Catch the rejection, log it, and
-      // let the parent's tree-data effect re-snapshot from the canonical
-      // backend state on next render — the move shown by the library
-      // gets corrected when fresh paths flow in.
+      // in its local model immediately. The parent owns the asynchronous
+      // rename and re-snapshots the canonical tree on success or failure.
       renaming: {
         canRename: (item) => !item.isFolder,
         onRename: (event) => {
           if (event.isFolder) return;
-          void onFileRename?.(event.sourcePath, event.destinationPath).catch((err) => {
-            console.error("rename failed", event.sourcePath, "→", event.destinationPath, err);
-          });
+          onFileRename?.(event.sourcePath, event.destinationPath);
         },
       },
       composition: {

@@ -32,6 +32,23 @@ export const observeResize = Effect.fn("Observers.resize")(function* (
   );
 });
 
+export const observeResizes = Effect.fn("Observers.resizes")(function* (
+  targets: Iterable<Element>,
+  callback: ResizeObserverCallback,
+) {
+  const factories = yield* BrowserObservers;
+  return yield* Effect.acquireRelease(
+    Effect.sync(() => factories.resize(callback)).pipe(
+      Effect.tap((observer) =>
+        Effect.sync(() => {
+          for (const target of targets) observer.observe(target);
+        }),
+      ),
+    ),
+    (observer) => Effect.sync(() => observer.disconnect()),
+  );
+});
+
 export const observeMutation = Effect.fn("Observers.mutation")(function* (
   target: Node,
   callback: MutationCallback,
@@ -55,6 +72,24 @@ export const observeIntersection = Effect.fn("Observers.intersection")(function*
   return yield* Effect.acquireRelease(
     Effect.sync(() => factories.intersection(callback, options)).pipe(
       Effect.tap((observer) => Effect.sync(() => observer.observe(target))),
+    ),
+    (observer) => Effect.sync(() => observer.disconnect()),
+  );
+});
+
+export const observeIntersections = Effect.fn("Observers.intersections")(function* (
+  targets: Iterable<Element>,
+  callback: IntersectionObserverCallback,
+  options?: IntersectionObserverInit,
+) {
+  const factories = yield* BrowserObservers;
+  return yield* Effect.acquireRelease(
+    Effect.sync(() => factories.intersection(callback, options)).pipe(
+      Effect.tap((observer) =>
+        Effect.sync(() => {
+          for (const target of targets) observer.observe(target);
+        }),
+      ),
     ),
     (observer) => Effect.sync(() => observer.disconnect()),
   );

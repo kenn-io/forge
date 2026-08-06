@@ -1,7 +1,10 @@
 <script lang="ts">
   import { FileTree, preparePresortedFileTreeInput } from "@pierre/trees";
   import type { FileTreeOptions } from "@pierre/trees";
+  import { Effect } from "effect";
   import { onMount, untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { makeAnimationFrameScheduler } from "../../browser/animation-frame.js";
   import type { DiffFile } from "../../api/types.js";
   import type { FileTreeEntry } from "./file-tree-entry.js";
 
@@ -25,12 +28,15 @@
     ariaLabel = "Changed files",
     onSelect,
   }: Props = $props();
+  const runtime = getAppRuntime();
 
   let host: HTMLElement | undefined = $state();
   let tree: FileTree | undefined;
   let renderedTreeKey = "";
   let syncingSelection = false;
-  let selectedPathScrollFrame = 0;
+  let selectedPathForFrame: string | undefined;
+  let cancelSelectedPathFrame = (): void => {};
+  let requestSelectedPathFrame = (): boolean => false;
   let lastSelectedPathRevealKey: number | null = null;
 
   const safeEntries = $derived.by<FileTreeEntry[]>(() => {
@@ -112,8 +118,30 @@
   });
 
   onMount(() => {
+    const execution = runtime.runCommand(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const scheduler = yield* makeAnimationFrameScheduler(
+            Effect.sync(() => {
+              const path = selectedPathForFrame;
+              selectedPathForFrame = undefined;
+              if (path) scrollPathIntoView(path);
+            }),
+          );
+          requestSelectedPathFrame = scheduler.schedule;
+          cancelSelectedPathFrame = scheduler.cancel;
+          return yield* Effect.never;
+        }),
+      ),
+      {
+        operation: "own diff file tree selection reveal",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
     return () => {
-      cancelAnimationFrame(selectedPathScrollFrame);
+      execution.interrupt();
+      cancelSelectedPathFrame();
       tree?.cleanUp();
       tree = undefined;
     };
@@ -172,11 +200,8 @@
 
   function scheduleSelectedPathIntoView(path: string): void {
     scrollPathIntoView(path);
-    cancelAnimationFrame(selectedPathScrollFrame);
-    selectedPathScrollFrame = requestAnimationFrame(() => {
-      selectedPathScrollFrame = 0;
-      scrollPathIntoView(path);
-    });
+    selectedPathForFrame = path;
+    requestSelectedPathFrame();
   }
 
   function scrollPathIntoView(path: string): void {

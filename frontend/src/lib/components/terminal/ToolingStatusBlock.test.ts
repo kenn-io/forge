@@ -1,17 +1,35 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+
+const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
+
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => {
+    const runtime = runtimeCapture.current;
+    if (runtime === undefined) throw new Error("tooling status test runtime is not initialized");
+    return runtime;
+  },
+}));
 
 import ToolingStatusBlock from "./ToolingStatusBlock.svelte";
 
 describe("ToolingStatusBlock", () => {
   beforeEach(() => {
+    runtimeCapture.current = makeAppRuntime();
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
     });
   });
 
-  afterEach(() => cleanup());
+  afterEach(async () => {
+    cleanup();
+    if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
+    runtimeCapture.current = undefined;
+    vi.useRealTimers();
+  });
 
   it("renders both git and gh rows when tooling is fully available", () => {
     render(ToolingStatusBlock, {
@@ -139,6 +157,27 @@ describe("ToolingStatusBlock", () => {
     const button = screen.getByLabelText("Copy auth command");
     await fireEvent.click(button);
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("gh auth login");
+  });
+
+  it("keeps repeated copy feedback for the full latest interval", async () => {
+    vi.useFakeTimers();
+    render(ToolingStatusBlock, {
+      props: {
+        tooling: {
+          git: { available: true },
+          gh: { available: false, authenticated: false },
+        },
+      },
+    });
+
+    const button = screen.getByLabelText("gh CLI missing").closest("li")?.querySelector("button");
+    expect(button).toBeTruthy();
+    await fireEvent.click(button!);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await fireEvent.click(button!);
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(button?.textContent).toBe("Copied");
   });
 
   it("renders nothing when tooling is undefined and hideWhenUnknown is set", () => {

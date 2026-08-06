@@ -113,11 +113,6 @@ test.describe("PR detail branch info", () => {
 test("diff summary uses real files after the PR head advances", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
-    await page.addInitScript(() => {
-      const realSetInterval = window.setInterval;
-      window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
-        realSetInterval(handler, timeout === 60_000 ? 100 : timeout, ...args)) as typeof window.setInterval;
-    });
     await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.locator(".sync-indicator")).toHaveCount(0);

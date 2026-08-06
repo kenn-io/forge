@@ -1,5 +1,6 @@
 <script lang="ts">
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
+  import { Context, Deferred, Effect, Fiber, Option, Schedule, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
   import { onDestroy, tick, untrack } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
@@ -27,10 +28,6 @@
     RuntimeSession,
   } from "../../api/types.js";
   import {
-    getWorkspaceRuntime,
-    launchWorkspaceSession,
-    renameWorkspaceSession,
-    stopWorkspaceSession,
     workspaceSessionWebSocketPath,
     type WorkspaceRuntimeState,
   } from "../../api/workspace-runtime.js";
@@ -100,7 +97,10 @@
     clearActiveTerminalDrag,
     readRuntimeSessionDrag,
   } from "./terminal-drag";
-  import { shouldRetryFleetDiffWatch } from "./fleet-diff-watch.js";
+  import { watchFleetWorkspaceDiff } from "./fleet-diff-watch.js";
+  import { workspaceEventStream } from "./workspace-event-stream.js";
+  import { decodeWorkspaceDetail, type WorkspaceDetail } from "./workspace-detail.js";
+  import { reconnectSchedule } from "../../api/retry-policy.js";
   import { Button, CollapsibleSidebar, SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
   import { getPaneLayoutStore, promoteSessionBesideWorkspace, type PaneSurfaceKey } from "../../stores/paneLayout.svelte.js";
@@ -117,55 +117,42 @@
     AlertIcon,
     RefreshIcon,
   } from "../../icons.ts";
-  import { apiErrorMessage, client } from "../../api/runtime.js";
+  import { apiErrorMessage } from "../../api/runtime.js";
+  import { configuredAPIPath } from "../../api/runtime-base.js";
+  import {
+    executeGeneratedApiRequest,
+    executeOpaqueGeneratedApiRequest,
+    GeneratedApi,
+  } from "../../api/generated-api.js";
+  import {
+    TransientTransportError,
+    type ApiProblemError,
+    type InvalidExternalPayload,
+  } from "../../api/effect-errors.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppServices } from "../../app/runtime.js";
   import { settingsErrorMessage } from "../../stores/settings-workflow.js";
-  import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
-    acceptWorkspaceLaunch,
     claimWorkspaceLaunch,
-    completeAcceptedWorkspaceLaunch,
     discardWorkspaceLaunch,
     failWorkspaceLaunch,
     isWorkspaceCreatePending,
-    isWorkspaceDeletionPending,
-    isWorkspaceIdDeleted,
     pendingWorkspaceLaunch,
     type WorkspaceLaunchClaim,
   } from "../../stores/workspace-create-pending.svelte.js";
   import { createTerminalZoomController } from "./terminalZoom";
+  import {
+    makeWorkspaceRuntimeOwner,
+    makeWorkspaceRuntimePresenterID,
+    WorkspaceRuntimeMutationOutcomeUnknown,
+    WorkspaceRuntimeWorkflow,
+    type WorkspaceRuntimeLaunchPlacement,
+    type WorkspaceRuntimeMutationState,
+    type WorkspaceRuntimeTarget,
+  } from "./workspace-runtime-workflow.js";
 
-  interface Workspace {
-    id: string;
-    platform_host: string;
-    repo_owner: string;
-    repo_name: string;
-    repo: {
-      provider: string;
-      platform_host?: string | undefined;
-      owner: string;
-      name: string;
-      repo_path: string;
-    };
-    item_type: "pull_request" | "issue" | "kata_task" | "adhoc";
-    item_number: number;
-    item_key?: string | undefined;
-    git_head_ref: string;
-    worktree_path: string;
-    tmux_session: string;
-    status: string;
-    enrichment_status: string;
-    error_message?: string | null;
-    created_at: string;
-    mr_title?: string | null;
-    mr_state?: string | null;
-    mr_is_draft?: boolean | null;
-    associated_pr_number?: number | null;
-    mr_head_repo_kind?: string | null;
-    kata?: KataWorkspaceMetadata | null;
-    fleet_host_key?: string;
-  }
+  type Workspace = WorkspaceDetail;
 
   interface ClosedRuntimeSession {
     workspaceId: string;
@@ -236,6 +223,107 @@
   ).replace(/\/$/, "");
   const { settings: settingsStore } = getStores();
   const appRuntime = getAppRuntime();
+  const runtimeOwner = makeWorkspaceRuntimeOwner("workspace-view");
+  const runtimePresenterID = makeWorkspaceRuntimePresenterID();
+
+  function runtimeTarget(workspaceId: string, hostKey: string | undefined): WorkspaceRuntimeTarget {
+    return { workspaceId, ...(hostKey === undefined ? {} : { hostKey }) };
+  }
+
+  function launchRuntimeSessionProgram(
+    workspaceId: string,
+    hostKey: string | undefined,
+    targetKey: string,
+    region: "workflow" | "terminal",
+    placement: WorkspaceRuntimeLaunchPlacement,
+  ) {
+    return Effect.gen(function* () {
+      const workflow = yield* WorkspaceRuntimeWorkflow;
+      return yield* workflow.launch(
+        runtimeTarget(workspaceId, hostKey),
+        targetKey,
+        region,
+        placement,
+      );
+    });
+  }
+
+  function stopRuntimeSessionProgram(
+    workspaceId: string,
+    hostKey: string | undefined,
+    sessionKey: string,
+  ) {
+    return Effect.gen(function* () {
+      const workflow = yield* WorkspaceRuntimeWorkflow;
+      yield* workflow.stop(
+        runtimeTarget(workspaceId, hostKey),
+        sessionKey,
+      );
+    });
+  }
+
+  function refreshWorkspaceMutationProgram(
+    workspaceId: string,
+    hostKey: string | undefined,
+  ) {
+    return Effect.gen(function* () {
+      const workflow = yield* WorkspaceRuntimeWorkflow;
+      yield* workflow.refresh(runtimeTarget(workspaceId, hostKey));
+    });
+  }
+
+  function retryWorkspaceSetupMutationProgram(
+    workspaceId: string,
+    hostKey: string | undefined,
+  ) {
+    return Effect.gen(function* () {
+      const workflow = yield* WorkspaceRuntimeWorkflow;
+      yield* workflow.retrySetup(runtimeTarget(workspaceId, hostKey));
+    });
+  }
+
+  function deleteWorkspaceMutationProgram(
+    workspaceId: string,
+    hostKey: string | undefined,
+    force: boolean,
+    identity: WorkspaceItemIdentity | undefined,
+    presenterID: string,
+    failurePresentationIsCurrent: () => boolean,
+  ) {
+    return Effect.gen(function* () {
+      const workflow = yield* WorkspaceRuntimeWorkflow;
+      const context = yield* Effect.context<AppServices>();
+      const target = runtimeTarget(workspaceId, hostKey);
+      yield* workflow.claimPresenter(
+        target,
+        presenterID,
+        (state) =>
+          presentRuntimeMutation(state, presenterID, failurePresentationIsCurrent).pipe(Effect.provide(context)),
+        { releaseWhenAcknowledged: true },
+      );
+      yield* workflow.delete(target, {
+        force,
+        presenterID,
+        ...(identity === undefined ? {} : { identity }),
+      });
+    });
+  }
+
+  function renameRuntimeSessionProgram(
+    workspaceId: string,
+    hostKey: string | undefined,
+    sessionKey: string,
+    label: string,
+  ) {
+    return Effect.gen(function* () {
+      const workflow = yield* WorkspaceRuntimeWorkflow;
+      return yield* workflow.rename(
+        runtimeTarget(workspaceId, hostKey),
+        sessionKey,
+        label,
+      );
+    });
+  }
   // Launcher, controls, and pending-write state is keyed by workspace identity
   // rather than held as bare flags: one embedded view serves every selection on its
   // surface, so a switch would otherwise inherit the previous workspace's open
@@ -274,14 +362,6 @@
         fingerprint: string;
       }
     | null = null;
-  let runtimeFetchSeq = 0;
-  let runtimeFetchInFlight:
-    | Promise<WorkspaceRuntimeState | null>
-    | null = null;
-  let runtimeFetchInFlightId = "";
-  let runtimeFetchInFlightHostKey:
-    | string
-    | undefined = undefined;
   // The workspace ID that `runtime` was fetched for. Stored
   // alongside the payload so we never render or operate on
   // sessions/targets that belong to a previous workspace
@@ -296,7 +376,15 @@
     id: string;
     hostKey: string | undefined;
   };
+  type RetainedRuntimePresenterLease = {
+    target: WorkspaceRuntimeTarget;
+    presenterID: string;
+  };
   let deletingWorkspaceTargets = $state<DeletingWorkspaceTarget[]>([]);
+  let retainedRuntimePresenterLeases: RetainedRuntimePresenterLease[] = [];
+  let workspacePresentationGeneration = 0;
+  const deleteTriggerElements = new Map<string, HTMLElement | null>();
+  let emptyLaunchTargetsExecution: { interrupt: () => void } | null = null;
   let sidebarRefreshToken = $state(0);
   let diffRefreshToken = $state(0);
   let lastDiffSnapshotVersion = "";
@@ -318,23 +406,36 @@
   let renameInputValue = $state("");
   let renameSaving = $state(false);
   let renameInputEl = $state<HTMLInputElement | null>(null);
-  // Bumps on every workspace route change so async callbacks can detect
-  // stale, non-destructive responses from a previous visit. Delete targets
-  // remain blocked across A -> B -> A navigation, while a successful delete
-  // still navigates away if the user returned to the destroyed workspace.
-  let workspaceGen = 0;
   onDestroy(() => {
-    workspaceGen += 1;
     terminalZoom.dispose();
+    emptyLaunchTargetsExecution?.interrupt();
+    emptyLaunchTargetsExecution = null;
+    const leases = retainedRuntimePresenterLeases;
+    retainedRuntimePresenterLeases = [];
+    if (leases.length === 0) return;
+    appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkspaceRuntimeWorkflow;
+        yield* Effect.forEach(
+          leases,
+          (lease) => workflow.releasePresenter(lease.target, lease.presenterID),
+          { discard: true },
+        );
+      }),
+      {
+        operation: "workspace.runtime.presenter.release",
+        safeContext: { surface: "workspace" },
+        onFailure: () => undefined,
+      },
+    );
   });
   let runtimeError = $state<string | null>(null);
-  let pollTimer = $state<ReturnType<
-    typeof setInterval
-  > | null>(null);
-  let runtimePollTimer = $state<ReturnType<
-    typeof setInterval
-  > | null>(null);
-  let eventSource = $state<EventSource | null>(null);
+  let workspacePolling:
+    | { key: string; interrupt: () => void }
+    | null = null;
+  let runtimePolling:
+    | { key: string; interrupt: () => void }
+    | null = null;
   let activeTabKey = $state<WorkflowTabKey>("home");
   let mountedSessionKeys = $state<string[]>([]);
   let closedSessions = $state<ClosedRuntimeSession[]>([]);
@@ -397,7 +498,7 @@
     workspaceListState = state;
   }
 
-  async function loadEmptyLaunchTargets(): Promise<void> {
+  function loadEmptyLaunchTargets(): void {
     if (
       emptyLaunchTargetsState === "loaded" ||
       emptyLaunchTargetsState === "loading"
@@ -405,14 +506,30 @@
       return;
     }
     emptyLaunchTargetsState = "loading";
-    try {
-      const { data } = await client.GET("/settings");
-      emptyLaunchTargets = data?.launch_targets ?? [];
-      emptyLaunchTargetsState = "loaded";
-    } catch {
-      emptyLaunchTargets = [];
-      emptyLaunchTargetsState = "error";
-    }
+    emptyLaunchTargetsExecution = appRuntime.runCommand(
+      Effect.gen(function* () {
+        const api = yield* GeneratedApi;
+        const settings = yield* api.execute("load workspace launch targets", (signal) =>
+          api.client.GET("/settings", { signal }),
+        );
+        yield* Effect.sync(() => {
+          emptyLaunchTargets = settings.launch_targets ?? [];
+          emptyLaunchTargetsState = "loaded";
+        });
+      }).pipe(
+        Effect.catch(() =>
+          Effect.sync(() => {
+            emptyLaunchTargets = [];
+            emptyLaunchTargetsState = "error";
+          }),
+        ),
+      ),
+      {
+        operation: "workspace.launch-targets.read",
+        safeContext: { surface: "workspace" },
+        onFailure: () => undefined,
+      },
+    );
   }
 
   function readLocalStorage(key: string): string | null {
@@ -511,12 +628,23 @@
     );
   }
 
+  function releaseRuntimeRead(): void {
+    appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkspaceRuntimeWorkflow;
+        yield* workflow.release(runtimeOwner);
+      }),
+      {
+        operation: "workspace.runtime.release",
+        safeContext: { surface: "workspace" },
+        onFailure: () => undefined,
+      },
+    );
+  }
+
   function invalidateRuntimeSnapshot(): void {
-    runtimeFetchSeq += 1;
-    runtimeFetchInFlight = null;
-    runtimeFetchInFlightId = "";
-    runtimeFetchInFlightHostKey = undefined;
     appliedRuntimeState = null;
+    releaseRuntimeRead();
   }
   const runtimeSessions = $derived(
     runtimeLive
@@ -1135,9 +1263,7 @@
   const deletingSelectedWorkspace = $derived(
     deletingWorkspaceTargets.some((target) =>
       isDeletingWorkspaceTarget(target, workspaceId, workspaceHostKey),
-    ) ||
-      isWorkspaceDeletionPending(workspaceId, workspaceHostKey) ||
-      isWorkspaceIdDeleted(workspaceId),
+    ),
   );
   const actionsBlocked = $derived(transitioning || deletingSelectedWorkspace || forceDeleting);
   const inlineDockMode = $derived(inlineDock?.getMode() ?? null);
@@ -1356,7 +1482,7 @@
   const ownedSessionPrefixes = new Set<string>();
 
   function releaseOwnedSessions(except?: string): void {
-    for (const prefix of [...ownedSessionPrefixes]) {
+    for (const prefix of ownedSessionPrefixes) {
       if (prefix === except) continue;
       for (const session of mountedSessions()) {
         if (session.hostKey.startsWith(prefix)) noteSessionUnmounted(session.hostKey);
@@ -1796,36 +1922,49 @@
     }
   }
 
-  async function fetchWorkspace(): Promise<void> {
+  function workspaceReadFailureMessage(
+    failure: ApiProblemError | InvalidExternalPayload | TransientTransportError,
+  ): string {
+    if (failure._tag === "ApiProblemError") {
+      const fallback =
+        failure.problem.status === undefined
+          ? "Failed to load workspace"
+          : `Failed to load workspace (${failure.problem.status})`;
+      return apiErrorMessage(failure.problem, fallback);
+    }
+    return failure.cause instanceof Error ? failure.cause.message : "Network error";
+  }
+
+  function fetchWorkspaceProgram(
+    id = workspaceId,
+    hostKey = workspaceHostKey,
+  ): Effect.Effect<Workspace | null, never, AppServices> {
     // Capture the id at call time. With workspaceId changing across
     // navigations, a slow in-flight fetch for the previous id could
     // otherwise resolve after a newer fetch and overwrite the new
     // workspace's data with stale content (causing a perceived flash
     // back to the previous workspace).
-    const id = workspaceId;
-    const hostKey = workspaceHostKey;
-    recordWorkspaceSwitchPhase("workspace-request-start", id, hostKey);
-    try {
-      if (hostKey) {
-        const { data, error, response } = await client.GET(
-          "/fleet/hosts/{host_key}/workspaces/{id}",
-          {
-            params: { path: { host_key: hostKey, id } },
-          },
-        );
+    return Effect.gen(function* () {
+      recordWorkspaceSwitchPhase("workspace-request-start", id, hostKey);
+      const data = hostKey
+        ? yield* executeOpaqueGeneratedApiRequest("load fleet workspace", (generatedClient, signal) =>
+            generatedClient.GET("/fleet/hosts/{host_key}/workspaces/{id}", {
+              params: { path: { host_key: hostKey, id } },
+              signal,
+            }),
+          )
+        : yield* executeGeneratedApiRequest("load workspace", (generatedClient, signal) =>
+            generatedClient.GET("/workspaces/{id}", {
+              params: { path: { id } },
+              signal,
+            }),
+          );
+      const nextWorkspace = yield* decodeWorkspaceDetail(data, hostKey);
+      yield* Effect.sync(() => {
         recordWorkspaceSwitchPhase("workspace-request-end", id, hostKey, {
-          status: response.status,
+          status: 200,
         });
         if (!isCurrentWorkspace(id, hostKey)) return;
-        if (!data) {
-          if (response.status === 404) handleWorkspaceGone(id, hostKey);
-          loadError = apiErrorMessage(
-            error,
-            `Failed to load workspace (${response.status})`,
-          );
-          return;
-        }
-        const nextWorkspace = { ...(data as Workspace), fleet_host_key: hostKey };
         workspace = nextWorkspace;
         syncSidebarTabForWorkspace(nextWorkspace);
         loadError = null;
@@ -1836,86 +1975,57 @@
         if (nextWorkspace.status === "ready") {
           startRuntimePolling();
           if (!hasAppliedRuntimeFor(id, hostKey)) {
-            void fetchRuntime();
+            requestRuntime();
           }
         } else {
           stopRuntimePolling();
         }
-        return;
-      }
-      const { data, error, response } = await client.GET(
-        "/workspaces/{id}",
-        {
-          params: { path: { id } },
-        },
-      );
-      recordWorkspaceSwitchPhase("workspace-request-end", id, hostKey, {
-        status: response.status,
       });
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      if (!data) {
-        if (response.status === 404) handleWorkspaceGone(id, hostKey);
-        loadError = apiErrorMessage(
-          error,
-          `Failed to load workspace (${response.status})`,
-        );
-        return;
-      }
-      workspace = data as Workspace;
-      syncSidebarTabForWorkspace(workspace);
-      loadError = null;
+      return nextWorkspace;
+    }).pipe(
+      Effect.catch((failure) =>
+        Effect.sync(() => {
+          recordWorkspaceSwitchPhase("workspace-request-end", id, hostKey, { error: true });
+          if (!isCurrentWorkspace(id, hostKey)) return null;
+          if (failure._tag === "ApiProblemError" && failure.problem.status === 404) {
+            handleWorkspaceGone(id, hostKey);
+          }
+          loadError = workspaceReadFailureMessage(failure);
+          return null;
+        }),
+      ),
+    );
+  }
 
-      if (data.status !== "creating") {
-        stopPolling();
-      }
-      if (data.status === "ready") {
-        startRuntimePolling();
-        if (!hasAppliedRuntimeFor(id, hostKey)) {
-          void fetchRuntime();
-        }
-      } else {
-        stopRuntimePolling();
-      }
-    } catch (err) {
-      recordWorkspaceSwitchPhase("workspace-request-end", id, hostKey, {
-        error: true,
-      });
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      loadError =
-        err instanceof Error
-          ? err.message
-          : "Network error";
-    }
+  function requestWorkspace(): void {
+    appRuntime.runCommand(fetchWorkspaceProgram().pipe(Effect.asVoid), {
+      operation: "workspace.details.read",
+      safeContext: { surface: "workspace" },
+      onFailure: () => undefined,
+    });
   }
 
   interface FetchRuntimeOptions {
     force?: boolean;
   }
 
-  async function fetchRuntime(
+  function fetchRuntimeProgram(
     options: FetchRuntimeOptions = {},
-  ): Promise<WorkspaceRuntimeState | null> {
-    if (!workspaceId) return null;
+  ) {
+    if (!workspaceId) return Effect.succeed<WorkspaceRuntimeState | null>(null);
     const id = workspaceId;
     const hostKey = workspaceHostKey;
-    if (
-      !options.force &&
-      runtimeFetchInFlight &&
-      runtimeFetchInFlightId === id &&
-      runtimeFetchInFlightHostKey === hostKey
-    ) {
-      return runtimeFetchInFlight;
-    }
-    const seq = runtimeFetchSeq + 1;
-    runtimeFetchSeq = seq;
-    const fetchPromise = (async () => {
+    return Effect.gen(function* () {
       recordWorkspaceSwitchPhase("runtime-request-start", id, hostKey);
-      try {
-        const data = await getWorkspaceRuntime(id, hostKey);
+      const workflow = yield* WorkspaceRuntimeWorkflow;
+      const result = yield* workflow.read(runtimeOwner, id, hostKey, options);
+      if (Option.isNone(result)) return null;
+      const data = result.value;
+      return yield* Effect.sync(() => {
         recordWorkspaceSwitchPhase("runtime-request-end", id, hostKey, {
           sessions: data.sessions.length,
         });
-        if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
+        if (!isCurrentWorkspace(id, hostKey)) return null;
         const fingerprint = JSON.stringify(data);
         if (
           hasAppliedRuntimeFor(id, hostKey) &&
@@ -1941,84 +2051,371 @@
           selectFallbackTab();
         }
         mountedSessionKeys = mountedSessionKeys.filter(
-          (key) =>
-            data.sessions.some((session) => session.key === key),
+          (key) => data.sessions.some((session) => session.key === key),
         );
         return data;
-      } catch (err) {
-        recordWorkspaceSwitchPhase("runtime-request-end", id, hostKey, {
-          error: true,
-        });
-        if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
-        runtimeError =
-          err instanceof Error
-            ? err.message
-            : "Runtime load failed";
-        return null;
-      } finally {
-        if (
-          runtimeFetchSeq === seq &&
-          runtimeFetchInFlightId === id &&
-          runtimeFetchInFlightHostKey === hostKey
-        ) {
-          runtimeFetchInFlight = null;
-          runtimeFetchInFlightId = "";
-          runtimeFetchInFlightHostKey = undefined;
-        }
-      }
-    })();
-    runtimeFetchInFlight = fetchPromise;
-    runtimeFetchInFlightId = id;
-    runtimeFetchInFlightHostKey = hostKey;
-    return fetchPromise;
+      });
+    }).pipe(
+      Effect.catch((failure) =>
+        Effect.sync(() => {
+          recordWorkspaceSwitchPhase("runtime-request-end", id, hostKey, {
+            error: true,
+          });
+          if (!isCurrentWorkspace(id, hostKey)) return null;
+          runtimeError = workspaceMutationFailureMessage(
+            failure,
+            "Runtime load failed",
+          );
+          return null;
+        }),
+      ),
+    );
   }
 
-  async function handleLaunch(
+  function requestRuntime(options: FetchRuntimeOptions = {}): void {
+    appRuntime.runCommand(fetchRuntimeProgram(options), {
+      operation: "workspace.runtime.read",
+      safeContext: { surface: "workspace" },
+      onFailure: () => undefined,
+    });
+  }
+
+  function runtimeMutationTargetKey(target: WorkspaceRuntimeTarget): string {
+    return JSON.stringify([target.hostKey ?? null, target.workspaceId]);
+  }
+
+  function clearRetainedDeletePresentation(target: WorkspaceRuntimeTarget): void {
+    const key = runtimeMutationTargetKey(target);
+    deleteTriggerElements.delete(key);
+    retainedRuntimePresenterLeases = retainedRuntimePresenterLeases.filter(
+      (lease) => runtimeMutationTargetKey(lease.target) !== key,
+    );
+  }
+
+  function clearRuntimeMutationPending(state: WorkspaceRuntimeMutationState): void {
+    switch (state.operation) {
+      case "Launch":
+        if (state.request.placement._tag === "Workflow") {
+          if (launchingKey === state.request.targetKey) launchingKey = null;
+        } else {
+          terminalLaunching = false;
+        }
+        return;
+      case "Stop":
+        if (stopPromptSession?.key === state.request.sessionKey) stopPromptSession = null;
+        stopSessionStopping = false;
+        return;
+      case "Rename":
+        renameSaving = false;
+        return;
+      case "ApplyPreset": {
+        const index = applyingWorkflowPresetFor.indexOf(viewWorkspaceKey);
+        if (index !== -1) applyingWorkflowPresetFor = applyingWorkflowPresetFor.toSpliced(index, 1);
+        return;
+      }
+      case "Refresh":
+        refreshingWorkspace = false;
+        return;
+      case "RetrySetup":
+        retryingSetup = false;
+        return;
+      case "Delete":
+        removeDeletingWorkspaceTarget(
+          state.request.target.workspaceId,
+          state.request.target.hostKey,
+        );
+        if (state.request.options.force) forceDeleting = false;
+        clearRetainedDeletePresentation(state.request.target);
+    }
+  }
+
+  function presentRuntimeMutation(
+    state: WorkspaceRuntimeMutationState,
+    presenterID: string,
+    failurePresentationIsCurrent: () => boolean = () => true,
+  ): Effect.Effect<boolean, never, AppServices> {
+    const { workspaceId: id, hostKey } = state.request.target;
+    const current = isCurrentWorkspace(id, hostKey);
+    if (!current && state.operation !== "Delete") return Effect.succeed(false);
+    if (state.kind === "pending") {
+      return Effect.sync(() => {
+        switch (state.operation) {
+          case "Launch":
+            if (state.request.placement._tag === "Workflow") launchingKey = state.request.targetKey;
+            else terminalLaunching = true;
+            break;
+          case "Stop":
+            stopSessionStopping = true;
+            break;
+          case "Rename":
+            renameSaving = true;
+            break;
+          case "ApplyPreset":
+            if (!applyingWorkflowPresetFor.includes(viewWorkspaceKey)) {
+              applyingWorkflowPresetFor = [...applyingWorkflowPresetFor, viewWorkspaceKey];
+            }
+            break;
+          case "Refresh":
+            refreshingWorkspace = true;
+            break;
+          case "RetrySetup":
+            retryingSetup = true;
+            break;
+          case "Delete":
+            addDeletingWorkspaceTarget(id, hostKey);
+            if (state.request.options.force) forceDeleting = true;
+            break;
+        }
+        return false;
+      });
+    }
+    if (state.kind === "failed" || state.kind === "uncertain") {
+      return Effect.sync(() => {
+        if (!current && state.operation !== "Delete") return false;
+        if (
+          state.operation === "Delete" &&
+          (state.request.options.presenterID !== presenterID || !failurePresentationIsCurrent())
+        ) {
+          clearRuntimeMutationPending(state);
+          return true;
+        }
+        const fallback =
+          state.operation === "Launch"
+            ? state.request.region === "terminal" ? "Terminal launch failed" : "Launch failed"
+            : state.operation === "Stop"
+              ? "Stop failed"
+              : state.operation === "Rename"
+                ? "Rename failed"
+                : state.operation === "ApplyPreset"
+                  ? "Preset launch failed"
+                  : state.operation === "Refresh"
+                    ? "Refresh failed"
+                    : state.operation === "RetrySetup"
+                      ? "Retry failed"
+                      : "Delete failed";
+        if (current) {
+          showFlash(workspaceMutationFailureMessage(state.error, fallback), { tone: "danger" });
+        }
+        clearRuntimeMutationPending(state);
+        return true;
+      });
+    }
+
+    switch (state.operation) {
+      case "Launch": {
+        if (state.request.placement._tag === "TerminalSplit") {
+          const placement = state.request.placement;
+          return Effect.sync(() => {
+            const session = state.session;
+            clearClosedSession(session);
+            const group = terminalLayout.terminalGroups.find((candidate) => candidate.id === placement.groupID);
+            const groups = group === undefined
+              ? [
+                  ...terminalLayout.terminalGroups,
+                  createTerminalGroup(session.key, placement.groupID),
+                ]
+              : updateTerminalGroupTree(terminalLayout.terminalGroups, placement.groupID, (candidate) => ({
+                  ...candidate,
+                  activeSessionKey: session.key,
+                  tree: splitPane(candidate.tree, placement.targetLeafID ?? null, session.key, placement.direction),
+                }));
+            terminalLayout = normalizeLayoutForSessions(
+              upsertRuntimeSession(session),
+              layoutWithTerminalGroups(
+                {
+                  ...terminalLayout,
+                  open: true,
+                  sessionRegions: { ...terminalLayout.sessionRegions, [session.key]: "terminal" },
+                },
+                groups,
+                placement.groupID,
+              ),
+            );
+            if (terminalLayout.dock === "top") selectWorkspaceTab("terminal");
+            clearRuntimeMutationPending(state);
+            return true;
+          });
+        }
+        return Effect.gen(function* () {
+          const refreshed = yield* fetchRuntimeProgram({ force: true });
+          if (!isCurrentWorkspace(id, hostKey)) return false;
+          yield* Effect.sync(() => {
+            const session = state.session;
+            clearClosedSession(session);
+            if (state.request.placement._tag === "Workflow") {
+              moveSessionToWorkflow(session.key);
+              mountSessionTerminal(session.key);
+              selectWorkspaceTab(workflowTabKeyForSession(session.key));
+              if (refreshed?.sessions.some((candidate) => candidate.key === session.key) === true) {
+                closeLauncher();
+                requestSessionFocus(sessionHostKeyFor(session));
+              } else {
+                showFlash("Session launched, but the workspace could not be reloaded", { tone: "danger" });
+              }
+            } else if (state.request.placement._tag === "Terminal") {
+              if (state.request.placement.insertIntoTree) {
+                const sessionsWithLaunch = upsertRuntimeSession(session);
+                const groups = addTerminalGroup(terminalLayout.terminalGroups, session.key);
+                const activeGroupID = groups.at(-1)?.id ?? terminalLayout.activeTerminalGroupID;
+                terminalLayout = normalizeLayoutForSessions(
+                  sessionsWithLaunch,
+                  layoutWithTerminalGroups(
+                    {
+                      ...terminalLayout,
+                      open: true,
+                      sessionRegions: { ...terminalLayout.sessionRegions, [session.key]: "terminal" },
+                    },
+                    groups,
+                    activeGroupID,
+                  ),
+                );
+              }
+              if (terminalLayout.dock === "top") selectWorkspaceTab("terminal");
+            }
+            clearRuntimeMutationPending(state);
+          });
+          return true;
+        });
+      }
+      case "Stop":
+        return Effect.gen(function* () {
+          yield* fetchRuntimeProgram({ force: true });
+          if (!isCurrentWorkspace(id, hostKey)) return false;
+          yield* Effect.sync(() => {
+            unmountSessionTerminal(state.request.sessionKey);
+            const groups = closeSessionInTerminalGroups(terminalLayout.terminalGroups, state.request.sessionKey);
+            terminalLayout = normalizeLayoutForSessions(
+              runtimeSessions,
+              layoutWithTerminalGroups(terminalLayout, groups, terminalLayout.activeTerminalGroupID),
+            );
+            if (activeTabKey === `session:${state.request.sessionKey}`) selectFallbackTab();
+            clearRuntimeMutationPending(state);
+          });
+          return true;
+        });
+      case "Rename":
+        return Effect.sync(() => {
+          if (runtime) invalidateRuntimeSnapshot();
+          runtime = runtime
+            ? {
+                ...runtime,
+                sessions: runtime.sessions.map((session) =>
+                  session.key === state.request.sessionKey ? state.session : session,
+                ),
+              }
+            : runtime;
+          renamePrompt = null;
+          renameInputValue = "";
+          clearRuntimeMutationPending(state);
+          return true;
+        });
+      case "ApplyPreset":
+        return Effect.gen(function* () {
+          const mappedLayout = mapPresetLayout(state.request.preset.layout, state.keyMap);
+          const refreshed = yield* fetchRuntimeProgram({ force: true });
+          if (!isCurrentWorkspace(id, hostKey) || !refreshed) return false;
+          yield* Effect.sync(() => {
+            const presetActiveTab = firstWorkflowTab(mappedLayout) ?? "home";
+            terminalLayout = normalizeLayoutForSessions(refreshed.sessions, mappedLayout, presetActiveTab);
+            mountedSessionKeys = refreshed.sessions
+              .filter((session) => sessionRegionForLayout(session, terminalLayout) === "workflow")
+              .map((session) => session.key);
+            selectedWorkflowPresetId = state.request.preset.id;
+            selectWorkspaceTab(firstWorkflowTab(terminalLayout) ?? "home");
+            clearRuntimeMutationPending(state);
+          });
+          return true;
+        });
+      case "Refresh":
+        return Effect.sync(() => {
+          if (!isCurrentWorkspace(id, hostKey) || state.workspace.id !== id) return false;
+          workspace = state.workspace;
+          syncSidebarTabForWorkspace(state.workspace);
+          sidebarRefreshToken += 1;
+          if (state.workspace.status === "ready") requestRuntime();
+          clearRuntimeMutationPending(state);
+          return true;
+        });
+      case "RetrySetup":
+        return Effect.gen(function* () {
+          if (!isCurrentWorkspace(id, hostKey) || state.workspace.id !== id) return false;
+          yield* Effect.sync(() => {
+            workspace = state.workspace;
+            if (state.workspace.status === "creating") startPolling();
+            clearRuntimeMutationPending(state);
+          });
+          if (state.workspace.status === "creating") yield* fetchWorkspaceProgram(id, hostKey);
+          return true;
+        });
+      case "Delete":
+        return Effect.sync(() => {
+          const { error, response } = state.result;
+          const force = state.request.options.force;
+          const responseFailed = force
+            ? !response.ok && response.status !== 204
+            : response.status === 409 || (!response.ok && response.status !== 204);
+          if (
+            responseFailed &&
+            (state.request.options.presenterID !== presenterID || !failurePresentationIsCurrent())
+          ) {
+            clearRuntimeMutationPending(state);
+            return true;
+          }
+          if (!responseFailed) {
+            onWorkspaceDeleted?.(id, hostKey, state.request.options.identity);
+          }
+          if (!isCurrentWorkspace(id, hostKey)) {
+            clearRuntimeMutationPending(state);
+            return true;
+          }
+          if (!force && response.status === 409) {
+            previouslyFocusedEl = deleteTriggerElements.get(runtimeMutationTargetKey(state.request.target)) ?? null;
+            forcePromptForId = id;
+            forcePromptIdentity = state.request.options.identity;
+            forcePromptMessage = apiErrorMessage(error, "Workspace has uncommitted changes.");
+            clearRuntimeMutationPending(state);
+            return true;
+          }
+          if (responseFailed) {
+            showFlash(apiErrorMessage(error, `Delete failed (${response.status})`), { tone: "danger" });
+          } else if (isCurrentTerminalRoute(id)) {
+            navigate("/workspaces");
+          }
+          if (force) {
+            forcePromptMessage = null;
+            forcePromptForId = null;
+            forcePromptIdentity = undefined;
+          }
+          clearRuntimeMutationPending(state);
+          return true;
+        });
+    }
+  }
+
+  function handleLaunch(
     targetKey: string,
-    launchClaim: WorkspaceLaunchClaim | null = null,
-  ): Promise<void> {
+    launchClaim?: WorkspaceLaunchClaim,
+  ): void {
     if (!workspaceId || launchingKey || actionsBlocked) return;
-    // Capture id so post-await steps bail if workspace changes mid-launch.
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     launchingKey = targetKey;
-    try {
-      const session = await launchWorkspaceSession(id, targetKey, {
-        hostKey,
-        region: "workflow",
-      });
-      if (launchClaim && !acceptWorkspaceLaunch(launchClaim, session.key)) return;
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      const refreshed = await fetchRuntime({ force: true });
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      // Explicit create-and-launch intent is reconciled by exact session key below.
-      // An empty first refresh is an expected propagation gap, not a failed launch.
-      if (launchClaim) return;
-      clearClosedSession(session);
-      moveSessionToWorkflow(session.key);
-      mountSessionTerminal(session.key);
-      selectWorkspaceTab(workflowTabKeyForSession(session.key));
-      // The launch succeeding is not enough to close on: the pane can only render
-      // what the refreshed runtime reports, so a failed refresh would drop the user
-      // on an empty pane with no explanation. The tab selection above stands either
-      // way, so the session appears as soon as a later refresh finds it.
-      if (refreshed?.sessions.some((candidate) => candidate.key === session.key) === true) {
-        closeLauncher();
-        requestSessionFocus(sessionHostKeyFor(session));
-      } else {
-        showFlash("Session launched, but the workspace could not be reloaded", {
-          tone: "danger",
-        });
-      }
-    } catch (err) {
-      if (launchClaim) failWorkspaceLaunch(launchClaim);
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      showFlash(err instanceof Error ? err.message : "Launch failed", {
-        tone: "danger",
-      });
-    } finally {
-      if (isCurrentWorkspace(id, hostKey)) launchingKey = null;
-    }
+    appRuntime.runCommand(
+      launchRuntimeSessionProgram(id, hostKey, targetKey, "workflow", {
+        _tag: "Workflow",
+        ...(launchClaim === undefined
+          ? {}
+          : { onSettled: () => failWorkspaceLaunch(launchClaim) }),
+      }),
+      {
+        operation: "workspace.session.launch",
+        safeContext: { surface: "workspace" },
+        onFailure: () => {
+          if (isCurrentWorkspace(id, hostKey)) launchingKey = null;
+          if (launchClaim !== undefined) failWorkspaceLaunch(launchClaim);
+        },
+      },
+    );
   }
 
   function openSession(sessionKey: string): void {
@@ -2042,21 +2439,14 @@
       stopPromptSession = session;
       return;
     }
-    void stopSession(session);
+    stopSession(session);
   }
 
-  async function confirmStopSession(): Promise<void> {
+  function confirmStopSession(): void {
     if (stopSessionStopping || stopPromptSession === null) return;
     stopSessionStopping = true;
     const session = stopPromptSession;
-    try {
-      await stopSession(session);
-      if (stopPromptSession?.key === session.key) {
-        stopPromptSession = null;
-      }
-    } finally {
-      stopSessionStopping = false;
-    }
+    stopSession(session);
   }
 
   function cancelStopSession(): void {
@@ -2064,36 +2454,19 @@
     stopPromptSession = null;
   }
 
-  async function stopSession(session: RuntimeSession): Promise<void> {
+  function stopSession(session: RuntimeSession): void {
     const id = workspaceId;
     const hostKey = workspaceHostKey;
-    try {
-      await stopWorkspaceSession(id, session.key, hostKey);
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      await fetchRuntime({ force: true });
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      unmountSessionTerminal(session.key);
-      const terminalGroups = closeSessionInTerminalGroups(
-        terminalLayout.terminalGroups,
-        session.key,
-      );
-      terminalLayout = normalizeLayoutForSessions(
-        runtimeSessions,
-        layoutWithTerminalGroups(
-          terminalLayout,
-          terminalGroups,
-          terminalLayout.activeTerminalGroupID,
-        ),
-      );
-      if (activeTabKey === `session:${session.key}`) {
-        selectFallbackTab();
-      }
-    } catch (err) {
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      showFlash(err instanceof Error ? err.message : "Stop failed", {
-        tone: "danger",
-      });
-    }
+    appRuntime.runCommand(
+      stopRuntimeSessionProgram(id, hostKey, session.key),
+      {
+        operation: "workspace.session.stop",
+        safeContext: { surface: "workspace" },
+        onFailure: () => {
+          stopSessionStopping = false;
+        },
+      },
+    );
   }
 
   function handleSessionExit(session: RuntimeSession): void {
@@ -2115,67 +2488,29 @@
     if (activeTabKey === `session:${session.key}`) {
       selectFallbackTab();
     }
-    void fetchRuntime({ force: true });
+    requestRuntime({ force: true });
   }
 
-  async function launchTerminalSession(
-    insertIntoTree = true,
-  ): Promise<RuntimeSession | null> {
-    if (!workspaceId || terminalLaunching || actionsBlocked) return null;
+  function launchTerminalSession(
+    placement: WorkspaceRuntimeLaunchPlacement = { _tag: "Terminal", insertIntoTree: true },
+  ): void {
+    if (!workspaceId || terminalLaunching || actionsBlocked) return;
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     terminalLaunching = true;
-    try {
-      const session = await launchWorkspaceSession(id, PLAIN_SHELL_TARGET, {
-        hostKey,
-        region: "terminal",
-      });
-      if (!isCurrentWorkspace(id, hostKey)) return null;
-      const sessionsWithLaunch = upsertRuntimeSession(session);
-      if (!insertIntoTree) {
-        clearClosedSession(session);
-        return session;
-      }
-      const groups = insertIntoTree
-        ? addTerminalGroup(terminalLayout.terminalGroups, session.key)
-        : terminalLayout.terminalGroups;
-      const activeGroupID =
-        groups.at(-1)?.id ?? terminalLayout.activeTerminalGroupID;
-      terminalLayout = normalizeLayoutForSessions(
-        sessionsWithLaunch,
-        layoutWithTerminalGroups(
-          {
-            ...terminalLayout,
-            open: true,
-            sessionRegions: {
-              ...terminalLayout.sessionRegions,
-              [session.key]: "terminal",
-            },
-          },
-          groups,
-          activeGroupID,
-        ),
-      );
-      await fetchRuntime({ force: true });
-      if (!isCurrentWorkspace(id, hostKey)) return null;
-      clearClosedSession(session);
-      if (terminalLayout.dock === "top") {
-        selectWorkspaceTab("terminal");
-      }
-      return session;
-    } catch (err) {
-      if (!isCurrentWorkspace(id, hostKey)) return null;
-      showFlash(
-        err instanceof Error ? err.message : "Terminal launch failed",
-        { tone: "danger" },
-      );
-    } finally {
-      if (isCurrentWorkspace(id, hostKey)) terminalLaunching = false;
-    }
-    return null;
+    appRuntime.runCommand(
+      launchRuntimeSessionProgram(id, hostKey, PLAIN_SHELL_TARGET, "terminal", placement),
+      {
+        operation: "workspace.terminal.launch",
+        safeContext: { surface: "workspace" },
+        onFailure: () => {
+          if (isCurrentWorkspace(id, hostKey)) terminalLaunching = false;
+        },
+      },
+    );
   }
 
-  async function toggleTerminalPanel(): Promise<void> {
+  function toggleTerminalPanel(): void {
     if (actionsBlocked) return;
     if (terminalLayout.open) {
       terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
@@ -2189,7 +2524,7 @@
     }
     terminalLayout = { ...terminalLayout, open: true };
     if (!terminalSessions.some(isActiveRuntimeSession)) {
-      await launchTerminalSession();
+      launchTerminalSession();
     } else if (terminalLayout.dock === "top") {
       selectWorkspaceTab("terminal");
     }
@@ -2436,7 +2771,7 @@
     renameInputValue = session.label;
   }
 
-  async function saveRenamePrompt(): Promise<void> {
+  function saveRenamePrompt(): void {
     if (renamePrompt === null || renameSaving) return;
     const trimmed = renameInputValue.trim();
     if (!trimmed) return;
@@ -2449,35 +2784,16 @@
     const hostKey = workspaceHostKey;
     const sessionKey = renamePrompt.sessionKey;
     renameSaving = true;
-    try {
-      const updated = await renameWorkspaceSession(
-        id,
-        sessionKey,
-        trimmed,
-        hostKey,
-      );
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      if (runtime) {
-        invalidateRuntimeSnapshot();
-      }
-      runtime = runtime
-        ? {
-            ...runtime,
-            sessions: runtime.sessions.map((session) =>
-              session.key === sessionKey ? updated : session,
-            ),
-          }
-        : runtime;
-      renamePrompt = null;
-      renameInputValue = "";
-    } catch (err) {
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      showFlash(err instanceof Error ? err.message : "Rename failed", {
-        tone: "danger",
-      });
-    } finally {
-      if (isCurrentWorkspace(id, hostKey)) renameSaving = false;
-    }
+    appRuntime.runCommand(
+      renameRuntimeSessionProgram(id, hostKey, sessionKey, trimmed),
+      {
+        operation: "workspace.session.rename",
+        safeContext: { surface: "workspace" },
+        onFailure: () => {
+          if (isCurrentWorkspace(id, hostKey)) renameSaving = false;
+        },
+      },
+    );
   }
 
   function cancelRenamePrompt(): void {
@@ -2528,7 +2844,7 @@
     selectedWorkflowPresetId = preset.id;
   }
 
-  async function applyWorkflowPreset(presetID: string): Promise<void> {
+  function applyWorkflowPreset(presetID: string): void {
     if (!workspaceId || applyingWorkflowPreset || actionsBlocked) return;
     const preset = workflowPresets.find((candidate) => candidate.id === presetID);
     if (!preset) return;
@@ -2536,51 +2852,20 @@
     const hostKey = workspaceHostKey;
     const presetOwner = viewWorkspaceKey;
     applyingWorkflowPresetFor = [...applyingWorkflowPresetFor, presetOwner];
-    try {
-      const keyMap: Record<string, string> = {};
-      for (const spec of preset.sessions) {
-        let session = await launchWorkspaceSession(id, spec.targetKey, {
-          hostKey,
-          region: spec.region,
-        });
-        if (!isCurrentWorkspace(id, hostKey)) return;
-        if (spec.label.trim() && spec.label !== session.label) {
-          session = await renameWorkspaceSession(
-            id,
-            session.key,
-            spec.label.trim(),
-            hostKey,
-          );
-          if (!isCurrentWorkspace(id, hostKey)) return;
-        }
-        keyMap[spec.sourceKey] = session.key;
-      }
-      const mappedLayout = mapPresetLayout(preset.layout, keyMap);
-      const refreshed = await fetchRuntime({ force: true });
-      if (!isCurrentWorkspace(id, hostKey) || !refreshed) return;
-      const presetActiveTab = firstWorkflowTab(mappedLayout) ?? "home";
-      terminalLayout = normalizeLayoutForSessions(
-        refreshed.sessions,
-        mappedLayout,
-        presetActiveTab,
-      );
-      mountedSessionKeys = refreshed.sessions
-        .filter((session) => sessionRegionForLayout(session, terminalLayout) === "workflow")
-        .map((session) => session.key);
-      selectedWorkflowPresetId = preset.id;
-      selectWorkspaceTab(firstWorkflowTab(terminalLayout) ?? "home");
-    } catch (err) {
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      showFlash(err instanceof Error ? err.message : "Preset launch failed", {
-        tone: "danger",
-      });
-    } finally {
-      // Only this apply's own entry, whatever is selected now: keyed on the current
-      // workspace instead, a preset that finished after a switch would leave its own
-      // workspace stuck applying for the rest of the session.
-      const index = applyingWorkflowPresetFor.indexOf(presetOwner);
-      if (index !== -1) applyingWorkflowPresetFor = applyingWorkflowPresetFor.toSpliced(index, 1);
-    }
+    appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkspaceRuntimeWorkflow;
+        yield* workflow.applyPreset(runtimeTarget(id, hostKey), preset);
+      }),
+      {
+        operation: "workspace.preset.apply",
+        safeContext: { surface: "workspace" },
+        onFailure: () => {
+          const index = applyingWorkflowPresetFor.indexOf(presetOwner);
+          if (index !== -1) applyingWorkflowPresetFor = applyingWorkflowPresetFor.toSpliced(index, 1);
+        },
+      },
+    );
   }
 
   function deleteWorkflowPreset(presetID: string): void {
@@ -2678,7 +2963,7 @@
       .slice(2)}`;
   }
 
-  async function splitTerminal(direction: SplitDirection): Promise<void> {
+  function splitTerminal(direction: SplitDirection): void {
     if (terminalLaunching || actionsBlocked) return;
     const groupBeforeLaunch = currentTerminalGroup;
     const treeBeforeLaunch = groupBeforeLaunch?.tree ?? null;
@@ -2686,45 +2971,12 @@
       terminalLayout.activeSessionKey !== null
         ? findLeafBySession(treeBeforeLaunch, terminalLayout.activeSessionKey)
         : firstLeaf(treeBeforeLaunch);
-    const session = await launchTerminalSession(false);
-    if (!session) return;
-    const groupID =
-      groupBeforeLaunch?.id ?? terminalLayout.activeTerminalGroupID ?? newPaneGroupID();
-    const groups =
-      groupBeforeLaunch === null
-        ? [createTerminalGroup(session.key, groupID)]
-        : updateTerminalGroupTree(
-            terminalLayout.terminalGroups,
-            groupID,
-            (group) => ({
-              ...group,
-              activeSessionKey: session.key,
-              tree: splitPane(
-                treeBeforeLaunch,
-                targetLeaf?.id ?? null,
-                session.key,
-                direction,
-              ),
-            }),
-          );
-    terminalLayout = normalizeLayoutForSessions(
-      upsertRuntimeSession(session),
-      layoutWithTerminalGroups(
-        {
-          ...terminalLayout,
-          open: true,
-          sessionRegions: {
-            ...terminalLayout.sessionRegions,
-            [session.key]: "terminal",
-          },
-        },
-        groups,
-        groupID,
-      ),
-    );
-    if (terminalLayout.dock === "top") {
-      selectWorkspaceTab("terminal");
-    }
+    launchTerminalSession({
+      _tag: "TerminalSplit",
+      direction,
+      groupID: groupBeforeLaunch?.id ?? terminalLayout.activeTerminalGroupID ?? newPaneGroupID(),
+      ...(targetLeaf === null ? {} : { targetLeafID: targetLeaf.id }),
+    });
   }
 
   function splitTerminalSessionIntoPane(
@@ -2870,153 +3122,117 @@
   }
 
   function startPolling(): void {
-    if (pollTimer) return;
-    pollTimer = setInterval(() => {
-      void fetchWorkspace();
-    }, 3000);
+    if (!workspaceId) return;
+    const key = JSON.stringify([workspaceHostKey ?? null, workspaceId]);
+    if (workspacePolling?.key === key) return;
+    stopPolling();
+    const id = workspaceId;
+    const hostKey = workspaceHostKey;
+    const execution = appRuntime.runCommand(
+      Stream.fromSchedule(Schedule.spaced("3 seconds")).pipe(
+        Stream.runForEach(() =>
+          isCurrentWorkspace(id, hostKey)
+            ? fetchWorkspaceProgram(id, hostKey).pipe(Effect.asVoid)
+            : Effect.void,
+        ),
+      ),
+      {
+        operation: "workspace.details.poll",
+        safeContext: { surface: "workspace" },
+        onFailure: () => undefined,
+      },
+    );
+    workspacePolling = { key, interrupt: execution.interrupt };
   }
 
   function stopPolling(): void {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
+    workspacePolling?.interrupt();
+    workspacePolling = null;
   }
 
   function startRuntimePolling(): void {
-    if (runtimePollTimer) return;
-    runtimePollTimer = setInterval(() => {
-      void fetchRuntime();
-    }, 3000);
+    if (!workspaceId) return;
+    const key = JSON.stringify([workspaceHostKey ?? null, workspaceId]);
+    if (runtimePolling?.key === key) return;
+    stopRuntimePolling();
+    const id = workspaceId;
+    const hostKey = workspaceHostKey;
+    const execution = appRuntime.runCommand(
+      Stream.fromSchedule(Schedule.spaced("3 seconds")).pipe(
+        Stream.runForEach(() =>
+          isCurrentWorkspace(id, hostKey)
+            ? fetchRuntimeProgram().pipe(Effect.asVoid)
+            : Effect.void,
+        ),
+      ),
+      {
+        operation: "workspace.runtime.poll",
+        safeContext: { surface: "workspace" },
+        onFailure: () => undefined,
+      },
+    );
+    runtimePolling = { key, interrupt: execution.interrupt };
   }
 
   function stopRuntimePolling(): void {
-    if (runtimePollTimer) {
-      clearInterval(runtimePollTimer);
-      runtimePollTimer = null;
-    }
+    runtimePolling?.interrupt();
+    runtimePolling = null;
   }
 
-  async function handleRetrySetup(): Promise<void> {
+  function workspaceMutationFailureMessage(
+    failure:
+      | ApiProblemError
+      | InvalidExternalPayload
+      | TransientTransportError
+      | WorkspaceRuntimeMutationOutcomeUnknown,
+    fallback: string,
+  ): string {
+    return failure instanceof WorkspaceRuntimeMutationOutcomeUnknown
+      ? `Could not confirm whether the ${failure.operation.toLowerCase()} completed. Retry will check workspace state before sending anything.`
+      : failure._tag === "ApiProblemError"
+      ? apiErrorMessage(
+          failure.problem,
+          failure.problem.status === undefined ? fallback : `${fallback} (${failure.problem.status})`,
+        )
+      : failure.cause instanceof Error
+        ? failure.cause.message
+        : fallback;
+  }
+
+  function handleRetrySetup(): void {
     if (!workspace || retryingSetup || actionsBlocked) return;
 
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     retryingSetup = true;
-    try {
-      if (hostKey) {
-        const { data, error, response } = await client.POST(
-          "/fleet/hosts/{host_key}/workspaces/{id}/retry",
-          {
-            params: { path: { host_key: hostKey, id } },
-          },
-        );
-        if (!data) {
-          showFlash(
-            apiErrorMessage(error, `Retry failed (${response.status})`),
-            { tone: "danger" },
-          );
-          return;
-        }
-        const nextWorkspace = { ...(data as Workspace), fleet_host_key: hostKey };
-        if (!isCurrentWorkspace(id, hostKey) || nextWorkspace.id !== id) return;
-        workspace = nextWorkspace;
-        if (workspace.status === "creating") {
-          startPolling();
-          await fetchWorkspace();
-        }
-        return;
-      }
-      const { data, error, response } = await client.POST(
-        "/workspaces/{id}/retry",
-        {
-          params: { path: { id } },
+    appRuntime.runCommand(
+      retryWorkspaceSetupMutationProgram(id, hostKey),
+      {
+        operation: "workspace.setup.retry",
+        safeContext: { surface: "workspace" },
+        onFailure: () => {
+          if (isCurrentWorkspace(id, hostKey)) retryingSetup = false;
         },
-      );
-      if (!data) {
-        showFlash(
-          apiErrorMessage(error, `Retry failed (${response.status})`),
-          { tone: "danger" },
-        );
-        return;
-      }
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      workspace = data as Workspace;
-      if (workspace.status === "creating") {
-        startPolling();
-        await fetchWorkspace();
-      }
-    } catch (err) {
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      showFlash(err instanceof Error ? err.message : "Retry failed", {
-        tone: "danger",
-      });
-    } finally {
-      if (isCurrentWorkspace(id, hostKey)) retryingSetup = false;
-    }
+      },
+    );
   }
 
-  async function handleRefreshWorkspace(): Promise<void> {
+  function handleRefreshWorkspace(): void {
     if (!workspace || refreshingWorkspace || actionsBlocked) return;
 
     const id = workspace.id;
     const hostKey = workspaceHostKey;
     refreshingWorkspace = true;
-    try {
-      if (hostKey) {
-        const { data, error, response } = await client.POST(
-          "/fleet/hosts/{host_key}/workspaces/{id}/refresh",
-          {
-            params: { path: { host_key: hostKey, id } },
-          },
-        );
-        if (!isCurrentWorkspace(id, hostKey)) return;
-        if (!data) {
-          showFlash(
-            apiErrorMessage(error, `Refresh failed (${response.status})`),
-            { tone: "danger" },
-          );
-          return;
-        }
-        workspace = { ...(data as Workspace), fleet_host_key: hostKey };
-        syncSidebarTabForWorkspace(workspace);
-        sidebarRefreshToken += 1;
-        if (workspace.status === "ready") {
-          void fetchRuntime();
-        }
-        return;
-      }
-      const { data, error, response } = await client.POST(
-        "/workspaces/{id}/refresh",
-        {
-          params: { path: { id } },
+    appRuntime.runCommand(
+      refreshWorkspaceMutationProgram(id, hostKey),
+      {
+        operation: "workspace.refresh",
+        safeContext: { surface: "workspace" },
+        onFailure: () => {
+          if (isCurrentWorkspace(id, hostKey)) refreshingWorkspace = false;
         },
-      );
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      if (!data) {
-        const message = apiErrorMessage(
-          error,
-          `Refresh failed (${response.status})`,
-        );
-        showFlash(message, { tone: "danger" });
-        return;
-      }
-      workspace = data as Workspace;
-      syncSidebarTabForWorkspace(workspace);
-      sidebarRefreshToken += 1;
-      if (workspace.status === "ready") {
-        void fetchRuntime();
-      }
-    } catch (err) {
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Refresh failed";
-      showFlash(message, { tone: "danger" });
-    } finally {
-      if (isCurrentWorkspace(id, hostKey)) refreshingWorkspace = false;
-    }
+      },
+    );
   }
 
   // Provider-aware identity of the loaded envelope, but only while it still
@@ -3064,13 +3280,26 @@
     void performDelete(triggerEl);
   }
 
-  async function performDelete(
+  function releaseRetainedRuntimePresenter(lease: RetainedRuntimePresenterLease): void {
+    appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkspaceRuntimeWorkflow;
+        yield* workflow.releasePresenter(lease.target, lease.presenterID);
+      }),
+      {
+        operation: "workspace.runtime.presenter.release",
+        safeContext: { surface: "workspace" },
+        onFailure: () => undefined,
+      },
+    );
+  }
+
+  function performDelete(
     triggerEl: HTMLElement | null = null,
-  ): Promise<void> {
+  ): void {
     if (actionsBlocked) return;
     const targetId = workspaceId;
     const targetHostKey = workspaceHostKey;
-    const targetGen = workspaceGen;
     const targetIdentity = workspaceIdentitySnapshot(targetId);
     // Capture the trigger synchronously: the click handler runs
     // before `inert` is applied to .terminal-view, so this is the
@@ -3081,55 +3310,31 @@
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
+    const target = runtimeTarget(targetId, targetHostKey);
+    const lease = { target, presenterID: makeWorkspaceRuntimePresenterID() };
+    const presentationGeneration = workspacePresentationGeneration;
+    retainedRuntimePresenterLeases = [...retainedRuntimePresenterLeases, lease];
+    deleteTriggerElements.set(runtimeMutationTargetKey(target), triggerEl);
     addDeletingWorkspaceTarget(targetId, targetHostKey);
-    try {
-      const { error, response } = targetHostKey
-        ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
-            params: { path: { host_key: targetHostKey, id: targetId } },
-          })
-        : await client.DELETE("/workspaces/{id}", {
-            params: { path: { id: targetId } },
-          });
-      const responseFailed =
-        response.status === 409 ||
-        (!response.ok && response.status !== 204);
-      if (responseFailed && targetGen !== workspaceGen) return;
-      // Successful delete: report it before any current-selection guard.
-      // The workspace is gone on the server regardless of what the user
-      // is looking at now, and inline claimants, tombstones, and route
-      // memory must hear about it even after switching workspaces
-      // mid-delete. Prompts, flashes, and navigation below stay gated.
-      if (!responseFailed) {
-        onWorkspaceDeleted?.(targetId, targetHostKey, targetIdentity);
-      }
-      // Different workspace now: the user has moved on and nothing
-      // else about this response applies.
-      if (!isCurrentWorkspace(targetId, targetHostKey)) return;
-      if (response.status === 409) {
-        previouslyFocusedEl = triggerEl;
-        forcePromptForId = targetId;
-        forcePromptIdentity = targetIdentity;
-        forcePromptMessage = apiErrorMessage(
-          error,
-          "Workspace has uncommitted changes.",
-        );
-        return;
-      }
-      if (!response.ok && response.status !== 204) {
-        showFlash(
-          apiErrorMessage(error, `Delete failed (${response.status})`),
-          { tone: "danger" },
-        );
-        return;
-      }
-      // Navigate away if the user is still looking at the deleted
-      // workspace, even after an A→B→A round trip — otherwise they'd be
-      // staring at a workspace that no longer exists.
-      if (!isCurrentTerminalRoute(targetId)) return;
-      navigate("/workspaces");
-    } finally {
-      removeDeletingWorkspaceTarget(targetId, targetHostKey);
-    }
+    appRuntime.runCommand(
+      deleteWorkspaceMutationProgram(
+        targetId,
+        targetHostKey,
+        false,
+        targetIdentity,
+        lease.presenterID,
+        () => workspacePresentationGeneration === presentationGeneration,
+      ),
+      {
+        operation: "workspace.delete",
+        safeContext: { surface: "workspace" },
+        onFailure: () => {
+          removeDeletingWorkspaceTarget(targetId, targetHostKey);
+          clearRetainedDeletePresentation(target);
+          releaseRetainedRuntimePresenter(lease);
+        },
+      },
+    );
   }
 
   function isDeletingWorkspaceTarget(
@@ -3167,66 +3372,40 @@
     return window.location.pathname.endsWith(terminalRoute(targetId));
   }
 
-  async function confirmForceDelete(): Promise<void> {
+  function confirmForceDelete(): void {
     if (forceDeleting) return;
     const targetId = forcePromptForId;
     if (targetId === null) return;
     const targetHostKey = workspaceHostKey;
-    const targetGen = workspaceGen;
     // Prefer the snapshot taken at 409 time; the live envelope may belong
     // to a different workspace after an A -> B switch.
     const targetIdentity = forcePromptIdentity ?? workspaceIdentitySnapshot(targetId);
     forceDeleting = true;
+    const target = runtimeTarget(targetId, targetHostKey);
+    const lease = { target, presenterID: makeWorkspaceRuntimePresenterID() };
+    const presentationGeneration = workspacePresentationGeneration;
+    retainedRuntimePresenterLeases = [...retainedRuntimePresenterLeases, lease];
     addDeletingWorkspaceTarget(targetId, targetHostKey);
-    try {
-      const { error, response } = targetHostKey
-        ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
-            params: {
-              path: { host_key: targetHostKey, id: targetId },
-              query: { force: true },
-            },
-          })
-        : await client.DELETE("/workspaces/{id}", {
-            params: {
-              path: { id: targetId },
-              query: { force: true },
-            },
-          });
-      const responseFailed =
-        !response.ok && response.status !== 204;
-      if (responseFailed && targetGen !== workspaceGen) return;
-      // Successful force-delete: report it before the current-selection
-      // guard — the server destroyed the workspace either way, and
-      // inline claimants, tombstones, and route memory must hear about
-      // it even after switching workspaces mid-delete.
-      if (!responseFailed) {
-        onWorkspaceDeleted?.(targetId, targetHostKey, targetIdentity);
-      }
-      // Once the user has moved to a different workspace we drop the
-      // rest of the response on the floor so prompt state stays put and
-      // navigate() doesn't pull them away.
-      if (!isCurrentWorkspace(targetId, targetHostKey)) return;
-      if (!response.ok && response.status !== 204) {
-        showFlash(
-          apiErrorMessage(error, `Delete failed (${response.status})`),
-          { tone: "danger" },
-        );
-        forcePromptMessage = null;
-        forcePromptForId = null;
-        forcePromptIdentity = undefined;
-        return;
-      }
-      // Navigate away if the user is still viewing the workspace the
-      // server just destroyed, even after an A→B→A round trip.
-      forcePromptMessage = null;
-      forcePromptForId = null;
-      forcePromptIdentity = undefined;
-      if (!isCurrentTerminalRoute(targetId)) return;
-      navigate("/workspaces");
-    } finally {
-      removeDeletingWorkspaceTarget(targetId, targetHostKey);
-      forceDeleting = false;
-    }
+    appRuntime.runCommand(
+      deleteWorkspaceMutationProgram(
+        targetId,
+        targetHostKey,
+        true,
+        targetIdentity,
+        lease.presenterID,
+        () => workspacePresentationGeneration === presentationGeneration,
+      ),
+      {
+        operation: "workspace.force-delete",
+        safeContext: { surface: "workspace" },
+        onFailure: () => {
+          removeDeletingWorkspaceTarget(targetId, targetHostKey);
+          forceDeleting = false;
+          clearRetainedDeletePresentation(target);
+          releaseRetainedRuntimePresenter(lease);
+        },
+      },
+    );
   }
 
   function cancelForceDelete(): void {
@@ -3236,84 +3415,31 @@
     forcePromptIdentity = undefined;
   }
 
-  async function watchFleetWorkspaceDiff(
-    id: string,
-    hostKey: string,
-    signal: AbortSignal,
-  ): Promise<void> {
-    let version = "";
-    let retryDelay = 1_000;
-    while (!signal.aborted && isCurrentWorkspace(id, hostKey)) {
-      try {
-        const { data, response } = await client.GET(
-          "/fleet/hosts/{host_key}/workspaces/{id}/diff/watch",
-          {
-            params: {
-              path: { host_key: hostKey, id },
-              query: version ? { version } : {},
-            },
-            signal,
-          },
-        );
-        if (signal.aborted || !isCurrentWorkspace(id, hostKey)) return;
-        const update = data as
-          | { changed?: boolean; version?: string }
-          | undefined;
-        if (!response.ok) {
-          if (!shouldRetryFleetDiffWatch(response.status)) return;
-          await waitForFleetDiffWatchRetry(signal, retryDelay);
-          retryDelay = Math.min(retryDelay * 2, 30_000);
-          continue;
-        }
-        // A successful but incompatible response will not become valid by
-        // retrying forever. Leave request-driven diff loading in place for
-        // older fleet members that do not implement the watch contract.
-        if (typeof update?.version !== "string" || update.version === "") return;
-        retryDelay = 1_000;
-        version = update.version;
-        if (update.changed && version !== lastDiffSnapshotVersion) {
-          lastDiffSnapshotVersion = version;
-          diffRefreshToken += 1;
-        }
-      } catch {
-        if (signal.aborted || !isCurrentWorkspace(id, hostKey)) return;
-        await waitForFleetDiffWatchRetry(signal, retryDelay);
-        retryDelay = Math.min(retryDelay * 2, 30_000);
-      }
-    }
-  }
-
-  function waitForFleetDiffWatchRetry(signal: AbortSignal, delay: number): Promise<void> {
-    if (signal.aborted) return Promise.resolve();
-    const jitteredDelay = Math.round(delay * (0.8 + Math.random() * 0.4));
-    return new Promise((resolve) => {
-      const done = () => {
-        window.clearTimeout(timeout);
-        signal.removeEventListener("abort", done);
-        resolve();
-      };
-      const timeout = window.setTimeout(done, jitteredDelay);
-      signal.addEventListener("abort", done, { once: true });
-    });
-  }
-
   let previouslyFocusedEl: HTMLElement | null = null;
 
   $effect(() => {
+    let afterTick: Effect.Effect<void> | null = null;
     if (renamePrompt !== null) {
-      void tick().then(() => {
+      afterTick = Effect.sync(() => {
         renameInputEl?.focus();
         renameInputEl?.select();
       });
     } else if (!modalOpen && previouslyFocusedEl !== null) {
       const triggerEl = previouslyFocusedEl;
       previouslyFocusedEl = null;
-      void tick().then(() => {
+      afterTick = Effect.sync(() => {
         if (document.contains(triggerEl)) {
           triggerEl.focus();
         }
       });
     }
+    if (afterTick === null) return;
+    const execution = appRuntime.runCommand(Effect.promise(() => tick()).pipe(Effect.andThen(afterTick)), {
+      operation: "workspace.dialog.focus",
+      safeContext: { surface: "workspace" },
+      onFailure: () => undefined,
+    });
+    return execution.interrupt;
   });
 
   $effect(() => {
@@ -3336,6 +3462,7 @@
   $effect(() => {
     const id = workspaceId;
     const hostKey = workspaceHostKey;
+    workspacePresentationGeneration += 1;
     if (
       appliedRuntimeState?.workspaceId !== id ||
       appliedRuntimeState.hostKey !== hostKey
@@ -3349,7 +3476,7 @@
     // able to cancel a newer switch begun elsewhere.
     let switchToken: string | null = null;
     if (id) {
-      switchToken = beginWorkspaceSwitch(id, hostKey);
+      switchToken = beginWorkspaceSwitch(appRuntime, id, hostKey);
     } else {
       cancelWorkspaceSwitch();
     }
@@ -3390,9 +3517,7 @@
     // A 409 force-delete prompt is bound to the workspace that
     // produced it. Dismiss it on any route change so the user
     // can't confirm a destructive action targeting a workspace
-    // they're no longer looking at. Bumping the generation token
-    // also invalidates any in-flight DELETE callback that captured
-    // the previous value.
+    // they're no longer looking at.
     forcePromptMessage = null;
     forcePromptForId = null;
     forcePromptIdentity = undefined;
@@ -3401,7 +3526,6 @@
     renamePrompt = null;
     renameInputValue = "";
     renameSaving = false;
-    workspaceGen += 1;
     mountedSessionKeys = restoredActiveTab.startsWith("session:")
       ? [restoredActiveTab.slice("session:".length)]
       : [];
@@ -3418,106 +3542,129 @@
       return;
     }
 
-    const fleetDiffWatchAbort = hostKey ? new AbortController() : null;
-    if (hostKey && fleetDiffWatchAbort) {
-      void watchFleetWorkspaceDiff(id, hostKey, fleetDiffWatchAbort.signal);
-    }
+    const mutationPresenter = appRuntime.runCommand(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const workflow = yield* WorkspaceRuntimeWorkflow;
+          const target = runtimeTarget(id, hostKey);
+          const context = yield* Effect.context<AppServices>();
+          yield* Effect.acquireRelease(
+            workflow.claimPresenter(
+              target,
+              runtimePresenterID,
+              (state) => presentRuntimeMutation(state, runtimePresenterID).pipe(Effect.provide(context)),
+            ),
+            () => workflow.releasePresenter(target, runtimePresenterID),
+          );
+          yield* Effect.never;
+        }),
+      ),
+      {
+        operation: "workspace.runtime.presenter",
+        safeContext: { surface: "workspace" },
+        onFailure: () => undefined,
+      },
+    );
 
-    const evtUrl = new URL(`${basePath}/api/v1/events`, window.location.origin);
+    const fleetDiffWatch = hostKey
+      ? appRuntime.runCommand(
+          watchFleetWorkspaceDiff(id, hostKey, (version) =>
+            Effect.sync(() => {
+              if (!isCurrentWorkspace(id, hostKey) || version === lastDiffSnapshotVersion) return;
+              lastDiffSnapshotVersion = version;
+              diffRefreshToken += 1;
+            }),
+          ),
+          {
+            operation: "workspace.fleet-diff.watch",
+            safeContext: { surface: "workspace" },
+            onFailure: () => undefined,
+          },
+        )
+      : null;
+
+    const evtUrl = new URL(configuredAPIPath("/events"), window.location.origin);
     if (!hostKey) {
       evtUrl.searchParams.set("workspace_id", id);
     }
-    const source = new EventSource(`${evtUrl.pathname}${evtUrl.search}`);
-    eventSource = source;
-    const workspaceRequest = fetchWorkspace();
-    void fetchRuntime();
-
-    source.addEventListener(
-      "workspace_status",
-      (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(
-            e.data as string,
-          ) as { id?: string };
-          if (!data.id || data.id === id) {
-            void fetchWorkspace();
-          }
-        } catch {
-          // Malformed SSE data; ignore.
-        }
+    const workspaceLifecycle = appRuntime.runCommand(
+      Effect.gen(function* () {
+        const initialWorkspace = yield* Deferred.make<Workspace | null>();
+        const events = Stream.runForEach(
+          workspaceEventStream(`${evtUrl.pathname}${evtUrl.search}`),
+          (signal) => {
+            switch (signal._tag) {
+              case "Open":
+                return Deferred.await(initialWorkspace).pipe(
+                  Effect.flatMap((loaded) =>
+                    isCurrentWorkspace(id, hostKey) &&
+                    loaded?.id === id &&
+                    selectedWorkspaceHostKey(loaded) === hostKey &&
+                    loaded.enrichment_status === "pending"
+                      ? fetchWorkspaceProgram(id, hostKey).pipe(Effect.asVoid)
+                      : Effect.void,
+                  ),
+                );
+              case "Status":
+                return signal.workspaceId === undefined || signal.workspaceId === id
+                  ? fetchWorkspaceProgram(id, hostKey).pipe(Effect.asVoid)
+                  : Effect.void;
+              case "Associated":
+                return signal.workspaceId === id
+                  ? fetchWorkspaceProgram(id, hostKey).pipe(Effect.asVoid)
+                  : Effect.void;
+              case "ReconnectStale":
+                return Effect.sync(() => {
+                  diffRefreshToken += 1;
+                }).pipe(
+                  Effect.andThen(
+                    Effect.all([fetchWorkspaceProgram(id, hostKey), fetchRuntimeProgram()], {
+                      concurrency: "unbounded",
+                      discard: true,
+                    }),
+                  ),
+                );
+              case "DiffChanged":
+                return Effect.sync(() => {
+                  if (
+                    signal.workspaceId !== id ||
+                    signal.version === undefined ||
+                    signal.version === "" ||
+                    signal.version === lastDiffSnapshotVersion
+                  ) {
+                    return;
+                  }
+                  lastDiffSnapshotVersion = signal.version;
+                  diffRefreshToken += 1;
+                });
+            }
+          },
+        ).pipe(Effect.retry({ schedule: reconnectSchedule }));
+        const eventFiber = yield* Effect.forkChild(events, { startImmediately: true });
+        yield* Effect.forkChild(fetchRuntimeProgram(), { startImmediately: true });
+        const loaded = yield* fetchWorkspaceProgram(id, hostKey);
+        yield* Deferred.succeed(initialWorkspace, loaded);
+        yield* Effect.sync(() => {
+          if (!isCurrentWorkspace(id, hostKey)) return;
+          if (loaded?.status === "creating") startPolling();
+          else if (loaded?.status === "ready") startRuntimePolling();
+        });
+        yield* Fiber.join(eventFiber);
+      }),
+      {
+        operation: "workspace.lifecycle",
+        safeContext: { surface: "workspace" },
+        onFailure: () => undefined,
       },
     );
-    source.addEventListener("open", () => {
-      void workspaceRequest.then(() => {
-        if (
-          eventSource === source &&
-          isCurrentWorkspace(id, hostKey) &&
-          workspace?.id === id &&
-          selectedWorkspaceHostKey(workspace) === hostKey &&
-          workspace.enrichment_status === "pending"
-        ) {
-          void fetchWorkspace();
-        }
-      });
-    });
-    source.addEventListener(
-      "workspace_pr_associated",
-      (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(
-            e.data as string,
-          ) as { workspace_id?: string };
-          if (data.workspace_id === id) {
-            void fetchWorkspace();
-          }
-        } catch {
-          // Malformed SSE data; ignore.
-        }
-      },
-    );
-    source.addEventListener("reconnect.stale", () => {
-      void fetchWorkspace();
-      void fetchRuntime();
-      diffRefreshToken += 1;
-    });
-    const refreshPreparedDiff = (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data as string) as {
-          workspace_id?: string;
-          version?: string;
-        };
-        if (
-          data.workspace_id === id &&
-          typeof data.version === "string" &&
-          data.version !== "" &&
-          data.version !== lastDiffSnapshotVersion
-        ) {
-          lastDiffSnapshotVersion = data.version;
-          diffRefreshToken += 1;
-        }
-      } catch {
-        // Malformed SSE data; ignore.
-      }
-    };
-    source.addEventListener("workspace_diff_ready", refreshPreparedDiff);
-    source.addEventListener("workspace_diff_changed", refreshPreparedDiff);
-
-    void workspaceRequest.then(() => {
-      if (workspace?.status === "creating") {
-        startPolling();
-      } else if (workspace?.status === "ready") {
-        startRuntimePolling();
-      }
-    });
 
     return () => {
       stopPolling();
       stopRuntimePolling();
-      fleetDiffWatchAbort?.abort();
-      source.close();
-      if (eventSource === source) {
-        eventSource = null;
-      }
+      releaseRuntimeRead();
+      mutationPresenter.interrupt();
+      fleetDiffWatch?.interrupt();
+      workspaceLifecycle.interrupt();
       // Leaving the workspace surface (view unmount) must end the
       // switch so late responses and pane callbacks cannot append
       // phases. On a switch to another workspace this cleanup runs
@@ -3545,66 +3692,27 @@
   $effect(() => {
     if (!workspaceId || !runtimeLive || workspace?.status !== "ready") return;
     if (actionsBlocked || launchingKey !== null) return;
-    const intent = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
-    if (intent === null || intent.phase !== "queued") return;
+    const targetKey = pendingWorkspaceLaunch(workspaceId, workspaceHostKey)?.targetKey ?? null;
+    if (targetKey === null) return;
     if (runtimeSessions.length > 0) {
       discardWorkspaceLaunch(workspaceId, workspaceHostKey);
       return;
     }
     const target = launchTargets.find(
-      (candidate) => candidate.key === intent.targetKey,
+      (candidate) => candidate.key === targetKey,
     );
     if (!target || target.kind !== "agent" || !target.available) {
       if (discardWorkspaceLaunch(workspaceId, workspaceHostKey) === null) return;
       const reason =
         target?.disabled_reason ?? "is not available in this workspace";
-      showFlash(`Agent "${intent.targetKey}" could not launch: ${reason}`, {
+      showFlash(`Agent "${targetKey}" could not launch: ${reason}`, {
         tone: "danger",
       });
       return;
     }
     const claim = claimWorkspaceLaunch(workspaceId, workspaceHostKey);
     if (claim === null) return;
-    void handleLaunch(claim.targetKey, claim);
-  });
-
-  $effect(() => {
-    if (!workspaceId || !runtimeLive) return;
-    const intent = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
-    if (
-      intent?.phase !== "awaiting_session" ||
-      intent.sessionKey === undefined ||
-      intent.acceptedAt === undefined
-    ) {
-      return;
-    }
-    const session = runtimeSessions.find((candidate) => candidate.key === intent.sessionKey);
-    if (session) {
-      const completed = untrack(() =>
-        completeAcceptedWorkspaceLaunch(workspaceId, workspaceHostKey, session.key),
-      );
-      if (!completed) return;
-      untrack(() => {
-        clearClosedSession(session);
-        moveSessionToWorkflow(session.key);
-        mountSessionTerminal(session.key);
-        selectWorkspaceTab(workflowTabKeyForSession(session.key));
-        closeLauncher();
-        requestSessionFocus(sessionHostKeyFor(session));
-      });
-      return;
-    }
-
-    const remaining = Math.max(0, 15_000 - (Date.now() - intent.acceptedAt));
-    const targetLabel = launchTargets.find((target) => target.key === intent.targetKey)?.label ?? intent.targetKey;
-    const sessionKey = intent.sessionKey;
-    const timeout = setTimeout(() => {
-      if (!completeAcceptedWorkspaceLaunch(workspaceId, workspaceHostKey, sessionKey)) return;
-      showFlash(`${targetLabel} launched, but its session did not become available`, {
-        tone: "danger",
-      });
-    }, remaining);
-    return () => clearTimeout(timeout);
+    handleLaunch(claim.targetKey, claim);
   });
 </script>
 
@@ -3725,7 +3833,7 @@
             class="retry-btn"
             onclick={() => {
               loadError = null;
-              void fetchWorkspace();
+              requestWorkspace();
             }}
           >
             Retry

@@ -143,6 +143,8 @@ describe("PublishDocsDialog", () => {
       Effect.gen(function* () {
         const workflow = yield* DocsWorkflow;
         yield* workflow.mutate(
+          "publish-test",
+          "publish-test-session",
           Effect.promise(() => {
             blockerStarted = true;
             return blocker.promise;

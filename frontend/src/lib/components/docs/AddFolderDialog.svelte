@@ -5,10 +5,19 @@
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import { Button, Card, Checkbox, IconButton, TextInput } from "@kenn-io/kit-ui";
   import { SelectDropdown } from "@kenn-io/kit-ui";
+  import { Effect, Option } from "effect";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import {
+    docsMutationOwner,
+    DocsMutationStateUncertainError,
+    DocsWorkflow,
+    makeDocsOwner,
+  } from "../../stores/docs-workflow.js";
   import Modal from "../shared/Modal.svelte";
-  import type { DocsAPI } from "../../api/docs/api";
-  import type { BrowseEntry, DocsAPIError, Folder } from "../../api/docs/types";
+  import { DocsRequestError, executeDocsRequest, type DocsAPI } from "../../api/docs/api";
+  import type { BrowseEntry, Folder } from "../../api/docs/types";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { getKataDaemonRoster } from "../../stores/active-kata-daemon.svelte";
 
   // Add-folder dialog with a built-in folder picker. The picker drives a
@@ -21,12 +30,24 @@
     api: DocsAPI;
     onClose: () => void;
     onAdded: (folder: Folder) => void;
+    presentationSurfaceID: string;
+    presentationSessionID: string;
     // Optional initial path. When set, the browser opens at that
     // directory; used by tests and for "edit path" reuse later.
     initialPath?: string;
   }
 
-  let { open, api, onClose, onAdded, initialPath = "" }: Props = $props();
+  let {
+    open,
+    api,
+    onClose,
+    onAdded,
+    presentationSurfaceID,
+    presentationSessionID,
+    initialPath = "",
+  }: Props = $props();
+  const runtime = getAppRuntime();
+  const browseOwner = makeDocsOwner("docs-add-folder-browse");
 
   // Form state. path holds the absolute folder the user wants to add;
   // browsePath tracks where we're navigating in the picker (which may
@@ -48,13 +69,10 @@
   let showHidden = $state(false);
   let loadingBrowse = $state(false);
   let browseError = $state<string | null>(null);
+  let browseExecution: AppExecution<void, never> | null = null;
 
   let error = $state<string | null>(null);
   let saving = $state(false);
-
-  // Sequence number guards stale async results: if the user clicks
-  // through folders quickly, only the latest fetch's response wins.
-  let browseSeq = 0;
 
   // Open / re-open seeds the browser once. Closing resets local state
   // so the next open starts fresh.
@@ -67,40 +85,72 @@
       showAdvanced = false;
       error = null;
       saving = false;
-      void loadBrowse(initialPath);
+      loadBrowse(initialPath);
     } else {
       browsePath = "";
       entries = [];
       parent = "";
       browseError = null;
     }
+    return () => {
+      browseExecution = null;
+      runtime.runCommand(
+        Effect.gen(function* () {
+          const workflow = yield* DocsWorkflow;
+          yield* workflow.stop(browseOwner);
+        }),
+        { operation: "stop folder browse", safeContext: { owner: browseOwner }, onFailure: () => {} },
+      );
+    };
   });
 
-  async function loadBrowse(target: string) {
-    const seq = ++browseSeq;
+  function loadBrowse(target: string): void {
     loadingBrowse = true;
     browseError = null;
-    try {
-      const result = await api.browseDirectories(target || undefined);
-      if (seq !== browseSeq) return;
-      browsePath = result.path;
-      parent = result.parent;
-      entries = result.entries;
-    } catch (err) {
-      if (seq !== browseSeq) return;
-      browseError = describeError(err, "Could not list folder");
-    } finally {
-      if (seq === browseSeq) loadingBrowse = false;
-    }
+    const requestedAPI = api;
+    let execution: AppExecution<void, never> | undefined;
+    const isCurrent = () => execution !== undefined && browseExecution === execution;
+    execution = runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* DocsWorkflow;
+        return yield* workflow.read(
+          browseOwner,
+          { lane: "directory", resource: JSON.stringify(["directory", target || null]) },
+          executeDocsRequest("browse Docs folders", (signal) =>
+            requestedAPI.browseDirectories(target || undefined, signal),
+          ),
+        );
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) => Effect.sync(() => {
+            if (!isCurrent()) return;
+            browseError = describeError(failure, "Could not list folder");
+          }),
+          onSuccess: (result) => Effect.sync(() => {
+            if (!isCurrent()) return;
+            browsePath = result.path;
+            parent = result.parent;
+            entries = result.entries;
+          }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          if (!isCurrent()) return;
+          browseExecution = null;
+          loadingBrowse = false;
+        })),
+      ),
+      { operation: "browse Docs folders", safeContext: { owner: browseOwner }, onFailure: () => {} },
+    );
+    browseExecution = execution;
   }
 
-  function navigateInto(entry: BrowseEntry) {
-    void loadBrowse(entry.path);
+  function navigateInto(entry: BrowseEntry): void {
+    loadBrowse(entry.path);
   }
 
   function navigateUp() {
     if (!parent) return;
-    void loadBrowse(parent);
+    loadBrowse(parent);
   }
 
   function useCurrentFolder() {
@@ -116,7 +166,7 @@
   );
   let hiddenCount = $derived(entries.filter((e) => e.hidden).length);
 
-  async function submit() {
+  function submit(): void {
     if (saving) return;
     const trimmed = path.trim();
     if (!trimmed) {
@@ -125,38 +175,99 @@
     }
     error = null;
     saving = true;
-    try {
-      const selectedDaemon = daemonRoster.length > 1 ? daemon.trim() : "";
-      const folder = await api.addFolder({
-        path: trimmed,
-        ...(name.trim() ? { name: name.trim() } : {}),
-        ...(id.trim() ? { id: id.trim() } : {}),
-        ...(selectedDaemon ? { daemon: selectedDaemon } : {}),
-      });
-      onAdded(folder);
-      onClose();
-    } catch (err) {
-      const message = describeError(err, "Could not add folder");
-      if (["already_exists", "duplicate_folder_id"].includes((err as DocsAPIError | undefined)?.code ?? "")) {
-        error = message;
-      } else {
-        showFlash(message, { tone: "danger" });
-      }
-    } finally {
-      saving = false;
-    }
+    const selectedDaemon = daemonRoster.length > 1 ? daemon.trim() : "";
+    const input = {
+      path: trimmed,
+      ...(name.trim() ? { name: name.trim() } : {}),
+      ...(id.trim() ? { id: id.trim() } : {}),
+      ...(selectedDaemon ? { daemon: selectedDaemon } : {}),
+    };
+    const requestedAPI = api;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* DocsWorkflow;
+        return yield* workflow.mutate(
+          presentationSurfaceID,
+          presentationSessionID,
+          Effect.gen(function* () {
+            const before = yield* workflow.read(
+              docsMutationOwner,
+              { lane: "folders", resource: JSON.stringify(["folders"]) },
+              executeDocsRequest("list Docs folders before add", (signal) => requestedAPI.listFolders(signal)),
+            );
+            const wasConfigured = before.some((folder) =>
+              input.id === undefined ? folder.path === input.path : folder.id === input.id,
+            );
+            return yield* workflow.reconcileMutation(
+              {
+                resource: JSON.stringify(["folders"]),
+                intent: JSON.stringify(["add-folder", input.path, input.name ?? null, input.id ?? null, input.daemon ?? null]),
+                recoveryEvidence: wasConfigured ? "present" : "absent",
+              },
+              "add Docs folder",
+              executeDocsRequest("add Docs folder", (signal) => requestedAPI.addFolder(input, signal)),
+              workflow.read(
+                docsMutationOwner,
+                { lane: "folders", resource: JSON.stringify(["folders"]) },
+                executeDocsRequest("list Docs folders after add", (signal) => requestedAPI.listFolders(signal)),
+              ),
+              (folders, recoveryEvidence) => {
+                if (recoveryEvidence === "present") return Option.none();
+                const recovered = folders.find((folder) =>
+                  input.id === undefined ? folder.path === input.path : folder.id === input.id,
+                );
+                return recovered === undefined ? Option.none() : Option.some(recovered);
+              },
+            );
+          }),
+        );
+      }).pipe(
+        Effect.match({
+          onFailure: (failure) => ({ failed: failure }),
+          onSuccess: (outcome) => ({ succeeded: outcome.result }),
+        }),
+        Effect.flatMap((result) =>
+          Effect.gen(function* () {
+            const workflow = yield* DocsWorkflow;
+            yield* workflow.present(
+              presentationSurfaceID,
+              presentationSessionID,
+              Effect.sync(() => {
+                saving = false;
+                if ("failed" in result) {
+                  const message = describeError(result.failed, "Could not add folder");
+                  if (
+                    result.failed instanceof DocsRequestError &&
+                    (result.failed.code === "already_exists" || result.failed.code === "duplicate_folder_id")
+                  ) {
+                    error = message;
+                    return;
+                  }
+                  showFlash(message, { tone: "danger" });
+                  return;
+                }
+                onAdded(result.succeeded);
+                onClose();
+              }),
+            );
+          }),
+        ),
+      ),
+      { operation: "add Docs folder", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   function describeError(err: unknown, fallback: string): string {
-    if (err && typeof err === "object" && "message" in err) {
-      const msg = (err as DocsAPIError).message;
-      return msg ? msg : fallback;
+    if (err instanceof DocsMutationStateUncertainError) {
+      return `${fallback}. Saved state could not be confirmed. Reload Docs before retrying.`;
     }
+    if (err instanceof DocsRequestError) return err.message || fallback;
+    if (err instanceof Error) return err.message || fallback;
     return fallback;
   }
 
-  function refresh() {
-    void loadBrowse(browsePath);
+  function refresh(): void {
+    loadBrowse(browsePath);
   }
 </script>
 
@@ -165,7 +276,7 @@
     class="modal-form"
     onsubmit={(event) => {
       event.preventDefault();
-      void submit();
+      submit();
     }}
   >
     <label class="modal-field">

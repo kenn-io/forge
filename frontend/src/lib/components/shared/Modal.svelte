@@ -1,11 +1,13 @@
 <script lang="ts">
   import { Modal as KitModal } from "@kenn-io/kit-ui";
   import { untrack, type ComponentProps } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { ModalFrameAction } from "../../stores/keyboard/keyspec.js";
   import type { Snippet } from "svelte";
 
   type KitModalFooter = NonNullable<ComponentProps<typeof KitModal>["footer"]>;
+  const runtime = getAppRuntime();
 
   // Shared in-app dialog shell: adapts kit-ui Modal (backdrop, frame, header,
   // focus trap, scroll lock, Escape/overlay close, focus restore) to this
@@ -60,7 +62,7 @@
 
   $effect(() => {
     if (!open) return;
-    queueMicrotask(() => {
+    const execution = untrack(() => runtime.runMicrotask(() => {
       // Preserve focus claimed by a mounted child control first. Shared inputs
       // implement autofocus in their mount attachment rather than by retaining
       // an HTML autofocus attribute, so replacing it here would move focus back
@@ -87,7 +89,8 @@
         bodyEl?.querySelector<HTMLElement>("button:not([disabled])") ??
         footEl?.querySelector<HTMLElement>("button:not([disabled])");
       (explicit ?? primary ?? action)?.focus();
-    });
+    }, { operation: "focus opened modal", safeContext: { frameId: frameId ?? "shared-modal" } }));
+    return execution.interrupt;
   });
 </script>
 

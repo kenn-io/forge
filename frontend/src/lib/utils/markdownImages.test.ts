@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { createRuntimeClient } from "../api/runtime.js";
+import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import { getStackDepth, getTopFrame, resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
-import { expandMarkdownImages } from "./markdownImages";
+import { expandMarkdownImages, observeMarkdownImageExpansion } from "./markdownImages";
 
 const appCss = readFileSync("src/app.css", "utf8");
 
@@ -55,6 +58,28 @@ describe("expandMarkdownImages", () => {
     expect(expanded?.getAttribute("src")).toBe("/shots/dashboard.png");
     expect(expanded?.getAttribute("alt")).toBe("Quality dashboard");
     expect(document.activeElement).toBe(overlay);
+  });
+
+  test("enhances markdown images while the app runtime owns the observer", async () => {
+    const runtime = makeTestAppRuntime(createRuntimeClient(() => Promise.resolve(Response.json({}))));
+    const root = document.createElement("div");
+    const execution = runtime.runCommand(Effect.scoped(observeMarkdownImageExpansion(root)), {
+      operation: "test markdown image observer",
+      safeContext: {},
+      onFailure: () => {},
+    });
+
+    try {
+      root.innerHTML = '<div class="markdown-body"><img src="/shots/runtime.png" alt="Runtime image"></div>';
+
+      await vi.waitFor(() => {
+        expect(root.querySelector('button[aria-label="Open image in expanded view"]')).not.toBeNull();
+      });
+    } finally {
+      execution.interrupt();
+      await execution.exit;
+      await Effect.runPromise(runtime.disposeEffect);
+    }
   });
 
   test("keeps zoom controls outside linked markdown images", () => {

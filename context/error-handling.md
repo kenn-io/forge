@@ -66,6 +66,10 @@ Add new codes only when the frontend or an API client needs a distinct recovery
 branch. Keep the OpenAPI enum stable and regenerate API artifacts with
 `make api-generate` after changing the taxonomy.
 
+- After dispatching a non-idempotent provider write, preserve only typed errors that prove rejection;
+  unverified provider failures and local persistence failures after provider success return
+  `mutationOutcomeUnknown` (`internal/server/httpapi/problems.go::ProviderMutationProblem`).
+
 ## Server Construction
 
 `internal/server/httpapi` owns the shared HTTP problem contract. Server domain
@@ -117,7 +121,6 @@ Generated TypeScript schemas should expose the problem `code` enum. Shared UI
 helpers should provide:
 
 - an `isProblem(value)` type guard;
-- a `readProblem(response)` helper for `application/problem+json` responses;
 - typed accessors for common `details` members such as `capability` and
   `retryAfter`.
 

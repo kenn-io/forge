@@ -1,6 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
+import type { KataCommand } from "../../features/kata/kata-command.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 import KataIssueProperties from "./KataIssueProperties.svelte";
 
@@ -51,27 +54,28 @@ function renderProperties(
     ownerOptions: typeof ownerOptions;
     actionsDisabled: boolean;
     draftResetGeneration: number;
-    onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
-    onAssignOwner: (uid: string, owner: string) => boolean | Promise<boolean>;
-    onUnassignOwner: (uid: string) => boolean | Promise<boolean>;
-    onSetPriority: (uid: string, priority: number | null) => boolean | Promise<boolean>;
-    onAddLabel: (uid: string, label: string) => boolean | Promise<boolean>;
-    onRemoveLabel: (uid: string, label: string) => void | Promise<void>;
+    onPatchMetadata: (uid: string, patch: Record<string, unknown>) => KataCommand<boolean>;
+    onAssignOwner: (uid: string, owner: string) => KataCommand<boolean>;
+    onUnassignOwner: (uid: string) => KataCommand<boolean>;
+    onSetPriority: (uid: string, priority: number | null) => KataCommand<boolean>;
+    onAddLabel: (uid: string, label: string) => KataCommand<boolean>;
+    onRemoveLabel: (uid: string, label: string) => KataCommand<boolean>;
   }> = {},
 ) {
-  return render(KataIssueProperties, {
+  return render(AppRuntimeHarness, {
     props: {
+      component: KataIssueProperties,
       issue: makeIssue({
         owner: "fixture-user",
         metadata: { scheduled_on: "2026-06-01", deadline_on: "2026-06-05" },
       }),
       ownerOptions,
-      onPatchMetadata: vi.fn(async () => true),
-      onAssignOwner: vi.fn(async () => true),
-      onUnassignOwner: vi.fn(async () => true),
-      onSetPriority: vi.fn(async () => true),
-      onAddLabel: vi.fn(async () => true),
-      onRemoveLabel: vi.fn(),
+      onPatchMetadata: vi.fn(() => Effect.succeed(true)),
+      onAssignOwner: vi.fn(() => Effect.succeed(true)),
+      onUnassignOwner: vi.fn(() => Effect.succeed(true)),
+      onSetPriority: vi.fn(() => Effect.succeed(true)),
+      onAddLabel: vi.fn(() => Effect.succeed(true)),
+      onRemoveLabel: vi.fn(() => Effect.succeed(true)),
       ...props,
     },
   });
@@ -83,17 +87,18 @@ describe("KataIssueProperties", () => {
   });
 
   it("adds and removes labels", async () => {
-    const onAddLabel = vi.fn(async () => true);
-    const onRemoveLabel = vi.fn();
+    const onAddLabel = vi.fn(() => Effect.succeed(true));
+    const onRemoveLabel = vi.fn(() => Effect.succeed(true));
 
-    const view = render(KataIssueProperties, {
+    const view = render(AppRuntimeHarness, {
       props: {
+        component: KataIssueProperties,
         issue: makeIssue({ metadata: { deadline_on: "2026-06-05" } }),
         ownerOptions: [],
-        onPatchMetadata: vi.fn(async () => true),
-        onAssignOwner: vi.fn(async () => true),
-        onUnassignOwner: vi.fn(async () => true),
-        onSetPriority: vi.fn(async () => true),
+        onPatchMetadata: vi.fn(() => Effect.succeed(true)),
+        onAssignOwner: vi.fn(() => Effect.succeed(true)),
+        onUnassignOwner: vi.fn(() => Effect.succeed(true)),
+        onSetPriority: vi.fn(() => Effect.succeed(true)),
         onAddLabel,
         onRemoveLabel,
       },
@@ -115,7 +120,7 @@ describe("KataIssueProperties", () => {
   });
 
   it("keeps labels passive until label editing is enabled", async () => {
-    const onRemoveLabel = vi.fn();
+    const onRemoveLabel = vi.fn(() => Effect.succeed(true));
     renderProperties({ onRemoveLabel });
 
     const labels = screen.getByRole("list", { name: "Labels" });
@@ -140,7 +145,7 @@ describe("KataIssueProperties", () => {
 
   it("keeps the label draft visible when label creation fails", async () => {
     renderProperties({
-      onAddLabel: vi.fn(async () => false),
+      onAddLabel: vi.fn(() => Effect.succeed(false)),
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Add label" }));
@@ -151,19 +156,20 @@ describe("KataIssueProperties", () => {
   });
 
   it("persists due date and priority changes", async () => {
-    const onPatchMetadata = vi.fn(async () => true);
-    const onSetPriority = vi.fn(async () => true);
+    const onPatchMetadata = vi.fn(() => Effect.succeed(true));
+    const onSetPriority = vi.fn(() => Effect.succeed(true));
 
-    render(KataIssueProperties, {
+    render(AppRuntimeHarness, {
       props: {
+        component: KataIssueProperties,
         issue: makeIssue({ metadata: { deadline_on: "2026-06-05" } }),
         ownerOptions: [],
         onPatchMetadata,
-        onAssignOwner: vi.fn(async () => true),
-        onUnassignOwner: vi.fn(async () => true),
+        onAssignOwner: vi.fn(() => Effect.succeed(true)),
+        onUnassignOwner: vi.fn(() => Effect.succeed(true)),
         onSetPriority,
-        onAddLabel: vi.fn(async () => true),
-        onRemoveLabel: vi.fn(),
+        onAddLabel: vi.fn(() => Effect.succeed(true)),
+        onRemoveLabel: vi.fn(() => Effect.succeed(true)),
       },
     });
 
@@ -181,7 +187,7 @@ describe("KataIssueProperties", () => {
   });
 
   it("patches scheduled and due dates and closes editors on accepted replacement", async () => {
-    const onPatchMetadata = vi.fn(async () => true);
+    const onPatchMetadata = vi.fn(() => Effect.succeed(true));
     const view = renderProperties({ onPatchMetadata, draftResetGeneration: 0 });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit scheduled" }));
@@ -216,7 +222,7 @@ describe("KataIssueProperties", () => {
   });
 
   it("clears date properties and closes date editors on Escape", async () => {
-    const onPatchMetadata = vi.fn(async () => true);
+    const onPatchMetadata = vi.fn(() => Effect.succeed(true));
     renderProperties({ onPatchMetadata });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit scheduled" }));
@@ -250,7 +256,7 @@ describe("KataIssueProperties", () => {
 
   it("keeps the property editor open when a property mutation fails", async () => {
     renderProperties({
-      onPatchMetadata: vi.fn(async () => false),
+      onPatchMetadata: vi.fn(() => Effect.succeed(false)),
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit scheduled" }));
@@ -263,8 +269,8 @@ describe("KataIssueProperties", () => {
   });
 
   it("assigns highlighted, custom, and unassigned owners", async () => {
-    const onAssignOwner = vi.fn(async () => true);
-    const onUnassignOwner = vi.fn(async () => true);
+    const onAssignOwner = vi.fn(() => Effect.succeed(true));
+    const onUnassignOwner = vi.fn(() => Effect.succeed(true));
     const view = renderProperties({ onAssignOwner, onUnassignOwner, draftResetGeneration: 0 });
 
     await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
@@ -298,7 +304,7 @@ describe("KataIssueProperties", () => {
 
   it("keeps custom owner text visible when owner assignment fails", async () => {
     renderProperties({
-      onAssignOwner: vi.fn(async () => false),
+      onAssignOwner: vi.fn(() => Effect.succeed(false)),
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
@@ -311,7 +317,7 @@ describe("KataIssueProperties", () => {
   });
 
   it("fences closed and active property controls without disabling an already-open owner editor", async () => {
-    const onRemoveLabel = vi.fn();
+    const onRemoveLabel = vi.fn(() => Effect.succeed(true));
     const view = renderProperties({ onRemoveLabel });
 
     await view.rerender({ actionsDisabled: true });
@@ -348,7 +354,7 @@ describe("KataIssueProperties", () => {
 
   it("keeps a successful owner draft open until accepted replacement and preserves newer input", async () => {
     const assignment = deferred<boolean>();
-    const onAssignOwner = vi.fn(() => assignment.promise);
+    const onAssignOwner = vi.fn(() => Effect.promise(() => assignment.promise));
     const view = renderProperties({ draftResetGeneration: 0, onAssignOwner });
 
     await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
@@ -373,7 +379,7 @@ describe("KataIssueProperties", () => {
     const assignment = deferred<boolean>();
     const view = renderProperties({
       draftResetGeneration: 0,
-      onAssignOwner: vi.fn(() => assignment.promise),
+      onAssignOwner: vi.fn(() => Effect.promise(() => assignment.promise)),
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
@@ -425,7 +431,7 @@ describe("KataIssueProperties", () => {
   });
 
   it("clears the priority through the detail property control", async () => {
-    const onSetPriority = vi.fn(async () => true);
+    const onSetPriority = vi.fn(() => Effect.succeed(true));
     renderProperties({ issue: makeIssue({ priority: 2 }), onSetPriority });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit priority" }));

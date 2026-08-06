@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect";
+import { Effect, Option, Ref } from "effect";
 import type { AppRuntime } from "../../app/runtime.js";
 import { executeRoborevRequest, type RoborevClient, RoborevStreamError } from "../../api/roborev/client.js";
 import type { components, operations } from "../../api/roborev/generated/schema.js";
@@ -506,39 +506,65 @@ export function createJobsStore(opts: JobsStoreOptions) {
     Effect.gen(function* () {
       const workflow = yield* RoborevWorkflow;
       const query = buildQuery();
-      const baseline = yield* fetchJobAuthority(id);
-      if (baseline === undefined) {
-        return yield* Effect.fail(
-          RoborevResponseError.make({
-            operation: "load authoritative Roborev rerun baseline",
-            message: "Roborev job was not found before rerun",
-            cause: new Error(`missing Roborev job ${id}`),
-          }),
-        );
-      }
+      const baselineRetryCount = yield* Ref.make<Option.Option<number>>(Option.none());
       const observedValue = { success: true } satisfies RerunJobResponse;
       return yield* workflow.mutate({
         key: `job:${id}`,
         operation: "rerun Roborev job",
-        mutation: executeRoborevRequest("rerun Roborev job", (signal) =>
-          client.POST("/api/job/rerun", {
-            body: { job_id: id },
-            signal,
-          }),
-        ).pipe(
-          Effect.flatMap((result) =>
-            result.error || !result.data
-              ? Effect.fail(
-                  RoborevMutationError.make({
-                    operation: "rerun Roborev job",
-                    cause: result.error ?? new Error("Roborev rerun response was empty"),
-                  }),
-                )
-              : Effect.succeed(result.data),
-          ),
-        ),
+        mutation: Effect.gen(function* () {
+          const baseline = yield* fetchJobAuthority(id).pipe(
+            Effect.catchTag("TransientTransportError", (cause) =>
+              Effect.fail(
+                RoborevResponseError.make({
+                  operation: "load authoritative Roborev rerun baseline",
+                  message: "Failed to load Roborev rerun baseline before submission",
+                  cause,
+                }),
+              ),
+            ),
+          );
+          if (baseline === undefined) {
+            return yield* Effect.fail(
+              RoborevResponseError.make({
+                operation: "load authoritative Roborev rerun baseline",
+                message: "Roborev job was not found before rerun",
+                cause: new Error(`missing Roborev job ${id}`),
+              }),
+            );
+          }
+          yield* Ref.set(baselineRetryCount, Option.some(baseline.retry_count));
+          const result = yield* executeRoborevRequest("rerun Roborev job", (signal) =>
+            client.POST("/api/job/rerun", {
+              body: { job_id: id },
+              signal,
+            }),
+          );
+          return yield* result.error || !result.data
+            ? Effect.fail(
+                RoborevMutationError.make({
+                  operation: "rerun Roborev job",
+                  cause: result.error ?? new Error("Roborev rerun response was empty"),
+                }),
+              )
+            : Effect.succeed(result.data);
+        }),
         reconcile: (acknowledged) =>
-          reconcileJobMutation(id, query, acknowledged, observedValue, (job) => job.retry_count > baseline.retry_count),
+          Ref.get(baselineRetryCount).pipe(
+            Effect.flatMap(
+              Option.match({
+                onNone: () =>
+                  Effect.fail(
+                    RoborevResponseError.make({
+                      operation: "reconcile Roborev rerun",
+                      message: "Rerun baseline was unavailable during reconciliation",
+                      cause: new Error(`missing Roborev rerun baseline ${id}`),
+                    }),
+                  ),
+                onSome: (retryCount) =>
+                  reconcileJobMutation(id, query, acknowledged, observedValue, (job) => job.retry_count > retryCount),
+              }),
+            ),
+          ),
         onAcknowledgedRefreshFailure: () =>
           Effect.sync(() => opts.onError?.("Job was rerun, but the refreshed job list is unavailable")),
       });

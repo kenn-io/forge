@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick, untrack, type Snippet } from "svelte";
+  import { Effect } from "effect";
   import { Button } from "@kenn-io/kit-ui";
   import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
   import XIcon from "@lucide/svelte/icons/x";
@@ -13,6 +14,9 @@
     type TabbedPanelLeaf,
   } from "./tabbed-panel-layout.js";
   import type { PaneLayoutStore, PaneTabSpec } from "../../stores/paneLayout.svelte.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { observeResize } from "../../browser/observers.js";
 
   interface Props {
     layout: PaneLayoutStore;
@@ -64,6 +68,8 @@
     onFocusPane = undefined,
     paneLeafExtras = undefined,
   }: Props = $props();
+  const runtime = getAppRuntime();
+  let focusExecution: AppExecution<void, never> | null = null;
 
   /**
    * The workspace pane draws its own tab strip: one tab per session, plus the dock.
@@ -178,10 +184,21 @@
    * a pane declined restoration and stranded focus. Focus already elsewhere is
    * never stolen, so a background close leaves the user's control alone.
    */
-  async function reclaimFocus(): Promise<void> {
-    await tick();
-    const focused = document.activeElement;
-    if (focused === null || focused === document.body) host?.focus();
+  function reclaimFocus(): void {
+    focusExecution?.interrupt();
+    focusExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => {
+          const focused = document.activeElement;
+          if (focused === null || focused === document.body) host?.focus();
+        })),
+      ),
+      {
+        operation: "restore detail pane focus",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   /**
@@ -192,7 +209,7 @@
    */
   function closePane(tabKey: string): void {
     layout.setHidden(tabKey, true);
-    void reclaimFocus();
+    reclaimFocus();
   }
 
   // The same stranding happens without a click: a released or deleted workspace
@@ -203,7 +220,7 @@
     const now = availableTabs;
     const removed = lastAvailableTabs.some((key) => !now.includes(key));
     lastAvailableTabs = now;
-    if (removed) void reclaimFocus();
+    if (removed) reclaimFocus();
   });
 
   // Always tracked, whether or not the host wants the callback: which pane the
@@ -270,11 +287,17 @@
     }
     hostWidth = Math.round(el.getBoundingClientRect().width);
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver((entries) => {
-      hostWidth = Math.round(entries[0]?.contentRect.width ?? el.getBoundingClientRect().width);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.scoped(
+          observeResize(el, (entries) => {
+            hostWidth = Math.round(entries[0]?.contentRect.width ?? el.getBoundingClientRect().width);
+          }).pipe(Effect.andThen(Effect.never)),
+        ),
+        { operation: "observe detail pane width", safeContext: {}, onFailure: () => {} },
+      ),
+    );
+    return execution.interrupt;
   });
 </script>
 

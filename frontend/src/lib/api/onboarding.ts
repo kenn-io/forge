@@ -1,4 +1,6 @@
-import { apiErrorMessage, client } from "./runtime.ts";
+import { Effect } from "effect";
+import { InvalidExternalPayload } from "./effect-errors.js";
+import { executeGeneratedApiRequest } from "./generated-api.js";
 import type { PullRequest } from "./types.js";
 
 export interface CreatedWorkspace {
@@ -6,21 +8,31 @@ export interface CreatedWorkspace {
   status: string;
 }
 
-export async function createPullRequestWorkspace(pull: PullRequest): Promise<CreatedWorkspace> {
-  const { data, error } = await client.POST("/workspaces", {
-    body: {
-      provider: pull.repo.provider,
-      platform_host: pull.repo.platform_host,
-      owner: pull.repo.owner,
-      name: pull.repo.name,
-      mr_number: pull.Number,
-    },
-  });
-  if (!data?.id) {
-    throw new Error(apiErrorMessage(error, "Could not create workspace"));
+export const createPullRequestWorkspace = Effect.fn("Onboarding.createPullRequestWorkspace")(function* (
+  pull: PullRequest,
+) {
+  const data = yield* executeGeneratedApiRequest("create pull request workspace", (client, signal) =>
+    client.POST("/workspaces", {
+      body: {
+        provider: pull.repo.provider,
+        platform_host: pull.repo.platform_host,
+        owner: pull.repo.owner,
+        name: pull.repo.name,
+        mr_number: pull.Number,
+      },
+      signal,
+    }),
+  );
+  if (!data.id) {
+    return yield* Effect.fail(
+      InvalidExternalPayload.make({
+        operation: "decode created pull request workspace",
+        cause: new Error("workspace response did not include an id"),
+      }),
+    );
   }
   return {
     id: data.id,
     status: data.status,
   };
-}
+});

@@ -1,8 +1,11 @@
 <script lang="ts">
   import SlidersHorizontalIcon from "@lucide/svelte/icons/sliders-horizontal";
   import { autoReposition, floatingPopoverStyle } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
   import { tick } from "svelte";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import {
     hostedWorkspaceControls,
     workspaceControlsBusy,
@@ -21,6 +24,7 @@
   }
 
   const { showStripActions = true }: Props = $props();
+  const runtime = getAppRuntime();
 
   // One button in a pane's tab strip, replacing the three bars that used to stack
   // above an embedded terminal. The contents come from the live view, which owns
@@ -35,6 +39,7 @@
   // detail surface, which keeps rendering while the user selects a different item,
   // so the hosted workspace can change under an open popover.
   let openedFor = $state<string | null>(null);
+  let placementExecution: AppExecution<void, never> | null = null;
 
   // Both cases leave a popover whose buttons no longer act on what the user opened
   // it for: the host went away (claim released, pane closed, workspace deleted), or
@@ -74,6 +79,8 @@
   });
 
   function close(): void {
+    placementExecution?.interrupt();
+    placementExecution = null;
     open = false;
     openedFor = null;
   }
@@ -113,7 +120,7 @@
     return () => node.remove();
   }
 
-  async function toggle(): Promise<void> {
+  function toggle(): void {
     if (open) {
       close();
       return;
@@ -122,10 +129,19 @@
     openedFor = controls?.workspaceKey ?? null;
     // Twice, because the first measurement happens before the contents have laid
     // out and a popover placed against a zero-height panel picks the wrong side.
-    await tick();
-    position();
-    await tick();
-    position();
+    placementExecution = runtime.runCommand(
+      Effect.gen(function* () {
+        yield* Effect.promise(() => tick());
+        position();
+        yield* Effect.promise(() => tick());
+        position();
+      }),
+      {
+        operation: "position workspace controls",
+        safeContext: { workspaceKey: openedFor ?? "" },
+        onFailure: () => {},
+      },
+    );
   }
 </script>
 
@@ -142,7 +158,7 @@
       aria-haspopup="true"
       aria-expanded={open}
       title="Workspace controls"
-      onclick={() => void toggle()}
+      onclick={toggle}
     >
       <SlidersHorizontalIcon size="13" strokeWidth="2" aria-hidden="true" />
     </button>

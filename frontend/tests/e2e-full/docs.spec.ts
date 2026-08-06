@@ -218,6 +218,37 @@ test.describe("docs workspace", () => {
     }
   });
 
+  test("reconciles a created file when the server commits before the response is lost", async ({ page }) => {
+    const server = await startDocsServer(page);
+    let createCommitted = false;
+    try {
+      await page.route("**/api/v1/docs/folders/notes/file**", async (route) => {
+        if (route.request().method() !== "POST" || createCommitted) {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        expect(response.status()).toBe(201);
+        createCommitted = true;
+        await route.abort("connectionfailed");
+      });
+      await page.goto(`${server.info.base_url}/docs`);
+      await expect(page).toHaveURL(/doc=README\.md/);
+      const docs = new DocsPane(page);
+
+      await docs.createFile("recovered-create.md");
+
+      expect(createCommitted).toBe(true);
+      await expect(page).toHaveURL(/doc=recovered-create\.md/);
+      await expect(docs.treeRow("recovered-create.md")).toBeVisible();
+      await page.reload();
+      await expect(docs.treeRow("recovered-create.md")).toBeVisible();
+    } finally {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await server.stop();
+    }
+  });
+
   test("saves edited markdown and renders the updated document", async ({ page }) => {
     const server = await startDocsServer(page);
     try {
@@ -243,6 +274,38 @@ test.describe("docs workspace", () => {
       await expect(page.getByRole("heading", { name: "Updated Notes", level: 1 })).toBeVisible();
       await expect(page.getByText("Saved through the docs editor.")).toBeVisible();
     } finally {
+      await server.stop();
+    }
+  });
+
+  test("reconciles an edited document when the server commits before the response is lost", async ({ page }) => {
+    const server = await startDocsServer(page);
+    let saveCommitted = false;
+    try {
+      await page.route("**/api/v1/docs/folders/notes/file**", async (route) => {
+        if (route.request().method() !== "PUT" || saveCommitted) {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        expect(response.ok()).toBe(true);
+        saveCommitted = true;
+        await route.abort("connectionfailed");
+      });
+      await page.goto(`${server.info.base_url}/docs?folder=notes&doc=README.md`);
+      await expect(page.getByRole("heading", { name: "Welcome to Notes" })).toBeVisible();
+      const editor = await openDocsEditor(page);
+      await replaceEditorText(page, editor, "# Recovered Save\n\nConfirmed from the authoritative file read.\n");
+
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+
+      await expect.poll(() => saveCommitted).toBe(true);
+      await expect(page.getByRole("heading", { name: "Recovered Save", level: 1 })).toBeVisible();
+      await expect(page.getByText("Confirmed from the authoritative file read.")).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole("heading", { name: "Recovered Save", level: 1 })).toBeVisible();
+    } finally {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
       await server.stop();
     }
   });

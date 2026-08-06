@@ -1,20 +1,54 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect, Layer } from "effect";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
-import type { MockedFunction } from "vite-plus/test";
-import RepoImportModal from "./RepoImportModal.svelte";
-import { bulkAddRepos, previewRepos } from "../../api/settings.js";
+import type { RepoPreviewResponse, SettingsSnapshot } from "../../stores/settings-workflow.js";
+import RepoImportModalRuntimeHarness from "./RepoImportModalRuntimeHarness.svelte";
 import { installOffsetParentStub, removeOffsetParentStub } from "../../../test/stubOffsetParent.js";
 
 beforeAll(installOffsetParentStub);
 afterAll(removeOffsetParentStub);
 
-vi.mock("../../api/settings.js", () => ({
-  previewRepos: vi.fn(),
-  bulkAddRepos: vi.fn(),
+const { preview, bulk } = vi.hoisted(() => ({
+  preview: vi.fn(),
+  bulk: vi.fn(),
 }));
 
-const preview = previewRepos as MockedFunction<typeof previewRepos>;
-const bulk = bulkAddRepos as MockedFunction<typeof bulkAddRepos>;
+vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
+  const { ApiProblemError } = await import("../../api/effect-errors.js");
+  const settingsFailure = (operation: string, cause: unknown) =>
+    new ApiProblemError({
+      operation,
+      problem: {
+        code: "upstreamError",
+        detail: cause instanceof Error ? cause.message : String(cause),
+        type: "about:blank",
+      },
+    });
+  return {
+    ...actual,
+    SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({
+      previewRepos: (owner, pattern, options) =>
+        Effect.tryPromise({
+          try: () => preview(owner, pattern, options),
+          catch: (cause) => settingsFailure("preview repositories", cause),
+        }),
+      bulkAddRepos: (repos) =>
+        Effect.tryPromise({
+          try: () => bulk(repos),
+          catch: (cause) => settingsFailure("add repositories", cause),
+        }),
+    }),
+  };
+});
+
+function renderRepoImportModal(props: {
+  open: boolean;
+  onClose: () => void;
+  onImported: (settings: SettingsSnapshot) => void;
+}): void {
+  render(RepoImportModalRuntimeHarness, { props });
+}
 
 function defaultFleetSettings() {
   return {
@@ -92,9 +126,7 @@ describe("RepoImportModal", () => {
       pattern: "*",
       repos: rows,
     });
-    render(RepoImportModal, {
-      props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
-    });
+    renderRepoImportModal({ open: true, onClose: vi.fn(), onImported: vi.fn() });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), {
       target: { value: "acme/*" },
@@ -153,9 +185,7 @@ describe("RepoImportModal", () => {
       agents: [],
       fleet: defaultFleetSettings(),
     });
-    render(RepoImportModal, {
-      props: { open: true, onClose: vi.fn(), onImported },
-    });
+    renderRepoImportModal({ open: true, onClose: vi.fn(), onImported });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), {
       target: { value: "acme/*" },
@@ -232,9 +262,7 @@ describe("RepoImportModal", () => {
       agents: [],
       fleet: defaultFleetSettings(),
     });
-    render(RepoImportModal, {
-      props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
-    });
+    renderRepoImportModal({ open: true, onClose: vi.fn(), onImported: vi.fn() });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), {
       target: { value: "acme/*" },
@@ -272,9 +300,7 @@ describe("RepoImportModal", () => {
 
   it("does not start duplicate previews while loading", async () => {
     preview.mockReturnValue(new Promise(() => {}));
-    render(RepoImportModal, {
-      props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
-    });
+    renderRepoImportModal({ open: true, onClose: vi.fn(), onImported: vi.fn() });
 
     const input = screen.getByLabelText("Repository pattern");
     await fireEvent.input(input, { target: { value: "acme/*" } });
@@ -285,9 +311,7 @@ describe("RepoImportModal", () => {
   });
 
   it("sets Forgejo and Gitea default hosts and keeps owner patterns non-nested", async () => {
-    render(RepoImportModal, {
-      props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
-    });
+    renderRepoImportModal({ open: true, onClose: vi.fn(), onImported: vi.fn() });
 
     const host = screen.getByLabelText("Host") as HTMLInputElement;
     const pattern = screen.getByLabelText("Repository pattern");
@@ -326,9 +350,7 @@ describe("RepoImportModal", () => {
   });
 
   it("keeps tab focus inside the modal", async () => {
-    render(RepoImportModal, {
-      props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
-    });
+    renderRepoImportModal({ open: true, onClose: vi.fn(), onImported: vi.fn() });
 
     const input = screen.getByLabelText("Repository pattern");
     await waitFor(() => expect(document.activeElement).toBe(input));
@@ -340,15 +362,13 @@ describe("RepoImportModal", () => {
   });
 
   it("ignores stale preview responses after input changes", async () => {
-    let resolveFirst: (value: Awaited<ReturnType<typeof previewRepos>>) => void = () => {};
+    let resolveFirst: (value: RepoPreviewResponse) => void = () => {};
     preview.mockReturnValueOnce(
       new Promise((resolve) => {
         resolveFirst = resolve;
       }),
     );
-    render(RepoImportModal, {
-      props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
-    });
+    renderRepoImportModal({ open: true, onClose: vi.fn(), onImported: vi.fn() });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), {
       target: { value: "acme/*" },
@@ -378,9 +398,7 @@ describe("RepoImportModal", () => {
       repos: rows,
     });
     preview.mockRejectedValueOnce(new Error("GitHub API error: boom"));
-    render(RepoImportModal, {
-      props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
-    });
+    renderRepoImportModal({ open: true, onClose: vi.fn(), onImported: vi.fn() });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), {
       target: { value: "acme/*" },

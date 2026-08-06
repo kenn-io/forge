@@ -299,13 +299,11 @@ export function createDiffStore(opts: DiffStoreOptions) {
   let diff = $state<DiffResult | null>(null);
   let loading = $state(false);
   let storeError = $state<string | null>(null);
-  let abortController: AbortController | null = null;
   let activeCommitLoad: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
   let activeWorkspaceLoad: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
 
   let fileList = $state<FilesResult | null>(null);
   let fileListLoading = $state(false);
-  let fileListAbortController: AbortController | null = null;
 
   let tabWidth = $state(loadTabWidth());
   let wordWrap = $state(safeGetItem("diff-word-wrap") === "true");
@@ -664,10 +662,6 @@ export function createDiffStore(opts: DiffStoreOptions) {
   }
 
   function prepareProviderDiffRead(includeFiles: boolean): void {
-    abortController?.abort();
-    abortController = null;
-    fileListAbortController?.abort();
-    fileListAbortController = null;
     fileList = null;
     diff = null;
     clearFilePreviewCache();
@@ -1131,10 +1125,6 @@ export function createDiffStore(opts: DiffStoreOptions) {
     if (workspaceScopeChanged) {
       resetDiffScopeState();
     }
-    abortController?.abort();
-    abortController = null;
-    fileListAbortController?.abort();
-    fileListAbortController = null;
     const isCurrent = () => workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base);
     let acknowledged = false;
     const program = Effect.gen(function* () {
@@ -1318,8 +1308,6 @@ export function createDiffStore(opts: DiffStoreOptions) {
     clearFilePreviewCache();
 
     activeCommitLoad?.interrupt();
-    fileListAbortController?.abort();
-    fileListAbortController = null;
     fileListLoading = false;
     diff = null;
     fileList = null;
@@ -1395,10 +1383,6 @@ export function createDiffStore(opts: DiffStoreOptions) {
     activeWorkspaceLoad = null;
     activeCommitsLoad?.interrupt();
     activeCommitsLoad = null;
-    abortController?.abort();
-    abortController = null;
-    fileListAbortController?.abort();
-    fileListAbortController = null;
     diff = null;
     fileList = null;
     storeError = null;
@@ -1439,10 +1423,6 @@ export function createDiffStore(opts: DiffStoreOptions) {
     activeWorkspaceLoad = null;
     activeCommitsLoad?.interrupt();
     activeCommitsLoad = null;
-    abortController?.abort();
-    abortController = null;
-    fileListAbortController?.abort();
-    fileListAbortController = null;
     loading = false;
     fileListLoading = false;
     commitsLoading = false;

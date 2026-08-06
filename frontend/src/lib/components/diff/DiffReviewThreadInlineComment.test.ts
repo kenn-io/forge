@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
+import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineCommentRuntimeHarness.svelte";
 import type { ReviewThread } from "./review-thread-context.js";
 
 type GlobalWithResizeObserver = { ResizeObserver?: unknown };

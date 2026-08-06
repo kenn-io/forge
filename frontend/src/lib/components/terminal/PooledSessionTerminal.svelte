@@ -1,8 +1,15 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { Effect } from "effect";
+  import { tick, untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import TerminalPane from "./TerminalPane.svelte";
   import { focusIsSacred } from "./terminal-focus.ts";
-  import { consumeSessionFocus, type MountedSession } from "../../stores/session-host.svelte.ts";
+  import {
+    consumeSessionFocus,
+    pendingSessionFocus,
+    type MountedSession,
+  } from "../../stores/session-host.svelte.ts";
 
   interface Props {
     session: MountedSession;
@@ -13,6 +20,7 @@
   }
 
   let { session, parking, slotEl, active, onExit }: Props = $props();
+  const appRuntime = getAppRuntime();
 
   let wrapper = $state<HTMLElement | null>(null);
   let terminalPane = $state<TerminalPane | null>(null);
@@ -53,7 +61,6 @@
     if (!node || !park) return;
     attached = false;
     park.appendChild(node);
-    let cancelled = false;
     if (!destination || destination === park) {
       // Parked with nowhere to go: the pane closed — unless this park is the
       // transient first half of a cross-flush transfer whose destination
@@ -61,30 +68,40 @@
       // same tick-then-frame cadence attachment uses before dropping
       // ownership, so focus a close took is never replayed on some later,
       // unrelated reveal, while a transfer mid-handoff keeps it.
-      void (async () => {
-        await tick();
-        if (cancelled) return;
-        requestAnimationFrame(() => {
-          if (cancelled) return;
-          ownsFocus = false;
-        });
-      })();
-      return () => {
-        cancelled = true;
-      };
+      const execution = untrack(() =>
+        appRuntime.runCommand(
+          Effect.promise(() => tick()).pipe(
+            Effect.andThen(nextAnimationFrame),
+            Effect.andThen(Effect.sync(() => {
+              ownsFocus = false;
+            })),
+          ),
+          {
+            operation: "park pooled terminal session",
+            safeContext: { sessionKey: session.hostKey },
+            onFailure: () => {},
+          },
+        ),
+      );
+      return execution.interrupt;
     }
-    void (async () => {
-      await tick();
-      if (cancelled) return;
-      destination.appendChild(node);
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        attached = true;
-      });
-    })();
-    return () => {
-      cancelled = true;
-    };
+    const execution = untrack(() =>
+      appRuntime.runCommand(
+        Effect.promise(() => tick()).pipe(
+          Effect.andThen(Effect.sync(() => destination.appendChild(node))),
+          Effect.andThen(nextAnimationFrame),
+          Effect.andThen(Effect.sync(() => {
+            attached = true;
+          })),
+        ),
+        {
+          operation: "attach pooled terminal session",
+          safeContext: { sessionKey: session.hostKey },
+          onFailure: () => {},
+        },
+      ),
+    );
+    return execution.interrupt;
   });
 
   // Focus the terminal on an explicit request (whether it arrived before
@@ -98,32 +115,50 @@
     if (!attached || !active) return;
     const node = wrapper;
     if (!node) return;
-    const requested = consumeSessionFocus(session.hostKey);
+    const queuedRequest = pendingSessionFocus(session.hostKey);
     // A soft request is navigation asking, not the user: it loses to a sacred
     // focus target (form fields, dialogs) but wins over a plain button, the
     // same contract renderer autofocus follows at creation.
     const granted =
-      requested === "explicit" || (requested === "soft" && !focusIsSacred(document.activeElement));
+      queuedRequest === "explicit" || (queuedRequest === "soft" && !focusIsSacred(document.activeElement));
     const unclaimed = document.activeElement === null || document.activeElement === document.body;
-    if (!granted && !(ownsFocus && unclaimed)) return;
+    if (!granted && !(ownsFocus && unclaimed)) {
+      if (queuedRequest !== false) untrack(() => consumeSessionFocus(session.hostKey));
+      return;
+    }
     const focusAtDecision = document.activeElement;
-    void (async () => {
-      // The active/attached state that admitted this effect also removes
-      // inert. Wait for that DOM update before asking xterm to focus; browsers
-      // silently ignore focus() inside an inert subtree.
-      await tick();
-      if (!attached || !active || wrapper !== node || node.inert) return;
-      if (
-        requested !== "explicit" &&
-        document.activeElement !== focusAtDecision &&
-        (focusIsSacred(document.activeElement) ||
-          (document.activeElement !== null && document.activeElement !== document.body))
-      ) {
-        return;
-      }
-      terminalPane?.focus();
-      if (!node.contains(document.activeElement)) node.focus();
-    })();
+    const execution = untrack(() =>
+      appRuntime.runCommand(
+        Effect.promise(() => tick()).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              // The active/attached state that admitted this effect also removes
+              // inert. Wait for that DOM update before asking xterm to focus; browsers
+              // silently ignore focus() inside an inert subtree.
+              if (!attached || !active || wrapper !== node || node.inert) return;
+              const requested = queuedRequest === false ? false : consumeSessionFocus(session.hostKey);
+              if (queuedRequest !== false && requested === false) return;
+              if (
+                requested !== "explicit" &&
+                document.activeElement !== focusAtDecision &&
+                (focusIsSacred(document.activeElement) ||
+                  (document.activeElement !== null && document.activeElement !== document.body))
+              ) {
+                return;
+              }
+              terminalPane?.focus();
+              if (!node.contains(document.activeElement)) node.focus();
+            }),
+          ),
+        ),
+        {
+          operation: "focus pooled terminal session",
+          safeContext: { sessionKey: session.hostKey },
+          onFailure: () => {},
+        },
+      ),
+    );
+    return execution.interrupt;
   });
 
   // The wrapper is reparented out of this component's own fragment, so Svelte

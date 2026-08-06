@@ -8,7 +8,7 @@
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import XIcon from "@lucide/svelte/icons/x";
-  import { untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
   import type {
@@ -18,7 +18,10 @@
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { StoreInstances } from "../../types.js";
-  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
+  import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import {
     Button,
     Card,
@@ -117,6 +120,7 @@
     jumpToReviewThread,
   }: Props = $props();
   const stores = getStores() as StoreInstances | undefined;
+  const runtime = getAppRuntime();
   const detailStore = stores?.detail;
   const diffStore = stores?.diff;
   const diffReviewDraft = stores?.diffReviewDraft;
@@ -1003,7 +1007,11 @@
   }
 
   let copiedId = $state<string | null>(null);
-  let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+  let copyExecution: AppExecution<void, never> | undefined;
+
+  onDestroy(() => {
+    copyExecution?.interrupt();
+  });
   let editingId = $state<number | null>(null);
   let editDraft = $state("");
   let savingEditId = $state<number | null>(null);
@@ -1244,15 +1252,25 @@
   }
 
   function copyText(id: string, text: string): void {
-    void copyToClipboard(text).then((ok) => {
-      if (!ok) return;
-      copiedId = id;
-      if (copyTimeout !== null) clearTimeout(copyTimeout);
-      copyTimeout = setTimeout(() => {
-        copiedId = null;
-        copyTimeout = null;
-      }, 1500);
-    });
+    copyExecution?.interrupt();
+    copyExecution = runtime.runCommand(
+      transientClipboardFeedback({
+        text,
+        write: copyToClipboard,
+        isActive: () => true,
+        onCopied: () => {
+          copiedId = id;
+        },
+        onExpired: () => {
+          copiedId = null;
+        },
+      }),
+      {
+        operation: "copy timeline content",
+        safeContext: { id },
+        onFailure: () => {},
+      },
+    );
   }
 
   function suggestionKey(event: PREvent | IssueEvent, block: MarkdownSuggestionBlock): string {
@@ -1268,23 +1286,11 @@
     return blocks.some((block) => block.type === "suggestion");
   }
 
-  async function renderedMarkdownTextHtml(text: string): Promise<string> {
-    return renderMarkdown(
-      text,
-      provider && repoOwner && repoName && repoPath
-        ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath }
-        : undefined,
-    );
-  }
-
-  function renderedMarkdownTextHtmlSync(text: string): string {
-    return renderMarkdownSync(
-      text,
-      provider && repoOwner && repoName && repoPath
-        ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath }
-        : undefined,
-    );
-  }
+  const markdownRepo = $derived(
+    provider && repoOwner && repoName && repoPath
+      ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath }
+      : undefined,
+  );
 
   function suggestionRequest(
     thread: ReviewThread,
@@ -1416,26 +1422,6 @@
       template.content.lastElementChild?.insertAdjacentHTML("beforeend", button);
     }
     return template.innerHTML;
-  }
-
-  async function renderedBodyHtml(event: PREvent | IssueEvent, inlineReplyEntry?: TimelineEntry): Promise<string> {
-    const html = await renderMarkdown(
-      event.Body,
-      provider && repoOwner && repoName && repoPath
-        ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath }
-        : undefined,
-    );
-    return inlineReplyEntry ? withInlineReplyButton(html, inlineReplyEntry) : html;
-  }
-
-  function renderedBodyHtmlSync(event: PREvent | IssueEvent, inlineReplyEntry?: TimelineEntry): string {
-    const html = renderMarkdownSync(
-      event.Body,
-      provider && repoOwner && repoName && repoPath
-        ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath }
-        : undefined,
-    );
-    return inlineReplyEntry ? withInlineReplyButton(html, inlineReplyEntry) : html;
   }
 
   function handleInlineReplyBodyClick(event: MouseEvent, entry: TimelineEntry | undefined): void {
@@ -1599,11 +1585,7 @@
                   {#if block.type === "markdown"}
                     {#if block.text.trim().length > 0}
                       <div class="event-body-segment">
-                        {#await renderedMarkdownTextHtml(block.text)}
-                          {@html renderedMarkdownTextHtmlSync(block.text)}
-                        {:then html}
-                          {@html html}
-                        {/await}
+                        <MarkdownHtml raw={block.text} repo={markdownRepo} />
                       </div>
                     {/if}
                   {:else if reviewThread}
@@ -1627,11 +1609,7 @@
                   {:else}
                     {@const fallback = "```suggestion\n" + block.replacement + "\n```"}
                     <div class="event-body-segment">
-                      {#await renderedMarkdownTextHtml(fallback)}
-                        {@html renderedMarkdownTextHtmlSync(fallback)}
-                      {:then html}
-                        {@html html}
-                      {/await}
+                      <MarkdownHtml raw={fallback} repo={markdownRepo} />
                     </div>
                   {/if}
                 {/each}
@@ -1649,11 +1627,13 @@
                 {/if}
               </div>
             {:else}
-              {#await renderedBodyHtml(event, inlineReplyEntry)}
-                {@html renderedBodyHtmlSync(event, inlineReplyEntry)}
-              {:then html}
-                {@html html}
-              {/await}
+              <MarkdownHtml
+                raw={event.Body}
+                repo={markdownRepo}
+                transformHtml={inlineReplyEntry
+                  ? (html) => withInlineReplyButton(html, inlineReplyEntry)
+                  : undefined}
+              />
             {/if}
           {:else}
             {event.Body}
@@ -2303,6 +2283,8 @@
   .commit-title,
   .system-event-summary,
   .system-event-link {
+    display: block;
+    max-width: 100%;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

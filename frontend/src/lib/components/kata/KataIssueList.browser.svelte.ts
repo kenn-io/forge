@@ -6,7 +6,7 @@ import "../../../app.css";
 
 import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
 import type { KataCurrentView } from "../../features/kata/kataWorkspaceAuthority.js";
-import KataIssueList from "./KataIssueList.svelte";
+import KataIssueListRuntimeHarness from "./KataIssueListRuntimeHarness.svelte";
 
 function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
   return {
@@ -43,7 +43,7 @@ describe("KataIssueList table geometry (browser)", () => {
   it("opens the column picker from the keyboard and restores focus on Escape", async () => {
     await page.viewport(980, 620);
     const issue = task();
-    render(KataIssueList, {
+    render(KataIssueListRuntimeHarness, {
       props: {
         currentView: currentView([issue]),
         issueCatalog: [issue],
@@ -70,7 +70,7 @@ describe("KataIssueList table geometry (browser)", () => {
     await page.viewport(980, 620);
 
     const issue = task();
-    const { container } = render(KataIssueList, {
+    const { container } = render(KataIssueListRuntimeHarness, {
       props: {
         currentView: currentView([issue]),
         issueCatalog: [issue],
@@ -118,7 +118,7 @@ describe("KataIssueList table geometry (browser)", () => {
       }),
     );
     const selected = issues[8]!;
-    const { container, rerender } = render(KataIssueList, {
+    const { container, rerender } = render(KataIssueListRuntimeHarness, {
       props: {
         currentView: currentView(issues),
         issueCatalog: issues,
@@ -183,7 +183,7 @@ describe("KataIssueList table geometry (browser)", () => {
     );
     const previouslySelected = issues[7]!;
     const nextSelected = issues[8]!;
-    const { container, rerender } = render(KataIssueList, {
+    const { container, rerender } = render(KataIssueListRuntimeHarness, {
       props: {
         currentView: currentView(issues),
         issueCatalog: issues,

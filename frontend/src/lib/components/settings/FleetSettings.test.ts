@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import * as flash from "../../stores/flash.svelte.js";
 
@@ -8,15 +9,23 @@ const { mockUpdateFleetSettings } = vi.hoisted(() => ({
   mockUpdateFleetSettings: vi.fn(),
 }));
 
-vi.mock("../../api/settings.js", () => ({
-  updateFleetSettings: mockUpdateFleetSettings,
-}));
+vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
+  return {
+    ...actual,
+    SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({
+      updateFleet: (request) => mockUpdateFleetSettings(request),
+    }),
+  };
+});
 
-vi.mock("../../stores/embed-config.svelte.js", () => ({
+vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../stores/embed-config.svelte.js")>()),
   isEmbedded: () => false,
 }));
 
 import FleetSettings from "./FleetSettings.svelte";
+import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 
 afterEach(() => {
   for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
@@ -48,6 +57,12 @@ function fleetSettings(overrides: Partial<FleetSettingsType> = {}): FleetSetting
   };
 }
 
+function renderFleetSettings(fleet: FleetSettingsType, onUpdate = vi.fn()): void {
+  render(SettingsRuntimeHarness, {
+    props: { component: FleetSettings, componentProps: { fleet, onUpdate } },
+  });
+}
+
 describe("FleetSettings", () => {
   afterEach(() => {
     cleanup();
@@ -55,12 +70,7 @@ describe("FleetSettings", () => {
   });
 
   it("shows disabled federation while keeping saved membership editable", () => {
-    render(FleetSettings, {
-      props: {
-        fleet: fleetSettings(),
-        onUpdate: vi.fn(),
-      },
-    });
+    renderFleetSettings(fleetSettings());
 
     const toggle = screen.getByRole("checkbox", {
       name: "Enable fleet federation",
@@ -84,14 +94,9 @@ describe("FleetSettings", () => {
       peer_timeout: "4s",
       restart_required: true,
     });
-    mockUpdateFleetSettings.mockResolvedValue(saved);
+    mockUpdateFleetSettings.mockReturnValue(Effect.succeed(saved));
 
-    render(FleetSettings, {
-      props: {
-        fleet: fleetSettings(),
-        onUpdate,
-      },
-    });
+    renderFleetSettings(fleetSettings(), onUpdate);
 
     await fireEvent.click(screen.getByRole("checkbox", { name: "Enable fleet federation" }));
     await fireEvent.input(screen.getByLabelText("Local fleet key"), {
@@ -142,23 +147,20 @@ describe("FleetSettings", () => {
   });
 
   it("keeps SSH platform custom values editable", async () => {
-    mockUpdateFleetSettings.mockResolvedValue(fleetSettings());
+    mockUpdateFleetSettings.mockReturnValue(Effect.succeed(fleetSettings()));
 
-    render(FleetSettings, {
-      props: {
-        fleet: fleetSettings({
-          ssh_peers: [
-            {
-              key: "epyc",
-              name: "EPYC",
-              destination: "wes@epyc.tail",
-              platform: "plan9",
-            },
-          ],
-        }),
-        onUpdate: vi.fn(),
-      },
-    });
+    renderFleetSettings(
+      fleetSettings({
+        ssh_peers: [
+          {
+            key: "epyc",
+            name: "EPYC",
+            destination: "wes@epyc.tail",
+            platform: "plan9",
+          },
+        ],
+      }),
+    );
 
     await fireEvent.click(screen.getByRole("button", { name: "SSH peer epyc platform: plan9" }));
     const platformInput = screen.getByRole("combobox", { name: "SSH peer epyc platform" });
@@ -180,14 +182,15 @@ describe("FleetSettings", () => {
   });
 
   it("surfaces save errors without discarding the draft", async () => {
-    mockUpdateFleetSettings.mockRejectedValue(new Error("fleet.peers[0]: base_url is required"));
+    mockUpdateFleetSettings.mockReturnValue(
+      Effect.fail({
+        _tag: "ApiProblemError",
+        operation: "save fleet settings",
+        problem: { type: "about:blank", detail: "fleet.peers[0]: base_url is required" },
+      }),
+    );
 
-    render(FleetSettings, {
-      props: {
-        fleet: fleetSettings(),
-        onUpdate: vi.fn(),
-      },
-    });
+    renderFleetSettings(fleetSettings());
 
     await fireEvent.input(screen.getByLabelText("HTTP peer mini name"), {
       target: { value: "Mini" },

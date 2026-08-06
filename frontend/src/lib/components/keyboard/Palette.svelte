@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import { tick, untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppServices } from "../../app/runtime.js";
 
   import type { ModalFrameAction } from "../../stores/keyboard/keyspec.js";
   import { getStores } from "../../context.js";
@@ -18,7 +21,6 @@
     isPaletteOpen,
   } from "../../stores/keyboard/palette-state.svelte.js";
   import { buildContext } from "../../stores/keyboard/context.svelte.js";
-  import { handleCommandResult } from "../../stores/keyboard/dispatch.svelte.js";
   import { getAllActions } from "../../stores/keyboard/registry.svelte.js";
   import { isActionVisible } from "../../stores/keyboard/visibility.js";
   import {
@@ -43,7 +45,7 @@
   const MODE_SEARCH_DEBOUNCE_MS = 150;
 
   interface Props {
-    modeSearch?: ((query: string) => Promise<ModePaletteResults>) | undefined;
+    modeSearch?: ((query: string) => Effect.Effect<ModePaletteResults>) | undefined;
     onOpenKataIssue?: OpenKataIssue | undefined;
     onOpenDoc?: ((folder: string, relPath: string) => void) | undefined;
   }
@@ -69,8 +71,7 @@
   let recents = $state<RecentsState>({ version: 1, items: [] });
   let modeResults = $state<ModePaletteResults | null>(null);
   let modeLoading = $state(false);
-  let modeRequestVersion = 0;
-  let modeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const runtime = getAppRuntime();
 
   const parsed = $derived(parsePaletteQuery(query));
 
@@ -122,44 +123,33 @@
     const search = modeSearch;
     const scope = parsed.scope;
     const q = parsed.query;
-    if (modeDebounceTimer !== null) {
-      clearTimeout(modeDebounceTimer);
-      modeDebounceTimer = null;
-    }
     if (!open || !search || scope !== "all" || q === "") {
-      modeRequestVersion++;
       modeResults = null;
       modeLoading = false;
       return;
     }
 
-    const version = ++modeRequestVersion;
     modeResults = null;
     modeLoading = true;
-    modeDebounceTimer = setTimeout(() => {
-      void search(q)
-        .then((results) => {
-          if (version === modeRequestVersion) modeResults = results;
-        })
-        .catch((err) => {
-          if (version !== modeRequestVersion) return;
-          const message = err instanceof Error ? err.message : String(err);
-          modeResults = {
-            query: q,
-            tasks: { ok: false, error: message },
-            docs: { ok: false, error: message },
-          };
-        })
-        .finally(() => {
-          if (version === modeRequestVersion) modeLoading = false;
-        });
-    }, MODE_SEARCH_DEBOUNCE_MS);
-    return () => {
-      if (modeDebounceTimer !== null) {
-        clearTimeout(modeDebounceTimer);
-        modeDebounceTimer = null;
-      }
-    };
+    const execution = untrack(() => runtime.runCommand(
+      Effect.sleep(`${MODE_SEARCH_DEBOUNCE_MS} millis`).pipe(
+        Effect.andThen(
+          Effect.suspend(() => search(q)),
+        ),
+        Effect.tap((results) => Effect.sync(() => {
+          modeResults = results;
+        })),
+        Effect.ensuring(Effect.sync(() => {
+          modeLoading = false;
+        })),
+      ),
+      {
+        operation: "search command palette modes",
+        safeContext: { queryLength: q.length },
+        onFailure: () => {},
+      },
+    ));
+    return execution.interrupt;
   });
 
   type RecentResult =
@@ -310,7 +300,7 @@
       const ctx = ctxStores
         ? buildContext(ctxStores)
         : ({} as ReturnType<typeof buildContext>);
-      void runCommandAfterClose(action, ctx);
+      runCommandAfterClose(action, ctx);
       return;
     }
     if (result.kind === "pull") {
@@ -383,21 +373,37 @@
     navigate(buildIssueRoute(result.ref));
   }
 
-  async function runCommandAfterClose(
+  function runCommandAfterClose(
     action: Action,
     ctx: ReturnType<typeof buildContext>,
-  ): Promise<void> {
-    await tick();
-    try {
-      const out = untrack(() => action.handler(ctx));
-      handleCommandResult(out, (err) => {
-        console.error(`palette action ${action.id} failed`, err);
-      });
-    } catch (err) {
-      // Mirror dispatch.svelte.ts/runHandler: log and keep the palette
-      // host alive so a throwing handler doesn't crash the app.
-      console.error(`palette action ${action.id} failed`, err);
-    }
+  ): void {
+    runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(
+          Effect.try({
+            try: () => untrack(() => action.handler(ctx)),
+            catch: (cause) => cause,
+          }).pipe(
+            Effect.flatMap(
+              (result): Effect.Effect<void, unknown, AppServices> =>
+                result === undefined ? Effect.void : result,
+            ),
+          ),
+        ),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            // Mirror dispatch.svelte.ts/runHandler: log and keep the palette
+            // host alive so a throwing handler doesn't crash the app.
+            console.error(`palette action ${action.id} failed`, error);
+          }),
+        ),
+      ),
+      {
+        operation: "run command palette action",
+        safeContext: { actionId: action.id },
+        onFailure: () => {},
+      },
+    );
   }
 
   function selectRowAt(index: number): void {

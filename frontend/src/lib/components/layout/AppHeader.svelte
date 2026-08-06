@@ -7,10 +7,14 @@
     type TopBarTab,
   } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
+  import { Effect } from "effect";
   import KbdBadge from "../keyboard/KbdBadge.svelte";
   import type { ModeVisibility } from "../../api/types.js";
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { observeResize } from "../../browser/observers.js";
   import {
     getBasePath,
     getLastActivityRoute,
@@ -54,7 +58,9 @@
   }
 
   let { onheightchange = undefined }: Props = $props();
+  const runtime = getAppRuntime();
   let headerFrame: HTMLDivElement | null = $state(null);
+  let syncMenuExecution: AppExecution<void, never> | null = null;
 
   $effect(() => {
     const node = headerFrame;
@@ -62,11 +68,21 @@
     if (!node || !notify) return;
 
     const update = () => notify(node.getBoundingClientRect().height);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
+    const execution = untrack(() => runtime.runCommand(
+      Effect.scoped(
+        Effect.sync(update).pipe(
+          Effect.andThen(observeResize(node, update)),
+          Effect.andThen(Effect.never),
+        ),
+      ),
+      {
+        operation: "observe application header",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    ));
     return () => {
-      observer.disconnect();
+      execution.interrupt();
       notify(0);
     };
   });
@@ -131,7 +147,7 @@
     const cleanups = [
       dismissable({
         owners: () => [syncControlEl],
-        dismiss: () => (syncMenuOpen = false),
+        dismiss: closeSyncMenu,
         escapeFocus: () => syncMenuTriggerEl,
       }),
       autoReposition(() => syncMenuEl, positionSyncMenu),
@@ -152,26 +168,43 @@
     });
   }
 
-  async function openSyncMenu(): Promise<void> {
-    if (syncing) return;
-    syncMenuOpen = true;
-    await tick();
-    positionSyncMenu();
-    if (currentSyncRepo) syncMenuItemEl?.focus();
+  function closeSyncMenu(): void {
+    syncMenuExecution?.interrupt();
+    syncMenuExecution = null;
+    syncMenuOpen = false;
   }
 
-  async function toggleSyncMenu(): Promise<void> {
+  function openSyncMenu(): void {
+    if (syncing) return;
+    syncMenuExecution?.interrupt();
+    syncMenuOpen = true;
+    syncMenuExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => {
+          positionSyncMenu();
+          if (currentSyncRepo) syncMenuItemEl?.focus();
+        })),
+      ),
+      {
+        operation: "open repository sync menu",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
+  }
+
+  function toggleSyncMenu(): void {
     if (syncMenuOpen) {
-      syncMenuOpen = false;
+      closeSyncMenu();
       return;
     }
-    await openSyncMenu();
+    openSyncMenu();
   }
 
   function handleSyncMenuTriggerKeydown(event: KeyboardEvent): void {
     if (event.key !== "ArrowDown") return;
     event.preventDefault();
-    void openSyncMenu();
+    openSyncMenu();
   }
 
   function handleSyncMenuItemKeydown(event: KeyboardEvent): void {
@@ -183,7 +216,7 @@
   function handleCurrentRepoSync(): void {
     const repo = currentSyncRepo;
     if (!repo || syncing) return;
-    syncMenuOpen = false;
+    closeSyncMenu();
     sync.triggerRepoSync(repo);
   }
 

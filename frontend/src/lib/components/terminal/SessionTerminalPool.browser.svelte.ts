@@ -2,7 +2,6 @@ import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
 
-import { STORES_KEY } from "../../context.js";
 import {
   consumeSessionFocus,
   noteSessionMounted,
@@ -13,7 +12,7 @@ import {
   sessionHostKey,
   setSessionSlotVisible,
 } from "../../stores/session-host.svelte.ts";
-import SessionTerminalPool from "./SessionTerminalPool.svelte";
+import SessionTerminalPool from "./SessionTerminalPoolRuntimeHarness.svelte";
 import SessionTerminalSlotTransferHarness from "./SessionTerminalSlotTransferHarness.svelte";
 
 const WAIT = 10_000;
@@ -86,7 +85,7 @@ describe("SessionTerminalPool", () => {
   function mountPool(): void {
     instance = mount(SessionTerminalPool, {
       target: container,
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      props: { settings: settingsStore },
     });
   }
 

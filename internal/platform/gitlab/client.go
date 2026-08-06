@@ -967,7 +967,7 @@ func mapGitLabErrorForHost(platformHost, capability string, err error) error {
 		return err
 	}
 	var gitlabErr *gitlab.ErrorResponse
-	code := platform.ErrCodeInvalidRepoRef
+	code := platform.ErrCodeProviderContract
 	if errors.Is(err, gitlab.ErrNotFound) {
 		code = platform.ErrCodeNotFound
 	} else if errors.As(err, &gitlabErr) {
@@ -1050,7 +1050,7 @@ func partialError(namespace string, page int64, err error) PartialError {
 	var platformErr *platform.Error
 	if errors.As(mapGitLabError("preview_page", err), &platformErr) {
 		code = string(platformErr.Code)
-		if code == string(platform.ErrCodeInvalidRepoRef) {
+		if code == string(platform.ErrCodeProviderContract) {
 			code = "upstream_error"
 		}
 	}

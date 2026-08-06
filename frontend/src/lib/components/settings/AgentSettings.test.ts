@@ -1,15 +1,24 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect, Layer } from "effect";
+import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-const { mockUpdateSettings } = vi.hoisted(() => ({
-  mockUpdateSettings: vi.fn(),
+const { mockPersistSettings } = vi.hoisted(() => ({
+  mockPersistSettings: vi.fn(),
 }));
 
-vi.mock("../../api/settings.js", () => ({
-  updateSettings: mockUpdateSettings,
-}));
+vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
+  return {
+    ...actual,
+    SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({
+      persist: (request) => Effect.promise(() => mockPersistSettings(request())),
+    }),
+  };
+});
 
-vi.mock("../../stores/embed-config.svelte.js", () => ({
+vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../stores/embed-config.svelte.js")>()),
   isEmbedded: () => false,
 }));
 
@@ -22,6 +31,13 @@ Object.defineProperty(Element.prototype, "animate", {
 });
 
 import AgentSettings from "./AgentSettings.svelte";
+import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
+
+function renderAgentSettings(componentProps: ComponentProps<typeof AgentSettings>) {
+  return render(SettingsRuntimeHarness, {
+    props: { component: AgentSettings, componentProps },
+  });
+}
 
 async function expandAgent(name: string): Promise<void> {
   await fireEvent.click(screen.getByRole("button", { name: `Edit ${name}` }));
@@ -30,11 +46,11 @@ async function expandAgent(name: string): Promise<void> {
 describe("AgentSettings", () => {
   afterEach(() => {
     cleanup();
-    mockUpdateSettings.mockReset();
+    mockPersistSettings.mockReset();
   });
 
   it("persists built-in agent binary and argument overrides", async () => {
-    mockUpdateSettings.mockResolvedValue({
+    mockPersistSettings.mockResolvedValue({
       agents: [
         {
           key: "codex",
@@ -46,11 +62,9 @@ describe("AgentSettings", () => {
     });
     const onUpdate = vi.fn();
 
-    render(AgentSettings, {
-      props: {
-        agents: [],
-        onUpdate,
-      },
+    renderAgentSettings({
+      agents: [],
+      onUpdate,
     });
 
     await expandAgent("Codex");
@@ -63,7 +77,7 @@ describe("AgentSettings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
 
     await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({
+      expect(mockPersistSettings).toHaveBeenCalledWith({
         agents: [
           {
             key: "codex",
@@ -88,7 +102,7 @@ describe("AgentSettings", () => {
   });
 
   it("preserves quoted empty arguments when saving", async () => {
-    mockUpdateSettings.mockResolvedValue({
+    mockPersistSettings.mockResolvedValue({
       agents: [
         {
           key: "codex",
@@ -100,11 +114,9 @@ describe("AgentSettings", () => {
     });
     const onUpdate = vi.fn();
 
-    render(AgentSettings, {
-      props: {
-        agents: [],
-        onUpdate,
-      },
+    renderAgentSettings({
+      agents: [],
+      onUpdate,
     });
 
     await expandAgent("Codex");
@@ -114,7 +126,7 @@ describe("AgentSettings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
 
     await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({
+      expect(mockPersistSettings).toHaveBeenCalledWith({
         agents: [
           {
             key: "codex",
@@ -130,18 +142,16 @@ describe("AgentSettings", () => {
   it("does not mark explicit default built-in agents dirty", () => {
     const onUpdate = vi.fn();
 
-    render(AgentSettings, {
-      props: {
-        agents: [
-          {
-            key: "codex",
-            label: "Codex",
-            command: ["codex"],
-            enabled: true,
-          },
-        ],
-        onUpdate,
-      },
+    renderAgentSettings({
+      agents: [
+        {
+          key: "codex",
+          label: "Codex",
+          command: ["codex"],
+          enabled: true,
+        },
+      ],
+      onUpdate,
     });
 
     expect(screen.getByLabelText("Codex")).toBeTruthy();
@@ -156,7 +166,7 @@ describe("AgentSettings", () => {
   });
 
   it("preserves explicit default built-in agents when saving other changes", async () => {
-    mockUpdateSettings.mockResolvedValue({
+    mockPersistSettings.mockResolvedValue({
       agents: [
         {
           key: "codex",
@@ -174,18 +184,16 @@ describe("AgentSettings", () => {
     });
     const onUpdate = vi.fn();
 
-    render(AgentSettings, {
-      props: {
-        agents: [
-          {
-            key: "codex",
-            label: "Codex",
-            command: ["codex"],
-            enabled: true,
-          },
-        ],
-        onUpdate,
-      },
+    renderAgentSettings({
+      agents: [
+        {
+          key: "codex",
+          label: "Codex",
+          command: ["codex"],
+          enabled: true,
+        },
+      ],
+      onUpdate,
     });
 
     await expandAgent("Claude");
@@ -195,7 +203,7 @@ describe("AgentSettings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
 
     await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({
+      expect(mockPersistSettings).toHaveBeenCalledWith({
         agents: [
           {
             key: "claude",
@@ -215,7 +223,7 @@ describe("AgentSettings", () => {
   });
 
   it("preserves disabled built-in agents with empty commands when saving other changes", async () => {
-    mockUpdateSettings.mockResolvedValue({
+    mockPersistSettings.mockResolvedValue({
       agents: [
         {
           key: "codex",
@@ -233,18 +241,16 @@ describe("AgentSettings", () => {
     });
     const onUpdate = vi.fn();
 
-    render(AgentSettings, {
-      props: {
-        agents: [
-          {
-            key: "codex",
-            label: "Codex",
-            command: [],
-            enabled: false,
-          },
-        ],
-        onUpdate,
-      },
+    renderAgentSettings({
+      agents: [
+        {
+          key: "codex",
+          label: "Codex",
+          command: [],
+          enabled: false,
+        },
+      ],
+      onUpdate,
     });
 
     await expandAgent("Claude");
@@ -254,7 +260,7 @@ describe("AgentSettings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
 
     await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({
+      expect(mockPersistSettings).toHaveBeenCalledWith({
         agents: [
           {
             key: "claude",
@@ -274,7 +280,7 @@ describe("AgentSettings", () => {
   });
 
   it("adds custom agents to the saved settings", async () => {
-    mockUpdateSettings.mockResolvedValue({
+    mockPersistSettings.mockResolvedValue({
       agents: [
         {
           key: "review",
@@ -286,11 +292,9 @@ describe("AgentSettings", () => {
     });
     const onUpdate = vi.fn();
 
-    render(AgentSettings, {
-      props: {
-        agents: [],
-        onUpdate,
-      },
+    renderAgentSettings({
+      agents: [],
+      onUpdate,
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Add custom agent" }));
@@ -309,7 +313,7 @@ describe("AgentSettings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
 
     await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({
+      expect(mockPersistSettings).toHaveBeenCalledWith({
         agents: [
           {
             key: "review",
@@ -351,27 +355,25 @@ describe("AgentSettings", () => {
         enabled: true,
       },
     ];
-    mockUpdateSettings.mockResolvedValue({
+    mockPersistSettings.mockResolvedValue({
       agents,
       launch_targets: launchTargets,
     });
     const onUpdate = vi.fn();
 
-    render(AgentSettings, {
-      props: {
-        agents: [],
-        launchTargets: [
-          {
-            key: "codex",
-            label: "Codex",
-            kind: "agent",
-            source: "builtin",
-            available: false,
-            disabled_reason: "codex not found on PATH",
-          },
-        ],
-        onUpdate,
-      },
+    renderAgentSettings({
+      agents: [],
+      launchTargets: [
+        {
+          key: "codex",
+          label: "Codex",
+          kind: "agent",
+          source: "builtin",
+          available: false,
+          disabled_reason: "codex not found on PATH",
+        },
+      ],
+      onUpdate,
     });
 
     await expandAgent("Codex");

@@ -381,6 +381,17 @@ func Upstream(detail, provider, host string) huma.StatusError {
 	return NewProblem(http.StatusBadGateway, CodeUpstreamError, detail, d)
 }
 
+// MutationOutcomeUnknown returns a 502 for a non-idempotent operation whose
+// upstream side effect cannot be safely ruled out. Provider identity is
+// included so clients can fence and reconcile the exact affected resource.
+func MutationOutcomeUnknown(detail, provider, host string) huma.StatusError {
+	d := platformErrorDetails(provider, host)
+	if len(d) == 0 {
+		d = nil
+	}
+	return NewProblem(http.StatusBadGateway, CodeMutationOutcomeUnknown, detail, d)
+}
+
 // problemServiceUnavailable returns a 503.
 func ServiceUnavailable(detail string) huma.StatusError {
 	return NewProblem(http.StatusServiceUnavailable, CodeServiceUnavailable, detail, nil)
@@ -477,6 +488,40 @@ func BranchConflict(branch, suggested string) huma.StatusError {
 // (and ignores the provider/host arguments).
 func ProviderCallProblem(err error, provider, host string) huma.StatusError {
 	return ProviderCallProblemWithDetail(err, provider, host, "")
+}
+
+// ProviderMutationProblem preserves provider responses that prove a mutation
+// was rejected. Transport, contract, and otherwise unclassified failures are
+// ambiguous after dispatch and must fence retries with mutationOutcomeUnknown.
+func ProviderMutationProblem(err error, provider, host string) huma.StatusError {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, tokenauth.ErrMissingToken) {
+		return ProviderCallProblem(err, provider, host)
+	}
+	var pe *platform.Error
+	if errors.As(err, &pe) {
+		switch pe.Code {
+		case platform.ErrCodeUnsupportedCapability,
+			platform.ErrCodeRepositoryFeatureDisabled,
+			platform.ErrCodeProviderNotConfigured,
+			platform.ErrCodeMissingToken,
+			platform.ErrCodeInvalidRepoRef,
+			platform.ErrCodeInvalidArgument,
+			platform.ErrCodePermissionDenied,
+			platform.ErrCodeNotFound,
+			platform.ErrCodeRateLimited,
+			platform.ErrCodeStaleState,
+			platform.ErrCodeConflict:
+			return ProviderCallProblem(err, provider, host)
+		}
+	}
+	return MutationOutcomeUnknown(
+		"The provider could not confirm whether the mutation was applied.",
+		provider,
+		host,
+	)
 }
 
 func ProviderCallProblemWithDetail(

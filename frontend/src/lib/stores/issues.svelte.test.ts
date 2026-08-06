@@ -50,6 +50,7 @@ function stubSettingsWrites(write: (body: unknown, index: number) => Response | 
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init);
+      if (request.method === "GET") return settingsResponse(false);
       const body: unknown = await request.clone().json();
       bodies.push(body);
       return await write(body, bodies.length - 1);

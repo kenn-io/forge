@@ -1,11 +1,35 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { KataTaskReference, KataTaskReferenceResponse, KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+import {
+  KataSnapshotAPIError,
+  type KataTaskReference,
+  type KataTaskReferenceResponse,
+  type KataTaskReferenceSearch,
+} from "../../api/kata/snapshot.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+
+const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
+
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => {
+    const runtime = runtimeCapture.current;
+    if (runtime === undefined) throw new Error("issue picker test runtime is not initialized");
+    return runtime;
+  },
+}));
+
 import IssuePickerDialog from "./IssuePickerDialog.svelte";
 
-afterEach(() => {
+beforeEach(() => {
+  runtimeCapture.current = makeAppRuntime();
+});
+
+afterEach(async () => {
   cleanup();
+  if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
+  runtimeCapture.current = undefined;
   vi.useRealTimers();
 });
 
@@ -38,7 +62,7 @@ function makeSearch(search?: KataTaskReferenceSearch): {
   searchReferences: KataTaskReferenceSearch;
   spy: ReturnType<typeof vi.fn>;
 } {
-  const fallback: KataTaskReferenceSearch = async () => searchResponse([]);
+  const fallback: KataTaskReferenceSearch = () => Effect.succeed(searchResponse([]));
   const spy = vi.fn(search ?? fallback);
   return { searchReferences: spy, spy };
 }
@@ -94,7 +118,7 @@ describe("IssuePickerDialog structure", () => {
 describe("IssuePickerDialog debounce", () => {
   it("coalesces rapid keystrokes into one search with the latest query", async () => {
     vi.useFakeTimers();
-    const { searchReferences, spy } = makeSearch(async () => searchResponse([fakeReference()]));
+    const { searchReferences, spy } = makeSearch(() => Effect.succeed(searchResponse([fakeReference()])));
     renderDialog({ searchReferences });
 
     const input = await getSearchInput();
@@ -118,7 +142,9 @@ describe("IssuePickerDialog results", () => {
       fakeReference({ uid: "u101", short_id: "101", reference: "Kata#101", qualified_id: "Kata#101", title: "Second" }),
       fakeReference({ uid: "u102", reference: "102", qualified_id: "Kata#102", title: "Third" }),
     ];
-    const { searchReferences } = makeSearch(async (_query, options) => searchResponse(issues.slice(0, options?.limit)));
+    const { searchReferences } = makeSearch((_query, options) =>
+      Effect.succeed(searchResponse(issues.slice(0, options?.limit))),
+    );
     renderDialog({ searchReferences });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
@@ -139,7 +165,7 @@ describe("IssuePickerDialog results", () => {
       fakeReference({ uid: "u100", reference: "100", title: "Keep me" }),
       fakeReference({ uid: "u101", reference: "101", title: "Hide me" }),
     ];
-    const { searchReferences } = makeSearch(async () => searchResponse(issues));
+    const { searchReferences } = makeSearch(() => Effect.succeed(searchResponse(issues)));
     renderDialog({ searchReferences, excludeUIDs: new Set(["u101"]) });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
@@ -155,7 +181,7 @@ describe("IssuePickerDialog results", () => {
   it("shows no matches when every result is excluded", async () => {
     vi.useFakeTimers();
     const issues = [fakeReference({ uid: "u100", title: "First" }), fakeReference({ uid: "u101", title: "Second" })];
-    const { searchReferences } = makeSearch(async () => searchResponse(issues));
+    const { searchReferences } = makeSearch(() => Effect.succeed(searchResponse(issues)));
     renderDialog({ searchReferences, excludeUIDs: new Set(["u100", "u101"]) });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
@@ -177,10 +203,10 @@ describe("IssuePickerDialog results", () => {
     const firstIssues = [fakeReference({ uid: "u200", reference: "200", title: "Stale" })];
     const secondIssues = [fakeReference({ uid: "u300", reference: "300", title: "Fresh" })];
     let call = 0;
-    const spy = vi.fn(async (): Promise<KataTaskReferenceResponse> => {
+    const spy = vi.fn(() => {
       call++;
-      if (call === 1) return firstPending;
-      return searchResponse(secondIssues);
+      if (call === 1) return Effect.promise(() => firstPending);
+      return Effect.succeed(searchResponse(secondIssues));
     });
     renderDialog({ searchReferences: spy });
 
@@ -200,9 +226,37 @@ describe("IssuePickerDialog results", () => {
     expect(screen.getByText("Fresh")).toBeTruthy();
   });
 
+  it("interrupts the stale search when a newer query starts", async () => {
+    vi.useFakeTimers();
+    let firstSearchInterrupted = false;
+    const searchReferences: KataTaskReferenceSearch = vi.fn((query) => {
+      if (query === "first") {
+        return Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              firstSearchInterrupted = true;
+            }),
+          ),
+        );
+      }
+      return Effect.succeed(searchResponse([fakeReference({ title: "Second" })]));
+    });
+    renderDialog({ searchReferences });
+
+    const input = await getSearchInput();
+    await fireEvent.input(input, { target: { value: "first" } });
+    await vi.advanceTimersByTimeAsync(250);
+    await fireEvent.input(input, { target: { value: "second" } });
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(firstSearchInterrupted).toBe(true);
+  });
+
   it("renders search errors as an alert and clears them with an empty query", async () => {
     vi.useFakeTimers();
-    const spy = vi.fn().mockRejectedValueOnce(new Error("upstream down"));
+    const spy = vi
+      .fn()
+      .mockReturnValueOnce(Effect.fail(KataSnapshotAPIError.make({ status: 503, message: "upstream down" })));
     renderDialog({ searchReferences: spy });
 
     const input = await getSearchInput();
@@ -225,7 +279,7 @@ describe("IssuePickerDialog selection", () => {
       fakeReference({ uid: "u100", reference: "100", qualified_id: "Kata#100", title: "First" }),
       fakeReference({ uid: "u101", short_id: "101", reference: "Kata#101", qualified_id: "Kata#101", title: "Second" }),
     ];
-    const { searchReferences } = makeSearch(async () => searchResponse(issues));
+    const { searchReferences } = makeSearch(() => Effect.succeed(searchResponse(issues)));
     const onPick = vi.fn();
     renderDialog({ searchReferences, onPick });
 
@@ -254,7 +308,7 @@ describe("IssuePickerDialog selection", () => {
 
   it("keeps Link disabled until a row is selected", async () => {
     vi.useFakeTimers();
-    const { searchReferences } = makeSearch(async () => searchResponse([fakeReference()]));
+    const { searchReferences } = makeSearch(() => Effect.succeed(searchResponse([fakeReference()])));
     renderDialog({ searchReferences });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
@@ -268,11 +322,13 @@ describe("IssuePickerDialog selection", () => {
   it("clears a prior selection as soon as the query changes", async () => {
     vi.useFakeTimers();
     let call = 0;
-    const spy = vi.fn(async () => {
+    const spy = vi.fn(() => {
       call++;
-      return call === 1
-        ? searchResponse([fakeReference({ uid: "u100", reference: "100", title: "First" })])
-        : searchResponse([fakeReference({ uid: "u200", reference: "200", title: "Different" })]);
+      return Effect.succeed(
+        call === 1
+          ? searchResponse([fakeReference({ uid: "u100", reference: "100", title: "First" })])
+          : searchResponse([fakeReference({ uid: "u200", reference: "200", title: "Different" })]),
+      );
     });
     renderDialog({ searchReferences: spy });
 
@@ -296,7 +352,7 @@ describe("IssuePickerDialog selection", () => {
     const pending = new Promise<KataTaskReferenceResponse>((resolve) => {
       resolvePending = resolve;
     });
-    const spy = vi.fn(async () => pending);
+    const spy = vi.fn(() => Effect.promise(() => pending));
     renderDialog({ searchReferences: spy });
 
     const input = await getSearchInput();
@@ -324,7 +380,9 @@ describe("IssuePickerDialog selection", () => {
     const excludeUIDs = new Set<string>();
     for (let i = 1; i <= 25; i++) excludeUIDs.add(`u${i}`);
 
-    const { searchReferences } = makeSearch(async (_query, options) => searchResponse(issues.slice(0, options?.limit)));
+    const { searchReferences } = makeSearch((_query, options) =>
+      Effect.succeed(searchResponse(issues.slice(0, options?.limit))),
+    );
     renderDialog({ searchReferences, excludeUIDs });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
@@ -349,7 +407,7 @@ describe("IssuePickerDialog close and reset paths", () => {
   it("clears query and results after closing and reopening", async () => {
     vi.useFakeTimers();
     const issues = [fakeReference({ uid: "u100", reference: "100", title: "First" })];
-    const { searchReferences } = makeSearch(async () => searchResponse(issues));
+    const { searchReferences } = makeSearch(() => Effect.succeed(searchResponse(issues)));
     const onPick = vi.fn();
     const onClose = vi.fn();
     const baseProps = { open: true, searchReferences, onPick, onClose };

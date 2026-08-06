@@ -1,6 +1,11 @@
 <script lang="ts">
   import { Card, IconButton } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import { onDestroy, onMount, tick } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { nextAnimationFrame } from "../../browser/animation-frame.js";
+  import { observeResize } from "../../browser/observers.js";
   import CheckIcon from "@lucide/svelte/icons/check";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import XIcon from "@lucide/svelte/icons/x";
@@ -21,6 +26,7 @@
   }
 
   const { comment, location, disabled, onjump, ondelete, onsave, oneditstatechange }: Props = $props();
+  const runtime = getAppRuntime();
 
   let expanded = $state(false);
   let editing = $state(false);
@@ -29,7 +35,8 @@
   let truncated = $state(false);
   let bodyElement: HTMLParagraphElement | undefined = $state();
   let editorElement: HTMLTextAreaElement | undefined = $state();
-  let measureFrame: number | undefined;
+  let measureExecution: AppExecution<void, never> | undefined;
+  let focusExecution: AppExecution<void, never> | undefined;
   const editStateID = $derived(`tray:${comment.id}`);
   const editDisabled = $derived(disabled || saving);
   const saveDisabled = $derived(editDisabled || draftBody.trim() === "");
@@ -44,18 +51,28 @@
   }
 
   function queueMeasure(): void {
-    if (measureFrame !== undefined) {
-      cancelAnimationFrame(measureFrame);
-    }
-    measureFrame = requestAnimationFrame(() => {
-      measureFrame = undefined;
-      measureTruncation();
-    });
+    measureExecution?.interrupt();
+    measureExecution = runtime.runCommand(
+      nextAnimationFrame.pipe(Effect.andThen(Effect.sync(measureTruncation)), Effect.asVoid),
+      { operation: "measure review draft truncation", safeContext: {}, onFailure: () => {} },
+    );
+  }
+
+  function queueMeasureAfterTick(): void {
+    measureExecution?.interrupt();
+    measureExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(nextAnimationFrame),
+        Effect.andThen(Effect.sync(measureTruncation)),
+        Effect.asVoid,
+      ),
+      { operation: "measure review draft after layout", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   function toggleExpanded(): void {
     expanded = !expanded;
-    void tick().then(queueMeasure);
+    queueMeasureAfterTick();
   }
 
   function draftDirty(body: string): boolean {
@@ -74,7 +91,13 @@
     editing = true;
     reportEditState(true);
     expanded = true;
-    void tick().then(() => editorElement?.focus());
+    focusExecution?.interrupt();
+    focusExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => editorElement?.focus())),
+      ),
+      { operation: "focus review draft editor", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   function cancelEdit(): void {
@@ -109,21 +132,23 @@
   }
 
   function scheduleMeasure(_body: string, _expanded: boolean): void {
-    void tick().then(queueMeasure);
+    queueMeasureAfterTick();
   }
 
   onMount(() => {
-    const observer = typeof ResizeObserver === "undefined"
+    const element = bodyElement;
+    const observerExecution = element === undefined || typeof ResizeObserver === "undefined"
       ? undefined
-      : new ResizeObserver(queueMeasure);
-    if (bodyElement) observer?.observe(bodyElement);
+      : runtime.runCommand(
+        Effect.scoped(observeResize(element, queueMeasure).pipe(Effect.andThen(Effect.never))),
+        { operation: "observe review draft body", safeContext: {}, onFailure: () => {} },
+      );
     queueMeasure();
 
     return () => {
-      observer?.disconnect();
-      if (measureFrame !== undefined) {
-        cancelAnimationFrame(measureFrame);
-      }
+      observerExecution?.interrupt();
+      measureExecution?.interrupt();
+      focusExecution?.interrupt();
     };
   });
 

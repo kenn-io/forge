@@ -5,6 +5,7 @@
   import { onMount, tick, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
+  import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { getStores } from "../../context.js";
   import type { DiffScrollTarget } from "../../stores/diff.svelte.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
@@ -73,10 +74,10 @@
   let diffArea: HTMLDivElement | undefined = $state();
   let diffContent: HTMLDivElement | undefined = $state();
   let diffVirtualizer: Virtualizer | undefined = $state();
-  let scrollClearRaf = 0;
-  let scrollRestoreRaf = 0;
-  let scrollTargetRaf = 0;
-  let virtualizerWakeRaf = 0;
+  let scrollClearExecution: AppExecution<void, never> | undefined;
+  let scrollRestoreExecution: AppExecution<void, never> | undefined;
+  let scrollTargetExecution: AppExecution<void, never> | undefined;
+  let virtualizerWakeExecution: AppExecution<void, never> | undefined;
   let contextGenerationExecution: AppExecution<void, never> | undefined;
   let scrollTargetRun = 0;
   let scrollingToTarget: DiffScrollTarget | null = null;
@@ -98,10 +99,10 @@
 
     return () => {
       scrollTargetRun += 1;
-      cancelAnimationFrame(scrollClearRaf);
-      cancelAnimationFrame(scrollRestoreRaf);
-      cancelAnimationFrame(scrollTargetRaf);
-      cancelAnimationFrame(virtualizerWakeRaf);
+      scrollClearExecution?.interrupt();
+      scrollRestoreExecution?.interrupt();
+      scrollTargetExecution?.interrupt();
+      virtualizerWakeExecution?.interrupt();
       contextGenerationExecution?.interrupt();
       diffStore.clearDiff();
       diffReviewDraft?.clear();
@@ -174,13 +175,18 @@
     const restoreTop = initialScrollTop;
     if (!area || !diff || loading || restoredScrollScope === restoreKey) return;
     restoredScrollScope = restoreKey;
-    cancelAnimationFrame(scrollRestoreRaf);
-    scrollRestoreRaf = requestAnimationFrame(() => {
-      scrollRestoreRaf = 0;
-      if (diffArea !== area) return;
-      area.scrollTop = Math.max(0, restoreTop);
-      wakeDiffVirtualizer();
-    });
+    scrollRestoreExecution?.interrupt();
+    scrollRestoreExecution = untrack(() => runtime.runCommand(
+      nextAnimationFrame.pipe(
+        Effect.andThen(Effect.sync(() => {
+          if (diffArea !== area) return;
+          area.scrollTop = Math.max(0, restoreTop);
+          wakeDiffVirtualizer();
+        })),
+        Effect.asVoid,
+      ),
+      { operation: "restore diff scroll position", safeContext: {}, onFailure: () => {} },
+    ));
   });
 
   $effect(() => {
@@ -253,16 +259,20 @@
   function finishProgrammaticScroll(): void {
     // Clear the scrolling flag after the instant scroll so the next user-initiated
     // scroll event resumes active file tracking.
-    scrollClearRaf = requestAnimationFrame(() => diffStore.clearScrolling());
+    scrollClearExecution?.interrupt();
+    scrollClearExecution = runtime.runCommand(
+      nextAnimationFrame.pipe(Effect.andThen(Effect.sync(diffStore.clearScrolling)), Effect.asVoid),
+      { operation: "finish programmatic diff scroll", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   function cancelPendingProgrammaticScroll(): void {
     scrollTargetRun += 1;
+    scrollTargetExecution?.interrupt();
     scrollingToTarget = null;
     diffStore.consumeScrollTarget();
     diffStore.clearScrolling();
-    cancelAnimationFrame(scrollClearRaf);
-    scrollClearRaf = 0;
+    scrollClearExecution?.interrupt();
   }
 
   function cancelProgrammaticScrollIfUserOverrides(): void {
@@ -354,13 +364,16 @@
     const area = diffArea;
     if (!area) return;
     area.dispatchEvent(new Event("scroll"));
-    cancelAnimationFrame(virtualizerWakeRaf);
-    virtualizerWakeRaf = requestAnimationFrame(() => {
-      virtualizerWakeRaf = 0;
-      if (diffArea === area) {
-        area.dispatchEvent(new Event("scroll"));
-      }
-    });
+    virtualizerWakeExecution?.interrupt();
+    virtualizerWakeExecution = runtime.runCommand(
+      nextAnimationFrame.pipe(
+        Effect.andThen(Effect.sync(() => {
+          if (diffArea === area) area.dispatchEvent(new Event("scroll"));
+        })),
+        Effect.asVoid,
+      ),
+      { operation: "wake diff virtualizer", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   // Watch for scroll requests from the sidebar file list (via the store).
@@ -369,6 +382,7 @@
   $effect(() => {
     const target = normalizeScrollTarget(diffStore.getScrollTarget());
     if (!target) {
+      scrollTargetExecution?.interrupt();
       scrollingToTarget = null;
       return;
     }
@@ -377,15 +391,20 @@
       scrollingToTarget = target;
       const run = scrollTargetRun + 1;
       scrollTargetRun = run;
-      void scrollToTargetAfterDom(target, run);
+      scrollTargetExecution?.interrupt();
+      scrollTargetExecution = untrack(() => runtime.runCommand(scrollToTargetAfterDom(target, run), {
+        operation: "scroll diff to target",
+        safeContext: { path: target.path, line: target.line ?? 0 },
+        onFailure: () => {},
+      }));
     }
   });
 
-  async function scrollToTargetAfterDom(
+  const scrollToTargetAfterDom = Effect.fn("DiffView.scrollToTargetAfterDom")(function* (
     target: DiffScrollTarget,
     run: number,
-  ): Promise<void> {
-    await tick();
+  ) {
+    yield* Effect.promise(() => tick());
     if (
       scrollTargetRun !== run ||
       !sameScrollTarget(normalizeScrollTarget(diffStore.getScrollTarget()), target)
@@ -397,7 +416,7 @@
     let visibleFrames = 0;
     let targetReached = false;
     for (let attempt = 0; attempt < maxScrollTargetAttempts; attempt += 1) {
-      await nextAnimationFrame();
+      yield* nextAnimationFrame;
       if (
         scrollTargetRun !== run ||
         !sameScrollTarget(normalizeScrollTarget(diffStore.getScrollTarget()), target)
@@ -438,16 +457,7 @@
       scrollingToTarget = null;
       finishProgrammaticScroll();
     }
-  }
-
-  function nextAnimationFrame(): Promise<void> {
-    return new Promise((resolve) => {
-      scrollTargetRaf = requestAnimationFrame(() => {
-        scrollTargetRaf = 0;
-        resolve();
-      });
-    });
-  }
+  });
 
   function sameScrollTarget(
     left: DiffScrollTarget | null,

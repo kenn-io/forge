@@ -1,30 +1,48 @@
 <script lang="ts">
   import { StatusBar as KitStatusBar, StatusDot } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
+  import { untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { getStores } from "../../context.js";
   import type { ActivityItem } from "../../api/types.js";
   import { isActivityItemTypeEnabled } from "../../stores/activity.svelte.js";
   import BudgetBars from "./BudgetBars.svelte";
   import BudgetPopover from "./BudgetPopover.svelte";
   import { formatCompact } from "./budget-utils";
-  import { client } from "../../api/runtime.js";
   import { getPage } from "../../stores/router.svelte.ts";
 
   const { activity, pulls, issues, sync, events } = getStores();
+  const runtime = getAppRuntime();
   const liveUpdateState = $derived(events.getConnectionState());
 
   let appVersion = $state("");
-
-  $effect(() => {
-    void client.GET("/version")
-      .then(({ data }) => { if (data?.version) appVersion = data.version; })
-      .catch(() => {});
-  });
-
   let tick = $state(0);
-  let tickHandle: ReturnType<typeof setInterval> | null = null;
+
   $effect(() => {
-    tickHandle = setInterval(() => { tick++; }, 10_000);
-    return () => { if (tickHandle !== null) clearInterval(tickHandle); };
+    const loadVersion = executeGeneratedApiRequest("GET /version", (client, signal) =>
+      client.GET("/version", { signal })
+    ).pipe(
+      Effect.tap((version) => Effect.sync(() => {
+        appVersion = version.version;
+      })),
+      Effect.catch(() => Effect.void),
+    );
+    const updateRelativeTimes = Effect.sleep("10 seconds").pipe(
+      Effect.andThen(Effect.sync(() => {
+        tick += 1;
+      })),
+      Effect.forever,
+    );
+    const execution = untrack(() => runtime.runCommand(
+      Effect.all([loadVersion, updateRelativeTimes], { concurrency: "unbounded", discard: true }),
+      {
+        operation: "load status bar version and update relative times",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    ));
+    return execution.interrupt;
   });
 
   function syncText(): string {

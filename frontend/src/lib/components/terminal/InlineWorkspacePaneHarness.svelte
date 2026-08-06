@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy, untrack } from "svelte";
+  import { makeAppRuntime } from "../../app/runtime.js";
+  import { setAppRuntime } from "../../app/runtime-context.js";
   import DetailPaneLayout from "../shared/DetailPaneLayout.svelte";
   import type {
     PaneLayoutStore,
@@ -15,6 +19,12 @@
      */
     controller?: InlineWorkspaceController | null;
   }
+
+  const runtime = makeAppRuntime();
+  setAppRuntime(untrack(() => runtime));
+  onDestroy(() => {
+    Effect.runFork(runtime.disposeEffect);
+  });
 
   const { layout, workspaceAvailable = true, controller = null }: Props = $props();
 

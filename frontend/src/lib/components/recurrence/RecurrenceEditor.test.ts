@@ -1,12 +1,34 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+import { KataRecurrenceConflictError } from "../../features/kata/recurrence-conflict.js";
+
+const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
+
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => {
+    const runtime = runtimeCapture.current;
+    if (runtime === undefined) throw new Error("recurrence editor test runtime is not initialized");
+    return runtime;
+  },
+}));
+
 import RecurrenceEditor from "./RecurrenceEditor.svelte";
 import RecurrenceEditorDialog from "./RecurrenceEditorDialog.svelte";
 import { ADVANCED_LAST_WEEKDAY } from "../../recurrence/__fixtures__/advancedRules";
 import { MONTH_LONG } from "../../recurrence/rrule";
 import type { KataRecurrence } from "../../api/kata/taskTypes";
 
-afterEach(cleanup);
+beforeEach(() => {
+  runtimeCapture.current = makeAppRuntime();
+});
+
+afterEach(async () => {
+  cleanup();
+  if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
+  runtimeCapture.current = undefined;
+});
 
 const createMode = { kind: "create", projectID: 1 } as const;
 
@@ -235,7 +257,7 @@ describe("RecurrenceEditor — mode toggle", () => {
 
 describe("RecurrenceEditor (via dialog) — submit create", () => {
   test("happy path: builds {actor, rrule, dtstart, timezone, template} and calls onCreate; onClose fires on success", async () => {
-    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const onCreate = vi.fn(() => Effect.void);
     const onClose = vi.fn();
     render(RecurrenceEditorDialog, {
       props: { open: true, mode: createMode, actor: "fixture-user", onClose, onCreate, onPatch: vi.fn() },
@@ -254,11 +276,8 @@ describe("RecurrenceEditor (via dialog) — submit create", () => {
   });
 
   test("400 validation error: dialog stays open, inline message shown, onClose not called", async () => {
-    const apiError = Object.assign(new Error("template_title is required"), {
-      status: 400,
-      code: "validation",
-    });
-    const onCreate = vi.fn().mockRejectedValue(apiError);
+    const apiError = new Error("template_title is required");
+    const onCreate = vi.fn(() => Effect.fail(apiError));
     const onClose = vi.fn();
     render(RecurrenceEditorDialog, {
       props: { open: true, mode: createMode, actor: "fixture-user", onClose, onCreate, onPatch: vi.fn() },
@@ -284,7 +303,7 @@ describe("RecurrenceEditor (via dialog) — submit create", () => {
   });
 
   test("authority fencing disables Save without closing or discarding the recurrence draft", async () => {
-    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const onCreate = vi.fn(() => Effect.void);
     const onClose = vi.fn();
     const view = render(RecurrenceEditorDialog, {
       props: {
@@ -394,7 +413,7 @@ describe("RecurrenceEditor — edit diff", () => {
   });
 
   test("template title changed: patch contains only template.title", async () => {
-    const onPatch = vi.fn().mockResolvedValue(undefined);
+    const onPatch = vi.fn(() => Effect.void);
     render(RecurrenceEditorDialog, {
       props: { open: true, mode: editMode, actor: "fixture-user", onClose: vi.fn(), onCreate: vi.fn(), onPatch },
     });
@@ -406,7 +425,7 @@ describe("RecurrenceEditor — edit diff", () => {
   });
 
   test("common mode canonicalizes but unchanged semantic rule does not patch rrule", async () => {
-    const onPatch = vi.fn().mockResolvedValue(undefined);
+    const onPatch = vi.fn(() => Effect.void);
     render(RecurrenceEditorDialog, {
       props: { open: true, mode: editMode, actor: "fixture-user", onClose: vi.fn(), onCreate: vi.fn(), onPatch },
     });
@@ -421,7 +440,7 @@ describe("RecurrenceEditor — edit diff", () => {
     ["monthly omitted BYMONTHDAY", { rrule: "FREQ=MONTHLY;INTERVAL=1", dtstart: "2026-05-20" }],
     ["yearly omitted BYMONTH", { rrule: "FREQ=YEARLY;INTERVAL=1", dtstart: "2026-05-20" }],
   ])("template-only edit preserves DTSTART-derived defaults for %s", async (_label, overrides) => {
-    const onPatch = vi.fn().mockResolvedValue(undefined);
+    const onPatch = vi.fn(() => Effect.void);
     render(RecurrenceEditorDialog, {
       props: {
         open: true,
@@ -466,7 +485,7 @@ describe("RecurrenceEditor — edit diff", () => {
   ])(
     "dtstart edit preserves DTSTART-derived defaults for %s",
     async (_label, overrides, calendarLabel, nextStart, expectedRRule, nextMonths) => {
-      const onPatch = vi.fn().mockResolvedValue(undefined);
+      const onPatch = vi.fn(() => Effect.void);
       render(RecurrenceEditorDialog, {
         props: {
           open: true,
@@ -486,7 +505,7 @@ describe("RecurrenceEditor — edit diff", () => {
 
   test("advanced mode unchanged rrule (byte-for-byte): no rrule in patch", async () => {
     const advEdit = { kind: "edit" as const, recurrence: { ...sample, rrule: ADVANCED_LAST_WEEKDAY }, etag: '"rev-1"' };
-    const onPatch = vi.fn().mockResolvedValue(undefined);
+    const onPatch = vi.fn(() => Effect.void);
     render(RecurrenceEditorDialog, {
       props: { open: true, mode: advEdit, actor: "fixture-user", onClose: vi.fn(), onCreate: vi.fn(), onPatch },
     });
@@ -543,12 +562,8 @@ describe("RecurrenceEditor — edit diff", () => {
 describe("RecurrenceEditor — 412 conflict", () => {
   test("412 response repopulates form with server payload and shows the exact banner text", async () => {
     const updatedServer: KataRecurrence = { ...sample, template_title: "Updated upstream", revision: 2 };
-    const apiError = Object.assign(new Error("revision mismatch"), {
-      status: 412,
-      code: "precondition_failed",
-      response: { recurrence: updatedServer, etag: '"rev-2"' },
-    });
-    const onPatch = vi.fn().mockRejectedValue(apiError);
+    const apiError = new KataRecurrenceConflictError("revision mismatch", updatedServer, '"rev-2"');
+    const onPatch = vi.fn(() => Effect.fail(apiError));
     render(RecurrenceEditorDialog, {
       props: { open: true, mode: editMode, actor: "fixture-user", onClose: vi.fn(), onCreate: vi.fn(), onPatch },
     });
@@ -564,12 +579,8 @@ describe("RecurrenceEditor — 412 conflict", () => {
       rrule: "FREQ=DAILY;INTERVAL=3",
       revision: 2,
     };
-    const apiError = Object.assign(new Error("revision mismatch"), {
-      status: 412,
-      code: "precondition_failed",
-      response: { recurrence: updatedServer, etag: '"rev-2"' },
-    });
-    const onPatch = vi.fn().mockRejectedValue(apiError);
+    const apiError = new KataRecurrenceConflictError("revision mismatch", updatedServer, '"rev-2"');
+    const onPatch = vi.fn(() => Effect.fail(apiError));
     render(RecurrenceEditorDialog, {
       props: { open: true, mode: editMode, actor: "fixture-user", onClose: vi.fn(), onCreate: vi.fn(), onPatch },
     });
@@ -587,14 +598,10 @@ describe("RecurrenceEditor — 412 conflict", () => {
     const onPatch = vi.fn().mockImplementation(() => {
       callCount += 1;
       if (callCount === 1) {
-        const err = Object.assign(new Error("revision mismatch"), {
-          status: 412,
-          code: "precondition_failed",
-          response: { recurrence: updatedServer, etag: '"rev-2"' },
-        });
-        return Promise.reject(err);
+        const err = new KataRecurrenceConflictError("revision mismatch", updatedServer, '"rev-2"');
+        return Effect.fail(err);
       }
-      return Promise.resolve();
+      return Effect.void;
     });
     render(RecurrenceEditorDialog, {
       props: { open: true, mode: editMode, actor: "fixture-user", onClose: vi.fn(), onCreate: vi.fn(), onPatch },

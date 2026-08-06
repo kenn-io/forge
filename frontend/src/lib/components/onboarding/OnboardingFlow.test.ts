@@ -1,16 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../../api/types.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
+import {
+  createdWorkspaceRef,
+  resetWorkspaceCreatePendingForTest,
+} from "../../stores/workspace-create-pending.svelte.js";
+import type { ToolingStatusValue } from "../../stores/embed-config.svelte.js";
 import type { StoreInstances } from "../../types.js";
-
-import type { PullRequest } from "../../api/types.ts";
-import { createSettingsStore } from "../../stores/settings.svelte.ts";
-import type { StoreInstances } from "../../types.ts";
 
 const mocks = vi.hoisted(() => ({
   listUserRepositories: vi.fn(),
-  bulkAddRepos: vi.fn(),
   createPullRequestWorkspace: vi.fn(),
   navigate: vi.fn(),
   tooling: {
@@ -18,15 +20,15 @@ const mocks = vi.hoisted(() => ({
       git: { available: true, version: "2.50" },
       gh: { available: true, authenticated: true, host: "github.com", user: "maintainer" },
       glab: { available: false, authenticated: false },
-    } as ToolingStatus | undefined,
+    } as ToolingStatusValue | undefined,
   },
 }));
+const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
+let observedBulkAddBodies: unknown[] = [];
 
 vi.mock("../../api/project-intake.ts", () => ({
   listUserRepositories: mocks.listUserRepositories,
-}));
-vi.mock("../../api/settings.ts", () => ({
-  bulkAddRepos: mocks.bulkAddRepos,
+  projectIntakeFailureMessage: (failure: Error) => failure.message,
 }));
 vi.mock("../../api/onboarding.ts", () => ({
   createPullRequestWorkspace: mocks.createPullRequestWorkspace,
@@ -36,6 +38,13 @@ vi.mock("../../stores/router.svelte.ts", () => ({
 }));
 vi.mock("../../stores/tooling-status.svelte.ts", () => ({
   resolveToolingStatus: () => mocks.tooling.value,
+}));
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => {
+    const runtime = runtimeCapture.current;
+    if (runtime === undefined) throw new Error("onboarding test runtime is not initialized");
+    return runtime;
+  },
 }));
 
 import OnboardingFlow from "./OnboardingFlow.svelte";
@@ -77,8 +86,8 @@ function storeFixture(options: { configured?: boolean; pulls?: PullRequest[]; pu
   const settings = createSettingsStore();
   const setConfiguredRepos = vi.spyOn(settings, "setConfiguredRepos");
   if (options.configured) settings.setConfiguredRepos([configuredRepo()]);
-  const triggerSync = vi.fn(async () => {});
-  const loadPulls = vi.fn(async () => {});
+  const triggerSync = vi.fn();
+  const loadPulls = vi.fn();
   const stores = {
     settings,
     sync: {
@@ -92,6 +101,7 @@ function storeFixture(options: { configured?: boolean; pulls?: PullRequest[]; pu
     },
     pulls: {
       loadPulls,
+      loadPullsEffect: () => Effect.sync(loadPulls),
       getPulls: () => pulls,
       getError: () => options.pullsError ?? null,
     },
@@ -106,45 +116,67 @@ function renderFlow(stores: StoreInstances) {
     onDismiss: vi.fn(),
     onComplete: vi.fn(),
   };
-  render(OnboardingFlow, {
+  const view = render(OnboardingFlow, {
     props: {
       stores,
       iconSrc: "/favicon.svg",
       ...callbacks,
     },
   });
-  return callbacks;
+  return { ...callbacks, unmount: view.unmount };
 }
 
 describe("OnboardingFlow", () => {
   beforeEach(() => {
+    runtimeCapture.current = makeAppRuntime();
+    observedBulkAddBodies = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (request.method === "POST" && new URL(request.url).pathname.endsWith("/repos/bulk")) {
+        observedBulkAddBodies.push(await request.json());
+        return Response.json({ repos: [{ repo_path: "acme/forge" }] });
+      }
+      return Response.json({});
+    });
     vi.clearAllMocks();
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
       gh: { available: true, authenticated: true, host: "github.com", user: "maintainer" },
       glab: { available: false, authenticated: false },
     };
-    mocks.listUserRepositories.mockResolvedValue([
-      {
-        name_with_owner: "acme/forge",
-        ssh_url: "git@github.com:acme/forge.git",
-        default_branch: "main",
-        provider: "github",
-        platform_host: "github.com",
-      },
-      {
-        name_with_owner: "acme/docs",
-        ssh_url: "git@github.com:acme/docs.git",
-        default_branch: "main",
-        provider: "github",
-        platform_host: "github.com",
-      },
-    ]);
-    mocks.bulkAddRepos.mockResolvedValue({ repos: [{ repo_path: "acme/forge" }] });
-    mocks.createPullRequestWorkspace.mockResolvedValue({
-      id: "ws-42",
-      status: "provisioning",
-    });
+    mocks.listUserRepositories.mockReturnValue(
+      Effect.yieldNow.pipe(
+        Effect.as([
+          {
+            name_with_owner: "acme/forge",
+            ssh_url: "git@github.com:acme/forge.git",
+            default_branch: "main",
+            provider: "github",
+            platform_host: "github.com",
+          },
+          {
+            name_with_owner: "acme/docs",
+            ssh_url: "git@github.com:acme/docs.git",
+            default_branch: "main",
+            provider: "github",
+            platform_host: "github.com",
+          },
+        ]),
+      ),
+    );
+    mocks.createPullRequestWorkspace.mockReturnValue(
+      Effect.succeed({
+        id: "ws-42",
+        status: "provisioning",
+      }),
+    );
+  });
+
+  afterEach(async () => {
+    if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
+    runtimeCapture.current = undefined;
+    resetWorkspaceCreatePendingForTest();
+    vi.unstubAllGlobals();
   });
 
   it("runs the real repository, sync, pull, and workspace activation path", async () => {
@@ -164,13 +196,17 @@ describe("OnboardingFlow", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Configure 1 repository" }));
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
-    expect(mocks.bulkAddRepos).toHaveBeenCalledWith([
+    expect(observedBulkAddBodies).toEqual([
       {
-        provider: "github",
-        host: "github.com",
-        owner: "acme",
-        name: "forge",
-        repo_path: "acme/forge",
+        repos: [
+          {
+            provider: "github",
+            host: "github.com",
+            owner: "acme",
+            name: "forge",
+            repo_path: "acme/forge",
+          },
+        ],
       },
     ]);
     expect(fixture.setConfiguredRepos).toHaveBeenCalledOnce();
@@ -284,15 +320,19 @@ describe("OnboardingFlow", () => {
       gh: { available: true, authenticated: true, host: "ghe.example.com", user: "maintainer" },
       glab: { available: false, authenticated: false },
     };
-    mocks.listUserRepositories.mockResolvedValue([
-      {
-        name_with_owner: "acme/forge",
-        ssh_url: "git@ghe.example.com:acme/forge.git",
-        default_branch: "main",
-        provider: "github",
-        platform_host: "ghe.example.com",
-      },
-    ]);
+    mocks.listUserRepositories.mockReturnValue(
+      Effect.yieldNow.pipe(
+        Effect.as([
+          {
+            name_with_owner: "acme/forge",
+            ssh_url: "git@ghe.example.com:acme/forge.git",
+            default_branch: "main",
+            provider: "github",
+            platform_host: "ghe.example.com",
+          },
+        ]),
+      ),
+    );
     renderFlow(storeFixture().stores);
 
     await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
@@ -304,15 +344,21 @@ describe("OnboardingFlow", () => {
       provider: "github",
       platformHost: "ghe.example.com",
     });
-    expect(mocks.bulkAddRepos).toHaveBeenCalledWith([
-      {
-        provider: "github",
-        host: "ghe.example.com",
-        owner: "acme",
-        name: "forge",
-        repo_path: "acme/forge",
-      },
-    ]);
+    await waitFor(() =>
+      expect(observedBulkAddBodies).toEqual([
+        {
+          repos: [
+            {
+              provider: "github",
+              host: "ghe.example.com",
+              owner: "acme",
+              name: "forge",
+              repo_path: "acme/forge",
+            },
+          ],
+        },
+      ]),
+    );
   });
 
   it("keeps the repository picker connected to provider settings", async () => {
@@ -361,5 +407,36 @@ describe("OnboardingFlow", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "I’ll do this later" }));
     expect(callbacks.onDismiss).toHaveBeenCalledOnce();
+  });
+
+  it("retains workspace creation after the onboarding view unmounts without navigating", async () => {
+    let resolveWorkspace: ((workspace: { id: string; status: string }) => void) | undefined;
+    const workspaceRequest = new Promise<{ id: string; status: string }>((resolve) => {
+      resolveWorkspace = resolve;
+    });
+    mocks.createPullRequestWorkspace.mockReturnValue(Effect.promise(() => workspaceRequest));
+    const callbacks = renderFlow(storeFixture({ configured: true }).stores);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with PR #42" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    callbacks.unmount();
+    resolveWorkspace?.({ id: "ws-42", status: "provisioning" });
+    await workspaceRequest;
+    await Promise.resolve();
+
+    expect(callbacks.onComplete).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalledWith("/terminal/ws-42");
+    expect(
+      createdWorkspaceRef({
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "forge",
+        repoPath: "acme/forge",
+        number: 42,
+        itemType: "pull",
+      }),
+    ).toEqual({ id: "ws-42", status: "provisioning" });
   });
 });

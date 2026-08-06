@@ -1,16 +1,17 @@
 <script lang="ts">
   import { Button, EmptyState, SearchInput, Spinner, TextInput } from "@kenn-io/kit-ui";
-  import { tick, untrack } from "svelte";
+  import { Effect } from "effect";
+  import { onDestroy, tick, untrack } from "svelte";
   import type { ConfigRepo, Settings } from "../../api/types.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import Modal from "../shared/Modal.svelte";
   import {
-    bulkAddRepos,
-    previewRepos,
-    removeRepo,
-    updateRepoWorktreeBasePath,
+    SettingsWorkflow,
+    settingsErrorMessage,
     type RepoPreviewRow,
-  } from "../../api/settings.js";
+  } from "../../stores/settings-workflow.js";
+  import Modal from "../shared/Modal.svelte";
 
   interface Props {
     open: boolean;
@@ -20,6 +21,7 @@
   }
 
   let { open, repo, onClose, onPromoted }: Props = $props();
+  const runtime = getAppRuntime();
 
   let rows = $state.raw<RepoPreviewRow[]>([]);
   let selectedKey = $state<string | null>(null);
@@ -28,8 +30,9 @@
   let filterText = $state("");
   let loading = $state(false);
   let submitting = $state(false);
+  let stateUncertain = $state(false);
   let error = $state<string | null>(null);
-  let requestToken = 0;
+  let previewExecution: AppExecution<void, never> | null = null;
   let loadedRepoKey: string | null = null;
   // kit SearchInput's inputEl bindable is exactly-optional, which
   // exactOptionalPropertyTypes rejects for a `| undefined` binding —
@@ -70,9 +73,18 @@
     const key = configRepoKey(target);
     if (loadedRepoKey === key) return;
     loadedRepoKey = key;
-    void tick().then(() => searchWrap?.querySelector("input")?.focus());
-    untrack(() => { void loadMatches(target); });
+    runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.tap(() => Effect.sync(() => {
+          if (open && repo && configRepoKey(repo) === key) searchWrap?.querySelector("input")?.focus();
+        })),
+      ),
+      { operation: "focus repository promotion search", safeContext: {}, onFailure: () => {} },
+    );
+    untrack(() => launchMatchesLoad(target));
   });
+
+  onDestroy(() => previewExecution?.interrupt());
 
   function promoteRowKey(row: RepoPreviewRow): string {
     return `${row.provider}/${row.platform_host}/${row.repo_path}`.toLowerCase();
@@ -83,6 +95,8 @@
   }
 
   function resetAll(): void {
+    previewExecution?.interrupt();
+    previewExecution = null;
     rows = [];
     selectedKey = null;
     pathDrafts = {};
@@ -90,88 +104,111 @@
     filterText = "";
     loading = false;
     submitting = false;
+    stateUncertain = false;
     error = null;
-    requestToken += 1;
   }
 
-  async function loadMatches(target: ConfigRepo): Promise<void> {
-    const token = ++requestToken;
+  function launchMatchesLoad(target: ConfigRepo): void {
+    previewExecution?.interrupt();
     rows = [];
     selectedKey = null;
     pathDrafts = {};
     addedExactKeys = {};
     loading = true;
     error = null;
-    try {
-      const resp = await previewRepos(target.owner, target.name, {
+    const targetKey = configRepoKey(target);
+    let execution: AppExecution<void, never> | undefined;
+    const isCurrent = () =>
+      execution !== undefined && previewExecution === execution && open && repo !== null && configRepoKey(repo) === targetKey;
+    const program = Effect.gen(function* () {
+      const workflow = yield* SettingsWorkflow;
+      return yield* workflow.previewRepos(target.owner, target.name, {
         provider: target.provider,
         host: target.platform_host,
       });
-      if (token !== requestToken) return;
-      rows = resp.repos;
-      const firstAvailable = resp.repos.find((row) => !row.already_configured);
-      selectedKey = firstAvailable ? promoteRowKey(firstAvailable) : null;
-    } catch (err) {
-      if (token !== requestToken) return;
-      error = err instanceof Error ? err.message : String(err);
-    } finally {
-      if (token === requestToken) loading = false;
-    }
+    }).pipe(
+      Effect.matchEffect({
+        onFailure: (failure) => Effect.sync(() => {
+          if (!isCurrent()) return;
+          error = settingsErrorMessage(failure);
+        }),
+        onSuccess: (response) => Effect.sync(() => {
+          if (!isCurrent()) return;
+          rows = response.repos;
+          const firstAvailable = response.repos.find((row) => !row.already_configured);
+          selectedKey = firstAvailable ? promoteRowKey(firstAvailable) : null;
+        }),
+      }),
+      Effect.ensuring(Effect.sync(() => {
+        if (!isCurrent()) return;
+        previewExecution = null;
+        loading = false;
+      })),
+    );
+    execution = runtime.runCommand(program, {
+      operation: "load wildcard repository matches",
+      safeContext: { provider: target.provider, host: target.platform_host },
+      onFailure: () => {},
+    });
+    previewExecution = execution;
   }
 
-  async function handlePromote(): Promise<void> {
+  function handlePromote(): void {
     const row = selectedRow;
     const key = selectedKey;
-    if (!row || !key || row.already_configured) return;
+    if (!row || !key || row.already_configured || stateUncertain) return;
     const worktreeBasePath = selectedPath.trim();
     if (worktreeBasePath === "") return;
-    let addedThisAttempt = false;
+    const exactRepoAlreadyAdded = addedExactKeys[key] ?? false;
     submitting = true;
     error = null;
-    try {
-      if (!addedExactKeys[key]) {
-        await bulkAddRepos([
-          {
-            provider: row.provider,
-            host: row.platform_host,
-            owner: row.owner,
-            name: row.name,
-            repo_path: row.repo_path,
-          },
-        ]);
-        addedThisAttempt = true;
-        addedExactKeys = { ...addedExactKeys, [key]: true };
-      }
-      const settings = await updateRepoWorktreeBasePath(
-        row.owner,
-        row.name,
-        {
+    const repoInput = {
+      provider: row.provider,
+      host: row.platform_host,
+      owner: row.owner,
+      name: row.name,
+      repo_path: row.repo_path,
+    };
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.promoteRepo(repoInput, worktreeBasePath, exactRepoAlreadyAdded);
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) => Effect.sync(() => {
+            if (failure._tag === "RepoPromotionRollbackError") {
+              addedExactKeys = { ...addedExactKeys, [key]: true };
+              onPromoted(failure.settings);
+              error = settingsErrorMessage(failure);
+              return;
+            }
+            if (failure._tag === "RepoPromotionStateUncertainError") {
+              stateUncertain = true;
+              error = settingsErrorMessage(failure);
+              return;
+            }
+            showFlash(settingsErrorMessage(failure), { tone: "danger" });
+          }),
+          onSuccess: (settings) => Effect.sync(() => {
+            addedExactKeys = { ...addedExactKeys, [key]: false };
+            onPromoted(settings);
+            onClose();
+          }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          submitting = false;
+        })),
+      ),
+      {
+        operation: "promote wildcard repository",
+        safeContext: {
           provider: row.provider,
           host: row.platform_host,
+          repoPath: row.repo_path,
         },
-        worktreeBasePath,
-      );
-      onPromoted(settings);
-      onClose();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (addedThisAttempt) {
-        try {
-          await removeRepo(row.owner, row.name, {
-            provider: row.provider,
-            host: row.platform_host,
-          });
-          addedExactKeys = { ...addedExactKeys, [key]: false };
-        } catch (rollbackErr) {
-          const rollbackMessage = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
-          error = `${message}; rollback failed: ${rollbackMessage}`;
-          return;
-        }
-      }
-      showFlash(message, { tone: "danger" });
-    } finally {
-      submitting = false;
-    }
+        onFailure: () => {},
+      },
+    );
   }
 
   function closeIfAllowed(): void {
@@ -258,7 +295,7 @@
             onkeydown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
-                void handlePromote();
+                handlePromote();
               }
             }}
           />
@@ -273,8 +310,8 @@
       <Button
         tone="info"
         surface="solid"
-        onclick={() => void handlePromote()}
-        disabled={submitting || !selectedRow || selectedRow.already_configured || selectedPath.trim() === ""}
+        onclick={handlePromote}
+        disabled={stateUncertain || submitting || !selectedRow || selectedRow.already_configured || selectedPath.trim() === ""}
       >
         {submitting ? "Promoting..." : "Promote repository"}
       </Button>

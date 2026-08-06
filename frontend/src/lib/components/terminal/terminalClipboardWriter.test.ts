@@ -1,10 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect, Exit, Scope } from "effect";
 
 import {
   createBrowserTerminalClipboardPort,
-  createTerminalClipboardWriter,
+  makeTerminalClipboardWriter,
   type TerminalClipboardPort,
+  type TerminalClipboardWriter,
+  type TerminalClipboardWriterOptions,
 } from "./terminalClipboardWriter";
+
+const writerScopes: Scope.CloseableScope[] = [];
+
+async function makeTestWriter(
+  port: TerminalClipboardPort,
+  options: TerminalClipboardWriterOptions = {},
+): Promise<TerminalClipboardWriter> {
+  const scope = await Effect.runPromise(Scope.make());
+  writerScopes.push(scope);
+  return Effect.runPromise(Scope.provide(makeTerminalClipboardWriter(port, options), scope));
+}
 
 function deferred<T>(): {
   promise: Promise<T>;
@@ -44,7 +58,8 @@ function createPort(): {
   };
 }
 
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(writerScopes.splice(0).map((scope) => Effect.runPromise(Scope.close(scope, Exit.void))));
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -73,7 +88,7 @@ describe("browser terminal clipboard port", () => {
 describe("terminal clipboard writer", () => {
   it("does not authorize a terminal write from an unconfirmed pointer gesture", async () => {
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
-    const writer = createTerminalClipboardWriter(port);
+    const writer = await makeTestWriter(port);
 
     writer.beginPointerGesture();
     const copied = writer.write("focus-click character");
@@ -88,7 +103,7 @@ describe("terminal clipboard writer", () => {
   it("keeps one confirmed pointer authorization alive through a long drag", async () => {
     vi.useFakeTimers();
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
-    const writer = createTerminalClipboardWriter(port);
+    const writer = await makeTestWriter(port);
 
     writer.beginPointerGesture();
     await vi.advanceTimersByTimeAsync(30_000);
@@ -109,7 +124,7 @@ describe("terminal clipboard writer", () => {
 
   it("does not reauthorize a consumed pointer gesture on release", async () => {
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
-    const writer = createTerminalClipboardWriter(port);
+    const writer = await makeTestWriter(port);
 
     writer.beginPointerGesture();
     writer.confirmPointerSelection();
@@ -124,7 +139,7 @@ describe("terminal clipboard writer", () => {
 
   it("revokes an active pointer authorization when the gesture is canceled", async () => {
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
-    const writer = createTerminalClipboardWriter(port);
+    const writer = await makeTestWriter(port);
 
     writer.beginPointerGesture();
     writer.cancelPointerGesture();
@@ -137,7 +152,7 @@ describe("terminal clipboard writer", () => {
 
   it("revokes a released pointer authorization when the gesture is canceled", async () => {
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
-    const writer = createTerminalClipboardWriter(port);
+    const writer = await makeTestWriter(port);
 
     writer.beginPointerGesture();
     writer.endPointerGesture();
@@ -151,7 +166,7 @@ describe("terminal clipboard writer", () => {
 
   it("revokes keyboard authorization created inside a canceled pointer gesture", async () => {
     const { port, writeLocalText, writeText } = createPort();
-    const writer = createTerminalClipboardWriter(port);
+    const writer = await makeTestWriter(port);
 
     writer.beginPointerGesture();
     writer.confirmPointerSelection();
@@ -168,7 +183,7 @@ describe("terminal clipboard writer", () => {
     vi.useFakeTimers();
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
     const onPointerGestureTimeout = vi.fn();
-    const writer = createTerminalClipboardWriter(port, { onPointerGestureTimeout });
+    const writer = await makeTestWriter(port, { onPointerGestureTimeout });
 
     writer.beginPointerGesture();
     await vi.advanceTimersByTimeAsync(60_001);
@@ -186,7 +201,7 @@ describe("terminal clipboard writer", () => {
   it("clears a rejected authorization so a later gesture can retry", async () => {
     const firstWrite = deferred<void>();
     const deferredWrites: Array<Promise<string>> = [];
-    const writer = createTerminalClipboardWriter({
+    const writer = await makeTestWriter({
       beginDeferredWrite(text) {
         deferredWrites.push(text);
         return deferredWrites.length === 1 ? firstWrite.promise : text.then(() => undefined);
@@ -207,7 +222,7 @@ describe("terminal clipboard writer", () => {
   it("keeps keyboard authorization alive while trusted key gestures continue", async () => {
     vi.useFakeTimers();
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
-    const writer = createTerminalClipboardWriter(port);
+    const writer = await makeTestWriter(port);
 
     writer.authorizeKeyboardGesture();
     await vi.advanceTimersByTimeAsync(4_000);
@@ -222,7 +237,7 @@ describe("terminal clipboard writer", () => {
 
   it("revokes keyboard authorization when terminal focus is lost", async () => {
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
-    const writer = createTerminalClipboardWriter(port);
+    const writer = await makeTestWriter(port);
 
     writer.authorizeKeyboardGesture();
     writer.cancelAuthorization();
@@ -233,10 +248,23 @@ describe("terminal clipboard writer", () => {
     expect(writeLocalText).not.toHaveBeenCalled();
   });
 
+  it("revokes pending keyboard authorization when its Effect scope closes", async () => {
+    const { port, deferredWrites, writeLocalText, writeText } = createPort();
+    const scope = await Effect.runPromise(Scope.make());
+    const writer = await Effect.runPromise(Scope.provide(makeTerminalClipboardWriter(port), scope));
+
+    writer.authorizeKeyboardGesture();
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+
+    await expect(deferredWrites[0]).rejects.toMatchObject({ name: "AbortError" });
+    expect(writeText).not.toHaveBeenCalled();
+    expect(writeLocalText).not.toHaveBeenCalled();
+  });
+
   it("does not shorten keyboard authorization for an unrelated pointer release", async () => {
     vi.useFakeTimers();
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
-    const writer = createTerminalClipboardWriter(port);
+    const writer = await makeTestWriter(port);
 
     writer.authorizeKeyboardGesture();
     await vi.advanceTimersByTimeAsync(2_000);
@@ -261,7 +289,7 @@ describe("terminal clipboard writer", () => {
       writeLocalText: vi.fn(async () => undefined),
       writeText,
     };
-    const writer = createTerminalClipboardWriter(port);
+    const writer = await makeTestWriter(port);
 
     writer.authorizeKeyboardGesture();
     await vi.advanceTimersByTimeAsync(10_001);
@@ -276,7 +304,7 @@ describe("terminal clipboard writer", () => {
     const deferredWrites: Array<Promise<string>> = [];
     const writeText = vi.fn(async () => undefined);
     const writeLocalText = vi.fn(async () => undefined);
-    const writer = createTerminalClipboardWriter({
+    const writer = await makeTestWriter({
       beginDeferredWrite(text) {
         deferredWrites.push(text);
         return deferredWrite.promise;
@@ -300,7 +328,7 @@ describe("terminal clipboard writer", () => {
     const directWrite = deferred<void>();
     const writeText = vi.fn(() => directWrite.promise);
     const writeLocalText = vi.fn(async () => undefined);
-    const writer = createTerminalClipboardWriter({
+    const writer = await makeTestWriter({
       beginDeferredWrite() {
         throw new DOMException("unsupported", "NotSupportedError");
       },
@@ -320,7 +348,7 @@ describe("terminal clipboard writer", () => {
 
   it("falls back to writeText when deferred clipboard setup is unavailable", async () => {
     const writeText = vi.fn(async () => undefined);
-    const writer = createTerminalClipboardWriter({
+    const writer = await makeTestWriter({
       beginDeferredWrite() {
         throw new DOMException("unsupported", "NotSupportedError");
       },
@@ -337,7 +365,7 @@ describe("terminal clipboard writer", () => {
 
   it("falls back to the local Kenn Forge clipboard when browser writes fail", async () => {
     const writeLocalText = vi.fn(async () => undefined);
-    const writer = createTerminalClipboardWriter({
+    const writer = await makeTestWriter({
       beginDeferredWrite() {
         throw new DOMException("unsupported", "NotSupportedError");
       },
@@ -355,7 +383,7 @@ describe("terminal clipboard writer", () => {
 
   it("reports failure only after browser and local writes fail", async () => {
     const deferredWrite = deferred<void>();
-    const writer = createTerminalClipboardWriter({
+    const writer = await makeTestWriter({
       beginDeferredWrite(text) {
         void text.catch(() => undefined);
         return deferredWrite.promise;

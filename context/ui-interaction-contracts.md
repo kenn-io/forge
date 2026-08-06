@@ -219,9 +219,10 @@ Persisted controls must state their scope clearly.
 - Settings that select a runtime must hydrate before that runtime starts, but
   the gate must abort timed-out or superseded reads and expose retry rather than strand the surface
   (`frontend/src/lib/components/terminal/WorkspaceEmbedShell.svelte::loadTerminalSettings`).
-- Concurrent startup callers share the active readiness/settings request, but completed snapshots
-  are not retained across shell transitions because settings writers do not share one invalidation boundary
-  (`frontend/src/lib/app/startup-workflow.ts::StartupWorkflowLive`).
+- Concurrent startup and embedded-shell callers share the last successful settings snapshot;
+  every accepted settings command invalidates that cache entry through the same acknowledged
+  workflow, and an invalidated in-flight read cannot publish into the next generation
+  (`frontend/src/lib/app/startup-workflow.ts::StartupWorkflowLive`, `frontend/src/lib/stores/settings-workflow.ts::SettingsWorkflowLive`).
 
 Whenever a control persists, document and test:
 
@@ -654,8 +655,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   interruption does not cancel the write; application shutdown still owns final interruption
   (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflowService`).
 - Unknown and partial Kata mutations remain application-owned under their original daemon and target;
-  matching writes stay fenced across replacement until fresh, newer authority proves the outcome, and
-  Retry never replays the write (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflowService`).
+  one unresolved outcome fences that daemon's writes across replacement until fresh authority resolves it,
+  and Retry never replays the write. Mutation identity and snapshot-baseline recovery evidence must name
+  that same daemon (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflowService`).
 - Roborev has no event replay cursor: reconnect after authoritative job-list reconciliation; a lost
   mutation response retains and fences its original target until authoritative observation, never
   replays the write. A confirmed POST stays acknowledged when its follow-up refresh fails; report
@@ -664,6 +666,42 @@ Rows that contain buttons, links, or toggles need clear event ownership.
 - Docs publish commands snapshot folder and message and remain application-owned after replacement;
   same-folder surfaces adopt pending or unacknowledged failure state, while completed success is never
   replayed into a later session (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflowService`).
+- Repository issue creation remains application-owned after acceptance; retained provider-aware state survives
+  page replacement, and only initial presenter adoption may replay it; ordinary summary refreshes must not reopen
+  dismissed state. Replacing a presenter interrupts its in-progress delivery before the replacement adopts the
+  state. Fence retry only for transport failure or stable `mutationOutcomeUnknown`; the bounded single-browser
+  command queue applies backpressure outside the registry lock instead of rejecting an admitted mutation
+  (`frontend/src/lib/components/repositories/repo-summary-workflow.ts::RepoSummaryWorkflow`).
+- Every Docs resource has one read key across ordinary loads and mutation reconciliation; owner-local lanes
+  cancel obsolete route reads without canceling another owner's accepted reconciliation. Owner generations
+  protect replacements, while presenter leases retain refreshes until a current surface claims them
+  (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflowService`).
+- When a settings or Docs write may have committed before failing, reconcile through its application workflow:
+  matching state is recovered success, contradictory state preserves the failure, and an inconclusive read
+  fences duplicate submission. Retain any pre-mutation absence evidence across retries. Repository evidence
+  includes canonical provider, resolved host, owner, and name
+  (`frontend/src/lib/stores/settings-workflow.ts::SettingsWorkflowLive`,
+  `frontend/src/lib/stores/docs-workflow.ts::DocsWorkflow`).
+- Frontend uncertainty fences live for one browser application runtime. A deliberate reload clears unresolved
+  evidence, so the user must verify fresh authoritative state before attempting that mutation again
+  (`frontend/src/lib/app/runtime.ts::makeAppRuntime`).
+- Project registration, clone, and new-worktree commands capture host/project identity and remain
+  application-owned after acceptance; retained worktree acknowledgements are generation-owned, so an
+  older reconciler cannot clear a replacement command or presentation fence
+  (`frontend/src/lib/components/terminal/project-mutation-workflow.ts::ProjectMutationWorkflow`).
+- Workspace runtime commands remain application-owned after acceptance and retain presentation by
+  `(hostKey, workspaceId)` across surface replacement; one-shot delete presenters may shadow the route presenter,
+  while failures from an abandoned visit must not surface in its replacement. Presenter replacement interrupts
+  stale asynchronous delivery before it can publish. A transport failure retains a retry fence until fresh runtime
+  authority proves applied or not applied; presets retain per-session progress so recovery never relaunches a
+  completed step. A known API or payload failure is a definite mutation failure, while a failed refresh after an
+  acknowledged success is presentation degradation and cannot reopen the mutation. These fences live for the one
+  browser application runtime; a deliberate page reload clears them, so a user who reloads during an unresolved
+  outcome must verify authoritative workspace state before attempting the action again
+  (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::makeWorkspaceRuntimeWorkflow`).
+- Embedding host callbacks settle only after mutations are durably visible to the next authoritative
+  snapshot; negative or malformed acknowledgements reconcile before the command is offered again
+  (`frontend/src/lib/components/terminal/project-mutation-workflow.ts::ProjectMutationWorkflow`).
 - Repository-browser commands use a mount-bound facade and fence every state publication;
   automatic README-first selection yields to user selection, and stale teardown cannot affect a successor
   (`frontend/src/lib/stores/repo-browser.svelte.ts::RepoBrowserMount`).

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount, tick, untrack } from "svelte";
+  import { Effect } from "effect";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import {
     Button,
@@ -18,14 +19,18 @@
 
   import {
     listUserRepositories,
+    projectIntakeFailureMessage,
     type DiscoveredUserRepository,
   } from "../../api/project-intake.ts";
   import type { PullRequest } from "../../api/types.js";
   import { createPullRequestWorkspace } from "../../api/onboarding.ts";
-  import { bulkAddRepos } from "../../api/settings.ts";
+  import type { AppExecution, AppServices } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { buildProviderPullRequestRoute } from "../../routes.js";
   import { navigate } from "../../stores/router.svelte.ts";
   import { resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
+  import { recordWorkspaceCreated } from "../../stores/workspace-create-pending.svelte.js";
+  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import type { StoreInstances } from "../../types.js";
   import ProviderReadinessStep from "./ProviderReadinessStep.svelte";
 
@@ -49,6 +54,7 @@
   ];
 
   let { stores, iconSrc, onStart, onDismiss, onComplete }: Props = $props();
+  const runtime = getAppRuntime();
   let phase = $state<Phase>(
     untrack(() => stores.settings.hasConfiguredRepos()) ? "sync" : "repos",
   );
@@ -65,6 +71,13 @@
   let toolingRetrying = $state(false);
   let toolingRetryError = $state<string | null>(null);
   let repoLoadStarted = false;
+  let repositoryExecution: AppExecution<void, never> | undefined;
+  let configureExecution: AppExecution<void, never> | undefined;
+  let phaseExecution: AppExecution<void, never> | undefined;
+  let syncExecution: AppExecution<void, never> | undefined;
+  let pullsExecution: AppExecution<void, never> | undefined;
+  let workspaceExecution: AppExecution<void, never> | undefined;
+  let componentDestroyed = false;
 
   let configureBusy = $state(false);
   let configureError = $state<string | null>(null);
@@ -79,7 +92,7 @@
   let workspaceBusy = $state(false);
   let workspaceError = $state<string | null>(null);
 
-  const tooling = $derived(resolveToolingStatus());
+  const tooling = $derived(resolveToolingStatus(runtime));
   const gh = $derived(tooling?.gh);
   const hasConfiguredRepos = $derived(stores.settings.hasConfiguredRepos());
   const ghReady = $derived(
@@ -132,40 +145,82 @@
         : "next";
   }
 
-  async function moveTo(next: Phase): Promise<void> {
-    phase = next;
-    await tick();
-    headingEl?.focus();
+  function moveToProgram(next: Phase): Effect.Effect<void> {
+    return Effect.sync(() => {
+      phase = next;
+    }).pipe(
+      Effect.andThen(Effect.promise(() => tick())),
+      Effect.andThen(Effect.sync(() => headingEl?.focus())),
+    );
   }
 
-  async function loadRepositories(): Promise<boolean> {
-    if (repositoriesLoading) return false;
+  function moveTo(next: Phase): void {
+    phaseExecution?.interrupt();
+    phaseExecution = runtime.runCommand(moveToProgram(next), {
+      operation: "move onboarding phase",
+      safeContext: { phase: next },
+      onFailure: () => {},
+    });
+  }
+
+  function loadRepositories(verifyTooling = false): void {
+    if (repositoriesLoading) return;
+    repositoryExecution?.interrupt();
     repoLoadStarted = true;
     repositoriesLoading = true;
     repositoryError = null;
-    try {
-      repositories = await listUserRepositories({
+    const requestedHost = gh?.host || "github.com";
+    let execution: AppExecution<void, never> | undefined;
+    const isCurrent = () => !componentDestroyed && execution !== undefined && repositoryExecution === execution;
+    execution = runtime.runCommand(
+      listUserRepositories({
         provider: "github",
-        platformHost: gh?.host || "github.com",
-      });
-      const available = new Set(
-        repositories.map((repository) => repository.name_with_owner),
-      );
-      selectedRepositories = selectedRepositories.filter((name) =>
-        available.has(name),
-      );
-      return true;
-    } catch (error) {
-      repositoryError = errorMessage(error);
-      return false;
-    } finally {
-      repositoriesLoading = false;
-    }
+        platformHost: requestedHost,
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              repositoryError = projectIntakeFailureMessage(failure);
+              if (verifyTooling) toolingRetryError = repositoryError;
+            }),
+          onSuccess: (result) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              repositories = result;
+              const available = new Set(result.map((repository) => repository.name_with_owner));
+              selectedRepositories = selectedRepositories.filter((name) => available.has(name));
+              if (verifyTooling) {
+                ghVerified = true;
+                providerConfirmed = true;
+                runtime.runMicrotask(() => headingEl?.focus(), {
+                  operation: "focus onboarding repository step",
+                  safeContext: {},
+                });
+              }
+            }),
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!isCurrent()) return;
+            repositoryExecution = undefined;
+            repositoriesLoading = false;
+            if (verifyTooling) toolingRetrying = false;
+          }),
+        ),
+      ),
+      {
+        operation: "load onboarding repositories",
+        safeContext: { provider: "github", platformHost: requestedHost },
+        onFailure: () => {},
+      },
+    );
+    repositoryExecution = execution;
   }
 
   function retryRepositoryLoad(): void {
     repoLoadStarted = false;
-    void loadRepositories();
+    loadRepositories();
   }
 
   function toggleRepository(name: string, checked: boolean): void {
@@ -185,13 +240,11 @@
     };
   }
 
-  async function configureRepositories(): Promise<void> {
+  function configureRepositories(): void {
     if (configureBusy || selectedRepositoryRows.length === 0) return;
     configureBusy = true;
     configureError = null;
-    try {
-      const settings = await bulkAddRepos(
-        selectedRepositoryRows.map((repository) => {
+    const requestedRepos = selectedRepositoryRows.map((repository) => {
           const identity = splitRepositoryPath(repository.name_with_owner);
           return {
             provider: repository.provider,
@@ -200,74 +253,147 @@
             name: identity.name,
             repo_path: repository.name_with_owner,
           };
-        }),
-      );
-      stores.settings.setConfiguredRepos(settings.repos);
-      await moveTo("sync");
-      void startSync();
-    } catch (error) {
-      configureError = errorMessage(error);
-    } finally {
-      configureBusy = false;
-    }
+        });
+    configureExecution?.interrupt();
+    configureExecution = runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        const settings = yield* workflow.bulkAddRepos(requestedRepos);
+        yield* Effect.sync(() => stores.settings.setConfiguredRepos(settings.repos));
+        if (componentDestroyed) return;
+        yield* moveToProgram("sync");
+        yield* startSyncProgram();
+      }).pipe(
+        Effect.catch((failure) =>
+          Effect.sync(() => {
+            if (!componentDestroyed) configureError = settingsErrorMessage(failure);
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!componentDestroyed) configureBusy = false;
+          }),
+        ),
+      ),
+      {
+        operation: "configure onboarding repositories",
+        safeContext: { repositoryCount: requestedRepos.length },
+        onFailure: () => {},
+      },
+    );
   }
 
-  async function startSync(): Promise<void> {
-    if (syncStartIssued) return;
-    syncStartIssued = true;
-    syncError = null;
-    try {
-      await stores.sync.triggerSync();
+  function startSyncProgram(): Effect.Effect<void, never, AppServices> {
+    return Effect.gen(function* () {
+      if (syncStartIssued) return;
+      yield* Effect.sync(() => {
+        syncStartIssued = true;
+        syncError = null;
+        stores.sync.triggerSync();
+      });
+      yield* Effect.yieldNow;
       const state = stores.sync.getSyncState();
       if (!state?.running) {
-        if (state?.last_error) syncError = state.last_error;
-        else if (state?.last_run_at) await finishSync();
+        const lastError = state?.last_error;
+        if (lastError) {
+          yield* Effect.sync(() => {
+            syncError = lastError;
+          });
+        } else if (state?.last_run_at) {
+          yield* finishSyncProgram();
+        }
       }
-    } catch (error) {
-      syncError = errorMessage(error);
-    }
+    });
+  }
+
+  function startSync(): void {
+    syncExecution?.interrupt();
+    syncExecution = runtime.runCommand(startSyncProgram(), {
+      operation: "start onboarding sync",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   function retrySync(): void {
     syncStartIssued = false;
     syncError = null;
-    void startSync();
+    startSync();
   }
 
-  async function loadAvailablePulls(): Promise<void> {
-    pullsLoading = true;
-    pullsError = null;
-    try {
-      await stores.pulls.loadPulls();
-      const loadError = stores.pulls.getError();
-      if (loadError) {
-        pullsError = loadError;
-        availablePulls = [];
-        selectedPull = null;
-      } else {
-        availablePulls = stores.pulls
-          .getPulls()
-          .filter((pull) => pull.State === "open")
-          .slice(0, 8);
-        selectedPull = availablePulls[0] ?? null;
-      }
-    } catch (error) {
-      pullsError = errorMessage(error);
-    } finally {
-      pullsLoading = false;
-    }
+  function loadAvailablePullsProgram(): Effect.Effect<void, never, AppServices> {
+    return Effect.sync(() => {
+      pullsLoading = true;
+      pullsError = null;
+    }).pipe(
+      Effect.andThen(stores.pulls.loadPullsEffect()),
+      Effect.matchEffect({
+        onFailure: (failure) =>
+          Effect.sync(() => {
+            pullsError = stores.pulls.getError() ?? errorMessage(failure);
+            availablePulls = [];
+            selectedPull = null;
+          }),
+        onSuccess: () =>
+          Effect.sync(() => {
+            const loadError = stores.pulls.getError();
+            if (loadError) {
+              pullsError = loadError;
+              availablePulls = [];
+              selectedPull = null;
+              return;
+            }
+            availablePulls = stores.pulls
+              .getPulls()
+              .filter((pull) => pull.State === "open")
+              .slice(0, 8);
+            selectedPull = availablePulls[0] ?? null;
+          }),
+      }),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (!componentDestroyed) pullsLoading = false;
+        }),
+      ),
+    );
   }
 
-  async function finishSync(): Promise<void> {
-    if (syncFinishing) return;
-    syncFinishing = true;
-    await loadAvailablePulls();
-    syncFinishing = false;
-    await moveTo("pulls");
+  function finishSyncProgram(): Effect.Effect<void, never, AppServices> {
+    if (syncFinishing) return Effect.void;
+    return Effect.sync(() => {
+      syncFinishing = true;
+    }).pipe(
+      Effect.andThen(loadAvailablePullsProgram()),
+      Effect.andThen(
+        Effect.sync(() => {
+          syncFinishing = false;
+        }),
+      ),
+      Effect.andThen(moveToProgram("pulls")),
+      Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          syncFinishing = false;
+        }),
+      ),
+    );
   }
 
-  async function retryPullLoad(): Promise<void> {
-    await loadAvailablePulls();
+  function finishSync(): void {
+    pullsExecution?.interrupt();
+    pullsExecution = runtime.runCommand(finishSyncProgram(), {
+      operation: "finish onboarding sync",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
+  function retryPullLoad(): void {
+    pullsExecution?.interrupt();
+    pullsExecution = runtime.runCommand(loadAvailablePullsProgram(), {
+      operation: "retry onboarding pull request load",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   function selectPull(pull: PullRequest): void {
@@ -298,47 +424,86 @@
     navigate("/settings");
   }
 
-  async function continueWithGitHub(): Promise<void> {
-    providerConfirmed = true;
-    await tick();
-    headingEl?.focus();
+  function continueWithGitHub(): void {
+    phaseExecution?.interrupt();
+    phaseExecution = runtime.runCommand(
+      Effect.sync(() => {
+        providerConfirmed = true;
+      }).pipe(
+        Effect.andThen(Effect.promise(() => tick())),
+        Effect.andThen(Effect.sync(() => headingEl?.focus())),
+      ),
+      {
+        operation: "continue onboarding with GitHub",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   function openSelectedPullView(): void {
     if (selectedPull) openPullView(selectedPull);
   }
 
-  async function startWorkspace(): Promise<void> {
+  function startWorkspace(): void {
     const pull = selectedPull;
     if (!pull || workspaceBusy) return;
     workspaceBusy = true;
     workspaceError = null;
-    try {
-      const workspace = pull.workspace?.id
-        ? { id: pull.workspace.id, status: pull.workspace.status }
-        : await createPullRequestWorkspace(pull);
-      onComplete();
-      navigate(`/terminal/${encodeURIComponent(workspace.id)}`);
-    } catch (error) {
-      workspaceError = errorMessage(error);
-    } finally {
-      workspaceBusy = false;
-    }
+    const identity = {
+      provider: pull.repo.provider,
+      platformHost: pull.repo.platform_host,
+      owner: pull.repo.owner,
+      name: pull.repo.name,
+      repoPath: pull.repo.repo_path,
+      number: pull.Number,
+      itemType: "pull",
+    };
+    workspaceExecution?.interrupt();
+    workspaceExecution = runtime.runCommand(
+      (pull.workspace?.id
+        ? Effect.succeed({ id: pull.workspace.id, status: pull.workspace.status })
+        : createPullRequestWorkspace(pull)
+      ).pipe(
+        Effect.tap((workspace) =>
+          Effect.sync(() => {
+            recordWorkspaceCreated(identity, workspace);
+            if (componentDestroyed) return;
+            onComplete();
+            navigate(`/terminal/${encodeURIComponent(workspace.id)}`);
+          }),
+        ),
+        Effect.catch((failure) =>
+          Effect.sync(() => {
+            if (!componentDestroyed) workspaceError = errorMessage(failure);
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!componentDestroyed) workspaceBusy = false;
+          }),
+        ),
+        Effect.asVoid,
+      ),
+      {
+        operation: "create onboarding workspace",
+        safeContext: {
+          provider: pull.repo.provider,
+          platformHost: pull.repo.platform_host,
+          owner: pull.repo.owner,
+          name: pull.repo.name,
+          number: pull.Number,
+        },
+        onFailure: () => {},
+      },
+    );
   }
 
-  async function retryTooling(): Promise<void> {
+  function retryTooling(): void {
     if (toolingRetrying) return;
     toolingRetrying = true;
     toolingRetryError = null;
-    const verified = await loadRepositories();
-    if (verified) {
-      ghVerified = true;
-      providerConfirmed = true;
-      await tick();
-      headingEl?.focus();
-    }
-    else toolingRetryError = repositoryError;
-    toolingRetrying = false;
+    loadRepositories(true);
   }
 
   function ciLabel(pull: PullRequest): string {
@@ -353,7 +518,7 @@
 
   $effect(() => {
     if (phase !== "repos" || !providerConfirmed || !ghReady || repoLoadStarted) return;
-    void loadRepositories();
+    loadRepositories();
   });
 
   $effect(() => {
@@ -361,7 +526,15 @@
     const becameConfigured = configured && !hadConfiguredRepos;
     hadConfiguredRepos = configured;
     if (!becameConfigured || phase !== "repos") return;
-    void moveTo("sync").then(startSync);
+    phaseExecution?.interrupt();
+    phaseExecution = runtime.runCommand(
+      moveToProgram("sync").pipe(Effect.andThen(startSyncProgram())),
+      {
+        operation: "continue onboarding after repository configuration",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   });
 
   onMount(() => {
@@ -370,10 +543,19 @@
       if (phase !== "sync") return;
       const state = stores.sync.getSyncState();
       if (state?.last_error) syncError = state.last_error;
-      else void finishSync();
+      else finishSync();
     });
-    if (phase === "sync") void startSync();
+    if (phase === "sync") startSync();
     return unsubscribe;
+  });
+
+  onDestroy(() => {
+    componentDestroyed = true;
+    repositoryExecution?.interrupt();
+    configureExecution?.interrupt();
+    phaseExecution?.interrupt();
+    syncExecution?.interrupt();
+    pullsExecution?.interrupt();
   });
 </script>
 

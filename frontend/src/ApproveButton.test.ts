@@ -18,7 +18,7 @@ vi.mock("./lib/stores/flash.svelte.js", () => ({
   showFlash: mockShowFlash,
 }));
 
-import ApproveButton from "./lib/components/detail/ApproveButton.svelte";
+import ApproveButton from "./lib/components/detail/ApproveButtonRuntimeHarness.svelte";
 
 const defaultProps = {
   provider: "github",

@@ -8,16 +8,30 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import Upload from "@lucide/svelte/icons/upload";
+  import { Effect, Option } from "effect";
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { DocsRoute } from "../../api/docs/route.js";
-  import { createDocsAPI, type DocsAPI } from "../../api/docs/api";
+  import {
+    createDocsAPI,
+    DocsRequestError,
+    executeDocsRequest,
+    retryIdempotentDocsRequest,
+    type DocsAPI,
+  } from "../../api/docs/api";
   import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
-  import type { DocsAPIError, GitPublishResponse, GitStatusEntry, TreeNode, Folder } from "../../api/docs/types";
+  import type {
+    GitPublishResponse,
+    GitPullResponse,
+    GitStatusEntry,
+    GitStatusResponse,
+    TreeNode,
+    Folder,
+  } from "../../api/docs/types";
   import PublishDocsDialog from "./PublishDocsDialog.svelte";
   import { buildFolderIndex, type FolderIndex } from "../../api/docs/folderLinks";
   import { docsHref } from "../../api/docs/route.js";
   import { withBasePath } from "../../stores/router.svelte.js";
-  import { untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import {
     getActiveKataDaemon,
     getKataDaemonRoster,
@@ -36,6 +50,15 @@
   import type { IssueSummary } from "./docsIssueTypes";
   import { SelectDropdown, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import { IconButton } from "@kenn-io/kit-ui";
+  import type { AppExecution, AppServices } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import {
+    docsMutationOwner,
+    DocsMutationStateUncertainError,
+    DocsWorkflow,
+    makeDocsOwner,
+  } from "../../stores/docs-workflow.js";
+  import { flattenTreePaths } from "./folderTreePaths";
 
   interface Props {
     route: DocsRoute;
@@ -59,6 +82,9 @@
     kataIssues = [],
     searchReferences,
   }: Props = $props();
+  const runtime = getAppRuntime();
+  const docsOwner = makeDocsOwner("docs-workspace");
+  const docsPresentationSurface = "docs-workspace";
 
   const issueCompletionSource = buildIssueCompletionSource(
     buildDocsIssueCompletionOptions({
@@ -68,6 +94,7 @@
       activeDaemon: getActiveKataDaemon,
       searchReferences: (query, options) => searchReferences(query, options),
     }),
+    runtime,
   );
   // Distinct authors/owners across loaded issues. Recomputed on read so
   // it always tracks the latest kataIssues snapshot.
@@ -115,11 +142,11 @@
   // doc query and stay on the bare folder.
   let autoOpenedFor: string | null = null;
 
-  // Token guards stale async responses from clobbering newer state when the
-  // user switches folders before the previous request resolves.
-  let treeRequestID = 0;
-  let gitRequestID = 0;
-  let docRequestID = 0;
+  let foldersExecution: AppExecution<void, never> | undefined;
+  let treeExecution: AppExecution<void, never> | undefined;
+  let gitExecution: AppExecution<void, never> | undefined;
+  let docExecution: AppExecution<void, never> | undefined;
+  let editorExecution: AppExecution<void, never> | undefined;
 
   let docContent: string | null = $state(null);
   // Identifies which (folder, doc) the current docContent belongs to.
@@ -200,28 +227,151 @@
     return JSON.stringify([folder ?? null, doc ?? null]);
   }
 
+  function docsResourceKey(kind: "folders" | "tree" | "git-status" | "document", ...identity: string[]): string {
+    return JSON.stringify([kind, ...identity]);
+  }
+
+  function docsIntentKey(operation: string, ...identity: string[]): string {
+    return JSON.stringify([operation, ...identity]);
+  }
+
   let currentRouteKey = $derived(docKey(route.folder, route.doc));
   let editReady = $derived(
     docContent !== null && docContentKey === currentRouteKey && !loadingDoc,
   );
 
+  interface TreeReconciliation {
+    readonly value: TreeNode | null;
+    readonly error: DocsRequestError | null;
+  }
+
+  interface GitStatusReconciliation {
+    readonly value: GitStatusResponse | null;
+    readonly error: DocsRequestError | null;
+  }
+
+  interface DocumentReconciliation {
+    readonly path: string;
+    readonly value: string | null;
+    readonly error: DocsRequestError | null;
+  }
+
+  interface PullConfirmation {
+    readonly kind: "response";
+    readonly result: GitPullResponse;
+  }
+
+  interface PullReconciliation {
+    readonly confirmation: PullConfirmation;
+    readonly tree: TreeReconciliation | null;
+    readonly gitStatus: GitStatusReconciliation | null;
+    readonly document: DocumentReconciliation | null;
+  }
+
+  interface PresentedCommandOptions<A, E> {
+    readonly operation: string;
+    readonly safeContext: Readonly<Record<string, string | number | boolean>>;
+    readonly onFailure: (failure: E) => void;
+    readonly onSuccess: (value: A) => void;
+    readonly onDone?: (() => void) | undefined;
+  }
+
+  function runPresentedCommand<A, E>(
+    program: Effect.Effect<A, E, AppServices>,
+    options: PresentedCommandOptions<A, E>,
+  ): void {
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* DocsWorkflow;
+        const result = yield* program.pipe(
+          Effect.match({
+            onFailure: (failure) => ({ failed: failure }),
+            onSuccess: (value) => ({ succeeded: value }),
+          }),
+        );
+        yield* workflow.present(
+          docsPresentationSurface,
+          docsOwner,
+          Effect.sync(() => {
+            if ("failed" in result) options.onFailure(result.failed);
+            else options.onSuccess(result.succeeded);
+            options.onDone?.();
+          }),
+        );
+      }),
+      { operation: options.operation, safeContext: options.safeContext, onFailure: () => {} },
+    );
+  }
+
   let folderIndex: FolderIndex = $derived(buildFolderIndex(tree));
 
-  async function loadEditor() {
-    if (DocMarkdownEditor || editorLoading) return;
+  function loadEditor(onLoaded?: () => void): void {
+    if (DocMarkdownEditor) {
+      onLoaded?.();
+      return;
+    }
+    if (editorLoading) return;
     editorLoading = true;
     editorLoadError = null;
-    try {
-      DocMarkdownEditor = (await import("./DocMarkdownEditor.svelte")).default;
-    } catch (err) {
-      editorLoadError = err instanceof Error ? err.message : "Could not load editor.";
-    } finally {
-      editorLoading = false;
-    }
+    let execution: AppExecution<void, never> | undefined;
+    const isCurrent = () => execution !== undefined && editorExecution === execution;
+    execution = runtime.runCommand(
+      Effect.tryPromise({
+        try: () => import("./DocMarkdownEditor.svelte"),
+        catch: (cause) => (cause instanceof Error ? cause : new Error("Could not load editor.")),
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              editorLoadError = failure.message || "Could not load editor.";
+            }),
+          onSuccess: (loaded) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              DocMarkdownEditor = loaded.default;
+              onLoaded?.();
+            }),
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!isCurrent()) return;
+            editorExecution = undefined;
+            editorLoading = false;
+          }),
+        ),
+      ),
+      { operation: "load Docs editor", safeContext: {}, onFailure: () => {} },
+    );
+    editorExecution = execution;
   }
 
   $effect(() => {
-    void loadFolders();
+    loadFolders();
+  });
+
+  runtime.runCommand(
+    Effect.gen(function* () {
+      const workflow = yield* DocsWorkflow;
+      yield* workflow.claimPresenter(
+        docsPresentationSurface,
+        docsOwner,
+        Effect.sync(refreshPresentedState),
+      );
+    }),
+    { operation: "claim Docs workspace presentation", safeContext: { owner: docsOwner }, onFailure: () => {} },
+  );
+
+  onDestroy(() => {
+    editorExecution?.interrupt();
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* DocsWorkflow;
+        yield* workflow.releasePresenter(docsPresentationSurface, docsOwner);
+        yield* workflow.stop(docsOwner);
+      }),
+      { operation: "stop Docs workspace reads", safeContext: { owner: docsOwner }, onFailure: () => {} },
+    );
   });
 
   // ] toggles the outline. Scoped to docs-mode by checking that the
@@ -233,8 +383,8 @@
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "]") return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (target) {
+      const target = event.target;
+      if (target instanceof HTMLElement) {
         const tag = target.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
         if (target.isContentEditable) return;
@@ -259,8 +409,8 @@
     tree = null;
     treeError = null;
     if (!folderID) return;
-    void loadTree(folderID);
-    void loadGitStatus(folderID);
+    loadTree(folderID);
+    loadGitStatus(folderID);
   });
 
   // When the tree finishes loading and no doc is selected, look for a
@@ -301,102 +451,294 @@
     headings = [];
     activeHeadingID = null;
     if (!folderID || !docPath) return;
-    void loadDoc(folderID, docPath);
+    loadDoc(folderID, docPath);
   });
 
-  async function loadFolders() {
-    loadingFolders = true;
-    try {
-      const result = await api.listFolders();
-      folders = result;
-      foldersError = null;
-      const routeFolderExists = route.folder !== null && result.some((folder) => folder.id === route.folder);
-      if (route.folder && !routeFolderExists) {
-        onRouteChange(
-          { mode: "docs", folder: result[0]?.id ?? null, doc: null },
-          { replace: true },
-        );
-      } else if (!route.folder && result.length > 0) {
-        // Auto-pick the first folder on landing so a fresh /docs visit isn't
-        // a dead end. Preserve `doc` so a shared link like /docs?doc=foo.md
-        // still opens the named doc after the folder gets filled in; null it
-        // out and the landing-doc effect would race and hijack the URL.
-        // Use replaceState so the back button skips the bare /docs URL
-        // instead of bouncing back into another auto-select.
-        const target = result[0]!.id;
-        const targetDoc = route.doc;
-        if (targetDoc) {
-          // We're honoring an explicit doc query — claim the landing slot
-          // for this folder so the landing-doc effect doesn't auto-open
-          // README later if the user deletes the named doc.
-          autoOpenedFor = target;
-        }
-        onRouteChange(
-          { mode: "docs", folder: target, doc: targetDoc },
-          { replace: true },
-        );
-      }
-    } catch (err) {
-      foldersError = err instanceof Error ? err.message : "Failed to load folders";
-    } finally {
-      loadingFolders = false;
-    }
-  }
+  const readFolders = Effect.fn("DocsWorkspace.readFolders")(function* (
+    requestedAPI: DocsAPI,
+    owner = docsOwner,
+  ) {
+    const workflow = yield* DocsWorkflow;
+    return yield* workflow.read(
+      owner,
+      { lane: "folders", resource: docsResourceKey("folders") },
+      executeDocsRequest("list Docs folders", (signal) => requestedAPI.listFolders(signal)),
+    );
+  });
 
-  async function loadTree(folderID: string) {
-    const token = ++treeRequestID;
-    loadingTree = true;
-    treeError = null;
-    try {
-      const result = await api.tree(folderID);
-      if (token !== treeRequestID) return;
-      tree = result;
-    } catch (err) {
-      if (token !== treeRequestID) return;
+  const readTree = Effect.fn("DocsWorkspace.readTree")(function* (
+    folderID: string,
+    requestedAPI: DocsAPI,
+    owner = docsOwner,
+  ) {
+    const workflow = yield* DocsWorkflow;
+    return yield* workflow.read(
+      owner,
+      { lane: "tree", resource: docsResourceKey("tree", folderID) },
+      executeDocsRequest("load Docs tree", (signal) => requestedAPI.tree(folderID, signal)),
+    );
+  });
+
+  const readGitStatus = Effect.fn("DocsWorkspace.readGitStatus")(function* (
+    folderID: string,
+    requestedAPI: DocsAPI,
+    owner = docsOwner,
+  ) {
+    const workflow = yield* DocsWorkflow;
+    return yield* workflow.read(
+      owner,
+      { lane: "git-status", resource: docsResourceKey("git-status", folderID) },
+      executeDocsRequest("load Docs git status", (signal) => requestedAPI.gitStatus(folderID, signal)),
+    );
+  });
+
+  const readDoc = Effect.fn("DocsWorkspace.readDocument")(function* (
+    folderID: string,
+    docPath: string,
+    requestedAPI: DocsAPI,
+    owner = docsOwner,
+  ) {
+    const workflow = yield* DocsWorkflow;
+    return yield* workflow.read(
+      owner,
+      { lane: "document", resource: docsResourceKey("document", folderID, docPath) },
+      executeDocsRequest("read Docs document", (signal) => requestedAPI.readFile(folderID, docPath, signal)),
+    );
+  });
+
+  const queueDocsMutation = Effect.fn("DocsWorkspace.queueMutation")(function* <A, E, R>(
+    mutation: Effect.Effect<A, E, R>,
+  ) {
+    const workflow = yield* DocsWorkflow;
+    return yield* workflow.mutate(docsPresentationSurface, docsOwner, mutation);
+  });
+
+  const reconcileTree = Effect.fn("DocsWorkspace.reconcileTree")(function* (
+    folderID: string,
+    requestedAPI: DocsAPI,
+  ) {
+    return yield* readTree(folderID, requestedAPI, docsMutationOwner).pipe(
+      Effect.match({
+        onFailure: (error): TreeReconciliation => ({ value: null, error }),
+        onSuccess: (value): TreeReconciliation => ({ value, error: null }),
+      }),
+    );
+  });
+
+  const reconcileGitStatus = Effect.fn("DocsWorkspace.reconcileGitStatus")(function* (
+    folderID: string,
+    requestedAPI: DocsAPI,
+  ) {
+    return yield* readGitStatus(folderID, requestedAPI, docsMutationOwner).pipe(
+      Effect.match({
+        onFailure: (error): GitStatusReconciliation => ({ value: null, error }),
+        onSuccess: (value): GitStatusReconciliation => ({ value, error: null }),
+      }),
+    );
+  });
+
+  const reconcileDocument = Effect.fn("DocsWorkspace.reconcileDocument")(function* (
+    folderID: string,
+    docPath: string,
+    requestedAPI: DocsAPI,
+  ) {
+    return yield* readDoc(folderID, docPath, requestedAPI, docsMutationOwner).pipe(
+      Effect.match({
+        onFailure: (error): DocumentReconciliation => ({ path: docPath, value: null, error }),
+        onSuccess: (value): DocumentReconciliation => ({ path: docPath, value, error: null }),
+      }),
+    );
+  });
+
+  function applyTreeReconciliation(folderID: string, reconciliation: TreeReconciliation): void {
+    if (route.folder !== folderID) return;
+    if (reconciliation.error !== null) {
       tree = null;
-      treeError = err instanceof Error ? err.message : "Failed to load tree";
-    } finally {
-      if (token === treeRequestID) loadingTree = false;
+      treeError = reconciliation.error.message || "Failed to load tree";
+      return;
     }
+    tree = reconciliation.value;
+    treeError = null;
   }
 
-  async function loadGitStatus(folderID: string) {
-    const token = ++gitRequestID;
-    try {
-      const result = await api.gitStatus(folderID);
-      if (token !== gitRequestID) return;
-      gitEntriesByFolder = { ...gitEntriesByFolder, [folderID]: result.entries };
-      folderIsRepo = { ...folderIsRepo, [folderID]: result.is_repo };
-    } catch (err) {
-      // Git status is decorative — failure shouldn't break the tree.
-      // But unsafe_git_config means the folder IS a repo that the server
-      // refused to inspect for safety; keep the publish action visible so
-      // the dialog can surface the explanation instead of silently
-      // dropping publish.
-      if (token !== gitRequestID) return;
+  function applyGitStatusReconciliation(folderID: string, reconciliation: GitStatusReconciliation): void {
+    if (route.folder !== folderID) return;
+    if (reconciliation.error !== null) {
       gitEntriesByFolder = { ...gitEntriesByFolder, [folderID]: [] };
-      const unsafeRepo = (err as DocsAPIError)?.code === "unsafe_git_config";
-      folderIsRepo = { ...folderIsRepo, [folderID]: unsafeRepo };
+      folderIsRepo = {
+        ...folderIsRepo,
+        [folderID]: reconciliation.error.code === "unsafe_git_config",
+      };
+      return;
     }
+    if (reconciliation.value === null) return;
+    gitEntriesByFolder = { ...gitEntriesByFolder, [folderID]: reconciliation.value.entries };
+    folderIsRepo = { ...folderIsRepo, [folderID]: reconciliation.value.is_repo };
   }
 
-  async function loadDoc(folderID: string, docPath: string) {
-    const token = ++docRequestID;
-    loadingDoc = true;
-    docError = null;
-    try {
-      const content = await api.readFile(folderID, docPath);
-      if (token !== docRequestID) return;
-      docContent = content;
-      docContentKey = docKey(folderID, docPath);
-    } catch (err) {
-      if (token !== docRequestID) return;
+  function applyDocumentReconciliation(folderID: string, reconciliation: DocumentReconciliation): void {
+    if (route.folder !== folderID || route.doc !== reconciliation.path || editing) return;
+    if (reconciliation.error !== null) {
       docContent = null;
       docContentKey = null;
-      docError = err instanceof Error ? err.message : "Failed to load document";
-    } finally {
-      if (token === docRequestID) loadingDoc = false;
+      docError = reconciliation.error.message || "Failed to load document";
+      return;
     }
+    docContent = reconciliation.value;
+    docContentKey = docKey(folderID, reconciliation.path);
+    docError = null;
+  }
+
+  function loadFolders(): void {
+    loadingFolders = true;
+    const requestedAPI = api;
+    let execution: AppExecution<void, never> | undefined;
+    const isCurrent = () => execution !== undefined && foldersExecution === execution;
+    execution = runtime.runCommand(
+      readFolders(requestedAPI).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              foldersError = failure.message || "Failed to load folders";
+            }),
+          onSuccess: (result) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              folders = result;
+              foldersError = null;
+              const routeFolderExists = route.folder !== null && result.some((folder) => folder.id === route.folder);
+              if (route.folder && !routeFolderExists) {
+                onRouteChange({ mode: "docs", folder: result[0]?.id ?? null, doc: null }, { replace: true });
+              } else if (!route.folder && result.length > 0) {
+                const target = result[0]!.id;
+                const targetDoc = route.doc;
+                if (targetDoc) autoOpenedFor = target;
+                onRouteChange({ mode: "docs", folder: target, doc: targetDoc }, { replace: true });
+              }
+            }),
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!isCurrent()) return;
+            foldersExecution = undefined;
+            loadingFolders = false;
+          }),
+        ),
+      ),
+      { operation: "load Docs folders", safeContext: { owner: docsOwner }, onFailure: () => {} },
+    );
+    foldersExecution = execution;
+  }
+
+  function refreshPresentedState(): void {
+    loadFolders();
+    const folderID = route.folder;
+    if (!folderID) return;
+    loadTree(folderID);
+    loadGitStatus(folderID);
+    if (route.doc && !editing) loadDoc(folderID, route.doc);
+  }
+
+  function loadTree(folderID: string): void {
+    loadingTree = true;
+    treeError = null;
+    const requestedAPI = api;
+    let execution: AppExecution<void, never> | undefined;
+    const isCurrent = () => execution !== undefined && treeExecution === execution && route.folder === folderID;
+    execution = runtime.runCommand(
+      readTree(folderID, requestedAPI).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              tree = null;
+              treeError = failure.message || "Failed to load tree";
+            }),
+          onSuccess: (result) =>
+            Effect.sync(() => {
+              if (isCurrent()) tree = result;
+            }),
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!isCurrent()) return;
+            treeExecution = undefined;
+            loadingTree = false;
+          }),
+        ),
+      ),
+      { operation: "load Docs tree", safeContext: { owner: docsOwner, folderID }, onFailure: () => {} },
+    );
+    treeExecution = execution;
+  }
+
+  function loadGitStatus(folderID: string): void {
+    const requestedAPI = api;
+    let execution: AppExecution<void, never> | undefined;
+    const isCurrent = () => execution !== undefined && gitExecution === execution && route.folder === folderID;
+    execution = runtime.runCommand(
+      readGitStatus(folderID, requestedAPI).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              gitEntriesByFolder = { ...gitEntriesByFolder, [folderID]: [] };
+              folderIsRepo = { ...folderIsRepo, [folderID]: failure.code === "unsafe_git_config" };
+            }),
+          onSuccess: (result) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              gitEntriesByFolder = { ...gitEntriesByFolder, [folderID]: result.entries };
+              folderIsRepo = { ...folderIsRepo, [folderID]: result.is_repo };
+            }),
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (isCurrent()) gitExecution = undefined;
+          }),
+        ),
+      ),
+      { operation: "load Docs git status", safeContext: { owner: docsOwner, folderID }, onFailure: () => {} },
+    );
+    gitExecution = execution;
+  }
+
+  function loadDoc(folderID: string, docPath: string): void {
+    loadingDoc = true;
+    docError = null;
+    const requestedAPI = api;
+    const requestedKey = docKey(folderID, docPath);
+    let execution: AppExecution<void, never> | undefined;
+    const isCurrent = () => execution !== undefined && docExecution === execution && currentRouteKey === requestedKey;
+    execution = runtime.runCommand(
+      readDoc(folderID, docPath, requestedAPI).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              docContent = null;
+              docContentKey = null;
+              docError = failure.message || "Failed to load document";
+            }),
+          onSuccess: (content) =>
+            Effect.sync(() => {
+              if (!isCurrent()) return;
+              docContent = content;
+              docContentKey = requestedKey;
+            }),
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!isCurrent()) return;
+            docExecution = undefined;
+            loadingDoc = false;
+          }),
+        ),
+      ),
+      { operation: "load Docs document", safeContext: { owner: docsOwner, folderID, docPath }, onFailure: () => {} },
+    );
+    docExecution = execution;
   }
 
   // Order matches the user-approved spec: capital README first (most
@@ -458,7 +800,7 @@
     return effectiveDocsFolderDaemon(folders, route.folder, getKataDaemonRoster());
   }
 
-  async function beginEdit() {
+  function beginEdit(): void {
     // Refuse to enter edit mode unless the loaded body belongs to the
     // route currently in view — guards against the race where the user
     // navigates to doc B, then clicks Edit before B has finished
@@ -468,15 +810,19 @@
     // A pull may rewrite this doc on disk; an editor opened mid-pull would
     // capture the pre-pull body and a later save would overwrite the pulled
     // content with it. The Edit button is disabled while pulling; re-check
-    // after the lazy import too, since a pull can start during that await.
+    // after the lazy import too, since a pull can start while it loads.
     if (pulling) return;
-    await loadEditor();
-    if (!DocMarkdownEditor || pulling) return;
-    editorDraft = docContent;
-    editorDirty = false;
-    saveError = null;
-    editing = true;
-    editTarget = { folder: route.folder, doc: route.doc };
+    const folderID = route.folder;
+    const docPath = route.doc;
+    loadEditor(() => {
+      if (!DocMarkdownEditor || pulling || !editReady || docContent === null) return;
+      if (route.folder !== folderID || route.doc !== docPath) return;
+      editorDraft = docContent;
+      editorDirty = false;
+      saveError = null;
+      editing = true;
+      editTarget = { folder: folderID, doc: docPath };
+    });
   }
 
   function cancelEdit() {
@@ -495,7 +841,8 @@
     editorDirty = dirty;
   }
 
-  async function saveEdit(value: string) {
+  function saveEdit(value: string): void {
+    if (saving) return;
     if (!editTarget) {
       saveError = "Editor not initialised; reopen the document before saving.";
       return;
@@ -507,28 +854,51 @@
     // navigation can't retarget the buffer to a different file.
     saving = true;
     saveError = null;
-    try {
-      await api.writeFile(target.folder, target.doc, value);
-      // Only refresh the in-view doc if it's still the one we wrote to.
-      const targetKey = docKey(target.folder, target.doc);
-      const currentKey = docKey(route.folder, route.doc);
-      if (currentKey === targetKey) {
-        docContent = value;
-        docContentKey = currentKey;
-      }
-      editing = false;
-      editorDirty = false;
-      editTarget = null;
-    } catch (err) {
-      const message = describeFileError(err, "Failed to save");
-      if (isFileInputError(err)) {
-        saveError = message;
-      } else {
-        showFlash(message, { tone: "danger" });
-      }
-    } finally {
-      saving = false;
-    }
+    const requestedAPI = api;
+    runPresentedCommand(
+      queueDocsMutation(
+        Effect.gen(function* () {
+          const workflow = yield* DocsWorkflow;
+          return yield* workflow.reconcileMutation(
+            {
+              resource: docsResourceKey("document", target.folder, target.doc),
+              intent: docsIntentKey("save", target.folder, target.doc, value),
+            },
+            "save Docs document",
+            executeDocsRequest("save Docs document", (signal) =>
+              requestedAPI.writeFile(target.folder, target.doc, value, signal),
+            ),
+            readDoc(target.folder, target.doc, requestedAPI, docsMutationOwner),
+            (content) => (content === value ? Option.some(undefined) : Option.none()),
+          );
+        }),
+      ),
+      {
+        operation: "save Docs document",
+        safeContext: { folderID: target.folder, docPath: target.doc },
+        onFailure: (failure) => {
+          if (editTarget?.folder !== target.folder || editTarget.doc !== target.doc) return;
+          const message = describeFileError(failure, "Failed to save");
+          if (isFileInputError(failure)) saveError = message;
+          else showFlash(message, { tone: "danger" });
+        },
+        onSuccess: (outcome) => {
+          if (editTarget?.folder !== target.folder || editTarget.doc !== target.doc) return;
+          const targetKey = docKey(target.folder, target.doc);
+          const currentKey = docKey(route.folder, route.doc);
+          if (currentKey === targetKey) {
+            docContent = outcome.snapshot;
+            docContentKey = currentKey;
+          }
+          editing = false;
+          editorDirty = false;
+          editTarget = null;
+        },
+        onDone: () => {
+          saving = false;
+        },
+      },
+    );
   }
 
   // Exit edit mode whenever the route navigates to a different doc.
@@ -637,8 +1007,9 @@
     deleteOpen = true;
   }
 
-  async function submitNewFile() {
-    if (!route.folder) return;
+  function submitNewFile(): void {
+    const folderID = route.folder;
+    if (!folderID || newFileSaving) return;
     if (editing && editorDirty) {
       newFileError = "Save or cancel the open edit before creating a new file.";
       return;
@@ -654,76 +1025,110 @@
     }
     newFileSaving = true;
     newFileError = null;
-    try {
-      await api.createFile(route.folder, name, "");
-      await loadTree(route.folder);
-      newFileOpen = false;
-      onRouteChange({ mode: "docs", folder: route.folder, doc: name });
-    } catch (err) {
-      const message = describeFileError(err, "Could not create file.");
-      if (isFileInputError(err)) {
-        newFileError = message;
-      } else {
-        showFlash(message, { tone: "danger" });
-      }
-    } finally {
-      newFileSaving = false;
-    }
+    const requestedAPI = api;
+    runPresentedCommand(
+      queueDocsMutation(
+        Effect.gen(function* () {
+          const workflow = yield* DocsWorkflow;
+          const outcome = yield* workflow.reconcileMutation(
+            {
+              resource: docsResourceKey("tree", folderID),
+              intent: docsIntentKey("create", folderID, name),
+            },
+            "create Docs document",
+            executeDocsRequest("create Docs document", (signal) =>
+              requestedAPI.createFile(folderID, name, "", signal),
+            ),
+            readTree(folderID, requestedAPI, docsMutationOwner),
+            (snapshot) => (flattenTreePaths(snapshot).includes(name) ? Option.some(undefined) : Option.none()),
+          );
+          return { value: outcome.snapshot, error: null } satisfies TreeReconciliation;
+        }),
+      ),
+      {
+        operation: "create Docs document",
+        safeContext: { folderID, name },
+        onFailure: (failure) => {
+          const message = describeFileError(failure, "Could not create file.");
+          if (isFileInputError(failure)) newFileError = message;
+          else showFlash(message, { tone: "danger" });
+        },
+        onSuccess: (reconciliation) => {
+          if (reconciliation !== null) applyTreeReconciliation(folderID, reconciliation);
+          newFileOpen = false;
+          if (route.folder === folderID) {
+            onRouteChange({ mode: "docs", folder: folderID, doc: name });
+          }
+        },
+        onDone: () => {
+          newFileSaving = false;
+        },
+      },
+    );
   }
 
   // Right-click → Rename in the file tree resolves here. The from/to
   // paths come straight from @pierre/trees' inline rename input, so
   // they're already scoped to the active folder and may target any
-  // file in the tree (not just route.doc). We rethrow API errors so
-  // the library can keep the inline input open and surface the
-  // failure to the user.
-  async function handleInlineRename(from: string, to: string): Promise<void> {
-    if (!route.folder) return;
+  // file in the tree (not just route.doc). The tree library invokes
+  // this callback synchronously, so the application runtime owns the
+  // request, failure presentation, and canonical tree reconciliation.
+  function handleInlineRename(from: string, to: string): void {
+    const folderID = route.folder;
+    if (!folderID) return;
     if (from === to) return;
     inlineFileError = null;
-    try {
-      // The dirty-editor guard lives INSIDE the catch path: @pierre/trees
-      // already moved the item locally before this handler runs, and the
-      // catch below reloads the canonical tree to clear that phantom.
-      // Throwing before the try/catch would skip the reload AND skip the
-      // inlineFileError surface, leaving the tree showing a path that
-      // doesn't exist on disk — the same bug the catch path is meant to
-      // prevent.
-      if (editing && editorDirty && from === route.doc) {
-        throw new Error("Save or cancel the open edit before renaming.");
-      }
-      await api.renameFile(route.folder, from, to);
-      await loadTree(route.folder);
-      // If we renamed the file currently in view, follow the move so
-      // the URL and breadcrumb don't keep pointing at the old path.
-      if (from === route.doc) {
-        onRouteChange(
-          { mode: "docs", folder: route.folder, doc: to },
-          { replace: true },
-        );
-      }
-    } catch (err) {
-      // @pierre/trees already moved the item locally and FolderTree's
-      // .catch() swallows the promise rejection, so we'd be left with a
-      // phantom path in the tree until something else triggers a reload.
-      // Reload the canonical tree to clear the phantom, surface the
-      // failure to the user via inlineFileError so they understand why
-      // the rename "didn't take", and rethrow so the original promise
-      // chain still rejects for any other observer.
-      const reason = describeFileError(err, "Could not rename file.");
-      inlineFileError = reason;
-      try {
-        await loadTree(route.folder);
-      } catch {
-        // loadTree's own treeError will be surfaced separately by the
-        // tree panel; nothing more to do here.
-      }
-      throw err;
+    const requestedAPI = api;
+    const dirtyEditorError =
+      editing && editorDirty && from === route.doc
+        ? new Error("Save or cancel the open edit before renaming.")
+        : null;
+    if (dirtyEditorError !== null) {
+      inlineFileError = dirtyEditorError.message;
+      return;
     }
+    runPresentedCommand(
+      queueDocsMutation(
+        Effect.gen(function* () {
+          const workflow = yield* DocsWorkflow;
+          const outcome = yield* workflow.reconcileMutation(
+            {
+              resource: docsResourceKey("tree", folderID),
+              intent: docsIntentKey("rename", folderID, from, to),
+            },
+            "rename Docs document",
+            executeDocsRequest("rename Docs document", (signal) =>
+              requestedAPI.renameFile(folderID, from, to, signal),
+            ),
+            readTree(folderID, requestedAPI, docsMutationOwner),
+            (snapshot) => {
+              const paths = flattenTreePaths(snapshot);
+              return paths.includes(to) && !paths.includes(from) ? Option.some(undefined) : Option.none();
+            },
+          );
+          return { value: outcome.snapshot, error: null } satisfies TreeReconciliation;
+        }),
+      ),
+      {
+        operation: "rename Docs document inline",
+        safeContext: { folderID, from, to },
+        onFailure: (failure) => {
+          inlineFileError = describeFileError(failure, "Could not rename file.");
+        },
+        onSuccess: (reconciliation) => {
+          applyTreeReconciliation(folderID, reconciliation);
+          if (route.folder === folderID && route.doc === from) {
+            onRouteChange({ mode: "docs", folder: folderID, doc: to }, { replace: true });
+          }
+        },
+      },
+    );
   }
 
-  async function submitRename() {
-    if (!route.folder || !route.doc) return;
+  function submitRename(): void {
+    const folderID = route.folder;
+    const docPath = route.doc;
+    if (!folderID || !docPath || renameSaving) return;
     if (editing && editorDirty) {
       renameError = "Save or cancel the open edit before renaming.";
       return;
@@ -737,76 +1142,133 @@
       renameError = "Rename within the same folder — name only.";
       return;
     }
-    const parent = route.doc.includes("/")
-      ? route.doc.slice(0, route.doc.lastIndexOf("/") + 1)
+    const parent = docPath.includes("/")
+      ? docPath.slice(0, docPath.lastIndexOf("/") + 1)
       : "";
     const newPath = `${parent}${target}`;
-    if (newPath === route.doc) {
+    if (newPath === docPath) {
       renameOpen = false;
       return;
     }
     renameSaving = true;
     renameError = null;
-    try {
-      await api.renameFile(route.folder, route.doc, newPath);
-      await loadTree(route.folder);
-      renameOpen = false;
-      onRouteChange(
-        { mode: "docs", folder: route.folder, doc: newPath },
-        { replace: true },
-      );
-    } catch (err) {
-      const message = describeFileError(err, "Could not rename file.");
-      if (isFileInputError(err)) {
-        renameError = message;
-      } else {
-        showFlash(message, { tone: "danger" });
-      }
-    } finally {
-      renameSaving = false;
-    }
+    const requestedAPI = api;
+    runPresentedCommand(
+      queueDocsMutation(
+        Effect.gen(function* () {
+          const workflow = yield* DocsWorkflow;
+          const outcome = yield* workflow.reconcileMutation(
+            {
+              resource: docsResourceKey("tree", folderID),
+              intent: docsIntentKey("rename", folderID, docPath, newPath),
+            },
+            "rename Docs document",
+            executeDocsRequest("rename Docs document", (signal) =>
+              requestedAPI.renameFile(folderID, docPath, newPath, signal),
+            ),
+            readTree(folderID, requestedAPI, docsMutationOwner),
+            (snapshot) => {
+              const paths = flattenTreePaths(snapshot);
+              return paths.includes(newPath) && !paths.includes(docPath) ? Option.some(undefined) : Option.none();
+            },
+          );
+          return { value: outcome.snapshot, error: null } satisfies TreeReconciliation;
+        }),
+      ),
+      {
+        operation: "rename Docs document",
+        safeContext: { folderID, from: docPath, to: newPath },
+        onFailure: (failure) => {
+          const message = describeFileError(failure, "Could not rename file.");
+          if (isFileInputError(failure)) renameError = message;
+          else showFlash(message, { tone: "danger" });
+        },
+        onSuccess: (reconciliation) => {
+          applyTreeReconciliation(folderID, reconciliation);
+          renameOpen = false;
+          if (route.folder === folderID && route.doc === docPath) {
+            onRouteChange({ mode: "docs", folder: folderID, doc: newPath }, { replace: true });
+          }
+        },
+        onDone: () => {
+          renameSaving = false;
+        },
+      },
+    );
   }
 
-  async function submitDelete() {
-    if (!route.folder || !route.doc) return;
+  function submitDelete(): void {
+    const folderID = route.folder;
+    const docPath = route.doc;
+    if (!folderID || !docPath || deleting) return;
     if (editing && editorDirty) {
       deleteError = "Save or cancel the open edit before deleting.";
       return;
     }
     deleting = true;
     deleteError = null;
-    try {
-      await api.deleteFile(route.folder, route.doc);
-      await loadTree(route.folder);
-      deleteOpen = false;
-      onRouteChange(
-        { mode: "docs", folder: route.folder, doc: null },
-        { replace: true },
-      );
-    } catch (err) {
-      const message = describeFileError(err, "Could not delete file.");
-      if (isFileInputError(err)) {
-        deleteError = message;
-      } else {
-        showFlash(message, { tone: "danger" });
-      }
-    } finally {
-      deleting = false;
-    }
+    const requestedAPI = api;
+    runPresentedCommand(
+      queueDocsMutation(
+        Effect.gen(function* () {
+          const workflow = yield* DocsWorkflow;
+          const outcome = yield* workflow.reconcileMutation(
+            {
+              resource: docsResourceKey("tree", folderID),
+              intent: docsIntentKey("delete", folderID, docPath),
+            },
+            "delete Docs document",
+            executeDocsRequest("delete Docs document", (signal) =>
+              requestedAPI.deleteFile(folderID, docPath, signal),
+            ),
+            readTree(folderID, requestedAPI, docsMutationOwner),
+            (snapshot) =>
+              flattenTreePaths(snapshot).includes(docPath) ? Option.none() : Option.some(undefined),
+          );
+          return { value: outcome.snapshot, error: null } satisfies TreeReconciliation;
+        }),
+      ),
+      {
+        operation: "delete Docs document",
+        safeContext: { folderID, docPath },
+        onFailure: (failure) => {
+          const message = describeFileError(failure, "Could not delete file.");
+          if (isFileInputError(failure)) deleteError = message;
+          else showFlash(message, { tone: "danger" });
+        },
+        onSuccess: (reconciliation) => {
+          applyTreeReconciliation(folderID, reconciliation);
+          deleteOpen = false;
+          if (route.folder === folderID && route.doc === docPath) {
+            onRouteChange({ mode: "docs", folder: folderID, doc: null }, { replace: true });
+          }
+        },
+        onDone: () => {
+          deleting = false;
+        },
+      },
+    );
   }
 
   function describeFileError(err: unknown, fallback: string): string {
-    const e = err as DocsAPIError;
-    if (e?.code === "already_exists") return "A file with that name already exists.";
-    if (e?.code === "unsupported_extension") return "Only .md files are supported.";
-    if (e?.code === "outside_folder") return "That path isn't allowed.";
-    if (e?.message) return e.message;
+    if (err instanceof DocsMutationStateUncertainError) {
+      return `${fallback} Saved state could not be confirmed. Reload Docs before retrying.`;
+    }
+    if (err instanceof DocsRequestError) {
+      if (err.code === "already_exists") return "A file with that name already exists.";
+      if (err.code === "unsupported_extension") return "Only .md files are supported.";
+      if (err.code === "outside_folder") return "That path isn't allowed.";
+      return err.message || fallback;
+    }
+    if (err instanceof Error) return err.message || fallback;
     return fallback;
   }
 
   function isFileInputError(err: unknown): boolean {
-    const code = (err as DocsAPIError | undefined)?.code;
-    return code === "already_exists" || code === "unsupported_extension" || code === "outside_folder";
+    return (
+      err instanceof DocsRequestError &&
+      (err.code === "already_exists" || err.code === "unsupported_extension" || err.code === "outside_folder")
+    );
   }
 
   function toggleFileMenu() {
@@ -828,9 +1290,9 @@
     addFolderOpen = true;
   }
 
-  async function handleFolderAdded(folder: Folder) {
+  function handleFolderAdded(folder: Folder): void {
     addFolderOpen = false;
-    await loadFolders();
+    loadFolders();
     onRouteChange({ mode: "docs", folder: folder.id, doc: null });
   }
 
@@ -840,8 +1302,8 @@
     renameFolderError = null;
   }
 
-  async function submitRenameFolder() {
-    if (!renameFolderTarget) return;
+  function submitRenameFolder(): void {
+    if (!renameFolderTarget || renameFolderSaving) return;
     const target = renameFolderTarget;
     const next = renameFolderValue.trim();
     if (!next) {
@@ -854,15 +1316,41 @@
     }
     renameFolderSaving = true;
     renameFolderError = null;
-    try {
-      const updated = await api.renameFolder(target.id, next);
-      folders = folders.map((n) => (n.id === target.id ? updated : n));
-      renameFolderTarget = null;
-    } catch (err) {
-      showFlash(describeFileError(err, "Could not rename folder."), { tone: "danger" });
-    } finally {
-      renameFolderSaving = false;
-    }
+    const requestedAPI = api;
+    runPresentedCommand(
+      queueDocsMutation(
+        Effect.gen(function* () {
+          const workflow = yield* DocsWorkflow;
+          return yield* workflow.reconcileMutation(
+            {
+              resource: docsResourceKey("folders"),
+              intent: docsIntentKey("rename-folder", target.id, next),
+            },
+            "rename Docs folder",
+            executeDocsRequest("rename Docs folder", (signal) => requestedAPI.renameFolder(target.id, next, signal)),
+            readFolders(requestedAPI, docsMutationOwner),
+            (snapshot) => {
+              const recovered = snapshot.find((folder) => folder.id === target.id && folder.name === next);
+              return recovered === undefined ? Option.none() : Option.some(recovered);
+            },
+          );
+        }),
+      ),
+      {
+        operation: "rename Docs folder",
+        safeContext: { folderID: target.id },
+        onFailure: (failure) => {
+          showFlash(describeFileError(failure, "Could not rename folder."), { tone: "danger" });
+        },
+        onSuccess: (outcome) => {
+          folders = outcome.snapshot;
+          if (renameFolderTarget?.id === target.id) renameFolderTarget = null;
+        },
+        onDone: () => {
+          renameFolderSaving = false;
+        },
+      },
+    );
   }
 
   function openRemoveFolder(folder: Folder) {
@@ -870,8 +1358,8 @@
     removeFolderError = null;
   }
 
-  async function submitRemoveFolder() {
-    if (!removeFolderTarget) return;
+  function submitRemoveFolder(): void {
+    if (!removeFolderTarget || removingFolder) return;
     const target = removeFolderTarget;
     // Block removal of the currently-viewed folder while a dirty
     // edit is open. Letting the route switch away would unmount the
@@ -884,67 +1372,117 @@
     }
     removingFolder = true;
     removeFolderError = null;
-    try {
-      await api.removeFolder(target.id);
-      const remaining = folders.filter((n) => n.id !== target.id);
-      folders = remaining;
-      removeFolderTarget = null;
-      // If we just removed the active folder, fall back to whatever
-      // remains so the docs view doesn't dead-end on a stale id.
-      if (route.folder === target.id) {
-        autoOpenedFor = null;
-        const fallback = remaining[0]?.id ?? null;
-        onRouteChange({ mode: "docs", folder: fallback, doc: null });
-      }
-    } catch (err) {
-      showFlash(describeFileError(err, "Could not remove folder."), { tone: "danger" });
-    } finally {
-      removingFolder = false;
-    }
+    const requestedAPI = api;
+    runPresentedCommand(
+      queueDocsMutation(
+        Effect.gen(function* () {
+          const workflow = yield* DocsWorkflow;
+          return yield* workflow.reconcileMutation(
+            {
+              resource: docsResourceKey("folders"),
+              intent: docsIntentKey("remove-folder", target.id),
+            },
+            "remove Docs folder",
+            executeDocsRequest("remove Docs folder", (signal) => requestedAPI.removeFolder(target.id, signal)),
+            readFolders(requestedAPI, docsMutationOwner),
+            (snapshot) =>
+              snapshot.some((folder) => folder.id === target.id) ? Option.none() : Option.some(undefined),
+          );
+        }),
+      ),
+      {
+        operation: "remove Docs folder",
+        safeContext: { folderID: target.id },
+        onFailure: (failure) => {
+          showFlash(describeFileError(failure, "Could not remove folder."), { tone: "danger" });
+        },
+        onSuccess: (outcome) => {
+          const remaining = outcome.snapshot;
+          folders = remaining;
+          if (removeFolderTarget?.id === target.id) removeFolderTarget = null;
+          if (route.folder === target.id) {
+            autoOpenedFor = null;
+            const fallback = remaining[0]?.id ?? null;
+            onRouteChange({ mode: "docs", folder: fallback, doc: null });
+          }
+        },
+        onDone: () => {
+          removingFolder = false;
+        },
+      },
+    );
   }
 
-  async function onPublishedSuccess(result: GitPublishResponse) {
+  function onPublishedSuccess(result: GitPublishResponse): void {
     gitNotice = {
       kind: "success",
       text: `Committed and pushed ${result.files.length} ${result.files.length === 1 ? "file" : "files"} as ${result.short_commit}.`,
     };
-    if (route.folder) await loadGitStatus(route.folder);
+    if (route.folder) loadGitStatus(route.folder);
   }
 
-  async function pullFromGit() {
+  function pullFromGit(): void {
     const folderID = route.folder;
     if (!folderID || pulling) return;
     pulling = true;
-    // The user may switch folders while the pull or any refresh below is
-    // awaited. An old-folder refresh issued after the switch would take a
-    // newer request token and supersede the new folder's loads, so
-    // re-check the route after every await and abandon the rest — the
-    // next visit to this folder loads fresh state anyway.
-    const stillCurrent = () => route.folder === folderID;
-    try {
-      const result = await api.gitPull(folderID);
-      if (!stillCurrent()) return;
-      await loadTree(folderID);
-      if (!stillCurrent()) return;
-      await loadGitStatus(folderID);
-      if (!stillCurrent()) return;
-      // The pulled commit may have rewritten the open document on disk.
-      // `!editing` is a backstop: Edit and Pull disable each other, so a
-      // draft can't normally exist here — but reloading over one would
-      // silently discard it, so never take that risk.
-      if (route.doc && !editing) await loadDoc(folderID, route.doc);
-      if (!stillCurrent()) return;
-      gitNotice = {
-        kind: "success",
-        text: result.up_to_date ? "Already up to date." : `Pulled to ${result.short_commit}.`,
-      };
-    } catch (err) {
-      if (route.folder === folderID) {
-        gitNotice = { kind: "error", text: err instanceof Error ? err.message : "Pull failed" };
-      }
-    } finally {
-      pulling = false;
-    }
+    // Pull reconciliation belongs to the accepted mutation, not the visible
+    // folder. Exact resource identities keep these reads alive if the user
+    // navigates away, while the presenter lease prevents their result from
+    // being published over the replacement view.
+    const requestedAPI = api;
+    const docPath = route.doc && !editing ? route.doc : null;
+    runPresentedCommand(
+      queueDocsMutation(
+        Effect.gen(function* () {
+          const confirmation = yield* retryIdempotentDocsRequest(
+            executeDocsRequest("pull Docs folder", (signal) => requestedAPI.gitPull(folderID, signal)).pipe(
+              Effect.map((result): PullConfirmation => ({ kind: "response", result })),
+            ),
+          );
+          const treeSnapshot = yield* readTree(folderID, requestedAPI, docsMutationOwner);
+          const gitStatusSnapshot = yield* readGitStatus(folderID, requestedAPI, docsMutationOwner);
+          const documentSnapshot =
+            docPath === null ? null : yield* readDoc(folderID, docPath, requestedAPI, docsMutationOwner);
+          return {
+            confirmation,
+            tree: { value: treeSnapshot, error: null },
+            gitStatus: { value: gitStatusSnapshot, error: null },
+            document:
+              docPath === null
+                ? null
+                : { path: docPath, value: documentSnapshot, error: null },
+          } satisfies PullReconciliation;
+        }),
+      ),
+      {
+        operation: "pull Docs folder",
+        safeContext: { folderID },
+        onFailure: (failure) => {
+          if (route.folder === folderID) {
+            gitNotice = { kind: "error", text: describeFileError(failure, "Pull failed") };
+          }
+        },
+        onSuccess: (reconciliation) => {
+          if (reconciliation.tree !== null) applyTreeReconciliation(folderID, reconciliation.tree);
+          if (reconciliation.gitStatus !== null) {
+            applyGitStatusReconciliation(folderID, reconciliation.gitStatus);
+          }
+          if (reconciliation.document !== null) {
+            applyDocumentReconciliation(folderID, reconciliation.document);
+          }
+          if (route.folder !== folderID) return;
+          gitNotice = {
+            kind: "success",
+            text: reconciliation.confirmation.result.up_to_date
+              ? "Already up to date."
+              : `Pulled to ${reconciliation.confirmation.result.short_commit}.`,
+          };
+        },
+        onDone: () => {
+          pulling = false;
+        },
+      },
+    );
   }
 </script>
 
@@ -1115,7 +1653,7 @@
               <button
                 type="button"
                 class="toolbar-btn"
-                onclick={() => void beginEdit()}
+                onclick={beginEdit}
                 disabled={!editReady || editorLoading || pulling}
               >{editorLoading ? "Loading…" : "Edit"}</button>
               <button
@@ -1189,7 +1727,7 @@
               <div class="editor-load-state" role="status">
                 {#if editorLoadError}
                   <span>Editor failed to load.</span>
-                  <button type="button" class="toolbar-btn" onclick={() => void loadEditor()}>Retry</button>
+                  <button type="button" class="toolbar-btn" onclick={() => loadEditor()}>Retry</button>
                 {:else}
                   <span>Loading editor…</span>
                 {/if}
@@ -1232,7 +1770,7 @@
     class="modal-form"
     onsubmit={(event) => {
       event.preventDefault();
-      void submitNewFile();
+      submitNewFile();
     }}
   >
     <label class="modal-field">
@@ -1269,7 +1807,7 @@
     class="modal-form"
     onsubmit={(event) => {
       event.preventDefault();
-      void submitRename();
+      submitRename();
     }}
   >
     <label class="modal-field">
@@ -1314,7 +1852,7 @@
     <button
       type="button"
       class="toolbar-btn danger"
-      onclick={() => void submitDelete()}
+      onclick={submitDelete}
       disabled={deleting}
     >
       {deleting ? "Deleting…" : "Delete"}
@@ -1325,6 +1863,8 @@
 <AddFolderDialog
   open={addFolderOpen}
   {api}
+  presentationSurfaceID={docsPresentationSurface}
+  presentationSessionID={docsOwner}
   onClose={() => (addFolderOpen = false)}
   onAdded={handleFolderAdded}
 />
@@ -1359,7 +1899,7 @@
     class="modal-form"
     onsubmit={(event) => {
       event.preventDefault();
-      void submitRenameFolder();
+      submitRenameFolder();
     }}
   >
     <label class="modal-field">
@@ -1410,7 +1950,7 @@
     <button
       type="button"
       class="toolbar-btn danger"
-      onclick={() => void submitRemoveFolder()}
+      onclick={submitRemoveFolder}
       disabled={removingFolder}
     >
       {removingFolder ? "Removing…" : "Remove"}

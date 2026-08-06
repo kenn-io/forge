@@ -4,6 +4,7 @@
     StatusDot,
     type StatusDotStatus,
   } from "@kenn-io/kit-ui";
+  import { onDestroy } from "svelte";
   // ToolingStatusBlock renders the embedding host's view of git and
   // provider CLI availability/authentication. It is consumed by the
   // First Run Panel (gates provider-dependent actions) and the New
@@ -11,6 +12,9 @@
   // is informational - it never blocks a flow, it just tells the user
   // what is missing and how to recover.
 
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import type { ToolingStatusValue } from "../../stores/embed-config.svelte.ts";
 
   interface Props {
@@ -25,7 +29,11 @@
 
   let { tooling, provider, hideWhenUnknown = false }: Props = $props();
 
+  const runtime = getAppRuntime();
+
   let copied = $state<string | null>(null);
+  let copyExecution: AppExecution<void, never> | null = null;
+  let active = true;
 
   type ToolStatus = "ok" | "missing" | "unauthed" | "unknown";
   type ProviderToolName = "gh" | "glab";
@@ -111,16 +119,32 @@
     }
   }
 
-  async function copyCommand(command: string): Promise<void> {
-    if (!(await copyToClipboard(command))) {
-      console.error("Copy failed");
-      return;
-    }
-    copied = command;
-    setTimeout(() => {
-      if (copied === command) copied = null;
-    }, 1500);
+  function copyCommand(command: string): void {
+    copyExecution?.interrupt();
+    copyExecution = runtime.runCommand(
+      transientClipboardFeedback({
+        text: command,
+        write: copyToClipboard,
+        isActive: () => active,
+        onCopied: () => {
+          copied = command;
+        },
+        onExpired: () => {
+          if (copied === command) copied = null;
+        },
+      }),
+      {
+        operation: "copy tooling recovery command",
+        safeContext: { command: providerToolName },
+        onFailure: () => {},
+      },
+    );
   }
+
+  onDestroy(() => {
+    active = false;
+    copyExecution?.interrupt();
+  });
 </script>
 
 {#if showBlock}

@@ -8,8 +8,8 @@ import type { GeneratedClient } from "../../api/generated-api.js";
 import type { ProviderRouteRef } from "../../api/provider-routes.js";
 import { createDiffReviewDraftStore } from "../../stores/diff-review-draft.svelte.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
-import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
-import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
+import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineCommentRuntimeHarness.svelte";
+import DiffReviewDraftTray from "./DiffReviewDraftTrayRuntimeHarness.svelte";
 
 const runtimes = new Set<OwnedAppRuntime>();
 
@@ -91,6 +91,7 @@ async function renderTray(publishResult: boolean) {
   });
   const context = new Map([[STORES_KEY, { diffReviewDraft }]]);
   const rendered = render(DiffReviewDraftTray, {
+    props: { runtime },
     context,
   });
   return { ...rendered, context, diffReviewDraft, discard, editComment, publish };
@@ -99,6 +100,7 @@ async function renderTray(publishResult: boolean) {
 describe("DiffReviewDraftTray", () => {
   afterEach(async () => {
     cleanup();
+    vi.unstubAllGlobals();
     await Promise.all(Array.from(runtimes, (runtime) => Effect.runPromise(runtime.disposeEffect)));
     runtimes.clear();
   });
@@ -188,5 +190,31 @@ describe("DiffReviewDraftTray", () => {
 
     expect(publish).not.toHaveBeenCalled();
     expect(discard).not.toHaveBeenCalled();
+  });
+
+  it("interrupts pending measurement and editor focus when the tray unmounts", async () => {
+    const frameCallbacks: FrameRequestCallback[] = [];
+    const cancelFrame = vi.fn();
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        frameCallbacks.push(callback);
+        return frameCallbacks.length;
+      }),
+    );
+    vi.stubGlobal("cancelAnimationFrame", cancelFrame);
+    const focus = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
+    const view = await renderTray(true);
+    await waitFor(() => expect(frameCallbacks.length).toBeGreaterThan(0));
+
+    screen.getByRole("button", { name: "Edit draft comment" }).click();
+    view.unmount();
+    for (const callback of frameCallbacks) callback(performance.now());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(cancelFrame).toHaveBeenCalled();
+    expect(focus).not.toHaveBeenCalled();
+    focus.mockRestore();
   });
 });

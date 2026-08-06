@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import ApproveButton from "./ApproveButton.svelte";
+import ApproveButton from "./ApproveButtonRuntimeHarness.svelte";
 import { STORES_KEY } from "../../context.js";
 import type { ProblemBody } from "../../api/problems.js";
 import type { ProviderRouteRef } from "../../api/provider-routes.js";

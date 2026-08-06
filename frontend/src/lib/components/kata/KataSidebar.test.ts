@@ -1,9 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { Effect } from "effect";
 import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataProjectSummary, KataTaskSearchFilters } from "../../api/kata/taskTypes.js";
 import type { KataAreaSummary, KataCurrentView } from "../../features/kata/kataWorkspaceAuthority.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import KataSidebar from "./KataSidebar.svelte";
 
 const projects: KataProjectSummary[] = [
@@ -34,15 +36,16 @@ const allScopeFilters: KataTaskSearchFilters = {
 type SidebarProps = ComponentProps<typeof KataSidebar>;
 
 function renderSidebar(overrides: Partial<SidebarProps> = {}) {
-  return render(KataSidebar, {
+  return render(AppRuntimeHarness, {
     props: {
+      component: KataSidebar,
       areas,
       projects,
       currentView,
       searchFilters: allScopeFilters,
-      onOpenView: vi.fn(),
-      onOpenProject: vi.fn(),
-      onCreateProject: vi.fn(),
+      onOpenView: vi.fn(() => Effect.succeed(true)),
+      onOpenProject: vi.fn(() => Effect.succeed(true)),
+      onCreateProject: vi.fn(() => Effect.succeed({ changed: true })),
       ...overrides,
     },
   });
@@ -88,8 +91,8 @@ describe("KataSidebar", () => {
   });
 
   it("opens system views and project scopes from the restored sidebar", async () => {
-    const onOpenView = vi.fn();
-    const onOpenProject = vi.fn();
+    const onOpenView = vi.fn(() => Effect.succeed(true));
+    const onOpenProject = vi.fn(() => Effect.succeed(true));
 
     renderSidebar({ onOpenView, onOpenProject });
 
@@ -101,7 +104,7 @@ describe("KataSidebar", () => {
   });
 
   it("keeps project rows navigation-only without rename affordances", async () => {
-    const onOpenProject = vi.fn();
+    const onOpenProject = vi.fn(() => Effect.succeed(true));
     renderSidebar({
       onOpenProject,
       searchFilters: { ...allScopeFilters, scope: { kind: "project", project_uid: "project-finances" } },
@@ -119,8 +122,8 @@ describe("KataSidebar", () => {
   });
 
   it("submits project creation without deriving navigation from the mutation result", async () => {
-    const onCreateProject = vi.fn(async () => ({ changed: true }));
-    const onOpenProject = vi.fn();
+    const onCreateProject = vi.fn(() => Effect.succeed({ changed: true }));
+    const onOpenProject = vi.fn(() => Effect.succeed(true));
 
     renderSidebar({ onCreateProject, onOpenProject });
 
@@ -128,7 +131,9 @@ describe("KataSidebar", () => {
     const input = screen.getByRole("textbox", { name: "New project name" });
     await waitFor(() => expect(input).toBe(document.activeElement));
     await fireEvent.input(input, { target: { value: "New Project" } });
-    await fireEvent.submit(input.closest("form")!);
+    const form = input.closest("form");
+    if (form === null) throw new Error("New project form was not rendered");
+    await fireEvent.submit(form);
 
     await waitFor(() => {
       expect(onCreateProject).toHaveBeenCalledWith("New Project");

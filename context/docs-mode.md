@@ -19,6 +19,15 @@ filesystem operations, search, and git pull/publish behavior.
   applies only while the daemon remains configured and never falls back to an
   ambient selection
   (`frontend/src/lib/components/docs/folderDaemon.ts::effectiveDocsFolderDaemon`).
+- Docs reads combine an owner-local latest-wins lane with one application-wide key per exact resource;
+  route changes cancel obsolete presentation work without canceling accepted reconciliation. Accepted
+  mutations serialize in application scope, and presenter leases retain refreshes across replacement
+  (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflow`).
+- Reconcile an ambiguous file or folder mutation through the ordinary authoritative read key: matching state
+  is recovered success, contradictory state preserves the failure, and an inconclusive read fences unsafe
+  retry. Pull refreshes tree, git state, and the captured open document
+  (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflow`,
+  `frontend/src/lib/components/docs/DocsWorkspace.svelte`).
 
 ## Filesystem And HTTP Boundary
 

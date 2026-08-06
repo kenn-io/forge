@@ -1,22 +1,19 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import { tick } from "svelte";
   import { Button, IconButton, TextInput } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import type { ConfigRepo } from "../../api/types.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import {
-    addRepo,
-    removeRepo,
-    getSettings,
-    refreshRepo,
-    updateRepoWorktreeBasePath,
-  } from "../../api/settings.js";
+  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import XIcon from "@lucide/svelte/icons/x";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoImportModal from "./RepoImportModal.svelte";
   import RepoPromoteModal from "./RepoPromoteModal.svelte";
 
+  const runtime = getAppRuntime();
   const { sync } = getStores();
 
   interface Props {
@@ -65,101 +62,157 @@
     return worktreeBaseDrafts[key] ?? repo.worktree_base_path ?? "";
   }
 
-  async function handleAdd(): Promise<void> {
+  function handleAdd(): void {
     if (embedded) return;
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     const parts = trimmed.split("/");
-    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+    const [provider, owner, name] = parts;
+    if (parts.length !== 3 || !provider || !owner || !name) {
       addError = "Format: provider/owner/name";
       return;
     }
     adding = true;
     addError = null;
-    try {
-      const settings = await addRepo(parts[1], parts[2], {
-        provider: parts[0],
-      });
-      inputValue = "";
-      onUpdate(settings.repos);
-      sync.refreshSyncStatus();
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      adding = false;
-    }
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.addRepo(owner, name, { provider });
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => showFlash(settingsErrorMessage(failure), { tone: "danger" })),
+          onSuccess: (settings) =>
+            Effect.sync(() => {
+              inputValue = "";
+              onUpdate(settings.repos);
+              sync.refreshSyncStatus();
+            }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          adding = false;
+        })),
+      ),
+      { operation: "add configured repository", safeContext: { provider }, onFailure: () => {} },
+    );
   }
 
-  async function handleRemove(repo: ConfigRepo): Promise<void> {
+  function handleRemove(repo: ConfigRepo): void {
     if (embedded) return;
-    try {
-      await removeRepo(repo.owner, repo.name, {
-        provider: repo.provider,
-        host: repo.platform_host,
-      });
-      confirmingRemove = null;
-      const settings = await getSettings();
-      onUpdate(settings.repos);
-      sync.refreshSyncStatus();
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    }
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.removeRepo(repo.owner, repo.name, {
+          provider: repo.provider,
+          host: repo.platform_host,
+        });
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => showFlash(settingsErrorMessage(failure), { tone: "danger" })),
+          onSuccess: () =>
+            Effect.sync(() => {
+              confirmingRemove = null;
+              const removedKey = repoKey(repo);
+              onUpdate(repos.filter((candidate) => repoKey(candidate) !== removedKey));
+              sync.refreshSyncStatus();
+            }),
+        }),
+      ),
+      {
+        operation: "remove configured repository",
+        safeContext: { provider: repo.provider, host: repo.platform_host, repoPath: repoLabel(repo) },
+        onFailure: () => {},
+      },
+    );
   }
 
-  async function handleRefresh(repo: ConfigRepo): Promise<void> {
+  function handleRefresh(repo: ConfigRepo): void {
     if (embedded) return;
     const key = repoKey(repo);
     refreshingByKey = { ...refreshingByKey, [key]: true };
-    try {
-      const settings = await refreshRepo(repo.owner, repo.name, {
-        provider: repo.provider,
-        host: repo.platform_host,
-      });
-      onUpdate(settings.repos);
-      sync.refreshSyncStatus();
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      refreshingByKey = { ...refreshingByKey, [key]: false };
-    }
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.refreshRepo(repo.owner, repo.name, {
+          provider: repo.provider,
+          host: repo.platform_host,
+        });
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => showFlash(settingsErrorMessage(failure), { tone: "danger" })),
+          onSuccess: (settings) =>
+            Effect.sync(() => {
+              onUpdate(settings.repos);
+              sync.refreshSyncStatus();
+            }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          refreshingByKey = { ...refreshingByKey, [key]: false };
+        })),
+      ),
+      {
+        operation: "refresh configured repository",
+        safeContext: { provider: repo.provider, host: repo.platform_host, repoPath: repoLabel(repo) },
+        onFailure: () => {},
+      },
+    );
   }
 
-  async function handleWorktreeBaseSave(repo: ConfigRepo): Promise<void> {
+  function handleWorktreeBaseSave(repo: ConfigRepo): void {
     if (embedded || repo.is_glob) return;
     const key = repoKey(repo);
     savingWorktreeBaseByKey = { ...savingWorktreeBaseByKey, [key]: true };
-    try {
-      const settings = await updateRepoWorktreeBasePath(
-        repo.owner,
-        repo.name,
-        {
-          provider: repo.provider,
-          host: repo.platform_host,
-        },
-        worktreeBaseValue(repo, key).trim(),
-      );
-      const nextDrafts = { ...worktreeBaseDrafts };
-      delete nextDrafts[key];
-      worktreeBaseDrafts = nextDrafts;
-      onUpdate(settings.repos);
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      savingWorktreeBaseByKey = { ...savingWorktreeBaseByKey, [key]: false };
-    }
+    const worktreeBasePath = worktreeBaseValue(repo, key).trim();
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.updateRepoWorktreeBasePath(
+          repo.owner,
+          repo.name,
+          { provider: repo.provider, host: repo.platform_host },
+          worktreeBasePath,
+        );
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => showFlash(settingsErrorMessage(failure), { tone: "danger" })),
+          onSuccess: (settings) =>
+            Effect.sync(() => {
+              const nextDrafts = { ...worktreeBaseDrafts };
+              delete nextDrafts[key];
+              worktreeBaseDrafts = nextDrafts;
+              onUpdate(settings.repos);
+            }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          savingWorktreeBaseByKey = { ...savingWorktreeBaseByKey, [key]: false };
+        })),
+      ),
+      {
+        operation: "save repository worktree base",
+        safeContext: { provider: repo.provider, host: repo.platform_host, repoPath: repoLabel(repo) },
+        onFailure: () => {},
+      },
+    );
   }
 
   function handleInputKeydown(e: KeyboardEvent): void {
     if (e.key === "Enter") {
       e.preventDefault();
-      void handleAdd();
+      handleAdd();
     }
   }
 
-  async function closeImportModal(): Promise<void> {
+  function closeImportModal(): void {
     importOpen = false;
-    await tick();
-    importTrigger?.focus();
+    runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => importTrigger?.focus())),
+      ),
+      { operation: "restore repository import focus", safeContext: {}, onFailure: () => {} },
+    );
   }
 </script>
 
@@ -169,7 +222,7 @@
       tone="info"
       surface="solid"
       onclick={(event) => {
-        importTrigger = event.currentTarget as HTMLButtonElement;
+        if (event.currentTarget instanceof HTMLButtonElement) importTrigger = event.currentTarget;
         importOpen = true;
       }}
     >Add repositories…</Button>
@@ -179,7 +232,7 @@
 
 <RepoImportModal
   open={importOpen}
-  onClose={() => { void closeImportModal(); }}
+  onClose={closeImportModal}
   onImported={(settings) => {
     onUpdate(settings.repos);
     sync.refreshSyncStatus();
@@ -211,7 +264,7 @@
               size="sm"
               tone="danger"
               surface="outline"
-              onclick={() => void handleRemove(repo)}
+              onclick={() => handleRemove(repo)}
             >Yes</Button>
             <Button
               size="sm"
@@ -235,7 +288,7 @@
                 size="sm"
                 tone="info"
                 surface="soft"
-                onclick={() => void handleRefresh(repo)}
+                onclick={() => handleRefresh(repo)}
                 disabled={Boolean(refreshingByKey[key])}
               >
                 {refreshingByKey[key] ? "Refreshing..." : "Refresh"}
@@ -285,7 +338,7 @@
               onkeydown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  void handleWorktreeBaseSave(repo);
+                  handleWorktreeBaseSave(repo);
                 }
               }}
             />
@@ -294,7 +347,7 @@
               tone="info"
               surface="outline"
               ariaLabel={`Save local clone path for ${repoDisplayLabel(repo)}`}
-              onclick={() => void handleWorktreeBaseSave(repo)}
+              onclick={() => handleWorktreeBaseSave(repo)}
               disabled={embedded || Boolean(savingWorktreeBaseByKey[key]) || worktreeBaseValue(repo, key).trim() === (repo.worktree_base_path ?? "")}
             >
               {savingWorktreeBaseByKey[key] ? "Saving..." : "Save"}
@@ -325,7 +378,7 @@
         <Button
           tone="info"
           surface="solid"
-          onclick={() => void handleAdd()}
+          onclick={handleAdd}
           disabled={adding || !inputValue.trim()}
         >
           {adding ? "Adding..." : "Add"}

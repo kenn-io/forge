@@ -1,6 +1,11 @@
 <script lang="ts">
   import type { DiffLineAnnotation, SelectedLineRange, Virtualizer } from "@pierre/diffs";
+  import { Effect } from "effect";
   import { mount, onMount, unmount } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { nextMicrotask } from "../../browser/microtask.js";
+  import { observeIntersection, observeMutation } from "../../browser/observers.js";
   import type { DiffFile as DiffFileType } from "../../api/types.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
@@ -21,6 +26,7 @@
   const stores = getStores();
   const diffStore = stores.diff;
   const diffReviewDraft = stores.diffReviewDraft;
+  const runtime = getAppRuntime();
 
   interface Props {
     file: DiffFileType;
@@ -88,7 +94,8 @@
   let inViewport = $state(false);
   type MountedAnnotation = {
     component?: object;
-    observer?: MutationObserver;
+    execution?: AppExecution<void, never>;
+    released?: boolean;
     target: HTMLElement;
   };
   type ReviewSide = "left" | "right";
@@ -164,23 +171,28 @@
 
   onMount(() => {
     annotationMountsEnabled = true;
-    let observer: IntersectionObserver | undefined;
+    let visibilityExecution: AppExecution<void, never> | undefined;
     // Guard for jsdom / SSR-ish test environments where IntersectionObserver
     // is not provided — treat the file as visible so rendering still runs.
     if (typeof IntersectionObserver === "undefined") {
       inViewport = true;
     } else if (fileEl) {
       const root = fileEl.closest(".kit-scrollbox__viewport");
-      observer = new IntersectionObserver(
-        (entries) => { inViewport = entries[0]!.isIntersecting; },
-        { root, rootMargin: "600px 0px" },
+      visibilityExecution = runtime.runCommand(
+        Effect.scoped(
+          observeIntersection(
+            fileEl,
+            (entries) => { inViewport = entries[0]!.isIntersecting; },
+            { root, rootMargin: "600px 0px" },
+          ).pipe(Effect.andThen(Effect.never)),
+        ),
+        { operation: "observe diff file visibility", safeContext: { path: file.path }, onFailure: () => {} },
       );
-      observer.observe(fileEl);
     }
 
     return () => {
       annotationMountsEnabled = false;
-      observer?.disconnect();
+      visibilityExecution?.interrupt();
       clearMountedAnnotations();
     };
   });
@@ -431,15 +443,30 @@
     target.className = "pierre-annotation-host";
     const mounted: MountedAnnotation = { target };
     mountedAnnotations.add(mounted);
-    queueMicrotask(() => {
-      if (!mountedAnnotations.has(mounted)) return;
-      if (!annotationMountsEnabled || !target.isConnected) {
-        mountedAnnotations.delete(mounted);
-        return;
-      }
-      mounted.component = mountAnnotationComponent(target, annotation.metadata);
-      observeMountedAnnotation(mounted);
-    });
+    mounted.execution = runtime.runCommand(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* nextMicrotask;
+          if (!annotationMountsEnabled || !target.isConnected) return;
+          mounted.component = mountAnnotationComponent(target, annotation.metadata);
+          yield* nextMicrotask;
+          if (!target.isConnected || typeof MutationObserver === "undefined") return yield* Effect.never;
+          const root = target.getRootNode();
+          const observedRoot = root instanceof ShadowRoot || root instanceof Document
+            ? root
+            : document;
+          yield* observeMutation(
+            observedRoot,
+            () => {
+              if (!target.isConnected) mounted.execution?.interrupt();
+            },
+            { childList: true, subtree: true },
+          );
+          return yield* Effect.never;
+        }).pipe(Effect.ensuring(Effect.suspend(() => releaseMountedAnnotation(mounted)))),
+      ),
+      { operation: "mount diff annotation", safeContext: { path: file.path }, onFailure: () => {} },
+    );
     return target;
   }
 
@@ -448,13 +475,14 @@
     return metadata.kind === "draft"
       ? mount(DiffReviewDraftInlineComment, {
         target,
-        props: { comment: metadata.comment },
+        props: { runtime, comment: metadata.comment },
         context,
       })
       : metadata.kind === "thread"
         ? mount(DiffReviewThreadInlineComment, {
           target,
           props: {
+            runtime,
             thread: metadata.thread,
             canReply: metadata.canReply,
             onreply: replyToThread,
@@ -463,7 +491,7 @@
         })
         : mount(DiffInlineCommentComposer, {
           target,
-          props: { range: metadata.range, onclose: closeComposer },
+          props: { runtime, range: metadata.range, onclose: closeComposer },
           context,
         });
   }
@@ -472,35 +500,19 @@
     return renderAnnotation(annotation as DiffLineAnnotation<DiffAnnotation>);
   }
 
-  function observeMountedAnnotation(mounted: MountedAnnotation): void {
-    const cleanUp = () => {
-      if (!mountedAnnotations.delete(mounted)) return;
-      mounted.observer?.disconnect();
-      if (mounted.component) void unmount(mounted.component);
-    };
-    if (typeof MutationObserver === "undefined") return;
-    mounted.observer = new MutationObserver(() => {
-      if (!mounted.target.isConnected) cleanUp();
-    });
-    queueMicrotask(() => {
-      if (!mountedAnnotations.has(mounted)) return;
-      if (!mounted.target.isConnected) {
-        cleanUp();
-        return;
-      }
-      const root = mounted.target.getRootNode();
-      const observedRoot = root instanceof ShadowRoot || root instanceof Document
-        ? root
-        : document;
-      mounted.observer?.observe(observedRoot, { childList: true, subtree: true });
-    });
+  function releaseMountedAnnotation(mounted: MountedAnnotation): Effect.Effect<void> {
+    if (mounted.released) return Effect.void;
+    mounted.released = true;
+    mountedAnnotations.delete(mounted);
+    const component = mounted.component;
+    return component === undefined
+      ? Effect.void
+      : Effect.promise(() => unmount(component));
   }
 
   function clearMountedAnnotations(): void {
     for (const mounted of mountedAnnotations) {
-      mountedAnnotations.delete(mounted);
-      mounted.observer?.disconnect();
-      if (mounted.component) void unmount(mounted.component);
+      mounted.execution?.interrupt();
     }
   }
 
@@ -580,6 +592,7 @@
       {#if showRichPreview}
         {#key richPreviewKey}
           <DiffRichPreview
+            {runtime}
             {file}
             {provider}
             {platformHost}
@@ -597,7 +610,7 @@
         {/key}
       {:else}
         {#each fileLevelReviewThreads as thread (thread.id)}
-          <DiffReviewThreadInlineComment {thread} fileLevel={true} />
+          <DiffReviewThreadInlineComment {runtime} {thread} fileLevel={true} />
         {/each}
         {#if file.is_binary}
           <div class="binary-notice">Binary file changed</div>

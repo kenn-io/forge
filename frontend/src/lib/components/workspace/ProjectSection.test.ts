@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import type { WorkspaceProject, WorkspaceWorktree } from "../../api/types.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import ProjectSection from "./ProjectSection.svelte";
 
 function createWorktree(isStale: boolean): WorkspaceWorktree {
@@ -35,8 +36,9 @@ function createProject(isStale: boolean): WorkspaceProject {
 }
 
 function renderSection(project: WorkspaceProject): void {
-  render(ProjectSection, {
+  render(AppRuntimeHarness, {
     props: {
+      component: ProjectSection,
       project,
       hostKey: "local",
       selectedWorktreeKey: null,

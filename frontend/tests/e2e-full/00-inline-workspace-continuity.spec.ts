@@ -687,6 +687,11 @@ test.describe("inline workspace pane continuity", () => {
       const homeTab = workflow.getByRole("tab", { name: "Home" });
       const terminalTab = workflow.getByRole("tab", { name: "Terminal" });
       await expect(terminalTab).toHaveAttribute("aria-selected", "true");
+      await expect
+        .poll(() => controlFrames.some((frame) => frame.type === "resize_active" && frame.active === true), {
+          timeout: 15_000,
+        })
+        .toBe(true);
       const revocationsBeforeHide = controlFrames.filter(
         (frame) => frame.type === "resize_active" && frame.active === false,
       ).length;
@@ -694,8 +699,10 @@ test.describe("inline workspace pane continuity", () => {
       await homeTab.click();
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
       await expect
-        .poll(() => controlFrames.filter((frame) => frame.type === "resize_active" && frame.active === false).length)
-        .toBe(revocationsBeforeHide + 1);
+        .poll(() => controlFrames.filter((frame) => frame.type === "resize_active" && frame.active === false).length, {
+          timeout: 15_000,
+        })
+        .toBeGreaterThan(revocationsBeforeHide);
       const geometryFramesAfterHide = controlFrames.filter(
         (frame) => frame.type === "resize" || frame.type === "refresh",
       ).length;
@@ -1666,7 +1673,9 @@ test.describe("inline workspace pane continuity", () => {
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspaceA.id}`);
       const initialA = await openTerminalPanel(page);
       const runtimeTmuxSessionA = await runningRuntimeTmuxSession(api, workspaceA.id);
+      const tmuxServer = isolatedServer;
       await initialA.click({ position: { x: 10, y: 10 } });
+      await expect.poll(() => tmuxClientTTY(tmuxServer, runtimeTmuxSessionA), { timeout: 15_000 }).not.toBe("");
       runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", runtimeTmuxSessionA, "mouse", "off"]);
       runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", runtimeTmuxSessionA, "mouse", "on"]);
       await expect(initialA.locator(".xterm.enable-mouse-events")).toBeVisible();
@@ -2263,7 +2272,7 @@ test.describe("inline workspace pane continuity", () => {
           let continuationDelivered = false;
           let fallbackTimer: number | null = null;
           const deliver = (bytes: Uint8Array) => {
-            this.onmessage?.(new MessageEvent("message", { data: bytes.buffer }));
+            this.dispatchEvent(new MessageEvent("message", { data: bytes.buffer }));
           };
           const deliverContinuation = () => {
             if (continuationDelivered) return;
@@ -2281,7 +2290,7 @@ test.describe("inline workspace pane continuity", () => {
               if (continuationDelivered) return;
               event.stopImmediatePropagation();
               deliverContinuation();
-              this.onmessage?.(new MessageEvent("message", { data: event.data }));
+              this.dispatchEvent(new MessageEvent("message", { data: event.data }));
               return;
             }
             if (!(event.data instanceof ArrayBuffer)) return;

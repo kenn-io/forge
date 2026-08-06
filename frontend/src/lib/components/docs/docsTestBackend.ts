@@ -387,7 +387,7 @@ function mockBrowse(requested?: string): BrowseResponse {
   const entries: BrowseEntry[] = children.map((name) => ({
     name,
     path: `${path}/${name}`,
-    ...(name.startsWith(".") ? { hidden: true } : {}),
+    hidden: name.startsWith("."),
   }));
   let parent = "";
   if (path !== "/") {

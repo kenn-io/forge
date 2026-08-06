@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Checkbox, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
@@ -10,8 +11,9 @@
     FleetSettings as FleetSettingsType,
     FleetSettingsUpdate,
   } from "../../api/types.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { updateFleetSettings } from "../../api/settings.js";
+  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
 
   interface Props {
@@ -37,6 +39,7 @@
 
   let { fleet, onUpdate }: Props = $props();
 
+  const runtime = getAppRuntime();
   const embedded = isEmbedded();
   const basePlatformOptions: TypeaheadOption[] = [
     { name: "macos", label: "macOS" },
@@ -213,19 +216,38 @@
     return [...basePlatformOptions, { name: trimmed, label: trimmed }];
   }
 
-  async function save(): Promise<void> {
+  function save(): void {
     if (!canSave) return;
     saving = true;
-    try {
-      const updated = await updateFleetSettings(pendingFleet);
-      currentFleet = updated;
-      resetDraft();
-      onUpdate(updated);
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      saving = false;
-    }
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.updateFleet(pendingFleet);
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              showFlash(settingsErrorMessage(failure), { tone: "danger" });
+            }),
+          onSuccess: (fleet) =>
+            Effect.sync(() => {
+              currentFleet = fleet;
+              resetDraft();
+              onUpdate(fleet);
+            }),
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            saving = false;
+          }),
+        ),
+      ),
+      {
+        operation: "save fleet settings",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 </script>
 

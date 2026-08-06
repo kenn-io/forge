@@ -31,7 +31,7 @@ vi.mock("../components/diff/DiffFilesLayout.svelte", async () => ({
   default: (await import("./PRListViewTestDiffFilesLayout.svelte")).default,
 }));
 
-import PRListView from "./PRListView.svelte";
+import PRListView from "./PRListViewRuntimeHarness.svelte";
 
 /** DetailPaneLayout flattens the tree below this measured host width. */
 const flattenBelowPx = 720;

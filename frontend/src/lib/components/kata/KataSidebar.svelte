@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import AlarmClockIcon from "@lucide/svelte/icons/alarm-clock";
   import CalendarDaysIcon from "@lucide/svelte/icons/calendar-days";
   import CheckCircleIcon from "@lucide/svelte/icons/check-circle-2";
@@ -17,15 +19,18 @@
     KataTaskViewName,
   } from "../../api/kata/taskTypes.js";
   import type { KataAreaSummary, KataCurrentView } from "../../features/kata/kataWorkspaceAuthority.js";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
 
   interface Props {
     areas: KataAreaSummary[];
     projects: KataProjectSummary[];
     currentView: KataCurrentView;
     searchFilters: KataTaskSearchFilters;
-    onOpenView: (name: KataTaskViewName) => void | Promise<void>;
-    onOpenProject: (projectUID: string) => void | Promise<void>;
-    onCreateProject: (name: string) => Promise<KataTaskMutationResponse>;
+    onOpenView: (name: KataTaskViewName) => KataCommand<boolean>;
+    onOpenProject: (projectUID: string) => KataCommand<boolean>;
+    onCreateProject: (name: string) => KataCommand<KataTaskMutationResponse, unknown>;
   }
 
   let {
@@ -37,6 +42,8 @@
     onOpenProject,
     onCreateProject,
   }: Props = $props();
+
+  const runtime = getAppRuntime();
 
   const systemViews: Array<{
     name: KataTaskViewName;
@@ -56,6 +63,9 @@
   let createSaving = $state(false);
   let createInput: HTMLInputElement | null = $state(null);
   let collapsedAreas = $state<string[]>([]);
+  let navigationExecution: AppExecution<void, never> | null = null;
+  let createExecution: AppExecution<void, unknown> | null = null;
+  let focusExecution: AppExecution<void, never> | null = null;
 
   function toggleArea(name: string): void {
     collapsedAreas = collapsedAreas.includes(name)
@@ -79,7 +89,11 @@
   function startCreatingProject(): void {
     creatingProject = true;
     createDraft = "";
-    queueMicrotask(() => createInput?.focus());
+    focusExecution?.interrupt();
+    focusExecution = runtime.runCommand(
+      Effect.yieldNow.pipe(Effect.andThen(Effect.sync(() => createInput?.focus()))),
+      { operation: "focus Kata project name", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   function cancelCreatingProject(): void {
@@ -87,20 +101,44 @@
     createDraft = "";
   }
 
-  async function submitCreateProject(): Promise<void> {
+  function submitCreateProject(): void {
     const name = createDraft.trim();
     if (!name || createSaving) return;
     createSaving = true;
-    try {
-      await onCreateProject(name);
-      creatingProject = false;
-      createDraft = "";
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : "Could not create project.", { tone: "danger" });
-    } finally {
-      createSaving = false;
-    }
+    createExecution = runtime.runCommand(
+      onCreateProject(name).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            creatingProject = false;
+            createDraft = "";
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => (createSaving = false))),
+        Effect.asVoid,
+      ),
+      {
+        operation: "create Kata project",
+        safeContext: {},
+        onFailure: (failure) =>
+          showFlash(failure instanceof Error ? failure.message : "Could not create project.", { tone: "danger" }),
+      },
+    );
   }
+
+  function runNavigation(command: KataCommand<boolean>, operation: string): void {
+    navigationExecution?.interrupt();
+    navigationExecution = runtime.runCommand(command.pipe(Effect.asVoid), {
+      operation,
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
+  onDestroy(() => {
+    navigationExecution?.interrupt();
+    createExecution?.interrupt();
+    focusExecution?.interrupt();
+  });
 </script>
 
 <aside class="kata-sidebar" aria-label="Kata navigation">
@@ -114,7 +152,7 @@
         class:active={searchFilters.scope.kind === "all" && currentView.name === view.name}
         aria-label={count !== undefined ? `${view.label} ${count}` : view.label}
         onclick={() => {
-          void onOpenView(view.name);
+          runNavigation(onOpenView(view.name), "open Kata view");
         }}
       >
         <span class="nav-icon"><Icon size={14} strokeWidth={1.75} /></span>
@@ -138,7 +176,7 @@
             type="button"
             class="project-select-button"
             class:active={isProjectActive(project.uid)}
-            onclick={() => void onOpenProject(project.uid)}
+            onclick={() => runNavigation(onOpenProject(project.uid), "open Kata project")}
           >
             <span class="project-name">{project.name}</span>
             <span class="project-count count">{project.open_count}</span>
@@ -153,7 +191,7 @@
         class="project-create-form"
         onsubmit={(event) => {
           event.preventDefault();
-          void submitCreateProject();
+          submitCreateProject();
         }}
       >
         <input
@@ -164,7 +202,7 @@
           onkeydown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              void submitCreateProject();
+              submitCreateProject();
             } else if (event.key === "Escape") {
               event.preventDefault();
               cancelCreatingProject();

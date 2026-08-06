@@ -4,7 +4,7 @@ import { render } from "vitest-browser-svelte";
 
 import { buildFolderIndex } from "../../api/docs/folderLinks";
 import type { DocsMarkdownOptions } from "../../api/docs/markdown";
-import DocMarkdownView from "./DocMarkdownView.svelte";
+import DocMarkdownViewRuntimeHarness from "./DocMarkdownViewRuntimeHarness.svelte";
 
 function options(): DocsMarkdownOptions {
   return {
@@ -18,7 +18,7 @@ function options(): DocsMarkdownOptions {
 
 describe("DocMarkdownView details blocks (browser)", () => {
   it("renders GitHub-style details blocks as native toggleable disclosures", async () => {
-    const { container } = render(DocMarkdownView, {
+    const { container } = render(DocMarkdownViewRuntimeHarness, {
       props: {
         source: [
           "<details>",

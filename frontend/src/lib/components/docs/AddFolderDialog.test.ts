@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import * as flash from "../../stores/flash.svelte.js";
-import AddFolderDialog from "./AddFolderDialog.svelte";
+import AddFolderDialogTestHarness from "./AddFolderDialogTestHarness.svelte";
 import type { DocsAPI } from "../../api/docs/api";
 import { createMockDocsBackend } from "./docsTestBackend";
 import { setActiveKataDaemon, setKataDaemonRoster } from "../../stores/active-kata-daemon.svelte";
@@ -23,16 +23,15 @@ function renderDialog(
   const api = opts.api ?? createMockDocsBackend();
   const onClose = vi.fn();
   const onAdded = vi.fn();
-  const result = render(AddFolderDialog, {
-    props: {
-      open: opts.open ?? true,
-      api,
-      onClose,
-      onAdded,
-      initialPath: opts.initialPath ?? "",
-    },
-  });
-  return { ...result, api, onClose, onAdded };
+  const props = {
+    open: opts.open ?? true,
+    api,
+    onClose,
+    onAdded,
+    initialPath: opts.initialPath ?? "",
+  };
+  const result = render(AddFolderDialogTestHarness, { props });
+  return { ...result, api, onClose, onAdded, props };
 }
 
 describe("AddFolderDialog", () => {
@@ -53,6 +52,23 @@ describe("AddFolderDialog", () => {
     expect(screen.getByText(".config")).toBeTruthy();
   });
 
+  test("interrupts an obsolete folder browse when its initial path changes", async () => {
+    const api = createMockDocsBackend();
+    const originalBrowse = api.browseDirectories.bind(api);
+    let firstSignal: AbortSignal | undefined;
+    vi.spyOn(api, "browseDirectories").mockImplementation((path, signal) => {
+      if (path !== "/first") return originalBrowse(path, signal);
+      firstSignal = signal;
+      return new Promise(() => {});
+    });
+    const rendered = renderDialog({ api, initialPath: "/first" });
+    await waitFor(() => expect(api.browseDirectories).toHaveBeenCalledWith("/first", expect.any(AbortSignal)));
+
+    await rendered.rerender({ ...rendered.props, initialPath: "/second" });
+
+    await waitFor(() => expect(firstSignal?.aborted).toBe(true));
+  });
+
   test("'Use this folder' copies the current browser path into the input", async () => {
     renderDialog();
     await waitFor(() => screen.getByText("Documents"));
@@ -70,9 +86,67 @@ describe("AddFolderDialog", () => {
     await fireEvent.input(input, { target: { value: "/mock/new-folder" } });
     await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
     await waitFor(() => expect(addSpy).toHaveBeenCalled());
-    expect(addSpy).toHaveBeenCalledWith({ path: "/mock/new-folder" });
+    expect(addSpy).toHaveBeenCalledWith({ path: "/mock/new-folder" }, expect.any(AbortSignal));
     expect(onAdded).toHaveBeenCalledWith(expect.objectContaining({ id: "new-folder", path: "/mock/new-folder" }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  test("finishes adding when the response is lost but the folder list confirms the path", async () => {
+    const backend = createMockDocsBackend();
+    const addFolder = vi.fn(async (input: Parameters<DocsAPI["addFolder"]>[0], signal?: AbortSignal) => {
+      await backend.addFolder(input, signal);
+      throw new Error("response lost after commit");
+    });
+    const api = { ...backend, addFolder };
+    const { onAdded, onClose } = renderDialog({ api });
+    await waitFor(() => screen.getByText("Documents"));
+    await fireEvent.input(screen.getByPlaceholderText("~/Notes"), { target: { value: "/mock/recovered-folder" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
+
+    await waitFor(() =>
+      expect(onAdded).toHaveBeenCalledWith(expect.objectContaining({ path: "/mock/recovered-folder" })),
+    );
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  test("reuses the original folder baseline when retrying retained uncertainty", async () => {
+    const backend = createMockDocsBackend();
+    let committed = false;
+    let failedReconciliation = false;
+    const addFolder = vi.fn(async (input: Parameters<DocsAPI["addFolder"]>[0], signal?: AbortSignal) => {
+      const folder = await backend.addFolder(input, signal);
+      committed = true;
+      throw new Error(`response lost after adding ${folder.path}`);
+    });
+    const listFolders = vi.fn(async (signal?: AbortSignal) => {
+      const folders = await backend.listFolders(signal);
+      if (committed && !failedReconciliation) {
+        failedReconciliation = true;
+        throw new Error("folder reconciliation unavailable");
+      }
+      return folders;
+    });
+    const api = { ...backend, addFolder, listFolders };
+    const { onAdded, onClose } = renderDialog({ api });
+    await waitFor(() => screen.getByText("Documents"));
+    await fireEvent.input(screen.getByPlaceholderText("~/Notes"), {
+      target: { value: "/mock/retained-folder" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
+    await waitFor(() =>
+      expect(flash.getFlash()).toMatchObject({
+        message: expect.stringMatching(/could not be confirmed/i),
+        tone: "danger",
+      }),
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
+
+    await waitFor(() =>
+      expect(onAdded).toHaveBeenCalledWith(expect.objectContaining({ path: "/mock/retained-folder" })),
+    );
+    expect(addFolder).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   test("submits a selected daemon binding when multiple daemons are available", async () => {
@@ -89,7 +163,7 @@ describe("AddFolderDialog", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
 
     await waitFor(() => expect(addSpy).toHaveBeenCalled());
-    expect(addSpy).toHaveBeenCalledWith({ path: "/mock/shared-notes", daemon: "work" });
+    expect(addSpy).toHaveBeenCalledWith({ path: "/mock/shared-notes", daemon: "work" }, expect.any(AbortSignal));
   });
 
   test("leaves a multi-daemon folder unbound until a daemon is selected", async () => {
@@ -104,7 +178,7 @@ describe("AddFolderDialog", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
 
     await waitFor(() => expect(addSpy).toHaveBeenCalled());
-    expect(addSpy).toHaveBeenCalledWith({ path: "/mock/shared-notes" });
+    expect(addSpy).toHaveBeenCalledWith({ path: "/mock/shared-notes" }, expect.any(AbortSignal));
   });
 
   test("drops a stale selected daemon when the roster shrinks before submit", async () => {
@@ -122,7 +196,7 @@ describe("AddFolderDialog", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
 
     await waitFor(() => expect(addSpy).toHaveBeenCalled());
-    expect(addSpy).toHaveBeenCalledWith({ path: "/mock/shared-notes" });
+    expect(addSpy).toHaveBeenCalledWith({ path: "/mock/shared-notes" }, expect.any(AbortSignal));
   });
 
   test("server errors surface as an inline message and keep the dialog open", async () => {

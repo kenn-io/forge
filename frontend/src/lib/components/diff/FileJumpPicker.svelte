@@ -1,8 +1,11 @@
 <script lang="ts">
   import FileSearchIcon from "@lucide/svelte/icons/file-search";
+  import { Effect } from "effect";
   import { tick } from "svelte";
   import type { DiffFile } from "../../api/types.js";
   import { getStores } from "../../context.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { Card, IconButton, SearchInput, floatingPopoverStyle } from "@kenn-io/kit-ui";
 
   interface Props {
@@ -11,6 +14,7 @@
 
   const { disabled = false }: Props = $props();
   const { diff } = getStores();
+  const runtime = getAppRuntime();
 
   let open = $state(false);
   let query = $state("");
@@ -20,6 +24,7 @@
   let triggerEl = $state<HTMLSpanElement>();
   let menuEl = $state<HTMLDivElement>();
   let menuStyle = $state("");
+  let domExecution: AppExecution<void, never> | null = null;
 
   const files = $derived(diff.getVisibleFileList()?.files ?? diff.getVisibleDiffFiles());
   const filteredFiles = $derived.by(() => {
@@ -75,7 +80,7 @@
     return index >= 0 ? path.slice(0, index) : "";
   }
 
-  async function toggle(): Promise<void> {
+  function toggle(): void {
     if (disabled) return;
     if (open) {
       close();
@@ -84,10 +89,15 @@
     open = true;
     query = "";
     highlightIndex = Math.max(files.findIndex((file) => file.path === activeFile), 0);
-    await tick();
-    positionMenu();
-    inputEl?.focus();
-    await scrollHighlightedOptionIntoView();
+    runDomCommand(
+      Effect.gen(function* () {
+        yield* Effect.promise(() => tick());
+        positionMenu();
+        inputEl?.focus();
+        yield* scrollHighlightedOptionIntoView;
+      }),
+      "open file jump picker",
+    );
   }
 
   function positionMenu(): void {
@@ -109,13 +119,20 @@
   }
 
   function close(restoreFocus = false): void {
+    domExecution?.interrupt();
+    domExecution = null;
     open = false;
     query = "";
     highlightIndex = 0;
     if (restoreFocus) {
-      void tick().then(() => {
-        triggerEl?.querySelector<HTMLButtonElement>("button")?.focus();
-      });
+      runDomCommand(
+        Effect.promise(() => tick()).pipe(
+          Effect.andThen(Effect.sync(() => {
+            triggerEl?.querySelector<HTMLButtonElement>("button")?.focus();
+          })),
+        ),
+        "restore file jump focus",
+      );
     }
   }
 
@@ -129,16 +146,26 @@
     highlightIndex = 0;
   }
 
-  async function scrollHighlightedOptionIntoView(): Promise<void> {
-    await tick();
-    menuEl
-      ?.querySelector<HTMLElement>(`#changed-file-option-${highlightIndex}`)
-      ?.scrollIntoView?.({ block: "nearest" });
+  const scrollHighlightedOptionIntoView = Effect.promise(() => tick()).pipe(
+    Effect.andThen(Effect.sync(() => {
+      menuEl
+        ?.querySelector<HTMLElement>(`#changed-file-option-${highlightIndex}`)
+        ?.scrollIntoView?.({ block: "nearest" });
+    })),
+  );
+
+  function runDomCommand(program: Effect.Effect<void>, operation: string): void {
+    domExecution?.interrupt();
+    domExecution = runtime.runCommand(program, {
+      operation,
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   function moveHighlight(nextIndex: number): void {
     highlightIndex = nextIndex;
-    void scrollHighlightedOptionIntoView();
+    runDomCommand(scrollHighlightedOptionIntoView, "reveal highlighted file");
   }
 
   function handleKeydown(event: KeyboardEvent): void {

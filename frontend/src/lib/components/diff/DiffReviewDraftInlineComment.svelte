@@ -1,22 +1,26 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import { onDestroy, tick } from "svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import XIcon from "@lucide/svelte/icons/x";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import { getStores } from "../../context.js";
+  import type { AppExecution, AppRuntime } from "../../app/runtime.js";
 
   interface Props {
+    runtime: AppRuntime;
     comment: DiffReviewDraftComment;
   }
 
-  const { comment }: Props = $props();
+  const { runtime, comment }: Props = $props();
   const { diffReviewDraft } = getStores();
   const submitting = $derived(diffReviewDraft.isSubmitting());
   let editing = $state(false);
   let draftBody = $state("");
   let saving = $state(false);
   let editorElement: HTMLTextAreaElement | undefined = $state();
+  let focusExecution: AppExecution<void, never> | null = null;
   const editStateID = $derived(`inline:${comment.id}`);
   const editDisabled = $derived(submitting || saving);
   const saveDisabled = $derived(editDisabled || draftBody.trim() === "");
@@ -29,13 +33,25 @@
   }
 
   function beginEdit(): void {
+    focusExecution?.interrupt();
     draftBody = comment.body;
     editing = true;
     reportEditState(true);
-    void tick().then(() => editorElement?.focus());
+    focusExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => editorElement?.focus())),
+      ),
+      {
+        operation: "focus inline draft comment",
+        safeContext: { commentId: comment.id },
+        onFailure: () => {},
+      },
+    );
   }
 
   function cancelEdit(): void {
+    focusExecution?.interrupt();
+    focusExecution = null;
     draftBody = comment.body;
     editing = false;
     reportEditState(false);
@@ -78,6 +94,7 @@
   }
 
   onDestroy(() => {
+    focusExecution?.interrupt();
     reportEditState(false);
   });
 </script>

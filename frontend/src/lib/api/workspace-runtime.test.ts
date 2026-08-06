@@ -1,208 +1,22 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 
-import {
-  getWorkspaceRuntime,
-  launchWorkspaceSession,
-  renameWorkspaceSession,
-  stopWorkspaceSession,
-  type RuntimeFetch,
-  workspaceSessionWebSocketPath,
-  workspaceTmuxWebSocketPath,
-} from "./workspace-runtime.js";
-import { beginInteractionTrace, endInteractionTrace } from "../instrumentation/traceContext.js";
+import { workspaceSessionWebSocketPath, workspaceTmuxWebSocketPath } from "./workspace-runtime.js";
 
-function capturedRequest(call: Parameters<RuntimeFetch> | undefined): Request {
-  if (!call) throw new Error("expected a runtime request");
-  return new Request(call[0], call[1]);
-}
-
-describe("workspace-runtime api", () => {
+describe("workspace runtime WebSocket paths", () => {
   afterEach(() => {
     delete window.__BASE_PATH__;
-    endInteractionTrace();
   });
 
-  it("loads runtime state and normalizes nullable arrays", async () => {
-    const fetchMock = vi.fn<RuntimeFetch>(
-      async () =>
-        new Response(
-          JSON.stringify({
-            launch_targets: null,
-            sessions: null,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-    );
-
-    const runtime = await getWorkspaceRuntime("ws-1", fetchMock);
-
-    expect(new URL(capturedRequest(fetchMock.mock.calls[0]).url).pathname).toBe("/api/v1/workspaces/ws-1/runtime");
-    expect(runtime.launch_targets).toEqual([]);
-    expect(runtime.sessions).toEqual([]);
-  });
-
-  it("launches and stops sessions with JSON mutation requests", async () => {
-    const fetchMock = vi
-      .fn<RuntimeFetch>()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            key: "ws-1:helper",
-            workspace_id: "ws-1",
-            target_key: "helper",
-            label: "Helper",
-            kind: "agent",
-            status: "running",
-            created_at: "2026-04-25T00:00:00Z",
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            key: "ws-1:helper",
-            workspace_id: "ws-1",
-            target_key: "helper",
-            label: "Review helper",
-            kind: "agent",
-            status: "running",
-            created_at: "2026-04-25T00:00:00Z",
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
-
-    await launchWorkspaceSession("ws-1", "helper", { fetch: fetchMock });
-    await renameWorkspaceSession("ws-1", "ws-1:helper", "Review helper", fetchMock);
-    await stopWorkspaceSession("ws-1", "ws-1:helper", fetchMock);
-
-    const launchRequest = capturedRequest(fetchMock.mock.calls[0]);
-    expect(new URL(launchRequest.url).pathname).toBe("/api/v1/workspaces/ws-1/runtime/sessions");
-    expect(launchRequest.method).toBe("POST");
-    await expect(launchRequest.clone().json()).resolves.toEqual({ target_key: "helper" });
-    expect(launchRequest.headers.get("Content-Type")).toBe("application/json");
-
-    const renameRequest = capturedRequest(fetchMock.mock.calls[1]);
-    expect(new URL(renameRequest.url).pathname).toBe("/api/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper");
-    expect(renameRequest.method).toBe("PATCH");
-    await expect(renameRequest.clone().json()).resolves.toEqual({ label: "Review helper" });
-    expect(renameRequest.headers.get("Content-Type")).toBe("application/json");
-
-    const stopRequest = capturedRequest(fetchMock.mock.calls[2]);
-    expect(new URL(stopRequest.url).pathname).toBe("/api/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper");
-    expect(stopRequest.method).toBe("DELETE");
-    expect(stopRequest.headers.get("Content-Type")).toBe("application/json");
-  });
-
-  it("includes display region when launching a workspace session", async () => {
-    const fetchMock = vi.fn<RuntimeFetch>(
-      async () =>
-        new Response(
-          JSON.stringify({
-            key: "ws-1:shell",
-            workspace_id: "ws-1",
-            target_key: "plain_shell",
-            label: "Shell",
-            kind: "plain_shell",
-            status: "running",
-            display_region: "workflow",
-            created_at: "2026-04-25T00:00:00Z",
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-    );
-
-    await launchWorkspaceSession("ws-1", "plain_shell", { region: "workflow", fetch: fetchMock });
-
-    const request = capturedRequest(fetchMock.mock.calls[0]);
-    expect(new URL(request.url).pathname).toBe("/api/v1/workspaces/ws-1/runtime/sessions");
-    expect(request.method).toBe("POST");
-    await expect(request.clone().json()).resolves.toEqual({
-      target_key: "plain_shell",
-      display_region: "workflow",
-    });
-    expect(request.headers.get("Content-Type")).toBe("application/json");
-  });
-
-  it("adds W3C trace headers to runtime reads and mutations", async () => {
-    const fetchMock = vi
-      .fn<RuntimeFetch>()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ launch_targets: [], sessions: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ key: "ws-1:helper" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ key: "ws-1:helper", label: "Review helper" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
-
-    const traceId = beginInteractionTrace("workspace-switch", { "workspace.id": "ws-1" });
-    await getWorkspaceRuntime("ws-1", fetchMock);
-    await launchWorkspaceSession("ws-1", "helper", { fetch: fetchMock });
-    await renameWorkspaceSession("ws-1", "ws-1:helper", "Review helper", fetchMock);
-    await stopWorkspaceSession("ws-1", "ws-1:helper", fetchMock);
-
-    const requests = fetchMock.mock.calls.map((call) => capturedRequest(call));
-    expect(requests).toHaveLength(4);
-    for (const request of requests) {
-      expect(request.headers.get("traceparent")).toMatch(new RegExp(`^00-${traceId}-[0-9a-f]{16}-01$`));
-      expect(request.headers.get("baggage")).toBe("interaction=workspace-switch,workspace.id=ws-1");
-    }
-  });
-
-  it("builds runtime websocket paths", () => {
+  it("builds runtime WebSocket paths", () => {
     expect(workspaceSessionWebSocketPath("ws-1", "ws-1:helper")).toBe(
       "/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
     );
     expect(workspaceTmuxWebSocketPath("ws-1")).toBe("/ws/v1/workspaces/ws-1/terminal");
   });
 
-  it("includes the configured base path in runtime and websocket paths", async () => {
+  it("includes the configured base path", () => {
     window.__BASE_PATH__ = "/kenn-forge/";
-    const fetchMock = vi.fn<RuntimeFetch>(
-      async () =>
-        new Response(
-          JSON.stringify({
-            launch_targets: [],
-            sessions: [],
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-    );
 
-    await getWorkspaceRuntime("ws-1", fetchMock);
-
-    expect(new URL(capturedRequest(fetchMock.mock.calls[0]).url).pathname).toBe(
-      "/kenn-forge/api/v1/workspaces/ws-1/runtime",
-    );
     expect(workspaceSessionWebSocketPath("ws-1", "ws-1:helper")).toBe(
       "/kenn-forge/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
     );

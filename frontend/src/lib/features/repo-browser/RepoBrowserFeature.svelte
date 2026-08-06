@@ -24,6 +24,7 @@
   import PierreFileContents from "./PierreFileContents.svelte";
   import { apiBaseURL } from "../../api/runtime.js";
   import type { FolderIndex } from "../../api/docs/folderLinks";
+  import { observeResizes } from "../../browser/observers.js";
 
   type RepoBrowserFeatureRoute = {
     page: "repo-browser";
@@ -142,23 +143,28 @@
 
   $effect(() => {
     if (!contentEl || !sidebarEl) return;
+    const contentTarget = contentEl;
+    const sidebarTarget = sidebarEl;
 
     updateSplitMeasurements();
 
-    const observers: ResizeObserver[] = [];
-    if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(updateSplitMeasurements);
-      observer.observe(contentEl);
-      observer.observe(sidebarEl);
-      observers.push(observer);
-    }
+    const execution = typeof ResizeObserver === "undefined"
+      ? undefined
+      : untrack(() =>
+          runtime.runCommand(
+            Effect.scoped(
+              observeResizes([contentTarget, sidebarTarget], updateSplitMeasurements).pipe(
+                Effect.andThen(Effect.never),
+              ),
+            ),
+            { operation: "observe repository browser split", safeContext: {}, onFailure: () => {} },
+          ),
+        );
 
     window.addEventListener("resize", updateSplitMeasurements);
     return () => {
       window.removeEventListener("resize", updateSplitMeasurements);
-      for (const observer of observers) {
-        observer.disconnect();
-      }
+      execution?.interrupt();
     };
   });
 
@@ -349,7 +355,7 @@
     });
     // Typeahead keeps its popup open when this Promise resolves false. The
     // request itself stays in the app runtime; this boundary only observes it.
-    const exit = await Effect.runPromise(execution.await);
+    const exit = await execution.exit;
     refPickerSelectionInFlight = false;
     if (Exit.isFailure(exit) || !exit.value) {
       refPickerError = "Couldn't load repository ref";

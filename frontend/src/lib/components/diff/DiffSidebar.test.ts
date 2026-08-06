@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile, FilesResult } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { DiffStore } from "../../stores/diff.svelte.js";
-import DiffSidebar from "./DiffSidebar.svelte";
-import PierreFileTree from "./PierreFileTree.svelte";
+import DiffSidebar from "./DiffSidebarRuntimeHarness.svelte";
+import PierreFileTree from "./PierreFileTreeRuntimeHarness.svelte";
 
 if (!globalThis.CSS) {
   globalThis.CSS = {} as typeof CSS;

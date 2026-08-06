@@ -12,11 +12,21 @@
     type NewWorkspaceRepoSeed,
   } from "../../stores/new-workspace.svelte.js";
   import { onMount, tick } from "svelte";
+  import { Effect, Schedule, Stream } from "effect";
   import { navigate } from "../../stores/router.svelte.ts";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
-  import { apiErrorMessage, client } from "../../api/runtime.js";
+  import { apiErrorMessage } from "../../api/runtime.js";
+  import { configuredAPIPath } from "../../api/runtime-base.js";
+  import { ApiProblemError } from "../../api/effect-errors.js";
+  import {
+    executeGeneratedApiRequest,
+    executeOpaqueGeneratedApiRequest,
+    type GeneratedApi,
+  } from "../../api/generated-api.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { eventSourceStream } from "../../browser/event-source.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { components } from "../../api/generated/schema.js";
   import { DiffStats, FilterDropdown, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
@@ -40,57 +50,16 @@
     type WorkspaceListDisplayOptions,
     type WorkspaceListSort,
   } from "./workspaceListSort.ts";
+  import {
+    WorkspaceListWorkflow,
+    makeWorkspaceRefreshCoordinator,
+    workspaceListLifecycle,
+  } from "./workspace-list-workflow.js";
+  import { decodeWorkspaceList, type WorkspaceListItem } from "./workspace-list-schema.js";
 
-  interface Workspace {
-    id: string;
-    repo?: {
-      provider: string;
-      platform_host: string;
-      owner: string;
-      name: string;
-      repo_path: string;
-    };
-    platform_host: string;
-    repo_owner: string;
-    repo_name: string;
-    item_type: "pull_request" | "issue" | "kata_task" | "adhoc";
-    item_number: number;
-    item_key?: string;
-    kata?: KataWorkspaceMetadata | null;
-    git_head_ref: string;
-    worktree_path: string;
-    tmux_session: string;
-    tmux_pane_title?: string | null;
-    tmux_working?: boolean;
-    tmux_activity_source?:
-      | "title"
-      | "output"
-      | "none"
-      | "unknown"
-      | null;
-    tmux_last_output_at?: string | null;
-    agent_state?: "idle" | "working" | "input" | "approval" | "done" | null;
-    agent_state_updated_at?: string | null;
-    status: string;
-    error_message?: string | null;
-    created_at: string;
-    item_last_activity_at?: string | null;
-    mr_title?: string | null;
-    mr_state?: string | null;
-    mr_is_draft?: boolean | null;
-    mr_ci_status?: string | null;
-    mr_review_decision?: string | null;
-    mr_additions?: number | null;
-    mr_deletions?: number | null;
-    commits_ahead?: number | null;
-    commits_behind?: number | null;
-    associated_pr_number?: number | null;
-    fleet_host_key?: string;
-    fleet_host_name?: string;
-  }
+  type Workspace = WorkspaceListItem;
 
   type HostSummary = components["schemas"]["HostSummary"];
-  type KataWorkspaceMetadata = components["schemas"]["WorkspaceKataMetadata"];
 
   interface Props {
     selectedId: string;
@@ -142,22 +111,21 @@
     hostVisible = true,
   }: Props = $props();
 
-  const basePath = (
-    window.__BASE_PATH__ ?? "/"
-  ).replace(/\/$/, "");
+  const runtime = getAppRuntime();
+
   const doneAcknowledgementsStorageKey =
     "kenn-forge:workspace-agent-done-acknowledgements/v1";
 
   let workspaces = $state.raw<Workspace[]>([]);
   let fleetHosts = $state.raw<HostSummary[]>([]);
   let fleetError = $state<string | null>(null);
+  let fleetPeerErrors = $state.raw<Record<string, string>>({});
   let fleetLoaded = $state(false);
+  const peerWorkspaceCache = new Map<string, Workspace[]>();
   let collapsedGroups = $state<string[]>([]);
   let searchQuery = $state("");
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
   let workspaceListStatus = $state<"loading" | "retrying" | "loaded">("loading");
-  let fetchInFlight = false;
-  let workspaceStatusRefreshFrame: number | null = null;
   let contextMenu = $state<{
     ws: Workspace;
     x: number;
@@ -178,6 +146,28 @@
   let displayOptions = $state<WorkspaceListDisplayOptions>(
     loadWorkspaceListDisplayOptions(),
   );
+
+  const refreshWorkspaces = makeWorkspaceRefreshCoordinator(
+    Effect.suspend(loadWorkspaces).pipe(
+      Effect.catch(() =>
+        Effect.sync(() => {
+          if (workspaces.length === 0) workspaceListStatus = "retrying";
+        }),
+      ),
+    ),
+  );
+  const refreshFleet = makeWorkspaceRefreshCoordinator(
+    Effect.suspend(loadFleetStatus).pipe(
+      Effect.catch((failure) =>
+        Effect.sync(() => {
+          fleetError = failureMessage(failure, "Fleet unavailable");
+          fleetLoaded = true;
+        }),
+      ),
+    ),
+  );
+  let requestApplicationWorkspaceRefresh = refreshWorkspaces.request;
+  const workspaceRefreshOwner = crypto.randomUUID();
 
   type WorkspaceGroup = {
     key: string;
@@ -287,7 +277,11 @@
   );
 
   const showFleetStatus = $derived(
-    fleetError !== null || (fleetLoaded && hasRemoteFleetHosts),
+    fleetError !== null || Object.keys(fleetPeerErrors).length > 0 || (fleetLoaded && hasRemoteFleetHosts),
+  );
+
+  const fleetDegraded = $derived(
+    fleetError !== null || Object.keys(fleetPeerErrors).length > 0,
   );
 
   // Flat ordering for timestamp sorts. The org/repo mode keeps
@@ -396,106 +390,132 @@
     return providers.length > 1;
   });
 
-  async function fetchWorkspaces(): Promise<void> {
-    if (fetchInFlight) return;
-    fetchInFlight = true;
-    const abortController = new AbortController();
-    let timeoutHandle: number | undefined;
-    try {
-      timeoutHandle = window.setTimeout(() => {
-        abortController.abort();
-      }, workspaceListLoadTimeoutMs);
-      const { data } = await client.GET("/workspaces", {
-        signal: abortController.signal,
-      });
-      if (!data) {
-        if (workspaces.length === 0) workspaceListStatus = "retrying";
-        return;
-      }
-      const local = (data.workspaces ?? []) as Workspace[];
-      const remote = fleetLoaded && !fleetError && hasRemoteFleetHosts
-        ? await fetchPeerWorkspaces(abortController.signal)
-        : [];
-      const nextWorkspaces = [
-        ...local,
-        ...(hasRemoteFleetHosts ? remote : []),
-      ];
-      reconcileDoneAcknowledgements(nextWorkspaces);
-      workspaces = nextWorkspaces;
-      workspaceListStatus = "loaded";
-    } catch {
-      // Network error; keep stale list.
-      if (workspaces.length === 0) workspaceListStatus = "retrying";
-    } finally {
-      if (timeoutHandle !== undefined) {
-        window.clearTimeout(timeoutHandle);
-      }
-      fetchInFlight = false;
-    }
+  function failureMessage(failure: unknown, fallback: string): string {
+    if (failure instanceof ApiProblemError) return apiErrorMessage(failure.problem, fallback);
+    return failure instanceof Error ? failure.message : fallback;
   }
 
-  function scheduleWorkspaceStatusRefresh(): void {
-    if (workspaceStatusRefreshFrame !== null) return;
-    workspaceStatusRefreshFrame = requestAnimationFrame(() => {
-      workspaceStatusRefreshFrame = null;
-      void fetchWorkspaces();
-    });
+  function cachedPeerWorkspaces(): Workspace[] {
+    return fleetHosts
+      .filter((host) => host.kind !== "self")
+      .flatMap((host) => peerWorkspaceCache.get(host.configKey) ?? []);
   }
 
-  async function fetchPeerWorkspaces(
-    signal: AbortSignal,
-  ): Promise<Workspace[]> {
+  function fetchPeerWorkspaces(): Effect.Effect<Workspace[], never, GeneratedApi> {
     const peers = fleetHosts.filter(
       (host) =>
         host.reachable &&
         host.kind !== "self",
     );
-    const lists = await Promise.all(
-      peers.map(async (host) => {
-        try {
-          const { data } = await client.GET(
-            "/fleet/hosts/{host_key}/workspaces",
-            {
-              params: { path: { host_key: host.configKey } },
-              signal,
-            },
+    return Effect.forEach(
+      peers,
+      (host) =>
+        executeOpaqueGeneratedApiRequest("load peer workspaces", (generatedClient, signal) =>
+          generatedClient.GET("/fleet/hosts/{host_key}/workspaces", {
+            params: { path: { host_key: host.configKey } },
+            signal,
+          }),
+        ).pipe(
+          Effect.flatMap(decodeWorkspaceList),
+          Effect.map((workspaces) =>
+            workspaces.map(
+              (workspace): Workspace => ({
+                ...workspace,
+                fleet_host_key: host.configKey,
+                fleet_host_name: host.name,
+              }),
+            ),
+          ),
+          Effect.timeout(`${workspaceListLoadTimeoutMs} millis`),
+          Effect.match({
+            onFailure: (failure) => ({
+              hostKey: host.configKey,
+              failure,
+              workspaces: undefined,
+            }),
+            onSuccess: (workspaces) => ({
+              hostKey: host.configKey,
+              failure: undefined,
+              workspaces,
+            }),
+          }),
+        ),
+      { concurrency: 4 },
+    ).pipe(
+      Effect.flatMap((results) =>
+        Effect.sync(() => {
+          const currentPeerKeys = new Set(
+            fleetHosts.filter((host) => host.kind !== "self").map((host) => host.configKey),
           );
-          const workspaces = (data as { workspaces?: Workspace[] } | undefined)?.workspaces ?? [];
-          return workspaces.map((ws) => ({
-            ...ws,
-            fleet_host_key: host.configKey,
-            fleet_host_name: host.name,
-          }));
-        } catch {
-          return [];
-        }
-      }),
+          const nextErrors: Record<string, string> = {};
+          for (const result of results) {
+            if (!currentPeerKeys.has(result.hostKey)) continue;
+            if (result.workspaces !== undefined) {
+              peerWorkspaceCache.set(result.hostKey, result.workspaces);
+            } else {
+              nextErrors[result.hostKey] = failureMessage(result.failure, "Workspace list unavailable");
+            }
+          }
+          fleetPeerErrors = nextErrors;
+          return cachedPeerWorkspaces();
+        }),
+      ),
     );
-    return lists.flat();
   }
 
-  async function fetchFleetStatus(): Promise<void> {
-    try {
-      const { data, error } = await client.GET("/snapshot", {
-        params: { query: { include_peers: true } },
+  function loadWorkspaces() {
+    return Effect.gen(function* () {
+      const data = yield* executeGeneratedApiRequest("load workspaces", (generatedClient, signal) =>
+        generatedClient.GET("/workspaces", { signal }),
+      ).pipe(Effect.timeout(`${workspaceListLoadTimeoutMs} millis`));
+      const local: Workspace[] = data.workspaces ?? [];
+      yield* Effect.sync(() => {
+        const nextWorkspaces = [...local, ...cachedPeerWorkspaces()];
+        reconcileDoneAcknowledgements(nextWorkspaces);
+        workspaces = nextWorkspaces;
+        workspaceListStatus = "loaded";
       });
-      if (error) {
-        fleetError = error.detail ?? error.title ?? "Fleet unavailable";
-        fleetLoaded = true;
-        return;
-      }
-      const nextHosts = (data?.hosts ?? []) as HostSummary[];
-      fleetHosts = nextHosts;
-      fleetError = null;
-      fleetLoaded = true;
-      if (!hasNonSelfFleetHost(nextHosts)) {
-        workspaces = localWorkspacesOnly(workspaces);
-      }
-      void fetchWorkspaces();
-    } catch {
-      fleetError = "Fleet unavailable";
-      fleetLoaded = true;
-    }
+      const remote = fleetLoaded && !fleetError && hasRemoteFleetHosts
+        ? yield* fetchPeerWorkspaces()
+        : cachedPeerWorkspaces();
+      const nextWorkspaces = [...local, ...remote];
+      yield* Effect.sync(() => {
+        reconcileDoneAcknowledgements(nextWorkspaces);
+        workspaces = nextWorkspaces;
+        workspaceListStatus = "loaded";
+      });
+    });
+  }
+
+  function loadFleetStatus() {
+    return executeGeneratedApiRequest("load fleet status", (generatedClient, signal) =>
+      generatedClient.GET("/snapshot", {
+        params: { query: { include_peers: true } },
+        signal,
+      }),
+    ).pipe(
+      Effect.flatMap((data) =>
+        Effect.sync(() => {
+          const nextHosts: HostSummary[] = data.hosts ?? [];
+          const nextPeerKeys = new Set(
+            nextHosts.filter((host) => host.kind !== "self").map((host) => host.configKey),
+          );
+          for (const hostKey of peerWorkspaceCache.keys()) {
+            if (!nextPeerKeys.has(hostKey)) peerWorkspaceCache.delete(hostKey);
+          }
+          fleetPeerErrors = Object.fromEntries(
+            Object.entries(fleetPeerErrors).filter(([hostKey]) => nextPeerKeys.has(hostKey)),
+          );
+          fleetHosts = nextHosts;
+          fleetError = null;
+          fleetLoaded = true;
+          if (!hasNonSelfFleetHost(nextHosts)) {
+            workspaces = localWorkspacesOnly(workspaces);
+          }
+          refreshWorkspaces.request();
+        }),
+      ),
+    );
   }
 
   function toggleGroup(key: string): void {
@@ -561,7 +581,7 @@
     ws: Workspace,
     query: string,
   ): boolean {
-    const haystack = [
+      const haystack: Array<string | undefined> = [
       displayName(ws),
       ws.git_head_ref,
       shortBranch(ws.git_head_ref),
@@ -846,10 +866,7 @@
     return "";
   }
 
-  async function openContextMenu(
-    event: MouseEvent,
-    ws: Workspace,
-  ): Promise<void> {
+  function openContextMenu(event: MouseEvent, ws: Workspace): void {
     event.preventDefault();
     event.stopPropagation();
     contextMenu = {
@@ -857,8 +874,11 @@
       x: event.clientX,
       y: event.clientY,
     };
-    await tick();
-    positionContextMenu();
+    runtime.runCommand(Effect.promise(() => tick()).pipe(Effect.andThen(Effect.sync(positionContextMenu))), {
+      operation: "position workspace context menu",
+      safeContext: { workspaceId: ws.id },
+      onFailure: () => undefined,
+    });
   }
 
   function positionContextMenu(): void {
@@ -882,35 +902,46 @@
     contextMenuStyle = "";
   }
 
-  async function copyMenuText(
-    value: string,
-    successMessage: string,
-  ): Promise<void> {
+  function copyMenuText(value: string, successMessage: string): void {
     closeContextMenu();
-    if (await copyToClipboard(value)) {
-      showFlash(successMessage);
-    } else {
-      showFlash("Could not copy to clipboard.", { tone: "danger" });
-    }
+    runtime.runCommand(
+      Effect.promise(() => copyToClipboard(value)).pipe(
+        Effect.flatMap((copied) =>
+          Effect.sync(() => {
+            showFlash(copied ? successMessage : "Could not copy to clipboard.", copied ? undefined : { tone: "danger" });
+          }),
+        ),
+      ),
+      {
+        operation: "copy workspace text",
+        safeContext: {},
+        onFailure: () => showFlash("Could not copy to clipboard.", { tone: "danger" }),
+      },
+    );
   }
 
-  async function refreshWorkspaceStatus(ws: Workspace): Promise<void> {
+  function refreshWorkspaceStatus(ws: Workspace): void {
     if (workspaceActionsDisabled(ws)) return;
     closeContextMenu();
-    const { error, response } = ws.fleet_host_key
-      ? await client.POST("/fleet/hosts/{host_key}/workspaces/{id}/refresh", {
-          params: {
-            path: { host_key: ws.fleet_host_key, id: ws.id },
-          },
-        })
-      : await client.POST("/workspaces/{id}/refresh", {
-          params: { path: { id: ws.id } },
-        });
-    if (!response.ok) {
-      showFlash(apiErrorMessage(error, `Refresh failed (${response.status})`), { tone: "danger" });
-      return;
-    }
-    await fetchWorkspaces();
+    const hostKey = ws.fleet_host_key;
+    const refresh = hostKey
+      ? executeOpaqueGeneratedApiRequest("refresh remote workspace", (generatedClient, signal) =>
+          generatedClient.POST("/fleet/hosts/{host_key}/workspaces/{id}/refresh", {
+            params: { path: { host_key: hostKey, id: ws.id } },
+            signal,
+          }),
+        ).pipe(Effect.asVoid)
+      : executeGeneratedApiRequest("refresh workspace", (generatedClient, signal) =>
+          generatedClient.POST("/workspaces/{id}/refresh", {
+            params: { path: { id: ws.id } },
+            signal,
+          }),
+        ).pipe(Effect.asVoid);
+    runtime.runCommand(refresh.pipe(Effect.tap(() => Effect.sync(requestApplicationWorkspaceRefresh))), {
+      operation: "refresh workspace status",
+      safeContext: { workspaceId: ws.id, remote: Boolean(ws.fleet_host_key) },
+      onFailure: (failure) => showFlash(failureMessage(failure, "Refresh failed."), { tone: "danger" }),
+    });
   }
 
   function workspaceActionMatches(
@@ -951,66 +982,83 @@
     }
   }
 
-  async function syncWorkspaceBranch(
-    ws: Workspace,
-    action: "push" | "pull",
-  ): Promise<void> {
+  function syncWorkspaceBranch(ws: Workspace, action: "push" | "pull"): void {
     if (!startWorkspaceAction(ws, action)) return;
     const label = action === "push" ? "Push branch" : "Pull remote changes";
-    try {
-      const { error, response } = ws.fleet_host_key
-        ? await client.POST(
-            action === "push"
-              ? "/fleet/hosts/{host_key}/workspaces/{id}/push"
-              : "/fleet/hosts/{host_key}/workspaces/{id}/pull",
-            {
-              params: {
-                path: { host_key: ws.fleet_host_key, id: ws.id },
-              },
-            },
-          )
-        : await client.POST(
-            action === "push" ? "/workspaces/{id}/push" : "/workspaces/{id}/pull",
-            {
+    const hostKey = ws.fleet_host_key;
+    const command = hostKey
+      ? action === "push"
+        ? executeOpaqueGeneratedApiRequest("push remote workspace branch", (generatedClient, signal) =>
+            generatedClient.POST("/fleet/hosts/{host_key}/workspaces/{id}/push", {
+              params: { path: { host_key: hostKey, id: ws.id } },
+              signal,
+            }),
+          ).pipe(Effect.asVoid)
+        : executeOpaqueGeneratedApiRequest("pull remote workspace branch", (generatedClient, signal) =>
+            generatedClient.POST("/fleet/hosts/{host_key}/workspaces/{id}/pull", {
+              params: { path: { host_key: hostKey, id: ws.id } },
+              signal,
+            }),
+          ).pipe(Effect.asVoid)
+      : action === "push"
+        ? executeGeneratedApiRequest("push workspace branch", (generatedClient, signal) =>
+            generatedClient.POST("/workspaces/{id}/push", {
               params: { path: { id: ws.id } },
-            },
-          );
-      if (!response.ok) {
-        showFlash(apiErrorMessage(error, `${label} failed (${response.status})`), { tone: "danger" });
-        return;
-      }
-      await fetchWorkspaces();
-      closeContextMenu();
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : `${label} failed.`, { tone: "danger" });
-    } finally {
-      finishWorkspaceAction(ws);
-    }
+              signal,
+            }),
+          ).pipe(Effect.asVoid)
+        : executeGeneratedApiRequest("pull workspace branch", (generatedClient, signal) =>
+            generatedClient.POST("/workspaces/{id}/pull", {
+              params: { path: { id: ws.id } },
+              signal,
+            }),
+          ).pipe(Effect.asVoid);
+    runtime.runCommand(
+      command.pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            requestApplicationWorkspaceRefresh();
+            closeContextMenu();
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => finishWorkspaceAction(ws))),
+      ),
+      {
+        operation: `${action} workspace branch`,
+        safeContext: { workspaceId: ws.id, remote: Boolean(ws.fleet_host_key) },
+        onFailure: (failure) => showFlash(failureMessage(failure, `${label} failed.`), { tone: "danger" }),
+      },
+    );
   }
 
-  async function revealWorkspacePath(ws: Workspace): Promise<void> {
+  function revealWorkspacePath(ws: Workspace): void {
     if (!startWorkspaceAction(ws, "reveal")) return;
     const label = revealLabel(ws);
-    try {
-      const { error, response } = ws.fleet_host_key
-        ? await client.POST("/fleet/hosts/{host_key}/workspaces/{id}/reveal", {
-            params: {
-              path: { host_key: ws.fleet_host_key, id: ws.id },
-            },
-          })
-        : await client.POST("/workspaces/{id}/reveal", {
+    const hostKey = ws.fleet_host_key;
+    const command = hostKey
+      ? executeOpaqueGeneratedApiRequest("reveal remote workspace path", (generatedClient, signal) =>
+          generatedClient.POST("/fleet/hosts/{host_key}/workspaces/{id}/reveal", {
+            params: { path: { host_key: hostKey, id: ws.id } },
+            signal,
+          }),
+        ).pipe(Effect.asVoid)
+      : executeGeneratedApiRequest("reveal workspace path", (generatedClient, signal) =>
+          generatedClient.POST("/workspaces/{id}/reveal", {
             params: { path: { id: ws.id } },
-          });
-      if (!response.ok) {
-        showFlash(apiErrorMessage(error, `${label} failed (${response.status})`), { tone: "danger" });
-        return;
-      }
-      closeContextMenu();
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : `${label} failed.`, { tone: "danger" });
-    } finally {
-      finishWorkspaceAction(ws);
-    }
+            signal,
+          }),
+        ).pipe(Effect.asVoid);
+    runtime.runCommand(
+      command.pipe(
+        Effect.tap(() => Effect.sync(closeContextMenu)),
+        Effect.ensuring(Effect.sync(() => finishWorkspaceAction(ws))),
+      ),
+      {
+        operation: "reveal workspace path",
+        safeContext: { workspaceId: ws.id, remote: Boolean(ws.fleet_host_key) },
+        onFailure: (failure) => showFlash(failureMessage(failure, `${label} failed.`), { tone: "danger" }),
+      },
+    );
   }
 
   function openDeleteWorkspaceDialog(ws: Workspace): void {
@@ -1023,62 +1071,70 @@
     deleteConfirmWorkspace = null;
   }
 
-  async function confirmDeleteWorkspaceFromList(): Promise<void> {
+  function confirmDeleteWorkspaceFromList(): void {
     const ws = deleteConfirmWorkspace;
     if (!ws || workspaceActionsDisabled(ws) || !startWorkspaceAction(ws, "delete")) return;
     onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
-    try {
-      const { error, response } = ws.fleet_host_key
-        ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
-            params: {
-              path: { host_key: ws.fleet_host_key, id: ws.id },
-            },
-          })
-        : await client.DELETE("/workspaces/{id}", {
+    const hostKey = ws.fleet_host_key;
+    const command = hostKey
+      ? executeOpaqueGeneratedApiRequest("delete remote workspace", (generatedClient, signal) =>
+          generatedClient.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
+            params: { path: { host_key: hostKey, id: ws.id } },
+            signal,
+          }),
+        ).pipe(Effect.asVoid)
+      : executeGeneratedApiRequest("delete workspace", (generatedClient, signal) =>
+          generatedClient.DELETE("/workspaces/{id}", {
             params: { path: { id: ws.id } },
-          });
-      if (!response.ok && response.status !== 204) {
-        const fallback = response.status === 409
-          ? "Workspace has uncommitted changes. Open it to force delete."
-          : `Delete failed (${response.status})`;
-        showFlash(apiErrorMessage(error, fallback), { tone: "danger" });
-        return;
-      }
-      // Report the deletion regardless of selection so a hosting shell's
-      // inline claim (which owns no tombstone otherwise) doesn't briefly
-      // re-claim a workspace this list just destroyed. The row's identity
-      // rides along: a workspace never claimed inline has no identity
-      // metadata in the host store, and without it the cached detail
-      // envelope could re-claim the dead workspace on a later visit.
-      onWorkspaceDeleted?.(
-        ws.id,
-        ws.fleet_host_key ?? undefined,
-        ws.repo
-          ? {
-              provider: ws.repo.provider,
-              platformHost: ws.repo.platform_host,
-              owner: ws.repo.owner,
-              name: ws.repo.name,
-              repoPath: ws.repo.repo_path,
-              number: ws.item_number,
-              // Row vocabulary ("pull_request"/"issue"/"kata_task");
-              // canonicalItemType maps it for identity comparison.
-              itemType: ws.item_type,
-            }
-          : undefined,
-      );
-      await fetchWorkspaces();
-      closeContextMenu();
-      if (isSelectedWorkspace(ws)) {
-        navigate("/workspaces");
-      }
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : "Delete failed.", { tone: "danger" });
-    } finally {
-      onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, false);
-      finishWorkspaceAction(ws);
-      deleteConfirmWorkspace = null;
-    }
+            signal,
+          }),
+        ).pipe(Effect.asVoid);
+    runtime.runCommand(
+      command.pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            // Report the deletion regardless of selection so a hosting shell's
+            // inline claim cannot briefly reclaim a workspace this list destroyed.
+            onWorkspaceDeleted?.(
+              ws.id,
+              hostKey,
+              ws.repo
+                ? {
+                    provider: ws.repo.provider,
+                    platformHost: ws.repo.platform_host,
+                    owner: ws.repo.owner,
+                    name: ws.repo.name,
+                    repoPath: ws.repo.repo_path,
+                    number: ws.item_number,
+                    itemType: ws.item_type,
+                  }
+                : undefined,
+            );
+            requestApplicationWorkspaceRefresh();
+            closeContextMenu();
+            if (isSelectedWorkspace(ws)) navigate("/workspaces");
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            onWorkspaceDeletePendingChange?.(ws.id, hostKey, false);
+            finishWorkspaceAction(ws);
+            deleteConfirmWorkspace = null;
+          }),
+        ),
+      ),
+      {
+        operation: "delete workspace",
+        safeContext: { workspaceId: ws.id, remote: Boolean(hostKey) },
+        onFailure: (failure) => {
+          const problem = failure instanceof ApiProblemError ? failure.problem : undefined;
+          const fallback = problem?.status === 409
+            ? "Workspace has uncommitted changes. Open it to force delete."
+            : "Delete failed.";
+          showFlash(failureMessage(failure, fallback), { tone: "danger" });
+        },
+      },
+    );
   }
 
   function openProviderItem(ws: Workspace): void {
@@ -1098,7 +1154,7 @@
       showFlash("Provider URL is not available for this workspace.", { tone: "danger" });
       return;
     }
-    void copyMenuText(url, "Copied item URL.");
+    copyMenuText(url, "Copied item URL.");
   }
 
   function workspaceRoute(ws: Workspace): string {
@@ -1154,33 +1210,34 @@
   }
 
   onMount(() => {
-    void fetchWorkspaces();
-    void fetchFleetStatus();
-    const pollHandle = window.setInterval(() => {
-      void fetchWorkspaces();
-    }, 5_000);
-    const fleetPollHandle = window.setInterval(() => {
-      void fetchFleetStatus();
-    }, 15_000);
-
-    const evtUrl = `${basePath}/api/v1/events`;
-    const source = new EventSource(evtUrl);
-    source.addEventListener(
-      "workspace_status",
-      () => {
-        scheduleWorkspaceStatusRefresh();
+    const evtUrl = configuredAPIPath("/events");
+    const workspaceEvents = eventSourceStream(evtUrl, "workspace_status").pipe(
+      Stream.retry(Schedule.exponential("1 second").pipe(Schedule.jittered)),
+      Stream.catch(() => Stream.empty),
+    );
+    const execution = runtime.runCommand(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const workflow = yield* WorkspaceListWorkflow;
+          requestApplicationWorkspaceRefresh = workflow.request;
+          yield* workflow.claim(workspaceRefreshOwner, refreshWorkspaces.request);
+          yield* workspaceListLifecycle({
+            refreshWorkspaces,
+            refreshFleet,
+            workspaceEvents,
+          });
+        }),
+      ),
+      {
+        operation: "run workspace list lifecycle",
+        safeContext: {},
+        onFailure: (failure) => {
+          if (workspaces.length === 0) workspaceListStatus = "retrying";
+          console.error("Workspace list lifecycle stopped", failure);
+        },
       },
     );
-
-    return () => {
-      window.clearInterval(pollHandle);
-      window.clearInterval(fleetPollHandle);
-      if (workspaceStatusRefreshFrame !== null) {
-        cancelAnimationFrame(workspaceStatusRefreshFrame);
-        workspaceStatusRefreshFrame = null;
-      }
-      source.close();
-    };
+    return execution.interrupt;
   });
 </script>
 
@@ -1235,7 +1292,7 @@
     <section class="fleet-status" aria-label="Fleet hosts">
       <div class="fleet-status-heading">
         <span class="fleet-status-title">Fleet</span>
-        {#if fleetError}
+        {#if fleetDegraded}
           <span class="fleet-status-count error">degraded</span>
         {:else}
           <span class="fleet-status-count">
@@ -1263,6 +1320,11 @@
             </span>
           {/each}
         </div>
+        {#each Object.entries(fleetPeerErrors) as [hostKey, message] (hostKey)}
+          <p class="fleet-status-error">
+            <span>{hostKey} degraded</span>: {message}
+          </p>
+        {/each}
       {/if}
     </section>
   {/if}

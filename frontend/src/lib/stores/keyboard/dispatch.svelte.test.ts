@@ -1,6 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { dispatchKeydown } from "./dispatch.svelte.js";
+import { dispatchKeydown as dispatchKeydownWithRuntime } from "./dispatch.svelte.js";
+import { makeAppRuntime } from "../../app/runtime.js";
 import { defaultActions } from "./actions.js";
 import { registerScopedActions, resetRegistry } from "./registry.svelte.js";
 import { isSidebarCollapsed, setSidebarCollapsed } from "../sidebar.svelte.js";
@@ -8,6 +10,15 @@ import { pushModalFrame, resetModalStack } from "./modal-stack.svelte.js";
 import type { Action, Context } from "./types.js";
 
 const flashModule = await import("../flash.svelte.js");
+const runtime = makeAppRuntime();
+
+function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Context): void {
+  dispatchKeydownWithRuntime(event, contextProvider, runtime);
+}
+
+afterAll(async () => {
+  await Effect.runPromise(runtime.disposeEffect);
+});
 
 const ctx: Context = {
   page: "pulls",
@@ -165,7 +176,7 @@ describe("dispatchKeydown — error handling", () => {
         binding: { key: "j" },
         priority: 0,
         when: () => true,
-        handler: () => Promise.reject(new Error("boom")),
+        handler: () => Effect.fail(new Error("boom")),
       },
     ]);
     dispatchKeydown(event({ key: "j" }), () => ctx);
@@ -183,11 +194,13 @@ describe("dispatchKeydown — in-flight de-dup", () => {
 
   it("does not re-invoke an in-flight async action", async () => {
     let resolve!: () => void;
-    const handler = vi.fn(
-      () =>
-        new Promise<void>((r) => {
-          resolve = r;
-        }),
+    const handler = vi.fn(() =>
+      Effect.promise(
+        () =>
+          new Promise<void>((done) => {
+            resolve = done;
+          }),
+      ),
     );
     registerScopedActions("a", [
       {

@@ -3,12 +3,18 @@
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
   import SendIcon from "@lucide/svelte/icons/send";
   import XIcon from "@lucide/svelte/icons/x";
+  import { Effect } from "effect";
   import { tick } from "svelte";
+  import type { Attachment } from "svelte/attachments";
+  import type { AppExecution, AppRuntime } from "../../app/runtime.js";
+  import { makeAnimationFrameScheduler } from "../../browser/animation-frame.js";
+  import { observeResize } from "../../browser/observers.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import type { ReviewThread } from "./review-thread-context.js";
   import { reviewThreadLineLabel } from "./review-thread-context.js";
 
   interface Props {
+    runtime: AppRuntime;
     thread: ReviewThread;
     fileLevel?: boolean;
     canReply?: boolean;
@@ -16,6 +22,7 @@
   }
 
   const {
+    runtime,
     thread,
     fileLevel = false,
     canReply = false,
@@ -28,37 +35,45 @@
   let error = $state<string | null>(null);
   let textareaEl: HTMLTextAreaElement | undefined = $state();
   let panelWidth = $state<string | undefined>();
+  let focusExecution: AppExecution<void, never> | null = null;
 
-  function setupThreadLayout(node: HTMLDivElement): { destroy: () => void } {
-    let animationFrame = 0;
-    const scheduleLayout = () => {
-      if (animationFrame) cancelAnimationFrame(animationFrame);
-      animationFrame = requestAnimationFrame(() => {
-        animationFrame = 0;
-        updatePanelWidth(node);
-      });
-    };
-    const container = layoutContainer(node);
-    const resizeObserver = typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(scheduleLayout)
-      : undefined;
-    if (container) {
-      container.addEventListener("scroll", scheduleLayout, { passive: true });
-      resizeObserver?.observe(container);
-    }
-    resizeObserver?.observe(node);
-    window.addEventListener("resize", scheduleLayout);
-    scheduleLayout();
-
-    return {
-      destroy: () => {
-        if (animationFrame) cancelAnimationFrame(animationFrame);
-        container?.removeEventListener("scroll", scheduleLayout);
-        window.removeEventListener("resize", scheduleLayout);
-        resizeObserver?.disconnect();
+  const setupThreadLayout: Attachment<HTMLDivElement> = (node) => {
+    const execution = runtime.runCommand(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const layoutScheduler = yield* makeAnimationFrameScheduler(
+            Effect.sync(() => updatePanelWidth(node)),
+          );
+          const scheduleLayout = (): void => {
+            layoutScheduler.schedule();
+          };
+          const container = layoutContainer(node);
+          yield* Effect.acquireRelease(
+            Effect.sync(() => {
+              container?.addEventListener("scroll", scheduleLayout, { passive: true });
+              window.addEventListener("resize", scheduleLayout);
+              scheduleLayout();
+            }),
+            () => Effect.sync(() => {
+              container?.removeEventListener("scroll", scheduleLayout);
+              window.removeEventListener("resize", scheduleLayout);
+            }),
+          );
+          if (typeof ResizeObserver !== "undefined") {
+            if (container) yield* observeResize(container, scheduleLayout);
+            yield* observeResize(node, scheduleLayout);
+          }
+          return yield* Effect.never;
+        }),
+      ),
+      {
+        operation: "own diff review thread layout",
+        safeContext: { threadId: thread.id },
+        onFailure: () => {},
       },
-    };
-  }
+    );
+    return execution.interrupt;
+  };
 
   function updatePanelWidth(element: HTMLElement): void {
     const container = layoutContainer(element);
@@ -91,12 +106,24 @@
   }
 
   function startReply(): void {
+    focusExecution?.interrupt();
     replying = true;
     error = null;
-    void tick().then(() => textareaEl?.focus({ preventScroll: true }));
+    focusExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => textareaEl?.focus({ preventScroll: true }))),
+      ),
+      {
+        operation: "focus inline review reply",
+        safeContext: { threadId: thread.id },
+        onFailure: () => {},
+      },
+    );
   }
 
   function cancelReply(): void {
+    focusExecution?.interrupt();
+    focusExecution = null;
     replying = false;
     replyBody = "";
     error = null;
@@ -125,7 +152,7 @@
   class:inline-review-thread--file-level={fileLevel}
   class:inline-review-thread--idle-reply={canReply && !thread.resolved && !replying}
   data-review-thread-id={thread.id}
-  use:setupThreadLayout
+  {@attach setupThreadLayout}
   style:--inline-review-thread-width={panelWidth}
   tabindex="-1"
 >

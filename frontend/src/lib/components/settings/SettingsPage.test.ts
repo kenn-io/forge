@@ -1,9 +1,10 @@
 import { cleanup, render, waitFor } from "@testing-library/svelte";
+import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS, type Settings } from "../../api/types.js";
 
-const { getSettings, setLaunchTargets } = vi.hoisted(() => ({
-  getSettings: vi.fn(),
+const { loadSettings, setLaunchTargets } = vi.hoisted(() => ({
+  loadSettings: vi.fn(),
   setLaunchTargets: vi.fn(),
 }));
 
@@ -21,9 +22,16 @@ vi.mock("../../context.js", async (importOriginal) => ({
   }),
 }));
 
-vi.mock("../../api/settings.js", () => ({
-  getSettings,
-}));
+vi.mock("../../app/startup-workflow.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../app/startup-workflow.js")>();
+  return {
+    ...actual,
+    StartupWorkflowLive: Layer.succeed(actual.StartupWorkflow)({
+      start: Effect.suspend(() => loadSettings()),
+      invalidate: Effect.void,
+    }),
+  };
+});
 
 vi.mock("./RepoSettings.svelte", async () => ({
   default: (await import("../../testing/AppViewStub.svelte")).default,
@@ -54,6 +62,7 @@ vi.mock("./WorkspaceSettings.svelte", async () => ({
 }));
 
 import SettingsPage from "./SettingsPage.svelte";
+import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 
 type LaunchTargets = NonNullable<Settings["launch_targets"]>;
 
@@ -110,15 +119,17 @@ function makeSettings(): Settings {
 describe("SettingsPage", () => {
   afterEach(() => {
     cleanup();
-    getSettings.mockReset();
+    loadSettings.mockReset();
     setLaunchTargets.mockReset();
   });
 
   it("hydrates launch targets into the shared settings store on initial load", async () => {
     const settings = makeSettings();
-    getSettings.mockResolvedValue(settings);
+    loadSettings.mockReturnValue(Effect.succeed(settings));
 
-    render(SettingsPage);
+    render(SettingsRuntimeHarness, {
+      props: { component: SettingsPage, componentProps: {} },
+    });
 
     await waitFor(() => {
       expect(setLaunchTargets).toHaveBeenCalledWith(settings.launch_targets);

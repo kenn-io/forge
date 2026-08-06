@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import { getStores } from "../../context.js";
   import type { PullRequestSettings as PullRequestSettingsType } from "../../api/types.js";
 
-  import { updateSettings } from "../../api/settings.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
 
   interface Props {
     pullRequests: PullRequestSettingsType;
@@ -11,6 +13,7 @@
   }
 
   let { pullRequests, onUpdate }: Props = $props();
+  const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
   const embedded = isEmbedded();
   let saving = $state(false);
@@ -19,7 +22,7 @@
     | "allow_mid_stack_merges"
     | "prefer_github_native_stacks";
 
-  async function toggleSetting(key: BooleanPullRequestSetting): Promise<void> {
+  function toggleSetting(key: BooleanPullRequestSetting): void {
     if (embedded || saving) return;
     const previous = pullRequests;
     const pending = {
@@ -28,16 +31,33 @@
     };
     onUpdate(pending);
     saving = true;
-    try {
-      const settings = await updateSettings({ pull_requests: pending });
-      onUpdate(settings.pull_requests);
-      settingsStore.setPullRequestSettings(settings.pull_requests);
-    } catch (err) {
-      onUpdate(previous);
-      console.warn("Failed to save pull request settings:", err);
-    } finally {
-      saving = false;
-    }
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.persist(() => ({ pull_requests: pending }));
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              onUpdate(previous);
+              console.warn("Failed to save pull request settings:", settingsErrorMessage(failure));
+            }),
+          onSuccess: (settings) =>
+            Effect.sync(() => {
+              onUpdate(settings.pull_requests);
+              settingsStore.setPullRequestSettings(settings.pull_requests);
+            }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          saving = false;
+        })),
+      ),
+      {
+        operation: "save pull request settings",
+        safeContext: { setting: key },
+        onFailure: () => {},
+      },
+    );
   }
 </script>
 

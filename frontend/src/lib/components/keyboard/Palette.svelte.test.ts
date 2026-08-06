@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import Palette from "./Palette.svelte";
-import { dispatchKeydown } from "../../stores/keyboard/dispatch.svelte.js";
+import Palette from "./PaletteRuntimeHarness.svelte";
+import { dispatchKeydown as dispatchKeydownWithRuntime } from "../../stores/keyboard/dispatch.svelte.js";
+import { makeAppRuntime } from "../../app/runtime.js";
 import { closePalette, openPalette, resetPaletteState } from "../../stores/keyboard/palette-state.svelte.js";
 import { registerScopedActions, resetRegistry } from "../../stores/keyboard/registry.svelte.js";
 import { RECENTS_KEY } from "../../stores/keyboard/recents.svelte.js";
@@ -12,6 +14,15 @@ import { resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 
 const noop = (): void => {};
 const trueWhen = (): boolean => true;
+const keyboardRuntime = makeAppRuntime();
+
+function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Context): void {
+  dispatchKeydownWithRuntime(event, contextProvider, keyboardRuntime);
+}
+
+afterAll(async () => {
+  await Effect.runPromise(keyboardRuntime.disposeEffect);
+});
 
 function action(id: string, label = id, scope: Action["scope"] = "global"): Action {
   return {
@@ -165,6 +176,31 @@ describe("Palette", () => {
     await rerender({});
     expect(ran).toBe(true);
     expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+  });
+
+  it("runs an Effect-valued command selected from the palette", async () => {
+    let ran = false;
+    registerScopedActions("test-run-effect", [
+      {
+        id: "test.effect",
+        label: "Test Effect",
+        scope: "global",
+        binding: null,
+        priority: 0,
+        when: trueWhen,
+        handler: () =>
+          Effect.sync(() => {
+            ran = true;
+          }),
+      },
+    ]);
+    const { rerender } = render(Palette, { props: {} });
+    openPalette();
+    await rerender({});
+
+    await fireEvent.keyDown(screen.getByRole("textbox", { name: "Search command palette" }), { key: "Enter" });
+
+    await waitFor(() => expect(ran).toBe(true));
   });
 
   it("clicking a command row runs its handler and closes the palette", async () => {
@@ -332,40 +368,41 @@ describe("Palette", () => {
 
   it("renders injected Kata task and docs search results for plain queries", async () => {
     const modeSearch = vi.fn(
-      async (): Promise<ModePaletteResults> => ({
-        query: "budget",
-        tasks: {
-          ok: true,
-          truncated: false,
-          rows: [
-            {
-              kind: "kata-task",
-              uid: "issue-budget",
-              short_id: "budget",
-              qualified_id: "Finances#budget",
-              title: "Set monthly budget",
-              project_uid: "project-finances",
-              project_name: "Finances",
-              status: "open",
-            },
-          ],
-        },
-        docs: {
-          ok: true,
-          truncated: false,
-          rows: [
-            {
-              kind: "doc",
-              folder: "notes",
-              folder_name: "Notes",
-              rel_path: "finance/budget.md",
-              hit_type: "body",
-              line: 4,
-              snippet: { text: "monthly budget", matches: [{ start: 8, end: 14 }] },
-            },
-          ],
-        },
-      }),
+      (): Effect.Effect<ModePaletteResults> =>
+        Effect.succeed({
+          query: "budget",
+          tasks: {
+            ok: true,
+            truncated: false,
+            rows: [
+              {
+                kind: "kata-task",
+                uid: "issue-budget",
+                short_id: "budget",
+                qualified_id: "Finances#budget",
+                title: "Set monthly budget",
+                project_uid: "project-finances",
+                project_name: "Finances",
+                status: "open",
+              },
+            ],
+          },
+          docs: {
+            ok: true,
+            truncated: false,
+            rows: [
+              {
+                kind: "doc",
+                folder: "notes",
+                folder_name: "Notes",
+                rel_path: "finance/budget.md",
+                hit_type: "body",
+                line: 4,
+                snippet: { text: "monthly budget", matches: [{ start: 8, end: 14 }] },
+              },
+            ],
+          },
+        }),
     );
 
     const { rerender } = render(Palette, { props: { modeSearch } });
@@ -386,43 +423,81 @@ describe("Palette", () => {
     });
   });
 
+  it("interrupts a superseded mode search", async () => {
+    let firstInterrupted = false;
+    const modeSearch = vi.fn((query: string): Effect.Effect<ModePaletteResults> => {
+      if (query === "first") {
+        return Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              firstInterrupted = true;
+            }),
+          ),
+        );
+      }
+      return Effect.succeed({
+        query,
+        tasks: { ok: true, truncated: false, rows: [] },
+        docs: {
+          ok: true,
+          truncated: false,
+          rows: [{ kind: "doc", folder: "notes", folder_name: "Notes", rel_path: "second.md", hit_type: "filename" }],
+        },
+      });
+    });
+    const props = { modeSearch };
+    const { rerender } = render(Palette, { props });
+    openPalette();
+    await rerender(props);
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+
+    await fireEvent.input(input, { target: { value: "first" } });
+    await waitFor(() => expect(modeSearch).toHaveBeenCalledWith("first"));
+    await fireEvent.input(input, { target: { value: "second" } });
+    await waitFor(() => expect(screen.getAllByText("second.md")).toHaveLength(2));
+    await waitFor(() => expect(firstInterrupted).toBe(true));
+    expect(screen.queryAllByText("first.md")).toHaveLength(0);
+    expect(screen.getAllByText("second.md")).toHaveLength(2);
+  });
+
   it("selects injected mode results with their callbacks", async () => {
     const onOpenKataIssue = vi.fn();
     const onOpenDoc = vi.fn();
     const modeSearch = vi.fn(
-      async (): Promise<ModePaletteResults> => ({
-        query: "budget",
-        tasks: {
-          ok: true,
-          truncated: false,
-          rows: [
-            {
-              kind: "kata-task",
-              uid: "issue-budget",
-              short_id: "budget",
-              qualified_id: "Finances#budget",
-              title: "Set monthly budget",
-              project_uid: "project-finances",
-              project_name: "Finances",
-              status: "open",
-              daemon_id: "daemon-work",
-            },
-          ],
-        },
-        docs: {
-          ok: true,
-          truncated: false,
-          rows: [
-            {
-              kind: "doc",
-              folder: "notes",
-              folder_name: "Notes",
-              rel_path: "finance/budget.md",
-              hit_type: "filename",
-            },
-          ],
-        },
-      }),
+      (): Effect.Effect<ModePaletteResults> =>
+        Effect.succeed({
+          query: "budget",
+          tasks: {
+            ok: true,
+            truncated: false,
+            rows: [
+              {
+                kind: "kata-task",
+                uid: "issue-budget",
+                short_id: "budget",
+                qualified_id: "Finances#budget",
+                title: "Set monthly budget",
+                project_uid: "project-finances",
+                project_name: "Finances",
+                status: "open",
+                daemon_id: "daemon-work",
+              },
+            ],
+          },
+          docs: {
+            ok: true,
+            truncated: false,
+            rows: [
+              {
+                kind: "doc",
+                folder: "notes",
+                folder_name: "Notes",
+                rel_path: "finance/budget.md",
+                hit_type: "filename",
+              },
+            ],
+          },
+        }),
     );
 
     const props = { modeSearch, onOpenKataIssue, onOpenDoc };

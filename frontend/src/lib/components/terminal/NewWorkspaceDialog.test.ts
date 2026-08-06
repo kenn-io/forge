@@ -1,16 +1,19 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect } from "effect";
 import {
   discardWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { STORES_KEY } from "../../context.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 
 import NewWorkspaceDialog from "./NewWorkspaceDialog.svelte";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
 const mockNavigate = vi.fn();
+const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
 const launchTargets = [
   {
     key: "codex",
@@ -23,12 +26,26 @@ const launchTargets = [
   },
 ];
 
-vi.mock("../../api/runtime.js", () => ({
-  apiErrorMessage: (error: { detail?: string; title?: string } | undefined, fallback: string) =>
-    error?.detail ?? error?.title ?? fallback,
-  client: {
+vi.mock("../../api/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/runtime.js")>();
+  const client = {
     GET: (...args: unknown[]) => mockGet(...args),
     POST: (...args: unknown[]) => mockPost(...args),
+  };
+  return {
+    ...actual,
+    apiErrorMessage: (error: { detail?: string; title?: string } | undefined, fallback: string) =>
+      error?.detail ?? error?.title ?? fallback,
+    client,
+    createRuntimeClient: () => client,
+  };
+});
+
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => {
+    const runtime = runtimeCapture.current;
+    if (runtime === undefined) throw new Error("new workspace dialog test runtime is not initialized");
+    return runtime;
   },
 }));
 
@@ -58,7 +75,9 @@ async function renderDialog(props: Record<string, unknown> = {}) {
       ],
     ]),
   });
-  await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/repos"));
+  await waitFor(() =>
+    expect(mockGet).toHaveBeenCalledWith("/repos", expect.objectContaining({ signal: expect.any(AbortSignal) })),
+  );
   return view;
 }
 
@@ -75,6 +94,7 @@ async function pickRepo(label: string): Promise<void> {
 
 describe("NewWorkspaceDialog", () => {
   beforeEach(() => {
+    runtimeCapture.current = makeAppRuntime();
     resetWorkspaceCreatePendingForTest();
     localStorage.clear();
     mockGet.mockReset();
@@ -86,9 +106,11 @@ describe("NewWorkspaceDialog", () => {
     mockPost.mockResolvedValue({ data: { id: "ws-new" } });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     resetWorkspaceCreatePendingForTest();
     cleanup();
+    if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
+    runtimeCapture.current = undefined;
   });
 
   it("creates a workspace for the selected repo with no branch when the field is empty", async () => {
@@ -390,6 +412,23 @@ describe("NewWorkspaceDialog", () => {
     resolveGet({ data: [repoFixture("acme", "gadget")] });
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
     expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("interrupts the repository load when the dialog closes", async () => {
+    let repositoryLoadInterrupted = false;
+    mockGet.mockImplementation(
+      (_path: string, options?: { signal?: AbortSignal }) =>
+        new Promise(() => {
+          options?.signal?.addEventListener("abort", () => {
+            repositoryLoadInterrupted = true;
+          });
+        }),
+    );
+
+    const { rerender } = await renderDialog();
+    await rerender({ open: false });
+
+    expect(repositoryLoadInterrupted).toBe(true);
   });
 
   it("reports a rejected create instead of failing silently", async () => {

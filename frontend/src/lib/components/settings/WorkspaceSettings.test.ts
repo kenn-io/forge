@@ -1,43 +1,59 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-vi.mock("../../api/settings.js", () => ({
-  updateSettings: vi.fn(),
-}));
+const mockPersistSettings = vi.hoisted(() => vi.fn());
 
-vi.mock("../../stores/embed-config.svelte.js", () => ({
+vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
+  return {
+    ...actual,
+    SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({
+      persist: (request) => mockPersistSettings(request),
+    }),
+  };
+});
+
+vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../stores/embed-config.svelte.js")>()),
   isEmbedded: () => false,
 }));
 
-import { updateSettings } from "../../api/settings.js";
 import WorkspaceSettings from "./WorkspaceSettings.svelte";
+import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 
-const mockUpdateSettings = vi.mocked(updateSettings);
 const initial = { auto_assign_on_create: false };
 
 describe("WorkspaceSettings", () => {
   afterEach(() => {
     cleanup();
-    mockUpdateSettings.mockReset();
+    mockPersistSettings.mockReset();
   });
 
   it("saves automatic assignment for new workspace items", async () => {
     const onUpdate = vi.fn();
     const saved = { auto_assign_on_create: true };
-    mockUpdateSettings.mockResolvedValue({ workspaces: saved } as never);
-    render(WorkspaceSettings, { props: { workspaces: initial, onUpdate } });
+    mockPersistSettings.mockReturnValue(Effect.succeed({ workspaces: saved }));
+    render(SettingsRuntimeHarness, {
+      props: { component: WorkspaceSettings, componentProps: { workspaces: initial, onUpdate } },
+    });
 
     await fireEvent.click(screen.getByRole("button", { name: "Assign new workspace items to me" }));
 
-    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalledWith({ workspaces: saved }));
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: saved });
     expect(onUpdate).toHaveBeenNthCalledWith(1, saved);
     expect(onUpdate).toHaveBeenLastCalledWith(saved);
   });
 
   it("restores the prior setting when saving fails", async () => {
     const onUpdate = vi.fn();
-    mockUpdateSettings.mockRejectedValue(new Error("save failed"));
-    render(WorkspaceSettings, { props: { workspaces: initial, onUpdate } });
+    mockPersistSettings.mockReturnValue(
+      Effect.fail({ _tag: "TransientTransportError", operation: "save settings", cause: new Error("save failed") }),
+    );
+    render(SettingsRuntimeHarness, {
+      props: { component: WorkspaceSettings, componentProps: { workspaces: initial, onUpdate } },
+    });
 
     await fireEvent.click(screen.getByRole("button", { name: "Assign new workspace items to me" }));
 

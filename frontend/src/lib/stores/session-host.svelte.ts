@@ -229,6 +229,12 @@ export function clearSessionFocusRequest(): void {
   pendingFocusSoft = false;
 }
 
+/** Read the outstanding request without consuming it so a Svelte effect can react to it safely. */
+export function pendingSessionFocus(key: SessionHostKey): "explicit" | "soft" | false {
+  if (pendingFocusKey !== key) return false;
+  return pendingFocusSoft ? "soft" : "explicit";
+}
+
 /**
  * The outstanding request's flavor when this session owns it, which it
  * consumes; false otherwise.

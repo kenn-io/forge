@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mockSetPullRequestSettings = vi.fn();
+const mockPersistSettings = vi.hoisted(() => vi.fn());
 
 vi.mock("../../context.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../context.js")>()),
@@ -10,18 +12,24 @@ vi.mock("../../context.js", async (importOriginal) => ({
   }),
 }));
 
-vi.mock("../../api/settings.js", () => ({
-  updateSettings: vi.fn(),
-}));
+vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
+  return {
+    ...actual,
+    SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({
+      persist: (request) => mockPersistSettings(request),
+    }),
+  };
+});
 
-vi.mock("../../stores/embed-config.svelte.js", () => ({
+vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../stores/embed-config.svelte.js")>()),
   isEmbedded: () => false,
 }));
 
-import { updateSettings } from "../../api/settings.js";
 import PullRequestSettings from "./PullRequestSettings.svelte";
+import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 
-const mockUpdateSettings = vi.mocked(updateSettings);
 const initial = {
   allow_mid_stack_merges: false,
   prefer_github_native_stacks: false,
@@ -31,20 +39,21 @@ describe("PullRequestSettings", () => {
   afterEach(() => {
     cleanup();
     mockSetPullRequestSettings.mockReset();
-    mockUpdateSettings.mockReset();
+    mockPersistSettings.mockReset();
   });
 
   it("saves the GitHub native stack preference", async () => {
     const onUpdate = vi.fn();
     const saved = { ...initial, prefer_github_native_stacks: true };
-    mockUpdateSettings.mockResolvedValue({ pull_requests: saved } as never);
-    render(PullRequestSettings, {
-      props: { pullRequests: initial, onUpdate },
+    mockPersistSettings.mockReturnValue(Effect.succeed({ pull_requests: saved }));
+    render(SettingsRuntimeHarness, {
+      props: { component: PullRequestSettings, componentProps: { pullRequests: initial, onUpdate } },
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Prefer GitHub native stacks" }));
 
-    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalledWith({ pull_requests: saved }));
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ pull_requests: saved });
     expect(onUpdate).toHaveBeenNthCalledWith(1, saved);
     expect(onUpdate).toHaveBeenLastCalledWith(saved);
     expect(mockSetPullRequestSettings).toHaveBeenCalledWith(saved);
@@ -52,9 +61,11 @@ describe("PullRequestSettings", () => {
 
   it("restores the prior settings when saving fails", async () => {
     const onUpdate = vi.fn();
-    mockUpdateSettings.mockRejectedValue(new Error("save failed"));
-    render(PullRequestSettings, {
-      props: { pullRequests: initial, onUpdate },
+    mockPersistSettings.mockReturnValue(
+      Effect.fail({ _tag: "TransientTransportError", operation: "save settings", cause: new Error("save failed") }),
+    );
+    render(SettingsRuntimeHarness, {
+      props: { component: PullRequestSettings, componentProps: { pullRequests: initial, onUpdate } },
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Prefer GitHub native stacks" }));

@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { Effect, Schedule } from "effect";
+  import { onDestroy, untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
   import { getStores, getNavigate, getSidebar, getActions, getHostState } from "../../context.js";
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import {
@@ -23,6 +27,7 @@
   } from "../../routes.js";
 
   const { pulls, sync, grouping, collapsedRepos, settings } = getStores();
+  const runtime = getAppRuntime();
   const navigate = getNavigate();
   const actions = getActions();
   const hostState = getHostState();
@@ -89,8 +94,7 @@
   }: Props = $props();
 
   let searchInput = $state(pulls.getSearchQuery() ?? "");
-  let debounceHandle: ReturnType<typeof setTimeout> | null = null;
-  let refreshHandle: ReturnType<typeof setInterval> | null = null;
+  let searchExecution: AppExecution<void, never> | null = null;
   const visiblePulls = $derived(pulls.getDisplayOrderPRs());
   const repoLabelFormatter = $derived(
     createRepoLabelFormatter(
@@ -106,30 +110,33 @@
   );
 
   $effect(() => {
-    pulls.loadPulls();
-
-    refreshHandle = setInterval(() => {
-      pulls.loadPulls();
-    }, 15_000);
-
-    // If sync is currently running on first load, refresh when it completes
-    if (sync.getSyncState()?.running) {
-      sync.onNextSyncComplete(pulls.loadPulls);
-    }
+    const execution = untrack(() => runtime.runCommand(
+      Effect.sync(pulls.loadPulls).pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.asVoid),
+      { operation: "poll pull request sidebar", safeContext: {}, onFailure: () => {} },
+    ));
+    const unsubscribeSync = sync.subscribeSyncComplete(pulls.loadPulls);
 
     return () => {
-      if (refreshHandle !== null) clearInterval(refreshHandle);
+      execution.interrupt();
+      unsubscribeSync();
     };
   });
+
+  onDestroy(() => searchExecution?.interrupt());
 
   function onSearchInput(value: string): void {
     searchInput = value;
 
-    if (debounceHandle !== null) clearTimeout(debounceHandle);
-    debounceHandle = setTimeout(() => {
-      pulls.setSearchQuery(value.trim() === "" ? undefined : value.trim());
-      pulls.loadPulls();
-    }, 300);
+    searchExecution?.interrupt();
+    searchExecution = runtime.runCommand(
+      Effect.sleep("300 millis").pipe(
+        Effect.andThen(Effect.sync(() => {
+          pulls.setSearchQuery(value.trim() === "" ? undefined : value.trim());
+          pulls.loadPulls();
+        })),
+      ),
+      { operation: "debounce pull request sidebar search", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   function pullStateLabel(state: string): string {

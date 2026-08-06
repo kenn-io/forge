@@ -1,4 +1,6 @@
-import { getOrCreateWorkerPoolSingleton, type WorkerPoolManager } from "@pierre/diffs/worker";
+import { Context, Effect, Layer } from "effect";
+import type { Scope } from "effect/Scope";
+import { WorkerPoolManager } from "@pierre/diffs/worker";
 
 export const diffTokenizeMaxLineLength = 180;
 
@@ -10,14 +12,14 @@ export const diffTokenizeMaxLineLength = 180;
 // script (see diff-highlight-screenshot.spec.ts).
 export function syntaxHighlightingDisabledForAutomation(): boolean {
   if (typeof navigator === "undefined" || navigator.webdriver !== true) return false;
-  return (globalThis as { __kenn_forgeForceSyntaxHighlight?: boolean }).__kenn_forgeForceSyntaxHighlight !== true;
+  return globalThis.__kenn_forgeForceSyntaxHighlight !== true;
 }
 
-export function getPierreDiffWorkerPool(): WorkerPoolManager | undefined {
+function createPierreDiffWorkerPool(): WorkerPoolManager | undefined {
   if (typeof Worker === "undefined") return undefined;
   if (syntaxHighlightingDisabledForAutomation()) return undefined;
-  return getOrCreateWorkerPoolSingleton({
-    poolOptions: {
+  return new WorkerPoolManager(
+    {
       workerFactory: () =>
         new Worker(new URL("./pierre-diff-worker-entry.js", import.meta.url), {
           type: "module",
@@ -25,10 +27,27 @@ export function getPierreDiffWorkerPool(): WorkerPoolManager | undefined {
       poolSize: 4,
       totalASTLRUCacheSize: 200,
     },
-    highlighterOptions: {
+    {
       theme: { dark: "pierre-dark", light: "pierre-light" },
       lineDiffType: "word",
       tokenizeMaxLineLength: diffTokenizeMaxLineLength,
     },
-  });
+  );
 }
+
+export const makePierreDiffWorkerPool: Effect.Effect<WorkerPoolManager | undefined, never, Scope> =
+  Effect.acquireRelease(Effect.sync(createPierreDiffWorkerPool), (pool) =>
+    pool === undefined ? Effect.void : Effect.sync(() => pool.terminate()),
+  );
+
+interface PierreDiffWorkerPoolService {
+  readonly pool: WorkerPoolManager | undefined;
+}
+
+export class PierreDiffWorkerPool extends Context.Service<PierreDiffWorkerPool, PierreDiffWorkerPoolService>()(
+  "kenn-forge/PierreDiffWorkerPool",
+) {}
+
+export const PierreDiffWorkerPoolLive = Layer.effect(PierreDiffWorkerPool)(
+  makePierreDiffWorkerPool.pipe(Effect.map((pool) => ({ pool }))),
+);

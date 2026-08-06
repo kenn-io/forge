@@ -1,11 +1,15 @@
 <script lang="ts">
   import { SegmentedControl } from "@kenn-io/kit-ui";
-  import { getStores } from "../../context.js";
-  import { showFlash } from "../../stores/flash.svelte.js";
+  import { Effect } from "effect";
   import type { ActivitySettings as ActivitySettingsType } from "../../api/types.js";
-  import { updateSettings } from "../../api/settings.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { getStores } from "../../context.js";
+  import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
+  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
 
   const { activity: activityStore } = getStores();
+  const runtime = getAppRuntime();
 
   interface Props {
     activity: ActivitySettingsType;
@@ -14,8 +18,10 @@
 
   let { activity, onUpdate }: Props = $props();
 
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   const embedded = isEmbedded();
+  let saveVersion = 0;
+  let confirmedActivity: ActivitySettingsType | undefined;
+  let pendingSaves = 0;
 
   const TIME_RANGES: { value: ActivitySettingsType["time_range"]; label: string }[] = [
     { value: "24h", label: "24h" },
@@ -24,45 +30,87 @@
     { value: "90d", label: "90d" },
   ];
 
-  async function save(updated: ActivitySettingsType): Promise<void> {
+  function save(updated: ActivitySettingsType, previous: ActivitySettingsType): void {
     if (embedded) return;
-    try {
-      const settings = await updateSettings({ activity: updated });
-      onUpdate(settings.activity);
-      activityStore.hydrateDefaults(settings.activity);
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : "Failed to save activity settings.", { tone: "danger" });
-    }
+    if (pendingSaves === 0) confirmedActivity = previous;
+    pendingSaves += 1;
+    const version = ++saveVersion;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.persist(() => ({ activity: updated }));
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              if (version === saveVersion) onUpdate(confirmedActivity ?? previous);
+              showFlash(settingsErrorMessage(failure), { tone: "danger" });
+            }),
+          onSuccess: (settings) =>
+            Effect.sync(() => {
+              confirmedActivity = settings.activity;
+              activityStore.hydrateDefaults(settings.activity);
+              if (version !== saveVersion) return;
+              onUpdate(settings.activity);
+            }),
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            pendingSaves -= 1;
+          }),
+        ),
+      ),
+      {
+        operation: "save activity settings",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   function setViewMode(mode: ActivitySettingsType["view_mode"]): void {
+    const previous = activity;
     const updated = { ...activity, view_mode: mode };
     onUpdate(updated);
-    void save(updated);
+    save(updated, previous);
   }
 
   function toggleCollapseThreads(): void {
+    const previous = activity;
     const updated = { ...activity, collapse_threads: !activity.collapse_threads };
     onUpdate(updated);
-    void save(updated);
+    save(updated, previous);
   }
 
   function setTimeRange(range_: ActivitySettingsType["time_range"]): void {
+    const previous = activity;
     const updated = { ...activity, time_range: range_ };
     onUpdate(updated);
-    void save(updated);
+    save(updated, previous);
   }
 
   function toggleHideClosed(): void {
+    const previous = activity;
     const updated = { ...activity, hide_closed: !activity.hide_closed };
     onUpdate(updated);
-    void save(updated);
+    save(updated, previous);
   }
 
   function toggleHideBots(): void {
+    const previous = activity;
     const updated = { ...activity, hide_bots: !activity.hide_bots };
     onUpdate(updated);
-    void save(updated);
+    save(updated, previous);
+  }
+
+  function setViewModeValue(value: string): void {
+    if (value === "flat" || value === "threaded") setViewMode(value);
+  }
+
+  function setTimeRangeValue(value: string): void {
+    if (value === "24h" || value === "7d" || value === "30d" || value === "90d") {
+      setTimeRange(value);
+    }
   }
 </script>
 
@@ -74,7 +122,7 @@
       { value: "threaded", label: "Threaded" },
     ]}
     value={activity.view_mode}
-    onchange={(v) => setViewMode(v as ActivitySettingsType["view_mode"])}
+    onchange={setViewModeValue}
     ariaLabel="Default view mode"
   />
 </div>
@@ -91,7 +139,7 @@
   <SegmentedControl
     options={TIME_RANGES}
     value={activity.time_range}
-    onchange={(v) => setTimeRange(v as ActivitySettingsType["time_range"])}
+    onchange={setTimeRangeValue}
     ariaLabel="Default time range"
   />
 </div>

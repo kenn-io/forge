@@ -35,6 +35,7 @@ import (
 	"go.kenn.io/forge/internal/profiler"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -839,6 +840,7 @@ type appState struct {
 type appStateRegistry struct {
 	mu      sync.Mutex
 	current atomic.Pointer[appState]
+	closers sync.WaitGroup
 }
 
 func newAppStateRegistry(initial *appState) *appStateRegistry {
@@ -855,6 +857,16 @@ func (r *appStateRegistry) Swap(next *appState) *appState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.current.Swap(next)
+}
+
+func (r *appStateRegistry) closeAsync(close func()) {
+	r.closers.Go(func() {
+		close()
+	})
+}
+
+func (r *appStateRegistry) waitForClosers() {
+	r.closers.Wait()
 }
 
 func (r *appStateRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -937,11 +949,14 @@ func (st *appState) close() {
 		slog.Warn("server shutdown", "err", err)
 	}
 	st.waitForHandlers()
+	// The private tmux daemon outlives this process unless it is stopped
+	// explicitly. Retired reset states can still have slower workspace cleanup
+	// ahead of them, so release the daemon as soon as no handler can use it.
+	killTmuxServer(st.tmuxCommand)
 	cleanupE2EWorkspaces(st.database, st.clones, st.worktreeDir, st.tmuxCommand, st.ptyOwner)
 	if err := st.database.Close(); err != nil {
 		slog.Warn("close database", "err", err)
 	}
-	killTmuxServer(st.tmuxCommand)
 	if err := os.RemoveAll(st.tmpDir); err != nil {
 		slog.Warn("remove e2e temp dir", "err", err)
 	}
@@ -2275,6 +2290,21 @@ func buildAppState(
 				fc, "acme", "widgets", 1,
 				diffRepo.AltHeadSHA, diffRepo.BaseSHA,
 			)
+			eventID := srv.Hub().Broadcast(server.Event{
+				Type: "pr_detail_refreshed",
+				Data: workspaceapi.PRDetailRefreshedPayload{
+					Provider:     "github",
+					PlatformHost: "github.com",
+					RepoPath:     "acme/widgets",
+					Owner:        "acme",
+					Name:         "widgets",
+					Number:       1,
+					HeadSHA:      diffRepo.AltHeadSHA,
+					SyncedAt:     time.Now().UTC().Format(time.RFC3339),
+					Warnings:     []string{},
+				},
+			})
+			w.Header().Set("X-Kenn-E2E-Event-ID", strconv.FormatUint(eventID, 10))
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(map[string]string{
 				"head_sha": diffRepo.AltHeadSHA,
@@ -2446,6 +2476,7 @@ func run(
 	// drain handlers before this closes the database and temp dir.
 	defer func() {
 		states.Load().close()
+		states.waitForClosers()
 	}()
 
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
@@ -2583,10 +2614,14 @@ func run(
 				return
 			}
 			old := states.Swap(newState)
+			// The retired state owns a private tmux server that must not
+			// outlive the reset, even if the runner exits before its slower
+			// workspace cleanup goroutine completes.
+			killTmuxServer(old.tmuxCommand)
 			// Old-state teardown (handler drain, tmux kill, temp
 			// dir removal) happens off the request path, matching
 			// the old SIGTERM-and-return stop() semantics.
-			go old.close()
+			states.closeAsync(old.close)
 
 			resetInfo := info
 			resetInfo.ConfigPath = newState.cfgPath
@@ -2632,6 +2667,10 @@ func run(
 
 	select {
 	case <-ctx.Done():
+		// Runner exit can close inherited stdio immediately after sending
+		// SIGTERM. Release the private daemon before logging or draining so
+		// that abrupt parent teardown cannot orphan it.
+		killTmuxServer(states.Load().tmuxCommand)
 		slog.Info("shutting down")
 		// Trigger Shutdown so Serve unblocks (the defer is a
 		// safety net for other exit paths and is idempotent).

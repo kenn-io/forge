@@ -24,6 +24,7 @@ const workspace = {
   tmux_pane_title: null,
   tmux_working: false,
   status: "ready",
+  enrichment_status: "fresh",
   created_at: "2026-04-10T12:00:00Z",
   mr_title: "Add auth middleware",
   mr_state: "open",

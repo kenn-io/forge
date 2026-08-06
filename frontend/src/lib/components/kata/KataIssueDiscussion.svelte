@@ -1,12 +1,17 @@
 <script lang="ts">
   import { MentionTextarea, type MentionOption } from "@kenn-io/kit-ui";
   import { Button } from "@kenn-io/kit-ui";
+  import { Effect, Exit } from "effect";
+  import { onDestroy } from "svelte";
   import ItemStateChip from "../shared/ItemStateChip.svelte";
-  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
+  import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import { localDateTimeLabel, timeAgo } from "../../utils/time.js";
 
   import type { KataIssueNavigationTarget } from "../../api/kata/navigation.js";
   import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
   import type {
     KataTaskDetail,
     KataTaskEditPatch,
@@ -34,11 +39,11 @@
     onLinkFiltersChange: (next: KataLinkFilters) => void;
     actionsDisabled?: boolean | undefined;
     draftResetGeneration?: number | undefined;
-    onAddComment: (uid: string, body: string) => boolean | Promise<boolean>;
-    onEditIssue: (uid: string, patch: KataTaskEditPatch) => boolean | Promise<boolean>;
+    onAddComment: (uid: string, body: string) => KataCommand<boolean>;
+    onEditIssue: (uid: string, patch: KataTaskEditPatch) => KataCommand<boolean>;
     // Navigation always carries the peer's full identity from the resolved
     // catalog row; bare-UID navigation is not representable.
-    onSelectIssue: (target: KataIssueNavigationTarget) => void | Promise<void>;
+    onSelectIssue: (target: KataIssueNavigationTarget) => void;
   }
 
   interface PendingDraftReset {
@@ -62,6 +67,11 @@
     onEditIssue,
     onSelectIssue,
   }: Props = $props();
+
+  const runtime = getAppRuntime();
+  let referenceSearchExecution: AppExecution<MentionOption[], never> | null = null;
+  let commentExecution: AppExecution<void, never> | null = null;
+  let relatedExecution: AppExecution<void, never> | null = null;
 
   let commentDraft = $state("");
   let relatedDraft = $state("");
@@ -121,7 +131,7 @@
     relatedDraftRevision += 1;
   }
 
-  async function submitComment(): Promise<void> {
+  function submitComment(): void {
     if (actionsDisabled) return;
     const draft = commentDraft;
     const body = draft.trim();
@@ -129,20 +139,32 @@
     const mutationUID = issue.issue.uid;
     const resetGeneration = draftResetGeneration;
     const draftRevision = commentDraftRevision;
-    const ok = await onAddComment(mutationUID, body);
-    if (ok) {
-      if (issue.issue.uid !== mutationUID) return;
-      if (draftResetGeneration !== resetGeneration) {
-        if (commentDraftRevision === draftRevision && commentDraft === draft) commentDraft = "";
-      } else {
-        pendingCommentReset = {
-          uid: mutationUID,
-          generation: resetGeneration,
-          value: draft,
-          revision: draftRevision,
-        };
-      }
-    }
+    commentExecution?.interrupt();
+    commentExecution = runtime.runCommand(
+      onAddComment(mutationUID, body).pipe(
+        Effect.tap((ok) =>
+          Effect.sync(() => {
+            if (!ok || issue.issue.uid !== mutationUID) return;
+            if (draftResetGeneration !== resetGeneration) {
+              if (commentDraftRevision === draftRevision && commentDraft === draft) commentDraft = "";
+            } else {
+              pendingCommentReset = {
+                uid: mutationUID,
+                generation: resetGeneration,
+                value: draft,
+                revision: draftRevision,
+              };
+            }
+          }),
+        ),
+        Effect.asVoid,
+      ),
+      {
+        operation: "add Kata task comment",
+        safeContext: { issueUid: mutationUID },
+        onFailure: () => {},
+      },
+    );
   }
 
   function linkPeerUIDFor(link: KataTaskLink, selectedUID: string | undefined): string {
@@ -174,7 +196,7 @@
     return relationLabels[relationForKataLink(link, issue.issue.uid)];
   }
 
-  async function submitRelatedLink(): Promise<void> {
+  function submitRelatedLink(): void {
     if (actionsDisabled) return;
     const draft = relatedDraft;
     const ref = draft.trim();
@@ -182,43 +204,83 @@
     const mutationUID = issue.issue.uid;
     const resetGeneration = draftResetGeneration;
     const draftRevision = relatedDraftRevision;
-    const ok = await onEditIssue(mutationUID, {
-      links_delta: { add_related: [ref] },
-    });
-    if (ok) {
-      if (issue.issue.uid !== mutationUID) return;
-      if (draftResetGeneration !== resetGeneration) {
-        if (relatedDraftRevision === draftRevision && relatedDraft === draft) relatedDraft = "";
-      } else {
-        pendingRelatedReset = {
-          uid: mutationUID,
-          generation: resetGeneration,
-          value: draft,
-          revision: draftRevision,
-        };
-      }
-    }
+    relatedExecution?.interrupt();
+    relatedExecution = runtime.runCommand(
+      onEditIssue(mutationUID, { links_delta: { add_related: [ref] } }).pipe(
+        Effect.tap((ok) =>
+          Effect.sync(() => {
+            if (!ok || issue.issue.uid !== mutationUID) return;
+            if (draftResetGeneration !== resetGeneration) {
+              if (relatedDraftRevision === draftRevision && relatedDraft === draft) relatedDraft = "";
+            } else {
+              pendingRelatedReset = {
+                uid: mutationUID,
+                generation: resetGeneration,
+                value: draft,
+                revision: draftRevision,
+              };
+            }
+          }),
+        ),
+        Effect.asVoid,
+      ),
+      {
+        operation: "link related Kata task",
+        safeContext: { issueUid: mutationUID },
+        onFailure: () => {},
+      },
+    );
   }
 
   function handleRelatedKeydown(event: KeyboardEvent): void {
     if (event.key === "Enter") {
       event.preventDefault();
-      void submitRelatedLink();
+      submitRelatedLink();
     }
   }
 
-  async function searchTaskReferences(query: string): Promise<MentionOption[]> {
-    const response = await searchReferences(query, {
-      ...(activeDaemonId ? { daemon_id: activeDaemonId } : {}),
-      limit: 20,
-    });
-    return (response.references ?? []).map((task) => ({
-      id: task.uid,
-      insert: task.reference,
-      label: task.title,
-      meta: task.project_name,
-    }));
+  function searchTaskReferences(query: string): Promise<MentionOption[]> {
+    referenceSearchExecution?.interrupt();
+    const execution = runtime.runCommand(
+      searchReferences(query, {
+        ...(activeDaemonId ? { daemon_id: activeDaemonId } : {}),
+        limit: 20,
+      }).pipe(
+        Effect.map((response) =>
+          (response.references ?? []).map((task) => ({
+            id: task.uid,
+            insert: task.reference,
+            label: task.title,
+            meta: task.project_name,
+          })),
+        ),
+        Effect.catch(() => Effect.succeed([])),
+      ),
+      {
+        operation: "search Kata references for a related task",
+        safeContext: { daemonId: activeDaemonId ?? "" },
+        onFailure: () => {},
+      },
+    );
+    referenceSearchExecution = execution;
+    return observeReferenceSearch(execution);
   }
+
+  async function observeReferenceSearch(execution: AppExecution<MentionOption[], never>): Promise<MentionOption[]> {
+    const exit = await execution.exit;
+    if (referenceSearchExecution === execution) referenceSearchExecution = null;
+    return Exit.isSuccess(exit) ? exit.value : [];
+  }
+
+  function selectIssue(target: KataIssueNavigationTarget): void {
+    onSelectIssue(target);
+  }
+
+  onDestroy(() => {
+    referenceSearchExecution?.interrupt();
+    commentExecution?.interrupt();
+    relatedExecution?.interrupt();
+  });
 </script>
 
 <section class="task-links" aria-label="Links">
@@ -250,7 +312,7 @@
           title={peer ? undefined : "Task state unavailable; the link cannot be opened"}
           onclick={() => {
             if (!peer) return;
-            void onSelectIssue({ uid: peer.uid, status: peer.status, project_uid: peer.project_uid });
+            selectIssue({ uid: peer.uid, status: peer.status, project_uid: peer.project_uid });
           }}
         >
           <span class="link-kind">{linkLabel(link)}</span>
@@ -269,7 +331,7 @@
     class="link-form"
     onsubmit={(event) => {
       event.preventDefault();
-      void submitRelatedLink();
+      submitRelatedLink();
     }}
   >
     <label>
@@ -297,7 +359,7 @@
     class="comment-composer"
     onsubmit={(event) => {
       event.preventDefault();
-      void submitComment();
+      submitComment();
     }}
   >
     <MentionTextarea
@@ -331,11 +393,7 @@
             </time>
           </div>
           <div class="comment-body markdown-body">
-            {#await renderMarkdown(comment.body)}
-              {@html renderMarkdownSync(comment.body)}
-            {:then html}
-              {@html html}
-            {/await}
+            <MarkdownHtml raw={comment.body} />
           </div>
         </article>
       {/each}

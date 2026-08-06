@@ -310,9 +310,7 @@ export const saveTerminalSettings = Effect.fn("TerminalSettings.save")(function*
     return { activeQueue, mutationGeneration };
   });
   const save = workflow
-    .enqueue({
-      request: Effect.sync(() => ({ terminal: { ...state.activeQueue.confirmed, ...changes } })),
-    })
+    .persist(() => ({ terminal: { ...state.activeQueue.confirmed, ...changes } }))
     .pipe(Effect.map((settings) => settings.terminal));
 
   return yield* save.pipe(

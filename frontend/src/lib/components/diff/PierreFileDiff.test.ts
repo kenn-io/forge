@@ -16,12 +16,14 @@ type GlobalWithCSSStyleSheet = {
 };
 
 let originalReplaceSync: unknown;
+let PierreFileDiff: typeof import("./PierreFileDiffRuntimeHarness.svelte").default;
 
-beforeAll(() => {
+beforeAll(async () => {
   originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype.replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
   }
+  ({ default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte"));
 });
 
 afterAll(() => {
@@ -192,11 +194,22 @@ function makeBusyWorkerPool(): unknown {
   };
 }
 
-vi.doMock("./pierre-worker-pool.js", () => ({
-  diffTokenizeMaxLineLength: 180,
-  getPierreDiffWorkerPool: () => workerPool.get(),
-  syntaxHighlightingDisabledForAutomation: () => false,
-}));
+vi.doMock("./pierre-worker-pool.js", async () => {
+  const { Context, Layer } = await import("effect");
+  class PierreDiffWorkerPool extends Context.Service<PierreDiffWorkerPool, { readonly pool: unknown }>()(
+    "test/PierreDiffWorkerPool",
+  ) {}
+  return {
+    diffTokenizeMaxLineLength: 180,
+    PierreDiffWorkerPool,
+    PierreDiffWorkerPoolLive: Layer.succeed(PierreDiffWorkerPool)({
+      get pool() {
+        return workerPool.get();
+      },
+    }),
+    syntaxHighlightingDisabledForAutomation: () => false,
+  };
+});
 
 function makeFile(): DiffFile {
   return {
@@ -326,7 +339,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("uses Pierre virtualized diffs when a viewer virtualizer is provided", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     const virtualizer = { type: "simple" };
 
     render(PierreFileDiff, {
@@ -342,7 +354,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("retries when Pierre declines an initial render attempt", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     pierre.setRenderResults([false, true]);
 
     render(PierreFileDiff, {
@@ -355,8 +366,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("renders patch text even when structured hunks are absent", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
-
     render(PierreFileDiff, {
       props: { file: makePatchOnlyFile() },
     });
@@ -369,7 +378,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("falls back to sparse rendering when syntax full-context loading fails", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     const loadFileContext = vi.fn(
       (callbacks: { readonly onFailure: (message: string) => void; readonly onSettled: () => void }) => {
         callbacks.onFailure("preview failed");
@@ -543,7 +551,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("shows the empty textual state for metadata-only patches", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     pierre.setMetadata({
       ...pierre.metadata,
       additionLines: [],
@@ -563,7 +570,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("replays context expansion after a deferred full-context render", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     const loadFileContext = vi.fn(
       (callbacks: {
         readonly onSuccess: (context: { readonly oldText: string; readonly newText: string }) => void;
@@ -637,7 +643,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("logs virtualized render geometry when diff debugging is enabled", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     window.localStorage.setItem("kenn-forge:debug:diff", "1");
     const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
 
@@ -663,8 +668,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("passes split diff style to Pierre when side-by-side mode is enabled", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
-
     render(PierreFileDiff, {
       props: { file: makeFile(), viewMode: "split" },
     });
@@ -677,7 +680,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("caps syntax tokenization line length for Pierre renders", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     const { diffTokenizeMaxLineLength } = await import("./pierre-worker-pool.js");
 
     render(PierreFileDiff, {
@@ -692,7 +694,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("keeps shown content visible when a later post-render has no highlighted spans", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     workerPool.set(makeBusyWorkerPool());
     pierre.setShadowHtml(`
       <pre data-diff-type="unified">
@@ -733,7 +734,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("shows plain-text diffs without waiting for the shared highlight pool to drain", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     workerPool.set(makeBusyWorkerPool());
 
     render(PierreFileDiff, {
@@ -749,7 +749,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("shows massive diffs beyond the tokenize cap without waiting for the highlight pool", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     workerPool.set(makeBusyWorkerPool());
     // Pierre forces plain-text rendering past DEFAULT_TOKENIZE_MAX_LENGTH
     // (100k lines), so styled spans never appear for this file either.
@@ -771,7 +770,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("rerenders when annotation metadata changes without moving lines", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     const file = makeFile();
     const firstAnnotations: DiffLineAnnotation<unknown>[] = [
       {
@@ -804,7 +802,6 @@ describe("PierreFileDiff", () => {
   });
 
   it("does not rerender when transient annotation metadata changes", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     const file = makeFile();
 
     const { rerender } = render(PierreFileDiff, {

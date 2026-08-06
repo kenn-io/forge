@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { StoreInstances } from "../../types.js";
-import FileJumpPicker from "./FileJumpPicker.svelte";
+import FileJumpPicker from "./FileJumpPickerRuntimeHarness.svelte";
 
 const files: DiffFile[] = [makeFile("src/components/App.svelte"), makeFile("src/lib/search.ts"), makeFile("README.md")];
 

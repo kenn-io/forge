@@ -1214,3 +1214,38 @@ describe("IssueDetail body copy feedback", () => {
     expect(document.querySelector(".body-copy--copied")).toBeNull();
   });
 });
+
+describe("IssueDetail task body saves", () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("flushes a pending task checkbox save when the detail unmounts", async () => {
+    const detail = issueDetail();
+    detail.issue.Body = "- [ ] ship the change";
+    const view = renderIssueDetail(detail);
+    let checkbox: HTMLInputElement | null = null;
+    await waitFor(() => {
+      checkbox = view.container.querySelector<HTMLInputElement>(".markdown-body input[type='checkbox']");
+      expect(checkbox?.dataset.taskIndex).toBe("0");
+    });
+    vi.useFakeTimers();
+
+    await fireEvent.click(checkbox as HTMLInputElement);
+    expect(view.issuesStore.saveIssueBodyInBackground).not.toHaveBeenCalled();
+    view.unmount();
+
+    expect(view.issuesStore.saveIssueBodyInBackground).toHaveBeenCalledWith(
+      "acme",
+      "widget",
+      7,
+      "- [x] ship the change",
+      {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+      },
+    );
+  });
+});

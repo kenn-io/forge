@@ -22,7 +22,10 @@ describe("Kata workspace authority ownership", () => {
         const controller = createKataWorkspaceAuthorityController({
           owner: createKataWorkspaceAuthorityOwner(),
           loadSnapshot: () => Deferred.await(release),
-          onSnapshotAccepted: (snapshot) => accepted.push(snapshot),
+          onSnapshotAccepted: (snapshot) =>
+            Effect.sync(() => {
+              accepted.push(snapshot);
+            }),
         });
         const fetchImpl: typeof fetch = () =>
           Promise.resolve(
@@ -59,6 +62,53 @@ describe("Kata workspace authority ownership", () => {
         yield* Fiber.await(load);
 
         expect(accepted).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("runs accepted snapshot work before completing the authority load", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let accepted = 0;
+        const controller = createKataWorkspaceAuthorityController({
+          owner: createKataWorkspaceAuthorityOwner(),
+          loadSnapshot: () =>
+            Effect.succeed({
+              server_instance_id: "server-a",
+              daemon_id: "home",
+              intent: { scope: "global", authority: "open" },
+              generation: 1,
+              invalidation_epoch: 1,
+              event_cursor: 1,
+              fetched_at: "2026-08-04T10:00:00Z",
+              projects: [],
+              member_issue_uids: [],
+              issues: [],
+              enrichment: {},
+            }),
+          onSnapshotAccepted: () =>
+            Effect.sync(() => {
+              accepted += 1;
+            }),
+        });
+        const fetchImpl: typeof fetch = () =>
+          Promise.resolve(
+            new Response(new ReadableStream<Uint8Array>(), {
+              status: 200,
+              headers: { "Content-Type": "text/event-stream" },
+            }),
+          );
+        const layer = Layer.merge(KataWorkflowLive, makeGeneratedApiLayer(createRuntimeClient(fetchImpl)));
+
+        yield* controller
+          .load({
+            intent: { daemon_id: "home", scope: "global", authority: "open" },
+            presentation: { text: "", owner: "", label: "" },
+          })
+          .pipe(Effect.provide(layer));
+
+        expect(accepted).toBe(1);
+        yield* controller.dispose().pipe(Effect.provide(layer));
       }),
     ),
   );

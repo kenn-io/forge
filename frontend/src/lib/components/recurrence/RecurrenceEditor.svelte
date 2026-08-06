@@ -1,11 +1,15 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import { Checkbox } from "@kenn-io/kit-ui";
   import { SelectDropdown } from "@kenn-io/kit-ui";
   import type {
     KataCreateRecurrenceInput,
     KataPatchRecurrenceInput,
     KataRecurrence,
+    KataRecurrenceTemplateUpdateInput,
   } from "../../api/kata/taskTypes";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
+  import { KataRecurrenceConflictError } from "../../features/kata/recurrence-conflict.js";
   import DatePicker from "../shared/DatePicker.svelte";
   import {
     WEEKDAYS,
@@ -28,8 +32,8 @@
   interface Props {
     mode: Mode;
     actor: string;
-    onCreate: (projectID: number, input: KataCreateRecurrenceInput) => Promise<void>;
-    onPatch: (id: number, input: KataPatchRecurrenceInput, etag: string) => Promise<void>;
+    onCreate: (projectID: number, input: KataCreateRecurrenceInput) => KataCommand<void, unknown>;
+    onPatch: (id: number, input: KataPatchRecurrenceInput, etag: string) => KataCommand<void, unknown>;
     onSaved: () => void;
   }
 
@@ -282,21 +286,19 @@
     if (mode.kind === "edit") return hasEditChanges();
     return true;
   }
-  export async function trySave(): Promise<void> {
-    submitError = null;
-    if (mode_ === "advanced" && parseRRule(advancedText).kind === "invalid") return;
-    if (mode_ === "common" && !isCommonFormValid()) return;
-    let template;
-    try {
-      template = templatePayload();
-    } catch (e) {
-      submitError = e instanceof Error ? e.message : String(e);
-      return;
-    }
+  export function trySave(): KataCommand<void> {
+    return Effect.gen(function* () {
+      submitError = null;
+      if (mode_ === "advanced" && parseRRule(advancedText).kind === "invalid") return;
+      if (mode_ === "common" && !isCommonFormValid()) return;
 
-    if (mode.kind === "create") {
-      try {
-        await onCreate(mode.projectID, {
+      const template = yield* Effect.try({
+        try: templatePayload,
+        catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+      });
+
+      if (mode.kind === "create") {
+        yield* onCreate(mode.projectID, {
           actor,
           rrule: activeRrule,
           dtstart,
@@ -304,68 +306,56 @@
           template,
         });
         onSaved();
-      } catch (e) {
-        submitError = extractValidationMessage(e);
+        return;
       }
-      return;
-    }
 
-    if (baselineRecurrence === null || baselineEtag === null) return;
-    const rec = baselineRecurrence;
-    const patch: Record<string, unknown> = { actor };
+      if (baselineRecurrence === null || baselineEtag === null) return;
+      const rec = baselineRecurrence;
+      const patch: KataPatchRecurrenceInput = { actor };
+      const templateDiff = templateChanges(rec, template);
+      if (templateDiff !== undefined) patch.template = templateDiff;
 
-    const templateDiff = templateChanges(rec, template);
-    if (templateDiff) patch.template = templateDiff;
+      const newTimezone = resolvedTimezone();
+      if (newTimezone !== rec.timezone) patch.timezone = newTimezone;
+      if (dtstart !== rec.dtstart) patch.dtstart = dtstart;
 
-    const newTz = resolvedTimezone();
-    if (newTz !== rec.timezone) patch.timezone = newTz;
-    if (dtstart !== rec.dtstart) patch.dtstart = dtstart;
-
-    if (mode_ === "advanced") {
-      if (advancedText !== rec.rrule) patch.rrule = advancedText;
-    } else {
-      const originalParse = parseRRule(rec.rrule);
-      const newCommon = currentCommonRule;
-      if (originalParse.kind === "common") {
-        if (!structurallyEqualCommon(originalParse.rrule, newCommon, dtstart)) {
+      if (mode_ === "advanced") {
+        if (advancedText !== rec.rrule) patch.rrule = advancedText;
+      } else {
+        const originalParse = parseRRule(rec.rrule);
+        const newCommon = currentCommonRule;
+        if (
+          originalParse.kind !== "common" ||
+          !structurallyEqualCommon(originalParse.rrule, newCommon, dtstart)
+        ) {
           patch.rrule = serializeRRule(newCommon);
         }
-      } else {
-        patch.rrule = serializeRRule(newCommon);
       }
-    }
 
-    if (Object.keys(patch).length === 1) return;
-
-    try {
-      // PATCH wire shape is verified at build time via the keys we
-      // assign above (actor/template/timezone/dtstart/rrule). The
-      // double cast keeps TypeScript happy without weakening
-      // PatchRecurrenceInput to allow `null` for owner/priority,
-      // which the server interprets as "clear" but the wire type
-      // doesn't yet model.
-      await onPatch(rec.id, patch as unknown as KataPatchRecurrenceInput, baselineEtag);
+      if (Object.keys(patch).length === 1) return;
+      yield* onPatch(rec.id, patch, baselineEtag);
       onSaved();
-    } catch (e) {
-      if (isConflict(e)) {
-        conflictBanner = "Server version loaded; your unsaved edits were not applied.";
-        const server = (e as { response?: { recurrence?: KataRecurrence; etag?: string } }).response;
-        if (server?.recurrence) {
-          baselineRecurrence = server.recurrence;
-          baselineEtag = server.etag ?? baselineEtag;
-          applyRecurrenceToForm(server.recurrence);
-        }
-      } else {
-        submitError = extractValidationMessage(e);
-      }
-    }
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          if (error instanceof KataRecurrenceConflictError) {
+            conflictBanner = "Server version loaded; your unsaved edits were not applied.";
+            baselineRecurrence = error.recurrence;
+            baselineEtag = error.etag;
+            applyRecurrenceToForm(error.recurrence);
+            return;
+          }
+          submitError = extractValidationMessage(error);
+        }),
+      ),
+    );
   }
 
   function templateChanges(
     rec: KataRecurrence,
     candidate: ReturnType<typeof templatePayload>,
-  ): Record<string, unknown> | null {
-    const diff: Record<string, unknown> = {};
+  ): KataRecurrenceTemplateUpdateInput | undefined {
+    const diff: KataRecurrenceTemplateUpdateInput = {};
     if (candidate.title !== rec.template_title) diff.title = candidate.title;
     if ((candidate.body ?? "") !== (rec.template_body ?? "")) diff.body = candidate.body ?? "";
     if ((candidate.owner ?? "") !== (rec.template_owner ?? "")) diff.owner = candidate.owner ?? null;
@@ -376,7 +366,7 @@
     const candidateMeta = JSON.stringify(candidate.metadata ?? {});
     const recMeta = JSON.stringify(rec.template_metadata ?? {});
     if (candidateMeta !== recMeta) diff.metadata = candidate.metadata ?? {};
-    return Object.keys(diff).length > 0 ? diff : null;
+    return Object.keys(diff).length > 0 ? diff : undefined;
   }
 
   function isCommonFormValid(): boolean {
@@ -408,10 +398,6 @@
     return out;
   }
 
-  function isConflict(e: unknown): boolean {
-    return !!e && typeof e === "object" && (e as { status?: number }).status === 412;
-  }
-
   function hasEditChanges(): boolean {
     if (baselineRecurrence === null) return false;
     const rec = baselineRecurrence;
@@ -427,13 +413,10 @@
   }
 
   function extractValidationMessage(e: unknown): string {
-    if (e && typeof e === "object") {
-      const anyE = e as { code?: string; message?: string; status?: number };
-      if (anyE.code === "validation" && typeof anyE.message === "string") {
-        return anyE.message;
-      }
+    if (typeof e === "object" && e !== null && "message" in e && typeof e.message === "string") {
+      return e.message;
     }
-    return e instanceof Error ? e.message : String(e);
+    return String(e);
   }
 
   // --- Mode toggle helpers ---------------------------------------
@@ -502,8 +485,26 @@
   function initialBaselineEtag(): string | null {
     return mode.kind === "edit" ? mode.etag : null;
   }
-  function weekdayLabel(d: string): string { return WEEKDAY_LABEL[d as Weekday] ?? d; }
-  function weekdayLongLabel(d: string): string { return WEEKDAY_LONG[d as Weekday] ?? d; }
+  function parseFrequency(value: string): CommonRule["freq"] {
+    if (value === "DAILY" || value === "WEEKLY" || value === "MONTHLY" || value === "YEARLY") return value;
+    return "WEEKLY";
+  }
+  function parseOrdinal(value: string): Ordinal {
+    const parsed = Number(value);
+    if (parsed === 1 || parsed === 2 || parsed === 3 || parsed === 4 || parsed === 5 || parsed === -1) return parsed;
+    return 1;
+  }
+  function parseWeekday(value: string): Weekday {
+    return WEEKDAYS.find((weekday) => weekday === value) ?? "MO";
+  }
+  function weekdayLabel(d: string): string {
+    const weekday = WEEKDAYS.find((candidate) => candidate === d);
+    return weekday === undefined ? d : WEEKDAY_LABEL[weekday];
+  }
+  function weekdayLongLabel(d: string): string {
+    const weekday = WEEKDAYS.find((candidate) => candidate === d);
+    return weekday === undefined ? d : WEEKDAY_LONG[weekday];
+  }
   function initialDtstart(): string {
     const today = new Date();
     const y = today.getFullYear();
@@ -565,7 +566,7 @@
           value={freq}
           options={frequencyOptions}
           onchange={(value) => {
-            freq = value as CommonRule["freq"];
+            freq = parseFrequency(value);
           }}
         />
       </label>
@@ -622,7 +623,7 @@
               options={ordinalOptions}
               disabled={dayInMonthMode !== "nthWeekday"}
               onchange={(value) => {
-                dayInMonthOrdinal = Number(value) as Ordinal;
+                dayInMonthOrdinal = parseOrdinal(value);
               }}
             />
             <SelectDropdown
@@ -631,7 +632,7 @@
               options={weekdayOptions}
               disabled={dayInMonthMode !== "nthWeekday"}
               onchange={(value) => {
-                dayInMonthWeekday = value as Weekday;
+                dayInMonthWeekday = parseWeekday(value);
               }}
             />
           </label>
@@ -676,7 +677,7 @@
               options={ordinalOptions}
               disabled={yearlyDayMode !== "nthWeekday"}
               onchange={(value) => {
-                dayInMonthOrdinal = Number(value) as Ordinal;
+                dayInMonthOrdinal = parseOrdinal(value);
               }}
             />
             <SelectDropdown
@@ -685,7 +686,7 @@
               options={weekdayOptions}
               disabled={yearlyDayMode !== "nthWeekday"}
               onchange={(value) => {
-                dayInMonthWeekday = value as Weekday;
+                dayInMonthWeekday = parseWeekday(value);
               }}
             />
           </label>

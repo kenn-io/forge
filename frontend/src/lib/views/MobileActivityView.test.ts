@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
-import MobileActivityView from "./MobileActivityView.svelte";
+import MobileActivityView from "./MobileActivityViewRuntimeHarness.svelte";
 
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return {

@@ -1,19 +1,26 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import { SearchInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { SelectDropdown } from "@kenn-io/kit-ui";
 
   import type { KataProjectSummary, KataTaskSearchFilters } from "../../api/kata/taskTypes.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { KataCommand } from "./kata-command.js";
 
   interface Props {
     filters: KataTaskSearchFilters;
     projects: KataProjectSummary[];
-    onChange: (filters: KataTaskSearchFilters) => void | Promise<void>;
+    onChange: (filters: KataTaskSearchFilters) => KataCommand<boolean>;
   }
 
   let { filters, projects, onChange }: Props = $props();
+  const runtime = getAppRuntime();
   let draftOverride = $state<KataTaskSearchFilters | null>(null);
   let draft = $derived(draftOverride ?? filters);
   let lastFilters: KataTaskSearchFilters | null = null;
+  let changeExecution: AppExecution<void, never> | null = null;
 
   $effect(() => {
     if (filters !== lastFilters) {
@@ -45,7 +52,12 @@
       scope: next.scope ?? draft.scope,
     };
     draftOverride = nextFilters;
-    void onChange(nextFilters);
+    changeExecution?.interrupt();
+    changeExecution = runtime.runCommand(onChange(nextFilters).pipe(Effect.asVoid), {
+      operation: "update Kata task filters",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   function inputValue(event: Event): string {
@@ -53,6 +65,13 @@
     if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement) return target.value;
     return "";
   }
+
+  function updateStatus(value: string): void {
+    if (value !== "open" && value !== "ready" && value !== "closed" && value !== "all") return;
+    emit({ status: value });
+  }
+
+  onDestroy(() => changeExecution?.interrupt());
 </script>
 
 <section class="kata-search-panel" aria-label="Search and filters">
@@ -91,7 +110,7 @@
         title="Status"
         value={draft.status}
         options={statusOptions}
-        onchange={(value) => emit({ status: value as KataTaskSearchFilters["status"] })}
+        onchange={updateStatus}
       />
     </div>
 

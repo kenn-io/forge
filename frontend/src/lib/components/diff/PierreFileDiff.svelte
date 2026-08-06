@@ -16,6 +16,9 @@
   import { onMount } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
+  import { makeAnimationFrameScheduler } from "../../browser/animation-frame.js";
+  import { makeMicrotaskScheduler } from "../../browser/microtask.js";
+  import { observeMutation, observeResize } from "../../browser/observers.js";
   import type { DiffFile } from "../../api/types.js";
   import {
     appThemeType,
@@ -31,11 +34,11 @@
     renderedCodeColumns,
     renderedCodeSide as renderedPierreCodeSide,
   } from "./pierre-dom.js";
-  import { diffTokenizeMaxLineLength, getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
   import {
     DiffContextPrefetch,
     type DiffContextPrefetchPriority,
   } from "./diff-context-prefetch.js";
+  import { diffTokenizeMaxLineLength, PierreDiffWorkerPool } from "./pierre-worker-pool.js";
   import type { WorkerPoolManager } from "@pierre/diffs/worker";
 
   interface Props {
@@ -140,8 +143,14 @@
   let rendered = $state(false);
   let renderedFileKey = "";
   let renderAttemptKey = "";
-  let reviewRangeFrame: number | undefined;
-  let renderRetryFrame: number | undefined;
+  let cancelReviewRangeFrame = (): void => {};
+  let cancelRenderRetryFrame = (): void => {};
+  let cancelAnnotationFocusMicrotask = (): void => {};
+  let cancelWorkerDrainMicrotask = (): void => {};
+  let requestReviewRangeFrame = (): boolean => false;
+  let requestRenderRetryFrame = (): boolean => false;
+  let requestAnnotationFocusMicrotask = (): boolean => false;
+  let requestWorkerDrainMicrotask = (): boolean => false;
   let renderRetryTick = $state(0);
   let renderRetryCount = 0;
   let renderedLineRows = new Map<number, RenderedLinePair[]>();
@@ -153,6 +162,8 @@
   let lineCommentButtonWasSelectedOnPointerDown = false;
   let syntaxHighlightWorkerActive = false;
   let syntaxHighlightWorkerPool: WorkerPoolManager | undefined;
+  let appWorkerPool = $state.raw<WorkerPoolManager | undefined>();
+  let workerPoolReady = $state(false);
   let unsubscribeWorkerStats: (() => void) | undefined;
   const maxImmediateRenderRetries = 5;
 
@@ -285,18 +296,68 @@
   }));
 
   onMount(() => {
-    let themeObserver: MutationObserver | undefined;
-    if (typeof MutationObserver !== "undefined") {
-      themeObserver = new MutationObserver(() => {
-        themeType = appThemeType();
-      });
-      themeObserver.observe(document.documentElement, {
-        attributeFilter: ["class"],
-      });
-    }
+    const execution = runtime.runCommand(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const workerPool = yield* PierreDiffWorkerPool;
+          const pool = workerPool.pool;
+          yield* Effect.sync(() => {
+            appWorkerPool = pool;
+            workerPoolReady = true;
+          });
+          const renderRetryScheduler = yield* makeAnimationFrameScheduler(
+            Effect.sync(() => {
+              renderRetryTick += 1;
+            }),
+          );
+          const reviewRangeScheduler = yield* makeAnimationFrameScheduler(
+            Effect.sync(() => {
+              applyTransientLineAnnotation();
+              applySelectedRanges();
+            }),
+          );
+          const annotationFocusScheduler = yield* makeMicrotaskScheduler(
+            Effect.sync(restoreAnnotationFocusAfterMicrotask),
+          );
+          const workerDrainScheduler = yield* makeMicrotaskScheduler(
+            Effect.sync(finalizeRenderedDomIfPending),
+          );
+          requestRenderRetryFrame = renderRetryScheduler.schedule;
+          cancelRenderRetryFrame = renderRetryScheduler.cancel;
+          requestReviewRangeFrame = reviewRangeScheduler.schedule;
+          cancelReviewRangeFrame = reviewRangeScheduler.cancel;
+          requestAnnotationFocusMicrotask = annotationFocusScheduler.schedule;
+          cancelAnnotationFocusMicrotask = annotationFocusScheduler.cancel;
+          requestWorkerDrainMicrotask = workerDrainScheduler.schedule;
+          cancelWorkerDrainMicrotask = workerDrainScheduler.cancel;
+          if (typeof MutationObserver !== "undefined") {
+            yield* observeMutation(
+              document.documentElement,
+              () => {
+                themeType = appThemeType();
+              },
+              { attributeFilter: ["class"] },
+            );
+          }
+          if (host && typeof ResizeObserver !== "undefined") {
+            yield* observeResize(host, () => {
+              if (rendered || emptyTextualDiff) return;
+              renderRetryCount = 0;
+              renderRetryTick += 1;
+            });
+          }
+          return yield* Effect.never;
+        }),
+      ),
+      {
+        operation: "own Pierre diff resources",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
 
     return () => {
-      themeObserver?.disconnect();
+      execution.interrupt();
       contextPrefetchExecution?.interrupt();
       contextPriorityExecution?.interrupt();
       manualContextExecution?.interrupt();
@@ -359,19 +420,9 @@
   });
 
   $effect(() => {
-    if (!host || typeof ResizeObserver === "undefined") return;
-    const resizeObserver = new ResizeObserver(() => {
-      if (rendered || emptyTextualDiff) return;
-      renderRetryCount = 0;
-      renderRetryTick += 1;
-    });
-    resizeObserver.observe(host);
-    return () => resizeObserver.disconnect();
-  });
-
-  $effect(() => {
     const currentRenderRetryTick = renderRetryTick;
     if (currentRenderRetryTick < 0) return;
+    if (!workerPoolReady) return;
     if (emptyTextualDiff) {
       cleanUpPierreDiff();
       renderAttemptKey = "";
@@ -530,7 +581,17 @@
     attempt();
     // Firefox annuls focus for unslotted content asynchronously; re-check
     // once the annulment has landed.
-    queueMicrotask(attempt);
+    requestAnnotationFocusMicrotask();
+  }
+
+  function restoreAnnotationFocusAfterMicrotask(): void {
+    const target = annotationFocusTarget;
+    if (!target) return;
+    if (!target.isConnected || host?.contains(target) !== true) return;
+    const active = document.activeElement;
+    if (active === target) return;
+    if (active !== null && active !== document.body && active !== document.documentElement) return;
+    target.focus({ preventScroll: true });
   }
 
   function removeDemandContextHandler(): void {
@@ -543,6 +604,8 @@
 
   function cleanUpPierreDiff(): void {
     removeDemandContextHandler();
+    cancelAnnotationFocusMicrotask();
+    cancelWorkerDrainMicrotask();
     cancelSelectedRangesApplication();
     cancelRenderRetry();
     clearSelectedRangeElements();
@@ -559,17 +622,13 @@
   }
 
   function createPierreDiff(): FileDiff<unknown> | VirtualizedFileDiff<unknown> {
-    const workerPool = getPierreDiffWorkerPool();
+    const workerPool = appWorkerPool;
     syntaxHighlightWorkerActive = Boolean(workerPool);
     syntaxHighlightWorkerPool = workerPool;
     unsubscribeWorkerStats?.();
     unsubscribeWorkerStats = workerPool?.subscribeToStatChanges(() => {
       if (rendered) return;
-      queueMicrotask(() => {
-        if (!rendered) {
-          finalizeRenderedDom();
-        }
-      });
+      requestWorkerDrainMicrotask();
     });
     if (!virtualizer) return new FileDiff<unknown>(pierreOptions, workerPool, true);
     return new VirtualizedFileDiff<unknown>(
@@ -581,35 +640,27 @@
     );
   }
 
+  function finalizeRenderedDomIfPending(): void {
+    if (!rendered) finalizeRenderedDom();
+  }
+
   function cancelRenderRetry(): void {
-    if (renderRetryFrame == null) return;
-    cancelAnimationFrame(renderRetryFrame);
-    renderRetryFrame = undefined;
+    cancelRenderRetryFrame();
   }
 
   function scheduleRenderRetry(): void {
-    if (renderRetryFrame != null || renderRetryCount >= maxImmediateRenderRetries) return;
-    renderRetryCount += 1;
-    renderRetryFrame = requestAnimationFrame(() => {
-      renderRetryFrame = undefined;
-      renderRetryTick += 1;
-    });
+    if (renderRetryCount >= maxImmediateRenderRetries) return;
+    if (requestRenderRetryFrame()) renderRetryCount += 1;
   }
 
   function cancelSelectedRangesApplication(): void {
-    if (reviewRangeFrame == null) return;
-    cancelAnimationFrame(reviewRangeFrame);
-    reviewRangeFrame = undefined;
+    cancelReviewRangeFrame();
   }
 
   function scheduleSelectedRangesApplication(): void {
     if (!rendered || !host?.shadowRoot) return;
     cancelSelectedRangesApplication();
-    reviewRangeFrame = requestAnimationFrame(() => {
-      reviewRangeFrame = undefined;
-      applyTransientLineAnnotation();
-      applySelectedRanges();
-    });
+    requestReviewRangeFrame();
   }
 
   function applySelectedRanges(): void {

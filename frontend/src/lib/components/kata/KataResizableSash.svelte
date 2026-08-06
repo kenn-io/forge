@@ -1,6 +1,11 @@
 <script lang="ts">
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
-  import type { Snippet } from "svelte";
+  import { Effect } from "effect";
+  import { untrack, type Snippet } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { observeResize } from "../../browser/observers.js";
+
+  const runtime = getAppRuntime();
 
   type Orientation = "vertical" | "horizontal";
   type SnippetFunction = () => ReturnType<Snippet>;
@@ -44,15 +49,22 @@
 
   $effect(() => {
     if (!container) return;
-    totalSize = axisSize(container.getBoundingClientRect());
+    const resizeTarget = container;
+    totalSize = axisSize(resizeTarget.getBoundingClientRect());
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      totalSize = axisSize(entry.target.getBoundingClientRect());
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.scoped(
+          observeResize(resizeTarget, (entries) => {
+            const entry = entries[0];
+            if (!entry) return;
+            totalSize = axisSize(entry.target.getBoundingClientRect());
+          }).pipe(Effect.andThen(Effect.never)),
+        ),
+        { operation: "observe kata split", safeContext: { orientation }, onFailure: () => {} },
+      ),
+    );
+    return execution.interrupt;
   });
 
   $effect(() => {

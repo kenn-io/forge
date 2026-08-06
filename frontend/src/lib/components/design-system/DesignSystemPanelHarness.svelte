@@ -9,6 +9,10 @@
   helpers directly while keeping the rest of the module graph narrow.
 -->
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy, untrack } from "svelte";
+  import { makeAppRuntime } from "../../app/runtime.js";
+  import { setAppRuntime } from "../../app/runtime-context.js";
   import TabbedPanelTree from "../shared/TabbedPanelTree.svelte";
   import {
     activateTabbedPanelTab,
@@ -23,6 +27,11 @@
 
   let activeTabKey = $state("overview");
   let node = $state<TabbedPanelNode>(createTabbedPanelDemoNode());
+  const runtime = makeAppRuntime();
+  setAppRuntime(untrack(() => runtime));
+  onDestroy(() => {
+    Effect.runFork(runtime.disposeEffect);
+  });
 
   function selectTab(tabKey: string): void {
     activeTabKey = tabKey;

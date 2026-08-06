@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { RuntimeSession } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
@@ -40,16 +41,17 @@ const mocks = vi.hoisted(() => ({
 
 let sockets: MockWebSocket[] = [];
 
-class MockWebSocket {
+class MockWebSocket extends EventTarget {
   static OPEN = 1;
   readyState = 1;
   binaryType = "arraybuffer";
-  onopen: (() => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onclose: (() => void) | null = null;
-  onerror: (() => void) | null = null;
+  onopen = () => this.dispatchEvent(new Event("open"));
+  onmessage = (event: MessageEvent) => this.dispatchEvent(event);
+  onclose = (event: CloseEvent) => this.dispatchEvent(event);
+  onerror = () => this.dispatchEvent(new Event("error"));
 
   constructor(public url: string) {
+    super();
     sockets.push(this);
   }
 
@@ -148,18 +150,75 @@ vi.mock("../../app/runtime-context.js", () => ({
   getAppRuntime: () => mocks.runtime,
 }));
 
+vi.mock("../../api/generated-api.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/generated-api.js")>();
+  const { createRuntimeClient } = await import("../../api/runtime.js");
+  const liveClient = createRuntimeClient();
+  interface RuntimeRequestOptions {
+    readonly params?: {
+      readonly path?: Readonly<Record<string, string>>;
+    };
+    readonly body?: {
+      readonly display_region?: "workflow" | "terminal";
+      readonly label?: string;
+      readonly target_key?: string;
+    };
+  }
+  const client = new Proxy(liveClient, {
+    get(target, property) {
+      const original = Reflect.get(target, property, target);
+      if (typeof property !== "string" || typeof original !== "function") return original;
+      return (path: string, options: RuntimeRequestOptions = {}) => {
+        const runtimePath = path.match(
+          /^\/(?:fleet\/hosts\/\{host_key\}\/)?workspaces\/\{id\}\/runtime(?:\/sessions(?:\/\{session_key\})?)?$/,
+        );
+        if (!runtimePath) return original.call(target, path, options);
+        const pathParams = options.params?.path ?? {};
+        const workspaceId = pathParams["id"] ?? "";
+        const hostKey = pathParams["host_key"];
+        const sessionKey = pathParams["session_key"];
+        if (property === "GET") {
+          return mocks.getWorkspaceRuntime(workspaceId, hostKey).then(async (data) =>
+            data instanceof Response
+              ? { error: await data.json(), response: data }
+              : {
+                  data,
+                  response: new Response(null, { status: 200 }),
+                },
+          );
+        }
+        if (property === "POST") {
+          return mocks
+            .launchWorkspaceSession(workspaceId, options.body?.target_key ?? "", {
+              hostKey,
+              region: options.body?.display_region,
+            })
+            .then((data) => ({ data, response: new Response(null, { status: 200 }) }));
+        }
+        if (property === "PATCH") {
+          return mocks
+            .renameWorkspaceSession(workspaceId, sessionKey, options.body?.label ?? "", hostKey)
+            .then((data) => ({ data, response: new Response(null, { status: 200 }) }));
+        }
+        if (property === "DELETE") {
+          return mocks
+            .stopWorkspaceSession(workspaceId, sessionKey, hostKey)
+            .then(() => ({ response: new Response(null, { status: 204 }) }));
+        }
+        return original.call(target, path, options);
+      };
+    },
+  });
+  return {
+    ...actual,
+    GeneratedApiLive: actual.makeGeneratedApiLayer(client),
+  };
+});
+
 vi.mock("../../api/workspace-runtime.js", () => ({
-  getWorkspaceRuntime: mocks.getWorkspaceRuntime,
-  launchWorkspaceSession: mocks.launchWorkspaceSession,
-  renameWorkspaceSession: mocks.renameWorkspaceSession,
-  stopWorkspaceSession: mocks.stopWorkspaceSession,
   workspaceSessionWebSocketPath: (workspaceId: string, sessionKey: string) =>
     `/ws/v1/workspaces/${workspaceId}/runtime/sessions/${sessionKey}/terminal`,
   workspaceTmuxWebSocketPath: (workspaceId: string) => `/ws/v1/workspaces/${workspaceId}/terminal`,
-}));
-
-vi.mock("../../api/settings.js", () => ({
-  updateSettings: mocks.mockUpdateSettings,
 }));
 
 vi.mock("../../stores/flash.svelte.js", () => ({
@@ -193,8 +252,9 @@ const runningSession = {
   label: "Helper",
   kind: "agent",
   status: "running",
+  display_region: "workflow",
   created_at: "2026-04-29T00:00:00Z",
-};
+} satisfies RuntimeSession;
 
 const reviewerSession = {
   ...runningSession,
@@ -202,7 +262,7 @@ const reviewerSession = {
   target_key: "reviewer",
   label: "Reviewer",
   created_at: "2026-04-29T00:01:00Z",
-};
+} satisfies RuntimeSession;
 
 const duplicateAgentSession = {
   ...runningSession,
@@ -219,8 +279,9 @@ const runningShellSession = {
   label: "Shell",
   kind: "plain_shell",
   status: "running",
+  display_region: "terminal",
   created_at: "2026-04-29T00:00:00Z",
-};
+} satisfies RuntimeSession;
 
 const relaunchedShellSession = {
   ...runningShellSession,
@@ -510,6 +571,60 @@ function deferred<T>() {
     resolve = r;
   });
   return { promise, resolve };
+}
+
+type RecordedEventListener = (event?: MessageEvent) => void;
+type RecordedEventSource = {
+  readonly url: string;
+  readonly listeners: Record<string, RecordedEventListener>;
+};
+
+function installEventSourceRecorder(): RecordedEventSource[] {
+  const sources: RecordedEventSource[] = [];
+  vi.stubGlobal(
+    "EventSource",
+    class {
+      readonly record: RecordedEventSource;
+
+      constructor(url: string) {
+        this.record = { url, listeners: {} };
+        sources.push(this.record);
+      }
+
+      addEventListener(type: string, callback: RecordedEventListener): void {
+        this.record.listeners[type] = callback;
+      }
+
+      removeEventListener(type: string, callback: RecordedEventListener): void {
+        if (this.record.listeners[type] === callback) delete this.record.listeners[type];
+      }
+
+      close(): void {}
+    },
+  );
+  return sources;
+}
+
+function latestWorkspaceEventListeners(sources: RecordedEventSource[]): Record<string, RecordedEventListener> {
+  return sources.findLast((source) => source.listeners.workspace_status !== undefined)?.listeners ?? {};
+}
+
+function capturePollingIntervals(callbacks: Array<{ callback: () => void; delay: number | undefined }>) {
+  const setTimeoutLive = globalThis.setTimeout;
+  return vi.spyOn(globalThis, "setTimeout").mockImplementation((callback: TimerHandler, delay?: number) => {
+    if (delay !== 3000) return setTimeoutLive(callback, delay);
+    const scheduled = () => {
+      if (typeof callback === "function") callback();
+    };
+    const current = callbacks[0];
+    if (current === undefined) {
+      callbacks.push({ callback: scheduled, delay });
+    } else {
+      current.callback = scheduled;
+      current.delay = delay;
+    }
+    return setTimeoutLive(() => undefined, 2_147_483_647);
+  });
 }
 
 // Every Delete entry point opens the same confirmation dialog before any
@@ -845,13 +960,7 @@ describe("WorkspaceTerminalView", () => {
   it("polls local workspace runtime so peer-spawned sessions appear", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
-    const setIntervalSpy = vi
-      .spyOn(globalThis, "setInterval")
-      .mockImplementation((callback: TimerHandler, delay?: number) => {
-        intervalCallbacks.push({ callback: callback as () => void, delay });
-        return 1 as unknown as ReturnType<typeof setInterval>;
-      });
-    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const setIntervalSpy = capturePollingIntervals(intervalCallbacks);
     const initialRuntime = deferred<{ launch_targets: never[]; sessions: never[] }>();
     mocks.getWorkspaceRuntime
       .mockReturnValueOnce(initialRuntime.promise)
@@ -876,16 +985,11 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(screen.getByRole("tab", { name: /Helper/ })).toBeTruthy());
     expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2);
     setIntervalSpy.mockRestore();
-    clearIntervalSpy.mockRestore();
   });
 
   it("does not reapply identical runtime polls to an active terminal", async () => {
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
-    vi.spyOn(globalThis, "setInterval").mockImplementation((callback: TimerHandler, delay?: number) => {
-      intervalCallbacks.push({ callback: callback as () => void, delay });
-      return 1 as unknown as ReturnType<typeof setInterval>;
-    });
-    vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    capturePollingIntervals(intervalCallbacks);
     const requestAnimationFrameSpy = vi.fn((callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -923,11 +1027,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("reapplies an authoritative runtime response after a local rename", async () => {
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
-    vi.spyOn(globalThis, "setInterval").mockImplementation((callback: TimerHandler, delay?: number) => {
-      intervalCallbacks.push({ callback: callback as () => void, delay });
-      return 1 as unknown as ReturnType<typeof setInterval>;
-    });
-    vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    capturePollingIntervals(intervalCallbacks);
     const serverRuntime = runtimeWithStaleSession();
     mocks.getWorkspaceRuntime.mockImplementation(async () => structuredClone(serverRuntime));
 
@@ -954,11 +1054,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("ignores a runtime poll that started before a local rename", async () => {
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
-    vi.spyOn(globalThis, "setInterval").mockImplementation((callback: TimerHandler, delay?: number) => {
-      intervalCallbacks.push({ callback: callback as () => void, delay });
-      return 1 as unknown as ReturnType<typeof setInterval>;
-    });
-    vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    capturePollingIntervals(intervalCallbacks);
     const stalePoll = deferred<ReturnType<typeof runtimeWithStaleSession>>();
     mocks.getWorkspaceRuntime
       .mockResolvedValueOnce(runtimeWithStaleSession())
@@ -997,13 +1093,7 @@ describe("WorkspaceTerminalView", () => {
   it("polls remote workspace runtime so peer-spawned sessions appear", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:fleet:member:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
-    const setIntervalSpy = vi
-      .spyOn(globalThis, "setInterval")
-      .mockImplementation((callback: TimerHandler, delay?: number) => {
-        intervalCallbacks.push({ callback: callback as () => void, delay });
-        return 1 as unknown as ReturnType<typeof setInterval>;
-      });
-    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const setIntervalSpy = capturePollingIntervals(intervalCallbacks);
     const initialRuntime = deferred<{ launch_targets: never[]; sessions: never[] }>();
     mocks.getWorkspaceRuntime
       .mockReturnValueOnce(initialRuntime.promise)
@@ -1029,7 +1119,6 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(screen.getByRole("tab", { name: /Helper/ })).toBeTruthy());
     expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2);
     setIntervalSpy.mockRestore();
-    clearIntervalSpy.mockRestore();
   });
 
   it("persists remote terminal layout under the fleet-scoped workspace key", async () => {
@@ -1057,7 +1146,7 @@ describe("WorkspaceTerminalView", () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
     localStorage.setItem("kenn-forge-workspace-active-tab:fleet:member:ws-1", "home");
     const remoteWorkspace = deferred<typeof workspaceResponse>();
-    const eventListeners: Record<string, () => void> = {};
+    const eventSources = installEventSourceRecorder();
 
     vi.stubGlobal(
       "fetch",
@@ -1080,16 +1169,6 @@ describe("WorkspaceTerminalView", () => {
         return Promise.resolve(Response.json({}));
       }),
     );
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        addEventListener(type: string, callback: () => void): void {
-          eventListeners[type] = callback;
-        }
-        close(): void {}
-      },
-    );
-
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
     const { rerender } = render(WorkspaceTerminalView, {
       props: {
@@ -1106,7 +1185,8 @@ describe("WorkspaceTerminalView", () => {
       workspaceHostKey: "member",
     });
 
-    eventListeners["reconnect.stale"]?.();
+    await waitFor(() => expect(latestWorkspaceEventListeners(eventSources)["reconnect.stale"]).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(eventSources)["reconnect.stale"]?.();
     await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", "member"));
     expect(screen.queryByRole("tab", { name: /Reviewer/ })).toBeNull();
 
@@ -1116,7 +1196,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("recovers pending enrichment that completed before the event stream opened", async () => {
-    const eventListeners: Record<string, () => void> = {};
+    const eventSources = installEventSourceRecorder();
     const pendingWorkspace = {
       ...workspaceResponse,
       enrichment_status: "pending",
@@ -1133,16 +1213,6 @@ describe("WorkspaceTerminalView", () => {
       return Promise.resolve(Response.json({}));
     });
     vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        addEventListener(type: string, callback: () => void): void {
-          eventListeners[type] = callback;
-        }
-        close(): void {}
-      },
-    );
-
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await waitFor(() => {
       expect(
@@ -1153,7 +1223,8 @@ describe("WorkspaceTerminalView", () => {
       fetchPath(input as Request | URL | string).endsWith("/workspaces/ws-1"),
     ).length;
 
-    eventListeners.open?.();
+    await waitFor(() => expect(latestWorkspaceEventListeners(eventSources).open).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(eventSources).open?.();
 
     await waitFor(() => {
       const afterOpen = fetchMock.mock.calls.filter(([input]) =>
@@ -1339,11 +1410,13 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
     expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
 
-    eventListeners.at(-1)?.workspace_diff_ready?.(
-      new MessageEvent("workspace_diff_ready", {
-        data: JSON.stringify({ workspace_id: "ws-2", version: "generation:2" }),
-      }),
-    );
+    eventListeners
+      .findLast((listeners) => listeners.workspace_diff_ready !== undefined)
+      ?.workspace_diff_ready?.(
+        new MessageEvent("workspace_diff_ready", {
+          data: JSON.stringify({ workspace_id: "ws-2", version: "generation:2" }),
+        }),
+      );
     workspaceBGate.resolve(workspaceB);
     // ws-2's payload landed but its runtime is still pending: the ready
     // view mounts with the details-loading sub-state and the diff still
@@ -1394,7 +1467,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("treats id-less workspace status events as global invalidation", async () => {
-    const eventListeners: Record<string, (event: MessageEvent) => void> = {};
+    const eventSources = installEventSourceRecorder();
     const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
       const url = input instanceof Request ? input.url : String(input);
       const { pathname } = new URL(url, "http://localhost");
@@ -1407,21 +1480,14 @@ describe("WorkspaceTerminalView", () => {
       return Promise.resolve(Response.json({}));
     });
     vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        addEventListener(type: string, callback: (event: MessageEvent) => void): void {
-          eventListeners[type] = callback;
-        }
-        close(): void {}
-      },
-    );
-
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     fetchMock.mockClear();
 
-    eventListeners.workspace_status?.(new MessageEvent("workspace_status", { data: "{}" }));
+    await waitFor(() => expect(latestWorkspaceEventListeners(eventSources).workspace_status).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(eventSources).workspace_status?.(
+      new MessageEvent("workspace_status", { data: "{}" }),
+    );
 
     await waitFor(() => {
       expect(
@@ -1433,13 +1499,7 @@ describe("WorkspaceTerminalView", () => {
   it("does not overlap runtime polling while a slow fetch is in flight", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:fleet:member:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
-    const setIntervalSpy = vi
-      .spyOn(globalThis, "setInterval")
-      .mockImplementation((callback: TimerHandler, delay?: number) => {
-        intervalCallbacks.push({ callback: callback as () => void, delay });
-        return 1 as unknown as ReturnType<typeof setInterval>;
-      });
-    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const setIntervalSpy = capturePollingIntervals(intervalCallbacks);
     let resolveFirst: (value: ReturnType<typeof runtimeWithStaleSession>) => void = () => undefined;
     const firstFetch = new Promise<ReturnType<typeof runtimeWithStaleSession>>((resolve) => {
       resolveFirst = resolve;
@@ -1470,23 +1530,17 @@ describe("WorkspaceTerminalView", () => {
     runtimePoll!.callback();
     await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
     setIntervalSpy.mockRestore();
-    clearIntervalSpy.mockRestore();
   });
 
   it("forces post-launch runtime refresh past an older in-flight poll", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
-    const setIntervalSpy = vi
-      .spyOn(globalThis, "setInterval")
-      .mockImplementation((callback: TimerHandler, delay?: number) => {
-        intervalCallbacks.push({ callback: callback as () => void, delay });
-        return 1 as unknown as ReturnType<typeof setInterval>;
-      });
-    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const setIntervalSpy = capturePollingIntervals(intervalCallbacks);
     const stalePoll = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
     mocks.getWorkspaceRuntime
       .mockResolvedValueOnce(runtimeWithTerminalSession())
       .mockReturnValueOnce(stalePoll.promise)
+      .mockResolvedValueOnce(runtimeWithTerminalSession())
       .mockResolvedValueOnce(runtimeWithTerminalSession(relaunchedShellSession));
     mocks.launchWorkspaceSession.mockResolvedValue(relaunchedShellSession);
 
@@ -1496,7 +1550,8 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    const terminalButton = await screen.findByRole("button", {
+    await screen.findByRole("tab", { name: /Home/ });
+    const terminalButton = screen.getByRole("button", {
       name: "Open terminal panel",
     });
     await fireEvent.click(terminalButton);
@@ -1510,7 +1565,7 @@ describe("WorkspaceTerminalView", () => {
 
     await fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!);
 
-    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(4));
     await waitFor(() => expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true));
 
     stalePoll.resolve(runtimeWithTerminalSession());
@@ -1519,7 +1574,6 @@ describe("WorkspaceTerminalView", () => {
     expect(sockets.filter((socket) => socket.url.includes("ws-1_shell_a"))).toHaveLength(1);
     expect(sockets.filter((socket) => socket.url.includes("ws-1_shell_b"))).toHaveLength(1);
     setIntervalSpy.mockRestore();
-    clearIntervalSpy.mockRestore();
   });
 
   it("collapses a dock persisted open when no terminal session is left in it", async () => {
@@ -1653,7 +1707,8 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    const terminalButton = await screen.findByRole("button", {
+    await screen.findByRole("tab", { name: /Home/ });
+    const terminalButton = screen.getByRole("button", {
       name: "Open terminal panel",
     });
     await fireEvent.click(terminalButton);
@@ -1829,7 +1884,8 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    const terminalButton = await screen.findByRole("button", {
+    await screen.findByRole("tab", { name: /Home/ });
+    const terminalButton = screen.getByRole("button", {
       name: "Open terminal panel",
     });
     await fireEvent.click(terminalButton);
@@ -1894,15 +1950,12 @@ describe("WorkspaceTerminalView", () => {
   it("keeps a split terminal when an older runtime poll resolves", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
-    vi.spyOn(globalThis, "setInterval").mockImplementation((callback: TimerHandler, delay?: number) => {
-      intervalCallbacks.push({ callback: callback as () => void, delay });
-      return 1 as unknown as ReturnType<typeof setInterval>;
-    });
-    vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    capturePollingIntervals(intervalCallbacks);
     const stalePoll = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
     mocks.getWorkspaceRuntime
       .mockResolvedValueOnce(runtimeWithTerminalSession())
       .mockReturnValueOnce(stalePoll.promise)
+      .mockResolvedValueOnce(runtimeWithTerminalSession())
       .mockResolvedValueOnce(runtimeWithTwoTerminalSessions());
     mocks.launchWorkspaceSession.mockResolvedValue({
       ...relaunchedShellSession,
@@ -1915,7 +1968,8 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    const terminalButton = await screen.findByRole("button", {
+    await screen.findByRole("tab", { name: /Home/ });
+    const terminalButton = screen.getByRole("button", {
       name: "Open terminal panel",
     });
     await fireEvent.click(terminalButton);
@@ -1933,19 +1987,13 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByRole("button", { name: "Shell 2" })).toBeTruthy();
 
     runtimePoll!.callback();
-    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(4));
   });
 
   it("shows newly discovered terminal sessions without auto-splitting them", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
-    const setIntervalSpy = vi
-      .spyOn(globalThis, "setInterval")
-      .mockImplementation((callback: TimerHandler, delay?: number) => {
-        intervalCallbacks.push({ callback: callback as () => void, delay });
-        return 1 as unknown as ReturnType<typeof setInterval>;
-      });
-    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const setIntervalSpy = capturePollingIntervals(intervalCallbacks);
     const initialRuntime = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
     mocks.getWorkspaceRuntime
       .mockReturnValueOnce(initialRuntime.promise)
@@ -1959,7 +2007,8 @@ describe("WorkspaceTerminalView", () => {
 
     await screen.findByRole("button", { name: "Refresh workspace details" });
     initialRuntime.resolve(runtimeWithTerminalSession());
-    const terminalButton = await screen.findByRole("button", {
+    await screen.findByRole("tab", { name: /Home/ });
+    const terminalButton = screen.getByRole("button", {
       name: "Open terminal panel",
     });
     await fireEvent.click(terminalButton);
@@ -1975,7 +2024,6 @@ describe("WorkspaceTerminalView", () => {
 
     await waitFor(() => expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true));
     setIntervalSpy.mockRestore();
-    clearIntervalSpy.mockRestore();
   });
 
   it("ignores older runtime responses after terminal cleanup refreshes", async () => {
@@ -3125,16 +3173,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("does not auto-open the session launcher while workspace deletion empties the runtime", async () => {
     const deleteRequest = deferred<Response>();
-    const eventListeners: Record<string, () => void> = {};
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        addEventListener(type: string, callback: () => void): void {
-          eventListeners[type] = callback;
-        }
-        close(): void {}
-      },
-    );
+    const eventSources = installEventSourceRecorder();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
@@ -3161,7 +3200,8 @@ describe("WorkspaceTerminalView", () => {
 
     await clickDeleteAndConfirm(screen.getByRole("button", { name: /^Delete workspace / }));
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
-    eventListeners["reconnect.stale"]?.();
+    await waitFor(() => expect(latestWorkspaceEventListeners(eventSources)["reconnect.stale"]).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(eventSources)["reconnect.stale"]?.();
 
     await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
@@ -3453,16 +3493,7 @@ describe("WorkspaceTerminalView", () => {
       // the workspace's one automatic launcher on a state that refused to show it,
       // and the workspace that recovers -- setup finished, still nothing running --
       // would come back with nothing on screen and no way to know why.
-      const eventListeners: Record<string, () => void> = {};
-      vi.stubGlobal(
-        "EventSource",
-        class {
-          addEventListener(type: string, callback: () => void): void {
-            eventListeners[type] = callback;
-          }
-          close(): void {}
-        },
-      );
+      const eventSources = installEventSourceRecorder();
       let status = "ready";
       vi.stubGlobal(
         "fetch",
@@ -3491,12 +3522,15 @@ describe("WorkspaceTerminalView", () => {
       // The tmux server drops the session out from under a workspace the view is
       // already showing a launcher for.
       status = "error";
-      eventListeners["reconnect.stale"]?.();
+      await waitFor(() =>
+        expect(latestWorkspaceEventListeners(eventSources)["reconnect.stale"]).toBeTypeOf("function"),
+      );
+      latestWorkspaceEventListeners(eventSources)["reconnect.stale"]?.();
       await waitFor(() => expect(screen.getByText(/tmux session is no longer running/)).toBeTruthy());
       expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
 
       status = "ready";
-      eventListeners["reconnect.stale"]?.();
+      latestWorkspaceEventListeners(eventSources)["reconnect.stale"]?.();
       await waitFor(() => expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy());
     });
 
@@ -3584,16 +3618,7 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("takes back an auto-opened launcher once a session shows up", async () => {
-      const eventListeners: Record<string, () => void> = {};
-      vi.stubGlobal(
-        "EventSource",
-        class {
-          addEventListener(type: string, callback: () => void): void {
-            eventListeners[type] = callback;
-          }
-          close(): void {}
-        },
-      );
+      const eventSources = installEventSourceRecorder();
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
       claimForPrs();
 
@@ -3610,7 +3635,10 @@ describe("WorkspaceTerminalView", () => {
       // reports zero sessions for a moment. The launcher opened over that gap is
       // ours to take back, or it sits on top of the terminal it stood in for.
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
-      eventListeners["reconnect.stale"]?.();
+      await waitFor(() =>
+        expect(latestWorkspaceEventListeners(eventSources)["reconnect.stale"]).toBeTypeOf("function"),
+      );
+      latestWorkspaceEventListeners(eventSources)["reconnect.stale"]?.();
 
       await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
       await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
@@ -3636,6 +3664,37 @@ describe("WorkspaceTerminalView", () => {
       // reports: closing here would leave an empty pane and no explanation.
       await waitFor(() => expect(mocks.showFlash).toHaveBeenCalled());
       expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy();
+    });
+
+    it("acknowledges a launch when its runtime reload returns an API problem", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      const dialog = await screen.findByRole("dialog", { name: /Launch a session/ });
+      const launchButton = within(dialog).getByRole("button", { name: /Helper/ });
+      mocks.launchWorkspaceSession.mockResolvedValueOnce(runningSession);
+      mocks.getWorkspaceRuntime
+        .mockResolvedValueOnce(runtimeWithLaunchTargetsOnly())
+        .mockResolvedValueOnce(
+          Response.json({ code: "serviceUnavailable", detail: "Runtime authority is unavailable" }, { status: 503 }),
+        );
+      await fireEvent.click(launchButton);
+
+      await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(3));
+      expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy();
+
+      mocks.launchWorkspaceSession.mockResolvedValueOnce(runningSession);
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+      await fireEvent.click(launchButton);
+
+      await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(2));
     });
 
     it("does not carry an open launcher into the next workspace", async () => {

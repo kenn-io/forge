@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { Effect } from "effect";
 import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { KataProjectSummary, KataTaskDetail } from "../../api/kata/taskTypes.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 import KataIssueOverflowMenu from "./KataIssueOverflowMenu.svelte";
 
@@ -63,16 +65,17 @@ const projects = [
 type MenuProps = ComponentProps<typeof KataIssueOverflowMenu>;
 
 function renderMenu(overrides: Partial<MenuProps> = {}) {
-  return render(KataIssueOverflowMenu, {
+  return render(AppRuntimeHarness, {
     props: {
+      component: KataIssueOverflowMenu,
       issue: makeIssue(),
       projects,
       hasChecklist: false,
       hasRecurrence: false,
-      onMoveIssue: vi.fn(async () => true),
+      onMoveIssue: vi.fn(() => Effect.succeed(true)),
       onAddChecklist: vi.fn(),
       onCreateRecurrence: vi.fn(),
-      onDeleteIssue: vi.fn(async () => true),
+      onDeleteIssue: vi.fn(() => Effect.succeed(true)),
       ...overrides,
     },
   });
@@ -126,7 +129,7 @@ describe("KataIssueOverflowMenu", () => {
   });
 
   it("filters destinations and closes after a successful move", async () => {
-    const onMoveIssue = vi.fn(async () => true);
+    const onMoveIssue = vi.fn(() => Effect.succeed(true));
     renderMenu({ onMoveIssue });
 
     await openMovePicker();
@@ -142,7 +145,7 @@ describe("KataIssueOverflowMenu", () => {
   });
 
   it("keeps the picker open when the workspace reports move failure", async () => {
-    const onMoveIssue = vi.fn(async () => false);
+    const onMoveIssue = vi.fn(() => Effect.succeed(false));
     renderMenu({ onMoveIssue });
     await openMovePicker();
     await fireEvent.click(screen.getByRole("button", { name: /Roadmap/ }));
@@ -170,8 +173,8 @@ describe("KataIssueOverflowMenu", () => {
     });
     const onMoveIssue = vi
       .fn()
-      .mockImplementationOnce(() => oldMove)
-      .mockResolvedValueOnce(true);
+      .mockImplementationOnce(() => Effect.promise(() => oldMove))
+      .mockImplementationOnce(() => Effect.succeed(true));
     const view = renderMenu({ onMoveIssue });
 
     await openMovePicker();
@@ -202,7 +205,7 @@ describe("KataIssueOverflowMenu", () => {
     const pendingMove = new Promise<boolean>((resolve) => {
       finishMove = resolve;
     });
-    const view = renderMenu({ onMoveIssue: vi.fn(() => pendingMove) });
+    const view = renderMenu({ onMoveIssue: vi.fn(() => Effect.promise(() => pendingMove)) });
 
     await openMovePicker();
     await view.rerender({
@@ -225,7 +228,7 @@ describe("KataIssueOverflowMenu", () => {
   });
 
   it("dismisses an empty move picker with Escape and restores trigger focus", async () => {
-    const onMoveIssue = vi.fn(async () => true);
+    const onMoveIssue = vi.fn(() => Effect.succeed(true));
     renderMenu({ onMoveIssue });
 
     const trigger = screen.getByRole("button", { name: "More actions" });
@@ -262,7 +265,7 @@ describe("KataIssueOverflowMenu", () => {
     const pendingMove = new Promise<boolean>((resolve) => {
       finishMove = resolve;
     });
-    const onMoveIssue = vi.fn(() => pendingMove);
+    const onMoveIssue = vi.fn(() => Effect.promise(() => pendingMove));
     renderMenu({ onMoveIssue });
 
     await openMovePicker();
@@ -278,7 +281,7 @@ describe("KataIssueOverflowMenu", () => {
   });
 
   it("confirms delete through the menu", async () => {
-    const onDeleteIssue = vi.fn(async () => true);
+    const onDeleteIssue = vi.fn(() => Effect.succeed(true));
     renderMenu({
       projects: [],
       hasChecklist: true,

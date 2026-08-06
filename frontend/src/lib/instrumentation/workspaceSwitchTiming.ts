@@ -11,6 +11,8 @@
 // (a stale fetch, a terminal pane from the previous workspace) records
 // nothing further.
 
+import { Effect } from "effect";
+import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { clearInteraction, markInteractionStart, measureInteraction } from "./interactionTiming.js";
 import { beginInteractionTrace, endInteractionTrace } from "./traceContext.js";
 
@@ -39,7 +41,7 @@ interface WorkspaceSwitch {
   beganAt: number;
   recorded: Set<WorkspaceSwitchPhase>;
   traceId: string;
-  traceTimeout: ReturnType<typeof setTimeout> | null;
+  traceExpiration: AppExecution<void, never> | undefined;
 }
 
 // Phases arriving later than this after route selection belong to some
@@ -53,17 +55,15 @@ let current: WorkspaceSwitch | null = null;
 let switchSeq = 0;
 
 function endSwitchTrace(sw: WorkspaceSwitch): void {
-  if (sw.traceTimeout !== null) {
-    clearTimeout(sw.traceTimeout);
-    sw.traceTimeout = null;
-  }
+  sw.traceExpiration?.interrupt();
+  sw.traceExpiration = undefined;
   endInteractionTrace(sw.traceId);
 }
 
 // Marks route selection: the moment the terminal view reacts to a new
 // workspace route. All phase measures are durations from this mark.
 // The returned token identifies this switch for cancelWorkspaceSwitch.
-export function beginWorkspaceSwitch(workspaceId: string, hostKey: string | undefined): string {
+export function beginWorkspaceSwitch(runtime: AppRuntime, workspaceId: string, hostKey: string | undefined): string {
   if (current) {
     clearInteraction(WORKSPACE_SWITCH_INTERACTION, current.token);
     endSwitchTrace(current);
@@ -81,14 +81,25 @@ export function beginWorkspaceSwitch(workspaceId: string, hostKey: string | unde
     beganAt: performance.now(),
     recorded: new Set(),
     traceId,
-    traceTimeout: null,
+    traceExpiration: undefined,
   };
   current = sw;
-  sw.traceTimeout = setTimeout(() => {
-    if (current !== sw) return;
-    sw.traceTimeout = null;
-    endInteractionTrace(sw.traceId);
-  }, MAX_PHASE_AGE_MS);
+  sw.traceExpiration = runtime.runCommand(
+    Effect.sleep(`${MAX_PHASE_AGE_MS} millis`).pipe(
+      Effect.andThen(
+        Effect.sync(() => {
+          if (current !== sw) return;
+          sw.traceExpiration = undefined;
+          endInteractionTrace(sw.traceId);
+        }),
+      ),
+    ),
+    {
+      operation: "expire workspace switch trace",
+      safeContext: { workspaceId, hostKey: hostKey ?? "" },
+      onFailure: () => {},
+    },
+  );
   markInteractionStart(WORKSPACE_SWITCH_INTERACTION, token);
   return token;
 }

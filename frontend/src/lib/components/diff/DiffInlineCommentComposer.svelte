@@ -1,44 +1,49 @@
 <script lang="ts">
   import { Button } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import SendIcon from "@lucide/svelte/icons/send";
   import XIcon from "@lucide/svelte/icons/x";
   import { tick } from "svelte";
+  import type { AppExecution, AppRuntime } from "../../app/runtime.js";
+  import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
   import { getStores } from "../../context.js";
 
   interface Props {
+    runtime: AppRuntime;
     range: DiffReviewLineRange;
     onclose?: (() => void) | undefined;
   }
 
-  const { range, onclose }: Props = $props();
+  const { runtime, range, onclose }: Props = $props();
   const { diffReviewDraft } = getStores();
 
   let body = $state("");
   let textareaEl: HTMLTextAreaElement | undefined = $state();
-  let autosizeFrame = 0;
+  let focusExecution: AppExecution<void, never> | undefined;
+  let autosizeExecution: AppExecution<void, never> | undefined;
   const submitting = $derived(diffReviewDraft.isSubmitting());
   const error = $derived(diffReviewDraft.getError());
 
   function setupTextarea(node: HTMLTextAreaElement) {
     textareaEl = node;
-    let destroyed = false;
-
-    void tick().then(() => {
-      // Focus exactly once. Retrying focus across frames/timers makes any
-      // visible focus treatment flicker as the indicator blinks per retry
-      // (issues #445/#446); never add a second focus mutation here.
-      if (!destroyed && node.isConnected && !node.disabled) {
-        node.focus({ preventScroll: true });
-      }
-      scheduleAutosizeTextarea();
-    });
+    focusExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => {
+          // Focus exactly once. Retrying focus across frames/timers makes any
+          // visible focus treatment flicker as the indicator blinks per retry.
+          if (node.isConnected && !node.disabled) node.focus({ preventScroll: true });
+          scheduleAutosizeTextarea();
+        })),
+      ),
+      { operation: "focus inline diff comment", safeContext: {}, onFailure: () => {} },
+    );
 
     return {
       destroy(): void {
-        destroyed = true;
+        focusExecution?.interrupt();
+        autosizeExecution?.interrupt();
         if (textareaEl === node) textareaEl = undefined;
-        if (autosizeFrame) cancelAnimationFrame(autosizeFrame);
       },
     };
   }
@@ -54,11 +59,11 @@
 
   function scheduleAutosizeTextarea(): void {
     autosizeTextarea();
-    if (autosizeFrame) cancelAnimationFrame(autosizeFrame);
-    autosizeFrame = requestAnimationFrame(() => {
-      autosizeFrame = 0;
-      autosizeTextarea();
-    });
+    autosizeExecution?.interrupt();
+    autosizeExecution = runtime.runCommand(
+      nextAnimationFrame.pipe(Effect.andThen(Effect.sync(autosizeTextarea)), Effect.asVoid),
+      { operation: "autosize inline diff comment", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   function submit(): void {

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataReachableGraphResponse, KataTaskSummary } from "../../api/kata/taskTypes.js";
-import KataReachableGraph from "./KataReachableGraph.svelte";
+import KataReachableGraph from "./KataReachableGraphRuntimeHarness.svelte";
 
 function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
   const shortID = overrides.short_id ?? "root";

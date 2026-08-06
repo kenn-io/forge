@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onDestroy, setContext, untrack } from "svelte";
-  import { Cause, Effect, Exit, Option } from "effect";
+  import { Effect, Option } from "effect";
   import type { Attachment } from "svelte/attachments";
   import type { AppExecution, AppRuntime } from "./lib/app/runtime.js";
   import { setAppRuntime } from "./lib/app/runtime-context.js";
+  import { observeResize } from "./lib/browser/observers.js";
   import { createAppStores } from "./lib/app-stores.svelte.js";
   import PRListView from "./lib/views/PRListView.svelte";
   import IssueListView from "./lib/views/IssueListView.svelte";
@@ -171,7 +172,7 @@
       id: action.id,
       label: action.label,
       handler: (context) =>
-        invokeAction(action, {
+        invokeAction(appRuntime, action, {
           surface: context.surface,
           owner: context.owner,
           name: context.name,
@@ -183,7 +184,7 @@
       id: action.id,
       label: action.label,
       handler: (context) =>
-        invokeAction(action, {
+        invokeAction(appRuntime, action, {
           surface: context.surface,
           owner: context.owner,
           name: context.name,
@@ -252,6 +253,7 @@
   let docsLoadError = $state<string | null>(null);
   let docsRetryFailures = 0;
   let onboardingState = $state<OnboardingState | null>(readOnboardingState());
+  let docsFeatureLoadExecution: AppExecution<void, never> | undefined;
   let docsRoute = $state<DocsRouteState>({
     mode: "docs",
     folder: null,
@@ -262,36 +264,28 @@
   const kataAPI = createKataTaskAPI();
   const kataWorkspaceAPI = createKataTaskAPI();
   const kataAuxiliaryAuthority = createKataAuxiliaryAuthority({});
-  const runtimeTaskReferenceSearch: KataTaskReferenceSearch = async (query, options = {}) => {
-    const { signal, ...requestOptions } = options;
-    const execution = appRuntime.runCommand(searchKataTaskReferences(query, requestOptions), {
-      operation: "search Kata task references",
-      safeContext: { daemonId: requestOptions.daemon_id ?? "" },
-      onFailure: () => {},
-    });
-    const interrupt = () => execution.interrupt();
-    signal?.addEventListener("abort", interrupt, { once: true });
-    if (signal?.aborted) interrupt();
-    try {
-      const exit = await Effect.runPromise(execution.await);
-      if (Exit.isSuccess(exit)) return exit.value;
-      const failure = Cause.findErrorOption(exit.cause);
-      if (Option.isSome(failure)) throw failure.value;
-      throw new Error(Cause.pretty(exit.cause));
-    } finally {
-      signal?.removeEventListener("abort", interrupt);
-    }
-  };
+  const runtimeTaskReferenceSearch: KataTaskReferenceSearch = (query, options = {}) =>
+    searchKataTaskReferences(query, options);
 
   const trackMobileHeaderHeight: Attachment<HTMLElement> = (node) => {
     const update = () => {
       renderedMobileHeaderHeight = node.getBoundingClientRect().height;
     };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
+    const execution = appRuntime.runCommand(
+      Effect.scoped(
+        Effect.sync(update).pipe(
+          Effect.andThen(observeResize(node, update)),
+          Effect.andThen(Effect.never),
+        ),
+      ),
+      {
+        operation: "observe mobile application header",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
     return () => {
-      observer.disconnect();
+      execution.interrupt();
       renderedMobileHeaderHeight = 0;
     };
   };
@@ -441,10 +435,23 @@
     else navigate(href);
   }
 
-  async function importDocsFeature(retryAttempt: number): Promise<typeof DocsFeature> {
-    if (retryAttempt > 1) return (await import("./lib/features/docs/DocsFeature.svelte?retry2")).default;
-    if (retryAttempt > 0) return (await import("./lib/features/docs/DocsFeature.svelte?retry")).default;
-    return (await import("./lib/features/docs/DocsFeature.svelte")).default;
+  function importDocsFeature(retryAttempt: number): Effect.Effect<DocsFeatureComponent, Error> {
+    if (retryAttempt > 1) {
+      return Effect.tryPromise({
+        try: () => import("./lib/features/docs/DocsFeature.svelte?retry2"),
+        catch: (cause) => cause instanceof Error ? cause : new Error("Could not load Docs"),
+      }).pipe(Effect.map((loaded) => loaded.default));
+    }
+    if (retryAttempt > 0) {
+      return Effect.tryPromise({
+        try: () => import("./lib/features/docs/DocsFeature.svelte?retry"),
+        catch: (cause) => cause instanceof Error ? cause : new Error("Could not load Docs"),
+      }).pipe(Effect.map((loaded) => loaded.default));
+    }
+    return Effect.tryPromise({
+      try: () => import("./lib/features/docs/DocsFeature.svelte"),
+      catch: (cause) => cause instanceof Error ? cause : new Error("Could not load Docs"),
+    }).pipe(Effect.map((loaded) => loaded.default));
   }
 
   function featureLoadMessage(error: unknown): string {
@@ -458,32 +465,48 @@
     window.location.assign(url.toString());
   }
 
-  async function loadDocsFeature(options: { retry?: boolean } = {}): Promise<void> {
+  function loadDocsFeature(options: { retry?: boolean } = {}): void {
     if (DocsFeature || docsLoading || (docsLoadError && !options.retry)) return;
     if (options.retry && docsRetryFailures >= 2) {
       reloadAfterLazyFeatureRetryFailure();
       return;
     }
+    const retry = options.retry === true;
+    const retryAttempt = retry ? docsRetryFailures + 1 : 0;
     docsLoading = true;
     docsLoadError = null;
-    try {
-      DocsFeature = await importDocsFeature(options.retry ? docsRetryFailures + 1 : 0);
-      docsRetryFailures = 0;
-    } catch (error) {
-      docsLoadError = featureLoadMessage(error);
-      if (options.retry) {
-        docsRetryFailures += 1;
-      }
-    } finally {
-      docsLoading = false;
-    }
+    let execution: AppExecution<void, never> | undefined;
+    const isCurrent = () => execution !== undefined && docsFeatureLoadExecution === execution;
+    execution = appRuntime.runCommand(
+      importDocsFeature(retryAttempt).pipe(
+        Effect.matchEffect({
+          onFailure: (error) => Effect.sync(() => {
+            if (!isCurrent()) return;
+            docsLoadError = featureLoadMessage(error);
+            if (retry) docsRetryFailures += 1;
+          }),
+          onSuccess: (feature) => Effect.sync(() => {
+            if (!isCurrent()) return;
+            DocsFeature = feature;
+            docsRetryFailures = 0;
+          }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          if (!isCurrent()) return;
+          docsFeatureLoadExecution = undefined;
+          docsLoading = false;
+        })),
+      ),
+      { operation: "load Docs feature", safeContext: { retryAttempt }, onFailure: () => {} },
+    );
+    docsFeatureLoadExecution = execution;
   }
 
   function openDoc(folder: string, relPath: string): void {
     navigate(docsHref({ mode: "docs", folder, doc: relPath }));
   }
 
-  async function runModePaletteSearch(query: string) {
+  function runModePaletteSearch(query: string) {
     return searchModePalette(query, { kata: kataAuxiliaryAuthority, docs: docsAPI });
   }
 
@@ -555,8 +578,8 @@
     const ui = getUIConfig();
     applyConfigRepo(ui.repo, ui.hideRepoSelector);
     const appEl = document.getElementById("app")!;
-    const cleanupContainer = initContainerObserver(appEl);
-    const cleanupItemRefs = initItemRefHandler();
+    const cleanupContainer = initContainerObserver(runtime, appEl);
+    const cleanupItemRefs = initItemRefHandler(appRuntime);
     const cancelStartup = runAppStartup(runtime, {
       stores: startupStores,
       afterBackendReady: loadKataDaemonRosterAfterBackendReady(),
@@ -592,7 +615,7 @@
       folder: route.folder,
       doc: route.doc,
     };
-    void loadDocsFeature();
+    loadDocsFeature();
   });
 
   $effect(() => {
@@ -936,7 +959,7 @@
 
   function handleSidebarResize(width: number): void {
     setSidebarWidth(width);
-    emitLayoutChanged({
+    emitLayoutChanged(appRuntime, {
       sidebar: { width },
       pinnedPanel: { width: 0, visible: false },
     });
@@ -963,7 +986,7 @@
       },
     ]);
     const onKeydown = (e: KeyboardEvent) =>
-      dispatchKeydown(e, () => buildContext(stores!));
+      dispatchKeydown(e, () => buildContext(stores!), appRuntime);
     window.addEventListener("keydown", onKeydown);
     return () => {
       window.removeEventListener("keydown", onKeydown);
@@ -1289,7 +1312,7 @@
         {#if docsLoadError}
           <div class="loading-state">
             <span>{docsLoadError}</span>
-            <button type="button" onclick={() => void loadDocsFeature({ retry: true })}>Retry loading Docs</button>
+            <button type="button" onclick={() => loadDocsFeature({ retry: true })}>Retry loading Docs</button>
           </div>
         {:else if !DocsFeature}
           <div class="loading-state">

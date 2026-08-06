@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { copyToClipboard } from "@kenn-io/kit-ui";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
 
   interface Props {
     kind: "pull" | "issue";
@@ -10,30 +13,40 @@
 
   const { kind, number, url }: Props = $props();
 
+  const runtime = getAppRuntime();
+
   let copied = $state(false);
-  let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+  let copyExecution: AppExecution<void, never> | null = null;
+  let active = true;
 
   const itemLabel = $derived(kind === "pull" ? "PR" : "issue");
 
   onDestroy(() => {
-    if (copyTimeout !== null) {
-      clearTimeout(copyTimeout);
-    }
+    active = false;
+    copyExecution?.interrupt();
   });
 
   function copyLink(): void {
     if (!url) return;
-    void copyToClipboard(url).then((ok) => {
-      if (!ok) return;
-      copied = true;
-      if (copyTimeout !== null) {
-        clearTimeout(copyTimeout);
-      }
-      copyTimeout = setTimeout(() => {
-        copied = false;
-        copyTimeout = null;
-      }, 1500);
-    });
+    copyExecution?.interrupt();
+    copyExecution = runtime.runCommand(
+      transientClipboardFeedback({
+        text: url,
+        write: copyToClipboard,
+        isActive: () => active,
+        onCopied: () => {
+          copied = true;
+        },
+        onExpired: () => {
+          copied = false;
+        },
+      }),
+      {
+        operation: "copy item link",
+        safeContext: { kind, number },
+        onFailure: () => {},
+      },
+    );
   }
 </script>
 

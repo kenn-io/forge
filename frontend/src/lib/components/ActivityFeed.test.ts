@@ -1,7 +1,29 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
+
+const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
+
+vi.mock("../app/runtime-context.js", () => ({
+  getAppRuntime: () => {
+    const runtime = runtimeCapture.current;
+    if (runtime === undefined) throw new Error("activity feed test runtime is not initialized");
+    return runtime;
+  },
+}));
+
 import ActivityFeed from "./ActivityFeed.svelte";
+
+beforeEach(() => {
+  runtimeCapture.current = makeAppRuntime();
+});
+
+afterEach(async () => {
+  if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
+  runtimeCapture.current = undefined;
+});
 
 function activityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return {

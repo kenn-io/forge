@@ -49,6 +49,10 @@ afterEach(async () => {
   detailRuntime = null;
 });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 const markdownMockState = vi.hoisted(() => ({
   pending: false,
   pendingPromise: new Promise<string>(() => undefined),
@@ -294,6 +298,8 @@ function renderPullDetail(
         runProviderAction(deferred ? "/merge/deferred" : "/merge", body, callbacks),
     ),
     editComment: vi.fn(),
+    savePRBodyInBackground: vi.fn(),
+    setLocalPRBody: vi.fn(),
     applyReviewSuggestions: vi.fn(
       (
         _owner: string,
@@ -640,6 +646,62 @@ describe("PullDetail approvals", () => {
       repoPath: "acme/widget",
       workflowApprovalSync: true,
     });
+  });
+
+  it("stops pending CI refreshes when the detail unmounts", async () => {
+    vi.useFakeTimers();
+    const detail = pullDetail();
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      {
+        name: "build",
+        status: "in_progress",
+        conclusion: "",
+        url: "https://example.com/build",
+        app: "GitHub Actions",
+      },
+    ]);
+    const view = renderPullDetail(detail);
+    await fireEvent.click(screen.getByRole("button", { name: /CI:\s*1\s*pending\s*check/i }));
+    expect(view.detailStore.refreshPendingCI).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(view.detailStore.refreshPendingCI).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels pending conversation scroll restoration when the detail unmounts", async () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const cancelFrame = vi.fn();
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      }),
+    );
+    vi.stubGlobal("cancelAnimationFrame", cancelFrame);
+    const view = renderPullDetail(pullDetail());
+    await waitFor(() => expect(callbacks.length).toBeGreaterThan(0));
+    const viewport = view.container.querySelector<HTMLDivElement>(".kit-scrollbox__viewport");
+    expect(viewport).not.toBeNull();
+    let scrollWrites = 0;
+    Object.defineProperty(viewport, "scrollTop", {
+      configurable: true,
+      get: () => 42,
+      set: () => {
+        scrollWrites += 1;
+      },
+    });
+
+    view.unmount();
+    for (const callback of callbacks) callback(performance.now());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(cancelFrame).toHaveBeenCalled();
+    expect(scrollWrites).toBe(0);
   });
 
   it("uses one shared expanded slot for CI and stack status", async () => {
@@ -2342,5 +2404,56 @@ describe("PullDetail body copy feedback", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(document.querySelector(".body-copy--copied")).toBeNull();
+  });
+
+  it("drops branch-copy feedback that resolves after navigating to another pull", async () => {
+    const detail = pullDetail();
+    const { rerender } = renderPullDetail(detail);
+
+    await fireEvent.click(screen.getByRole("button", { name: "main" }));
+    expect(clipboardMockState.resolvers).toHaveLength(1);
+    detail.merge_request.Number += 1;
+    await rerender({ number: detail.merge_request.Number });
+
+    clipboardMockState.resolvers[0]!(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.getByRole("button", { name: "main" }).getAttribute("title")).toBe("Click to copy");
+  });
+});
+
+describe("PullDetail task body saves", () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("flushes a pending task checkbox save when the detail unmounts", async () => {
+    const detail = pullDetail();
+    detail.merge_request.Body = "- [ ] ship the change";
+    const view = renderPullDetail(detail);
+    let checkbox: HTMLInputElement | null = null;
+    await waitFor(() => {
+      checkbox = view.container.querySelector<HTMLInputElement>(".markdown-body input[type='checkbox']");
+      expect(checkbox?.dataset.taskIndex).toBe("0");
+    });
+    vi.useFakeTimers();
+
+    await fireEvent.click(checkbox as HTMLInputElement);
+    expect(view.detailStore.savePRBodyInBackground).not.toHaveBeenCalled();
+    view.unmount();
+
+    expect(view.detailStore.savePRBodyInBackground).toHaveBeenCalledWith(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      },
+      1,
+      "- [x] ship the change",
+    );
   });
 });

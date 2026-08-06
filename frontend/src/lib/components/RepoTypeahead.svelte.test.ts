@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import RepoTypeahead from "./RepoTypeahead.svelte";
+import RepoTypeahead from "./RepoTypeaheadRuntimeHarness.svelte";
 import { getAllCheatsheetEntries, resetRegistry } from "../stores/keyboard/registry.svelte.js";
 
 describe("RepoTypeahead cheatsheet entries", () => {

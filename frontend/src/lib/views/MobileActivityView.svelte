@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import { onDestroy, onMount } from "svelte";
+  import { getAppRuntime } from "../app/runtime-context.js";
+  import type { AppExecution } from "../app/runtime.js";
   import type { ActivityItem } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
@@ -42,6 +45,7 @@
   } from "../utils/repo-label.js";
 
   const { activity, settings, sync, grouping } = getStores();
+  const runtime = getAppRuntime();
 
   interface Props {
     selectedRepo?: string | undefined;
@@ -66,7 +70,7 @@
     label: range,
   }));
   let searchInput = $state("");
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchExecution: AppExecution<void, never> | null = null;
   let unsubSync: (() => void) | undefined;
 
   const repoOptions = $derived.by(() =>
@@ -86,7 +90,7 @@
   onDestroy(() => {
     activity.stopActivityPolling();
     unsubSync?.();
-    if (debounceTimer) clearTimeout(debounceTimer);
+    searchExecution?.interrupt();
   });
 
   function isBot(author: string): boolean {
@@ -233,12 +237,21 @@
 
   function handleSearchInput(value: string): void {
     searchInput = value;
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      activity.setActivitySearch(value || undefined);
-      activity.syncToURL();
-      activity.loadActivity();
-    }, 300);
+    searchExecution?.interrupt();
+    searchExecution = runtime.runCommand(
+      Effect.sleep("300 millis").pipe(
+        Effect.andThen(Effect.sync(() => {
+          activity.setActivitySearch(value || undefined);
+          activity.syncToURL();
+          activity.loadActivity();
+        })),
+      ),
+      {
+        operation: "debounce mobile activity search",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   function handleCardClick(group: ActivityGroup): void {

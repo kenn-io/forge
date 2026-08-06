@@ -33,26 +33,6 @@ export function isProblem(value: unknown): value is ProblemBody {
   return problemCodeValues.has(code);
 }
 
-// readProblem decodes a fetch Response body as a problem when the
-// response is not OK and the content-type is application/problem+json.
-// Returns null for ok responses, non-problem bodies, or parse failures.
-export async function readProblem(response: Response): Promise<ProblemBody | null> {
-  if (response.ok) {
-    return null;
-  }
-  const ct = response.headers.get("content-type") ?? "";
-  if (!ct.includes("application/problem+json") && !ct.includes("application/json")) {
-    return null;
-  }
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    return null;
-  }
-  return isProblem(body) ? body : null;
-}
-
 // problemCapability reads details.capability from an unsupportedCapability
 // problem so call sites can render a typed tooltip without dipping into
 // the loose details record.

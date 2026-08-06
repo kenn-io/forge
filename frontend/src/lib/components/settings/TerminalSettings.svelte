@@ -8,7 +8,13 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { TerminalSettings as TerminalSettingsType } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
   import { settingsErrorMessage } from "../../stores/settings-workflow.js";
+  import {
+    queryLocalFonts,
+    supportsLocalFonts,
+    type LocalFontData as FontData,
+  } from "../../browser/local-fonts.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import {
     previewTerminalSettings,
@@ -16,13 +22,6 @@
     saveTerminalSettings,
     terminalSettingsChanges,
   } from "../../stores/terminal-settings-persistence.js";
-
-  interface FontData {
-    family: string;
-    fullName: string;
-    postscriptName: string;
-    style: string;
-  }
 
   interface Props {
     terminal: TerminalSettingsType;
@@ -43,6 +42,7 @@
   const { settings: settingsStore } = getStores();
   const embedded = isEmbedded();
   const runtime = getAppRuntime();
+  let localFontExecution: AppExecution<void, unknown> | null = null;
 
   const commonMonospaceFonts = [
     "JetBrains Mono",
@@ -200,10 +200,7 @@
     );
   });
   const supportsLocalFontPicker = $derived(
-    typeof window !== "undefined" &&
-      typeof (window as Window & {
-        queryLocalFonts?: () => Promise<FontData[]>;
-      }).queryLocalFonts === "function",
+    supportsLocalFonts(),
   );
 
   function syncDraftFromTerminal(value: TerminalSettingsType): void {
@@ -237,34 +234,50 @@
   });
 
   onDestroy(() => {
+    localFontExecution?.interrupt();
     if (!livePreview) return;
     if (saving) return;
     restoreTerminalSettingsPreview(settingsStore);
   });
 
-  async function loadLocalFonts(): Promise<void> {
+  function loadLocalFonts(): void {
     if (!supportsLocalFontPicker) {
       fontLoadError = "Local font access is not available in this browser.";
       return;
     }
     loadingFonts = true;
     fontLoadError = null;
-    try {
-      const queryLocalFonts = (window as unknown as Window & {
-        queryLocalFonts: () => Promise<FontData[]>;
-      }).queryLocalFonts;
-      localFonts = await queryLocalFonts();
-    } catch (err) {
-      fontLoadError = err instanceof Error ? err.message : String(err);
-    } finally {
-      loadingFonts = false;
-    }
+    localFontExecution?.interrupt();
+    localFontExecution = runtime.runCommand(
+      Effect.tryPromise({
+        try: (signal) => {
+          signal.throwIfAborted();
+          return queryLocalFonts();
+        },
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.tap((fonts) => Effect.sync(() => {
+          localFonts = fonts;
+        })),
+        Effect.ensuring(Effect.sync(() => {
+          loadingFonts = false;
+        })),
+        Effect.asVoid,
+      ),
+      {
+        operation: "load local terminal fonts",
+        safeContext: {},
+        onFailure: (error) => {
+          fontLoadError = error instanceof Error ? error.message : String(error);
+        },
+      },
+    );
   }
 
   function openFontDialog(): void {
     fontDialogOpen = true;
     if (localFonts === null) {
-      void loadLocalFonts();
+      loadLocalFonts();
     }
   }
 
@@ -482,7 +495,7 @@
             <button
               class="retry-fonts-btn"
               type="button"
-              onclick={() => void loadLocalFonts()}
+              onclick={loadLocalFonts}
             >
               Try again
             </button>

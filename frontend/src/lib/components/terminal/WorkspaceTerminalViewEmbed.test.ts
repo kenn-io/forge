@@ -11,7 +11,10 @@
 // captured-fetch problem entirely.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { ProblemBody } from "../../api/problems.js";
+import type { OwnedAppRuntime } from "../../app/runtime.js";
 import { pushModalFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 
 const mocks = vi.hoisted(() => ({
@@ -23,6 +26,17 @@ const mocks = vi.hoisted(() => ({
   },
   showFlash: vi.fn(),
 }));
+const runtimeState = vi.hoisted<{ appRuntime?: OwnedAppRuntime }>(() => ({}));
+
+function problem(status: number, code: ProblemBody["code"], detail: string): ProblemBody {
+  return {
+    type: "about:blank",
+    title: "Workspace request failed",
+    status,
+    detail,
+    code,
+  };
+}
 
 vi.mock("../../api/runtime.js", () => ({
   client: mocks.runtimeClient,
@@ -31,26 +45,17 @@ vi.mock("../../api/runtime.js", () => ({
   apiErrorMessage: (_err: unknown, fallback: string) => fallback,
 }));
 
-vi.mock("../../app/runtime-context.js", () => ({
-  getAppRuntime: () => ({
-    runCommand: () => {
-      throw new Error("Embedded view tests do not save terminal settings");
-    },
-  }),
-}));
+vi.mock("../../app/runtime-context.js", async () => {
+  const { makeAppRuntime } = await import("../../app/runtime.js");
+  runtimeState.appRuntime = makeAppRuntime();
+  return { getAppRuntime: () => runtimeState.appRuntime };
+});
 
 vi.mock("../../stores/flash.svelte.js", () => ({
   showFlash: mocks.showFlash,
 }));
 
 vi.mock("../../api/workspace-runtime.js", () => ({
-  getWorkspaceRuntime: vi.fn().mockResolvedValue({
-    launch_targets: [],
-    sessions: [],
-  }),
-  launchWorkspaceSession: vi.fn(),
-  renameWorkspaceSession: vi.fn(),
-  stopWorkspaceSession: vi.fn(),
   workspaceSessionWebSocketPath: () => "",
   workspaceTmuxWebSocketPath: () => "",
 }));
@@ -135,12 +140,20 @@ const readyWorkspaceData = {
   platform_host: "github.com",
   repo_owner: "acme",
   repo_name: "widget",
+  repo: {
+    provider: "github",
+    platform_host: "github.com",
+    owner: "acme",
+    name: "widget",
+    repo_path: "acme/widget",
+  },
   item_type: "pull_request",
   item_number: 7,
   git_head_ref: "feature/embed-props",
   worktree_path: "/tmp/worktree",
   tmux_session: "kenn-forge-ws-1",
   status: "ready",
+  enrichment_status: "fresh",
   created_at: "2026-04-29T00:00:00Z",
 };
 
@@ -152,6 +165,12 @@ const readyIssueWorkspaceData = {
 };
 
 describe("WorkspaceTerminalView embed props", () => {
+  afterAll(async () => {
+    if (runtimeState.appRuntime !== undefined) {
+      await Effect.runPromise(runtimeState.appRuntime.disposeEffect);
+    }
+  });
+
   beforeEach(() => {
     mocks.runtimeClient.GET.mockReset();
     mocks.runtimeClient.POST.mockReset();
@@ -274,6 +293,7 @@ describe("WorkspaceTerminalView embed props", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "PR" })).toBeTruthy());
     expect(mocks.runtimeClient.POST).toHaveBeenCalledWith("/workspaces/{id}/refresh", {
       params: { path: { id: "ws-1" } },
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -284,8 +304,7 @@ describe("WorkspaceTerminalView embed props", () => {
       response: { status: 200 },
     });
     mocks.runtimeClient.POST.mockResolvedValue({
-      data: undefined,
-      error: { detail: "temporarily unavailable" },
+      error: problem(503, "serviceUnavailable", "temporarily unavailable"),
       response: { status: 503 },
     });
 
@@ -312,8 +331,7 @@ describe("WorkspaceTerminalView embed props", () => {
     // another client. Without reporting it, created-records and
     // overrides keep advertising the dead ID indefinitely.
     mocks.runtimeClient.GET.mockResolvedValue({
-      data: undefined,
-      error: { detail: "workspace not found" },
+      error: problem(404, "workspaceNotFound", "workspace not found"),
       response: { status: 404 },
     });
     const onWorkspaceDeleted = vi.fn();
@@ -347,16 +365,22 @@ describe("WorkspaceTerminalView embed props", () => {
     let gone = false;
     mocks.runtimeClient.GET.mockImplementation(async (path: string) => {
       if (path === "/workspaces/{id}" && gone) {
-        return { data: undefined, error: { detail: "workspace not found" }, response: { status: 404 } };
+        return {
+          error: problem(404, "workspaceNotFound", "workspace not found"),
+          response: { status: 404 },
+        };
       }
       return { data: workspaceWithRepo, error: undefined, response: { status: 200 } };
     });
-    const listeners = new Map<string, (e: { data: string }) => void>();
+    const listeners = new Map<string, (event?: MessageEvent) => void>();
     vi.stubGlobal(
       "EventSource",
       class {
-        addEventListener(type: string, cb: (e: { data: string }) => void): void {
+        addEventListener(type: string, cb: (event?: MessageEvent) => void): void {
           listeners.set(type, cb);
+        }
+        removeEventListener(type: string, cb: (event?: MessageEvent) => void): void {
+          if (listeners.get(type) === cb) listeners.delete(type);
         }
         close(): void {}
       },
@@ -369,7 +393,8 @@ describe("WorkspaceTerminalView embed props", () => {
     await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
 
     gone = true;
-    listeners.get("workspace_status")?.({ data: JSON.stringify({ id: "ws-1" }) });
+    await waitFor(() => expect(listeners.get("workspace_status")).toBeTypeOf("function"));
+    listeners.get("workspace_status")?.(new MessageEvent("workspace_status", { data: JSON.stringify({ id: "ws-1" }) }));
 
     await waitFor(() => {
       expect(onWorkspaceDeleted).toHaveBeenCalledWith(
@@ -387,8 +412,7 @@ describe("WorkspaceTerminalView embed props", () => {
 
   it("a transient workspace load failure is not treated as a deletion", async () => {
     mocks.runtimeClient.GET.mockResolvedValue({
-      data: undefined,
-      error: { detail: "upstream boom" },
+      error: problem(500, "upstreamError", "upstream boom"),
       response: { status: 500 },
     });
     const onWorkspaceDeleted = vi.fn();
@@ -524,8 +548,7 @@ describe("WorkspaceTerminalView embed props", () => {
 
     it("keeps a collapse control reachable when the workspace fetch fails", async () => {
       mocks.runtimeClient.GET.mockResolvedValue({
-        data: undefined,
-        error: { detail: "boom" },
+        error: problem(500, "upstreamError", "boom"),
         response: { status: 500 },
       });
       const setMode = vi.fn();
@@ -551,7 +574,10 @@ describe("WorkspaceTerminalView embed props", () => {
       // uncollapsible.
       mocks.runtimeClient.GET.mockImplementation(async (_path: string, opts: { params: { path: { id: string } } }) => {
         if (opts.params.path.id === "ws-2") {
-          return { data: undefined, error: { detail: "boom" }, response: { status: 500 } };
+          return {
+            error: problem(500, "upstreamError", "boom"),
+            response: { status: 500 },
+          };
         }
         return { data: readyWorkspaceData, error: undefined, response: { status: 200 } };
       });

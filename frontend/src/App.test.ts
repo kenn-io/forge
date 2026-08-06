@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Cause, Effect } from "effect";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { mountApplication } from "./lib/app/mount.js";
 import type { AppExecution, OwnedAppRuntime } from "./lib/app/runtime.js";
+import { createRuntimeClient } from "./lib/api/runtime.js";
+import { makeTestAppRuntime } from "./lib/testing/effect-layers.js";
 // Compile the root component during collection so Vite transform work is not
 // charged against the first lazy-feature test's behavioral timeout.
 import "./App.svelte";
@@ -35,10 +37,10 @@ const kataAuxiliary = vi.hoisted(() => {
     daemonID: "home",
     phase: "accepted" as const,
     error: null,
-    load: vi.fn(async () => true),
-    retry: vi.fn(async () => true),
+    load: vi.fn(() => Effect.succeed(true)),
+    retry: vi.fn(() => Effect.succeed(true)),
     selectIssue: vi.fn(),
-    stop: vi.fn(),
+    stop: vi.fn(() => Effect.void),
   };
   return { instance, create: vi.fn(() => instance) };
 });
@@ -163,7 +165,7 @@ vi.mock("./lib/features/docs/DocsFeature.svelte?retry2", async () => {
   };
 });
 vi.mock("./lib/api/kata/daemons.js", () => ({
-  fetchKataDaemons: vi.fn(async () => kataDaemons.rows),
+  fetchKataDaemons: vi.fn(() => Effect.succeed(kataDaemons.rows)),
 }));
 vi.mock("./lib/api/kata/taskClient.js", () => ({
   createKataTaskAPI: kataClients.create,
@@ -242,7 +244,7 @@ function testAppRuntime(onDispose: () => void): OwnedAppRuntime {
   };
 }
 
-const appRuntime = testAppRuntime(() => undefined);
+const appRuntime = makeTestAppRuntime(createRuntimeClient(() => Promise.resolve(Response.json({}))));
 
 describe("App feature routes", () => {
   beforeEach(async () => {
@@ -253,17 +255,22 @@ describe("App feature routes", () => {
     startup.readyCallbacks = [];
     kataDaemons.rows = [];
     kataAuxiliary.instance.issues = [];
+    kataAuxiliary.instance.load.mockImplementation(() => Effect.succeed(true));
+    kataAuxiliary.instance.retry.mockImplementation(() => Effect.succeed(true));
+    kataAuxiliary.instance.stop.mockImplementation(() => Effect.void);
     appSurfaceProps.palette = null;
     appSurfaceProps.docs = null;
     appSurfaceProps.provider = null;
-    kataReferences.search.mockResolvedValue({
-      server_instance_id: "server-a",
-      daemon_id: "home",
-      generation: 7,
-      invalidation_epoch: 2,
-      fetched_at: "2026-07-20T12:00:00Z",
-      references: [],
-    });
+    kataReferences.search.mockReturnValue(
+      Effect.succeed({
+        server_instance_id: "server-a",
+        daemon_id: "home",
+        generation: 7,
+        invalidation_epoch: 2,
+        fetched_at: "2026-07-20T12:00:00Z",
+        references: [],
+      }),
+    );
     installBrowserGlobals();
     window.history.replaceState(null, "", "/pulls");
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
@@ -276,6 +283,10 @@ describe("App feature routes", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  afterAll(async () => {
+    await Effect.runPromise(appRuntime.disposeEffect);
   });
 
   it("preserves structured replace navigation through application context", async () => {
@@ -481,10 +492,12 @@ describe("App feature routes", () => {
     // the task was reopened and closed again, so only the isolated selection
     // carries its current status.
     kataAuxiliary.instance.issues = [{ uid: "issue-closed", status: "open", project_uid: "project-stale" }] as never;
-    kataAuxiliary.instance.selectIssue.mockResolvedValue({
-      daemonID: "home",
-      detail: { issue: { uid: "issue-closed", status: "closed", project_uid: "project-target" } },
-    });
+    kataAuxiliary.instance.selectIssue.mockReturnValue(
+      Effect.succeed({
+        daemonID: "home",
+        detail: { issue: { uid: "issue-closed", status: "closed", project_uid: "project-target" } },
+      }),
+    );
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
@@ -508,10 +521,12 @@ describe("App feature routes", () => {
       { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
       { id: "docs-daemon", url: "http://127.0.0.1:7778", default: false, auth: "none", health: "connected" },
     ];
-    kataAuxiliary.instance.selectIssue.mockResolvedValue({
-      daemonID: "docs-daemon",
-      detail: { issue: { uid: "issue-doc", status: "open", project_uid: "project-doc" } },
-    });
+    kataAuxiliary.instance.selectIssue.mockReturnValue(
+      Effect.succeed({
+        daemonID: "docs-daemon",
+        detail: { issue: { uid: "issue-doc", status: "open", project_uid: "project-doc" } },
+      }),
+    );
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
@@ -537,10 +552,12 @@ describe("App feature routes", () => {
     const older = new Promise((resolve) => {
       resolveOlder = resolve;
     });
-    kataAuxiliary.instance.selectIssue.mockReturnValueOnce(older as never).mockResolvedValueOnce({
-      daemonID: "home",
-      detail: { issue: { uid: "issue-new", status: "open", project_uid: "project-new" } },
-    });
+    kataAuxiliary.instance.selectIssue.mockReturnValueOnce(Effect.promise(() => older)).mockReturnValueOnce(
+      Effect.succeed({
+        daemonID: "home",
+        detail: { issue: { uid: "issue-new", status: "open", project_uid: "project-new" } },
+      }),
+    );
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
@@ -568,40 +585,39 @@ describe("App feature routes", () => {
     );
   });
 
-  it("handles an initial auxiliary authority load rejection at the app lifecycle boundary", async () => {
+  it("handles an initial auxiliary authority failure at the app lifecycle boundary", async () => {
     kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
-    const catchRejection = vi.fn(() => Promise.resolve(false));
-    const handled = { catch: catchRejection } as unknown as Promise<boolean>;
-    kataAuxiliary.instance.load.mockReturnValueOnce(handled);
+    kataAuxiliary.instance.load.mockReturnValueOnce(Effect.fail(new Error("snapshot unavailable")));
     const { default: App } = await import("./App.svelte");
 
     render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
 
     await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("home"));
-    expect(catchRejection).toHaveBeenCalledOnce();
   });
 
   it("routes open textual Kata references through the generated reference search", async () => {
-    kataReferences.search.mockResolvedValueOnce({
-      server_instance_id: "server-a",
-      daemon_id: "home",
-      generation: 7,
-      invalidation_epoch: 2,
-      fetched_at: "2026-07-20T12:00:00Z",
-      references: [
-        {
-          uid: "issue-solo",
-          project_id: 7,
-          project_uid: "project-a",
-          project_name: "Project A",
-          short_id: "solo",
-          qualified_id: "Project A#solo",
-          reference: "solo",
-          title: "Open task",
-          status: "open",
-        },
-      ],
-    });
+    kataReferences.search.mockReturnValueOnce(
+      Effect.succeed({
+        server_instance_id: "server-a",
+        daemon_id: "home",
+        generation: 7,
+        invalidation_epoch: 2,
+        fetched_at: "2026-07-20T12:00:00Z",
+        references: [
+          {
+            uid: "issue-solo",
+            project_id: 7,
+            project_uid: "project-a",
+            project_name: "Project A",
+            short_id: "solo",
+            qualified_id: "Project A#solo",
+            reference: "solo",
+            title: "Open task",
+            status: "open",
+          },
+        ],
+      }),
+    );
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
@@ -617,26 +633,28 @@ describe("App feature routes", () => {
   });
 
   it("routes completed textual Kata references through all-status resolution", async () => {
-    kataReferences.search.mockResolvedValueOnce({
-      server_instance_id: "server-a",
-      daemon_id: "home",
-      generation: 7,
-      invalidation_epoch: 2,
-      fetched_at: "2026-07-20T12:00:00Z",
-      references: [
-        {
-          uid: "issue-closed",
-          project_id: 7,
-          project_uid: "project-a",
-          project_name: "Project A",
-          short_id: "closed-task",
-          qualified_id: "Project A#closed-task",
-          reference: "closed-task",
-          title: "Completed task",
-          status: "closed",
-        },
-      ],
-    });
+    kataReferences.search.mockReturnValueOnce(
+      Effect.succeed({
+        server_instance_id: "server-a",
+        daemon_id: "home",
+        generation: 7,
+        invalidation_epoch: 2,
+        fetched_at: "2026-07-20T12:00:00Z",
+        references: [
+          {
+            uid: "issue-closed",
+            project_id: 7,
+            project_uid: "project-a",
+            project_name: "Project A",
+            short_id: "closed-task",
+            qualified_id: "Project A#closed-task",
+            reference: "closed-task",
+            title: "Completed task",
+            status: "closed",
+          },
+        ],
+      }),
+    );
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
@@ -654,26 +672,28 @@ describe("App feature routes", () => {
   });
 
   it("does not route an ambiguous bare reference from a qualified server result", async () => {
-    kataReferences.search.mockResolvedValueOnce({
-      server_instance_id: "server-a",
-      daemon_id: "home",
-      generation: 7,
-      invalidation_epoch: 2,
-      fetched_at: "2026-07-20T12:00:00Z",
-      references: [
-        {
-          uid: "issue-ambiguous",
-          project_id: 7,
-          project_uid: "project-a",
-          project_name: "Project A",
-          short_id: "solo",
-          qualified_id: "Project A#solo",
-          reference: "Project A#solo",
-          title: "Ambiguous task",
-          status: "open",
-        },
-      ],
-    });
+    kataReferences.search.mockReturnValueOnce(
+      Effect.succeed({
+        server_instance_id: "server-a",
+        daemon_id: "home",
+        generation: 7,
+        invalidation_epoch: 2,
+        fetched_at: "2026-07-20T12:00:00Z",
+        references: [
+          {
+            uid: "issue-ambiguous",
+            project_id: 7,
+            project_uid: "project-a",
+            project_name: "Project A",
+            short_id: "solo",
+            qualified_id: "Project A#solo",
+            reference: "Project A#solo",
+            title: "Ambiguous task",
+            status: "open",
+          },
+        ],
+      }),
+    );
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");

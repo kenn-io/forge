@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import PublishDocsDialog from "./PublishDocsDialog.svelte";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+import PublishDocsDialogTestHarness from "./PublishDocsDialogTestHarness.svelte";
 import type { DocsAPI } from "../../api/docs/api";
 import type { GitPublishResponse } from "../../api/docs/types";
+import { DocsWorkflow } from "../../stores/docs-workflow.js";
 
 function fakeApi(overrides: Partial<DocsAPI> = {}): DocsAPI {
   const base: Partial<DocsAPI> = {
@@ -27,11 +30,21 @@ function fakeApi(overrides: Partial<DocsAPI> = {}): DocsAPI {
 }
 
 describe("PublishDocsDialog", () => {
-  afterEach(() => cleanup());
+  let runtime: OwnedAppRuntime;
+
+  beforeEach(() => {
+    runtime = makeAppRuntime();
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await Effect.runPromise(runtime.disposeEffect);
+  });
 
   test("renders the suggested message and the file list once preview loads", async () => {
-    render(PublishDocsDialog, {
+    render(PublishDocsDialogTestHarness, {
       props: {
+        runtime,
         open: true,
         folderID: "notes",
         api: fakeApi(),
@@ -45,8 +58,9 @@ describe("PublishDocsDialog", () => {
   });
 
   test("not-a-repo state hides the form and shows the explanation", async () => {
-    render(PublishDocsDialog, {
+    render(PublishDocsDialogTestHarness, {
       props: {
+        runtime,
         open: true,
         folderID: "notes",
         api: fakeApi({
@@ -65,8 +79,9 @@ describe("PublishDocsDialog", () => {
   });
 
   test("no-changes state disables the Commit & Push button", async () => {
-    render(PublishDocsDialog, {
+    render(PublishDocsDialogTestHarness, {
       props: {
+        runtime,
         open: true,
         folderID: "notes",
         api: fakeApi({
@@ -87,8 +102,9 @@ describe("PublishDocsDialog", () => {
   });
 
   test("asset limitation note is visible when there are changes", async () => {
-    render(PublishDocsDialog, {
+    render(PublishDocsDialogTestHarness, {
       props: {
+        runtime,
         open: true,
         folderID: "notes",
         api: fakeApi(),
@@ -102,8 +118,9 @@ describe("PublishDocsDialog", () => {
 
   test("successful publish calls onPublished with the final file count and short SHA", async () => {
     const onPublished = vi.fn();
-    render(PublishDocsDialog, {
+    render(PublishDocsDialogTestHarness, {
       props: {
+        runtime,
         open: true,
         folderID: "notes",
         api: fakeApi(),
@@ -117,6 +134,157 @@ describe("PublishDocsDialog", () => {
     const arg = onPublished.mock.calls[0]![0];
     expect(arg.short_commit).toBe("abcdef1");
     expect(arg.files).toHaveLength(1);
+  });
+
+  test("queues the folder and message captured by the submit click", async () => {
+    const blocker = Promise.withResolvers<void>();
+    let blockerStarted = false;
+    const blockerExecution = runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* DocsWorkflow;
+        yield* workflow.mutate(
+          Effect.promise(() => {
+            blockerStarted = true;
+            return blocker.promise;
+          }),
+        );
+      }),
+      { operation: "block Docs publish queue", safeContext: {}, onFailure: () => {} },
+    );
+    await waitFor(() => expect(blockerStarted).toBe(true));
+    const gitPublish = vi.fn(
+      async (): Promise<GitPublishResponse> => ({
+        commit: "abcdef1234567890abcdef1234567890abcdef12",
+        short_commit: "abcdef1",
+        branch: "main",
+        pushed: true,
+        files: [{ path: "new.md", status: "untracked" }],
+      }),
+    );
+    const api = fakeApi({
+      gitChanges: async (requestedFolderID) => ({
+        is_repo: true,
+        branch: "main",
+        upstream: "origin/main",
+        changes: [{ path: "new.md", status: "untracked" }],
+        ignored_non_markdown_count: 0,
+        suggested_message: `docs: publish ${requestedFolderID}`,
+      }),
+      gitPublish,
+    });
+    const rendered = render(PublishDocsDialogTestHarness, {
+      props: {
+        runtime,
+        open: true,
+        folderID: "notes",
+        api,
+        onClose: () => {},
+        onPublished: () => {},
+      },
+    });
+    const textarea = await screen.findByRole("textbox", { name: /commit message/i });
+    await fireEvent.input(textarea, { target: { value: "docs: submitted message" } });
+    await fireEvent.click(screen.getByRole("button", { name: /commit & push/i }));
+
+    await rendered.rerender({
+      runtime,
+      open: true,
+      folderID: "other",
+      api,
+      onClose: () => {},
+      onPublished: () => {},
+    });
+    blocker.resolve();
+    await Effect.runPromise(blockerExecution.await);
+
+    await waitFor(() => expect(gitPublish).toHaveBeenCalledOnce());
+    expect(gitPublish).toHaveBeenCalledWith("notes", "docs: submitted message", expect.any(AbortSignal));
+  });
+
+  test("remounted dialog adopts an unfinished publish failure for its folder", async () => {
+    const publish = Promise.withResolvers<GitPublishResponse>();
+    const gitPublish = vi.fn(() => publish.promise);
+    const api = fakeApi({ gitPublish });
+    const onClose = vi.fn();
+    const first = render(PublishDocsDialogTestHarness, {
+      props: { runtime, open: true, folderID: "notes", api, onClose, onPublished: () => {} },
+    });
+    await screen.findByRole("textbox", { name: /commit message/i });
+    await fireEvent.click(screen.getByRole("button", { name: /commit & push/i }));
+    await waitFor(() => expect(gitPublish).toHaveBeenCalledOnce());
+    first.unmount();
+
+    render(PublishDocsDialogTestHarness, {
+      props: { runtime, open: true, folderID: "notes", api, onClose, onPublished: () => {} },
+    });
+    await screen.findByRole("textbox", { name: /commit message/i });
+    const failure = Object.assign(new Error("push failed: timeout"), {
+      status: 500,
+      code: "push_failed_after_commit",
+      commit: "abcdef1234567890abcdef1234567890abcdef12",
+    });
+    publish.reject(failure);
+
+    await waitFor(() => expect(screen.getByText(/Committed abcdef1 locally, but push failed/i)).toBeTruthy());
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  test("retained publish failure remains visible when the replacement preview fails", async () => {
+    const publish = Promise.withResolvers<GitPublishResponse>();
+    const gitPublish = vi.fn(() => publish.promise);
+    const firstApi = fakeApi({ gitPublish });
+    const first = render(PublishDocsDialogTestHarness, {
+      props: { runtime, open: true, folderID: "notes", api: firstApi, onClose: () => {}, onPublished: () => {} },
+    });
+    await screen.findByRole("textbox", { name: /commit message/i });
+    await fireEvent.click(screen.getByRole("button", { name: /commit & push/i }));
+    await waitFor(() => expect(gitPublish).toHaveBeenCalledOnce());
+    first.unmount();
+
+    render(PublishDocsDialogTestHarness, {
+      props: {
+        runtime,
+        open: true,
+        folderID: "notes",
+        api: fakeApi({ gitChanges: async () => Promise.reject(new Error("preview unavailable")) }),
+        onClose: () => {},
+        onPublished: () => {},
+      },
+    });
+    publish.reject(
+      Object.assign(new Error("push failed: timeout"), {
+        status: 500,
+        code: "push_failed_after_commit",
+        commit: "abcdef1234567890abcdef1234567890abcdef12",
+      }),
+    );
+
+    expect(await screen.findByText(/Committed abcdef1 locally, but push failed/i)).toBeTruthy();
+    expect(screen.getByText(/preview unavailable/i)).toBeTruthy();
+  });
+
+  test("closing an adopted publish failure acknowledges it before a later session opens", async () => {
+    const failure = Object.assign(new Error("push failed: timeout"), {
+      status: 500,
+      code: "push_failed_after_commit",
+      commit: "abcdef1234567890abcdef1234567890abcdef12",
+    });
+    const api = fakeApi({ gitPublish: async () => Promise.reject(failure) });
+    const onClose = vi.fn();
+    const rendered = render(PublishDocsDialogTestHarness, {
+      props: { runtime, open: true, folderID: "notes", api, onClose, onPublished: () => {} },
+    });
+    await screen.findByRole("textbox", { name: /commit message/i });
+    await fireEvent.click(screen.getByRole("button", { name: /commit & push/i }));
+    await screen.findByText(/Committed abcdef1 locally, but push failed/i);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    await rendered.rerender({ runtime, open: false, folderID: "notes", api, onClose, onPublished: () => {} });
+    await rendered.rerender({ runtime, open: true, folderID: "notes", api, onClose, onPublished: () => {} });
+
+    await screen.findByRole("textbox", { name: /commit message/i });
+    expect(screen.queryByText(/Committed abcdef1 locally, but push failed/i)).toBeNull();
   });
 
   test("push_failed_after_commit keeps the dialog open with a recovery message", async () => {
@@ -135,8 +303,8 @@ describe("PublishDocsDialog", () => {
     });
     const onPublished = vi.fn();
     const onClose = vi.fn();
-    render(PublishDocsDialog, {
-      props: { open: true, folderID: "notes", api, onClose, onPublished },
+    render(PublishDocsDialogTestHarness, {
+      props: { runtime, open: true, folderID: "notes", api, onClose, onPublished },
     });
     await screen.findByRole("textbox", { name: /commit message/i });
     await fireEvent.click(screen.getByRole("button", { name: /commit & push/i }));
@@ -157,8 +325,9 @@ describe("PublishDocsDialog", () => {
         throw err;
       },
     });
-    render(PublishDocsDialog, {
+    render(PublishDocsDialogTestHarness, {
       props: {
+        runtime,
         open: true,
         folderID: "notes",
         api,
@@ -183,8 +352,9 @@ describe("PublishDocsDialog", () => {
         throw err;
       },
     });
-    render(PublishDocsDialog, {
+    render(PublishDocsDialogTestHarness, {
       props: {
+        runtime,
         open: true,
         folderID: "notes",
         api,
@@ -209,8 +379,9 @@ describe("PublishDocsDialog", () => {
         throw err;
       },
     });
-    render(PublishDocsDialog, {
+    render(PublishDocsDialogTestHarness, {
       props: {
+        runtime,
         open: true,
         folderID: "notes",
         api,
@@ -224,8 +395,9 @@ describe("PublishDocsDialog", () => {
 
   test("Escape closes the dialog when no publish is in flight", async () => {
     const onClose = vi.fn();
-    render(PublishDocsDialog, {
+    render(PublishDocsDialogTestHarness, {
       props: {
+        runtime,
         open: true,
         folderID: "notes",
         api: fakeApi(),
@@ -247,8 +419,9 @@ describe("PublishDocsDialog", () => {
       resolvePublish = r;
     });
     const onClose = vi.fn();
-    render(PublishDocsDialog, {
+    render(PublishDocsDialogTestHarness, {
       props: {
+        runtime,
         open: true,
         folderID: "notes",
         api: fakeApi({ gitPublish: () => pendingPublish }),

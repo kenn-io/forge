@@ -1,7 +1,10 @@
 <script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { Cause, Effect, Exit, Option } from "effect";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { getStores } from "../../context.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppServices } from "../../app/runtime.js";
   import { IconButton, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { queueWorkspaceLaunch } from "../../stores/workspace-create-pending.svelte.js";
@@ -10,9 +13,14 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
 
   import { fetchKataDaemons, type KataDaemonInfo } from "../../api/kata/daemons.js";
-  import { createKataTaskAPI } from "../../api/kata/taskClient.js";
+  import {
+    createKataTaskAPI,
+    KataMutationOutcomeUnknownError,
+    KataMutationPartiallyAppliedError,
+  } from "../../api/kata/taskClient.js";
   import {
     KataSnapshotAPIError,
+    fetchKataWorkspaceSnapshot,
     searchKataTaskReferences,
     type KataSnapshotIntent,
     type KataTaskReferenceSearch,
@@ -31,6 +39,7 @@
     KataTaskDetail,
     KataTaskEditPatch,
     KataTaskEvent,
+    KataTaskEffect,
     KataTaskMutationResponse,
     KataTaskMutationTarget,
     KataTaskSearchFilters,
@@ -56,7 +65,7 @@
   import KataReachableGraph from "./KataReachableGraph.svelte";
   import KataRecurrenceDialogs from "./KataRecurrenceDialogs.svelte";
   import KataSearchPanel from "./KataSearchPanel.svelte";
-  import { acknowledgeKataMutationThenRevalidate } from "./kataMutationRevalidation.js";
+  import { KataMutationError, KataWorkflow, type KataMutationFenceState } from "./kata-workflow.js";
   import {
     applyKataLinkStatusScope,
     createKataLinkFilters,
@@ -70,10 +79,15 @@
     type KataWorkspaceAuthorityRequest,
   } from "./kataWorkspaceAuthority.js";
   import { createKataAuthorityStore } from "../../stores/kata-authority.svelte.js";
-  import { createKataWorkspaceAuthorityController } from "./kataWorkspaceAuthorityController.svelte.js";
+  import {
+    createKataWorkspaceAuthorityController,
+    createKataWorkspaceAuthorityOwner,
+  } from "./kataWorkspaceAuthorityController.svelte.js";
   import type { KataGraphLayoutDirection } from "./kataReachableGraph.js";
 
   const { settings } = getStores();
+  const appRuntime = getAppRuntime();
+  const mutationSurfaceOwner = createKataWorkspaceAuthorityOwner();
 
   interface Props {
     api?: KataTaskAPI | undefined;
@@ -136,7 +150,7 @@
 
   let {
     api = undefined,
-    searchReferences = searchKataTaskReferences,
+    searchReferences = undefined,
     selectedIssueUID = null,
     routeViewName = null,
     routeScopeUID = null,
@@ -170,6 +184,8 @@
   let mutationRecurrenceRefreshRequired = false;
   let recurrenceConflictRecoveryPending = $state(false);
   let mutationRefreshError = $state<string | null>(null);
+  let mutationOutcomeUnknown = $state(false);
+  let mutationPartialOutcome = $state(false);
   let mutationRefreshRequest: KataWorkspaceAuthorityRequest | null = null;
   let mutationRefreshGeneration = 0;
   let authorityRetrying = $state(false);
@@ -239,6 +255,7 @@
     lastLinkFilterScope = { daemonID, status };
   });
   const authorityController = createKataWorkspaceAuthorityController({
+    owner: createKataWorkspaceAuthorityOwner(),
     resetIssueExpansion,
     onSnapshotAccepted: (snapshot) => {
       sidebarCatalog = {
@@ -279,7 +296,9 @@
         mutationRefreshPending &&
         mutationRecurrenceRefreshRequired &&
         (mutationAcknowledged || recurrenceConflictRecoveryPending);
-      if (!awaitRecurrenceRefresh) finishAcceptedMutationRefresh();
+      if (!awaitRecurrenceRefresh && !mutationOutcomeUnknown && !mutationPartialOutcome) {
+        finishAcceptedMutationRefresh();
+      }
       authorityRetrying = false;
       const pendingProject = pendingCreatedProjectScope;
       if (pendingProject) {
@@ -323,6 +342,60 @@
       connection = { status: "error", message };
     },
   });
+  onDestroy(() => {
+    appRuntime.runCommand(authorityController.dispose(), {
+      operation: "dispose Kata workspace authority",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  });
+
+  async function observeAppCommand<A, E>(
+    program: Effect.Effect<A, E, AppServices>,
+    operation: string,
+    daemonID: string,
+    signal?: AbortSignal,
+  ): Promise<A> {
+    const execution = appRuntime.runCommand(program, {
+      operation,
+      safeContext: { daemonId: daemonID },
+      onFailure: () => {},
+    });
+    const interrupt = () => execution.interrupt();
+    signal?.addEventListener("abort", interrupt, { once: true });
+    if (signal?.aborted) interrupt();
+    try {
+      const exit = await Effect.runPromise(execution.await);
+      if (Exit.isSuccess(exit)) return exit.value;
+      const failure = Cause.findErrorOption(exit.cause);
+      if (Option.isSome(failure)) throw failure.value;
+      throw new Error(Cause.pretty(exit.cause));
+    } finally {
+      signal?.removeEventListener("abort", interrupt);
+    }
+  }
+
+  const runtimeTaskReferenceSearch: KataTaskReferenceSearch = (query, options = {}) => {
+    const { signal, ...requestOptions } = options;
+    return observeAppCommand(
+      searchKataTaskReferences(query, requestOptions),
+      "search Kata task references",
+      requestOptions.daemon_id ?? activeKataDaemonId ?? "",
+      signal,
+    );
+  };
+
+  function observeAuthority<A, E>(program: Effect.Effect<A, E, AppServices>): Promise<A> {
+    return observeAppCommand(program, "update Kata workspace authority", activeKataDaemonId ?? "");
+  }
+
+  function stopAuthority(): void {
+    appRuntime.runCommand(authorityController.stop(), {
+      operation: "stop Kata workspace authority",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
   const authorityStore = authorityController.authorityStore;
   const workspaceActionsBlocked = $derived(
     workspaceOwnershipPending ||
@@ -342,7 +415,11 @@
     switchingDaemon || routedDaemonError
       ? null
       : mutationRefreshError
-      ? recurrenceConflictRecoveryPending
+      ? mutationPartialOutcome
+        ? mutationRefreshError
+        : mutationOutcomeUnknown
+        ? `Kata could not confirm whether the last change was applied: ${mutationRefreshError}`
+        : recurrenceConflictRecoveryPending
         ? `The recurrence changed, but its current revision could not be loaded: ${mutationRefreshError}`
         : `Change saved, but Kata snapshot refresh failed: ${mutationRefreshError}`
       : authorityStore.state.phase === "degraded" || authorityStore.state.phase === "abandoned"
@@ -359,6 +436,82 @@
       daemonInfos[0]?.id,
   );
   const activeKataDaemonId = $derived(acceptedSnapshot?.daemon_id ?? bootstrapDaemonId ?? acceptedKataDaemonId);
+  const activeMutationFenceKey = $derived(acceptedSnapshot ? mutationFenceKey(acceptedSnapshot) : null);
+
+  function mutationFenceKey(snapshot: KataWorkspaceSnapshotProjection): string {
+    const target = snapshot.selected_issue_uid ??
+      (snapshot.intent.scope === "project" ? `project:${snapshot.intent.project_uid}` : "global");
+    return JSON.stringify([snapshot.daemon_id, target]);
+  }
+
+  function observeMutationFence(state: KataMutationFenceState): Effect.Effect<void> {
+    return Effect.sync(() => {
+      if (state.kind === "unknown") {
+        mutationRefreshPending = true;
+        mutationAcknowledged = false;
+        mutationOutcomeUnknown = true;
+        mutationPartialOutcome = false;
+        mutationRefreshError = state.message;
+        mutationRefreshRequest = null;
+        return;
+      }
+      if (state.kind === "partial") {
+        mutationRefreshPending = true;
+        mutationAcknowledged = false;
+        mutationOutcomeUnknown = false;
+        mutationPartialOutcome = true;
+        mutationRefreshError = state.message;
+        mutationRefreshRequest = null;
+        return;
+      }
+      if (state.kind === "reconciling") {
+        mutationRefreshPending = true;
+        mutationAcknowledged = false;
+        mutationOutcomeUnknown = true;
+        mutationPartialOutcome = false;
+        mutationRefreshError = null;
+        return;
+      }
+      if (state.resolution === "applied") mutationDraftResetGeneration += 1;
+      mutationRefreshPending = false;
+      mutationAcknowledged = false;
+      mutationOutcomeUnknown = false;
+      mutationPartialOutcome = false;
+      mutationRefreshError = null;
+      mutationRefreshRequest = null;
+      mutationRefreshGeneration += 1;
+    });
+  }
+
+  $effect(() => {
+    const key = activeMutationFenceKey;
+    if (key === null) return;
+    const execution = appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* KataWorkflow;
+        yield* workflow.claimMutation(key, mutationSurfaceOwner, observeMutationFence);
+      }),
+      {
+        operation: "claim Kata mutation recovery",
+        safeContext: { owner: mutationSurfaceOwner },
+        onFailure: () => {},
+      },
+    );
+    return () => {
+      execution.interrupt();
+      appRuntime.runCommand(
+        Effect.gen(function* () {
+          const workflow = yield* KataWorkflow;
+          yield* workflow.releaseMutation(mutationSurfaceOwner);
+        }),
+        {
+          operation: "release Kata mutation recovery",
+          safeContext: { owner: mutationSurfaceOwner },
+          onFailure: () => {},
+        },
+      );
+    };
+  });
   const acceptedProjects = $derived(
     acceptedSnapshot ? structuredClone(acceptedSnapshot.projects) as KataProjectSummary[] : [],
   );
@@ -576,7 +729,7 @@
       authorityStore.updatePresentation(request.presentation);
       return null;
     }
-    return authorityController.load(request);
+    return observeAuthority(authorityController.load(request));
   }
 
   onMount(() => {
@@ -601,7 +754,7 @@
 
     void (async () => {
       try {
-        const daemons = await fetchKataDaemons();
+        const daemons = await observeAppCommand(fetchKataDaemons(), "load Kata daemon roster", "");
         if (cancelled) return;
         daemonInfos = daemons;
         daemonRosterLoaded = true;
@@ -612,7 +765,7 @@
         const requestedDaemon = requestedDaemonId?.trim() || undefined;
         if (requestedDaemon && !daemons.some((daemon) => daemon.id === requestedDaemon)) {
           const message = `Kata daemon ${requestedDaemon} is not configured.`;
-          authorityController.stop();
+          stopAuthority();
           authorityStore.abandon(message);
           workspaceOwnershipPending = true;
           connection = { status: "error", message };
@@ -641,7 +794,7 @@
           selectedIssueUID: selectedIssueUID ?? persisted?.selectedIssueUID ?? null,
           graphSourceUID: graphSourceIssue?.uid,
         });
-        await authorityController.load(request);
+        await observeAuthority(authorityController.load(request));
       } catch (loadError) {
         if (!cancelled) error = kataRequestErrorMessage(loadError);
       } finally {
@@ -658,7 +811,7 @@
 
     return () => {
       cancelled = true;
-      authorityController.stop();
+      stopAuthority();
     };
   });
 
@@ -686,6 +839,8 @@
     mutationRefreshPending = false;
     mutationAcknowledged = false;
     mutationRefreshError = null;
+    mutationOutcomeUnknown = false;
+    mutationPartialOutcome = false;
     mutationRefreshRequest = null;
     mutationRecurrenceRefreshRequired = false;
     recurrenceConflictRecoveryPending = false;
@@ -707,8 +862,11 @@
       latestRecurrenceLoad = Promise.resolve(true);
       return latestRecurrenceLoad;
     }
-    const load = taskAPI
-      .recurrences(detail.issue.project_id, { daemonId: snapshot.daemon_id })
+    const load = observeAppCommand(
+      taskAPI.recurrences(detail.issue.project_id, { daemonId: snapshot.daemon_id }),
+      "load Kata recurrences",
+      snapshot.daemon_id,
+    )
       .then((response) => {
         if (generation !== recurrenceLoadGeneration) return false;
         const current = authorityStore.snapshot;
@@ -764,6 +922,7 @@
     mutationRecurrenceRefreshRequired = true;
     recurrenceConflictRecoveryPending = true;
     mutationRefreshError = "Could not refresh Kata recurrences.";
+    mutationOutcomeUnknown = false;
     mutationRefreshRequest = acceptedAuthorityRequest();
   }
 
@@ -775,6 +934,10 @@
 
   function acceptedMutationOptions(): KataPinnedDaemonOptions {
     return { daemonId: acceptedDaemonIDForMutation() };
+  }
+
+  function hasHTTPStatus(error: unknown, status: number): boolean {
+    return typeof error === "object" && error !== null && "status" in error && error.status === status;
   }
 
   function selectedMutationTarget(uid: string): KataTaskMutationTarget {
@@ -793,55 +956,139 @@
   }
 
   async function runAuthorityMutation<T>(
-    task: () => Promise<T>,
-    options: { refreshRecurrences?: boolean } = {},
+    task: KataTaskEffect<T>,
+    options: {
+      refreshRecurrences?: boolean;
+      isApplied?: (snapshot: KataWorkspaceSnapshotProjection) => boolean;
+    } = {},
   ): Promise<T> {
     const capturedRequest = acceptedAuthorityRequest();
+    const baseline = acceptedSnapshot;
+    if (!baseline) throw new Error("No accepted Kata snapshot is available.");
+    const identity = {
+      key: mutationFenceKey(baseline),
+      daemonId: baseline.daemon_id,
+      operation: "change Kata task",
+      target: baseline.selected_issue_uid ?? "authority",
+    };
     let replacementRequest: KataWorkspaceAuthorityRequest | null = capturedRequest;
     let replacementGeneration = ++mutationRefreshGeneration;
     mutationRefreshPending = true;
     mutationAcknowledged = false;
     mutationRecurrenceRefreshRequired = options.refreshRecurrences === true;
     mutationRefreshError = null;
+    mutationOutcomeUnknown = false;
     mutationRefreshRequest = capturedRequest;
     try {
-      const result = await acknowledgeKataMutationThenRevalidate(
-        async () => {
-          pendingMutationCount += 1;
-          try {
-            return await task();
-          } finally {
-            pendingMutationCount -= 1;
-          }
-        },
-        () => replacementRequest ? authorityController.load(replacementRequest) : Promise.resolve(true),
-        () => {
-          replacementRequest = currentMutationReplacementRequest(capturedRequest);
-          transferLoadingRowSelectionToReplacement(replacementRequest);
-          replacementGeneration = ++mutationRefreshGeneration;
-          mutationRefreshPending = replacementRequest !== null;
-          mutationAcknowledged = replacementRequest !== null;
-          mutationRecurrenceRefreshRequired =
-            replacementRequest !== null && options.refreshRecurrences === true;
-          mutationRefreshError = null;
-          mutationRefreshRequest = replacementRequest;
+      const program = Effect.gen(function* () {
+        const workflow = yield* KataWorkflow;
+        return yield* workflow.mutateAndRevalidate(
+          Effect.sync(() => (pendingMutationCount += 1)).pipe(
+            Effect.andThen(
+              task.pipe(
+                Effect.mapError(
+                  (cause) => new KataMutationError({ message: kataRequestErrorMessage(cause), cause }),
+                ),
+              ),
+            ),
+            Effect.ensuring(Effect.sync(() => (pendingMutationCount -= 1))),
+          ),
+          Effect.suspend(() =>
+            replacementRequest
+              ? authorityController.load(replacementRequest).pipe(
+                  Effect.mapError(
+                    (cause) => new KataMutationError({ message: kataRequestErrorMessage(cause), cause }),
+                  ),
+                )
+              : Effect.succeed(true),
+          ),
+          () =>
+            Effect.sync(() => {
+              replacementRequest = currentMutationReplacementRequest(capturedRequest);
+              transferLoadingRowSelectionToReplacement(replacementRequest);
+              replacementGeneration = ++mutationRefreshGeneration;
+              mutationRefreshPending = replacementRequest !== null;
+              mutationAcknowledged = replacementRequest !== null;
+              mutationRecurrenceRefreshRequired =
+                replacementRequest !== null && options.refreshRecurrences === true;
+              mutationRefreshError = null;
+              mutationOutcomeUnknown = false;
+              mutationPartialOutcome = false;
+              mutationRefreshRequest = replacementRequest;
+            }),
+          {
+            identity,
+            baseline,
+            readFresh: fetchKataWorkspaceSnapshot(capturedRequest.intent, { fresh: true }),
+            ...(options.isApplied === undefined ? {} : { isApplied: options.isApplied }),
+          },
+        );
+      });
+      const execution = appRuntime.runCommand(program, {
+        operation: "run Kata mutation",
+        safeContext: { daemonId: capturedRequest.intent.daemon_id ?? "" },
+        onFailure: () => {},
+      });
+      // Kata controls require a Promise result. Mutation and ordering remain
+      // app-runtime owned; this boundary only observes the command fiber.
+      const exit = await Effect.runPromise(execution.await);
+      if (Exit.isFailure(exit)) {
+        const failure = Cause.findErrorOption(exit.cause);
+        if (Option.isNone(failure)) throw new Error(Cause.pretty(exit.cause));
+        if (failure.value instanceof KataMutationError && failure.value.cause instanceof Error) {
+          throw failure.value.cause;
+        }
+        throw failure.value;
+      }
+      const result = exit.value;
+      appRuntime.runCommand(
+        result.replacement.pipe(
+          Effect.tap((replacement) =>
+            Effect.sync(() => {
+              if (replacementGeneration !== mutationRefreshGeneration || replacement.replacementAccepted) return;
+              mutationRefreshPending = true;
+              mutationRefreshError = replacement.replacementError ?? "Kata snapshot replacement was not accepted.";
+              mutationRefreshRequest = currentMutationReplacementRequest(capturedRequest) ?? replacementRequest;
+              showFlash("Change saved, but Kata could not refresh. Retry the snapshot before making more changes.", {
+                tone: "warning",
+              });
+            }),
+          ),
+        ),
+        {
+          operation: "revalidate Kata snapshot after mutation",
+          safeContext: { daemonId: capturedRequest.intent.daemon_id ?? "" },
+          onFailure: () => {},
         },
       );
-      void result.replacement.then((replacement) => {
-        if (replacementGeneration !== mutationRefreshGeneration || replacement.replacementAccepted) return;
-        mutationRefreshPending = true;
-        mutationRefreshError = replacement.replacementError ?? "Kata snapshot replacement was not accepted.";
-        mutationRefreshRequest = currentMutationReplacementRequest(capturedRequest) ?? replacementRequest;
-        showFlash("Change saved, but Kata could not refresh. Retry the snapshot before making more changes.", {
-          tone: "warning",
-        });
-      });
       return result.acknowledgement;
     } catch (mutationError) {
       mutationRefreshGeneration += 1;
+      if (mutationError instanceof KataMutationOutcomeUnknownError) {
+        mutationRefreshPending = true;
+        mutationAcknowledged = false;
+        mutationRecurrenceRefreshRequired = false;
+        mutationOutcomeUnknown = true;
+        mutationPartialOutcome = false;
+        mutationRefreshError = mutationError.message;
+        mutationRefreshRequest = currentMutationReplacementRequest(capturedRequest) ?? capturedRequest;
+        throw mutationError;
+      }
+      if (mutationError instanceof KataMutationPartiallyAppliedError) {
+        mutationRefreshPending = true;
+        mutationAcknowledged = false;
+        mutationRecurrenceRefreshRequired = false;
+        mutationOutcomeUnknown = false;
+        mutationPartialOutcome = true;
+        mutationRefreshError = mutationError.message;
+        mutationRefreshRequest = null;
+        throw mutationError;
+      }
       mutationRefreshPending = false;
       mutationAcknowledged = false;
       mutationRecurrenceRefreshRequired = false;
+      mutationOutcomeUnknown = false;
+      mutationPartialOutcome = false;
       mutationRefreshError = null;
       mutationRefreshRequest = null;
       throw mutationError;
@@ -908,11 +1155,44 @@
     authorityRetrying = true;
     mutationRefreshError = null;
     error = null;
+    const uncertainMutationKey = activeMutationFenceKey;
+    if (mutationPartialOutcome && uncertainMutationKey !== null) {
+      try {
+        await observeAppCommand(
+          Effect.gen(function* () {
+            const workflow = yield* KataWorkflow;
+            yield* workflow.acknowledgeMutation(uncertainMutationKey);
+          }),
+          "acknowledge partial Kata mutation",
+          activeKataDaemonId ?? "",
+        );
+      } catch (retryError) {
+        mutationRefreshError = kataRequestErrorMessage(retryError);
+        authorityRetrying = false;
+        return;
+      }
+    } else if (mutationOutcomeUnknown && uncertainMutationKey !== null) {
+      try {
+        const resolution = await observeAppCommand(
+          Effect.gen(function* () {
+            const workflow = yield* KataWorkflow;
+            return yield* workflow.reconcileMutation(uncertainMutationKey);
+          }),
+          "reconcile uncertain Kata mutation",
+          activeKataDaemonId ?? "",
+        );
+        if (resolution === "ambiguous") return;
+      } catch (retryError) {
+        mutationRefreshError = kataRequestErrorMessage(retryError);
+        authorityRetrying = false;
+        return;
+      }
+    }
     const request = recoveryAuthorityRequest();
     transferLoadingRowSelectionToReplacement(request);
     if (!acceptedSnapshot) workspaceOwnershipPending = true;
     try {
-      const accepted = await authorityController.load(request);
+      const accepted = await observeAuthority(authorityController.load(request));
       if (!accepted) {
         throw new Error(authorityStore.state.error ?? "Kata snapshot replacement was not accepted.");
       }
@@ -966,7 +1246,7 @@
     if (requestedDaemon && daemonRosterLoaded && !daemonInfos.some((daemon) => daemon.id === requestedDaemon)) {
       const message = `Kata daemon ${requestedDaemon} is not configured.`;
       routeReconcileGeneration += 1;
-      authorityController.stop();
+      stopAuthority();
       authorityStore.abandon(message);
       workspaceOwnershipPending = true;
       connection = { status: "error", message };
@@ -1194,12 +1474,12 @@
     currentViewName = viewName;
     searchFilters = defaultKataTaskSearchFilters(viewName);
     const accepted = await runViewTask(
-      () => authorityController.load(kataWorkspaceAuthorityRequest({
+      () => observeAuthority(authorityController.load(kataWorkspaceAuthorityRequest({
         daemonID: activeKataDaemonId,
         view: viewName,
         filters: searchFilters,
         selectedIssueUID: acceptedSelectedIssue?.issue.uid ?? selectedIssueUID,
-      })),
+      }))),
       "view",
       () => isCurrentNavigation(generation),
     );
@@ -1226,12 +1506,12 @@
     };
     supersededRouteSelectionUID = previousSelectedIssueUID;
     const accepted = await runViewTask(
-      () => authorityController.load(kataWorkspaceAuthorityRequest({
+      () => observeAuthority(authorityController.load(kataWorkspaceAuthorityRequest({
         daemonID: activeKataDaemonId,
         view: "all",
         filters: searchFilters,
         selectedIssueUID: selectedIssueUIDForScope,
-      })),
+      }))),
       "view",
       () => isCurrentNavigation(generation),
     );
@@ -1260,7 +1540,7 @@
     };
     pendingCreatedProjectScope = pending;
     try {
-      const acknowledgement = await runAuthorityMutation(() => taskAPI.createProject(name, acceptedMutationOptions()));
+      const acknowledgement = await runAuthorityMutation(taskAPI.createProject(name, acceptedMutationOptions()));
       if (!acknowledgement.changed && pendingCreatedProjectScope === pending) pendingCreatedProjectScope = null;
       return acknowledgement;
     } catch (error) {
@@ -1274,7 +1554,7 @@
     const inbox = acceptedProjects.find((project) => project.metadata.role === "inbox");
     if (!inbox) throw new Error("task inbox project is not available");
     await runViewTaskOrThrow(async () => {
-      await runAuthorityMutation(() => taskAPI.createIssue(
+      await runAuthorityMutation(taskAPI.createIssue(
         inbox.id,
         actor,
         { title },
@@ -1309,12 +1589,12 @@
     try {
       let accepted: boolean;
       try {
-        accepted = await authorityController.load(kataWorkspaceAuthorityRequest({
+        accepted = await observeAuthority(authorityController.load(kataWorkspaceAuthorityRequest({
           daemonID: id,
           view: targetViewName,
           filters: targetFilters,
           selectedIssueUID: targetSelectedIssueUID,
-        }));
+        })));
       } catch (switchError) {
         if (
           !(switchError instanceof KataSnapshotAPIError) ||
@@ -1328,11 +1608,11 @@
         targetSelectedIssueUID = null;
         currentViewName = targetViewName;
         searchFilters = targetFilters;
-        accepted = await authorityController.load(kataWorkspaceAuthorityRequest({
+        accepted = await observeAuthority(authorityController.load(kataWorkspaceAuthorityRequest({
           daemonID: id,
           view: targetViewName,
           filters: targetFilters,
-        }));
+        })));
       }
       if (!accepted || !isCurrentNavigation(generation)) return;
       supersededRouteSelectionUID = null;
@@ -1384,13 +1664,13 @@
     rowNavigationSelection = rowSelection;
     resetDetailDrafts();
     const ok = await runViewTask(async () =>
-      authorityController.load(kataWorkspaceAuthorityRequest({
+      observeAuthority(authorityController.load(kataWorkspaceAuthorityRequest({
         daemonID: activeKataDaemonId,
         view: acceptedCurrentView.name,
         filters: searchFilters,
         selectedIssueUID: uid,
         graphSourceUID: graphSourceIssue?.uid,
-      })), "view");
+      }))), "view");
     if (rowNavigationSelection === rowSelection) rowNavigationSelection = null;
     if (!ok || !isCurrentNavigation(generation)) {
       if (
@@ -1421,12 +1701,23 @@
     try {
       const store = createKataAuthorityStore();
       const daemonID = activeKataDaemonId;
-      const accepted = await store.loadSnapshot({
+      const intent: KataSnapshotIntent = {
         ...(daemonID ? { daemon_id: daemonID } : {}),
         scope: "global",
         authority: "all",
         selected_issue_uid: uid,
-      });
+      };
+      const accepted = await observeAuthority(
+        Effect.gen(function* () {
+          const workflow = yield* KataWorkflow;
+          return yield* workflow.latestSnapshot(
+            "kata-link-resolution",
+            store,
+            intent,
+            fetchKataWorkspaceSnapshot(intent),
+          );
+        }),
+      );
       const detail = store.snapshot?.selected_detail;
       if (!accepted || store.snapshot?.selected_issue_uid !== uid || !detail) return null;
       return { uid, status: detail.issue.status, project_uid: detail.issue.project_uid };
@@ -1457,12 +1748,12 @@
       scope: { kind: "project", project_uid: target.project_uid },
     };
     const accepted = await runViewTask(async () =>
-      authorityController.load(kataWorkspaceAuthorityRequest({
+      observeAuthority(authorityController.load(kataWorkspaceAuthorityRequest({
         daemonID: activeKataDaemonId,
         view: viewName,
         filters: searchFilters,
         selectedIssueUID: target.uid,
-      })), "view");
+      }))), "view");
     if (rowNavigationSelection === rowSelection) rowNavigationSelection = null;
     if (!accepted || !isCurrentNavigation(generation)) return;
     if (authorityStore.snapshot?.selected_issue_uid !== target.uid) {
@@ -1507,7 +1798,7 @@
   }
 
   async function retryAcceptedEnrichment(): Promise<void> {
-    await runViewTask(() => authorityController.retry(), "view");
+    await runViewTask(() => observeAuthority(authorityController.retry()), "view");
   }
 
   async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
@@ -1518,7 +1809,7 @@
     pendingMoveIssueUIDs = new SvelteSet(pendingMoveIssueUIDs).add(sourceIssueUID);
     try {
       const ok = await runViewTask(
-        () => runAuthorityMutation(() => taskAPI.moveIssue(
+        () => runAuthorityMutation(taskAPI.moveIssue(
           selectedMutationTarget(sourceIssueUID),
           actor,
           toProjectUID,
@@ -1538,7 +1829,7 @@
 
   async function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {
     if (mutationActionsBlocked) return false;
-    const ok = await runViewTask(() => runAuthorityMutation(() => taskAPI.patchIssueMetadata(
+    const ok = await runViewTask(() => runAuthorityMutation(taskAPI.patchIssueMetadata(
       selectedMutationTarget(uid),
       actor,
       patch,
@@ -1550,14 +1841,24 @@
 
   async function addSelectedComment(uid: string, body: string): Promise<boolean> {
     if (mutationActionsBlocked) return false;
-    return runViewTask(() => runAuthorityMutation(() =>
-      taskAPI.addComment(selectedMutationTarget(uid), actor, body, acceptedMutationOptions())
+    const priorMatches = acceptedSelectedIssue?.comments.filter(
+      (comment) => comment.author === actor && comment.body === body,
+    ).length ?? 0;
+    return runViewTask(() => runAuthorityMutation(
+      taskAPI.addComment(selectedMutationTarget(uid), actor, body, acceptedMutationOptions()),
+      {
+        isApplied: (snapshot) =>
+          snapshot.selected_detail?.issue.uid === uid &&
+          snapshot.selected_detail.comments.filter(
+            (comment) => comment.author === actor && comment.body === body,
+          ).length > priorMatches,
+      },
     ), "flash");
   }
 
   async function editSelectedIssue(uid: string, patch: KataTaskEditPatch): Promise<boolean> {
     if (mutationActionsBlocked) return false;
-    const ok = await runViewTask(() => runAuthorityMutation(() =>
+    const ok = await runViewTask(() => runAuthorityMutation(
       taskAPI.editIssue(selectedMutationTarget(uid), actor, patch, acceptedMutationOptions())
     ), "flash");
     return ok;
@@ -1565,7 +1866,7 @@
 
   async function assignSelectedOwner(uid: string, owner: string): Promise<boolean> {
     if (mutationActionsBlocked) return false;
-    const ok = await runViewTask(() => runAuthorityMutation(() =>
+    const ok = await runViewTask(() => runAuthorityMutation(
       taskAPI.assignOwner(selectedMutationTarget(uid), actor, owner, acceptedMutationOptions())
     ), "flash");
     return ok;
@@ -1573,7 +1874,7 @@
 
   async function unassignSelectedOwner(uid: string): Promise<boolean> {
     if (mutationActionsBlocked) return false;
-    const ok = await runViewTask(() => runAuthorityMutation(() =>
+    const ok = await runViewTask(() => runAuthorityMutation(
       taskAPI.unassignOwner(selectedMutationTarget(uid), actor, acceptedMutationOptions())
     ), "flash");
     return ok;
@@ -1581,7 +1882,7 @@
 
   async function setSelectedPriority(uid: string, priority: number | null): Promise<boolean> {
     if (mutationActionsBlocked) return false;
-    const ok = await runViewTask(() => runAuthorityMutation(() =>
+    const ok = await runViewTask(() => runAuthorityMutation(
       taskAPI.setPriority(selectedMutationTarget(uid), actor, priority, acceptedMutationOptions())
     ), "flash");
     return ok;
@@ -1589,7 +1890,7 @@
 
   async function addSelectedLabel(uid: string, label: string): Promise<boolean> {
     if (mutationActionsBlocked) return false;
-    const ok = await runViewTask(() => runAuthorityMutation(() =>
+    const ok = await runViewTask(() => runAuthorityMutation(
       taskAPI.addLabel(selectedMutationTarget(uid), actor, label, acceptedMutationOptions())
     ), "flash");
     return ok;
@@ -1597,7 +1898,7 @@
 
   async function removeSelectedLabel(uid: string, label: string): Promise<void> {
     if (mutationActionsBlocked) return;
-    await runViewTask(() => runAuthorityMutation(() =>
+    await runViewTask(() => runAuthorityMutation(
       taskAPI.removeLabel(selectedMutationTarget(uid), actor, label, acceptedMutationOptions())
     ), "flash");
   }
@@ -1613,12 +1914,13 @@
     if (mutationActionsBlocked || !selected || workspaceActionBusy) return;
     workspaceActionBusy = true;
     try {
-      const created = await createKataWorkspaceForTask(
-        kataWorkspaceIdentityFromIssue(
-          selected,
-          acceptedSnapshot?.daemon_id ?? null,
-          projectNameForIssue(selected),
+      const daemonID = acceptedSnapshot?.daemon_id ?? "";
+      const created = await observeAppCommand(
+        createKataWorkspaceForTask(
+          kataWorkspaceIdentityFromIssue(selected, daemonID, projectNameForIssue(selected)),
         ),
+        "create Kata task workspace",
+        daemonID,
       );
       if (launchTargetKey) {
         queueWorkspaceLaunch(created.id, launchTargetKey, undefined);
@@ -1657,7 +1959,7 @@
     if (mutationActionsBlocked) return;
     await runViewTaskOrThrow(async () => {
       await runAuthorityMutation(
-        () => taskAPI.createRecurrence(projectID, input, acceptedMutationOptions()),
+        taskAPI.createRecurrence(projectID, input, acceptedMutationOptions()),
         { refreshRecurrences: true },
       );
     }, "none");
@@ -1669,7 +1971,7 @@
       const recurrence = selectedRecurrences.find((item) => item.id === id);
       if (!recurrence) throw new Error(`recurrence not loaded: id=${id}`);
       await runAuthorityMutation(
-        () => taskAPI.patchRecurrence(
+        taskAPI.patchRecurrence(
           recurrence.project_id,
           recurrence.uid,
           input,
@@ -1686,7 +1988,7 @@
     return runViewTask(async () => {
       try {
         return await runAuthorityMutation(
-          () => taskAPI.deleteRecurrence(
+          taskAPI.deleteRecurrence(
             recurrence.project_id,
             recurrence.uid,
             actor,
@@ -1700,7 +2002,7 @@
         // reload the list and wait for the winning reload to reconcile the
         // open dialog. If reconciliation fails, fence that stale dialog until
         // a retry loads the current revision.
-        if ((error as { status?: number }).status === 412 && acceptedSnapshot) {
+        if (hasHTTPStatus(error, 412) && acceptedSnapshot) {
           void scheduleSelectedRecurrenceLoad(acceptedSnapshot);
           const refreshed = await awaitWinningRecurrenceLoad();
           if (!refreshed) beginRecurrenceConflictRecovery();
@@ -1718,7 +2020,7 @@
     if (mutationActionsBlocked || !selected) return false;
     const ok = await runViewTask(
       () =>
-        runAuthorityMutation(() => taskAPI.closeIssue(
+        runAuthorityMutation(taskAPI.closeIssue(
           selectedMutationTarget(selected.issue.uid),
           actor,
           { reason, message },
@@ -1732,7 +2034,7 @@
   async function reopenSelectedIssue(): Promise<void> {
     const selected = acceptedSelectedIssue;
     if (mutationActionsBlocked || !selected) return;
-    await runViewTask(() => runAuthorityMutation(() =>
+    await runViewTask(() => runAuthorityMutation(
       taskAPI.reopenIssue(selectedMutationTarget(selected.issue.uid), actor, acceptedMutationOptions())
     ), "flash");
   }
@@ -1800,7 +2102,7 @@
     <section class="kata-authority-recovery" role="alert">
       <span>{authorityRecoveryMessage}</span>
       <button type="button" disabled={authorityRetrying} onclick={() => void retryAuthoritySnapshot()}>
-        {authorityRetrying ? "Retrying…" : "Retry Kata snapshot"}
+        {authorityRetrying ? "Retrying…" : mutationPartialOutcome ? "Acknowledge partial change" : "Retry Kata snapshot"}
       </button>
     </section>
   {/if}
@@ -1910,7 +2212,7 @@
       issue={acceptedSelectedIssue}
       events={acceptedSelectedEvents}
       issueCatalog={acceptedIssueCatalog}
-      {searchReferences}
+      searchReferences={searchReferences ?? runtimeTaskReferenceSearch}
       activeDaemonId={activeKataDaemonId}
       {linkFilters}
       onLinkFiltersChange={(next) => {

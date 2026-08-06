@@ -6,7 +6,7 @@
   // echo would make it converge back to the stale route.
   import { untrack } from "svelte";
 
-  import KataWorkspace from "./KataWorkspace.svelte";
+  import KataWorkspace from "./KataWorkspaceRuntimeHarness.svelte";
   import type { KataTaskAPI, KataTaskViewName } from "../../api/kata/taskTypes.js";
 
   interface RouteState {

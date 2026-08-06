@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy, setContext, untrack } from "svelte";
-  import { Effect, Option } from "effect";
+  import { Cause, Effect, Exit, Option } from "effect";
   import type { Attachment } from "svelte/attachments";
-  import type { AppRuntime } from "./lib/app/runtime.js";
+  import type { AppExecution, AppRuntime } from "./lib/app/runtime.js";
   import { setAppRuntime } from "./lib/app/runtime-context.js";
   import { createAppStores } from "./lib/app-stores.svelte.js";
   import PRListView from "./lib/views/PRListView.svelte";
@@ -23,10 +23,8 @@
     type RepoBrowserRouteRef,
     type RoutedItemRef,
   } from "./lib/routes.js";
-  import { client } from "./lib/api/runtime.js";
   import {
     ACTIONS_KEY,
-    API_CLIENT_KEY,
     EVENT_KEY,
     HOST_STATE_KEY,
     NAVIGATE_KEY,
@@ -59,7 +57,10 @@
   import KataFeature from "./lib/features/kata/KataFeature.svelte";
   import RepoBrowserFeature from "./lib/features/repo-browser/RepoBrowserFeature.svelte";
   import { fetchKataDaemons } from "./lib/api/kata/daemons.js";
-  import { searchKataTaskReferences } from "./lib/api/kata/snapshot.js";
+  import {
+    searchKataTaskReferences,
+    type KataTaskReferenceSearch,
+  } from "./lib/api/kata/snapshot.js";
   import { createKataTaskAPI } from "./lib/api/kata/taskClient.js";
   import type { KataIssueNavigationTarget } from "./lib/api/kata/navigation.js";
   import type { KataTaskViewName } from "./lib/api/kata/taskTypes.js";
@@ -71,7 +72,6 @@
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
-  import { TransientTransportError } from "./lib/api/effect-errors.js";
   import {
     initTheme,
     cleanupTheme,
@@ -225,7 +225,6 @@
           console.warn("Roborev daemon polling stopped unexpectedly:", failure);
         },
       });
-  setContext(API_CLIENT_KEY, client);
   setContext(ACTIONS_KEY, appActions);
   setContext(NAVIGATE_KEY, appNavigate);
   setContext(EVENT_KEY, () => {});
@@ -262,7 +261,27 @@
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
   const kataAPI = createKataTaskAPI();
   const kataWorkspaceAPI = createKataTaskAPI();
-  const kataAuxiliaryAuthority = createKataAuxiliaryAuthority();
+  const kataAuxiliaryAuthority = createKataAuxiliaryAuthority({});
+  const runtimeTaskReferenceSearch: KataTaskReferenceSearch = async (query, options = {}) => {
+    const { signal, ...requestOptions } = options;
+    const execution = appRuntime.runCommand(searchKataTaskReferences(query, requestOptions), {
+      operation: "search Kata task references",
+      safeContext: { daemonId: requestOptions.daemon_id ?? "" },
+      onFailure: () => {},
+    });
+    const interrupt = () => execution.interrupt();
+    signal?.addEventListener("abort", interrupt, { once: true });
+    if (signal?.aborted) interrupt();
+    try {
+      const exit = await Effect.runPromise(execution.await);
+      if (Exit.isSuccess(exit)) return exit.value;
+      const failure = Cause.findErrorOption(exit.cause);
+      if (Option.isSome(failure)) throw failure.value;
+      throw new Error(Cause.pretty(exit.cause));
+    } finally {
+      signal?.removeEventListener("abort", interrupt);
+    }
+  };
 
   const trackMobileHeaderHeight: Attachment<HTMLElement> = (node) => {
     const update = () => {
@@ -376,31 +395,38 @@
     navigate(kataIssueHref(target, targetDaemon));
   }
 
-  let auxiliaryNavigationToken = 0;
+  let auxiliaryNavigationExecution: AppExecution<unknown, unknown> | undefined;
 
-  async function openAuxiliaryKataIssue(uid: string, daemonID?: string): Promise<void> {
+  function openAuxiliaryKataIssue(uid: string, daemonID?: string): void {
     // UID-only sources carry no status/project authority, and rows in the
     // shared auxiliary snapshot can be stale during invalidation reloads.
     // Always resolve routing authority through an isolated pinned selection,
     // honoring an explicit daemon (for example a daemon-bound Docs folder).
-    // Only the latest click may navigate or surface an error: an older
-    // selection resolving after a newer one must not steal the route.
-    const token = ++auxiliaryNavigationToken;
-    try {
-      const selection = await kataAuxiliaryAuthority.selectIssue(uid, daemonID);
-      if (token !== auxiliaryNavigationToken) return;
-      navigate(kataIssueHref(
-        {
-          uid,
-          status: selection.detail.issue.status,
-          project_uid: selection.detail.issue.project_uid,
-        },
-        selection.daemonID,
-      ));
-    } catch {
-      if (token !== auxiliaryNavigationToken) return;
-      showFlash("Could not open linked task", { tone: "danger" });
-    }
+    // Only the latest click may navigate or surface an error.
+    auxiliaryNavigationExecution?.interrupt();
+    auxiliaryNavigationExecution = appRuntime.runCommand(
+      kataAuxiliaryAuthority.selectIssue(uid, daemonID).pipe(
+        Effect.tap((selection) =>
+          Effect.sync(() =>
+            navigate(
+              kataIssueHref(
+                {
+                  uid,
+                  status: selection.detail.issue.status,
+                  project_uid: selection.detail.issue.project_uid,
+                },
+                selection.daemonID,
+              ),
+            ),
+          ),
+        ),
+      ),
+      {
+        operation: "open auxiliary Kata task",
+        safeContext: { daemonId: daemonID ?? "" },
+        onFailure: () => showFlash("Could not open linked task", { tone: "danger" }),
+      },
+    );
   }
 
   function updateKataRoute(update: KataRouteUpdate, options?: { replace?: boolean }): void {
@@ -464,13 +490,7 @@
   const loadKataDaemonRosterAfterBackendReady = Effect.fn(
     "App.loadKataDaemonRosterAfterBackendReady",
   )(function* () {
-    const roster = yield* Effect.tryPromise({
-      try: () => fetchKataDaemons(),
-      catch: (cause) => TransientTransportError.make({
-        operation: "load Kata daemon roster",
-        cause,
-      }),
-    }).pipe(
+    const roster = yield* fetchKataDaemons().pipe(
       Effect.map((daemons) => ({
         ids: daemons.map((daemon) => daemon.id),
         defaultId: daemons.find((daemon) => daemon.default)?.id,
@@ -492,31 +512,38 @@
     return stores?.settings.isModeVisible(mode) ?? true;
   }
 
-  async function openKataShortId(shortId: string, project?: string, daemonId?: string): Promise<void> {
-    try {
-      const requestedReference = project ? `${project}#${shortId}` : shortId;
-      const results = await searchKataTaskReferences(
+  function openKataShortId(shortId: string, project?: string, daemonId?: string): void {
+    const requestedReference = project ? `${project}#${shortId}` : shortId;
+    appRuntime.runCommand(
+      searchKataTaskReferences(
         requestedReference,
         { ...(daemonId ? { daemon_id: daemonId } : {}), status: "all" },
-      );
-      const match = (results.references ?? []).find((reference) =>
-        reference.reference === requestedReference
-        || reference.qualified_id === requestedReference
-        || (project !== undefined
-          && reference.short_id === shortId
-          && (reference.project_name === project || reference.project_uid === project)),
-      );
-      if (match) {
-        openKataIssue({
-          uid: match.uid,
-          status: match.status,
-          project_uid: match.project_uid,
-          ...(daemonId ? { daemon_id: daemonId } : {}),
-        });
-      }
-    } catch {
-      showFlash("Could not open linked task", { tone: "danger" });
-    }
+      ).pipe(
+        Effect.tap((results) =>
+          Effect.sync(() => {
+            const match = (results.references ?? []).find((reference) =>
+              reference.reference === requestedReference
+              || reference.qualified_id === requestedReference
+              || (project !== undefined
+                && reference.short_id === shortId
+                && (reference.project_name === project || reference.project_uid === project)),
+            );
+            if (!match) return;
+            openKataIssue({
+              uid: match.uid,
+              status: match.status,
+              project_uid: match.project_uid,
+              ...(daemonId ? { daemon_id: daemonId } : {}),
+            });
+          }),
+        ),
+      ),
+      {
+        operation: "open linked Kata task",
+        safeContext: { daemonId: daemonId ?? "" },
+        onFailure: () => showFlash("Could not open linked task", { tone: "danger" }),
+      },
+    );
   }
 
   function startFullAppShell(startupStores: StoreInstances) {
@@ -571,8 +598,14 @@
   $effect(() => {
     if (!appReady || !getKataDaemonRosterLoaded()) return;
     const daemonID = getActiveKataDaemon() ?? kataDefaultDaemonId;
-    const load = untrack(() => kataAuxiliaryAuthority.load(daemonID));
-    void load.catch(() => {});
+    const execution = untrack(() =>
+      appRuntime.runCommand(kataAuxiliaryAuthority.load(daemonID), {
+        operation: "load auxiliary Kata authority",
+        safeContext: { daemonId: daemonID ?? "" },
+        onFailure: () => {},
+      }),
+    );
+    return execution.interrupt;
   });
 
   let lastRepo: string | undefined;
@@ -706,7 +739,12 @@
   }
 
   onDestroy(() => {
-    kataAuxiliaryAuthority.stop();
+    auxiliaryNavigationExecution?.interrupt();
+    appRuntime.runCommand(kataAuxiliaryAuthority.stop(), {
+      operation: "stop auxiliary Kata authority",
+      safeContext: {},
+      onFailure: () => {},
+    });
     stopFullAppShell();
     roborevPollingExecution?.interrupt();
   });
@@ -1229,7 +1267,7 @@
         {@const route = getRoute()}
         {#if route.page === "repo-browser"}
           <RepoBrowserFeature
-            {client}
+            store={stores.repoBrowser}
             {route}
             onRouteChange={updateRepoBrowserRoute}
           />
@@ -1239,7 +1277,6 @@
         {#if route.page === "kata"}
           <KataFeature
             api={kataWorkspaceAPI}
-            searchReferences={searchKataTaskReferences}
             selectedIssueUID={route.issue ?? null}
             routeViewName={route.view ?? null}
             routeScopeUID={route.scope ?? null}
@@ -1327,7 +1364,7 @@
               if (options?.replace) replaceUrl(docsHref(next));
               else navigate(docsHref(next));
             }}
-            searchReferences={searchKataTaskReferences}
+            searchReferences={runtimeTaskReferenceSearch}
             onOpenIssue={openAuxiliaryKataIssue}
             onOpenKataShortId={(shortId, project, daemonId) => {
               void openKataShortId(shortId, project, daemonId);

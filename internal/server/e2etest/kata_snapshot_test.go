@@ -910,6 +910,66 @@ func TestKataProxySuccessfulMutationInvalidatesSnapshotBeforeResponseE2E(t *test
 	assert.Greater(refreshed.Generation, first.Generation)
 }
 
+func TestKataTaskSnapshotFreshReadAdvancesInvalidationEpochE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Cached title")
+
+	first := fixture.snapshot(t, apigenerated.Project, apigenerated.Ready)
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		fixture.forge.URL+"/api/v1/kata/tasks/snapshot?scope=project&project_uid=project-a&authority=ready&fresh=true",
+		http.NoBody,
+	)
+	require.NoError(err)
+	req.Header.Set("X-Kenn-Forge-Kata-Daemon", kataSnapshotE2EDaemonID)
+	response, err := fixture.forge.Client().Do(req)
+	require.NoError(err)
+	defer response.Body.Close()
+	require.Equal(http.StatusOK, response.StatusCode)
+	var fresh apigenerated.KataTaskSnapshotResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&fresh))
+
+	assert.Greater(fresh.InvalidationEpoch, first.InvalidationEpoch)
+	assert.Greater(fresh.Generation, first.Generation)
+}
+
+func TestKataProxyCommittedMutationWithLostResponseIsReportedOnceE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Before lost response")
+	first := fixture.snapshot(t, apigenerated.Project, apigenerated.Ready)
+	fixture.daemon.mu.Lock()
+	fixture.daemon.dropNextMutationResponse = true
+	fixture.daemon.mu.Unlock()
+
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		fixture.forge.URL+"/api/v1/kata/proxy/api/v1/issues/issue-member",
+		strings.NewReader(`{"title":"Committed once"}`),
+	)
+	require.NoError(err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	response, err := fixture.forge.Client().Do(req)
+	require.NoError(err)
+	defer response.Body.Close()
+	require.Equal(http.StatusBadGateway, response.StatusCode)
+	var problem apigenerated.ProblemError
+	require.NoError(json.NewDecoder(response.Body).Decode(&problem))
+
+	assert.Equal(apigenerated.MutationOutcomeUnknown, problem.Code)
+	assert.Equal(int64(1), fixture.daemon.mutationCalls.Load())
+	refreshed := fixture.snapshot(t, apigenerated.Project, apigenerated.Ready)
+	require.NotNil(refreshed.Issues)
+	require.Len(*refreshed.Issues, 1)
+	assert.Equal("Committed once", (*refreshed.Issues)[0].Title)
+	assert.Greater(refreshed.InvalidationEpoch, first.InvalidationEpoch)
+	assert.Equal(int64(1), fixture.daemon.mutationCalls.Load())
+}
+
 type kataSnapshotE2EFixture struct {
 	daemon *kataSnapshotDaemonStub
 	forge  *httptest.Server
@@ -1038,6 +1098,8 @@ type kataSnapshotDaemonStub struct {
 	projectEventPages         []katagenerated.PollEventsBody
 	projectEventPageSize      int
 	projectEventCursors       []int64
+	dropNextMutationResponse  bool
+	mutationCalls             atomic.Int64
 }
 
 func newKataSnapshotDaemonStub(t *testing.T, title string) *kataSnapshotDaemonStub {
@@ -1080,6 +1142,7 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 	case "/api/v1/issues/issue-member", "/api/v1/issues/issue-other":
 		issueUID := strings.TrimPrefix(r.URL.Path, "/api/v1/issues/")
 		if r.Method == http.MethodPost {
+			s.mutationCalls.Add(1)
 			var input struct {
 				Title string `json:"title"`
 			}
@@ -1101,7 +1164,21 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 				OriginInstanceUID: "kata-e2e", ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a",
 				Type: "issue.updated",
 			})
+			dropResponse := s.dropNextMutationResponse
+			s.dropNextMutationResponse = false
 			s.mu.Unlock()
+			if dropResponse {
+				hijacker, ok := w.(http.Hijacker)
+				if !ok {
+					http.Error(w, "response hijacking unavailable", http.StatusInternalServerError)
+					return
+				}
+				connection, _, hijackErr := hijacker.Hijack()
+				if hijackErr == nil {
+					_ = connection.Close()
+				}
+				return
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

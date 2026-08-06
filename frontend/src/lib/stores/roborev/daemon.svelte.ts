@@ -14,7 +14,6 @@ type DaemonStatus = RoborevComponents["schemas"]["DaemonStatus"];
 export interface DaemonStoreOptions {
   client: RoborevClient;
   runtime: AppRuntime;
-  onRecover?: () => void;
 }
 
 export function createDaemonStore(opts: DaemonStoreOptions) {
@@ -93,12 +92,7 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
       if (!available) clearStatus();
     });
     const recovered = available && !previous;
-    if (recovered) {
-      yield* Effect.sync(() => {
-        wasEverAvailable = true;
-        opts.onRecover?.();
-      });
-    }
+    if (recovered) wasEverAvailable = true;
     return recovered;
   }).pipe(
     Effect.ensuring(

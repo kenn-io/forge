@@ -13,13 +13,17 @@ import { ActivityWorkflowLive } from "../stores/activity-workflow.js";
 import { DetailWorkflowLive } from "../stores/detail-workflow.js";
 import { DiffWorkflowLive } from "../stores/diff-workflow.js";
 import { FilePreviewWorkflowLive } from "../stores/diff-preview-workflow.js";
+import { DocsWorkflowLive } from "../stores/docs-workflow.js";
 import { IssuesWorkflowLive } from "../stores/issues-workflow.js";
 import { ProviderMutationsLive } from "../stores/ordered-mutations.js";
 import { PullsWorkflowLive } from "../stores/pulls-workflow.js";
 import { ProviderEventsCheckpointLive } from "../stores/provider-events-workflow.js";
 import { SyncWorkflowLive } from "../stores/sync-workflow.js";
 import { RoborevDaemonWorkflowLive } from "../stores/roborev/daemon-workflow.js";
+import { RoborevWorkflowLive } from "../stores/roborev/roborev-workflow.js";
+import { RepoBrowserWorkflowLive } from "../stores/repo-browser-workflow.js";
 import { StartupWorkflowLive } from "./startup-workflow.js";
+import { KataWorkflowLive } from "../features/kata/kata-workflow.js";
 
 export function makeAppLiveLayer(generatedApiLayer: Layer.Layer<GeneratedApi>) {
   const browserBoundaryLive = Layer.mergeAll(
@@ -43,9 +47,13 @@ export function makeAppLiveLayer(generatedApiLayer: Layer.Layer<GeneratedApi>) {
     DiffWorkflowLive,
     DiffContextPrefetchLive,
     FilePreviewWorkflowLive,
+    DocsWorkflowLive,
     ProviderEventsCheckpointLive,
     ProviderMutationsLive,
     RoborevDaemonWorkflowLive,
+    RoborevWorkflowLive,
+    RepoBrowserWorkflowLive,
+    KataWorkflowLive,
   );
   const applicationWorkflowsLive = Layer.mergeAll(SettingsWorkflowLive, providerWorkflowsLive);
 

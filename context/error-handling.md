@@ -58,6 +58,7 @@ not an exhaustive enum.
 | `payloadTooLarge` | 413 | A bounded payload exceeds its accepted size. Request-body failures include `details.maxBytes` when known. Archive detailed-report failures use `details.reason = "reportTooLarge"` with integer `observedRecords`, `maxRecords`, `observedTextBytes`, and `maxTextBytes`; clients branch on the reason and camelCase fields, not prose. |
 | `rateLimited` | 429 | Upstream provider quota is exhausted. Include `details.retryAfter` as a UTC RFC3339 timestamp when known. |
 | `internalError` | 500 | Generic kenn-forge bug or unexpected local failure. |
+| `mutationOutcomeUnknown` | 502 | A non-idempotent upstream mutation may have been applied despite transport failure. Clients fence related writes, reconcile fresh authority, and never replay the request automatically. |
 | `upstreamError` | 502 | Provider API, auth, network, or upstream service failure. Include provider identity when known. |
 | `serviceUnavailable` | 503 | Temporarily unavailable local service or health dependency. |
 

@@ -11,10 +11,7 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { DocsRoute } from "../../api/docs/route.js";
   import { createDocsAPI, type DocsAPI } from "../../api/docs/api";
-  import {
-    searchKataTaskReferences,
-    type KataTaskReferenceSearch,
-  } from "../../api/kata/snapshot.js";
+  import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
   import type { DocsAPIError, GitPublishResponse, GitStatusEntry, TreeNode, Folder } from "../../api/docs/types";
   import PublishDocsDialog from "./PublishDocsDialog.svelte";
   import { buildFolderIndex, type FolderIndex } from "../../api/docs/folderLinks";
@@ -50,7 +47,7 @@
     // the immediate `#` autocomplete results before the daemon search
     // returns. May be empty.
     kataIssues?: readonly IssueSummary[] | undefined;
-    searchReferences?: KataTaskReferenceSearch | undefined;
+    searchReferences: KataTaskReferenceSearch;
   }
 
   let {
@@ -60,7 +57,7 @@
     onOpenIssue,
     onOpenKataShortId,
     kataIssues = [],
-    searchReferences = searchKataTaskReferences,
+    searchReferences,
   }: Props = $props();
 
   const issueCompletionSource = buildIssueCompletionSource(

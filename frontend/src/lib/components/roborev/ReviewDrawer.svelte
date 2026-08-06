@@ -4,7 +4,6 @@
     Button,
     FitStages,
     IconButton,
-    copyToClipboard,
   } from "@kenn-io/kit-ui";
   import BanIcon from "@lucide/svelte/icons/ban";
   import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
@@ -61,17 +60,15 @@
     return ref;
   }
 
-  async function copyOutput(): Promise<void> {
-    const output =
-      stores.roborevReview?.getOutput() ?? "";
-    await copyToClipboard(output);
+  function copyOutput(): void {
+    stores.roborevReview?.copyOutput();
   }
 
   function handleCloseReview(): void {
     const jobId =
       stores.roborevJobs?.getSelectedJobId();
     if (jobId !== undefined) {
-      void stores.roborevReview?.closeReview(jobId);
+      stores.roborevReview?.closeReview(jobId);
     }
   }
 
@@ -79,7 +76,7 @@
     const jobId =
       stores.roborevJobs?.getSelectedJobId();
     if (jobId !== undefined) {
-      void stores.roborevJobs?.rerunJob(jobId);
+      stores.roborevJobs?.rerunJob(jobId);
     }
   }
 
@@ -87,7 +84,7 @@
     const jobId =
       stores.roborevJobs?.getSelectedJobId();
     if (jobId !== undefined) {
-      void stores.roborevJobs?.cancelJob(jobId);
+      stores.roborevJobs?.cancelJob(jobId);
     }
   }
 
@@ -327,7 +324,7 @@
         {/if}
         <Button
           size="sm"
-          onclick={() => void copyOutput()}
+          onclick={copyOutput}
           title="Copy review output"
           label="Copy Output"
         />
@@ -372,7 +369,7 @@
           size="sm"
           ariaLabel="Copy Output"
           title="Copy review output"
-          onclick={() => void copyOutput()}
+          onclick={copyOutput}
         >
           <CopyIcon size={14} aria-hidden="true" />
         </IconButton>

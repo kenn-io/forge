@@ -1,4 +1,8 @@
-import type { RoborevClient } from "../../api/roborev/client.js";
+import { Effect, Stream } from "effect";
+import type { AppRuntime } from "../../app/runtime.js";
+import { loadRoborevJobOutput, roborevJobOutputStream } from "../../api/roborev/client.js";
+import type { RoborevLogLinePayload } from "../../api/roborev/schemas.js";
+import { makeRoborevOwner, RoborevWorkflow } from "./roborev-workflow.js";
 
 interface LogLine {
   ts: string;
@@ -6,120 +10,154 @@ interface LogLine {
   lineType: string;
 }
 
-interface RawLogLine {
-  ts?: unknown;
-  text?: unknown;
-  line_type?: unknown;
-}
-
-interface JobOutputSnapshot {
-  lines?: RawLogLine[] | null;
-}
-
 export interface LogStoreOptions {
-  client: RoborevClient;
+  runtime: AppRuntime;
   baseUrl: string;
+  onError?: (message: string) => void;
+}
+
+function logLineFromPayload(payload: RoborevLogLinePayload): LogLine {
+  return {
+    ts: payload.ts ?? "",
+    text: payload.text ?? "",
+    lineType: payload.line_type ?? "",
+  };
 }
 
 export function createLogStore(opts: LogStoreOptions) {
-  let lines = $state<LogLine[]>([]);
+  let lines = $state.raw<LogLine[]>([]);
   let streaming = $state(false);
   let followMode = $state(true);
   let connectedJobId = $state<number | undefined>(undefined);
-  let abortController: AbortController | null = null;
-  let requestVersion = 0;
+  let activeLogOwner: string | undefined;
 
-  function logLineFromRaw(raw: RawLogLine): LogLine {
-    return {
-      ts: typeof raw.ts === "string" ? raw.ts : "",
-      text: typeof raw.text === "string" ? raw.text : "",
-      lineType: typeof raw.line_type === "string" ? raw.line_type : "",
-    };
-  }
+  const startStreamingEffect = (
+    jobId: number,
+    logOwner: string,
+    claimedPreviousOwner?: string,
+    requirePublicClaim = false,
+  ) =>
+    Effect.gen(function* () {
+      const workflow = yield* RoborevWorkflow;
+      if (requirePublicClaim && activeLogOwner !== logOwner) return;
+      const previousOwner = claimedPreviousOwner ?? activeLogOwner;
+      yield* Effect.sync(() => {
+        activeLogOwner = logOwner;
+        connectedJobId = jobId;
+        streaming = true;
+        lines = [];
+      });
+      if (previousOwner !== undefined && previousOwner !== logOwner) yield* workflow.stopLog(previousOwner);
+      yield* workflow.log(
+        logOwner,
+        jobId,
+        Stream.runForEach(roborevJobOutputStream(opts.baseUrl, jobId), (payload) =>
+          Effect.sync(() => {
+            if (activeLogOwner !== logOwner) return;
+            lines = [...lines, logLineFromPayload(payload)];
+          }),
+        ).pipe(
+          Effect.catch((failure) =>
+            Effect.sync(() => {
+              if (activeLogOwner !== logOwner) return;
+              opts.onError?.(failure.message);
+            }),
+          ),
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (activeLogOwner !== logOwner) return;
+              streaming = false;
+            }),
+          ),
+        ),
+      );
+    });
 
-  async function startStreaming(jobId: number): Promise<void> {
-    stopStreaming();
-    const version = ++requestVersion;
+  function startStreaming(jobId: number): string {
+    const logOwner = makeRoborevOwner("roborev-log");
+    const previousOwner = activeLogOwner;
+    activeLogOwner = logOwner;
     connectedJobId = jobId;
     streaming = true;
     lines = [];
-
-    abortController = new AbortController();
-    const params = new URLSearchParams({ job_id: String(jobId), stream: "1" });
-    const url = `${opts.baseUrl}/api/job/output?${params}`;
-
-    try {
-      const resp = await fetch(url, {
-        headers: { Accept: "application/x-ndjson" },
-        signal: abortController.signal,
-      });
-      if (!resp.ok || !resp.body) {
-        if (version === requestVersion) {
-          streaming = false;
-        }
-        return;
-      }
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (version !== requestVersion) break;
-        buffer += decoder.decode(value, {
-          stream: true,
-        });
-
-        const parts = buffer.split("\n");
-        buffer = parts.pop() ?? "";
-        for (const part of parts) {
-          const trimmed = part.trim();
-          if (!trimmed) continue;
-          try {
-            const parsed = JSON.parse(trimmed) as RawLogLine;
-            lines = [...lines, logLineFromRaw(parsed)];
-          } catch {
-            // Skip malformed NDJSON lines
-          }
-        }
-      }
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        return;
-      }
-    } finally {
-      if (version === requestVersion) {
-        streaming = false;
-      }
-    }
+    opts.runtime.runCommand(startStreamingEffect(jobId, logOwner, previousOwner, true), {
+      operation: "stream Roborev job output",
+      safeContext: { job_id: jobId, owner: logOwner },
+      onFailure: () => {},
+    });
+    return logOwner;
   }
 
-  function stopStreaming(): void {
-    if (abortController) {
-      abortController.abort();
-      abortController = null;
-    }
+  const stopStreamingEffect = (logOwner: string) =>
+    Effect.gen(function* () {
+      const workflow = yield* RoborevWorkflow;
+      yield* workflow.stopLog(logOwner);
+      yield* Effect.sync(() => {
+        if (activeLogOwner !== logOwner) return;
+        activeLogOwner = undefined;
+        connectedJobId = undefined;
+        streaming = false;
+      });
+    });
+
+  function stopStreaming(logOwner: string): void {
+    opts.runtime.runCommand(stopStreamingEffect(logOwner), {
+      operation: "stop Roborev job output",
+      safeContext: { owner: logOwner },
+      onFailure: () => {},
+    });
+  }
+
+  const loadSnapshotEffect = (
+    jobId: number,
+    logOwner: string,
+    claimedPreviousOwner?: string,
+    requirePublicClaim = false,
+  ) =>
+    Effect.gen(function* () {
+      const workflow = yield* RoborevWorkflow;
+      if (requirePublicClaim && activeLogOwner !== logOwner) return;
+      const previousOwner = claimedPreviousOwner ?? activeLogOwner;
+      yield* Effect.sync(() => {
+        activeLogOwner = logOwner;
+        connectedJobId = undefined;
+        streaming = false;
+        lines = [];
+      });
+      if (previousOwner !== undefined && previousOwner !== logOwner) yield* workflow.stopLog(previousOwner);
+      yield* workflow.log(
+        logOwner,
+        jobId,
+        loadRoborevJobOutput(opts.baseUrl, jobId).pipe(
+          Effect.tap((snapshot) =>
+            Effect.sync(() => {
+              if (activeLogOwner !== logOwner) return;
+              lines = (snapshot.lines ?? []).map(logLineFromPayload);
+            }),
+          ),
+          Effect.catch((failure) =>
+            Effect.sync(() => {
+              if (activeLogOwner !== logOwner) return;
+              opts.onError?.(failure.message);
+            }),
+          ),
+        ),
+      );
+    });
+
+  function loadSnapshot(jobId: number): string {
+    const logOwner = makeRoborevOwner("roborev-log");
+    const previousOwner = activeLogOwner;
+    activeLogOwner = logOwner;
     connectedJobId = undefined;
     streaming = false;
-  }
-
-  async function loadSnapshot(jobId: number): Promise<void> {
-    stopStreaming();
-    const version = ++requestVersion;
     lines = [];
-    const params = new URLSearchParams({ job_id: String(jobId) });
-    const resp = await fetch(`${opts.baseUrl}/api/job/output?${params}`);
-    if (!resp.ok) return;
-    let data: JobOutputSnapshot;
-    try {
-      data = (await resp.json()) as JobOutputSnapshot;
-    } catch {
-      return;
-    }
-    if (version !== requestVersion) return;
-    lines = (data.lines ?? []).map(logLineFromRaw);
+    opts.runtime.runCommand(loadSnapshotEffect(jobId, logOwner, previousOwner, true), {
+      operation: "load Roborev job output",
+      safeContext: { job_id: jobId, owner: logOwner },
+      onFailure: () => {},
+    });
+    return logOwner;
   }
 
   function toggleFollow(): void {
@@ -149,8 +187,11 @@ export function createLogStore(opts: LogStoreOptions) {
     getFollowMode,
     getConnectedJobId,
     startStreaming,
+    startStreamingEffect,
     stopStreaming,
+    stopStreamingEffect,
     loadSnapshot,
+    loadSnapshotEffect,
     toggleFollow,
     clear,
   };

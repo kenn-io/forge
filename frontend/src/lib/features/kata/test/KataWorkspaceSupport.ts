@@ -1,4 +1,5 @@
 import { vi } from "vite-plus/test";
+import { Effect } from "effect";
 
 import {
   KATA_DAEMON_HEADER,
@@ -400,26 +401,24 @@ function createDaemonWorkspaceAPI(
   } = {},
 ): KataTaskAPI {
   const api: KataTaskAPI = {
-    createProject: vi.fn(async () => ({ changed: true })),
-    createIssue: vi.fn(async (_projectID: number, _actor: string, _draft: { title: string }) => ({
-      changed: true,
-    })),
-    addComment: vi.fn(async () => ({ changed: true })),
-    addLabel: vi.fn(async () => ({ changed: true })),
-    removeLabel: vi.fn(async () => ({ changed: true })),
-    assignOwner: vi.fn(async () => ({ changed: true })),
-    unassignOwner: vi.fn(async () => ({ changed: true })),
-    setPriority: vi.fn(async () => ({ changed: true })),
-    closeIssue: vi.fn(async () => ({ changed: true })),
-    reopenIssue: vi.fn(async () => ({ changed: true })),
-    editIssue: vi.fn(async () => ({ changed: true })),
-    patchIssueMetadata: vi.fn(async () => ({ changed: true })),
-    moveIssue: vi.fn(async () => ({ changed: true })),
-    recurrences: vi.fn(async () => ({ recurrences: [], fetched_at: fetchedAt })),
-    createRecurrence: vi.fn(async () => ({ recurrence: recurrence() })),
-    showRecurrence: vi.fn(async () => ({ recurrence: recurrence(), etag: '"rev-1"' })),
-    patchRecurrence: vi.fn(async () => ({ changed: true, recurrence: recurrence(), etag: '"rev-2"' })),
-    deleteRecurrence: vi.fn(async () => undefined),
+    createProject: vi.fn(() => Effect.succeed({ changed: true })),
+    createIssue: vi.fn(() => Effect.succeed({ changed: true })),
+    addComment: vi.fn(() => Effect.succeed({ changed: true })),
+    addLabel: vi.fn(() => Effect.succeed({ changed: true })),
+    removeLabel: vi.fn(() => Effect.succeed({ changed: true })),
+    assignOwner: vi.fn(() => Effect.succeed({ changed: true })),
+    unassignOwner: vi.fn(() => Effect.succeed({ changed: true })),
+    setPriority: vi.fn(() => Effect.succeed({ changed: true })),
+    closeIssue: vi.fn(() => Effect.succeed({ changed: true })),
+    reopenIssue: vi.fn(() => Effect.succeed({ changed: true })),
+    editIssue: vi.fn(() => Effect.succeed({ changed: true })),
+    patchIssueMetadata: vi.fn(() => Effect.succeed({ changed: true })),
+    moveIssue: vi.fn(() => Effect.succeed({ changed: true })),
+    recurrences: vi.fn(() => Effect.succeed({ recurrences: [], fetched_at: fetchedAt })),
+    createRecurrence: vi.fn(() => Effect.succeed({ recurrence: recurrence() })),
+    showRecurrence: vi.fn(() => Effect.succeed({ recurrence: recurrence(), etag: '"rev-1"' })),
+    patchRecurrence: vi.fn(() => Effect.succeed({ changed: true, recurrence: recurrence(), etag: '"rev-2"' })),
+    deleteRecurrence: vi.fn(() => Effect.void),
   };
   installKataWorkspaceSnapshotFixture({
     rows: (requestedDaemonID) => rowsByDaemon[requestedDaemonID] ?? [],
@@ -468,68 +467,80 @@ function createWorkspaceAPI(
   const commentsByUID = new Map<string, ReturnType<typeof makeComment>[]>([
     ["issue-pay-rent", [makeComment(1, rows[0]!.id, "Verify amount against the lease.")]],
   ]);
-  const addComment = vi.fn(async (target: { ref: string }, _actor: string, body: string) => {
-    const found = rows.find((item) => item.uid === target.ref) ?? rows[0]!;
-    const next = [makeComment(Date.now(), found.id, body), ...(commentsByUID.get(found.uid) ?? [])];
-    commentsByUID.set(found.uid, next);
-    return { changed: true };
-  });
-  const addLabel = vi.fn(async (target: { ref: string }, _actor: string, label: string) => {
-    rows = rows.map((item) =>
-      item.uid === target.ref ? { ...item, labels: [...new Set([...(item.labels ?? []), label])] } : item,
-    );
-    return { changed: true };
-  });
-  const removeLabel = vi.fn(async (target: { ref: string }, _actor: string, label: string) => {
-    rows = rows.map((item) =>
-      item.uid === target.ref
-        ? { ...item, labels: (item.labels ?? []).filter((candidate) => candidate !== label) }
-        : item,
-    );
-    return { changed: true };
-  });
-  const assignOwner = vi.fn(async (target: { ref: string }, _actor: string, owner: string) => {
-    rows = rows.map((item) => (item.uid === target.ref ? { ...item, owner } : item));
-    return { changed: true };
-  });
-  const unassignOwner = vi.fn(async (target: { ref: string }) => {
-    rows = rows.map((item) => (item.uid === target.ref ? { ...item, owner: undefined } : item));
-    return { changed: true };
-  });
-  const setPriority = vi.fn(async (target: { ref: string }, _actor: string, priority: number | null) => {
-    rows = rows.map((item) => (item.uid === target.ref ? { ...item, priority: priority ?? undefined } : item));
-    return { changed: true };
-  });
-  const patchIssueMetadata = vi.fn(async (target: { ref: string }, _actor: string, patch: Record<string, unknown>) => {
-    rows = rows.map((item) =>
-      item.uid === target.ref
-        ? { ...item, metadata: { ...item.metadata, ...patch }, revision: item.revision + 1 }
-        : item,
-    );
-    return { changed: true };
-  });
-  const moveIssue = vi.fn(async () => ({ changed: true }));
-  const recurrences = vi.fn(async () => ({ recurrences: options.recurrences ?? [], fetched_at: fetchedAt }));
-  const createRecurrence = vi.fn(async () => ({
-    recurrence: recurrence(),
-  }));
-  const patchRecurrence = vi.fn(async () => ({
-    changed: true,
-    recurrence: recurrence({ revision: 2 }),
-    etag: '"rev-2"',
-  }));
-  const deleteRecurrence = vi.fn(async () => undefined);
-  const createIssue = vi.fn(async (projectID: number, actor: string, draft: { title: string }) => {
-    const created: KataTaskSummary = {
-      ...issue("issue-capture", draft.title, "project-inbox"),
-      project_id: projectID,
-      author: actor,
-    };
-    rows = [created, ...rows];
-    return { changed: true };
-  });
+  const addComment = vi.fn((target: { ref: string }, _actor: string, body: string) =>
+    Effect.sync(() => {
+      const found = rows.find((item) => item.uid === target.ref) ?? rows[0]!;
+      const next = [makeComment(Date.now(), found.id, body), ...(commentsByUID.get(found.uid) ?? [])];
+      commentsByUID.set(found.uid, next);
+      return { changed: true };
+    }),
+  );
+  const addLabel = vi.fn((target: { ref: string }, _actor: string, label: string) =>
+    Effect.sync(() => {
+      rows = rows.map((item) =>
+        item.uid === target.ref ? { ...item, labels: [...new Set([...(item.labels ?? []), label])] } : item,
+      );
+      return { changed: true };
+    }),
+  );
+  const removeLabel = vi.fn((target: { ref: string }, _actor: string, label: string) =>
+    Effect.sync(() => {
+      rows = rows.map((item) =>
+        item.uid === target.ref
+          ? { ...item, labels: (item.labels ?? []).filter((candidate) => candidate !== label) }
+          : item,
+      );
+      return { changed: true };
+    }),
+  );
+  const assignOwner = vi.fn((target: { ref: string }, _actor: string, owner: string) =>
+    Effect.sync(() => {
+      rows = rows.map((item) => (item.uid === target.ref ? { ...item, owner } : item));
+      return { changed: true };
+    }),
+  );
+  const unassignOwner = vi.fn((target: { ref: string }) =>
+    Effect.sync(() => {
+      rows = rows.map((item) => (item.uid === target.ref ? { ...item, owner: undefined } : item));
+      return { changed: true };
+    }),
+  );
+  const setPriority = vi.fn((target: { ref: string }, _actor: string, priority: number | null) =>
+    Effect.sync(() => {
+      rows = rows.map((item) => (item.uid === target.ref ? { ...item, priority: priority ?? undefined } : item));
+      return { changed: true };
+    }),
+  );
+  const patchIssueMetadata = vi.fn((target: { ref: string }, _actor: string, patch: Record<string, unknown>) =>
+    Effect.sync(() => {
+      rows = rows.map((item) =>
+        item.uid === target.ref
+          ? { ...item, metadata: { ...item.metadata, ...patch }, revision: item.revision + 1 }
+          : item,
+      );
+      return { changed: true };
+    }),
+  );
+  const moveIssue = vi.fn(() => Effect.succeed({ changed: true }));
+  const recurrences = vi.fn(() => Effect.succeed({ recurrences: options.recurrences ?? [], fetched_at: fetchedAt }));
+  const createRecurrence = vi.fn(() => Effect.succeed({ recurrence: recurrence() }));
+  const patchRecurrence = vi.fn(() =>
+    Effect.succeed({ changed: true, recurrence: recurrence({ revision: 2 }), etag: '"rev-2"' }),
+  );
+  const deleteRecurrence = vi.fn(() => Effect.void);
+  const createIssue = vi.fn((projectID: number, actor: string, draft: { title: string }) =>
+    Effect.sync(() => {
+      const created: KataTaskSummary = {
+        ...issue("issue-capture", draft.title, "project-inbox"),
+        project_id: projectID,
+        author: actor,
+      };
+      rows = [created, ...rows];
+      return { changed: true };
+    }),
+  );
   const api: KataTaskAPI = {
-    createProject: vi.fn(async () => ({ changed: true })),
+    createProject: vi.fn(() => Effect.succeed({ changed: true })),
     createIssue,
     addComment,
     addLabel,
@@ -537,17 +548,14 @@ function createWorkspaceAPI(
     assignOwner,
     unassignOwner,
     setPriority,
-    closeIssue: vi.fn(async () => ({ changed: true })),
-    reopenIssue: vi.fn(async () => ({ changed: true })),
-    editIssue: vi.fn(async () => ({ changed: true })),
+    closeIssue: vi.fn(() => Effect.succeed({ changed: true })),
+    reopenIssue: vi.fn(() => Effect.succeed({ changed: true })),
+    editIssue: vi.fn(() => Effect.succeed({ changed: true })),
     patchIssueMetadata,
     moveIssue,
     recurrences,
     createRecurrence,
-    showRecurrence: vi.fn(async () => ({
-      recurrence: recurrence(),
-      etag: '"rev-1"',
-    })),
+    showRecurrence: vi.fn(() => Effect.succeed({ recurrence: recurrence(), etag: '"rev-1"' })),
     patchRecurrence,
     deleteRecurrence,
   };

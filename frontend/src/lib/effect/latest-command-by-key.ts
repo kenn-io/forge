@@ -21,6 +21,7 @@ export interface LatestCommandByKey<Error> {
     key: string,
     command: Effect.Effect<void, Error>,
   ) => Effect.Effect<void, Error | CommandQueueClosed>;
+  readonly cancel: (key: string) => Effect.Effect<void>;
   readonly shutdown: Effect.Effect<void>;
 }
 
@@ -128,6 +129,25 @@ export function makeLatestCommandByKey<Error>(
       return yield* Deferred.await(acknowledgement).pipe(Effect.flatMap((exit) => exit));
     });
 
+    const cancel = Effect.fn("LatestCommandByKey.cancel")(function* (key: string) {
+      const pending = yield* acceptance.withPermit(
+        Ref.modify(
+          states,
+          (current): readonly [Option.Option<CommandEntry<Error>>, ReadonlyMap<string, KeyState<Error>>] => {
+            const entry = current.get(key)?.pending ?? Option.none();
+            const next = new Map(current);
+            next.delete(key);
+            return [entry, next];
+          },
+        ),
+      );
+      if (Option.isSome(pending)) {
+        acknowledgements.delete(pending.value.acknowledgement);
+        yield* Deferred.succeed(pending.value.acknowledgement, Exit.interrupt());
+      }
+      yield* FiberMap.remove(workers, key);
+    });
+
     const shutdown = Effect.gen(function* () {
       const shouldClose = yield* acceptance.withPermit(
         Ref.modify(closed, (isClosed): readonly [boolean, boolean] => [!isClosed, true]),
@@ -145,6 +165,6 @@ export function makeLatestCommandByKey<Error>(
     });
     yield* Effect.addFinalizer(() => shutdown);
 
-    return { submit, shutdown };
+    return { submit, cancel, shutdown };
   });
 }

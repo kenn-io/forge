@@ -3,10 +3,7 @@
   import type { AppRuntime } from "../app/runtime.js";
   import { setAppRuntime } from "../app/runtime-context.js";
 
-  import {
-    API_CLIENT_KEY,
-    STORES_KEY,
-  } from "../context.js";
+  import { STORES_KEY } from "../context.js";
   import CommentBox from "./detail/CommentBox.svelte";
   import IssueCommentBox from "./detail/IssueCommentBox.svelte";
 
@@ -44,8 +41,6 @@
     platformHost = "github.com",
     repoPath = `${owner}/${name}`,
     submitComment = async () => true,
-    autocompleteResponse = { users: [], references: [] },
-    onAutocompleteQuery = undefined,
   }: Props = $props();
 
   setAppRuntime(untrack(() => runtime));
@@ -74,25 +69,6 @@
     },
   });
 
-  setContext(API_CLIENT_KEY, {
-    GET: async (
-      path: string,
-      options?: {
-        params?: {
-          path?: Record<string, unknown>;
-          query?: Record<string, unknown>;
-        };
-      },
-    ) => {
-      if (
-        path === "/repo/{provider}/{owner}/{name}/comment-autocomplete"
-        || path === "/host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete"
-      ) {
-        return { data: { users: [], references: [] } };
-      }
-      return { data: undefined, error: { title: "not mocked" } };
-    },
-  });
 </script>
 
 {#if kind === "pull"}

@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { defaultProviderCapabilities } from "../repositories/repoSummary.js";
-import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
+import KataProjectMappingsSettings from "./KataProjectMappingsSettingsRuntimeHarness.svelte";
 
 const { mockUpdateSettings, mockFetchKataDaemons, mockGetKataProjectMappings } = vi.hoisted(() => ({
   mockUpdateSettings: vi.fn(),
@@ -13,7 +14,8 @@ vi.mock("../../api/settings.js", () => ({
   updateSettings: mockUpdateSettings,
 }));
 
-vi.mock("../../stores/embed-config.svelte.js", () => ({
+vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../stores/embed-config.svelte.js")>()),
   isEmbedded: () => false,
 }));
 
@@ -27,10 +29,10 @@ vi.mock("../../api/kata/workspaces.js", () => ({
 
 describe("KataProjectMappingsSettings", () => {
   beforeEach(() => {
-    mockFetchKataDaemons.mockResolvedValue([
-      { id: "work", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
-    ]);
-    mockGetKataProjectMappings.mockResolvedValue({ daemon_id: "work", projects: [], targets: [] });
+    mockFetchKataDaemons.mockReturnValue(
+      Effect.succeed([{ id: "work", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }]),
+    );
+    mockGetKataProjectMappings.mockReturnValue(Effect.succeed({ daemon_id: "work", projects: [], targets: [] }));
   });
 
   afterEach(() => {
@@ -63,39 +65,41 @@ describe("KataProjectMappingsSettings", () => {
   });
 
   it("shows the effective mapping and prefills a registered-project override", async () => {
-    mockGetKataProjectMappings.mockResolvedValue({
-      daemon_id: "work",
-      projects: [
-        {
-          daemon_id: "work",
-          project_uid: "project-kata",
-          project_name: "Kata",
-          status: "mapped",
-          source: "registered_project",
-          repo: {
-            provider: "github",
-            platform_host: "github.com",
-            owner: "kenn-io",
-            name: "middleman",
-            repo_path: "kenn-io/middleman",
-            capabilities: defaultProviderCapabilities,
+    mockGetKataProjectMappings.mockReturnValue(
+      Effect.succeed({
+        daemon_id: "work",
+        projects: [
+          {
+            daemon_id: "work",
+            project_uid: "project-kata",
+            project_name: "Kata",
+            status: "mapped",
+            source: "registered_project",
+            repo: {
+              provider: "github",
+              platform_host: "github.com",
+              owner: "kenn-io",
+              name: "middleman",
+              repo_path: "kenn-io/middleman",
+              capabilities: defaultProviderCapabilities,
+            },
           },
-        },
-      ],
-      targets: [
-        {
-          display_name: "Kenn Forge",
-          repo: {
-            provider: "github",
-            platform_host: "github.com",
-            owner: "kenn-io",
-            name: "middleman",
-            repo_path: "kenn-io/middleman",
-            capabilities: defaultProviderCapabilities,
+        ],
+        targets: [
+          {
+            display_name: "Kenn Forge",
+            repo: {
+              provider: "github",
+              platform_host: "github.com",
+              owner: "kenn-io",
+              name: "middleman",
+              repo_path: "kenn-io/middleman",
+              capabilities: defaultProviderCapabilities,
+            },
           },
-        },
-      ],
-    });
+        ],
+      }),
+    );
 
     render(KataProjectMappingsSettings, {
       props: { mappings: [], onUpdate: vi.fn() },
@@ -123,34 +127,36 @@ describe("KataProjectMappingsSettings", () => {
       },
     ];
     mockUpdateSettings.mockResolvedValue({ kata_projects: savedMappings });
-    mockGetKataProjectMappings.mockResolvedValue({
-      daemon_id: "work",
-      projects: [],
-      targets: [
-        {
-          display_name: "Kenn Forge",
-          repo: {
-            provider: "github",
-            platform_host: "github.com",
-            owner: "kenn-io",
-            name: "middleman",
-            repo_path: "kenn-io/middleman",
-            capabilities: defaultProviderCapabilities,
+    mockGetKataProjectMappings.mockReturnValue(
+      Effect.succeed({
+        daemon_id: "work",
+        projects: [],
+        targets: [
+          {
+            display_name: "Kenn Forge",
+            repo: {
+              provider: "github",
+              platform_host: "github.com",
+              owner: "kenn-io",
+              name: "middleman",
+              repo_path: "kenn-io/middleman",
+              capabilities: defaultProviderCapabilities,
+            },
           },
-        },
-        {
-          display_name: "Tools",
-          repo: {
-            provider: "github",
-            platform_host: "github.com",
-            owner: "acme",
-            name: "tools",
-            repo_path: "acme/tools",
-            capabilities: defaultProviderCapabilities,
+          {
+            display_name: "Tools",
+            repo: {
+              provider: "github",
+              platform_host: "github.com",
+              owner: "acme",
+              name: "tools",
+              repo_path: "acme/tools",
+              capabilities: defaultProviderCapabilities,
+            },
           },
-        },
-      ],
-    });
+        ],
+      }),
+    );
     const onUpdate = vi.fn();
 
     render(KataProjectMappingsSettings, {
@@ -189,30 +195,32 @@ describe("KataProjectMappingsSettings", () => {
   });
 
   it("requires an explicit repository choice when inference has no selectable target", async () => {
-    mockGetKataProjectMappings.mockResolvedValue({
-      daemon_id: "work",
-      projects: [
-        {
-          daemon_id: "work",
-          project_uid: "project-unmapped",
-          project_name: "Unmapped",
-          status: "unmapped",
-        },
-      ],
-      targets: [
-        {
-          display_name: "Unrelated",
-          repo: {
-            provider: "github",
-            platform_host: "github.com",
-            owner: "acme",
-            name: "other",
-            repo_path: "acme/other",
-            capabilities: defaultProviderCapabilities,
+    mockGetKataProjectMappings.mockReturnValue(
+      Effect.succeed({
+        daemon_id: "work",
+        projects: [
+          {
+            daemon_id: "work",
+            project_uid: "project-unmapped",
+            project_name: "Unmapped",
+            status: "unmapped",
           },
-        },
-      ],
-    });
+        ],
+        targets: [
+          {
+            display_name: "Unrelated",
+            repo: {
+              provider: "github",
+              platform_host: "github.com",
+              owner: "acme",
+              name: "other",
+              repo_path: "acme/other",
+              capabilities: defaultProviderCapabilities,
+            },
+          },
+        ],
+      }),
+    );
 
     render(KataProjectMappingsSettings, { props: { mappings: [], onUpdate: vi.fn() } });
     await fireEvent.click(await screen.findByRole("button", { name: "Add override" }));

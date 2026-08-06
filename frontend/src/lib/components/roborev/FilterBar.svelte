@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
   import { getStores } from "../../context.js";
   import { Checkbox, FilterDropdown, SearchInput } from "@kenn-io/kit-ui";
   import RepoTreePicker from "./RepoTreePicker.svelte";
@@ -11,6 +15,7 @@
 
   const stores = getStores();
   const jobsStore = stores.roborevJobs;
+  const runtime = getAppRuntime();
 
   const statusOptions = [
     { value: "", label: "All statuses" },
@@ -24,7 +29,7 @@
   let searchValue = $state(
     jobsStore?.getFilterSearch() ?? "",
   );
-  let searchTimeout: ReturnType<typeof setTimeout> | undefined;
+  let searchExecution: AppExecution<void, never> | undefined;
 
   function setStatusFilter(value: string): void {
     jobsStore?.setFilter("status", value || undefined);
@@ -65,14 +70,24 @@
 
   function onSearchInput(value: string): void {
     searchValue = value;
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-      jobsStore?.setFilter(
-        "search",
-        searchValue || undefined,
-      );
-    }, 300);
+    searchExecution?.interrupt();
+    searchExecution = runtime.runCommand(
+      Effect.sleep("300 millis").pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            jobsStore?.setFilter("search", value || undefined);
+          }),
+        ),
+      ),
+      {
+        operation: "apply Roborev search filter",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
+
+  onDestroy(() => searchExecution?.interrupt());
 
   function onHideClosedChange(checked: boolean): void {
     jobsStore?.setFilter("hideClosed", checked);

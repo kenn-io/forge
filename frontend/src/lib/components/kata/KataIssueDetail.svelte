@@ -7,10 +7,7 @@
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { localDateTimeLabel, timeAgo } from "../../utils/time.js";
 
-  import {
-    searchKataTaskReferences,
-    type KataTaskReferenceSearch,
-  } from "../../api/kata/snapshot.js";
+  import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
   import type {
     KataProjectSummary,
     KataRecurrence,
@@ -41,7 +38,7 @@
     issue: KataTaskDetail;
     events: KataTaskEvent[];
     issueCatalog: readonly KataTaskSummary[];
-    searchReferences?: KataTaskReferenceSearch | undefined;
+    searchReferences: KataTaskReferenceSearch;
     activeDaemonId?: string | undefined;
     linkFilters: KataLinkFilters;
     onLinkFiltersChange: (next: KataLinkFilters) => void;
@@ -81,7 +78,7 @@
     issue,
     events,
     issueCatalog,
-    searchReferences = searchKataTaskReferences,
+    searchReferences,
     activeDaemonId = undefined,
     linkFilters,
     onLinkFiltersChange,

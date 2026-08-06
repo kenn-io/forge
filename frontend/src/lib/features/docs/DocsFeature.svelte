@@ -9,7 +9,7 @@
     route: DocsRoute;
     onRouteChange: (next: DocsRoute, options?: { replace?: boolean }) => void;
     api?: DocsAPI;
-    searchReferences?: KataTaskReferenceSearch;
+    searchReferences: KataTaskReferenceSearch;
     kataIssues?: readonly IssueSummary[];
     onOpenIssue?: (uid: string, daemonId?: string) => void;
     onOpenKataShortId?: (shortId: string, project?: string, daemonId?: string) => void;
@@ -19,7 +19,7 @@
     route,
     onRouteChange,
     api = undefined,
-    searchReferences = undefined,
+    searchReferences,
     kataIssues = [],
     onOpenIssue = undefined,
     onOpenKataShortId = undefined,

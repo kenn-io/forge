@@ -1,87 +1,49 @@
-import {
-  KataEventStreamError,
-  readKataEventStream,
-  type KataTaskEventStreamFrame,
-} from "../../api/kata/eventStream.js";
-
-type ReadKataEventStream = typeof readKataEventStream;
+import { Effect } from "effect";
+import type { GeneratedApi } from "../../api/generated-api.js";
+import type { KataTaskEventStreamFrame } from "../../api/kata/schemas.js";
+import { KataWorkflow, type KataWorkflowService } from "./kata-workflow.js";
 
 interface KataEventStreamControllerOptions {
+  owner: string;
   getDaemonId: () => string | undefined;
   getLastEventID: () => number;
   onOpen: () => void;
-  onMessage: (message: KataTaskEventStreamFrame) => Promise<void>;
+  onMessage: (
+    message: KataTaskEventStreamFrame,
+    workflow: KataWorkflowService,
+  ) => Effect.Effect<boolean, never, GeneratedApi>;
   onReset?: (() => void) | undefined;
   onError: (message: string) => void;
-  readEventStream?: ReadKataEventStream | undefined;
-  reconnectDelayMS?: number | undefined;
-  reconnectMaxDelayMS?: number | undefined;
 }
 
 export interface KataEventStreamController {
-  start: (reconnecting?: boolean) => void;
-  stop: (resetReconnect?: boolean) => void;
+  readonly start: Effect.Effect<void, never, GeneratedApi | KataWorkflow>;
+  readonly stop: Effect.Effect<void, never, KataWorkflow>;
 }
 
 export function createKataEventStreamController(options: KataEventStreamControllerOptions): KataEventStreamController {
-  const readEventStream = options.readEventStream ?? readKataEventStream;
-  const reconnectDelayMS = options.reconnectDelayMS ?? 100;
-  const reconnectMaxDelayMS = options.reconnectMaxDelayMS ?? 5_000;
-  let controller: AbortController | null = null;
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let generation = 0;
-  let reconnectAttempt = 0;
-
-  function stop(resetReconnect = true): void {
-    generation += 1;
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    controller?.abort();
-    controller = null;
-    if (resetReconnect) {
-      reconnectAttempt = 0;
-    }
-  }
-
-  function start(reconnecting = false): void {
-    stop(!reconnecting);
-    const activeController = new AbortController();
-    const activeGeneration = generation;
-    controller = activeController;
-
-    void readEventStream({
-      daemonId: options.getDaemonId(),
-      lastEventID: options.getLastEventID(),
-      signal: activeController.signal,
-      onOpen: () => {
-        if (activeGeneration !== generation) return;
-        reconnectAttempt = 0;
-        options.onOpen();
-      },
-      onMessage: async (message) => {
-        if (activeGeneration !== generation || activeController.signal.aborted) return;
-        await options.onMessage(message);
-        if (activeGeneration !== generation || activeController.signal.aborted) return;
-        if (message.kind === "reset") {
-          options.onReset?.();
-        }
-      },
-    }).catch((err: unknown) => {
-      if (activeController.signal.aborted) return;
-      if (activeGeneration !== generation) return;
-      options.onError(err instanceof Error ? err.message : "Live updates disconnected");
-      if (err instanceof KataEventStreamError && !err.retryable) return;
-      const delay = Math.min(reconnectDelayMS * 2 ** reconnectAttempt, reconnectMaxDelayMS);
-      reconnectAttempt += 1;
-      reconnectTimer = setTimeout(() => {
-        if (activeGeneration !== generation) return;
-        reconnectTimer = null;
-        start(true);
-      }, delay);
-    });
-  }
-
-  return { start, stop };
+  return {
+    start: Effect.gen(function* () {
+      const workflow = yield* KataWorkflow;
+      yield* workflow.connectEvents({
+        owner: options.owner,
+        daemonId: options.getDaemonId(),
+        checkpoint: options.getLastEventID(),
+        onOpen: Effect.sync(options.onOpen),
+        onFrame: (message) =>
+          options.onMessage(message, workflow).pipe(
+            Effect.tap((accepted) =>
+              accepted && message.kind === "reset" ? Effect.sync(() => options.onReset?.()) : Effect.void,
+            ),
+            Effect.andThen(workflow.updateEventSource(options.owner, options.getDaemonId(), options.getLastEventID())),
+            Effect.asVoid,
+          ),
+        onError: (error) => Effect.sync(() => options.onError(error.message)),
+      });
+    }),
+    stop: Effect.gen(function* () {
+      const workflow = yield* KataWorkflow;
+      yield* workflow.disconnectEvents(options.owner);
+    }),
+  };
 }

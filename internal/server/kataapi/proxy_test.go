@@ -573,6 +573,45 @@ url = "http://`+addr+`"
 	assert.Contains(rr.Body.String(), "upstreamError")
 }
 
+func TestKataProxyTransportFailureClassifiesMutationOutcomeAndInvalidates(t *testing.T) {
+	tests := []struct {
+		name              string
+		method            string
+		wantCode          httpapi.ProblemCode
+		wantInvalidations int
+	}{
+		{name: "read", method: http.MethodGet, wantCode: httpapi.CodeUpstreamError},
+		{
+			name:              "mutation",
+			method:            http.MethodPost,
+			wantCode:          httpapi.CodeMutationOutcomeUnknown,
+			wantInvalidations: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invalidations := 0
+			entry, err := newKataDaemonProxyEntryWithTransport(
+				kata.Daemon{ID: "home", URL: "http://kata.invalid"},
+				0,
+				failingKataProxyTransport{},
+				func() { invalidations++ },
+			)
+			require.NoError(t, err)
+
+			rr := httptest.NewRecorder()
+			entry.handler.ServeHTTP(rr, httptest.NewRequest(tt.method, "/api/v1/issues", http.NoBody))
+
+			problem := decodeProblem(t, rr)
+			assert := assert.New(t)
+			assert.Equal(http.StatusBadGateway, rr.Code)
+			assert.Equal(tt.wantCode, problem.Code)
+			assert.Equal(tt.wantInvalidations, invalidations)
+		})
+	}
+}
+
 func TestKataProxyLocalDaemonResolvesRuntimeAfterServerStart(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -961,4 +1000,10 @@ type poisonDefaultTransport struct{}
 
 func (poisonDefaultTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, fmt.Errorf("poison default transport used")
+}
+
+type failingKataProxyTransport struct{}
+
+func (failingKataProxyTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("upstream response lost")
 }

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import type { components } from "../../src/lib/api/roborev/generated/schema.js";
 import {
   assertSeededRoborevDaemon,
   stopDaemon,
@@ -902,6 +903,65 @@ test.describe.serial("Roborev", () => {
         const count = await items.count();
         expect(count).toBeGreaterThanOrEqual(3);
       }).toPass({ timeout: 10_000 });
+    });
+
+    test("a committed comment with a lost response is reconciled without replay", async ({ page }) => {
+      await openDrawer(page, 72);
+      const comment = "Lost response reconciliation comment";
+      await page.route(
+        "**/api/roborev/api/comment",
+        async (route) => {
+          const response = await route.fetch();
+          expect(response.ok()).toBe(true);
+          await route.abort("failed");
+        },
+        { times: 1 },
+      );
+
+      const textarea = page.locator(".comment-input .comment-textarea");
+      await textarea.fill(comment);
+      await page.locator(".submit-btn").click();
+
+      await expect(page.locator(".response-item").filter({ hasText: comment })).toHaveCount(1, { timeout: 10_000 });
+      await expect(textarea).toHaveValue("");
+      await expect(page.locator(".submit-btn")).toBeDisabled();
+      const authority = await page.request.get("/api/roborev/api/comments?job_id=72");
+      expect(authority.ok()).toBe(true);
+      const body: components["schemas"]["ListCommentsOutputBody"] = await authority.json();
+      expect((body.responses ?? []).filter((response) => response.response === comment)).toHaveLength(1);
+    });
+
+    test("an acknowledged comment remains successful when its refresh fails", async ({ page }) => {
+      await openDrawer(page, 72);
+      const comment = "Acknowledged comment with unavailable refresh";
+      let mutationAccepted = false;
+      await page.route("**/api/roborev/api/comment", async (route) => {
+        const response = await route.fetch();
+        mutationAccepted = true;
+        await route.fulfill({ response });
+      });
+      await page.route(
+        "**/api/roborev/api/comments?**",
+        async (route) => {
+          if (!mutationAccepted) {
+            await route.continue();
+            return;
+          }
+          await route.abort("failed");
+        },
+        { times: 1 },
+      );
+
+      const textarea = page.locator(".comment-input .comment-textarea");
+      await textarea.fill(comment);
+      await page.locator(".submit-btn").click();
+
+      await expect(textarea).toHaveValue("");
+      await expect(page.getByText("Comment was added, but the refreshed review is unavailable")).toBeVisible();
+      const authority = await page.request.get("/api/roborev/api/comments?job_id=72");
+      expect(authority.ok()).toBe(true);
+      const body: components["schemas"]["ListCommentsOutputBody"] = await authority.json();
+      expect((body.responses ?? []).filter((response) => response.response === comment)).toHaveLength(1);
     });
 
     test("close review action on job 71", async ({ page }) => {

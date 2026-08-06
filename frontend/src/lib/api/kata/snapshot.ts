@@ -1,7 +1,10 @@
+import { Effect, Schema } from "effect";
 import type { components } from "../generated/schema.js";
 
 import { getActiveKataDaemon, getDefaultKataDaemon } from "../../stores/active-kata-daemon.svelte.js";
-import { apiErrorMessage, createRuntimeClient } from "../runtime.js";
+import { TransientTransportError } from "../effect-errors.js";
+import { GeneratedApi } from "../generated-api.js";
+import { apiErrorMessage } from "../runtime.js";
 import { KATA_DAEMON_HEADER } from "./daemons.js";
 
 export { KATA_DAEMON_HEADER };
@@ -13,17 +16,11 @@ export type KataTaskReferenceResponse = components["schemas"]["KataTaskReference
 export type KataAuthorityScope = "global" | "project";
 export type KataAuthority = "open" | "ready" | "closed" | "all";
 
-export class KataSnapshotAPIError extends Error {
-  readonly status: number;
-  readonly code: string | undefined;
-
-  constructor(input: { status: number; code?: string | undefined; message: string }) {
-    super(input.message);
-    this.name = "KataSnapshotAPIError";
-    this.status = input.status;
-    this.code = input.code;
-  }
-}
+export class KataSnapshotAPIError extends Schema.TaggedErrorClass<KataSnapshotAPIError>()("KataSnapshotAPIError", {
+  status: Schema.Number,
+  code: Schema.optionalKey(Schema.String),
+  message: Schema.String,
+}) {}
 
 export interface KataSnapshotIntent {
   daemon_id?: string | undefined;
@@ -35,13 +32,13 @@ export interface KataSnapshotIntent {
 }
 
 interface KataClientOptions {
-  fetchImpl?: typeof fetch | undefined;
-  signal?: AbortSignal | undefined;
   getDaemonId?: (() => string | undefined) | undefined;
   getDefaultDaemonId?: (() => string | undefined) | undefined;
 }
 
-export interface FetchKataSnapshotOptions extends KataClientOptions {}
+export interface FetchKataSnapshotOptions extends Pick<KataClientOptions, "getDaemonId" | "getDefaultDaemonId"> {
+  fresh?: boolean | undefined;
+}
 
 export interface SearchKataTaskReferencesOptions extends KataClientOptions {
   daemon_id?: string | undefined;
@@ -49,7 +46,12 @@ export interface SearchKataTaskReferencesOptions extends KataClientOptions {
   status?: "open" | "all" | undefined;
 }
 
-export type KataTaskReferenceSearchOptions = Pick<SearchKataTaskReferencesOptions, "daemon_id" | "limit" | "signal">;
+export interface KataTaskReferenceSearchOptions {
+  daemon_id?: string | undefined;
+  limit?: number | undefined;
+  status?: "open" | "all" | undefined;
+  signal?: AbortSignal | undefined;
+}
 
 export type KataTaskReferenceSearch = (
   query: string,
@@ -68,53 +70,70 @@ function daemonHeaders(daemonID: string | undefined): { "X-Kenn-Forge-Kata-Daemo
   return daemonID ? { [KATA_DAEMON_HEADER]: daemonID } : {};
 }
 
-export async function fetchKataWorkspaceSnapshot(
+export const fetchKataWorkspaceSnapshot = Effect.fn("KataSnapshot.fetch")(function* (
   intent: KataSnapshotIntent,
   options: FetchKataSnapshotOptions = {},
-): Promise<KataWorkspaceSnapshotResponse> {
+) {
   const query = {
     scope: intent.scope,
     authority: intent.authority,
     ...(intent.project_uid ? { project_uid: intent.project_uid } : {}),
     ...(intent.selected_issue_uid ? { selected_issue_uid: intent.selected_issue_uid } : {}),
     ...(intent.graph_source_uid ? { graph_source_uid: intent.graph_source_uid } : {}),
+    ...(options.fresh === true ? { fresh: true } : {}),
   };
-  const client = createRuntimeClient(options.fetchImpl);
-  const { data, error, response } = await client.GET("/kata/tasks/snapshot", {
-    params: {
-      header: daemonHeaders(effectiveDaemonID(intent.daemon_id, options)),
-      query,
-    },
-    ...(options.signal ? { signal: options.signal } : {}),
+  const { client } = yield* GeneratedApi;
+  const { data, error, response } = yield* Effect.tryPromise({
+    try: (signal) =>
+      client.GET("/kata/tasks/snapshot", {
+        params: {
+          header: daemonHeaders(effectiveDaemonID(intent.daemon_id, options)),
+          query,
+        },
+        signal,
+      }),
+    catch: (cause) => TransientTransportError.make({ operation: "load Kata task snapshot", cause }),
   });
   if (!response.ok || !data) {
-    throw new KataSnapshotAPIError({
-      status: response.status,
-      ...(typeof error?.code === "string" ? { code: error.code } : {}),
-      message: apiErrorMessage(error, `Could not load Kata task snapshot (${response.status})`),
-    });
+    return yield* Effect.fail(
+      KataSnapshotAPIError.make({
+        status: response.status,
+        ...(typeof error?.code === "string" ? { code: error.code } : {}),
+        message: apiErrorMessage(error, `Could not load Kata task snapshot (${response.status})`),
+      }),
+    );
   }
   return data;
-}
+});
 
-export async function searchKataTaskReferences(
+export const searchKataTaskReferences = Effect.fn("KataSnapshot.searchReferences")(function* (
   query: string,
   options: SearchKataTaskReferencesOptions = {},
-): Promise<KataTaskReferenceResponse> {
-  const client = createRuntimeClient(options.fetchImpl);
-  const { data, error, response } = await client.GET("/kata/tasks/references", {
-    params: {
-      header: daemonHeaders(effectiveDaemonID(options.daemon_id, options)),
-      query: {
-        q: query,
-        ...(options.limit === undefined ? {} : { limit: options.limit }),
-        ...(options.status === undefined ? {} : { status: options.status }),
-      },
-    },
-    ...(options.signal ? { signal: options.signal } : {}),
+) {
+  const { client } = yield* GeneratedApi;
+  const { data, error, response } = yield* Effect.tryPromise({
+    try: (signal) =>
+      client.GET("/kata/tasks/references", {
+        params: {
+          header: daemonHeaders(effectiveDaemonID(options.daemon_id, options)),
+          query: {
+            q: query,
+            ...(options.limit === undefined ? {} : { limit: options.limit }),
+            ...(options.status === undefined ? {} : { status: options.status }),
+          },
+        },
+        signal,
+      }),
+    catch: (cause) => TransientTransportError.make({ operation: "search Kata task references", cause }),
   });
   if (!response.ok || !data) {
-    throw new Error(apiErrorMessage(error, `Could not search Kata task references (${response.status})`));
+    return yield* Effect.fail(
+      KataSnapshotAPIError.make({
+        status: response.status,
+        ...(typeof error?.code === "string" ? { code: error.code } : {}),
+        message: apiErrorMessage(error, `Could not search Kata task references (${response.status})`),
+      }),
+    );
   }
   return data;
-}
+});

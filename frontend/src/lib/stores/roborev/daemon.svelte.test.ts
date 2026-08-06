@@ -9,9 +9,9 @@ import { createDaemonStore } from "./daemon.svelte.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
-function daemonStore(forgeClient: GeneratedClient, client: RoborevClient, onRecover?: () => void) {
+function daemonStore(forgeClient: GeneratedClient, client: RoborevClient) {
   runtime = makeTestAppRuntime(forgeClient);
-  return createDaemonStore({ client, runtime, ...(onRecover === undefined ? {} : { onRecover }) });
+  return createDaemonStore({ client, runtime });
 }
 
 function startPolling(store: ReturnType<typeof daemonStore>) {
@@ -89,7 +89,7 @@ describe("createDaemonStore", () => {
     polling.interrupt();
   });
 
-  it("reports recovery before a stalled status read and aborts that read on stop", async () => {
+  it("reports availability before a stalled status read and aborts that read on stop", async () => {
     const forgeGet = vi.fn().mockResolvedValue({
       data: {
         available: true,
@@ -102,17 +102,15 @@ describe("createDaemonStore", () => {
       statusSignal = options?.signal;
       return new Promise(() => {});
     });
-    const onRecover = vi.fn();
     const store = daemonStore(
       { GET: forgeGet } as unknown as GeneratedClient,
       { GET: roborevGet } as unknown as RoborevClient,
-      onRecover,
     );
 
     const polling = startPolling(store);
     await vi.waitFor(() => {
       expect(store.isAvailable()).toBe(true);
-      expect(onRecover).toHaveBeenCalledTimes(1);
+      expect(store.getWasEverAvailable()).toBe(true);
       expect(statusSignal).toBeDefined();
     });
 
@@ -181,11 +179,9 @@ describe("createDaemonStore", () => {
         version: "test",
       },
     });
-    const onRecover = vi.fn();
     const store = daemonStore(
       { GET: forgeGet } as unknown as GeneratedClient,
       { GET: roborevGet } as unknown as RoborevClient,
-      onRecover,
     );
 
     const oldPolling = startPolling(store);
@@ -217,7 +213,6 @@ describe("createDaemonStore", () => {
     expect(store.isLoading()).toBe(true);
     expect(store.getQueuedJobs()).toBe(0);
     expect(store.getWasEverAvailable()).toBe(false);
-    expect(onRecover).not.toHaveBeenCalled();
     expect(roborevGet).not.toHaveBeenCalled();
 
     resolveCurrentHealth(unavailable);
@@ -258,11 +253,9 @@ describe("createDaemonStore", () => {
         version: "test",
       },
     });
-    const onRecover = vi.fn();
     const store = daemonStore(
       { GET: forgeGet } as unknown as GeneratedClient,
       { GET: roborevGet } as unknown as RoborevClient,
-      onRecover,
     );
 
     const polling = startPolling(store);
@@ -271,7 +264,7 @@ describe("createDaemonStore", () => {
       await vi.waitFor(() => expect(forgeGet).toHaveBeenCalledTimes(2), { timeout: 2_000 });
       await vi.waitFor(() => {
         expect(store.isAvailable()).toBe(true);
-        expect(onRecover).toHaveBeenCalledTimes(1);
+        expect(store.getWasEverAvailable()).toBe(true);
         expect(roborevGet).toHaveBeenCalledTimes(1);
       });
 

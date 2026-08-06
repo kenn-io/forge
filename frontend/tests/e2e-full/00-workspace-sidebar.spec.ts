@@ -758,6 +758,88 @@ test.describe("workspace Kata sidebar live integration", () => {
     }
   });
 
+  test("retains a lost-response mutation fence across Kata sidebar remount", async ({ page }) => {
+    let harness: LiveKataHarness | null = null;
+    let kataHome: ForgeKataHome | null = null;
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+
+    try {
+      const activeHarness = await createLiveKataHarness();
+      harness = activeHarness;
+      kataHome = await configureForgeKataHome(activeHarness.baseURL);
+      isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const source = await activeHarness.seedIssue({
+        projectName: "widgets",
+        issueTitle: "Reconcile one retained comment",
+        issueBody: "Task for lost-response sidebar recovery.",
+      });
+      const createResponse = await api.post("/api/v1/kata/workspaces", {
+        data: {
+          daemon_id: "live",
+          project_uid: source.issue.project_uid,
+          project_name: source.project.name,
+          issue_uid: source.issue.uid,
+          short_id: source.issue.short_id,
+          qualified_id: source.issue.qualified_id,
+          title: source.issue.title,
+        },
+      });
+      const createBody = await createResponse.text();
+      expect(createResponse.status(), `POST /api/v1/kata/workspaces failed: ${createBody}`).toBe(202);
+      const workspace = JSON.parse(createBody) as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(api, workspace.id);
+
+      let mutationRequests = 0;
+      await page.route(
+        `**/api/v1/kata/proxy/api/v1/projects/${source.project.id}/issues/${source.issue.uid}/comments`,
+        async (route) => {
+          if (route.request().method() !== "POST") {
+            await route.continue();
+            return;
+          }
+          mutationRequests += 1;
+          const response = await route.fetch();
+          expect(response.ok()).toBe(true);
+          await route.abort("failed");
+        },
+        { times: 1 },
+      );
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      await page.getByRole("button", { name: "Kata task" }).click();
+      const pane = page.locator(".kata-workspace-sidebar");
+      await expect(pane.getByRole("heading", { name: source.issue.title })).toBeVisible();
+      const comment = "Persist once through a lost response";
+      await pane.getByRole("textbox", { name: "Comment" }).fill(comment);
+      await pane.getByRole("button", { name: "Add comment" }).click();
+      await expect(pane.getByRole("button", { name: "Retry Kata snapshot" })).toBeVisible();
+
+      await test.step("remount and reconcile the retained fence", async () => {
+        await page.getByRole("button", { name: "Diff", exact: true }).click();
+        await expect(pane).toHaveCount(0);
+        await page.getByRole("button", { name: "Kata task" }).click();
+        await expect(pane.getByRole("button", { name: "Retry Kata snapshot" })).toBeVisible();
+        await pane.getByRole("button", { name: "Retry Kata snapshot" }).click();
+        await expect(pane.getByRole("textbox", { name: "Comment" })).toHaveValue("");
+        await expect(pane.getByRole("button", { name: "Add comment" })).toBeDisabled();
+      });
+      await test.step("verify one committed mutation", async () => {
+        expect(mutationRequests).toBe(1);
+        const authority = await activeHarness.getIssue(source.issue.uid);
+        expect(
+          (authority.comments as Array<{ body?: string }> | undefined)?.filter((entry) => entry.body === comment),
+        ).toHaveLength(1);
+      });
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+      await kataHome?.stop();
+      await harness?.stop();
+    }
+  });
+
   test("preserves comment and related-task drafts edited away and back before replacement", async ({ page }) => {
     let harness: LiveKataHarness | null = null;
     let kataHome: ForgeKataHome | null = null;

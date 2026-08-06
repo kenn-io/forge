@@ -1,4 +1,5 @@
 import type { components } from "../generated/schema.js";
+import { Effect, Schema } from "effect";
 import { configuredAPIBaseURL } from "../runtime-base.js";
 import type {
   AddFolderInput,
@@ -29,12 +30,12 @@ export interface DocsAPI {
   // DocsAPIError with status 409 / code "duplicate_folder_id" on collision
   // and 503 / "save_unavailable" when the server was started without a
   // writable config path.
-  addFolder(input: AddFolderInput): Promise<Folder>;
+  addFolder(input: AddFolderInput, signal?: AbortSignal): Promise<Folder>;
   removeFolder(id: string): Promise<void>;
   renameFolder(id: string, name: string): Promise<Folder>;
   // List subdirectories at path (defaults to the user's home dir on the
   // server). Used by the add-folder folder picker.
-  browseDirectories(path?: string): Promise<BrowseResponse>;
+  browseDirectories(path?: string, signal?: AbortSignal): Promise<BrowseResponse>;
   tree(folderID: string): Promise<TreeNode>;
   readFile(folderID: string, relPath: string): Promise<string>;
   writeFile(folderID: string, relPath: string, content: string): Promise<void>;
@@ -46,8 +47,8 @@ export interface DocsAPI {
   search(folderID: string, query: string, limit?: number): Promise<SearchResponse>;
   searchAll(query: string, limit?: number): Promise<CrossFolderSearchResponse>;
   gitStatus(folderID: string): Promise<GitStatusResponse>;
-  gitChanges(folderID: string): Promise<GitChangesResponse>;
-  gitPublish(folderID: string, message: string): Promise<GitPublishResponse>;
+  gitChanges(folderID: string, signal?: AbortSignal): Promise<GitChangesResponse>;
+  gitPublish(folderID: string, message: string, signal?: AbortSignal): Promise<GitPublishResponse>;
   // Fast-forward the folder's branch to its upstream. Throws DocsAPIError
   // with code "diverged" when local and remote history have both moved.
   gitPull(folderID: string): Promise<GitPullResponse>;
@@ -58,6 +59,41 @@ export interface DocsAPIClientOptions {
   baseURL?: string;
   fetch?: typeof fetch;
 }
+
+export class DocsRequestError extends Schema.TaggedErrorClass<DocsRequestError>()("DocsRequestError", {
+  operation: Schema.String,
+  message: Schema.String,
+  status: Schema.Number,
+  code: Schema.optional(Schema.String),
+  commit: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {}
+
+function docsRequestError(operation: string, cause: unknown): DocsRequestError {
+  const message = cause instanceof Error ? cause.message : "Docs request failed";
+  const status = cause instanceof Error && "status" in cause && typeof cause.status === "number" ? cause.status : 0;
+  const code = cause instanceof Error && "code" in cause && typeof cause.code === "string" ? cause.code : undefined;
+  const commit =
+    cause instanceof Error && "commit" in cause && typeof cause.commit === "string" ? cause.commit : undefined;
+  return DocsRequestError.make({
+    operation,
+    message,
+    status,
+    ...(code === undefined ? {} : { code }),
+    ...(commit === undefined ? {} : { commit }),
+    cause,
+  });
+}
+
+export const executeDocsRequest = Effect.fn("DocsApi.execute")(function* <A>(
+  operation: string,
+  request: (signal: AbortSignal) => Promise<A>,
+) {
+  return yield* Effect.tryPromise({
+    try: request,
+    catch: (cause) => docsRequestError(operation, cause),
+  });
+});
 
 export function createDocsAPI(options: DocsAPIClientOptions = {}): DocsAPI {
   const api = createRuntimeClient(options.fetch, options.baseURL);
@@ -77,8 +113,11 @@ export function createDocsAPI(options: DocsAPIClientOptions = {}): DocsAPI {
       throwOnDocsError(error, response);
       return (data!.folders ?? []) as Folder[];
     },
-    async addFolder(input) {
-      const { data, error, response } = await api.POST("/docs/folders", { body: input });
+    async addFolder(input, signal) {
+      const { data, error, response } = await api.POST("/docs/folders", {
+        body: input,
+        ...(signal === undefined ? {} : { signal }),
+      });
       throwOnDocsError(error, response);
       return data!.folder as Folder;
     },
@@ -96,11 +135,12 @@ export function createDocsAPI(options: DocsAPIClientOptions = {}): DocsAPI {
       throwOnDocsError(error, response);
       return data!.folder as Folder;
     },
-    async browseDirectories(path) {
+    async browseDirectories(path, signal) {
       const query: { path?: string } = {};
       if (path !== undefined) query.path = path;
       const { data, error, response } = await api.GET("/docs/browse", {
         params: { query },
+        ...(signal === undefined ? {} : { signal }),
       });
       throwOnDocsError(error, response);
       return { ...data!, entries: data!.entries ?? [] } as BrowseResponse;
@@ -171,17 +211,19 @@ export function createDocsAPI(options: DocsAPIClientOptions = {}): DocsAPI {
       throwOnDocsError(error, response);
       return { ...data!, entries: data!.entries ?? [] } as GitStatusResponse;
     },
-    async gitChanges(folderID) {
+    async gitChanges(folderID, signal) {
       const { data, error, response } = await api.GET("/docs/folders/{id}/git/changes", {
         params: { path: { id: folderID } },
+        ...(signal === undefined ? {} : { signal }),
       });
       throwOnDocsError(error, response);
       return { ...data!, changes: data!.changes ?? [] } as GitChangesResponse;
     },
-    async gitPublish(folderID, message) {
+    async gitPublish(folderID, message, signal) {
       const { data, error, response } = await api.POST("/docs/folders/{id}/git/publish", {
         params: { path: { id: folderID } },
         body: { message },
+        ...(signal === undefined ? {} : { signal }),
       });
       throwOnDocsError(error, response);
       return { ...data!, files: data!.files ?? [] } as GitPublishResponse;

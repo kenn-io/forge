@@ -324,7 +324,7 @@ func newKataDaemonProxyEntryWithTransport(
 			return nil
 		},
 		Transport: transport,
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			cause := err
 			var urlErr *url.Error
 			if errors.As(err, &urlErr) {
@@ -332,10 +332,19 @@ func newKataDaemonProxyEntryWithTransport(
 			}
 			slog.Warn("kata proxy failed",
 				"daemon", d.ID, "target", kata.RedactURL(d.URL), "err", cause)
+			code := httpapi.CodeUpstreamError
+			detail := "Kata daemon is unreachable"
+			if isKataMutationMethod(r.Method) {
+				if invalidate != nil {
+					invalidate()
+				}
+				code = httpapi.CodeMutationOutcomeUnknown
+				detail = "Kata could not confirm whether the mutation was applied."
+			}
 			writeProblemResponse(w, httpapi.NewProblem(
 				http.StatusBadGateway,
-				httpapi.CodeUpstreamError,
-				"Kata daemon is unreachable",
+				code,
+				detail,
 				map[string]any{"daemon": d.ID},
 			))
 		},

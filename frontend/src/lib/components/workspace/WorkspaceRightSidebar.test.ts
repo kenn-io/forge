@@ -5,7 +5,7 @@ import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import type { StoreInstances } from "../../types.js";
-import WorkspaceRightSidebar from "./WorkspaceRightSidebar.svelte";
+import WorkspaceRightSidebarTestHarness from "./WorkspaceRightSidebarTestHarness.svelte";
 
 let runtime: OwnedAppRuntime;
 
@@ -23,62 +23,77 @@ function makeStores(): Pick<StoreInstances, "diff"> & Partial<StoreInstances> {
 }
 
 function renderSidebar(refreshToken = 0) {
-  return render(WorkspaceRightSidebar, {
+  const sidebarProps = {
+    activeTab: "diff" as const,
+    workspaceID: "ws-1",
+    provider: "github",
+    platformHost: "github.com",
+    repoOwner: "acme",
+    repoName: "widgets",
+    repoPath: "acme/widgets",
+    ownerItemType: "pull_request" as const,
+    ownerItemNumber: 7,
+    associatedPRNumber: 7,
+    branch: "feature/widgets",
+    roborevBaseUrl: "http://localhost/api/roborev",
+    refreshToken,
+  };
+  const rendered = render(WorkspaceRightSidebarTestHarness, {
     props: {
-      activeTab: "diff",
-      workspaceID: "ws-1",
-      provider: "github",
-      platformHost: "github.com",
-      repoOwner: "acme",
-      repoName: "widgets",
-      repoPath: "acme/widgets",
-      ownerItemType: "pull_request",
-      ownerItemNumber: 7,
-      associatedPRNumber: 7,
-      branch: "feature/widgets",
-      roborevBaseUrl: "http://localhost/api/roborev",
-      refreshToken,
+      runtime,
+      sidebarProps,
     },
     context: new Map([[STORES_KEY, makeStores()]]),
   });
+  return {
+    ...rendered,
+    rerender: (props: Partial<typeof sidebarProps>) =>
+      rendered.rerender({ runtime, sidebarProps: { ...sidebarProps, ...props } }),
+  };
 }
 
 function renderDisabledSidebar() {
-  return render(WorkspaceRightSidebar, {
+  return render(WorkspaceRightSidebarTestHarness, {
     props: {
-      activeTab: "diff",
-      workspaceID: "ws-1",
-      provider: "github",
-      platformHost: "github.com",
-      repoOwner: "acme",
-      repoName: "widgets",
-      repoPath: "acme/widgets",
-      ownerItemType: "pull_request",
-      ownerItemNumber: 7,
-      associatedPRNumber: 7,
-      branch: "feature/widgets",
-      roborevBaseUrl: "http://localhost/api/roborev",
-      disabled: true,
+      runtime,
+      sidebarProps: {
+        activeTab: "diff",
+        workspaceID: "ws-1",
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widgets",
+        repoPath: "acme/widgets",
+        ownerItemType: "pull_request",
+        ownerItemNumber: 7,
+        associatedPRNumber: 7,
+        branch: "feature/widgets",
+        roborevBaseUrl: "http://localhost/api/roborev",
+        disabled: true,
+      },
     },
     context: new Map([[STORES_KEY, makeStores()]]),
   });
 }
 
 function renderKataSidebarWithoutPR() {
-  return render(WorkspaceRightSidebar, {
+  return render(WorkspaceRightSidebarTestHarness, {
     props: {
-      activeTab: "diff",
-      workspaceID: "ws-kata-1",
-      provider: "github",
-      platformHost: "github.com",
-      repoOwner: "acme",
-      repoName: "widgets",
-      repoPath: "acme/widgets",
-      ownerItemType: "kata_task",
-      ownerItemNumber: 0,
-      associatedPRNumber: null,
-      branch: "kenn-forge/kata/task-123",
-      roborevBaseUrl: "http://localhost/api/roborev",
+      runtime,
+      sidebarProps: {
+        activeTab: "diff",
+        workspaceID: "ws-kata-1",
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widgets",
+        repoPath: "acme/widgets",
+        ownerItemType: "kata_task",
+        ownerItemNumber: 0,
+        associatedPRNumber: null,
+        branch: "kenn-forge/kata/task-123",
+        roborevBaseUrl: "http://localhost/api/roborev",
+      },
     },
     context: new Map([[STORES_KEY, makeStores()]]),
   });

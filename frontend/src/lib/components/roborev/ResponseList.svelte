@@ -10,26 +10,27 @@
     commentText = "";
   });
 
-  async function handleSubmit(): Promise<void> {
+  function handleSubmit(): void {
+    const review = stores.roborevReview;
     const jobId =
-      stores.roborevReview?.getSelectedJobId();
-    if (!jobId || !commentText.trim()) return;
+      review?.getSelectedJobId();
+    const comment = commentText.trim();
+    if (!review || !jobId || !comment) return;
     submitting = true;
-    try {
-      const ok =
-        await stores.roborevReview?.addComment(
-          jobId,
-          commentText.trim(),
-        );
-      if (ok) commentText = "";
-    } finally {
-      submitting = false;
-    }
+    review.addComment(jobId, comment, {
+      onSuccess: () => {
+        commentText = "";
+        submitting = false;
+      },
+      onFailure: () => {
+        submitting = false;
+      },
+    });
   }
 
   function handleKeydown(e: KeyboardEvent): void {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      void handleSubmit();
+      handleSubmit();
     }
   }
 </script>
@@ -74,7 +75,7 @@
         <button
           class="submit-btn"
           disabled={submitting || !commentText.trim()}
-          onclick={() => void handleSubmit()}
+          onclick={handleSubmit}
         >
           {submitting ? "Sending..." : "Comment"}
         </button>

@@ -1,9 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 
-import FilterBar from "./FilterBar.svelte";
+import FilterBarTestHarness from "./FilterBarTestHarness.svelte";
 
 type JobsStoreStub = {
+  getOwner: () => string;
   getFilterSearch: () => string | undefined;
   getFilterStatus: () => string | undefined;
   getFilterHideClosed: () => boolean;
@@ -21,6 +24,7 @@ const state = {
 const client = {
   GET: vi.fn(),
 };
+let runtime: OwnedAppRuntime;
 
 vi.mock("../../context.js", () => ({
   getStores: () => ({
@@ -31,8 +35,10 @@ vi.mock("../../context.js", () => ({
 
 describe("FilterBar", () => {
   beforeEach(() => {
+    runtime = makeAppRuntime();
     state.showAutoDesign = false;
     state.jobs = {
+      getOwner: () => "filter-bar-test",
       getFilterSearch: () => undefined,
       getFilterStatus: () => undefined,
       getFilterHideClosed: () => false,
@@ -46,14 +52,16 @@ describe("FilterBar", () => {
     client.GET.mockResolvedValue({ data: { repos: [] }, error: undefined });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
     state.jobs = null;
     client.GET.mockReset();
+    vi.useRealTimers();
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("shows an unchecked auto-design toggle that enables the filter", async () => {
-    render(FilterBar);
+    render(FilterBarTestHarness, { props: { runtime } });
 
     const checkbox = screen.getByLabelText("Show auto-design") as HTMLInputElement;
     expect(checkbox.checked).toBe(false);
@@ -61,5 +69,18 @@ describe("FilterBar", () => {
     await fireEvent.click(checkbox);
 
     expect(state.jobs?.setFilter).toHaveBeenCalledWith("showAutoDesign", true);
+  });
+
+  it("does not apply a pending search after the filter bar unmounts", async () => {
+    vi.useFakeTimers();
+    const rendered = render(FilterBarTestHarness, { props: { runtime } });
+
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Search by ref" }), {
+      target: { value: "feature/refactor" },
+    });
+    rendered.unmount();
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(state.jobs?.setFilter).not.toHaveBeenCalledWith("search", "feature/refactor");
   });
 });

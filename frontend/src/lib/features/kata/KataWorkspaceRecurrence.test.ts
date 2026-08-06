@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import KataWorkspace from "./KataWorkspace.svelte";
+import KataWorkspace from "./KataWorkspaceRuntimeHarness.svelte";
 import {
   createWorkspaceAPI,
   deferred,
@@ -167,7 +168,9 @@ describe("KataWorkspace", () => {
     } = createWorkspaceAPI([selected], {
       recurrences: [recurrenceRow],
     });
-    deleteRecurrence.mockRejectedValueOnce(Object.assign(new Error("recurrence revision conflict"), { status: 412 }));
+    deleteRecurrence.mockReturnValueOnce(
+      Effect.fail(Object.assign(new Error("recurrence revision conflict"), { status: 412 })),
+    );
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
 
     await screen.findByRole("heading", { name: selected.title });
@@ -218,8 +221,12 @@ describe("KataWorkspace", () => {
     } = createWorkspaceAPI([selected], {
       recurrences: [freshRow],
     });
-    recurrenceReads.mockResolvedValueOnce({ recurrences: [staleRow], fetched_at: "2026-02-11T08:00:00Z" });
-    deleteRecurrence.mockRejectedValueOnce(Object.assign(new Error("recurrence revision conflict"), { status: 412 }));
+    recurrenceReads.mockReturnValueOnce(
+      Effect.succeed({ recurrences: [staleRow], fetched_at: "2026-02-11T08:00:00Z" }),
+    );
+    deleteRecurrence.mockReturnValueOnce(
+      Effect.fail(Object.assign(new Error("recurrence revision conflict"), { status: 412 })),
+    );
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
 
     await screen.findByRole("heading", { name: selected.title });
@@ -284,9 +291,11 @@ describe("KataWorkspace", () => {
       deleteRecurrence,
     } = createWorkspaceAPI([selected], { recurrences: [freshRow] });
     recurrenceReads
-      .mockResolvedValueOnce({ recurrences: [staleRow], fetched_at: "2026-02-11T08:00:00Z" })
-      .mockRejectedValueOnce(new Error("recurrence refresh failed"));
-    deleteRecurrence.mockRejectedValueOnce(Object.assign(new Error("recurrence revision conflict"), { status: 412 }));
+      .mockReturnValueOnce(Effect.succeed({ recurrences: [staleRow], fetched_at: "2026-02-11T08:00:00Z" }))
+      .mockReturnValueOnce(Effect.fail(new Error("recurrence refresh failed")));
+    deleteRecurrence.mockReturnValueOnce(
+      Effect.fail(Object.assign(new Error("recurrence revision conflict"), { status: 412 })),
+    );
 
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
 
@@ -357,7 +366,7 @@ describe("KataWorkspace", () => {
       }),
     );
     const { api, createRecurrence } = createWorkspaceAPI();
-    createRecurrence.mockRejectedValueOnce(new Error("daemon rejected recurrence"));
+    createRecurrence.mockReturnValueOnce(Effect.fail(new Error("daemon rejected recurrence")));
 
     render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
 
@@ -404,9 +413,9 @@ describe("KataWorkspace", () => {
       recurrences: [recurrenceRow],
     });
     recurrences
-      .mockResolvedValueOnce({ recurrences: [recurrenceRow], fetched_at: "2026-06-01T12:00:00Z" })
-      .mockRejectedValueOnce(new Error("recurrence refresh failed"))
-      .mockResolvedValueOnce({ recurrences: [], fetched_at: "2026-06-01T12:00:00Z" });
+      .mockReturnValueOnce(Effect.succeed({ recurrences: [recurrenceRow], fetched_at: "2026-06-01T12:00:00Z" }))
+      .mockReturnValueOnce(Effect.fail(new Error("recurrence refresh failed")))
+      .mockReturnValueOnce(Effect.succeed({ recurrences: [], fetched_at: "2026-06-01T12:00:00Z" }));
 
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
 
@@ -459,11 +468,11 @@ describe("KataWorkspace", () => {
     const { api, recurrences, deleteRecurrence } = createWorkspaceAPI([source, target], {
       recurrences: [recurrenceRow],
     });
-    deleteRecurrence.mockImplementationOnce(() => mutation.promise);
+    deleteRecurrence.mockImplementationOnce(() => Effect.promise(() => mutation.promise));
     recurrences
-      .mockResolvedValueOnce({ recurrences: [recurrenceRow], fetched_at: "2026-06-01T12:00:00Z" })
-      .mockResolvedValueOnce({ recurrences: [], fetched_at: "2026-06-01T12:00:00Z" })
-      .mockImplementationOnce(() => postAcknowledgementRecurrences.promise);
+      .mockReturnValueOnce(Effect.succeed({ recurrences: [recurrenceRow], fetched_at: "2026-06-01T12:00:00Z" }))
+      .mockReturnValueOnce(Effect.succeed({ recurrences: [], fetched_at: "2026-06-01T12:00:00Z" }))
+      .mockImplementationOnce(() => Effect.promise(() => postAcknowledgementRecurrences.promise));
 
     const view = render(KataWorkspace, { props: { api, selectedIssueUID: source.uid } });
 

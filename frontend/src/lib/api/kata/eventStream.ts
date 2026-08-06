@@ -1,5 +1,8 @@
+import { Effect, Option, Schema, Stream } from "effect";
+import { responseByteStream } from "../../browser/streaming-fetch.js";
+import { GeneratedApi } from "../generated-api.js";
 import { KATA_DAEMON_HEADER } from "./daemons.js";
-import { createRuntimeClient } from "../runtime.js";
+import { KataEventStreamOpened, type KataEventStreamEvent, KataTaskEventStreamFrame } from "./schemas.js";
 
 interface FrameState {
   id?: number;
@@ -7,28 +10,13 @@ interface FrameState {
   data: string[];
 }
 
-export interface ReadKataEventStreamOptions {
-  daemonId?: string | undefined;
-  fetchImpl?: typeof fetch | undefined;
-  lastEventID?: number | undefined;
-  signal?: AbortSignal | undefined;
-  onOpen?: (() => void) | undefined;
-  onMessage(message: KataTaskEventStreamFrame): void | Promise<void>;
-}
-
-export interface KataTaskEventStreamFrame {
-  kind: "reset" | "invalidation";
-  server_instance_id: string;
-  daemon_id: string;
-  epoch: number;
-  cursor: number;
-}
+export { KataTaskEventStreamFrame } from "./schemas.js";
 
 export class KataEventStreamError extends Error {
   readonly retryable: boolean;
 
-  constructor(message: string, options: { retryable: boolean }) {
-    super(message);
+  constructor(message: string, options: { retryable: boolean; cause?: unknown }) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "KataEventStreamError";
     this.retryable = options.retryable;
   }
@@ -38,22 +26,9 @@ function isRetryableStreamSetupStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function nonNegativeSafeInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
-}
-
-function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function parseData(data: string): Record<string, unknown> | undefined {
+function parseData(data: string): unknown {
   try {
-    const parsed: unknown = JSON.parse(data);
-    return isObject(parsed) ? parsed : undefined;
+    return JSON.parse(data);
   } catch {
     return undefined;
   }
@@ -138,106 +113,85 @@ export class KataEventStreamParser {
     }
 
     const body = parseData(frame.data.join("\n"));
-    if (!body) return undefined;
-    const serverInstanceID = nonEmptyString(body.server_instance_id);
-    const daemonID = nonEmptyString(body.daemon_id);
-    const epoch = nonNegativeSafeInteger(body.epoch);
-    const cursor = nonNegativeSafeInteger(body.cursor);
-    if (serverInstanceID === undefined || daemonID === undefined || epoch === undefined || cursor !== frame.id) {
-      return undefined;
-    }
-
-    return {
+    if (typeof body !== "object" || body === null || Array.isArray(body)) return undefined;
+    const decoded = Schema.decodeUnknownOption(KataTaskEventStreamFrame)({
       kind,
-      server_instance_id: serverInstanceID,
-      daemon_id: daemonID,
-      epoch,
-      cursor,
-    };
+      ...body,
+    });
+    if (Option.isNone(decoded) || decoded.value.cursor !== frame.id) return undefined;
+    return decoded.value;
   }
 }
 
-export async function readKataEventStream(options: ReadKataEventStreamOptions): Promise<void> {
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const client = createRuntimeClient(fetchImpl);
+export interface KataEventStreamOptions {
+  readonly daemonId?: string | undefined;
+  readonly lastEventID?: number | undefined;
+}
 
+function streamHeaders(options: KataEventStreamOptions): Headers {
   const headers = new Headers({ Accept: "text/event-stream" });
-  if (options.daemonId) {
-    headers.set(KATA_DAEMON_HEADER, options.daemonId);
-  }
-  if (options.lastEventID && options.lastEventID > 0) {
-    headers.set("Last-Event-ID", String(options.lastEventID));
-  }
+  if (options.daemonId) headers.set(KATA_DAEMON_HEADER, options.daemonId);
+  if (options.lastEventID && options.lastEventID > 0) headers.set("Last-Event-ID", String(options.lastEventID));
+  return headers;
+}
 
-  let response: Response;
-  let body: ReadableStream<Uint8Array> | null | undefined;
-  try {
-    const init = {
-      headers,
-      parseAs: "stream" as const,
-      ...(options.signal ? { signal: options.signal } : {}),
-    };
-    const result = await client.GET("/kata/tasks/events", init);
-    response = result.response;
-    body = result.data;
-  } catch (error) {
-    if (options.signal?.aborted) return;
-    throw error;
-  }
+function releaseResponseBody(response: Response): Effect.Effect<void> {
+  const body = response.body;
+  if (body === null) return Effect.void;
+  return Effect.tryPromise({
+    try: () => body.cancel(),
+    catch: (cause) => new Error("Could not cancel Kata event response body", { cause }),
+  }).pipe(Effect.ignore);
+}
 
-  if (!response.ok) {
-    throw new KataEventStreamError(`Kata event stream failed: HTTP ${response.status}`, {
-      retryable: isRetryableStreamSetupStatus(response.status),
-    });
-  }
-  if (!body) {
-    throw new KataEventStreamError("Kata event stream response has no body", { retryable: false });
-  }
-  options.onOpen?.();
+function parsedFrames(response: Response): Stream.Stream<KataTaskEventStreamFrame, KataEventStreamError> {
+  return Stream.suspend(() => {
+    const parser = new KataEventStreamParser();
+    const frames = responseByteStream(response, "read Kata event stream").pipe(
+      Stream.mapError((cause) => new KataEventStreamError("Live updates disconnected", { retryable: true, cause })),
+      Stream.decodeText(),
+      Stream.flatMap((chunk) => Stream.fromIterable(parser.push(chunk))),
+    );
+    return Stream.concat(frames, Stream.fromIterable(parser.flush()));
+  });
+}
 
-  const reader = body.getReader();
-  if (options.signal?.aborted) {
-    try {
-      // An aborted response body may already be errored, in which case
-      // cancel() rejects with the stored stream error; the abort contract is
-      // still a clean return.
-      await reader.cancel();
-    } catch {
-      // Ignored: cancellation of an errored stream.
-    } finally {
-      reader.releaseLock();
-    }
-    return;
-  }
-  const decoder = new TextDecoder();
-  const parser = new KataEventStreamParser();
-  const abortReader = () => {
-    reader.cancel().catch(() => {});
-  };
-  options.signal?.addEventListener("abort", abortReader, { once: true });
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) {
-        const tail = decoder.decode();
-        const messages = [...(tail ? parser.push(tail) : []), ...parser.flush()];
-        for (const message of messages) {
-          await options.onMessage(message);
-        }
-        break;
+export function kataEventStream(
+  options: KataEventStreamOptions,
+): Stream.Stream<KataEventStreamEvent, KataEventStreamError, GeneratedApi> {
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      const { client } = yield* GeneratedApi;
+      const result = yield* Effect.acquireRelease(
+        Effect.tryPromise({
+          try: (signal) =>
+            client.GET("/kata/tasks/events", {
+              headers: streamHeaders(options),
+              parseAs: "stream",
+              signal,
+            }),
+          catch: (cause) => new KataEventStreamError("Live updates disconnected", { retryable: true, cause }),
+        }),
+        ({ response }) => releaseResponseBody(response),
+        { interruptible: true },
+      );
+      if (!result.response.ok) {
+        return Stream.fail(
+          new KataEventStreamError(`Kata event stream failed: HTTP ${result.response.status}`, {
+            retryable: isRetryableStreamSetupStatus(result.response.status),
+          }),
+        );
       }
-      const messages = parser.push(decoder.decode(value, { stream: true }));
-      for (const message of messages) {
-        await options.onMessage(message);
+      if (!result.data) {
+        return Stream.fail(new KataEventStreamError("Kata event stream response has no body", { retryable: false }));
       }
-    }
-    throw new KataEventStreamError("Live updates disconnected", { retryable: true });
-  } catch (error) {
-    if (options.signal?.aborted) return;
-    throw error;
-  } finally {
-    options.signal?.removeEventListener("abort", abortReader);
-    reader.releaseLock();
-  }
+      return Stream.concat(
+        Stream.succeed<KataEventStreamEvent>(KataEventStreamOpened.make({ opened: true })),
+        Stream.concat(
+          parsedFrames(result.response),
+          Stream.fail(new KataEventStreamError("Live updates disconnected", { retryable: true })),
+        ),
+      );
+    }),
+  );
 }

@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import Modal from "../shared/Modal.svelte";
-  import type { DocsAPI } from "../../api/docs/api";
+  import { DocsRequestError, executeDocsRequest, type DocsAPI } from "../../api/docs/api";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { DocsWorkflow, makeDocsOwner, type DocsPublishState } from "../../stores/docs-workflow.js";
   import type { GitChangesResponse, GitPublishResponse } from "../../api/docs/types";
 
   interface Props {
@@ -12,6 +15,9 @@
   }
 
   let { open, folderID, api, onClose, onPublished }: Props = $props();
+  const runtime = getAppRuntime();
+  let activePublisherSessionID: string | undefined;
+  let retainedPublishMessage: string | undefined;
 
   // Discriminated state machine — each variant maps to a distinct dialog body.
   // Errors keep the dialog open and live alongside `ready` so the form stays
@@ -26,72 +32,168 @@
   let status: Status = $state({ kind: "loading" });
   let message = $state("");
   let publishing = $state(false);
+  let acknowledgingFailure = $state(false);
   let publishError: { message: string; commit?: string } | null = $state(null);
 
-  // Each open is a fresh session: re-fetch preview, reset the form.
-  // Sequence guard so a slow preview from a previous open can't overwrite
-  // the current one if the user toggled quickly.
-  let previewSeq = 0;
+  const loadPreviewEffect = Effect.fn("DocsPublishDialog.loadPreview")(function* (
+    requestedFolderID: string,
+    sessionID: string,
+    requestedAPI: DocsAPI,
+  ) {
+      const workflow = yield* DocsWorkflow;
+      const preview = yield* workflow.read(
+        sessionID,
+        "preview",
+        executeDocsRequest("load Docs publish preview", (signal) =>
+          requestedAPI.gitChanges(requestedFolderID, signal),
+        ),
+      );
+      yield* Effect.sync(() => {
+        if (activePublisherSessionID !== sessionID) return;
+        if (!preview.is_repo) {
+          status = { kind: "not_a_repo" };
+          return;
+        }
+        if (retainedPublishMessage === undefined) message = preview.suggested_message ?? "";
+        status = preview.changes.length === 0 ? { kind: "no_changes", preview } : { kind: "ready", preview };
+      });
+    });
+
+  const observePublishState =
+    (sessionID: string) =>
+    (state: DocsPublishState): Effect.Effect<void> =>
+      Effect.sync(() => {
+        if (activePublisherSessionID !== sessionID) return;
+        switch (state.kind) {
+          case "pending":
+            retainedPublishMessage = state.request.message;
+            message = state.request.message;
+            publishing = true;
+            publishError = null;
+            return;
+          case "failed":
+            retainedPublishMessage = state.request.message;
+            message = state.request.message;
+            publishing = false;
+            publishError = translateError(state.error);
+            return;
+          case "succeeded":
+            retainedPublishMessage = undefined;
+            publishing = false;
+            onPublished(state.result);
+            onClose();
+        }
+      });
+
+  // Each open is a fresh session. The owner-keyed workflow physically
+  // interrupts an older preview before accepting its replacement.
   $effect(() => {
     if (!open) {
+      activePublisherSessionID = undefined;
+      retainedPublishMessage = undefined;
       status = { kind: "loading" };
       message = "";
       publishing = false;
+      acknowledgingFailure = false;
       publishError = null;
       return;
     }
-    const seq = ++previewSeq;
-    void loadPreview(seq);
+    const requestedFolderID = folderID;
+    const requestedAPI = api;
+    const sessionID = makeDocsOwner("docs-publish-dialog");
+    activePublisherSessionID = sessionID;
+    retainedPublishMessage = undefined;
+    status = { kind: "loading" };
+    message = "";
+    publishing = false;
+    acknowledgingFailure = false;
+    publishError = null;
+    const execution = runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* DocsWorkflow;
+        yield* workflow.claimPublisher(requestedFolderID, sessionID, observePublishState(sessionID));
+        yield* loadPreviewEffect(requestedFolderID, sessionID, requestedAPI);
+      }),
+      {
+      operation: "load Docs publish preview",
+      safeContext: { owner: sessionID },
+      onFailure: (error) => {
+        if (activePublisherSessionID !== sessionID) return;
+        status = { kind: "load_error", message: translateError(error).message };
+      },
+      },
+    );
+    return () => {
+      if (activePublisherSessionID === sessionID) activePublisherSessionID = undefined;
+      execution.interrupt();
+      runtime.runCommand(
+        Effect.gen(function* () {
+          const workflow = yield* DocsWorkflow;
+          yield* workflow.releasePublisher(sessionID);
+          yield* workflow.stop(sessionID);
+        }),
+        { operation: "release Docs publish dialog", safeContext: { owner: sessionID }, onFailure: () => {} },
+      );
+    };
   });
 
-  async function loadPreview(seq: number) {
-    status = { kind: "loading" };
-    publishError = null;
-    try {
-      const preview = await api.gitChanges(folderID);
-      if (seq !== previewSeq) return;
-      if (!preview.is_repo) {
-        status = { kind: "not_a_repo" };
-        return;
-      }
-      message = preview.suggested_message ?? "";
-      if (preview.changes.length === 0) {
-        status = { kind: "no_changes", preview };
-      } else {
-        status = { kind: "ready", preview };
-      }
-    } catch (err) {
-      if (seq !== previewSeq) return;
-      // The preview endpoint enforces the same git safety gate as
-      // publish, so route the error through translateError to get the
-      // actionable unsafe_git_config copy instead of the raw envelope.
-      status = {
-        kind: "load_error",
-        message: err instanceof Error ? translateError(err).message : "Could not load preview",
-      };
-    }
-  }
-
-  async function submit() {
-    if (status.kind !== "ready") return;
+  function submit(): void {
+    const submittedSessionID = activePublisherSessionID;
+    if (status.kind !== "ready" || publishing || submittedSessionID === undefined) return;
+    const submittedFolderID = folderID;
+    const submittedMessage = message;
+    const submittedAPI = api;
     publishing = true;
     publishError = null;
-    try {
-      const result = await api.gitPublish(folderID, message);
-      publishing = false;
-      onPublished(result);
-      onClose();
-    } catch (err) {
-      publishing = false;
-      publishError = translateError(err);
-    }
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* DocsWorkflow;
+        yield* workflow.publish({
+          folderID: submittedFolderID,
+          sessionID: submittedSessionID,
+          message: submittedMessage,
+          request: executeDocsRequest("publish Docs", (signal) =>
+            submittedAPI.gitPublish(submittedFolderID, submittedMessage, signal),
+          ),
+        });
+      }),
+      {
+        operation: "publish Docs",
+        safeContext: { owner: submittedSessionID },
+        onFailure: (error) => {
+          if (activePublisherSessionID !== submittedSessionID) return;
+          publishing = false;
+          publishError = translateError(error);
+        },
+      },
+    );
   }
 
   // guardedClose is a no-op while a publish is in flight so that Escape,
   // backdrop click, and the X button cannot reset state or discard a
   // push_failed_after_commit error before the user has read it.
   function guardedClose() {
-    if (publishing) return;
+    if (publishing || acknowledgingFailure) return;
+    const sessionID = activePublisherSessionID;
+    if (publishError && sessionID !== undefined) {
+      acknowledgingFailure = true;
+      runtime.runCommand(
+        Effect.gen(function* () {
+          const workflow = yield* DocsWorkflow;
+          yield* workflow.acknowledgePublisher(sessionID);
+          yield* Effect.sync(onClose);
+        }),
+        {
+          operation: "acknowledge Docs publish failure",
+          safeContext: { owner: sessionID },
+          onFailure: () => {
+            acknowledgingFailure = false;
+            onClose();
+          },
+        },
+      );
+      return;
+    }
     onClose();
   }
 
@@ -99,8 +201,8 @@
   // push_failed_after_commit case carries an extra `commit` field on the
   // thrown error so we can show the short SHA in the recovery message.
   function translateError(err: unknown): { message: string; commit?: string } {
-    if (err instanceof Error) {
-      const e = err as Error & { code?: string; commit?: string };
+    if (err instanceof DocsRequestError) {
+      const e = err;
       switch (e.code) {
         case "push_failed_after_commit":
           {
@@ -134,6 +236,7 @@
           return { message: e.message };
       }
     }
+    if (err instanceof Error) return { message: err.message };
     return { message: "Unexpected error" };
   }
 </script>
@@ -177,13 +280,13 @@
         aria-label="Commit message"
       ></textarea>
     </label>
-    {#if publishError}
-      <p class="error">{publishError.message}</p>
-    {/if}
+  {/if}
+  {#if publishError}
+    <p class="error">{publishError.message}</p>
   {/if}
 
   {#snippet footer()}
-    <button type="button" class="secondary" onclick={guardedClose} disabled={publishing}>
+    <button type="button" class="secondary" onclick={guardedClose} disabled={publishing || acknowledgingFailure}>
       Cancel
     </button>
     {#if status.kind === "ready" || status.kind === "no_changes"}

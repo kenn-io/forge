@@ -1,21 +1,21 @@
 <script lang="ts">
   import { SearchInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
-  import { untrack } from "svelte";
+  import { Effect, Exit } from "effect";
+  import { onDestroy, untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import { buildRepoBrowserRoute, type RepoBrowserRouteRef, type RepoBrowserViewMode } from "../../routes.js";
-  import { createRepoBrowserStore } from "../../stores/repo-browser.svelte.js";
+  import type { RepoBrowserStore } from "../../stores/repo-browser.svelte.js";
   import { diffFileCategoryOptions, type DiffFileCategoryFilter } from "../../utils/diff-categories.js";
   import PierreFileTree from "../../components/diff/PierreFileTree.svelte";
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import type { FileTreeEntry } from "../../components/diff/file-tree-entry.js";
-  import type { GeneratedClient } from "../../api/generated-api.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import type { SourceBrowserFileEntry } from "../../utils/source-browser-files.js";
   import type { RepoBrowserCommit, RepoBrowserRef } from "../../api/types.js";
   import { providerDefaultHost } from "../../api/provider-routes.js";
   import DocMarkdownView from "../../components/docs/DocMarkdownView.svelte";
   import { RefreshIcon, ExternalLinkIcon, SpinnerIcon } from "../../icons";
   import {
-    chooseRepoBrowserInitialPath,
     formatRepoBrowserCommitAge,
     formatRepoBrowserCommitDate,
     formatRepoBrowserFileSize,
@@ -41,7 +41,7 @@
   };
 
   interface Props {
-    client: GeneratedClient;
+    store: RepoBrowserStore;
     route: RepoBrowserFeatureRoute;
     onRouteChange: (route: RepoBrowserRouteRef, options?: { replace?: boolean }) => void;
   }
@@ -57,15 +57,20 @@
   const MIN_VIEWER_WIDTH = 360;
   const RESIZE_HANDLE_WIDTH = 4;
 
-  let { client, route, onRouteChange }: Props = $props();
+  let { store, route, onRouteChange }: Props = $props();
+  const runtime = getAppRuntime();
+  const mounted = untrack(() => store.mount());
 
-  // svelte-ignore state_referenced_locally
-  const store = createRepoBrowserStore({ client });
+  onDestroy(() => {
+    runtime.runCommand(mounted.stop(), {
+      operation: "stop repository browser route",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  });
 
   let repoLoadKey = "";
   let repoLoadAliasKey = "";
-  let routeLoadGeneration = 0;
-  let pathSelectionGeneration = 0;
   let routeAnchorKey = "";
   let pathFilter = $state("");
   let selectedPathRevealKey = $state(0);
@@ -163,14 +168,12 @@
     if (nextRepoLoadKey !== repoLoadKey && nextRepoLoadKey !== repoLoadAliasKey) {
       repoLoadKey = nextRepoLoadKey;
       repoLoadAliasKey = "";
-      void loadRoute(route);
+      loadRoute(route);
       return;
     }
     const currentPath = untrack(() => store.getSelectedPath());
     if (route.path && route.path !== currentPath) {
-      const generation = routeLoadGeneration + 1;
-      routeLoadGeneration = generation;
-      void syncRoutePath(route.path, generation);
+      syncRoutePath(route.path);
     }
     const nextMode = routeViewMode(route);
     const currentMode = untrack(() => store.getViewMode());
@@ -191,32 +194,37 @@
     ].join("\0");
   }
 
-  async function loadRoute(value: RepoBrowserFeatureRoute): Promise<void> {
+  function loadRoute(value: RepoBrowserFeatureRoute): void {
     const requestedLoadKey = routeKey(value);
-    const generation = routeLoadGeneration + 1;
-    const selectionGeneration = nextPathSelectionGeneration();
-    routeLoadGeneration = generation;
     store.setViewMode(routeViewMode(value));
     const requestedRef = routeRef(value);
-    await store.loadRepo(repoRef(value), {
+    const program = mounted.loadRepo(repoRef(value), {
       ...(requestedRef ? { ref: requestedRef } : {}),
       path: value.path ?? null,
+    }).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          repoLoadKey = requestedLoadKey;
+          repoLoadAliasKey = routeKeyWithSelectedRef(value);
+          if (!value.path) {
+            const selectedPath = store.getSelectedPath();
+            if (selectedPath) pushRoute({ path: selectedPath }, { replace: true });
+          }
+          selectedPathRevealKey += 1;
+        }),
+      ),
+    );
+    runtime.runCommand(program, {
+      operation: "load repository browser route",
+      safeContext: {
+        provider: value.provider,
+        platformHost: value.platformHost ?? "",
+        owner: value.owner,
+        name: value.name,
+        repoPath: value.repoPath,
+      },
+      onFailure: () => {},
     });
-    if (generation !== routeLoadGeneration || selectionGeneration !== pathSelectionGeneration) return;
-    repoLoadKey = requestedLoadKey;
-    repoLoadAliasKey = routeKeyWithSelectedRef(value);
-    if (!value.path) {
-      const initialPath = chooseRepoBrowserInitialPath(store.getTree());
-      if (initialPath && initialPath !== store.getSelectedPath()) {
-        await store.selectPath(initialPath);
-        if (generation !== routeLoadGeneration || !pathSelectionStillCurrent(selectionGeneration, initialPath)) return;
-      }
-      if (initialPath) {
-        pushRoute({ path: initialPath }, { replace: true });
-      }
-    }
-    if (generation !== routeLoadGeneration || selectionGeneration !== pathSelectionGeneration) return;
-    selectedPathRevealKey += 1;
   }
 
   function repoRef(value: RepoBrowserFeatureRoute) {
@@ -283,39 +291,50 @@
     );
   }
 
-  async function selectPath(path: string, options?: { replace?: boolean }): Promise<void> {
-    const generation = nextPathSelectionGeneration();
-    await store.selectPath(path);
-    if (!pathSelectionStillCurrent(generation, path)) return;
-    selectedPathRevealKey += 1;
-    pushRoute({ path }, options);
+  function selectPath(path: string, options?: { replace?: boolean }): void {
+    runtime.runCommand(
+      mounted.selectPath(path).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            selectedPathRevealKey += 1;
+            pushRoute({ path }, options);
+          }),
+        ),
+      ),
+      {
+        operation: "select repository browser path",
+        safeContext: { path },
+        onFailure: () => {},
+      },
+    );
   }
 
-  async function syncRoutePath(path: string, generation: number): Promise<void> {
-    const selectionGeneration = nextPathSelectionGeneration();
-    await store.selectPath(path);
-    if (generation !== routeLoadGeneration || !pathSelectionStillCurrent(selectionGeneration, path)) return;
-    selectedPathRevealKey += 1;
+  function syncRoutePath(path: string): void {
+    runtime.runCommand(
+      mounted.selectPath(path).pipe(Effect.tap(() => Effect.sync(() => (selectedPathRevealKey += 1)))),
+      {
+        operation: "synchronize repository browser path",
+        safeContext: { path },
+        onFailure: () => {},
+      },
+    );
   }
 
-  function nextPathSelectionGeneration(): number {
-    pathSelectionGeneration += 1;
-    return pathSelectionGeneration;
-  }
-
-  function pathSelectionStillCurrent(generation: number, path: string): boolean {
-    return generation === pathSelectionGeneration && store.getSelectedPath() === path;
-  }
-
-  async function selectRefByKey(key: string): Promise<boolean> {
+  function selectRefByKey(key: string) {
     const ref = store.getRefs().find((candidate) => refKey(candidate) === key);
-    if (!ref) return false;
-    if (!(await store.selectRef(ref))) return false;
-    selectedPathRevealKey += 1;
-    repoLoadKey = routeKeyWithSelectedRef(route);
-    repoLoadAliasKey = "";
-    pushRoute({ path: store.getSelectedPath() ?? undefined });
-    return true;
+    if (!ref) return Effect.succeed(false);
+    return mounted.selectRef(ref).pipe(
+      Effect.tap((selected) =>
+        selected
+          ? Effect.sync(() => {
+              selectedPathRevealKey += 1;
+              repoLoadKey = routeKeyWithSelectedRef(route);
+              repoLoadAliasKey = "";
+              pushRoute({ path: store.getSelectedPath() ?? undefined });
+            })
+          : Effect.void,
+      ),
+    );
   }
 
   async function selectRefFromPicker(key: string): Promise<boolean | void> {
@@ -323,18 +342,21 @@
     if (selectedRef !== null && refKey(selectedRef) === key) return;
     if (refPickerSelectionInFlight) return false;
     refPickerSelectionInFlight = true;
-    try {
-      if (!(await selectRefByKey(key))) {
-        refPickerError = "Couldn't load repository ref";
-        return false;
-      }
-      refPickerQuery = "";
-    } catch {
+    const execution = runtime.runCommand(selectRefByKey(key), {
+      operation: "select repository browser ref",
+      safeContext: { key },
+      onFailure: () => {},
+    });
+    // Typeahead keeps its popup open when this Promise resolves false. The
+    // request itself stays in the app runtime; this boundary only observes it.
+    const exit = await Effect.runPromise(execution.await);
+    refPickerSelectionInFlight = false;
+    if (Exit.isFailure(exit) || !exit.value) {
       refPickerError = "Couldn't load repository ref";
       return false;
-    } finally {
-      refPickerSelectionInFlight = false;
     }
+    refPickerQuery = "";
+    return true;
   }
 
   function setRefPickerType(type: RefPickerType): void {
@@ -353,11 +375,15 @@
 
   function refreshRepo(): void {
     repoLoadKey = "";
-    void loadRoute(route);
+    loadRoute(route);
   }
 
   function selectHistoryCommit(commit: RepoBrowserCommit): void {
-    void store.selectCommit(commit.sha);
+    runtime.runCommand(mounted.selectCommit(commit.sha), {
+      operation: "select repository browser commit",
+      safeContext: { sha: commit.sha },
+      onFailure: () => {},
+    });
   }
 
   function updateSplitMeasurements(): void {
@@ -559,19 +585,25 @@
   }
 
   function openMarkdownDoc(path: string, anchor?: string): void {
-    void (async () => {
-      const generation = nextPathSelectionGeneration();
-      if (path !== store.getSelectedPath()) {
-        await store.selectPath(path);
-        if (!pathSelectionStillCurrent(generation, path)) return;
-        selectedPathRevealKey += 1;
-      }
-      if (!pathSelectionStillCurrent(generation, path)) return;
-      routeAnchorKey = routeAnchorStateKey(path, anchor ?? null);
-      pendingMarkdownAnchor = anchor ?? null;
-      store.setViewMode("preview");
-      pushRoute({ path, mode: "preview", anchor: anchor ?? null });
-    })();
+    const load = path === store.getSelectedPath() ? Effect.void : mounted.selectPath(path);
+    runtime.runCommand(
+      load.pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            selectedPathRevealKey += 1;
+            routeAnchorKey = routeAnchorStateKey(path, anchor ?? null);
+            pendingMarkdownAnchor = anchor ?? null;
+            store.setViewMode("preview");
+            pushRoute({ path, mode: "preview", anchor: anchor ?? null });
+          }),
+        ),
+      ),
+      {
+        operation: "open repository markdown document",
+        safeContext: { path },
+        onFailure: () => {},
+      },
+    );
   }
 
   function buildForgeHref(
@@ -703,7 +735,7 @@
           selectedPath={selectedPath}
           {selectedPathRevealKey}
           ariaLabel="Repository files"
-          onSelect={(path) => void selectPath(path)}
+          onSelect={selectPath}
         />
       </div>
     </aside>

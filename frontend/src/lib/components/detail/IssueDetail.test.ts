@@ -6,7 +6,7 @@ import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { GeneratedClient } from "../../api/generated-api.js";
 import type { IssueDetail, Label } from "../../api/types.js";
 import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
-import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
+import { ACTIONS_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
@@ -234,7 +234,6 @@ function renderIssueDetail(
       detailProps,
     },
     context: new Map<symbol, unknown>([
-      [API_CLIENT_KEY, apiClient],
       [
         STORES_KEY,
         {

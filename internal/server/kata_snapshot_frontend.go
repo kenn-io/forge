@@ -35,6 +35,7 @@ type kataTaskSnapshotInput struct {
 	Authority        string `query:"authority" default:"open" enum:"open,ready,closed,all"`
 	SelectedIssueUID string `query:"selected_issue_uid"`
 	GraphSourceUID   string `query:"graph_source_uid"`
+	Fresh            bool   `query:"fresh" doc:"Bypass cached daemon authority for mutation reconciliation"`
 }
 
 type kataTaskSnapshotResponse struct {
@@ -95,6 +96,7 @@ type kataSnapshotFrontendDeps struct {
 	ensureEvents            func(kata.Daemon) (kataFrontendEventHandle, error)
 	loadAuthority           func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error)
 	daemonEpoch             func(string) uint64
+	invalidateDaemon        func(string) uint64
 	invalidateDaemonIfEpoch func(string, uint64) (uint64, bool)
 	newClient               func(context.Context, kata.Daemon) (kataAPIClient, error)
 	enrich                  func(context.Context, kataAPIClient, kataCoordinatedAuthority, kataSnapshotEnrichmentRequest) (kataSnapshotEnrichment, error)
@@ -116,6 +118,7 @@ func (s *Server) kataSnapshotFrontend() *kataSnapshotFrontend {
 		},
 		loadAuthority:           s.kataSnapshots.loadAuthority,
 		daemonEpoch:             s.kataSnapshots.daemonEpoch,
+		invalidateDaemon:        s.kataSnapshots.invalidateDaemon,
 		invalidateDaemonIfEpoch: s.kataSnapshots.invalidateDaemonIfEpoch,
 		newClient:               newKataAPIClient,
 		enrich: func(
@@ -181,6 +184,13 @@ func (f *kataSnapshotFrontend) Snapshot(
 	}
 	if err := validateKataAuthorityRequest(intent); err != nil {
 		return kataTaskSnapshotResponse{}, err
+	}
+	if input.Fresh {
+		daemon, problem := f.deps.resolveDaemon(input.DaemonID)
+		if problem != nil {
+			return kataTaskSnapshotResponse{}, problem
+		}
+		f.deps.invalidateDaemon(daemon.ID)
 	}
 	enrichmentRequest := kataSnapshotEnrichmentRequest{
 		SelectedIssueUID: strings.TrimSpace(input.SelectedIssueUID),

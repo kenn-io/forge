@@ -187,7 +187,10 @@ func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 			var cursor string
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var request graphQLRequest
-				require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+					http.Error(w, "invalid request", http.StatusBadRequest)
+					return
+				}
 				cursor, _ = request.Variables["cursor"].(string)
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = fmt.Fprintf(w, `{"data":%s}`, tt.responseData)
@@ -231,7 +234,7 @@ func TestGraphQLFetcherFetchesCurrentCommentVisibility(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
-				require.Contains(t, string(body), tt.queryKey)
+				assert.Contains(t, string(body), tt.queryKey)
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = fmt.Fprint(w, `{"data":{"repository":{`+map[string]string{
 					"pullRequest(number:": `"pullRequest":{"comments":{"nodes":[{"databaseId":202,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`,

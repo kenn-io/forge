@@ -6,8 +6,9 @@
     TopBar,
     type TopBarTab,
   } from "@kenn-io/kit-ui";
-  import { getStores, KbdBadge } from "@kenn-forge/ui";
-  import type { ModeVisibility } from "@kenn-forge/ui/api/types";
+  import { getStores } from "../../context.js";
+  import KbdBadge from "../keyboard/KbdBadge.svelte";
+  import type { ModeVisibility } from "../../api/types.js";
   import { tick } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {

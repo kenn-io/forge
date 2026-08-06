@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { LaunchTarget } from "@kenn-forge/ui/api/types";
+import type { LaunchTarget } from "../../api/types.js";
 import type {
   KataProjectSummary,
   KataRecurrence,

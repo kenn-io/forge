@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { createSettingsStore, type StoreInstances } from "@kenn-forge/ui";
-import type { PullRequest } from "@kenn-forge/ui/api/types";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+import type { PullRequest } from "../../api/types.ts";
+import { createSettingsStore } from "../../stores/settings.svelte.ts";
+import type { StoreInstances } from "../../types.ts";
 
 const mocks = vi.hoisted(() => ({
   listUserRepositories: vi.fn(),

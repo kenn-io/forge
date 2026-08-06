@@ -1,14 +1,6 @@
 <script lang="ts">
-  import {
-    activateTabbedPanelTab,
-    appendTabbedPanelTabToLeaf,
-    moveTabbedPanelTabBefore,
-    splitTabbedPanelTabIntoLeaf,
-    TabbedPanelTree,
-    type TabbedPanelDirection,
-    type TabbedPanelNode,
-    updateTabbedPanelSplitRatio,
-  } from "@kenn-forge/ui";
+  import { activateTabbedPanelTab, appendTabbedPanelTabToLeaf, moveTabbedPanelTabBefore, splitTabbedPanelTabIntoLeaf, type TabbedPanelDirection, type TabbedPanelNode, updateTabbedPanelSplitRatio } from "../shared/tabbed-panel-layout.js";
+  import TabbedPanelTree from "../shared/TabbedPanelTree.svelte";
 
   import {
     createTabbedPanelDemoNode,

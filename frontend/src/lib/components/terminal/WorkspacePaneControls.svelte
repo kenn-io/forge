@@ -1,7 +1,7 @@
 <script lang="ts">
   import SlidersHorizontalIcon from "@lucide/svelte/icons/sliders-horizontal";
   import { autoReposition, floatingPopoverStyle } from "@kenn-io/kit-ui";
-  import { getStackDepth } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+  import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
   import { tick } from "svelte";
   import {
     hostedWorkspaceControls,

@@ -4,8 +4,8 @@ import {
   type NumberedRouteItemRef,
   type RepositoryRouteRef,
   type RoutedItemRef,
-} from "@kenn-forge/ui/routes";
-import { canonicalProvider } from "@kenn-forge/ui/api/provider-routes";
+} from "../routes.js";
+import { canonicalProvider } from "../api/provider-routes.js";
 import type { KataTaskViewName } from "../api/kata/taskTypes.js";
 
 export type RepoRef = RepositoryRouteRef;

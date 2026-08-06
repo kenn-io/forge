@@ -1,13 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { createDiffStore } from "@kenn-forge/ui/stores/diff";
-import {
-  clearActiveTabbedPanelDrag,
-  getPaneLayoutStore,
-  resetPaneLayoutStoresForTest,
-  sessionPaneKey,
-  startTabbedPanelTabDrag,
-} from "@kenn-forge/ui";
+import { createDiffStore } from "../../stores/diff.svelte.js";
+import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
+import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../../stores/paneLayout.svelte.js";
+import { sessionPaneKey } from "../../stores/session-pane-key.js";
 import {
   beginWorkspaceDeletion,
   discardWorkspaceLaunch,
@@ -15,8 +11,8 @@ import {
   pendingWorkspaceLaunch,
   queueWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
-} from "@kenn-forge/ui/stores/workspace-create-pending";
-import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
+} from "../../stores/workspace-create-pending.svelte.js";
+import { STORES_KEY } from "../../context.js";
 
 const mocks = vi.hoisted(() => ({
   getWorkspaceRuntime: vi.fn(),
@@ -105,8 +101,8 @@ vi.mock("@xterm/addon-webgl", () => ({
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
-vi.mock("@kenn-forge/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
+vi.mock("../../context.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../context.js")>();
   return {
     ...actual,
     getStores: () => ({
@@ -159,12 +155,12 @@ vi.mock("../../api/settings.js", () => ({
   updateSettings: mocks.mockUpdateSettings,
 }));
 
-vi.mock("@kenn-forge/ui/stores/flash", () => ({
+vi.mock("../../stores/flash.svelte.js", () => ({
   showFlash: mocks.showFlash,
 }));
 
-vi.mock("../../../../../packages/ui/src/components/detail/PullDetail.svelte", async () => ({
-  default: (await import("../../../../../packages/ui/src/views/PRListViewTestPullDetail.svelte")).default,
+vi.mock("../detail/PullDetail.svelte", async () => ({
+  default: (await import("../../views/PRListViewTestPullDetail.svelte")).default,
 }));
 
 // The harness pairs the view with the session terminal pool, which WorkspaceHost

@@ -1,4 +1,4 @@
-import type { RoutedItemRef } from "@kenn-forge/ui/routes";
+import type { RoutedItemRef } from "../../routes.js";
 
 import type { RecentsState } from "./types.js";
 

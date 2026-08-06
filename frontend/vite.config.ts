@@ -1,5 +1,4 @@
 import { createRequire } from "node:module";
-import path from "node:path";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 import { defaultClientConditions, searchForWorkspaceRoot, type Plugin, type ProxyOptions, type UserConfig } from "vite";
@@ -18,28 +17,6 @@ const devServerPort = resolveViteServerPort();
 const devServerAllowedHosts = resolveViteAllowedHosts();
 const devServerHmr = resolveViteHmr(devServerPort);
 const workspaceRoot = searchForWorkspaceRoot(process.cwd());
-const uiPkg = path.resolve(process.cwd(), "../packages/ui");
-const uiIndex = path.resolve(process.cwd(), "../packages/ui/src/index.ts");
-const uiGeneratedClient = path.resolve(process.cwd(), "../packages/ui/src/api/generated/client.ts");
-const uiGeneratedSchema = path.resolve(process.cwd(), "../packages/ui/src/api/generated/schema.ts");
-const uiApiTypes = path.resolve(process.cwd(), "../packages/ui/src/api/types.ts");
-const uiApiCsrf = path.resolve(process.cwd(), "../packages/ui/src/api/csrf.ts");
-const uiRoutes = path.resolve(process.cwd(), "../packages/ui/src/routes.ts");
-const uiRepoLabel = path.resolve(process.cwd(), "../packages/ui/src/utils/repo-label.ts");
-const uiStoreDetail = path.resolve(process.cwd(), "../packages/ui/src/stores/detail.svelte.ts");
-const uiStoreEvents = path.resolve(process.cwd(), "../packages/ui/src/stores/events.svelte.ts");
-const uiStorePulls = path.resolve(process.cwd(), "../packages/ui/src/stores/pulls.svelte.ts");
-const uiStoreIssues = path.resolve(process.cwd(), "../packages/ui/src/stores/issues.svelte.ts");
-const uiStoreActivity = path.resolve(process.cwd(), "../packages/ui/src/stores/activity.svelte.ts");
-const uiStoreSync = path.resolve(process.cwd(), "../packages/ui/src/stores/sync.svelte.ts");
-const uiStoreDiff = path.resolve(process.cwd(), "../packages/ui/src/stores/diff.svelte.ts");
-const uiStoreGrouping = path.resolve(process.cwd(), "../packages/ui/src/stores/grouping.svelte.ts");
-const uiStoreDetailActivityView = path.resolve(
-  process.cwd(),
-  "../packages/ui/src/stores/detail-activity-view.svelte.ts",
-);
-const uiStoreSettings = path.resolve(process.cwd(), "../packages/ui/src/stores/settings.svelte.ts");
-const uiModalStack = path.resolve(process.cwd(), "../packages/ui/src/stores/keyboard/modal-stack.svelte.ts");
 
 function devApiUrlPlugin(url: string): Plugin {
   return {
@@ -177,7 +154,7 @@ const unitTestProject = {
     ...(unitTestMaxWorkers ? { maxWorkers: unitTestMaxWorkers } : {}),
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)", "../packages/ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
+    include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)", "../packages/github-app-ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
     exclude: ["tests/e2e/**", "tests/e2e-full/**", "node_modules/**", "src/**/*.browser.svelte.ts"],
   },
 } satisfies TestProjectInlineConfiguration;
@@ -249,114 +226,31 @@ const config = {
         find: /^@testing-library\/svelte$/,
         replacement: testingLibrarySvelteEntry,
       },
-      {
-        find: /^@kenn-forge\/ui$/,
-        replacement: uiIndex,
-      },
-      {
-        find: /^@kenn-forge\/ui\/api\/client$/,
-        replacement: uiGeneratedClient,
-      },
-      {
-        find: /^@kenn-forge\/ui\/api\/schema$/,
-        replacement: uiGeneratedSchema,
-      },
-      {
-        find: /^@kenn-forge\/ui\/api\/types$/,
-        replacement: uiApiTypes,
-      },
-      {
-        find: /^@kenn-forge\/ui\/api\/csrf$/,
-        replacement: uiApiCsrf,
-      },
-      {
-        find: /^@kenn-forge\/ui\/routes$/,
-        replacement: uiRoutes,
-      },
-      {
-        find: /^@kenn-forge\/ui\/utils\/repo-label$/,
-        replacement: uiRepoLabel,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/detail$/,
-        replacement: uiStoreDetail,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/events$/,
-        replacement: uiStoreEvents,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/pulls$/,
-        replacement: uiStorePulls,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/issues$/,
-        replacement: uiStoreIssues,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/activity$/,
-        replacement: uiStoreActivity,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/sync$/,
-        replacement: uiStoreSync,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/diff$/,
-        replacement: uiStoreDiff,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/grouping$/,
-        replacement: uiStoreGrouping,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/detail-activity-view$/,
-        replacement: uiStoreDetailActivityView,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/settings$/,
-        replacement: uiStoreSettings,
-      },
-      {
-        find: /^@kenn-forge\/ui\/stores\/keyboard\/modal-stack$/,
-        replacement: uiModalStack,
-      },
     ],
   },
   optimizeDeps: {
-    // @kenn-forge/ui is excluded so Vite serves its source modules directly
-    // (the resolve.alias above points it at ../packages/ui/src). But the
-    // barrel reaches heavy transitive deps that some of those packages own
-    // and frontend cannot resolve bare (the @tiptap/@pierre/prosemirror/
-    // svelte-tiptap cluster). Left undeclared, Vite discovers them mid-run on
-    // a cold optimizer, re-bundles, and reloads the page -- which yanks an
-    // in-flight dynamic import of App.svelte out from under the browser test
-    // tier (TypeError: Failed to fetch dynamically imported module). Force
-    // pre-bundling them at startup so there is nothing to discover later.
+    // The frontend imports several heavy editor and diff dependencies. Left
+    // undeclared, Vite discovers them mid-run on a cold optimizer, re-bundles,
+    // and reloads the page underneath an in-flight browser-tier App mount.
+    // Pre-bundle that exact cold-start set up front.
     //
-    // The "@kenn-forge/ui > <dep>" barrel-traversal entries resolve the dep in
-    // packages/ui's context (it is not a frontend dependency); the bare
-    // entries (openapi-fetch, the @lucide/svelte icon paths) resolve from
-    // frontend directly. The set is exactly the cold "new dependencies
-    // optimized" list emitted when mounting App.svelte in the browser tier.
     // @kenn-io/kit-ui is likewise consumed as Svelte source (svelte export
     // condition); its .svelte.ts rune modules cannot go through the dep
     // optimizer's plain-JS parse.
-    exclude: ["@kenn-forge/ui", "@kenn-io/kit-ui"],
+    exclude: ["@kenn-io/kit-ui"],
     include: [
-      // packages/ui-owned transitive deps, reached through the excluded barrel.
-      "@kenn-forge/ui > @pierre/diffs",
-      "@kenn-forge/ui > @pierre/diffs/worker",
-      "@kenn-forge/ui > @tiptap/core",
-      "@kenn-forge/ui > @tiptap/extension-document",
-      "@kenn-forge/ui > @tiptap/extension-hard-break",
-      "@kenn-forge/ui > @tiptap/extension-paragraph",
-      "@kenn-forge/ui > @tiptap/extension-placeholder",
-      "@kenn-forge/ui > @tiptap/extension-text",
-      "@kenn-forge/ui > @tiptap/suggestion",
-      "@kenn-forge/ui > prosemirror-state",
-      "@kenn-forge/ui > shiki",
-      "@kenn-forge/ui > svelte-tiptap",
+      "@pierre/diffs",
+      "@pierre/diffs/worker",
+      "@tiptap/core",
+      "@tiptap/extension-document",
+      "@tiptap/extension-hard-break",
+      "@tiptap/extension-paragraph",
+      "@tiptap/extension-placeholder",
+      "@tiptap/extension-text",
+      "@tiptap/suggestion",
+      "prosemirror-state",
+      "shiki",
+      "svelte-tiptap",
       // kit-ui-owned transitive deps, reached through its excluded barrel
       // (the markdown pipeline peers plus its own icon set — the icon paths
       // below are shared with the frontend list where they overlap).
@@ -391,9 +285,8 @@ const config = {
       "@kenn-io/kit-ui > @lucide/svelte/icons/x",
       // Frontend-resolvable deps the barrel also pulls in.
       "openapi-fetch",
-      // The complete set of @lucide/svelte icon paths imported anywhere in
-      // frontend/src or packages/ui/src (generated by `grep -rhoE
-      // "@lucide/svelte/icons/[a-z0-9-]+" src ../packages/ui/src | sort -u`).
+      // The complete set of @lucide/svelte icon paths imported under
+      // frontend/src.
       // Pre-bundling every icon -- not just the /pulls subset -- stops the cold
       // optimizer from discovering a new icon mid-run on issues/detail routes,
       // re-bundling, and reloading the page out from under a browser-tier mount.
@@ -526,7 +419,7 @@ const config = {
     strictPort: true,
     ...(devServerAllowedHosts ? { allowedHosts: devServerAllowedHosts } : {}),
     hmr: devServerHmr,
-    fs: { allow: [workspaceRoot, uiPkg] },
+    fs: { allow: [workspaceRoot] },
     proxy: {
       "/api": {
         target: apiUrl,

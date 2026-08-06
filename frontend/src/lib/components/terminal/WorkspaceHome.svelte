@@ -2,7 +2,7 @@
   import type {
     LaunchTarget,
     RuntimeSession,
-  } from "@kenn-forge/ui/api/types";
+  } from "../../api/types.js";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import FolderIcon from "@lucide/svelte/icons/folder";
   import PlayIcon from "@lucide/svelte/icons/play";

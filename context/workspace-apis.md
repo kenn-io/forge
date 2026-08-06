@@ -141,7 +141,7 @@ embedder protocol for arbitrary host state.
 - Client detail stores mirror this: a background poll or sync whose payload is
   content-identical (ignoring fetch timestamps) must not replace displayed
   store state — equal-but-new objects re-render the whole panel every cycle
-  (`packages/ui/src/stores/detail.svelte.ts::applyRefreshedDetail`).
+  (`frontend/src/lib/stores/detail.svelte.ts::applyRefreshedDetail`).
 - `DELETE /workspaces/{id}`: tear down a kenn-forge-managed workspace and its
   local resources.
   - Force-delete blocks new setup generations before joining the current worker,
@@ -315,7 +315,7 @@ Workspace creation launches an agent only after an explicit target choice on
 the create split button. The one-shot target is reactive session state keyed by
 workspace ID; primary creation never launches, while an explicit fork-PR choice
 shares the ordinary manual Launch-menu trust boundary
-(`packages/ui/src/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`).
+(`frontend/src/lib/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`).
 The launch API accepts only the target and display region. Agent launches
 refresh and persist head-repository classification while preparing generated
 context, but classification does not authorize or block the launch
@@ -323,13 +323,13 @@ context, but classification does not authorize or block the launch
 `internal/workspace/agent_context.go::Manager.PrepareAgentLaunchContext`).
 Agent settings use the `agents` and `launch_targets` fields from `GET /settings`;
 the shared create split control consumes agent targets from the hydrated store
-(`packages/ui/src/components/workspace/WorkspaceCreateSplitButton.svelte::agentTargets`).
+(`frontend/src/lib/components/workspace/WorkspaceCreateSplitButton.svelte::agentTargets`).
 A save replaces both fields from its response so command fixes update
 availability without a reload
 (`frontend/src/lib/components/settings/AgentSettings.svelte::save`).
 Startup (`frontend/src/lib/utils/appStartup.ts`) and a
-`config_changed` SSE hot reload (`packages/ui/src/Provider.svelte::reloadSettingsAfterConfigChange`,
-via `packages/ui/src/stores/settings-hydration.ts::applySettingsHydration`)
+`config_changed` SSE hot reload (`frontend/src/lib/Provider.svelte::reloadSettingsAfterConfigChange`,
+via `frontend/src/lib/stores/settings-hydration.ts::applySettingsHydration`)
 both hydrate the same `GET /settings` fields into the settings/activity/issues
 stores from two separate call sites — a field added to one path and not the
 other silently goes stale after a config edit until the next full page load.
@@ -422,7 +422,7 @@ server check exactly.
   last-known-good snapshot; preserving browser refreshes retry with capped,
   cancelable backoff only when retained files and diff share a snapshot version,
   while cold loads expose blocking errors
-  (`packages/ui/src/stores/diff.svelte.ts::loadWorkspaceDiff`).
+  (`frontend/src/lib/stores/diff.svelte.ts::loadWorkspaceDiff`).
   A changed fingerprint publishes through `workspace_diff_changed` when ready.
   Watcher hints validate selected keys even inside the freshness interval;
   periodic validation makes stale snapshots eligible for refresh, while the
@@ -466,11 +466,11 @@ server check exactly.
   conflict reloads the coherent files/diff pair once only while the preview's
   captured load token and generation still own the store; stale preview work
   fails without mutation
-  (`packages/ui/src/stores/diff.svelte.ts::loadWorkspaceFilePreview`).
+  (`frontend/src/lib/stores/diff.svelte.ts::loadWorkspaceFilePreview`).
 - Preserving refreshes publish only a fresh coherent files/diff pair; stale
   responses retain the visible pair and retry because same-fingerprint
   validation emits no change event
-  (`packages/ui/src/stores/diff.svelte.ts::loadWorkspaceDiff`).
+  (`frontend/src/lib/stores/diff.svelte.ts::loadWorkspaceDiff`).
 - Workspace diff and preview paths identify the current path first. Old paths
   are fallback aliases only, since a rename source can coexist with a new file
   at that path (`internal/server/workspaceapi/routes_handlers.go::filterWorkspaceDiffSnapshotPath`).

@@ -7,9 +7,10 @@ import type {
   PromotableSession,
   WorkspaceItemIdentity,
   WorkspaceRefLite,
-} from "@kenn-forge/ui";
-import { canonicalItemType, parseSessionPaneKey, sessionPaneKeyMatchesWorkspace } from "@kenn-forge/ui";
-import { canonicalProvider, resolvedPlatformHost } from "@kenn-forge/ui/api/provider-routes";
+} from "../workspace-inline.js";
+import { canonicalItemType } from "../workspace-inline.js";
+import { parseSessionPaneKey, sessionPaneKeyMatchesWorkspace } from "./session-pane-key.js";
+import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
 import {
   clearCreatedWorkspaceById,
   createdWorkspaceRef,
@@ -17,9 +18,9 @@ import {
   markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
   resolveControllerlessWorkspaceRef,
-} from "@kenn-forge/ui/stores/workspace-create-pending";
-import { getStackDepth } from "@kenn-forge/ui/stores/keyboard/modal-stack";
-import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "@kenn-forge/ui/stores/paneLayout";
+} from "./workspace-create-pending.svelte.js";
+import { getStackDepth } from "./keyboard/modal-stack.svelte.js";
+import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "./paneLayout.svelte.js";
 import { clearSessionFocusRequest, getSessionSlotElement, requestSessionFocus } from "./session-host.svelte.ts";
 import { forgetWorkspaceRoute, getRoute, navigate, replaceUrl } from "./router.svelte.ts";
 

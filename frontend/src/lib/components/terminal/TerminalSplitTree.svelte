@@ -1,8 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
-  import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "@kenn-forge/ui";
-  import type { RuntimeSession } from "@kenn-forge/ui/api/types";
+  import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
+  import type { RuntimeSession } from "../../api/types.js";
   import XIcon from "@lucide/svelte/icons/x";
   import MoveIcon from "@lucide/svelte/icons/move";
   import PanelRightIcon from "@lucide/svelte/icons/panel-right";

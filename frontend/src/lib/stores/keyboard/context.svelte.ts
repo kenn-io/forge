@@ -1,7 +1,7 @@
 import { getRoute, getPage, getDetailTab, isDiffView, getSelectedPRFromRoute, type Route } from "../router.svelte.js";
 import type { Context } from "./types.js";
-import type { PullSelection } from "@kenn-forge/ui/stores/pulls";
-import type { IssueSelection } from "@kenn-forge/ui/stores/issues";
+import type { PullSelection } from "../pulls.svelte.js";
+import type { IssueSelection } from "../issues.svelte.js";
 
 interface SelectionSources {
   pulls: { getSelectedPR: () => PullSelection | null };

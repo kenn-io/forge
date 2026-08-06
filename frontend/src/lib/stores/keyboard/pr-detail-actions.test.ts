@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { getActionsByOwner, getAllActions, resetRegistry } from "./registry.svelte.js";
 import { registerPRDetailActions } from "./pr-detail-actions.js";
-import type { PRDetailActionInput } from "../../../../../packages/ui/src/components/detail/keyboard-actions.js";
+import type { PRDetailActionInput } from "../../components/detail/keyboard-actions.js";
 import type { Context } from "./types.js";
 
 const ctx = {} as Context;

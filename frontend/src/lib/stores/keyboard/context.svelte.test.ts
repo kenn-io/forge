@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { IssueSelection } from "@kenn-forge/ui/stores/issues";
-import type { PullSelection } from "@kenn-forge/ui/stores/pulls";
+import type { IssueSelection } from "../issues.svelte.js";
+import type { PullSelection } from "../pulls.svelte.js";
 
 import { buildContext } from "./context.svelte.js";
 

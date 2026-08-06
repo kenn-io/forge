@@ -1,15 +1,15 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
 
-import type { Repo } from "@kenn-forge/ui/api/types";
-import { createSettingsStore } from "@kenn-forge/ui/stores/settings";
+import type { Repo } from "../api/types.js";
+import { createSettingsStore } from "../stores/settings.svelte.js";
 import { client } from "../api/runtime.js";
 import RepoTypeahead from "./RepoTypeahead.svelte";
 
 let settingsStore: ReturnType<typeof createSettingsStore>;
 
-vi.mock("@kenn-forge/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
+vi.mock("../context.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../context.js")>();
   return {
     ...actual,
     getStores: () => ({

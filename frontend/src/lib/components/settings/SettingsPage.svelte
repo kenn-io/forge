@@ -2,8 +2,8 @@
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import { onMount } from "svelte";
   import { SearchInput, SettingsLayout, SettingsSection, type SettingsCategory } from "@kenn-io/kit-ui";
-  import { getStores } from "@kenn-forge/ui";
-  import type { Settings } from "@kenn-forge/ui/api/types";
+  import { getStores } from "../../context.js";
+  import type { Settings } from "../../api/types.js";
   import { getSettings } from "../../api/settings.js";
   import { navigate } from "../../stores/router.svelte.js";
   import RepoSettings from "./RepoSettings.svelte";
@@ -18,7 +18,7 @@
   import {
     beginTerminalSettingsHydration,
     hydrateTerminalSettings,
-  } from "@kenn-forge/ui/stores/terminal-settings-persistence";
+  } from "../../stores/terminal-settings-persistence.js";
   import { SETTINGS_PANELS, settingsPanelsForModes } from "./settingsPanels.js";
 
   // Switched-panel model on kit SettingsLayout: this list is the single

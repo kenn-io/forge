@@ -1,8 +1,7 @@
 /**
  * App-shell registration for the PR-detail palette commands.
  *
- * The canX/runX closures live in @kenn-forge/ui
- * (`packages/ui/src/components/detail/keyboard-actions.ts`); registration
+ * The canX/runX closures live in the detail keyboard workflow; registration
  * happens here in the app shell because the keyboard registry imports
  * Svelte 5 runes that the package can't reach upward for. The registry
  * itself does not know about the PR-detail action shape — it only sees
@@ -24,7 +23,7 @@ import {
   runApproveWorkflows,
   runMarkReady,
   type PRDetailActionInput,
-} from "../../../../../packages/ui/src/components/detail/keyboard-actions.js";
+} from "../../components/detail/keyboard-actions.js";
 import { registerScopedActions } from "./registry.svelte.js";
 import type { Action, Context } from "./types.js";
 

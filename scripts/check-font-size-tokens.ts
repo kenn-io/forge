@@ -22,7 +22,7 @@ type ParsedArgs = {
   paths: string[];
 };
 
-const DEFAULT_SCAN_PATHS = ["frontend/src", "packages/ui/src"];
+const DEFAULT_SCAN_PATHS = ["frontend/src"];
 const SOURCE_EXTENSIONS = new Set([".css", ".svelte", ".ts"]);
 const ALLOWED_RELATIVE_FONT_SIZES = new Set(["0.9em"]);
 const FONT_SIZE_RE = /font-size\s*:\s*([^;]+)/gi;

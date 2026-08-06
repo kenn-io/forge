@@ -1,5 +1,5 @@
-import { getStack } from "@kenn-forge/ui/stores/keyboard/modal-stack";
-import { showFlash } from "@kenn-forge/ui/stores/flash";
+import { getStack } from "./modal-stack.svelte.js";
+import { showFlash } from "../flash.svelte.js";
 import { getAllActions } from "./registry.svelte.js";
 import { isTerminalKeyboardTarget, shouldIgnoreGlobalShortcutTarget } from "../../utils/keyboardShortcuts.js";
 import type { Action, Context, KeySpec } from "./types.js";

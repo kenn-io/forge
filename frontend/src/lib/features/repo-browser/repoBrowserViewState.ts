@@ -1,4 +1,4 @@
-import type { RepoBrowserTreeEntry } from "@kenn-forge/ui/api/types";
+import type { RepoBrowserTreeEntry } from "../../api/types.js";
 
 const markdownExtensions = new Set([".md", ".mdx"]);
 

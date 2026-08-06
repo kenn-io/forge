@@ -1,9 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import type { StoreInstances } from "@kenn-forge/ui";
-  import { buildProviderPullRequestRoute } from "@kenn-forge/ui/routes";
-  import type { PullRequest } from "@kenn-forge/ui/api/types";
   import {
     Button,
     Checkbox,
@@ -25,8 +22,11 @@
   } from "../../api/project-intake.ts";
   import { createPullRequestWorkspace } from "../../api/onboarding.ts";
   import { bulkAddRepos } from "../../api/settings.ts";
+  import type { PullRequest } from "../../api/types.ts";
+  import { buildProviderPullRequestRoute } from "../../routes.ts";
   import { navigate } from "../../stores/router.svelte.ts";
   import { resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
+  import type { StoreInstances } from "../../types.ts";
   import ProviderReadinessStep from "./ProviderReadinessStep.svelte";
 
   type Phase = "repos" | "sync" | "pulls" | "workspace";

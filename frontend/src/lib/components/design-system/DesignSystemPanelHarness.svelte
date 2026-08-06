@@ -4,20 +4,16 @@
   content that DesignSystemTabbedPanelDemo.svelte ships on /design-system: both
   read that configuration from the shared tabbedPanelDemoData.ts (including the
   nine Activity rows whose overflow drives the scroll assertion), so the demo and
-  this harness cannot drift apart. It imports TabbedPanelTree and
-  activateTabbedPanelTab from their source files rather than the @kenn-forge/ui
-  barrel: the barrel re-exports the whole UI package (tiptap, pierre, dozens of
-  lucide icons), which the browser project would optimize mid-run and reload
-  over, making a cold run flaky. The geometry/scroll under test belongs to the
-  real TabbedPanelTree, so this stays a faithful equivalent of the shipped demo
-  without the heavy module graph.
+  this harness cannot drift apart. The geometry/scroll under test belongs to
+  the real TabbedPanelTree, so the harness imports that component and its layout
+  helpers directly while keeping the rest of the module graph narrow.
 -->
 <script lang="ts">
-  import TabbedPanelTree from "../../../../../packages/ui/src/components/shared/TabbedPanelTree.svelte";
+  import TabbedPanelTree from "../shared/TabbedPanelTree.svelte";
   import {
     activateTabbedPanelTab,
     type TabbedPanelNode,
-  } from "../../../../../packages/ui/src/components/shared/tabbed-panel-layout.ts";
+  } from "../shared/tabbed-panel-layout.ts";
 
   import {
     createTabbedPanelDemoNode,

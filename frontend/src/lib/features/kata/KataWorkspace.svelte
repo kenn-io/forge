@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
-  import { getStores } from "@kenn-forge/ui";
+  import { getStores } from "../../context.js";
   import { IconButton, type TypeaheadOption } from "@kenn-io/kit-ui";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
-  import { queueWorkspaceLaunch } from "@kenn-forge/ui/stores/workspace-create-pending";
+  import { showFlash } from "../../stores/flash.svelte.js";
+  import { queueWorkspaceLaunch } from "../../stores/workspace-create-pending.svelte.js";
   import LayoutPanelLeftIcon from "@lucide/svelte/icons/layout-panel-left";
   import LayoutPanelTopIcon from "@lucide/svelte/icons/layout-panel-top";
   import PlusIcon from "@lucide/svelte/icons/plus";

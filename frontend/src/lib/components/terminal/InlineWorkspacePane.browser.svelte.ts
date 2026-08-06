@@ -1,9 +1,6 @@
 import { flushSync, mount, unmount } from "svelte";
 import { describe, expect, it } from "vite-plus/test";
-import {
-  createPaneLayoutStore,
-  type PaneLayoutStore,
-} from "../../../../../packages/ui/src/stores/paneLayout.svelte.js";
+import { createPaneLayoutStore, type PaneLayoutStore } from "../../stores/paneLayout.svelte.js";
 import InlineWorkspacePaneHarness from "./InlineWorkspacePaneHarness.svelte";
 
 /**

@@ -5,7 +5,7 @@
   import UserIcon from "@lucide/svelte/icons/user-round";
   import XIcon from "@lucide/svelte/icons/x";
   import { Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
-  import { Button, Chip, SelectDropdown } from "@kenn-forge/ui";
+  import { Button, Chip, SelectDropdown } from "@kenn-io/kit-ui";
   import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
   import DatePicker from "../shared/DatePicker.svelte";
 

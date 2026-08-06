@@ -2,7 +2,7 @@ import { cleanup, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import RepoImportModal from "./RepoImportModal.svelte";
-import { getStackDepth, getTopFrame, resetModalStack } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+import { getStackDepth, getTopFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 
 vi.mock("../../api/settings.js", () => ({
   previewRepos: vi.fn(),

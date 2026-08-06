@@ -6,14 +6,9 @@
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import HouseIcon from "@lucide/svelte/icons/house";
-  import {
-    clearActiveTabbedPanelDrag,
-    readTabbedPanelTabDrag,
-    startTabbedPanelTabDrag,
-    TabbedPanelTree,
-    workspaceTabDragScope,
-    type TabbedPanelDescriptor,
-  } from "@kenn-forge/ui";
+  import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag, startTabbedPanelTabDrag, workspaceTabDragScope } from "../shared/tabbed-panel-drag.js";
+  import TabbedPanelTree from "../shared/TabbedPanelTree.svelte";
+  import type { TabbedPanelDescriptor } from "../shared/tabbed-panel-layout.js";
   import type { SplitDirection, WorkflowNode, WorkflowTabKey } from "./terminal-layout";
   import {
     clearActiveTerminalDrag,

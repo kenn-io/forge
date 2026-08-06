@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { createJobsStore } from "@kenn-forge/ui";
-import type { components } from "@kenn-forge/ui/api/roborev/schema";
+import { createJobsStore } from "./roborev/jobs.svelte.js";
+import type { components } from "../api/roborev/generated/schema.js";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 

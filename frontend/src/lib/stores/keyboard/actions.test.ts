@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import {
-  getPaneLayoutStore,
-  resetPaneLayoutStoresForTest,
-  type PaneLayoutStore,
-} from "@kenn-forge/ui/stores/paneLayout";
-import { sessionPaneKey } from "@kenn-forge/ui";
+import { getPaneLayoutStore, resetPaneLayoutStoresForTest, type PaneLayoutStore } from "../paneLayout.svelte.js";
+import { sessionPaneKey } from "../session-pane-key.js";
 
 import { defaultActions, setStoreInstances } from "./actions.js";
 import { navigate } from "../router.svelte.ts";
@@ -15,10 +11,7 @@ import {
   resetWorkspaceHostForTest,
 } from "../workspace-host.svelte.ts";
 import { isSidebarCollapsed, setSidebarCollapsed } from "../sidebar.svelte.js";
-import {
-  OPEN_LABEL_PICKER_EVENT,
-  type OpenLabelPickerDetail,
-} from "../../../../../packages/ui/src/components/detail/labelPickerCommand.js";
+import { OPEN_LABEL_PICKER_EVENT, type OpenLabelPickerDetail } from "../../components/detail/labelPickerCommand.js";
 import {
   getNewWorkspaceSeedRepo,
   isNewWorkspaceDialogOpen,

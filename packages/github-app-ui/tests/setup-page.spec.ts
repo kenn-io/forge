@@ -28,7 +28,7 @@ interface FakeFlow {
   manifestPosts: string[];
 }
 
-function startFakeFlowServer(opts: { flowGone?: boolean }): Promise<FakeFlow> {
+function startFakeFlowServer(opts: { flowGone?: boolean; invalidManifest?: boolean }): Promise<FakeFlow> {
   const manifestPosts: string[] = [];
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -41,13 +41,15 @@ function startFakeFlowServer(opts: { flowGone?: boolean }): Promise<FakeFlow> {
       res.writeHead(200, { "Content-Type": "application/json" }).end(
         JSON.stringify({
           action: `${base}/settings/apps/new?state=test-state`,
-          manifest: JSON.stringify({
-            name: "kenn-forge-pw",
-            redirect_url: `${base}/callback/test-state`,
-            hook_attributes: { active: false },
-            public: false,
-            default_permissions: { contents: "read", pull_requests: "read" },
-          }),
+          manifest: opts.invalidManifest
+            ? JSON.stringify({ default_permissions: { contents: 7 } })
+            : JSON.stringify({
+                name: "kenn-forge-pw",
+                redirect_url: `${base}/callback/test-state`,
+                hook_attributes: { active: false },
+                public: false,
+                default_permissions: { contents: "read", pull_requests: "read" },
+              }),
           name: "kenn-forge-pw",
           host: "github.com",
         }),
@@ -138,6 +140,61 @@ test("stale setup link explains the flow is gone", async ({ page }) => {
   try {
     await page.goto(fake.base);
     await expect(page.getByRole("heading", { name: "This setup link is no longer active" })).toBeVisible();
+    expect(fake.manifestPosts).toHaveLength(0);
+  } finally {
+    fake.server.close();
+  }
+});
+
+test("a persisted page hide keeps Continue active", async ({ page }) => {
+  const fake = await startFakeFlowServer({});
+  try {
+    await page.goto(fake.base);
+    await expect(page.getByRole("button", { name: "Continue to GitHub" })).toBeVisible();
+
+    await page.evaluate(async () => {
+      window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+    });
+
+    await page.getByRole("button", { name: "Continue to GitHub" }).click();
+    await expect(page).toHaveURL(/step=done/);
+    expect(fake.manifestPosts).toHaveLength(1);
+  } finally {
+    fake.server.close();
+  }
+});
+
+test("invalid setup data is distinguished from a stale link", async ({ page }) => {
+  const fake = await startFakeFlowServer({ invalidManifest: true });
+  try {
+    await page.goto(fake.base);
+
+    await expect(page.getByRole("heading", { name: "This setup page could not read the app manifest" })).toBeVisible();
+    await expect(page.getByText("The app manifest has invalid repository permissions")).toBeVisible();
+    expect(fake.manifestPosts).toHaveLength(0);
+  } finally {
+    fake.server.close();
+  }
+});
+
+test("a failed form submission stays retryable", async ({ page }) => {
+  await page.addInitScript(() => {
+    HTMLFormElement.prototype.submit = () => {
+      throw new Error("submission blocked");
+    };
+  });
+  const fake = await startFakeFlowServer({});
+  try {
+    await page.goto(fake.base);
+    const continueButton = page.getByRole("button", { name: "Continue to GitHub" });
+
+    await continueButton.click();
+
+    await expect(page.getByText("Could not continue to GitHub")).toBeVisible();
+    await expect(continueButton).toBeEnabled();
     expect(fake.manifestPosts).toHaveLength(0);
   } finally {
     fake.server.close();

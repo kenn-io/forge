@@ -10,7 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 // only being caught in review.
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const roots = [currentDir, path.resolve(currentDir, "../../packages/ui/src")];
+const roots = [currentDir, path.resolve(currentDir, "./lib")];
 
 // Matches the opening tag of a native `<select>` element. Case-sensitive so
 // the `<SelectDropdown>` component and words like "selected"/"selection" are
@@ -51,7 +51,7 @@ describe("no native select elements", () => {
     const violations = files.flatMap(violationsIn);
     expect(
       violations,
-      `Found native <select> elements. Use the SelectDropdown primitive from @kenn-forge/ui instead:\n${violations.join("\n")}`,
+      `Found native <select> elements. Use the shared SelectDropdown primitive instead:\n${violations.join("\n")}`,
     ).toEqual([]);
   });
 });

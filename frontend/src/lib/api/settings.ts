@@ -1,6 +1,6 @@
-import type { Settings } from "@kenn-forge/ui/api/types";
-import type { components } from "@kenn-forge/ui/api/schema";
-import { providerRepoPath, providerRouteParams } from "@kenn-forge/ui/api/provider-routes";
+import type { Settings } from "./types.js";
+import type { components } from "./generated/schema.js";
+import { providerRepoPath, providerRouteParams } from "./provider-routes.js";
 
 import { apiErrorMessage, client } from "./runtime.js";
 

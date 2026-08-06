@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createDetailStore } from "@kenn-forge/ui/stores/detail";
-import { createIssuesStore } from "@kenn-forge/ui/stores/issues";
-import * as flash from "@kenn-forge/ui/stores/flash";
-import type { ForgeClient } from "@kenn-forge/ui";
+import { createDetailStore } from "./detail.svelte.js";
+import { createIssuesStore } from "./issues.svelte.js";
+import * as flash from "./flash.svelte.js";
+import type { ForgeClient } from "../types.js";
 
 describe("provider-aware detail API routes", () => {
   it("loads PR detail through the provider item endpoint", async () => {

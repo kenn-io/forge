@@ -1,8 +1,8 @@
 <script lang="ts">
   import { SegmentedControl } from "@kenn-io/kit-ui";
-  import { getStores } from "@kenn-forge/ui";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
-  import type { ActivitySettings as ActivitySettingsType } from "@kenn-forge/ui/api/types";
+  import { getStores } from "../../context.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
+  import type { ActivitySettings as ActivitySettingsType } from "../../api/types.js";
   import { updateSettings } from "../../api/settings.js";
 
   const { activity: activityStore } = getStores();

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
-import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@kenn-forge/ui/api/types";
+import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "./lib/api/types.js";
 
 import { createTerminalZoomController } from "./lib/components/terminal/terminalZoom.js";
 import {
@@ -22,8 +22,8 @@ const settingsStoreCapture = vi.hoisted(() => ({
     | undefined,
 }));
 
-vi.mock("@kenn-forge/ui/stores/settings", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@kenn-forge/ui/stores/settings")>();
+vi.mock("./lib/stores/settings.svelte.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./lib/stores/settings.svelte.js")>();
   return {
     ...actual,
     createSettingsStore: () => {

@@ -1,8 +1,9 @@
 import { initMarkdownMermaidRendering } from "@kenn-io/kit-ui/utils/markdown-mermaid";
-import { pushModalFrame } from "@kenn-forge/ui/stores/keyboard/modal-stack";
-import { mount } from "svelte";
-import App from "./App.svelte";
+import { Cause } from "effect";
+import { pushModalFrame } from "./lib/stores/keyboard/modal-stack.svelte.js";
 import "./app.css";
+import { mountApplication } from "./lib/app/mount.js";
+import { makeAppRuntime } from "./lib/app/runtime.js";
 import { prepareFrontendReload, retireFrontendReload } from "./lib/utils/frontendReloadGuard.js";
 import { initMarkdownImageExpansion } from "./lib/utils/markdownImages.js";
 
@@ -57,7 +58,10 @@ if (!target) {
   throw new Error("Root element 'app' not found. Cannot mount application.");
 }
 
-mount(App, { target });
+const runtime = makeAppRuntime();
+mountApplication(target, runtime, (cause) => {
+  console.error("Frontend application Effect failed", Cause.pretty(cause));
+});
 initMarkdownImageExpansion(target);
 initMarkdownMermaidRendering(target, {
   onLightboxOpen: () => pushModalFrame("mermaid-lightbox", []),

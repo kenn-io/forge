@@ -6,7 +6,7 @@ const mockLoadDetail = vi.hoisted(() => vi.fn());
 const mockLoadPulls = vi.hoisted(() => vi.fn());
 const mockShowFlash = vi.hoisted(() => vi.fn());
 
-vi.mock("../../packages/ui/src/context.js", () => ({
+vi.mock("./lib/context.js", () => ({
   getClient: () => ({ POST: mockPost }),
   getStores: () => ({
     detail: { loadDetail: mockLoadDetail },
@@ -14,11 +14,11 @@ vi.mock("../../packages/ui/src/context.js", () => ({
   }),
 }));
 
-vi.mock("../../packages/ui/src/stores/flash.svelte.js", () => ({
+vi.mock("./lib/stores/flash.svelte.js", () => ({
   showFlash: mockShowFlash,
 }));
 
-import ApproveButton from "../../packages/ui/src/components/detail/ApproveButton.svelte";
+import ApproveButton from "./lib/components/detail/ApproveButton.svelte";
 
 const defaultProps = {
   provider: "github",

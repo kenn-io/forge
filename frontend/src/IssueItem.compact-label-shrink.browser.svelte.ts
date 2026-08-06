@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { cleanup, render } from "vitest-browser-svelte";
 
-import type { Issue } from "../../packages/ui/src/api/types.js";
-import IssueItem from "../../packages/ui/src/components/sidebar/IssueItem.svelte";
-import { STORES_KEY } from "../../packages/ui/src/context.js";
+import type { Issue } from "./lib/api/types.js";
+import IssueItem from "./lib/components/sidebar/IssueItem.svelte";
+import { STORES_KEY } from "./lib/context.js";
 import "./app.css";
 
 describe("IssueItem compact label row", () => {

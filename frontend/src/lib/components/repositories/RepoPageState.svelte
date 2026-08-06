@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from "@kenn-forge/ui";
+  import { Button } from "@kenn-io/kit-ui";
   import { Card } from "@kenn-io/kit-ui";
 
   interface Props {

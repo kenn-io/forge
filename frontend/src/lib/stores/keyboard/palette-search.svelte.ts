@@ -1,5 +1,5 @@
 import type { Action } from "./types.js";
-import type { Issue, PullRequest } from "@kenn-forge/ui/api/types";
+import type { Issue, PullRequest } from "../../api/types.js";
 
 export type ParsedQuery =
   | { scope: "command"; query: string }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { RateLimitHostStatus } from "@kenn-forge/ui/api/types";
+  import type { RateLimitHostStatus } from "../../api/types.js";
   import { budgetColor, worstCaseRatio } from "./budget-utils";
 
   interface Props {

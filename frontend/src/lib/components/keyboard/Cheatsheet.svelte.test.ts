@@ -9,7 +9,7 @@ import {
 } from "../../stores/keyboard/cheatsheet-state.svelte.js";
 import { registerScopedActions, resetRegistry } from "../../stores/keyboard/registry.svelte.js";
 import type { Action } from "../../stores/keyboard/types.js";
-import { resetModalStack } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+import { resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 
 const noop = (): void => {};
 const trueWhen = (): boolean => true;

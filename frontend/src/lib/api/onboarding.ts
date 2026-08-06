@@ -1,6 +1,5 @@
-import type { PullRequest } from "@kenn-forge/ui/api/types";
-
 import { apiErrorMessage, client } from "./runtime.ts";
+import type { PullRequest } from "./types.ts";
 
 export interface CreatedWorkspace {
   id: string;

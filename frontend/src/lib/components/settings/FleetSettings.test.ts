@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import * as flash from "@kenn-forge/ui/stores/flash";
+import * as flash from "../../stores/flash.svelte.js";
 
-import type { FleetSettings as FleetSettingsType } from "@kenn-forge/ui/api/types";
+import type { FleetSettings as FleetSettingsType } from "../../api/types.js";
 
 const { mockUpdateFleetSettings } = vi.hoisted(() => ({
   mockUpdateFleetSettings: vi.fn(),

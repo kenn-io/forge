@@ -1,5 +1,5 @@
-import type { components } from "@kenn-forge/ui/api/schema";
-import { configuredAPIBaseURL } from "@kenn-forge/ui/api/runtime-base";
+import type { components } from "../generated/schema.js";
+import { configuredAPIBaseURL } from "../runtime-base.js";
 import type {
   AddFolderInput,
   BrowseResponse,

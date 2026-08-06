@@ -1,9 +1,9 @@
 import type { QuerySerializerOptions } from "openapi-fetch";
 
-import { createAPIClient } from "@kenn-forge/ui/api/client";
-import { configuredAPIBaseURL } from "@kenn-forge/ui/api/runtime-base";
-import type { components } from "@kenn-forge/ui/api/schema";
-import { csrfFetch, type FetchFn } from "@kenn-forge/ui/api/csrf";
+import { createAPIClient } from "./generated/client.js";
+import { configuredAPIBaseURL } from "./runtime-base.js";
+import type { components } from "./generated/schema.js";
+import { csrfFetch, type FetchFn } from "./csrf.js";
 
 import { traceHeadersForRequest } from "../instrumentation/traceContext.js";
 

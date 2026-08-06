@@ -1,4 +1,4 @@
-import { pushModalFrame } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
 
 export interface MarkdownImageExpansionController {
   renderNow: () => void;

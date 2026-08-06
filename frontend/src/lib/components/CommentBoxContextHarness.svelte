@@ -4,9 +4,9 @@
   import {
     API_CLIENT_KEY,
     STORES_KEY,
-  } from "../../../../packages/ui/src/context.js";
-  import CommentBox from "../../../../packages/ui/src/components/detail/CommentBox.svelte";
-  import IssueCommentBox from "../../../../packages/ui/src/components/detail/IssueCommentBox.svelte";
+  } from "../context.js";
+  import CommentBox from "./detail/CommentBox.svelte";
+  import IssueCommentBox from "./detail/IssueCommentBox.svelte";
 
   interface AutocompleteResponse {
     users: string[];

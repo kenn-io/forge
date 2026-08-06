@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createDetailStore } from "@kenn-forge/ui/stores/detail";
-import { createIssuesStore } from "@kenn-forge/ui/stores/issues";
-import type { ForgeClient } from "@kenn-forge/ui";
-import type { Label } from "@kenn-forge/ui/api/types";
+import { createDetailStore } from "./detail.svelte.js";
+import { createIssuesStore } from "./issues.svelte.js";
+import type { ForgeClient } from "../types.js";
+import type { Label } from "../api/types.js";
 
 const routeRef = {
   provider: "github",

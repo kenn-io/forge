@@ -8,7 +8,7 @@ import { registerScopedActions, resetRegistry } from "../../stores/keyboard/regi
 import { RECENTS_KEY } from "../../stores/keyboard/recents.svelte.js";
 import type { ModePaletteResults } from "../../stores/keyboard/mode-palette-search.js";
 import type { Action, Context } from "../../stores/keyboard/types.js";
-import { resetModalStack } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+import { resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 
 const noop = (): void => {};
 const trueWhen = (): boolean => true;

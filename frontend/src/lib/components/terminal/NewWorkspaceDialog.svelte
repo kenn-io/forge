@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { getStores, WorkspaceCreateSplitButton } from "@kenn-forge/ui";
+  import { getStores } from "../../context.js";
+  import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
   import { Button, TextInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
-  import { canonicalProvider, providerRepoPath, providerRouteParams } from "@kenn-forge/ui/api/provider-routes";
-  import type { Repo } from "@kenn-forge/ui/api/types";
-  import { queueWorkspaceLaunch } from "@kenn-forge/ui/stores/workspace-create-pending";
+  import { canonicalProvider, providerRepoPath, providerRouteParams } from "../../api/provider-routes.js";
+  import type { Repo } from "../../api/types.js";
+  import { queueWorkspaceLaunch } from "../../stores/workspace-create-pending.svelte.js";
   import Modal from "../shared/Modal.svelte";
   import { apiErrorMessage, client } from "../../api/runtime.js";
   import { navigate } from "../../stores/router.svelte.js";

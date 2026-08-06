@@ -13,7 +13,7 @@ import { Marked, type MarkedExtension, type Tokens } from "marked";
 // injection; markdown.test.ts pins the quote-bearing attribute cases.
 import { codeFenceLanguage, escapeHtml } from "@kenn-io/kit-ui/utils/markdown";
 import { mermaidCodeFence } from "@kenn-io/kit-ui/utils/markdown-mermaid";
-import { providerItemRefExtension, type RepoContext } from "@kenn-forge/ui/utils/markdown";
+import { providerItemRefExtension, type RepoContext } from "../../utils/markdown.js";
 import {
   joinFolderPath,
   parseWikilink,

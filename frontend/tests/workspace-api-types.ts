@@ -1,4 +1,4 @@
-import type { WorkspaceHost, WorkspaceProject } from "@kenn-forge/ui/api/types";
+import type { WorkspaceHost, WorkspaceProject } from "../src/lib/api/types.js";
 
 const project = {
   key: "proj-1",

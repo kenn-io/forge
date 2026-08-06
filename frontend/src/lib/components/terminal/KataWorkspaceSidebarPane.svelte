@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import { showFlash } from "../../stores/flash.svelte.js";
 
   import { createKataTaskAPI } from "../../api/kata/taskClient.js";
   import {

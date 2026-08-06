@@ -13,9 +13,9 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { cleanup, render } from "vitest-browser-svelte";
 
-import type { PullRequest } from "../../packages/ui/src/api/types.js";
-import { HOST_STATE_KEY, STORES_KEY } from "../../packages/ui/src/context.js";
-import PullItem from "../../packages/ui/src/components/sidebar/PullItem.svelte";
+import type { PullRequest } from "./lib/api/types.js";
+import { HOST_STATE_KEY, STORES_KEY } from "./lib/context.js";
+import PullItem from "./lib/components/sidebar/PullItem.svelte";
 
 function mkPR(overrides: Record<string, unknown> = {}): PullRequest {
   return {

@@ -1,4 +1,4 @@
-import type { components } from "@kenn-forge/ui/api/schema";
+import type { components } from "../generated/schema.js";
 
 import { getActiveKataDaemon, getDefaultKataDaemon } from "../../stores/active-kata-daemon.svelte.js";
 import { apiErrorMessage, createRuntimeClient } from "../runtime.js";

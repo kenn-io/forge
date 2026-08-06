@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   discardWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
-} from "@kenn-forge/ui/stores/workspace-create-pending";
+} from "../../stores/workspace-create-pending.svelte.js";
 import type { KataTaskLink } from "../../api/kata/taskTypes.js";
 import KataWorkspace from "./KataWorkspace.svelte";
 import { KATA_WORKSPACE_STATE_STORAGE_KEY } from "./kataWorkspacePersistence.js";
@@ -35,8 +35,8 @@ vi.mock("../../api/kata/workspaces.js", async (importOriginal) => {
 
 vi.mock("../../stores/router.svelte.js", () => ({ navigate: mockNavigate }));
 
-vi.mock("@kenn-forge/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
+vi.mock("../../context.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../context.js")>();
   return {
     ...actual,
     getStores: () => ({

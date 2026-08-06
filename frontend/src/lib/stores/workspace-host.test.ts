@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from "vite-plus/test";
-import { getPaneLayoutStore, promoteSessionBesideWorkspace } from "@kenn-forge/ui/stores/paneLayout";
-import { pushModalFrame } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+import { getPaneLayoutStore, promoteSessionBesideWorkspace } from "./paneLayout.svelte.js";
+import { pushModalFrame } from "./keyboard/modal-stack.svelte.js";
 import { consumeSessionFocus, registerSessionSlot, resetSessionHostForTest } from "./session-host.svelte.ts";
 import {
   createdWorkspaceRef,
@@ -10,7 +10,7 @@ import {
   recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
   resolveControllerlessWorkspaceRef,
-} from "@kenn-forge/ui/stores/workspace-create-pending";
+} from "./workspace-create-pending.svelte.js";
 import { getLastWorkspaceRoute, navigate } from "./router.svelte.ts";
 import {
   activeHostedSession,

@@ -1,5 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Cause, Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { mountApplication } from "./lib/app/mount.js";
+import type { AppExecution, OwnedAppRuntime } from "./lib/app/runtime.js";
 // Compile the root component during collection so Vite transform work is not
 // charged against the first lazy-feature test's behavioral timeout.
 import "./App.svelte";
@@ -54,29 +57,48 @@ const appSurfaceProps = vi.hoisted(() => ({
   provider: null as Record<string, unknown> | null,
 }));
 
-vi.mock("@kenn-forge/ui", async () => {
+vi.mock("./lib/Provider.svelte", async () => {
   const ProviderMock = (await import("./lib/testing/AppProviderMock.svelte")).default;
-  const Stub = (await import("./lib/testing/AppViewStub.svelte")).default;
   return {
-    Provider: (anchor: Parameters<typeof ProviderMock>[0], props: Parameters<typeof ProviderMock>[1]) => {
+    default: (anchor: Parameters<typeof ProviderMock>[0], props: Parameters<typeof ProviderMock>[1]) => {
       appSurfaceProps.provider = props as Record<string, unknown>;
       return ProviderMock(anchor, props);
     },
-    WorkspaceCreateSplitButton: Stub,
-    PRListView: Stub,
-    IssueListView: Stub,
-    ActivityFeedView: Stub,
-    MobileActivityView: Stub,
-    ReviewsView: Stub,
-    FocusListView: Stub,
-    getStores: () => ({
-      settings: {
-        getLaunchTargets: () => [],
-      },
-    }),
-    normalizeRepoFilterSelection: (repo: string | undefined) => repo,
   };
 });
+vi.mock("./lib/views/PRListView.svelte", async () => ({
+  default: (await import("./lib/testing/AppViewStub.svelte")).default,
+}));
+vi.mock("./lib/views/IssueListView.svelte", async () => ({
+  default: (await import("./lib/testing/AppViewStub.svelte")).default,
+}));
+vi.mock("./lib/views/ActivityFeedView.svelte", async () => ({
+  default: (await import("./lib/testing/AppViewStub.svelte")).default,
+}));
+vi.mock("./lib/views/MobileActivityView.svelte", async () => ({
+  default: (await import("./lib/testing/AppViewStub.svelte")).default,
+}));
+vi.mock("./lib/views/ReviewsView.svelte", async () => ({
+  default: (await import("./lib/testing/AppViewStub.svelte")).default,
+}));
+vi.mock("./lib/views/FocusListView.svelte", async () => ({
+  default: (await import("./lib/testing/AppViewStub.svelte")).default,
+}));
+vi.mock("./lib/components/workspace/WorkspaceCreateSplitButton.svelte", async () => ({
+  default: (await import("./lib/testing/AppViewStub.svelte")).default,
+}));
+vi.mock("./lib/context.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./lib/context.js")>()),
+  getStores: () => ({
+    settings: {
+      getLaunchTargets: () => [],
+    },
+  }),
+}));
+vi.mock("./lib/utils/repo-filter-values.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./lib/utils/repo-filter-values.js")>()),
+  normalizeRepoFilterSelection: (repo: string | undefined) => repo,
+}));
 
 vi.mock("./lib/components/layout/AppHeader.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
@@ -208,6 +230,17 @@ function createAppTarget() {
   return target;
 }
 
+function testAppRuntime(onDispose: () => void): OwnedAppRuntime {
+  return {
+    disposeEffect: Effect.sync(onDispose),
+    runCommand: <A, E>(): AppExecution<A, E> => {
+      throw new Error("This lifecycle test does not run application commands");
+    },
+  };
+}
+
+const appRuntime = testAppRuntime(() => undefined);
+
 describe("App feature routes", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -248,7 +281,7 @@ describe("App feature routes", () => {
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
 
     await waitFor(() => expect(featureImports.docs).toBe(1));
     expect(screen.getByText(/\[vitest\] There was an error when mocking a module/)).toBeTruthy();
@@ -267,7 +300,7 @@ describe("App feature routes", () => {
     const { fetchKataDaemons } = await import("./lib/api/kata/daemons.js");
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(screen.getByText("Loading")).toBeTruthy());
     await waitFor(() => expect(featureImports.docs).toBe(1));
 
@@ -284,7 +317,7 @@ describe("App feature routes", () => {
   it("keeps Docs mounted while hidden", async () => {
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
 
     const { navigate } = await import("./lib/stores/router.svelte.ts");
@@ -306,14 +339,14 @@ describe("App feature routes", () => {
 
   it("renders flashes raised through the shared store in the app-mounted kit banner", async () => {
     const { default: App } = await import("./App.svelte");
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
 
     // Import through the same facade every caller uses. This guards the
     // single-module-instance invariant the flash unification depends on: if
-    // frontend and packages/ui ever resolve different kit-ui copies, the
+    // If frontend modules ever resolve different kit-ui copies, the
     // flash lands in a store the mounted banner does not read and this fails.
-    const { showFlash, getFlashes, dismissFlash } = await import("@kenn-forge/ui/stores/flash");
+    const { showFlash, getFlashes, dismissFlash } = await import("./lib/stores/flash.svelte.js");
     try {
       showFlash("first shared-store flash");
       await waitFor(() => expect(screen.getByText("first shared-store flash")).toBeTruthy());
@@ -333,7 +366,7 @@ describe("App feature routes", () => {
     render(App, { target: createAppTarget() });
     await waitFor(() => expect(appSurfaceProps.provider).not.toBeNull());
     const onWarning = appSurfaceProps.provider?.onWarning as ((message: string) => void) | undefined;
-    const { getFlashes, dismissFlash } = await import("@kenn-forge/ui/stores/flash");
+    const { getFlashes, dismissFlash } = await import("./lib/stores/flash.svelte.js");
 
     try {
       onWarning?.("Merged, but workspace cleanup failed");
@@ -362,7 +395,7 @@ describe("App feature routes", () => {
     replaceUrl("/kata");
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
 
     expect(kataClients.create).toHaveBeenCalledTimes(2);
@@ -377,7 +410,10 @@ describe("App feature routes", () => {
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
-    const { unmount } = render(App, { target: createAppTarget() });
+    const { unmount } = render(App, {
+      target: createAppTarget(),
+      props: { runtime: appRuntime },
+    });
     await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
     await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("home"));
 
@@ -403,7 +439,7 @@ describe("App feature routes", () => {
     kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(appSurfaceProps.palette).not.toBeNull());
 
     const openKataIssue = appSurfaceProps.palette?.onOpenKataIssue as
@@ -434,7 +470,7 @@ describe("App feature routes", () => {
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
 
     const openIssue = appSurfaceProps.docs?.onOpenIssue as ((uid: string) => void) | undefined;
@@ -461,7 +497,7 @@ describe("App feature routes", () => {
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
 
     const openIssue = appSurfaceProps.docs?.onOpenIssue as ((uid: string, daemonId?: string) => void) | undefined;
@@ -490,7 +526,7 @@ describe("App feature routes", () => {
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
 
     const openIssue = appSurfaceProps.docs?.onOpenIssue as ((uid: string) => void) | undefined;
@@ -520,7 +556,7 @@ describe("App feature routes", () => {
     kataAuxiliary.instance.load.mockReturnValueOnce(handled);
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
 
     await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("home"));
     expect(catchRejection).toHaveBeenCalledOnce();
@@ -551,7 +587,7 @@ describe("App feature routes", () => {
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Open Kata reference" }));
 
@@ -586,7 +622,7 @@ describe("App feature routes", () => {
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Open closed Kata reference" }));
 
@@ -623,11 +659,44 @@ describe("App feature routes", () => {
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
-    render(App, { target: createAppTarget() });
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
     await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Open Kata reference" }));
 
     await waitFor(() => expect(kataReferences.search).toHaveBeenCalledWith("solo", { status: "all" }));
     expect(window.location.pathname + window.location.search).toBe("/docs?folder=notes&doc=README.md");
+  });
+
+  it("awaits Svelte unmount and managed runtime finalizers exactly once", async () => {
+    const target = createAppTarget();
+    const finalized = vi.fn();
+    const mounted = mountApplication(target, testAppRuntime(finalized));
+    await waitFor(() => expect(target.childElementCount).toBeGreaterThan(0));
+
+    await Effect.runPromise(mounted.dispose);
+    await Effect.runPromise(mounted.dispose);
+
+    expect(target.childElementCount).toBe(0);
+    expect(finalized).toHaveBeenCalledOnce();
+    expect(kataAuxiliary.instance.stop).toHaveBeenCalledOnce();
+  });
+
+  it("reports a non-interruption root finalizer defect", async () => {
+    const target = createAppTarget();
+    const reportFailure = vi.fn();
+    const mounted = mountApplication(
+      target,
+      testAppRuntime(() => {
+        throw new Error("finalizer failed");
+      }),
+      reportFailure,
+    );
+    await waitFor(() => expect(target.childElementCount).toBeGreaterThan(0));
+
+    await Effect.runPromiseExit(mounted.dispose);
+
+    await waitFor(() => expect(reportFailure).toHaveBeenCalledOnce());
+    expect(Cause.hasDies(reportFailure.mock.calls[0]?.[0])).toBe(true);
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain("Kenn Forge could not start");
   });
 });

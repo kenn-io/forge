@@ -1,4 +1,4 @@
-import type { LaunchTarget } from "@kenn-forge/ui/api/types";
+import type { LaunchTarget } from "../../api/types.js";
 
 export function isVisibleLaunchTarget(target: LaunchTarget): boolean {
   if (target.kind === "shell") return false;

@@ -6,8 +6,9 @@
     FlashBanner,
     Spinner,
   } from "@kenn-io/kit-ui";
-  import { Provider, WorkspaceRightSidebar } from "@kenn-forge/ui";
-  import type { StoreInstances } from "@kenn-forge/ui";
+  import Provider from "../../Provider.svelte";
+  import WorkspaceRightSidebar from "../workspace/WorkspaceRightSidebar.svelte";
+  import type { StoreInstances } from "../../types.js";
 
   import { client } from "../../api/runtime.js";
   import { getSettings } from "../../api/settings.js";
@@ -41,8 +42,8 @@
   import {
     beginTerminalSettingsHydration,
     hydrateTerminalSettings,
-  } from "@kenn-forge/ui/stores/terminal-settings-persistence";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  } from "../../stores/terminal-settings-persistence.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
 
   let stores = $state<StoreInstances | undefined>();
   let terminalSettingsReady = $state(false);

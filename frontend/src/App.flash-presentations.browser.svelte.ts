@@ -1,5 +1,5 @@
 // Shell coverage matrix for the shared flash store: a flash raised through
-// @kenn-forge/ui/stores/flash must render in a mounted kit FlashBanner in
+// The shared flash store must render in a mounted kit FlashBanner in
 // every app presentation, not just the desktop shell. The jsdom App test
 // covers the focus/phone presentation (its 1024px #app classifies compact);
 // this browser suite covers the desktop shell (wide viewport) and the
@@ -22,12 +22,12 @@ describe("flash rendering across app shells", () => {
   let overlayTarget: HTMLElement | null = null;
 
   beforeEach(async () => {
-    const { getFlashes, dismissFlash } = await import("@kenn-forge/ui/stores/flash");
+    const { getFlashes, dismissFlash } = await import("./lib/stores/flash.svelte.js");
     for (const flash of getFlashes()) dismissFlash(flash.id);
   });
 
   afterEach(async () => {
-    const { getFlashes, dismissFlash } = await import("@kenn-forge/ui/stores/flash");
+    const { getFlashes, dismissFlash } = await import("./lib/stores/flash.svelte.js");
     for (const flash of getFlashes()) dismissFlash(flash.id);
     overlayUnmount?.();
     overlayUnmount = null;
@@ -39,7 +39,7 @@ describe("flash rendering across app shells", () => {
   });
 
   async function visibleFlash(message: string): Promise<HTMLElement> {
-    const { showFlash } = await import("@kenn-forge/ui/stores/flash");
+    const { showFlash } = await import("./lib/stores/flash.svelte.js");
     showFlash(message, { tone: "danger" });
     return vi.waitFor(() => {
       const stack = document.querySelector<HTMLElement>(".kit-flash-stack");

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { createDiffStore } from "@kenn-forge/ui/stores/diff";
-import type { DiffStoreOptions } from "@kenn-forge/ui/stores/diff";
-import type { DiffFile, DiffResult, FilesResult } from "@kenn-forge/ui/api/types";
+import { createDiffStore } from "./diff.svelte.js";
+import type { DiffStoreOptions } from "./diff.svelte.js";
+import type { DiffFile, DiffResult, FilesResult } from "../api/types.js";
 
 const ownerRepoRef = {
   provider: "github",
@@ -48,6 +48,7 @@ function makeDiffFile(path: string, additions: number, deletions: number): DiffF
     old_path: path,
     status: "modified",
     is_binary: false,
+    is_generated: path === "bun.lock",
     is_whitespace_only: false,
     additions,
     deletions,
@@ -1630,6 +1631,54 @@ describe("createDiffStore loadDiff", () => {
     const result = store.getFileList();
     expect(result).not.toBeNull();
     expect(result!.files).toEqual([]);
+  });
+
+  it("normalizes nullable nested diff collections", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const fileWithNullLines = {
+        path: "src/app.ts",
+        old_path: "src/app.ts",
+        status: "modified",
+        is_binary: false,
+        is_generated: false,
+        is_whitespace_only: false,
+        additions: 1,
+        deletions: 0,
+        patch: "",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 0,
+            new_start: 1,
+            new_count: 1,
+            lines: null,
+          },
+        ],
+      };
+      const fileWithNullHunks = {
+        ...fileWithNullLines,
+        path: "src/empty.ts",
+        old_path: "src/empty.ts",
+        hunks: null,
+      };
+
+      if (url.includes("/files")) return Response.json({ stale: false, files: [fileWithNullHunks] });
+      if (url.includes("/diff")) {
+        return Response.json({
+          stale: false,
+          whitespace_only_count: 0,
+          files: [fileWithNullHunks, fileWithNullLines],
+        });
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    const store = createDiffStore({ client: testClient() });
+    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
+
+    expect(store.getDiff()?.files[0]?.hunks).toEqual([]);
+    expect(store.getDiff()?.files[1]?.hunks[0]?.lines).toEqual([]);
   });
 
   it("filters loaded diff and file list by selected file category", async () => {

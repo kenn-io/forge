@@ -20,18 +20,18 @@ Interactive surfaces must agree on which item is selected.
   state, and stale-detail guards.
 - When host is omitted for a provider's default host (Activity URLs,
   provider-default routes), normalize comparisons and cache keys with
-  `packages/ui/src/api/provider-routes.ts::resolvedPlatformHost` so the
+  `frontend/src/lib/api/provider-routes.ts::resolvedPlatformHost` so the
   concrete default host and an omitted host do not look like different items.
 - Route segments and item references may carry provider aliases (gh/gl/fj)
   while store data uses canonical names: every identity comparison or cache
   key derived from `provider` must canonicalize it first
-  (`packages/ui/src/workspace-inline.ts::identityEquals`). This includes
+  (`frontend/src/lib/workspace-inline.ts::identityEquals`). This includes
   route-reset/generation effects that detect item changes — tracking raw
   props treats an alias-only re-expression of the same item as a new item
   and discards in-flight work.
 - Workspace item identity includes the item type, canonicalized across caller
   vocabularies ("pull"/"pr"/"pull_request") by
-  `packages/ui/src/workspace-inline.ts::canonicalItemType`: a PR and an issue
+  `frontend/src/lib/workspace-inline.ts::canonicalItemType`: a PR and an issue
   can share a repo and number, so repo+number alone must never key claims,
   overrides, or deletion tombstones.
 - Use shared named route/item reference types from
@@ -47,11 +47,11 @@ Interactive surfaces must agree on which item is selected.
   submission. Gate only presentation — refetches, prompts, flashes,
   navigation — on the live component and current selection
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::handleDelete`,
-  `packages/ui/src/components/detail/PullDetail.svelte::createWorkspace`).
+  `frontend/src/lib/components/detail/PullDetail.svelte::createWorkspace`).
   The pending request is identity-scoped shared state too: component-local
   creating flags reset on route changes and remounts while the request is
   still in flight, re-enabling the action for a duplicate submission
-  (`packages/ui/src/stores/workspace-create-pending.svelte.ts`). The same
+  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts`). The same
   store records confirmed creations for detail instances WITHOUT an inline
   controller (focus/mobile views, DetailDrawer), which otherwise only see
   the detail envelope; records reconcile away when an identity-matched
@@ -74,7 +74,7 @@ Interactive surfaces must agree on which item is selected.
   record reconciles under the same rule as the host store's positive
   override — same-ID envelope or newer-tick request only; a stale
   different-ID envelope must not erase a recreation
-  (`packages/ui/src/stores/workspace-create-pending.svelte.ts::reconcileWorkspaceCreated`).
+  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::reconcileWorkspaceCreated`).
   Controller-less detail views (focus/mobile, DetailDrawer) AND the host
   store's `effectiveRef` (both its tombstone and no-override branches)
   resolve under one rule — `resolveControllerlessWorkspaceRef`, never
@@ -90,9 +90,15 @@ Interactive surfaces must agree on which item is selected.
   begun controller-less must surface on an inline surface after a layout
   switch, where no recordCreated override ever ran
   (`frontend/src/lib/stores/workspace-host.svelte.ts::effectiveRef`).
-- An explicit create-and-launch intent is keyed by `(workspaceHostKey, workspaceId)` and published before liveness
-  checks; once accepted it survives remount until its exact session appears or 15 seconds expires, so sibling views
-  suppress the empty fallback and never relaunch (`packages/ui/src/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`).
+- An explicit create-and-launch intent is keyed by `(workspaceHostKey, workspaceId)`
+  and must be published before presentation liveness checks; ID-only state collides
+  local and fleet workspaces, while layout churn must not discard the command
+  (`frontend/src/lib/components/workspace/WorkspaceCreateSplitButton.svelte::selectTarget`,
+  `frontend/src/lib/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`,
+  `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::pendingWorkspaceLaunchTarget`).
+  Once claimed, the intent stays globally pending until its ownership token settles it:
+  sibling views suppress their empty fallback and may discard only unclaimed intents
+  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::completeWorkspaceLaunch`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and
@@ -199,17 +205,17 @@ Persisted controls must state their scope clearly.
   serialized mutation path and reconcile only fields still owned by the settling
   mutation generation; value equality alone is ABA-prone, while stale full-object
   saves can erase unrelated preferences
-  (`packages/ui/src/stores/terminal-settings-persistence.ts::saveTerminalSettings`).
+  (`frontend/src/lib/stores/terminal-settings-persistence.ts::saveTerminalSettings`).
 - A settings form that snapshots its baseline must either merge sibling mutations
   or keep the form and those controls mutually gated while either save settles
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::terminalZoomSaving`).
 - An idle settings queue must rebase from authoritative store values, excluding
   fields still owned by live preview; otherwise reloads are erased or drafts leak
-  into unrelated saves (`packages/ui/src/stores/terminal-settings-persistence.ts::settingsWithoutPreview`).
+  into unrelated saves (`frontend/src/lib/stores/terminal-settings-persistence.ts::settingsWithoutPreview`).
 - Settings hydration must share the mutation coordinator; a stale read must
   preserve pending or newly confirmed fields and rebase active previews while
   retaining only generation-owned drafts
-  (`packages/ui/src/stores/terminal-settings-persistence.ts::hydrateTerminalSettings`).
+  (`frontend/src/lib/stores/terminal-settings-persistence.ts::hydrateTerminalSettings`).
 - Settings that select a runtime must hydrate before that runtime starts, but
   the gate must abort timed-out or superseded reads and expose retry rather than strand the surface
   (`frontend/src/lib/components/terminal/WorkspaceEmbedShell.svelte::loadTerminalSettings`).
@@ -266,7 +272,7 @@ Keyboard handlers must have one clear owner for each key press.
 - Panes hidden behind a maximized one stay mounted with live window-level
   command listeners: a command that opens detail UI must un-maximize first so it
   cannot build an invisible overlay
-  (`packages/ui/src/components/detail/PullDetail.svelte::onOpenLabelPickerCommand`).
+  (`frontend/src/lib/components/detail/PullDetail.svelte::onOpenLabelPickerCommand`).
 - Focus Terminal reveals, it never maximizes: a closed workspace pane reopens
   alongside the detail and a visible one keeps its arrangement. Maximizing over
   the detail is only ever an explicit user action. Reopening also has to clear a
@@ -292,7 +298,7 @@ Keyboard handlers must have one clear owner for each key press.
   focus replaces" is wrong because a pane split into its own leaf still renders a
   clickable tab header. The URL wins over stored layout state on load: it
   activates the pane it names and drops a zoom held elsewhere
-  (`packages/ui/src/views/PRListView.svelte::routePanesSplitApart`).
+  (`frontend/src/lib/views/PRListView.svelte::routePanesSplitApart`).
 - The stored pane tree is intent, not what is on screen: below the flatten width
   one pane renders however the tree is split, hidden panes stay in the tree, and
   a zoom covers every other leaf. Anything acting on the arrangement — palette
@@ -301,16 +307,16 @@ Keyboard handlers must have one clear owner for each key press.
   report distinguishes EDITABLE tabs (rendered, a legitimate command target even
   behind a sibling tab) from ON-SCREEN tabs (one per rendered leaf); only the
   latter answers "are both route panes visible at once"
-  (`packages/ui/src/stores/paneLayout.svelte.ts::PaneRenderReport`).
+  (`frontend/src/lib/stores/paneLayout.svelte.ts::PaneRenderReport`).
 - Tab drag scopes are namespaced `<kind>:<id>` and matched by string equality, so
   an un-namespaced scope silently lets two unrelated trees exchange tabs. The
   primitive that moves tabs rejects one rather than trusting call sites
-  (`packages/ui/src/components/shared/tabbed-panel-drag.ts::assertNamespacedDragScope`).
+  (`frontend/src/lib/components/shared/tabbed-panel-drag.ts::assertNamespacedDragScope`).
 - Pane availability must be derived at render time, not read back from an effect's
   result: a claim made in an effect lags one tick, and one tick of an unavailable
   pane prunes it out, collapses a split into a bare leaf, and remounts the whole
   subtree — losing scroll state and reparenting the live terminal
-  (`packages/ui/src/item-workspace-claim.svelte.ts::useItemWorkspaceClaim`).
+  (`frontend/src/lib/item-workspace-claim.svelte.ts::useItemWorkspaceClaim`).
   For the same reason the release-on-teardown guard reads its controller
   untracked: reactive reads re-run the effect on a mere prop reassignment and its
   cleanup then clobbers the claim just made in the same flush.
@@ -372,7 +378,7 @@ Keyboard handlers must have one clear owner for each key press.
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never
   prune their own stored trees, so demoting restores the tab order, split, and
-  group the user chose. The pane body crosses the `packages/ui` boundary as an
+  group the user chose. The pane body crosses the view/workspace boundary as an
   `InlineWorkspaceController` snippet: views get `{paneKey, label}` and pass
   their own `visible` back, and the generation-carrying registry key stays in
   `frontend/` (`frontend/src/lib/stores/workspace-host.svelte.ts`).
@@ -456,7 +462,7 @@ Keyboard handlers must have one clear owner for each key press.
   first, so the strip it left keeps the gap and the dragging styling. The strip that
   accepted the drop adopts the dragged key to preview an insertion, so "this leaf no
   longer holds it" cannot tell a leftover from a live preview
-  (`packages/ui/src/components/shared/tabbed-panel-drag.ts::onTabbedPanelDragEnd`,
+  (`frontend/src/lib/components/shared/tabbed-panel-drag.ts::onTabbedPanelDragEnd`,
   `frontend/src/lib/components/terminal/terminal-drag.ts::onTerminalDragEnd`).
   The broadcast also hides body drop previews: trees nest (workflow tree inside a
   detail leaf) and a dragover bubbles through both, so both preview the same drag,
@@ -481,7 +487,7 @@ Keyboard handlers must have one clear owner for each key press.
   feeds the report back into the renderer's inputs (the pane tab named from it) sees
   a null on each republish, changes the inputs, and the effect never settles. Clear
   it from a separate dependency-free effect, which only runs at unmount
-  (`packages/ui/src/components/shared/DetailPaneLayout.svelte`).
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte`).
 - A slot key computed from a session that can disappear is derived, and nullable.
   Child props are their own deriveds: they re-run on the flush that clears the
   session, before the `{#if}` guarding them is torn down, and a throw there aborts
@@ -503,7 +509,7 @@ Keyboard handlers must have one clear owner for each key press.
   that is enforced in `promoteSessionBesideWorkspace`, not per caller: holding a
   leaf in the stored tree says nothing about being visible, and the view keeps
   publishing its sessions from a parked host
-  (`packages/ui/src/stores/paneLayout.svelte.ts`).
+  (`frontend/src/lib/stores/paneLayout.svelte.ts`).
 - The inline dock mode covers EVERY pane of the hosted workspace - the container
   plus the sessions promoted out of it - so a container hidden while a promoted
   terminal is on screen is "split", not "collapsed", and collapsing hides exactly
@@ -533,7 +539,7 @@ Keyboard handlers must have one clear owner for each key press.
   flush - `undefined`, while still mounted, including from a `ResizeObserver`
   batch. Every read of that prop is guarded: throwing there unmounts the whole
   surface, leaving a detail with no panes and no way back
-  (`packages/ui/src/components/shared/TabbedPanelTree.svelte`).
+  (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
 - The desktop `.app-main` clips overflow but must never become a scroll
   container; focus-driven scrolling there shifts every mode rail and creates
   matching chrome gaps (`frontend/src/App.svelte::.app-main`).
@@ -577,7 +583,7 @@ shortcuts while it is open.
   focus fell to `<body>` or was still inside the closing subtree, so a
   transition triggered in the background (e.g. a selection change un-zooming a
   maximized pane) never steals focus from a control the user moved to
-  (`packages/ui/src/components/shared/DetailPaneLayout.svelte::shouldReclaimFocus`).
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::shouldReclaimFocus`).
 - Background actions that are still visible should be disabled or skipped when
   their `when` predicate no longer matches the active modal state.
 - Outside-click, focus-leave, and Escape close paths should converge on the same
@@ -627,7 +633,7 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   close buttons or compact action affordances.
 - Explicit clipboard controls copy provider/repository values exactly; copying is
   not code execution or a shell security boundary, so source UI must not filter,
-  quote, escape, or add shell confirmation (`packages/ui/src/components/diff/DiffFile.svelte`).
+  quote, escape, or add shell confirmation (`frontend/src/lib/components/diff/DiffFile.svelte`).
 - If a component claims menu-like behavior, it must honor the keyboard and focus
   contract of that role. Otherwise, use simpler semantics honestly.
 - Gate unavailable menu actions at the items when the menu remains safe to
@@ -716,14 +722,14 @@ checks, or revocation behavior than the other
 (`internal/server/huma_routes.go::approvalReviewHeadSHA`).
 PR head mutations must not share an in-flight lock. Approve, request-changes,
 merge, and suggestion application keep local submission guards; only durable
-head-conflict state blocks the other actions (`packages/ui/src/components/detail/PullDetail.svelte::headActionsBlocked`).
+head-conflict state blocks the other actions (`frontend/src/lib/components/detail/PullDetail.svelte::headActionsBlocked`).
 Once either provider mutation succeeds, close and clear its form before the
 follow-up refresh. A refresh failure may show a warning, but must not leave the
 successful mutation available for an accidental duplicate submission.
 Editing a saved draft comment should change only the body and preserve the
 original diff range, so the PATCH path must rebuild the range from the stored
 comment rather than from whichever line is currently selected
-(`packages/ui/src/stores/diff-review-draft.svelte.ts::editComment`).
+(`frontend/src/lib/stores/diff-review-draft.svelte.ts::editComment`).
 
 An open saved-draft comment editor is also pending local state, even before its
 body differs from the saved text. Review-level publish and discard must stay
@@ -731,15 +737,15 @@ unavailable until every draft comment editor is saved or canceled; otherwise the
 provider mutation can submit the old saved body while the UI still shows an
 unsaved edit. Track that state in the draft-review store and have both tray and
 inline editors clear it on save, cancel, and unmount
-(`packages/ui/src/stores/diff-review-draft.svelte.ts::hasPendingCommentEdits`,
-`packages/ui/src/components/diff/DiffReviewDraftTray.svelte::publish`,
-`packages/ui/src/components/diff/DiffReviewDraftInlineComment.svelte::reportEditState`).
+(`frontend/src/lib/stores/diff-review-draft.svelte.ts::hasPendingCommentEdits`,
+`frontend/src/lib/components/diff/DiffReviewDraftTray.svelte::publish`,
+`frontend/src/lib/components/diff/DiffReviewDraftInlineComment.svelte::reportEditState`).
 
 Draft authoring and the sticky publish tray are gated by the repo operation
 `review_draft`, not `submit_review`. `submit_review` gates submitted review
 actions in the detail header, while Files-tab draft authoring must disappear
 when `review_draft` is unavailable and show that operation's reason instead
-(`packages/ui/src/components/diff/DiffFilesLayout.svelte:44`,
+(`frontend/src/lib/components/diff/DiffFilesLayout.svelte:44`,
 `frontend/tests/e2e/inline-review.spec.ts:655`).
 
 ## Optional Metadata Controls

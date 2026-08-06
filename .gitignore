@@ -30,6 +30,7 @@ scripts/e2e/gitlab/fixture-data/
 .claude/scheduled_tasks.lock
 .claude/scheduled_tasks.json
 .worktrees/
+.repos/effect
 cmd/e2e-server/e2e-server
 cmd/e2e-server/e2e-server.exe
 /e2e-server
@@ -41,7 +42,6 @@ cmd/e2e-server/e2e-server.exe
 .claude/worktrees/
 .claude/settings.local.json
 .superset
-frontend/src/lib/api/generated/
 internal/apiclient/spec/openapi.json
 __pycache__/
 *.py[cod]

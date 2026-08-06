@@ -17,9 +17,9 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 - Light and dark themes should express the same UI language through shared tokens.
 - PR detail background refresh has one progress surface: the metadata-row
   `Syncing` indicator; do not add a second stale-data banner or spinner
-  (`packages/ui/src/components/detail/PullDetail.svelte`).
+  (`frontend/src/lib/components/detail/PullDetail.svelte`).
 - Inline conditional notices occupy layout only while active; do not reserve
-  invisible rows for them (`packages/ui/src/components/diff/DiffView.svelte`).
+  invisible rows for them (`frontend/src/lib/components/diff/DiffView.svelte`).
 
 ## Sources of truth
 
@@ -29,11 +29,10 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
   kenn-forge-specific tokens `app.css` defines on top (chrome, budget,
   workflow status, review, verdict, diff, viewer glass controls)
 - Shared primitives: `@kenn-io/kit-ui` first; app-specific compositions live
-  in `packages/ui/src/components/shared/` and
-  `frontend/src/lib/components/shared/`
-- Diff/file-tree adapters: `packages/ui/src/components/diff/PierreFileDiff.svelte`
-  and `packages/ui/src/components/diff/PierreFileTree.svelte`
-- Routed item references and URL builders: `packages/ui/src/routes.ts`
+  in `frontend/src/lib/components/shared/`
+- Diff/file-tree adapters: `frontend/src/lib/components/diff/PierreFileDiff.svelte`
+  and `frontend/src/lib/components/diff/PierreFileTree.svelte`
+- Routed item references and URL builders: `frontend/src/lib/routes.ts`
 - Svelte guidance: `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`)
 - Interaction contracts: `context/ui-interaction-contracts.md`
 - Mobile UX principles: `context/mobile-ux.md`
@@ -42,17 +41,15 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 ## kit-ui contract
 
 kenn-forge consumes `@kenn-io/kit-ui` as source, pinned to one commit SHA in
-both `frontend/package.json` and `packages/ui/package.json` (bump both
-together; never a `file:` path — bun's store keys by name@version and goes
-stale). Its runtime deps are peers and its rune-module source cannot be
+`frontend/package.json` (never a `file:` path — bun's store keys by
+name@version and goes stale). Its runtime deps are peers and its rune-module source cannot be
 prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
 `"@kenn-io/kit-ui > <dep>"` includes. See kit-ui's `docs/migration.md` and
 `docs/theming.md`. Invariants kenn-forge relies on:
 
 - Theme tokens come from kit `theme.css`; theming is `dark` /
-  `high-contrast` classes on `<html>`. `@kenn-forge/ui` additionally
-  consumes app tokens from `frontend/src/app.css` and has no standalone
-  theme — style-asserting harnesses must load `app.css` like
+  `high-contrast` classes on `<html>`. Frontend components additionally
+  consume app tokens from `frontend/src/app.css` — style-asserting harnesses must load `app.css` like
   `browserAppHarness.ts`.
 - Type scale: rem tokens self-adjust on coarse pointers; `kit-type-touch`
   on `<html>` forces the touch scale. Never pin `html { font-size }`.
@@ -118,19 +115,19 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   compact stage's intrinsic width: grow otherwise leaves the host narrower
   than that stage, and the icons paint over the sibling that should have
   wrapped instead. Every stage must expose the same accessible names
-  (`packages/ui/src/components/roborev/ReviewDrawer.svelte::.footer-actions-fit`,
-  `packages/ui/src/components/detail/PullDetail.svelte::measuredPrimaryActions`).
-- Flash: one shared store (`@kenn-forge/ui/stores/flash`); kit `FlashBanner`
+  (`frontend/src/lib/components/roborev/ReviewDrawer.svelte::.footer-actions-fit`,
+  `frontend/src/lib/components/detail/PullDetail.svelte::measuredPrimaryActions`).
+- Flash: one shared store (`frontend/src/lib/stores/flash.svelte.ts`); kit `FlashBanner`
   mounts once per shell in a page-level fixed layer below measured shell chrome
   and above modal backdrops, never inside feature containers; headerless shells
   use the viewport edge (`frontend/src/App.svelte:968`).
 - Commit timeline rows keep type, author, SHA, and relative time together in the
   compact header; the SHA is metadata, not card action content
-  (`packages/ui/src/components/detail/EventTimeline.svelte`).
+  (`frontend/src/lib/components/detail/EventTimeline.svelte`).
 - `PullItem`/`IssueItem` sidebar rows have a Playwright-enforced uniform two-line
   height; any icon rendered inside the row (e.g. `CITokenCluster`'s compact
   `dotSize`) must fit the row's line-height or it silently grows that one row
-  (`packages/ui/src/components/shared/CITokenCluster.svelte`).
+  (`frontend/src/lib/components/shared/CITokenCluster.svelte`).
 
 `kit-ui-check` gates at zero findings in both `make frontend-check` and the
 Vite+ `frontend-check` task behind CI's `vp run -w check`. If a rule mistakes
@@ -208,7 +205,7 @@ component instead of adding a fourth copy.
 
 ### SidebarToggle
 
-Use kit-ui's `SidebarToggle` (re-exported from `@kenn-forge/ui`) for collapse and expand controls on left-side navigation rails.
+Use kit-ui's `SidebarToggle` directly for collapse and expand controls on left-side navigation rails.
 
 Intent:
 
@@ -220,7 +217,7 @@ Use it inside left sidebar headers and collapsed strips. Pass a specific label s
 
 ### GroupedSidebarSection
 
-Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap large always-visible vertical scroll panes (list rails, diff area, pull/issue detail, activity views) in `ScrollBox` for consistent flex sizing, native vertical scrolling, and a labelled focusable region; bind `viewport` when a host needs imperative scroll logic, and note the scrolling element is the viewport, not the host's content wrapper class. Give each scroll area a concise accessible label so keyboard users can identify and scroll the region. (`packages/ui/src/components/shared/GroupedSidebarSection.svelte`, `ScrollBox` from `@kenn-io/kit-ui` — see kit-ui's `docs/components/scroll-box.md`, `frontend/src/app.css:39`)
+Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap large always-visible vertical scroll panes (list rails, diff area, pull/issue detail, activity views) in `ScrollBox` for consistent flex sizing, native vertical scrolling, and a labelled focusable region; bind `viewport` when a host needs imperative scroll logic, and note the scrolling element is the viewport, not the host's content wrapper class. Give each scroll area a concise accessible label so keyboard users can identify and scroll the region. (`frontend/src/lib/components/shared/GroupedSidebarSection.svelte`, `ScrollBox` from `@kenn-io/kit-ui` — see kit-ui's `docs/components/scroll-box.md`, `frontend/src/app.css:39`)
 
 ### SplitResizeHandle and BottomDock
 
@@ -305,7 +302,7 @@ A pane body is stretched by its panel, which is a flex container: a pane body
 must not size itself from its own content. Detail views end their chain at a
 `ScrollBox` that expects a height-constrained flex parent, so a block panel
 turns their internal scrolling into outer overflow with no visible error
-(`packages/ui/src/components/shared/TabbedPanelTree.svelte::.tabbed-panel-tab-panel`).
+(`frontend/src/lib/components/shared/TabbedPanelTree.svelte::.tabbed-panel-tab-panel`).
 
 Zoom is transient focus state, not part of the saved arrangement. Drop it
 whenever what was zoomed stops rendering (`DetailPaneLayout`'s reconciliation
@@ -409,15 +406,23 @@ Never render a serialized payload string (JSON blob, opaque struct dump) as UI t
 Parse it in a named util and show labeled human-readable stats, with the unabbreviated
 values in a `title`. Abbreviate the hover values by significant digits, not fixed
 decimals — a fixed scale rounds small magnitudes to a meaningless zero
-(`packages/ui/src/utils/roborev-usage.ts` for roborev `token_usage`).
+(`frontend/src/lib/utils/roborev-usage.ts` for roborev `token_usage`).
 
 ## Implementation guidance
 
 When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`) alongside this document.
 
+Effect-owned frontend work shares the single main `ManagedRuntime` and reaches it through Svelte context; do not create per-feature runtimes or detach async work from its scope (`frontend/src/lib/app/runtime.ts::makeAppRuntime`, `frontend/src/lib/app/mount.ts::mountApplication`).
+
+The standalone GitHub App setup entrypoint owns one scoped Effect program rather than another managed SPA runtime; its Svelte component only projects callbacks and publishes the synchronous Continue command (`packages/github-app-ui/src/main.ts`, `packages/github-app-ui/src/setup-program.ts::makeSetupController`).
+
+Effect root lifetimes survive browser back-forward cache restores: the main SPA stays alive for the JavaScript realm, and standalone entrypoints ignore persisted page hides when deciding teardown (`frontend/src/main.ts`, `packages/github-app-ui/src/main.ts`).
+
+Effect callback streams use explicit bounded buffers: pullable producers suspend for backpressure, while callback-only sources fail with a typed transient overflow so reconnect/replay can recover (`frontend/src/lib/browser/streaming-fetch.ts::byteStreamFromReader`, `frontend/src/lib/browser/event-source.ts::eventSourceStream`).
+
 A `$state` record written by full-object reassignment (`x = { ...x, k: v }`) that is also read inside the same reactive scope — an `$effect`, or a `{@attach ...}` callback, which Svelte runs as one — is a self-referential dependency: Svelte detects it as `effect_update_depth_exceeded` and the attachment tears itself down and reattaches forever. Mutate the specific key instead (`x[k] = v`) (`frontend/src/lib/stores/workspace-host.svelte.ts::registerSlotElement`).
 
-For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads, embed callbacks, and API view models near the module that owns the concept, then import those types at call sites. PR/issue/file/focus route identity and URL construction belongs in the shared route item module at `packages/ui/src/routes.ts`; the frontend router remains the browser-location adapter over those builders. New routed item callers should use those named refs and builders instead of repeating `{ owner; name; number; platformHost }` shapes or hand-building `/pulls`, `/issues`, or `/focus` URLs.
+For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads, embed callbacks, and API view models near the module that owns the concept, then import those types at call sites. PR/issue/file/focus route identity and URL construction belongs in the shared route item module at `frontend/src/lib/routes.ts`; the frontend router remains the browser-location adapter over those builders. New routed item callers should use those named refs and builders instead of repeating `{ owner; name; number; platformHost }` shapes or hand-building `/pulls`, `/issues`, or `/focus` URLs.
 
 When TypeScript complains, prefer making the owning type more precise over adding call-site assertions. Generated OpenAPI types, named domain unions, and shared option arrays should carry their real values so components can consume them directly. Good cleanups look like `handleCommandResult(result: void | Promise<void>, ...)` or a typed dropdown option returning `TimeRange`; they remove runtime probing and casts by tightening the contract. Bad cleanups add `as unknown as`, broad `as any`, defensive `instanceof` branches, or response-normalization functions around data that is already typed by the API schema.
 
@@ -431,9 +436,9 @@ Rich Markdown diff preview parses each reconstructed hunk side as one document.
 Review cards anchor only at confidently mapped valid container boundaries;
 hidden-gap or uncertain threads stay visible in fallback rather than using a
 guessed inline position
-(`packages/ui/src/utils/markdown-rich-preview.ts::buildMarkdownRichPreview`).
+(`frontend/src/lib/utils/markdown-rich-preview.ts::buildMarkdownRichPreview`).
 
-The markdown pipelines deliberately stay app-side rather than moving to kit-ui `createMarkdownRenderer`: interactive task lists and docs link/image rewriting need marked renderer overrides, docs external-image blocking needs an element-level DOMPurify hook, and the drag handle needs the non-data `draggable` attribute — all beyond kit's extensions/codeFence/data-\* hook surface. This applies to the two renderers (`packages/ui/src/utils/markdown.ts` and the docs renderer) plus the markdown DOM-diff surface (`markdown-diff.ts`), which diffs already-rendered HTML and owns no render or escaping invariants of its own. The fence primitives that do fit (`escapeHtml`, `codeFenceLanguage`, `codeHighlightPlan` and its budgets, `shikiStyleIsAllowed`) are imported from `@kenn-io/kit-ui/utils/markdown` in both renderers so highlight budgets and escaping stay in parity by construction; do not reintroduce local copies. Mermaid is fully kit-owned: both renderers route fences through `mermaidCodeFence`, and `frontend/src/main.ts` wires kit's `initMarkdownMermaidRendering` (from `@kenn-io/kit-ui/utils/markdown-mermaid`, viewer classes `kit-mermaid-*`) into the app modal stack via `onLightboxOpen`; the diff image panel is kit's `ImagePreview`. New deps reached through the excluded kit-ui source barrel (mermaid, new lucide icons) must be added to `optimizeDeps.include` in `frontend/vite.config.ts`, or the cold optimizer re-bundles mid-run and breaks the browser test tier. `escapeHtml`'s double-quote escaping is a load-bearing contract for double-quoted attribute interpolation in both renderers, pinned by the docs suite's attribute-escaping tests. The invariants the boundary protects — task index stability, style stripping, external-image blocking, mermaid bypass, highlight budgets — are covered by `packages/ui/src/utils/markdown.test.ts`, `frontend/src/lib/utils/markdownTaskListStyle.test.ts`, and the docs markdown suite.
+The markdown pipelines deliberately stay app-side rather than moving to kit-ui `createMarkdownRenderer`: interactive task lists and docs link/image rewriting need marked renderer overrides, docs external-image blocking needs an element-level DOMPurify hook, and the drag handle needs the non-data `draggable` attribute — all beyond kit's extensions/codeFence/data-\* hook surface. This applies to the two renderers (`frontend/src/lib/utils/markdown.ts` and the docs renderer) plus the markdown DOM-diff surface (`markdown-diff.ts`), which diffs already-rendered HTML and owns no render or escaping invariants of its own. The fence primitives that do fit (`escapeHtml`, `codeFenceLanguage`, `codeHighlightPlan` and its budgets, `shikiStyleIsAllowed`) are imported from `@kenn-io/kit-ui/utils/markdown` in both renderers so highlight budgets and escaping stay in parity by construction; do not reintroduce local copies. Mermaid is fully kit-owned: both renderers route fences through `mermaidCodeFence`, and `frontend/src/main.ts` wires kit's `initMarkdownMermaidRendering` (from `@kenn-io/kit-ui/utils/markdown-mermaid`, viewer classes `kit-mermaid-*`) into the app modal stack via `onLightboxOpen`; the diff image panel is kit's `ImagePreview`. New deps reached through the excluded kit-ui source barrel (mermaid, new lucide icons) must be added to `optimizeDeps.include` in `frontend/vite.config.ts`, or the cold optimizer re-bundles mid-run and breaks the browser test tier. `escapeHtml`'s double-quote escaping is a load-bearing contract for double-quoted attribute interpolation in both renderers, pinned by the docs suite's attribute-escaping tests. The invariants the boundary protects — task index stability, style stripping, external-image blocking, mermaid bypass, highlight budgets — are covered by `frontend/src/lib/utils/markdown.test.ts`, `frontend/src/lib/utils/markdownTaskListStyle.test.ts`, and the docs markdown suite.
 
 Responsive layout work should separate presentation mode from sizing mode.
 

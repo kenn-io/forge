@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { getStores } from "@kenn-forge/ui";
-  import type { PullRequestSettings as PullRequestSettingsType } from "@kenn-forge/ui/api/types";
+  import { getStores } from "../../context.js";
+  import type { PullRequestSettings as PullRequestSettingsType } from "../../api/types.js";
 
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";

@@ -106,12 +106,9 @@ owner:
   machine's, so assert the invariant that holds either side of a wrap boundary,
   never which side a chosen width lands on
   (`frontend/src/RoborevReviewDrawer.footer-layout.browser.svelte.ts`).
-- Browser specs must live under `frontend/src`, even when they cover a
-  `packages/ui` component. The browser project includes only
-  `src/**/*.browser.svelte.ts` while the unit project also includes
-  `../packages/ui/src/**` (`frontend/vite.config.ts:214`, `:178`), so a
-  `*.browser.svelte.ts` file placed beside a `packages/ui` component never runs
-  at all — it is silently collected by nothing rather than failing.
+- Browser specs live beside their components under `frontend/src`; the browser
+  project includes `src/**/*.browser.svelte.ts`, while the unit project also
+  includes GitHub App setup tests (`frontend/vite.config.ts::unitTestProject`).
 - Use Playwright mock e2e when the regression is specifically about a
   multi-step browser workflow, viewport behavior, screenshots/video, drag,
   scroll/sticky/overflow geometry, canvas/xterm rendering, or browser navigation.
@@ -157,8 +154,8 @@ Pane tab headers are `role="tab"` with an `aria-label`, so use
 `getByRole("tab", { name })` — `getByRole(..., { hasText })` is not a valid
 option and silently matches every tab.
 
-Every `@lucide/svelte/icons/<name>` import added anywhere in `frontend/src` or
-`packages/ui/src` must also be added to the `optimizeDeps.include` list in
+Every `@lucide/svelte/icons/<name>` import added anywhere in `frontend/src`
+must also be added to the `optimizeDeps.include` list in
 `frontend/vite.config.ts`. A missing entry passes locally on a warm Vite cache
 but fails the browser-lane CI job on a cold one: the optimizer discovers the
 icon mid-run, re-bundles, and the page reload breaks unrelated suites with
@@ -193,7 +190,7 @@ Non-container Vite+ jobs cache only Bun downloads with an exact OS, architecture
 
 Timezone-sensitive Vitest tests must not mutate `process.env.TZ` after workers
 start; launch the test process with `TZ` or stub the locale formatter instead
-(`packages/ui/src/components/detail/operation-gates.test.ts:8`).
+(`frontend/src/lib/components/detail/operation-gates.test.ts:8`).
 
 Full-stack e2e serves the frontend embedded in the e2e-server binary
 (`internal/web/dist`), not live sources: run `make frontend` before building
@@ -212,9 +209,9 @@ selections made by the test.
 
 Roborev `hide_classify_jobs` e2e fixtures must cover skipped design rows and classify-typed auto-design rows.
 Seed classify rows terminal unless testing worker mutation; live workers can rewrite queued/running rows during browser assertions (`internal/testutil/roborev_fixtures.go::seedRoborevMutationFixtures`).
-Keep injected Roborev `panel_run` failures controlled until the assertion observes them; drawer/list refresh demand can immediately retry member fetches and clear transient panel errors (`packages/ui/src/stores/roborev/jobs.svelte.ts::wantsPanelMembers`).
-Roborev `/api/stream/events` is NDJSON, not SSE: use an abortable Fetch reader with bounded reconnects, and abort both pre-header and active-body requests on teardown (`packages/ui/src/stores/roborev/jobs.svelte.ts::connectEventStream`).
-The `e2e-roborev` daemon pin (`ROBOREV_REF` in `.github/workflows/ci.yml`) must be at or after the roborev commit the generated schema (`packages/ui/src/api/roborev/generated/`) was produced from; a stale pin makes the daemon silently omit newer response fields while seed inserts still succeed, because the seeder creates its own schema.
+Keep injected Roborev `panel_run` failures controlled until the assertion observes them; drawer/list refresh demand can immediately retry member fetches and clear transient panel errors (`frontend/src/lib/stores/roborev/jobs.svelte.ts::wantsPanelMembers`).
+Roborev `/api/stream/events` is NDJSON, not SSE: use an abortable Fetch reader with bounded reconnects, and abort both pre-header and active-body requests on teardown (`frontend/src/lib/stores/roborev/jobs.svelte.ts::connectEventStream`).
+The `e2e-roborev` daemon pin (`ROBOREV_REF` in `.github/workflows/ci.yml`) must be at or after the roborev commit the generated schema (`frontend/src/lib/api/roborev/generated/`) was produced from; a stale pin makes the daemon silently omit newer response fields while seed inserts still succeed, because the seeder creates its own schema.
 
 Kata reachable-graph tests can use `window.__kenn_forge_kata_graph_debug` in
 browser/e2e runs, or `kata-graph-debug.ts` directly in unit tests, to inspect
@@ -272,7 +269,7 @@ An absence assertion against a disclosure's inner text is vacuous once the
 disclosure is collapsed by default: the text is gone from the DOM whether or
 not the underlying data actually cleared. Assert on the disclosure's own
 `data-testid` instead, since that wrapper is gated on the data
-(`packages/ui/src/components/detail/MergeWarningsChip.svelte`).
+(`frontend/src/lib/components/detail/MergeWarningsChip.svelte`).
 
 ## Huma API Contract
 

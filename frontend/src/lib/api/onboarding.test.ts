@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { PullRequest } from "@kenn-forge/ui/api/types";
+
+import type { PullRequest } from "./types.ts";
 
 const runtime = vi.hoisted(() => ({
   post: vi.fn(),

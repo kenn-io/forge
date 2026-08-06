@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import * as flash from "@kenn-forge/ui/stores/flash";
+import * as flash from "../../stores/flash.svelte.js";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -24,12 +24,10 @@ vi.mock("../../stores/filter.svelte.js", () => ({
   setGlobalRepo: (repo: string | undefined) => mockSetGlobalRepo(repo),
 }));
 
-vi.mock("@kenn-forge/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
-  const { default: MockCommentEditor } = await import("../../../test/MockCommentEditor.svelte");
+vi.mock("../../context.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../context.js")>();
   return {
     ...actual,
-    CommentEditor: MockCommentEditor,
     getStores: () => ({
       sync: {
         subscribeSyncComplete: () => () => {},
@@ -41,6 +39,10 @@ vi.mock("@kenn-forge/ui", async (importOriginal) => {
     }),
   };
 });
+
+vi.mock("../detail/CommentEditor.svelte", async () => ({
+  default: (await import("../../../test/MockCommentEditor.svelte")).default,
+}));
 
 import RepoSummaryPage from "./RepoSummaryPage.svelte";
 

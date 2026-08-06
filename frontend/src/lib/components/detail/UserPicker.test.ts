@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import UserPicker from "../../../../../packages/ui/src/components/detail/UserPicker.svelte";
+import UserPicker from "./UserPicker.svelte";
 
 describe("UserPicker", () => {
   afterEach(() => cleanup());

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import CollapsibleDescription from "../../../packages/ui/src/components/detail/CollapsibleDescription.svelte";
+  import CollapsibleDescription from "../lib/components/detail/CollapsibleDescription.svelte";
 </script>
 
 <CollapsibleDescription

@@ -54,10 +54,6 @@ const appSurfaceProps = vi.hoisted(() => ({
   provider: null as Record<string, unknown> | null,
 }));
 
-const workspaceHostMocks = vi.hoisted(() => ({
-  notifyWorkspaceDeleted: vi.fn(),
-}));
-
 vi.mock("@kenn-forge/ui", async () => {
   const ProviderMock = (await import("./lib/testing/AppProviderMock.svelte")).default;
   const Stub = (await import("./lib/testing/AppViewStub.svelte")).default;
@@ -79,14 +75,6 @@ vi.mock("@kenn-forge/ui", async () => {
       },
     }),
     normalizeRepoFilterSelection: (repo: string | undefined) => repo,
-  };
-});
-
-vi.mock("./lib/stores/workspace-host.svelte.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./lib/stores/workspace-host.svelte.ts")>();
-  return {
-    ...actual,
-    notifyWorkspaceDeleted: workspaceHostMocks.notifyWorkspaceDeleted,
   };
 });
 
@@ -338,46 +326,6 @@ describe("App feature routes", () => {
     } finally {
       for (const flash of getFlashes()) dismissFlash(flash.id);
     }
-  });
-
-  it("tombstones both owning and associated pull identities from workspace deletion events", async () => {
-    const { default: App } = await import("./App.svelte");
-    render(App, { target: createAppTarget() });
-    await waitFor(() => expect(appSurfaceProps.provider).not.toBeNull());
-    const onWorkspaceDeleted = appSurfaceProps.provider?.onWorkspaceDeleted as
-      | ((event: Record<string, unknown>) => void)
-      | undefined;
-
-    onWorkspaceDeleted?.({
-      workspace_id: "ws-issue-7",
-      provider: "github",
-      platform_host: "github.com",
-      repo_path: "acme/widget",
-      owner: "acme",
-      name: "widget",
-      item_type: "issue",
-      item_number: 7,
-      associated_pr_number: 42,
-    });
-
-    expect(workspaceHostMocks.notifyWorkspaceDeleted).toHaveBeenNthCalledWith(1, "ws-issue-7", undefined, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-      owner: "acme",
-      name: "widget",
-      number: 7,
-      itemType: "issue",
-    });
-    expect(workspaceHostMocks.notifyWorkspaceDeleted).toHaveBeenNthCalledWith(2, "ws-issue-7", undefined, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-      owner: "acme",
-      name: "widget",
-      number: 42,
-      itemType: "pull",
-    });
   });
 
   it("routes Provider warnings through a warning-tone flash", async () => {

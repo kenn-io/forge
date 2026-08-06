@@ -342,7 +342,7 @@ func (s *Handler) Register(api huma.API) {
 		DefaultStatus: http.StatusNoContent,
 		Summary:       "Delete workspace",
 		Tags:          []string{"Workspaces"},
-	}, s.deleteWorkspace)
+	}, s.DeleteWorkspace)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "register-project",

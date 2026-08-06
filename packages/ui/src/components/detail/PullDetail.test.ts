@@ -1223,11 +1223,7 @@ describe("PullDetail approvals", () => {
           merged: true,
           sha: "merge-sha",
           message: "merged",
-          workspace_cleanup: {
-            workspace_id: "ws-1",
-            status: "failed",
-            warning: "workspace has uncommitted changes",
-          },
+          workspace_cleanup_warning: "workspace has uncommitted changes",
         },
         error: undefined,
       })),

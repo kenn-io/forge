@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -152,7 +151,7 @@ type getWorkspaceRuntimeSessionAttachSpecInput struct {
 	SessionKey string `path:"session_key"`
 }
 
-type deleteWorkspaceInput struct {
+type DeleteWorkspaceInput struct {
 	ID    string `path:"id"`
 	Force bool   `query:"force"`
 }
@@ -2443,51 +2442,40 @@ func workspaceRuntimeLaunchError(err error) error {
 	return httpapi.Internal("launch session: " + msg)
 }
 
-var errWorkspaceManagerNotConfigured = errors.New("workspace manager not configured")
-
-// DeleteWorkspace tears down a kenn-forge-managed workspace through the same
-// lifecycle used by the HTTP boundary. It is not intended to delete arbitrary
-// worktrees on disk.
+// DeleteWorkspace tears down a kenn-forge-managed workspace.
 func (s *Handler) DeleteWorkspace(
-	ctx context.Context, id string, force bool,
-) ([]string, error) {
+	ctx context.Context, input *DeleteWorkspaceInput,
+) (*struct{}, error) {
 	if s.workspaces == nil {
-		return nil, errWorkspaceManagerNotConfigured
-	}
-	ws, err := s.workspaces.Get(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("get workspace: %w", err)
-	}
-	if ws == nil {
-		return nil, workspace.ErrWorkspaceNotFound
+		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 
-	setupDone := s.markWorkspaceDeleting(id)
+	setupDone := s.markWorkspaceDeleting(input.ID)
 	deleted := false
 	// A successful deletion keeps admission closed permanently so queued setup
 	// dispatchers cannot recreate resources for the removed row; a failed one
 	// reopens admission only after every concurrent deletion has finished.
-	defer func() { s.finishWorkspaceDeleting(id, deleted) }()
+	defer func() { s.finishWorkspaceDeleting(input.ID, deleted) }()
 
 	if s.runtime != nil {
 		// Block new launches before the dirty preflight; existing
 		// sessions are stopped only after the preflight passes.
-		s.runtime.BeginStopping(id)
+		s.runtime.BeginStopping(input.ID)
 	}
 	defer func() {
 		if s.runtime != nil {
-			s.runtime.EndStopping(id)
+			s.runtime.EndStopping(input.ID)
 		}
 	}()
 	if err := waitForWorkspaceSetup(ctx, setupDone); err != nil {
-		return nil, fmt.Errorf("wait for workspace setup: %w", err)
+		return nil, httpapi.Internal("wait for workspace setup: " + err.Error())
 	}
 	dirty, err := s.workspaces.Delete(
-		ctx, id, force,
+		ctx, input.ID, input.Force,
 		func(stopCtx context.Context) {
 			if s.runtime != nil {
-				sessions := s.runtime.ListSessions(id)
-				s.runtime.StopWorkspace(stopCtx, id)
+				sessions := s.runtime.ListSessions(input.ID)
+				s.runtime.StopWorkspace(stopCtx, input.ID)
 				for _, session := range sessions {
 					s.removeAgentActivityRuntimeSession(session.Key)
 				}
@@ -2495,41 +2483,11 @@ func (s *Handler) DeleteWorkspace(
 		},
 	)
 	if err != nil {
-		return nil, err
-	}
-	if len(dirty) > 0 {
-		return dirty, nil
-	}
-
-	deleted = true
-	s.hub.Broadcast(Event{Type: "workspace_deleted", Data: WorkspaceDeletedPayload{
-		WorkspaceID:        ws.ID,
-		Provider:           ws.Platform,
-		PlatformHost:       ws.PlatformHost,
-		RepoPath:           ws.RepoOwner + "/" + ws.RepoName,
-		Owner:              ws.RepoOwner,
-		Name:               ws.RepoName,
-		ItemType:           ws.ItemType,
-		ItemNumber:         ws.ItemNumber,
-		AssociatedPRNumber: ws.AssociatedPRNumber,
-	}})
-	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
-	return nil, nil
-}
-
-func (s *Handler) deleteWorkspace(
-	ctx context.Context, input *deleteWorkspaceInput,
-) (*struct{}, error) {
-	dirty, err := s.DeleteWorkspace(ctx, input.ID, input.Force)
-	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, err.Error(), nil)
 		}
 		if errors.Is(err, workspace.ErrWorkspaceOwnershipUnproven) {
 			return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
-		}
-		if errors.Is(err, errWorkspaceManagerNotConfigured) {
-			return nil, httpapi.ServiceUnavailable(err.Error())
 		}
 		return nil, httpapi.Internal("delete workspace: " + err.Error())
 	}
@@ -2537,5 +2495,7 @@ func (s *Handler) deleteWorkspace(
 		return nil, httpapi.Conflict(httpapi.CodeConflict,
 			"workspace has uncommitted changes: "+strings.Join(dirty, ", "), nil)
 	}
+
+	deleted = true
 	return nil, nil
 }

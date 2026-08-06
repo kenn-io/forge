@@ -6109,7 +6109,7 @@ export interface components {
             merged: boolean;
             message: string;
             sha: string;
-            workspace_cleanup?: components["schemas"]["WorkspaceCleanupResult"];
+            workspace_cleanup_warning?: string;
         };
         MergePRInputBody: {
             /**
@@ -6120,7 +6120,7 @@ export interface components {
             readonly $schema?: string;
             commit_message: string;
             commit_title: string;
-            delete_workspace_after_merge?: boolean;
+            delete_workspace_id?: string;
             expected_head_sha?: string;
             method: string;
         };
@@ -7776,12 +7776,6 @@ export interface components {
             updated_at?: string;
             updated_reason?: string;
             updated_source?: string;
-        };
-        WorkspaceCleanupResult: {
-            /** @enum {string} */
-            status: "deleted" | "already_absent" | "not_found_at_submission" | "failed";
-            warning?: string;
-            workspace_id?: string;
         };
         WorkspaceDiffWatchResponse: {
             /**
@@ -17882,7 +17876,6 @@ export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeep
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
 export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceDirectoryNotReusable", "workspaceNotFound", "worktreeDirty"];
 export const workflowStateMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
-export const workspaceCleanupResultStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceCleanupResult"]["status"]> = ["deleted", "already_absent", "not_found_at_submission", "failed"];
 export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval", "done"];
 export const workspaceResponseEnrichment_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["enrichment_status"]> = ["not_applicable", "pending", "fresh", "stale", "failed"];
 export const workspaceResponseMr_head_repo_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["mr_head_repo_kind"]> = ["same_repo", "fork", "unknown"];

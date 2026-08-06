@@ -28,21 +28,6 @@ type WorkspaceRef struct {
 	Status string `json:"status"`
 }
 
-// WorkspaceDeletedPayload identifies a local workspace removed through the
-// shared deletion lifecycle so connected clients can invalidate cached item
-// links and terminal routes for the exact workspace ID.
-type WorkspaceDeletedPayload struct {
-	WorkspaceID        string `json:"workspace_id"`
-	Provider           string `json:"provider"`
-	PlatformHost       string `json:"platform_host"`
-	RepoPath           string `json:"repo_path"`
-	Owner              string `json:"owner"`
-	Name               string `json:"name"`
-	ItemType           string `json:"item_type"`
-	ItemNumber         int    `json:"item_number"`
-	AssociatedPRNumber *int   `json:"associated_pr_number,omitempty"`
-}
-
 type workspaceResponse struct {
 	ID                    string                    `json:"id"`
 	Repo                  httpapi.RepoRefResponse   `json:"repo"`

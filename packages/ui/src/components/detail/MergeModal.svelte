@@ -10,13 +10,8 @@
   } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
-  import type { WorkspaceCleanupResult } from "../../api/types.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
-  import {
-    readDeleteWorkspaceAfterMergePreference,
-    writeDeleteWorkspaceAfterMergePreference,
-  } from "./mergeWorkspaceCleanupPreference.js";
 
   const client = getClient();
 
@@ -49,12 +44,12 @@
      * queue) and the modal offers an immediate merge instead.
      */
     alreadyQueued?: boolean;
-    /** Whether this pull request currently has a linked workspace. */
-    workspacePresent?: boolean;
+    /** Exact workspace to delete after a successful merge. */
+    workspaceId?: string | undefined;
     /** Warning shown when the configured override permits a mid-stack merge. */
     midStackWarning?: string | undefined;
     onclose: () => void;
-    onmerged: (cleanup?: WorkspaceCleanupResult) => void;
+    onmerged: (cleanupWarning?: string) => void;
     /** Called when a deferred merge was accepted and now waits on CI. */
     onqueued: () => void;
     onstateconflict?: ((
@@ -73,7 +68,7 @@
     allowSquash, allowMerge, allowRebase,
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
-    alreadyQueued = false, workspacePresent = false, midStackWarning,
+    alreadyQueued = false, workspaceId, midStackWarning,
     onclose, onmerged, onqueued, onstateconflict,
   }: Props = $props();
 
@@ -98,7 +93,7 @@
     commit_message: string;
     method: Method;
     expected_head_sha?: string;
-    delete_workspace_after_merge: boolean;
+    delete_workspace_id?: string;
   };
 
   function buildMethods(): MethodOption[] {
@@ -139,9 +134,7 @@
   let selectedMethod = $state<Method>(methods[0]?.value ?? "squash");
   let commitTitle = $state(initialCommitTitle());
   let commitMessage = $state(initialCommitMessage());
-  let deleteWorkspaceAfterMerge = $state(
-    untrack(() => (workspacePresent ? readDeleteWorkspaceAfterMergePreference() : true)),
-  );
+  let deleteWorkspaceAfterMerge = $state(true);
 
   let activeMergeSubmission = $state<"deferred" | "immediate" | null>(null);
   let error = $state<string | null>(null);
@@ -152,7 +145,7 @@
       commit_title: commitTitle,
       commit_message: commitMessage,
       method: selectedMethod,
-      delete_workspace_after_merge: workspacePresent && deleteWorkspaceAfterMerge,
+      ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
     };
   }
@@ -207,7 +200,7 @@
         body: params,
       });
       if (error && handleMergeError(error)) return;
-      onmerged(data?.workspace_cleanup);
+      onmerged(data?.workspace_cleanup_warning);
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
@@ -304,13 +297,12 @@
         ></textarea>
       </div>
 
-      {#if workspacePresent}
+      {#if workspaceId}
         <Checkbox
           checked={deleteWorkspaceAfterMerge}
           label="Delete workspace after merge"
           onchange={(checked) => {
             deleteWorkspaceAfterMerge = checked;
-            writeDeleteWorkspaceAfterMergePreference(checked);
           }}
         />
       {/if}

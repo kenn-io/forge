@@ -22,7 +22,6 @@ import (
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/workspace"
 )
 
 type deferredMergeProviderBase struct {
@@ -183,8 +182,7 @@ func (p *deferredMergeTestProvider) MergeMergeRequest(
 
 type deferredMergeTestOptions struct {
 	deferredMergeMaxWait time.Duration
-	workspaces           *workspace.Manager
-	deleteWorkspace      func(context.Context, string, bool) ([]string, error)
+	deleteWorkspace      func(context.Context, string) error
 }
 
 type deferredMergeTestRecordedEvent struct {
@@ -239,7 +237,6 @@ func newDeferredMergeHTTPFixture(
 		DB:                   database,
 		Resolver:             resolver,
 		Syncer:               syncer,
-		Workspaces:           opts.workspaces,
 		DeleteWorkspace:      opts.deleteWorkspace,
 		Now:                  func() time.Time { return now },
 		DeferredMergeMaxWait: opts.deferredMergeMaxWait,
@@ -327,9 +324,6 @@ func newDeferredMergeRouteServer(
 	if len(options) > 0 {
 		opts = options[0]
 	}
-	if opts.workspaces == nil {
-		opts.workspaces = workspace.NewManager(database, t.TempDir())
-	}
 	srv, client := newDeferredMergeHTTPFixture(
 		t,
 		database,
@@ -339,125 +333,6 @@ func newDeferredMergeRouteServer(
 		opts,
 	)
 	return srv, database, repoID, client
-}
-
-func TestDeferredMergeCleanupUsesWorkspacePinnedAtQueueTime(t *testing.T) {
-	ctx := t.Context()
-	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
-	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
-	}
-	ciStarted := make(chan struct{})
-	ciRelease := make(chan struct{})
-	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			mergeRequests: []platform.MergeRequest{{
-				Repo:           ref,
-				PlatformID:     7001,
-				Number:         7,
-				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
-				Title:          "Defer merge",
-				Author:         "ada",
-				State:          "open",
-				HeadBranch:     "feature",
-				BaseBranch:     "main",
-				HeadSHA:        "head-sha",
-				BaseSHA:        "base-sha",
-				CIStatus:       "pending",
-				CreatedAt:      now,
-				UpdatedAt:      now,
-				LastActivityAt: now,
-			}},
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:        "GitLab",
-					Name:       "pipeline",
-					Status:     "completed",
-					Conclusion: "success",
-				}},
-			},
-		},
-		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
-		ciStarted: ciStarted,
-		ciRelease: ciRelease,
-	}
-	deleted := make(chan string, 1)
-	srv, database, _, _ := newDeferredMergeRouteServer(
-		t, provider, ref, now,
-		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-		deferredMergeTestOptions{
-			deleteWorkspace: func(_ context.Context, id string, force bool) ([]string, error) {
-				require.False(t, force)
-				deleted <- id
-				return nil, nil
-			},
-		},
-	)
-	require.NoError(t, database.InsertWorkspace(ctx, &db.Workspace{
-		ID:           "ws-old",
-		Platform:     string(ref.Platform),
-		PlatformHost: ref.Host,
-		RepoOwner:    ref.Owner,
-		RepoName:     ref.Name,
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   7,
-		ItemKey:      "7",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-		CreatedAt:    now,
-	}))
-
-	_, err := srv.handler.enqueueDeferredMerge(
-		ctx,
-		"gitlab",
-		ref.Host,
-		ref.Owner,
-		ref.Name,
-		7,
-		mergePRInputBody{
-			Method:                    "squash",
-			ExpectedHeadSHA:           "head-sha",
-			DeleteWorkspaceAfterMerge: true,
-		},
-		5*time.Millisecond,
-		time.Second,
-	)
-	require.NoError(t, err)
-	select {
-	case <-ciStarted:
-	case <-time.After(time.Second):
-		require.FailNow(t, "timed out waiting for deferred CI refresh")
-	}
-	require.NoError(t, database.DeleteWorkspace(ctx, "ws-old"))
-	require.NoError(t, database.InsertWorkspace(ctx, &db.Workspace{
-		ID:           "ws-new",
-		Platform:     string(ref.Platform),
-		PlatformHost: ref.Host,
-		RepoOwner:    ref.Owner,
-		RepoName:     ref.Name,
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   7,
-		ItemKey:      "7",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-		CreatedAt:    now.Add(time.Minute),
-	}))
-	close(ciRelease)
-
-	select {
-	case workspaceID := <-deleted:
-		require.Equal(t, "ws-old", workspaceID)
-	case <-time.After(time.Second):
-		require.FailNow(t, "timed out waiting for workspace cleanup")
-	}
 }
 
 func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
@@ -551,9 +426,23 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 		},
 	)
 	t.Cleanup(syncer.Stop)
-	srv, client := newDeferredMergeHTTPFixture(t, database, syncer, now, 0)
+	var deletedID string
+	srv, client := newDeferredMergeHTTPFixture(
+		t,
+		database,
+		syncer,
+		now,
+		0,
+		deferredMergeTestOptions{
+			deleteWorkspace: func(_ context.Context, id string) error {
+				deletedID = id
+				return errors.New("workspace has uncommitted changes: notes.txt")
+			},
+		},
+	)
 	events, _ := srv.Hub().Subscribe(ctx, false)
 	expectedHeadSHA := "head-sha"
+	workspaceID := "ws-1"
 
 	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
 		ctx,
@@ -563,10 +452,11 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 		ref.Name,
 		7,
 		generated.MergePRInputBody{
-			CommitTitle:     "Merge title",
-			CommitMessage:   "Merge body",
-			Method:          "squash",
-			ExpectedHeadSha: &expectedHeadSHA,
+			CommitTitle:       "Merge title",
+			CommitMessage:     "Merge body",
+			Method:            "squash",
+			ExpectedHeadSha:   &expectedHeadSHA,
+			DeleteWorkspaceId: &workspaceID,
 		},
 	)
 	require.NoError(err)
@@ -606,6 +496,8 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	require.True(completed.Merged)
 	require.Equal("merge-sha", completed.SHA)
 	require.Equal("2026-06-15T12:00:00Z", completed.CompletedAt)
+	require.Equal("workspace has uncommitted changes: notes.txt", completed.Warning)
+	require.Equal("ws-1", deletedID)
 
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)

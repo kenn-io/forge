@@ -26985,56 +26985,6 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 	assert.Len(srv.runtime.ListSessions(ws.Id), 2)
 }
 
-func TestDeleteWorkspacePublishesIdentityAfterSuccessfulCleanup(t *testing.T) {
-	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
-	ctx := t.Context()
-	ws := createReadyWorkspace(t, ctx, client)
-	events, _ := srv.Hub().Subscribe(ctx, false)
-	dirty, err := srv.workspaceAPI.DeleteWorkspace(ctx, ws.Id, false)
-
-	require.NoError(t, err)
-	assert.Empty(t, dirty)
-	stored, err := database.GetWorkspace(ctx, ws.Id)
-	require.NoError(t, err)
-	assert.Nil(t, stored)
-	deleted := readEventMatching(t, events, func(event Event) bool {
-		return event.Type == "workspace_deleted"
-	})
-	payload, ok := deleted.Data.(workspaceapi.WorkspaceDeletedPayload)
-	require.True(t, ok)
-	assert.Equal(t, ws.Id, payload.WorkspaceID)
-	assert.Equal(t, "github", payload.Provider)
-	assert.Equal(t, "github.com", payload.PlatformHost)
-	assert.Equal(t, "acme/widget", payload.RepoPath)
-	assert.Equal(t, "acme", payload.Owner)
-	assert.Equal(t, "widget", payload.Name)
-	assert.Equal(t, db.WorkspaceItemTypePullRequest, payload.ItemType)
-	assert.Equal(t, 1, payload.ItemNumber)
-	assert.Nil(t, payload.AssociatedPRNumber)
-	readEventMatching(t, events, func(event Event) bool {
-		return event.Type == "data_changed"
-	})
-}
-
-func TestDeleteWorkspacePreservesDirtyWorkspace(t *testing.T) {
-	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
-	ctx := t.Context()
-	ws := createReadyWorkspace(t, ctx, client)
-	require.NoError(t, os.WriteFile(
-		filepath.Join(ws.WorktreePath, "dirty.txt"),
-		[]byte("uncommitted\n"),
-		0o644,
-	))
-	dirty, err := srv.workspaceAPI.DeleteWorkspace(ctx, ws.Id, false)
-
-	require.NoError(t, err)
-	assert.Equal(t, []string{"dirty.txt"}, dirty)
-	stored, err := database.GetWorkspace(ctx, ws.Id)
-	require.NoError(t, err)
-	require.NotNil(t, stored)
-	assert.Equal(t, ws.Id, stored.ID)
-}
-
 func pinWorkspaceMergeRequestForReview(
 	t *testing.T,
 	ctx context.Context,
@@ -27063,223 +27013,29 @@ func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) 
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 	headSHA := pinWorkspaceMergeRequestForReview(t, ctx, database, ws)
-	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/github/acme/widget/1/merge", map[string]any{
-		"commit_title":                 "merge title",
-		"commit_message":               "merge body",
-		"method":                       "squash",
-		"expected_head_sha":            headSHA,
-		"delete_workspace_after_merge": true,
+		"commit_title":        "merge title",
+		"commit_message":      "merge body",
+		"method":              "squash",
+		"expected_head_sha":   headSHA,
+		"delete_workspace_id": ws.Id,
 	})
 
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 	var response struct {
-		Merged           bool `json:"merged"`
-		WorkspaceCleanup struct {
-			WorkspaceID string `json:"workspace_id"`
-			Status      string `json:"status"`
-			Warning     string `json:"warning"`
-		} `json:"workspace_cleanup"`
+		Merged                  bool   `json:"merged"`
+		WorkspaceCleanupWarning string `json:"workspace_cleanup_warning"`
 	}
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
 	assert.True(t, response.Merged)
-	assert.Equal(t, ws.Id, response.WorkspaceCleanup.WorkspaceID)
-	assert.Equal(t, "deleted", response.WorkspaceCleanup.Status)
-	assert.Empty(t, response.WorkspaceCleanup.Warning)
+	assert.Empty(t, response.WorkspaceCleanupWarning)
 	stored, err := database.GetWorkspace(ctx, ws.Id)
 	require.NoError(t, err)
 	assert.Nil(t, stored)
 	_, err = os.Stat(ws.WorktreePath)
 	assert.ErrorIs(t, err, os.ErrNotExist)
-	deleted := readEventMatching(t, events, func(event Event) bool {
-		return event.Type == "workspace_deleted"
-	})
-	assert.Equal(t, ws.Id, deleted.Data.(workspaceapi.WorkspaceDeletedPayload).WorkspaceID)
 }
-
-func TestMergeWorkspaceCleanupPreservesDirtyWorkspaceAsWarning(t *testing.T) {
-	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
-	ctx := t.Context()
-	ws := createReadyWorkspace(t, ctx, client)
-	headSHA := pinWorkspaceMergeRequestForReview(t, ctx, database, ws)
-	require.NoError(t, os.WriteFile(
-		filepath.Join(ws.WorktreePath, "dirty.txt"),
-		[]byte("uncommitted\n"),
-		0o644,
-	))
-
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/github/acme/widget/1/merge", map[string]any{
-		"commit_title":                 "merge title",
-		"commit_message":               "merge body",
-		"method":                       "squash",
-		"expected_head_sha":            headSHA,
-		"delete_workspace_after_merge": true,
-	})
-
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	var response struct {
-		Merged           bool `json:"merged"`
-		WorkspaceCleanup struct {
-			Status  string `json:"status"`
-			Warning string `json:"warning"`
-		} `json:"workspace_cleanup"`
-	}
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
-	assert.True(t, response.Merged)
-	assert.Equal(t, "failed", response.WorkspaceCleanup.Status)
-	assert.Contains(t, response.WorkspaceCleanup.Warning, "uncommitted changes: dirty.txt")
-	stored, err := database.GetWorkspace(ctx, ws.Id)
-	require.NoError(t, err)
-	require.NotNil(t, stored)
-	assert.Equal(t, ws.Id, stored.ID)
-	merged, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 1)
-	require.NoError(t, err)
-	require.NotNil(t, merged)
-	assert.Equal(t, db.MergeRequestStateMerged, merged.State)
-}
-
-func TestMergeWorkspaceCleanupDoesNotRunAfterProviderFailure(t *testing.T) {
-	mock := &mockGH{mergePullRequestFn: func(
-		context.Context, string, string, int, string, string, string,
-	) (*gh.PullRequestMergeResult, error) {
-		return nil, &gh.ErrorResponse{
-			Response: &http.Response{StatusCode: http.StatusConflict},
-			Message:  "provider rejected merge",
-		}
-	}}
-	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
-		t,
-		nil,
-		mock,
-		"github.com",
-		ServerOptions{PtyOwnerInProcess: true},
-	)
-	ctx := t.Context()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-	headSHA := pinWorkspaceMergeRequestForReview(t, ctx, fixture.database, ws)
-
-	rr := doJSON(t, fixture.server, http.MethodPost, "/api/v1/pulls/github/acme/widget/1/merge", map[string]any{
-		"commit_title":                 "merge title",
-		"commit_message":               "merge body",
-		"method":                       "squash",
-		"expected_head_sha":            headSHA,
-		"delete_workspace_after_merge": true,
-	})
-
-	require.Equal(t, http.StatusConflict, rr.Code, rr.Body.String())
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
-	require.NoError(t, err)
-	require.NotNil(t, stored)
-	assert.Equal(t, ws.Id, stored.ID)
-}
-
-func TestDeferredMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) {
-	var headSHA string
-	var baseSHA string
-	mock := &mockGH{
-		getPullRequestFn: func(
-			_ context.Context, _, _ string, number int,
-		) (*gh.PullRequest, error) {
-			state := "open"
-			headRef := "feature"
-			baseRef := "main"
-			return &gh.PullRequest{
-				Number: &number,
-				State:  &state,
-				Head: &gh.PullRequestBranch{
-					Ref: &headRef,
-					SHA: &headSHA,
-				},
-				Base: &gh.PullRequestBranch{
-					Ref: &baseRef,
-					SHA: &baseSHA,
-				},
-			}, nil
-		},
-		listCheckRunsForRefFn: func(
-			_ context.Context, _, _, ref string,
-		) ([]*gh.CheckRun, error) {
-			require.Equal(t, headSHA, ref)
-			name := "tests"
-			status := "completed"
-			conclusion := "success"
-			return []*gh.CheckRun{{
-				Name:       &name,
-				Status:     &status,
-				Conclusion: &conclusion,
-			}}, nil
-		},
-	}
-	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
-		t,
-		nil,
-		mock,
-		"github.com",
-		ServerOptions{PtyOwnerInProcess: true},
-	)
-	ctx := t.Context()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-	headSHA = pinWorkspaceMergeRequestForReview(t, ctx, fixture.database, ws)
-	baseSHA = gitOutput(t, ws.WorktreePath, "rev-parse", "refs/heads/main")
-	mr, err := fixture.database.GetMergeRequest(
-		ctx, "github", "github.com", "acme", "widget", 1,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, mr)
-	require.NoError(t, fixture.database.UpdateMRCIStatus(
-		ctx,
-		mr.RepoID,
-		mr.Number,
-		"pending",
-		`[{"name":"tests","status":"in_progress","conclusion":"","url":"","app":""}]`,
-	))
-	events, _ := fixture.server.Hub().Subscribe(ctx, false)
-
-	rr := doJSON(
-		t,
-		fixture.server,
-		http.MethodPost,
-		"/api/v1/pulls/github/acme/widget/1/merge/deferred",
-		map[string]any{
-			"commit_title":                 "merge title",
-			"commit_message":               "merge body",
-			"method":                       "squash",
-			"expected_head_sha":            headSHA,
-			"delete_workspace_after_merge": true,
-		},
-	)
-
-	require.Equal(t, http.StatusAccepted, rr.Code, rr.Body.String())
-	deleted := readEventMatching(t, events, func(event Event) bool {
-		return event.Type == "workspace_deleted"
-	})
-	assert.Equal(
-		t,
-		ws.Id,
-		deleted.Data.(workspaceapi.WorkspaceDeletedPayload).WorkspaceID,
-	)
-	completed := readEventMatching(t, events, func(event Event) bool {
-		return event.Type == "deferred_merge_completed"
-	})
-	payload, ok := completed.Data.(pullapi.DeferredMergeCompletedPayload)
-	require.True(t, ok)
-	require.NotNil(t, payload.WorkspaceCleanup)
-	assert.Equal(t, ws.Id, payload.WorkspaceCleanup.WorkspaceID)
-	assert.Equal(t, "deleted", payload.WorkspaceCleanup.Status)
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
-	require.NoError(t, err)
-	assert.Nil(t, stored)
-	_, err = os.Stat(ws.WorktreePath)
-	assert.ErrorIs(t, err, os.ErrNotExist)
-}
-
-// TestWorkspaceListReportsCommitsAheadBehindE2E verifies that the
-// /api/v1/workspaces list response includes commits_ahead /
-// commits_behind for ready workspaces, computed against the worktree's
-// `@{upstream}` tracking branch. The sidebar's push-state pills depend
-// on these fields, so a regression here would silently turn the pills
-// off without any test failure at the unit-test layer.
 
 func TestWorkspaceDiffCacheHitReturnsWhileGitCapacityIsHeldE2E(t *testing.T) {
 	require := require.New(t)

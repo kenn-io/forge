@@ -12,7 +12,6 @@
     PullDetail,
     PullRequest,
     RepoOperations,
-    WorkspaceCleanupResult,
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import type { ConflictReason } from "../../api/problems.js";
@@ -2684,7 +2683,7 @@
           routeGeneration={mutationRouteGeneration}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           alreadyQueued={deferredMergePending}
-          workspacePresent={d.workspace != null}
+          workspaceId={d.workspace?.id}
           midStackWarning={midStackBlocker
             ? `This is stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}. Branch #${midStackBlocker.number} below it has not been merged.`
             : undefined}
@@ -2700,11 +2699,11 @@
               repoPath,
             });
           }}
-          onmerged={(cleanup: WorkspaceCleanupResult | undefined) => {
+          onmerged={(cleanupWarning: string | undefined) => {
             showMergeModal = false;
-            if (cleanup?.status === "failed") {
+            if (cleanupWarning) {
               showFlash(
-                `Pull request merged, but the workspace was not pruned: ${cleanup.warning ?? "workspace cleanup failed"}`,
+                `Pull request merged, but the workspace was not pruned: ${cleanupWarning}`,
                 { tone: "warning" },
               );
             }

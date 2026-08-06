@@ -13,7 +13,6 @@
   } from "@kenn-forge/ui";
   import type { StoreInstances } from "@kenn-forge/ui";
   import type { ActivityItem, ModeVisibility } from "@kenn-forge/ui/api/types";
-  import type { WorkspaceDeletedEvent } from "@kenn-forge/ui/stores/events";
   import {
     buildFocusPullRequestFilesRoute,
     buildFocusPullRequestRoute,
@@ -95,11 +94,7 @@
     getSelectedPRFromRoute,
     type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
-  import {
-    getInlineWorkspaceController,
-    notifyWorkspaceDeleted,
-    tabSlotAttachment,
-  } from "./lib/stores/workspace-host.svelte.ts";
+  import { getInlineWorkspaceController, tabSlotAttachment } from "./lib/stores/workspace-host.svelte.ts";
   import {
     buildActivitySelectionSearch,
     parseActivitySelection,
@@ -637,26 +632,6 @@
     );
   }
 
-  function handleWorkspaceDeleted(event: WorkspaceDeletedEvent): void {
-    const identity = {
-      provider: event.provider,
-      platformHost: event.platform_host,
-      repoPath: event.repo_path,
-      owner: event.owner,
-      name: event.name,
-      number: event.item_number,
-      itemType: event.item_type,
-    };
-    notifyWorkspaceDeleted(event.workspace_id, undefined, identity);
-    if (event.associated_pr_number !== undefined) {
-      notifyWorkspaceDeleted(event.workspace_id, undefined, {
-        ...identity,
-        number: event.associated_pr_number,
-        itemType: "pull",
-      });
-    }
-  }
-
   onDestroy(() => {
     kataAuxiliaryAuthority.stop();
     stopFullAppShell();
@@ -999,7 +974,6 @@
     onError={(msg) => showFlash(msg, { tone: "danger" })}
     onWarning={(msg) => showFlash(msg, { tone: "warning" })}
     onNotification={showFlash}
-    onWorkspaceDeleted={handleWorkspaceDeleted}
     onNavigate={(e, options) => {
       const path = typeof e === "string" ? e : e.path;
       if (options?.replace) replaceUrl(path);

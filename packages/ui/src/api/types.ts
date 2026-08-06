@@ -41,7 +41,6 @@ export type ActivityParams = NonNullable<operations["list-activity"]["parameters
 export type PullsParams = operations["list-pulls"]["parameters"]["query"];
 export type IssuesParams = operations["list-issues"]["parameters"]["query"];
 export type MergeParams = components["schemas"]["MergePRInputBody"];
-export type WorkspaceCleanupResult = components["schemas"]["WorkspaceCleanupResult"];
 
 export type WorktreeLink = components["schemas"]["WorktreeLinkResponse"];
 export type LaunchTarget = components["schemas"]["LaunchTarget"];

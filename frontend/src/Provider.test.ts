@@ -517,54 +517,12 @@ describe("Provider events store wiring", () => {
       status: "merged",
       merged: true,
       completed_at: "2026-07-10T15:00:00Z",
-      workspace_cleanup: {
-        workspace_id: "ws-1",
-        status: "failed",
-        warning: "workspace has uncommitted changes",
-      },
+      workspace_cleanup_warning: "workspace has uncommitted changes",
     });
 
     expect(onWarning).toHaveBeenCalledWith(
       "acme/widget#42 merged, but the workspace was not pruned: workspace has uncommitted changes",
     );
     expect(onNotification).not.toHaveBeenCalled();
-  });
-
-  it("forwards workspace deletions and refreshes the matching pull detail", () => {
-    currentDetail = {
-      repo: {
-        provider: "github",
-        platform_host: "github.com",
-        repo_path: "acme/widget",
-      },
-      repo_owner: "acme",
-      repo_name: "widget",
-      merge_request: { Number: 42 },
-    };
-    const onWorkspaceDeleted = vi.fn();
-    render(Provider, {
-      props: { client: stubClient, onWorkspaceDeleted, getPage: () => "pulls" },
-    });
-    const event = {
-      workspace_id: "ws-1",
-      provider: "github",
-      platform_host: "github.com",
-      repo_path: "acme/widget",
-      owner: "acme",
-      name: "widget",
-      item_type: "issue",
-      item_number: 7,
-      associated_pr_number: 42,
-    };
-
-    captured.store?.options.onWorkspaceDeleted?.(event);
-
-    expect(onWorkspaceDeleted).toHaveBeenCalledWith(event);
-    expect(loadPulls).toHaveBeenCalledTimes(1);
-    expect(refreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 42, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-    });
   });
 });

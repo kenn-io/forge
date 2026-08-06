@@ -749,30 +749,6 @@ func (e WorkflowStateMetaResponseStatus) Valid() bool {
 	}
 }
 
-// Defines values for WorkspaceCleanupResultStatus.
-const (
-	WorkspaceCleanupResultStatusAlreadyAbsent        WorkspaceCleanupResultStatus = "already_absent"
-	WorkspaceCleanupResultStatusDeleted              WorkspaceCleanupResultStatus = "deleted"
-	WorkspaceCleanupResultStatusFailed               WorkspaceCleanupResultStatus = "failed"
-	WorkspaceCleanupResultStatusNotFoundAtSubmission WorkspaceCleanupResultStatus = "not_found_at_submission"
-)
-
-// Valid indicates whether the value is a known member of the WorkspaceCleanupResultStatus enum.
-func (e WorkspaceCleanupResultStatus) Valid() bool {
-	switch e {
-	case WorkspaceCleanupResultStatusAlreadyAbsent:
-		return true
-	case WorkspaceCleanupResultStatusDeleted:
-		return true
-	case WorkspaceCleanupResultStatusFailed:
-		return true
-	case WorkspaceCleanupResultStatusNotFoundAtSubmission:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for WorkspaceResponseAgentState.
 const (
 	Approval WorkspaceResponseAgentState = "approval"
@@ -802,25 +778,25 @@ func (e WorkspaceResponseAgentState) Valid() bool {
 
 // Defines values for WorkspaceResponseEnrichmentStatus.
 const (
-	WorkspaceResponseEnrichmentStatusFailed        WorkspaceResponseEnrichmentStatus = "failed"
-	WorkspaceResponseEnrichmentStatusFresh         WorkspaceResponseEnrichmentStatus = "fresh"
-	WorkspaceResponseEnrichmentStatusNotApplicable WorkspaceResponseEnrichmentStatus = "not_applicable"
-	WorkspaceResponseEnrichmentStatusPending       WorkspaceResponseEnrichmentStatus = "pending"
-	WorkspaceResponseEnrichmentStatusStale         WorkspaceResponseEnrichmentStatus = "stale"
+	Failed        WorkspaceResponseEnrichmentStatus = "failed"
+	Fresh         WorkspaceResponseEnrichmentStatus = "fresh"
+	NotApplicable WorkspaceResponseEnrichmentStatus = "not_applicable"
+	Pending       WorkspaceResponseEnrichmentStatus = "pending"
+	Stale         WorkspaceResponseEnrichmentStatus = "stale"
 )
 
 // Valid indicates whether the value is a known member of the WorkspaceResponseEnrichmentStatus enum.
 func (e WorkspaceResponseEnrichmentStatus) Valid() bool {
 	switch e {
-	case WorkspaceResponseEnrichmentStatusFailed:
+	case Failed:
 		return true
-	case WorkspaceResponseEnrichmentStatusFresh:
+	case Fresh:
 		return true
-	case WorkspaceResponseEnrichmentStatusNotApplicable:
+	case NotApplicable:
 		return true
-	case WorkspaceResponseEnrichmentStatusPending:
+	case Pending:
 		return true
-	case WorkspaceResponseEnrichmentStatusStale:
+	case Stale:
 		return true
 	default:
 		return false
@@ -2661,22 +2637,22 @@ type LocalSyncCeilingStatus struct {
 // MergePRBody defines model for MergePRBody.
 type MergePRBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string                 `json:"$schema,omitempty"`
-	Merged           bool                    `json:"merged"`
-	Message          string                  `json:"message"`
-	Sha              string                  `json:"sha"`
-	WorkspaceCleanup *WorkspaceCleanupResult `json:"workspace_cleanup,omitempty"`
+	Schema                  *string `json:"$schema,omitempty"`
+	Merged                  bool    `json:"merged"`
+	Message                 string  `json:"message"`
+	Sha                     string  `json:"sha"`
+	WorkspaceCleanupWarning *string `json:"workspace_cleanup_warning,omitempty"`
 }
 
 // MergePRInputBody defines model for MergePRInputBody.
 type MergePRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                    *string `json:"$schema,omitempty"`
-	CommitMessage             string  `json:"commit_message"`
-	CommitTitle               string  `json:"commit_title"`
-	DeleteWorkspaceAfterMerge *bool   `json:"delete_workspace_after_merge,omitempty"`
-	ExpectedHeadSha           *string `json:"expected_head_sha,omitempty"`
-	Method                    string  `json:"method"`
+	Schema            *string `json:"$schema,omitempty"`
+	CommitMessage     string  `json:"commit_message"`
+	CommitTitle       string  `json:"commit_title"`
+	DeleteWorkspaceId *string `json:"delete_workspace_id,omitempty"`
+	ExpectedHeadSha   *string `json:"expected_head_sha,omitempty"`
+	Method            string  `json:"method"`
 }
 
 // MergeRequest defines model for MergeRequest.
@@ -4159,16 +4135,6 @@ type WorkflowStateMetaResponse struct {
 
 // WorkflowStateMetaResponseStatus defines model for WorkflowStateMetaResponse.Status.
 type WorkflowStateMetaResponseStatus string
-
-// WorkspaceCleanupResult defines model for WorkspaceCleanupResult.
-type WorkspaceCleanupResult struct {
-	Status      WorkspaceCleanupResultStatus `json:"status"`
-	Warning     *string                      `json:"warning,omitempty"`
-	WorkspaceId *string                      `json:"workspace_id,omitempty"`
-}
-
-// WorkspaceCleanupResultStatus defines model for WorkspaceCleanupResult.Status.
-type WorkspaceCleanupResultStatus string
 
 // WorkspaceDiffWatchResponse defines model for WorkspaceDiffWatchResponse.
 type WorkspaceDiffWatchResponse struct {

@@ -1,4 +1,4 @@
-import type { SyncStatus, WorkspaceCleanupResult } from "../api/types.js";
+import type { SyncStatus } from "../api/types.js";
 
 export interface ConfigChangedEvent {
   valid: boolean;
@@ -32,18 +32,6 @@ export interface WorkspacePRAssociatedEvent {
   issue_number: number;
   pr_number: number;
   associated_at: string;
-}
-
-export interface WorkspaceDeletedEvent {
-  workspace_id: string;
-  provider: string;
-  platform_host: string;
-  repo_path: string;
-  owner: string;
-  name: string;
-  item_type: string;
-  item_number: number;
-  associated_pr_number?: number;
 }
 
 export interface WorkspacePRRefreshQueuedEvent {
@@ -109,7 +97,7 @@ export interface DeferredMergeCompletedEvent {
   message?: string;
   error?: string;
   completed_at: string;
-  workspace_cleanup?: WorkspaceCleanupResult;
+  workspace_cleanup_warning?: string;
 }
 
 export interface EventsStoreOptions {
@@ -135,7 +123,6 @@ export interface EventsStoreOptions {
   onReconnectStale?: () => void;
   onWorkspacePushedHeadChanged?: (event: WorkspacePushedHeadChangedEvent) => void;
   onWorkspacePRAssociated?: (event: WorkspacePRAssociatedEvent) => void;
-  onWorkspaceDeleted?: (event: WorkspaceDeletedEvent) => void;
   onWorkspacePRRefreshQueued?: (event: WorkspacePRRefreshQueuedEvent) => void;
   onPRDetailRefreshed?: (event: PRDetailRefreshedEvent) => void;
   onPRCIRefreshQueued?: (event: PRCIRefreshQueuedEvent) => void;
@@ -194,7 +181,6 @@ export function createEventsStore(opts: EventsStoreOptions = {}) {
       opts.onWorkspacePushedHeadChanged,
     );
     addJSONListener<WorkspacePRAssociatedEvent>(source, "workspace_pr_associated", opts.onWorkspacePRAssociated);
-    addJSONListener<WorkspaceDeletedEvent>(source, "workspace_deleted", opts.onWorkspaceDeleted);
     addJSONListener<WorkspacePRRefreshQueuedEvent>(
       source,
       "workspace_pr_refresh_queued",

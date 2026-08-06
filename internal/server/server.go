@@ -1000,8 +1000,11 @@ func newServer(
 		Config:               pullConfigSnapshot(cfg),
 		Now:                  func() time.Time { return s.now() },
 		DeferredMergeMaxWait: deferredMergeMaxWait,
-		DeleteWorkspace:      s.workspaceAPI.DeleteWorkspace,
-		FleetSelfKey:         s.fleetAPI.SelfKey,
+		DeleteWorkspace: func(ctx context.Context, id string) error {
+			_, err := s.workspaceAPI.DeleteWorkspace(ctx, &workspaceapi.DeleteWorkspaceInput{ID: id})
+			return err
+		},
+		FleetSelfKey: s.fleetAPI.SelfKey,
 		FilterRepos: func(repos []db.Repo) []db.Repo {
 			if s.cfg == nil {
 				return repos

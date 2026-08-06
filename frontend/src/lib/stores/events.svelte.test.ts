@@ -278,29 +278,6 @@ describe("createEventsStore event dispatch", () => {
     expect(onWorkspacePRAssociated).toHaveBeenCalledWith(expect.objectContaining({ issue_number: 7, pr_number: 42 }));
   });
 
-  it("parses workspace deletion identity and routes it to the callback", () => {
-    const onWorkspaceDeleted = vi.fn();
-    const store = createEventsStore({ onWorkspaceDeleted });
-    store.connect();
-    const payload = {
-      workspace_id: "ws_123",
-      provider: "github",
-      platform_host: "github.com",
-      repo_path: "acme/widgets",
-      owner: "acme",
-      name: "widgets",
-      item_type: "issue",
-      item_number: 7,
-      associated_pr_number: 42,
-    };
-
-    emit(instances[0] as StubEventSource, "workspace_deleted", {
-      data: JSON.stringify(payload),
-    });
-
-    expect(onWorkspaceDeleted).toHaveBeenCalledWith(payload);
-  });
-
   it("swallows malformed pushed-head refresh event frames", () => {
     const onPRDetailRefreshed = vi.fn();
     const store = createEventsStore({ onPRDetailRefreshed });

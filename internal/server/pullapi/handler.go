@@ -34,7 +34,7 @@ type Deps struct {
 	Config               ConfigSnapshot
 	Now                  func() time.Time
 	DeferredMergeMaxWait time.Duration
-	DeleteWorkspace      func(context.Context, string, bool) ([]string, error)
+	DeleteWorkspace      func(context.Context, string) error
 
 	FleetSelfKey                  func(string) string
 	FilterRepos                   func([]db.Repo) []db.Repo
@@ -55,7 +55,7 @@ type Handler struct {
 	syncer          *ghclient.Syncer
 	clones          *gitclone.Manager
 	workspaces      *workspace.Manager
-	deleteWorkspace func(context.Context, string, bool) ([]string, error)
+	deleteWorkspace func(context.Context, string) error
 	now             func() time.Time
 
 	fleetSelfKey                  func(string) string

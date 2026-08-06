@@ -78,8 +78,9 @@
   } from "./stores/settings.svelte.js";
   import { beginTerminalSettingsHydration } from "./stores/terminal-settings-persistence.js";
   import { applySettingsHydration } from "./stores/settings-hydration.js";
-  import { createEventsStore } from "./stores/events.svelte.js";
-  import type { WorkspaceDeletedEvent } from "./stores/events.svelte.js";
+  import {
+    createEventsStore,
+  } from "./stores/events.svelte.js";
   import type { RoutedItemRef } from "./routes.js";
 
   interface Props {
@@ -98,7 +99,6 @@
     onError?: (msg: string) => void;
     onWarning?: (msg: string) => void;
     onNotification?: (msg: string) => void;
-    onWorkspaceDeleted?: (event: WorkspaceDeletedEvent) => void;
     stores?: StoreInstances | undefined;
     children?: import("svelte").Snippet;
   }
@@ -123,7 +123,6 @@
     onError = undefined,
     onWarning = undefined,
     onNotification = undefined,
-    onWorkspaceDeleted = undefined,
     stores = $bindable(),
     children,
   }: Props = $props();
@@ -147,7 +146,6 @@
     errorCb: ((msg: string) => void) | undefined,
     warningCb: ((msg: string) => void) | undefined,
     notificationCb: ((msg: string) => void) | undefined,
-    workspaceDeletedCb: ((event: WorkspaceDeletedEvent) => void) | undefined,
   ): StoreInstances {
     const grouping = createGroupingStore();
     const detailActivityView = createDetailActivityViewStore();
@@ -359,29 +357,6 @@
           );
         }
       },
-      onWorkspaceDeleted: (event) => {
-        workspaceDeletedCb?.(event);
-        refreshVisibleData();
-        const detail = detailStore.getDetail();
-        const detailNumber = detail?.merge_request?.Number;
-        if (detailNumber === undefined) return;
-        const ownsVisiblePull = event.item_type === "pull_request" && event.item_number === detailNumber;
-        const isAssociatedWithVisiblePull = event.associated_pr_number === detailNumber;
-        if (
-          detail?.repo?.provider === event.provider &&
-          detail.repo.platform_host === event.platform_host &&
-          detail.repo.repo_path === event.repo_path &&
-          detail.repo_owner === event.owner &&
-          detail.repo_name === event.name &&
-          (ownsVisiblePull || isAssociatedWithVisiblePull)
-        ) {
-          void detailStore.refreshDetailOnly(event.owner, event.name, detailNumber, {
-            provider: event.provider,
-            platformHost: event.platform_host,
-            repoPath: event.repo_path,
-          });
-        }
-      },
       onDeferredMergeCompleted: (event) => {
         void pullsStore.loadPulls();
         void activityStore.loadActivity();
@@ -406,9 +381,9 @@
           );
         }
         if (event.status === "merged") {
-          if (event.workspace_cleanup?.status === "failed") {
+          if (event.workspace_cleanup_warning) {
             warningCb?.(
-              `${event.owner}/${event.name}#${event.number} merged, but the workspace was not pruned: ${event.workspace_cleanup.warning ?? "workspace cleanup failed"}`,
+              `${event.owner}/${event.name}#${event.number} merged, but the workspace was not pruned: ${event.workspace_cleanup_warning}`,
             );
           } else {
             notificationCb?.(`${event.owner}/${event.name}#${event.number} merged after CI passed.`);
@@ -514,7 +489,7 @@
     onNavigate, onEvent, prepareRoute,
     onWorkspaceCommand,
     sidebar, getPage, getActivitySelection,
-    roborevBaseUrl, onError, onWarning, onNotification, onWorkspaceDeleted,
+    roborevBaseUrl, onError, onWarning, onNotification,
   );
 
   onDestroy(() => {

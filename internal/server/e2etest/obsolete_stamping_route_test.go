@@ -89,14 +89,14 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 		stateMu.RUnlock()
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/owner/repo":
-			require.NoError(json.NewEncoder(w).Encode(map[string]any{
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
 				"id": 1, "name": "repo", "full_name": "owner/repo",
 				"html_url": "https://codeberg.org/owner/repo", "clone_url": origin,
 				"default_branch": "main", "has_issues": true, "has_pull_requests": true,
 				"owner": map[string]any{"id": 2, "login": "owner"},
 			}))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/owner/repo/pulls/1":
-			require.NoError(json.NewEncoder(w).Encode(map[string]any{
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
 				"id": 101, "number": 1, "title": "Synthetic merge request", "state": "open",
 				"url":      "https://codeberg.org/api/v1/repos/owner/repo/pulls/1",
 				"html_url": "https://codeberg.org/owner/repo/pulls/1",
@@ -110,9 +110,9 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 				"updated_at": current.updatedAt.Format(time.RFC3339),
 			}))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/owner/repo/issues/1/comments":
-			require.NoError(json.NewEncoder(w).Encode([]any{}))
+			assert.NoError(json.NewEncoder(w).Encode([]any{}))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/owner/repo/pulls/1/reviews":
-			require.NoError(json.NewEncoder(w).Encode([]any{}))
+			assert.NoError(json.NewEncoder(w).Encode([]any{}))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/owner/repo/pulls/1/commits":
 			commits := make([]map[string]any, 0, len(current.commits))
 			for i, sha := range current.commits {
@@ -125,11 +125,11 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 					},
 				})
 			}
-			require.NoError(json.NewEncoder(w).Encode(commits))
+			assert.NoError(json.NewEncoder(w).Encode(commits))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/owner/repo/commits/") && strings.HasSuffix(r.URL.Path, "/statuses"):
-			require.NoError(json.NewEncoder(w).Encode([]any{}))
+			assert.NoError(json.NewEncoder(w).Encode([]any{}))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/owner/repo/actions/runs":
-			require.NoError(json.NewEncoder(w).Encode(map[string]any{
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
 				"total_count": 0, "workflow_runs": []any{},
 			}))
 		default:

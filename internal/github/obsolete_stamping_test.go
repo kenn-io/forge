@@ -488,6 +488,103 @@ func TestStampObsoleteCommitEventsRestampsRestoredHeadAfterUnverifiedHead(t *tes
 	})
 }
 
+func TestStampObsoleteCommitEventsInvalidatesCacheOnMidRoundFailure(t *testing.T) {
+	assert := assert.New(t)
+	fixture := setupObsoleteStampingFixture(t)
+	h := fixture.history
+	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
+	))
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+		h.a1: false, h.a2: false, h.a3: false,
+	})
+
+	setObsoleteFixtureHead(t, fixture, h.b2)
+	_, err := fixture.database.WriteDB().ExecContext(t.Context(), `
+		CREATE TRIGGER reject_obsolete_metadata
+		BEFORE UPDATE OF metadata_json ON forge_mr_events
+		BEGIN
+			SELECT RAISE(ABORT, 'reject obsolete metadata');
+		END`)
+	require.NoError(t, err)
+
+	// The b2 head exists and all batched git checks complete before this
+	// metadata-only write fails, exercising an error after verification began.
+	err = fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
+	)
+	require.ErrorContains(t, err, "reject obsolete metadata")
+	fixture.syncer.stampedHeadsMu.Lock()
+	_, cached := fixture.syncer.stampedHeads[fixture.mrID]
+	fixture.syncer.stampedHeadsMu.Unlock()
+	assert.False(cached, "failed round must leave no stamped-head certification")
+	_, err = fixture.database.WriteDB().ExecContext(
+		t.Context(), `DROP TRIGGER reject_obsolete_metadata`,
+	)
+	require.NoError(t, err)
+
+	// Restoring a3 must not hit the certification cached before the failed b2
+	// round. Newly persisted b-lineage events prove a3 is verified again.
+	setObsoleteFixtureHead(t, fixture, h.a3)
+	seedObsoleteCommitEvents(t, fixture, h.b1, h.b2)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
+	))
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+		h.a1: false, h.a2: false, h.a3: false,
+		h.b1: true, h.b2: true,
+	})
+}
+
+func TestStampObsoleteCommitEventsConcurrentMergeRequests(t *testing.T) {
+	assert := assert.New(t)
+	fixture := setupObsoleteStampingFixture(t)
+	h := fixture.history
+	first, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 1,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	second := *first
+	second.ID = 0
+	second.PlatformID = 2
+	second.PlatformExternalID = "mr-2"
+	second.Number = 2
+	second.URL = "https://github.com/owner/repo/pull/2"
+	second.PlatformHeadSHA = h.b2
+	second.UpdatedAt = second.UpdatedAt.Add(time.Minute)
+	second.LastActivityAt = second.UpdatedAt
+	secondMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &second)
+	require.NoError(t, err)
+
+	secondFixture := fixture
+	secondFixture.mrID = secondMRID
+	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
+	seedObsoleteCommitEvents(t, secondFixture, h.a1, h.a2, h.a3, h.b1, h.b2)
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	stamp := func(mrID int64, number int, headSHA string) {
+		<-start
+		errs <- fixture.syncer.stampObsoleteCommitEvents(
+			t.Context(), fixture.repo, fixture.repoID, mrID, number, headSHA,
+		)
+	}
+	go stamp(fixture.mrID, 1, h.a3)
+	go stamp(secondMRID, 2, h.b2)
+	close(start)
+	assert.NoError(<-errs)
+	assert.NoError(<-errs)
+
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+		h.a1: false, h.a2: false, h.a3: false, h.b1: true, h.b2: true,
+	})
+	assertObsoleteCommitFlags(t, secondFixture, map[string]bool{
+		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
+	})
+}
+
 func TestStampObsoleteCommitEventsRepairsThroughUnchangedDetail(t *testing.T) {
 	assert := assert.New(t)
 	fixture := setupObsoleteStampingFixture(t)

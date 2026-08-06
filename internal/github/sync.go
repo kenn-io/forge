@@ -189,6 +189,18 @@ func commitEventSHA(event db.MREvent) string {
 	return ""
 }
 
+func (s *Syncer) obsoleteStampLock(mrID int64) *sync.Mutex {
+	s.stampingLocksMu.Lock()
+	defer s.stampingLocksMu.Unlock()
+	if s.stampingLocks == nil {
+		s.stampingLocks = make(map[int64]*sync.Mutex)
+	}
+	if s.stampingLocks[mrID] == nil {
+		s.stampingLocks[mrID] = &sync.Mutex{}
+	}
+	return s.stampingLocks[mrID]
+}
+
 // stampObsoleteCommitEvents records on each stored commit event whether its
 // commit is still reachable from the merge request's current head, so strict
 // date order can collapse superseded commits without replaying force pushes.
@@ -202,20 +214,25 @@ func (s *Syncer) stampObsoleteCommitEvents(
 	number int,
 	headSHA string,
 ) error {
-	s.stampingMu.Lock()
-	defer s.stampingMu.Unlock()
+	stampLock := s.obsoleteStampLock(mrID)
+	stampLock.Lock()
+	defer stampLock.Unlock()
 	if s.clones == nil || headSHA == "" {
 		return nil
 	}
+	s.stampedHeadsMu.Lock()
 	if s.stampedHeads[mrID] == headSHA {
+		s.stampedHeadsMu.Unlock()
 		return nil
 	}
+	delete(s.stampedHeads, mrID)
+	s.stampedHeadsMu.Unlock()
+
 	current, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 	if err != nil {
 		return err
 	}
 	if current == nil || current.PlatformHeadSHA != headSHA {
-		delete(s.stampedHeads, mrID)
 		return nil
 	}
 	platformName := string(repoPlatform(repo))
@@ -224,14 +241,19 @@ func (s *Syncer) stampObsoleteCommitEvents(
 		ctx, platformName, host, repo.Owner, repo.Name, headSHA,
 	)
 	if err != nil || !hasHead {
-		delete(s.stampedHeads, mrID)
 		return err
 	}
 	events, err := s.db.ListMREvents(ctx, mrID)
 	if err != nil {
 		return err
 	}
-	metadataByDedupeKey := make(map[string]string)
+	type commitCandidate struct {
+		event db.MREvent
+		sha   string
+	}
+	candidates := make([]commitCandidate, 0, len(events))
+	candidateSHAs := make([]string, 0, len(events))
+	seenSHAs := make(map[string]bool)
 	for _, event := range events {
 		if event.EventType != "commit" {
 			continue
@@ -246,47 +268,54 @@ func (s *Syncer) stampObsoleteCommitEvents(
 				continue
 			}
 		}
-		live, err := s.commitReachableFromHead(
-			ctx, platformName, host, repo, sha, headSHA,
-		)
-		if err != nil {
-			return err
+		candidates = append(candidates, commitCandidate{event: event, sha: sha})
+		if !seenSHAs[sha] {
+			seenSHAs[sha] = true
+			candidateSHAs = append(candidateSHAs, sha)
 		}
-		metadataJSON, metadataChanged := withObsoleteMetadata(event.MetadataJSON, !live)
+	}
+	missing, err := s.clones.FilterMissingCommits(
+		ctx, platformName, host, repo.Owner, repo.Name, candidateSHAs,
+	)
+	if err != nil {
+		return err
+	}
+	presentSHAs := make([]string, 0, len(candidateSHAs))
+	for _, sha := range candidateSHAs {
+		if !missing[sha] {
+			presentSHAs = append(presentSHAs, sha)
+		}
+	}
+	unreachable, err := s.clones.UnreachableFrom(
+		ctx, platformName, host, repo.Owner, repo.Name, headSHA, presentSHAs,
+	)
+	if err != nil {
+		return err
+	}
+
+	metadataByDedupeKey := make(map[string]string)
+	for _, candidate := range candidates {
+		obsolete := missing[candidate.sha] || unreachable[candidate.sha]
+		metadataJSON, metadataChanged := withObsoleteMetadata(
+			candidate.event.MetadataJSON, obsolete,
+		)
 		if !metadataChanged {
 			continue
 		}
-		metadataByDedupeKey[event.DedupeKey] = metadataJSON
+		metadataByDedupeKey[candidate.event.DedupeKey] = metadataJSON
 	}
 	if err := s.db.UpdateMREventMetadata(
 		ctx, mrID, metadataByDedupeKey,
 	); err != nil {
 		return err
 	}
+	s.stampedHeadsMu.Lock()
+	defer s.stampedHeadsMu.Unlock()
 	if s.stampedHeads == nil {
 		s.stampedHeads = make(map[int64]string)
 	}
 	s.stampedHeads[mrID] = headSHA
 	return nil
-}
-
-func (s *Syncer) commitReachableFromHead(
-	ctx context.Context, platformName, host string, repo RepoRef, sha, headSHA string,
-) (bool, error) {
-	if strings.EqualFold(sha, headSHA) {
-		return true, nil
-	}
-	has, err := s.clones.HasCommit(
-		ctx, platformName, host, repo.Owner, repo.Name, sha,
-	)
-	if err != nil || !has {
-		// A clone containing the head also contains its ancestor closure, so a
-		// confirmed-missing event commit is unreachable from that head.
-		return false, err
-	}
-	return s.clones.IsAncestor(
-		ctx, platformName, host, repo.Owner, repo.Name, sha, headSHA,
-	)
 }
 
 func commitOrderSHA(summary string) string {
@@ -637,8 +666,10 @@ type Syncer struct {
 	archivePollInterval      time.Duration
 	now                      func() time.Time
 	clones                   *gitclone.Manager
-	stampingMu               sync.Mutex
-	stampedHeads             map[int64]string        // guarded by stampingMu
+	stampingLocksMu          sync.Mutex
+	stampingLocks            map[int64]*sync.Mutex // guarded by stampingLocksMu
+	stampedHeadsMu           sync.Mutex
+	stampedHeads             map[int64]string        // guarded by stampedHeadsMu
 	rateTrackers             map[string]*RateTracker // provider/host bucket -> tracker
 	writeRateTrackers        map[string]*RateTracker // provider/host bucket -> mutation-credential REST tracker
 	writeGQLRateTrackers     map[string]*RateTracker // provider/host bucket -> mutation-credential GraphQL tracker

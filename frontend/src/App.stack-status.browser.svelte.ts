@@ -106,8 +106,12 @@ function toolsStackMember(number: number) {
   return authStack().members.find((member) => member.number === number)!;
 }
 
-function toolsPullDetail(number: number) {
+function toolsPullDetail(number: number, downstackFailure = false) {
   const member = toolsStackMember(number);
+  const detailStack = authStack();
+  if (downstackFailure) {
+    detailStack.members[0]!.ci_status = "failure";
+  }
   return {
     merge_request: {
       ID: 2000 + number,
@@ -145,7 +149,7 @@ function toolsPullDetail(number: number) {
       worktree_links: [],
     },
     repo: toolsRepo,
-    stack: authStack(),
+    stack: detailStack,
     repo_owner: "acme",
     repo_name: "tools",
     platform_host: "github.com",
@@ -158,12 +162,12 @@ function toolsPullDetail(number: number) {
 }
 
 // Serve every acme/tools stack member detail by number.
-function toolsStackRoutes(): MockRouteOverride {
+function toolsStackRoutes(downstackFailure = false): MockRouteOverride {
   return (req) => {
     if (req.method !== "GET") return null;
     const match = req.url.pathname.match(/^\/api\/v1\/pulls\/github\/acme\/tools\/(\d+)$/);
     if (!match) return null;
-    return jsonResponse(toolsPullDetail(Number(match[1])));
+    return jsonResponse(toolsPullDetail(Number(match[1]), downstackFailure));
   };
 }
 
@@ -223,6 +227,20 @@ describe("stack status panel", () => {
     expect(baseRow?.querySelector(".stack-base-name")?.textContent?.trim()).toBe("main");
     expect(baseRow?.querySelectorAll(".stack-member-link").length).toBe(0);
     expect(window.location.pathname).toBe("/pulls/github/acme/tools/11");
+  });
+
+  it("aligns the downstack failure count with the stack label", async () => {
+    mounted = await mountBrowserApp("/pulls/github/acme/tools/11", {
+      overrides: [toolsStackRoutes(true)],
+    });
+
+    await expect.element(page.getByTestId("stack-chip")).toBeVisible();
+
+    const label = document.querySelector<HTMLElement>(".stack-chip-label");
+    const failure = document.querySelector<HTMLElement>(".stack-chip-failure");
+    expect(label).not.toBeNull();
+    expect(failure).not.toBeNull();
+    expect(Math.abs(label!.getBoundingClientRect().bottom - failure!.getBoundingClientRect().bottom)).toBeLessThan(1);
   });
 
   it("preserves the focus route when navigating to a stack member", async () => {

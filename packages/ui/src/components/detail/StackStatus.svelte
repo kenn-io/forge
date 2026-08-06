@@ -368,6 +368,7 @@
   .stack-chip-failure {
     display: inline-flex;
     align-items: center;
+    vertical-align: middle;
     gap: 1px;
     color: var(--accent-red);
     font-variant-numeric: tabular-nums;

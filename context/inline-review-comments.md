@@ -29,6 +29,9 @@ published review-thread ingestion, or review controls in shared diff UI.
   timeline events; ingestion commits both representations atomically so neither can
   clear or bypass it independently
   (`internal/server/pullapi/diff_review_handlers.go::Handler.ingestDiffReviewThreads`).
+- Provider publication is irreversible; follow-up thread-ingestion failures preserve
+  the published or partially-published response and schedule reconciliation
+  (`internal/server/pullapi/diff_review_handlers.go::Handler.publishDiffReviewDraft`).
 - Workspace diffs reuse the renderer with review mode disabled. They must not
   expose composers, draft trays, publish actions, or thread-resolution controls,
   and replacing a pull-request diff with workspace state clears the draft store

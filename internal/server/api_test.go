@@ -11383,6 +11383,155 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 	assert.Equal(`"etag-v2"`, etag)
 }
 
+func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+
+	now := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+	recentDetail := now.Add(time.Minute)
+	staleDetail := now.Add(-time.Hour)
+	buildPR := func(number int) *gh.PullRequest {
+		id := int64(number * 1000)
+		state := "open"
+		title := fmt.Sprintf("existing PR %d", number)
+		url := fmt.Sprintf("https://github.com/acme/widget/pull/%d", number)
+		author := "alice"
+		headSHA := fmt.Sprintf("head-%d", number)
+		headRef := fmt.Sprintf("feature-%d", number)
+		baseRef := "main"
+		timestamp := gh.Timestamp{Time: now}
+		return &gh.PullRequest{
+			ID: &id, Number: &number, State: &state, Title: &title, HTMLURL: &url,
+			User: &gh.User{Login: &author}, CreatedAt: &timestamp, UpdatedAt: &timestamp,
+			Head: &gh.PullRequestBranch{SHA: &headSHA, Ref: &headRef},
+			Base: &gh.PullRequestBranch{Ref: &baseRef},
+		}
+	}
+
+	openPRs := make([]*gh.PullRequest, 0, 100)
+	for number := 1; number <= 100; number++ {
+		openPRs = append(openPRs, buildPR(number))
+	}
+	inlineHidden := true
+	var conditionalCalls atomic.Int32
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			return openPRs, nil
+		},
+		listOpenIssuesFn: func(context.Context, string, string) ([]*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}
+		},
+		getPullRequestIfChangedFn: func(
+			_ context.Context, _, _ string, number int, etag string,
+		) (*gh.PullRequest, string, bool, error) {
+			conditionalCalls.Add(1)
+			require.Equal(1, number)
+			require.Equal(`"etag-inline"`, etag)
+			return nil, etag, true, nil
+		},
+		listReviewThreadsFn: func(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error) {
+			line := 12
+			reason := ""
+			if inlineHidden {
+				reason = "ABUSE"
+			}
+			return []ghclient.PullRequestReviewThread{{
+				NodeID: "PRRT_conditional", Path: "src/main.go", Side: "RIGHT", Line: line,
+				Comments: []ghclient.PullRequestReviewThreadComment{{
+					NodeID: "PRRC_conditional", DatabaseID: 112233,
+					Body: "moderated inline comment", AuthorLogin: "reviewer",
+					CommitID: "head-1", IsMinimized: inlineHidden, MinimizedReason: reason,
+					CreatedAt: now, UpdatedAt: now,
+				}},
+			}}, nil
+		},
+	}
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		if bytes.Contains(body, []byte("pullRequest(number:")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"errors":[{"message":"bulk GraphQL should be skipped"}]}`))
+	}))
+	defer gqlSrv.Close()
+
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	var mrID int64
+	for number := 1; number <= 100; number++ {
+		detailFetchedAt := &recentDetail
+		if number == 1 {
+			detailFetchedAt = nil
+		}
+		id, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number * 1000), Number: number,
+			URL:   fmt.Sprintf("https://github.com/acme/widget/pull/%d", number),
+			Title: fmt.Sprintf("existing PR %d", number), Author: "alice", State: "open",
+			HeadBranch: fmt.Sprintf("feature-%d", number), BaseBranch: "main",
+			PlatformHeadSHA: fmt.Sprintf("head-%d", number), CreatedAt: now, UpdatedAt: now,
+			LastActivityAt: now, DetailFetchedAt: detailFetchedAt,
+		})
+		require.NoError(err)
+		if number == 1 {
+			mrID = id
+		}
+	}
+	require.NoError(database.UpsertHTTPEtag(
+		ctx, "github", "github.com", "acme", "widget", "pull_request", 1, `"etag-inline"`,
+	))
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock}, database, nil, defaultTestRepos,
+		time.Minute, nil, map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil,
+		),
+	})
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+	first, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, first.StatusCode())
+	require.NotNil(first.JSON200)
+	require.NotNil(first.JSON200.Events)
+	require.Len(*first.JSON200.Events, 1)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, (*first.JSON200.Events)[0].MetadataJSON)
+	threads, err := database.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, threads[0].MetadataJSON)
+
+	inlineHidden = false
+	_, err = database.WriteDB().ExecContext(ctx,
+		`UPDATE forge_merge_requests SET detail_fetched_at = ? WHERE id = ?`, staleDetail, mrID,
+	)
+	require.NoError(err)
+	srv.syncer.RunOnce(ctx)
+	second, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, second.StatusCode())
+	require.NotNil(second.JSON200)
+	require.NotNil(second.JSON200.Events)
+	require.Len(*second.JSON200.Events, 1)
+	assert.Empty((*second.JSON200.Events)[0].MetadataJSON)
+	threads, err = database.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Empty(threads[0].MetadataJSON)
+	assert.Equal(int32(2), conditionalCalls.Load())
+}
+
 func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalIssueDetail(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -16711,12 +16860,14 @@ func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testin
 		ReadMergeRequests:      true,
 		ReadIssues:             true,
 		ReadComments:           true,
+		ReadReviewThreads:      true,
 		ReviewDraftMutation:    true,
 		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
 	}
 	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 	provider.publishReviewErr = &platform.DiffReviewPublishPartialError{Err: errors.New("approval failed")}
+	provider.reviewThreadsErr = errors.New("transient review thread refresh failure")
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -17659,7 +17810,7 @@ func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
 	}
 }
 
-func TestAPIPublishReviewDraftRollsBackThreadIngestWhenEventPersistenceFails(t *testing.T) {
+func TestAPIPublishReviewDraftReturnsSuccessWhenAtomicThreadIngestFails(t *testing.T) {
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -17729,7 +17880,10 @@ func TestAPIPublishReviewDraftRollsBackThreadIngestWhenEventPersistenceFails(t *
 		basePath+"/publish",
 		map[string]string{"action": "comment"},
 	)
-	require.Equal(http.StatusInternalServerError, publishRR.Code, publishRR.Body.String())
+	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
+	var publishStatus pullapi.ActionStatusBody
+	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
+	require.Equal("published", publishStatus.Status)
 	require.Len(provider.publishedReviews, 1)
 	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)

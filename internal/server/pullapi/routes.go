@@ -1344,7 +1344,7 @@ func (s *Handler) requestChangesPR(ctx context.Context, input *requestChangesPRI
 	err = mutator.RequestChanges(ctx, platformRepoRefFromDB(*repo), input.Number, body, expectedHeadSHA)
 	if err != nil {
 		if errors.Is(err, platform.ErrStaleState) {
-			s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
+			s.syncAfterReviewDraftPublish(*repo, input.Number)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,

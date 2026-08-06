@@ -4395,7 +4395,7 @@ func TestRefreshTimelineUsesForcePushForLastActivity(t *testing.T) {
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
 	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now.Add(-2*time.Hour))))
+		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now.Add(-2*time.Hour)), ""))
 
 	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(err)
@@ -4456,7 +4456,7 @@ func TestRefreshTimelineFetchFailurePreservesStoredForcePushActivity(t *testing.
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
 	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now.Add(-2*time.Hour))))
+		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now.Add(-2*time.Hour)), ""))
 
 	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(err)
@@ -4542,7 +4542,7 @@ func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
 	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now)))
+		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now), ""))
 
 	events, err := d.ListMREvents(ctx, mrID)
 	require.NoError(err)
@@ -8198,7 +8198,7 @@ func TestRefreshTimelineSkipsMergedEventWhenAuthoredMergedEventAlreadyExists(t *
 	)
 
 	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 7), pr))
+		mergeRequestSnapshotRevision(t, d, repoID, 7), pr, ""))
 
 	events, err := d.ListMREvents(ctx, mrID)
 	require.NoError(err)

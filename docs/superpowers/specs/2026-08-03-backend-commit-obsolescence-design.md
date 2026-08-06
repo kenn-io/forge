@@ -44,10 +44,13 @@ round's own dataset:
   bare clone — open the bare repository, resolve the head commit (a missing
   head means the round commits without liveness updates), and walk ancestry
   from the head with early termination once every candidate is resolved.
-  The walk carries a visit budget (50k commits): a force-pushed-away
-  candidate is unreachable and would otherwise force a full-history
-  traversal over contributor-controlled input, so exhausting the budget
-  reports the head unverifiable instead of returning partial verdicts.
+  The walk reads only what it needs — parent hashes — and refuses
+  contributor-controlled bulk: each commit's encoded size is checked before
+  go-git decodes it (1 MB cap; real commit objects are a few hundred
+  bytes), and a visit budget (50k commits) bounds the traversal, since a
+  force-pushed-away candidate is unreachable and would otherwise force a
+  full-history walk. Exceeding either limit reports the head unverifiable
+  instead of returning partial verdicts.
   Read-only, lock-free, no subprocesses; the git CLI remains only for
   networked operations (clone/fetch with credentials). go-git is an
   explicitly maintainer-approved dependency for this. SHA-256 (64-hex)
@@ -84,6 +87,12 @@ fresh metadata (the provider listing a commit is itself liveness evidence,
 and showing a commit wrongly is the safe direction), while unlisted events
 keep their last verified flags. Ancestry liveness is provider-agnostic: any
 provider whose merge requests sync through the shared flows inherits it.
+
+Liveness runs while an MR is open and once more on the round that takes it
+out of the open state, computed against the final head — the flags that
+round persists are the terminal record. Already-merged and already-closed
+MRs are never refetched or recomputed; a reopened MR computes again like
+any open one.
 
 ### Frontend collapse
 

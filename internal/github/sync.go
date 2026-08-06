@@ -1642,10 +1642,20 @@ func (s *Syncer) commitMergeRequestDatasets(
 	return applied, nil
 }
 
-// openMRLivenessHead is the liveness head for a dataset commit: the MR's
-// current head while it is open, and "" (no liveness evaluation) otherwise.
-func openMRLivenessHead(normalized *db.MergeRequest) string {
-	if normalized != nil && normalized.State == db.MergeRequestStateOpen {
+// livenessHeadForRound picks the head against which a round computes commit
+// liveness. Open MRs always compute against their current head. A round that
+// takes an MR out of the open state computes once against the final head, so
+// the flags it persists become the terminal record; rounds for
+// already-terminal MRs return "" — merged and closed history is never
+// refetched or recomputed.
+func livenessHeadForRound(normalized, existing *db.MergeRequest) string {
+	if normalized == nil {
+		return ""
+	}
+	if normalized.State == db.MergeRequestStateOpen {
+		return normalized.PlatformHeadSHA
+	}
+	if existing != nil && existing.State == db.MergeRequestStateOpen {
 		return normalized.PlatformHeadSHA
 	}
 	return ""
@@ -8687,7 +8697,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 			comments, bulk.CommentsComplete,
 			reviews,
 			nil, nil, false, events, derived,
-			openMRLivenessHead(normalized),
+			livenessHeadForRound(normalized, nil),
 		)
 		if err != nil {
 			return fmt.Errorf("commit archival events for MR #%d: %w", number, err)
@@ -8947,6 +8957,7 @@ func (s *Syncer) fetchMRDetail(
 
 	if err := s.refreshTimeline(
 		ctx, repo, mrID, revision, fullPR,
+		livenessHeadForRound(normalized, existing),
 	); err != nil {
 		// Timeline = 4 base calls (comments + reviews + commits + force-push);
 		// provider review-thread sync is handled inside refreshTimeline.
@@ -9103,13 +9114,10 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	}
 	// Unchanged rounds have no dataset commit of their own, so commit
 	// liveness travels with the detail-fetched marker under the same
-	// revision guard instead.
-	livenessHead := ""
-	if existing.State == db.MergeRequestStateOpen {
-		livenessHead = existing.PlatformHeadSHA
-	}
+	// revision guard instead. The round is unchanged, so no state
+	// transition is possible here.
 	metadataUpdates := s.computeCommitLiveness(
-		ctx, repo, existing.ID, livenessHead, nil,
+		ctx, repo, existing.ID, livenessHeadForRound(existing, existing), nil,
 	)
 	detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(
 		ctx, existing.ID, existing.SnapshotRevision, pending, metadataUpdates,
@@ -9183,7 +9191,7 @@ func (s *Syncer) fetchProviderMRDetail(
 
 	detailCalls, pending, err := s.syncProviderMRDetailExtras(
 		ctx, reader, repo, mrID, number, revision, normalized.PlatformHeadSHA,
-		openMRLivenessHead(normalized),
+		livenessHeadForRound(normalized, existing),
 	)
 	calls += detailCalls
 	if err != nil {
@@ -9630,6 +9638,7 @@ func (s *Syncer) refreshTimeline(
 	mrID int64,
 	expectedRevision int64,
 	ghPR *gh.PullRequest,
+	livenessHeadSHA string,
 ) error {
 	if ghPR == nil {
 		return fmt.Errorf("nil pull request")
@@ -9719,16 +9728,12 @@ func (s *Syncer) refreshTimeline(
 		CommentCount:   len(comments),
 		LastActivityAt: lastActivityAt,
 	}
-	livenessHead := ""
-	if ghPR.GetState() == "open" {
-		livenessHead = ghPR.GetHead().GetSHA()
-	}
 	applied, err := s.commitMergeRequestDatasets(
 		ctx, repo, mrID, number, expectedRevision,
 		commentEvents, true,
 		reviewEvents,
 		nil, nil, false, events, &derived,
-		livenessHead,
+		livenessHeadSHA,
 	)
 	if err != nil {
 		return fmt.Errorf("commit comments and reviews for MR #%d: %w", number, err)
@@ -11484,7 +11489,10 @@ func (s *Syncer) syncMRForRepo(
 			return nil
 		}
 
-		if err := s.refreshTimeline(ctx, repo, mrID, revision, ghPR); err != nil {
+		if err := s.refreshTimeline(
+			ctx, repo, mrID, revision, ghPR,
+			livenessHeadForRound(normalized, existing),
+		); err != nil {
 			if errors.Is(err, errParentSnapshotAdvanced) {
 				return nil
 			}
@@ -11549,7 +11557,7 @@ func (s *Syncer) syncMRForRepo(
 		pending := false
 		_, pending, err = s.syncProviderMRDetailExtras(
 			ctx, mrReader, repo, mrID, number, revision, normalized.PlatformHeadSHA,
-			openMRLivenessHead(normalized),
+			livenessHeadForRound(normalized, existing),
 		)
 		if err != nil {
 			if errors.Is(err, errParentSnapshotAdvanced) {

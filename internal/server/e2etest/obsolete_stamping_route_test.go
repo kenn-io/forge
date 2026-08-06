@@ -63,19 +63,22 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 
 	type providerState struct {
 		head      string
+		prState   string
 		commits   []string
 		updatedAt time.Time
 	}
 	var stateMu sync.RWMutex
 	state := providerState{
 		head:      a3,
+		prState:   "open",
 		commits:   []string{a1, a2, a3},
 		updatedAt: time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC),
 	}
-	setProviderState := func(head string, commits []string) {
+	setProviderState := func(head, prState string, commits []string) {
 		t.Helper()
 		stateMu.Lock()
 		state.head = head
+		state.prState = prState
 		state.commits = append([]string(nil), commits...)
 		state.updatedAt = state.updatedAt.Add(time.Minute)
 		stateMu.Unlock()
@@ -97,7 +100,7 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 			}))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/owner/repo/pulls/1":
 			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
-				"id": 101, "number": 1, "title": "Synthetic merge request", "state": "open",
+				"id": 101, "number": 1, "title": "Synthetic merge request", "state": current.prState,
 				"url":      "https://codeberg.org/api/v1/repos/owner/repo/pulls/1",
 				"html_url": "https://codeberg.org/owner/repo/pulls/1",
 				"user":     map[string]any{"id": 3, "login": "developer", "full_name": "Developer"},
@@ -218,7 +221,7 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 	}
 
 	runGit(origin, "update-ref", "refs/heads/feature", b2)
-	setProviderState(b2, []string{b1, b2})
+	setProviderState(b2, "open", []string{b1, b2})
 	syncResponse = doJSONRequest(t, srv, http.MethodPost, syncPath, map[string]any{})
 	require.Equal(http.StatusOK, syncResponse.Code, syncResponse.Body.String())
 	assertDetailFlags(map[string]bool{
@@ -230,7 +233,7 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 	// rounds must keep re-injecting the verified flags — the collapse state
 	// may never flip on a same-head refresh.
 	for range 2 {
-		setProviderState(b2, []string{b1, b2})
+		setProviderState(b2, "open", []string{b1, b2})
 		syncResponse = doJSONRequest(t, srv, http.MethodPost, syncPath, map[string]any{})
 		require.Equal(http.StatusOK, syncResponse.Code, syncResponse.Body.String())
 		assertDetailFlags(map[string]bool{
@@ -239,10 +242,21 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 	}
 
 	runGit(origin, "update-ref", "refs/heads/feature", a3)
-	setProviderState(a3, []string{a1, a2, a3})
+	setProviderState(a3, "open", []string{a1, a2, a3})
 	syncResponse = doJSONRequest(t, srv, http.MethodPost, syncPath, map[string]any{})
 	require.Equal(http.StatusOK, syncResponse.Code, syncResponse.Body.String())
 	assertDetailFlags(map[string]bool{
 		a1: false, a2: false, a3: false, b1: true, b2: true,
+	})
+
+	// A force push followed immediately by close, observed by one sync: the
+	// transition round must compute liveness against the final head so the
+	// terminal record is correct, not frozen at the pre-push flags.
+	runGit(origin, "update-ref", "refs/heads/feature", b2)
+	setProviderState(b2, "closed", []string{b1, b2})
+	syncResponse = doJSONRequest(t, srv, http.MethodPost, syncPath, map[string]any{})
+	require.Equal(http.StatusOK, syncResponse.Code, syncResponse.Body.String())
+	assertDetailFlags(map[string]bool{
+		a1: true, a2: true, a3: true, b1: false, b2: false,
 	})
 }

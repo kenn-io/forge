@@ -37,15 +37,22 @@ const contextCheckInterval = 1024
 // as it was, the safe direction.
 const maxAncestryVisits = 50_000
 
-// errAncestryBudgetExhausted terminates a walk that hit maxAncestryVisits.
-var errAncestryBudgetExhausted = errors.New("ancestry visit budget exhausted")
+// maxCommitObjectSize rejects pathological commit objects before anything is
+// decoded. Reachability needs only hashes, never contents, so the walk reads
+// each commit's header prefix (tree and parent lines) and nothing else — but
+// serving even that reader can force the object store to materialize the
+// object, so its encoded size is checked first. Real commit objects are a
+// few hundred bytes; anything above this cap is contributor-controlled input
+// the walk refuses, reporting the head unverifiable.
+const maxCommitObjectSize = 1 << 20
 
 // CommitsReachableFrom answers reachability for all candidates with a single
 // in-process ancestry walk via go-git: no subprocesses, no locks, and no
 // argv limits. The walk starts at the head and terminates early once every
 // candidate is resolved; candidates never reached — including ones absent
 // from the object store — are dead, because a clone containing the head
-// contains the head's entire ancestor closure.
+// contains the head's entire ancestor closure. Only commit headers are ever
+// read: the walk needs parent hashes, not messages or trees.
 func (m *Manager) CommitsReachableFrom(
 	ctx context.Context,
 	platform, host, owner, name, headSHA string,
@@ -67,13 +74,6 @@ func (m *Manager) CommitsReachableFrom(
 	if !ok {
 		return CommitReachability{}, nil
 	}
-	headCommit, err := repo.CommitObject(headHash)
-	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		return CommitReachability{}, nil
-	}
-	if err != nil {
-		return CommitReachability{}, fmt.Errorf("resolve head %s: %w", headSHA, err)
-	}
 
 	live := make(map[string]bool, len(candidateSHAs))
 	remaining := make(map[plumbing.Hash]string, len(candidateSHAs))
@@ -87,6 +87,11 @@ func (m *Manager) CommitsReachableFrom(
 		remaining[hash] = normalized
 	}
 	if len(remaining) == 0 {
+		if _, ok, err := commitParents(repo.Storer, headHash); err != nil {
+			return CommitReachability{}, fmt.Errorf("read commit %s: %w", headSHA, err)
+		} else if !ok {
+			return CommitReachability{}, nil
+		}
 		return CommitReachability{HeadVerified: true, Live: live}, nil
 	}
 
@@ -95,33 +100,71 @@ func (m *Manager) CommitsReachableFrom(
 		budget = maxAncestryVisits
 	}
 	visited := 0
-	iter := object.NewCommitPreorderIter(headCommit, nil, nil)
-	err = iter.ForEach(func(commit *object.Commit) error {
+	seen := make(map[plumbing.Hash]bool)
+	queue := []plumbing.Hash{headHash}
+	for len(queue) > 0 {
+		hash := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		if seen[hash] {
+			continue
+		}
+		seen[hash] = true
 		visited++
 		if visited > budget {
-			return errAncestryBudgetExhausted
+			return CommitReachability{}, nil
 		}
 		if visited%contextCheckInterval == 0 {
 			if err := ctx.Err(); err != nil {
-				return err
+				return CommitReachability{}, fmt.Errorf("walk ancestry of %s: %w", headSHA, err)
 			}
 		}
-		if sha, ok := remaining[commit.Hash]; ok {
+		if sha, ok := remaining[hash]; ok {
 			live[sha] = true
-			delete(remaining, commit.Hash)
+			delete(remaining, hash)
 			if len(remaining) == 0 {
-				return storer.ErrStop
+				return CommitReachability{HeadVerified: true, Live: live}, nil
 			}
 		}
-		return nil
-	})
-	if errors.Is(err, errAncestryBudgetExhausted) {
-		return CommitReachability{}, nil
-	}
-	if err != nil {
-		return CommitReachability{}, fmt.Errorf("walk ancestry of %s: %w", headSHA, err)
+		parents, ok, err := commitParents(repo.Storer, hash)
+		if err != nil {
+			return CommitReachability{}, fmt.Errorf("read commit %s: %w", hash, err)
+		}
+		if !ok {
+			// The head itself missing is the ordinary lagging-clone case;
+			// anything else — a missing parent inside a supposedly complete
+			// closure, or an object refusing bounded parsing — equally means
+			// the walk cannot certify ancestry this round.
+			return CommitReachability{}, nil
+		}
+		queue = append(queue, parents...)
 	}
 	return CommitReachability{HeadVerified: true, Live: live}, nil
+}
+
+// commitParents returns a commit's parent hashes — the only thing the walk
+// needs. The encoded size is checked before go-git decodes the object, so a
+// pathological commit is refused without ever being materialized. ok=false
+// means the object is missing, oversized, or malformed: the caller reports
+// the head unverifiable rather than guessing at ancestry.
+func commitParents(
+	objects storer.EncodedObjectStorer,
+	hash plumbing.Hash,
+) ([]plumbing.Hash, bool, error) {
+	obj, err := objects.EncodedObject(plumbing.CommitObject, hash)
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if obj.Size() > maxCommitObjectSize {
+		return nil, false, nil
+	}
+	commit, err := object.DecodeCommit(objects, obj)
+	if err != nil {
+		return nil, false, nil
+	}
+	return commit.ParentHashes, true, nil
 }
 
 // commitHash parses a full lowercase hex SHA into an object hash. Only

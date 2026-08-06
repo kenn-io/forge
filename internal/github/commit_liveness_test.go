@@ -847,6 +847,27 @@ func TestCommitLivenessConcurrentSameMergeRequestRounds(t *testing.T) {
 	})
 }
 
+func TestLivenessHeadForRound(t *testing.T) {
+	assert := assert.New(t)
+	open := &db.MergeRequest{State: db.MergeRequestStateOpen, PlatformHeadSHA: "head-open"}
+	merged := &db.MergeRequest{State: db.MergeRequestStateMerged, PlatformHeadSHA: "head-final"}
+	closed := &db.MergeRequest{State: db.MergeRequestStateClosed, PlatformHeadSHA: "head-final"}
+
+	assert.Equal("head-open", livenessHeadForRound(open, nil), "open MRs always compute")
+	assert.Equal("head-open", livenessHeadForRound(open, closed), "reopened MRs compute again")
+	assert.Equal("head-final", livenessHeadForRound(merged, open),
+		"the round that merges an MR computes once against the final head")
+	assert.Equal("head-final", livenessHeadForRound(closed, open),
+		"the round that closes an MR computes once against the final head")
+	assert.Empty(livenessHeadForRound(merged, merged),
+		"already-merged MRs are never recomputed")
+	assert.Empty(livenessHeadForRound(closed, closed),
+		"already-closed MRs are never recomputed")
+	assert.Empty(livenessHeadForRound(merged, nil),
+		"an MR first seen terminal has no transition round")
+	assert.Empty(livenessHeadForRound(nil, open))
+}
+
 func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history

@@ -131,6 +131,9 @@ and the root event stream.
 - A cursor older than the ring or ahead of the current process head emits
   `reconnect.stale`; the client must discard incremental assumptions and perform
   an authoritative refetch (`internal/server/server.go::Server.handleSSE`).
+- The frontend checkpoint advances only after an event's Effect consequences succeed;
+  overlapping owners must keep it monotonic, and buffer pressure reconnects from the
+  last accepted ID (`frontend/src/lib/stores/provider-events-workflow.ts::providerEventsProgram`).
 
 ## Long-Lived Transport Inventory
 

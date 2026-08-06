@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { startIsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("comment editor autocomplete", () => {
   test("PR comment editor preserves IME composition without accepting a suggestion", async ({ page }) => {
@@ -164,5 +165,74 @@ test.describe("comment editor autocomplete", () => {
         .first(),
     ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("Select a PR")).toHaveCount(0);
+  });
+
+  test("PR comment edits and deletions persist through the real detail API", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      const detail = page.locator(".pull-detail");
+      await expect(detail).toBeVisible();
+
+      const shell = detail.locator(".comment-editor-shell").first();
+      const editor = shell.locator(".comment-editor-input");
+      const originalBody = "Comment mutation full-stack baseline";
+      const editedBody = "Comment mutation full-stack edited";
+      await editor.fill(originalBody);
+      const postResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === "/api/v1/pulls/github/acme/widgets/1/comments",
+      );
+      await shell.getByRole("button", { name: "Comment" }).click();
+      expect((await postResponse).status()).toBe(201);
+
+      const originalBodyNode = detail.locator(".event-body", { hasText: originalBody }).last();
+      await expect(originalBodyNode).toBeVisible();
+      const originalCard = originalBodyNode.locator("xpath=ancestor::*[.//button[@aria-label='Edit comment']][1]");
+      await originalCard.hover();
+      await originalCard.getByRole("button", { name: "Edit comment" }).click();
+      const editPanel = detail.locator(".edit-panel");
+      await editPanel.locator(".comment-editor-input").fill(editedBody);
+      const patchResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PATCH" &&
+          /\/api\/v1\/pulls\/github\/acme\/widgets\/1\/comments\/\d+$/.test(new URL(response.url()).pathname),
+      );
+      await editPanel.getByRole("button", { name: "Save" }).click();
+      expect((await patchResponse).status()).toBe(200);
+      await expect(detail.locator(".event-body", { hasText: editedBody }).last()).toBeVisible();
+
+      const persistedAfterEdit = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
+      expect(persistedAfterEdit.ok()).toBe(true);
+      const editedDetail: { events?: Array<{ Body?: string }> } = await persistedAfterEdit.json();
+      expect(editedDetail.events?.some((event) => event.Body === editedBody)).toBe(true);
+
+      const editedBodyNode = detail.locator(".event-body", { hasText: editedBody }).last();
+      const editedCard = editedBodyNode.locator("xpath=ancestor::*[.//button[@aria-label='Delete comment']][1]");
+      await editedCard.hover();
+      await editedCard.getByRole("button", { name: "Delete comment" }).click();
+      const dialog = page.getByRole("dialog", { name: "Delete comment?" });
+      await expect(dialog).toBeVisible();
+      const deleteResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "DELETE" &&
+          /\/api\/v1\/pulls\/github\/acme\/widgets\/1\/comments\/\d+$/.test(new URL(response.url()).pathname),
+      );
+      await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+      expect((await deleteResponse).status()).toBe(204);
+      await expect(dialog).toBeHidden();
+      await expect(detail.locator(".event-body", { hasText: editedBody })).toHaveCount(0);
+
+      const reconciled = await page.request.post(`${server.info.base_url}/__e2e/activity/pr-comments/sync?number=1`);
+      expect(reconciled.status(), await reconciled.text()).toBe(204);
+
+      const persistedAfterDelete = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
+      expect(persistedAfterDelete.ok()).toBe(true);
+      const deletedDetail: { events?: Array<{ Body?: string }> } = await persistedAfterDelete.json();
+      expect(deletedDetail.events?.some((event) => event.Body === editedBody)).toBe(false);
+    } finally {
+      await server.stop();
+    }
   });
 });

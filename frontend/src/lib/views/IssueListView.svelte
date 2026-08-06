@@ -51,10 +51,10 @@
     workspacePaneControls = undefined,
   }: Props = $props();
 
-  function refreshSelectedDetail(): Promise<void> | undefined {
-    if (selectedIssue === null) return undefined;
+  function refreshSelectedDetail(): void {
+    if (selectedIssue === null) return;
     const ref = selectedIssue;
-    return issues.loadIssueDetail(ref.owner, ref.name, ref.number, {
+    issues.loadIssueDetail(ref.owner, ref.name, ref.number, {
       sync: false,
       provider: ref.provider,
       platformHost: ref.platformHost,
@@ -83,7 +83,7 @@
     identity: () => claimIdentity,
     detailMatches: () => issueDetailMatchesRef(issues.getIssueDetail(), selectedIssue ?? null),
     envelopeRef: () => issues.getIssueDetail()?.workspace ?? null,
-    refresh: () => void refreshSelectedDetail(),
+    refresh: refreshSelectedDetail,
   });
 
   function handlePaneFocus(tabKey: string): void {

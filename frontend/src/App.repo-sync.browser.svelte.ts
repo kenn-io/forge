@@ -26,7 +26,7 @@ import {
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
-import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
 import { setGlobalRepo } from "./lib/stores/filter.svelte.js";
 
 const WAIT = 10_000;
@@ -58,27 +58,8 @@ function settingsOverride(): MockRouteOverride {
   return (req) => {
     if (req.method !== "GET" || req.url.pathname !== "/api/v1/settings") return null;
     return jsonResponse({
+      ...mockSettings,
       repos: configuredRepos,
-      activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false },
-      terminal: {
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-      },
-      agents: [],
-      fleet: {
-        enabled: false,
-        key: "",
-        peer_timeout: "2s",
-        sessions: { include_unmanaged_details: false },
-        peers: [],
-        ssh_peers: [],
-        restart_required: false,
-      },
     });
   };
 }

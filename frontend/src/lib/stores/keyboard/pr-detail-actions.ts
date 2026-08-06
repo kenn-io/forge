@@ -41,18 +41,15 @@ export type PRDetailInputBuilder = (ctx: Context) => PRDetailActionInput | null;
  * hot reload doesn't accumulate duplicate registrations.
  */
 export function registerPRDetailActions(getInput: PRDetailInputBuilder): () => void {
-  const wrap = (
-    can: (input: PRDetailActionInput) => boolean,
-    run: (input: PRDetailActionInput) => void | Promise<void>,
-  ) => ({
+  const wrap = (can: (input: PRDetailActionInput) => boolean, run: (input: PRDetailActionInput) => void) => ({
     when: (ctx: Context): boolean => {
       const input = getInput(ctx);
       return input !== null && can(input);
     },
-    handler: async (ctx: Context): Promise<void> => {
+    handler: (ctx: Context): void => {
       const input = getInput(ctx);
       if (input === null) return;
-      await run(input);
+      run(input);
     },
   });
 

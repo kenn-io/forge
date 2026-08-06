@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, setContext, untrack } from "svelte";
+  import { Effect, Option } from "effect";
   import type { Attachment } from "svelte/attachments";
   import type { AppRuntime } from "./lib/app/runtime.js";
   import { setAppRuntime } from "./lib/app/runtime-context.js";
-  import Provider from "./lib/Provider.svelte";
+  import { createAppStores } from "./lib/app-stores.svelte.js";
   import PRListView from "./lib/views/PRListView.svelte";
   import IssueListView from "./lib/views/IssueListView.svelte";
   import ActivityFeedView from "./lib/views/ActivityFeedView.svelte";
@@ -11,7 +12,7 @@
   import ReviewsView from "./lib/views/ReviewsView.svelte";
   import FocusListView from "./lib/views/FocusListView.svelte";
   import { normalizeRepoFilterSelection } from "./lib/utils/repo-filter-values.js";
-  import type { StoreInstances } from "./lib/types.js";
+  import type { ActionRegistry, NavigateCallback, StoreInstances } from "./lib/types.js";
   import type { ActivityItem, ModeVisibility } from "./lib/api/types.js";
   import {
     buildFocusPullRequestFilesRoute,
@@ -23,6 +24,19 @@
     type RoutedItemRef,
   } from "./lib/routes.js";
   import { client } from "./lib/api/runtime.js";
+  import {
+    ACTIONS_KEY,
+    API_CLIENT_KEY,
+    EVENT_KEY,
+    HOST_STATE_KEY,
+    NAVIGATE_KEY,
+    PREPARE_ROUTE_KEY,
+    ROBOREV_CLIENT_KEY,
+    SIDEBAR_KEY,
+    STORES_KEY,
+    UI_CONFIG_KEY,
+    WORKSPACE_COMMAND_KEY,
+  } from "./lib/context.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
@@ -57,7 +71,7 @@
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
-  import { waitUntilBackendReady } from "./lib/utils/backendReadiness.js";
+  import { TransientTransportError } from "./lib/api/effect-errors.js";
   import {
     initTheme,
     cleanupTheme,
@@ -94,11 +108,7 @@
     getSelectedPRFromRoute,
     type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
-  import {
-    getInlineWorkspaceController,
-    notifyWorkspaceDeleted,
-    tabSlotAttachment,
-  } from "./lib/stores/workspace-host.svelte.ts";
+  import { getInlineWorkspaceController, tabSlotAttachment } from "./lib/stores/workspace-host.svelte.ts";
   import {
     buildActivitySelectionSearch,
     parseActivitySelection,
@@ -124,7 +134,6 @@
     emitLayoutChanged,
     initWorkspaceBridge,
   } from "./lib/stores/embed-config.svelte.js";
-  import { getSettings } from "./lib/api/settings.js";
   import { shouldUseFullAppShell } from "./lib/utils/appShell.js";
   import {
     readOnboardingState,
@@ -155,7 +164,84 @@
 
   type DocsFeatureComponent = typeof import("./lib/features/docs/DocsFeature.svelte").default;
 
-  let stores = $state<StoreInstances | undefined>();
+  let stores = $state.raw<StoreInstances | undefined>();
+  const appRuntime = untrack(() => runtime);
+  const appActions: ActionRegistry = {
+    pull: getPullRequestActions().map((action) => ({
+      id: action.id,
+      label: action.label,
+      handler: (context) =>
+        invokeAction(action, {
+          surface: context.surface,
+          owner: context.owner,
+          name: context.name,
+          number: context.number,
+          ...(context.meta != null && { meta: context.meta }),
+        }),
+    })),
+    issue: getIssueActions().map((action) => ({
+      id: action.id,
+      label: action.label,
+      handler: (context) =>
+        invokeAction(action, {
+          surface: context.surface,
+          owner: context.owner,
+          name: context.name,
+          number: context.number,
+          ...(context.meta != null && { meta: context.meta }),
+        }),
+    })),
+  };
+  const appNavigate: NavigateCallback = (event, options) => {
+    const path = typeof event === "string" ? event : event.path;
+    if (options?.replace) replaceUrl(path);
+    else navigate(path);
+  };
+  const appComposition = createAppStores({
+    runtime: appRuntime,
+    roborevBaseUrl: "/api/roborev",
+    onError: (message) => showFlash(message, { tone: "danger" }),
+    onNotification: showFlash,
+    onNavigate: appNavigate,
+    hostState: {
+      getGlobalRepo: getNormalizedGlobalRepo,
+      getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
+      getActiveWorktreeKey,
+    },
+    getActivitySelection: () => drawerItem,
+    config: {
+      hideStar: getUIConfig().hideStar,
+      basePath: getBasePath(),
+    },
+    getPage,
+  });
+  stores = appComposition.stores;
+  const roborevPollingExecution = appComposition.stores.roborevDaemon === undefined
+    ? undefined
+    : appRuntime.runCommand(appComposition.stores.roborevDaemon.pollingEffect, {
+        operation: "poll Roborev daemon health",
+        safeContext: {},
+        onFailure: (failure) => {
+          console.warn("Roborev daemon polling stopped unexpectedly:", failure);
+        },
+      });
+  setContext(API_CLIENT_KEY, client);
+  setContext(ACTIONS_KEY, appActions);
+  setContext(NAVIGATE_KEY, appNavigate);
+  setContext(EVENT_KEY, () => {});
+  setContext(PREPARE_ROUTE_KEY, null);
+  setContext(WORKSPACE_COMMAND_KEY, emitWorkspaceCommand);
+  setContext(STORES_KEY, appComposition.stores);
+  setContext(UI_CONFIG_KEY, { hideStar: getUIConfig().hideStar, basePath: getBasePath() });
+  setContext(SIDEBAR_KEY, { isEmbedded, isSidebarToggleEnabled, toggleSidebar });
+  setContext(HOST_STATE_KEY, {
+    getGlobalRepo: getNormalizedGlobalRepo,
+    getGroupByRepo: appComposition.stores.grouping.getGroupByRepo,
+    getActiveWorktreeKey,
+  });
+  if (appComposition.roborevClient !== undefined) {
+    setContext(ROBOREV_CLIENT_KEY, appComposition.roborevClient);
+  }
   let appReady = $state(false);
   let viewportWidth = $state(window.innerWidth);
   let renderedHeaderHeight = $state(0);
@@ -173,7 +259,6 @@
     doc: null,
   });
   let cleanupFullAppShell: (() => void) | undefined;
-  let fullShellStores: StoreInstances | undefined;
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
   const kataAPI = createKataTaskAPI();
   const kataWorkspaceAPI = createKataTaskAPI();
@@ -219,15 +304,8 @@
   }
 
   function stopFullAppShell() {
-    fullShellStores?.events.disconnect();
-    // runAppStartup begins sync polling once the shell is ready; its cancel
-    // only aborts in-flight startup, so the interval must be stopped here or
-    // it keeps firing after teardown (leaking across embed-route navigation
-    // and, in jsdom tests, hitting whichever fetch stub is current).
-    fullShellStores?.sync.stopPolling();
     cleanupFullAppShell?.();
     cleanupFullAppShell = undefined;
-    fullShellStores = undefined;
     appReady = false;
   }
 
@@ -383,33 +461,32 @@
     return searchModePalette(query, { kata: kataAuxiliaryAuthority, docs: docsAPI });
   }
 
-  async function loadKataDaemonRoster(): Promise<{
-    daemons: Awaited<ReturnType<typeof fetchKataDaemons>>;
-    ids: string[];
-    defaultId: string | undefined;
-  }> {
-    const daemons = await fetchKataDaemons();
-    return {
-      daemons,
-      ids: daemons.map((daemon) => daemon.id),
-      defaultId: daemons.find((daemon) => daemon.default)?.id,
-    };
-  }
-
-  function loadKataDaemonRosterAfterBackendReady(signal: AbortSignal): void {
-    void (async () => {
-      try {
-        const roster = await loadKataDaemonRoster();
-        if (signal.aborted) return;
-        setKataDaemonRoster(roster.ids, roster.defaultId);
-        kataDefaultDaemonId = roster.defaultId;
-      } catch {
-        if (signal.aborted) return;
+  const loadKataDaemonRosterAfterBackendReady = Effect.fn(
+    "App.loadKataDaemonRosterAfterBackendReady",
+  )(function* () {
+    const roster = yield* Effect.tryPromise({
+      try: () => fetchKataDaemons(),
+      catch: (cause) => TransientTransportError.make({
+        operation: "load Kata daemon roster",
+        cause,
+      }),
+    }).pipe(
+      Effect.map((daemons) => ({
+        ids: daemons.map((daemon) => daemon.id),
+        defaultId: daemons.find((daemon) => daemon.default)?.id,
+      })),
+      Effect.option,
+    );
+    yield* Effect.sync(() => {
+      if (Option.isSome(roster)) {
+        setKataDaemonRoster(roster.value.ids, roster.value.defaultId);
+        kataDefaultDaemonId = roster.value.defaultId;
+      } else {
         kataDefaultDaemonId = undefined;
         setKataDaemonRoster([], undefined);
       }
-    })();
-  }
+    });
+  });
 
   function isModeVisible(mode: keyof ModeVisibility): boolean {
     return stores?.settings.isModeVisible(mode) ?? true;
@@ -444,7 +521,6 @@
 
   function startFullAppShell(startupStores: StoreInstances) {
     if (cleanupFullAppShell) return;
-    fullShellStores = startupStores;
     appReady = false;
     initTheme();
     initSidebar();
@@ -454,29 +530,19 @@
     const appEl = document.getElementById("app")!;
     const cleanupContainer = initContainerObserver(appEl);
     const cleanupItemRefs = initItemRefHandler();
-    const cancelStartup = runAppStartup({
-      waitUntilBackendReady,
-      afterBackendReady: loadKataDaemonRosterAfterBackendReady,
-      getSettings,
-      getStores: () => startupStores,
+    const cancelStartup = runAppStartup(runtime, {
+      stores: startupStores,
+      afterBackendReady: loadKataDaemonRosterAfterBackendReady(),
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
       onReady: () => {
         appReady = true;
       },
     });
-    const onBeforeUnload = () => {
-      stores?.events.disconnect();
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
     cleanupFullAppShell = () => {
       cancelStartup();
       cleanupTheme();
       cleanupContainer();
       cleanupItemRefs();
-      window.removeEventListener(
-        "beforeunload",
-        onBeforeUnload,
-      );
     };
   }
 
@@ -485,7 +551,7 @@
       stopFullAppShell();
       return;
     }
-    if (stores && stores !== fullShellStores) {
+    if (stores && cleanupFullAppShell === undefined) {
       stopFullAppShell();
       startFullAppShell(stores);
     }
@@ -642,7 +708,7 @@
   onDestroy(() => {
     kataAuxiliaryAuthority.stop();
     stopFullAppShell();
-    stores?.events.disconnect();
+    roborevPollingExecution?.interrupt();
   });
 
   $effect(() => {
@@ -657,9 +723,9 @@
     }
     if (repo === lastRepo) return;
     lastRepo = repo;
-    void stores.pulls.loadPulls();
-    void stores.issues.loadIssues();
-    void stores.activity.loadActivity();
+    stores.pulls.loadPulls();
+    stores.issues.loadIssues();
+    stores.activity.loadActivity();
   });
 
   $effect(() => {
@@ -943,8 +1009,7 @@
       // Same identity check feeds `stale`; reaching this return means
       // selection and detail agree, so the action is fresh.
       stale: false,
-      stores: { pulls: stores.pulls, detail: stores.detail },
-      client,
+      stores: { detail: stores.detail },
       requireHeadPin: capabilities.mutation_head_binding,
       ...(renderedHeadSha !== "" && { expectedHeadSha: renderedHeadSha }),
       approveCommentBody: "",
@@ -953,7 +1018,7 @@
       // re-reviews current state, mirroring PullDetail's own handler.
       // The flash from onError carries the explanation.
       onHeadConflict: () => {
-        void appStores.detail.loadDetail(sel.owner, sel.name, sel.number, {
+        appStores.detail.loadDetail(sel.owner, sel.name, sel.number, {
           provider: sel.provider,
           platformHost: sel.platformHost,
           repoPath: sel.repoPath,
@@ -975,61 +1040,6 @@
 {#if !shouldUseFullAppShell(getPage())}
   <WorkspaceEmbedShell />
 {:else}
-  <Provider
-    {client}
-    roborevBaseUrl="/api/roborev"
-    onError={(msg) => showFlash(msg, { tone: "danger" })}
-    onWarning={(msg) => showFlash(msg, { tone: "warning" })}
-    onNotification={showFlash}
-    onNavigate={(e, options) => {
-      const path = typeof e === "string" ? e : e.path;
-      if (options?.replace) replaceUrl(path);
-      else navigate(path);
-    }}
-    onWorkspaceCommand={emitWorkspaceCommand}
-    onWorkspaceDeleted={notifyWorkspaceDeleted}
-    actions={{
-      pull: getPullRequestActions().map((a) => ({
-        id: a.id,
-        label: a.label,
-        handler: (ctx) => invokeAction(a, {
-          surface: ctx.surface,
-          owner: ctx.owner,
-          name: ctx.name,
-          number: ctx.number,
-          ...ctx.meta != null && { meta: ctx.meta },
-        }),
-      })),
-      issue: getIssueActions().map((a) => ({
-        id: a.id,
-        label: a.label,
-        handler: (ctx) => invokeAction(a, {
-          surface: ctx.surface,
-          owner: ctx.owner,
-          name: ctx.name,
-          number: ctx.number,
-          ...ctx.meta != null && { meta: ctx.meta },
-        }),
-      })),
-    }}
-    hostState={{
-      getGlobalRepo: getNormalizedGlobalRepo,
-      getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
-      getActiveWorktreeKey,
-    }}
-    getActivitySelection={() => drawerItem}
-    config={{
-      hideStar: getUIConfig().hideStar,
-      basePath: getBasePath(),
-    }}
-    {getPage}
-    sidebar={{
-      isEmbedded,
-      isSidebarToggleEnabled,
-      toggleSidebar,
-    }}
-    bind:stores
-  >
   <!-- Mounted once above the focus/full-shell branching so flashes raised
        through the shared store stay visible in every presentation, not just
        the desktop shell. -->
@@ -1366,8 +1376,7 @@
         onClose={closeNewWorkspaceDialog}
       />
     {/if}
-  </Provider>
-{/if}
+  {/if}
 
 <!-- Handed to every detail view: the controls themselves come from the hosted
      workspace's live view, and this component is the popover that holds them in a

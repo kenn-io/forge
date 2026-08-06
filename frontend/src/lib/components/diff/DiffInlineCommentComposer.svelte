@@ -61,14 +61,15 @@
     });
   }
 
-  async function submit(): Promise<void> {
+  function submit(): void {
     const nextBody = body.trim();
     if (!nextBody) return;
-    const ok = await diffReviewDraft.createComment(nextBody, range);
-    if (ok) {
-      body = "";
-      onclose?.();
-    }
+    diffReviewDraft.createComment(nextBody, range, {
+      onSuccess: () => {
+        body = "";
+        onclose?.();
+      },
+    });
   }
 
 </script>
@@ -101,7 +102,7 @@
       tone="info"
       surface="solid"
       size="sm"
-      onclick={() => void submit()}
+      onclick={submit}
       disabled={submitting || body.trim() === ""}
     >
       <SendIcon size={14} />

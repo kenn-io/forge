@@ -78,9 +78,9 @@
   onMount(() => {
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
-    void activity.loadActivity();
+    activity.loadActivity();
     activity.startActivityPolling();
-    unsubSync = sync.subscribeSyncComplete(() => void activity.loadActivity());
+    unsubSync = sync.subscribeSyncComplete(activity.loadActivity);
   });
 
   onDestroy(() => {
@@ -184,7 +184,7 @@
       activity.getShowNotifications(),
     ));
     activity.syncToURL();
-    void activity.loadActivity();
+    activity.loadActivity();
   }
 
   function toggleItemType(itemType: ActivityItemType): void {
@@ -198,7 +198,7 @@
   function setTimeRange(range: TimeRange): void {
     activity.setTimeRange(range);
     activity.syncToURL();
-    void activity.loadActivity();
+    activity.loadActivity();
   }
 
   function handleTimeRangeChange(value: string): void {
@@ -207,7 +207,7 @@
 
   function handleRepoChange(value: string): void {
     onRepoChange?.(value || undefined);
-    void activity.loadActivity();
+    activity.loadActivity();
   }
 
   function toggleHideBots(): void {
@@ -237,7 +237,7 @@
     debounceTimer = setTimeout(() => {
       activity.setActivitySearch(value || undefined);
       activity.syncToURL();
-      void activity.loadActivity();
+      activity.loadActivity();
     }, 300);
   }
 
@@ -265,7 +265,7 @@
 
   function handleMarkSeen(domEvent: Event, item: ActivityItem): void {
     domEvent.stopPropagation();
-    void activity.markNotificationSeen(item);
+    activity.markNotificationSeen(item);
   }
 
   function eventLabel(item: ActivityItem): string {

@@ -1,14 +1,22 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import { onDestroy, tick, untrack } from "svelte";
+  import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
+  import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import { retryIdempotentRead } from "../../api/retry-policy.js";
+  import type { ProblemBody } from "../../api/problems.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { canonicalProvider, providerItemPath, providerRepoPath, providerRouteParams, resolvedPlatformHost } from "../../api/provider-routes.js";
   import type { IssueDetail, Label, ProviderCapabilities } from "../../api/types.js";
   import {
-    getStores, getClient, getActions,
+    getStores, getActions,
     getUIConfig, getNavigate,
   } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
+  import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
@@ -30,7 +38,7 @@
     OPEN_LABEL_PICKER_EVENT,
     type OpenLabelPickerDetail,
   } from "./labelPickerCommand.js";
-  import { nextCatalogLabelNames } from "./labelSelection.js";
+  import { nextCatalogLabels } from "./labelSelection.js";
   import { floatingPopoverStyle } from "@kenn-io/kit-ui";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
@@ -53,7 +61,7 @@
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
   const { issues, activity, detailActivityView, settings } = getStores();
-  const client = getClient();
+  const runtime = getAppRuntime();
   const actions = getActions();
   const uiConfig = getUIConfig();
   const navigate = getNavigate();
@@ -193,20 +201,30 @@
     );
   }
 
-  async function editTimelineComment(
+  function editTimelineComment(
     event: { PlatformID: number | null },
     body: string,
-  ): Promise<boolean> {
-    if (staleIssue) return false;
-    if (event.PlatformID === null) return false;
-    return issues.editIssueComment(owner, name, number, event.PlatformID, body);
+    callbacks: MutationCallbacks,
+  ): void {
+    if (staleIssue || event.PlatformID === null) {
+      callbacks.onFailure?.(
+        staleIssue ? "Refresh issue details before editing a comment" : "Comment identifier is unavailable",
+      );
+      callbacks.onSettled?.();
+      return;
+    }
+    issues.editIssueComment(owner, name, number, event.PlatformID, body, callbacks);
   }
 
-  async function deleteTimelineComment(event: { PlatformID: number | null }): Promise<string | null> {
-    if (staleIssue) return "Refresh issue details before deleting a comment";
-    if (event.PlatformID === null) return "Comment identifier is unavailable";
-    const ok = await issues.deleteIssueComment(owner, name, number, event.PlatformID);
-    return ok ? null : issues.getIssueDetailError() ?? "Could not delete comment";
+  function deleteTimelineComment(event: { PlatformID: number | null }, callbacks: MutationCallbacks): void {
+    if (staleIssue || event.PlatformID === null) {
+      callbacks.onFailure?.(
+        staleIssue ? "Refresh issue details before deleting a comment" : "Comment identifier is unavailable",
+      );
+      callbacks.onSettled?.();
+      return;
+    }
+    issues.deleteIssueComment(owner, name, number, event.PlatformID, callbacks);
   }
 
   $effect(() => {
@@ -218,7 +236,7 @@
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     untrack(() => {
-      void issues.loadIssueDetail(
+      issues.loadIssueDetail(
         requestOwner,
         requestName,
         requestNumber,
@@ -268,9 +286,7 @@
     branchConflict = null;
     pendingWorkspaceLaunchTarget = null;
     workspaceCreating = false;
-    labelPickerOpen = false;
-    labelPickerError = null;
-    pendingLabel = null;
+    closeLabelPicker();
   });
 
   let labelPickerOpen = $state(false);
@@ -282,8 +298,13 @@
   let labelPickerPopover = $state<HTMLDivElement>();
   let labelPickerAutofocusFilter = $state(false);
   let labelPickerStyle = $state("");
+  let labelCatalogExecution: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
+  let labelCatalogGeneration = 0;
 
   function closeLabelPicker(): void {
+    labelCatalogGeneration += 1;
+    labelCatalogExecution?.interrupt();
+    labelCatalogExecution = null;
     labelPickerOpen = false;
     labelPickerError = null;
     pendingLabel = null;
@@ -315,10 +336,10 @@
     if (inlineWorkspace?.isClaimedFor(itemIdentity) && inlineWorkspace.getDockMode() === "expanded") {
       inlineWorkspace.setDockMode("split");
     }
-    void openLabelPicker();
+    openLabelPicker();
   }
 
-  async function openLabelPicker(event?: MouseEvent): Promise<void> {
+  function openLabelPicker(event?: MouseEvent): void {
     if (labelGate.unavailable) return;
     labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
       ?? labelPickerAnchor;
@@ -330,38 +351,70 @@
     labelPickerOpen = true;
     labelPickerError = null;
     labelCatalogSyncing = true;
-    await tick();
-    positionLabelPicker();
-    try {
-      await loadLabelCatalogWithRefresh({
-        isActive: () => labelPickerOpen,
-        loadOnce: async () => {
-          const { data, error } = await client.GET(
-            providerRepoPath(routeRef, "/labels"),
-            { params: { path: providerRouteParams(routeRef) } },
-          );
-          if (error) {
-            throw new Error(error.detail ?? error.title ?? "failed to load labels");
-          }
-          return {
-            labels: (data?.labels ?? []) as Label[],
-            stale: data?.stale ?? false,
-            syncing: data?.syncing ?? false,
-          };
-        },
-        onUpdate: (catalog) => {
-          labelCatalog = catalog.labels;
-          labelCatalogSyncing = Boolean(catalog.stale || catalog.syncing);
-          void tick().then(() => {
-            if (labelPickerOpen) positionLabelPicker();
+    const generation = ++labelCatalogGeneration;
+    labelCatalogExecution?.interrupt();
+    const selectedRef = {
+      provider: routeRef.provider,
+      platformHost: routeRef.platformHost,
+      owner: routeRef.owner,
+      name: routeRef.name,
+      repoPath: routeRef.repoPath,
+    };
+    const selectedNumber = number;
+    const isCurrent = () =>
+      labelPickerOpen &&
+      labelCatalogGeneration === generation &&
+      canonicalProvider(selectedRef.provider) === canonicalProvider(routeRef.provider) &&
+      resolvedPlatformHost(selectedRef.provider, selectedRef.platformHost) ===
+        resolvedPlatformHost(routeRef.provider, routeRef.platformHost) &&
+      selectedRef.owner === routeRef.owner &&
+      selectedRef.name === routeRef.name &&
+      selectedRef.repoPath === routeRef.repoPath &&
+      selectedNumber === number;
+    const program = Effect.gen(function* () {
+      yield* Effect.promise(() => tick());
+      yield* Effect.sync(positionLabelPicker);
+      yield* loadLabelCatalogWithRefresh({
+        isActive: isCurrent,
+        loadOnce: executeGeneratedApiRequest("GET issue label catalog", (client, signal) =>
+          client.GET(providerRepoPath(selectedRef, "/labels"), {
+            params: { path: providerRouteParams(selectedRef) },
+            signal,
+          }),
+        ).pipe(
+          Effect.map((data) => ({
+            labels: data.labels ?? [],
+            stale: data.stale ?? false,
+            syncing: data.syncing ?? false,
+          })),
+        ),
+        onUpdate: (catalog) => Effect.gen(function* () {
+          yield* Effect.sync(() => {
+            if (!isCurrent()) return;
+            labelCatalog = catalog.labels;
+            labelCatalogSyncing = Boolean(catalog.stale || catalog.syncing);
           });
-        },
+          yield* Effect.promise(() => tick());
+          yield* Effect.sync(() => {
+            if (isCurrent()) positionLabelPicker();
+          });
+        }),
       });
-    } catch (err) {
-      labelPickerError = err instanceof Error ? err.message : String(err);
-    } finally {
-      if (labelPickerOpen) labelCatalogSyncing = false;
-    }
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => {
+        if (isCurrent()) labelCatalogSyncing = false;
+      })),
+    );
+    labelCatalogExecution = runtime.runCommand(program, {
+      operation: "load issue label catalog",
+      safeContext: { owner: selectedRef.owner, name: selectedRef.name },
+      onFailure: (failure) => {
+        if (!isCurrent()) return;
+        labelPickerError = failure._tag === "ApiProblemError"
+          ? failure.problem.detail ?? failure.problem.title ?? "failed to load labels"
+          : "Could not reach Kenn Forge";
+      },
+    });
   }
 
   $effect(() => {
@@ -379,51 +432,59 @@
     };
   });
 
-  async function toggleLabel(labelName: string): Promise<void> {
+  function toggleLabel(labelName: string): void {
     if (pendingLabel !== null || labelGate.unavailable) return;
     const currentLabels = issues.getIssueDetail()?.issue.labels ?? [];
     pendingLabel = labelName;
     labelPickerError = null;
-    const nextNames = nextCatalogLabelNames(currentLabels, labelCatalog, labelName);
-    try {
-      await issues.setIssueLabels(owner, name, number, nextNames);
-    } catch {
-      // The issues store reports mutation failures through the shared flash.
-    } finally {
-      pendingLabel = null;
-    }
+    const nextLabels = nextCatalogLabels(currentLabels, labelCatalog, labelName);
+    issues.setIssueLabels(owner, name, number, nextLabels, {
+      onFailure: (message) => {
+        labelPickerError = message;
+      },
+      onSettled: () => {
+        pendingLabel = null;
+      },
+    });
   }
 
-  async function clearLabels(): Promise<void> {
+  function clearLabels(): void {
     if (labelGate.unavailable) return;
     if (pendingLabel !== null) return;
     const currentLabels = issues.getIssueDetail()?.issue.labels ?? [];
     if (currentLabels.length === 0) return;
     pendingLabel = CLEAR_LABELS_PENDING;
     labelPickerError = null;
-    try {
-      await issues.setIssueLabels(owner, name, number, []);
-    } catch {
-      // The issues store reports mutation failures through the shared flash.
-    } finally {
-      pendingLabel = null;
-    }
+    issues.setIssueLabels(owner, name, number, [], {
+      onFailure: (message) => {
+        labelPickerError = message;
+      },
+      onSettled: () => {
+        pendingLabel = null;
+      },
+    });
   }
 
-  async function loadUserCandidates(query: string): Promise<string[]> {
-    const { data, error } = await client.GET(
-      providerRepoPath(routeRef, "/comment-autocomplete"),
-      {
+  function loadUserCandidates(query: string) {
+    return executeGeneratedApiRequest("GET issue user candidates", (client, signal) =>
+      client.GET(providerRepoPath(routeRef, "/comment-autocomplete"), {
         params: {
           path: providerRouteParams(routeRef),
           query: { trigger: "@", q: query, limit: 25 },
         },
-      },
+        signal,
+      }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.map((data) => data.users ?? []),
+      Effect.mapError((failure) =>
+        new Error(
+          failure._tag === "ApiProblemError"
+            ? failure.problem.detail ?? failure.problem.title ?? "failed to load users"
+            : "Could not reach Kenn Forge",
+        ),
+      ),
     );
-    if (error) {
-      throw new Error(error.detail ?? error.title ?? "failed to load users");
-    }
-    return data?.users ?? [];
   }
 
   function userAvatarURL(username: string): string {
@@ -477,40 +538,17 @@
   // key, so rate limits gate them just like credential failures.
   const contentGate = $derived(operationGate(repoOperations?.update_content));
 
-  async function handleStateChange(
-    newState: "open" | "closed",
-  ): Promise<void> {
+  function handleStateChange(newState: "open" | "closed"): void {
     if (staleIssue) return;
     if (!currentCapabilities().state_mutation) return;
     stateSubmitting = true;
-    try {
-      const { error: requestError } = await client.POST(
-        providerItemPath("issues", routeRef, "/github-state"),
-        {
-          params: { path: { ...providerRouteParams(routeRef), number } },
-          body: { state: newState },
-        },
-      );
-      if (requestError) {
-        throw new Error(
-          requestError.detail
-            ?? requestError.title
-            ?? "failed to change issue state",
-        );
-      }
-      await issues.loadIssueDetail(
-        owner,
-        name,
-        number,
-        { provider, platformHost, repoPath },
-      );
-      await issues.loadIssues();
-      await activity.loadActivity();
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      stateSubmitting = false;
-    }
+    issues.setIssueState(routeRef, number, newState, {
+      onSuccess: () => activity.loadActivity(),
+      onFailure: (message) => showFlash(message, { tone: "danger" }),
+      onSettled: () => {
+        stateSubmitting = false;
+      },
+    });
   }
 
   let workspaceCreating = $state(false);
@@ -530,6 +568,8 @@
   let workspaceRequestGen = 0;
   let componentDestroyed = false;
   onDestroy(() => {
+    labelCatalogGeneration += 1;
+    labelCatalogExecution?.interrupt();
     componentDestroyed = true;
   });
   const createWorkspaceTitle =
@@ -538,19 +578,6 @@
     "issue-create-workspace-description";
   const ISSUE_WORKSPACE_BRANCH_CONFLICT_TYPE =
     "urn:kenn-forge:error:issue-workspace-branch-conflict";
-
-  type APIErrorDetail = {
-    location?: string;
-    value?: unknown;
-  };
-
-  type APIError = {
-    type?: string;
-    title?: string;
-    detail?: string;
-    details?: Record<string, unknown>;
-    errors?: APIErrorDetail[] | null;
-  };
 
   type BranchConflictState = {
     existingBranch: string;
@@ -606,7 +633,7 @@
   }
 
   function branchConflictValue(
-    error: APIError,
+    error: ProblemBody,
     location: string,
   ): string | null {
     const value = error.errors?.find(
@@ -618,7 +645,7 @@
   }
 
   function parseBranchConflict(
-    error: APIError | undefined,
+    error: ProblemBody | undefined,
   ): BranchConflictState | null {
     if (!error) {
       return null;
@@ -666,20 +693,20 @@
   };
 
   // Re-checks the identity at call time (not just at the caller's check)
-  // before refetching: refetchDetailForIdentity is fired without an
-  // await on its result, so the selection can move on in the interim.
-  async function refetchDetailForIdentity(identity: WorkspaceItemIdentity): Promise<void> {
+  // before refetching because the selection can move on before this
+  // synchronous launcher projects the response.
+  function refetchDetailForIdentity(identity: WorkspaceItemIdentity): void {
     if (!identityEquals(identity, $state.snapshot(itemIdentity))) return;
-    await issues.loadIssueDetail(owner, name, number, {
+    issues.loadIssueDetail(owner, name, number, {
       provider,
       platformHost,
       repoPath,
     });
   }
 
-  async function createWorkspace(
+  function createWorkspace(
     options: CreateWorkspaceOptions = {},
-  ): Promise<void> {
+  ): void {
     if (staleIssue) return;
     const detail = issues.getIssueDetail();
     if (!detail) return;
@@ -714,55 +741,82 @@
       requestGen !== workspaceRequestGen ||
       !identityEquals(requestIdentity, $state.snapshot(itemIdentity));
     const responseIsStale = () => componentDestroyed || identityLeft();
+    const selectedRef = {
+      provider: requestIdentity.provider,
+      platformHost: requestIdentity.platformHost,
+      owner: requestIdentity.owner,
+      name: requestIdentity.name,
+      repoPath: requestIdentity.repoPath,
+    };
+    const requestBody = {
+      ...(options.gitHeadRef ? { git_head_ref: options.gitHeadRef.trim() } : {}),
+      ...(options.reuseExistingBranch ? { reuse_existing_branch: true } : {}),
+      ...(options.reuseExistingDirectory ? { reuse_existing_directory: true } : {}),
+    };
 
     workspaceCreating = true;
     beginWorkspaceCreate(requestIdentity);
     if (branchConflict) {
       branchConflict.error = null;
     }
-    try {
-      const { data, error: requestError } = await client.POST(
-        providerItemPath("issues", routeRef, "/workspace"),
-        {
+    const program = executeGeneratedApiRequest("POST issue workspace", (client, signal) =>
+      client.POST(providerItemPath("issues", selectedRef, "/workspace"), {
           params: {
             path: {
-              ...providerRouteParams(routeRef),
-              number,
+              ...providerRouteParams(selectedRef),
+              number: requestIdentity.number,
             },
           },
-          body: {
-            ...(options.gitHeadRef
-              ? {
-                  git_head_ref:
-                    options.gitHeadRef.trim(),
-                }
-              : {}),
-            ...(options.reuseExistingBranch
-              ? {
-                  reuse_existing_branch: true,
-                }
-              : {}),
-            ...(options.reuseExistingDirectory
-              ? {
-                  reuse_existing_directory: true,
-                }
-              : {}),
-          },
-        },
-      );
-      if (requestError) {
-        // Superseded or unmounted: an error about an item the user
-        // already left is noise.
+          body: requestBody,
+          signal,
+        }),
+    ).pipe(
+      Effect.flatMap((data) =>
+        Effect.sync(() => {
+          if (data?.id) {
+            // Publish the confirmed creation before any liveness guard: the
+            // workspace exists server-side even after navigation or unmount.
+            const createdRef = {
+              id: data.id,
+              status: data.status ?? "provisioning",
+            };
+            recordWorkspaceCreated(requestIdentity, createdRef);
+            if (launchTargetKey) {
+              queueWorkspaceLaunch(createdRef.id, launchTargetKey, undefined);
+            }
+            inlineWorkspace?.recordCreated(requestIdentity, createdRef);
+          }
+          if (responseIsStale()) return;
+          pendingWorkspaceLaunchTarget = null;
+          if (!data?.id) return;
+          if (inlineWorkspace) {
+            refetchDetailForIdentity(requestIdentity);
+          } else {
+            navigate(`/terminal/${data.id}`);
+          }
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          endWorkspaceCreate(requestIdentity);
+          if (!responseIsStale()) workspaceCreating = false;
+        }),
+      ),
+    );
+    runtime.runCommand(program, {
+      operation: "create issue workspace",
+      safeContext: {
+        provider: requestIdentity.provider,
+        owner: requestIdentity.owner,
+        name: requestIdentity.name,
+        number: requestIdentity.number,
+      },
+      onFailure: (failure) => {
         if (responseIsStale()) return;
-        const conflict = parseBranchConflict(
-          requestError as APIError,
-        );
+        const problem = failure._tag === "ApiProblemError" ? failure.problem : undefined;
+        const conflict = parseBranchConflict(problem);
         if (conflict) {
-          if (
-            options.fromConflictDialog
-            && options.reuseExistingBranch
-            && branchConflict
-          ) {
+          if (options.fromConflictDialog && options.reuseExistingBranch && branchConflict) {
             branchConflict.error =
               "This branch is already checked out in another worktree. Create a new branch instead.";
             return;
@@ -770,70 +824,15 @@
           branchConflict = conflict;
           return;
         }
-
-        const message =
-          requestError.detail
-          ?? requestError.title
-          ?? "failed to create workspace";
+        const message = problem?.detail ?? problem?.title ??
+          (failure._tag === "ApiProblemError" ? "failed to create workspace" : "Could not reach Kenn Forge");
         if (options.fromConflictDialog && branchConflict) {
           branchConflict.error = message;
           return;
         }
-        throw new Error(
-          message,
-        );
-      }
-      if (data?.id) {
-        // Publish the confirmed creation to identity-scoped shared state
-        // BEFORE any liveness guard: the workspace exists server-side
-        // even when the selection moved on (an A→B→A round-trip bumps
-        // the request generation) or a layout change replaced this
-        // component, and dropping the response leaves the replacement
-        // UI offering "Create Workspace" for a duplicate submission.
-        // The created-record covers every consumer — focus/mobile views
-        // and DetailDrawer run without an inline controller; the
-        // controller's recordCreated is claim-guarded, so a late
-        // publication only parks the ref under its identity — it can't
-        // activate an inactive surface.
-        const createdRef = {
-          id: data.id,
-          status: data.status ?? "provisioning",
-        };
-        recordWorkspaceCreated(requestIdentity, createdRef);
-        if (launchTargetKey) {
-          queueWorkspaceLaunch(createdRef.id, launchTargetKey, undefined);
-        }
-        inlineWorkspace?.recordCreated(requestIdentity, createdRef);
-      }
-      // Everything below is presentation owned by this live component
-      // and its current selection. A destroyed component must not
-      // refetch: its frozen identity still matches its own props, but
-      // the shared issue store may already belong to a different
-      // selection, and loading the old item would replace it. The
-      // override above is enough — a replacement component loads its
-      // own detail on mount.
-      if (responseIsStale()) return;
-      pendingWorkspaceLaunchTarget = null;
-      if (data?.id) {
-        if (inlineWorkspace) {
-          void refetchDetailForIdentity(requestIdentity);
-        } else {
-          navigate(`/terminal/${data.id}`);
-        }
-      }
-    } catch (err) {
-      if (responseIsStale()) return;
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      // The request settled either way: release the identity-scoped
-      // pending entry so the button re-enables everywhere at once.
-      endWorkspaceCreate(requestIdentity);
-      // A stale request must not clobber the creating flag a newer
-      // request (or a fresh selection) owns.
-      if (!responseIsStale()) {
-        workspaceCreating = false;
-      }
-    }
+        showFlash(message, { tone: "danger" });
+      },
+    });
   }
 
   function closeBranchConflictDialog(): void {
@@ -1166,7 +1165,7 @@
             disabledReason={assigneeGate.unavailable ? assigneeGate.reason : undefined}
             loadCandidates={loadUserCandidates}
             avatarUrlForUser={userAvatarURL}
-            onchange={(next) => issues.setIssueAssignees(owner, name, number, next)}
+            onchange={(next, callbacks) => issues.setIssueAssignees(owner, name, number, next, callbacks)}
           >
             {#snippet icon()}
               <UsersIcon size={12} aria-hidden="true" />

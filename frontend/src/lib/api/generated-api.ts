@@ -19,7 +19,7 @@ export type GeneratedRequestResult<A> =
 
 export const executeGeneratedRequest = Effect.fn("GeneratedApi.execute")(function* <A>(
   operation: string,
-  request: () => Promise<GeneratedRequestResult<A>>,
+  request: (signal: AbortSignal) => Promise<GeneratedRequestResult<A>>,
 ) {
   const result = yield* Effect.tryPromise({
     try: request,
@@ -39,7 +39,18 @@ export class GeneratedApi extends Context.Service<
   }
 >()("kenn-forge/GeneratedApi") {}
 
-export const GeneratedApiLive = Layer.succeed(GeneratedApi)({
-  client: createRuntimeClient(),
-  execute: executeGeneratedRequest,
+export const executeGeneratedApiRequest = Effect.fn("GeneratedApi.executeWithClient")(function* <A>(
+  operation: string,
+  request: (client: GeneratedClient, signal: AbortSignal) => Promise<GeneratedRequestResult<A>>,
+) {
+  const api = yield* GeneratedApi;
+  return yield* api.execute(operation, (signal) => request(api.client, signal));
 });
+
+export const makeGeneratedApiLayer = (client: GeneratedClient) =>
+  Layer.succeed(GeneratedApi)({
+    client,
+    execute: executeGeneratedRequest,
+  });
+
+export const GeneratedApiLive = makeGeneratedApiLayer(createRuntimeClient());

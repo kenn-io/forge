@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { mockApi } from "./support/mockApi";
+import { mockApi, mockSettings as defaultSettings } from "./support/mockApi";
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
@@ -441,6 +441,7 @@ test("full app initializes after navigating away from an initial embed route", a
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
+        ...defaultSettings,
         repos: [
           {
             provider: "github",
@@ -453,21 +454,14 @@ test("full app initializes after navigating away from an initial embed route", a
           },
         ],
         activity: {
+          ...defaultSettings.activity,
           view_mode: "threaded",
-          time_range: "7d",
-          hide_closed: false,
-          hide_bots: false,
         },
         terminal: {
+          ...defaultSettings.terminal,
           font_family: '"Fira Code", monospace',
           font_size: 14,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
         },
-        agents: [],
       }),
     });
   });
@@ -493,7 +487,9 @@ test("full app initializes after navigating away from an initial embed route", a
   await expect(page.locator("header.app-top-bar")).toBeVisible();
 });
 
-test("full app reinitializes after navigating through an embed route", async ({ page }) => {
+test("full app reinitializes after navigating through an embed route without refetching cached settings", async ({
+  page,
+}) => {
   let settingsRequests = 0;
   await page.addInitScript(() => {
     const OriginalEventSource = window.EventSource;
@@ -521,6 +517,7 @@ test("full app reinitializes after navigating through an embed route", async ({ 
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
+        ...defaultSettings,
         repos: [
           {
             provider: "github",
@@ -533,21 +530,14 @@ test("full app reinitializes after navigating through an embed route", async ({ 
           },
         ],
         activity: {
+          ...defaultSettings.activity,
           view_mode: "threaded",
-          time_range: "7d",
-          hide_closed: false,
-          hide_bots: false,
         },
         terminal: {
+          ...defaultSettings.terminal,
           font_family: '"Fira Code", monospace',
           font_size: 14,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
         },
-        agents: [],
       }),
     });
   });
@@ -563,7 +553,7 @@ test("full app reinitializes after navigating through an embed route", async ({ 
   });
   await expect(page).toHaveURL(/\/workspaces\/embed\/list$/);
   await expect(page.locator("header.app-top-bar")).toHaveCount(0);
-  await expect.poll(() => settingsRequests).toBe(2);
+  await expect.poll(() => settingsRequests).toBe(1);
   await expect
     .poll(async () => page.evaluate(() => window.__kenn_forge_event_source_counts?.().closed ?? 0))
     .toBeGreaterThanOrEqual(initialEventSources);
@@ -573,7 +563,7 @@ test("full app reinitializes after navigating through an embed route", async ({ 
   });
   await expect(page).toHaveURL(/\/pulls$/);
   await expect(page.locator("header.app-top-bar")).toBeVisible();
-  await expect.poll(() => settingsRequests).toBe(3);
+  await expect.poll(() => settingsRequests).toBe(1);
   await expect
     .poll(async () => page.evaluate(() => window.__kenn_forge_event_source_counts?.().created ?? 0))
     .toBeGreaterThan(initialEventSources);

@@ -1,8 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect } from "effect";
+import type { ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { IssueDetail } from "../../api/types.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+import type { GeneratedClient } from "../../api/generated-api.js";
+import type { IssueDetail, Label } from "../../api/types.js";
+import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
+import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
 import {
   discardWorkspaceLaunch,
@@ -46,6 +52,15 @@ vi.mock("@kenn-io/kit-ui", async (importOriginal) => {
 });
 
 import IssueDetailComponent from "./IssueDetail.svelte";
+import IssueDetailTestHarness from "./IssueDetailTestHarness.svelte";
+
+let issueRuntime: OwnedAppRuntime | null = null;
+
+afterEach(async () => {
+  if (issueRuntime === null) return;
+  await Effect.runPromise(issueRuntime.disposeEffect);
+  issueRuntime = null;
+});
 
 const capabilities = {
   read_repositories: true,
@@ -159,11 +174,17 @@ function issueDetail(): IssueDetail {
 
 function renderIssueDetail(
   detail: IssueDetail,
-  deleteIssueComment = vi.fn(async () => true),
+  deleteIssueComment = vi.fn(
+    (_owner: string, _name: string, _number: number, _commentID: number, callbacks: MutationCallbacks): void => {
+      callbacks.onSuccess?.();
+      callbacks.onSettled?.();
+    },
+  ),
   options: {
     staleRefreshing?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
     actions?: ActionRegistry;
+    runtimeClient?: GeneratedClient;
   } = {},
   apiClient: { GET: ReturnType<typeof vi.fn>; POST: ReturnType<typeof vi.fn> } = {
     GET: vi.fn(),
@@ -172,7 +193,7 @@ function renderIssueDetail(
 ) {
   let envelopeTick = 0;
   const issuesStore = {
-    loadIssueDetail: vi.fn(async () => undefined),
+    loadIssueDetail: vi.fn(),
     startIssueDetailPolling: vi.fn(),
     stopIssueDetailPolling: vi.fn(),
     getIssueDetail: () => detail,
@@ -182,9 +203,10 @@ function renderIssueDetail(
     isIssueStaleRefreshing: () => options.staleRefreshing ?? false,
     isIssueDetailSyncing: () => false,
     getIssueDetailLoaded: () => true,
-    loadIssues: vi.fn(async () => undefined),
+    loadIssues: vi.fn(),
     updateIssueKanbanState: vi.fn(),
     toggleIssueStar: vi.fn(),
+    setIssueState: vi.fn(),
     editIssueComment: vi.fn(),
     deleteIssueComment,
     setIssueLabels: vi.fn(),
@@ -194,15 +216,22 @@ function renderIssueDetail(
   };
   const navigate = vi.fn();
 
-  const result = render(IssueDetailComponent, {
+  const runtime =
+    issueRuntime ?? makeTestAppRuntime(options.runtimeClient ?? (apiClient as unknown as GeneratedClient));
+  issueRuntime = runtime;
+  let detailProps: ComponentProps<typeof IssueDetailComponent> = {
+    owner: "acme",
+    name: "widget",
+    number: detail.issue.Number,
+    provider: "github",
+    platformHost: "github.com",
+    repoPath: "acme/widget",
+    inlineWorkspace: options.inlineWorkspace ?? null,
+  };
+  const result = render(IssueDetailTestHarness, {
     props: {
-      owner: "acme",
-      name: "widget",
-      number: detail.issue.Number,
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-      inlineWorkspace: options.inlineWorkspace ?? null,
+      runtime,
+      detailProps,
     },
     context: new Map<symbol, unknown>([
       [API_CLIENT_KEY, apiClient],
@@ -224,6 +253,10 @@ function renderIssueDetail(
   });
   return {
     ...result,
+    rerender: (next: Partial<ComponentProps<typeof IssueDetailComponent>>) => {
+      detailProps = { ...detailProps, ...next };
+      return result.rerender({ runtime, detailProps });
+    },
     deleteIssueComment,
     issuesStore,
     navigate,
@@ -316,7 +349,17 @@ describe("IssueDetail activity view", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
-      expect(deleteIssueComment).toHaveBeenCalledWith("acme", "widget", 7, 20);
+      expect(deleteIssueComment).toHaveBeenCalledWith(
+        "acme",
+        "widget",
+        7,
+        20,
+        expect.objectContaining({
+          onSuccess: expect.any(Function),
+          onFailure: expect.any(Function),
+          onSettled: expect.any(Function),
+        }),
+      );
       expect(screen.queryByRole("dialog", { name: "Delete comment?" })).toBeNull();
     });
   });
@@ -390,6 +433,31 @@ describe("IssueDetail inline workspace handoff", () => {
       ],
     };
   }
+
+  it("creates an issue workspace through the app runtime", async () => {
+    const controller = createTestController("split");
+    const { apiClient: runtimeClient, resolvePost } = deferredWorkspaceApiClient();
+    const contextClient = {
+      GET: vi.fn(),
+      POST: vi.fn(async () => ({ error: { title: "legacy client used" } })),
+    };
+    renderIssueDetail(
+      issueDetail(),
+      undefined,
+      {
+        inlineWorkspace: controller,
+        runtimeClient: runtimeClient as unknown as GeneratedClient,
+      },
+      contextClient,
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() => expect(runtimeClient.POST).toHaveBeenCalled());
+    resolvePost({ data: { id: "ws-runtime", status: "provisioning" } });
+
+    await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    expect(contextClient.POST).not.toHaveBeenCalled();
+  });
 
   it("recovers the expected existing workspace directory", async () => {
     const controller = createTestController("split");
@@ -996,6 +1064,67 @@ describe("IssueDetail inline workspace handoff", () => {
 
     expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
     expect(controller.setDockMode).toHaveBeenCalledWith("split");
+  });
+
+  it("loads the issue label catalog through the app runtime", async () => {
+    const detail = issueDetail();
+    detail.repo.capabilities = { ...capabilities, read_labels: true, label_mutation: true };
+    const contextClient = {
+      GET: vi.fn(async () => ({
+        data: { labels: [{ name: "context-label", color: "ededed", description: "" }] },
+      })),
+      POST: vi.fn(),
+    };
+    const runtimeClient = {
+      GET: vi.fn(async () => ({
+        data: { labels: [{ name: "runtime-label", color: "ededed", description: "" }] },
+      })),
+    } as unknown as GeneratedClient;
+
+    renderIssueDetail(detail, undefined, { runtimeClient }, contextClient);
+    openLabelPickerFor({
+      itemType: "issue",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: 7,
+    });
+
+    expect(await screen.findByText("runtime-label")).toBeTruthy();
+    expect(screen.queryByText("context-label")).toBeNull();
+  });
+
+  it("does not apply a closed picker catalog to a reopened issue picker", async () => {
+    const detail = issueDetail();
+    detail.repo.capabilities = { ...capabilities, read_labels: true, label_mutation: true };
+    const oldCatalog = Promise.withResolvers<{ data: { labels: Label[] } }>();
+    const freshCatalog = Promise.withResolvers<{ data: { labels: Label[] } }>();
+    const get = vi.fn().mockReturnValueOnce(oldCatalog.promise).mockReturnValueOnce(freshCatalog.promise);
+    renderIssueDetail(detail, undefined, {}, { GET: get, POST: vi.fn() });
+    const command = {
+      itemType: "issue" as const,
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: 7,
+    };
+
+    openLabelPickerFor(command);
+    expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Close label picker" }));
+    openLabelPickerFor(command);
+    expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
+
+    oldCatalog.resolve({ data: { labels: [{ name: "old-open", color: "ededed", description: "" }] } });
+    await oldCatalog.promise;
+    expect(screen.queryByText("old-open")).toBeNull();
+
+    freshCatalog.resolve({ data: { labels: [{ name: "fresh-open", color: "ededed", description: "" }] } });
+    expect(await screen.findByText("fresh-open")).toBeTruthy();
   });
 });
 

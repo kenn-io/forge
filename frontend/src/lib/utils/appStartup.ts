@@ -1,99 +1,65 @@
+import { Effect, Option } from "effect";
+import type { AppRuntime } from "../app/runtime.js";
+import { StartupWorkflow } from "../app/startup-workflow.js";
 import type { StoreInstances } from "../types.js";
-import type { Settings } from "../api/types.js";
-import { beginTerminalSettingsHydration, hydrateTerminalSettings } from "../stores/terminal-settings-persistence.js";
+import { applySettingsHydration } from "../stores/settings-hydration.js";
+import { beginTerminalSettingsHydration } from "../stores/terminal-settings-persistence.js";
 
 export interface AppStartupDeps {
-  waitUntilBackendReady?: (signal: AbortSignal) => Promise<void>;
-  afterBackendReady?: (signal: AbortSignal) => void;
-  getSettings: () => Promise<Settings>;
-  getStores: () => StoreInstances | undefined;
-  onReady: () => void;
-  beforeInitialLoad?: () => void;
+  readonly stores: StoreInstances;
+  readonly afterBackendReady?: Effect.Effect<void>;
+  readonly onReady: () => void;
+  readonly beforeInitialLoad?: () => void;
 }
 
-const SETTINGS_STARTUP_TIMEOUT_MS = 8_000;
+export const appStartupProgram = Effect.fn("AppStartup.run")(function* (deps: AppStartupDeps) {
+  const startup = yield* StartupWorkflow;
+  const terminalHydration = yield* Effect.sync(() => beginTerminalSettingsHydration(deps.stores.settings));
+  const snapshot = yield* startup.start.pipe(
+    Effect.match({
+      onFailure: (failure) => {
+        console.warn("Failed to load settings, using defaults:", failure);
+        return Option.none();
+      },
+      onSuccess: Option.some,
+    }),
+  );
 
-async function loadSettingsWithTimeout(getSettings: () => Promise<Settings>): Promise<Settings> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      getSettings(),
-      new Promise<Settings>((_, reject) => {
-        timeout = setTimeout(() => {
-          reject(new Error("timed out loading settings during startup"));
-        }, SETTINGS_STARTUP_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    if (timeout !== undefined) clearTimeout(timeout);
+  if (Option.isSome(snapshot)) {
+    yield* Effect.sync(() => {
+      applySettingsHydration(
+        {
+          settings: deps.stores.settings,
+          activity: deps.stores.activity,
+          issues: deps.stores.issues,
+        },
+        snapshot.value,
+        terminalHydration,
+      );
+    });
   }
-}
 
-/**
- * runAppStartup kicks off the async initialization work App.svelte
- * performs during onMount: fetching settings, hydrating store
- * defaults, and wiring live-update subscriptions once both have
- * resolved.
- *
- * It returns a cancel function that must be called from the
- * component's cleanup path. If cancellation fires before the
- * settings fetch resolves, no post-await side effects run, so
- * the component cannot leak an EventSource or start polling
- * after it has already unmounted.
- */
-export function runAppStartup(deps: AppStartupDeps): () => void {
-  let cancelled = false;
-  const abort = new AbortController();
-  void (async () => {
-    try {
-      if (deps.waitUntilBackendReady) {
-        await deps.waitUntilBackendReady(abort.signal);
-      }
-    } catch (err) {
-      if (cancelled || abort.signal.aborted) return;
-      console.warn("Failed waiting for backend readiness:", err);
-      return;
-    }
-    if (cancelled) return;
-    deps.afterBackendReady?.(abort.signal);
-    const settingsStore = deps.getStores()?.settings;
-    const terminalHydration = settingsStore ? beginTerminalSettingsHydration(settingsStore) : null;
-    try {
-      const settings = await loadSettingsWithTimeout(deps.getSettings);
-      if (cancelled) return;
-      const stores = deps.getStores();
-      if (stores) {
-        stores.settings.setConfiguredRepos(settings.repos);
-        stores.settings.setModeVisibility(settings.modes);
-        if (terminalHydration?.store === stores.settings) {
-          hydrateTerminalSettings(terminalHydration, settings.terminal);
-        } else {
-          const currentHydration = beginTerminalSettingsHydration(stores.settings);
-          hydrateTerminalSettings(currentHydration, settings.terminal);
-        }
-        stores.settings.setPullRequestSettings(settings.pull_requests);
-        stores.settings.setLaunchTargets(settings.launch_targets ?? []);
-        stores.activity.hydrateDefaults(settings.activity);
-        stores.issues.hydrateDefaults(settings.issues);
-      }
-    } catch (err) {
-      if (cancelled) return;
-      console.warn("Failed to load settings, using defaults:", err);
-    }
-    if (cancelled) return;
-    deps.beforeInitialLoad?.();
-    if (cancelled) return;
-    deps.onReady();
-    const stores = deps.getStores();
-    if (stores) {
-      stores.sync.startPolling();
-      void stores.pulls.loadPulls();
-      void stores.issues.loadIssues();
-      stores.events.connect();
-    }
-  })();
-  return () => {
-    cancelled = true;
-    abort.abort();
-  };
+  if (deps.afterBackendReady) {
+    yield* Effect.forkChild(deps.afterBackendReady);
+  }
+  yield* Effect.sync(() => deps.beforeInitialLoad?.());
+  yield* Effect.sync(deps.onReady);
+  yield* Effect.sync(() => {
+    deps.stores.pulls.loadPulls();
+    deps.stores.issues.loadIssues();
+  });
+  yield* Effect.forkChild(deps.stores.sync.pollingEffect, { startImmediately: true });
+  yield* Effect.forkChild(deps.stores.events.streamEffect, { startImmediately: true });
+  return yield* Effect.never;
+});
+
+export function runAppStartup(runtime: AppRuntime, deps: AppStartupDeps): () => void {
+  const execution = runtime.runCommand(appStartupProgram(deps), {
+    operation: "start application shell",
+    safeContext: {},
+    onFailure: (failure) => {
+      console.warn("Application startup stopped unexpectedly:", failure);
+    },
+  });
+  return execution.interrupt;
 }

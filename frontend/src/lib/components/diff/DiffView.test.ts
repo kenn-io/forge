@@ -1,30 +1,40 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile, DiffResult, FilesResult } from "../../api/types.js";
+import { makeAppRuntime } from "../../app/runtime.js";
+import type { OwnedAppRuntime } from "../../app/runtime.js";
+import type { GeneratedClient } from "../../api/generated-api.js";
 import { STORES_KEY } from "../../context.js";
+import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import {
   createDiffStore,
   type DiffScrollTarget,
   type DiffStore,
   type DiffStoreOptions,
+  type LoadWorkspaceDiffOptions,
+  type WorkspaceDiffBase,
 } from "../../stores/diff.svelte.js";
-
-const prefetchScheduler = vi.hoisted(() => ({
-  dispose: vi.fn(),
-  reset: vi.fn(),
-  schedule: vi.fn(),
-  setGeneration: vi.fn(),
-}));
-
-vi.mock("./diff-context-prefetch.js", () => ({
-  createDiffContextPrefetchScheduler: () => prefetchScheduler,
-}));
 
 vi.mock("./DiffFile.svelte", async () => ({
   default: (await import("./DiffViewTestFile.svelte")).default,
 }));
 
-import DiffView from "./DiffView.svelte";
+import DiffView from "./DiffViewRuntimeHarness.svelte";
+
+let runtime: OwnedAppRuntime | undefined;
+
+function loadWorkspaceDiff(
+  store: DiffStore,
+  workspaceID: string,
+  base: WorkspaceDiffBase,
+  stacked = false,
+  options: LoadWorkspaceDiffOptions = {},
+): Promise<void> {
+  const settled = Promise.withResolvers<void>();
+  store.loadWorkspaceDiff(workspaceID, base, stacked, options, { onSettled: settled.resolve });
+  return settled.promise;
+}
 
 if (!globalThis.CSS) {
   globalThis.CSS = {} as typeof CSS;
@@ -114,8 +124,10 @@ function renderDiffView(
     pageKeyboardActive?: boolean;
   } = {},
 ) {
+  runtime ??= makeAppRuntime();
   return render(DiffView, {
     props: {
+      runtime,
       provider: "github",
       platformHost: "github.com",
       owner: "acme",
@@ -130,34 +142,14 @@ function renderDiffView(
 }
 
 describe("DiffView", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    runtime = undefined;
+  });
+
+  afterEach(async () => {
     vi.useRealTimers();
     cleanup();
-    prefetchScheduler.dispose.mockReset();
-    prefetchScheduler.reset.mockReset();
-    prefetchScheduler.schedule.mockReset();
-    prefetchScheduler.setGeneration.mockReset();
-  });
-
-  it("aligns context prefetch when the file-preview generation changes", async () => {
-    const diff = createDiffStore();
-    renderDiffView(diff);
-    await waitFor(() => expect(prefetchScheduler.setGeneration).toHaveBeenCalledOnce());
-
-    diff.resetToHead();
-
-    await waitFor(() => expect(prefetchScheduler.setGeneration).toHaveBeenCalledTimes(2));
-    expect(prefetchScheduler.setGeneration).toHaveBeenLastCalledWith(
-      ["github", "github.com", "acme/widgets", "1", "1"].join("\0"),
-    );
-  });
-
-  it("disposes context prefetch when the diff view unmounts", () => {
-    const result = renderDiffView(createDiffStore());
-
-    result.unmount();
-
-    expect(prefetchScheduler.dispose).toHaveBeenCalledOnce();
+    if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("uses the workspace file list for keyboard navigation", async () => {
@@ -209,12 +201,13 @@ describe("DiffView", () => {
         };
       }),
     } as unknown as NonNullable<DiffStoreOptions["client"]>;
-    const diff = createDiffStore({ client });
-    await diff.loadWorkspaceDiff("ws-1", "head");
+    runtime = makeTestAppRuntime(client as unknown as GeneratedClient);
+    const diff = createDiffStore({ runtime });
+    await loadWorkspaceDiff(diff, "ws-1", "head");
     const { getByText, queryByText } = renderDiffView(diff);
     expect(getByText("a.ts")).toBeTruthy();
 
-    const refresh = diff.loadWorkspaceDiff("ws-1", "head", false, { preserveVisible: true });
+    const refresh = loadWorkspaceDiff(diff, "ws-1", "head", false, { preserveVisible: true });
     await failureSeen;
 
     expect(getByText("a.ts")).toBeTruthy();
@@ -269,11 +262,12 @@ describe("DiffView", () => {
         };
       }),
     } as unknown as NonNullable<DiffStoreOptions["client"]>;
-    const diff = createDiffStore({ client });
+    runtime = makeTestAppRuntime(client as unknown as GeneratedClient);
+    const diff = createDiffStore({ runtime });
     const { getByText, queryByText } = renderDiffView(diff);
-    const initialLoad = diff.loadWorkspaceDiff("ws-1", "head");
+    const initialLoad = loadWorkspaceDiff(diff, "ws-1", "head");
     await initialStarted;
-    const refresh = diff.loadWorkspaceDiff("ws-1", "head", false, { preserveVisible: true });
+    const refresh = loadWorkspaceDiff(diff, "ws-1", "head", false, { preserveVisible: true });
     await failureSeen;
     releaseInitial();
     await Promise.all([initialLoad, refresh]);
@@ -305,9 +299,10 @@ describe("DiffView", () => {
         return { error: await response.clone().json(), response };
       }),
     } as unknown as NonNullable<DiffStoreOptions["client"]>;
-    const diff = createDiffStore({ client });
+    runtime = makeTestAppRuntime(client as unknown as GeneratedClient);
+    const diff = createDiffStore({ runtime });
 
-    await diff.loadWorkspaceDiff("ws-1", "head");
+    await loadWorkspaceDiff(diff, "ws-1", "head");
     const { getByText, queryByText } = renderDiffView(diff);
 
     expect(getByText("refresh failed")).toBeTruthy();

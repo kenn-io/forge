@@ -3,9 +3,14 @@
 </script>
 
 <script lang="ts">
+  import { Effect } from "effect";
   import { onDestroy, tick, untrack, type ComponentProps } from "svelte";
+  import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
+  import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import { retryIdempotentRead } from "../../api/retry-policy.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import type {
-    DiffFile,
     KanbanStatus,
     Label,
     ProviderCapabilities,
@@ -14,11 +19,12 @@
     RepoOperations,
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
+  import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import type { ConflictReason } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
-    getStores, getClient, getActions,
-    getUIConfig, getNavigate, getWorkspaceDeletedCallback,
+    getStores, getActions,
+    getUIConfig, getNavigate,
   } from "../../context.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { buildPullRequestFilesRoute } from "../../routes.js";
@@ -66,7 +72,7 @@
     OPEN_LABEL_PICKER_EVENT,
     type OpenLabelPickerDetail,
   } from "./labelPickerCommand.js";
-  import { nextCatalogLabelNames } from "./labelSelection.js";
+  import { nextCatalogLabels } from "./labelSelection.js";
   import { floatingPopoverStyle } from "@kenn-io/kit-ui";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
   import { reviewThreadsFromEvents } from "../diff/review-thread-context.js";
@@ -116,11 +122,10 @@
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
   const { detail: detailStore, pulls, activity, diff: diffStore, detailActivityView, settings } = getStores();
-  const client = getClient();
+  const runtime = getAppRuntime();
   const actions = getActions();
   const uiConfig = getUIConfig();
   const navigate = getNavigate();
-  const notifyWorkspaceDeleted = getWorkspaceDeletedCallback();
 
   const defaultProviderCapabilities: ProviderCapabilities = {
     read_repositories: true,
@@ -166,7 +171,6 @@
     provider: string;
     platformHost?: string | undefined;
     repoPath: string;
-    onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
     hideStaleWhileLoading?: boolean;
@@ -183,7 +187,6 @@
     provider,
     platformHost,
     repoPath,
-    onPullsRefresh,
     hideTabs = false,
     hideWorkspaceAction = false,
     hideStaleWhileLoading = false,
@@ -328,46 +331,69 @@
     }
     return entries;
   }
-  async function editTimelineComment(
+  function editTimelineComment(
     event: { PlatformID: number | null },
     body: string,
-  ): Promise<boolean> {
-    if (stalePR) return false;
-    if (event.PlatformID === null) return false;
-    return detailStore.editComment(owner, name, number, event.PlatformID, body);
+    callbacks: MutationCallbacks,
+  ): void {
+    if (stalePR || event.PlatformID === null) {
+      callbacks.onFailure?.(
+        stalePR ? "Refresh pull request details before editing a comment" : "Comment identifier is unavailable",
+      );
+      callbacks.onSettled?.();
+      return;
+    }
+    detailStore.editComment(owner, name, number, event.PlatformID, body, callbacks);
   }
 
-  async function deleteTimelineComment(event: { PlatformID: number | null }): Promise<string | null> {
-    if (stalePR) return "Refresh pull request details before deleting a comment";
-    if (event.PlatformID === null) return "Comment identifier is unavailable";
-    const ok = await detailStore.deleteComment(owner, name, number, event.PlatformID);
-    return ok ? null : detailStore.getDetailError() ?? "Could not delete comment";
+  function deleteTimelineComment(event: { PlatformID: number | null }, callbacks: MutationCallbacks): void {
+    if (stalePR || event.PlatformID === null) {
+      callbacks.onFailure?.(
+        stalePR ? "Refresh pull request details before deleting a comment" : "Comment identifier is unavailable",
+      );
+      callbacks.onSettled?.();
+      return;
+    }
+    detailStore.deleteComment(owner, name, number, event.PlatformID, callbacks);
   }
 
-  async function applyTimelineSuggestion(
+  function applyTimelineSuggestion(
     input: ApplySuggestionRequest,
-  ): Promise<boolean | { ok: false; error: string }> {
-    if (stalePR || headActionsBlocked || applySuggestionGate.unavailable) return false;
-    if (currentPR()?.State !== "open") return false;
+    callbacks: {
+      readonly onResult: (result: boolean | { ok: false; error: string }) => void;
+      readonly onSettled: () => void;
+    },
+  ): void {
+    if (stalePR || headActionsBlocked || applySuggestionGate.unavailable || currentPR()?.State !== "open") {
+      callbacks.onResult(false);
+      callbacks.onSettled();
+      return;
+    }
     const requestGeneration = mutationRouteGeneration;
     let durableConflict = false;
-    const ok = await detailStore.applyReviewSuggestions(owner, name, number, input, (conflict) => {
-      durableConflict = handleStateConflict(
-        conflict.reason,
-        conflict.context,
-        conflict.expectedHeadSha,
-        conflict.ref,
-        conflict.number,
-        requestGeneration,
-      );
+    detailStore.applyReviewSuggestions(routeRef, number, input, {
+      onConflict: (conflict) => {
+        durableConflict = handleStateConflict(
+          conflict.reason,
+          conflict.context,
+          conflict.expectedHeadSha,
+          conflict.ref,
+          conflict.number,
+          requestGeneration,
+        );
+      },
+      onResult: (ok) => {
+        if (!ok && durableConflict) {
+          callbacks.onResult({
+            ok: false,
+            error: detailStore.getDetailError() ?? "Pull request state changed.",
+          });
+          return;
+        }
+        callbacks.onResult(ok);
+      },
+      onSettled: callbacks.onSettled,
     });
-    if (!ok && durableConflict) {
-      return {
-        ok: false,
-        error: detailStore.getDetailError() ?? "Pull request state changed.",
-      };
-    }
-    return ok;
   }
 
   function updateTimelineFilter(next: PRTimelineFilterState): void {
@@ -476,7 +502,7 @@
   $effect(() => {
     if (!shouldAutoRefreshCI) return;
     const refresh = () => {
-      void detailStore.refreshPendingCI(owner, name, number, {
+      detailStore.refreshPendingCI(owner, name, number, {
         provider,
         platformHost,
         repoPath,
@@ -498,7 +524,7 @@
     const requestAutoSync = autoSync;
     const requestWorkflowApprovalSync = workflowApprovalSync;
     untrack(() => {
-      void detailStore.loadDetail(
+      detailStore.loadDetail(
         requestOwner,
         requestName,
         requestNumber,
@@ -540,6 +566,8 @@
 
   onDestroy(() => {
     cancelAnimationFrame(pullDetailScrollRestoreRaf);
+    labelCatalogGeneration += 1;
+    labelCatalogExecution?.interrupt();
     componentDestroyed = true;
   });
 
@@ -590,6 +618,7 @@
     // owner/name/number have already changed.
     flushBodySave();
     clearDragState();
+    closeLabelPicker();
   });
 
 
@@ -609,14 +638,6 @@
         branchCopyTimeout = null;
       }, 1500);
     });
-  }
-
-  async function refreshPulls(): Promise<void> {
-    if (onPullsRefresh) {
-      await onPullsRefresh();
-    } else {
-      await pulls.loadPulls();
-    }
   }
 
   let stateSubmitting = $state(false);
@@ -648,10 +669,10 @@
     if (stalePR) return;
     const mr = currentPR();
     if (!mr) return;
-    void detailStore.toggleDetailPRStar(owner, name, number, mr.Starred);
+    detailStore.toggleDetailPRStar(routeRef, number, mr.Starred);
   }
 
-  async function saveTitle(): Promise<void> {
+  function saveTitle(): void {
     if (stalePR || contentGate.unavailable) return;
     if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
@@ -661,23 +682,21 @@
       return;
     }
     savingTitle = true;
-    try {
-      await detailStore.updatePRContent(
-        owner, name, number, { title: trimmed },
-      );
-      editingTitle = false;
-      titleDraft = "";
-    } catch {
-      // Store sets storeError; keep editor open with draft.
-    } finally {
-      savingTitle = false;
-    }
+    detailStore.updatePRContent(routeRef, number, { title: trimmed }, {
+      onSuccess: () => {
+        editingTitle = false;
+        titleDraft = "";
+      },
+      onSettled: () => {
+        savingTitle = false;
+      },
+    });
   }
 
   function onTitleKeydown(e: KeyboardEvent): void {
     if (e.key === "Enter") {
       e.preventDefault();
-      void saveTitle();
+      saveTitle();
     } else if (e.key === "Escape") {
       cancelEditTitle();
     }
@@ -702,7 +721,7 @@
     bodyDraft = "";
   }
 
-  async function saveBody(): Promise<void> {
+  function saveBody(): void {
     if (stalePR || contentGate.unavailable) return;
     if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
@@ -711,17 +730,15 @@
       return;
     }
     savingBody = true;
-    try {
-      await detailStore.updatePRContent(
-        owner, name, number, { body: bodyDraft },
-      );
-      editingBody = false;
-      bodyDraft = "";
-    } catch {
-      // Store sets storeError; keep editor open with draft.
-    } finally {
-      savingBody = false;
-    }
+    detailStore.updatePRContent(routeRef, number, { body: bodyDraft }, {
+      onSuccess: () => {
+        editingBody = false;
+        bodyDraft = "";
+      },
+      onSettled: () => {
+        savingBody = false;
+      },
+    });
   }
 
   function onBodyKeydown(e: KeyboardEvent): void {
@@ -730,9 +747,9 @@
     }
   }
 
-  async function handleStateChange(
+  function handleStateChange(
     newState: "open" | "closed" | "draft",
-  ): Promise<void> {
+  ): void {
     if (stalePR) return;
     const caps = currentCapabilities();
     if (newState === "draft") {
@@ -741,33 +758,12 @@
       return;
     }
     stateSubmitting = true;
-    try {
-      const { error: requestError } = await client.POST(
-        providerItemPath("pulls", routeRef, "/github-state"),
-        {
-          params: { path: { ...providerRouteParams(routeRef), number } },
-          body: { state: newState },
-        },
-      );
-      if (requestError) {
-        throw new Error(
-          requestError.detail
-            ?? requestError.title
-            ?? "failed to change PR state",
-        );
-      }
-      await detailStore.loadDetail(owner, name, number, {
-        provider,
-        platformHost,
-        repoPath,
-      });
-      await refreshPulls();
-      await activity.loadActivity();
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      stateSubmitting = false;
-    }
+    detailStore.setPullState(routeRef, number, newState, {
+      onSuccess: () => activity.loadActivity(),
+      onSettled: () => {
+        stateSubmitting = false;
+      },
+    });
   }
 
   type RepoSettings = {
@@ -779,7 +775,6 @@
   };
 
   let repoSettings = $state<RepoSettings | null>(null);
-  let repoSettingsRequestID = 0;
   let showMergeModal = $state(false);
 
   // Head-pinning conflict state (context/provider-architecture.md
@@ -856,7 +851,7 @@
     headConflictContext = context ?? null;
     conflictRefreshError = null;
     showMergeModal = false;
-    void refreshConflictState(false);
+    refreshConflictState(false);
     return true;
   }
 
@@ -883,7 +878,7 @@
     return headIsCurrent;
   }
 
-  async function refreshConflictState(allowRecovery = true): Promise<void> {
+  function refreshConflictState(allowRecovery = true): void {
     const reason = stateConflict;
     if (!reason || conflictRefreshBusy) return;
     const requestID = ++conflictRefreshRequestID;
@@ -891,27 +886,29 @@
     const reviewedHeadAtConflict = conflictReviewedHead;
     conflictRefreshBusy = true;
     conflictRefreshError = null;
-    const refreshed = await detailStore.syncDetailNow(owner, name, number, {
-      provider,
-      platformHost,
-      repoPath,
-    });
-    const currentRouteKey = `${provider}\n${platformHost}\n${repoPath}\n${owner}\n${name}\n${number}`;
-    if (requestID !== conflictRefreshRequestID || routeKey !== currentRouteKey) {
-      return;
-    }
-    if (stateConflict !== reason) {
+    const finish = (refreshed: boolean): void => {
+      const currentRouteKey = `${provider}\n${platformHost}\n${repoPath}\n${owner}\n${name}\n${number}`;
+      if (requestID !== conflictRefreshRequestID || routeKey !== currentRouteKey) return;
+      if (stateConflict !== reason) {
+        conflictRefreshBusy = false;
+        return;
+      }
+      if (!refreshed) {
+        conflictRefreshError = "Could not refresh the pull request. Try again.";
+      } else if (allowRecovery && conflictHasFreshContext(reason, reviewedHeadAtConflict)) {
+        stateConflict = null;
+        headConflictContext = null;
+        conflictReviewedHead = null;
+      }
       conflictRefreshBusy = false;
-      return;
-    }
-    if (!refreshed) {
-      conflictRefreshError = "Could not refresh the pull request. Try again.";
-    } else if (allowRecovery && conflictHasFreshContext(reason, reviewedHeadAtConflict)) {
-      stateConflict = null;
-      headConflictContext = null;
-      conflictReviewedHead = null;
-    }
-    conflictRefreshBusy = false;
+    };
+    detailStore.syncDetailNow(
+      owner,
+      name,
+      number,
+      { provider, platformHost, repoPath },
+      { onSuccess: finish, onFailure: () => finish(false) },
+    );
   }
 
   function handleHeadConflict(
@@ -926,25 +923,41 @@
   }
 
   $effect(() => {
-    const requestID = ++repoSettingsRequestID;
+    const selectedRef = {
+      provider: routeRef.provider,
+      platformHost: routeRef.platformHost,
+      owner: routeRef.owner,
+      name: routeRef.name,
+      repoPath: routeRef.repoPath,
+    };
     repoSettings = null;
-    client.GET(providerRepoPath(routeRef), {
-      params: { path: providerRouteParams(routeRef) },
-    }).then(({ data, error }) => {
-      if (requestID !== repoSettingsRequestID) return;
-      if (error || !data) return;
-      repoSettings = {
-        allowSquash: data.AllowSquashMerge,
-        allowMerge: data.AllowMergeCommit,
-        allowRebase: data.AllowRebaseMerge,
-        viewerCanMerge: data.ViewerCanMerge,
-        operations: data.operations,
-      };
-    }).catch(() => {
-      if (requestID === repoSettingsRequestID) {
+    const program = executeGeneratedApiRequest("GET repository merge settings", (client, signal) =>
+      client.GET(providerRepoPath(selectedRef), {
+        params: { path: providerRouteParams(selectedRef) },
+        signal,
+      }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.flatMap((settings) =>
+        Effect.sync(() => {
+          repoSettings = {
+            allowSquash: settings.AllowSquashMerge,
+            allowMerge: settings.AllowMergeCommit,
+            allowRebase: settings.AllowRebaseMerge,
+            viewerCanMerge: settings.ViewerCanMerge,
+            operations: settings.operations,
+          };
+        }),
+      ),
+    );
+    const execution = runtime.runCommand(program, {
+      operation: "load repository merge settings",
+      safeContext: { provider: selectedRef.provider, owner: selectedRef.owner, name: selectedRef.name },
+      onFailure: () => {
         repoSettings = null;
-      }
+      },
     });
+    return execution.interrupt;
   });
 
   const workflowApproval = $derived(
@@ -984,7 +997,9 @@
 
   function onKanbanChange(value: string): void {
     if (stalePR) return;
-    void detailStore.updateKanbanState(owner, name, number, value as KanbanStatus);
+    const option = kanbanOptions.find((candidate) => candidate.value === value);
+    if (option === undefined) return;
+    detailStore.updateKanbanState(routeRef, number, option.value);
   }
 
   function mergeActionLabel(settings: RepoSettings): string {
@@ -1047,8 +1062,7 @@
       // Treat a blocked head as stale for gating: the merge modal must
       // not open while the reviewed head is unknown.
       stale: stalePR || headActionsBlocked || midStackMergeBlocked,
-      stores: { detail: detailStore, pulls },
-      client,
+      stores: { detail: detailStore },
       requireHeadPin: capabilities.mutation_head_binding,
       ...(detailHeadSha !== "" && { expectedHeadSha: detailHeadSha }),
       setMergeModalOpen: (open: boolean) => { showMergeModal = open; },
@@ -1092,6 +1106,8 @@
   let labelPickerLaunchedFromActionMenu = $state(false);
   let labelPickerAutofocusFilter = $state(false);
   let labelPickerStyle = $state("");
+  let labelCatalogExecution: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
+  let labelCatalogGeneration = 0;
 
   const workspace = $derived(
     inlineWorkspace
@@ -1175,12 +1191,15 @@
     stateMenuOpen = !stateMenuOpen;
   }
 
-  async function chooseState(newState: "open" | "closed" | "draft"): Promise<void> {
+  function chooseState(newState: "open" | "closed" | "draft"): void {
     closeStateMenu();
-    await handleStateChange(newState);
+    handleStateChange(newState);
   }
 
   function closeLabelPicker(): void {
+    labelCatalogGeneration += 1;
+    labelCatalogExecution?.interrupt();
+    labelCatalogExecution = null;
     labelPickerOpen = false;
     labelPickerError = null;
     pendingLabel = null;
@@ -1233,10 +1252,10 @@
     if (inlineWorkspace?.isClaimedFor(itemIdentity) && inlineWorkspace.getDockMode() === "expanded") {
       inlineWorkspace.setDockMode("split");
     }
-    void openLabelPicker();
+    openLabelPicker();
   }
 
-  async function openLabelPicker(event?: MouseEvent): Promise<void> {
+  function openLabelPicker(event?: MouseEvent): void {
     if (labelGate.unavailable) return;
     labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
       ?? visibleLabelPickerAnchor();
@@ -1256,38 +1275,70 @@
     labelPickerOpen = true;
     labelPickerError = null;
     labelCatalogSyncing = true;
-    await tick();
-    positionLabelPicker();
-    try {
-      await loadLabelCatalogWithRefresh({
-        isActive: () => labelPickerOpen,
-        loadOnce: async () => {
-          const { data, error } = await client.GET(
-            providerRepoPath(routeRef, "/labels"),
-            { params: { path: providerRouteParams(routeRef) } },
-          );
-          if (error) {
-            throw new Error(error.detail ?? error.title ?? "failed to load labels");
-          }
-          return {
-            labels: (data?.labels ?? []) as Label[],
-            stale: data?.stale ?? false,
-            syncing: data?.syncing ?? false,
-          };
-        },
-        onUpdate: (catalog) => {
-          labelCatalog = catalog.labels;
-          labelCatalogSyncing = Boolean(catalog.stale || catalog.syncing);
-          void tick().then(() => {
-            if (labelPickerOpen) positionLabelPicker();
+    const generation = ++labelCatalogGeneration;
+    labelCatalogExecution?.interrupt();
+    const selectedRef = {
+      provider: routeRef.provider,
+      platformHost: routeRef.platformHost,
+      owner: routeRef.owner,
+      name: routeRef.name,
+      repoPath: routeRef.repoPath,
+    };
+    const selectedNumber = number;
+    const isCurrent = () =>
+      labelPickerOpen &&
+      labelCatalogGeneration === generation &&
+      canonicalProvider(selectedRef.provider) === canonicalProvider(routeRef.provider) &&
+      resolvedPlatformHost(selectedRef.provider, selectedRef.platformHost) ===
+        resolvedPlatformHost(routeRef.provider, routeRef.platformHost) &&
+      selectedRef.owner === routeRef.owner &&
+      selectedRef.name === routeRef.name &&
+      selectedRef.repoPath === routeRef.repoPath &&
+      selectedNumber === number;
+    const program = Effect.gen(function* () {
+      yield* Effect.promise(() => tick());
+      yield* Effect.sync(positionLabelPicker);
+      yield* loadLabelCatalogWithRefresh({
+        isActive: isCurrent,
+        loadOnce: executeGeneratedApiRequest("GET pull request label catalog", (client, signal) =>
+          client.GET(providerRepoPath(selectedRef, "/labels"), {
+            params: { path: providerRouteParams(selectedRef) },
+            signal,
+          }),
+        ).pipe(
+          Effect.map((data) => ({
+            labels: data.labels ?? [],
+            stale: data.stale ?? false,
+            syncing: data.syncing ?? false,
+          })),
+        ),
+        onUpdate: (catalog) => Effect.gen(function* () {
+          yield* Effect.sync(() => {
+            if (!isCurrent()) return;
+            labelCatalog = catalog.labels;
+            labelCatalogSyncing = Boolean(catalog.stale || catalog.syncing);
           });
-        },
+          yield* Effect.promise(() => tick());
+          yield* Effect.sync(() => {
+            if (isCurrent()) positionLabelPicker();
+          });
+        }),
       });
-    } catch (err) {
-      labelPickerError = err instanceof Error ? err.message : String(err);
-    } finally {
-      if (labelPickerOpen) labelCatalogSyncing = false;
-    }
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => {
+        if (isCurrent()) labelCatalogSyncing = false;
+      })),
+    );
+    labelCatalogExecution = runtime.runCommand(program, {
+      operation: "load pull request label catalog",
+      safeContext: { owner: selectedRef.owner, name: selectedRef.name },
+      onFailure: (failure) => {
+        if (!isCurrent()) return;
+        labelPickerError = failure._tag === "ApiProblemError"
+          ? failure.problem.detail ?? failure.problem.title ?? "failed to load labels"
+          : "Could not reach Kenn Forge";
+      },
+    });
   }
 
   $effect(() => {
@@ -1305,49 +1356,57 @@
     };
   });
 
-  async function toggleLabel(labelName: string): Promise<void> {
+  function toggleLabel(labelName: string): void {
     if (labelGate.unavailable) return;
     if (pendingLabel !== null) return;
     pendingLabel = labelName;
     labelPickerError = null;
-    const nextNames = nextCatalogLabelNames(labels, labelCatalog, labelName);
-    try {
-      await detailStore.setPullLabels(owner, name, number, nextNames);
-    } catch {
-      // The detail store reports mutation failures through the shared flash.
-    } finally {
-      pendingLabel = null;
-    }
+    const nextLabels = nextCatalogLabels(labels, labelCatalog, labelName);
+    detailStore.setPullLabels(owner, name, number, nextLabels, {
+      onFailure: (message) => {
+        labelPickerError = message;
+      },
+      onSettled: () => {
+        pendingLabel = null;
+      },
+    });
   }
 
-  async function clearLabels(): Promise<void> {
+  function clearLabels(): void {
     if (labelGate.unavailable) return;
     if (pendingLabel !== null || labels.length === 0) return;
     pendingLabel = CLEAR_LABELS_PENDING;
     labelPickerError = null;
-    try {
-      await detailStore.setPullLabels(owner, name, number, []);
-    } catch {
-      // The detail store reports mutation failures through the shared flash.
-    } finally {
-      pendingLabel = null;
-    }
+    detailStore.setPullLabels(owner, name, number, [], {
+      onFailure: (message) => {
+        labelPickerError = message;
+      },
+      onSettled: () => {
+        pendingLabel = null;
+      },
+    });
   }
 
-  async function loadUserCandidates(query: string): Promise<string[]> {
-    const { data, error } = await client.GET(
-      providerRepoPath(routeRef, "/comment-autocomplete"),
-      {
+  function loadUserCandidates(query: string) {
+    return executeGeneratedApiRequest("GET pull request user candidates", (client, signal) =>
+      client.GET(providerRepoPath(routeRef, "/comment-autocomplete"), {
         params: {
           path: providerRouteParams(routeRef),
           query: { trigger: "@", q: query, limit: 25 },
         },
-      },
+        signal,
+      }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.map((data) => data.users ?? []),
+      Effect.mapError((failure) =>
+        new Error(
+          failure._tag === "ApiProblemError"
+            ? failure.problem.detail ?? failure.problem.title ?? "failed to load users"
+            : "Could not reach Kenn Forge",
+        ),
+      ),
     );
-    if (error) {
-      throw new Error(error.detail ?? error.title ?? "failed to load users");
-    }
-    return data?.users ?? [];
   }
 
   function userAvatarURL(username: string): string {
@@ -1400,16 +1459,16 @@
   // Re-checks the identity at call time (not just at the caller's check)
   // before refetching: refetchDetailForIdentity is fired without an
   // await on its result, so the selection can move on in the interim.
-  async function refetchDetailForIdentity(identity: WorkspaceItemIdentity): Promise<void> {
+  function refetchDetailForIdentity(identity: WorkspaceItemIdentity): void {
     if (!identityEquals(identity, $state.snapshot(itemIdentity))) return;
-    await detailStore.refreshDetailOnly(owner, name, number, {
+    detailStore.refreshDetailOnly(owner, name, number, {
       provider,
       platformHost,
       repoPath,
     });
   }
 
-  async function createWorkspace(launchTargetKey?: string): Promise<void> {
+  function createWorkspace(launchTargetKey?: string): void {
     if (stalePR) return;
     const detail = detailStore.getDetail();
     if (!detail) return;
@@ -1425,80 +1484,68 @@
       requestGen !== wsRequestGen ||
       !identityEquals(requestIdentity, $state.snapshot(itemIdentity));
     const responseIsStale = () => componentDestroyed || identityLeft();
+    const requestBody = {
+      provider: requestIdentity.provider,
+      platform_host: detail.platform_host,
+      owner: detail.repo_owner,
+      name: detail.repo_name,
+      mr_number: detail.merge_request.Number,
+    };
 
     wsCreating = true;
     beginWorkspaceCreate(requestIdentity);
-    try {
-      const { data, error: reqError } = await client.POST(
-        "/workspaces",
-        {
-          body: {
-            provider,
-            platform_host: detail.platform_host,
-            owner: detail.repo_owner,
-            name: detail.repo_name,
-            mr_number: detail.merge_request.Number,
-          },
-        },
-      );
-      if (reqError) {
-        // Superseded or unmounted: an error about an item the user
-        // already left is noise.
+    const program = executeGeneratedApiRequest("POST pull request workspace", (client, signal) =>
+      client.POST("/workspaces", { body: requestBody, signal }),
+    ).pipe(
+      Effect.flatMap((data) =>
+        Effect.sync(() => {
+          if (data?.id) {
+            // Publish the confirmed creation to identity-scoped shared state
+            // BEFORE any liveness guard: the workspace exists server-side
+            // even when the selection moved on or this component unmounted.
+            const createdRef = {
+              id: data.id,
+              status: data.status ?? "provisioning",
+            };
+            recordWorkspaceCreated(requestIdentity, createdRef);
+            if (launchTargetKey) {
+              queueWorkspaceLaunch(createdRef.id, launchTargetKey, undefined);
+            }
+            inlineWorkspace?.recordCreated(requestIdentity, createdRef);
+          }
+          if (responseIsStale() || !data?.id) return;
+          if (inlineWorkspace) {
+            refetchDetailForIdentity(requestIdentity);
+          } else {
+            navigate(`/terminal/${data.id}`);
+          }
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          endWorkspaceCreate(requestIdentity);
+          if (!responseIsStale()) wsCreating = false;
+        }),
+      ),
+    );
+    runtime.runCommand(program, {
+      operation: "create pull request workspace",
+      safeContext: {
+        provider: requestIdentity.provider,
+        owner: requestIdentity.owner,
+        name: requestIdentity.name,
+        number: requestIdentity.number,
+      },
+      onFailure: (failure) => {
         if (responseIsStale()) return;
-        throw new Error(
-          reqError.detail ?? reqError.title ?? "failed to create workspace",
+        showFlash(
+          failure._tag === "ApiProblemError"
+            ? failure.problem.detail ?? failure.problem.title ?? "failed to create workspace"
+            : "Could not reach Kenn Forge",
+          { tone: "danger" },
         );
-      }
-      if (data?.id) {
-        // Publish the confirmed creation to identity-scoped shared state
-        // BEFORE any liveness guard: the workspace exists server-side
-        // even when the selection moved on (an A→B→A round-trip bumps
-        // the request generation) or a layout change replaced this
-        // component, and dropping the response leaves the replacement
-        // UI offering "Create Workspace" for a duplicate submission.
-        // The created-record covers every consumer — focus/mobile views
-        // and DetailDrawer run without an inline controller; the
-        // controller's recordCreated is claim-guarded, so a late
-        // publication only parks the ref under its identity — it can't
-        // activate an inactive surface.
-        const createdRef = {
-          id: data.id,
-          status: data.status ?? "provisioning",
-        };
-        recordWorkspaceCreated(requestIdentity, createdRef);
-        if (launchTargetKey) {
-          queueWorkspaceLaunch(createdRef.id, launchTargetKey, undefined);
-        }
-        inlineWorkspace?.recordCreated(requestIdentity, createdRef);
-      }
-      // Everything below is presentation owned by this live component
-      // and its current selection. A destroyed component must not
-      // refetch: its frozen identity still matches its own props, but
-      // the shared detail store may already belong to a different
-      // selection, and loading the old item would replace it. The
-      // override above is enough — a replacement component loads its
-      // own detail on mount.
-      if (responseIsStale()) return;
-      if (data?.id) {
-        if (inlineWorkspace) {
-          void refetchDetailForIdentity(requestIdentity);
-        } else {
-          navigate(`/terminal/${data.id}`);
-        }
-      }
-    } catch (err) {
-      if (responseIsStale()) return;
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      // The request settled either way: release the identity-scoped
-      // pending entry so the button re-enables everywhere at once.
-      endWorkspaceCreate(requestIdentity);
-      // A stale request must not clobber the creating flag a newer
-      // request (or a fresh selection) owns.
-      if (!responseIsStale()) {
-        wsCreating = false;
-      }
-    }
+      },
+    });
   }
 
   // Task-list checkbox clicks update the body locally for instant
@@ -1539,13 +1586,16 @@
     const target = pendingBodySave;
     pendingBodySave = null;
     if (target === null) return;
-    void detailStore.savePRBodyInBackground(
-      target.owner, target.name, target.number, target.body,
+    detailStore.savePRBodyInBackground(
       {
         provider: target.provider,
         platformHost: target.platformHost,
+        owner: target.owner,
+        name: target.name,
         repoPath: target.repoPath,
       },
+      target.number,
+      target.body,
     );
   }
 
@@ -1715,21 +1765,22 @@
     if (root) clearDropIndicatorClasses(root);
   }
 
-  async function loadDiffSummaryFiles(): Promise<DiffSummaryFilesResult> {
-    const { data, error } = await client.GET(
-      providerItemPath("pulls", routeRef, "/files"),
-      {
+  function loadDiffSummaryFiles() {
+    return executeGeneratedApiRequest("GET pull request diff summary files", (client, signal) =>
+      client.GET(providerItemPath("pulls", routeRef, "/files"), {
         params: { path: { ...providerRouteParams(routeRef), number } },
-      },
-    );
-    if (error) {
-      throw new Error(
-        error.detail ?? error.title ?? "failed to load changed files",
-      );
-    }
-    return new DiffSummaryFilesResult(
-      data?.stale ?? true,
-      (data?.files ?? []) as DiffFile[],
+        signal,
+      }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.map((data) => new DiffSummaryFilesResult(data.stale ?? true, data.files ?? [])),
+      Effect.mapError((failure) =>
+        new Error(
+          failure._tag === "ApiProblemError"
+            ? failure.problem.detail ?? failure.problem.title ?? "failed to load changed files"
+            : "Could not reach Kenn Forge",
+        ),
+      ),
     );
   }
   // Body-copy feedback is parent-controlled: the kit CopyButton's internal
@@ -1875,7 +1926,7 @@
             />
             <button
               class="title-edit-save"
-              onclick={() => void saveTitle()}
+              onclick={saveTitle}
               disabled={savingTitle || !titleDraft.trim() || contentGate.unavailable}
               title={contentGate.unavailable ? contentGate.reason : undefined}
             >
@@ -2011,7 +2062,7 @@
                   class="state-menu-item"
                   disabled={stateSubmitting || markDraftGate.unavailable}
                   title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
-                  onclick={() => void chooseState("draft")}
+                  onclick={() => chooseState("draft")}
                 >
                   Draft
                 </button>
@@ -2089,7 +2140,7 @@
           disabledReason={assigneeGate.unavailable ? assigneeGate.reason : undefined}
           loadCandidates={loadUserCandidates}
           avatarUrlForUser={userAvatarURL}
-          onchange={(next) => detailStore.setPullAssignees(owner, name, number, next)}
+          onchange={(next, callbacks) => detailStore.setPullAssignees(owner, name, number, next, callbacks)}
         >
           {#snippet icon()}
             <UsersIcon size={12} aria-hidden="true" />
@@ -2104,7 +2155,7 @@
           tooltipNote="User review requests only; team requests are not shown"
           loadCandidates={loadUserCandidates}
           avatarUrlForUser={userAvatarURL}
-          onchange={(next) => detailStore.setPullReviewers(owner, name, number, next)}
+          onchange={(next, callbacks) => detailStore.setPullReviewers(owner, name, number, next, callbacks)}
         >
           {#snippet icon()}
             <UserCheckIcon size={12} aria-hidden="true" />
@@ -2580,7 +2631,7 @@
               <Button
                 class="btn--conflict-refresh"
                 disabled={conflictRefreshBusy}
-                onclick={() => void refreshConflictState()}
+                onclick={() => refreshConflictState()}
                 tone="neutral"
                 surface="soft"
                 size="sm"
@@ -2684,7 +2735,6 @@
           routeGeneration={mutationRouteGeneration}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           alreadyQueued={deferredMergePending}
-          workspaceId={d.workspace?.id}
           midStackWarning={midStackBlocker
             ? `This is stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}. Branch #${midStackBlocker.number} below it has not been merged.`
             : undefined}
@@ -2694,30 +2744,21 @@
             showMergeModal = false;
             // Pick up deferred_merge_pending so the merge action renders
             // as queued until the background worker completes.
-            void detailStore.refreshDetailOnly(owner, name, number, {
+            detailStore.refreshDetailOnly(owner, name, number, {
               provider,
               platformHost,
               repoPath,
             });
           }}
-          onmerged={(cleanupWarning: string | undefined, deletedWorkspaceId: string | undefined) => {
+          onmerged={() => {
             showMergeModal = false;
-            if (deletedWorkspaceId) {
-              notifyWorkspaceDeleted?.(deletedWorkspaceId, undefined, $state.snapshot(itemIdentity));
-            }
-            if (cleanupWarning) {
-              showFlash(
-                `Pull request merged, but the workspace was not pruned: ${cleanupWarning}`,
-                { tone: "warning" },
-              );
-            }
-            void detailStore.loadDetail(owner, name, number, {
+            detailStore.loadDetail(owner, name, number, {
               provider,
               platformHost,
               repoPath,
             });
-            void pulls.loadPulls();
-            void activity.loadActivity();
+            pulls.loadPulls();
+            activity.loadActivity();
           }}
         />
       {/if}
@@ -2740,7 +2781,7 @@
             <div class="body-edit-actions">
               <button
                 class="title-edit-save"
-                onclick={() => void saveBody()}
+                onclick={saveBody}
                 disabled={savingBody || contentGate.unavailable}
                 title={contentGate.unavailable ? contentGate.reason : undefined}
               >

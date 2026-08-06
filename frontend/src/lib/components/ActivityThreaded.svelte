@@ -381,7 +381,7 @@
 
   function handleMarkSeen(e: Event, row: ActivityItem): void {
     e.stopPropagation();
-    void activity.markNotificationSeen(row);
+    activity.markNotificationSeen(row);
   }
 
   function eventClass(type: string): string {

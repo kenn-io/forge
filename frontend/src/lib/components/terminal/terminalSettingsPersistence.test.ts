@@ -1,12 +1,109 @@
 import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "../../api/types.js";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+import type { StartupSnapshot } from "../../app/startup-workflow.js";
 import {
   beginTerminalSettingsHydration,
   hydrateTerminalSettings,
   previewTerminalSettings,
   restoreTerminalSettingsPreview,
-  saveTerminalSettings,
+  saveTerminalSettings as saveTerminalSettingsEffect,
 } from "../../stores/terminal-settings-persistence.js";
+
+let runtime: OwnedAppRuntime;
+let persistSettings: (settings: TerminalSettings) => Promise<TerminalSettings>;
+
+function settingsResponse(terminal: TerminalSettings): StartupSnapshot {
+  return {
+    activity: {
+      view_mode: "threaded",
+      time_range: "7d",
+      hide_closed: false,
+      hide_bots: false,
+      collapse_threads: false,
+      default_branch_retention_days: 90,
+      default_branch_max_commits: 5000,
+    },
+    agents: [],
+    fleet: {
+      enabled: false,
+      sessions: {},
+      peers: [],
+      ssh_peers: [],
+      restart_required: false,
+    },
+    issues: { hide_bots: true },
+    kata_projects: [],
+    launch_targets: [],
+    modes: {
+      activity: true,
+      repos: true,
+      kata: false,
+      docs: false,
+      pulls: true,
+      issues: true,
+      reviews: true,
+      workspaces: true,
+    },
+    notifications: { enabled: true },
+    pull_requests: {
+      allow_mid_stack_merges: false,
+      prefer_github_native_stacks: false,
+    },
+    repos: [],
+    terminal,
+    workspaces: { auto_assign_on_create: false },
+  };
+}
+
+function saveTerminalSettings(options: {
+  baseline: TerminalSettings;
+  changes: Partial<TerminalSettings>;
+  persist: (settings: TerminalSettings) => Promise<TerminalSettings>;
+  store: ReturnType<typeof createStore>;
+}): Promise<TerminalSettings> {
+  persistSettings = options.persist;
+  const execution = runtime.runCommand(
+    saveTerminalSettingsEffect({
+      baseline: options.baseline,
+      changes: options.changes,
+      store: options.store,
+    }),
+    {
+      operation: "test terminal settings persistence",
+      safeContext: {},
+      onFailure: () => undefined,
+    },
+  );
+  return Effect.runPromise(execution.await.pipe(Effect.flatMap((exit) => exit)));
+}
+
+beforeEach(() => {
+  runtime = makeAppRuntime();
+  persistSettings = (settings) => Promise.resolve(settings);
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const body = await request.clone().json();
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      !("terminal" in body) ||
+      typeof body.terminal !== "object" ||
+      body.terminal === null
+    ) {
+      return Response.json({ detail: "invalid terminal settings" }, { status: 400 });
+    }
+    const terminal = body.terminal as TerminalSettings;
+    return Response.json(settingsResponse(await persistSettings(terminal)));
+  };
+  vi.stubGlobal("fetch", fetch);
+});
+
+afterEach(async () => {
+  await Effect.runPromise(runtime.disposeEffect);
+  vi.unstubAllGlobals();
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -60,8 +157,7 @@ describe("terminal settings persistence", () => {
       font_family: '"Iosevka Term", monospace',
       font_size: 13,
     });
-    await Promise.resolve();
-    expect(persist).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1));
 
     firstSave.resolve({
       ...DEFAULT_TERMINAL_SETTINGS,
@@ -102,8 +198,9 @@ describe("terminal settings persistence", () => {
       store,
     });
 
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1));
     firstSave.reject(new Error("settings unavailable"));
-    await expect(firstZoom).rejects.toThrow("settings unavailable");
+    await expect(firstZoom).rejects.toMatchObject({ _tag: "TransientTransportError" });
     await secondZoom;
 
     expect(store.getTerminalSettings().font_size).toBe(14);
@@ -140,8 +237,9 @@ describe("terminal settings persistence", () => {
       store,
     });
 
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1));
     firstSave.reject(new Error("settings unavailable"));
-    await expect(firstZoom).rejects.toThrow("settings unavailable");
+    await expect(firstZoom).rejects.toMatchObject({ _tag: "TransientTransportError" });
     await Promise.all([secondZoom, thirdZoom]);
 
     expect(persist).toHaveBeenNthCalledWith(3, {
@@ -173,10 +271,12 @@ describe("terminal settings persistence", () => {
       store,
     });
 
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1));
     firstSave.reject(new Error("first save failed"));
-    await expect(firstZoom).rejects.toThrow("first save failed");
+    await expect(firstZoom).rejects.toMatchObject({ _tag: "TransientTransportError" });
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(2));
     secondSave.reject(new Error("second save failed"));
-    await expect(secondZoom).rejects.toThrow("second save failed");
+    await expect(secondZoom).rejects.toMatchObject({ _tag: "TransientTransportError" });
 
     expect(store.getTerminalSettings().font_size).toBe(DEFAULT_TERMINAL_SETTINGS.font_size);
   });
@@ -208,9 +308,9 @@ describe("terminal settings persistence", () => {
       store,
     });
 
-    await Promise.resolve();
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1));
     firstSave.reject(new Error("settings unavailable"));
-    await expect(optionsSave).rejects.toThrow("settings unavailable");
+    await expect(optionsSave).rejects.toMatchObject({ _tag: "TransientTransportError" });
     await zoomSave;
 
     expect(persist).toHaveBeenNthCalledWith(2, {

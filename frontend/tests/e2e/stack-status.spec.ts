@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { mockSettings as defaultSettings } from "./support/mockApi";
 
 const capabilities = {
   comment_mutation: true,
@@ -303,6 +304,7 @@ async function mockStackedPR(
 
     if (method === "GET" && pathname === "/api/v1/settings") {
       await fulfillJson(route, {
+        ...defaultSettings,
         repos: [
           {
             provider: "github",
@@ -315,21 +317,13 @@ async function mockStackedPR(
           },
         ],
         activity: {
+          ...defaultSettings.activity,
           view_mode: "threaded",
-          time_range: "7d",
-          hide_closed: false,
-          hide_bots: false,
         },
         terminal: {
-          font_family: "",
+          ...defaultSettings.terminal,
           font_size: 14,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
         },
-        agents: [],
       });
       return;
     }

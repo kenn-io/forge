@@ -1,27 +1,33 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+import type { StartupSnapshot } from "../../app/startup-workflow.js";
 
-const { mockGetTerminalSettings, mockSetTerminalSettings, mockTerminalStore, mockUpdateSettings } = vi.hoisted(() => {
-  const defaultTerminal = {
-    font_family: "",
-    font_size: 14,
-    scrollback: 1000,
-    line_height: 1,
-    letter_spacing: 0,
-    cursor_blink: true,
-    font_ligatures: false,
-    hide_tmux_status: false,
-  };
-  const store = { terminal: { ...defaultTerminal } };
-  return {
-    mockGetTerminalSettings: vi.fn(() => store.terminal),
-    mockSetTerminalSettings: vi.fn((terminal: typeof defaultTerminal) => {
-      store.terminal = terminal;
-    }),
-    mockTerminalStore: { defaultTerminal, store },
-    mockUpdateSettings: vi.fn(),
-  };
-});
+const { mockGetTerminalSettings, mockSetTerminalSettings, mockTerminalStore, mockUpdateSettings, runtime } = vi.hoisted(
+  () => {
+    const defaultTerminal = {
+      font_family: "",
+      font_size: 14,
+      scrollback: 1000,
+      line_height: 1,
+      letter_spacing: 0,
+      cursor_blink: true,
+      font_ligatures: false,
+      hide_tmux_status: false,
+    };
+    const store = { terminal: { ...defaultTerminal } };
+    return {
+      mockGetTerminalSettings: vi.fn(() => store.terminal),
+      mockSetTerminalSettings: vi.fn((terminal: typeof defaultTerminal) => {
+        store.terminal = terminal;
+      }),
+      mockTerminalStore: { defaultTerminal, store },
+      mockUpdateSettings: vi.fn(),
+      runtime: { current: undefined as unknown as OwnedAppRuntime },
+    };
+  },
+);
 
 vi.mock("../../context.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../context.js")>();
@@ -44,19 +50,68 @@ vi.mock("../../api/types.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../api/settings.js", () => ({
-  updateSettings: mockUpdateSettings,
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => runtime.current,
 }));
 
-vi.mock("../../stores/embed-config.svelte.js", () => ({
-  isEmbedded: () => false,
-}));
+vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/embed-config.svelte.js")>();
+  return {
+    ...actual,
+    isEmbedded: () => false,
+  };
+});
 
 import TerminalSettings from "./TerminalSettings.svelte";
 
+function settingsResponse(terminal: StartupSnapshot["terminal"]): StartupSnapshot {
+  return {
+    activity: {
+      view_mode: "threaded",
+      time_range: "7d",
+      hide_closed: false,
+      hide_bots: false,
+      collapse_threads: false,
+      default_branch_retention_days: 90,
+      default_branch_max_commits: 5000,
+    },
+    agents: [],
+    fleet: {
+      enabled: false,
+      sessions: {},
+      peers: [],
+      ssh_peers: [],
+      restart_required: false,
+    },
+    issues: { hide_bots: true },
+    kata_projects: [],
+    launch_targets: [],
+    modes: {
+      activity: true,
+      repos: true,
+      kata: false,
+      docs: false,
+      pulls: true,
+      issues: true,
+      reviews: true,
+      workspaces: true,
+    },
+    notifications: { enabled: true },
+    pull_requests: {
+      allow_mid_stack_merges: false,
+      prefer_github_native_stacks: false,
+    },
+    repos: [],
+    terminal,
+    workspaces: { auto_assign_on_create: false },
+  };
+}
+
 describe("TerminalSettings", () => {
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await Effect.runPromise(runtime.current.disposeEffect);
+    vi.unstubAllGlobals();
     mockSetTerminalSettings.mockReset();
     mockSetTerminalSettings.mockImplementation((terminal) => {
       mockTerminalStore.store.terminal = terminal;
@@ -66,6 +121,26 @@ describe("TerminalSettings", () => {
       ...mockTerminalStore.defaultTerminal,
     };
     mockUpdateSettings.mockReset();
+  });
+
+  beforeEach(() => {
+    runtime.current = makeAppRuntime();
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const body = await request.clone().json();
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        !("terminal" in body) ||
+        typeof body.terminal !== "object" ||
+        body.terminal === null
+      ) {
+        return Response.json({ detail: "invalid terminal settings" }, { status: 400 });
+      }
+      const updated = await mockUpdateSettings({ terminal: body.terminal });
+      return Response.json(settingsResponse(updated.terminal));
+    };
+    vi.stubGlobal("fetch", fetch);
   });
 
   it("enables save after editing and persists the font family", async () => {

@@ -15,6 +15,7 @@
     DetailActivityViewMode,
     DetailTimelineOrder,
   } from "../../stores/detail-activity-view.svelte.js";
+  import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
@@ -65,9 +66,21 @@
     showCommitDetails?: boolean;
     activityViewMode?: DetailActivityViewMode;
     timelineOrder?: DetailTimelineOrder;
-    onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
-    onDeleteComment?: ((event: PREvent | IssueEvent) => Promise<string | null>) | undefined;
-    onApplySuggestion?: ((input: ApplySuggestionRequest) => Promise<boolean | SuggestionApplyResult>) | undefined;
+    onEditComment?:
+      | ((event: PREvent | IssueEvent, body: string, callbacks: MutationCallbacks) => void)
+      | undefined;
+    onDeleteComment?:
+      | ((event: PREvent | IssueEvent, callbacks: DeleteCommentCallbacks) => void)
+      | undefined;
+    onApplySuggestion?:
+      | ((
+          input: ApplySuggestionRequest,
+          callbacks: {
+            readonly onResult: (result: boolean | SuggestionApplyResult) => void;
+            readonly onSettled: () => void;
+          },
+        ) => void)
+      | undefined;
     jumpToReviewThread?: ((thread: ReviewThread) => void) | undefined;
   }
 
@@ -75,6 +88,12 @@
     ok: boolean;
     error?: string | undefined;
   };
+
+  interface DeleteCommentCallbacks {
+    readonly onSuccess: () => void;
+    readonly onFailure: (message: string) => void;
+    readonly onSettled: () => void;
+  }
 
   const {
     events,
@@ -146,7 +165,7 @@
       diffReloadedForHead = currentHeadSHA;
     }
     untrack(() => {
-      void diffStore.loadDiff(repoOwner, repoName, number, {
+      diffStore.loadDiff(repoOwner, repoName, number, {
         provider,
         platformHost,
         owner: repoOwner,
@@ -973,12 +992,13 @@
     return thread ? { thread } : null;
   }
 
-  async function refreshAfterThreadChange(): Promise<void> {
+  function refreshAfterThreadChange(): void {
     if (!provider || !repoOwner || !repoName || !repoPath || number == null) return;
-    await detailStore?.refreshDetailOnly(repoOwner, repoName, number, {
+    detailStore?.loadDetail(repoOwner, repoName, number, {
       provider,
       platformHost,
       repoPath,
+      sync: false,
     });
   }
 
@@ -1055,23 +1075,22 @@
     return compact.length > 160 ? `${compact.slice(0, 159)}…` : compact;
   }
 
-  async function confirmDelete(): Promise<void> {
+  function confirmDelete(): void {
     const target = deleteTarget;
     if (!target || !onDeleteComment || deletingId !== null) return;
     deletingId = target.ID;
     deleteError = null;
-    try {
-      const error = await onDeleteComment(target);
-      if (error === null) {
+    onDeleteComment(target, {
+      onSuccess: () => {
         deleteTarget = null;
-      } else {
-        deleteError = error;
-      }
-    } catch (err) {
-      deleteError = err instanceof Error ? err.message : String(err);
-    } finally {
-      deletingId = null;
-    }
+      },
+      onFailure: (message) => {
+        deleteError = message;
+      },
+      onSettled: () => {
+        deletingId = null;
+      },
+    });
   }
 
   function startEdit(event: PREvent | IssueEvent): void {
@@ -1181,7 +1200,7 @@
     replyError = null;
   }
 
-  async function submitReply(entry: TimelineEntry): Promise<void> {
+  function submitReply(entry: TimelineEntry): void {
     // Re-check the gate: availability can flip (rate limit, missing
     // write credential) while the composer is already open.
     if (!canReplyToThread(entry)) return;
@@ -1194,17 +1213,15 @@
     }
     savingReplyThreadID = targetID;
     replyError = null;
-    try {
-      const ok = await detailStore?.replyToDiscussion(repoOwner, repoName, number, targetID, body);
-      if (ok) {
-        cancelReply();
-      }
-    } finally {
-      savingReplyThreadID = null;
-    }
+    detailStore?.replyToDiscussion(repoOwner, repoName, number, targetID, body, {
+      onSuccess: cancelReply,
+      onSettled: () => {
+        if (savingReplyThreadID === targetID) savingReplyThreadID = null;
+      },
+    });
   }
 
-  async function saveEdit(event: PREvent | IssueEvent): Promise<void> {
+  function saveEdit(event: PREvent | IssueEvent): void {
     const nextBody = editDraft.trim();
     if (nextBody === "") {
       editError = "Comment body must not be empty";
@@ -1218,14 +1235,12 @@
 
     savingEditId = event.ID;
     editError = null;
-    try {
-      const ok = await onEditComment(event, nextBody);
-      if (ok) {
-        cancelEdit();
-      }
-    } finally {
-      savingEditId = null;
-    }
+    onEditComment(event, nextBody, {
+      onSuccess: cancelEdit,
+      onSettled: () => {
+        if (savingEditId === event.ID) savingEditId = null;
+      },
+    });
   }
 
   function copyText(id: string, text: string): void {
@@ -1281,32 +1296,37 @@
     };
   }
 
-  async function commitSuggestion(
+  function commitSuggestion(
     event: PREvent | IssueEvent,
     block: Extract<MarkdownSuggestionBlock, { type: "suggestion" }>,
     thread: ReviewThread,
-  ): Promise<void> {
+  ): void {
     if (onApplySuggestion === undefined || suggestionSubmissionBusy) return;
     const key = suggestionKey(event, block);
     const { [key]: _discardedError, ...remainingErrors } = suggestionErrors;
     suggestionErrors = remainingErrors;
     applyingSuggestionKey = key;
-    try {
-      const result = await onApplySuggestion({
+    onApplySuggestion(
+      {
         suggestions: [suggestionRequest(thread, block.replacement)],
-      });
-      const ok = typeof result === "boolean" ? result : result.ok;
-      if (ok) {
-        batchedSuggestions = batchedSuggestions.filter((item) => item.key !== key);
-      } else if (typeof result !== "boolean" && result.error) {
-        suggestionErrors = {
-          ...suggestionErrors,
-          [key]: result.error,
-        };
-      }
-    } finally {
-      applyingSuggestionKey = null;
-    }
+      },
+      {
+        onResult: (result) => {
+          const ok = typeof result === "boolean" ? result : result.ok;
+          if (ok) {
+            batchedSuggestions = batchedSuggestions.filter((item) => item.key !== key);
+          } else if (typeof result !== "boolean" && result.error) {
+            suggestionErrors = {
+              ...suggestionErrors,
+              [key]: result.error,
+            };
+          }
+        },
+        onSettled: () => {
+          applyingSuggestionKey = null;
+        },
+      },
+    );
   }
 
   function toggleSuggestionBatch(
@@ -1327,7 +1347,7 @@
         ];
   }
 
-  async function commitSuggestionBatch(): Promise<void> {
+  function commitSuggestionBatch(): void {
     const eligible = eligibleBatchedSuggestions;
     if (onApplySuggestion === undefined || eligible.length === 0 || suggestionSubmissionBusy) return;
     const submittedKeys = eligible.map((item) => item.key);
@@ -1335,20 +1355,25 @@
       Object.entries(suggestionErrors).filter(([key]) => !submittedKeys.includes(key)),
     );
     savingSuggestionBatch = true;
-    try {
-      const result = await onApplySuggestion({ suggestions: eligible.map((item) => item.request) });
-      const ok = typeof result === "boolean" ? result : result.ok;
-      if (ok) {
-        batchedSuggestions = batchedSuggestions.filter((item) => !submittedKeys.includes(item.key));
-      } else if (typeof result !== "boolean" && result.error) {
-        suggestionErrors = {
-          ...suggestionErrors,
-          ...Object.fromEntries(submittedKeys.map((key) => [key, result.error!])),
-        };
-      }
-    } finally {
-      savingSuggestionBatch = false;
-    }
+    onApplySuggestion(
+      { suggestions: eligible.map((item) => item.request) },
+      {
+        onResult: (result) => {
+          const ok = typeof result === "boolean" ? result : result.ok;
+          if (ok) {
+            batchedSuggestions = batchedSuggestions.filter((item) => !submittedKeys.includes(item.key));
+          } else if (typeof result !== "boolean" && result.error) {
+            suggestionErrors = {
+              ...suggestionErrors,
+              ...Object.fromEntries(submittedKeys.map((key) => [key, result.error!])),
+            };
+          }
+        },
+        onSettled: () => {
+          savingSuggestionBatch = false;
+        },
+      },
+    );
   }
 
   function directLinkCopyID(event: PREvent | IssueEvent): string {
@@ -1527,7 +1552,7 @@
               editDraft = nextBody;
             }}
             onsubmit={() => {
-              void saveEdit(event);
+              saveEdit(event);
             }}
           />
           {#if editError}
@@ -1536,7 +1561,7 @@
           <div class="edit-actions">
             <button
               class="edit-action edit-action--primary"
-              onclick={() => void saveEdit(event)}
+              onclick={() => saveEdit(event)}
               disabled={savingEditId === event.ID}
             >
               <CheckIcon size={14} />
@@ -1593,7 +1618,7 @@
                       batched={batchedSuggestionKeys.includes(blockKey)}
                       error={suggestionErrors[blockKey] ?? null}
                       onCommit={onApplySuggestion !== undefined
-                        ? () => void commitSuggestion(event, block, reviewThread.thread)
+                        ? () => commitSuggestion(event, block, reviewThread.thread)
                         : undefined}
                       onToggleBatch={onApplySuggestion !== undefined
                         ? () => toggleSuggestionBatch(event, block, reviewThread.thread)
@@ -1652,7 +1677,7 @@
             editDraft = nextBody;
           }}
           onsubmit={() => {
-            void saveEdit(event);
+            saveEdit(event);
           }}
         />
         {#if editError}
@@ -1661,7 +1686,7 @@
         <div class="edit-actions">
           <button
             class="edit-action edit-action--primary"
-            onclick={() => void saveEdit(event)}
+            onclick={() => saveEdit(event)}
             disabled={savingEditId === event.ID}
           >
             <CheckIcon size={14} />
@@ -1707,7 +1732,7 @@
 	        replyDraft = nextBody;
 	      }}
 	      onsubmit={() => {
-	        void submitReply(entry);
+	        submitReply(entry);
 	      }}
 	    />
 	    {#if replyError}
@@ -1716,7 +1741,7 @@
 	    <div class="edit-actions">
 	      <button
 	        class="edit-action edit-action--primary"
-	        onclick={() => void submitReply(entry)}
+	        onclick={() => submitReply(entry)}
 	        disabled={savingReplyThreadID === targetID || !canReplyToThread(entry)}
 	      >
 	        <CheckIcon size={14} />
@@ -1745,7 +1770,7 @@
         <button
           class="thread-toggle thread-reply-action"
           type="button"
-          onclick={() => void commitSuggestionBatch()}
+          onclick={() => commitSuggestionBatch()}
           disabled={suggestionSubmissionBusy}
         >
           <CheckIcon size={14} />

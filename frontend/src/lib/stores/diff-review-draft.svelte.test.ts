@@ -1,8 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
 
-import type { ForgeClient } from "../types.js";
+import type { OwnedAppRuntime } from "../app/runtime.js";
+import { TransientTransportError } from "../api/effect-errors.js";
+import type { GeneratedClient } from "../api/generated-api.js";
+import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import type { ProviderRouteRef } from "../api/provider-routes.js";
-import { createDiffReviewDraftStore } from "./diff-review-draft.svelte.js";
+import { createDiffReviewDraftStore, type DiffReviewDraftStoreOptions } from "./diff-review-draft.svelte.js";
+import type { MutationCallbacks } from "./ordered-mutations.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 
 interface MockDraftLoad {
@@ -55,10 +60,11 @@ function draftLoad({
 }
 
 function mutation(overrides: Partial<MockMutation> = {}): MockMutation {
-  return {
-    response: { status: 200, ok: true },
-    ...overrides,
-  };
+  const response = overrides.response ?? { status: 200, ok: true };
+  if (overrides.error !== undefined) {
+    return { error: overrides.error, response };
+  }
+  return { data: overrides.data ?? { status: "ok" }, response };
 }
 
 function failedMutation(): MockMutation {
@@ -110,8 +116,8 @@ function mockClient({
   POST?: ReturnType<typeof vi.fn>;
   PATCH?: ReturnType<typeof vi.fn>;
   DELETE?: ReturnType<typeof vi.fn>;
-} = {}): ForgeClient {
-  return { GET, POST, PATCH, DELETE } as unknown as ForgeClient;
+} = {}): GeneratedClient {
+  return { GET, POST, PATCH, DELETE } as unknown as GeneratedClient;
 }
 
 function deferred<T>() {
@@ -124,49 +130,114 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+let runtime: OwnedAppRuntime | undefined;
+
+type TestStoreOptions = Omit<DiffReviewDraftStoreOptions, "runtime"> & { readonly client: GeneratedClient };
+
+function createStore(options: TestStoreOptions) {
+  const { client, ...storeOptions } = options;
+  runtime = makeTestAppRuntime(client);
+  return createDiffReviewDraftStore({ ...storeOptions, runtime });
+}
+
+function runAcknowledged(launch: (callbacks: MutationCallbacks) => void): Promise<boolean> {
+  return new Promise((resolve) => {
+    launch({
+      onSuccess: () => resolve(true),
+      onFailure: () => resolve(false),
+    });
+  });
+}
+
 describe("createDiffReviewDraftStore", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    runtime = undefined;
+  });
+
+  afterEach(async () => {
     for (const flash of getFlashes()) dismissFlash(flash.id);
+    if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
+  });
+
+  it("launches publish synchronously and settles from its acknowledged mutation", async () => {
+    const client = mockClient();
+    const store = createStore({ client });
+    store.setContext(providerRef(), 42, true);
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    const settled = Promise.withResolvers<void>();
+    const succeeded = vi.fn();
+
+    const result = store.publish("comment", "summary", {
+      onSuccess: succeeded,
+      onSettled: settled.resolve,
+    });
+
+    expect(result).toBeUndefined();
+    await settled.promise;
+    expect(succeeded).toHaveBeenCalledOnce();
   });
 
   it("refreshes PR detail after a successful publish", async () => {
     const client = mockClient();
-    const onPublished = vi.fn();
-    const store = createDiffReviewDraftStore({ client, onPublished });
+    const onPublished = vi.fn(() => Effect.void);
+    const store = createStore({ client, onPublished });
     const ref = providerRef();
 
     store.setContext(ref, 42, true);
     await Promise.resolve();
-    const ok = await store.publish("comment", "summary");
+    const ok = await runAcknowledged((callbacks) => store.publish("comment", "summary", callbacks));
 
     expect(ok).toBe(true);
-    expect(onPublished).toHaveBeenCalledWith(ref, 42);
+    await vi.waitFor(() => expect(onPublished).toHaveBeenCalledWith(ref, 42));
   });
 
-  it("keeps publish successful when detail refresh fails", async () => {
-    const client = mockClient();
-    const store = createDiffReviewDraftStore({
+  it("still refreshes the draft when timeline reconciliation fails", async () => {
+    const order: string[] = [];
+    const client = mockClient({
+      GET: vi.fn(() => {
+        order.push("draft");
+        return Promise.resolve(draftLoad());
+      }),
+    });
+    const store = createStore({
       client,
-      onPublished: () => Promise.reject(new Error("refresh failed")),
+      onPublished: () =>
+        Effect.sync(() => order.push("timeline")).pipe(
+          Effect.andThen(
+            Effect.fail(
+              TransientTransportError.make({
+                operation: "refresh published review timeline",
+                cause: new Error("offline"),
+              }),
+            ),
+          ),
+        ),
     });
 
     store.setContext(providerRef(), 42, true);
     await Promise.resolve();
 
-    await expect(store.publish("comment", "summary")).resolves.toBe(true);
+    await expect(runAcknowledged((callbacks) => store.publish("comment", "summary", callbacks))).resolves.toBe(true);
+    await vi.waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
+    expect(order).toEqual(["draft", "timeline", "draft"]);
     expect(store.getError()).toBeNull();
+    expect(getFlash()).toMatchObject({
+      message: "Review was published, but the pull request timeline could not be refreshed.",
+      tone: "danger",
+    });
   });
 
   it("does not refresh PR detail when publish fails", async () => {
     const client = mockClient({ POST: mockPost(failedMutation()) });
-    const onPublished = vi.fn();
-    const store = createDiffReviewDraftStore({ client, onPublished });
+    const onPublished = vi.fn(() => Effect.void);
+    const store = createStore({ client, onPublished });
+    const settled = Promise.withResolvers<void>();
 
     store.setContext(providerRef(), 42, true);
     await Promise.resolve();
-    const ok = await store.publish("comment", "summary");
+    store.publish("comment", "summary", { onSettled: settled.resolve });
+    await settled.promise;
 
-    expect(ok).toBe(false);
     expect(onPublished).not.toHaveBeenCalled();
     expect(store.getError()).toBeNull();
     expect(getFlash()).toMatchObject({ message: "failed", tone: "danger" });
@@ -197,16 +268,19 @@ describe("createDiffReviewDraftStore", () => {
         }),
       ),
     });
-    const onStalePublish = vi.fn();
-    const store = createDiffReviewDraftStore({ client, onStalePublish });
+    const syncCompleted = Promise.withResolvers<void>();
+    const onStalePublish = vi.fn(() => Effect.promise(() => syncCompleted.promise));
+    const store = createStore({ client, onStalePublish });
     const ref = providerRef();
 
     store.setContext(ref, 42, true);
     await Promise.resolve();
-    const ok = await store.publish("approve", "summary");
+    const result = runAcknowledged((callbacks) => store.publish("approve", "summary", callbacks));
 
-    expect(ok).toBe(false);
-    expect(onStalePublish).toHaveBeenCalledWith(ref, 42);
+    await vi.waitFor(() => expect(onStalePublish).toHaveBeenCalledWith(ref, 42));
+    expect(client.GET).toHaveBeenCalledTimes(1);
+    syncCompleted.resolve();
+    expect(await result).toBe(false);
     expect(client.GET).toHaveBeenCalledTimes(2);
     expect(store.getComments()).toEqual([{ id: "fresh", body: "fresh draft" }]);
     expect(store.getError()).toBe("review draft head is stale");
@@ -218,7 +292,7 @@ describe("createDiffReviewDraftStore", () => {
     const client = mockClient({
       GET: vi.fn().mockReturnValueOnce(oldLoad.promise).mockReturnValueOnce(newLoad.promise),
     });
-    const store = createDiffReviewDraftStore({ client });
+    const store = createStore({ client });
     const ref = providerRef({
       provider: "github",
       platformHost: "github.com",
@@ -246,6 +320,29 @@ describe("createDiffReviewDraftStore", () => {
     expect(store.isLoading()).toBe(false);
   });
 
+  it("settles every draft mutation rejected before command acceptance", () => {
+    const store = createStore({ client: mockClient() });
+    const launches: Array<(onSettled: () => void) => void> = [
+      (onSettled) =>
+        store.createComment(
+          "comment",
+          { path: "src/main.ts", side: "right", line: 7, line_type: "add" },
+          { onSettled },
+        ),
+      (onSettled) => store.editComment(draftComment(), "updated", { onSettled }),
+      (onSettled) => store.deleteComment("draft-1", { onSettled }),
+      (onSettled) => store.publish("comment", "summary", { onSettled }),
+      (onSettled) => store.discard({ onSettled }),
+      (onSettled) => store.setThreadResolved("thread-1", true, { onSettled }),
+    ];
+
+    for (const launch of launches) {
+      const settled = vi.fn();
+      launch(settled);
+      expect(settled).toHaveBeenCalledOnce();
+    }
+  });
+
   it("patches a draft comment body while preserving its review range", async () => {
     const original = draftComment({ id: "draft-7", body: "before" });
     const updated = draftComment({
@@ -260,17 +357,21 @@ describe("createDiffReviewDraftStore", () => {
         .mockResolvedValueOnce(draftLoad({ comments: [updated] })),
       PATCH: mockPatch(mutation({ data: updated })),
     });
-    const store = createDiffReviewDraftStore({ client });
+    const store = createStore({ client });
     const ref = providerRef();
 
     store.setContext(ref, 42, true);
     await Promise.resolve();
     const comment = store.getComments()[0];
+    const settled = Promise.withResolvers<void>();
 
-    await expect(store.editComment(comment, "after")).resolves.toBe(true);
+    const result = store.editComment(comment, "after", { onSettled: settled.resolve });
+
+    expect(result).toBeUndefined();
+    await settled.promise;
     expect(client.PATCH).toHaveBeenCalledWith(
       "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}",
-      {
+      expect.objectContaining({
         params: {
           path: {
             provider: "forgejo",
@@ -291,9 +392,85 @@ describe("createDiffReviewDraftStore", () => {
             diff_head_sha: "head-sha",
           },
         },
-      },
+      }),
     );
     expect(store.getComments()).toEqual([updated]);
+  });
+
+  it("launches draft comment creation synchronously and refreshes after acknowledgement", async () => {
+    const created = draftComment({ id: "draft-created", body: "new comment" });
+    const client = mockClient({
+      GET: vi
+        .fn()
+        .mockResolvedValueOnce(draftLoad())
+        .mockResolvedValueOnce(draftLoad({ comments: [created] })),
+      POST: mockPost(mutation({ data: created })),
+    });
+    const store = createStore({ client });
+    store.setContext(providerRef(), 42, true);
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    const settled = Promise.withResolvers<void>();
+
+    const result = store.createComment(
+      "new comment",
+      {
+        path: "src/main.ts",
+        side: "right",
+        line: 7,
+        line_type: "add",
+      },
+      { onSettled: settled.resolve },
+    );
+
+    expect(result).toBeUndefined();
+    await settled.promise;
+    await vi.waitFor(() => expect(store.getComments()).toEqual([created]));
+  });
+
+  it("launches draft comment deletion synchronously and refreshes after acknowledgement", async () => {
+    const existing = draftComment();
+    const client = mockClient({
+      GET: vi
+        .fn()
+        .mockResolvedValueOnce(draftLoad({ comments: [existing] }))
+        .mockResolvedValueOnce(draftLoad()),
+    });
+    const store = createStore({ client });
+    store.setContext(providerRef(), 42, true);
+    await vi.waitFor(() => expect(store.getComments()).toEqual([existing]));
+    const settled = Promise.withResolvers<void>();
+
+    const result = store.deleteComment(existing.id, { onSettled: settled.resolve });
+
+    expect(result).toBeUndefined();
+    await settled.promise;
+    await vi.waitFor(() => expect(store.getComments()).toEqual([]));
+  });
+
+  it("launches thread resolution synchronously from the provider mutation queue", async () => {
+    const client = mockClient();
+    const store = createStore({ client });
+    store.setRouteContext(providerRef(), 42);
+    const settled = Promise.withResolvers<void>();
+
+    const result = store.setThreadResolved("thread-1", true, { onSettled: settled.resolve });
+
+    expect(result).toBeUndefined();
+    await settled.promise;
+    expect(client.POST).toHaveBeenCalledWith(
+      "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve",
+      expect.objectContaining({
+        params: {
+          path: {
+            provider: "forgejo",
+            owner: "acme",
+            name: "widgets",
+            number: 42,
+            thread_id: "thread-1",
+          },
+        },
+      }),
+    );
   });
 
   it("surfaces partial publish status while clearing the draft", async () => {
@@ -305,8 +482,8 @@ describe("createDiffReviewDraftStore", () => {
         }),
       ),
     });
-    const onPublished = vi.fn();
-    const store = createDiffReviewDraftStore({ client, onPublished });
+    const onPublished = vi.fn(() => Effect.void);
+    const store = createStore({ client, onPublished });
     const ref = providerRef({
       provider: "gitlab",
       platformHost: "gitlab.example.com",
@@ -317,7 +494,7 @@ describe("createDiffReviewDraftStore", () => {
 
     store.setContext(ref, 7, true);
     await Promise.resolve();
-    const ok = await store.publish("approve", "summary");
+    const ok = await runAcknowledged((callbacks) => store.publish("approve", "summary", callbacks));
 
     expect(ok).toBe(true);
     expect(store.getDraft()?.comments).toEqual([]);
@@ -332,13 +509,13 @@ describe("createDiffReviewDraftStore", () => {
     const client = mockClient({
       GET: vi.fn().mockReturnValueOnce(staleLoad.promise).mockResolvedValueOnce(draftLoad()),
     });
-    const store = createDiffReviewDraftStore({ client });
+    const store = createStore({ client });
 
     store.setContext(providerRef(), 42, true);
     await Promise.resolve();
 
-    await expect(store.publish("comment", "summary")).resolves.toBe(true);
-    expect(store.getComments()).toEqual([]);
+    await expect(runAcknowledged((callbacks) => store.publish("comment", "summary", callbacks))).resolves.toBe(true);
+    await vi.waitFor(() => expect(store.getComments()).toEqual([]));
 
     staleLoad.resolve(
       draftLoad({
@@ -357,13 +534,13 @@ describe("createDiffReviewDraftStore", () => {
       GET: vi.fn().mockReturnValueOnce(staleLoad.promise),
       POST: mockPost(failedMutation()),
     });
-    const store = createDiffReviewDraftStore({ client });
+    const store = createStore({ client });
 
     store.setContext(providerRef(), 42, true);
     await Promise.resolve();
     expect(store.isLoading()).toBe(true);
 
-    await expect(store.publish("comment", "summary")).resolves.toBe(false);
+    await expect(runAcknowledged((callbacks) => store.publish("comment", "summary", callbacks))).resolves.toBe(false);
     expect(store.isLoading()).toBe(false);
 
     staleLoad.resolve(
@@ -383,13 +560,17 @@ describe("createDiffReviewDraftStore", () => {
     const client = mockClient({
       GET: vi.fn().mockReturnValueOnce(staleLoad.promise),
     });
-    const store = createDiffReviewDraftStore({ client });
+    const store = createStore({ client });
 
     store.setContext(providerRef(), 42, true);
     await Promise.resolve();
     expect(store.isLoading()).toBe(true);
+    const settled = Promise.withResolvers<void>();
 
-    await expect(store.discard()).resolves.toBe(true);
+    const result = store.discard({ onSettled: settled.resolve });
+
+    expect(result).toBeUndefined();
+    await settled.promise;
     expect(store.isLoading()).toBe(false);
 
     staleLoad.resolve(

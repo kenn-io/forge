@@ -1,7 +1,10 @@
 <script lang="ts">
   import { Spinner } from "@kenn-io/kit-ui";
   import { Virtualizer } from "@pierre/diffs";
+  import { Effect } from "effect";
   import { onMount, tick, untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
   import { getStores } from "../../context.js";
   import type { DiffScrollTarget } from "../../stores/diff.svelte.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
@@ -10,9 +13,10 @@
   const stores = getStores();
   const diffStore = stores.diff;
   const diffReviewDraft = stores.diffReviewDraft;
+  const runtime = getAppRuntime();
   import { ScrollBox } from "@kenn-io/kit-ui";
   import DiffFileComponent from "./DiffFile.svelte";
-  import { createDiffContextPrefetchScheduler } from "./diff-context-prefetch.js";
+  import { DiffContextPrefetch } from "./diff-context-prefetch.js";
   import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
 
   interface Props {
@@ -73,7 +77,7 @@
   let scrollRestoreRaf = 0;
   let scrollTargetRaf = 0;
   let virtualizerWakeRaf = 0;
-  const contextPrefetchScheduler = createDiffContextPrefetchScheduler({ concurrency: 4 });
+  let contextGenerationExecution: AppExecution<void, never> | undefined;
   let scrollTargetRun = 0;
   let scrollingToTarget: DiffScrollTarget | null = null;
   let restoredScrollScope = "";
@@ -83,7 +87,7 @@
 
   onMount(() => {
     if (loadOnMount) {
-      void diffStore.loadDiff(owner, name, number, {
+      diffStore.loadDiff(owner, name, number, {
         provider,
         platformHost,
         owner,
@@ -98,7 +102,7 @@
       cancelAnimationFrame(scrollRestoreRaf);
       cancelAnimationFrame(scrollTargetRaf);
       cancelAnimationFrame(virtualizerWakeRaf);
-      contextPrefetchScheduler.dispose();
+      contextGenerationExecution?.interrupt();
       diffStore.clearDiff();
       diffReviewDraft?.clear();
     };
@@ -134,7 +138,19 @@
   );
 
   $effect(() => {
-    contextPrefetchScheduler.setGeneration(nextContextPrefetchIdentity);
+    const identity = nextContextPrefetchIdentity;
+    contextGenerationExecution?.interrupt();
+    contextGenerationExecution = runtime.runCommand(
+      Effect.gen(function* () {
+        const prefetch = yield* DiffContextPrefetch;
+        yield* prefetch.setGeneration(identity);
+      }),
+      {
+        operation: "set diff context prefetch generation",
+        safeContext: { surface: "diff" },
+        onFailure: () => {},
+      },
+    );
   });
 
   $effect(() => {
@@ -627,7 +643,6 @@
             {#each visibleFiles as file (file.path)}
               <DiffFileComponent
                 {file}
-                {contextPrefetchScheduler}
                 contextPrefetchIdentity={nextContextPrefetchIdentity}
                 {provider}
                 {platformHost}

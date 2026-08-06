@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { Label } from "../../api/types.js";
 
 export interface LabelCatalogLoadResult {
@@ -6,30 +7,24 @@ export interface LabelCatalogLoadResult {
   syncing?: boolean;
 }
 
-export interface LabelCatalogRefreshOptions {
-  loadOnce: () => Promise<LabelCatalogLoadResult>;
-  onUpdate: (catalog: LabelCatalogLoadResult) => void;
+export interface LabelCatalogRefreshOptions<LoadE, LoadR, UpdateE, UpdateR> {
+  loadOnce: Effect.Effect<LabelCatalogLoadResult, LoadE, LoadR>;
+  onUpdate: (catalog: LabelCatalogLoadResult) => Effect.Effect<void, UpdateE, UpdateR>;
   isActive: () => boolean;
-  wait?: (ms: number) => Promise<void>;
   intervalMs?: number;
 }
 
-function defaultWait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export async function loadLabelCatalogWithRefresh({
-  loadOnce,
-  onUpdate,
-  isActive,
-  wait = defaultWait,
-  intervalMs = 1_000,
-}: LabelCatalogRefreshOptions): Promise<void> {
-  while (isActive()) {
-    const catalog = await loadOnce();
-    if (!isActive()) return;
-    onUpdate(catalog);
+export const loadLabelCatalogWithRefresh = Effect.fn("LabelCatalog.refresh")(function* <
+  LoadE,
+  LoadR,
+  UpdateE,
+  UpdateR,
+>({ loadOnce, onUpdate, isActive, intervalMs = 1_000 }: LabelCatalogRefreshOptions<LoadE, LoadR, UpdateE, UpdateR>) {
+  while (yield* Effect.sync(isActive)) {
+    const catalog = yield* loadOnce;
+    if (!(yield* Effect.sync(isActive))) return;
+    yield* onUpdate(catalog);
     if (!catalog.stale && !catalog.syncing) return;
-    await wait(intervalMs);
+    yield* Effect.sleep(intervalMs);
   }
-}
+});

@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
-import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "../../../test/browserAppHarness.js";
+import {
+  emitBrowserEventSource,
+  getBrowserEventSourceCount,
+  mountBrowserApp,
+  resetKeyboardModuleState,
+  type MountedBrowserApp,
+} from "../../../test/browserAppHarness.js";
 import {
   createMockApiFetch,
   jsonResponse,
@@ -10,6 +16,8 @@ import {
   type MockRouteOverride,
 } from "../../../test/mockApiFetch.js";
 import StatusBarTestHost from "./StatusBarTestHost.svelte";
+import { Effect } from "effect";
+import { makeAppRuntime } from "../../app/runtime.js";
 
 const WAIT = 10_000;
 
@@ -17,7 +25,7 @@ let mounted: (MountedBrowserApp | MountedStatusBar) | null = null;
 
 interface MountedStatusBar {
   api: MockApiHandle;
-  unmount: () => void;
+  unmount: () => void | Promise<void>;
 }
 
 function repo(owner: string, name: string) {
@@ -210,14 +218,16 @@ async function mountStatusBar(path: string, overrides: MockRouteOverride[]): Pro
 
   const target = document.createElement("div");
   document.body.appendChild(target);
-  const { unmount } = render(StatusBarTestHost, { target });
+  const runtime = makeAppRuntime();
+  const { unmount } = render(StatusBarTestHost, { target, props: { runtime } });
 
   return {
     api,
-    unmount: () => {
+    unmount: async () => {
       unmount();
       target.remove();
       globalThis.fetch = originalFetch;
+      await Effect.runPromise(runtime.disposeEffect);
     },
   };
 }
@@ -236,7 +246,7 @@ describe("status bar counts", () => {
   });
 
   afterEach(async () => {
-    mounted?.unmount();
+    await mounted?.unmount();
     mounted = null;
     localStorage.clear();
     await resetKeyboardModuleState();
@@ -251,6 +261,34 @@ describe("status bar counts", () => {
         "syncing (github.com/acme/widgets)",
       );
     }, WAIT);
+  });
+
+  it("shows when live updates are reconnecting", async () => {
+    mounted = await mountBrowserApp("/repos");
+    await vi.waitFor(() => expect(getBrowserEventSourceCount()).toBe(1), WAIT);
+
+    emitBrowserEventSource("error", {});
+
+    await vi.waitFor(() => {
+      expect(document.querySelector(".kit-status-bar__section--right")?.textContent).toContain(
+        "live updates reconnecting",
+      );
+    }, WAIT);
+  });
+
+  it("offers a reconnect action after live updates stop", async () => {
+    mounted = await mountBrowserApp("/repos");
+    await vi.waitFor(() => expect(getBrowserEventSourceCount()).toBe(1), WAIT);
+
+    emitBrowserEventSource("sync_status", { running: "yes" });
+    const reconnect = page.getByRole("button", { name: "Reconnect live updates" });
+    await expect.element(reconnect).toBeVisible();
+    await vi.waitFor(() => expect(getBrowserEventSourceCount()).toBe(0), WAIT);
+    await reconnect.click();
+
+    await vi.waitFor(() => expect(getBrowserEventSourceCount()).toBe(1), WAIT);
+    emitBrowserEventSource("open", {});
+    await expect.element(reconnect).not.toBeInTheDocument();
   });
 
   it("counts only open PRs when the loaded pull cache includes closed and merged rows", async () => {

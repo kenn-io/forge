@@ -1,5 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+import { mockSettings } from "../../../test/mockApiFetch.js";
 
 type TerminalSettings = {
   font_family: string;
@@ -31,6 +34,7 @@ const {
   mockSetModeVisibility,
   mockSetTerminalSettings,
   mockUpdateSettings,
+  runtime,
 } = vi.hoisted(() => {
   const defaults: TerminalSettings = {
     font_family: "",
@@ -64,6 +68,7 @@ const {
       currentTerminal.value = settings;
     }),
     mockUpdateSettings: vi.fn(),
+    runtime: { current: undefined as unknown as OwnedAppRuntime },
   };
 });
 
@@ -102,19 +107,36 @@ vi.mock("../../context.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../api/settings.js", () => ({
-  updateSettings: mockUpdateSettings,
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => runtime.current,
 }));
 
-vi.mock("../../stores/embed-config.svelte.js", () => ({
-  isEmbedded: () => false,
-}));
+vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/embed-config.svelte.js")>();
+  return {
+    ...actual,
+    isEmbedded: () => false,
+  };
+});
 
 import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
 
 describe("TerminalOptionsMenu", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    runtime.current = makeAppRuntime();
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const body = await request.clone().json();
+      const updated = await mockUpdateSettings(body);
+      return Response.json({ ...mockSettings, ...updated });
+    };
+    vi.stubGlobal("fetch", fetch);
+  });
+
+  afterEach(async () => {
     cleanup();
+    await Effect.runPromise(runtime.current.disposeEffect);
+    vi.unstubAllGlobals();
     currentModes.value = { ...defaultModes };
     currentTerminal.value = { ...defaultTerminal };
     mockSetModeVisibility.mockClear();
@@ -142,6 +164,7 @@ describe("TerminalOptionsMenu", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Saving..." })).toBeTruthy();
     });
+    await vi.waitFor(() => expect(resolveSave).toBeTypeOf("function"));
 
     await fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.getByRole("dialog", { name: "Terminal options" })).toBeTruthy();

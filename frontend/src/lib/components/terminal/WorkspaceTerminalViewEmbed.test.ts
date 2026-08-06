@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   runtimeClient: {
     GET: vi.fn(),
     POST: vi.fn(),
+    PUT: vi.fn(),
     DELETE: vi.fn(),
   },
   showFlash: vi.fn(),
@@ -25,7 +26,17 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../api/runtime.js", () => ({
   client: mocks.runtimeClient,
+  createRuntimeClient: () => mocks.runtimeClient,
+  tracedFetch: (fetch: typeof globalThis.fetch) => fetch,
   apiErrorMessage: (_err: unknown, fallback: string) => fallback,
+}));
+
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => ({
+    runCommand: () => {
+      throw new Error("Embedded view tests do not save terminal settings");
+    },
+  }),
 }));
 
 vi.mock("../../stores/flash.svelte.js", () => ({

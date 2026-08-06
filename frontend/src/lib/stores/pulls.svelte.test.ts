@@ -1,11 +1,38 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../api/types.js";
-import type { ForgeClient } from "../types.js";
-import { createPullsStore } from "./pulls.svelte.js";
+import type { GeneratedClient } from "../api/generated-api.js";
+import type { OwnedAppRuntime } from "../app/runtime.js";
+import { makeTestAppRuntime } from "../testing/effect-layers.js";
+import {
+  createPullsStore as createRuntimePullsStore,
+  type PullsStore,
+  type PullsStoreOptions,
+} from "./pulls.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 
-afterEach(() => {
+let runtime: OwnedAppRuntime | undefined;
+
+type TestPullsStoreOptions = Omit<PullsStoreOptions, "runtime"> & { readonly client: GeneratedClient };
+
+function createPullsStore(options: TestPullsStoreOptions) {
+  const { client, ...storeOptions } = options;
+  runtime = makeTestAppRuntime(client);
+  return createRuntimePullsStore({ ...storeOptions, runtime });
+}
+
+async function loadPulls(store: PullsStore): Promise<void> {
+  store.loadPulls();
+  await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+}
+
+beforeEach(() => {
+  runtime = undefined;
+});
+
+afterEach(async () => {
   for (const item of getFlashes()) dismissFlash(item.id);
+  if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
 });
 
 function pull(id: number, repoName: string, lastActivityAt: string, overrides: Partial<PullRequest> = {}): PullRequest {
@@ -40,28 +67,93 @@ function pull(id: number, repoName: string, lastActivityAt: string, overrides: P
   } as PullRequest;
 }
 
-function clientWithPulls(data: PullRequest[]): ForgeClient {
+function clientWithPulls(data: PullRequest[]): GeneratedClient {
   return {
     GET: vi.fn(async () => ({ data, error: undefined })),
-  } as unknown as ForgeClient;
+  } as unknown as GeneratedClient;
 }
 
 describe("pulls store display order", () => {
+  it("aborts a superseded list request", async () => {
+    let firstSignal: AbortSignal | undefined;
+    const get = vi
+      .fn()
+      .mockImplementationOnce((_path: string, options?: { signal?: AbortSignal }) => {
+        firstSignal = options?.signal;
+        return new Promise((_resolve, reject) => {
+          firstSignal?.addEventListener("abort", () => {
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        });
+      })
+      .mockResolvedValueOnce({ data: [], error: undefined });
+    const store = createPullsStore({
+      client: { GET: get } as unknown as GeneratedClient,
+    });
+
+    store.loadPulls();
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    store.loadPulls();
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+
+    expect(firstSignal?.aborted).toBe(true);
+  });
+
   it("flashes star failures without replacing list load errors", async () => {
     const store = createPullsStore({
       client: {
         DELETE: vi.fn(async () => ({ error: { detail: "permission denied" } })),
-      } as unknown as ForgeClient,
+      } as unknown as GeneratedClient,
     });
 
-    await store.togglePRStar(
+    const result = store.togglePRStar(
       { provider: "github", platformHost: "github.com", owner: "acme", name: "api", repoPath: "acme/api" },
       7,
       true,
     );
 
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(getFlash()?.message).toBe("permission denied"));
     expect(getFlash()).toMatchObject({ message: "permission denied", tone: "danger" });
     expect(store.getError()).toBeNull();
+  });
+
+  it("orders opposite star requests for the same provider item", async () => {
+    const first = Promise.withResolvers<{ data: undefined; error: undefined }>();
+    const remove = vi.fn(() => first.promise);
+    const add = vi.fn().mockResolvedValue({ data: undefined, error: undefined });
+    const listed = pull(7, "api", "2026-05-20T15:00:00Z", { Starred: true });
+    const projectDetailStar = vi.fn();
+    const store = createPullsStore({
+      client: {
+        DELETE: remove,
+        PUT: add,
+        GET: vi.fn().mockResolvedValue({ data: [listed], error: undefined }),
+      } as unknown as GeneratedClient,
+      optimisticDetailStarUpdate: projectDetailStar,
+    });
+    const ref = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "api",
+      repoPath: "acme/api",
+    };
+
+    await loadPulls(store);
+    const unstar = store.togglePRStar(ref, 7, Boolean(store.getPulls()[0]?.Starred));
+    await vi.waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+    expect(store.getPulls()[0]?.Starred).toBe(false);
+    expect(projectDetailStar).toHaveBeenCalledWith(ref, 7, false, expect.any(Number));
+    expect(projectDetailStar.mock.calls[0]?.[3]).toBeGreaterThan(0);
+    const star = store.togglePRStar(ref, 7, Boolean(store.getPulls()[0]?.Starred));
+
+    expect(unstar).toBeUndefined();
+    expect(star).toBeUndefined();
+    expect(store.getPulls()[0]?.Starred).toBe(true);
+    expect(add).not.toHaveBeenCalled();
+    first.resolve({ data: undefined, error: undefined });
+    await vi.waitFor(() => expect(add).toHaveBeenCalledTimes(1));
   });
 
   it("preserves the API order for flat display", async () => {
@@ -74,7 +166,7 @@ describe("pulls store display order", () => {
       getGroupByRepo: () => false,
     });
 
-    await store.loadPulls();
+    await loadPulls(store);
 
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 2, 3]);
   });
@@ -89,7 +181,7 @@ describe("pulls store display order", () => {
       getGroupByRepo: () => true,
     });
 
-    await store.loadPulls();
+    await loadPulls(store);
 
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 3, 2]);
   });
@@ -116,7 +208,7 @@ describe("pulls store display order", () => {
       ]),
     });
 
-    await store.loadPulls();
+    await loadPulls(store);
 
     store.toggleAttributeFilter("ready");
     store.toggleKanbanStatusFilter("reviewing");
@@ -144,7 +236,7 @@ describe("pulls store display order", () => {
       ]),
     });
 
-    await store.loadPulls();
+    await loadPulls(store);
     store.toggleAttributeFilter("has_workspace");
 
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1]);
@@ -162,7 +254,7 @@ describe("pulls store display order", () => {
       ]),
     });
 
-    await store.loadPulls();
+    await loadPulls(store);
 
     store.toggleKanbanStatusFilter("new");
 

@@ -1,11 +1,13 @@
 import { render } from "vitest-browser-svelte";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
 import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
+import { makeAppRuntime } from "../../app/runtime.js";
 
 import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
 import type { WorkspaceRuntimeState } from "../../api/workspace-runtime.ts";
-import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
+import WorkspaceTerminalView from "./WorkspaceTerminalViewTestHarness.svelte";
 
 const WAIT = 10_000;
 
@@ -87,9 +89,10 @@ describe("WorkspaceTerminalView layout flip", () => {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
     };
+    const runtime = makeAppRuntime();
 
     const screen = render(WorkspaceTerminalView, {
-      props: { workspaceId: "ws-1", hideWorkspaceList: false, hideRightSidebar: true },
+      props: { runtime, workspaceId: "ws-1", hideWorkspaceList: false, hideRightSidebar: true },
       context: new Map([[STORES_KEY, { settings: settingsStore }]]),
     });
 
@@ -100,15 +103,16 @@ describe("WorkspaceTerminalView layout flip", () => {
         return el as HTMLElement;
       }, WAIT);
 
-      await screen.rerender({ workspaceId: "ws-1", hideWorkspaceList: true, hideRightSidebar: true });
+      await screen.rerender({ runtime, workspaceId: "ws-1", hideWorkspaceList: true, hideRightSidebar: true });
 
       expect(before.isConnected).toBe(true);
       expect(document.contains(before)).toBe(true);
 
-      await screen.rerender({ workspaceId: "ws-1", hideWorkspaceList: false, hideRightSidebar: true });
+      await screen.rerender({ runtime, workspaceId: "ws-1", hideWorkspaceList: false, hideRightSidebar: true });
       expect(before.isConnected).toBe(true);
     } finally {
       await screen.unmount();
+      await Effect.runPromise(runtime.disposeEffect);
       globalThis.fetch = originalFetch;
       globalThis.EventSource = originalEventSource;
     }

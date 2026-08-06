@@ -1,7 +1,9 @@
 import { cleanup, render } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import RepoIssueModal from "./RepoIssueModal.svelte";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+import RepoIssueModalTestHarness from "./RepoIssueModalTestHarness.svelte";
 import type { RepoSummaryCard } from "./repoSummary.js";
 import { getStackDepth, getTopFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 
@@ -33,27 +35,34 @@ const summary: RepoSummaryCard = {
   recent_issues: [],
 } as unknown as RepoSummaryCard;
 
+let runtime: OwnedAppRuntime;
+
 describe("RepoIssueModal modal frame integration", () => {
   beforeEach(() => {
     resetModalStack();
+    runtime = makeAppRuntime();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
     resetModalStack();
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("pushes a frame on mount and pops on unmount", () => {
     expect(getStackDepth()).toBe(0);
-    const { unmount } = render(RepoIssueModal, {
+    const { unmount } = render(RepoIssueModalTestHarness, {
       props: {
-        summary,
-        title: "",
-        body: "",
-        ontitlechange: vi.fn(),
-        onbodychange: vi.fn(),
-        oncancel: vi.fn(),
-        onsubmitissue: vi.fn(),
+        runtime,
+        modalProps: {
+          summary,
+          title: "",
+          body: "",
+          ontitlechange: vi.fn(),
+          onbodychange: vi.fn(),
+          oncancel: vi.fn(),
+          onsubmitissue: vi.fn(),
+        },
       },
     });
     expect(getStackDepth()).toBe(1);

@@ -1,16 +1,16 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-const mockPost = vi.hoisted(() => vi.fn());
-const mockLoadDetail = vi.hoisted(() => vi.fn());
-const mockLoadPulls = vi.hoisted(() => vi.fn());
+const mockApprovePull = vi.hoisted(() => vi.fn());
+const mockRequestPullChanges = vi.hoisted(() => vi.fn());
 const mockShowFlash = vi.hoisted(() => vi.fn());
 
 vi.mock("./lib/context.js", () => ({
-  getClient: () => ({ POST: mockPost }),
   getStores: () => ({
-    detail: { loadDetail: mockLoadDetail },
-    pulls: { loadPulls: mockLoadPulls },
+    detail: {
+      approvePull: mockApprovePull,
+      requestPullChanges: mockRequestPullChanges,
+    },
   }),
 }));
 
@@ -38,17 +38,20 @@ function renderApproveButton(overrides: Partial<typeof defaultProps> = {}) {
 
 describe("ApproveButton tooltips", () => {
   beforeEach(() => {
-    mockPost.mockResolvedValue({ data: { status: "approved" } });
-    mockLoadDetail.mockResolvedValue(undefined);
-    mockLoadPulls.mockResolvedValue(undefined);
+    const settleSuccessfully = (...args: unknown[]) => {
+      const callbacks = args.at(-1) as { onSuccess?: () => void; onSettled?: () => void };
+      callbacks.onSuccess?.();
+      callbacks.onSettled?.();
+    };
+    mockApprovePull.mockImplementation(settleSuccessfully);
+    mockRequestPullChanges.mockImplementation(settleSuccessfully);
     mockShowFlash.mockReset();
   });
 
   afterEach(() => {
     cleanup();
-    mockPost.mockReset();
-    mockLoadDetail.mockReset();
-    mockLoadPulls.mockReset();
+    mockApprovePull.mockReset();
+    mockRequestPullChanges.mockReset();
   });
 
   it("collapsed button title describes opening the form, not submitting", () => {
@@ -103,16 +106,15 @@ describe("ApproveButton tooltips", () => {
     await fireEvent.click(requestChanges);
 
     await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledTimes(1);
+      expect(mockRequestPullChanges).toHaveBeenCalledTimes(1);
     });
-    expect(mockPost.mock.calls[0]?.[0]).toContain("/request-changes");
-    const [, init] = mockPost.mock.calls[0] as [string, { body: { body: string } }];
-    expect(init.body.body).toBe("Please cover the empty state.");
+    expect(mockRequestPullChanges.mock.calls[0]?.[2]).toEqual({
+      body: "Please cover the empty state.",
+    });
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
   });
 
-  it("closes a successful change request before reporting a refresh failure", async () => {
-    mockLoadDetail.mockRejectedValueOnce(new Error("offline"));
+  it("closes a successful change request and launches both refreshes", async () => {
     renderApproveButton({ supportedReviewActions: ["approve", "request_changes"] });
 
     await fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
@@ -124,8 +126,7 @@ describe("ApproveButton tooltips", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
     });
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    expect(mockShowFlash).toHaveBeenCalledWith("Changes were requested, but the pull request could not be refreshed.");
+    expect(mockRequestPullChanges).toHaveBeenCalledTimes(1);
   });
 
   it("collapses the approval popover from cancel without removing the trigger", async () => {
@@ -140,12 +141,14 @@ describe("ApproveButton tooltips", () => {
   });
 
   it("keeps the approval popover open and trigger disabled while submitting", async () => {
-    let resolvePost: (value: { data: { status: string } }) => void = () => {};
-    mockPost.mockReturnValue(
-      new Promise((resolve) => {
-        resolvePost = resolve;
-      }),
-    );
+    let settleApproval = () => {};
+    mockApprovePull.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as { onSuccess?: () => void; onSettled?: () => void };
+      settleApproval = () => {
+        callbacks.onSuccess?.();
+        callbacks.onSettled?.();
+      };
+    });
     renderApproveButton();
 
     const trigger = screen.getByRole("button", { name: /^approve$/i });
@@ -163,7 +166,7 @@ describe("ApproveButton tooltips", () => {
     await fireEvent.click(trigger);
     expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
 
-    resolvePost({ data: { status: "approved" } });
+    settleApproval();
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
@@ -195,20 +198,27 @@ describe("ApproveButton tooltips", () => {
     await fireEvent.click(screen.getByTitle("Submit an approving code review on this pull request"));
 
     await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledTimes(1);
+      expect(mockApprovePull).toHaveBeenCalledTimes(1);
     });
-    const [, init] = mockPost.mock.calls[0] as [string, { body: { expected_head_sha?: string } }];
-    expect(init.body.expected_head_sha).toBe("gitea-pin");
+    expect(mockApprovePull.mock.calls[0]?.[2]).toMatchObject({ expected_head_sha: "gitea-pin" });
   });
 
   it("collapses the approval popover after a head conflict", async () => {
     const onHeadConflict = vi.fn();
-    mockPost.mockResolvedValue({
-      error: {
+    mockApprovePull.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as {
+        onProblem?: (problem: unknown) => void;
+        onFailure?: (message: string) => void;
+        onSettled?: () => void;
+      };
+      const problem = {
         code: "conflict",
         detail: "target changed since it was reviewed",
         details: { reason: "stale_state" },
-      },
+      };
+      callbacks.onProblem?.(problem);
+      callbacks.onFailure?.(problem.detail);
+      callbacks.onSettled?.();
     });
     const { rerender } = render(ApproveButton, {
       props: {
@@ -249,10 +259,9 @@ describe("ApproveButton tooltips", () => {
     await fireEvent.click(screen.getByTitle("Submit an approving code review on this pull request"));
 
     await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledTimes(2);
+      expect(mockApprovePull).toHaveBeenCalledTimes(2);
     });
-    const [, retryInit] = mockPost.mock.calls[1] as [string, { body: { expected_head_sha?: string } }];
-    expect(retryInit.body.expected_head_sha).toBe("fresh-pin");
+    expect(mockApprovePull.mock.calls[1]?.[2]).toMatchObject({ expected_head_sha: "fresh-pin" });
   });
 
   it("collapses and clears the draft when the PR identity changes", async () => {

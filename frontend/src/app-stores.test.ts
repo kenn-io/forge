@@ -1,9 +1,12 @@
-import { cleanup, render } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { EventsStoreOptions } from "./lib/stores/events.svelte.js";
 import type { Settings, SyncStatus } from "./lib/api/types.js";
-import type { ForgeClient } from "./lib/types.js";
+import type { AppServices, OwnedAppRuntime } from "./lib/app/runtime.js";
+import { createAppStores, type AppStoreOptions } from "./lib/app-stores.svelte.js";
+import { client } from "./lib/api/runtime.js";
+import { makeTestAppRuntime } from "./lib/testing/effect-layers.js";
 
 type LaunchTargets = NonNullable<Settings["launch_targets"]>;
 
@@ -27,6 +30,16 @@ const captured: {
   settings: null,
 };
 
+async function acceptEvent(result: Effect.Effect<void, unknown, AppServices> | void): Promise<void> {
+  if (result === undefined) return;
+  const execution = runtime.runCommand(result, {
+    operation: "accept test provider event",
+    safeContext: {},
+    onFailure: () => undefined,
+  });
+  await Effect.runPromise(execution.await.pipe(Effect.flatMap((exit) => exit)));
+}
+
 vi.mock("./lib/stores/events.svelte.js", () => ({
   createEventsStore: (opts: EventsStoreOptions) => {
     const store: CapturedEventsStore = {
@@ -41,15 +54,26 @@ vi.mock("./lib/stores/events.svelte.js", () => ({
 }));
 
 const loadPulls = vi.fn(async () => undefined);
+const loadPullsEffect = vi.fn(() => Effect.promise(() => loadPulls()));
+const reconcilePullsEffect = vi.fn(() => Effect.promise(() => loadPulls()));
 const loadIssues = vi.fn(async () => undefined);
+const loadIssuesEffect = vi.fn(() => Effect.promise(() => loadIssues()));
+const reconcileIssuesEffect = vi.fn(() => Effect.promise(() => loadIssues()));
 const loadActivity = vi.fn(async () => undefined);
+const loadActivityEffect = vi.fn(() => Effect.promise(() => loadActivity()));
+const reconcileActivityEffect = vi.fn(() => Effect.promise(() => loadActivity()));
 const setSyncStatus = vi.fn();
 const refreshDetailOnly = vi.fn(async () => undefined);
+const refreshDetailOnlyEffect = vi.fn((...args: Parameters<typeof refreshDetailOnly>) =>
+  Effect.promise(() => refreshDetailOnly(...args)),
+);
 let currentDetail: unknown = null;
 
 vi.mock("./lib/stores/pulls.svelte.js", () => ({
   createPullsStore: () => ({
     loadPulls,
+    loadPullsEffect,
+    reconcilePullsEffect,
     optimisticKanbanUpdate: vi.fn(),
     getPullKanbanStatus: vi.fn(),
     getPulls: () => [],
@@ -60,6 +84,8 @@ vi.mock("./lib/stores/pulls.svelte.js", () => ({
 vi.mock("./lib/stores/issues.svelte.js", () => ({
   createIssuesStore: () => ({
     loadIssues,
+    loadIssuesEffect,
+    reconcileIssuesEffect,
     hydrateDefaults: vi.fn(),
     getIssues: () => [],
     isLoading: () => false,
@@ -69,6 +95,8 @@ vi.mock("./lib/stores/issues.svelte.js", () => ({
 vi.mock("./lib/stores/activity.svelte.js", () => ({
   createActivityStore: () => ({
     loadActivity,
+    loadActivityEffect,
+    reconcileActivityEffect,
     hydrateDefaults: vi.fn(),
     getActivity: () => [],
     isLoading: () => false,
@@ -81,6 +109,8 @@ vi.mock("./lib/stores/sync.svelte.js", () => ({
     onNextSyncComplete: vi.fn(),
     subscribeSyncComplete: vi.fn(() => () => undefined),
     refreshSyncStatus: vi.fn(async () => undefined),
+    refreshSyncStatusEffect: Effect.void,
+    reconcileSyncStatusEffect: Effect.void,
     setSyncStatus,
     triggerSync: vi.fn(async () => undefined),
     startPolling: vi.fn(),
@@ -92,6 +122,7 @@ vi.mock("./lib/stores/detail.svelte.js", () => ({
   createDetailStore: () => ({
     loadDetail: vi.fn(),
     refreshDetailOnly,
+    refreshDetailOnlyEffect,
     isDetailLoading: () => false,
     getDetail: () => currentDetail,
   }),
@@ -159,33 +190,61 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
   },
 }));
 
-import Provider from "./lib/Provider.svelte";
-
 const getSettings = vi.fn();
-const stubClient = {
-  GET: getSettings,
-  POST: vi.fn(),
-  PUT: vi.fn(),
-  DELETE: vi.fn(),
-} as unknown as ForgeClient;
+
+let runtime: OwnedAppRuntime;
 
 beforeEach(() => {
+  runtime = makeTestAppRuntime(client);
   captured.store = null;
   captured.settings = null;
   getSettings.mockReset();
+  vi.spyOn(client, "GET").mockImplementation(getSettings);
   loadPulls.mockClear();
+  loadPullsEffect.mockClear();
+  reconcilePullsEffect.mockClear();
   loadIssues.mockClear();
+  loadIssuesEffect.mockClear();
+  reconcileIssuesEffect.mockClear();
   loadActivity.mockClear();
+  loadActivityEffect.mockClear();
+  reconcileActivityEffect.mockClear();
   setSyncStatus.mockClear();
   refreshDetailOnly.mockClear();
+  refreshDetailOnlyEffect.mockClear();
   currentDetail = null;
 });
 
-afterEach(() => {
-  cleanup();
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await Effect.runPromise(runtime.disposeEffect);
 });
 
-describe("Provider events store wiring", () => {
+function compose(options: Omit<AppStoreOptions, "runtime"> = {}) {
+  return createAppStores({ runtime, ...options });
+}
+
+describe("app store event wiring", () => {
+  it("acknowledges a data change only after its visible refresh succeeds", async () => {
+    const refresh = Promise.withResolvers<void>();
+    loadPulls.mockImplementationOnce(() => refresh.promise);
+    compose({ getPage: () => "pulls" });
+
+    const event = captured.store?.options.onDataChanged?.();
+    expect(event).toBeDefined();
+    let acknowledged = false;
+    const completion = Effect.runPromise(event ?? Effect.void).then(() => {
+      acknowledged = true;
+    });
+    await vi.waitFor(() => expect(loadPulls).toHaveBeenCalledOnce());
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(acknowledged).toBe(false);
+    refresh.resolve();
+    await completion;
+    expect(acknowledged).toBe(true);
+  });
+
   it("replaces stale launch targets after a valid config reload", async () => {
     const codexTarget = {
       key: "codex",
@@ -237,10 +296,10 @@ describe("Provider events store wiring", () => {
     >;
     getSettings.mockResolvedValue({ data: settings });
 
-    render(Provider, { props: { client: stubClient } });
+    compose();
     captured.settings?.setLaunchTargets([staleTarget]);
 
-    captured.store?.options.onConfigChanged?.({ valid: true, restart_required: false });
+    await acceptEvent(captured.store?.options.onConfigChanged?.({ valid: true, restart_required: false }));
 
     await vi.waitFor(() => {
       expect(captured.settings?.getLaunchTargets()).toEqual([codexTarget]);
@@ -257,23 +316,27 @@ describe("Provider events store wiring", () => {
     { route: "focus", pulls: 1, issues: 1, activity: 0 },
     { route: "terminal", pulls: 0, issues: 0, activity: 0 },
     { route: "workspaces", pulls: 0, issues: 0, activity: 0 },
-  ])("refreshes only the stores visible on the $route route", ({ route, pulls, issues, activity }) => {
-    render(Provider, {
-      props: { client: stubClient, getPage: () => route },
-    });
+  ])("refreshes only the stores visible on the $route route", async ({ route, pulls, issues, activity }) => {
+    compose({ getPage: () => route });
 
     expect(captured.store).not.toBeNull();
     const cb = captured.store?.options.onDataChanged;
     expect(cb).toBeTypeOf("function");
 
-    cb?.();
+    await acceptEvent(cb?.());
 
     expect(loadPulls).toHaveBeenCalledTimes(pulls);
     expect(loadIssues).toHaveBeenCalledTimes(issues);
     expect(loadActivity).toHaveBeenCalledTimes(activity);
+    expect(reconcilePullsEffect).toHaveBeenCalledTimes(pulls);
+    expect(reconcileIssuesEffect).toHaveBeenCalledTimes(issues);
+    expect(reconcileActivityEffect).toHaveBeenCalledTimes(activity);
+    expect(loadPullsEffect).not.toHaveBeenCalled();
+    expect(loadIssuesEffect).not.toHaveBeenCalled();
+    expect(loadActivityEffect).not.toHaveBeenCalled();
   });
 
-  it("refreshes the Activity drawer selection instead of stale displayed detail", () => {
+  it("refreshes the Activity drawer selection instead of stale displayed detail", async () => {
     currentDetail = {
       repo: {
         provider: "github",
@@ -284,23 +347,20 @@ describe("Provider events store wiring", () => {
       repo_name: "old-widget",
       merge_request: { Number: 41 },
     };
-    render(Provider, {
-      props: {
-        client: stubClient,
-        getPage: () => "activity",
-        getActivitySelection: () => ({
-          itemType: "pr",
-          provider: "gitlab",
-          platformHost: "gitlab.example.com",
-          repoPath: "group/widget",
-          owner: "group",
-          name: "widget",
-          number: 42,
-        }),
-      },
+    compose({
+      getPage: () => "activity",
+      getActivitySelection: () => ({
+        itemType: "pr",
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        repoPath: "group/widget",
+        owner: "group",
+        name: "widget",
+        number: 42,
+      }),
     });
 
-    captured.store?.options.onDataChanged?.();
+    await acceptEvent(captured.store?.options.onDataChanged?.());
 
     expect(loadActivity).toHaveBeenCalledTimes(1);
     expect(refreshDetailOnly).toHaveBeenCalledTimes(1);
@@ -311,24 +371,21 @@ describe("Provider events store wiring", () => {
     });
   });
 
-  it("refreshes the selected Activity PR after a stale reconnect", () => {
-    render(Provider, {
-      props: {
-        client: stubClient,
-        getPage: () => "activity",
-        getActivitySelection: () => ({
-          itemType: "pr",
-          provider: "github",
-          platformHost: "github.com",
-          repoPath: "acme/widget",
-          owner: "acme",
-          name: "widget",
-          number: 42,
-        }),
-      },
+  it("refreshes the selected Activity PR after a stale reconnect", async () => {
+    compose({
+      getPage: () => "activity",
+      getActivitySelection: () => ({
+        itemType: "pr",
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        owner: "acme",
+        name: "widget",
+        number: 42,
+      }),
     });
 
-    captured.store?.options.onReconnectStale?.();
+    await acceptEvent(captured.store?.options.onReconnectStale?.());
 
     expect(loadPulls).toHaveBeenCalledTimes(1);
     expect(loadIssues).toHaveBeenCalledTimes(1);
@@ -341,8 +398,8 @@ describe("Provider events store wiring", () => {
     });
   });
 
-  it("passes onSyncStatus that pushes the received status into sync store", () => {
-    render(Provider, { props: { client: stubClient } });
+  it("passes onSyncStatus that pushes the received status into sync store", async () => {
+    compose();
 
     const cb = captured.store?.options.onSyncStatus;
     expect(cb).toBeTypeOf("function");
@@ -352,13 +409,13 @@ describe("Provider events store wiring", () => {
       last_run_at: "2026-04-08T12:00:00Z",
       last_error: "",
     };
-    cb?.(status);
+    await acceptEvent(cb?.(status));
 
     expect(setSyncStatus).toHaveBeenCalledTimes(1);
     expect(setSyncStatus).toHaveBeenCalledWith(status);
   });
 
-  it("refreshes only the visible PR detail for matching targeted refresh events", () => {
+  it("refreshes only the visible PR detail for matching targeted refresh events", async () => {
     currentDetail = {
       repo: {
         provider: "github",
@@ -369,42 +426,9 @@ describe("Provider events store wiring", () => {
       repo_name: "widget",
       merge_request: { Number: 42 },
     };
-    render(Provider, { props: { client: stubClient } });
+    compose();
 
-    captured.store?.options.onPRDetailRefreshed?.({
-      provider: "github",
-      platform_host: "github.com",
-      repo_path: "acme/widget",
-      owner: "acme",
-      name: "widget",
-      number: 42,
-      head_sha: "2222222",
-      synced_at: "2026-05-20T14:15:04Z",
-      warnings: [],
-    });
-
-    expect(refreshDetailOnly).toHaveBeenCalledTimes(1);
-    expect(refreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 42, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-    });
-  });
-
-  it("ignores targeted PR refreshes while an issue detail is visible", () => {
-    currentDetail = {
-      repo: {
-        provider: "github",
-        platform_host: "github.com",
-        repo_path: "acme/widget",
-      },
-      repo_owner: "acme",
-      repo_name: "widget",
-      issue: { Number: 7 },
-    };
-    render(Provider, { props: { client: stubClient } });
-
-    expect(() =>
+    await acceptEvent(
       captured.store?.options.onPRDetailRefreshed?.({
         provider: "github",
         platform_host: "github.com",
@@ -416,24 +440,63 @@ describe("Provider events store wiring", () => {
         synced_at: "2026-05-20T14:15:04Z",
         warnings: [],
       }),
-    ).not.toThrow();
-    expect(() =>
-      captured.store?.options.onPRCIRefreshed?.({
+    );
+
+    expect(refreshDetailOnly).toHaveBeenCalledTimes(1);
+    expect(refreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 42, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+  });
+
+  it("ignores targeted PR refreshes while an issue detail is visible", async () => {
+    currentDetail = {
+      repo: {
         provider: "github",
         platform_host: "github.com",
         repo_path: "acme/widget",
-        owner: "acme",
-        name: "widget",
-        number: 42,
-        head_sha: "2222222",
-        refreshed_at: "2026-05-20T14:15:20Z",
-        warnings: [],
-      }),
-    ).not.toThrow();
+      },
+      repo_owner: "acme",
+      repo_name: "widget",
+      issue: { Number: 7 },
+    };
+    compose();
+
+    await expect(
+      acceptEvent(
+        captured.store?.options.onPRDetailRefreshed?.({
+          provider: "github",
+          platform_host: "github.com",
+          repo_path: "acme/widget",
+          owner: "acme",
+          name: "widget",
+          number: 42,
+          head_sha: "2222222",
+          synced_at: "2026-05-20T14:15:04Z",
+          warnings: [],
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      acceptEvent(
+        captured.store?.options.onPRCIRefreshed?.({
+          provider: "github",
+          platform_host: "github.com",
+          repo_path: "acme/widget",
+          owner: "acme",
+          name: "widget",
+          number: 42,
+          head_sha: "2222222",
+          refreshed_at: "2026-05-20T14:15:20Z",
+          warnings: [],
+        }),
+      ),
+    ).resolves.toBeUndefined();
     expect(refreshDetailOnly).not.toHaveBeenCalled();
   });
 
-  it("ignores targeted PR detail refreshes for non-visible PRs", () => {
+  it("ignores targeted PR detail refreshes for non-visible PRs", async () => {
     currentDetail = {
       repo: {
         provider: "github",
@@ -444,30 +507,27 @@ describe("Provider events store wiring", () => {
       repo_name: "widget",
       merge_request: { Number: 42 },
     };
-    render(Provider, { props: { client: stubClient } });
+    compose();
 
-    captured.store?.options.onPRDetailRefreshed?.({
-      provider: "github",
-      platform_host: "github.com",
-      repo_path: "acme/widget",
-      owner: "acme",
-      name: "widget",
-      number: 99,
-      head_sha: "2222222",
-      synced_at: "2026-05-20T14:15:04Z",
-      warnings: [],
-    });
+    await acceptEvent(
+      captured.store?.options.onPRDetailRefreshed?.({
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+        owner: "acme",
+        name: "widget",
+        number: 99,
+        head_sha: "2222222",
+        synced_at: "2026-05-20T14:15:04Z",
+        warnings: [],
+      }),
+    );
 
     expect(refreshDetailOnly).not.toHaveBeenCalled();
   });
 
   it("forwards basePath getter when config.basePath is set", () => {
-    render(Provider, {
-      props: {
-        client: stubClient,
-        config: { basePath: "/prefix" },
-      },
-    });
+    compose({ config: { basePath: "/prefix" } });
 
     const getBasePath = captured.store?.options.getBasePath;
     expect(getBasePath).toBeTypeOf("function");
@@ -475,27 +535,29 @@ describe("Provider events store wiring", () => {
   });
 
   it("omits getBasePath when config has no basePath", () => {
-    render(Provider, { props: { client: stubClient } });
+    compose();
     expect(captured.store?.options.getBasePath).toBeUndefined();
   });
 
-  it("routes deferred merge failures only through the error callback", () => {
+  it("routes deferred merge failures only through the error callback", async () => {
     const onError = vi.fn();
     const onNotification = vi.fn();
-    render(Provider, { props: { client: stubClient, onError, onNotification } });
+    compose({ onError, onNotification });
 
-    captured.store?.options.onDeferredMergeCompleted?.({
-      provider: "github",
-      platform_host: "github.com",
-      repo_path: "acme/widget",
-      owner: "acme",
-      name: "widget",
-      number: 42,
-      head_sha: "2222222",
-      status: "failed",
-      error: "checks did not pass",
-      completed_at: "2026-07-10T15:00:00Z",
-    });
+    await acceptEvent(
+      captured.store?.options.onDeferredMergeCompleted?.({
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+        owner: "acme",
+        name: "widget",
+        number: 42,
+        head_sha: "2222222",
+        status: "failed",
+        error: "checks did not pass",
+        completed_at: "2026-07-10T15:00:00Z",
+      }),
+    );
 
     expect(onError).toHaveBeenCalledWith("Deferred merge for acme/widget#42 failed: checks did not pass");
     expect(onNotification).not.toHaveBeenCalled();

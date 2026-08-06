@@ -1,7 +1,7 @@
 import type { QuerySerializerOptions } from "openapi-fetch";
 import type { RepoBrowserBlob, RepoBrowserCommit, RepoBrowserRef, RepoBrowserTreeEntry } from "../api/types.js";
 import { providerRepoPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
-import type { ForgeClient } from "../types.js";
+import type { GeneratedClient } from "../api/generated-api.js";
 import type { components } from "../api/generated/schema.js";
 import type { DiffFileCategoryCounts, DiffFileCategoryFilter } from "../utils/diff-categories.js";
 import {
@@ -14,7 +14,7 @@ import {
 export type RepoBrowserViewMode = "source" | "preview";
 
 export interface RepoBrowserStoreOptions {
-  client?: ForgeClient;
+  client?: GeneratedClient;
 }
 
 type Problem = { detail?: string; title?: string };
@@ -68,7 +68,7 @@ function apiErrorMessage(error: Problem | undefined, fallback: string): string {
   return error?.detail ?? error?.title ?? fallback;
 }
 
-function defaultRepoBrowserClient(): ForgeClient {
+function defaultRepoBrowserClient(): GeneratedClient {
   throw new Error("repo browser store requires a client");
 }
 

@@ -2,11 +2,10 @@
   import { Button } from "@kenn-io/kit-ui";
   import SendHorizontalIcon from "@lucide/svelte/icons/send-horizontal";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { getClient, getStores } from "../../context.js";
-    import { runMarkReady, type PRDetailActionInput } from "./keyboard-actions.js";
+  import { getStores } from "../../context.js";
+  import { runMarkReady, type PRDetailActionInput } from "./keyboard-actions.js";
 
-  const client = getClient();
-  const { detail, pulls } = getStores();
+  const { detail } = getStores();
 
   interface Props {
     owner: string;
@@ -50,29 +49,26 @@
       },
       repoSettings: null,
       stale: disabled,
-      stores: { detail, pulls },
-      client,
+      stores: { detail },
       ...(oncompleted !== undefined && { onCompleted: oncompleted }),
+      onError: (message) => showFlash(message, { tone: "danger" }),
+      onSettled: () => {
+        submitting = false;
+      },
     };
   }
 
-  async function handleReadyForReview(): Promise<void> {
-    if (disabled) return;
+  function handleReadyForReview(): void {
+    if (disabled || submitting) return;
     submitting = true;
-    try {
-      await runMarkReady(buildInput());
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      submitting = false;
-    }
+    runMarkReady(buildInput());
   }
 </script>
 
 <div class="ready-section">
   <Button
     class="btn btn--ready"
-    onclick={() => void handleReadyForReview()}
+    onclick={handleReadyForReview}
     disabled={submitting || disabled}
     tone="info"
     surface="soft"

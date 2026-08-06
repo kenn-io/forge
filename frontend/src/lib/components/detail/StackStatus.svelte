@@ -1,10 +1,17 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import { onDestroy, untrack } from "svelte";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import Layers2Icon from "@lucide/svelte/icons/layers-2";
   import XIcon from "@lucide/svelte/icons/x";
+  import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
+  import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import type { components } from "../../api/generated/schema.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
-  import { getClient, getNavigate, getStores } from "../../context.js";
+  import { retryIdempotentRead } from "../../api/retry-policy.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { getNavigate, getStores } from "../../context.js";
   import {
     buildPullRequestRoute,
     type PullRequestRouteRef,
@@ -12,7 +19,7 @@
   import { Chip } from "@kenn-io/kit-ui";
   import type { StoreInstances } from "../../types.js";
 
-  const client = getClient();
+  const runtime = getAppRuntime();
   const navigate = getNavigate();
   const stores = getStores() as Partial<StoreInstances>;
   const syncStore = stores.sync;
@@ -41,32 +48,13 @@
     onmembernavigate,
   }: Props = $props();
 
-  interface StackMember {
-    number: number;
-    title: string;
-    state: string;
-    ci_status: string;
-    review_decision: string;
-    mergeable_state: string;
-    position: number;
-    is_draft: boolean;
-    base_branch: string;
-    blocked_by: number | null;
-  }
-
-  interface StackContext {
-    stack_id: number;
-    stack_name: string;
-    position: number;
-    size: number;
-    health: string;
-    members: StackMember[] | null;
-  }
+  type StackMember = components["schemas"]["StackMemberResponse"];
+  type StackContext = components["schemas"]["StackContextResponse"];
 
   let data = $state<StackContext | null>(null);
   let visible = $state(false);
   let dataRefKey = $state("");
-  let requestSeq = 0;
+  let stackExecution: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
 
   const currentRefKey = $derived(JSON.stringify([
     provider,
@@ -134,32 +122,36 @@
 
   function fetchStack(o: string, n: string, num: number, refKey = currentRefKey): void {
     const ref = { provider, platformHost, owner: o, name: n, repoPath };
-    const seq = ++requestSeq;
-    client.GET(providerItemPath("pulls", ref, "/stack"), {
-      params: { path: { ...providerRouteParams(ref), number: num } },
-    }).then(({ data: resp, error }) => {
-      if (seq !== requestSeq) return;
-      if (error || !resp) {
+    stackExecution?.interrupt();
+    const program = executeGeneratedApiRequest("GET pull request stack", (client, signal) =>
+      client.GET(providerItemPath("pulls", ref, "/stack"), {
+        params: { path: { ...providerRouteParams(ref), number: num } },
+        signal,
+      }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.flatMap((stack) =>
+        Effect.sync(() => {
+          if (!stack.members || stack.members.length <= 1) {
+            visible = false;
+            data = null;
+            dataRefKey = refKey;
+            return;
+          }
+          data = stack;
+          dataRefKey = refKey;
+          visible = true;
+        }),
+      ),
+    );
+    stackExecution = runtime.runCommand(program, {
+      operation: "load pull request stack",
+      safeContext: { provider: ref.provider, owner: ref.owner, name: ref.name, number: num },
+      onFailure: () => {
         visible = false;
         data = null;
         dataRefKey = "";
-        return;
-      }
-      const stack = resp as StackContext;
-      if (!stack.members || stack.members.length <= 1) {
-        visible = false;
-        data = null;
-        dataRefKey = refKey;
-        return;
-      }
-      data = stack;
-      dataRefKey = refKey;
-      visible = true;
-    }).catch(() => {
-      if (seq !== requestSeq) return;
-      visible = false;
-      data = null;
-      dataRefKey = "";
+      },
     });
   }
 
@@ -188,13 +180,16 @@
         dataRefKey = refKey;
       }
     }
-    requestSeq += 1;
+    stackExecution?.interrupt();
   });
 
   const unsubSync = syncStore?.subscribeSyncComplete?.(() =>
     initialStack || data ? fetchStack(owner, name, number) : undefined
   );
-  onDestroy(() => unsubSync?.());
+  onDestroy(() => {
+    unsubSync?.();
+    stackExecution?.interrupt();
+  });
 
   function toggleExpanded(): void {
     const next = !expanded;

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import type { Mock } from "vite-plus/test";
+import type { ProblemBody } from "../../api/problems.js";
+import type { DetailStore, ProviderActionCallbacks } from "../../stores/detail.svelte.js";
 
 import {
   canApprovePR,
@@ -13,53 +14,12 @@ import {
   type PRDetailActionInput,
 } from "./keyboard-actions.js";
 
-type FakeClient = {
-  POST: Mock;
-  GET: Mock;
-  PUT: Mock;
-  PATCH: Mock;
-  DELETE: Mock;
-  OPTIONS: Mock;
-  HEAD: Mock;
-  TRACE: Mock;
-};
-
-function fakeClient(): FakeClient {
-  const ok: Mock = vi.fn().mockResolvedValue({
-    data: {},
-    error: undefined,
-    response: new Response("{}"),
-  });
-  return {
-    POST: ok,
-    GET: vi.fn(),
-    PUT: vi.fn(),
-    PATCH: vi.fn(),
-    DELETE: vi.fn(),
-    OPTIONS: vi.fn(),
-    HEAD: vi.fn(),
-    TRACE: vi.fn(),
-  };
-}
-
-interface FakeStores {
-  detail: {
-    loadDetail: Mock;
-    refreshDetailOnly: Mock;
-  };
-  pulls: {
-    loadPulls: Mock;
-  };
-}
-
-function fakeStores(): FakeStores {
+function fakeStores() {
   return {
     detail: {
-      loadDetail: vi.fn().mockResolvedValue(undefined),
-      refreshDetailOnly: vi.fn().mockResolvedValue(undefined),
-    },
-    pulls: {
-      loadPulls: vi.fn().mockResolvedValue(undefined),
+      approvePull: vi.fn<DetailStore["approvePull"]>(),
+      markPullReady: vi.fn<DetailStore["markPullReady"]>(),
+      approvePullWorkflows: vi.fn<DetailStore["approvePullWorkflows"]>(),
     },
   };
 }
@@ -75,8 +35,7 @@ interface BuildOpts {
   stale?: boolean;
   withRepoSettings?: boolean;
   repoSettings?: PRDetailActionInput["repoSettings"];
-  client?: FakeClient;
-  stores?: FakeStores;
+  stores?: ReturnType<typeof fakeStores>;
   setMergeModalOpen?: (open: boolean) => void;
   onAfterOpenMerge?: () => void;
   onCompleted?: () => void;
@@ -94,7 +53,6 @@ interface BuildOpts {
 }
 
 function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
-  const client = (opts.client ?? fakeClient()) as unknown as PRDetailActionInput["client"];
   const stores = opts.stores ?? fakeStores();
   return {
     pr: {
@@ -129,8 +87,7 @@ function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
           }),
     stale: opts.stale ?? false,
     requireHeadPin: opts.requireHeadPin ?? false,
-    stores: stores as unknown as PRDetailActionInput["stores"],
-    client,
+    stores,
     ...(opts.approveCommentBody !== undefined && {
       approveCommentBody: opts.approveCommentBody,
     }),
@@ -156,7 +113,7 @@ function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
 }
 
 function conflictProblem(reason: string, context?: string) {
-  return {
+  const problem: ProblemBody = {
     type: "about:blank",
     title: "Conflict",
     status: 409,
@@ -164,6 +121,7 @@ function conflictProblem(reason: string, context?: string) {
     code: "conflict",
     details: { reason, ...(context !== undefined && { context }) },
   };
+  return problem;
 }
 
 // canApprovePR --------------------------------------------------------
@@ -193,121 +151,78 @@ describe("canApprovePR", () => {
 // runApprovePR --------------------------------------------------------
 
 describe("runApprovePR", () => {
-  it("POSTs to /approve and refreshes detail+pulls on success", async () => {
-    const client = fakeClient();
+  it("launches approval through the detail store with a trimmed generated body", () => {
     const stores = fakeStores();
-    await runApprovePR(
+    runApprovePR(
       buildInput({
-        client,
         stores,
         approveCommentBody: " hello ",
+        platformHeadSha: " platform-head ",
       }),
     );
 
-    expect(client.POST).toHaveBeenCalledTimes(1);
-    const [path, init] = client.POST.mock.calls[0];
-    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/approve");
-    expect(init).toEqual({
-      params: {
-        path: {
-          provider: "github",
-          owner: "octo",
-          name: "repo",
-          number: 42,
-        },
-      },
-      body: { body: "hello" },
-    });
-    expect(stores.detail.loadDetail).toHaveBeenCalledTimes(1);
-    expect(stores.detail.loadDetail.mock.calls[0]).toEqual([
-      "octo",
-      "repo",
-      42,
+    expect(stores.detail.approvePull).toHaveBeenCalledWith(
       {
         provider: "github",
         platformHost: "github.com",
+        owner: "octo",
+        name: "repo",
         repoPath: "octo/repo",
       },
-    ]);
-    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses host route when platformHost differs from default", async () => {
-    const client = fakeClient();
-    await runApprovePR(
-      buildInput({
-        client,
-        platformHost: "ghe.example.com",
-      }),
+      42,
+      { body: "hello", expected_head_sha: "platform-head" },
+      expect.any(Object),
     );
-    const [path, init] = client.POST.mock.calls[0];
-    expect(path).toBe("/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve");
-    expect(init.params.path.platform_host).toBe("ghe.example.com");
   });
 
-  it("calls onError and throws on API error", async () => {
-    const client = fakeClient();
-    client.POST.mockResolvedValueOnce({
-      data: undefined,
-      error: { detail: "boom" },
-      response: new Response("{}"),
-    });
+  it("wires acknowledged failure and success callbacks", () => {
+    const stores = fakeStores();
     const onError = vi.fn();
-    await expect(runApprovePR(buildInput({ client, onError }))).rejects.toThrow("boom");
+    const onCompleted = vi.fn();
+    runApprovePR(buildInput({ stores, onError, onCompleted }));
+    const callbacks = stores.detail.approvePull.mock.calls[0]?.[3];
+
+    callbacks?.onFailure?.("boom");
+    callbacks?.onSuccess?.();
+
     expect(onError).toHaveBeenCalledWith("boom");
+    expect(onCompleted).toHaveBeenCalledOnce();
   });
 
-  it("does nothing when canApprovePR is false", async () => {
-    const client = fakeClient();
-    await runApprovePR(buildInput({ client, state: "closed" }));
-    expect(client.POST).not.toHaveBeenCalled();
+  it("does nothing when canApprovePR is false", () => {
+    const stores = fakeStores();
+    runApprovePR(buildInput({ stores, state: "closed" }));
+    expect(stores.detail.approvePull).not.toHaveBeenCalled();
   });
 
-  it("echoes the reviewed head as expected_head_sha when only reviewed head is provided", async () => {
-    const client = fakeClient();
-    await runApprovePR(
+  it("uses the reviewed head when the platform head is unavailable", () => {
+    const stores = fakeStores();
+    runApprovePR(
       buildInput({
-        client,
+        stores,
         expectedHeadSha: " abc123 ",
       }),
     );
-    const [, init] = client.POST.mock.calls[0];
-    expect(init.body).toEqual({ body: "", expected_head_sha: "abc123" });
+    expect(stores.detail.approvePull.mock.calls[0]?.[2]).toEqual({
+      body: "",
+      expected_head_sha: "abc123",
+    });
   });
 
-  it("prefers the latest synced platform head over the reviewed head", async () => {
-    const client = fakeClient();
-    await runApprovePR(
-      buildInput({
-        client,
-        platformHeadSha: " platform-head ",
-        expectedHeadSha: " reviewed-head ",
-      }),
-    );
-    const [, init] = client.POST.mock.calls[0];
-    expect(init.body).toEqual({ body: "", expected_head_sha: "platform-head" });
+  it("omits the head pin when no synced or reviewed head is known", () => {
+    const stores = fakeStores();
+    runApprovePR(buildInput({ stores, expectedHeadSha: "" }));
+    expect(stores.detail.approvePull.mock.calls[0]?.[2]).toEqual({ body: "" });
   });
 
-  it("omits expected_head_sha when no synced or reviewed head is known", async () => {
-    const client = fakeClient();
-    await runApprovePR(buildInput({ client, expectedHeadSha: "" }));
-    const [, init] = client.POST.mock.calls[0];
-    expect(init.body).toEqual({ body: "" });
-  });
-
-  it("reports stale_state and head_unknown conflicts via onHeadConflict", async () => {
+  it("reports stale_state and head_unknown problems via onHeadConflict", () => {
     for (const reason of ["stale_state", "head_unknown"] as const) {
-      const client = fakeClient();
-      client.POST.mockResolvedValueOnce({
-        data: undefined,
-        error: conflictProblem(reason),
-        response: new Response("{}", { status: 409 }),
-      });
       const stores = fakeStores();
       const onHeadConflict = vi.fn();
-      await expect(
-        runApprovePR(buildInput({ client, stores, expectedHeadSha: "abc123", onHeadConflict })),
-      ).rejects.toThrow("target changed since it was reviewed; refresh and retry");
+      runApprovePR(buildInput({ stores, expectedHeadSha: "abc123", onHeadConflict }));
+      const callbacks: ProviderActionCallbacks | undefined = stores.detail.approvePull.mock.calls[0]?.[3];
+      callbacks?.onProblem?.(conflictProblem(reason));
+
       expect(onHeadConflict).toHaveBeenCalledWith(
         reason,
         undefined,
@@ -321,22 +236,16 @@ describe("runApprovePR", () => {
         },
         42,
       );
-      // The conflict owner refreshes; the closure must not double-load.
-      expect(stores.detail.loadDetail).not.toHaveBeenCalled();
-      expect(stores.pulls.loadPulls).not.toHaveBeenCalled();
     }
   });
 
-  it("forwards provider side-effect context to onHeadConflict", async () => {
+  it("forwards provider side-effect context to onHeadConflict", () => {
     const sideEffect = "approval 31 may stand on a moved head: dismissal failed";
-    const client = fakeClient();
-    client.POST.mockResolvedValueOnce({
-      data: undefined,
-      error: conflictProblem("stale_state", sideEffect),
-      response: new Response("{}", { status: 409 }),
-    });
+    const stores = fakeStores();
     const onHeadConflict = vi.fn();
-    await expect(runApprovePR(buildInput({ client, expectedHeadSha: "abc123", onHeadConflict }))).rejects.toThrow();
+    runApprovePR(buildInput({ stores, expectedHeadSha: "abc123", onHeadConflict }));
+    stores.detail.approvePull.mock.calls[0]?.[3]?.onProblem?.(conflictProblem("stale_state", sideEffect));
+
     expect(onHeadConflict).toHaveBeenCalledWith(
       "stale_state",
       sideEffect,
@@ -352,15 +261,12 @@ describe("runApprovePR", () => {
     );
   });
 
-  it("does not report generic conflicts via onHeadConflict", async () => {
-    const client = fakeClient();
-    client.POST.mockResolvedValueOnce({
-      data: undefined,
-      error: conflictProblem("merge_conflict_or_unknown"),
-      response: new Response("{}", { status: 409 }),
-    });
+  it("does not report generic conflicts via onHeadConflict", () => {
+    const stores = fakeStores();
     const onHeadConflict = vi.fn();
-    await expect(runApprovePR(buildInput({ client, expectedHeadSha: "abc123", onHeadConflict }))).rejects.toThrow();
+    runApprovePR(buildInput({ stores, expectedHeadSha: "abc123", onHeadConflict }));
+    stores.detail.approvePull.mock.calls[0]?.[3]?.onProblem?.(conflictProblem("merge_conflict_or_unknown"));
+
     expect(onHeadConflict).not.toHaveBeenCalled();
   });
 });
@@ -467,79 +373,46 @@ describe("canMarkReady", () => {
 // runMarkReady --------------------------------------------------------
 
 describe("runMarkReady", () => {
-  it("POSTs to /ready-for-review and refreshes on success", async () => {
-    const client = fakeClient();
+  it("launches the acknowledged ready command and forwards completion", () => {
     const stores = fakeStores();
     const onCompleted = vi.fn();
-    await runMarkReady(
+    runMarkReady(
       buildInput({
-        client,
         stores,
         isDraft: true,
         onCompleted,
       }),
     );
-    expect(client.POST).toHaveBeenCalledTimes(1);
-    const [path] = client.POST.mock.calls[0];
-    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/ready-for-review");
-    expect(stores.detail.loadDetail).toHaveBeenCalledTimes(1);
-    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
+    expect(stores.detail.markPullReady).toHaveBeenCalledWith(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "octo",
+        name: "repo",
+        repoPath: "octo/repo",
+      },
+      42,
+      expect.any(Object),
+    );
+
+    stores.detail.markPullReady.mock.calls[0]?.[2]?.onSuccess?.();
+
     expect(onCompleted).toHaveBeenCalledTimes(1);
   });
 
-  it("does nothing when not a draft", async () => {
-    const client = fakeClient();
-    await runMarkReady(buildInput({ client, isDraft: false }));
-    expect(client.POST).not.toHaveBeenCalled();
+  it("does nothing when not a draft", () => {
+    const stores = fakeStores();
+    runMarkReady(buildInput({ stores, isDraft: false }));
+    expect(stores.detail.markPullReady).not.toHaveBeenCalled();
   });
 
-  it("refreshes state and reports error on stale-draft 404", async () => {
-    const client = fakeClient();
-    client.POST.mockResolvedValueOnce({
-      data: undefined,
-      error: {
-        title: "failed to mark pull request ready for review: 404 Not Found",
-      },
-      response: new Response("{}"),
-    });
+  it("forwards acknowledged failures", () => {
     const stores = fakeStores();
     const onError = vi.fn();
-    await expect(
-      runMarkReady(
-        buildInput({
-          client,
-          stores,
-          isDraft: true,
-          onError,
-        }),
-      ),
-    ).rejects.toThrow(/ready for review.*404/);
-    expect(stores.detail.loadDetail).toHaveBeenCalledTimes(1);
-    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
-    expect(onError).toHaveBeenCalled();
-  });
+    runMarkReady(buildInput({ stores, isDraft: true, onError }));
 
-  it("does not refresh on a generic mutation error", async () => {
-    const client = fakeClient();
-    client.POST.mockResolvedValueOnce({
-      data: undefined,
-      error: { detail: "permission denied" },
-      response: new Response("{}"),
-    });
-    const stores = fakeStores();
-    const onError = vi.fn();
-    await expect(
-      runMarkReady(
-        buildInput({
-          client,
-          stores,
-          isDraft: true,
-          onError,
-        }),
-      ),
-    ).rejects.toThrow("permission denied");
-    expect(stores.detail.loadDetail).not.toHaveBeenCalled();
-    expect(stores.pulls.loadPulls).not.toHaveBeenCalled();
+    stores.detail.markPullReady.mock.calls[0]?.[2]?.onFailure?.("permission denied");
+
     expect(onError).toHaveBeenCalledWith("permission denied");
   });
 });
@@ -563,56 +436,49 @@ describe("canApproveWorkflows", () => {
 // runApproveWorkflows ------------------------------------------------
 
 describe("runApproveWorkflows", () => {
-  it("POSTs to /approve-workflows and refreshes via refreshDetailOnly", async () => {
-    const client = fakeClient();
+  it("launches the acknowledged workflow approval command", () => {
     const stores = fakeStores();
     const onCompleted = vi.fn();
-    await runApproveWorkflows(
+    runApproveWorkflows(
       buildInput({
-        client,
         stores,
         onCompleted,
       }),
     );
-    expect(client.POST).toHaveBeenCalledTimes(1);
-    const [path, init] = client.POST.mock.calls[0];
-    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/approve-workflows");
-    expect(init).toEqual({
-      params: {
-        path: {
-          provider: "github",
-          owner: "octo",
-          name: "repo",
-          number: 42,
-        },
+    expect(stores.detail.approvePullWorkflows).toHaveBeenCalledWith(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "octo",
+        name: "repo",
+        repoPath: "octo/repo",
       },
-    });
-    expect(stores.detail.refreshDetailOnly).toHaveBeenCalledTimes(1);
-    expect(stores.detail.loadDetail).not.toHaveBeenCalled();
-    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
+      42,
+      expect.any(Object),
+    );
+
+    stores.detail.approvePullWorkflows.mock.calls[0]?.[2]?.onSuccess?.();
+
     expect(onCompleted).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onError and throws on API error", async () => {
-    const client = fakeClient();
-    client.POST.mockResolvedValueOnce({
-      data: undefined,
-      error: { title: "no pending workflows" },
-      response: new Response("{}"),
-    });
+  it("forwards acknowledged workflow failures", () => {
+    const stores = fakeStores();
     const onError = vi.fn();
-    await expect(runApproveWorkflows(buildInput({ client, onError }))).rejects.toThrow("no pending workflows");
+    runApproveWorkflows(buildInput({ stores, onError }));
+    stores.detail.approvePullWorkflows.mock.calls[0]?.[2]?.onFailure?.("no pending workflows");
+
     expect(onError).toHaveBeenCalledWith("no pending workflows");
   });
 
-  it("does nothing when canApproveWorkflows is false", async () => {
-    const client = fakeClient();
-    await runApproveWorkflows(
+  it("does nothing when canApproveWorkflows is false", () => {
+    const stores = fakeStores();
+    runApproveWorkflows(
       buildInput({
-        client,
+        stores,
         approveWorkflows: false,
       }),
     );
-    expect(client.POST).not.toHaveBeenCalled();
+    expect(stores.detail.approvePullWorkflows).not.toHaveBeenCalled();
   });
 });

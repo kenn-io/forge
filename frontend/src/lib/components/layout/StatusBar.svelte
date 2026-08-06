@@ -9,7 +9,8 @@
   import { client } from "../../api/runtime.js";
   import { getPage } from "../../stores/router.svelte.ts";
 
-  const { activity, pulls, issues, sync } = getStores();
+  const { activity, pulls, issues, sync, events } = getStores();
+  const liveUpdateState = $derived(events.getConnectionState());
 
   let appVersion = $state("");
 
@@ -237,6 +238,26 @@
       <span class="status-item status-item--error" title={sync.getSyncState()?.last_error}>sync error</span>
       <span class="status-sep">&middot;</span>
     {/if}
+    {#if liveUpdateState === "reconnecting" || (liveUpdateState === "disconnected" && events.getLastError())}
+      {#if liveUpdateState === "disconnected"}
+        <button
+          type="button"
+          class="status-item status-item--error status-item--live-updates live-updates-button"
+          aria-label="Reconnect live updates"
+          title={events.getLastError() ?? "Reconnect live updates"}
+          onclick={events.reconnect}
+        >
+          <StatusDot status="stale" label="Live updates disconnected" size={5} />
+          live updates disconnected
+        </button>
+      {:else}
+        <span class="status-item status-item--live-updates">
+          <StatusDot status="working" label="Reconnecting live updates" size={5} />
+          live updates reconnecting
+        </span>
+      {/if}
+      <span class="status-sep">&middot;</span>
+    {/if}
     <span class="status-item" class:status-item--active={sync.getSyncState()?.running}>
       {#if sync.getSyncState()?.running}
         <StatusDot status="working" label="Syncing" size={5} />
@@ -262,6 +283,18 @@
     display: flex;
     align-items: center;
     gap: 4px;
+  }
+  .status-item--live-updates {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .live-updates-button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
   }
   .budget-wrapper {
     position: relative;

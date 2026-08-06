@@ -1,25 +1,52 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import type { ComponentProps } from "svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import * as flash from "../../stores/flash.svelte.js";
 import UserListEditor from "./UserListEditor.svelte";
+import UserListEditorTestHarness from "./UserListEditorTestHarness.svelte";
+
+let runtime: OwnedAppRuntime;
+
+function renderEditor(editorProps: ComponentProps<typeof UserListEditor>) {
+  const rendered = render(UserListEditorTestHarness, { props: { runtime, editorProps } });
+  return {
+    ...rendered,
+    rerenderEditor: (next: Partial<ComponentProps<typeof UserListEditor>>) => {
+      editorProps = { ...editorProps, ...next };
+      return rendered.rerender({ runtime, editorProps });
+    },
+  };
+}
+
+function candidateLoader(values: string[]) {
+  return vi.fn(() => Effect.succeed(values));
+}
 
 describe("UserListEditor", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    runtime = makeAppRuntime();
+  });
+
+  afterEach(async () => {
     cleanup();
     for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("keeps a mutation flash visible when a later candidate fetch succeeds", async () => {
-    const loadCandidates = vi.fn().mockResolvedValue(["alice", "bob"]);
-    const onchange = vi.fn().mockRejectedValue(new Error("provider rejected the save"));
-    render(UserListEditor, {
-      props: {
-        label: "Assignees",
-        users: [],
-        canEdit: true,
-        loadCandidates,
-        onchange,
-      },
+    const loadCandidates = candidateLoader(["alice", "bob"]);
+    const onchange = vi.fn((_next, callbacks) => {
+      flash.showFlash("provider rejected the save", { tone: "danger" });
+      callbacks.onSettled?.();
+    });
+    renderEditor({
+      label: "Assignees",
+      users: [],
+      canEdit: true,
+      loadCandidates,
+      onchange,
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
@@ -45,17 +72,39 @@ describe("UserListEditor", () => {
     });
   });
 
+  it("keeps one synchronous mutation pending until its acknowledgement settles", async () => {
+    let settle = () => {};
+    const onchange = vi.fn((_next, callbacks) => {
+      settle = () => callbacks.onSettled?.();
+    });
+    renderEditor({
+      label: "Assignees",
+      users: [],
+      canEdit: true,
+      loadCandidates: candidateLoader(["alice", "bob"]),
+      onchange,
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
+    await waitFor(() => expect(screen.getByRole("menuitemcheckbox", { name: /alice/i })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /alice/i }));
+    await fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /bob/i }));
+    expect(onchange).toHaveBeenCalledTimes(1);
+
+    settle();
+    await fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /bob/i }));
+    expect(onchange).toHaveBeenCalledTimes(2);
+  });
+
   it("closes the picker and blocks mutations once the view goes stale", async () => {
     const onchange = vi.fn();
-    const { rerender } = render(UserListEditor, {
-      props: {
-        label: "Assignees",
-        users: ["alice"],
-        canEdit: true,
-        disabled: false,
-        loadCandidates: vi.fn().mockResolvedValue(["alice", "bob"]),
-        onchange,
-      },
+    const { rerenderEditor } = renderEditor({
+      label: "Assignees",
+      users: ["alice"],
+      canEdit: true,
+      disabled: false,
+      loadCandidates: candidateLoader(["alice", "bob"]),
+      onchange,
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
@@ -63,20 +112,18 @@ describe("UserListEditor", () => {
 
     // The item went stale (e.g. navigation): the open picker must
     // close so it cannot mutate whatever the handlers now target.
-    await rerender({ disabled: true });
+    await rerenderEditor({ disabled: true });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit assignees" })).toBeNull());
     expect(onchange).not.toHaveBeenCalled();
   });
 
   it("clears a non-empty filter on the first Escape and closes the picker on the second", async () => {
-    render(UserListEditor, {
-      props: {
-        label: "Assignees",
-        users: [],
-        canEdit: true,
-        loadCandidates: vi.fn().mockResolvedValue(["alice", "bob"]),
-        onchange: vi.fn(),
-      },
+    renderEditor({
+      label: "Assignees",
+      users: [],
+      canEdit: true,
+      loadCandidates: candidateLoader(["alice", "bob"]),
+      onchange: vi.fn(),
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
@@ -97,14 +144,12 @@ describe("UserListEditor", () => {
   });
 
   it("dismisses the picker on a press outside the chip and panel", async () => {
-    render(UserListEditor, {
-      props: {
-        label: "Assignees",
-        users: [],
-        canEdit: true,
-        loadCandidates: vi.fn().mockResolvedValue(["alice"]),
-        onchange: vi.fn(),
-      },
+    renderEditor({
+      label: "Assignees",
+      users: [],
+      canEdit: true,
+      loadCandidates: candidateLoader(["alice"]),
+      onchange: vi.fn(),
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
@@ -122,11 +167,11 @@ describe("UserListEditor", () => {
     const props = {
       users: [],
       canEdit: true,
-      loadCandidates: vi.fn().mockResolvedValue(["alice"]),
+      loadCandidates: candidateLoader(["alice"]),
       onchange: vi.fn(),
     };
-    render(UserListEditor, { props: { ...props, label: "Assignees" } });
-    render(UserListEditor, { props: { ...props, label: "Reviewers" } });
+    renderEditor({ ...props, label: "Assignees" });
+    renderEditor({ ...props, label: "Reviewers" });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: "Edit assignees" })).toBeTruthy());
@@ -145,11 +190,11 @@ describe("UserListEditor", () => {
     const props = {
       users: [],
       canEdit: true,
-      loadCandidates: vi.fn().mockResolvedValue(["alice"]),
+      loadCandidates: candidateLoader(["alice"]),
       onchange: vi.fn(),
     };
-    render(UserListEditor, { props: { ...props, label: "Assignees" } });
-    render(UserListEditor, { props: { ...props, label: "Reviewers" } });
+    renderEditor({ ...props, label: "Assignees" });
+    renderEditor({ ...props, label: "Reviewers" });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: "Edit assignees" })).toBeTruthy());
@@ -166,16 +211,14 @@ describe("UserListEditor", () => {
   it("clears a candidate-load error once a later fetch succeeds", async () => {
     const loadCandidates = vi
       .fn()
-      .mockRejectedValueOnce(new Error("failed to load users"))
-      .mockResolvedValue(["carol"]);
-    render(UserListEditor, {
-      props: {
-        label: "Assignees",
-        users: [],
-        canEdit: true,
-        loadCandidates,
-        onchange: vi.fn(),
-      },
+      .mockReturnValueOnce(Effect.fail(new Error("failed to load users")))
+      .mockReturnValue(Effect.succeed(["carol"]));
+    renderEditor({
+      label: "Assignees",
+      users: [],
+      canEdit: true,
+      loadCandidates,
+      onchange: vi.fn(),
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
@@ -186,5 +229,58 @@ describe("UserListEditor", () => {
       timeout: 2000,
     });
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("interrupts candidate loading when the picker closes", async () => {
+    let interrupted = false;
+    const loadCandidates = vi.fn(() =>
+      Effect.never.pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            interrupted = true;
+          }),
+        ),
+      ),
+    );
+    renderEditor({
+      label: "Assignees",
+      users: [],
+      canEdit: true,
+      loadCandidates,
+      onchange: vi.fn(),
+    });
+
+    const trigger = screen.getByRole("button", { name: "Edit assignees" });
+    await fireEvent.click(trigger);
+    await waitFor(() => expect(loadCandidates).toHaveBeenCalled());
+    await fireEvent.click(trigger);
+
+    await waitFor(() => expect(interrupted).toBe(true));
+  });
+
+  it("interrupts candidate loading when the editor unmounts", async () => {
+    let interrupted = false;
+    const loadCandidates = vi.fn(() =>
+      Effect.never.pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            interrupted = true;
+          }),
+        ),
+      ),
+    );
+    const { unmount } = renderEditor({
+      label: "Assignees",
+      users: [],
+      canEdit: true,
+      loadCandidates,
+      onchange: vi.fn(),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
+    await waitFor(() => expect(loadCandidates).toHaveBeenCalled());
+    unmount();
+
+    await waitFor(() => expect(interrupted).toBe(true));
   });
 });

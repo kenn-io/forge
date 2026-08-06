@@ -19,16 +19,9 @@ import { Effect } from "effect";
 // browser-tier assertions.
 import "../app.css";
 import { createMockApiFetch, type MockApiHandle, type MockRouteOverride } from "./mockApiFetch.js";
-import type { AppExecution, OwnedAppRuntime } from "../lib/app/runtime.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../lib/app/runtime.js";
 
-function browserTestRuntime(): OwnedAppRuntime {
-  return {
-    disposeEffect: Effect.void,
-    runCommand: <A, E>(): AppExecution<A, E> => {
-      throw new Error("The browser App harness does not run Effect commands yet");
-    },
-  };
-}
+let previousRuntimeDisposal = Promise.resolve();
 
 // An in-memory EventSource so the live-update store never opens a real backend
 // connection. Tests can also emit specific events when they need to exercise
@@ -94,6 +87,7 @@ export function emitBrowserEventSource(type: string, data: unknown): void {
 
 export interface MountedBrowserApp {
   api: MockApiHandle;
+  runtime: OwnedAppRuntime;
   target: HTMLElement;
   unmount: () => void;
 }
@@ -108,7 +102,9 @@ export interface MountBrowserAppOptions {
  * jsdom mountApp(): same fixtures, same router seeding, real layout.
  */
 export async function mountBrowserApp(path: string, options: MountBrowserAppOptions = {}): Promise<MountedBrowserApp> {
+  await previousRuntimeDisposal;
   const api = createMockApiFetch(options.overrides ?? []);
+  const runtime = makeAppRuntime();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = api.fetch;
 
@@ -132,16 +128,18 @@ export async function mountBrowserApp(path: string, options: MountBrowserAppOpti
   // vitest-browser-svelte's render forwards `target` straight to Svelte.mount,
   // so App mounts into the same #app element it reads for its width.
   const { default: App } = await import("../App.svelte");
-  const { unmount } = render(App, { target, props: { runtime: browserTestRuntime() } });
+  const { unmount } = render(App, { target, props: { runtime } });
 
   return {
     api,
+    runtime,
     target,
     unmount: () => {
       unmount();
       target.remove();
       globalThis.fetch = originalFetch;
       globalThis.EventSource = originalEventSource;
+      previousRuntimeDisposal = Effect.runPromise(runtime.disposeEffect);
     },
   };
 }

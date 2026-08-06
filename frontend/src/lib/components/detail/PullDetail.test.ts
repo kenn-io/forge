@@ -1,16 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { Effect } from "effect";
+import type { ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { DiffResult, PullDetail } from "../../api/types.js";
-import {
-  ACTIONS_KEY,
-  API_CLIENT_KEY,
-  NAVIGATE_KEY,
-  STORES_KEY,
-  UI_CONFIG_KEY,
-  WORKSPACE_DELETED_KEY,
-} from "../../context.js";
+import type { DiffResult, Label, PullDetail } from "../../api/types.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { createDetailStore } from "../../stores/detail.svelte.js";
+import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
 import {
   discardWorkspaceLaunch,
@@ -19,7 +16,10 @@ import {
   recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
-import type { ForgeClient } from "../../types.js";
+import type { GeneratedClient } from "../../api/generated-api.js";
+import type { ProblemBody } from "../../api/problems.js";
+import type { ProviderRouteRef } from "../../api/provider-routes.js";
+import type { ProviderActionCallbacks } from "../../stores/detail.svelte.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/inlineWorkspaceTestController.svelte.js";
@@ -40,6 +40,14 @@ const launchTargets = [
 // remounts; tests that leave a deferred create unresolved must not leak
 // that pending identity into later tests.
 afterEach(resetWorkspaceCreatePendingForTest);
+
+let detailRuntime: OwnedAppRuntime | null = null;
+
+afterEach(async () => {
+  if (detailRuntime === null) return;
+  await Effect.runPromise(detailRuntime.disposeEffect);
+  detailRuntime = null;
+});
 
 const markdownMockState = vi.hoisted(() => ({
   pending: false,
@@ -75,6 +83,7 @@ vi.mock("../../utils/markdown.js", async (importOriginal) => {
 });
 
 import PullDetailComponent from "./PullDetail.svelte";
+import PullDetailTestHarness from "./PullDetailTestHarness.svelte";
 
 const capabilities = {
   read_repositories: true,
@@ -214,11 +223,23 @@ function renderPullDetail(
     actions?: { pull: unknown[] };
     detailSyncing?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
-    onWorkspaceDeleted?: ReturnType<typeof vi.fn>;
+    runtimeClient?: GeneratedClient;
   } = {},
 ) {
   const actions = options.actions ?? { pull: [] };
   let envelopeTick = 0;
+  const runProviderAction = (path: string, body: unknown, callbacks: ProviderActionCallbacks): void => {
+    void apiClient.POST(path, { body }).then((result) => {
+      const error = "error" in result ? (result.error as ProblemBody | undefined) : undefined;
+      if (error !== undefined) {
+        callbacks.onProblem?.(error);
+        callbacks.onFailure?.(error.detail ?? error.title ?? "provider action failed");
+      } else {
+        callbacks.onSuccess?.();
+      }
+      callbacks.onSettled?.();
+    });
+  };
   const detailStore = {
     loadDetail: vi.fn(async () => undefined),
     startDetailPolling: vi.fn(),
@@ -230,26 +251,81 @@ function renderPullDetail(
     isDetailSyncing: () => options.detailSyncing ?? false,
     getDetailLoaded: () => true,
     updateKanbanState: vi.fn(),
+    setPullState: vi.fn(
+      (_ref: ProviderRouteRef, _number: number, _state: string, callbacks: ProviderActionCallbacks) => {
+        callbacks.onSuccess?.();
+        callbacks.onSettled?.();
+      },
+    ),
     toggleDetailPRStar: vi.fn(),
     updatePRContent: vi.fn(),
     refreshPendingCI: vi.fn(async () => undefined),
-    syncDetailNow: vi.fn(async () => true),
-    refreshDetailOnly: vi.fn(async () => undefined),
+    syncDetailNow: vi.fn(
+      (
+        _owner: string,
+        _name: string,
+        _number: number,
+        _identity: unknown,
+        callbacks: { onSuccess?: (value: boolean) => void },
+      ) => {
+        callbacks.onSuccess?.(true);
+      },
+    ),
+    refreshDetailOnly: vi.fn(
+      (_owner: string, _name: string, _number: number, _identity: unknown, callbacks?: { onSettled?: () => void }) => {
+        callbacks?.onSettled?.();
+      },
+    ),
+    approvePull: vi.fn((_ref: ProviderRouteRef, _number: number, body: unknown, callbacks: ProviderActionCallbacks) =>
+      runProviderAction("/approve", body, callbacks),
+    ),
+    requestPullChanges: vi.fn(
+      (_ref: ProviderRouteRef, _number: number, body: unknown, callbacks: ProviderActionCallbacks) =>
+        runProviderAction("/request-changes", body, callbacks),
+    ),
+    markPullReady: vi.fn((_ref: ProviderRouteRef, _number: number, callbacks: ProviderActionCallbacks) =>
+      runProviderAction("/ready-for-review", undefined, callbacks),
+    ),
+    approvePullWorkflows: vi.fn((_ref: ProviderRouteRef, _number: number, callbacks: ProviderActionCallbacks) =>
+      runProviderAction("/approve-workflows", undefined, callbacks),
+    ),
+    mergePull: vi.fn(
+      (_ref: ProviderRouteRef, _number: number, body: unknown, deferred: boolean, callbacks: ProviderActionCallbacks) =>
+        runProviderAction(deferred ? "/merge/deferred" : "/merge", body, callbacks),
+    ),
     editComment: vi.fn(),
-    applyReviewSuggestions: vi.fn(async () => true),
+    applyReviewSuggestions: vi.fn(
+      (
+        _owner: string,
+        _name: string,
+        _number: number,
+        _input: unknown,
+        callbacks: { onResult?: (value: boolean) => void; onSettled?: () => void },
+      ) => {
+        callbacks.onResult?.(true);
+        callbacks.onSettled?.();
+      },
+    ),
   };
   const navigate = vi.fn();
 
-  const rendered = render(PullDetailComponent, {
+  const runtime =
+    detailRuntime ?? makeTestAppRuntime(options.runtimeClient ?? (apiClient as unknown as GeneratedClient));
+  detailRuntime = runtime;
+  let detailProps: ComponentProps<typeof PullDetailComponent> = {
+    owner: "acme",
+    name: "widget",
+    number: detail.merge_request.Number,
+    provider: "github",
+    platformHost: "github.com",
+    repoPath: "acme/widget",
+    hideWorkspaceAction: options.hideWorkspaceAction ?? true,
+    inlineWorkspace: options.inlineWorkspace ?? null,
+  };
+  const rendered = render(PullDetailTestHarness, {
     props: {
-      owner: "acme",
-      name: "widget",
-      number: detail.merge_request.Number,
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-      hideWorkspaceAction: options.hideWorkspaceAction ?? true,
-      inlineWorkspace: options.inlineWorkspace ?? null,
+      runtime,
+      detailProps,
     },
     context: new Map<symbol, unknown>([
       [API_CLIENT_KEY, apiClient],
@@ -268,11 +344,14 @@ function renderPullDetail(
       [ACTIONS_KEY, actions],
       [UI_CONFIG_KEY, { hideStar: true }],
       [NAVIGATE_KEY, navigate],
-      [WORKSPACE_DELETED_KEY, options.onWorkspaceDeleted ?? null],
     ]),
   });
   return {
     ...rendered,
+    rerender: (next: Partial<ComponentProps<typeof PullDetailComponent>>) => {
+      detailProps = { ...detailProps, ...next };
+      return rendered.rerender({ runtime, detailProps });
+    },
     detailStore,
     navigate,
     setEnvelopeTick: (tick: number) => {
@@ -712,6 +791,78 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByRole("dialog", { name: "Edit labels" })).toBeNull();
   });
 
+  it("loads the label catalog through the app runtime", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities = {
+      ...capabilities,
+      read_labels: true,
+      label_mutation: true,
+    };
+    const repoSettings = {
+      AllowSquashMerge: false,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    };
+    const contextClient = {
+      GET: vi.fn(async (path: string) =>
+        path.endsWith("/labels")
+          ? { data: { labels: [{ name: "context-label", color: "ededed", description: "" }] } }
+          : { data: repoSettings },
+      ),
+      POST: vi.fn(async () => ({ data: {} })),
+    };
+    const runtimeClient = {
+      GET: vi.fn(async (path: string) =>
+        path.endsWith("/labels")
+          ? { data: { labels: [{ name: "runtime-label", color: "ededed", description: "" }] } }
+          : { data: repoSettings },
+      ),
+    } as unknown as GeneratedClient;
+
+    renderPullDetail(detail, repoSettings, contextClient, { runtimeClient });
+    await fireEvent.click(screen.getByRole("button", { name: "Labels" }));
+
+    expect(await screen.findByText("runtime-label")).toBeTruthy();
+    expect(screen.queryByText("context-label")).toBeNull();
+  });
+
+  it("closes and invalidates the label catalog when the pull route changes", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities = {
+      ...capabilities,
+      read_labels: true,
+      label_mutation: true,
+    };
+    const oldCatalog = Promise.withResolvers<{ data: { labels: Label[] } }>();
+    const apiClient = {
+      GET: vi.fn((path: string) =>
+        path.endsWith("/labels")
+          ? oldCatalog.promise
+          : Promise.resolve({
+              data: {
+                AllowSquashMerge: false,
+                AllowMergeCommit: false,
+                AllowRebaseMerge: false,
+                ViewerCanMerge: true,
+              },
+            }),
+      ),
+      POST: vi.fn(async () => ({ data: {} })),
+    };
+    const { rerender } = renderPullDetail(detail, undefined, apiClient);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Labels" }));
+    expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
+
+    await rerender({ name: "other", repoPath: "acme/other", number: 2 });
+    expect(screen.queryByRole("dialog", { name: "Edit labels" })).toBeNull();
+
+    oldCatalog.resolve({ data: { labels: [{ name: "old-route", color: "ededed", description: "" }] } });
+    await oldCatalog.promise;
+    expect(screen.queryByText("old-route")).toBeNull();
+  });
+
   it("closes the label picker when the actions menu Labels action is clicked after reopening the menu", async () => {
     const detail = pullDetail();
     detail.repo.capabilities = {
@@ -1016,15 +1167,18 @@ describe("PullDetail approvals", () => {
     await fireEvent.click(screen.getByRole("button", { name: "State: Open" }));
     await fireEvent.click(screen.getByRole("menuitem", { name: "Draft" }));
 
-    expect(apiClient.POST).toHaveBeenCalledWith("/pulls/{provider}/{owner}/{name}/{number}/github-state", {
-      params: { path: { provider: "github", owner: "acme", name: "widget", number: 1 } },
-      body: { state: "draft" },
-    });
-    expect(detailStore.loadDetail).toHaveBeenCalledWith("acme", "widget", 1, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-    });
+    expect(detailStore.setPullState).toHaveBeenCalledWith(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      },
+      1,
+      "draft",
+      expect.objectContaining({ onSuccess: expect.any(Function), onSettled: expect.any(Function) }),
+    );
   });
 
   it("gates actions from the detail payload before repo settings resolve", async () => {
@@ -1095,33 +1249,42 @@ describe("PullDetail approvals", () => {
           };
         }
         if (path.endsWith("/sync")) {
-          return { error: undefined };
+          return {
+            error: {
+              code: "sync_failed",
+              type: "about:blank",
+              detail: "provider refresh failed",
+            },
+          };
         }
         return { data: {} };
       }),
     };
-    const detailStore = createDetailStore({
-      client: apiClient as unknown as ForgeClient,
-    });
-    await detailStore.loadDetail("acme", "widget", 1, {
+    detailRuntime = makeTestAppRuntime(apiClient as unknown as GeneratedClient);
+    const detailStore = createDetailStore({ runtime: detailRuntime });
+    detailStore.loadDetail("acme", "widget", 1, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
       sync: false,
     });
+    await waitFor(() => expect(detailStore.isDetailLoading()).toBe(false));
 
-    render(PullDetailComponent, {
+    render(PullDetailTestHarness, {
       props: {
-        owner: "acme",
-        name: "widget",
-        number: 1,
-        provider: "github",
-        platformHost: "github.com",
-        repoPath: "acme/widget",
-        hideWorkspaceAction: true,
-        // Background sync would re-fetch the original fixture and race
-        // the fail-closed state this test asserts.
-        autoSync: false,
+        runtime: detailRuntime,
+        detailProps: {
+          owner: "acme",
+          name: "widget",
+          number: 1,
+          provider: "github",
+          platformHost: "github.com",
+          repoPath: "acme/widget",
+          hideWorkspaceAction: true,
+          // Background sync would re-fetch the original fixture and race
+          // the fail-closed state this test asserts.
+          autoSync: false,
+        },
       },
       context: new Map<symbol, unknown>([
         [API_CLIENT_KEY, apiClient],
@@ -1263,57 +1426,6 @@ describe("PullDetail approvals", () => {
         }),
       );
       expect(detailStore.loadDetail).toHaveBeenCalled();
-    });
-  });
-
-  it("publishes successful merge cleanup through the workspace deletion callback", async () => {
-    const detail = pullDetail();
-    detail.repo.capabilities.merge_mutation = true;
-    detail.workspace = { id: "ws-1", status: "ready" };
-    const onWorkspaceDeleted = vi.fn();
-    const apiClient = {
-      GET: vi.fn(async () => ({
-        data: {
-          AllowSquashMerge: true,
-          AllowMergeCommit: false,
-          AllowRebaseMerge: false,
-          ViewerCanMerge: true,
-        },
-      })),
-      POST: vi.fn(async () => ({
-        data: { merged: true, sha: "merge-sha", message: "merged" },
-        error: undefined,
-      })),
-    };
-    renderPullDetail(
-      detail,
-      {
-        AllowSquashMerge: true,
-        AllowMergeCommit: false,
-        AllowRebaseMerge: false,
-        ViewerCanMerge: true,
-      },
-      apiClient,
-      { onWorkspaceDeleted },
-    );
-
-    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
-    await fireEvent.click(
-      within(screen.getByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
-        name: "Squash and merge",
-      }),
-    );
-
-    await waitFor(() => {
-      expect(onWorkspaceDeleted).toHaveBeenCalledWith("ws-1", undefined, {
-        provider: "github",
-        platformHost: "github.com",
-        owner: "acme",
-        name: "widget",
-        repoPath: "acme/widget",
-        number: 1,
-        itemType: "pull",
-      });
     });
   });
 
@@ -1478,14 +1590,13 @@ describe("PullDetail approvals", () => {
       expect(screen.getByText(/head commit changed since this pull request was reviewed/i)).toBeTruthy();
     });
 
-    const detailLoadsBeforeApproval = detailStore.loadDetail.mock.calls.length;
     resolveApprove({
       data: { status: "approved" },
       error: undefined,
       response: new Response("{}"),
     });
     await vi.waitFor(() => {
-      expect(detailStore.loadDetail.mock.calls.length).toBeGreaterThan(detailLoadsBeforeApproval);
+      expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
     });
 
     expect(screen.getByText(/head commit changed since this pull request was reviewed/i)).toBeTruthy();
@@ -1594,6 +1705,27 @@ describe("PullDetail inline workspace handoff", () => {
     };
     return { apiClient, resolvePost };
   }
+
+  it("creates a pull workspace through the app runtime", async () => {
+    const controller = createTestController("split");
+    const { apiClient: runtimeClient, resolvePost } = deferredWorkspaceApiClient();
+    const contextClient = {
+      GET: vi.fn(async () => ({ data: {} })),
+      POST: vi.fn(async () => ({ error: { title: "legacy client used" } })),
+    };
+    renderPullDetail(pullDetail(), undefined, contextClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+      runtimeClient: runtimeClient as unknown as GeneratedClient,
+    });
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
+    await waitFor(() => expect(runtimeClient.POST).toHaveBeenCalled());
+    resolvePost({ data: { id: "ws-runtime", status: "provisioning" } });
+
+    await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    expect(contextClient.POST).not.toHaveBeenCalled();
+  });
 
   it("create with inline controller records the override and does not navigate", async () => {
     const controller = createTestController("split");

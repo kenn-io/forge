@@ -1,4 +1,7 @@
-import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "../../api/types.js";
+import { Effect } from "effect";
+import type { AppRuntime } from "../../app/runtime.js";
+import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
+import type { SettingsError } from "../../stores/settings-workflow.js";
 import { saveTerminalSettings, type TerminalSettingsStore } from "../../stores/terminal-settings-persistence.js";
 
 export const MIN_TERMINAL_FONT_SIZE = 8;
@@ -6,18 +9,19 @@ export const MAX_TERMINAL_FONT_SIZE = 32;
 export const RESET_TERMINAL_FONT_SIZE = DEFAULT_TERMINAL_SETTINGS.font_size;
 
 interface TerminalZoomControllerOptions {
+  runtime: AppRuntime;
   store: TerminalSettingsStore;
-  persist: (settings: TerminalSettings) => Promise<TerminalSettings>;
-  reportError: (error: unknown) => void;
+  reportError: (error: SettingsError) => void;
   onPendingChange?: (pending: boolean) => void;
 }
 
 export interface TerminalZoomController {
   decrease: () => void;
+  dispose: () => void;
   increase: () => void;
   reset: () => void;
   setFontSize: (fontSize: number) => void;
-  whenIdle: () => Promise<void>;
+  whenIdle: () => Effect.Effect<void>;
 }
 
 function clampFontSize(fontSize: number): number {
@@ -25,38 +29,41 @@ function clampFontSize(fontSize: number): number {
 }
 
 export function createTerminalZoomController({
+  runtime,
   store,
-  persist,
   reportError,
   onPendingChange,
 }: TerminalZoomControllerOptions): TerminalZoomController {
-  let saveQueue = Promise.resolve();
+  let latestCompletion: Effect.Effect<void> = Effect.void;
   let pendingSaves = 0;
+  let pendingChange = onPendingChange;
+  let failureReporter: ((error: SettingsError) => void) | undefined = reportError;
 
   function setFontSize(fontSize: number): void {
     const nextFontSize = clampFontSize(fontSize);
     const current = store.getTerminalSettings();
     if (current.font_size === nextFontSize) return;
 
-    const save = saveTerminalSettings({
+    pendingSaves += 1;
+    if (pendingSaves === 1) pendingChange?.(true);
+    const program = saveTerminalSettings({
       baseline: current,
       changes: { font_size: nextFontSize },
-      persist,
       store,
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          pendingSaves -= 1;
+          if (pendingSaves === 0) pendingChange?.(false);
+        }),
+      ),
+    );
+    const execution = runtime.runCommand(program, {
+      operation: "save terminal zoom",
+      safeContext: { fontSize: nextFontSize },
+      onFailure: (failure) => failureReporter?.(failure),
     });
-    pendingSaves += 1;
-    if (pendingSaves === 1) onPendingChange?.(true);
-    saveQueue = save
-      .then(
-        () => undefined,
-        (error) => {
-          reportError(error);
-        },
-      )
-      .finally(() => {
-        pendingSaves -= 1;
-        if (pendingSaves === 0) onPendingChange?.(false);
-      });
+    latestCompletion = execution.await.pipe(Effect.asVoid);
   }
 
   function increase(): void {
@@ -73,9 +80,13 @@ export function createTerminalZoomController({
 
   return {
     decrease,
+    dispose: () => {
+      pendingChange = undefined;
+      failureReporter = undefined;
+    },
     increase,
     reset,
     setFontSize,
-    whenIdle: () => saveQueue,
+    whenIdle: () => latestCompletion,
   };
 }

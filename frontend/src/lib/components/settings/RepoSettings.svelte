@@ -82,7 +82,7 @@
       });
       inputValue = "";
       onUpdate(settings.repos);
-      void sync.refreshSyncStatus();
+      sync.refreshSyncStatus();
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
@@ -100,7 +100,7 @@
       confirmingRemove = null;
       const settings = await getSettings();
       onUpdate(settings.repos);
-      void sync.refreshSyncStatus();
+      sync.refreshSyncStatus();
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     }
@@ -116,7 +116,7 @@
         host: repo.platform_host,
       });
       onUpdate(settings.repos);
-      void sync.refreshSyncStatus();
+      sync.refreshSyncStatus();
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
@@ -182,7 +182,7 @@
   onClose={() => { void closeImportModal(); }}
   onImported={(settings) => {
     onUpdate(settings.repos);
-    void sync.refreshSyncStatus();
+    sync.refreshSyncStatus();
   }}
 />
 
@@ -192,7 +192,7 @@
   onClose={() => { promoteRepo = null; }}
   onPromoted={(settings) => {
     onUpdate(settings.repos);
-    void sync.refreshSyncStatus();
+    sync.refreshSyncStatus();
   }}
 />
 

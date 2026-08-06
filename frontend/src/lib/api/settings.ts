@@ -1,10 +1,10 @@
-import type { Settings } from "./types.js";
 import type { components } from "./generated/schema.js";
 import { providerRepoPath, providerRouteParams } from "./provider-routes.js";
 
 import { apiErrorMessage, client } from "./runtime.js";
 
-type UpdateSettingsRequest = components["schemas"]["UpdateSettingsRequest"];
+export type SettingsResponse = components["schemas"]["SettingsResponse"];
+export type UpdateSettingsRequest = components["schemas"]["UpdateSettingsRequest"];
 type UpdateFleetSettingsRequest = components["schemas"]["UpdateFleetSettingsInputBody"];
 export type RepoPreviewResponse = components["schemas"]["RepoPreviewResponse"];
 export type RepoPreviewRow = components["schemas"]["RepoPreviewRow"];
@@ -24,45 +24,7 @@ export interface RepoInput extends RepoRequestOptions {
   repo_path?: string;
 }
 
-function normalizeUpdateRequest(settings: {
-  activity?: Settings["activity"];
-  issues?: Settings["issues"];
-  pull_requests?: Settings["pull_requests"];
-  workspaces?: Settings["workspaces"];
-  modes?: Settings["modes"];
-  terminal?: Settings["terminal"];
-  agents?: Settings["agents"];
-  kata_projects?: Settings["kata_projects"];
-}): UpdateSettingsRequest {
-  const request: UpdateSettingsRequest = {};
-  if (settings.activity) {
-    request.activity = settings.activity;
-  }
-  if (settings.issues) {
-    request.issues = settings.issues;
-  }
-  if (settings.pull_requests) {
-    request.pull_requests = settings.pull_requests;
-  }
-  if (settings.workspaces) {
-    request.workspaces = settings.workspaces;
-  }
-  if (settings.modes) {
-    request.modes = settings.modes;
-  }
-  if (settings.terminal) {
-    request.terminal = settings.terminal;
-  }
-  if (settings.agents) {
-    request.agents = settings.agents;
-  }
-  if (settings.kata_projects) {
-    request.kata_projects = settings.kata_projects;
-  }
-  return request;
-}
-
-export async function getSettings(options: { signal?: AbortSignal } = {}): Promise<Settings> {
+export async function getSettings(options: { signal?: AbortSignal } = {}): Promise<SettingsResponse> {
   const { data, error, response } = await client.GET("/settings", options.signal ? { signal: options.signal } : {});
   if (!data) {
     throw new Error(requestErrorMessage(error, `GET /settings -> ${response.status}`));
@@ -70,18 +32,9 @@ export async function getSettings(options: { signal?: AbortSignal } = {}): Promi
   return data;
 }
 
-export async function updateSettings(settings: {
-  activity?: Settings["activity"];
-  issues?: Settings["issues"];
-  pull_requests?: Settings["pull_requests"];
-  workspaces?: Settings["workspaces"];
-  modes?: Settings["modes"];
-  terminal?: Settings["terminal"];
-  agents?: Settings["agents"];
-  kata_projects?: Settings["kata_projects"];
-}): Promise<Settings> {
+export async function updateSettings(settings: UpdateSettingsRequest): Promise<SettingsResponse> {
   const { data, error, response } = await client.PUT("/settings", {
-    body: normalizeUpdateRequest(settings),
+    body: settings,
   });
   if (!data) {
     throw new Error(requestErrorMessage(error, `PUT /settings -> ${response.status}`));
@@ -89,7 +42,7 @@ export async function updateSettings(settings: {
   return data;
 }
 
-export async function updateFleetSettings(fleet: UpdateFleetSettingsRequest): Promise<Settings["fleet"]> {
+export async function updateFleetSettings(fleet: UpdateFleetSettingsRequest): Promise<SettingsResponse["fleet"]> {
   const { data, error, response } = await client.PUT("/settings/fleet", {
     body: fleet,
   });
@@ -99,7 +52,7 @@ export async function updateFleetSettings(fleet: UpdateFleetSettingsRequest): Pr
   return data;
 }
 
-export async function addRepo(owner: string, name: string, options: RepoRequestOptions): Promise<Settings> {
+export async function addRepo(owner: string, name: string, options: RepoRequestOptions): Promise<SettingsResponse> {
   const { data, error, response } = await client.POST("/repos", {
     body: { ...options, owner, name },
   });
@@ -125,7 +78,7 @@ export async function removeRepo(owner: string, name: string, options: RepoReque
   }
 }
 
-export async function refreshRepo(owner: string, name: string, options: RepoRequestOptions): Promise<Settings> {
+export async function refreshRepo(owner: string, name: string, options: RepoRequestOptions): Promise<SettingsResponse> {
   const ref = {
     provider: options.provider,
     platformHost: options.host,
@@ -147,7 +100,7 @@ export async function updateRepoWorktreeBasePath(
   name: string,
   options: RepoRequestOptions,
   worktreeBasePath: string,
-): Promise<Settings> {
+): Promise<SettingsResponse> {
   const ref = {
     provider: options.provider,
     platformHost: options.host,
@@ -179,7 +132,7 @@ export async function previewRepos(
   return data;
 }
 
-export async function bulkAddRepos(repos: RepoInput[]): Promise<Settings> {
+export async function bulkAddRepos(repos: RepoInput[]): Promise<SettingsResponse> {
   const { data, error, response } = await client.POST("/repos/bulk", {
     body: {
       repos,

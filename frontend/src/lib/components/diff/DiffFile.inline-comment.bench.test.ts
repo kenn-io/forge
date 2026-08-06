@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import type { DiffFile as DiffFileType } from "../../api/types.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
@@ -19,6 +21,11 @@ let originalIntersectionObserverExisted = false;
 let originalResizeObserver: unknown;
 let originalResizeObserverExisted = false;
 let originalReplaceSync: unknown;
+let runtime: OwnedAppRuntime;
+
+beforeEach(() => {
+  runtime = makeAppRuntime();
+});
 
 beforeAll(() => {
   originalIntersectionObserverExisted = "IntersectionObserver" in globalThis;
@@ -91,8 +98,9 @@ afterAll(() => {
   }
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await Effect.runPromise(runtime.disposeEffect);
 });
 
 function makeLargeFile(lineCount: number): DiffFileType {
@@ -140,7 +148,7 @@ function makeLargeFile(lineCount: number): DiffFileType {
 }
 
 function renderDiffFile(file: DiffFileType) {
-  const diff = createDiffStore();
+  const diff = createDiffStore({ runtime });
   const diffReviewDraft = {
     getComments: () => [],
     isSubmitting: () => false,

@@ -1,21 +1,13 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as flash from "./lib/stores/flash.svelte.js";
 
-const mockPost = vi.fn();
-const mockRefreshDetailOnly = vi.fn();
-const mockLoadPulls = vi.fn();
+const mockApprovePullWorkflows = vi.fn();
 
 vi.mock("./lib/context.js", () => ({
-  getClient: () => ({
-    POST: mockPost,
-  }),
   getStores: () => ({
     detail: {
-      refreshDetailOnly: mockRefreshDetailOnly,
-    },
-    pulls: {
-      loadPulls: mockLoadPulls,
+      approvePullWorkflows: mockApprovePullWorkflows,
     },
   }),
 }));
@@ -24,11 +16,7 @@ import ApproveWorkflowsButton from "./lib/components/detail/ApproveWorkflowsButt
 
 describe("ApproveWorkflowsButton", () => {
   beforeEach(() => {
-    mockPost.mockReset();
-    mockRefreshDetailOnly.mockReset();
-    mockLoadPulls.mockReset();
-    mockRefreshDetailOnly.mockResolvedValue(undefined);
-    mockLoadPulls.mockResolvedValue(undefined);
+    mockApprovePullWorkflows.mockReset();
   });
 
   afterEach(() => {
@@ -52,9 +40,14 @@ describe("ApproveWorkflowsButton", () => {
     expect(screen.getByRole("button", { name: /approve workflows \(2\)/i })).toBeTruthy();
   });
 
-  it("posts to approve-workflows and refreshes detail without sync", async () => {
-    mockPost.mockResolvedValue({
-      data: { status: "approved_workflows", approved_count: 2 },
+  it("launches workflow approval and stays pending until acknowledgement", async () => {
+    let settle = () => {};
+    mockApprovePullWorkflows.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as { onSuccess?: () => void; onSettled?: () => void };
+      settle = () => {
+        callbacks.onSuccess?.();
+        callbacks.onSettled?.();
+      };
     });
 
     render(ApproveWorkflowsButton, {
@@ -71,27 +64,27 @@ describe("ApproveWorkflowsButton", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /approve workflows \(2\)/i }));
 
-    expect(mockPost).toHaveBeenCalledWith("/pulls/{provider}/{owner}/{name}/{number}/approve-workflows", {
-      params: {
-        path: {
-          provider: "github",
-          owner: "acme",
-          name: "widget",
-          number: 7,
-        },
+    expect(mockApprovePullWorkflows).toHaveBeenCalledWith(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
       },
-    });
-    expect(mockRefreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 7, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-    });
-    expect(mockLoadPulls).toHaveBeenCalledTimes(1);
+      7,
+      expect.any(Object),
+    );
+    expect(screen.getByRole("button", { name: /approving workflows/i })).toBeTruthy();
+    settle();
+    await waitFor(() => expect(screen.getByRole("button", { name: /approve workflows \(2\)/i })).toBeTruthy());
   });
 
   it("shows a danger flash when approval fails", async () => {
-    mockPost.mockResolvedValue({
-      error: { detail: "GitHub API error" },
+    mockApprovePullWorkflows.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as { onFailure?: (message: string) => void; onSettled?: () => void };
+      callbacks.onFailure?.("GitHub API error");
+      callbacks.onSettled?.();
     });
 
     render(ApproveWorkflowsButton, {
@@ -113,6 +106,6 @@ describe("ApproveWorkflowsButton", () => {
       tone: "danger",
     });
     expect(screen.queryByText("GitHub API error")).toBeNull();
-    expect(mockRefreshDetailOnly).not.toHaveBeenCalled();
+    expect(mockApprovePullWorkflows).toHaveBeenCalledOnce();
   });
 });

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Effect, Exit } from "effect";
   import { onMount } from "svelte";
   import Document from "@tiptap/extension-document";
   import HardBreak from "@tiptap/extension-hard-break";
@@ -23,7 +24,11 @@
     providerRepoPath,
     providerRouteParams,
   } from "../../api/provider-routes.js";
-  import { getClient } from "../../context.js";
+  import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import type { components } from "../../api/generated/schema.js";
+  import { retryIdempotentRead } from "../../api/retry-policy.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { computeCommentEditorMenuPosition } from "./commentEditorMenuPosition";
 
   interface Props {
@@ -49,22 +54,13 @@
 
   type AutocompleteTrigger = "@" | "#" | "!";
 
-  interface CommentAutocompleteReference {
-    kind: string;
-    number: number;
-    title: string;
-    state: string;
-  }
-
-  interface CommentAutocompleteResponse {
-    users?: string[] | null;
-    references?: CommentAutocompleteReference[] | null;
-  }
+  type CommentAutocompleteReference = components["schemas"]["CommentAutocompleteReference"];
+  type CommentAutocompleteResponse = components["schemas"]["CommentAutocompleteResponse"];
 
   const mentionSuggestionKey = new PluginKey("comment-editor-user-suggestion");
   const referenceSuggestionKey = new PluginKey("comment-editor-reference-suggestion");
   const mergeRequestSuggestionKey = new PluginKey("comment-editor-merge-request-suggestion");
-  const client = getClient();
+  const runtime = getAppRuntime();
 
   let {
     owner,
@@ -82,8 +78,7 @@
 
   let editor = $state<Editor | null>(null);
   let syncingFromProps = false;
-  let suggestionAbortController: AbortController | null = null;
-  let suggestionRequestSequence = 0;
+  let suggestionExecution: AppExecution<SuggestionItem[], never> | null = null;
   let pointerFocusPending = false;
   let isComposingInput = false;
 
@@ -156,16 +151,11 @@
     query: string,
   ): Promise<SuggestionItem[]> {
     if (trigger === "!" && !isGitLabRepo()) return [];
-    suggestionAbortController?.abort();
-    const abortController = new AbortController();
-    suggestionAbortController = abortController;
-    const requestSequence = ++suggestionRequestSequence;
+    suggestionExecution?.interrupt();
     const ref = { provider, platformHost, owner, name, repoPath };
-
-    const { data, error } = await client.GET(
-      providerRepoPath(ref, "/comment-autocomplete"),
-      {
-        signal: abortController.signal,
+    const program = executeGeneratedApiRequest("GET comment autocomplete", (client, signal) =>
+      client.GET(providerRepoPath(ref, "/comment-autocomplete"), {
+        signal,
         params: {
           path: providerRouteParams(ref),
           query: {
@@ -174,29 +164,22 @@
             limit: 8,
           },
         },
-      },
-    ).catch((err: unknown) => {
-      if (
-        err instanceof DOMException &&
-        err.name === "AbortError"
-      ) {
-        return { data: undefined, error: undefined };
-      }
-      throw err;
+      }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.map((response) => toSuggestionItems(trigger, response)),
+      Effect.catch(() => Effect.succeed([])),
+    );
+    const execution = runtime.runCommand(program, {
+      operation: "load comment autocomplete",
+      safeContext: { provider: ref.provider, owner: ref.owner, name: ref.name, trigger, query },
+      onFailure: () => {},
     });
-
-    if (
-      abortController.signal.aborted ||
-      requestSequence !== suggestionRequestSequence
-    ) {
-      return [];
-    }
-
-    if (error || data === undefined) {
-      return [];
-    }
-
-    return toSuggestionItems(trigger, data);
+    suggestionExecution = execution;
+    // Tiptap's suggestion callback requires a Promise. The request itself
+    // runs in the app runtime; this boundary only observes that owned fiber.
+    const exit = await Effect.runPromise(execution.await);
+    return Exit.isSuccess(exit) ? exit.value : [];
   }
 
   function insertSuggestionText(current: CoreEditor, range: Range, insertText: string): void {
@@ -413,7 +396,7 @@
             char: trigger,
             allowedPrefixes: [" ", "(", "["],
             allow: () => !isComposingInput && (trigger !== "!" || isGitLabRepo()),
-            items: async ({ query }) => loadSuggestionItems(trigger, query),
+            items: ({ query }) => loadSuggestionItems(trigger, query),
             command: ({ editor, range, props }) => {
               insertSuggestionText(editor, range, props.insertText);
             },
@@ -532,7 +515,7 @@
     current.view.dom.addEventListener("compositionend", handleCompositionEnd);
 
     return () => {
-      suggestionAbortController?.abort();
+      suggestionExecution?.interrupt();
       current.view.dom.removeEventListener("compositionstart", handleCompositionStart);
       current.view.dom.removeEventListener("compositionend", handleCompositionEnd);
       current.destroy();

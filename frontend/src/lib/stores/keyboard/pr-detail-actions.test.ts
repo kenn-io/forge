@@ -11,10 +11,10 @@ const expectedIds = ["pr.approve", "pr.ready", "pr.approveWorkflows"];
 
 function buildOpenApprovableInput(overrides: Partial<PRDetailActionInput> = {}): PRDetailActionInput {
   const stores = {
-    pulls: { loadPulls: vi.fn().mockResolvedValue(undefined) },
     detail: {
-      loadDetail: vi.fn().mockResolvedValue(undefined),
-      refreshDetailOnly: vi.fn().mockResolvedValue(undefined),
+      approvePull: vi.fn(),
+      markPullReady: vi.fn(),
+      approvePullWorkflows: vi.fn(),
     },
   };
   return {
@@ -34,8 +34,7 @@ function buildOpenApprovableInput(overrides: Partial<PRDetailActionInput> = {}):
     },
     repoSettings: null,
     stale: false,
-    stores: stores as unknown as PRDetailActionInput["stores"],
-    client: {} as PRDetailActionInput["client"],
+    stores,
     approveCommentBody: "",
     ...overrides,
   };
@@ -64,6 +63,17 @@ describe("registerPRDetailActions", () => {
     for (const action of actions) {
       await expect(Promise.resolve(action.handler(ctx))).resolves.toBeUndefined();
     }
+  });
+
+  it("runs provider commands from a synchronous palette handler", () => {
+    const input = buildOpenApprovableInput();
+    registerPRDetailActions(() => input);
+    const approve = getActionsByOwner("pr-detail-actions").find((action) => action.id === "pr.approve");
+
+    const result = approve?.handler(ctx);
+
+    expect(result).toBeUndefined();
+    expect(input.stores.detail.approvePull).toHaveBeenCalledOnce();
   });
 
   it("pr.approve.when() is true when the input PR is approvable", () => {

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { setContext } from "svelte";
+  import { setContext, untrack } from "svelte";
+  import type { AppRuntime } from "../app/runtime.js";
+  import { setAppRuntime } from "../app/runtime-context.js";
 
   import {
     API_CLIENT_KEY,
@@ -19,6 +21,7 @@
   }
 
   interface Props {
+    runtime: AppRuntime;
     kind: "pull" | "issue";
     owner?: string;
     name?: string;
@@ -32,6 +35,7 @@
   }
 
   const {
+    runtime,
     kind,
     owner = "octo",
     name = "repo",
@@ -44,17 +48,29 @@
     onAutocompleteQuery = undefined,
   }: Props = $props();
 
+  setAppRuntime(untrack(() => runtime));
+
   // Reference the props inside closures: setContext runs once at init, and
   // svelte's state_referenced_locally warning is right that a bare reference
   // would freeze the initial function values.
   setContext(STORES_KEY, {
     detail: {
-      submitComment: async (o: string, n: string, num: number, body: string) =>
-        (await submitComment(o, n, num, body)) !== false,
+      submitComment: (o: string, n: string, num: number, body: string, callbacks: { onSuccess?: () => void; onFailure?: (message: string) => void; onSettled?: () => void }) => {
+        void submitComment(o, n, num, body).then((result) => {
+          if (result === false) callbacks.onFailure?.("failed");
+          else callbacks.onSuccess?.();
+          callbacks.onSettled?.();
+        });
+      },
     },
     issues: {
-      submitIssueComment: async (o: string, n: string, num: number, body: string) =>
-        (await submitComment(o, n, num, body)) !== false,
+      submitIssueComment: (o: string, n: string, num: number, body: string, callbacks: { onSuccess?: () => void; onFailure?: (message: string) => void; onSettled?: () => void }) => {
+        void submitComment(o, n, num, body).then((result) => {
+          if (result === false) callbacks.onFailure?.("failed");
+          else callbacks.onSuccess?.();
+          callbacks.onSettled?.();
+        });
+      },
     },
   });
 
@@ -72,8 +88,7 @@
         path === "/repo/{provider}/{owner}/{name}/comment-autocomplete"
         || path === "/host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete"
       ) {
-        onAutocompleteQuery?.(options?.params);
-        return { data: autocompleteResponse };
+        return { data: { users: [], references: [] } };
       }
       return { data: undefined, error: { title: "not mocked" } };
     },

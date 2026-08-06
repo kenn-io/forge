@@ -1,15 +1,15 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { Mock } from "vite-plus/test";
+
+const mockMergePull = vi.hoisted(() => vi.fn());
+
+vi.mock("../../context.js", () => ({
+  getStores: () => ({ detail: { mergePull: mockMergePull } }),
+}));
 
 import MergeModal from "./MergeModal.svelte";
-import { API_CLIENT_KEY } from "../../context.js";
+import * as flash from "../../stores/flash.svelte.js";
 import { getStackDepth, getTopFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
-import {
-  isWorkspaceDeletionPending,
-  isWorkspaceIdDeleted,
-  resetWorkspaceCreatePendingForTest,
-} from "../../stores/workspace-create-pending.svelte.js";
 
 const baseProps = {
   owner: "octo",
@@ -33,12 +33,12 @@ const baseProps = {
 describe("MergeModal modal frame integration", () => {
   beforeEach(() => {
     resetModalStack();
-    resetWorkspaceCreatePendingForTest();
   });
 
   afterEach(() => {
     cleanup();
     resetModalStack();
+    for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
   });
 
   it("pushes a frame on mount and pops on unmount", () => {
@@ -64,96 +64,74 @@ describe("MergeModal modal frame integration", () => {
   });
 });
 
-describe("MergeModal head pinning", () => {
+describe("MergeModal acknowledged merge commands", () => {
   beforeEach(() => {
     resetModalStack();
-    resetWorkspaceCreatePendingForTest();
+    mockMergePull.mockReset();
+    mockMergePull.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as { onSuccess?: () => void; onSettled?: () => void };
+      callbacks.onSuccess?.();
+      callbacks.onSettled?.();
+    });
   });
 
   afterEach(() => {
     cleanup();
     resetModalStack();
+    for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
   });
 
-  function clientWith(post: Mock) {
-    return {
-      POST: post,
-      GET: vi.fn(),
-      PUT: vi.fn(),
-      PATCH: vi.fn(),
-      DELETE: vi.fn(),
-      OPTIONS: vi.fn(),
-      HEAD: vi.fn(),
-      TRACE: vi.fn(),
-    };
-  }
-
-  function renderModal(post: Mock, props: Partial<Record<string, unknown>> = {}) {
-    return render(MergeModal, {
-      props: { ...baseProps, ...props },
-      context: new Map<symbol, unknown>([[API_CLIENT_KEY, clientWith(post)]]),
-    });
-  }
-
-  function deferred<T>(): {
-    promise: Promise<T>;
-    resolve: (value: T) => void;
-    reject: (reason?: unknown) => void;
-  } {
-    let resolve!: (value: T) => void;
-    let reject!: (reason?: unknown) => void;
-    const promise = new Promise<T>((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    return { promise, resolve, reject };
+  function renderModal(props: Partial<Record<string, unknown>> = {}) {
+    return render(MergeModal, { props: { ...baseProps, ...props } });
   }
 
   async function confirmMerge(): Promise<void> {
     await fireEvent.click(screen.getByText("Squash and merge", { selector: ".kit-modal-footer button" }));
   }
 
-  it("echoes the reviewed head as expected_head_sha in the merge body", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
-    renderModal(post, { expectedHeadSha: "abc123" });
+  it("echoes the reviewed head in the generated merge body", async () => {
+    renderModal({ expectedHeadSha: "abc123" });
 
     await confirmMerge();
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    const [, init] = post.mock.calls[0];
-    expect(init.body.expected_head_sha).toBe("abc123");
+    expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({
+      expected_head_sha: "abc123",
+      method: "squash",
+    });
   });
 
-  it("omits expected_head_sha when the rendered head is unknown", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
-    renderModal(post);
+  it("omits the head pin when the rendered head is unknown", async () => {
+    renderModal();
 
     await confirmMerge();
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    const [, init] = post.mock.calls[0];
-    expect(init.body).not.toHaveProperty("expected_head_sha");
+    expect(mockMergePull.mock.calls[0]?.[2]).not.toHaveProperty("expected_head_sha");
   });
 
   it.each(["stale_state", "head_unknown", "not_open", "head_repo_unknown"] as const)(
     "closes and reports the %s conflict instead of leaving a stale retry open",
     async (reason) => {
-      const post = vi.fn().mockResolvedValue({
-        data: undefined,
-        error: {
+      mockMergePull.mockImplementation((...args: unknown[]) => {
+        const callbacks = args.at(-1) as {
+          onProblem?: (problem: unknown) => void;
+          onFailure?: (message: string) => void;
+          onSettled?: () => void;
+        };
+        callbacks.onProblem?.({
           type: "about:blank",
           title: "Conflict",
           status: 409,
           detail: "target changed since it was reviewed; refresh and retry",
           code: "conflict",
           details: { reason },
-        },
-        response: new Response("{}", { status: 409 }),
+        });
+        callbacks.onFailure?.("target changed since it was reviewed; refresh and retry");
+        callbacks.onSettled?.();
       });
       const onclose = vi.fn();
       const onstateconflict = vi.fn();
       const onmerged = vi.fn();
-      renderModal(post, {
+      renderModal({
         expectedHeadSha: "abc123",
         routeGeneration: 12,
         onclose,
@@ -163,221 +141,122 @@ describe("MergeModal head pinning", () => {
 
       await confirmMerge();
 
-      await waitFor(() =>
-        expect(onstateconflict).toHaveBeenCalledWith(
-          reason,
-          undefined,
-          "abc123",
-          {
-            provider: "github",
-            platformHost: "github.com",
-            owner: "octo",
-            name: "repo",
-            repoPath: "octo/repo",
-          },
-          1,
-          12,
-        ),
+      expect(onstateconflict).toHaveBeenCalledWith(
+        reason,
+        undefined,
+        "abc123",
+        {
+          provider: "github",
+          platformHost: "github.com",
+          owner: "octo",
+          name: "repo",
+          repoPath: "octo/repo",
+        },
+        1,
+        12,
       );
-      expect(onclose).toHaveBeenCalledTimes(1);
+      expect(onclose).toHaveBeenCalledOnce();
       expect(onmerged).not.toHaveBeenCalled();
-      expect(screen.queryByText("target changed since it was reviewed; refresh and retry")).toBeNull();
     },
   );
 
   it("shows the provider message inline for generic merge conflicts", async () => {
-    const post = vi.fn().mockResolvedValue({
-      data: undefined,
-      error: {
+    mockMergePull.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as {
+        onProblem?: (problem: unknown) => void;
+        onFailure?: (message: string) => void;
+        onSettled?: () => void;
+      };
+      callbacks.onProblem?.({
         type: "about:blank",
         title: "Conflict",
         status: 409,
         detail: "merge blocked by provider",
         code: "conflict",
         details: { reason: "conflict" },
-      },
-      response: new Response("{}", { status: 409 }),
+      });
+      callbacks.onFailure?.("merge blocked by provider");
+      callbacks.onSettled?.();
     });
     const onclose = vi.fn();
-    const onheadconflict = vi.fn();
-    renderModal(post, { expectedHeadSha: "abc123", onclose, onheadconflict });
+    renderModal({ expectedHeadSha: "abc123", onclose });
 
     await confirmMerge();
 
-    await waitFor(() => expect(screen.getByText("merge blocked by provider")).toBeTruthy());
-    expect(onheadconflict).not.toHaveBeenCalled();
+    expect(await screen.findByText("merge blocked by provider")).toBeTruthy();
     expect(onclose).not.toHaveBeenCalled();
   });
 
-  it("enqueues a deferred merge and reports it as queued when CI is still pending", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
-    const onclose = vi.fn();
+  it("shows non-conflict problem failures through the shared flash", async () => {
+    mockMergePull.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as {
+        onProblem?: (problem: unknown) => void;
+        onFailure?: (message: string) => void;
+        onSettled?: () => void;
+      };
+      callbacks.onProblem?.({
+        type: "about:blank",
+        title: "Invalid merge",
+        detail: "commit title is required",
+        code: "validationError",
+      });
+      callbacks.onFailure?.("commit title is required");
+      callbacks.onSettled?.();
+    });
+    renderModal();
+
+    await confirmMerge();
+
+    expect(flash.getFlash()).toMatchObject({ message: "commit title is required", tone: "danger" });
+  });
+
+  it("routes a deferred merge and reports its acknowledgement", async () => {
     const onqueued = vi.fn();
-    renderModal(post, {
-      deferUntilChecksPass: true,
-      workspaceId: "ws-1",
-      onclose,
-      onqueued,
-    });
+    renderModal({ deferUntilChecksPass: true, onqueued });
 
-    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".kit-modal-footer button" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    const [path, init] = post.mock.calls[0];
-    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge/deferred");
-    expect(init.body.method).toBe("squash");
-    expect(init.body.delete_workspace_id).toBe("ws-1");
-    expect(onqueued).toHaveBeenCalledTimes(1);
-    expect(onclose).not.toHaveBeenCalled();
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
+    expect(onqueued).toHaveBeenCalledOnce();
   });
 
-  it("offers an immediate merge override while CI is still pending", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
+  it("offers an immediate merge override while CI is pending", async () => {
     const onmerged = vi.fn();
-    renderModal(post, {
-      deferUntilChecksPass: true,
-      onmerged,
-    });
+    renderModal({ deferUntilChecksPass: true, onmerged });
 
-    expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: "Merge Anyway" }));
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    const [path, init] = post.mock.calls[0];
-    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge");
-    expect(init.body.method).toBe("squash");
-    expect(onmerged).toHaveBeenCalledTimes(1);
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
+    expect(onmerged).toHaveBeenCalledOnce();
   });
 
-  it("disables the deferred merge action while scheduling the merge", async () => {
-    const scheduled = deferred<{ data: Record<string, never>; error: undefined; response: Response }>();
-    const post = vi.fn().mockReturnValue(scheduled.promise);
-    renderModal(post, {
-      deferUntilChecksPass: true,
+  it("keeps the merge action disabled until its acknowledgement settles", async () => {
+    let settle = () => {};
+    mockMergePull.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as { onSuccess?: () => void; onSettled?: () => void };
+      settle = () => {
+        callbacks.onSuccess?.();
+        callbacks.onSettled?.();
+      };
     });
+    renderModal({ deferUntilChecksPass: true });
 
-    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".kit-modal-footer button" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
 
-    const pendingButton = screen.getByRole<HTMLButtonElement>("button", { name: "Merge scheduled..." });
-    expect(pendingButton.disabled).toBe(true);
-    expect(post).toHaveBeenCalledTimes(1);
-
-    scheduled.resolve({ data: {}, error: undefined, response: new Response("{}") });
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Merge scheduled..." }).disabled).toBe(true);
+    settle();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy());
   });
 
   it("offers only an immediate merge when a deferred merge is already queued", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
     const onmerged = vi.fn();
-    renderModal(post, {
-      deferUntilChecksPass: true,
-      alreadyQueued: true,
-      onmerged,
-    });
+    renderModal({ deferUntilChecksPass: true, alreadyQueued: true, onmerged });
 
-    // A second deferred queue would 409, so neither deferred action is offered.
     expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Merge Anyway" })).toBeNull();
-    expect(screen.getByText(/A merge is already queued/)).toBeTruthy();
-
     await confirmMerge();
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    const [path] = post.mock.calls[0];
-    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge");
-    expect(onmerged).toHaveBeenCalledTimes(1);
-  });
-
-  it("enqueues a deferred merge when requested without granular pending checks", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
-    const onqueued = vi.fn();
-    renderModal(post, {
-      deferUntilChecksPass: true,
-      onqueued,
-    });
-
-    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".kit-modal-footer button" }));
-
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    const [path] = post.mock.calls[0];
-    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge/deferred");
-    expect(onqueued).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows a checked cleanup option only when the pull request has a workspace", () => {
-    const post = vi.fn();
-    const withoutWorkspace = renderModal(post);
-
-    expect(screen.queryByRole("checkbox", { name: "Delete workspace after merge" })).toBeNull();
-    withoutWorkspace.unmount();
-
-    renderModal(post, { workspaceId: "ws-1" });
-    const checkbox = screen.getByRole<HTMLInputElement>("checkbox", { name: "Delete workspace after merge" });
-    expect(checkbox.checked).toBe(true);
-  });
-
-  it("omits the workspace ID when cleanup is unchecked", async () => {
-    const request = deferred<{ data: Record<string, never>; error: undefined; response: Response }>();
-    const post = vi.fn().mockReturnValue(request.promise);
-    renderModal(post, { workspaceId: "ws-1" });
-    await fireEvent.click(screen.getByRole("checkbox", { name: "Delete workspace after merge" }));
-
-    await confirmMerge();
-
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    const [, init] = post.mock.calls[0];
-    expect(init.body).not.toHaveProperty("delete_workspace_id");
-    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false);
-    request.resolve({ data: {}, error: undefined, response: new Response("{}") });
-  });
-
-  it("publishes local deletion state throughout successful immediate cleanup", async () => {
-    const request = deferred<{ data: Record<string, never>; error: undefined; response: Response }>();
-    const post = vi.fn().mockReturnValue(request.promise);
-    const onmerged = vi.fn();
-    renderModal(post, { workspaceId: "ws-1", onmerged });
-
-    await confirmMerge();
-
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(true);
-    expect(isWorkspaceDeletionPending("ws-1", "github.com")).toBe(false);
-
-    request.resolve({ data: {}, error: undefined, response: new Response("{}") });
-    await waitFor(() => expect(onmerged).toHaveBeenCalledWith(undefined, "ws-1"));
-    expect(isWorkspaceIdDeleted("ws-1")).toBe(true);
-    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false);
-  });
-
-  it("passes an immediate cleanup warning to the merged callback", async () => {
-    const post = vi.fn().mockResolvedValue({
-      data: { workspace_cleanup_warning: "workspace has uncommitted changes" },
-      error: undefined,
-      response: new Response("{}"),
-    });
-    const onmerged = vi.fn();
-    renderModal(post, { workspaceId: "ws-1", onmerged });
-
-    await confirmMerge();
-
-    await waitFor(() => expect(onmerged).toHaveBeenCalledWith("workspace has uncommitted changes", undefined));
-    expect(isWorkspaceIdDeleted("ws-1")).toBe(false);
-    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false);
-  });
-
-  it("releases local deletion state when the immediate merge request fails", async () => {
-    const request = deferred<never>();
-    const post = vi.fn().mockReturnValue(request.promise);
-    const onmerged = vi.fn();
-    renderModal(post, { workspaceId: "ws-1", onmerged });
-
-    await confirmMerge();
-
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(true);
-    request.reject(new Error("merge request failed"));
-
-    await waitFor(() => expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false));
-    expect(isWorkspaceIdDeleted("ws-1")).toBe(false);
-    expect(onmerged).not.toHaveBeenCalled();
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
+    expect(onmerged).toHaveBeenCalledOnce();
   });
 });

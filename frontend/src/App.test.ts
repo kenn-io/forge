@@ -67,7 +67,7 @@ vi.mock("./lib/Provider.svelte", async () => {
   };
 });
 vi.mock("./lib/views/PRListView.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
+  default: (await import("./lib/testing/AppNavigationContextProbe.svelte")).default,
 }));
 vi.mock("./lib/views/IssueListView.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
@@ -82,7 +82,7 @@ vi.mock("./lib/views/ReviewsView.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
 vi.mock("./lib/views/FocusListView.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
+  default: (await import("./lib/testing/AppNavigationContextProbe.svelte")).default,
 }));
 vi.mock("./lib/components/workspace/WorkspaceCreateSplitButton.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
@@ -181,16 +181,18 @@ vi.mock("./lib/stores/keyboard/mode-palette-search.js", () => ({
   searchModePalette: modePalette.search,
 }));
 vi.mock("./lib/utils/appStartup.js", () => ({
-  runAppStartup: ({
-    afterBackendReady,
-    onReady,
-  }: {
-    afterBackendReady?: (signal: AbortSignal) => void;
-    onReady: () => void;
-  }) => {
-    const signal = new AbortController().signal;
+  runAppStartup: (
+    _runtime: OwnedAppRuntime,
+    {
+      afterBackendReady,
+      onReady,
+    }: {
+      afterBackendReady?: Effect.Effect<void>;
+      onReady: () => void;
+    },
+  ) => {
     const markReady = () => {
-      afterBackendReady?.(signal);
+      if (afterBackendReady) Effect.runFork(afterBackendReady);
       onReady();
     };
     if (startup.autoReady) {
@@ -233,9 +235,10 @@ function createAppTarget() {
 function testAppRuntime(onDispose: () => void): OwnedAppRuntime {
   return {
     disposeEffect: Effect.sync(onDispose),
-    runCommand: <A, E>(): AppExecution<A, E> => {
-      throw new Error("This lifecycle test does not run application commands");
-    },
+    runCommand: <A, E>(): AppExecution<A, E> => ({
+      interrupt: () => {},
+      await: Effect.never,
+    }),
   };
 }
 
@@ -273,6 +276,22 @@ describe("App feature routes", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it("preserves structured replace navigation through application context", async () => {
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    const pushState = vi.spyOn(window.history, "pushState");
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Replace navigation probe" })).toBeTruthy());
+    replaceState.mockClear();
+    pushState.mockClear();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Replace navigation probe" }));
+
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/issues");
+    expect(pushState).not.toHaveBeenCalled();
   });
 
   it("retries lazy feature imports after a chunk load failure", async () => {

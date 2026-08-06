@@ -219,6 +219,9 @@ Persisted controls must state their scope clearly.
 - Settings that select a runtime must hydrate before that runtime starts, but
   the gate must abort timed-out or superseded reads and expose retry rather than strand the surface
   (`frontend/src/lib/components/terminal/WorkspaceEmbedShell.svelte::loadTerminalSettings`).
+- Concurrent startup callers share the active readiness/settings request, but completed snapshots
+  are not retained across shell transitions because settings writers do not share one invalidation boundary
+  (`frontend/src/lib/app/startup-workflow.ts::StartupWorkflowLive`).
 
 Whenever a control persists, document and test:
 
@@ -691,6 +694,11 @@ Not every visibility control means "remove this entity entirely."
   the feature explicitly removes that category from the result set.
 - When two data sources race, prefer the source that matches the user's current
   filter/scope rather than a stale but faster preview.
+- After a sync trigger is accepted, retain optimistic running state through the
+  pre-trigger idle snapshot; accept completion only after running or a newer `last_run_at`
+  (`frontend/src/lib/stores/sync.svelte.ts::applySyncStatus`).
+- A trigger with no local status reads its baseline before POST, and invalidates any
+  refresh that began before the trigger (`frontend/src/lib/stores/sync.svelte.ts::runTriggeredSync`).
 - Empty states should make it clear when filters, not missing data, are hiding
   results.
 
@@ -758,6 +766,9 @@ Async detail mutations must be scoped to the currently visible item. Compare the
 full provider route identity before opening transient UI or applying mutation
 responses, and discard stale responses instead of patching another item.
 
+- Acknowledging a provider comment POST clears and unlocks its keyed draft; follow-up
+  reconciliation failure is reported separately and must never offer to replay the POST
+  (`frontend/src/lib/stores/detail.svelte.ts::submitComment`).
 - Separate Kata mutation transport from post-acknowledgement authority recovery:
   transport failure preserves drafts; acknowledgement fences mutation actions without clearing editors; only the matching unchanged draft resets after accepted snapshot and required recurrence replacement; Retry never repeats the mutation
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::runAuthorityMutation`).

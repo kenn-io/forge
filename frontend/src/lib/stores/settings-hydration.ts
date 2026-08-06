@@ -1,33 +1,27 @@
 import { hydrateTerminalSettings, type TerminalSettingsHydration } from "./terminal-settings-persistence.js";
-import type { ActivitySettings, ConfigRepo, Settings, TerminalSettings } from "../api/types.js";
+import type { components } from "../api/generated/schema.js";
+
+type SettingsResponse = components["schemas"]["SettingsResponse"];
 
 // Minimal structural shapes rather than the full store types: this module
 // only needs the setters it calls, and narrowing here keeps it testable
 // without constructing a whole Provider store graph.
 export interface SettingsHydrationStore {
-  setConfiguredRepos: (repos: ConfigRepo[]) => void;
-  setModeVisibility: (modes: Settings["modes"]) => void;
-  setPullRequestSettings: (pullRequests: Settings["pull_requests"]) => void;
-  setLaunchTargets: (targets: Settings["launch_targets"]) => void;
+  setConfiguredRepos: (repos: SettingsResponse["repos"]) => void;
+  setModeVisibility: (modes: SettingsResponse["modes"]) => void;
+  setPullRequestSettings: (pullRequests: SettingsResponse["pull_requests"]) => void;
+  setLaunchTargets: (targets: NonNullable<SettingsResponse["launch_targets"]>) => void;
 }
 
 export interface ActivityHydrationStore {
-  hydrateDefaults: (activity: ActivitySettings) => void;
+  hydrateDefaults: (activity: SettingsResponse["activity"]) => void;
 }
 
 export interface IssuesHydrationStore {
-  hydrateDefaults: (issues: Settings["issues"]) => void;
+  hydrateDefaults: (issues: SettingsResponse["issues"]) => void;
 }
 
-export interface SettingsHydrationPayload {
-  repos: ConfigRepo[];
-  activity: ActivitySettings;
-  issues: Settings["issues"];
-  terminal: TerminalSettings;
-  modes: Settings["modes"];
-  pullRequests: Settings["pull_requests"];
-  launchTargets: Settings["launch_targets"];
-}
+export type SettingsHydrationPayload = SettingsResponse;
 
 /**
  * Applies a `GET /settings` payload to the settings, activity, and issues
@@ -47,8 +41,8 @@ export function applySettingsHydration(
   stores.settings.setConfiguredRepos(payload.repos);
   hydrateTerminalSettings(terminalHydration, payload.terminal);
   stores.settings.setModeVisibility(payload.modes);
-  stores.settings.setPullRequestSettings(payload.pullRequests);
-  stores.settings.setLaunchTargets(payload.launchTargets);
+  stores.settings.setPullRequestSettings(payload.pull_requests);
+  stores.settings.setLaunchTargets(payload.launch_targets ?? []);
   stores.activity.hydrateDefaults(payload.activity);
   stores.issues.hydrateDefaults(payload.issues);
 }

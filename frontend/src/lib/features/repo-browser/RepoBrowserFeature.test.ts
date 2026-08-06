@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { createQuerySerializer, type QuerySerializerOptions } from "openapi-fetch";
 import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ForgeClient } from "../../types.js";
+import type { GeneratedClient } from "../../api/generated-api.js";
 
 vi.mock("./PierreFileContents.svelte", async () => ({
   default: (await import("./RepoBrowserFeatureTestPierreFileContents.svelte")).default,
@@ -400,7 +400,7 @@ describe("RepoBrowserFeature", () => {
         }
         return (base.GET as unknown as (path: string, options?: TestGetOptions) => unknown)(path, options);
       }),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const onRouteChange = vi.fn();
     render(RepoBrowserFeature, {
       props: {
@@ -735,7 +735,7 @@ function setReadonlyNumber(element: HTMLElement, property: "clientWidth", value:
   });
 }
 
-function testClient(clientOptions: TestClientOptions = {}): ForgeClient {
+function testClient(clientOptions: TestClientOptions = {}): GeneratedClient {
   const refs = clientOptions.refs ?? [
     { type: "branch" as const, name: "main", sha: "main-sha", stale: false },
     { type: "tag" as const, name: "v1.0.0", sha: "tag-sha", stale: false },
@@ -904,7 +904,7 @@ function testClient(clientOptions: TestClientOptions = {}): ForgeClient {
         response: new Response(null, { status: 404 }),
       };
     }),
-  } as unknown as ForgeClient;
+  } as unknown as GeneratedClient;
 }
 
 function testTreeEntries(options: TestClientOptions) {
@@ -936,7 +936,7 @@ function testURL(path: string, options?: TestGetOptions): string {
   return qs ? `${url}?${qs}` : url;
 }
 
-function requestedURLs(client: ForgeClient): string[] {
+function requestedURLs(client: GeneratedClient): string[] {
   return (client.GET as unknown as { mock: { calls: Array<[string, TestGetOptions | undefined]> } }).mock.calls.map(
     ([path, options]) => testURL(path, options),
   );

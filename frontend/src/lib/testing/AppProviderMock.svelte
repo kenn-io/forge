@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import type { Snippet } from "svelte";
   import { onMount } from "svelte";
 
@@ -22,11 +23,11 @@
     },
     events: {
       disconnect: noop,
+      getConnectionState: () => "connected",
+      getLastError: () => null,
     },
-    // stopFullAppShell stops sync polling on teardown; the mock store must
-    // expose it or onDestroy throws once the shell has started.
     sync: {
-      stopPolling: noop,
+      pollingEffect: Effect.never,
     },
     pulls: {
       getSelectedPR: () => null,

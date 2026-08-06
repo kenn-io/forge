@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { mockApi } from "./support/mockApi";
+import { mockApi, mockSettings as defaultSettings } from "./support/mockApi";
 
 const REPO = {
   provider: "github",
@@ -82,6 +82,7 @@ async function mockSettings(page: Page): Promise<void> {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
+        ...defaultSettings,
         repos: [
           {
             provider: "github",
@@ -94,22 +95,14 @@ async function mockSettings(page: Page): Promise<void> {
           },
         ],
         activity: {
+          ...defaultSettings.activity,
           view_mode: "threaded",
-          time_range: "7d",
-          hide_closed: false,
-          hide_bots: false,
           collapse_threads: true,
         },
         terminal: {
-          font_family: "",
+          ...defaultSettings.terminal,
           font_size: 14,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
         },
-        agents: [],
       }),
     });
   });

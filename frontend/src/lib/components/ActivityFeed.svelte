@@ -124,9 +124,9 @@
   onMount(() => {
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
-    void activity.loadActivity();
+    activity.loadActivity();
     activity.startActivityPolling();
-    unsubSync = sync.subscribeSyncComplete(() => void activity.loadActivity());
+    unsubSync = sync.subscribeSyncComplete(activity.loadActivity);
   });
 
   onDestroy(() => {
@@ -143,7 +143,7 @@
       activity.getShowNotifications(),
     ));
     activity.syncToURL();
-    void activity.loadActivity();
+    activity.loadActivity();
   }
 
   function toggleItemType(itemType: ActivityItemType): void {
@@ -171,7 +171,7 @@
   function handleTimeRangeChange(range: TimeRange): void {
     activity.setTimeRange(range);
     activity.syncToURL();
-    void activity.loadActivity();
+    activity.loadActivity();
   }
 
   function handleViewModeChange(mode: ViewMode): void {
@@ -197,7 +197,7 @@
     debounceTimer = setTimeout(() => {
       activity.setActivitySearch(val || undefined);
       activity.syncToURL();
-      void activity.loadActivity();
+      activity.loadActivity();
     }, 300);
   }
 
@@ -525,7 +525,7 @@
 
   function handleMarkSeen(e: Event, item: ActivityItem): void {
     e.stopPropagation();
-    void activity.markNotificationSeen(item);
+    activity.markNotificationSeen(item);
   }
 
   function isSelectedActivityItem(item: ActivityItem): boolean {

@@ -1,227 +1,155 @@
+import { Deferred, Effect } from "effect";
+import type { AppRuntime, AppServices } from "../app/runtime.js";
 import type { SyncStatus } from "../api/types.js";
-
-export interface ConfigChangedEvent {
-  valid: boolean;
-  error?: string;
-  restart_required: boolean;
-}
-
-export interface WorkspacePushedHeadChangedEvent {
-  workspace_id: string;
-  provider: string;
-  platform_host: string;
-  repo_path: string;
-  owner: string;
-  name: string;
-  number: number;
-  old_sha: string;
-  new_sha: string;
-  remote: string;
-  branch: string;
-  tracking_ref: string;
-  observed_at: string;
-}
-
-export interface WorkspacePRAssociatedEvent {
-  workspace_id: string;
-  provider: string;
-  platform_host: string;
-  repo_path: string;
-  owner: string;
-  name: string;
-  issue_number: number;
-  pr_number: number;
-  associated_at: string;
-}
-
-export interface WorkspacePRRefreshQueuedEvent {
-  workspace_id: string;
-  provider: string;
-  platform_host: string;
-  repo_path: string;
-  owner: string;
-  name: string;
-  number: number;
-  head_sha: string;
-  priority: string;
-  queued_at: string;
-}
-
-export interface PRDetailRefreshedEvent {
-  provider: string;
-  platform_host: string;
-  repo_path: string;
-  owner: string;
-  name: string;
-  number: number;
-  head_sha: string;
-  synced_at: string;
-  warnings: string[];
-}
-
-export interface PRCIRefreshQueuedEvent {
-  provider: string;
-  platform_host: string;
-  repo_path: string;
-  owner: string;
-  name: string;
-  number: number;
-  head_sha: string;
-  priority: string;
-  queued_at: string;
-}
-
-export interface PRCIRefreshedEvent {
-  provider: string;
-  platform_host: string;
-  repo_path: string;
-  owner: string;
-  name: string;
-  number: number;
-  head_sha: string;
-  refreshed_at: string;
-  warnings: string[];
-}
-
-export interface DeferredMergeCompletedEvent {
-  provider: string;
-  platform_host: string;
-  repo_path: string;
-  owner: string;
-  name: string;
-  number: number;
-  head_sha: string;
-  status: "merged" | "failed";
-  merged?: boolean;
-  sha?: string;
-  message?: string;
-  error?: string;
-  completed_at: string;
-  workspace_cleanup_warning?: string;
-}
+import {
+  providerEventsProgram,
+  type ConfigChangedEvent,
+  type DeferredMergeCompletedEvent,
+  type PRCIRefreshedEvent,
+  type PRCIRefreshQueuedEvent,
+  type PRDetailRefreshedEvent,
+  type ProviderEvent,
+  type ProviderEventsConnectionState,
+  type ProviderEventsError,
+  type WorkspacePRAssociatedEvent,
+  type WorkspacePRRefreshQueuedEvent,
+  type WorkspacePushedHeadChangedEvent,
+} from "./provider-events-workflow.js";
 
 export interface EventsStoreOptions {
-  /**
-   * Base URL path (typically from config.basePath). Trailing
-   * slash tolerated. Used to build the EventSource URL.
-   */
-  getBasePath?: () => string;
-  /** Called on each `data_changed` SSE frame. */
-  onDataChanged?: () => void;
-  /** Called on each `sync_status` SSE frame. */
-  onSyncStatus?: (status: SyncStatus) => void;
-  /** Called on each `config.changed` SSE frame. */
-  onConfigChanged?: (event: ConfigChangedEvent) => void;
-  /**
-   * Called on a `reconnect.stale` SSE frame. The server emits this
-   * when the client's Last-Event-ID cursor predates its replay ring,
-   * meaning the gap between disconnect and reconnect was too large to
-   * bridge from the in-memory buffer. The handler should refetch view
-   * state from scratch (pulls, issues, sync status) the same way it
-   * would after a hard refresh.
-   */
-  onReconnectStale?: () => void;
-  onWorkspacePushedHeadChanged?: (event: WorkspacePushedHeadChangedEvent) => void;
-  onWorkspacePRAssociated?: (event: WorkspacePRAssociatedEvent) => void;
-  onWorkspacePRRefreshQueued?: (event: WorkspacePRRefreshQueuedEvent) => void;
-  onPRDetailRefreshed?: (event: PRDetailRefreshedEvent) => void;
-  onPRCIRefreshQueued?: (event: PRCIRefreshQueuedEvent) => void;
-  onPRCIRefreshed?: (event: PRCIRefreshedEvent) => void;
-  onDeferredMergeCompleted?: (event: DeferredMergeCompletedEvent) => void;
+  readonly runtime: AppRuntime;
+  readonly getBasePath?: () => string;
+  readonly onDataChanged?: () => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onSyncStatus?: (status: SyncStatus) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onConfigChanged?: (event: ConfigChangedEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onReconnectStale?: () => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onWorkspacePushedHeadChanged?: (
+    event: WorkspacePushedHeadChangedEvent,
+  ) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onWorkspacePRAssociated?: (
+    event: WorkspacePRAssociatedEvent,
+  ) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onWorkspacePRRefreshQueued?: (
+    event: WorkspacePRRefreshQueuedEvent,
+  ) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onPRDetailRefreshed?: (
+    event: PRDetailRefreshedEvent,
+  ) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onPRCIRefreshQueued?: (
+    event: PRCIRefreshQueuedEvent,
+  ) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onPRCIRefreshed?: (event: PRCIRefreshedEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onDeferredMergeCompleted?: (
+    event: DeferredMergeCompletedEvent,
+  ) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onTerminalFailure?: (message: string) => void;
+  readonly onRecoverableFailure?: (message: string) => void;
 }
 
-/**
- * createEventsStore wraps a single EventSource that streams from
- * /api/v1/events. It exposes connect/disconnect and forwards
- * data_changed / sync_status frames to the callbacks supplied at
- * construction time.
- */
-export function createEventsStore(opts: EventsStoreOptions = {}) {
+export function createEventsStore(opts: EventsStoreOptions) {
   const getBasePath = opts.getBasePath ?? (() => "/");
-  let source: EventSource | null = null;
-  let connected = $state(false);
+  let connectionState = $state<ProviderEventsConnectionState>("disconnected");
+  let lastError = $state<string | null>(null);
+  let reconnectSignal: Deferred.Deferred<void> | null = null;
 
   function buildURL(): string {
     const base = getBasePath().replace(/\/$/, "");
     return `${base}/api/v1/events`;
   }
 
-  function connect(): void {
-    if (source !== null) return;
-    try {
-      source = new EventSource(buildURL());
-    } catch {
-      return;
+  function dispatch(event: ProviderEvent): Effect.Effect<void, ProviderEventsError, AppServices> {
+    switch (event.type) {
+      case "data_changed":
+        return opts.onDataChanged?.() ?? Effect.void;
+      case "sync_status":
+        return opts.onSyncStatus?.(event.payload) ?? Effect.void;
+      case "config.changed":
+        return opts.onConfigChanged?.(event.payload) ?? Effect.void;
+      case "reconnect.stale":
+        return opts.onReconnectStale?.() ?? Effect.void;
+      case "workspace_pushed_head_changed":
+        return opts.onWorkspacePushedHeadChanged?.(event.payload) ?? Effect.void;
+      case "workspace_pr_associated":
+        return opts.onWorkspacePRAssociated?.(event.payload) ?? Effect.void;
+      case "workspace_pr_refresh_queued":
+        return opts.onWorkspacePRRefreshQueued?.(event.payload) ?? Effect.void;
+      case "pr_detail_refreshed":
+        return opts.onPRDetailRefreshed?.(event.payload) ?? Effect.void;
+      case "pr_ci_refresh_queued":
+        return opts.onPRCIRefreshQueued?.(event.payload) ?? Effect.void;
+      case "pr_ci_refreshed":
+        return opts.onPRCIRefreshed?.(event.payload) ?? Effect.void;
+      case "deferred_merge_completed":
+        return opts.onDeferredMergeCompleted?.(event.payload) ?? Effect.void;
     }
-    source.addEventListener("open", () => {
-      connected = true;
-    });
-    source.addEventListener("error", () => {
-      connected = false;
-    });
-    source.addEventListener("data_changed", () => {
-      opts.onDataChanged?.();
-    });
-    source.addEventListener("sync_status", (ev) => {
-      const payload = decodeEventPayload(ev);
-      if (payload === undefined) return;
-      opts.onSyncStatus?.(payload as SyncStatus);
-    });
-    source.addEventListener("config.changed", (ev) => {
-      const payload = decodeEventPayload(ev);
-      if (payload === undefined) return;
-      opts.onConfigChanged?.(payload as ConfigChangedEvent);
-    });
-    source.addEventListener("reconnect.stale", () => {
-      opts.onReconnectStale?.();
-    });
-    addJSONListener<WorkspacePushedHeadChangedEvent>(
-      source,
-      "workspace_pushed_head_changed",
-      opts.onWorkspacePushedHeadChanged,
-    );
-    addJSONListener<WorkspacePRAssociatedEvent>(source, "workspace_pr_associated", opts.onWorkspacePRAssociated);
-    addJSONListener<WorkspacePRRefreshQueuedEvent>(
-      source,
-      "workspace_pr_refresh_queued",
-      opts.onWorkspacePRRefreshQueued,
-    );
-    addJSONListener<PRDetailRefreshedEvent>(source, "pr_detail_refreshed", opts.onPRDetailRefreshed);
-    addJSONListener<PRCIRefreshQueuedEvent>(source, "pr_ci_refresh_queued", opts.onPRCIRefreshQueued);
-    addJSONListener<PRCIRefreshedEvent>(source, "pr_ci_refreshed", opts.onPRCIRefreshed);
-    addJSONListener<DeferredMergeCompletedEvent>(source, "deferred_merge_completed", opts.onDeferredMergeCompleted);
   }
 
-  function disconnect(): void {
-    if (source === null) return;
-    source.close();
-    source = null;
-    connected = false;
-  }
-
-  function isConnected(): boolean {
-    return connected;
-  }
-
-  return { connect, disconnect, isConnected };
-}
-
-function addJSONListener<T>(source: EventSource, eventName: string, callback: ((event: T) => void) | undefined): void {
-  source.addEventListener(eventName, (ev) => {
-    if (!callback) return;
-    const payload = decodeEventPayload(ev);
-    if (payload === undefined) return;
-    callback(payload as T);
+  const streamAttempt = Effect.suspend(() => {
+    lastError = null;
+    const url = buildURL();
+    return providerEventsProgram({
+      url,
+      onState: (state) => {
+        connectionState = state;
+      },
+      onEvent: dispatch,
+      onConsequenceFailure: (failure) => {
+        const message = `A live update could not refresh ${failure.operation}; later updates will continue.`;
+        lastError = message;
+        opts.onRecoverableFailure?.(message);
+      },
+    });
   });
-}
 
-function decodeEventPayload(ev: Event): unknown | undefined {
-  try {
-    return JSON.parse((ev as MessageEvent).data) as unknown;
-  } catch {
-    // ignore malformed frames
-    return undefined;
+  const waitForReconnect = Effect.gen(function* () {
+    const signal = yield* Deferred.make<void>();
+    yield* Effect.sync(() => {
+      reconnectSignal = signal;
+    });
+    yield* Deferred.await(signal);
+    yield* Effect.sync(() => {
+      if (reconnectSignal === signal) reconnectSignal = null;
+    });
+  });
+
+  const streamEffect = Effect.forever(
+    streamAttempt.pipe(
+      Effect.catch((failure) =>
+        Effect.sync(() => {
+          connectionState = "disconnected";
+          lastError = `Live updates stopped: ${failure.operation}`;
+          opts.onTerminalFailure?.(lastError);
+        }).pipe(Effect.andThen(waitForReconnect)),
+      ),
+    ),
+  ).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        reconnectSignal = null;
+        connectionState = "disconnected";
+      }),
+    ),
+  );
+
+  function reconnect(): void {
+    const signal = reconnectSignal;
+    if (signal === null) return;
+    opts.runtime.runCommand(Deferred.succeed(signal, undefined), {
+      operation: "reconnect provider events",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
+
+  function getConnectionState(): ProviderEventsConnectionState {
+    return connectionState;
+  }
+
+  function getLastError(): string | null {
+    return lastError;
+  }
+
+  return { streamEffect, reconnect, getConnectionState, getLastError };
 }
 
 export type EventsStore = ReturnType<typeof createEventsStore>;

@@ -8,12 +8,15 @@
 </script>
 
 <script lang="ts">
-  import { tick, type Snippet } from "svelte";
+  import { Effect } from "effect";
+  import { onDestroy, tick, type Snippet } from "svelte";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { Chip } from "@kenn-io/kit-ui";
   import UserPicker from "./UserPicker.svelte";
   import { floatingPopoverStyle } from "@kenn-io/kit-ui";
-  import { showFlash } from "../../stores/flash.svelte.js";
+  import type { AppExecution, AppServices } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
 
   interface Props {
     label: string;
@@ -29,9 +32,9 @@
     /// Returns candidate usernames matching the filter query. Called
     /// with "" when the picker opens and again as the user types, so
     /// candidates beyond the first page stay reachable by searching.
-    loadCandidates: (query: string) => Promise<string[]>;
+    loadCandidates: (query: string) => Effect.Effect<string[], Error, AppServices>;
     avatarUrlForUser?: ((username: string) => string) | undefined;
-    onchange: (next: string[]) => Promise<unknown>;
+    onchange: (next: string[], callbacks: MutationCallbacks) => void;
     icon?: Snippet;
   }
 
@@ -47,6 +50,8 @@
     onchange,
     icon = undefined,
   }: Props = $props();
+
+  const runtime = getAppRuntime();
 
   let open = $state(false);
   let candidates = $state<string[]>([]);
@@ -66,7 +71,7 @@
     return tooltipNote ? `${base}\n${tooltipNote}` : base;
   });
 
-  let candidateFetchSeq = 0;
+  let candidateExecution: AppExecution<void, Error> | null = null;
   let queryDebounce: ReturnType<typeof setTimeout> | null = null;
 
   function closePicker(): void {
@@ -74,41 +79,47 @@
     open = false;
     pendingUser = null;
     candidatesError = null;
+    candidatesLoading = false;
+    candidateExecution?.interrupt();
+    candidateExecution = null;
     if (queryDebounce !== null) {
       clearTimeout(queryDebounce);
       queryDebounce = null;
     }
   }
 
-  async function fetchCandidates(query: string): Promise<void> {
-    const seq = ++candidateFetchSeq;
+  function fetchCandidates(query: string): void {
+    candidateExecution?.interrupt();
     candidatesLoading = true;
-    try {
-      const next = await loadCandidates(query);
-      if (seq !== candidateFetchSeq) return;
-      candidates = next;
-      candidatesQuery = query;
-      // A fresh successful fetch supersedes any previous candidate-load error.
-      candidatesError = null;
-      void tick().then(() => {
+    const program = loadCandidates(query).pipe(
+      Effect.flatMap((next) =>
+        Effect.sync(() => {
+          candidates = next;
+          candidatesQuery = query;
+          candidatesError = null;
+          candidatesLoading = false;
+        }),
+      ),
+      Effect.flatMap(() => Effect.promise(() => tick())),
+      Effect.flatMap(() => Effect.sync(() => {
         if (open) positionPicker();
-      });
-    } catch (err) {
-      if (seq === candidateFetchSeq) {
-        candidatesError = err instanceof Error ? err.message : String(err);
-      }
-    } finally {
-      if (seq === candidateFetchSeq) {
+      })),
+    );
+    candidateExecution = runtime.runCommand(program, {
+      operation: "load user candidates",
+      safeContext: { query },
+      onFailure: (failure) => {
+        candidatesError = failure instanceof Error ? failure.message : String(failure);
         candidatesLoading = false;
-      }
-    }
+      },
+    });
   }
 
   function onPickerQuery(query: string): void {
     if (queryDebounce !== null) clearTimeout(queryDebounce);
     queryDebounce = setTimeout(() => {
       queryDebounce = null;
-      void fetchCandidates(query);
+      fetchCandidates(query);
     }, 200);
   }
 
@@ -153,10 +164,14 @@
     candidatesError = null;
     await tick();
     positionPicker();
-    await fetchCandidates("");
+    fetchCandidates("");
   }
 
-  async function toggleUser(username: string): Promise<void> {
+  onDestroy(() => {
+    closePicker();
+  });
+
+  function toggleUser(username: string): void {
     // The chip honors disabled, but the picker can already be open
     // when the item goes stale; never mutate from a stale view.
     if (disabled || !canEdit) return;
@@ -166,26 +181,22 @@
     const next = users.some((user) => user.toLowerCase() === key)
       ? users.filter((user) => user.toLowerCase() !== key)
       : [...users, username];
-    try {
-      await onchange(next);
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      pendingUser = null;
-    }
+    onchange(next, {
+      onSettled: () => {
+        if (pendingUser === username) pendingUser = null;
+      },
+    });
   }
 
-  async function clearUsers(): Promise<void> {
+  function clearUsers(): void {
     if (disabled || !canEdit) return;
     if (pendingUser !== null || users.length === 0) return;
     pendingUser = "";
-    try {
-      await onchange([]);
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      pendingUser = null;
-    }
+    onchange([], {
+      onSettled: () => {
+        if (pendingUser === "") pendingUser = null;
+      },
+    });
   }
 
   $effect(() => {

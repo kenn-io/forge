@@ -1,5 +1,8 @@
-import { Context, Deferred, Effect, Layer } from "effect";
+import { Context, Deferred, Effect, Layer, ManagedRuntime } from "effect";
 import * as Socket from "effect/unstable/socket/Socket";
+import { makeAppLiveLayer } from "../app/layer.js";
+import { makeAppRuntimeBoundary, type OwnedAppRuntime } from "../app/runtime.js";
+import { makeGeneratedApiLayer, type GeneratedClient } from "../api/generated-api.js";
 import { EventSourceFactory, type EventSourceLike } from "../browser/event-source.js";
 import { BrowserObservers } from "../browser/observers.js";
 
@@ -216,3 +219,7 @@ function makeWebSocketTestLayer(mode: WebSocketTestMode) {
 export const WebSocketSuccessTest = makeWebSocketTestLayer("success");
 export const WebSocketFailureTest = makeWebSocketTestLayer("failure");
 export const WebSocketInterruptionTest = makeWebSocketTestLayer("interruption");
+
+export function makeTestAppRuntime(client: GeneratedClient): OwnedAppRuntime {
+  return makeAppRuntimeBoundary(ManagedRuntime.make(makeAppLiveLayer(makeGeneratedApiLayer(client))));
+}

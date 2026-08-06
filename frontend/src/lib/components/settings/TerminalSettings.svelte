@@ -1,12 +1,14 @@
 <script lang="ts">
   import { Checkbox } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import Modal from "../shared/Modal.svelte";
   import { onDestroy, untrack } from "svelte";
   import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { TerminalSettings as TerminalSettingsType } from "../../api/types.js";
-  import { updateSettings } from "../../api/settings.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { settingsErrorMessage } from "../../stores/settings-workflow.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import {
     previewTerminalSettings,
@@ -40,6 +42,7 @@
 
   const { settings: settingsStore } = getStores();
   const embedded = isEmbedded();
+  const runtime = getAppRuntime();
 
   const commonMonospaceFonts = [
     "JetBrains Mono",
@@ -270,31 +273,41 @@
     fontDialogOpen = false;
   }
 
-  async function save(): Promise<void> {
+  function save(): void {
     if (embedded) return;
     if (!isDirty) return;
 
     saving = true;
     onSavingChange?.(true);
-    try {
-      const updated = await saveTerminalSettings({
+    const program = saveTerminalSettings({
         baseline: currentTerminal,
         changes: terminalSettingsChanges(currentTerminal, pendingTerminal),
-        persist: async (next) => (await updateSettings({ terminal: next })).terminal,
         store: settingsStore,
-      });
-      syncDraftFromTerminal(updated);
-      if (livePreview) {
-        livePreviewBaseline = updated;
-      }
-      onUpdate(updated);
-    } catch (err) {
-      syncDraftFromTerminal(currentTerminal);
-      showFlash(err instanceof Error ? err.message : "Failed to save terminal settings.", { tone: "danger" });
-    } finally {
-      saving = false;
-      onSavingChange?.(false);
-    }
+      }).pipe(
+        Effect.tap((updated) =>
+          Effect.sync(() => {
+            syncDraftFromTerminal(updated);
+            if (livePreview) {
+              livePreviewBaseline = updated;
+            }
+            onUpdate(updated);
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            saving = false;
+            onSavingChange?.(false);
+          }),
+        ),
+      );
+    runtime.runCommand(program, {
+      operation: "save terminal settings",
+      safeContext: {},
+      onFailure: (failure) => {
+        syncDraftFromTerminal(currentTerminal);
+        showFlash(settingsErrorMessage(failure), { tone: "danger" });
+      },
+    });
   }
 
   function reset(): void {

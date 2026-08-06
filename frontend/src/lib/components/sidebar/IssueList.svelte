@@ -53,14 +53,14 @@
   );
 
   $effect(() => {
-    void issues.loadIssues();
+    issues.loadIssues();
 
     refreshHandle = setInterval(() => {
-      void issues.loadIssues();
+      issues.loadIssues();
     }, 15_000);
 
     if (sync.getSyncState()?.running) {
-      sync.onNextSyncComplete(() => void issues.loadIssues());
+      sync.onNextSyncComplete(issues.loadIssues);
     }
 
     return () => {
@@ -74,7 +74,7 @@
     if (debounceHandle !== null) clearTimeout(debounceHandle);
     debounceHandle = setTimeout(() => {
       issues.setIssueSearchQuery(value.trim() === "" ? undefined : value.trim());
-      void issues.loadIssues();
+      issues.loadIssues();
     }, 300);
   }
 
@@ -86,7 +86,7 @@
 
   function setIssueState(state: string): void {
     issues.setIssueFilterState(state);
-    void issues.loadIssues();
+    issues.loadIssues();
   }
 
   function resetCompactView(): void {
@@ -256,7 +256,7 @@
     <button
       class="star-filter-btn"
       class:star-filter-btn--active={issues.getIssueFilterStarred()}
-      onclick={() => { issues.setIssueFilterStarred(!issues.getIssueFilterStarred()); void issues.loadIssues(); }}
+      onclick={() => { issues.setIssueFilterStarred(!issues.getIssueFilterStarred()); issues.loadIssues(); }}
       title={issues.getIssueFilterStarred() ? "Show all" : "Show starred only"}
     >
       {#if issues.getIssueFilterStarred()}

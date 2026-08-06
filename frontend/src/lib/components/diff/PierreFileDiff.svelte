@@ -12,7 +12,10 @@
     ThemeTypes,
     Virtualizer,
   } from "@pierre/diffs";
-  import { onMount, tick, untrack } from "svelte";
+  import { Effect, Result } from "effect";
+  import { onMount } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
   import type { DiffFile } from "../../api/types.js";
   import {
     appThemeType,
@@ -29,10 +32,9 @@
     renderedCodeSide as renderedPierreCodeSide,
   } from "./pierre-dom.js";
   import { diffTokenizeMaxLineLength, getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
-  import type {
-    DiffContextPrefetchPriority,
-    DiffContextPrefetchScheduler,
-    DiffContextPrefetchTaskHandle,
+  import {
+    DiffContextPrefetch,
+    type DiffContextPrefetchPriority,
   } from "./diff-context-prefetch.js";
   import type { WorkerPoolManager } from "@pierre/diffs/worker";
 
@@ -40,11 +42,16 @@
     file: DiffFile | null | undefined;
     active?: boolean;
     contextPrefetchIdentity?: string | undefined;
-    contextPrefetchScheduler?: DiffContextPrefetchScheduler | undefined;
     viewMode?: "unified" | "split";
     wordWrap?: boolean;
     tabWidth?: number;
-    loadFileText?: ((side: "old" | "new") => Promise<string>) | undefined;
+    loadFileContext?:
+      | ((callbacks: {
+          readonly onSuccess: (context: { readonly oldText: string; readonly newText: string }) => void;
+          readonly onFailure: (message: string) => void;
+          readonly onSettled: () => void;
+        }) => void)
+      | undefined;
     lineAnnotations?: DiffLineAnnotation<unknown>[];
     transientLineAnnotation?: DiffLineAnnotation<unknown> | null;
     selectedRange?: SelectedLineRange | null;
@@ -95,11 +102,10 @@
     file = null,
     active = true,
     contextPrefetchIdentity = "",
-    contextPrefetchScheduler = undefined,
     viewMode = "unified",
     wordWrap = false,
     tabWidth = 4,
-    loadFileText = undefined,
+    loadFileContext = undefined,
     lineAnnotations = [],
     transientLineAnnotation = null,
     selectedRange = null,
@@ -109,6 +115,7 @@
     renderAnnotation = undefined,
     virtualizer = undefined,
   }: Props = $props();
+  const runtime = getAppRuntime();
 
   let host: HTMLElement | undefined = $state();
   let pierreDiff: FileDiff<unknown> | VirtualizedFileDiff<unknown> | undefined;
@@ -116,12 +123,18 @@
   let demandContextHandlerRoot: ShadowRoot | undefined;
   let annotationFocusTarget: HTMLElement | undefined;
   let fullContext: { oldFile: FileContents; newFile: FileContents } | undefined = $state();
+  let fullContextFileKey = "";
   let fullContextFileDiff: FileDiffMetadata | undefined;
   let fullContextRendered = false;
-  let contextLoadPromise: Promise<{ oldFile: FileContents; newFile: FileContents }> | undefined;
-  let contextPrefetchHandle: DiffContextPrefetchTaskHandle | undefined;
+  let contextLoading = false;
+  let contextRequestVersion = 0;
+  let contextPrefetchExecution: AppExecution<void, never> | undefined;
+  let contextPriorityExecution: AppExecution<void, never> | undefined;
+  let contextPrefetchTaskKey = "";
+  let manualContextExecution: AppExecution<void, never> | undefined;
+  let contextReadyVersion = $state(0);
   let contextError: string | null = $state(null);
-  let syntaxContextPrefetchFailedFileKey = $state("");
+  let syntaxContextPrefetchFailedFileKey = "";
   let syntaxContextLoadFailedFileKey = $state("");
   let themeType = $state<ThemeTypes>(appThemeType());
   let rendered = $state(false);
@@ -144,16 +157,14 @@
   const maxImmediateRenderRetries = 5;
 
   const renderFile = $derived(file ? diffFileWithPatch(file) : emptyFile);
-  const fileKey = $derived(
-    `${renderFile.path}\0${renderFile.old_path}\0${renderFile.patch}\0${contextPrefetchIdentity}`,
-  );
+  const fileKey = $derived(`${renderFile.path}\0${renderFile.old_path}\0${renderFile.patch}`);
   const fileHunks = $derived(renderFile.hunks ?? []);
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
     return parsePierreFileDiff(renderFile, {
       // Pierre marks patch-only diffs as partial and hides expansion controls.
       // Give it sparse line arrays so the controls render; the first click is
       // intercepted, full contents are fetched, and the same expansion replays.
-      enableDemandContextExpansion: Boolean(loadFileText) && hasCollapsedContext(renderFile),
+      enableDemandContextExpansion: Boolean(loadFileContext) && hasCollapsedContext(renderFile),
     });
   });
   const hasRenderablePierreDiff = $derived(
@@ -164,7 +175,7 @@
   );
   const emptyTextualDiff = $derived(!renderFile.patch.trim() || !hasRenderablePierreDiff);
   const needsFullContextForSyntax = $derived(
-    Boolean(loadFileText) && hasCollapsedContext(renderFile) && sparseContextMayDistortSyntax(renderFile),
+    Boolean(loadFileContext) && hasCollapsedContext(renderFile) && sparseContextMayDistortSyntax(renderFile),
   );
 
   const pierreOptions = $derived.by<FileDiffOptions<unknown>>(() => ({
@@ -286,10 +297,14 @@
 
     return () => {
       themeObserver?.disconnect();
+      contextPrefetchExecution?.interrupt();
+      contextPriorityExecution?.interrupt();
+      manualContextExecution?.interrupt();
       cancelSelectedRangesApplication();
       cancelRenderRetry();
       cleanUpPierreDiff();
-      contextLoadPromise = undefined;
+      contextRequestVersion += 1;
+      contextLoading = false;
     };
   });
 
@@ -310,11 +325,20 @@
     renderedFileKey = fileKey;
     pierreDiffVirtualizer = virtualizer;
     cleanUpPierreDiff();
-    contextLoadPromise = undefined;
+    contextRequestVersion += 1;
+    contextLoading = false;
     contextError = null;
+    contextPrefetchExecution?.interrupt();
+    contextPrefetchExecution = undefined;
+    contextPriorityExecution?.interrupt();
+    contextPriorityExecution = undefined;
+    contextPrefetchTaskKey = "";
+    manualContextExecution?.interrupt();
+    manualContextExecution = undefined;
     syntaxContextPrefetchFailedFileKey = "";
     syntaxContextLoadFailedFileKey = "";
     fullContext = undefined;
+    fullContextFileKey = "";
     fullContextFileDiff = undefined;
     fullContextRendered = false;
     pendingContextExpansion = undefined;
@@ -322,6 +346,16 @@
     renderAttemptKey = "";
     renderRetryCount = 0;
     cancelRenderRetry();
+  });
+
+  $effect(() => {
+    const generation = contextPrefetchIdentity;
+    const requestFileKey = fileKey;
+    const priority: DiffContextPrefetchPriority = active ? "foreground" : "background";
+    if (!needsFullContextForSyntax || fullContext || (!active && !virtualizer)) return;
+    if (priority === "foreground" && syntaxContextLoadFailedFileKey === requestFileKey) return;
+    if (priority === "background" && syntaxContextPrefetchFailedFileKey === requestFileKey) return;
+    scheduleContextPrefetch(generation, requestFileKey, priority);
   });
 
   $effect(() => {
@@ -333,38 +367,6 @@
     });
     resizeObserver.observe(host);
     return () => resizeObserver.disconnect();
-  });
-
-  $effect(() => {
-    const scheduler = contextPrefetchScheduler;
-    const requestFileKey = fileKey;
-    scheduler?.setGeneration(contextPrefetchIdentity);
-    const retryForeground = syntaxContextPrefetchFailedFileKey === requestFileKey;
-    if (
-      !scheduler ||
-      !needsFullContextForSyntax ||
-      fullContext ||
-      syntaxContextLoadFailedFileKey === requestFileKey ||
-      (retryForeground && !active)
-    ) return;
-    const handle = scheduler.schedule(
-      requestFileKey,
-      retryForeground || untrack(() => active) ? "foreground" : "background",
-      (signal) => loadFullContextForSyntax(
-        requestFileKey,
-        signal,
-        untrack(() => active) ? "foreground" : "background",
-      ),
-    );
-    contextPrefetchHandle = handle;
-    return () => {
-      if (contextPrefetchHandle === handle) contextPrefetchHandle = undefined;
-      handle.cancel();
-    };
-  });
-
-  $effect(() => {
-    contextPrefetchHandle?.setPriority(active ? "foreground" : "background");
   });
 
   $effect(() => {
@@ -384,15 +386,9 @@
     if (pierreDiff instanceof VirtualizedFileDiff && isHostInScrollViewport()) {
       pierreDiff.setVisibility(true);
     }
-    if (
-      active &&
-      needsFullContextForSyntax &&
-      !fullContext &&
-      syntaxContextLoadFailedFileKey !== fileKey
-    ) {
+    if (needsFullContextForSyntax && !fullContext && syntaxContextLoadFailedFileKey !== fileKey) {
       rendered = false;
       clearRenderedDomState();
-      if (!contextPrefetchScheduler) void loadFullContextForSyntax(fileKey);
       return;
     }
     const nextRenderAttemptKey = [
@@ -750,15 +746,17 @@
       fullContextRendered,
       sparseCacheKey: pierreFile?.cacheKey,
     });
-    void loadFullContextAndExpand(hunkIndex, direction, expansionLineCount)
-      .catch((err: unknown) => {
-        contextError = err instanceof Error ? err.message : String(err);
-        debugPierreDiff("expand failed", {
-          path: renderFile.path,
-          hunkIndex,
-          error: contextError,
-        });
-      });
+    pendingContextExpansion = {
+      direction,
+      expansionLineCount,
+      fileKey,
+      hunkIndex,
+    };
+    if (fullContext && fullContextFileKey === fileKey) {
+      contextReadyVersion += 1;
+      return;
+    }
+    startFullContextLoad(fileKey);
   }
 
   function closestFromEvent(event: Event, selector: string): Element | null {
@@ -780,53 +778,6 @@
   function isExpandAllClick(target: Element, event: Event): boolean {
     return target.hasAttribute("data-expand-all-button")
       || (event instanceof MouseEvent && event.shiftKey);
-  }
-
-  async function loadFullContextAndExpand(
-    hunkIndex: number,
-    direction: ExpansionDirections,
-    expansionLineCount: number | undefined,
-  ): Promise<void> {
-    const requestFileKey = fileKey;
-    const alreadyRendered = fullContextRendered;
-    debugPierreDiff("expand loading full context", {
-      path: renderFile.path,
-      hunkIndex,
-      direction,
-      alreadyRendered,
-    });
-    const context = await loadFullContext(requestFileKey);
-    if (!context || fileKey !== requestFileKey) return;
-    await tick();
-    if (fileKey !== requestFileKey) return;
-    if (!alreadyRendered && !fullContextRendered) {
-      const didRender = renderFullContext(context);
-      debugPierreDiff("expand full context render result", {
-        path: renderFile.path,
-        hunkIndex,
-        didRender,
-        fullCacheKey: fullContextFileDiff?.cacheKey,
-        sparseCacheKey: pierreFile?.cacheKey,
-      });
-      if (fileKey !== requestFileKey) return;
-      if (!didRender) {
-        if (!fullContextFileDiff) return;
-        pendingContextExpansion = {
-          direction,
-          expansionLineCount,
-          fileKey: requestFileKey,
-          hunkIndex,
-        };
-        scheduleRenderRetry();
-        return;
-      }
-    }
-    expandRenderedHunk(hunkIndex, direction, expansionLineCount);
-    debugPierreDiff("expand complete", {
-      path: renderFile.path,
-      hunkIndex,
-      rows: pierreDiffDebugEnabled() ? expandedContextDebugRows() : [],
-    });
   }
 
   function expandRenderedHunk(
@@ -1013,85 +964,173 @@
     return Boolean(stats && (stats.queuedTasks > 0 || stats.activeTasks > 0));
   }
 
-  async function loadFullContext(
-    requestFileKey: string,
-    signal?: AbortSignal,
-  ): Promise<{ oldFile: FileContents; newFile: FileContents } | undefined> {
-    if (fullContext) return fullContext;
-    const promise = contextLoadPromise ??= fetchFullContext(signal);
-    try {
-      const context = await promise;
-      if (
-        signal?.aborted ||
-        fileKey !== requestFileKey ||
-        contextLoadPromise !== promise
-      ) return undefined;
-      fullContext = context;
-    } catch (err) {
-      if (contextLoadPromise === promise) {
-        contextLoadPromise = undefined;
-      }
-      if (signal?.aborted || fileKey !== requestFileKey) return undefined;
-      throw err;
-    }
-    return fullContext;
+  function requestFullContextText(): Effect.Effect<
+    { readonly oldText: string; readonly newText: string },
+    string
+  > {
+    if (!loadFileContext) return Effect.fail("Context loading is unavailable");
+    return Effect.callback((resume) => {
+      loadFileContext({
+        onSuccess: (context) => resume(Effect.succeed(context)),
+        onFailure: (message) => resume(Effect.fail(message)),
+        onSettled: () => {},
+      });
+    });
   }
 
-  async function loadFullContextForSyntax(
+  const loadFullContextEffect = Effect.fn("PierreFileDiff.loadFullContext")(function* (
     requestFileKey: string,
-    signal?: AbortSignal,
-    priority: DiffContextPrefetchPriority = "foreground",
-  ): Promise<void> {
-    try {
-      const context = await loadFullContext(requestFileKey, signal);
-      if (!context || signal?.aborted || fileKey !== requestFileKey) return;
-      await tick();
-      if (signal?.aborted || fileKey !== requestFileKey || fullContextRendered) return;
-      renderFullContext(context);
-    } catch (err) {
-      if (signal?.aborted || fileKey !== requestFileKey) return;
-      if (priority === "background") {
-        syntaxContextPrefetchFailedFileKey = requestFileKey;
+    isCancelled: Effect.Effect<boolean>,
+    currentPriority: Effect.Effect<DiffContextPrefetchPriority>,
+  ) {
+    if (fullContext && fullContextFileKey === requestFileKey) return;
+    const version = contextRequestVersion + 1;
+    yield* Effect.sync(() => {
+      contextRequestVersion = version;
+      contextLoading = true;
+      contextError = null;
+      debugPierreDiff("fetch full context start", {
+        path: renderFile.path,
+        status: renderFile.status,
+      });
+    });
+    return yield* Effect.gen(function* () {
+      const outcome = yield* Effect.result(requestFullContextText());
+      const cancelled = yield* isCancelled;
+      const priority = yield* currentPriority;
+      if (cancelled || version !== contextRequestVersion || fileKey !== requestFileKey) return;
+
+      yield* Effect.sync(() => {
+        if (Result.isFailure(outcome)) {
+          if (priority === "background") {
+            syntaxContextPrefetchFailedFileKey = requestFileKey;
+            return;
+          }
+          syntaxContextLoadFailedFileKey = requestFileKey;
+          contextError = outcome.failure;
+          pendingContextExpansion = undefined;
+          debugPierreDiff("expand failed", {
+            path: renderFile.path,
+            error: outcome.failure,
+          });
+          return;
+        }
+
+        const { oldText, newText } = outcome.success;
+        const context = {
+          oldFile: pierreFileContents(renderFile.old_path || renderFile.path, oldText, "full-old"),
+          newFile: pierreFileContents(renderFile.path, newText, "full-new"),
+        };
+        fullContext = context;
+        fullContextFileKey = requestFileKey;
+        contextReadyVersion += 1;
+        debugPierreDiff("fetch full context complete", {
+          path: renderFile.path,
+          oldLength: oldText.length,
+          newLength: newText.length,
+          oldCacheKey: context.oldFile.cacheKey,
+          newCacheKey: context.newFile.cacheKey,
+        });
+      });
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (version === contextRequestVersion) contextLoading = false;
+        }),
+      ),
+    );
+  });
+
+  function scheduleContextPrefetch(
+    generation: string,
+    requestFileKey: string,
+    priority: DiffContextPrefetchPriority,
+  ): void {
+    const scheduledKey = `${generation}\0${requestFileKey}`;
+    if (contextPrefetchTaskKey === scheduledKey) {
+      contextPriorityExecution?.interrupt();
+      contextPriorityExecution = runtime.runCommand(
+        Effect.gen(function* () {
+          const prefetch = yield* DiffContextPrefetch;
+          yield* prefetch.setPriority(generation, requestFileKey, priority);
+        }),
+        {
+          operation: "prioritize diff context prefetch",
+          safeContext: { surface: "diff-file" },
+          onFailure: () => {},
+        },
+      );
+      return;
+    }
+
+    contextPrefetchExecution?.interrupt();
+    contextPrefetchTaskKey = scheduledKey;
+    contextPrefetchExecution = runtime.runCommand(
+      Effect.gen(function* () {
+        const prefetch = yield* DiffContextPrefetch;
+        yield* prefetch.run({
+          generation,
+          id: requestFileKey,
+          priority,
+          task: (isCancelled, currentPriority) =>
+            loadFullContextEffect(requestFileKey, isCancelled, currentPriority),
+        });
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (contextPrefetchTaskKey === scheduledKey) contextPrefetchTaskKey = "";
+          }),
+        ),
+      ),
+      {
+        operation: "prefetch diff context",
+        safeContext: { surface: "diff-file" },
+        onFailure: () => {},
+      },
+    );
+  }
+
+  function startFullContextLoad(requestFileKey: string): void {
+    manualContextExecution?.interrupt();
+    manualContextExecution = runtime.runCommand(
+      loadFullContextEffect(requestFileKey, Effect.succeed(false), Effect.succeed("foreground")),
+      {
+        operation: "load diff context",
+        safeContext: { surface: "diff-file" },
+        onFailure: () => {},
+      },
+    );
+  }
+
+  $effect(() => {
+    const readyVersion = contextReadyVersion;
+    const context = fullContext;
+    const requestFileKey = fullContextFileKey;
+    if (readyVersion < 0 || !context || requestFileKey !== fileKey) return;
+    const pending = pendingContextExpansion;
+    if (!fullContextRendered) {
+      const didRender = renderFullContext(context);
+      debugPierreDiff("expand full context render result", {
+        path: renderFile.path,
+        hunkIndex: pending?.hunkIndex,
+        didRender,
+        fullCacheKey: fullContextFileDiff?.cacheKey,
+        sparseCacheKey: pierreFile?.cacheKey,
+      });
+      if (!didRender) {
+        if (fullContextFileDiff) scheduleRenderRetry();
         return;
       }
-      syntaxContextLoadFailedFileKey = requestFileKey;
-      contextError = err instanceof Error ? err.message : "unknown error";
     }
-  }
-
-  async function fetchFullContext(
-    signal?: AbortSignal,
-  ): Promise<{ oldFile: FileContents; newFile: FileContents }> {
-    if (!loadFileText) {
-      throw new Error("Context loading is unavailable");
+    replayPendingContextExpansion();
+    if (pending) {
+      debugPierreDiff("expand complete", {
+        path: renderFile.path,
+        hunkIndex: pending.hunkIndex,
+        rows: pierreDiffDebugEnabled() ? expandedContextDebugRows() : [],
+      });
     }
-    if (signal?.aborted) throw signal.reason;
-    contextError = null;
-    debugPierreDiff("fetch full context start", {
-      path: renderFile.path,
-      status: renderFile.status,
-    });
-    const [oldResult, newResult] = await Promise.allSettled([
-      renderFile.status === "added" ? Promise.resolve("") : loadFileText("old"),
-      renderFile.status === "deleted" ? Promise.resolve("") : loadFileText("new"),
-    ]);
-    if (oldResult.status === "rejected") throw oldResult.reason;
-    if (newResult.status === "rejected") throw newResult.reason;
-    const oldContents = oldResult.value;
-    const newContents = newResult.value;
-    const context = {
-      oldFile: pierreFileContents(renderFile.old_path || renderFile.path, oldContents, "full-old"),
-      newFile: pierreFileContents(renderFile.path, newContents, "full-new"),
-    };
-    debugPierreDiff("fetch full context complete", {
-      path: renderFile.path,
-      oldLength: oldContents.length,
-      newLength: newContents.length,
-      oldCacheKey: context.oldFile.cacheKey,
-      newCacheKey: context.newFile.cacheKey,
-    });
-    return context;
-  }
+  });
 
   function annotationKey(annotations: DiffLineAnnotation<unknown>[]): string {
     return annotations.map((annotation) => {

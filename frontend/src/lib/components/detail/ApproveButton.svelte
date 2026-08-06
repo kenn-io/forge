@@ -2,14 +2,13 @@
   import { Button, Card } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
   import { tick } from "svelte";
-  import { getClient, getStores } from "../../context.js";
+  import { getStores } from "../../context.js";
   import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
-  import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
+  import type { ProviderRouteRef } from "../../api/provider-routes.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { submitApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
+  import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
 
-  const client = getClient();
-  const { detail, pulls } = getStores();
+  const { detail } = getStores();
 
   interface Props {
     owner: string;
@@ -100,7 +99,12 @@
     });
   });
 
-  function buildInput(onHandledHeadConflict?: () => void): PRDetailActionInput {
+  function buildInput(callbacks: {
+    onHandledHeadConflict: () => void;
+    onCompleted: () => void;
+    onError: (message: string) => void;
+    onSettled: () => void;
+  }): PRDetailActionInput {
     return {
       pr: {
         State: "open", IsDraft: false, MergeableState: "",
@@ -115,14 +119,16 @@
       repoSettings: null,
       stale: disabled,
       requireHeadPin,
-      stores: { detail, pulls },
-      client,
+      stores: { detail },
       approveCommentBody: body,
       ...(pinAtOpen !== "" && { expectedHeadSha: pinAtOpen }),
       onHeadConflict: (...args) => {
-        onHandledHeadConflict?.();
+        callbacks.onHandledHeadConflict();
         handleHeadConflict(...args);
       },
+      onCompleted: callbacks.onCompleted,
+      onError: callbacks.onError,
+      onSettled: callbacks.onSettled,
     };
   }
 
@@ -139,85 +145,76 @@
     onheadconflict?.(reason, context, failedHeadSha, failedRef, failedNumber, failedGeneration);
   }
 
-  async function handleApprove(): Promise<void> {
+  function handleApprove(): void {
     if (disabled || submitting) return;
     submitting = true;
     submittingAction = "approve";
     let handledHeadConflict = false;
-    try {
-      const approved = await submitApprovePR(buildInput(() => {
-        handledHeadConflict = true;
-      }));
-      if (!approved) return;
-      body = "";
-      expanded = false;
-      oncompleted?.();
-      try {
-        await Promise.all([
-          detail.loadDetail(owner, name, number, { provider, platformHost, repoPath }),
-          pulls.loadPulls(),
-        ]);
-      } catch {
-        showFlash("Pull request approved, but it could not be refreshed.");
-      }
-    } catch (err) {
-      if (!handledHeadConflict) showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      submitting = false;
-      submittingAction = null;
-    }
+    runApprovePR(
+      buildInput({
+        onHandledHeadConflict: () => {
+          handledHeadConflict = true;
+        },
+        onCompleted: () => {
+          body = "";
+          expanded = false;
+          oncompleted?.();
+        },
+        onError: (message) => {
+          if (!handledHeadConflict) showFlash(message, { tone: "danger" });
+        },
+        onSettled: () => {
+          submitting = false;
+          submittingAction = null;
+        },
+      }),
+    );
   }
 
-  // Mirrors handleApprove/submitApprovePR on purpose: the same pinAtOpen
+  // Mirrors handleApprove/runApprovePR on purpose: the same pinAtOpen
   // captured when the form opened is submitted as expected_head_sha.
   // Request changes must not carry a stronger (or weaker) provider
   // submission contract than approve.
-  async function handleRequestChanges(): Promise<void> {
+  function handleRequestChanges(): void {
     if (disabled || submitting || body.trim() === "") return;
     submitting = true;
     submittingAction = "request_changes";
     let handledHeadConflict = false;
-    try {
-      const { error: requestError } = await client.POST(providerItemPath("pulls", {
-        provider, platformHost, owner, name, repoPath,
-      }, "/request-changes"), {
-        params: { path: { ...providerRouteParams({ provider, platformHost, owner, name, repoPath }), number } },
-        body: {
-          body: body.trim(),
-          ...(pinAtOpen !== "" && { expected_head_sha: pinAtOpen }),
+    detail.requestPullChanges(
+      { provider, platformHost, owner, name, repoPath },
+      number,
+      {
+        body: body.trim(),
+        ...(pinAtOpen !== "" && { expected_head_sha: pinAtOpen }),
+      },
+      {
+        onProblem: (problem) => {
+          const reason = isProblem(problem) ? problemConflictReason(problem) : undefined;
+          if (reason === "stale_state" || reason === "head_unknown") {
+            handledHeadConflict = true;
+            handleHeadConflict(
+              reason,
+              isProblem(problem) ? problemConflictContext(problem) : undefined,
+              pinAtOpen,
+              { provider, platformHost, owner, name, repoPath },
+              number,
+            );
+          }
         },
-      });
-      if (requestError) {
-        const reason = isProblem(requestError) ? problemConflictReason(requestError) : undefined;
-        if (reason === "stale_state" || reason === "head_unknown") {
-          handledHeadConflict = true;
-          handleHeadConflict(
-            reason,
-            isProblem(requestError) ? problemConflictContext(requestError) : undefined,
-			pinAtOpen,
-			{ provider, platformHost, owner, name, repoPath },
-			number,
-          );
-        }
-        throw new Error(requestError.detail ?? requestError.title ?? "failed to request changes");
-      }
-      body = "";
-      expanded = false;
-      oncompleted?.();
-      try {
-        await Promise.all([
-          detail.loadDetail(owner, name, number, { provider, platformHost, repoPath }),
-          pulls.loadPulls(),
-        ]);
-      } catch {
-        showFlash("Changes were requested, but the pull request could not be refreshed.");
-      }
-    } catch (err) {
-      if (!handledHeadConflict) showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      submitting = false;
-      submittingAction = null;
-    }
+        onSuccess: () => {
+          body = "";
+          expanded = false;
+          oncompleted?.();
+        },
+        onFailure: (message) => {
+          if (!handledHeadConflict) showFlash(message, { tone: "danger" });
+        },
+        onSettled: () => {
+          submitting = false;
+          submittingAction = null;
+        },
+      },
+    );
   }
 </script>
 
@@ -268,7 +265,7 @@
         {#if canRequestChanges}
           <Button
             class="btn btn--request-changes"
-            onclick={() => void handleRequestChanges()}
+            onclick={handleRequestChanges}
             disabled={submitting || disabled || body.trim() === ""}
             tone="danger"
             surface="solid"
@@ -281,7 +278,7 @@
         {/if}
         <Button
           class="btn btn--primary btn--green"
-          onclick={() => void handleApprove()}
+          onclick={handleApprove}
           disabled={submitting || disabled}
           tone="success"
           surface="solid"

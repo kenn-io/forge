@@ -40,7 +40,7 @@
 
   function handleStarClick(e: MouseEvent): void {
     e.stopPropagation();
-    void pulls.togglePRStar(
+    pulls.togglePRStar(
       {
         provider: pr.repo.provider,
         platformHost: pr.repo.platform_host,

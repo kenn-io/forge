@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 
 // jsdom does not ship IntersectionObserver; install a stub that reports the
 // observed element as visible immediately so the viewport-gated render effect
@@ -17,6 +19,15 @@ let originalIntersectionObserverExisted = false;
 let originalResizeObserver: unknown;
 let originalResizeObserverExisted = false;
 let originalReplaceSync: unknown;
+let runtime: OwnedAppRuntime;
+
+beforeEach(() => {
+  runtime = makeAppRuntime();
+});
+
+afterEach(async () => {
+  await Effect.runPromise(runtime.disposeEffect);
+});
 
 beforeAll(() => {
   originalIntersectionObserverExisted = "IntersectionObserver" in globalThis;
@@ -93,6 +104,8 @@ import diffRichPreviewSource from "./DiffRichPreview.svelte?raw";
 import type { DiffFile as DiffFileType, FilePreview } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { DiffReviewDraftComment, DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
+import type { FilePreviewCallbacks } from "../../stores/diff.svelte.js";
+import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { renderedCodeSide } from "./pierre-dom.js";
 import type { ReviewThread } from "./review-thread-context.js";
@@ -103,7 +116,13 @@ type LoadFilePreview = (
   number: number,
   path: string,
   side?: "old" | "new",
-) => Promise<FilePreview>;
+  callbacks?: FilePreviewCallbacks,
+) => void;
+
+type FilePreviewPairCallbacks = {
+  readonly onSuccess?: (previews: { readonly old: FilePreview | null; readonly new: FilePreview | null }) => void;
+  readonly onSettled?: () => void;
+};
 
 function makeFile(overrides: Partial<DiffFileType> = {}): DiffFileType {
   return {
@@ -267,10 +286,11 @@ function renderDiffFile(
       number: number,
       discussionID: string,
       body: string,
-    ) => Promise<boolean>;
+      callbacks: MutationCallbacks,
+    ) => void;
   } = {},
 ) {
-  const diff = createDiffStore();
+  const diff = createDiffStore({ runtime });
   if (options.richPreview) diff.setRichPreview(true);
   if (options.viewMode) diff.setViewMode(options.viewMode);
   if (options.loadFilePreview) vi.spyOn(diff, "loadFilePreview").mockImplementation(options.loadFilePreview);
@@ -322,7 +342,12 @@ function renderDiffFile(
           diff,
           diffReviewDraft,
           detail: {
-            replyToDiscussion: options.replyToDiscussion ?? (() => Promise.resolve(true)),
+            replyToDiscussion:
+              options.replyToDiscussion ??
+              ((_owner, _name, _number, _discussionID, _body, callbacks) => {
+                callbacks.onSuccess?.();
+                callbacks.onSettled?.();
+              }),
           },
         },
       ],
@@ -543,10 +568,12 @@ describe("DiffFile", () => {
     renderDiffFile(makeFile({ path: "assets/chart.png", old_path: "assets/chart.png" }), {
       richPreview: true,
       diffHeadSHA: "diff-head",
-      loadFilePreview: () =>
-        new Promise<FilePreview>((resolve) => {
-          resolvePreview = resolve;
-        }),
+      loadFilePreview: (_owner, _name, _number, _path, _side, callbacks) => {
+        resolvePreview = (preview) => {
+          callbacks?.onSuccess?.(preview);
+          callbacks?.onSettled?.();
+        };
+      },
       reviewThreads: [
         makeReviewThread({
           path: "assets/chart.png",
@@ -572,7 +599,10 @@ describe("DiffFile", () => {
     renderDiffFile(makeFile({ path: "assets/chart.png", old_path: "assets/chart.png" }), {
       richPreview: true,
       diffHeadSHA: "diff-head",
-      loadFilePreview: () => Promise.reject(new Error("preview failed")),
+      loadFilePreview: (_owner, _name, _number, _path, _side, callbacks) => {
+        callbacks?.onFailure?.("preview failed");
+        callbacks?.onSettled?.();
+      },
       reviewThreads: [
         makeReviewThread({
           path: "assets/chart.png",
@@ -1864,7 +1894,10 @@ describe("DiffFile", () => {
   });
 
   it("lets published inline review threads be replied to", async () => {
-    const replyToDiscussion = vi.fn().mockResolvedValue(true);
+    const replyToDiscussion = vi.fn((_owner, _name, _number, _discussionID, _body, callbacks) => {
+      callbacks.onSuccess?.();
+      callbacks.onSettled?.();
+    });
     renderDiffFile(makeFile(), {
       reviewEnabled: true,
       diffHeadSHA: "diff-head",
@@ -1883,7 +1916,14 @@ describe("DiffFile", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 
     await waitFor(() => {
-      expect(replyToDiscussion).toHaveBeenCalledWith(expect.any(String), "n", 1, "thread-1", "Follow-up reply");
+      expect(replyToDiscussion).toHaveBeenCalledWith(
+        expect.any(String),
+        "n",
+        1,
+        "thread-1",
+        "Follow-up reply",
+        expect.objectContaining({ onSettled: expect.any(Function), onSuccess: expect.any(Function) }),
+      );
     });
   });
 
@@ -2102,10 +2142,14 @@ describe("DiffFile", () => {
       ],
     });
     const { diff } = renderDiffFile(file);
-    const loadFilePreview = vi
-      .spyOn(diff, "loadFilePreview")
-      .mockImplementation(async (_owner, _name, _number, path, side) => {
-        return textPreview(path, side === "old" ? oldText.join("\n") : newText.join("\n"));
+    const loadFileContextPreviews = vi
+      .spyOn(diff, "loadFileContextPreviews")
+      .mockImplementation((_owner, _name, _number, source, callbacks: FilePreviewPairCallbacks) => {
+        callbacks.onSuccess?.({
+          old: textPreview(source.old_path, oldText.join("\n")),
+          new: textPreview(source.path, newText.join("\n")),
+        });
+        callbacks.onSettled?.();
       });
 
     const expandButton = await waitFor(() => {
@@ -2127,8 +2171,7 @@ describe("DiffFile", () => {
       expect(expandedLines.every((line) => line.length > 0)).toBe(true);
       expect(expandedLines.some((line) => line.includes("shared 10"))).toBe(true);
     });
-    expect(loadFilePreview).toHaveBeenCalledWith(expect.any(String), "n", 1, "src/context.txt", "old");
-    expect(loadFilePreview).toHaveBeenCalledWith(expect.any(String), "n", 1, "src/context.txt", "new");
+    expect(loadFileContextPreviews).toHaveBeenCalledTimes(1);
   });
 
   it("continues expanding context after full file text is loaded", async () => {
@@ -2204,10 +2247,14 @@ describe("DiffFile", () => {
       ],
     });
     const { diff } = renderDiffFile(file);
-    const loadFilePreview = vi
-      .spyOn(diff, "loadFilePreview")
-      .mockImplementation(async (_owner, _name, _number, path, side) => {
-        return textPreview(path, side === "old" ? oldText.join("\n") : newText.join("\n"));
+    const loadFileContextPreviews = vi
+      .spyOn(diff, "loadFileContextPreviews")
+      .mockImplementation((_owner, _name, _number, source, callbacks: FilePreviewPairCallbacks) => {
+        callbacks.onSuccess?.({
+          old: textPreview(source.old_path, oldText.join("\n")),
+          new: textPreview(source.path, newText.join("\n")),
+        });
+        callbacks.onSettled?.();
       });
 
     const firstExpandButton = await waitFor(() => {
@@ -2246,7 +2293,7 @@ describe("DiffFile", () => {
       expect(expandedLines.every((line) => line.length > 0)).toBe(true);
       expect(expandedLines.some((line) => line.includes("shared 50"))).toBe(true);
     });
-    expect(loadFilePreview).toHaveBeenCalledTimes(2);
+    expect(loadFileContextPreviews).toHaveBeenCalledTimes(1);
   });
 
   it("hides Pierre context expansion when file text loading is disabled", async () => {
@@ -2317,14 +2364,14 @@ describe("DiffFile", () => {
     const { diff } = renderDiffFile(file, {
       contextExpansionEnabled: false,
     });
-    const loadFilePreview = vi.spyOn(diff, "loadFilePreview");
+    const loadFileContextPreviews = vi.spyOn(diff, "loadFileContextPreviews");
 
     await waitFor(() => {
       const root = document.querySelector(".pierre-diff")?.shadowRoot;
       expect(root?.textContent).toContain("@@ -77,3 +77,3 @@ lateContext");
       expect(root?.querySelector("[data-expand-button]")).toBeNull();
     });
-    expect(loadFilePreview).not.toHaveBeenCalled();
+    expect(loadFileContextPreviews).not.toHaveBeenCalled();
   });
 
   it("keeps raw hunk headers on Pierre context separators", async () => {

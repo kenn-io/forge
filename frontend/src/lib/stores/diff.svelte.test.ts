@@ -1,6 +1,15 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { createDiffStore } from "./diff.svelte.js";
-import type { DiffStoreOptions } from "./diff.svelte.js";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { GeneratedClient } from "../api/generated-api.js";
+import type { OwnedAppRuntime } from "../app/runtime.js";
+import { makeTestAppRuntime } from "../testing/effect-layers.js";
+import {
+  createDiffStore as createRuntimeDiffStore,
+  type DiffStore,
+  type DiffStoreOptions,
+  type LoadWorkspaceDiffOptions,
+  type WorkspaceDiffBase,
+} from "./diff.svelte.js";
 import type { DiffFile, DiffResult, FilesResult } from "../api/types.js";
 
 const ownerRepoRef = {
@@ -11,7 +20,59 @@ const ownerRepoRef = {
   repoPath: "owner/repo",
 };
 
-type TestClient = NonNullable<DiffStoreOptions["client"]>;
+type TestClient = GeneratedClient;
+
+let runtime: OwnedAppRuntime | undefined;
+
+type TestDiffStoreOptions = Omit<DiffStoreOptions, "runtime"> & { readonly client: GeneratedClient };
+
+function createDiffStore(options: TestDiffStoreOptions) {
+  const { client, ...storeOptions } = options;
+  runtime = makeTestAppRuntime(client);
+  return createRuntimeDiffStore({ ...storeOptions, runtime });
+}
+
+async function loadDiff(store: DiffStore, ...args: Parameters<DiffStore["loadDiff"]>): Promise<void> {
+  store.loadDiff(...args);
+  await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
+}
+
+function loadWorkspaceDiff(
+  store: DiffStore,
+  workspaceID: string,
+  base: WorkspaceDiffBase,
+  stacked = false,
+  options: LoadWorkspaceDiffOptions = {},
+): Promise<void> {
+  const settled = Promise.withResolvers<void>();
+  const result = store.loadWorkspaceDiff(workspaceID, base, stacked, options, { onSettled: settled.resolve });
+  expect(result).toBeUndefined();
+  return settled.promise;
+}
+
+function loadCommits(store: DiffStore): Promise<void> {
+  const settled = Promise.withResolvers<void>();
+  const result = store.loadCommits({}, { onSettled: settled.resolve });
+  expect(result).toBeUndefined();
+  return settled.promise;
+}
+
+function loadFilePreview(
+  store: DiffStore,
+  owner: string,
+  name: string,
+  number: number,
+  path: string,
+  side?: "old" | "new",
+): Promise<FilePreview> {
+  const settled = Promise.withResolvers<FilePreview>();
+  const result = store.loadFilePreview(owner, name, number, path, side, {
+    onSuccess: settled.resolve,
+    onFailure: (message) => settled.reject(new Error(message)),
+  });
+  expect(result).toBeUndefined();
+  return settled.promise;
+}
 
 interface TestGetOptions {
   params?: {
@@ -37,6 +98,7 @@ function makeFilesResult(
   const diffFiles = files.map((path) => makeDiffFile(path, 0, 0));
   return {
     stale: false,
+    whitespace_only_count: 0,
     files: diffFiles,
     ...overrides,
   };
@@ -54,6 +116,16 @@ function makeDiffFile(path: string, additions: number, deletions: number): DiffF
     deletions,
     hunks: [],
     patch: "",
+  };
+}
+
+function makeFilePreview(path: string, content: string): FilePreview {
+  return {
+    path,
+    content,
+    encoding: "base64",
+    media_type: "text/plain",
+    size: content.length,
   };
 }
 
@@ -91,14 +163,65 @@ function testURL(path: string, options?: TestGetOptions): string {
   return qs ? `${url}?${qs}` : url;
 }
 
-afterEach(() => {
+beforeEach(() => {
+  runtime = undefined;
+});
+
+afterEach(async () => {
   vi.restoreAllMocks();
   localStorage.removeItem("diff-hide-whitespace");
   localStorage.removeItem("diff-tab-width");
   localStorage.removeItem("diff-collapsed-files");
+  if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
 });
 
 describe("createDiffStore loadDiff", () => {
+  it("uses the generated client owned by the application runtime", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("store-local transport must not run"));
+    const result = makeDiffResult(["src/runtime.ts"]);
+    const client = {
+      GET: vi.fn(async () => ({ data: result, response: new Response(null, { status: 200 }) })),
+    } as unknown as GeneratedClient;
+    const store = createDiffStore({ client });
+
+    await loadDiff(store, "owner", "repo", 7, ownerRepoRef);
+
+    expect(store.getDiff()?.files.map((file) => file.path)).toEqual(["src/runtime.ts"]);
+  });
+
+  it("does not satisfy concurrent full demand with a diff-only refresh", async () => {
+    const calls: string[] = [];
+    const diff = makeDiffResult(["src/app.ts"]);
+    const files = makeFilesResult(["src/app.ts"]);
+    let diffCalls = 0;
+    let releaseDiffOnly = () => {};
+    const diffOnly = new Promise<Response>((resolve) => {
+      releaseDiffOnly = () => resolve(Response.json(diff));
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/files")) return Response.json(files);
+      if (url.includes("/diff")) {
+        diffCalls += 1;
+        if (diffCalls === 2) return diffOnly;
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
+    const store = createDiffStore({ client: testClient() });
+
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
+    store.setHideWhitespace(true);
+    await vi.waitFor(() => expect(diffCalls).toBe(2));
+    store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    await vi.waitFor(() => expect(calls.filter((url) => url.includes("/files"))).toHaveLength(2));
+    releaseDiffOnly();
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
+
+    expect(calls.filter((url) => url.includes("/files"))).toHaveLength(2);
+  });
+
   it("loads default branch commit diffs through the repo route", async () => {
     const calls: string[] = [];
     const diff = makeDiffResult(["internal/cache.go"]);
@@ -113,9 +236,12 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
+    const settled = Promise.withResolvers<void>();
 
-    await store.loadCommitDiff(ownerRepoRef, "abc123");
+    const result = store.loadCommitDiff(ownerRepoRef, "abc123", { onSettled: settled.resolve });
 
+    expect(result).toBeUndefined();
+    await settled.promise;
     expect(calls).toEqual(["/api/v1/repo/github/owner/repo/commits/abc123/diff"]);
     expect(store.getDiff()?.files[0]?.path).toBe("internal/cache.go");
   });
@@ -139,7 +265,9 @@ describe("createDiffStore loadDiff", () => {
 
     const store = createDiffStore({ client: testClient() });
 
-    await store.loadCommitDiff(ownerRepoRef, "abc123");
+    const settled = Promise.withResolvers<void>();
+    store.loadCommitDiff(ownerRepoRef, "abc123", { onSettled: settled.resolve });
+    await settled.promise;
     store.setHideWhitespace(true);
 
     await vi.waitFor(() => {
@@ -167,7 +295,7 @@ describe("createDiffStore loadDiff", () => {
 
     const store = createDiffStore({ client: testClient() });
 
-    await store.loadWorkspaceDiff("ws-1", "pushed");
+    await loadWorkspaceDiff(store, "ws-1", "pushed");
 
     expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=pushed");
     expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=pushed");
@@ -220,9 +348,9 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head");
+    await loadWorkspaceDiff(store, "ws-1", "head");
 
-    const refresh = store.loadWorkspaceDiff("ws-1", "head", false, { preserveVisible: true });
+    const refresh = loadWorkspaceDiff(store, "ws-1", "head", false, { preserveVisible: true });
     await diffStarted;
     expect(store.getFileList()?.files[0]?.path).toBe("a.ts");
     expect(store.getDiff()?.files[0]?.path).toBe("a.ts");
@@ -267,8 +395,8 @@ describe("createDiffStore loadDiff", () => {
       });
 
       const store = createDiffStore({ client: testClient() });
-      await store.loadWorkspaceDiff("ws-1", "head");
-      const refresh = store.loadWorkspaceDiff("ws-1", "head", false, { preserveVisible: true });
+      await loadWorkspaceDiff(store, "ws-1", "head");
+      const refresh = loadWorkspaceDiff(store, "ws-1", "head", false, { preserveVisible: true });
       await stalePairSeen;
       await vi.advanceTimersByTimeAsync(0);
 
@@ -311,7 +439,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head");
+    await loadWorkspaceDiff(store, "ws-1", "head");
 
     expect(filesCalls).toBe(2);
     expect(store.getFileList()?.files[0]?.path).toBe("new.ts");
@@ -347,19 +475,16 @@ describe("createDiffStore loadDiff", () => {
         return Response.json(diff);
       }
       if (url.includes("/fleet/hosts/member/workspaces/ws-1/file-preview")) {
-        return Response.json({
-          path: "src/remote.go",
-          content: "package remote",
-        });
+        return Response.json(makeFilePreview("src/remote.go", "package remote"));
       }
       return Response.json({}, { status: 404 });
     });
 
     const store = createDiffStore({ client: testClient() });
 
-    await store.loadWorkspaceDiff("ws-1", "merge-target", false, { workspaceHostKey: "member" });
-    await store.loadCommits();
-    await store.loadFilePreview("owner", "repo", 1, "src/remote.go", "new");
+    await loadWorkspaceDiff(store, "ws-1", "merge-target", false, { workspaceHostKey: "member" });
+    await loadCommits(store);
+    await loadFilePreview(store, "owner", "repo", 1, "src/remote.go", "new");
 
     expect(calls).toContain("/api/v1/fleet/hosts/member/workspaces/ws-1/files?base=merge-target");
     expect(calls).toContain(
@@ -370,6 +495,39 @@ describe("createDiffStore loadDiff", () => {
       "/api/v1/fleet/hosts/member/workspaces/ws-1/file-preview?base=merge-target&path=src%2Fremote.go&side=new&revision=generation%3A1",
     );
     expect(calls.some((url) => url.includes("/api/v1/workspaces/ws-1/"))).toBe(false);
+  });
+
+  it("requests both sides of a renamed pull file through its current path", async () => {
+    const calls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      return Response.json(makeFilePreview("src/current.ts", "const renamed = true;"));
+    });
+    const store = createDiffStore({ client: testClient() });
+    const settled = Promise.withResolvers<void>();
+
+    const result = store.loadFileContextPreviews(
+      "owner",
+      "repo",
+      1,
+      {
+        ...makeDiffFile("src/current.ts", 1, 1),
+        old_path: "src/previous.ts",
+        status: "renamed",
+      },
+      { onSettled: settled.resolve },
+    );
+    expect(result).toBeUndefined();
+    await settled.promise;
+
+    const previewPaths = calls.map((url) => {
+      const parsed = new URL(url, "http://kenn-forge.test");
+      return { path: parsed.searchParams.get("path"), side: parsed.searchParams.get("side") };
+    });
+    expect(previewPaths).toContainEqual({ path: "src/current.ts", side: "old" });
+    expect(previewPaths).toContainEqual({ path: "src/current.ts", side: "new" });
+    expect(previewPaths.some(({ path }) => path === "src/previous.ts")).toBe(false);
   });
 
   it("reloads the coherent workspace snapshot and retries a conflicted preview once", async () => {
@@ -393,15 +551,15 @@ describe("createDiffStore loadDiff", () => {
         );
       }
       if (url.includes("revision=generation%3A2")) {
-        return Response.json({ path: "src/app.go", content: "package refreshed" });
+        return Response.json(makeFilePreview("src/app.go", "package refreshed"));
       }
       return Response.json({}, { status: 404 });
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head");
+    await loadWorkspaceDiff(store, "ws-1", "head");
 
-    const preview = await store.loadFilePreview("owner", "repo", 1, "src/app.go", "new");
+    const preview = await loadFilePreview(store, "owner", "repo", 1, "src/app.go", "new");
 
     expect(preview.content).toBe("package refreshed");
     expect(filesCalls).toBe(2);
@@ -449,11 +607,11 @@ describe("createDiffStore loadDiff", () => {
     const store = createDiffStore({ client: testClient() });
     const initialToken = {};
     const replacementToken = {};
-    await store.loadWorkspaceDiff("ws-1", "head", false, { loadToken: initialToken });
-    const preview = store.loadFilePreview("owner", "repo", 1, "original.ts", "new");
+    await loadWorkspaceDiff(store, "ws-1", "head", false, { loadToken: initialToken });
+    const preview = loadFilePreview(store, "owner", "repo", 1, "original.ts", "new");
     await previewStarted;
 
-    await store.loadWorkspaceDiff("ws-1", "head", false, { loadToken: replacementToken });
+    await loadWorkspaceDiff(store, "ws-1", "head", false, { loadToken: replacementToken });
     releasePreview();
 
     await expect(preview).rejects.toThrow("Workspace changed while refreshing file preview");
@@ -497,7 +655,7 @@ describe("createDiffStore loadDiff", () => {
             { status: 409 },
           );
         }
-        return Response.json({ path: "original.ts", content: "superseded retry" });
+        return Response.json(makeFilePreview("original.ts", "superseded retry"));
       }
       return Response.json({}, { status: 404 });
     });
@@ -505,15 +663,68 @@ describe("createDiffStore loadDiff", () => {
     const store = createDiffStore({ client: testClient() });
     const initialToken = {};
     const replacementToken = {};
-    await store.loadWorkspaceDiff("ws-1", "head", false, { loadToken: initialToken });
-    const preview = store.loadFilePreview("owner", "repo", 1, "original.ts", "new");
+    await loadWorkspaceDiff(store, "ws-1", "head", false, { loadToken: initialToken });
+    const preview = loadFilePreview(store, "owner", "repo", 1, "original.ts", "new");
     await recoveryStarted;
 
-    await store.loadWorkspaceDiff("ws-1", "head", false, { loadToken: replacementToken });
+    await loadWorkspaceDiff(store, "ws-1", "head", false, { loadToken: replacementToken });
     releaseRecovery();
 
     await expect(preview).rejects.toThrow("Workspace changed while refreshing file preview");
     expect(previewCalls).toBe(1);
+    expect(store.getDiff()?.snapshot_version).toBe("generation:3");
+  });
+
+  it("rejects a recovered preview superseded while its retry is pending", async () => {
+    let filesCalls = 0;
+    let previewCalls = 0;
+    let releaseRetry: () => void = () => {};
+    let signalRetryStarted: () => void = () => {};
+    const retryStarted = new Promise<void>((resolve) => {
+      signalRetryStarted = resolve;
+    });
+    const retryGate = new Promise<void>((resolve) => {
+      releaseRetry = resolve;
+    });
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/workspaces/ws-1/files")) {
+        filesCalls += 1;
+        return Response.json(makeFilesResult(["original.ts"], { snapshot_version: `generation:${filesCalls}` }));
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json({
+          ...makeDiffResult(["original.ts"]),
+          snapshot_version: `generation:${filesCalls}`,
+        });
+      }
+      if (url.includes("/workspaces/ws-1/file-preview")) {
+        previewCalls += 1;
+        if (previewCalls === 1) {
+          return Response.json(
+            { code: "conflict", detail: "snapshot changed", details: { reason: "snapshot_changed" } },
+            { status: 409 },
+          );
+        }
+        signalRetryStarted();
+        await retryGate;
+        return Response.json(makeFilePreview("original.ts", "superseded retry"));
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    const store = createDiffStore({ client: testClient() });
+    const loadToken = {};
+    await loadWorkspaceDiff(store, "ws-1", "head", false, { loadToken });
+    const preview = loadFilePreview(store, "owner", "repo", 1, "original.ts", "new");
+    await retryStarted;
+
+    await loadWorkspaceDiff(store, "ws-1", "head", false, { loadToken });
+    releaseRetry();
+
+    await expect(preview).rejects.toThrow("Workspace changed while refreshing file preview");
+    expect(previewCalls).toBe(2);
     expect(store.getDiff()?.snapshot_version).toBe("generation:3");
   });
 
@@ -536,7 +747,7 @@ describe("createDiffStore loadDiff", () => {
 
     const store = createDiffStore({ client: testClient() });
 
-    await store.loadWorkspaceDiff("ws-1", "merge-target");
+    await loadWorkspaceDiff(store, "ws-1", "merge-target");
 
     expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=merge-target");
     expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=merge-target");
@@ -558,7 +769,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head");
+    await loadWorkspaceDiff(store, "ws-1", "head");
 
     expect(store.areAllVisibleFilesCollapsed()).toBe(false);
 
@@ -613,8 +824,8 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head");
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "head");
+    await loadCommits(store);
 
     expect(calls).toContain("/api/v1/workspaces/ws-1/commits");
     expect(store.getCommits()?.map((commit) => commit.sha)).toEqual(["sha2", "sha1"]);
@@ -656,8 +867,8 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "merge-target");
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "merge-target");
+    await loadCommits(store);
 
     store.selectCommit("sha2");
 
@@ -720,8 +931,8 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "merge-target");
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "merge-target");
+    await loadCommits(store);
     store.selectCommit("sha2");
 
     await vi.waitFor(() => {
@@ -729,7 +940,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     calls.length = 0;
-    await store.loadWorkspaceDiff("ws-1", "merge-target", false, { refreshCommits: true });
+    await loadWorkspaceDiff(store, "ws-1", "merge-target", false, { refreshCommits: true });
 
     expect(calls).toContain("/api/v1/workspaces/ws-1/commits");
     expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=merge-target&commit=sha2");
@@ -796,11 +1007,11 @@ describe("createDiffStore loadDiff", () => {
     });
 
     store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "merge-target");
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "merge-target");
+    await loadCommits(store);
     const generationBeforeRefresh = store.getFilePreviewGeneration();
 
-    const refresh = store.loadWorkspaceDiff("ws-1", "merge-target", false, { refreshCommits: true });
+    const refresh = loadWorkspaceDiff(store, "ws-1", "merge-target", false, { refreshCommits: true });
     await refreshCommitsStartedPromise;
 
     expect(store.getFilePreviewGeneration()).toBe(generationBeforeRefresh);
@@ -860,17 +1071,17 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "merge-target", false, { workspaceHostKey: "member-a" });
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "merge-target", false, { workspaceHostKey: "member-a" });
+    await loadCommits(store);
     calls.length = 0;
 
-    const staleRefresh = store.loadWorkspaceDiff("ws-1", "merge-target", false, {
+    const staleRefresh = loadWorkspaceDiff(store, "ws-1", "merge-target", false, {
       workspaceHostKey: "member-a",
       refreshCommits: true,
     });
     await refreshCommitsStartedPromise;
 
-    await store.loadWorkspaceDiff("ws-1", "merge-target", false, { workspaceHostKey: "member-b" });
+    await loadWorkspaceDiff(store, "ws-1", "merge-target", false, { workspaceHostKey: "member-b" });
     expect(store.getDiff()?.files[0]?.path).toBe("member-b.ts");
 
     resolveRefreshCommits();
@@ -917,11 +1128,11 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head");
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "head");
+    await loadCommits(store);
     calls.length = 0;
 
-    const refresh = store.loadWorkspaceDiff("ws-1", "head", false, { refreshCommits: true });
+    const refresh = loadWorkspaceDiff(store, "ws-1", "head", false, { refreshCommits: true });
     await refreshStarted;
     store.cancelWorkspaceDiff("ws-1");
     releaseRefresh();
@@ -966,10 +1177,10 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head", false, { loadToken: tokenA });
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "head", false, { loadToken: tokenA });
+    await loadCommits(store);
 
-    const replacement = store.loadWorkspaceDiff("ws-1", "head", false, {
+    const replacement = loadWorkspaceDiff(store, "ws-1", "head", false, {
       loadToken: tokenB,
       refreshCommits: true,
     });
@@ -1011,8 +1222,8 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head", false, { loadToken: token });
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "head", false, { loadToken: token });
+    await loadCommits(store);
     store.selectCommit("sha2");
     await scopeRequestStarted;
 
@@ -1062,8 +1273,8 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "merge-target");
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "merge-target");
+    await loadCommits(store);
     store.selectCommit("sha2");
 
     await vi.waitFor(() => {
@@ -1071,7 +1282,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     calls.length = 0;
-    await store.loadWorkspaceDiff("ws-1", "merge-target", false, { refreshCommits: true });
+    await loadWorkspaceDiff(store, "ws-1", "merge-target", false, { refreshCommits: true });
 
     expect(calls).toContain("/api/v1/workspaces/ws-1/commits");
     expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=merge-target");
@@ -1123,8 +1334,8 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "merge-target");
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "merge-target");
+    await loadCommits(store);
 
     store.selectRange("sha3", "sha2");
 
@@ -1170,8 +1381,8 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "merge-target");
-    await store.loadCommits();
+    await loadWorkspaceDiff(store, "ws-1", "merge-target");
+    await loadCommits(store);
 
     store.selectCommit("sha2");
 
@@ -1180,7 +1391,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     calls.length = 0;
-    await store.loadWorkspaceDiff("ws-1", "merge-target", true);
+    await loadWorkspaceDiff(store, "ws-1", "merge-target", true);
 
     expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=merge-target&commit=sha2");
     expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=merge-target&commit=sha2");
@@ -1208,7 +1419,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head");
+    await loadWorkspaceDiff(store, "ws-1", "head");
 
     expect(store.getFileList()?.files.map((file) => file.path)).toEqual(["a.ts", "whitespace.ts"]);
 
@@ -1243,7 +1454,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head");
+    await loadWorkspaceDiff(store, "ws-1", "head");
 
     store.requestScrollToFile("b.ts");
 
@@ -1295,7 +1506,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head");
+    await loadWorkspaceDiff(store, "ws-1", "head");
 
     expect(store.getDiff()?.whitespace_only_count).toBe(7);
   });
@@ -1311,7 +1522,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadWorkspaceDiff("ws-1", "head");
+    await loadWorkspaceDiff(store, "ws-1", "head");
 
     expect(store.isDiffLoading()).toBe(false);
     expect(store.getDiffError()).toBe("workspace files failed");
@@ -1354,12 +1565,12 @@ describe("createDiffStore loadDiff", () => {
     const store = createDiffStore({ client: testClient() });
 
     // Load PR A fully.
-    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
     expect(store.getDiff()?.files[0]?.path).toBe("a.ts");
     expect(store.getFileList()?.files[0]?.path).toBe("a.ts");
 
     // Start loading PR B — don't await yet.
-    const loadB = store.loadDiff("owner", "repo", 2, ownerRepoRef);
+    store.loadDiff("owner", "repo", 2, ownerRepoRef);
 
     // Both stale PR A values must be null immediately.
     expect(store.getDiff()).toBeNull();
@@ -1376,7 +1587,7 @@ describe("createDiffStore loadDiff", () => {
 
     // Release /diff for B.
     resolveDiffB();
-    await loadB;
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
 
     expect(store.getDiff()?.files[0]?.path).toBe("b.ts");
     expect(store.getFileList()?.files[0]?.path).toBe("b.ts");
@@ -1421,10 +1632,10 @@ describe("createDiffStore loadDiff", () => {
     const store = createDiffStore({ client: testClient() });
 
     // Start loading PR A (will hang).
-    void store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // Switch to PR B — should abort PR A.
-    await store.loadDiff("owner", "repo", 2, ownerRepoRef);
+    await loadDiff(store, "owner", "repo", 2, ownerRepoRef);
 
     expect(diffAAborted).toBe(true);
     expect(filesAAborted).toBe(true);
@@ -1450,7 +1661,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    const loadP = store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // Wait for /files to fail.
     await vi.waitFor(() => {
@@ -1462,7 +1673,7 @@ describe("createDiffStore loadDiff", () => {
 
     // Resolve /diff — file list falls through to diff.files.
     resolveDiff();
-    await loadP;
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
 
     expect(store.isFileListLoading()).toBe(false);
     expect(store.getFileList()?.files[0]?.path).toBe("a.ts");
@@ -1498,7 +1709,7 @@ describe("createDiffStore loadDiff", () => {
     // Enable whitespace hiding before loading.
     localStorage.setItem("diff-hide-whitespace", "true");
     const store = createDiffStore({ client: testClient() });
-    const loadP = store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // Verify /diff request includes whitespace=hide query param.
     expect(fetchedUrls.some((u) => u.includes("diff?whitespace=hide"))).toBe(true);
@@ -1511,7 +1722,7 @@ describe("createDiffStore loadDiff", () => {
 
     // /diff arrives — authoritative, whitespace-filtered.
     resolveDiff();
-    await loadP;
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
 
     expect(store.getFileList()?.files).toHaveLength(1);
     expect(store.getFileList()?.files[0]?.path).toBe("a.ts");
@@ -1538,7 +1749,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
     expect(store.getFileList()?.files).toHaveLength(2);
 
     // Toggle whitespace — /diff reload will fail.
@@ -1568,7 +1779,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
 
     // /diff failed — sidebar must not show stale /files data.
     expect(store.getDiffError()).toBeTruthy();
@@ -1595,11 +1806,11 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    const loadP = store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // /diff fails fast, /files still pending — release it.
     resolveFiles();
-    await loadP;
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
 
     // Late /files must not repopulate sidebar after /diff error.
     expect(store.getDiffError()).toBeTruthy();
@@ -1625,7 +1836,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
 
     // getFileList must return [] not null, even when API sends null.
     const result = store.getFileList();
@@ -1675,7 +1886,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
 
     expect(store.getDiff()?.files[0]?.hunks).toEqual([]);
     expect(store.getDiff()?.files[1]?.hunks[0]?.lines).toEqual([]);
@@ -1697,7 +1908,7 @@ describe("createDiffStore loadDiff", () => {
     });
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
 
     expect(store.getFileCategoryFilter()).toBe("all");
     expect(store.getVisibleDiffFiles().map((file) => file.path)).toEqual([

@@ -373,6 +373,9 @@ instead of serializing the whole test.
 - Playwright workers share one run-owned socket directory; new runs reap those
   whose recorded owner PID is dead
   (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2ETmuxDir`).
+- Keep every child owned and the shared socket root intact through child exit;
+  terminating children can still daemonize tmux after the first cleanup sweep
+  (`frontend/tests/e2e-full/support/e2eServer.ts::shutdownOwnedServers`).
 - Stale recovery may connect only to tmux roots, owner files, and sockets owned
   by the current user; matching a private test name is not ownership
   (`frontend/tests/e2e-full/support/e2eServer.ts::cleanupE2ETmuxDir`).

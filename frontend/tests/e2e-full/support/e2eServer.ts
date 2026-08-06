@@ -110,28 +110,44 @@ async function isCurrentUserOwnedPath(
   }
 }
 
-async function killTmuxSocket(socket: string): Promise<boolean> {
-  return await new Promise<boolean>((resolve) => {
-    const child = spawn("tmux", ["-f", "/dev/null", "-S", socket, "kill-server"], {
-      stdio: "ignore",
+async function runTmuxSocketCommand(
+  socket: string,
+  command: "kill-server" | "list-sessions",
+): Promise<{ exitCode: number | null; stderr: string }> {
+  return await new Promise((resolve) => {
+    const child = spawn("tmux", ["-f", "/dev/null", "-S", socket, command], {
+      stdio: ["ignore", "ignore", "pipe"],
     });
     let settled = false;
-    const finish = (completed: boolean) => {
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => {
+      stderr = (stderr + chunk.toString()).slice(-4_096);
+    });
+    const finish = (exitCode: number | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve(completed);
+      resolve({ exitCode, stderr });
     };
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      finish(false);
+      finish(null);
     }, 5_000);
-    child.once("error", () => finish(false));
-    child.once("exit", (code) => finish(code === 0));
+    child.once("error", () => finish(null));
+    child.once("exit", (code) => finish(code));
   });
 }
 
-export async function cleanupE2ETmuxDir(dir: string): Promise<boolean> {
+async function killTmuxSocket(socket: string): Promise<boolean> {
+  const killed = await runTmuxSocketCommand(socket, "kill-server");
+  if (killed.exitCode === 0) {
+    return true;
+  }
+  const verified = await runTmuxSocketCommand(socket, "list-sessions");
+  return verified.exitCode === 1 && verified.stderr.trim().startsWith("no server running on ");
+}
+
+export async function cleanupE2ETmuxDir(dir: string, removeRoot = true): Promise<boolean> {
   if (!isPrivateE2ETmuxDir(dir)) {
     return false;
   }
@@ -164,11 +180,11 @@ export async function cleanupE2ETmuxDir(dir: string): Promise<boolean> {
       return await killTmuxSocket(socket);
     }),
   );
-  if (stopped.every(Boolean)) {
+  if (stopped.every(Boolean) && removeRoot) {
     await rm(dir, { force: true, recursive: true });
     return true;
   }
-  return false;
+  return stopped.every(Boolean);
 }
 
 async function reapStaleE2ETmuxDirs(): Promise<void> {
@@ -646,7 +662,7 @@ export async function shutdownOwnedServers(): Promise<void> {
     signalServerProcess(server.child, server.serverPID);
   }
   if (tmuxDir) {
-    await cleanupE2ETmuxDir(tmuxDir);
+    await cleanupE2ETmuxDir(tmuxDir, false);
   }
   await Promise.all(servers.map((server) => terminateServerProcess(server.child, server.serverPID, true)));
   if (tmuxDir) {
@@ -687,10 +703,10 @@ function installCleanup(): void {
   };
 
   process.once("exit", cleanupImmediately);
-  process.once("SIGINT", () => {
+  process.on("SIGINT", () => {
     void cleanupAfterSignal(130);
   });
-  process.once("SIGTERM", () => {
+  process.on("SIGTERM", () => {
     void cleanupAfterSignal(143);
   });
 }
@@ -991,14 +1007,21 @@ export async function startIsolatedE2EServerWithOptions(
     }
     standaloneServers.add(started);
     startingServers.delete(started.child);
+    let stopPromise: Promise<void> | null = null;
     return {
       info: started.info,
-      stop: async () => {
-        standaloneServers.delete(started);
-        await terminateServerProcess(started.child, started.info.pid);
-        await removeServerInfo(infoFile);
-        await rm(infoDir, { force: true, recursive: true });
-        await cleanupOwnedTmuxDirIfIdle();
+      stop: () => {
+        stopPromise ??= (async () => {
+          try {
+            await terminateServerProcess(started.child, started.info.pid);
+          } finally {
+            standaloneServers.delete(started);
+          }
+          await removeServerInfo(infoFile);
+          await rm(infoDir, { force: true, recursive: true });
+          await cleanupOwnedTmuxDirIfIdle();
+        })();
+        return stopPromise;
       },
     };
   }

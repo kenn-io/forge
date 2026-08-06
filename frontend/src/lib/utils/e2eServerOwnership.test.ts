@@ -6,6 +6,7 @@ import { readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import * as e2eServerModule from "../../../tests/e2e-full/support/e2eServer";
 
 const { stopE2EServer } = e2eServerModule;
@@ -26,12 +27,14 @@ function writeFakeE2EServer(rootDir: string): string {
     serverPath,
     `#!/usr/bin/env node
 const { spawnSync } = require("node:child_process");
-const { mkdirSync, writeFileSync } = require("node:fs");
+const { existsSync, mkdirSync, writeFileSync } = require("node:fs");
 const { createServer } = require("node:http");
 const path = require("node:path");
 
 const infoFlag = process.argv.indexOf("-server-info-file");
 const infoFile = process.argv[infoFlag + 1];
+const fleetFlag = process.argv.indexOf("-fleet-key");
+const slowShutdown = fleetFlag >= 0 && process.argv[fleetFlag + 1] === "slow";
 const server = createServer((_req, response) => {
   response.writeHead(200);
   response.end("ok");
@@ -51,21 +54,20 @@ server.listen(0, "127.0.0.1", () => {
 
 process.on("SIGTERM", () => {
   const finish = () => server.close(() => process.exit(0));
-  if (process.env.FAKE_E2E_CREATE_LATE_TMUX === "1") {
+  if (process.env.FAKE_E2E_CREATE_LATE_TMUX === "1" && slowShutdown) {
     setTimeout(() => {
       const dir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(path.join(dir, "owner.json"), JSON.stringify({ pid: process.ppid }));
+      const rootWasPreserved = existsSync(dir) && existsSync(path.join(dir, "owner.json"));
       const result = spawnSync("tmux", [
         "-f", "/dev/null", "-S", path.join(dir, "mm-e2e-late.sock"),
         "new-session", "-d", "-s", "late", "sleep", "30",
       ]);
-      writeFileSync(process.env.FAKE_E2E_LATE_MARKER, String(result.status));
+      writeFileSync(process.env.FAKE_E2E_LATE_MARKER, JSON.stringify({ rootWasPreserved, status: result.status }));
       finish();
     }, 100);
     return;
   }
-  finish();
+  setTimeout(finish, slowShutdown ? 250 : 0);
 });
 `,
   );
@@ -657,24 +659,65 @@ describe("private tmux ownership", () => {
       await rm(binDir, { force: true, recursive: true });
     }
   });
+
+  it("removes a stale socket after tmux verifies that its server is gone", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const dir = mkdtempSync("/tmp/kf-e2e-tmux-");
+    const socket = path.join(dir, "mm-e2e-stale.sock");
+    writeFileSync(path.join(dir, "owner.json"), JSON.stringify({ pid: process.pid }), { mode: 0o600 });
+    const socketServer = createServer();
+    await new Promise<void>((resolve, reject) => {
+      socketServer.once("error", reject);
+      socketServer.listen(socket, () => resolve());
+    });
+
+    const binDir = mkdtempSync(path.join(os.tmpdir(), "e2e-fake-bin-"));
+    const fakeTmux = path.join(binDir, "tmux");
+    writeFileSync(
+      fakeTmux,
+      '#!/bin/sh\ncase "$*" in *list-sessions*) echo "no server running on test socket" >&2;; esac\nexit 1\n',
+    );
+    chmodSync(fakeTmux, 0o755);
+    process.env.PATH = `${binDir}${path.delimiter}${process.env.PATH ?? ""}`;
+
+    try {
+      await e2eServerModule.cleanupE2ETmuxDir(dir);
+      expect(await fileExists(dir)).toBe(false);
+    } finally {
+      await new Promise<void>((resolve) => socketServer.close(() => resolve()));
+      await rm(dir, { force: true, recursive: true });
+      await rm(binDir, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("owned server lifecycle", () => {
-  it("does not remove a shared tmux directory while another fresh server is active", async () => {
+  it("keeps the shared tmux root until concurrent fresh-server stops have exited", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
     process.env.PLAYWRIGHT_E2E_SERVER_BINARY = writeFakeE2EServer(dir);
     process.env.FAKE_E2E_STARTED_FILE = path.join(dir, "started");
+    process.env.FAKE_E2E_CREATE_LATE_TMUX = "1";
+    const lateMarker = path.join(dir, "late-created");
+    process.env.FAKE_E2E_LATE_MARKER = lateMarker;
     delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
 
-    const first = await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true });
+    const first = await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true, fleetKey: "slow" });
     const second = await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true });
     const tmuxDir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
     expect(tmuxDir).toBeTruthy();
+    let firstStop: Promise<void> | null = null;
 
     try {
-      await first.stop();
+      firstStop = first.stop();
+      await second.stop();
       expect(await fileExists(tmuxDir ?? "")).toBe(true);
+      await firstStop;
+      await expect(readFile(lateMarker, "utf8")).resolves.toBe(JSON.stringify({ rootWasPreserved: true, status: 0 }));
+      expect(await fileExists(tmuxDir ?? "")).toBe(false);
     } finally {
+      await firstStop;
       await second.stop();
       await rm(dir, { force: true, recursive: true });
     }
@@ -712,17 +755,67 @@ describe("owned server lifecycle", () => {
     process.env.FAKE_E2E_LATE_MARKER = lateMarker;
     delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
 
-    await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true });
+    await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true, fleetKey: "slow" });
     const tmuxDir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
     expect(tmuxDir).toBeTruthy();
 
     await e2eServerModule.shutdownOwnedServers();
 
-    await expect(readFile(lateMarker, "utf8")).resolves.toBe("0");
+    await expect(readFile(lateMarker, "utf8")).resolves.toBe(JSON.stringify({ rootWasPreserved: true, status: 0 }));
     expect(await fileExists(tmuxDir ?? "")).toBe(false);
     expect(process.env.PLAYWRIGHT_E2E_TMUX_DIR).toBeUndefined();
     await rm(dir, { force: true, recursive: true });
   });
+
+  it("keeps handling SIGTERM until asynchronous server cleanup finishes", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    const helperFile = path.join(dir, "owner-helper.ts");
+    const readyFile = path.join(dir, "owner-ready.json");
+    const startedFile = path.join(dir, "server-started");
+    const moduleURL = pathToFileURL(path.resolve("tests/e2e-full/support/e2eServer.ts")).href;
+    writeFileSync(
+      helperFile,
+      `import { writeFile } from "node:fs/promises";
+import process from "node:process";
+import { startIsolatedE2EServerWithOptions } from ${JSON.stringify(moduleURL)};
+await startIsolatedE2EServerWithOptions({ freshProcess: true, fleetKey: "slow" });
+await writeFile(process.env.FAKE_OWNER_READY_FILE, JSON.stringify({ tmuxDir: process.env.PLAYWRIGHT_E2E_TMUX_DIR }));
+setInterval(() => {}, 1000);
+`,
+    );
+    const helperEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      PLAYWRIGHT_E2E_SERVER_BINARY: writeFakeE2EServer(dir),
+      FAKE_E2E_STARTED_FILE: startedFile,
+      FAKE_OWNER_READY_FILE: readyFile,
+    };
+    delete helperEnv.PLAYWRIGHT_E2E_TMUX_DIR;
+    const owner = spawn("bun", [helperFile], { env: helperEnv, stdio: "ignore" });
+
+    try {
+      await waitForFile(readyFile);
+      const { tmuxDir } = JSON.parse(await readFile(readyFile, "utf8"));
+      const outcomePromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+        owner.once("exit", (code, signal) => resolve({ code, signal }));
+      });
+      owner.kill("SIGTERM");
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      owner.kill("SIGTERM");
+      const outcome = await outcomePromise;
+
+      expect(outcome).toEqual({ code: 143, signal: null });
+      expect(await fileExists(tmuxDir)).toBe(false);
+    } finally {
+      if (owner.exitCode === null && owner.signalCode === null) {
+        owner.kill("SIGKILL");
+        await new Promise<void>((resolve) => owner.once("exit", () => resolve()));
+      }
+      await rm(dir, { force: true, recursive: true });
+    }
+  }, 10_000);
 });
 
 describe("stopE2EServer", () => {

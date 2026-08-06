@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,13 +32,20 @@ import (
 	"go.kenn.io/forge/internal/web"
 )
 
-var (
-	testTmuxMu       sync.Mutex
-	testTmuxCommands = make(map[string][]string)
-)
+var testTmux = newTestTmuxTracker()
+
+type testTmuxTracker struct {
+	mu           sync.Mutex
+	commands     map[string][]string
+	shuttingDown bool
+}
+
+func newTestTmuxTracker() *testTmuxTracker {
+	return &testTmuxTracker{commands: make(map[string][]string)}
+}
 
 func TestMain(m *testing.M) {
-	runCleanup, stopSignalCleanup := testsignal.Install(cleanupTrackedTestTmux, func(err error) {
+	runCleanup, stopSignalCleanup := testsignal.Install(testTmux.cleanup, func(err error) {
 		fmt.Fprintf(os.Stderr, "cleanup e2e-server test tmux: %v\n", err)
 	})
 	code := m.Run()
@@ -51,30 +59,99 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func trackTestTmux(tmuxCommand []string) func() {
+func (tracker *testTmuxTracker) start(
+	tmuxCommand, args []string,
+	afterStart func(),
+) (func() error, error) {
 	key := strings.Join(tmuxCommand, "\x00")
-	testTmuxMu.Lock()
-	testTmuxCommands[key] = append([]string{}, tmuxCommand...)
-	testTmuxMu.Unlock()
-	return func() {
-		testTmuxMu.Lock()
-		delete(testTmuxCommands, key)
-		testTmuxMu.Unlock()
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	if tracker.shuttingDown {
+		return nil, errors.New("e2e-server test tmux cleanup has started")
 	}
+	tracker.commands[key] = append([]string{}, tmuxCommand...)
+	output, err := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
+	if err != nil {
+		delete(tracker.commands, key)
+		return nil, fmt.Errorf("start e2e-server test tmux: %w: %s", err, output)
+	}
+	if afterStart != nil {
+		afterStart()
+	}
+	return func() error { return tracker.stop(key, tmuxCommand) }, nil
 }
 
-func cleanupTrackedTestTmux() error {
-	testTmuxMu.Lock()
-	commands := make([][]string, 0, len(testTmuxCommands))
-	for _, command := range testTmuxCommands {
-		commands = append(commands, command)
+func (tracker *testTmuxTracker) cleanup() error {
+	tracker.mu.Lock()
+	tracker.shuttingDown = true
+	commands := make(map[string][]string, len(tracker.commands))
+	for key, command := range tracker.commands {
+		commands[key] = append([]string{}, command...)
 	}
-	clear(testTmuxCommands)
-	testTmuxMu.Unlock()
-	for _, command := range commands {
-		killTmuxServer(command)
+	tracker.mu.Unlock()
+	var cleanupErr error
+	for key, command := range commands {
+		cleanupErr = errors.Join(cleanupErr, tracker.stop(key, command))
 	}
+	return cleanupErr
+}
+
+func (tracker *testTmuxTracker) stop(key string, tmuxCommand []string) error {
+	args := append([]string{}, tmuxCommand[1:]...)
+	args = append(args, "kill-server")
+	killOutput, killErr := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
+	args[len(args)-1] = "list-sessions"
+	listOutput, listErr := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
+	if listErr == nil {
+		return fmt.Errorf(
+			"stop e2e-server test tmux: %v: %s; server still accepts commands: %s",
+			killErr, killOutput, listOutput,
+		)
+	}
+	var listExitErr *exec.ExitError
+	if !errors.As(listErr, &listExitErr) {
+		return fmt.Errorf("verify e2e-server test tmux stopped: %w: %s", listErr, listOutput)
+	}
+	tracker.mu.Lock()
+	if current, ok := tracker.commands[key]; ok && strings.Join(current, "\x00") == key {
+		delete(tracker.commands, key)
+	}
+	tracker.mu.Unlock()
 	return nil
+}
+
+func TestTestTmuxTrackerRetainsFailedCleanupForRetry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell tmux tracker probe is not supported on Windows")
+	}
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	stateFile := filepath.Join(dir, "state")
+	failFile := filepath.Join(dir, "fail")
+	command := filepath.Join(dir, "tmux-probe")
+	require.NoError(os.WriteFile(command, []byte(`#!/bin/sh
+case "$*" in
+  *new-session*) : > "$KF_TEST_TMUX_STATE" ;;
+  *kill-server*)
+    [ ! -e "$KF_TEST_TMUX_FAIL" ] || exit 1
+    rm -f "$KF_TEST_TMUX_STATE"
+    ;;
+  *list-sessions*) [ -e "$KF_TEST_TMUX_STATE" ] ;;
+esac
+`), 0o700))
+	t.Setenv("KF_TEST_TMUX_STATE", stateFile)
+	t.Setenv("KF_TEST_TMUX_FAIL", failFile)
+	require.NoError(os.WriteFile(failFile, nil, 0o600))
+
+	tracker := newTestTmuxTracker()
+	_, err := tracker.start([]string{command}, []string{"new-session"}, nil)
+	require.NoError(err)
+	require.Error(tracker.cleanup())
+	require.FileExists(stateFile)
+	require.NoError(os.Remove(failFile))
+	require.NoError(tracker.cleanup())
+	assert.NoFileExists(stateFile)
 }
 
 func TestWriteServerInfoFile(t *testing.T) {
@@ -517,17 +594,19 @@ func TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM(t *testing.T) {
 		tmuxCommand := instanceTmuxCommand()
 		args := append([]string{}, tmuxCommand[1:]...)
 		args = append(args, "new-session", "-d", "-s", "signal-cleanup", "sleep 30")
-		if output, err := procutil.Command(tmuxCommand[0], args...).CombinedOutput(); err != nil {
-			_, _ = os.Stderr.Write(output)
-			os.Exit(2)
-		}
-		trackTestTmux(tmuxCommand)
 		encoded, err := json.Marshal(tmuxCommand)
 		if err != nil {
 			os.Exit(3)
 		}
-		if err := os.WriteFile(os.Getenv("KENN_FORGE_E2E_SIGNAL_READY"), encoded, 0o600); err != nil {
-			os.Exit(4)
+		_, err = testTmux.start(tmuxCommand, args, func() {
+			if writeErr := os.WriteFile(os.Getenv("KENN_FORGE_E2E_SIGNAL_READY"), encoded, 0o600); writeErr != nil {
+				os.Exit(4)
+			}
+			time.Sleep(250 * time.Millisecond)
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
 		}
 		select {}
 	}
@@ -711,12 +790,10 @@ func startPrivateE2ETmuxServer(t *testing.T, configPath string) []string {
 	require.True(t, isOwnedE2ETmuxCommand(tmuxCommand))
 	args := append([]string{}, tmuxCommand[1:]...)
 	args = append(args, "new-session", "-d", "-s", "forge-e2e-shutdown-test", "sleep 30")
-	output, err := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
-	require.NoError(t, err, string(output))
-	untrack := trackTestTmux(tmuxCommand)
+	stop, err := testTmux.start(tmuxCommand, args, nil)
+	require.NoError(t, err)
 	t.Cleanup(func() {
-		killTmuxServer(tmuxCommand)
-		untrack()
+		require.NoError(t, stop())
 	})
 	return tmuxCommand
 }

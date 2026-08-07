@@ -12173,13 +12173,14 @@ func (s *Syncer) SyncItemByNumber(
 }
 
 // CarryMergeRequestDerivedFields copies sync-derived columns a provider
-// snapshot cannot represent — comment count, review decision, CI state, and
-// the detail-fetched marker — from the stored row onto normalized, so
-// committing a fetched or mutation-returned snapshot does not erase them.
-// CI state is head-derived and is carried only while the head is unchanged
-// (see the SHA-sensitive sync rules); the detail-fetched marker is dropped
-// when the snapshot reopens the MR, so the next sync refreshes detail
-// instead of trusting a pre-close fetch.
+// snapshot cannot represent — comment count, review decision, and CI state —
+// from the stored row onto normalized, so committing a fetched or
+// mutation-returned snapshot does not erase them. CI status and checks are
+// head-derived and carried only while the head is unchanged (see the
+// SHA-sensitive sync rules). The ci_had_pending flag and the detail-fetched
+// marker are owned by the snapshot upsert itself (the stored flag always
+// wins, and a set marker is never cleared by a snapshot), so this helper
+// deliberately leaves them alone.
 func CarryMergeRequestDerivedFields(normalized, existing *db.MergeRequest) {
 	if normalized == nil || existing == nil {
 		return
@@ -12189,10 +12190,6 @@ func CarryMergeRequestDerivedFields(normalized, existing *db.MergeRequest) {
 	if strings.EqualFold(normalized.PlatformHeadSHA, existing.PlatformHeadSHA) {
 		normalized.CIStatus = existing.CIStatus
 		normalized.CIChecksJSON = existing.CIChecksJSON
-		normalized.CIHadPending = existing.CIHadPending
-	}
-	if normalized.State != db.MergeRequestStateOpen {
-		normalized.DetailFetchedAt = existing.DetailFetchedAt
 	}
 }
 

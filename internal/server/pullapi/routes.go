@@ -2042,6 +2042,11 @@ func (s *Handler) setPRGitHubState(
 							string(repoProviderKind(*repo)), repoProviderHost(*repo),
 						)
 					}
+					// Refetched snapshots cannot represent sync-derived
+					// columns either; carry them like the success path so
+					// a concurrent close recovered here does not erase
+					// them from a row no later sync will refetch.
+					ghclient.CarryMergeRequestDerivedFields(normalized, mr)
 					_, _, _, _ = s.syncer.CommitMergeRequestParentSnapshot(
 						ctx, mergeRequestRepoRef(*repo), normalized,
 					)

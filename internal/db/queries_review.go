@@ -47,7 +47,7 @@ func parseNullableTime(v sql.NullString) (*time.Time, error) {
 
 func (d *DB) GetOrCreateMRReviewDraft(ctx context.Context, mrID int64) (*MRReviewDraft, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	if _, err := d.rw.ExecContext(ctx, `
+	if _, err := d.execContext(ctx, `
 		INSERT INTO forge_mr_review_drafts (merge_request_id, created_at, updated_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(merge_request_id) DO NOTHING`,
@@ -125,7 +125,7 @@ func (d *DB) CreateMRReviewDraftComment(
 	input MRReviewDraftCommentInput,
 ) (*MRReviewDraftComment, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := d.rw.ExecContext(ctx, `
+	res, err := d.execContext(ctx, `
 		INSERT INTO forge_mr_review_draft_comments (
 			draft_id, body, path, old_path, side, start_side, start_line,
 			line, old_line, new_line, line_type, diff_head_sha, commit_sha,
@@ -144,7 +144,7 @@ func (d *DB) CreateMRReviewDraftComment(
 	if err != nil {
 		return nil, fmt.Errorf("get mr review draft comment id: %w", err)
 	}
-	if _, err := d.rw.ExecContext(ctx,
+	if _, err := d.execContext(ctx,
 		`UPDATE forge_mr_review_drafts SET updated_at = ? WHERE id = ?`,
 		now, draftID,
 	); err != nil {
@@ -159,7 +159,7 @@ func (d *DB) UpdateMRReviewDraftComment(
 	input MRReviewDraftCommentInput,
 ) (*MRReviewDraftComment, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := d.rw.ExecContext(ctx, `
+	res, err := d.execContext(ctx, `
 		UPDATE forge_mr_review_draft_comments
 		SET body = ?, path = ?, old_path = ?, side = ?, start_side = ?,
 			start_line = ?, line = ?, old_line = ?, new_line = ?,
@@ -179,7 +179,7 @@ func (d *DB) UpdateMRReviewDraftComment(
 	} else if n == 0 {
 		return nil, sql.ErrNoRows
 	}
-	if _, err := d.rw.ExecContext(ctx,
+	if _, err := d.execContext(ctx,
 		`UPDATE forge_mr_review_drafts SET updated_at = ? WHERE id = ?`,
 		now, draftID,
 	); err != nil {
@@ -189,7 +189,7 @@ func (d *DB) UpdateMRReviewDraftComment(
 }
 
 func (d *DB) DeleteMRReviewDraftComment(ctx context.Context, draftID, commentID int64) error {
-	res, err := d.rw.ExecContext(ctx,
+	res, err := d.execContext(ctx,
 		`DELETE FROM forge_mr_review_draft_comments WHERE draft_id = ? AND id = ?`,
 		draftID, commentID,
 	)
@@ -202,7 +202,7 @@ func (d *DB) DeleteMRReviewDraftComment(ctx context.Context, draftID, commentID 
 		return sql.ErrNoRows
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	if _, err := d.rw.ExecContext(ctx,
+	if _, err := d.execContext(ctx,
 		`UPDATE forge_mr_review_drafts SET updated_at = ? WHERE id = ?`,
 		now, draftID,
 	); err != nil {
@@ -212,7 +212,7 @@ func (d *DB) DeleteMRReviewDraftComment(ctx context.Context, draftID, commentID 
 }
 
 func (d *DB) DeleteMRReviewDraft(ctx context.Context, mrID int64) error {
-	if _, err := d.rw.ExecContext(ctx,
+	if _, err := d.execContext(ctx,
 		`DELETE FROM forge_mr_review_drafts WHERE merge_request_id = ?`,
 		mrID,
 	); err != nil {
@@ -440,7 +440,7 @@ func (d *DB) SetMRReviewThreadResolved(
 	resolved bool,
 	resolvedAt *time.Time,
 ) error {
-	res, err := d.rw.ExecContext(ctx, `
+	res, err := d.execContext(ctx, `
 		UPDATE forge_mr_review_threads
 		SET resolved = ?, resolved_at = ?, updated_at = ?
 		WHERE merge_request_id = ? AND id = ?`,

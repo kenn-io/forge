@@ -27,7 +27,7 @@ func (d *DB) UpsertHostRuntimeTmuxSession(
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		INSERT INTO forge_host_runtime_sessions
 		    (session_key, runtime_backend, backend_session_key, label, cwd,
 		     created_at)
@@ -88,7 +88,7 @@ func (d *DB) DeleteHostRuntimeTmuxSession(
 	ctx context.Context,
 	sessionKey string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		DELETE FROM forge_host_runtime_sessions
 		WHERE session_key = ? AND runtime_backend = 'tmux'`, sessionKey,
 	)
@@ -108,7 +108,7 @@ func (d *DB) DeleteHostRuntimeTmuxSessionCreatedAt(
 	sessionKey string,
 	createdAt time.Time,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	result, err := d.execContext(ctx, `
 		DELETE FROM forge_host_runtime_sessions
 		WHERE session_key = ?
 		  AND runtime_backend = 'tmux'

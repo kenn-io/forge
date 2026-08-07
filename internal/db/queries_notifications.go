@@ -185,24 +185,29 @@ func (d *DB) UpsertNotifications(ctx context.Context, notifications []Notificati
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		for i := range notifications {
-			n := notifications[i]
-			if err := canonicalizeNotification(&n); err != nil {
-				return err
-			}
-			if n.SyncedAt.IsZero() {
-				n.SyncedAt = time.Now().UTC()
-			}
-			var repoID *int64
-			if n.RepoID != nil {
-				repoID = n.RepoID
-			} else if id, found, err := lookupNotificationRepoIDTx(ctx, tx, n.Platform, n.PlatformHost, n.RepoOwner, n.RepoName); err != nil {
-				return err
-			} else if found {
-				repoID = &id
-			}
+		return upsertNotificationsTx(ctx, tx, notifications)
+	})
+}
 
-			_, err := tx.ExecContext(ctx, `
+func upsertNotificationsTx(ctx context.Context, tx *sql.Tx, notifications []Notification) error {
+	for i := range notifications {
+		n := notifications[i]
+		if err := canonicalizeNotification(&n); err != nil {
+			return err
+		}
+		if n.SyncedAt.IsZero() {
+			n.SyncedAt = time.Now().UTC()
+		}
+		var repoID *int64
+		if n.RepoID != nil {
+			repoID = n.RepoID
+		} else if id, found, err := lookupNotificationRepoIDTx(ctx, tx, n.Platform, n.PlatformHost, n.RepoOwner, n.RepoName); err != nil {
+			return err
+		} else if found {
+			repoID = &id
+		}
+
+		_, err := tx.ExecContext(ctx, `
 				INSERT INTO forge_notification_items (
 					platform, platform_host, platform_notification_id, repo_id, repo_owner, repo_name,
 					subject_type, subject_title, subject_url, subject_latest_comment_url, web_url,
@@ -330,19 +335,54 @@ func (d *DB) UpsertNotifications(ctx context.Context, notifications []Notificati
 						ELSE forge_notification_items.source_ack_generation_at
 					END
 				WHERE excluded.source_updated_at >= forge_notification_items.source_updated_at`,
-				n.Platform, n.PlatformHost, n.PlatformNotificationID, nullableInt64(repoID), n.RepoOwner, n.RepoName,
-				n.SubjectType, n.SubjectTitle, n.SubjectURL, n.SubjectLatestCommentURL, n.WebURL,
-				nullableInt(n.ItemNumber), n.ItemType, n.ItemAuthor, n.Reason, boolInt(n.Unread), boolInt(n.Participating),
-				n.SourceUpdatedAt, nullableNotificationTime(n.SourceLastAcknowledgedAt), n.SyncedAt, nullableNotificationTime(n.DoneAt), n.DoneReason,
-				nullableNotificationTime(n.SourceAckQueuedAt), nullableNotificationTime(n.SourceAckSyncedAt), nullableNotificationTime(n.SourceAckGenerationAt), n.SourceAckError, n.SourceAckAttempts,
-				nullableNotificationTime(n.SourceAckLastAttemptAt), nullableNotificationTime(n.SourceAckNextAttemptAt),
-			)
-			if err != nil {
-				return fmt.Errorf("upsert notification %s: %w", n.PlatformNotificationID, err)
-			}
+			n.Platform, n.PlatformHost, n.PlatformNotificationID, nullableInt64(repoID), n.RepoOwner, n.RepoName,
+			n.SubjectType, n.SubjectTitle, n.SubjectURL, n.SubjectLatestCommentURL, n.WebURL,
+			nullableInt(n.ItemNumber), n.ItemType, n.ItemAuthor, n.Reason, boolInt(n.Unread), boolInt(n.Participating),
+			n.SourceUpdatedAt, nullableNotificationTime(n.SourceLastAcknowledgedAt), n.SyncedAt, nullableNotificationTime(n.DoneAt), n.DoneReason,
+			nullableNotificationTime(n.SourceAckQueuedAt), nullableNotificationTime(n.SourceAckSyncedAt), nullableNotificationTime(n.SourceAckGenerationAt), n.SourceAckError, n.SourceAckAttempts,
+			nullableNotificationTime(n.SourceAckLastAttemptAt), nullableNotificationTime(n.SourceAckNextAttemptAt),
+		)
+		if err != nil {
+			return fmt.Errorf("upsert notification %s: %w", n.PlatformNotificationID, err)
 		}
+	}
+	return nil
+}
+
+func (d *DB) UpsertNotificationsIfRouteFence(
+	ctx context.Context,
+	notifications []Notification,
+	identity RepoIdentity,
+	fence RepositoryRouteFence,
+) (bool, error) {
+	identity = canonicalRepoIdentity(identity)
+	release, err := d.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+
+	committed := false
+	err = d.Tx(ctx, func(tx *sql.Tx) error {
+		matches, err := repositoryRouteFenceMatchesTx(
+			ctx, tx, identity, fence,
+		)
+		if err != nil {
+			return err
+		}
+		if !matches {
+			return nil
+		}
+		if err := upsertNotificationsTx(ctx, tx, notifications); err != nil {
+			return err
+		}
+		committed = true
 		return nil
 	})
+	if err != nil {
+		return false, fmt.Errorf("conditionally upsert notifications: %w", err)
+	}
+	return committed, nil
 }
 
 // LatestOpenPRNotificationActivity returns the newest notification timestamp
@@ -838,7 +878,7 @@ func (d *DB) UpdateNotificationSyncWatermark(ctx context.Context, platform, host
 	}
 	syncedAt = canonicalUTCTime(syncedAt)
 	lastFullValue := nullableNotificationTime(lastFullSyncedAt)
-	_, err = d.rw.ExecContext(ctx, `
+	_, err = d.execContext(ctx, `
 		INSERT INTO forge_notification_sync_watermarks (platform, platform_host, repo_owner, repo_name, last_successful_sync_at, last_full_sync_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(platform, platform_host, repo_owner, repo_name) DO UPDATE SET
@@ -849,6 +889,67 @@ func (d *DB) UpdateNotificationSyncWatermark(ctx context.Context, platform, host
 		return fmt.Errorf("update notification sync watermark: %w", err)
 	}
 	return nil
+}
+
+func (d *DB) UpdateNotificationSyncWatermarkIfRouteFence(
+	ctx context.Context,
+	platform, host, owner, name string,
+	fence RepositoryRouteFence,
+	syncedAt time.Time,
+	lastFullSyncedAt *time.Time,
+) (bool, error) {
+	var err error
+	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
+	if err != nil {
+		return false, err
+	}
+	owner, name, err = canonicalizeNotificationRepo(owner, name)
+	if err != nil {
+		return false, err
+	}
+	syncedAt = canonicalUTCTime(syncedAt)
+	lastFullValue := nullableNotificationTime(lastFullSyncedAt)
+	identity := canonicalRepoIdentity(RepoIdentity{
+		Platform: platform, PlatformHost: host, Owner: owner, Name: name,
+	})
+	release, err := d.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+
+	committed := false
+	err = d.Tx(ctx, func(tx *sql.Tx) error {
+		matches, err := repositoryRouteFenceMatchesTx(
+			ctx, tx, identity, fence,
+		)
+		if err != nil {
+			return err
+		}
+		if !matches {
+			return nil
+		}
+		_, err = tx.ExecContext(ctx, `
+		INSERT INTO forge_notification_sync_watermarks (
+			platform, platform_host, repo_owner, repo_name,
+			last_successful_sync_at, last_full_sync_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(platform, platform_host, repo_owner, repo_name) DO UPDATE SET
+			last_successful_sync_at = excluded.last_successful_sync_at,
+			last_full_sync_at = excluded.last_full_sync_at`,
+			platform, host, owner, name, syncedAt, lastFullValue,
+		)
+		if err != nil {
+			return err
+		}
+		committed = true
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("conditionally update notification sync watermark: %w", err)
+	}
+	return committed, nil
 }
 
 func (d *DB) MarkNotificationsAcknowledged(ctx context.Context, platform, host string, notificationIDs []string, acknowledgedAt time.Time) error {
@@ -865,7 +966,7 @@ func (d *DB) MarkNotificationsAcknowledged(ctx context.Context, platform, host s
 	for _, id := range notificationIDs {
 		args = append(args, id)
 	}
-	_, err = d.rw.ExecContext(ctx, fmt.Sprintf(`UPDATE forge_notification_items
+	_, err = d.execContext(ctx, fmt.Sprintf(`UPDATE forge_notification_items
 		SET unread = 0, source_last_acknowledged_at = ?, source_ack_synced_at = ?, source_ack_queued_at = NULL, source_ack_generation_at = NULL,
 		    source_ack_error = '', source_ack_attempts = 0, source_ack_last_attempt_at = NULL, source_ack_next_attempt_at = NULL
 		WHERE platform = ? AND platform_host = ? AND platform_notification_id IN (%s)`, sqlPlaceholders(len(notificationIDs))), args...)
@@ -889,6 +990,17 @@ func (d *DB) ListQueuedNotificationAcks(ctx context.Context, platform, host stri
 		  AND n.source_ack_synced_at IS NULL
 		  AND n.source_ack_error != 'max_attempts_exceeded'
 		  AND COALESCE(n.source_ack_next_attempt_at, n.source_ack_queued_at) <= ?
+		  AND (
+		      n.repo_id IS NULL
+		      OR EXISTS (
+		          SELECT 1
+		          FROM forge_repo_routes route
+		          WHERE route.repo_id = n.repo_id
+		            AND route.platform = n.platform
+		            AND route.platform_host = n.platform_host
+		            AND route.is_current = 1
+		      )
+		  )
 		ORDER BY n.source_ack_queued_at ASC, n.id ASC LIMIT ?`, notificationSelectColumns), platform, host, canonicalUTCTime(now), limit)
 	if err != nil {
 		return nil, fmt.Errorf("list queued notification acks: %w", err)
@@ -902,7 +1014,38 @@ func (d *DB) ListQueuedNotificationAcks(ctx context.Context, platform, host stri
 		}
 		notifications = append(notifications, n)
 	}
-	return notifications, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Queued acknowledgements outlive route renames: a row resolved to a
+	// stable repository carries that repository's current owner/name, so
+	// propagation fences, credential selection, and routed mark-read calls
+	// follow the live route instead of failing against the cached
+	// historical one and dropping the acknowledgement.
+	repoRoutes := map[int64]*Repo{}
+	for i := range notifications {
+		repoID := notifications[i].RepoID
+		if repoID == nil {
+			continue
+		}
+		repo, seen := repoRoutes[*repoID]
+		if !seen {
+			repo, err = d.GetRepoByID(ctx, *repoID)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"resolve queued notification ack repository: %w", err,
+				)
+			}
+			repoRoutes[*repoID] = repo
+		}
+		if repo == nil || repo.Platform != platform || repo.PlatformHost != host ||
+			repo.Owner == "" || repo.Name == "" {
+			continue
+		}
+		notifications[i].RepoOwner = repo.Owner
+		notifications[i].RepoName = repo.Name
+	}
+	return notifications, nil
 }
 
 func (d *DB) NotificationAckPropagationCurrent(ctx context.Context, id int64, queuedAt *time.Time, sourceUpdatedAt time.Time) (bool, error) {
@@ -927,7 +1070,7 @@ func (d *DB) MarkNotificationAckPropagationResult(ctx context.Context, id int64,
 		synced := canonicalUTCTime(*syncedAt)
 		queuedAtValue := nullableNotificationTime(queuedAt)
 		sourceUpdatedAt = canonicalUTCTime(sourceUpdatedAt)
-		_, err := d.rw.ExecContext(ctx, `UPDATE forge_notification_items
+		_, err := d.execContext(ctx, `UPDATE forge_notification_items
 			SET unread = 0,
 			    source_last_acknowledged_at = ?,
 			    source_ack_synced_at = ?,
@@ -945,7 +1088,7 @@ func (d *DB) MarkNotificationAckPropagationResult(ctx context.Context, id int64,
 		return nil
 	}
 	now := time.Now().UTC()
-	_, err := d.rw.ExecContext(ctx, `UPDATE forge_notification_items
+	_, err := d.execContext(ctx, `UPDATE forge_notification_items
 		SET source_ack_error = ?, source_ack_attempts = source_ack_attempts + 1,
 		    source_ack_last_attempt_at = ?, source_ack_next_attempt_at = ?
 		WHERE id = ? AND source_ack_queued_at = ? AND source_updated_at = ?`, errText, now, nullableNotificationTime(nextAttemptAt), id, nullableNotificationTime(queuedAt), canonicalUTCTime(sourceUpdatedAt))
@@ -958,7 +1101,7 @@ func (d *DB) MarkNotificationAckPropagationResult(ctx context.Context, id int64,
 // ReopenNotificationAckPropagation restores a locally read notification to
 // unread when a successful upstream read ack cannot be reconciled safely.
 func (d *DB) ReopenNotificationAckPropagation(ctx context.Context, id int64, queuedAt *time.Time, sourceUpdatedAt time.Time) error {
-	_, err := d.rw.ExecContext(ctx, `UPDATE forge_notification_items
+	_, err := d.execContext(ctx, `UPDATE forge_notification_items
 		SET unread = 1,
 		    source_ack_queued_at = NULL,
 		    source_ack_synced_at = NULL,
@@ -975,11 +1118,35 @@ func (d *DB) ReopenNotificationAckPropagation(ctx context.Context, id int64, que
 	return nil
 }
 
+// ReactivateNotificationAckPropagation reopens a guarded acknowledgement and
+// clears local completion after confirmed newer unread provider activity.
+func (d *DB) ReactivateNotificationAckPropagation(ctx context.Context, id int64, queuedAt *time.Time, sourceUpdatedAt time.Time) error {
+	_, err := d.execContext(ctx, `UPDATE forge_notification_items
+		SET unread = 1,
+		    done_at = NULL,
+		    done_reason = '',
+		    source_ack_queued_at = NULL,
+		    source_ack_synced_at = NULL,
+		    source_ack_generation_at = NULL,
+		    source_ack_error = '',
+		    source_ack_attempts = 0,
+		    source_ack_last_attempt_at = NULL,
+		    source_ack_next_attempt_at = NULL
+		WHERE id = ? AND source_ack_queued_at = ? AND source_updated_at = ?`,
+		id, nullableNotificationTime(queuedAt), canonicalUTCTime(sourceUpdatedAt))
+	if err != nil {
+		return fmt.Errorf("reactivate notification ack propagation: %w", err)
+	}
+	return nil
+}
+
 // NotificationRepoRef identifies one repository whose queued acknowledgements
-// share a credential.
+// share a credential. RepoID fences linked rows across route renames; Owner and
+// Name remain necessary for unlinked legacy rows.
 type NotificationRepoRef struct {
-	Owner string
-	Name  string
+	RepoID int64
+	Owner  string
+	Name   string
 }
 
 // DeferQueuedNotificationAcksForRepos defers queued acknowledgements for the
@@ -1005,12 +1172,27 @@ func (d *DB) DeferQueuedNotificationAcksForRepos(
 	now := time.Now().UTC()
 	nextAttemptAt = canonicalUTCTime(nextAttemptAt)
 	args := []any{errText, now, nextAttemptAt, nextAttemptAt, platform, host}
-	placeholders := make([]string, 0, len(repos))
+	repoIDPlaceholders := make([]string, 0, len(repos))
+	routePlaceholders := make([]string, 0, len(repos))
+	repoIDArgs := make([]any, 0, len(repos))
+	routeArgs := make([]any, 0, len(repos)*2)
 	for _, repo := range repos {
-		placeholders = append(placeholders, "(LOWER(?), LOWER(?))")
-		args = append(args, repo.Owner, repo.Name)
+		if repo.RepoID > 0 {
+			repoIDPlaceholders = append(repoIDPlaceholders, "?")
+			repoIDArgs = append(repoIDArgs, repo.RepoID)
+		}
+		routePlaceholders = append(routePlaceholders, "(LOWER(?), LOWER(?))")
+		routeArgs = append(routeArgs, repo.Owner, repo.Name)
 	}
-	_, err = d.rw.ExecContext(ctx, `UPDATE forge_notification_items
+	match := make([]string, 0, 2)
+	if len(repoIDPlaceholders) > 0 {
+		match = append(match, "repo_id IN ("+strings.Join(repoIDPlaceholders, ", ")+")")
+		args = append(args, repoIDArgs...)
+	}
+	match = append(match, "(repo_id IS NULL AND (LOWER(repo_owner), LOWER(repo_name)) IN ("+
+		strings.Join(routePlaceholders, ", ")+"))")
+	args = append(args, routeArgs...)
+	_, err = d.execContext(ctx, `UPDATE forge_notification_items
 		SET source_ack_error = ?, source_ack_last_attempt_at = ?,
 		    source_ack_next_attempt_at = CASE
 			    WHEN source_ack_next_attempt_at IS NULL OR source_ack_next_attempt_at < ? THEN ?
@@ -1021,8 +1203,7 @@ func (d *DB) DeferQueuedNotificationAcksForRepos(
 		  AND source_ack_queued_at IS NOT NULL
 		  AND source_ack_synced_at IS NULL
 		  AND source_ack_error != 'max_attempts_exceeded'
-		  AND (LOWER(repo_owner), LOWER(repo_name)) IN (`+
-		strings.Join(placeholders, ", ")+`)`, args...)
+		  AND (`+strings.Join(match, " OR ")+`)`, args...)
 	if err != nil {
 		return fmt.Errorf("defer queued notification acks for repos: %w", err)
 	}
@@ -1031,7 +1212,7 @@ func (d *DB) DeferQueuedNotificationAcksForRepos(
 
 func (d *DB) MarkClosedLinkedNotificationsDone(ctx context.Context, now time.Time) error {
 	now = canonicalUTCTime(now)
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_notification_items
 		SET done_at = COALESCE(done_at, ?), done_reason = 'closed'
 		WHERE done_at IS NULL
@@ -1054,7 +1235,7 @@ func (d *DB) MarkClosedLinkedNotificationsDone(ctx context.Context, now time.Tim
 	if err != nil {
 		return fmt.Errorf("mark closed pr notifications done: %w", err)
 	}
-	_, err = d.rw.ExecContext(ctx, `
+	_, err = d.execContext(ctx, `
 		UPDATE forge_notification_items
 		SET done_at = COALESCE(done_at, ?), done_reason = 'closed'
 		WHERE done_at IS NULL

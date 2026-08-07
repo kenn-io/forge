@@ -881,11 +881,16 @@ func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
 	livenessTestGit(t, h.sourceDir, "commit", "-m", "repair head")
 	repairHead := livenessTestGit(t, h.sourceDir, "rev-parse", "HEAD")
 	existing := setLivenessFixtureHead(t, fixture, repairHead)
+	routeFence, found, err := fixture.database.CurrentRepositoryRouteFence(
+		t.Context(), platform.DBRepoIdentity(platformRepoRef(fixture.repo)), fixture.repoID,
+	)
+	require.NoError(t, err)
+	require.True(t, found)
 
 	// The clone does not yet contain the head, so the unchanged-detail round
 	// marks detail fetched without touching liveness metadata.
-	_, err := fixture.syncer.markUnchangedMRDetailFetched(
-		t.Context(), fixture.repo, fixture.repoID, 1, existing, 1,
+	_, err = fixture.syncer.markUnchangedMRDetailFetched(
+		t.Context(), fixture.repo, fixture.repoID, 1, existing, routeFence, 1,
 	)
 	require.NoError(t, err)
 	assertLivenessCommitFlags(t, fixture, map[string]bool{h.a1: false})
@@ -899,7 +904,7 @@ func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
 	// Once the clone has the head, the next unchanged-detail round carries the
 	// liveness updates with its marker under the same revision guard.
 	_, err = fixture.syncer.markUnchangedMRDetailFetched(
-		t.Context(), fixture.repo, fixture.repoID, 1, existing, 1,
+		t.Context(), fixture.repo, fixture.repoID, 1, existing, routeFence, 1,
 	)
 	require.NoError(t, err)
 	assertLivenessCommitFlags(t, fixture, map[string]bool{h.a1: true})
@@ -927,6 +932,11 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 		t.Context(), verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
 	)
 	require.NoError(t, err)
+	routeFence, found, err := fixture.database.CurrentRepositoryRouteFence(
+		t.Context(), platform.DBRepoIdentity(platformRepoRef(providerRepo)), providerRepoID,
+	)
+	require.NoError(t, err)
+	require.True(t, found)
 	now := time.Date(2026, 8, 5, 12, 1, 0, 0, time.UTC)
 	providerMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID:             providerRepoID,
@@ -1005,7 +1015,7 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	_, err = syncer.fetchProviderMRDetail(
-		t.Context(), provider, providerRepo, providerRepoID, 1,
+		t.Context(), provider, providerRepo, providerRepoID, 1, routeFence,
 	)
 	require.NoError(t, err)
 	assertLivenessCommitFlags(t, providerFixture, map[string]bool{
@@ -1035,7 +1045,8 @@ func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
 		RepoPath:           "owner/repo",
 		CloneURL:           h.sourceDir,
 	}
-	barePath, err := h.manager.ClonePath(
+	barePath, err := h.manager.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(t.Context(), providerRepo.PlatformExternalID),
 		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
 	)
 	require.NoError(t, err)

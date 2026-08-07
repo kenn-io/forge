@@ -903,8 +903,10 @@ type Syncer struct {
 	pendingPRCommentSyncs    []queuedPRCommentSync
 	pendingIssueCommentSyncs []queuedIssueCommentSync
 
-	afterMergeRequestParentSnapshotCommit func()
-	afterHeadRepoSnapshotRead             func()
+	afterMergeRequestParentSnapshotCommit   func()
+	afterHeadRepoSnapshotRead               func()
+	afterNotificationRepoIdentityReconciled func()
+	beforeCloneRouteValidation              func()
 }
 
 type archiveProviderRequest struct {
@@ -923,11 +925,13 @@ type archiveRepositoryLifecycle interface {
 
 type queuedPRCommentSync struct {
 	repo   RepoRef
+	repoID int64
 	number int
 }
 
 type queuedIssueCommentSync struct {
 	repo   RepoRef
+	repoID int64
 	number int
 }
 
@@ -1533,11 +1537,41 @@ func (s *Syncer) commitIssueParentSnapshot(
 	repo RepoRef,
 	issue *db.Issue,
 ) (int64, int64, bool, error) {
-	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
+	return s.commitIssueParentSnapshotWithRouteFence(ctx, repo, issue, nil)
+}
+
+func (s *Syncer) commitIssueParentSnapshotIfRouteFence(
+	ctx context.Context,
+	repo RepoRef,
+	issue *db.Issue,
+	fence db.RepositoryRouteFence,
+) (int64, int64, bool, error) {
+	return s.commitIssueParentSnapshotWithRouteFence(
+		ctx, repo, issue, &fence,
+	)
+}
+
+func (s *Syncer) commitIssueParentSnapshotWithRouteFence(
+	ctx context.Context,
+	repo RepoRef,
+	issue *db.Issue,
+	fence *db.RepositoryRouteFence,
+) (int64, int64, bool, error) {
+	if fence != nil {
+		ctx = s.db.WithRepositoryRouteFence(
+			ctx, platform.DBRepoIdentity(platformRepoRef(repo)), *fence,
+		)
+	}
+	lockedCtx, releaseReconciliation, err :=
+		s.db.LockRepositoryReconciliationReadForWrite(ctx)
 	if err != nil {
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return 0, 0, false, nil
+		}
 		return 0, 0, false, err
 	}
 	defer releaseReconciliation()
+	ctx = lockedCtx
 	if err := s.verifyRepoRouteOwnershipUnderReconciliationRead(
 		ctx, repo, issue.RepoID,
 	); err != nil {
@@ -1563,11 +1597,42 @@ func (s *Syncer) CommitMergeRequestParentSnapshot(
 	repo RepoRef,
 	mr *db.MergeRequest,
 ) (int64, int64, bool, error) {
-	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
+	return s.commitMergeRequestParentSnapshotWithRouteFence(ctx, repo, mr, nil)
+}
+
+func (s *Syncer) commitMergeRequestParentSnapshotIfRouteFence(
+	ctx context.Context,
+	repo RepoRef,
+	mr *db.MergeRequest,
+	fence db.RepositoryRouteFence,
+) (int64, int64, bool, error) {
+	return s.commitMergeRequestParentSnapshotWithRouteFence(
+		ctx, repo, mr, &fence,
+	)
+}
+
+func (s *Syncer) commitMergeRequestParentSnapshotWithRouteFence(
+	ctx context.Context,
+	repo RepoRef,
+	mr *db.MergeRequest,
+	fence *db.RepositoryRouteFence,
+) (int64, int64, bool, error) {
+	ctx = withCloneRepositoryIdentity(ctx, repo)
+	if fence != nil {
+		ctx = s.db.WithRepositoryRouteFence(
+			ctx, platform.DBRepoIdentity(platformRepoRef(repo)), *fence,
+		)
+	}
+	lockedCtx, releaseReconciliation, err :=
+		s.db.LockRepositoryReconciliationReadForWrite(ctx)
 	if err != nil {
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return 0, 0, false, nil
+		}
 		return 0, 0, false, err
 	}
 	defer releaseReconciliation()
+	ctx = lockedCtx
 
 	if err := s.verifyRepoRouteOwnershipUnderReconciliationRead(
 		ctx, repo, mr.RepoID,
@@ -1588,6 +1653,57 @@ func (s *Syncer) CommitMergeRequestParentSnapshot(
 		ctx, repo, mr.RepoID, mr.Number,
 	)
 	return mrID, revision, accepted, err
+}
+
+func (s *Syncer) repositoryRouteFenceMatches(
+	ctx context.Context,
+	repo RepoRef,
+	fence db.RepositoryRouteFence,
+) (bool, error) {
+	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer releaseReconciliation()
+	return s.db.RepositoryRouteFenceMatchesUnderRepositoryReconciliationRead(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), fence,
+	)
+}
+
+func (s *Syncer) markMergeRequestDetailFetchedIfRouteFence(
+	ctx context.Context,
+	repo RepoRef,
+	fence db.RepositoryRouteFence,
+	mrID, revision int64,
+	pending bool,
+	eventMetadataUpdates map[string]string,
+) (bool, error) {
+	ctx = s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), fence,
+	)
+	applied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(
+		ctx, mrID, revision, pending, eventMetadataUpdates,
+	)
+	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+		return false, nil
+	}
+	return applied, err
+}
+
+func (s *Syncer) markIssueDetailFetchedIfRouteFence(
+	ctx context.Context,
+	repo RepoRef,
+	fence db.RepositoryRouteFence,
+	issueID, revision int64,
+) (bool, error) {
+	ctx = s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), fence,
+	)
+	applied, err := s.db.MarkIssueDetailFetchedSnapshot(ctx, issueID, revision)
+	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+		return false, nil
+	}
+	return applied, err
 }
 
 // commitIssueCommentsSnapshot binds the child snapshot to the parent issue ID
@@ -1992,7 +2108,16 @@ func (p *gitHubClientProvider) GetRepository(
 	if err != nil {
 		return platform.Repository{}, err
 	}
-	owner := ref.Owner
+	return gitHubPlatformRepository(p.host, ref.Owner, repo), nil
+}
+
+// gitHubPlatformRepository converts a GitHub REST repository into the
+// provider-neutral snapshot, preferring the canonical owner the provider
+// reports over the requested route owner.
+func gitHubPlatformRepository(
+	host, requestedOwner string, repo *gh.Repository,
+) platform.Repository {
+	owner := requestedOwner
 	if repo.GetOwner().GetLogin() != "" {
 		owner = repo.GetOwner().GetLogin()
 	}
@@ -2000,7 +2125,7 @@ func (p *gitHubClientProvider) GetRepository(
 	return platform.Repository{
 		Ref: platform.RepoRef{
 			Platform:           platform.KindGitHub,
-			Host:               p.host,
+			Host:               host,
 			Owner:              canonicalRepoOwner(owner),
 			Name:               canonicalRepoName(repo.GetName()),
 			RepoPath:           canonicalRepoOwner(owner) + "/" + canonicalRepoName(repo.GetName()),
@@ -2024,7 +2149,7 @@ func (p *gitHubClientProvider) GetRepository(
 		DefaultBranch:  repo.GetDefaultBranch(),
 		WebURL:         repo.GetHTMLURL(),
 		CloneURL:       repo.GetCloneURL(),
-	}, nil
+	}
 }
 
 func gitHubViewerCanMerge(repo *gh.Repository) *bool {
@@ -3751,6 +3876,42 @@ func cloneRemoteURL(repo RepoRef) string {
 		repoPath = strings.Trim(repo.Owner+"/"+repo.Name, "/")
 	}
 	return fmt.Sprintf("https://%s/%s.git", repoHost(repo), strings.Trim(repoPath, "/"))
+}
+
+func withCloneRepositoryIdentity(ctx context.Context, repo RepoRef) context.Context {
+	return gitclone.WithRepositoryIdentity(ctx, repo.PlatformExternalID)
+}
+
+func (s *Syncer) ensureCloneForRoute(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	routeFence db.RepositoryRouteFence,
+) error {
+	identity := platform.DBRepoIdentity(platformRepoRef(repo))
+	return s.clones.EnsureCloneValidated(
+		ctx,
+		string(repoPlatform(repo)),
+		repoHost(repo),
+		repo.Owner,
+		repo.Name,
+		cloneRemoteURL(repo),
+		func(validationCtx context.Context) error {
+			if s.beforeCloneRouteValidation != nil {
+				s.beforeCloneRouteValidation()
+			}
+			current, found, err := s.db.CurrentRepositoryRouteFence(
+				validationCtx, identity, repoID,
+			)
+			if err != nil {
+				return err
+			}
+			if !found || current != routeFence {
+				return db.ErrRepositoryRouteFenceChanged
+			}
+			return nil
+		},
+	)
 }
 
 func (s *Syncer) optionalGitHubClientFor(repo RepoRef) (Client, bool) {
@@ -5776,7 +5937,7 @@ func (s *Syncer) reconcileArchivedRepos(
 		// same credential is preempted instead of overlapping the
 		// refresh, matching the coordination live repo syncs get.
 		release := s.beginProviderWork(bucket, archive.PriorityNormalIndex)
-		resolved, _, _, err := s.reconcileRepoIdentity(ctx, repo)
+		resolved, _, _, _, _, err := s.reconcileRepoIdentityObservation(ctx, repo)
 		release()
 		if err != nil {
 			slog.Debug("archived repo metadata refresh failed",
@@ -5874,27 +6035,27 @@ func (s *Syncer) syncRepoIdentity(
 	return identity, &resolved, observedAt, nil
 }
 
-func (s *Syncer) reconcileRepoIdentity(
+func (s *Syncer) reconcileRepoIdentityObservation(
 	ctx context.Context,
 	repo RepoRef,
-) (RepoRef, int64, *platform.Repository, error) {
+) (RepoRef, int64, *platform.Repository, time.Time, bool, error) {
 	previousID := int64(0)
 	previous, err := s.db.ResolveActiveRepositoryRoute(
 		ctx, platform.DBRepoIdentity(platformRepoRef(repo)),
 	)
 	if err != nil {
-		return RepoRef{}, 0, nil, err
+		return RepoRef{}, 0, nil, time.Time{}, false, err
 	}
 	if previous != nil {
 		previousID = previous.Repository.ID
 	}
 	identity, resolved, observedAt, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {
-		return RepoRef{}, 0, nil, err
+		return RepoRef{}, 0, nil, time.Time{}, false, err
 	}
 	entry, accepted, err := s.db.ReconcileRepositoryObservation(ctx, identity, observedAt)
 	if err != nil {
-		return RepoRef{}, 0, nil, err
+		return RepoRef{}, 0, nil, time.Time{}, false, err
 	}
 	if !accepted {
 		// The catalog holds a newer observation, so this snapshot's
@@ -5905,7 +6066,7 @@ func (s *Syncer) reconcileRepoIdentity(
 			// The stale observation resolved to a repository a route
 			// replacement has displaced. Syncing would fetch the reused
 			// route's content into the preserved repository's history.
-			return RepoRef{}, 0, nil, fmt.Errorf(
+			return RepoRef{}, 0, nil, time.Time{}, false, fmt.Errorf(
 				"repository identity observation for %s/%s is stale and "+
 					"resolves to %s catalog entry %d; awaiting revalidation",
 				repo.Owner, repo.Name, entry.Lifecycle, entry.Repository.ID,
@@ -5924,9 +6085,9 @@ func (s *Syncer) reconcileRepoIdentity(
 	if err := s.reconcileArchiveRepositoryIfNeeded(
 		ctx, previousID, entry.Repository.ID,
 	); err != nil {
-		return RepoRef{}, 0, nil, err
+		return RepoRef{}, 0, nil, time.Time{}, false, err
 	}
-	return authoritative, entry.Repository.ID, resolved, nil
+	return authoritative, entry.Repository.ID, resolved, observedAt, accepted, nil
 }
 
 func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
@@ -6177,7 +6338,8 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	resolvedRef, repoID, resolvedRepo, err := s.reconcileRepoIdentity(ctx, repo)
+	resolvedRef, repoID, resolvedRepo, observedAt, _, err :=
+		s.reconcileRepoIdentityObservation(ctx, repo)
 	if err != nil {
 		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
 	}
@@ -6191,15 +6353,51 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		)
 		return nil
 	}
+	ctx = withCloneRepositoryIdentity(ctx, repo)
+	routeFence, found, err := s.db.CurrentRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), repoID,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"capture repository route for %s/%s: %w", repo.Owner, repo.Name, err,
+		)
+	}
+	if !found {
+		return nil
+	}
 
-	s.refreshRepoSettings(ctx, repo, repoID, resolvedRepo)
+	// Settings refresh runs before the route guard is attached: its refetch
+	// branches record fresh identity observations, and reconciliation takes
+	// the reconciliation write lock that a guarded context's transactions
+	// would deadlock against. Its writes carry the fence explicitly. A
+	// failed settings commit aborts the sync: a route-reuse replacement row
+	// must not have items indexed under it while it still advertises the
+	// permissive schema defaults.
+	if err := s.refreshRepoSettings(
+		ctx, repo, repoID, resolvedRepo, observedAt, routeFence,
+	); err != nil {
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return nil
+		}
+		err = fmt.Errorf(
+			"refresh repo settings for %s/%s: %w", repo.Owner, repo.Name, err,
+		)
+		s.recordAbortedRepoSync(ctx, repo, repoID, routeFence, err)
+		return err
+	}
+
+	ctx = s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+	)
 
 	if err := s.db.UpdateRepoSyncStarted(ctx, repoID, time.Now().UTC()); err != nil {
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return nil
+		}
 		return fmt.Errorf("mark sync started for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
 	// Fetch bare clone before PR data so refs are available for merge-base.
-	host := repoHost(repo)
 	cloneFetchOK := false
 	defaultBranch := s.defaultBranchForActivity(ctx, repoID, repo)
 	var previousTip *db.BranchTip
@@ -6216,7 +6414,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 	if s.clones != nil {
-		if err := s.clones.EnsureClone(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+		if err := s.ensureCloneForRoute(ctx, repo, repoID, routeFence); err != nil {
 			slog.Warn("bare clone fetch failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
 			)
@@ -6235,7 +6433,13 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	s.syncRepoLabelCatalog(ctx, repo, repoID)
 
 	syncErr := s.indexSyncRepo(ctx, repo, repoID, cloneFetchOK)
+	if errors.Is(syncErr, db.ErrRepositoryRouteFenceChanged) {
+		return nil
+	}
 	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return nil
+		}
 		markErr := err
 		if syncErr == nil {
 			syncErr = markErr
@@ -6253,6 +6457,39 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	}
 
 	return syncErr
+}
+
+// recordAbortedRepoSync surfaces a sync that stopped before item indexing on
+// the repository row's sync health, so the UI reports the failed attempt
+// instead of presenting the previous outcome as current. Best effort under
+// the route fence: a route that changed owners no longer reports this
+// repository's health.
+func (s *Syncer) recordAbortedRepoSync(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	routeFence db.RepositoryRouteFence,
+	syncErr error,
+) {
+	statusCtx := s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+	)
+	now := time.Now().UTC()
+	if err := s.db.UpdateRepoSyncStarted(statusCtx, repoID, now); err != nil {
+		if !errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			slog.Warn("record aborted sync start failed",
+				"repo", repo.Owner+"/"+repo.Name, "err", err,
+			)
+		}
+		return
+	}
+	if err := s.db.UpdateRepoSyncCompleted(
+		statusCtx, repoID, now, syncErr.Error(),
+	); err != nil && !errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+		slog.Warn("record aborted sync completion failed",
+			"repo", repo.Owner+"/"+repo.Name, "err", err,
+		)
+	}
 }
 
 func (s *Syncer) defaultBranchForActivity(ctx context.Context, repoID int64, repo RepoRef) string {
@@ -6436,113 +6673,227 @@ func dbBranchCommits(
 	return out
 }
 
+// refreshRepoSettings persists provider metadata and merge settings for a
+// reconciled repository. ctx must not carry a repository route guard:
+// refetch branches record fresh identity observations through the
+// reconciliation write lock. All writes go through the observation
+// watermark, so a snapshot that lost to a newer observation is refetched
+// once and then dropped rather than overwriting fresher settings. A nil
+// return means the settings are committed or the provider cannot report
+// them; any other outcome is an error so callers do not index items
+// against unverified merge availability.
 func (s *Syncer) refreshRepoSettings(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
 	resolvedRepo *platform.Repository,
-) {
+	observedAt time.Time,
+	routeFence db.RepositoryRouteFence,
+) error {
 	if resolvedRepo != nil {
-		s.updateRepoSettingsFromProviderRepo(ctx, repoID, *resolvedRepo)
-		return
+		applied, err := s.persistRepoSettingsObservation(
+			ctx, repo, repoID, observedAt, *resolvedRepo, routeFence,
+		)
+		if err != nil {
+			return err
+		}
+		if applied {
+			return nil
+		}
+		// The snapshot lost to a newer observation between capture and
+		// commit; fall through and fetch fresh settings.
 	}
 
 	if client, ok := s.optionalGitHubClientFor(repo); ok {
+		observedAt := time.Now().UTC()
 		ghRepo, err := client.GetRepository(ctx, repo.Owner, repo.Name)
 		if err != nil {
-			slog.Warn("get repo settings failed",
-				"repo", repo.Owner+"/"+repo.Name, "err", err,
-			)
-			return
+			return fmt.Errorf("get repo settings: %w", err)
 		}
-		// This branch is the only settings refresh most GitHub repos ever
-		// take (resolution pre-fills the platform repo id, so resolvedRepo
-		// is nil), so it must persist provider metadata too — otherwise a
-		// newly discovered repo keeps an empty default branch and the
-		// worktree diff sampler degrades to a bare HEAD diff.
-		if err := s.db.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
-			PlatformRepoID: ghRepo.GetNodeID(),
-			WebURL:         ghRepo.GetHTMLURL(),
-			CloneURL:       ghRepo.GetCloneURL(),
-			DefaultBranch:  ghRepo.GetDefaultBranch(),
-		}); err != nil {
-			slog.Warn("update repo provider metadata failed",
-				"repo", repo.Owner+"/"+repo.Name, "err", err,
-			)
-		}
-		if canMerge := gitHubViewerCanMerge(ghRepo); canMerge != nil {
-			_ = s.db.UpdateRepoSettings(ctx, repoID,
-				ghRepo.GetAllowSquashMerge(),
-				ghRepo.GetAllowMergeCommit(),
-				ghRepo.GetAllowRebaseMerge(),
-				*canMerge,
-			)
-			return
-		}
-		_ = s.db.UpdateRepoMergeSettings(ctx, repoID,
-			ghRepo.GetAllowSquashMerge(),
-			ghRepo.GetAllowMergeCommit(),
-			ghRepo.GetAllowRebaseMerge(),
+		return s.persistRefetchedRepoSettings(
+			ctx, repo, repoID, observedAt,
+			gitHubPlatformRepository(repoHost(repo), repo.Owner, ghRepo),
+			routeFence,
 		)
-		return
 	}
 
 	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
 		if errors.Is(err, platform.ErrUnsupportedCapability) || errors.Is(err, platform.ErrProviderNotConfigured) {
-			return
+			return nil
 		}
-		slog.Warn("get repo settings reader failed",
-			"repo", repo.Owner+"/"+repo.Name, "err", err,
-		)
-		return
+		return fmt.Errorf("resolve repo settings reader: %w", err)
 	}
+	observedAt = time.Now().UTC()
 	providerRepo, err := reader.GetRepository(ctx, platformRepoRef(repo))
 	if err != nil {
-		slog.Warn("get repo settings failed",
-			"repo", repo.Owner+"/"+repo.Name, "err", err,
-		)
-		return
+		return fmt.Errorf("get repo settings: %w", err)
 	}
-	s.updateRepoSettingsFromProviderRepo(ctx, repoID, providerRepo)
+	return s.persistRefetchedRepoSettings(
+		ctx, repo, repoID, observedAt, providerRepo, routeFence,
+	)
 }
 
-func (s *Syncer) updateRepoSettingsFromProviderRepo(
+// reconcileRepoForDirectSync resolves repository identity for a direct item
+// sync and persists the verified provider snapshot under the current route
+// fence. The archive lifecycle records its own identity observations between
+// reconciliation and this write (route changes, first encounters), which
+// advances the observation watermark and rejects the held snapshot as stale;
+// re-resolving fetches a fresh snapshot with a fresh timestamp so settings
+// still commit instead of leaving a replacement row on permissive schema
+// defaults. found=false reports a vanished route; callers skip the sync unit.
+func (s *Syncer) reconcileRepoForDirectSync(
+	ctx context.Context,
+	repo RepoRef,
+) (RepoRef, int64, db.RepositoryRouteFence, bool, error) {
+	var zero db.RepositoryRouteFence
+	for range 2 {
+		resolvedRef, repoID, providerRepo, observedAt, accepted, err :=
+			s.reconcileRepoIdentityObservation(ctx, repo)
+		if err != nil {
+			return RepoRef{}, 0, zero, false, fmt.Errorf(
+				"resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err,
+			)
+		}
+		if !accepted {
+			// The catalog rejected this observation for a newer one, so the
+			// provider snapshot was discarded and the row's settings are
+			// unverified. This is not the same as a provider without
+			// repository reading: retry rather than sync the item against
+			// possibly default merge availability.
+			repo = resolvedRef
+			continue
+		}
+		routeFence, found, err := s.db.CurrentRepositoryRouteFence(
+			ctx, platform.DBRepoIdentity(platformRepoRef(resolvedRef)), repoID,
+		)
+		if err != nil {
+			return RepoRef{}, 0, zero, false, fmt.Errorf(
+				"capture repository route for %s/%s: %w",
+				resolvedRef.Owner, resolvedRef.Name, err,
+			)
+		}
+		if !found {
+			return resolvedRef, repoID, zero, false, nil
+		}
+		if providerRepo == nil {
+			return resolvedRef, repoID, routeFence, true, nil
+		}
+		applied, err := s.persistRepoSettingsObservation(
+			ctx, resolvedRef, repoID, observedAt, *providerRepo, routeFence,
+		)
+		if err != nil {
+			if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+				return RepoRef{}, 0, zero, false, err
+			}
+			return RepoRef{}, 0, zero, false, fmt.Errorf(
+				"persist repository settings for %s/%s: %w",
+				resolvedRef.Owner, resolvedRef.Name, err,
+			)
+		}
+		if applied {
+			return resolvedRef, repoID, routeFence, true, nil
+		}
+		repo = resolvedRef
+	}
+	return RepoRef{}, 0, zero, false, fmt.Errorf(
+		"repository settings observation for %s/%s kept losing to newer observations",
+		repo.Owner, repo.Name,
+	)
+}
+
+// persistRepoSettingsObservation commits a provider repository snapshot under
+// both the observation watermark and the captured route fence. applied=false
+// with a nil error means the snapshot lost to a newer observation, whose
+// writer carries fresher data. Errors — including
+// db.ErrRepositoryRouteFenceChanged — surface to the caller: a failed write
+// can leave a just-reconciled replacement row on its permissive schema
+// defaults, so item syncs must not continue as if settings were committed.
+func (s *Syncer) persistRepoSettingsObservation(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	observedAt time.Time,
+	providerRepo platform.Repository,
+	routeFence db.RepositoryRouteFence,
+) (bool, error) {
+	fencedCtx := s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+	)
+	return s.updateRepoSettingsFromProviderObservation(
+		fencedCtx, repoID, observedAt, providerRepo,
+	)
+}
+
+// persistRefetchedRepoSettings records a freshly fetched repository snapshot
+// as its own identity observation so its settings commit under the
+// observation watermark. A snapshot whose identity no longer resolves to
+// repoID reports a changed route fence; one that keeps losing the watermark
+// is an error, because the repository's settings remain unverified.
+func (s *Syncer) persistRefetchedRepoSettings(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	observedAt time.Time,
+	providerRepo platform.Repository,
+	routeFence db.RepositoryRouteFence,
+) error {
+	entry, accepted, err := s.db.ReconcileRepositoryObservation(
+		ctx, platform.DBRepositoryIdentity(providerRepo), observedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("record repo settings observation: %w", err)
+	}
+	if entry.Repository.ID != repoID {
+		return fmt.Errorf(
+			"repo settings observation: %w for %s/%s",
+			db.ErrRepositoryRouteFenceChanged, repo.Owner, repo.Name,
+		)
+	}
+	if accepted {
+		applied, err := s.persistRepoSettingsObservation(
+			ctx, repo, repoID, observedAt, providerRepo, routeFence,
+		)
+		if err != nil {
+			return err
+		}
+		if applied {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"repository settings observation for %s/%s kept losing to newer observations",
+		repo.Owner, repo.Name,
+	)
+}
+
+func (s *Syncer) updateRepoSettingsFromProviderObservation(
 	ctx context.Context,
 	repoID int64,
+	observedAt time.Time,
 	repo platform.Repository,
-) {
-	if err := s.db.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
-		PlatformRepoID: repo.PlatformExternalID,
-		WebURL:         repo.WebURL,
-		CloneURL:       repo.CloneURL,
-		DefaultBranch:  repo.DefaultBranch,
-	}); err != nil {
-		slog.Warn("update repo provider metadata failed",
-			"repo", repo.Ref.DisplayName(), "err", err,
-		)
-	}
+) (bool, error) {
+	var settings *db.RepoMergeSettings
 	if repo.MergeSettings != nil {
-		settings := repo.MergeSettings
-		if repo.ViewerCanMerge == nil {
-			_ = s.db.UpdateRepoMergeSettings(ctx, repoID,
-				settings.AllowSquashMerge,
-				settings.AllowMergeCommit,
-				settings.AllowRebaseMerge,
-			)
-			return
+		settings = &db.RepoMergeSettings{
+			AllowSquashMerge: repo.MergeSettings.AllowSquashMerge,
+			AllowMergeCommit: repo.MergeSettings.AllowMergeCommit,
+			AllowRebaseMerge: repo.MergeSettings.AllowRebaseMerge,
 		}
-		_ = s.db.UpdateRepoSettings(ctx, repoID,
-			settings.AllowSquashMerge,
-			settings.AllowMergeCommit,
-			settings.AllowRebaseMerge,
-			*repo.ViewerCanMerge,
-		)
-		return
 	}
-	if repo.ViewerCanMerge != nil {
-		_ = s.db.UpdateRepoViewerCanMerge(ctx, repoID, *repo.ViewerCanMerge)
-	}
+	return s.db.UpdateRepoProviderObservation(
+		ctx,
+		repoID,
+		observedAt,
+		db.RepoProviderMetadata{
+			PlatformRepoID: repo.PlatformExternalID,
+			WebURL:         repo.WebURL,
+			CloneURL:       repo.CloneURL,
+			DefaultBranch:  repo.DefaultBranch,
+		},
+		settings,
+		repo.ViewerCanMerge,
+	)
 }
 
 func (s *Syncer) syncRepoLabelCatalog(ctx context.Context, repo RepoRef, repoID int64) {
@@ -6584,21 +6935,48 @@ func (s *Syncer) RefreshRepoLabelCatalog(ctx context.Context, repo db.Repo) erro
 		WebURL:             repo.WebURL,
 		DefaultBranch:      repo.DefaultBranch,
 	}
+	identity := platform.DBRepoIdentity(platformRepoRef(ref))
+	routeFence, found, err := s.db.CurrentRepositoryRouteFence(ctx, identity, repo.ID)
+	if err != nil {
+		return fmt.Errorf("capture repository route for label catalog: %w", err)
+	}
+	if !found {
+		return nil
+	}
+	ctx = s.db.WithRepositoryRouteFence(ctx, identity, routeFence)
 	checkedAt := time.Now().UTC()
 	reader, err := s.labelReaderFor(ref)
 	if err != nil {
-		_ = s.db.UpdateRepoLabelCatalogCheck(ctx, repo.ID, checkedAt, err.Error())
+		if updateErr := s.db.UpdateRepoLabelCatalogCheck(ctx, repo.ID, checkedAt, err.Error()); updateErr != nil {
+			if errors.Is(updateErr, db.ErrRepositoryRouteFenceChanged) {
+				return nil
+			}
+			return errors.Join(err, updateErr)
+		}
 		return err
 	}
 	catalog, err := reader.ListLabels(ctx, platformRepoRef(ref))
 	if err != nil {
-		_ = s.db.UpdateRepoLabelCatalogCheck(ctx, repo.ID, checkedAt, err.Error())
+		if updateErr := s.db.UpdateRepoLabelCatalogCheck(ctx, repo.ID, checkedAt, err.Error()); updateErr != nil {
+			if errors.Is(updateErr, db.ErrRepositoryRouteFenceChanged) {
+				return nil
+			}
+			return errors.Join(err, updateErr)
+		}
 		return err
 	}
 	if catalog.NotModified {
-		return s.db.MarkRepoLabelCatalogSynced(ctx, repo.ID, checkedAt)
+		err := s.db.MarkRepoLabelCatalogSynced(ctx, repo.ID, checkedAt)
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return nil
+		}
+		return err
 	}
-	return s.db.ReplaceRepoLabelCatalog(ctx, repo.ID, platform.DBLabels(catalog.Labels, checkedAt), checkedAt)
+	err = s.db.ReplaceRepoLabelCatalog(ctx, repo.ID, platform.DBLabels(catalog.Labels, checkedAt), checkedAt)
+	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+		return nil
+	}
+	return err
 }
 
 const repoOverviewTimelineLimit = 30
@@ -7815,7 +8193,10 @@ func (s *Syncer) indexUpsertMergeRequest(
 		existing.DiffBaseSHA == normalized.PlatformBaseSHA &&
 		existing.MergeBaseSHA != ""
 	if s.clones != nil && cloneFetchOK && !snapshotCurrent {
-		if err := s.syncProviderMRDiff(ctx, repo, mrID, revision, mr.Number, normalized, false); err != nil {
+		if err := s.syncProviderMRDiff(
+			ctx, repo, repoID, mrID, revision, mr.Number,
+			normalized, false, db.RepositoryRouteFence{},
+		); err != nil {
 			if errors.Is(err, errParentSnapshotAdvanced) {
 				return nil
 			}
@@ -7829,7 +8210,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 	if existing != nil &&
 		existing.DetailFetchedAt != nil &&
 		existing.UpdatedAt.Equal(normalized.UpdatedAt) {
-		s.queuePRCommentSync(repo, existing.Number)
+		s.queuePRCommentSync(repo, existing.RepoID, existing.Number)
 	}
 
 	return nil
@@ -8023,7 +8404,7 @@ func (s *Syncer) indexUpsertMR(
 	if existing != nil &&
 		existing.DetailFetchedAt != nil &&
 		existing.UpdatedAt.Equal(normalized.UpdatedAt) {
-		s.queuePRCommentSync(repo, existing.Number)
+		s.queuePRCommentSync(repo, existing.RepoID, existing.Number)
 	}
 
 	return nil
@@ -8139,22 +8520,35 @@ func (s *Syncer) resetPendingCommentSyncs() {
 	s.pendingIssueCommentSyncs = nil
 }
 
-func (s *Syncer) queuePRCommentSync(repo RepoRef, number int) {
+func (s *Syncer) queuePRCommentSync(repo RepoRef, repoID int64, number int) {
 	s.commentRefreshMu.Lock()
 	defer s.commentRefreshMu.Unlock()
 	s.pendingPRCommentSyncs = append(s.pendingPRCommentSyncs, queuedPRCommentSync{
-		repo:   repo,
+		repo: repo, repoID: repoID,
 		number: number,
 	})
 }
 
-func (s *Syncer) queueIssueCommentSync(repo RepoRef, number int) {
+func (s *Syncer) queueIssueCommentSync(repo RepoRef, repoID int64, number int) {
 	s.commentRefreshMu.Lock()
 	defer s.commentRefreshMu.Unlock()
 	s.pendingIssueCommentSyncs = append(s.pendingIssueCommentSyncs, queuedIssueCommentSync{
-		repo:   repo,
+		repo: repo, repoID: repoID,
 		number: number,
 	})
+}
+
+func (s *Syncer) commentRefreshRouteContext(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+) (context.Context, bool, error) {
+	identity := platform.DBRepoIdentity(platformRepoRef(repo))
+	fence, found, err := s.db.CurrentRepositoryRouteFence(ctx, identity, repoID)
+	if err != nil || !found {
+		return ctx, found, err
+	}
+	return s.db.WithRepositoryRouteFence(ctx, identity, fence), true, nil
 }
 
 func (s *Syncer) drainPendingCommentSyncs(
@@ -8183,6 +8577,20 @@ func (s *Syncer) drainPendingCommentSyncs(
 			eligibleHosts[bucket] = false
 			continue
 		}
+		refreshCtx, found, err := s.commentRefreshRouteContext(
+			ctx, item.repo, item.repoID,
+		)
+		if err != nil {
+			slog.Warn("comment refresh: capture PR repo route failed",
+				"repo", item.repo.Owner+"/"+item.repo.Name,
+				"number", item.number,
+				"err", err,
+			)
+			continue
+		}
+		if !found {
+			continue
+		}
 		client, err := s.clientFor(item.repo)
 		if err != nil {
 			slog.Warn("comment refresh: resolve client failed",
@@ -8192,19 +8600,8 @@ func (s *Syncer) drainPendingCommentSyncs(
 			)
 			continue
 		}
-		repoRow, err := s.db.GetRepoByIdentity(
-			ctx, platform.DBRepoIdentity(platformRepoRef(item.repo)),
-		)
-		if err != nil || repoRow == nil {
-			slog.Warn("comment refresh: get PR repo failed",
-				"repo", item.repo.Owner+"/"+item.repo.Name,
-				"number", item.number,
-				"err", err,
-			)
-			continue
-		}
 		pr, err := s.db.GetMergeRequestByRepoIDAndNumber(
-			ctx, repoRow.ID, item.number,
+			refreshCtx, item.repoID, item.number,
 		)
 		if err != nil {
 			slog.Warn("comment refresh: get PR failed",
@@ -8215,12 +8612,14 @@ func (s *Syncer) drainPendingCommentSyncs(
 			continue
 		}
 		probe, due := s.beginRepositoryFeatureProbe(
-			ctx, item.repo, platform.RepositoryFeatureMergeRequests,
+			refreshCtx, item.repo, platform.RepositoryFeatureMergeRequests,
 		)
 		if !due {
 			continue
 		}
-		providerAttempted, _ := s.refreshPRCommentsForItem(ctx, client, item.repo, pr)
+		providerAttempted, _ := s.refreshPRCommentsForItem(
+			refreshCtx, client, item.repo, pr,
+		)
 		if providerAttempted {
 			probe.release()
 		} else {
@@ -8243,6 +8642,20 @@ func (s *Syncer) drainPendingCommentSyncs(
 			eligibleHosts[bucket] = false
 			continue
 		}
+		refreshCtx, found, err := s.commentRefreshRouteContext(
+			ctx, item.repo, item.repoID,
+		)
+		if err != nil {
+			slog.Warn("comment refresh: capture issue repo route failed",
+				"repo", item.repo.Owner+"/"+item.repo.Name,
+				"number", item.number,
+				"err", err,
+			)
+			continue
+		}
+		if !found {
+			continue
+		}
 		client, err := s.clientFor(item.repo)
 		if err != nil {
 			slog.Warn("comment refresh: resolve client failed",
@@ -8252,19 +8665,8 @@ func (s *Syncer) drainPendingCommentSyncs(
 			)
 			continue
 		}
-		repoRow, err := s.db.GetRepoByIdentity(
-			ctx, platform.DBRepoIdentity(platformRepoRef(item.repo)),
-		)
-		if err != nil || repoRow == nil {
-			slog.Warn("comment refresh: get issue repo failed",
-				"repo", item.repo.Owner+"/"+item.repo.Name,
-				"number", item.number,
-				"err", err,
-			)
-			continue
-		}
 		issue, err := s.db.GetIssueByRepoIDAndNumber(
-			ctx, repoRow.ID, item.number,
+			refreshCtx, item.repoID, item.number,
 		)
 		if err != nil {
 			slog.Warn("comment refresh: get issue failed",
@@ -8275,12 +8677,14 @@ func (s *Syncer) drainPendingCommentSyncs(
 			continue
 		}
 		probe, due := s.beginRepositoryFeatureProbe(
-			ctx, item.repo, platform.RepositoryFeatureIssues,
+			refreshCtx, item.repo, platform.RepositoryFeatureIssues,
 		)
 		if !due {
 			continue
 		}
-		providerAttempted, _ := s.refreshIssueCommentsForItem(ctx, client, item.repo, issue)
+		providerAttempted, _ := s.refreshIssueCommentsForItem(
+			refreshCtx, client, item.repo, issue,
+		)
 		if providerAttempted {
 			probe.release()
 		} else {
@@ -8887,22 +9291,46 @@ func (s *Syncer) fetchMRDetail(
 	number int,
 	cloneFetchOK bool,
 ) (int, error) {
+	calls, err := s.fetchMRDetailWithRouteFence(
+		ctx, repo, repoID, number, cloneFetchOK,
+	)
+	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+		return calls, nil
+	}
+	return calls, err
+}
+
+func (s *Syncer) fetchMRDetailWithRouteFence(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	cloneFetchOK bool,
+) (int, error) {
+	ctx = withCloneRepositoryIdentity(ctx, repo)
 	calls := 0
 	mrReader, err := s.mergeRequestReaderFor(repo)
 	if err != nil {
 		return calls, fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
+	routeFence, _, err := s.db.CurrentRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), repoID,
+	)
+	if err != nil {
+		return calls, fmt.Errorf("capture repository route for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 	if _, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); !ok {
-		return s.fetchProviderMRDetail(ctx, mrReader, repo, repoID, number)
+		return s.fetchProviderMRDetail(
+			ctx, mrReader, repo, repoID, number, routeFence,
+		)
 	}
 
 	client, err := s.clientFor(repo)
 	if err != nil {
 		return calls, fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
-
 	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
 		ctx, repoID, number,
 	)
@@ -8929,7 +9357,7 @@ func (s *Syncer) fetchMRDetail(
 	if err == nil && fullPR == nil {
 		if notModified && existing != nil {
 			return s.markUnchangedMRDetailFetched(
-				ctx, repo, repoID, number, existing, calls,
+				ctx, repo, repoID, number, existing, routeFence, calls,
 			)
 		}
 		err = fmt.Errorf("client returned nil pull request")
@@ -8955,7 +9383,9 @@ func (s *Syncer) fetchMRDetail(
 		calls++ // GetUser
 	}
 
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshotIfRouteFence(
+		ctx, repo, normalized, routeFence,
+	)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"upsert MR #%d: %w", number, err,
@@ -8964,8 +9394,14 @@ func (s *Syncer) fetchMRDetail(
 	if !accepted {
 		return calls, nil
 	}
+	ctx = s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+	)
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return calls, nil
+		}
 		return calls, fmt.Errorf(
 			"ensure kanban state for MR #%d: %w", number, err,
 		)
@@ -9065,7 +9501,9 @@ func (s *Syncer) fetchMRDetail(
 		pending = ciHasPending(freshMR.CIChecksJSON)
 	}
 
-	detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending, nil)
+	detailApplied, err := s.markMergeRequestDetailFetchedIfRouteFence(
+		ctx, repo, routeFence, mrID, revision, pending, nil,
+	)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"mark detail fetched for MR #%d: %w", number, err,
@@ -9091,9 +9529,9 @@ func (s *Syncer) fetchMRDetail(
 	}
 
 	if newETag != "" {
-		if err := s.db.UpsertHTTPEtag(
-			ctx, string(repoPlatform(repo)), repoHost(repo),
-			repo.Owner, repo.Name, "pull_request", number, newETag,
+		if _, err := s.db.UpsertHTTPEtagIfRouteFence(
+			ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+			"pull_request", number, newETag,
 		); err != nil {
 			slog.Warn("persist pull request ETag failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -9142,8 +9580,19 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	repoID int64,
 	number int,
 	existing *db.MergeRequest,
+	routeFence db.RepositoryRouteFence,
 	calls int,
 ) (int, error) {
+	matches, err := s.repositoryRouteFenceMatches(ctx, repo, routeFence)
+	if err != nil {
+		return calls, err
+	}
+	if !matches {
+		return calls, nil
+	}
+	ctx = s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+	)
 	pending := existing.CIHadPending
 	if existing.CIHadPending && existing.PlatformHeadSHA != "" {
 		ciApplied, err := s.refreshCIStatusSnapshot(
@@ -9170,8 +9619,9 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	metadataUpdates := s.computeCommitLiveness(
 		ctx, repo, existing.ID, livenessHeadForRound(existing, existing), nil,
 	)
-	detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(
-		ctx, existing.ID, existing.SnapshotRevision, pending, metadataUpdates,
+	detailApplied, err := s.markMergeRequestDetailFetchedIfRouteFence(
+		ctx, repo, routeFence, existing.ID, existing.SnapshotRevision, pending,
+		metadataUpdates,
 	)
 	if err != nil {
 		return calls, fmt.Errorf("mark unchanged detail fetched for MR #%d: %w", number, err)
@@ -9199,6 +9649,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	repo RepoRef,
 	repoID int64,
 	number int,
+	routeFence db.RepositoryRouteFence,
 ) (int, error) {
 	calls := 0
 	mrReader, err := s.mergeRequestReaderFor(repo)
@@ -9225,7 +9676,9 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 	preserveMergeableStateIfOmitted(normalized, existing)
 
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshotIfRouteFence(
+		ctx, repo, normalized, routeFence,
+	)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"upsert MR #%d: %w", number, err,
@@ -9234,7 +9687,13 @@ func (s *Syncer) fetchProviderMRDetail(
 	if !accepted {
 		return calls, nil
 	}
+	ctx = s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+	)
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return calls, nil
+		}
 		return calls, fmt.Errorf(
 			"ensure kanban state for MR #%d: %w", number, err,
 		)
@@ -9255,7 +9714,9 @@ func (s *Syncer) fetchProviderMRDetail(
 		return calls, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
 	}
 
-	detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending, nil)
+	detailApplied, err := s.markMergeRequestDetailFetchedIfRouteFence(
+		ctx, repo, routeFence, mrID, revision, pending, nil,
+	)
 	if err != nil {
 		return calls, fmt.Errorf("mark detail fetched for MR #%d: %w", number, err)
 	}
@@ -9440,10 +9901,18 @@ func (s *Syncer) fetchIssueDetail(
 	if err != nil {
 		return calls, fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
+	routeFence, _, err := s.db.CurrentRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), repoID,
+	)
+	if err != nil {
+		return calls, fmt.Errorf("capture repository route for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 	if _, ok := issueReader.(interface {
 		GetGitHubIssue(context.Context, platform.RepoRef, int) (*gh.Issue, error)
 	}); !ok {
-		return s.fetchProviderIssueDetail(ctx, issueReader, repo, repoID, number)
+		return s.fetchProviderIssueDetail(
+			ctx, issueReader, repo, repoID, number, routeFence,
+		)
 	}
 
 	client, err := s.clientFor(repo)
@@ -9479,8 +9948,8 @@ func (s *Syncer) fetchIssueDetail(
 			if existing == nil {
 				return calls, fmt.Errorf("mark unchanged detail fetched for issue #%d: issue is missing", number)
 			}
-			detailApplied, markErr := s.db.MarkIssueDetailFetchedSnapshot(
-				ctx, existing.ID, existing.SnapshotRevision,
+			detailApplied, markErr := s.markIssueDetailFetchedIfRouteFence(
+				ctx, repo, routeFence, existing.ID, existing.SnapshotRevision,
 			)
 			if markErr != nil {
 				return calls, fmt.Errorf(
@@ -9503,7 +9972,9 @@ func (s *Syncer) fetchIssueDetail(
 	if err != nil {
 		return calls, fmt.Errorf("normalize issue #%d: %w", number, err)
 	}
-	issueID, revision, accepted, err := s.commitIssueParentSnapshot(ctx, repo, normalized)
+	issueID, revision, accepted, err := s.commitIssueParentSnapshotIfRouteFence(
+		ctx, repo, normalized, routeFence,
+	)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"upsert issue #%d: %w", number, err,
@@ -9512,6 +9983,9 @@ func (s *Syncer) fetchIssueDetail(
 	if !accepted {
 		return calls, nil
 	}
+	ctx = s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+	)
 
 	if err := s.refreshIssueTimeline(
 		ctx, repo, issueID, revision, ghIssue,
@@ -9520,11 +9994,16 @@ func (s *Syncer) fetchIssueDetail(
 		if errors.Is(err, errParentSnapshotAdvanced) {
 			return calls, nil
 		}
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return calls, nil
+		}
 		return calls, err
 	}
 	calls++ // comments
 
-	detailApplied, err := s.db.MarkIssueDetailFetchedSnapshot(ctx, issueID, revision)
+	detailApplied, err := s.markIssueDetailFetchedIfRouteFence(
+		ctx, repo, routeFence, issueID, revision,
+	)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"mark detail fetched for issue #%d: %w", number, err,
@@ -9535,9 +10014,9 @@ func (s *Syncer) fetchIssueDetail(
 	}
 
 	if newETag != "" {
-		if err := s.db.UpsertHTTPEtag(
-			ctx, string(repoPlatform(repo)), repoHost(repo),
-			repo.Owner, repo.Name, "issue", number, newETag,
+		if _, err := s.db.UpsertHTTPEtagIfRouteFence(
+			ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+			"issue", number, newETag,
 		); err != nil {
 			slog.Warn("persist issue ETag failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -9590,6 +10069,7 @@ func (s *Syncer) fetchProviderIssueDetail(
 	repo RepoRef,
 	repoID int64,
 	number int,
+	routeFence db.RepositoryRouteFence,
 ) (int, error) {
 	calls := 0
 	issueReader, err := s.issueReaderFor(repo)
@@ -9613,7 +10093,9 @@ func (s *Syncer) fetchProviderIssueDetail(
 	if existing != nil {
 		normalized.CommentCount = existing.CommentCount
 	}
-	issueID, revision, accepted, err := s.commitIssueParentSnapshot(ctx, repo, normalized)
+	issueID, revision, accepted, err := s.commitIssueParentSnapshotIfRouteFence(
+		ctx, repo, normalized, routeFence,
+	)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"upsert issue #%d: %w", number, err,
@@ -9622,6 +10104,9 @@ func (s *Syncer) fetchProviderIssueDetail(
 	if !accepted {
 		return calls, nil
 	}
+	ctx = s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+	)
 	events, eventsErr := reader.ListIssueEvents(ctx, platformRepoRef(repo), number)
 	calls++
 	if eventsErr != nil && !errors.Is(eventsErr, platform.ErrUnsupportedCapability) {
@@ -9640,6 +10125,9 @@ func (s *Syncer) fetchProviderIssueDetail(
 		}
 		applied, commitErr := s.commitIssueCommentsSnapshot(ctx, repo, issueID, number, revision, comments, dbEvents, nil)
 		if commitErr != nil {
+			if errors.Is(commitErr, db.ErrRepositoryRouteFenceChanged) {
+				return calls, nil
+			}
 			return calls, fmt.Errorf("replace provider issue comments for #%d: %w", number, commitErr)
 		}
 		if !applied {
@@ -9647,7 +10135,9 @@ func (s *Syncer) fetchProviderIssueDetail(
 		}
 	}
 
-	detailApplied, err := s.db.MarkIssueDetailFetchedSnapshot(ctx, issueID, revision)
+	detailApplied, err := s.markIssueDetailFetchedIfRouteFence(
+		ctx, repo, routeFence, issueID, revision,
+	)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"mark detail fetched for issue #%d: %w", number, err,
@@ -9904,9 +10394,13 @@ func (s *Syncer) refreshCIStatusSnapshot(
 	if !result.Updated {
 		return true, nil
 	}
-	return s.db.UpdateMergeRequestCISnapshot(
+	applied, err := s.db.UpdateMergeRequestCISnapshot(
 		ctx, mrID, expectedRevision, result.Status, result.ChecksJSON,
 	)
+	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+		return false, nil
+	}
+	return applied, err
 }
 
 const ciRefreshWarning = "Could not refresh CI checks; showing last known status."
@@ -10441,7 +10935,7 @@ func (s *Syncer) syncOpenPlatformIssue(
 
 	if !needsTimeline {
 		if existing != nil && existing.DetailFetchedAt != nil {
-			s.queueIssueCommentSync(repo, existing.Number)
+			s.queueIssueCommentSync(repo, existing.RepoID, existing.Number)
 		}
 		return nil
 	}
@@ -10510,7 +11004,7 @@ func (s *Syncer) syncOpenIssue(
 
 	if !needsTimeline {
 		if existing != nil && existing.DetailFetchedAt != nil {
-			s.queueIssueCommentSync(repo, existing.Number)
+			s.queueIssueCommentSync(repo, existing.RepoID, existing.Number)
 		}
 		return nil
 	}
@@ -10929,6 +11423,7 @@ func (s *Syncer) drainDetailQueue(
 	exhausted := make(map[string]bool)
 	verifiedRepos := make(map[string]RepoRef)
 	verifiedRepoIDs := make(map[string]int64)
+	verifiedRouteFences := make(map[string]db.RepositoryRouteFence)
 	rejectedRepos := make(map[string]bool)
 
 	for i := range queue {
@@ -11005,23 +11500,28 @@ func (s *Syncer) drainDetailQueue(
 			continue
 		}
 		repoID, verified := verifiedRepoIDs[repoKey]
+		routeFence := verifiedRouteFences[repoKey]
 		if verified {
 			repo = verifiedRepos[repoKey]
 		} else {
-			resolvedRepo, resolvedRepoID, _, resolveErr := s.reconcileRepoIdentity(ctx, repo)
-			if resolveErr != nil {
+			resolvedRepo, resolvedRepoID, resolvedFence, found, resolveErr :=
+				s.reconcileRepoForDirectSync(ctx, repo)
+			if resolveErr != nil || !found {
 				probe.abandon()
 				rejectedRepos[repoKey] = true
 				slog.Warn("detail drain: verify repo identity failed",
 					"repo", qi.RepoOwner+"/"+qi.RepoName,
+					"found", found,
 					"err", resolveErr,
 				)
 				continue
 			}
 			repo = resolvedRepo
 			repoID = resolvedRepoID
+			routeFence = resolvedFence
 			verifiedRepos[repoKey] = repo
 			verifiedRepoIDs[repoKey] = repoID
+			verifiedRouteFences[repoKey] = routeFence
 		}
 		if repo.Archived {
 			// Identity verification just discovered the archived flip;
@@ -11038,13 +11538,13 @@ func (s *Syncer) drainDetailQueue(
 			)
 			continue
 		}
+		itemCtx := withCloneRepositoryIdentity(ctx, repo)
 
 		// Compute diff SHAs if clone available.
 		cloneFetchOK := false
 		if s.clones != nil {
-			if cloneErr := s.clones.EnsureClone(
-				ctx, string(repoPlatform(repo)), host, qi.RepoOwner, qi.RepoName,
-				cloneRemoteURL(repo),
+			if cloneErr := s.ensureCloneForRoute(
+				itemCtx, repo, repoID, routeFence,
 			); cloneErr != nil {
 				slog.Warn("detail drain: bare clone failed",
 					"repo", qi.RepoOwner+"/"+qi.RepoName,
@@ -11057,11 +11557,11 @@ func (s *Syncer) drainDetailQueue(
 		providerCalls := 0
 		if qi.Type == QueueItemPR {
 			providerCalls, err = s.fetchMRDetail(
-				ctx, repo, repoID, qi.Number, cloneFetchOK,
+				itemCtx, repo, repoID, qi.Number, cloneFetchOK,
 			)
 		} else {
 			providerCalls, err = s.fetchIssueDetail(
-				ctx, repo, repoID, qi.Number,
+				itemCtx, repo, repoID, qi.Number,
 			)
 		}
 
@@ -11319,6 +11819,21 @@ func (s *Syncer) SyncClosedMROnProvider(
 		repo = routed
 	}
 	repo = repoRefFromStoredIdentity(repo, *stored)
+	identity := platform.DBRepoIdentity(platformRepoRef(repo))
+	routeFence, found, err := s.db.CurrentRepositoryRouteFence(
+		ctx, identity, repoID,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"capture repository route for closed-MR resync %s/%s: %w",
+			repo.Owner, repo.Name, err,
+		)
+	}
+	if !found {
+		return nil
+	}
+	ctx = withCloneRepositoryIdentity(ctx, repo)
+	ctx = s.db.WithRepositoryRouteFence(ctx, identity, routeFence)
 	reader, err := s.mergeRequestReaderFor(repo)
 	if err != nil {
 		return fmt.Errorf(
@@ -11436,9 +11951,15 @@ func (s *Syncer) syncMRForRepo(
 		return fmt.Errorf("resolve merge request reader for %s/%s: %w", owner, name, err)
 	}
 
-	resolvedRef, repoID, _, err := s.reconcileRepoIdentity(ctx, repo)
+	resolvedRef, repoID, routeFence, found, err := s.reconcileRepoForDirectSync(ctx, repo)
 	if err != nil {
-		return fmt.Errorf("resolve repo identity %s/%s: %w", owner, name, err)
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return nil
+		}
+		return err
+	}
+	if !found {
+		return nil
 	}
 	repo = resolvedRef
 	if repo.Archived && !IsArchiveSyncBudgetContext(ctx) {
@@ -11449,6 +11970,7 @@ func (s *Syncer) syncMRForRepo(
 		)
 		return nil
 	}
+	ctx = withCloneRepositoryIdentity(ctx, repo)
 
 	// Preserve derived fields that provider detail doesn't populate. CI is
 	// refreshed later in this sync path; keeping the previous values here
@@ -11487,7 +12009,7 @@ func (s *Syncer) syncMRForRepo(
 			if err == nil && ghPR == nil {
 				if notModified && existing != nil {
 					_, err := s.markUnchangedMRDetailFetched(
-						ctx, repo, repoID, number, existing, 1,
+						ctx, repo, repoID, number, existing, routeFence, 1,
 					)
 					return err
 				}
@@ -11559,14 +12081,22 @@ func (s *Syncer) syncMRForRepo(
 		}
 	}
 
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshotIfRouteFence(
+		ctx, repo, normalized, routeFence,
+	)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
 	if !accepted {
 		return nil
 	}
+	ctx = s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+	)
 	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return nil
+		}
 		return err
 	}
 	// UpsertMergeRequest preserves ci_had_pending across upserts. Clear
@@ -11592,7 +12122,10 @@ func (s *Syncer) syncMRForRepo(
 		// Run the diff sync, but don't let its failure abort the rest of SyncMR:
 		// timeline and CI status are independent and the user still wants them
 		// fresh. Capture the error and surface it via DiffSyncError at the end.
-		diffErr = s.syncMRDiff(ctx, repo, repoID, mrID, revision, number, ghPR, normalized)
+		diffErr = s.syncMRDiff(
+			ctx, repo, repoID, mrID, revision, number,
+			ghPR, normalized, routeFence,
+		)
 		if errors.Is(diffErr, errParentSnapshotAdvanced) {
 			return nil
 		}
@@ -11641,8 +12174,8 @@ func (s *Syncer) syncMRForRepo(
 		fresh, freshErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 		if freshErr == nil && fresh != nil {
 			pending := ciHasPending(fresh.CIChecksJSON)
-			detailApplied, detailErr := s.db.MarkMergeRequestDetailFetchedSnapshot(
-				ctx, mrID, revision, pending, nil,
+			detailApplied, detailErr := s.markMergeRequestDetailFetchedIfRouteFence(
+				ctx, repo, routeFence, mrID, revision, pending, nil,
 			)
 			if detailErr != nil {
 				return fmt.Errorf("mark detail fetched for MR #%d: %w", number, detailErr)
@@ -11657,7 +12190,10 @@ func (s *Syncer) syncMRForRepo(
 		// DiffHeadSHA matches the platform head, so a sync that never
 		// writes it would leave head-bound actions permanently
 		// disabled with 409 head_unknown.
-		diffErr = s.syncProviderMRDiff(ctx, repo, mrID, revision, number, normalized, true)
+		diffErr = s.syncProviderMRDiff(
+			ctx, repo, repoID, mrID, revision, number,
+			normalized, true, routeFence,
+		)
 		if errors.Is(diffErr, errParentSnapshotAdvanced) {
 			return nil
 		}
@@ -11676,8 +12212,8 @@ func (s *Syncer) syncMRForRepo(
 		if _, err := s.persistMergedActorEvent(ctx, mrID, revision, platformMR.MergedBy, normalized.MergedAt); err != nil {
 			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
 		}
-		detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(
-			ctx, mrID, revision, pending, nil,
+		detailApplied, err := s.markMergeRequestDetailFetchedIfRouteFence(
+			ctx, repo, routeFence, mrID, revision, pending, nil,
 		)
 		if err != nil {
 			return fmt.Errorf("mark detail fetched for MR #%d: %w", number, err)
@@ -11710,9 +12246,9 @@ func (s *Syncer) syncMRForRepo(
 		return diffErr
 	}
 	if newETag != "" {
-		if err := s.db.UpsertHTTPEtag(
-			ctx, string(repoPlatform(repo)), repoHost(repo),
-			repo.Owner, repo.Name, "pull_request", number, newETag,
+		if _, err := s.db.UpsertHTTPEtagIfRouteFence(
+			ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+			"pull_request", number, newETag,
 		); err != nil {
 			slog.Warn("persist pull request ETag failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -11822,12 +12358,14 @@ func preserveCIStateIfOmitted(
 func (s *Syncer) syncMRDiff(
 	ctx context.Context, repo RepoRef, repoID, mrID, expectedRevision int64, number int,
 	ghPR *gh.PullRequest, normalized *db.MergeRequest,
+	routeFence db.RepositoryRouteFence,
 ) error {
+	ctx = withCloneRepositoryIdentity(ctx, repo)
 	if s.clones == nil {
 		return nil
 	}
 	host := repoHost(repo)
-	if err := s.clones.EnsureClone(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+	if err := s.ensureCloneForRoute(ctx, repo, repoID, routeFence); err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCloneUnavailable,
 			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
@@ -11879,9 +12417,11 @@ func (s *Syncer) syncMRDiff(
 // meaningless once merged/closed, and the merged-MR merge-base repair
 // logic is GitHub-specific.
 func (s *Syncer) syncProviderMRDiff(
-	ctx context.Context, repo RepoRef, mrID, expectedRevision int64, number int,
+	ctx context.Context, repo RepoRef, repoID, mrID, expectedRevision int64, number int,
 	normalized *db.MergeRequest, ensureClone bool,
+	routeFence db.RepositoryRouteFence,
 ) error {
+	ctx = withCloneRepositoryIdentity(ctx, repo)
 	if s.clones == nil {
 		return nil
 	}
@@ -11897,7 +12437,7 @@ func (s *Syncer) syncProviderMRDiff(
 	// round-trips. Per-MR detail syncs have no prior fetch and pass
 	// ensureClone.
 	if ensureClone {
-		if err := s.clones.EnsureClone(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+		if err := s.ensureCloneForRoute(ctx, repo, repoID, routeFence); err != nil {
 			return &DiffSyncError{
 				Code: DiffSyncCodeCloneUnavailable,
 				Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
@@ -12014,11 +12554,15 @@ func (s *Syncer) syncIssueForRepo(
 		defer releaseProviderWork()
 	}
 
-	resolvedRef, repoID, _, err := s.reconcileRepoIdentity(ctx, repo)
+	resolvedRef, repoID, _, found, err := s.reconcileRepoForDirectSync(ctx, repo)
 	if err != nil {
-		return fmt.Errorf(
-			"resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err,
-		)
+		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return nil
+		}
+		return err
+	}
+	if !found {
+		return nil
 	}
 	repo = resolvedRef
 	if repo.Archived && !IsArchiveSyncBudgetContext(ctx) {

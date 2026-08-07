@@ -168,7 +168,7 @@ func (d *DB) updateApplied(
 	query string,
 	args ...any,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, query, args...)
+	result, err := d.execContext(ctx, query, args...)
 	if err != nil {
 		return false, fmt.Errorf("%s: %w", action, err)
 	}

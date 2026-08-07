@@ -3,16 +3,38 @@
 package gitclone
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/tokenauth"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
+
+type blockingRouteResolver struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (r *blockingRouteResolver) SourceForRepo(_, _, _, _ string) tokenauth.Source {
+	r.once.Do(func() {
+		close(r.started)
+		<-r.release
+	})
+	return nil
+}
+
+func (*blockingRouteResolver) FallbackSource(string) tokenauth.Source { return nil }
 
 // setupTestRepo creates a bare "remote" repo with one commit and returns
 // both the remote path and the working clone path (for follow-up pushes).
@@ -91,6 +113,406 @@ func TestIntegrationEnsureCloneInNamespacePartitionsStorage(t *testing.T) {
 		clonesDir, "github.com", "testowner", "testrepo.git",
 	)
 	assert.NoDirExists(t, defaultPath)
+}
+
+func TestIntegrationEnsureClonePartitionsConcurrentRouteReuseByProviderIdentity(t *testing.T) {
+	remoteA, workA := setupTestRepo(t)
+	remoteB, workB := setupTestRepo(t)
+	shaABytes, err := gitcmd.New().Output(t.Context(), workA, "rev-parse", "HEAD")
+	require.NoError(t, err)
+	shaA := strings.TrimSpace(string(shaABytes))
+	shaB := commitAndPush(t, workB, "replacement.go", "package replacement\n", "replacement")
+
+	mgr := New(t.TempDir(), nil)
+	ctxA := WithRepositoryIdentity(t.Context(), "provider-repo-a")
+	ctxB := WithRepositoryIdentity(t.Context(), "provider-repo-b")
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var ready sync.WaitGroup
+	ready.Add(2)
+	for _, clone := range []struct {
+		ctx    context.Context
+		remote string
+	}{{ctxA, remoteA}, {ctxB, remoteB}} {
+		go func() {
+			ready.Done()
+			<-start
+			errs <- mgr.EnsureClone(
+				clone.ctx, "github", "github.com", "acme", "widget", clone.remote,
+			)
+		}()
+	}
+	ready.Wait()
+	close(start)
+	require.NoError(t, <-errs)
+	require.NoError(t, <-errs)
+
+	gotA, err := mgr.RevParse(ctxA, "github", "github.com", "acme", "widget", "HEAD")
+	require.NoError(t, err)
+	gotB, err := mgr.RevParse(ctxB, "github", "github.com", "acme", "widget", "HEAD")
+	require.NoError(t, err)
+	assert.Equal(t, shaA, gotA)
+	assert.Equal(t, shaB, gotB)
+}
+
+func TestIntegrationEnsureCloneValidatedRemovesCloneAfterRouteChange(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	ctx := WithRepositoryIdentity(t.Context(), "provider-repo-a")
+	validationErr := errors.New("repository route changed")
+	var validations atomic.Int64
+
+	err := mgr.EnsureCloneValidated(
+		ctx, "github", "github.com", "acme", "widget", remote,
+		func(context.Context) error {
+			if validations.Add(1) == 1 {
+				return nil
+			}
+			return validationErr
+		},
+	)
+	require.ErrorIs(t, err, validationErr)
+	assert.Equal(t, int64(2), validations.Load())
+	clonePath, pathErr := mgr.ClonePathForContext(
+		ctx, "github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, pathErr)
+	assert.NoDirExists(t, clonePath)
+	assert.NoDirExists(t, clonePath+".removing",
+		"invalidation must not leave a renamed-aside clone behind")
+}
+
+func TestIntegrationEnsureCloneValidatedRejectsStaleCallerBeforeUnvalidatedFetch(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	routes := &blockingRouteResolver{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	mgr := New(t.TempDir(), routes)
+	ctx := WithRepositoryIdentity(t.Context(), "provider-repo-a")
+	leaderDone := make(chan error, 1)
+	go func() {
+		leaderDone <- mgr.EnsureClone(
+			ctx, "github", "github.com", "acme", "widget", remote,
+		)
+	}()
+	<-routes.started
+
+	validationErr := errors.New("repository route changed")
+	validatedDone := make(chan error, 1)
+	go func() {
+		validatedDone <- mgr.EnsureCloneValidated(
+			ctx, "github", "github.com", "acme", "widget", remote,
+			func(context.Context) error { return validationErr },
+		)
+	}()
+	select {
+	case err := <-validatedDone:
+		require.ErrorIs(t, err, validationErr)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "stale caller was not rejected before joining clone work")
+	}
+	close(routes.release)
+
+	require.NoError(t, <-leaderDone)
+	// The stale caller never joins or mutates the unvalidated leader's flight.
+	clonePath, err := mgr.ClonePathForContext(
+		ctx, "github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	assert.DirExists(t, clonePath)
+}
+
+func TestIntegrationEnsureCloneValidatedStaleFollowerKeepsValidatedClone(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	ctx := WithRepositoryIdentity(t.Context(), "provider-repo-a")
+
+	leaderValidationStarted := make(chan struct{})
+	releaseLeaderValidation := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseLeader := func() {
+		releaseOnce.Do(func() { close(releaseLeaderValidation) })
+	}
+	t.Cleanup(releaseLeader)
+	var leaderValidations atomic.Int64
+	leaderDone := make(chan error, 1)
+	go func() {
+		leaderDone <- mgr.EnsureCloneValidated(
+			ctx, "github", "github.com", "acme", "widget", remote,
+			func(context.Context) error {
+				if leaderValidations.Add(1) == 2 {
+					close(leaderValidationStarted)
+					<-releaseLeaderValidation
+				}
+				return nil
+			},
+		)
+	}()
+	select {
+	case <-leaderValidationStarted:
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "leader did not reach post-fetch validation")
+	}
+	key := ensureCloneKey(
+		cloneNamespaceForContext(ctx, "github"), "github.com", "acme", "widget",
+	)
+
+	staleErr := errors.New("repository route changed")
+	followerDone := make(chan error, 1)
+	go func() {
+		followerDone <- mgr.EnsureCloneValidated(
+			ctx, "github", "github.com", "acme", "widget", remote,
+			func(context.Context) error { return staleErr },
+		)
+	}()
+	select {
+	case err := <-followerDone:
+		require.ErrorIs(t, err, staleErr)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "stale follower was not rejected before joining")
+	}
+	mgr.ensureMu.Lock()
+	flight := mgr.ensureFlights[key]
+	waiters := 0
+	if flight != nil {
+		waiters = flight.waiters
+	}
+	mgr.ensureMu.Unlock()
+	assert.Equal(t, 1, waiters, "stale follower must not join the current flight")
+	releaseLeader()
+
+	require.NoError(t, <-leaderDone,
+		"the caller whose route still owns the clone must keep using it")
+	clonePath, err := mgr.ClonePathForContext(
+		ctx, "github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	assert.DirExists(t, clonePath,
+		"a stale follower must not remove a clone the current route still owns")
+	require.Eventually(t, func() bool {
+		mgr.ensureMu.Lock()
+		defer mgr.ensureMu.Unlock()
+		return mgr.ensureFlights[key] == nil
+	}, 5*time.Second, time.Millisecond)
+}
+
+func TestIntegrationEnsureCloneValidatedRejectsStaleCallerWhileCurrentCallerValidates(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	ctx := WithRepositoryIdentity(t.Context(), "provider-repo-a")
+	require.NoError(t, mgr.EnsureClone(
+		ctx, "github", "github.com", "acme", "widget", remote,
+	))
+	key := ensureCloneKey(
+		cloneNamespaceForContext(ctx, "github"), "github.com", "acme", "widget",
+	)
+	clonePath, err := mgr.ClonePathForContext(
+		ctx, "github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+
+	currentValidationStarted := make(chan struct{})
+	releaseCurrentValidation := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseCurrent := func() {
+		releaseOnce.Do(func() { close(releaseCurrentValidation) })
+	}
+	t.Cleanup(releaseCurrent)
+	currentDone := make(chan error, 1)
+	go func() {
+		currentDone <- mgr.EnsureCloneValidated(
+			ctx, "github", "github.com", "acme", "widget", remote,
+			func(context.Context) error {
+				mgr.ensureMu.Lock()
+				flight := mgr.ensureFlights[key]
+				validatingJoinedCaller := flight != nil && flight.complete
+				mgr.ensureMu.Unlock()
+				if validatingJoinedCaller {
+					close(currentValidationStarted)
+					<-releaseCurrentValidation
+				}
+				return nil
+			},
+		)
+	}()
+
+	select {
+	case <-currentValidationStarted:
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "current caller validation ran after its flight was released")
+	}
+
+	staleErr := errors.New("repository route changed")
+	var staleValidations atomic.Int64
+	staleDone := make(chan error, 1)
+	go func() {
+		staleDone <- mgr.EnsureCloneValidated(
+			ctx, "github", "github.com", "acme", "widget", remote,
+			func(context.Context) error {
+				staleValidations.Add(1)
+				return staleErr
+			},
+		)
+	}()
+	select {
+	case err := <-staleDone:
+		require.ErrorIs(t, err, staleErr)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "stale caller was not rejected before joining clone work")
+	}
+	assert.Equal(t, int64(1), staleValidations.Load())
+	assert.DirExists(t, clonePath,
+		"a stale caller must not remove the current caller's validated clone")
+	select {
+	case err := <-currentDone:
+		require.Fail(t, "current caller returned before validation was released", "%v", err)
+	default:
+	}
+
+	releaseCurrent()
+	require.NoError(t, <-currentDone)
+}
+
+func TestIntegrationEnsureCloneValidatedFollowerRetriesAfterStarterInvalidation(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	ctx := WithRepositoryIdentity(t.Context(), "provider-repo-a")
+
+	followerJoined := make(chan struct{})
+	staleErr := errors.New("repository route changed")
+	var starterValidations atomic.Int64
+	starterDone := make(chan error, 1)
+	go func() {
+		starterDone <- mgr.EnsureCloneValidated(
+			ctx, "github", "github.com", "acme", "widget", remote,
+			func(context.Context) error {
+				if starterValidations.Add(1) == 2 {
+					<-followerJoined
+					return staleErr
+				}
+				return nil
+			},
+		)
+	}()
+	key := ensureCloneKey(
+		cloneNamespaceForContext(ctx, "github"), "github.com", "acme", "widget",
+	)
+	require.Eventually(t, func() bool {
+		mgr.ensureMu.Lock()
+		defer mgr.ensureMu.Unlock()
+		return mgr.ensureFlights[key] != nil
+	}, 5*time.Second, time.Millisecond)
+
+	var followerValidations atomic.Int64
+	followerDone := make(chan error, 1)
+	go func() {
+		followerDone <- mgr.EnsureCloneValidated(
+			ctx, "github", "github.com", "acme", "widget", remote,
+			func(context.Context) error {
+				followerValidations.Add(1)
+				return nil
+			},
+		)
+	}()
+	require.Eventually(t, func() bool {
+		mgr.ensureMu.Lock()
+		defer mgr.ensureMu.Unlock()
+		flight := mgr.ensureFlights[key]
+		return flight != nil && flight.waiters == 2
+	}, 5*time.Second, time.Millisecond)
+	close(followerJoined)
+
+	require.ErrorIs(t, <-starterDone, staleErr)
+	// A follower whose own route still owns the path must not be rejected
+	// because the starter's route lost ownership: it refetches the clone the
+	// starter's failed validation removed.
+	require.NoError(t, <-followerDone)
+	assert.Greater(t, followerValidations.Load(), int64(1),
+		"a follower retries and validates the freshly fetched clone")
+	clonePath, err := mgr.ClonePathForContext(
+		ctx, "github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	assert.DirExists(t, clonePath)
+}
+
+func TestIntegrationEnsureCloneValidatedCleanupFailureIsNotRetryable(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	ctx := WithRepositoryIdentity(t.Context(), "provider-repo-a")
+
+	cleanupErr := errors.New("remove invalidated clone failed")
+	var cleanupCalls atomic.Int64
+	mgr.removeCloneAsideForTest = func(string) error {
+		cleanupCalls.Add(1)
+		return cleanupErr
+	}
+
+	followerJoined := make(chan struct{})
+	staleErr := errors.New("repository route changed")
+	var starterValidations atomic.Int64
+	starterDone := make(chan error, 1)
+	go func() {
+		starterDone <- mgr.EnsureCloneValidated(
+			ctx, "github", "github.com", "acme", "widget", remote,
+			func(context.Context) error {
+				if starterValidations.Add(1) == 2 {
+					<-followerJoined
+					return staleErr
+				}
+				return nil
+			},
+		)
+	}()
+	key := ensureCloneKey(
+		cloneNamespaceForContext(ctx, "github"), "github.com", "acme", "widget",
+	)
+	require.Eventually(t, func() bool {
+		mgr.ensureMu.Lock()
+		defer mgr.ensureMu.Unlock()
+		return mgr.ensureFlights[key] != nil
+	}, 5*time.Second, time.Millisecond)
+
+	var followerValidations atomic.Int64
+	followerDone := make(chan error, 1)
+	go func() {
+		followerDone <- mgr.EnsureCloneValidated(
+			ctx, "github", "github.com", "acme", "widget", remote,
+			func(context.Context) error {
+				followerValidations.Add(1)
+				return nil
+			},
+		)
+	}()
+	require.Eventually(t, func() bool {
+		mgr.ensureMu.Lock()
+		defer mgr.ensureMu.Unlock()
+		flight := mgr.ensureFlights[key]
+		return flight != nil && flight.waiters == 2
+	}, 5*time.Second, time.Millisecond)
+	close(followerJoined)
+
+	for _, err := range []error{<-starterDone, <-followerDone} {
+		require.ErrorIs(t, err, staleErr)
+		require.ErrorIs(t, err, cleanupErr)
+		var invalidated *cloneValidationError
+		require.NotErrorAs(t, err, &invalidated)
+	}
+	assert.Equal(t, int64(1), cleanupCalls.Load())
+	assert.Equal(t, int64(1), followerValidations.Load(),
+		"a follower must preflight once but not retry after failed quarantine")
+	clonePath, err := mgr.ClonePathForContext(
+		ctx, "github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	assert.DirExists(t, clonePath,
+		"a failed cleanup leaves the possibly contaminated clone in place")
+}
+
+func TestWaitEnsureCloneFlightReleasedRejectsMissingFlight(t *testing.T) {
+	err := waitEnsureCloneFlightReleased(t.Context(), nil)
+	require.EqualError(t, err, "wait for clone flight release: missing flight")
 }
 
 // TestEnsureCloneShortCircuitsCanceledContext verifies that a caller
@@ -547,4 +969,326 @@ func TestIntegrationMergeBase(t *testing.T) {
 		ctx, "github", "github.com", "testowner", "testrepo", headSHA, headSHA)
 	require.NoError(err)
 	assert.Equal(headSHA, mb)
+}
+
+func TestIntegrationRepoBrowserClonePartitionsRouteReuseByProviderIdentity(t *testing.T) {
+	remoteA, workA := setupTestRepo(t)
+	remoteB, workB := setupTestRepo(t)
+	shaABytes, err := gitcmd.New().Output(t.Context(), workA, "rev-parse", "HEAD")
+	require.NoError(t, err)
+	shaA := strings.TrimSpace(string(shaABytes))
+	shaB := commitAndPush(t, workB, "replacement.go", "package replacement\n", "replacement")
+
+	mgr := New(t.TempDir(), nil)
+	refA := RepoBrowserRepoRef{
+		Provider: "github", Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		ProviderRepoID: "provider-repo-a", RemoteURL: remoteA,
+	}
+	refB := RepoBrowserRepoRef{
+		Provider: "github", Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		ProviderRepoID: "provider-repo-b", RemoteURL: remoteB,
+	}
+	require.NoError(t, mgr.EnsureRepoBrowserClone(t.Context(), refA))
+	require.NoError(t, mgr.EnsureRepoBrowserClone(t.Context(), refB))
+
+	pathA, err := mgr.repoBrowserClonePath(refA)
+	require.NoError(t, err)
+	pathB, err := mgr.repoBrowserClonePath(refB)
+	require.NoError(t, err)
+	require.NotEqual(t, pathA, pathB,
+		"distinct repository identities sharing a path must not share browser clone storage")
+	gotA, err := gitcmd.New().Output(t.Context(), pathA, "rev-parse", "HEAD")
+	require.NoError(t, err)
+	gotB, err := gitcmd.New().Output(t.Context(), pathB, "rev-parse", "HEAD")
+	require.NoError(t, err)
+	assert.Equal(t, shaA, strings.TrimSpace(string(gotA)))
+	assert.Equal(t, shaB, strings.TrimSpace(string(gotB)))
+}
+
+func TestAdoptLegacyClonesKeepsMainAndBrowserCachesAvailableOffline(t *testing.T) {
+	remote, work := setupTestRepo(t)
+	shaBytes, err := gitcmd.New().Output(t.Context(), work, "rev-parse", "HEAD")
+	require.NoError(t, err)
+	wantSHA := strings.TrimSpace(string(shaBytes))
+	mgr := New(t.TempDir(), nil)
+	legacyRepo := RepoBrowserRepoRef{
+		Provider: "github", Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		RemoteURL: remote,
+	}
+
+	require.NoError(t, mgr.EnsureClone(
+		t.Context(), "github", "github.com", "acme", "widget", remote,
+	))
+	require.NoError(t, mgr.EnsureRepoBrowserClone(t.Context(), legacyRepo))
+	legacyMainPath, err := mgr.ClonePath(
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	legacyBrowserPath, err := mgr.repoBrowserClonePath(legacyRepo)
+	require.NoError(t, err)
+	require.NoError(t, os.Rename(remote, remote+".offline"))
+
+	stableRepo := legacyRepo
+	stableRepo.ProviderRepoID = "provider-repo-1"
+	require.NoError(t, mgr.AdoptLegacyClones(t.Context(), stableRepo))
+
+	legacyMainSHA, err := mgr.RevParse(
+		t.Context(), "github", "github.com", "acme", "widget", "HEAD",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, wantSHA, legacyMainSHA)
+	stableCtx := WithRepositoryIdentity(t.Context(), stableRepo.ProviderRepoID)
+	gotMainSHA, err := mgr.RevParse(
+		stableCtx, "github", "github.com", "acme", "widget", "HEAD",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, wantSHA, gotMainSHA)
+	stableMainPath, err := mgr.ClonePathForContext(
+		stableCtx, "github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	stableOrigin, err := gitcmd.New().Output(
+		t.Context(), stableMainPath, "config", "--get", "remote.origin.url",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, remote, strings.TrimSpace(string(stableOrigin)))
+	stableFetch, err := gitcmd.New().Output(
+		t.Context(), stableMainPath, "config", "--get-all", "remote.origin.fetch",
+	)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, defaultRefspecs(), strings.Fields(string(stableFetch)))
+	_, err = gitcmd.New().Output(
+		t.Context(), stableMainPath, "config", "--get", "remote.origin.mirror",
+	)
+	assert.Error(t, err)
+	resolved, err := mgr.ResolveRepoBrowserRef(
+		t.Context(), stableRepo,
+		RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, wantSHA, resolved.SHA)
+	assert.DirExists(t, legacyMainPath)
+	assert.NoDirExists(t, legacyBrowserPath)
+}
+
+func TestAdoptLegacyClonesCopiesMainWithoutSharedRefsOrObjects(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	legacyRepo := RepoBrowserRepoRef{
+		Provider: "github", Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		RemoteURL: remote,
+	}
+	require.NoError(t, mgr.EnsureClone(
+		t.Context(), "github", "github.com", "acme", "widget", remote,
+	))
+	legacyMainPath, err := mgr.ClonePath(
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	objectContent := []byte("independent legacy object\n")
+	objectOut, stderr, err := gitcmd.New().Run(
+		t.Context(), legacyMainPath, bytes.NewReader(objectContent),
+		"hash-object", "-w", "--stdin",
+	)
+	require.NoError(t, err, string(stderr))
+	objectSHA := strings.TrimSpace(string(objectOut))
+	run(t, legacyMainPath, "git", "update-ref", "refs/test/independent", objectSHA)
+
+	stableRepo := legacyRepo
+	stableRepo.ProviderRepoID = "provider-repo-1"
+	require.NoError(t, mgr.AdoptLegacyClones(t.Context(), stableRepo))
+	stableMainPath, err := mgr.ClonePathForContext(
+		WithRepositoryIdentity(t.Context(), stableRepo.ProviderRepoID),
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	stableRef, err := mgr.RevParse(
+		WithRepositoryIdentity(t.Context(), stableRepo.ProviderRepoID),
+		"github", "github.com", "acme", "widget", "refs/test/independent",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, objectSHA, stableRef)
+	stableObjectPath := filepath.Join(
+		stableMainPath, "objects", objectSHA[:2], objectSHA[2:],
+	)
+	legacyObjectPath := filepath.Join(
+		legacyMainPath, "objects", objectSHA[:2], objectSHA[2:],
+	)
+	require.FileExists(t, stableObjectPath)
+	stableObjectInfo, err := os.Stat(stableObjectPath)
+	require.NoError(t, err)
+	legacyObjectInfo, err := os.Stat(legacyObjectPath)
+	require.NoError(t, err)
+	assert.False(t, os.SameFile(stableObjectInfo, legacyObjectInfo))
+	assert.NoFileExists(t, filepath.Join(stableMainPath, "objects", "info", "alternates"))
+	require.NoError(t, os.WriteFile(stableObjectPath, []byte("corrupt"), 0o444))
+	run(t, stableMainPath, "git", "update-ref", "-d", "refs/test/independent")
+
+	legacyRef, err := mgr.RevParse(
+		t.Context(), "github", "github.com", "acme", "widget",
+		"refs/test/independent",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, objectSHA, legacyRef)
+	legacyObject, err := gitcmd.New().Output(
+		t.Context(), legacyMainPath, "cat-file", "blob", objectSHA,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, objectContent, legacyObject)
+}
+
+func TestAdoptLegacyClonesCopyFailureDoesNotPublishPartialStableMain(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	legacyRepo := RepoBrowserRepoRef{
+		Provider: "github", Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		RemoteURL: remote,
+	}
+	require.NoError(t, mgr.EnsureClone(
+		t.Context(), "github", "github.com", "acme", "widget", remote,
+	))
+	legacyMainPath, err := mgr.ClonePath(
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	brokenRefPath := filepath.Join(legacyMainPath, "refs", "test", "broken")
+	require.NoError(t, os.MkdirAll(filepath.Dir(brokenRefPath), 0o755))
+	require.NoError(t, os.WriteFile(
+		brokenRefPath, []byte(strings.Repeat("f", 40)+"\n"), 0o644,
+	))
+
+	stableRepo := legacyRepo
+	stableRepo.ProviderRepoID = "provider-repo-1"
+	err = mgr.AdoptLegacyClones(t.Context(), stableRepo)
+	require.Error(t, err)
+	stableMainPath, pathErr := mgr.ClonePathForContext(
+		WithRepositoryIdentity(t.Context(), stableRepo.ProviderRepoID),
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, pathErr)
+	assert.NoDirExists(t, stableMainPath)
+	legacySHA, revErr := mgr.RevParse(
+		t.Context(), "github", "github.com", "acme", "widget", "HEAD",
+	)
+	require.NoError(t, revErr)
+	assert.NotEmpty(t, legacySHA)
+	staging, globErr := filepath.Glob(filepath.Join(
+		filepath.Dir(stableMainPath), "."+filepath.Base(stableMainPath)+".adopting-*",
+	))
+	require.NoError(t, globErr)
+	assert.Empty(t, staging)
+}
+
+func TestAdoptLegacyClonesRejectsIncompleteStableMain(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	legacyRepo := RepoBrowserRepoRef{
+		Provider: "github", Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		RemoteURL: remote,
+	}
+	require.NoError(t, mgr.EnsureClone(
+		t.Context(), "github", "github.com", "acme", "widget", remote,
+	))
+	stableRepo := legacyRepo
+	stableRepo.ProviderRepoID = "provider-repo-1"
+	stableMainPath, err := mgr.ClonePathForContext(
+		WithRepositoryIdentity(t.Context(), stableRepo.ProviderRepoID),
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(stableMainPath, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(stableMainPath, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644,
+	))
+
+	err = mgr.AdoptLegacyClones(t.Context(), stableRepo)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "incomplete")
+	legacySHA, revErr := mgr.RevParse(
+		t.Context(), "github", "github.com", "acme", "widget", "HEAD",
+	)
+	require.NoError(t, revErr)
+	assert.NotEmpty(t, legacySHA)
+}
+
+func TestAdoptLegacyClonesHandlesConcurrentStableMainPublication(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	cloneBase := t.TempDir()
+	seedManager := New(cloneBase, nil)
+	require.NoError(t, seedManager.EnsureClone(
+		t.Context(), "github", "github.com", "acme", "widget", remote,
+	))
+	stableRepo := RepoBrowserRepoRef{
+		Provider: "github", Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		ProviderRepoID: "provider-repo-1", RemoteURL: remote,
+	}
+
+	ctx := t.Context()
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var ready sync.WaitGroup
+	ready.Add(2)
+	for range 2 {
+		mgr := New(cloneBase, nil)
+		go func() {
+			ready.Done()
+			<-start
+			errs <- mgr.AdoptLegacyClones(ctx, stableRepo)
+		}()
+	}
+	ready.Wait()
+	close(start)
+	require.NoError(t, <-errs)
+	require.NoError(t, <-errs)
+
+	legacySHA, err := seedManager.RevParse(
+		t.Context(), "github", "github.com", "acme", "widget", "HEAD",
+	)
+	require.NoError(t, err)
+	stableSHA, err := seedManager.RevParse(
+		WithRepositoryIdentity(t.Context(), stableRepo.ProviderRepoID),
+		"github", "github.com", "acme", "widget", "HEAD",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, legacySHA, stableSHA)
+}
+
+func TestAdoptLegacyClonesRejectsMismatchedStoredOrigin(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	legacyRepo := RepoBrowserRepoRef{
+		Provider: "github", Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		RemoteURL: remote,
+	}
+	require.NoError(t, mgr.EnsureClone(
+		t.Context(), "github", "github.com", "acme", "widget", remote,
+	))
+	require.NoError(t, mgr.EnsureRepoBrowserClone(t.Context(), legacyRepo))
+	legacyMainPath, err := mgr.ClonePath(
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	run(t, legacyMainPath, "git", "config", "remote.origin.url",
+		"https://github.com/other/repository.git")
+
+	stableRepo := legacyRepo
+	stableRepo.ProviderRepoID = "provider-repo-1"
+	err = mgr.AdoptLegacyClones(t.Context(), stableRepo)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "does not match configured repo")
+	assert.DirExists(t, legacyMainPath)
+	stableMainPath, pathErr := mgr.ClonePathForContext(
+		WithRepositoryIdentity(t.Context(), stableRepo.ProviderRepoID),
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, pathErr)
+	assert.NoDirExists(t, stableMainPath)
 }

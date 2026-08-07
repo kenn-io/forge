@@ -52,7 +52,7 @@ func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, stateFilter str
 
 // UpsertStack inserts or updates a stack keyed by (repo_id, base_number).
 func (d *DB) UpsertStack(ctx context.Context, repoID int64, baseNumber int, name string) (int64, error) {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		INSERT INTO forge_stacks (repo_id, base_number, name)
 		VALUES (?, ?, ?)
 		ON CONFLICT(repo_id, base_number) DO UPDATE SET
@@ -219,7 +219,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 // DeleteStaleStacks removes stacks for a repo that are not in the active set.
 func (d *DB) DeleteStaleStacks(ctx context.Context, repoID int64, activeStackIDs []int64) error {
 	if len(activeStackIDs) == 0 {
-		_, err := d.rw.ExecContext(ctx,
+		_, err := d.execContext(ctx,
 			`DELETE FROM forge_stacks WHERE repo_id = ?`, repoID)
 		if err != nil {
 			return fmt.Errorf("delete all stacks for repo: %w", err)
@@ -231,7 +231,7 @@ func (d *DB) DeleteStaleStacks(ctx context.Context, repoID int64, activeStackIDs
 	for _, id := range activeStackIDs {
 		args = append(args, id)
 	}
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`DELETE FROM forge_stacks WHERE repo_id = ? AND id NOT IN (`+
 			sqlPlaceholders(len(activeStackIDs))+`)`,
 		args...,

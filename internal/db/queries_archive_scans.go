@@ -249,7 +249,7 @@ func (d *DB) BlockArchiveRepoScan(
 	code string,
 	detail string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_archive_repo_scans
 		SET status = 'blocked', last_error_code = ?, last_error_detail = ?, updated_at = ?
 		WHERE repo_id = ? AND scan = ?

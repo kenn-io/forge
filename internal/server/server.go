@@ -1080,9 +1080,13 @@ func newServer(
 		tmuxAvailable && s.workspaces != nil,
 		options.DisableWorkspaceBackgroundMonitors,
 	)
-	if clones != nil && !options.DisableWorkspaceBackgroundMonitors {
+	if clones != nil {
+		// Seed even when background refresh is disabled: startup also adopts
+		// safe pre-stable-ID clone paths so cached reads survive an upgrade.
 		s.repoBrowserAPI.SeedRefreshRepos(context.Background())
-		s.runWorkspaceDependent(s.repoBrowserAPI.RunRefreshLoop)
+		if !options.DisableWorkspaceBackgroundMonitors {
+			s.runWorkspaceDependent(s.repoBrowserAPI.RunRefreshLoop)
+		}
 	}
 
 	// The syncer's native-stack preference is the transition authority for

@@ -25,6 +25,35 @@ combining repository-owned history
 - Timestamp provider observations before the identity lookup starts; a delayed
   response must not supersede a newer route observation
   (`internal/github/sync.go::Syncer.syncRepoIdentity`).
+- Asynchronous provider responses fetched through a mutable route must fence the
+  exact ownership generation before snapshot, notification, or cache commits;
+  same-identity freshness observations do not advance that generation
+  (`internal/db/repository_catalog.go::RepositoryRouteFence`).
+- Repository provider metadata and merge settings have a single sync-path
+  writer: commits go through the observation watermark so a delayed snapshot
+  never overwrites a newer same-route observation, and reconciled direct item
+  syncs persist their verified snapshot so a replacement repository row never
+  serves permissive schema defaults. Snapshot fields a provider omits must not
+  erase stored metadata — clone URLs seeded outside the provider resolve
+  clones — and a failed settings write stops the item sync instead of
+  populating a row that still advertises default merge availability
+  (`internal/db/repository_catalog.go::UpdateRepoProviderObservation`).
+  Newly verified or legacy-adopted rows fail closed when viewer merge permission
+  is omitted; only an already verified row may preserve its stored permission
+  (`internal/db/repository_catalog.go::ReconcileRepositoryObservation`).
+  Concurrent identity-only observations (the archive lifecycle re-reconciles
+  tracked repositories during route changes and first encounters) advance the
+  watermark without writing settings, so a direct sync whose snapshot loses
+  the watermark must re-resolve rather than proceed unsettled
+  (`internal/github/sync.go::Syncer.reconcileRepoForDirectSync`). Periodic
+  repository sync holds the same line: an uncommitted settings refresh aborts
+  the sync before item indexing and records the aborted attempt on the
+  repository row's sync health; only a provider that cannot report settings
+  is a silent skip (`internal/github/sync.go::Syncer.refreshRepoSettings`,
+  `internal/github/sync.go::Syncer.recordAbortedRepoSync`).
+- Assigning a historically occupied route to another verified repository clears
+  route-scoped state even without an active occupant; migration 47 applies the same
+  cleanup to preexisting reuse, while legacy adoption remains in-place (`internal/db/repository_catalog.go::ReconcileRepositoryObservation`, `internal/db/migrations/000047_repository_route_generation.up.sql:1`).
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.
@@ -94,9 +123,17 @@ Managed Git authorization is selected by full `(platform, platform_host, owner,
 name)` identity. GitHub smart HTTP uses mutation/user candidates and never an
 App installation token. Exact repository routes beat owner routes, which beat
 the unscoped host fallback. Non-GitHub providers use their provider-host
-fallback. Clone storage and singleflight keys must partition providers sharing a
-host, and authenticated workspace operations must validate the effective origin
-fetch and push destinations before resolving a credential.
+fallback. Clone storage and clone-coordination keys must partition providers sharing a host and
+distinct stable repository IDs sharing mutable routes
+(`internal/gitclone/clone.go::WithRepositoryIdentity`). Authenticated workspace operations
+must validate the effective origin fetch and push destinations before resolving a credential.
+Pre-stable-ID clone adoption stays offline and requires a catalog-verified stable owner with
+no other route history plus a matching stored origin (`internal/db/repository_catalog.go::DB.AdoptLegacyClonesIfSafe`).
+Stable main storage is an independent copy while the workspace path-scoped main clone remains
+(`internal/gitclone/repo_browser.go::Manager.AdoptLegacyClones`).
+Repository-browser refreshes fetch only into unpublished same-filesystem staging and publish with a
+route-generation guard plus reader-exclusive rename swap; failures retain the prior clone. Current
+waiters retry only after stale staging cleanup (`internal/gitclone/repo_browser.go::refreshRepoBrowserClone`).
 
 Minimum read scope should cover repository metadata, merge requests or pull
 requests, issues, comments, commits, tags, releases, and CI/status data. Write
@@ -218,7 +255,8 @@ registry helpers return typed errors for missing providers or capabilities.
   `closed_at`. (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`)
 - Successful canonical hydration durably marks lifecycle details checked even when a provider omits them, preventing repeated backfill reads. (`internal/db/queries_dataset_progress.go::CommitArchiveItemSync`)
 - Authentication and repository-blocked errors defer every archive work class, including already-pending hydration, until an explicit retry clears the repository error. (`internal/archive/scheduler.go::archiveRepoDeferred`)
-- Archive admission is provider-host scoped. Normal index, notification, and active-detail work outrank archive requests; live work registers first, cancels the active archive request context, and waits for that request lease to release before provider I/O. Archive leases are released before SQLite commits. Register repo index and item detail work inside their shared execution functions so periodic, watched, manual, API, and item-number entry points cannot bypass admission. (`internal/github/sync.go::beginProviderWork`, `internal/github/sync.go::tryBeginArchiveProviderRequest`, `internal/github/sync.go::Admit`, `internal/archive/scheduler.go::admit`)
+- Archive admission is provider-host scoped. Normal index, notification, and active-detail work outrank archive requests; live work registers first, cancels the active archive request context, and waits for that request lease to release before provider I/O. Archive leases are released before SQLite commits. (`internal/github/sync.go::beginProviderWork`, `internal/github/sync.go::tryBeginArchiveProviderRequest`, `internal/github/sync.go::Admit`, `internal/archive/scheduler.go::admit`)
+- Split-auth live work holds every read/write credential identity it may spend, including identities selected after route reconciliation. Register work inside shared execution functions so no entry point bypasses admission. (`internal/github/notifications_sync.go::notificationProviderWork`)
 - Archive admission requires the declared minimum cost and normally bounds wire attempts above the live floor. Gitealike merge-request reads remain preemptible but may exceed the estimate to complete their atomic dataset. (`internal/github/budget.go::LocalArchiveSpendAvailable`,
   `internal/archive/scheduler.go::archiveFeatureReadAttemptCost`, `internal/github/sync.go::Admit`)
 - Detailed reports use schema `kenn-forge-archive-report/1` and half-open UTC windows. They expose opened items, current close/merge lifecycle projections, comments, reviews, and inline comments; a reopened issue has no close row. Issue close actors must match the current `closed_at`; merge metrics come from the normalized merge-request row. Daemon CLI JSON must reject any other schema before conversion and round-trip every recognized report kind and field. (`internal/db/queries_archive_report.go::archiveReportActivityQuery`, `cmd/kenn-forge/archive_cli.go::archiveReportFromAPI`)

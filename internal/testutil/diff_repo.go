@@ -15,6 +15,7 @@ import (
 
 // DiffRepoResult holds the SHAs from the test repo for use in assertions.
 type DiffRepoResult struct {
+	PlatformRepoID string
 	BaseSHA        string // merge-base / base branch tip
 	HeadSHA        string // PR head commit
 	AltHeadSHA     string // newer PR head commit used by E2E refresh tests
@@ -42,8 +43,16 @@ func SetupDiffRepo(
 ) (*DiffRepoResult, error) {
 	workDir := filepath.Join(tmpDir, "workrepo")
 	cloneBase := filepath.Join(tmpDir, "clones")
-	barePath := filepath.Join(
-		cloneBase, "github.com", "acme", "widgets.git")
+	repoIdentity := db.GitHubRepoIdentity("github.com", "acme", "widgets")
+	repoIdentity.PlatformRepoID = "repo-acme-widgets"
+	mgr := gitclone.New(cloneBase, nil)
+	barePath, err := mgr.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(ctx, repoIdentity.PlatformRepoID),
+		"github", "github.com", "acme", "widgets",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolve bare clone path: %w", err)
+	}
 
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir work: %w", err)
@@ -199,10 +208,28 @@ func SetupDiffRepo(
 		"clone", "--bare", workDir, barePath); err != nil {
 		return nil, fmt.Errorf("bare clone: %w", err)
 	}
+	// Workspace setup still uses the platform/path namespace because a
+	// workspace can outlive catalog route changes. Seed that independent clone
+	// as well as the stable-identity clone used by sync and diff endpoints.
+	workspaceBarePath, err := mgr.ClonePath(
+		"github", "github.com", "acme", "widgets",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace bare clone path: %w", err)
+	}
+	// git clone creates missing destination parents itself; this mirrors the
+	// identity-namespace clone above so the two seeding sites stay uniform.
+	if err := os.MkdirAll(
+		filepath.Dir(workspaceBarePath), 0o755); err != nil {
+		return nil, err
+	}
+	if err := git(ctx, "",
+		"clone", "--bare", workDir, workspaceBarePath); err != nil {
+		return nil, fmt.Errorf("workspace bare clone: %w", err)
+	}
 
 	// Seed database with the real SHAs for acme/widgets PR #1.
-	repoID, err := d.UpsertRepo(
-		ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := d.UpsertRepo(ctx, repoIdentity)
 	if err != nil {
 		return nil, fmt.Errorf("upsert repo: %w", err)
 	}
@@ -227,9 +254,8 @@ func SetupDiffRepo(
 		return nil, fmt.Errorf("update repo provider metadata: %w", err)
 	}
 
-	mgr := gitclone.New(cloneBase, nil)
-
 	return &DiffRepoResult{
+		PlatformRepoID: repoIdentity.PlatformRepoID,
 		BaseSHA:        baseSHA,
 		HeadSHA:        headSHA,
 		AltHeadSHA:     altHeadSHA,

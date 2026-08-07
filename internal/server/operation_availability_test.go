@@ -352,12 +352,12 @@ func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database, _ := newServerWithRateTracker(t)
-	_, err := database.UpsertRepo(
+	repoID, err := database.UpsertRepo(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
-	// Schema default is viewer_can_merge=1, so no extra update is
-	// needed; the fresh row already satisfies the merge permission.
+	// Keep merge available so this fixture isolates the healthy path.
+	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
@@ -376,11 +376,12 @@ func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database, rt := newServerWithRateTracker(t)
-	_, err := database.UpsertRepo(
+	repoID, err := database.UpsertRepo(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
-	// Schema default already grants viewer merge permission.
+	// Keep merge available so this fixture isolates rate limiting.
+	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
 
 	resetAt := time.Now().UTC().Add(30 * time.Minute)
 	rt.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
@@ -426,10 +427,12 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	_, err := database.UpsertRepo(
+	repoID, err := database.UpsertRepo(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
+	// Keep merge available so this fixture isolates GraphQL tracker state.
+	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
 
 	// Pause GraphQL by reporting zero remaining requests with a
 	// future reset; leave REST untouched.
@@ -655,10 +658,12 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	_, err := database.UpsertRepo(
+	repoID, err := database.UpsertRepo(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
+	// Keep merge available so this fixture isolates write tracker state.
+	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
 
 	// App (sync) budget exhausted, PAT healthy: writes stay available.
 	resetAt := time.Now().UTC().Add(30 * time.Minute)
@@ -961,6 +966,13 @@ func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1, withSeedPRAuthor("marius"))
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	// Keep merge available so this fixture isolates the self-approval gate.
+	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repo.ID, true))
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
 	require.Equal(http.StatusOK, rr.Code)

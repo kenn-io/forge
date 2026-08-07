@@ -209,6 +209,75 @@ func (r *RepositoryResolver) List(ctx context.Context) ([]db.Repo, error) {
 	return r.db.ListRepos(ctx)
 }
 
+func (r *RepositoryResolver) CaptureRepositoryRouteFence(
+	ctx context.Context, repo db.Repo,
+) (db.RepositoryRouteFence, bool, error) {
+	if r == nil || r.db == nil {
+		return db.RepositoryRouteFence{}, false, ErrRepositoryStoreUnavailable
+	}
+	return r.db.CurrentRepositoryRouteFence(ctx, repositoryRouteIdentity(repo), repo.ID)
+}
+
+func (r *RepositoryResolver) RepositoryRouteFenceMatches(
+	ctx context.Context, repo db.Repo, fence db.RepositoryRouteFence,
+) (bool, error) {
+	current, found, err := r.CaptureRepositoryRouteFence(ctx, repo)
+	if err != nil || !found {
+		return false, err
+	}
+	return current == fence, nil
+}
+
+// GuardRepositoryRouteFence holds repository reconciliation stable while a
+// caller publishes work derived from the exact captured route generation.
+func (r *RepositoryResolver) GuardRepositoryRouteFence(
+	ctx context.Context,
+	repo db.Repo,
+	fence db.RepositoryRouteFence,
+	publish func() error,
+) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, ErrRepositoryStoreUnavailable
+	}
+	release, err := r.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	matches, err := r.db.RepositoryRouteFenceMatchesUnderRepositoryReconciliationRead(
+		ctx, repositoryRouteIdentity(repo), fence,
+	)
+	if err != nil || !matches {
+		return false, err
+	}
+	if err := publish(); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func repositoryRouteIdentity(repo db.Repo) db.RepoIdentity {
+	return db.RepoIdentity{
+		Platform:       repo.Platform,
+		PlatformHost:   repo.PlatformHost,
+		PlatformRepoID: repo.PlatformRepoID,
+		Owner:          repo.Owner,
+		Name:           repo.Name,
+		RepoPath:       repo.RepoPath,
+	}
+}
+
+func (r *RepositoryResolver) AdoptLegacyClonesIfSafe(
+	ctx context.Context, repo db.Repo, adopt func() error,
+) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, ErrRepositoryStoreUnavailable
+	}
+	return r.db.AdoptLegacyClonesIfSafe(
+		ctx, repositoryRouteIdentity(repo), repo.ID, adopt,
+	)
+}
+
 func (r *RepositoryResolver) Ref(repo db.Repo) RepoRefResponse {
 	provider := strings.TrimSpace(repo.Platform)
 	if provider == "" {

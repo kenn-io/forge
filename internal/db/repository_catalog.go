@@ -32,6 +32,16 @@ type RepositoryRoute struct {
 	LastSeenAt   time.Time
 }
 
+// RepositoryRouteFence identifies one ownership generation of an active route.
+// Route rows are reused when a repository returns to a historical path, so the
+// generation prevents A -> B -> A changes from looking unchanged without
+// invalidating in-flight work when the same owner merely refreshes last_seen_at.
+type RepositoryRouteFence struct {
+	RouteID    int64
+	RepoID     int64
+	Generation int64
+}
+
 type RepositoryCatalogEntry struct {
 	Repository Repo
 	Lifecycle  RepositoryLifecycleState
@@ -137,6 +147,60 @@ func (d *DB) ResolveActiveRepositoryRoute(
 	}
 	defer release()
 	return d.resolveActiveRepositoryRoute(ctx, identity)
+}
+
+// CurrentRepositoryRouteFence captures the active route generation when it is
+// still owned by repoID.
+func (d *DB) CurrentRepositoryRouteFence(
+	ctx context.Context,
+	identity RepoIdentity,
+	repoID int64,
+) (RepositoryRouteFence, bool, error) {
+	fence, found, err := d.ResolveCurrentRepositoryRouteFence(ctx, identity)
+	if err != nil {
+		return RepositoryRouteFence{}, false, err
+	}
+	if !found || fence.RepoID != repoID {
+		return RepositoryRouteFence{}, false, nil
+	}
+	return fence, true, nil
+}
+
+// ResolveCurrentRepositoryRouteFence captures the active generation of a
+// route, including for legacy callers that do not yet carry a repository ID.
+func (d *DB) ResolveCurrentRepositoryRouteFence(
+	ctx context.Context,
+	identity RepoIdentity,
+) (RepositoryRouteFence, bool, error) {
+	identity = canonicalRepoIdentity(identity)
+	release, err := d.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return RepositoryRouteFence{}, false, err
+	}
+	defer release()
+
+	fence, found, err := currentRepositoryRouteFence(
+		ctx, d.ro, identity,
+	)
+	if err != nil {
+		return RepositoryRouteFence{}, false, err
+	}
+	return fence, found, nil
+}
+
+// RepositoryRouteFenceMatchesUnderRepositoryReconciliationRead verifies a
+// fence for a caller that already holds the reconciliation read lock.
+func (d *DB) RepositoryRouteFenceMatchesUnderRepositoryReconciliationRead(
+	ctx context.Context,
+	identity RepoIdentity,
+	fence RepositoryRouteFence,
+) (bool, error) {
+	identity = canonicalRepoIdentity(identity)
+	current, found, err := currentRepositoryRouteFence(ctx, d.ro, identity)
+	if err != nil || !found {
+		return false, err
+	}
+	return repositoryRouteFencesEqual(current, fence), nil
 }
 
 // resolveActiveRepositoryRoute is ResolveActiveRepositoryRoute without the
@@ -376,7 +440,7 @@ func (d *DB) ReconcileRepositoryObservation(
 			repoID = legacyID
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE forge_repos
-				SET platform_repo_id = ?, lifecycle_state = 'active'
+				SET platform_repo_id = ?, lifecycle_state = 'active', viewer_can_merge = 0
 				WHERE id = ?`,
 				identity.PlatformRepoID, repoID,
 			); err != nil {
@@ -388,8 +452,8 @@ func (d *DB) ReconcileRepositoryObservation(
 					platform, platform_host, platform_repo_id,
 					owner, name, repo_path,
 					owner_key, name_key, repo_path_key,
-					lifecycle_state
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+					lifecycle_state, viewer_can_merge
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)`,
 				identity.Platform, identity.PlatformHost,
 				identity.PlatformRepoID,
 				identity.Owner, identity.Name, identity.RepoPath,
@@ -409,6 +473,20 @@ func (d *DB) ReconcileRepositoryObservation(
 				ctx, tx, targetID, observedAt,
 			); err != nil {
 				return err
+			}
+		} else if !targetFound {
+			reused, err := historicalRouteHasOtherRepositoryTx(
+				ctx, tx, identity, repoID,
+			)
+			if err != nil {
+				return err
+			}
+			if reused {
+				if err := deleteRepositoryRouteScopedStateTx(
+					ctx, tx, identity,
+				); err != nil {
+					return err
+				}
 			}
 		}
 		if err := activateRepositoryRouteTx(
@@ -434,6 +512,187 @@ func (d *DB) ReconcileRepositoryObservation(
 		return nil, false, errors.New("reconciled repository is missing")
 	}
 	return entry, accepted, nil
+}
+
+// UpdateRepoProviderObservation atomically persists provider metadata and
+// merge settings only while observedAt is still the repository's newest
+// accepted identity observation. Route generations intentionally do not
+// advance for same-route refreshes, so the observation watermark is the
+// freshness fence for provider snapshots captured on that route.
+func (d *DB) UpdateRepoProviderObservation(
+	ctx context.Context,
+	repoID int64,
+	observedAt time.Time,
+	metadata RepoProviderMetadata,
+	mergeSettings *RepoMergeSettings,
+	viewerCanMerge *bool,
+) (bool, error) {
+	metadata.PlatformRepoID = strings.TrimSpace(metadata.PlatformRepoID)
+	observedAt = canonicalUTCTime(observedAt)
+	release := d.lockRepositoryReconciliationWrite()
+	defer release()
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	tx, err := d.rw.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("update repository provider observation: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if guard := d.repositoryRouteGuard(ctx); guard != nil {
+		matches, err := repositoryRouteFenceMatchesTx(ctx, tx, guard.identity, guard.fence)
+		if err != nil {
+			return false, fmt.Errorf("update repository provider observation: %w", err)
+		}
+		if !matches {
+			return false, fmt.Errorf(
+				"update repository provider observation: %w for %s/%s",
+				ErrRepositoryRouteFenceChanged,
+				guard.identity.PlatformHost, guard.identity.RepoPath,
+			)
+		}
+	}
+	watermark, found, err := repositoryObservationWatermarkTx(ctx, tx, repoID)
+	if err != nil {
+		return false, fmt.Errorf("update repository provider observation: %w", err)
+	}
+	if !found || !watermark.Equal(observedAt) {
+		return false, nil
+	}
+	identity, err := lookupRepoIdentityByIDTx(ctx, tx, repoID)
+	if err != nil {
+		return false, fmt.Errorf("update repository provider observation: %w", err)
+	}
+	if current := strings.TrimSpace(identity.PlatformRepoID); current != metadata.PlatformRepoID {
+		return false, fmt.Errorf(
+			"update repository provider observation: stable provider id for repository %d is %q, not %q",
+			repoID, current, metadata.PlatformRepoID,
+		)
+	}
+
+	// Snapshots may omit URLs or the default branch (minimal payloads, list
+	// responses). Known stored metadata must survive an omitted field, or a
+	// settings-only snapshot would erase the clone URL other flows resolve
+	// clones through.
+	query := `UPDATE forge_repos
+		SET web_url = CASE WHEN ? <> '' THEN ? ELSE web_url END,
+		    clone_url = CASE WHEN ? <> '' THEN ? ELSE clone_url END,
+		    default_branch = CASE WHEN ? <> '' THEN ? ELSE default_branch END`
+	args := []any{
+		metadata.WebURL, metadata.WebURL,
+		metadata.CloneURL, metadata.CloneURL,
+		metadata.DefaultBranch, metadata.DefaultBranch,
+	}
+	if mergeSettings != nil {
+		query += `, allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ?`
+		args = append(args,
+			mergeSettings.AllowSquashMerge,
+			mergeSettings.AllowMergeCommit,
+			mergeSettings.AllowRebaseMerge,
+		)
+	}
+	if viewerCanMerge != nil {
+		query += `, viewer_can_merge = ?`
+		args = append(args, *viewerCanMerge)
+	}
+	query += ` WHERE id = ?`
+	args = append(args, repoID)
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		return false, fmt.Errorf("update repository provider observation: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("update repository provider observation: commit: %w", err)
+	}
+	return true, nil
+}
+
+func historicalRouteHasOtherRepositoryTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	identity RepoIdentity,
+	repoID int64,
+) (bool, error) {
+	var reused bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM forge_repo_routes AS route
+			WHERE route.platform = ?
+			  AND route.platform_host = ?
+			  AND route.repo_path_key = ?
+			  AND route.repo_id <> ?
+		)`,
+		identity.Platform, identity.PlatformHost, identity.RepoPathKey, repoID,
+	).Scan(&reused)
+	if err != nil {
+		return false, fmt.Errorf("check historical repository route reuse: %w", err)
+	}
+	return reused, nil
+}
+
+// AdoptLegacyClonesIfSafe runs adopt while repoID remains the verified current
+// owner of an unambiguous route. Pre-stable-ID clones were path-scoped, so a
+// route with any other catalog owner must not adopt them.
+func (d *DB) AdoptLegacyClonesIfSafe(
+	ctx context.Context,
+	identity RepoIdentity,
+	repoID int64,
+	adopt func() error,
+) (bool, error) {
+	if err := validateRepositoryObservation(identity); err != nil {
+		return false, err
+	}
+	if adopt == nil {
+		return false, errors.New("legacy clone adoption callback is required")
+	}
+	identity.PlatformRepoID = strings.TrimSpace(identity.PlatformRepoID)
+	identity = canonicalRepoIdentity(identity)
+	release, err := d.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+
+	var allowed bool
+	err = d.ro.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM forge_repo_routes AS current
+			JOIN forge_repos AS repo ON repo.id = current.repo_id
+			WHERE current.repo_id = ?
+			  AND current.is_current = 1
+			  AND current.platform = ?
+			  AND current.platform_host = ?
+			  AND current.repo_path_key = ?
+			  AND repo.lifecycle_state = 'active'
+			  AND repo.platform = current.platform
+			  AND repo.platform_host = current.platform_host
+			  AND repo.platform_repo_id = ?
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM forge_repo_routes AS historical
+				WHERE historical.platform = current.platform
+				  AND historical.platform_host = current.platform_host
+				  AND historical.repo_path_key = current.repo_path_key
+				  AND historical.repo_id <> current.repo_id
+			  )
+		)`,
+		repoID,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.RepoPathKey,
+		identity.PlatformRepoID,
+	).Scan(&allowed)
+	if err != nil {
+		return false, fmt.Errorf("check legacy clone adoption: %w", err)
+	}
+	if !allowed {
+		return false, nil
+	}
+	if err := adopt(); err != nil {
+		return true, fmt.Errorf("adopt legacy clones: %w", err)
+	}
+	return true, nil
 }
 
 // DeactivateRepositoryObservation records an authoritative provider absence.
@@ -556,6 +815,53 @@ func currentRepositoryIDByRouteTx(
 	return repoID, true, nil
 }
 
+func currentRepositoryRouteFence(
+	ctx context.Context,
+	queryer repositoryCatalogQueryer,
+	identity RepoIdentity,
+) (RepositoryRouteFence, bool, error) {
+	var fence RepositoryRouteFence
+	err := queryer.QueryRowContext(ctx, `
+		SELECT id, repo_id, generation
+		FROM forge_repo_routes
+		WHERE platform = ?
+		  AND platform_host = ?
+		  AND repo_path_key = ?
+		  AND is_current = 1`,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.RepoPathKey,
+	).Scan(&fence.RouteID, &fence.RepoID, &fence.Generation)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RepositoryRouteFence{}, false, nil
+	}
+	if err != nil {
+		return RepositoryRouteFence{}, false, fmt.Errorf(
+			"lookup current repository route fence: %w", err,
+		)
+	}
+	return fence, true, nil
+}
+
+func repositoryRouteFenceMatchesTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	identity RepoIdentity,
+	fence RepositoryRouteFence,
+) (bool, error) {
+	current, found, err := currentRepositoryRouteFence(ctx, tx, identity)
+	if err != nil || !found {
+		return false, err
+	}
+	return repositoryRouteFencesEqual(current, fence), nil
+}
+
+func repositoryRouteFencesEqual(a, b RepositoryRouteFence) bool {
+	return a.RouteID == b.RouteID &&
+		a.RepoID == b.RepoID &&
+		a.Generation == b.Generation
+}
+
 // repositoryObservationWatermarkTx returns the newest observation recorded
 // across all of a repository's routes, current or historical. Deactivations
 // stamp last_seen_at, so the watermark also advances when a route is
@@ -614,6 +920,26 @@ func deactivateCurrentRepositoryRouteTx(
 	repoID int64,
 	observedAt time.Time,
 ) error {
+	var route RepoIdentity
+	err := tx.QueryRowContext(ctx, `
+		SELECT platform, platform_host, owner, name, repo_path,
+		       owner_key, name_key, repo_path_key
+		FROM forge_repo_routes
+		WHERE repo_id = ? AND is_current = 1`, repoID,
+	).Scan(
+		&route.Platform, &route.PlatformHost,
+		&route.Owner, &route.Name, &route.RepoPath,
+		&route.OwnerKey, &route.NameKey, &route.RepoPathKey,
+	)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("load repository route before historicalizing: %w", err)
+	}
+	if err == nil {
+		if err := deleteRepositoryRouteScopedStateTx(ctx, tx, route); err != nil {
+			return err
+		}
+	}
+
 	result, err := tx.ExecContext(ctx, `
 		UPDATE forge_repo_routes
 		SET is_current = 0, last_seen_at = ?
@@ -650,6 +976,62 @@ func deactivateCurrentRepositoryRouteTx(
 		repoID,
 	); err != nil {
 		return fmt.Errorf("deactivate repository: %w", err)
+	}
+	return nil
+}
+
+func deleteRepositoryRouteScopedStateTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	identity RepoIdentity,
+) error {
+	steps := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{
+			name: "delete unlinked route notifications",
+			sql: `DELETE FROM forge_notification_items
+			      WHERE repo_id IS NULL
+			        AND platform = ?
+			        AND platform_host = ?
+			        AND repo_owner = ?
+			        AND repo_name = ?`,
+			args: []any{
+				identity.Platform, identity.PlatformHost,
+				identity.OwnerKey, identity.NameKey,
+			},
+		},
+		{
+			name: "delete route HTTP ETags",
+			sql: `DELETE FROM forge_http_etags
+			      WHERE platform = ?
+			        AND platform_host = ?
+			        AND owner_key = ?
+			        AND name_key = ?`,
+			args: []any{
+				identity.Platform, identity.PlatformHost,
+				identity.OwnerKey, identity.NameKey,
+			},
+		},
+		{
+			name: "delete route notification watermark",
+			sql: `DELETE FROM forge_notification_sync_watermarks
+			      WHERE platform = ?
+			        AND platform_host = ?
+			        AND repo_owner = ?
+			        AND repo_name = ?`,
+			args: []any{
+				identity.Platform, identity.PlatformHost,
+				identity.OwnerKey, identity.NameKey,
+			},
+		},
+	}
+	for _, step := range steps {
+		if _, err := tx.ExecContext(ctx, step.sql, step.args...); err != nil {
+			return fmt.Errorf("%s: %w", step.name, err)
+		}
 	}
 	return nil
 }
@@ -705,6 +1087,11 @@ func activateRepositoryRouteTx(
 			owner_key = excluded.owner_key,
 			name_key = excluded.name_key,
 			is_current = 1,
+			generation = CASE
+				WHEN forge_repo_routes.is_current = 0
+				THEN forge_repo_routes.generation + 1
+				ELSE forge_repo_routes.generation
+			END,
 			last_seen_at = excluded.last_seen_at`,
 		repoID,
 		identity.Platform,

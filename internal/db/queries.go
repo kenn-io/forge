@@ -789,7 +789,7 @@ func (d *DB) GetRepoLabelCatalogFreshness(ctx context.Context, repoID int64) (La
 
 func (d *DB) UpdateRepoLabelCatalogCheck(ctx context.Context, repoID int64, checkedAt time.Time, syncErr string) error {
 	checkedAt = canonicalUTCTime(checkedAt)
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_repos
 		SET label_catalog_checked_at = ?, label_catalog_sync_error = ?
 		WHERE id = ?
@@ -804,7 +804,7 @@ func (d *DB) UpdateRepoLabelCatalogCheck(ctx context.Context, repoID int64, chec
 
 func (d *DB) MarkRepoLabelCatalogSynced(ctx context.Context, repoID int64, syncedAt time.Time) error {
 	syncedAt = canonicalUTCTime(syncedAt)
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_repos
 		SET label_catalog_synced_at = CASE
 		        WHEN ? >= COALESCE(label_catalog_synced_at, '') THEN ?
@@ -1153,7 +1153,7 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 // UpdateRepoSyncStarted records the time a sync began.
 func (d *DB) UpdateRepoSyncStarted(ctx context.Context, id int64, t time.Time) error {
 	t = canonicalUTCTime(t)
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`UPDATE forge_repos SET last_sync_started_at = ? WHERE id = ?`, t, id,
 	)
 	if err != nil {
@@ -1165,7 +1165,7 @@ func (d *DB) UpdateRepoSyncStarted(ctx context.Context, id int64, t time.Time) e
 // UpdateRepoSyncCompleted records the time and optional error a sync finished.
 func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time, syncErr string) error {
 	t = canonicalUTCTime(t)
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`UPDATE forge_repos SET last_sync_completed_at = ?, last_sync_error = ? WHERE id = ?`,
 		t, syncErr, id,
 	)
@@ -1186,7 +1186,27 @@ func (d *DB) UpdateRepoProviderMetadata(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
+	tx, err := d.rw.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("update repo provider metadata: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if guard := d.repositoryRouteGuard(ctx); guard != nil {
+		matches, err := repositoryRouteFenceMatchesTx(
+			ctx, tx, guard.identity, guard.fence,
+		)
+		if err != nil {
+			return fmt.Errorf("update repo provider metadata: %w", err)
+		}
+		if !matches {
+			return fmt.Errorf(
+				"update repo provider metadata: %w for %s/%s",
+				ErrRepositoryRouteFenceChanged,
+				guard.identity.PlatformHost, guard.identity.RepoPath,
+			)
+		}
+	}
+	err = func(tx *sql.Tx) error {
 		identity, err := lookupRepoIdentityByIDTx(ctx, tx, repoID)
 		if err != nil {
 			return err
@@ -1254,9 +1274,12 @@ func (d *DB) UpdateRepoProviderMetadata(
 			repoID,
 		)
 		return err
-	})
+	}(tx)
 	if err != nil {
 		return fmt.Errorf("update repo provider metadata: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("update repo provider metadata: commit: %w", err)
 	}
 	return nil
 }
@@ -1356,7 +1379,7 @@ func (d *DB) UpdateRepoSettings(
 	id int64,
 	allowSquash, allowMerge, allowRebase, viewerCanMerge bool,
 ) error {
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`UPDATE forge_repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ?, viewer_can_merge = ? WHERE id = ?`,
 		allowSquash, allowMerge, allowRebase, viewerCanMerge, id,
 	)
@@ -1369,7 +1392,7 @@ func (d *DB) UpdateRepoMergeSettings(
 	id int64,
 	allowSquash, allowMerge, allowRebase bool,
 ) error {
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`UPDATE forge_repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ? WHERE id = ?`,
 		allowSquash, allowMerge, allowRebase, id,
 	)
@@ -1378,7 +1401,7 @@ func (d *DB) UpdateRepoMergeSettings(
 
 // UpdateRepoViewerCanMerge updates the current user's merge permission for a repo without changing merge method settings.
 func (d *DB) UpdateRepoViewerCanMerge(ctx context.Context, id int64, viewerCanMerge bool) error {
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`UPDATE forge_repos SET viewer_can_merge = ? WHERE id = ?`,
 		viewerCanMerge, id,
 	)
@@ -1423,7 +1446,7 @@ func marshalUserNamesJSON(names []string) string {
 // UpdateMergeRequestAssignees persists a provider-confirmed assignee set
 // after a mutation so the next sync does not revert the edit.
 func (d *DB) UpdateMergeRequestAssignees(ctx context.Context, repoID, mrID int64, assignees []string) error {
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`UPDATE forge_merge_requests SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
 		marshalUserNamesJSON(assignees), mrID, repoID,
 	)
@@ -1436,7 +1459,7 @@ func (d *DB) UpdateMergeRequestAssignees(ctx context.Context, repoID, mrID int64
 // UpdateMergeRequestReviewers persists a provider-confirmed
 // requested-reviewer set after a mutation.
 func (d *DB) UpdateMergeRequestReviewers(ctx context.Context, repoID, mrID int64, reviewers []string) error {
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`UPDATE forge_merge_requests SET reviewers_json = ? WHERE id = ? AND repo_id = ?`,
 		marshalUserNamesJSON(reviewers), mrID, repoID,
 	)
@@ -1449,7 +1472,7 @@ func (d *DB) UpdateMergeRequestReviewers(ctx context.Context, repoID, mrID int64
 // UpdateIssueAssignees persists a provider-confirmed assignee set on an
 // issue after a mutation.
 func (d *DB) UpdateIssueAssignees(ctx context.Context, repoID, issueID int64, assignees []string) error {
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`UPDATE forge_issues SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
 		marshalUserNamesJSON(assignees), issueID, repoID,
 	)
@@ -2390,7 +2413,7 @@ func listMREvents(ctx context.Context, q mrEventQueryer, mrID int64) ([]MREvent,
 // UpdateThreadResolved updates the resolved state for all events matching the
 // given merge request and thread ID.
 func (d *DB) UpdateThreadResolved(ctx context.Context, mrID int64, threadID string, resolved bool) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_mr_events
 		SET resolved = ?
 		WHERE merge_request_id = ? AND thread_id = ?`,
@@ -2592,7 +2615,7 @@ func (d *DB) UpdateMRTitleBody(
 	title, body string,
 	updatedAt time.Time,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET title = ?, body = ?, updated_at = ?,
 		    last_activity_at = MAX(last_activity_at, ?)
@@ -2614,7 +2637,7 @@ func (d *DB) UpdateIssueTitleBody(
 	title, body string,
 	updatedAt time.Time,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_issues
 		SET title = ?, body = ?, updated_at = ?,
 		    last_activity_at = MAX(last_activity_at, ?)
@@ -2634,7 +2657,7 @@ func (d *DB) UpdateMRDerivedFields(
 	number int,
 	fields MRDerivedFields,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET review_decision = ?, comment_count = ?, last_activity_at = ?
 		WHERE repo_id = ? AND number = ?`,
@@ -2655,7 +2678,7 @@ func (d *DB) UpdateMRReviewActivity(
 	reviewDecision string,
 	lastActivityAt time.Time,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET review_decision = ?, last_activity_at = ?
 		WHERE id = ?`, reviewDecision, lastActivityAt, mrID)
@@ -2672,7 +2695,7 @@ func (d *DB) UpdateIssueDerivedFields(
 	number int,
 	fields IssueDerivedFields,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_issues
 		SET comment_count = ?, last_activity_at = ?
 		WHERE repo_id = ? AND number = ?`,
@@ -2692,7 +2715,7 @@ func (d *DB) UpdateIssueActivity(
 	issueID int64,
 	lastActivityAt time.Time,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_issues
 		SET last_activity_at = ?
 		WHERE id = ?`, lastActivityAt, issueID)
@@ -2710,7 +2733,7 @@ func (d *DB) UpdateMRCIStatus(
 	ciStatus string,
 	ciChecksJSON string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET ci_status = ?, ci_checks_json = ?
 		WHERE repo_id = ? AND number = ?`,
@@ -2734,7 +2757,7 @@ func (d *DB) UpdateMRCIStatusForHead(
 	ciChecksJSON string,
 	ciHadPending bool,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET ci_status = ?, ci_checks_json = ?, ci_had_pending = ci_had_pending OR ?
 		WHERE repo_id = ? AND number = ? AND platform_head_sha = ?`,
@@ -2759,7 +2782,7 @@ func (d *DB) UpdateClosedMRState(
 	mergedAt, closedAt *time.Time,
 	platformHeadSHA, platformBaseSHA string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET state = ?, merged_at = ?, closed_at = ?,
 		    updated_at = ?, last_activity_at = ?,
@@ -2777,7 +2800,7 @@ func (d *DB) UpdateClosedMRState(
 // UpdateDiffSHAs stores the locally-verified diff SHAs for a merge request.
 // Called after a successful bare clone fetch and merge-base computation.
 func (d *DB) UpdateDiffSHAs(ctx context.Context, repoID int64, number int, diffHead, diffBase, mergeBase string) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		 SET diff_head_sha = ?, diff_base_sha = ?, merge_base_sha = ?
 		 WHERE repo_id = ? AND number = ?`,
@@ -2796,7 +2819,7 @@ func (d *DB) UpdatePlatformSHAs(
 	repoID int64, number int,
 	platformHead, platformBase string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		 SET platform_head_sha = ?, platform_base_sha = ?
 		 WHERE repo_id = ? AND number = ?`,
@@ -2885,7 +2908,7 @@ func (d *DB) UpdateMRState(
 	mergedAt, closedAt *time.Time,
 ) error {
 	now := time.Now().UTC()
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET state = ?, merged_at = ?, closed_at = ?,
 		    updated_at = ?, last_activity_at = ?
@@ -3328,7 +3351,7 @@ func (d *DB) UpdateIssueState(
 	closedAt *time.Time,
 ) error {
 	now := time.Now().UTC()
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_issues SET state = ?, closed_at = ?,
 		    updated_at = ?, last_activity_at = ?
 		WHERE repo_id = ? AND number = ?`,
@@ -3419,7 +3442,51 @@ func (d *DB) UpsertHTTPEtag(
 		return nil
 	}
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
-	_, err := d.rw.ExecContext(ctx,
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		return upsertHTTPEtagTx(
+			ctx, tx, platform, platformHost, owner, name,
+			resourceType, resourceNumber, etag,
+		)
+	})
+}
+
+func (d *DB) UpsertHTTPEtagIfRouteFence(
+	ctx context.Context,
+	identity RepoIdentity,
+	fence RepositoryRouteFence,
+	resourceType string,
+	resourceNumber int,
+	etag string,
+) (bool, error) {
+	if etag == "" {
+		return true, nil
+	}
+	identity = canonicalRepoIdentity(identity)
+	guarded := d.WithRepositoryRouteFence(ctx, identity, fence)
+	err := d.Tx(guarded, func(tx *sql.Tx) error {
+		return upsertHTTPEtagTx(
+			guarded, tx, identity.Platform, identity.PlatformHost,
+			identity.OwnerKey, identity.NameKey,
+			resourceType, resourceNumber, etag,
+		)
+	})
+	if errors.Is(err, ErrRepositoryRouteFenceChanged) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("conditionally upsert http etag: %w", err)
+	}
+	return true, nil
+}
+
+func upsertHTTPEtagTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	platform, platformHost, owner, name, resourceType string,
+	resourceNumber int,
+	etag string,
+) error {
+	_, err := tx.ExecContext(ctx,
 		`INSERT INTO forge_http_etags (
 			platform, platform_host, owner_key, name_key,
 			resource_type, resource_number, etag, fetched_at
@@ -3452,7 +3519,7 @@ func (d *DB) UpdateMRDetailFetched(
 	platformHost, repoOwner, repoName = canonicalRepoLookupIdentifier(
 		platformHost, repoOwner, repoName,
 	)
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET detail_fetched_at = datetime('now'),
 		    ci_had_pending = ?
@@ -3477,7 +3544,7 @@ func (d *DB) UpdateMRDetailFetchedByRepoID(
 	number int,
 	ciHadPending bool,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET detail_fetched_at = datetime('now'),
 		    ci_had_pending = ?
@@ -3504,7 +3571,7 @@ func (d *DB) UpdateMRWorkflowApproval(
 	required bool,
 	count int,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET workflow_approval_checked_at = ?,
 		    workflow_approval_head_sha   = ?,
@@ -3529,7 +3596,7 @@ func (d *DB) UpdateIssueDetailFetched(
 	platformHost, repoOwner, repoName = canonicalRepoLookupIdentifier(
 		platformHost, repoOwner, repoName,
 	)
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_issues
 		SET detail_fetched_at = datetime('now')
 		WHERE repo_id = (
@@ -3859,7 +3926,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 func (d *DB) SetStarred(
 	ctx context.Context, itemType string, repoID int64, number int,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		INSERT INTO forge_starred_items (item_type, repo_id, number)
 		VALUES (?, ?, ?)
 		ON CONFLICT(item_type, repo_id, number) DO NOTHING`,
@@ -3875,7 +3942,7 @@ func (d *DB) SetStarred(
 func (d *DB) UnsetStarred(
 	ctx context.Context, itemType string, repoID int64, number int,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		DELETE FROM forge_starred_items
 		WHERE item_type = ? AND repo_id = ? AND number = ?`,
 		itemType, repoID, number,
@@ -4334,7 +4401,7 @@ func (d *DB) InsertWorkspace(
 	if err != nil {
 		return fmt.Errorf("encode workspace kata metadata: %w", err)
 	}
-	_, err = d.rw.ExecContext(ctx, `
+	_, err = d.execContext(ctx, `
 		INSERT INTO forge_workspaces
 		    (id, platform, platform_host, repo_owner, repo_name,
 		     repo_owner_key, repo_name_key, repo_path_key,
@@ -4637,7 +4704,7 @@ func (d *DB) UpdateWorkspaceStatus(
 	id, status string,
 	errMsg *string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_workspaces
 		SET status = ?, error_message = ?
 		WHERE id = ?`,
@@ -4655,7 +4722,7 @@ func (d *DB) UpdateWorkspaceStatus(
 func (d *DB) UpdateWorkspaceBranch(
 	ctx context.Context, id, branch string,
 ) error {
-	result, err := d.rw.ExecContext(ctx, `
+	result, err := d.execContext(ctx, `
 		UPDATE forge_workspaces
 		SET workspace_branch = ?
 		WHERE id = ?`,
@@ -4680,7 +4747,7 @@ func (d *DB) UpdateWorkspaceBranch(
 func (d *DB) CompleteRecoveredWorkspaceSetup(
 	ctx context.Context, id, branch string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_workspaces
 		SET workspace_branch = ?,
 		    status = 'ready',
@@ -4701,7 +4768,7 @@ func (d *DB) CompleteRecoveredWorkspaceSetup(
 func (d *DB) UpdateWorkspaceMRHeadRepo(
 	ctx context.Context, id string, mrHeadRepo *string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_workspaces
 		SET mr_head_repo = ?
 		WHERE id = ?`,
@@ -4724,7 +4791,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForMissingRepo(
 	mrHeadRepo *string,
 ) (bool, error) {
 	identity = canonicalRepoIdentity(identity)
-	result, err := d.rw.ExecContext(ctx, `
+	result, err := d.execContext(ctx, `
 		UPDATE forge_workspaces
 		SET mr_head_repo = ?
 		WHERE id = ?
@@ -4786,7 +4853,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 	expectedRevision int64,
 	mrHeadRepo *string,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	result, err := d.execContext(ctx, `
 		UPDATE forge_workspaces
 		SET mr_head_repo = ?
 		WHERE id = ?
@@ -4839,7 +4906,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 func (d *DB) StartWorkspaceRetry(
 	ctx context.Context, id string,
 ) (bool, error) {
-	res, err := d.rw.ExecContext(ctx, `
+	res, err := d.execContext(ctx, `
 		UPDATE forge_workspaces
 		SET status = 'creating',
 		    error_message = NULL
@@ -4862,7 +4929,7 @@ func (d *DB) StartWorkspaceRetry(
 func (d *DB) SetWorkspaceAssociatedPRNumberIfNull(
 	ctx context.Context, id string, prNumber int,
 ) (bool, error) {
-	res, err := d.rw.ExecContext(ctx, `
+	res, err := d.execContext(ctx, `
 		UPDATE forge_workspaces
 		SET associated_pr_number = ?
 		WHERE id = ? AND associated_pr_number IS NULL`,
@@ -4887,7 +4954,7 @@ func (d *DB) SetWorkspaceAssociatedPRNumberIfNull(
 func (d *DB) InsertWorkspaceSetupEvent(
 	ctx context.Context, event *WorkspaceSetupEvent,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		INSERT INTO forge_workspace_setup_events
 		    (workspace_id, stage, outcome, message)
 		VALUES (?, ?, ?, ?)`,
@@ -4948,7 +5015,7 @@ func (d *DB) UpsertWorkspaceRuntimeSession(
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		INSERT INTO forge_workspace_runtime_sessions
 		    (workspace_id, session_key, target_key, label, kind, display_region, scope,
 		     tmux_session, created_at)
@@ -5060,7 +5127,7 @@ func (d *DB) UpdateWorkspaceRuntimeSessionLabel(
 	sessionKey string,
 	label string,
 ) (bool, error) {
-	res, err := d.rw.ExecContext(ctx, `
+	res, err := d.execContext(ctx, `
 		UPDATE forge_workspace_runtime_sessions
 		SET label = ?
 		WHERE workspace_id = ? AND session_key = ?`,
@@ -5102,7 +5169,7 @@ func (d *DB) DeleteWorkspaceRuntimeSession(
 	workspaceID string,
 	sessionKey string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		DELETE FROM forge_workspace_runtime_sessions
 		WHERE workspace_id = ? AND session_key = ?`,
 		workspaceID, sessionKey,
@@ -5121,7 +5188,7 @@ func (d *DB) DeleteWorkspaceRuntimeSessionCreatedAt(
 	sessionKey string,
 	createdAt time.Time,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	result, err := d.execContext(ctx, `
 		DELETE FROM forge_workspace_runtime_sessions
 		WHERE workspace_id = ? AND session_key = ? AND created_at = ?`,
 		workspaceID, sessionKey, canonicalUTCTime(createdAt),
@@ -5142,7 +5209,7 @@ func (d *DB) DeleteWorkspaceRuntimeSessions(
 	ctx context.Context,
 	workspaceID string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		DELETE FROM forge_workspace_runtime_sessions
 		WHERE workspace_id = ?`, workspaceID,
 	)
@@ -5156,7 +5223,7 @@ func (d *DB) DeleteWorkspaceRuntimeSessions(
 func (d *DB) DeleteWorkspace(
 	ctx context.Context, id string,
 ) error {
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`DELETE FROM forge_workspaces WHERE id = ?`, id,
 	)
 	if err != nil {

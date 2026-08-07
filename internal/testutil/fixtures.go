@@ -31,9 +31,15 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/widgets: %w", err)
 	}
+	if err := d.UpdateRepoViewerCanMerge(ctx, widgetsID, true); err != nil {
+		return nil, fmt.Errorf("grant fixture merge permission for acme/widgets: %w", err)
+	}
 	toolsID, err := d.UpsertRepo(ctx, fixtureRepoIdentity("acme", "tools"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/tools: %w", err)
+	}
+	if err := d.UpdateRepoViewerCanMerge(ctx, toolsID, true); err != nil {
+		return nil, fmt.Errorf("grant fixture merge permission for acme/tools: %w", err)
 	}
 	const toolsCloneURL = "https://github.com/acme/tools.git"
 	if err := d.UpdateRepoProviderMetadata(ctx, toolsID, db.RepoProviderMetadata{

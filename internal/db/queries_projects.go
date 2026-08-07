@@ -109,7 +109,7 @@ func (d *DB) CreateProject(ctx context.Context, in CreateProjectInput) (*Project
 
 	defaultBranch := strings.TrimSpace(in.DefaultBranch)
 
-	_, err = d.rw.ExecContext(ctx,
+	_, err = d.execContext(ctx,
 		`INSERT INTO forge_projects (
 		    id, display_name, local_path, repo_id, default_branch
 		 ) VALUES (?, ?, ?, ?, ?)`,
@@ -185,7 +185,7 @@ func (d *DB) ListProjects(ctx context.Context) ([]Project, error) {
 // when no project matches the id so the caller can map the result to a 404
 // rather than a misleading success.
 func (d *DB) DeleteProject(ctx context.Context, id string) error {
-	res, err := d.rw.ExecContext(ctx,
+	res, err := d.execContext(ctx,
 		`DELETE FROM forge_projects WHERE id = ?`, id,
 	)
 	if err != nil {
@@ -208,7 +208,7 @@ func (d *DB) DeleteProject(ctx context.Context, id string) error {
 // worktree exists, so a host write-through can surface a 404 instead of a
 // misleading 204.
 func (d *DB) DeleteProjectWorktree(ctx context.Context, projectID, worktreeID string) error {
-	res, err := d.rw.ExecContext(ctx,
+	res, err := d.execContext(ctx,
 		`DELETE FROM forge_project_worktrees WHERE id = ? AND project_id = ?`,
 		worktreeID, projectID,
 	)
@@ -258,7 +258,7 @@ func (d *DB) CreateProjectWorktree(ctx context.Context, in CreateProjectWorktree
 		return nil, err
 	}
 
-	_, err = d.rw.ExecContext(ctx,
+	_, err = d.execContext(ctx,
 		`INSERT INTO forge_project_worktrees (
 		    id, project_id, branch, path
 		 ) VALUES (?, ?, ?, ?)`,
@@ -292,7 +292,7 @@ func (d *DB) adoptProjectWorktreeByPath(
 	if owner != projectID {
 		return nil, ErrWorktreePathTaken
 	}
-	if _, err := d.rw.ExecContext(ctx,
+	if _, err := d.execContext(ctx,
 		`UPDATE forge_project_worktrees
 		 SET branch = ?, is_stale = 0, updated_at = (datetime('now'))
 		 WHERE id = ?`,
@@ -373,7 +373,7 @@ func (d *DB) SetProjectWorktreeHidden(
 	if hidden {
 		hiddenInt = 1
 	}
-	res, err := d.rw.ExecContext(ctx, `
+	res, err := d.execContext(ctx, `
 		UPDATE forge_project_worktrees
 		SET is_hidden = ?, updated_at = ?
 		WHERE id = ? AND project_id = ?`,
@@ -406,7 +406,7 @@ func (d *DB) SetProjectWorktreeSessionBackend(
 	if ts.IsZero() {
 		ts = time.Now().UTC()
 	}
-	res, err := d.rw.ExecContext(ctx, `
+	res, err := d.execContext(ctx, `
 		UPDATE forge_project_worktrees
 		SET session_backend = ?, updated_at = ?
 		WHERE id = ? AND project_id = ?`,
@@ -537,7 +537,7 @@ func (d *DB) MarkProjectStale(
 	if ts.IsZero() {
 		ts = time.Now().UTC()
 	}
-	if _, err := d.rw.ExecContext(ctx, `
+	if _, err := d.execContext(ctx, `
 		UPDATE forge_projects
 		SET is_stale = 1, updated_at = ?
 		WHERE id = ?`, ts, projectID,
@@ -558,7 +558,7 @@ func (d *DB) UpsertProjectWorktreeTmuxSession(
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		INSERT INTO forge_project_worktree_runtime_sessions
 		    (worktree_id, session_key, target_key, label, runtime_backend,
 		     backend_session_key,
@@ -654,7 +654,7 @@ func (d *DB) DeleteProjectWorktreeTmuxSession(
 	worktreeID string,
 	sessionKey string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		DELETE FROM forge_project_worktree_runtime_sessions
 		WHERE worktree_id = ?
 		  AND session_key = ?
@@ -677,7 +677,7 @@ func (d *DB) DeleteProjectWorktreeTmuxSessionCreatedAt(
 	sessionKey string,
 	createdAt time.Time,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	result, err := d.execContext(ctx, `
 		DELETE FROM forge_project_worktree_runtime_sessions
 		WHERE worktree_id = ?
 		  AND session_key = ?
@@ -848,7 +848,7 @@ func (d *DB) SetProjectWorktreeLinkedIssues(
 	if err != nil {
 		return nil, fmt.Errorf("marshal linked issue numbers: %w", err)
 	}
-	res, err := d.rw.ExecContext(ctx, `
+	res, err := d.execContext(ctx, `
 		UPDATE forge_project_worktrees
 		SET linked_issue_numbers = ?, updated_at = ?
 		WHERE id = ? AND project_id = ?`,

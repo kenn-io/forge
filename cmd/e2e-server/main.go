@@ -1496,25 +1496,35 @@ func buildAppState(
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/issue-workspace/reused-branch" {
-			clonePath, err := diffRepo.Manager.ClonePath(
+			identityClonePath, err := diffRepo.Manager.ClonePathForContext(
+				gitclone.WithRepositoryIdentity(r.Context(), diffRepo.PlatformRepoID),
 				"github", "github.com", "acme", "widgets",
 			)
 			if err != nil {
 				http.Error(w, "resolve fixture clone", http.StatusInternalServerError)
 				return
 			}
-			const branch = "kenn-forge/issue-10-widget-rendering-broken-on-safari"
-			_, stderr, err := gitcmd.New().Run(
-				r.Context(), clonePath, nil,
-				"update-ref", "refs/heads/"+branch, diffRepo.BaseSHA,
+			workspaceClonePath, err := diffRepo.Manager.ClonePath(
+				"github", "github.com", "acme", "widgets",
 			)
 			if err != nil {
-				http.Error(
-					w,
-					"create reused issue branch: "+string(stderr),
-					http.StatusInternalServerError,
-				)
+				http.Error(w, "resolve workspace fixture clone", http.StatusInternalServerError)
 				return
+			}
+			const branch = "kenn-forge/issue-10-widget-rendering-broken-on-safari"
+			for _, clonePath := range []string{identityClonePath, workspaceClonePath} {
+				_, stderr, err := gitcmd.New().Run(
+					r.Context(), clonePath, nil,
+					"update-ref", "refs/heads/"+branch, diffRepo.BaseSHA,
+				)
+				if err != nil {
+					http.Error(
+						w,
+						"create reused issue branch: "+string(stderr),
+						http.StatusInternalServerError,
+					)
+					return
+				}
 			}
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -1535,7 +1545,8 @@ func buildAppState(
 			forkSnapshot := *mr
 			forkSnapshot.HeadRepoCloneURL = "https://github.com/forker/widgets.git"
 			forkSnapshot.UpdatedAt = time.Now().UTC()
-			clonePath, err := diffRepo.Manager.ClonePath(
+			clonePath, err := diffRepo.Manager.ClonePathForContext(
+				gitclone.WithRepositoryIdentity(r.Context(), diffRepo.PlatformRepoID),
 				"github", "github.com", "acme", "widgets",
 			)
 			if err != nil {

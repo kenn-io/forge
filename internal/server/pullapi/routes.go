@@ -2136,6 +2136,7 @@ func (s *Handler) getCommits(ctx context.Context, input *repoNumberInput) (*getC
 	}
 
 	host := repoProviderHost(*repo)
+	ctx = gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID)
 	commits, err := s.clones.ListCommits(
 		ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name,
 		shas.MergeBaseSHA, shas.DiffHeadSHA,
@@ -2179,13 +2180,14 @@ type getDiffInput struct {
 type getDiffOutput = httpapi.BodyOutput[diffResponse]
 
 type resolvedDiffRange struct {
-	platform string
-	host     string
-	owner    string
-	name     string
-	fromSHA  string
-	toSHA    string
-	diffSHAs *db.DiffSHAs
+	platform       string
+	host           string
+	owner          string
+	name           string
+	providerRepoID string
+	fromSHA        string
+	toSHA          string
+	diffSHAs       *db.DiffSHAs
 }
 
 func (s *Handler) resolveDiffRange(
@@ -2210,6 +2212,7 @@ func (s *Handler) resolveDiffRange(
 	}
 
 	host := repoProviderHost(*repo)
+	ctx = gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID)
 	diffFrom := shas.MergeBaseSHA
 	diffTo := shas.DiffHeadSHA
 
@@ -2262,13 +2265,14 @@ func (s *Handler) resolveDiffRange(
 	}
 
 	return &resolvedDiffRange{
-		platform: string(repoProviderKind(*repo)),
-		host:     host,
-		owner:    repo.Owner,
-		name:     repo.Name,
-		fromSHA:  diffFrom,
-		toSHA:    diffTo,
-		diffSHAs: shas,
+		platform:       string(repoProviderKind(*repo)),
+		host:           host,
+		owner:          repo.Owner,
+		name:           repo.Name,
+		providerRepoID: repo.PlatformRepoID,
+		fromSHA:        diffFrom,
+		toSHA:          diffTo,
+		diffSHAs:       shas,
 	}, nil
 }
 
@@ -2281,6 +2285,7 @@ func (s *Handler) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOut
 	if err != nil {
 		return nil, err
 	}
+	ctx = gitclone.WithRepositoryIdentity(ctx, resolved.providerRepoID)
 
 	hideWhitespace := input.Whitespace == "hide"
 	result, err := s.clones.Diff(
@@ -2347,6 +2352,7 @@ func (s *Handler) getFilePreview(ctx context.Context, input *getFilePreviewInput
 	if err != nil {
 		return nil, err
 	}
+	ctx = gitclone.WithRepositoryIdentity(ctx, resolved.providerRepoID)
 
 	previewRef := resolved.toSHA
 	previewPath := input.Path
@@ -2486,6 +2492,7 @@ func (s *Handler) getFiles(ctx context.Context, input *getFilesInput) (*getFiles
 	}
 
 	host := repoProviderHost(*repo)
+	ctx = gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID)
 	files, err := s.clones.DiffFiles(
 		ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name,
 		shas.MergeBaseSHA, shas.DiffHeadSHA,

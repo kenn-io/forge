@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -30,6 +31,22 @@ type mergeRequestSnapshotLockKey struct {
 type mergeRequestSnapshotLock struct {
 	token chan struct{}
 	refs  int
+}
+
+var ErrRepositoryRouteFenceChanged = errors.New("repository route fence changed")
+
+type repositoryRouteGuardContextKey struct{}
+
+type repositoryRouteLeaseContextKey struct{}
+
+type repositoryRouteGuard struct {
+	db       *DB
+	identity RepoIdentity
+	fence    RepositoryRouteFence
+}
+
+type repositoryRouteLease struct {
+	guard *repositoryRouteGuard
 }
 
 // Open opens (or creates) a SQLite database at path, enables WAL mode, and
@@ -123,6 +140,92 @@ func (d *DB) LockRepositoryReconciliationRead(
 	return func() {
 		once.Do(d.mrReconcileMu.RUnlock)
 	}, nil
+}
+
+// WithRepositoryRouteFence binds subsequent database writes to one observed
+// repository route generation. Reads are unaffected; each write validates the
+// fence while holding the reconciliation read lock through commit.
+func (d *DB) WithRepositoryRouteFence(
+	ctx context.Context,
+	identity RepoIdentity,
+	fence RepositoryRouteFence,
+) context.Context {
+	return context.WithValue(ctx, repositoryRouteGuardContextKey{}, &repositoryRouteGuard{
+		db: d, identity: canonicalRepoIdentity(identity), fence: fence,
+	})
+}
+
+func (d *DB) repositoryRouteGuard(ctx context.Context) *repositoryRouteGuard {
+	guard, _ := ctx.Value(repositoryRouteGuardContextKey{}).(*repositoryRouteGuard)
+	if guard == nil || guard.db != d {
+		return nil
+	}
+	return guard
+}
+
+// lockRepositoryRouteWrite validates an optional context route guard and keeps
+// repository reconciliation from interleaving until release. The returned
+// context makes nested guarded writes re-entrant for the same short critical
+// section.
+func (d *DB) lockRepositoryRouteWrite(
+	ctx context.Context,
+) (context.Context, func(), error) {
+	guard := d.repositoryRouteGuard(ctx)
+	if guard == nil {
+		return ctx, func() {}, nil
+	}
+	if lease, _ := ctx.Value(repositoryRouteLeaseContextKey{}).(*repositoryRouteLease); lease != nil && lease.guard == guard {
+		return ctx, func() {}, nil
+	}
+
+	release, err := d.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return ctx, nil, err
+	}
+	matches, err := d.RepositoryRouteFenceMatchesUnderRepositoryReconciliationRead(
+		ctx, guard.identity, guard.fence,
+	)
+	if err != nil {
+		release()
+		return ctx, nil, err
+	}
+	if !matches {
+		release()
+		return ctx, nil, fmt.Errorf(
+			"%w for %s/%s", ErrRepositoryRouteFenceChanged,
+			guard.identity.PlatformHost, guard.identity.RepoPath,
+		)
+	}
+	locked := context.WithValue(
+		ctx, repositoryRouteLeaseContextKey{}, &repositoryRouteLease{guard: guard},
+	)
+	return locked, release, nil
+}
+
+// LockRepositoryReconciliationReadForWrite holds repository identity stable
+// for a compound write. When ctx carries a route fence, it validates that
+// fence and returns a context that makes nested guarded DB writes re-entrant.
+func (d *DB) LockRepositoryReconciliationReadForWrite(
+	ctx context.Context,
+) (context.Context, func(), error) {
+	if d.repositoryRouteGuard(ctx) != nil {
+		return d.lockRepositoryRouteWrite(ctx)
+	}
+	release, err := d.LockRepositoryReconciliationRead(ctx)
+	return ctx, release, err
+}
+
+func (d *DB) execContext(
+	ctx context.Context,
+	query string,
+	args ...any,
+) (sql.Result, error) {
+	lockedCtx, release, err := d.lockRepositoryRouteWrite(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	return d.rw.ExecContext(lockedCtx, query, args...)
 }
 
 func (d *DB) lockRepositoryReconciliationWrite() func() {
@@ -232,7 +335,12 @@ func (d *DB) releaseMergeRequestSnapshotLockRef(
 
 // Tx runs fn inside a transaction, rolling back on error.
 func (d *DB) Tx(ctx context.Context, fn func(tx *sql.Tx) error) error {
-	tx, err := d.rw.BeginTx(ctx, nil)
+	lockedCtx, release, err := d.lockRepositoryRouteWrite(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	tx, err := d.rw.BeginTx(lockedCtx, nil)
 	if err != nil {
 		return err
 	}

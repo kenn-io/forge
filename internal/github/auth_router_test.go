@@ -920,6 +920,78 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 	require.ErrorContains(err, "rate reserve exhausted")
 }
 
+func TestSyncerNotificationIdentityAdmissionUsesSplitCredentials(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	readIdentity := IdentityKey{
+		Host: "github.com", Principal: "installation:789",
+	}
+	writeIdentity := IdentityKey{Host: "github.com", Principal: "user:123"}
+	router, err := NewHostRouter("github.com", &Route{
+		Key:          RouteKey{Host: "github.com", Owner: "org-a"},
+		ReadIdentity: readIdentity, WriteIdentity: writeIdentity,
+	})
+	require.NoError(err)
+	readBudget := NewSyncBudget(0)
+	writeBudget := NewSyncBudget(10)
+	syncer := &Syncer{
+		routers: map[string]*HostRouter{"github.com": router},
+		budgets: map[string]*SyncBudget{
+			RateBucketKey("github", "github.com", "installation:789"): readBudget,
+			RateBucketKey("github", "github.com", "user:123"):         writeBudget,
+		},
+	}
+	repo := RepoRef{Owner: "org-a", Name: "one", PlatformHost: "github.com"}
+
+	err = syncer.ensureNotificationIdentityBudget(
+		repo, &routeRecordingClient{},
+	)
+	require.ErrorContains(err, "sync budget exhausted")
+
+	readBudget = NewSyncBudget(10)
+	writeBudget = NewSyncBudget(0)
+	syncer.budgets = map[string]*SyncBudget{
+		RateBucketKey("github", "github.com", "installation:789"): readBudget,
+		RateBucketKey("github", "github.com", "user:123"):         writeBudget,
+	}
+	err = syncer.ensureNotificationIdentityBudget(
+		repo, &routeRecordingClient{},
+	)
+	require.ErrorContains(err, "sync budget exhausted")
+
+	readBudget = NewSyncBudget(10)
+	writeBudget = NewSyncBudget(10)
+	syncer.budgets = map[string]*SyncBudget{
+		RateBucketKey("github", "github.com", "installation:789"): readBudget,
+		RateBucketKey("github", "github.com", "user:123"):         writeBudget,
+	}
+	readTracker := NewRateTracker(
+		database, "github.com", "installation:789", "rest",
+	)
+	readTracker.UpdateFromRate(Rate{
+		Limit: 5000, Remaining: 0, Reset: time.Now().Add(time.Hour),
+	})
+	syncer.rateTrackers = map[string]*RateTracker{
+		RateBucketKey("github", "github.com", "installation:789"): readTracker,
+	}
+	err = syncer.ensureNotificationIdentityBudget(
+		repo, &routeRecordingClient{},
+	)
+	require.ErrorContains(err, "rate reserve exhausted")
+
+	syncer.rateTrackers = nil
+	registry := NewQuotaRegistry()
+	registry.UpdateSnapshot(readIdentity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer,
+		Reset: time.Now().Add(time.Hour),
+	})
+	syncer.SetQuotaRegistry(registry)
+	err = syncer.ensureNotificationIdentityBudget(
+		repo, &routeRecordingClient{},
+	)
+	require.ErrorContains(err, "read rate reserve exhausted")
+}
+
 func TestSyncerRefreshesRateSnapshotsPerIdentityRoute(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

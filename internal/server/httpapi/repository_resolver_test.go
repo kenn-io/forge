@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -68,6 +70,91 @@ func TestRepositoryResolverBuildsCanonicalRef(t *testing.T) {
 	assert.Equal("gitlab.example.com", ref.PlatformHost)
 	assert.Equal("group/subgroup/widget", ref.RepoPath)
 	assert.True(ref.Capabilities.ReadRepositories)
+}
+
+func TestRepositoryResolverGuardRepositoryRouteFenceBlocksReconciliation(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "provider-old",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	repo, err := database.GetRepoByID(t.Context(), repoID)
+	require.NoError(err)
+	resolver := NewRepositoryResolver(RepositoryResolverDeps{DB: database})
+	fence, found, err := resolver.CaptureRepositoryRouteFence(t.Context(), *repo)
+	require.NoError(err)
+	require.True(found)
+
+	publishStarted := make(chan struct{})
+	releasePublish := make(chan struct{})
+	type guardResult struct {
+		matches bool
+		err     error
+	}
+	guardDone := make(chan guardResult, 1)
+	go func() {
+		matches, guardErr := resolver.GuardRepositoryRouteFence(
+			context.Background(), *repo, fence, func() error {
+				close(publishStarted)
+				<-releasePublish
+				return nil
+			},
+		)
+		guardDone <- guardResult{matches: matches, err: guardErr}
+	}()
+	<-publishStarted
+
+	writerWaiting := make(chan struct{})
+	restoreHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
+		close(writerWaiting)
+	})
+	t.Cleanup(restoreHook)
+	writerDone := make(chan error, 1)
+	go func() {
+		_, _, reconcileErr := database.ReconcileRepositoryObservation(
+			context.Background(),
+			db.RepoIdentity{
+				Platform:       "github",
+				PlatformHost:   "github.com",
+				PlatformRepoID: "provider-new",
+				Owner:          "acme",
+				Name:           "widget",
+				RepoPath:       "acme/widget",
+			},
+			time.Now().UTC().Add(time.Hour),
+		)
+		writerDone <- reconcileErr
+	}()
+	<-writerWaiting
+	select {
+	case writerErr := <-writerDone:
+		require.Fail("reconciliation completed while publication guard was held", writerErr)
+	default:
+	}
+
+	close(releasePublish)
+	guarded := <-guardDone
+	require.NoError(guarded.err)
+	assert.True(guarded.matches)
+	require.NoError(<-writerDone)
+
+	stalePublishCalled := false
+	matches, err := resolver.GuardRepositoryRouteFence(
+		t.Context(), *repo, fence, func() error {
+			stalePublishCalled = true
+			return nil
+		},
+	)
+	require.NoError(err)
+	assert.False(matches)
+	assert.False(stalePublishCalled)
 }
 
 func TestPlatformRepoRefRestoresProviderIdentityAndNumericID(t *testing.T) {

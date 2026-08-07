@@ -3,9 +3,11 @@ package gitclone
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -56,12 +58,11 @@ type Manager struct {
 	baseDir string
 	routes  RouteResolver
 
-	// ensureSF deduplicates concurrent EnsureClone calls for the same
-	// (host, owner, name). Without it, callers like the periodic syncer,
-	// per-PR detail syncs, and workspace setup race each other on the
-	// same bare clone and trigger a stampede of identical git fetches,
-	// which GitHub's smart-HTTP edge throttles with sporadic 5xx.
-	ensureSF singleflight.Group
+	// ensureFlights deduplicates concurrent EnsureClone calls for the same
+	// storage namespace and repository while retaining the slot until every
+	// caller has run its own route validation.
+	ensureMu      sync.Mutex
+	ensureFlights map[string]*ensureCloneFlight
 
 	repoBrowserRefreshSF singleflight.Group
 	repoBrowserMu        sync.Mutex
@@ -69,16 +70,62 @@ type Manager struct {
 
 	// ancestryVisitBudget overrides maxAncestryVisits when positive; tests
 	// use it to exercise the budget without building enormous histories.
-	ancestryVisitBudget int
+	ancestryVisitBudget  int
+	repoBrowserBarrierMu sync.Mutex
+	repoBrowserBarriers  map[string]*repoBrowserBarrier
+
+	// Deterministic synchronization and failure-injection hooks for
+	// repository-browser concurrency tests and clone cleanup tests. Tests set
+	// these before starting goroutines.
+	repoBrowserReadWaitingForTest      func(string)
+	repoBrowserAfterReadLockForTest    func(string)
+	repoBrowserAfterRefreshJoinForTest func(RepoBrowserRouteFence)
+	repoBrowserFetchErrorForTest       func(RepoBrowserRouteFence) error
+	removeRepoBrowserStagingForTest    func(string) error
+	publishRepoBrowserStagingForTest   func(string, string) error
+	removeCloneAsideForTest            func(string) error
+}
+
+type ensureCloneFlight struct {
+	done     chan struct{}
+	released chan struct{}
+	err      error
+	complete bool
+	waiters  int
+}
+
+// cloneValidationError marks a slot whose fetch succeeded but whose
+// starter's route validation failed, removing the fetched clone. Followers
+// distinguish it from a fetch failure so a caller whose own route still owns
+// the path can retry with a fresh, self-validated fetch. Unwrap keeps
+// errors.Is checks (for example db.ErrRepositoryRouteFenceChanged) working
+// through the marker.
+type cloneValidationError struct{ err error }
+
+func (e *cloneValidationError) Error() string { return e.err.Error() }
+
+func (e *cloneValidationError) Unwrap() error { return e.err }
+
+type repositoryIdentityContextKey struct{}
+
+// WithRepositoryIdentity partitions clone-backed work by the provider's
+// stable repository identity. Callers should set this after reconciling a
+// mutable owner/name route so route reuse cannot share clone state or an
+// in-flight fetch between distinct repositories.
+func WithRepositoryIdentity(ctx context.Context, providerRepoID string) context.Context {
+	providerRepoID = strings.TrimSpace(providerRepoID)
+	return context.WithValue(ctx, repositoryIdentityContextKey{}, providerRepoID)
 }
 
 // New creates a Manager that stores bare clones under baseDir. A nil resolver
 // means all operations proceed without auth.
 func New(baseDir string, routes RouteResolver) *Manager {
 	return &Manager{
-		baseDir:          baseDir,
-		routes:           routes,
-		repoBrowserRepos: make(map[string]RepoBrowserRepoRef),
+		baseDir:             baseDir,
+		routes:              routes,
+		ensureFlights:       make(map[string]*ensureCloneFlight),
+		repoBrowserRepos:    make(map[string]RepoBrowserRepoRef),
+		repoBrowserBarriers: make(map[string]*repoBrowserBarrier),
 	}
 }
 
@@ -98,6 +145,37 @@ func cloneNamespaceForPlatform(platform string) string {
 		return ""
 	}
 	return platform
+}
+
+func cloneNamespaceForContext(ctx context.Context, platform string) string {
+	namespace := cloneNamespaceForPlatform(platform)
+	providerRepoID, _ := ctx.Value(repositoryIdentityContextKey{}).(string)
+	providerRepoID = strings.TrimSpace(providerRepoID)
+	if providerRepoID == "" {
+		return namespace
+	}
+	digest := sha256.Sum256([]byte(providerRepoID))
+	identityNamespace := fmt.Sprintf("repo-%x", digest[:16])
+	if namespace == "" {
+		return identityNamespace
+	}
+	return namespace + "-" + identityNamespace
+}
+
+// ClonePathForContext returns the clone path selected for ctx. Contexts
+// carrying a provider repository identity use identity-partitioned storage.
+func (m *Manager) ClonePathForContext(
+	ctx context.Context, platform, host, owner, name string,
+) (string, error) {
+	return m.ClonePathInNamespace(
+		cloneNamespaceForContext(ctx, platform), host, owner, name,
+	)
+}
+
+func (m *Manager) clonePathForContext(
+	ctx context.Context, platform, host, owner, name string,
+) (string, error) {
+	return m.ClonePathForContext(ctx, platform, host, owner, name)
 }
 
 // ClonePathInNamespace returns the filesystem path for a repo's bare clone
@@ -156,8 +234,8 @@ func validateCloneNamespace(namespace string) error {
 // remoteURL is the HTTPS clone URL (e.g., https://github.com/owner/name.git).
 // On first call, clones the repo. On subsequent calls, fetches updates.
 //
-// Concurrent callers for the same (host, owner, name) share a single
-// underlying clone/fetch via singleflight so PR detail syncs, the
+// Concurrent callers for the same storage namespace and (host, owner, name)
+// share a single underlying clone/fetch slot so PR detail syncs, the
 // periodic syncer, and workspace setup do not stampede the same bare
 // clone with duplicate git operations.
 //
@@ -171,8 +249,27 @@ func (m *Manager) EnsureClone(
 	ctx context.Context, platform, host, owner, name, remoteURL string,
 ) error {
 	return m.EnsureCloneInNamespace(
-		ctx, cloneNamespaceForPlatform(platform),
+		ctx, cloneNamespaceForContext(ctx, platform),
 		platform, host, owner, name, remoteURL,
+	)
+}
+
+// EnsureCloneValidated creates or fetches a clone with route validation.
+// When this caller starts the shared fetch, validate runs inside the slot
+// after the fetch and before any waiter is released; a failure there removes
+// the fetched clone, so data fetched across an A -> B -> A ownership change
+// is never retained. Every caller additionally runs validate as a pure gate
+// before joining and again before leaving the slot; a stale caller is
+// rejected without touching the shared clone, and joined validation remains
+// serialized against later clone work.
+func (m *Manager) EnsureCloneValidated(
+	ctx context.Context,
+	platform, host, owner, name, remoteURL string,
+	validate func(context.Context) error,
+) error {
+	return m.ensureCloneInNamespaceValidated(
+		ctx, cloneNamespaceForContext(ctx, platform),
+		platform, host, owner, name, remoteURL, validate,
 	)
 }
 
@@ -181,11 +278,21 @@ func (m *Manager) EnsureClone(
 func (m *Manager) EnsureCloneInNamespace(
 	ctx context.Context, namespace, platform, host, owner, name, remoteURL string,
 ) error {
+	return m.ensureCloneInNamespaceValidated(
+		ctx, namespace, platform, host, owner, name, remoteURL, nil,
+	)
+}
+
+func (m *Manager) ensureCloneInNamespaceValidated(
+	ctx context.Context,
+	namespace, platform, host, owner, name, remoteURL string,
+	validate func(context.Context) error,
+) error {
 	namespace = strings.TrimSpace(namespace)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// Validate per-caller inputs before entering the singleflight
+	// Validate per-caller inputs before entering the shared clone
 	// slot. remoteURL is not part of the slot key (we dedup by
 	// repo identity, not URL spelling), so without an up-front
 	// check a follower with a malformed URL could inherit the
@@ -194,22 +301,184 @@ func (m *Manager) EnsureCloneInNamespace(
 	if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
 		return err
 	}
-	if _, err := m.ClonePathInNamespace(namespace, host, owner, name); err != nil {
+	clonePath, err := m.ClonePathInNamespace(namespace, host, owner, name)
+	if err != nil {
 		return err
 	}
 	key := ensureCloneKey(namespace, host, owner, name)
-	ch := m.ensureSF.DoChan(key, func() (any, error) {
+	if err := validateEnsureCloneCaller(ctx, validate); err != nil {
+		return err
+	}
+	run := func() error {
 		opCtx, cancel := context.WithTimeout(
 			context.WithoutCancel(ctx), ensureCloneTimeout,
 		)
 		defer cancel()
-		return nil, m.ensureCloneNowInNamespace(
+		if err := m.ensureCloneNowInNamespace(
 			opCtx, namespace, platform, host, owner, name, remoteURL,
-		)
-	})
+		); err != nil {
+			return err
+		}
+		if validate == nil {
+			return nil
+		}
+		// The slot starter's validation spans the whole fetch window, so a
+		// route that changed ownership during the fetch fails here and the
+		// possibly cross-repository clone is removed before any waiter can
+		// observe it.
+		if err := validate(opCtx); err != nil {
+			if cleanupErr := m.removeCloneAside(clonePath); cleanupErr != nil {
+				return errors.Join(err, fmt.Errorf(
+					"remove clone after failed validation: %w", cleanupErr,
+				))
+			}
+			return &cloneValidationError{err: err}
+		}
+		return nil
+	}
+	started, flight, err := m.awaitEnsureCloneFlight(ctx, key, run, validate)
+	if err != nil {
+		var invalidated *cloneValidationError
+		if started || !errors.As(err, &invalidated) {
+			return err
+		}
+		// The starter's route lost ownership and its failed validation
+		// removed the fetched clone, but this caller's route may still own
+		// the path. Wait for every joined caller to finish validation, then
+		// retry once with a fresh fetch this caller validates.
+		if err := waitEnsureCloneFlightReleased(ctx, flight); err != nil {
+			return err
+		}
+		if err := validateEnsureCloneCaller(ctx, validate); err != nil {
+			return err
+		}
+		if _, _, err := m.awaitEnsureCloneFlight(ctx, key, run, validate); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateEnsureCloneCaller(
+	ctx context.Context, validate func(context.Context) error,
+) error {
+	if validate == nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	validationCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), ensureCloneTimeout,
+	)
+	defer cancel()
+	return validate(validationCtx)
+}
+
+// removeCloneAside renames an invalidated clone out of its published path
+// before deleting it. Readers outside the clone flight (diff, commit, and
+// file reads resolve the path directly) either finish on their already-open
+// handles or fail cleanly on a vanished path; they never observe a
+// half-deleted tree mid-RemoveAll.
+func removeCloneAside(clonePath string) error {
+	aside := clonePath + ".removing"
+	if err := os.RemoveAll(aside); err != nil {
+		return err
+	}
+	if err := os.Rename(clonePath, aside); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return os.RemoveAll(aside)
+}
+
+func (m *Manager) removeCloneAside(clonePath string) error {
+	if remove := m.removeCloneAsideForTest; remove != nil {
+		return remove(clonePath)
+	}
+	return removeCloneAside(clonePath)
+}
+
+// awaitEnsureCloneFlight joins (or starts) the shared clone flight for key,
+// waits for it, and reports whether this caller started it alongside the
+// flight and its result. Per-caller validation runs before leaving the
+// flight, keeping the slot serialized until every joined route check ends.
+func (m *Manager) awaitEnsureCloneFlight(
+	ctx context.Context, key string, run func() error,
+	validate func(context.Context) error,
+) (bool, *ensureCloneFlight, error) {
+	flight, started := m.joinEnsureCloneFlight(key, run)
+	defer m.leaveEnsureCloneFlight(key, flight)
 	select {
-	case res := <-ch:
-		return res.Err
+	case <-flight.done:
+	case <-ctx.Done():
+		return started, flight, ctx.Err()
+	}
+	err := flight.err
+	if err == nil {
+		err = validateEnsureCloneCaller(ctx, validate)
+	}
+	return started, flight, err
+}
+
+func (m *Manager) joinEnsureCloneFlight(
+	key string,
+	run func() error,
+) (*ensureCloneFlight, bool) {
+	m.ensureMu.Lock()
+	if m.ensureFlights == nil {
+		m.ensureFlights = make(map[string]*ensureCloneFlight)
+	}
+	// Completed work remains joinable until every registered caller finishes
+	// its own route validation. A second flight must not mutate or remove the
+	// clone while callers from the first flight are still checking ownership.
+	if flight := m.ensureFlights[key]; flight != nil {
+		flight.waiters++
+		m.ensureMu.Unlock()
+		return flight, false
+	}
+	flight := &ensureCloneFlight{
+		done: make(chan struct{}), released: make(chan struct{}), waiters: 1,
+	}
+	m.ensureFlights[key] = flight
+	m.ensureMu.Unlock()
+
+	go func() {
+		err := run()
+		m.ensureMu.Lock()
+		flight.err = err
+		flight.complete = true
+		close(flight.done)
+		if flight.waiters == 0 && m.ensureFlights[key] == flight {
+			delete(m.ensureFlights, key)
+			close(flight.released)
+		}
+		m.ensureMu.Unlock()
+	}()
+	return flight, true
+}
+
+func (m *Manager) leaveEnsureCloneFlight(key string, flight *ensureCloneFlight) {
+	m.ensureMu.Lock()
+	flight.waiters--
+	if flight.complete && flight.waiters == 0 && m.ensureFlights[key] == flight {
+		delete(m.ensureFlights, key)
+		close(flight.released)
+	}
+	m.ensureMu.Unlock()
+}
+
+func waitEnsureCloneFlightReleased(
+	ctx context.Context, flight *ensureCloneFlight,
+) error {
+	if flight == nil {
+		return errors.New("wait for clone flight release: missing flight")
+	}
+	select {
+	case <-flight.released:
+		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -221,7 +490,7 @@ func ensureCloneKey(namespace, host, owner, name string) string {
 
 // ensureCloneNow is the unshared inner: it decides whether to create a
 // fresh bare clone or refresh an existing one. Always called from
-// inside the singleflight slot opened by EnsureClone, which has
+// inside the shared clone slot opened by EnsureClone, which has
 // already validated the caller's remoteURL.
 func (m *Manager) ensureCloneNowInNamespace(
 	ctx context.Context, namespace, platform, host, owner, name, remoteURL string,
@@ -404,7 +673,7 @@ func (m *Manager) fetch(
 func (m *Manager) RevParse(
 	ctx context.Context, platform, host, owner, name, ref string,
 ) (string, error) {
-	clonePath, err := m.ClonePath(platform, host, owner, name)
+	clonePath, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return "", err
 	}
@@ -419,7 +688,7 @@ func (m *Manager) RevParse(
 func (m *Manager) MergeBase(
 	ctx context.Context, platform, host, owner, name, sha1, sha2 string,
 ) (string, error) {
-	clonePath, err := m.ClonePath(platform, host, owner, name)
+	clonePath, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return "", err
 	}

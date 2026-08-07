@@ -136,7 +136,7 @@ func (d *DB) DeleteGitHubNativeStacks(ctx context.Context, repoID int64, numbers
 	for _, number := range numbers {
 		args = append(args, number)
 	}
-	if _, err := d.rw.ExecContext(ctx,
+	if _, err := d.execContext(ctx,
 		`DELETE FROM github_native_stacks WHERE repo_id = ? AND stack_number IN (`+
 			sqlPlaceholders(len(numbers))+`)`, args...,
 	); err != nil {

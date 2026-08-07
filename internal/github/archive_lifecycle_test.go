@@ -1734,6 +1734,134 @@ func TestSyncRepoRegistersReadAndWriteIdentityProviderWork(t *testing.T) {
 	assert.False(syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive))
 }
 
+func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	getRepoStarted := make(chan struct{})
+	listStarted := make(chan struct{})
+	releaseList := make(chan struct{})
+	var getRepoOnce sync.Once
+	var listOnce sync.Once
+	mc := &mockClient{
+		getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
+			getRepoOnce.Do(func() { close(getRepoStarted) })
+			owner := "acme"
+			name := "widget"
+			nodeID := "repo-new"
+			id := int64(1)
+			return &gh.Repository{
+				ID: &id, NodeID: &nodeID, Owner: &gh.User{Login: &owner}, Name: &name,
+			}, nil
+		},
+		listNotificationsFn: func(
+			context.Context, NotificationListOptions,
+		) ([]NotificationThread, bool, error) {
+			listOnce.Do(func() { close(listStarted) })
+			<-releaseList
+			return nil, false, nil
+		},
+	}
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, database, nil,
+		[]RepoRef{repo}, time.Hour, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "installation:22"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:8"},
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "legacy"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "installation:11"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:9"},
+		},
+	)
+	require.NoError(err)
+	router.RegisterRepoCredentialAlias("acme", "widget", RouteKey{
+		Host: "github.com", Owner: "legacy",
+	}, "repo-old")
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	oldReadBucket := RateBucketKey("github", "github.com", "installation:11")
+	oldWriteBucket := RateBucketKey("github", "github.com", "user:9")
+	newReadBucket := RateBucketKey("github", "github.com", "installation:22")
+	newWriteBucket := RateBucketKey("github", "github.com", "user:8")
+	oldArchiveCtx, releaseOldArchive, allowed := syncer.tryBeginArchiveProviderRequest(
+		t.Context(), oldReadBucket,
+	)
+	require.True(allowed)
+	t.Cleanup(releaseOldArchive)
+	newArchiveCtx, releaseNewArchive, allowed := syncer.tryBeginArchiveProviderRequest(
+		t.Context(), newReadBucket,
+	)
+	require.True(allowed)
+	t.Cleanup(releaseNewArchive)
+	t.Cleanup(func() {
+		select {
+		case <-releaseList:
+		default:
+			close(releaseList)
+		}
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- syncer.SyncNotifications(t.Context()) }()
+	select {
+	case <-oldArchiveCtx.Done():
+	case <-time.After(time.Second):
+		require.Fail("notification sync did not preempt the initial read identity archive")
+	}
+	select {
+	case <-getRepoStarted:
+		require.Fail("repository verification started before the initial read archive released")
+	case <-time.After(25 * time.Millisecond):
+	}
+	releaseOldArchive()
+	select {
+	case <-getRepoStarted:
+	case <-time.After(time.Second):
+		require.Fail("notification sync did not begin repository verification")
+	}
+	select {
+	case <-newArchiveCtx.Done():
+	case <-time.After(time.Second):
+		require.Fail("notification sync did not preempt the reconciled read identity archive")
+	}
+	select {
+	case <-listStarted:
+		require.Fail("notification listing started before the reconciled read archive released")
+	case <-time.After(25 * time.Millisecond):
+	}
+	releaseNewArchive()
+	select {
+	case <-listStarted:
+	case <-time.After(time.Second):
+		require.Fail("notification sync did not begin listing notifications")
+	}
+	for bucket, label := range map[string]string{
+		oldReadBucket: "initial read", oldWriteBucket: "initial write",
+		newReadBucket: "reconciled read", newWriteBucket: "reconciled write",
+	} {
+		assert.True(
+			syncer.higherPriorityProviderWorkActive(bucket, archive.PriorityFullArchive),
+			label+" identity work must preempt archives during notification sync",
+		)
+	}
+	close(releaseList)
+	require.NoError(<-done)
+	for _, bucket := range []string{oldReadBucket, oldWriteBucket, newReadBucket, newWriteBucket} {
+		assert.False(syncer.higherPriorityProviderWorkActive(bucket, archive.PriorityFullArchive))
+	}
+}
+
 func TestProcessQueuedNotificationReadsHoldsWriteIdentityProviderWork(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

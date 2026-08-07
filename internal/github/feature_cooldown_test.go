@@ -721,20 +721,20 @@ func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservat
 	tests := []struct {
 		name    string
 		feature string
-		run     func(context.Context, *Syncer, RepoRef)
+		run     func(context.Context, *Syncer, RepoRef, int64)
 	}{
 		{
 			name:    "pending merge request missing detail",
 			feature: platform.RepositoryFeatureMergeRequests,
-			run: func(ctx context.Context, syncer *Syncer, repo RepoRef) {
-				syncer.queuePRCommentSync(repo, 7)
+			run: func(ctx context.Context, syncer *Syncer, repo RepoRef, repoID int64) {
+				syncer.queuePRCommentSync(repo, repoID, 7)
 				syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 			},
 		},
 		{
 			name:    "repository issue list empty",
 			feature: platform.RepositoryFeatureIssues,
-			run: func(ctx context.Context, syncer *Syncer, repo RepoRef) {
+			run: func(ctx context.Context, syncer *Syncer, repo RepoRef, _ int64) {
 				syncer.refreshRepoIssueComments(ctx, repo)
 			},
 		},
@@ -776,7 +776,7 @@ func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservat
 			))
 			now = now.Add(repositoryFeatureProbeInterval)
 
-			tc.run(ctx, syncer, repo)
+			tc.run(ctx, syncer, repo, repoID)
 
 			first, due := syncer.beginRepositoryFeatureProbe(ctx, repo, tc.feature)
 			require.True(due)
@@ -949,7 +949,7 @@ func TestDisabledIssueCooldownSkipsQueuedComments(t *testing.T) {
 			errors.New("repository issues disabled"),
 		),
 	))
-	syncer.queueIssueCommentSync(repo, 1)
+	syncer.queueIssueCommentSync(repo, repoID, 1)
 
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 
@@ -1002,9 +1002,9 @@ func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
 	))
 	now = now.Add(repositoryFeatureProbeInterval)
 
-	syncer.queueIssueCommentSync(repo, 1)
+	syncer.queueIssueCommentSync(repo, repoID, 1)
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
-	syncer.queueIssueCommentSync(repo, 1)
+	syncer.queueIssueCommentSync(repo, repoID, 1)
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 
 	assert.Equal(int32(1), commentCalls.Load())

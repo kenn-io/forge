@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/gitclone"
 )
 
 const defaultRepoBrowserRefreshInterval = 5 * time.Minute
@@ -57,13 +56,24 @@ func (h *Handler) SeedRefreshRepos(ctx context.Context) {
 		if strings.TrimSpace(repo.CloneURL) == "" {
 			continue
 		}
-		repoRef := gitclone.RepoBrowserRepoRef{
-			Provider:  repo.Platform,
-			Host:      repo.PlatformHost,
-			Owner:     repo.Owner,
-			Name:      repo.Name,
-			RepoPath:  repo.RepoPath,
-			RemoteURL: repo.CloneURL,
+		repoRef, err := h.repoBrowserRepoRef(ctx, repo)
+		if err != nil {
+			slog.Warn("failed to fence repo browser refresh repo",
+				"provider", repo.Platform,
+				"host", repo.PlatformHost,
+				"repo", repo.RepoPath,
+				"err", err)
+			continue
+		}
+		_, err = h.resolver.AdoptLegacyClonesIfSafe(ctx, repo, func() error {
+			return h.clones.AdoptLegacyClones(ctx, repoRef)
+		})
+		if err != nil {
+			slog.Warn("failed to adopt legacy repository clones",
+				"provider", repo.Platform,
+				"host", repo.PlatformHost,
+				"repo", repo.RepoPath,
+				"err", err)
 		}
 		registered, err := h.clones.RegisterExistingRepoBrowserClone(ctx, repoRef)
 		if err != nil {

@@ -20,7 +20,7 @@ func (m *Manager) DiffFiles(
 	ctx context.Context,
 	platform, host, owner, name, mergeBase, headSHA string,
 ) ([]DiffFile, error) {
-	clonePath, err := m.ClonePath(platform, host, owner, name)
+	clonePath, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (m *Manager) Diff(
 	platform, host, owner, name, mergeBase, headSHA string,
 	hideWhitespace bool,
 ) (*DiffResult, error) {
-	clonePath, err := m.ClonePath(platform, host, owner, name)
+	clonePath, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +340,7 @@ func (m *Manager) FileContent(
 	platform, host, owner, name, ref, filePath string,
 	maxBytes int64,
 ) (*FileContent, error) {
-	clonePath, err := m.ClonePath(platform, host, owner, name)
+	clonePath, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return nil, err
 	}

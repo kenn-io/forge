@@ -129,7 +129,7 @@ func (d *DB) GetBranchTip(
 
 func (d *DB) UpsertBranchTip(ctx context.Context, tip BranchTip) error {
 	canonicalizeBranchTipTimestamps(&tip)
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		INSERT INTO forge_branch_tips (
 		    repo_id, branch_name, tip_sha, observed_at
 		)
@@ -159,7 +159,7 @@ func (d *DB) InsertBranchForcePush(
 	fp BranchForcePush,
 ) error {
 	canonicalizeBranchForcePushTimestamps(&fp)
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		INSERT INTO forge_branch_force_pushes (
 		    repo_id, branch_name, before_sha, after_sha, before_observed_at,
 		    detected_at

@@ -162,6 +162,9 @@ Some PR-derived state is only valid for one head commit.
   (`internal/github/sync.go::computeCommitLiveness`,
   `internal/db/queries.go::UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead`,
   `internal/gitclone/reachability.go::CommitsReachableFrom`).
+- Mutation-triggered closed-MR refetches capture the route generation before
+  provider I/O, carry stable clone identity, and fence all snapshot/diff writes
+  (`internal/github/sync.go::SyncClosedMROnProvider`).
 - Workflow-approval decisions must be tied to the correct PR identity, not just
   the head SHA. Shared SHAs across forks or sibling PRs must not leak approval
   state between items.
@@ -548,8 +551,15 @@ Managed Git uses exact-repository or owner PAT routes with mutation context and
 must never expose an App installation token to smart HTTP. Thread full provider,
 host, owner, and repository identity through clone/fetch and local reads, passing
 the normalized platform (`repoPlatform(repo)`) so an unqualified GitHub ref still
-picks its credential route instead of none;
-partition non-GitHub clone storage by provider on shared hosts. Before injecting
+picks its credential route instead of none. Partition sync, diff, and repository
+browser clone storage by stable provider repository identity
+(`internal/gitclone/repo_browser.go::repoBrowserCloneNamespace`). Only the shared fetch's starter discards
+a clone when its captured route generation no longer owns the path; later
+callers re-validate their own fences as pure gates so a stale caller never
+deletes a clone current-route callers are reading, and a follower rejected only
+by the starter's stale route retries with its own validated fetch. Workspace clones remain
+path-scoped, so shared full-stack fixtures must seed both namespaces
+(`internal/testutil/diff_repo.go::SetupDiffRepo`). Before injecting
 a PAT into workspace fetch or push, require the branch upstream to be `origin`,
 reject repository-local URL rewrites, and validate every origin fetch/push URL.
 

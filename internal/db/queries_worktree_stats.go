@@ -56,7 +56,7 @@ func (d *DB) UpsertWorktreeStats(
 		changed = !worktreeStatsCountsEqual(prev, stats)
 	}
 
-	if _, err = d.rw.ExecContext(ctx, `
+	if _, err = d.execContext(ctx, `
 		INSERT INTO forge_worktree_stats
 		    (path, diff_added, diff_removed, sync_ahead, sync_behind, sampled_at)
 		VALUES (?, ?, ?, ?, ?, ?)
@@ -123,7 +123,7 @@ func (d *DB) ListWorktreeStats(
 // snapshot's worktree set. An empty keep set clears the table.
 func (d *DB) PruneWorktreeStats(ctx context.Context, keepPaths []string) error {
 	if len(keepPaths) == 0 {
-		if _, err := d.rw.ExecContext(
+		if _, err := d.execContext(
 			ctx, `DELETE FROM forge_worktree_stats`,
 		); err != nil {
 			return fmt.Errorf("prune worktree stats: %w", err)
@@ -135,7 +135,7 @@ func (d *DB) PruneWorktreeStats(ctx context.Context, keepPaths []string) error {
 	for _, p := range keepPaths {
 		args = append(args, p)
 	}
-	if _, err := d.rw.ExecContext(ctx,
+	if _, err := d.execContext(ctx,
 		`DELETE FROM forge_worktree_stats WHERE path NOT IN (`+placeholders+`)`,
 		args...,
 	); err != nil {

@@ -65,7 +65,7 @@ func (m *Manager) CommitsReachableFrom(
 	platform, host, owner, name, headSHA string,
 	candidateSHAs []string,
 ) (CommitReachability, error) {
-	clonePath, err := m.ClonePath(platform, host, owner, name)
+	clonePath, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return CommitReachability{}, err
 	}

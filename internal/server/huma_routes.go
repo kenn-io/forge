@@ -477,6 +477,7 @@ func (s *Server) getRepoCommitDiff(
 	}
 
 	host := httpapi.ProviderHost(*repo)
+	ctx = gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID)
 	if !isFullGitObjectID(input.SHA) {
 		return nil, httpapi.Validation("path.sha", "commit SHA must be a full object ID")
 	}

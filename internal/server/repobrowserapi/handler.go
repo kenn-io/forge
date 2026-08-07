@@ -506,18 +506,62 @@ func (h *Handler) ensureRepoBrowserClone(
 	if strings.TrimSpace(repo.CloneURL) == "" {
 		return nil, gitclone.RepoBrowserRepoRef{}, errRepoBrowserCloneUnavailable
 	}
-	repoRef := gitclone.RepoBrowserRepoRef{
-		Provider:  repo.Platform,
-		Host:      repo.PlatformHost,
-		Owner:     repo.Owner,
-		Name:      repo.Name,
-		RepoPath:  repo.RepoPath,
-		RemoteURL: repo.CloneURL,
+	repoRef, err := h.repoBrowserRepoRef(ctx, *repo)
+	if err != nil {
+		return nil, gitclone.RepoBrowserRepoRef{}, err
 	}
 	if err := h.clones.EnsureRepoBrowserClone(ctx, repoRef); err != nil {
 		return nil, gitclone.RepoBrowserRepoRef{}, err
 	}
 	return repo, repoRef, nil
+}
+
+func (h *Handler) repoBrowserRepoRef(
+	ctx context.Context, repo db.Repo,
+) (gitclone.RepoBrowserRepoRef, error) {
+	fence, found, err := h.resolver.CaptureRepositoryRouteFence(ctx, repo)
+	if err != nil {
+		return gitclone.RepoBrowserRepoRef{}, err
+	}
+	if !found {
+		return gitclone.RepoBrowserRepoRef{}, db.ErrRepositoryRouteFenceChanged
+	}
+	token := gitclone.NewRepoBrowserRouteFence(
+		fence.RouteID, fence.RepoID, fence.Generation,
+	)
+	return gitclone.RepoBrowserRepoRef{
+		Provider:       repo.Platform,
+		Host:           repo.PlatformHost,
+		Owner:          repo.Owner,
+		Name:           repo.Name,
+		RepoPath:       repo.RepoPath,
+		ProviderRepoID: repo.PlatformRepoID,
+		RemoteURL:      repo.CloneURL,
+		RouteFence:     token,
+		ValidateRouteFence: func(
+			validationCtx context.Context,
+			got gitclone.RepoBrowserRouteFence,
+		) (bool, error) {
+			if got != token {
+				return false, nil
+			}
+			return h.resolver.RepositoryRouteFenceMatches(
+				validationCtx, repo, fence,
+			)
+		},
+		PublishIfRouteFenceMatches: func(
+			publishCtx context.Context,
+			got gitclone.RepoBrowserRouteFence,
+			publish func() error,
+		) (bool, error) {
+			if got != token {
+				return false, nil
+			}
+			return h.resolver.GuardRepositoryRouteFence(
+				publishCtx, repo, fence, publish,
+			)
+		},
+	}, nil
 }
 
 func (h *Handler) repoRefFromRepo(repo db.Repo) httpapi.RepoRefResponse {
@@ -576,6 +620,10 @@ func repoBrowserProblem(err error) error {
 	}
 	if errors.Is(err, httpapi.ErrRepoNotFound) {
 		return httpapi.NotFound(httpapi.CodeRepoNotFound, "repo not found", map[string]any{"reason": "repo_not_found"})
+	}
+	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) ||
+		errors.Is(err, gitclone.ErrRepoBrowserRouteFenceChanged) {
+		return httpapi.NotFound(httpapi.CodeRepoNotFound, "repo route changed", map[string]any{"reason": "repo_not_found"})
 	}
 	if errors.Is(err, errRepoBrowserCloneUnavailable) {
 		return httpapi.NotFound(httpapi.CodeNotFound, "repo browser clone unavailable", map[string]any{"reason": "clone_unavailable"})

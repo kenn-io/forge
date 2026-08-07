@@ -3025,7 +3025,7 @@ func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
 		default:
 			return false
 		}
-	}, time.Second, time.Millisecond)
+	}, 10*time.Second, time.Millisecond)
 
 	for range 3 {
 		resp, err = client.HTTP.EnqueuePrSyncWithResponse(
@@ -3036,6 +3036,8 @@ func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
 	}
 	close(releaseFirst)
 
+	// The rerun re-verifies repository identity and persists the settings
+	// observation before its PR fetch; give the loaded CI runner headroom.
 	require.Eventually(func() bool {
 		select {
 		case <-secondDone:
@@ -3043,7 +3045,7 @@ func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
 		default:
 			return false
 		}
-	}, time.Second, time.Millisecond)
+	}, 10*time.Second, time.Millisecond)
 	assert.Equal(int64(2), calls.Load())
 	assert.Never(
 		func() bool { return calls.Load() > 2 },
@@ -6511,7 +6513,10 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	runGit(t, work, "push", "--tags", "origin", "main")
 
 	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
-	clonePath, err := clones.ClonePath("github", "github.com", "acme", "widgets")
+	clonePath, err := clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(ctx, "repo-acme-widgets"),
+		"github", "github.com", "acme", "widgets",
+	)
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(clonePath), 0o755))
 	runGit(t, dir, "clone", "--bare", remote, clonePath)
@@ -20893,7 +20898,12 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	database := dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
-	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(ctx, "repo-acme-widget"),
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(bare), 0o755))
 
 	work := filepath.Join(dir, "work")
@@ -20934,7 +20944,6 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	runGit(t, work, "push", "origin", "feature")
 	headSHA := testGitSHA(t, work, "HEAD")
 
-	clones := gitclone.New(bareDir, nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil, defaultTestRepos, time.Minute, nil, nil,
@@ -21012,7 +21021,11 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 	database := dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
-	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	bare, err := gitclone.New(bareDir, nil).ClonePathForContext(
+		gitclone.WithRepositoryIdentity(ctx, "repo-acme-widget"),
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(bare), 0o755))
 
 	work := filepath.Join(dir, "work")
@@ -22059,7 +22072,12 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
 
 	tmpWork := filepath.Join(dir, "work")
 	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
@@ -22091,7 +22109,6 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 		sha = testGitSHA(t, tmpWork, sha+"^1")
 	}
 
-	clones := gitclone.New(bareDir, nil)
 	mock := &mockGH{}
 	repos := []ghclient.RepoRef{{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"}}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
@@ -22195,7 +22212,10 @@ func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
 	require := require.New(t)
 
 	_, _, _, _, _, srv := setupTestServerWithClonesAndServer(t)
-	clonePath, err := srv.clones.ClonePath("github", "github.com", "acme", "widget")
+	clonePath, err := srv.clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
+		"github", "github.com", "acme", "widget",
+	)
 	require.NoError(err)
 	configPath := filepath.Join(clonePath, "config")
 	before, err := os.ReadFile(configPath)
@@ -22458,7 +22478,12 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(bareDir, "github.com", "acme", "rootrepo.git")
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-rootrepo"),
+		"github", "github.com", "acme", "rootrepo",
+	)
+	require.NoError(err)
 	tmpWork := filepath.Join(dir, "work")
 	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
 	runGit(t, dir, "clone", bare, tmpWork)
@@ -22476,7 +22501,6 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	runGit(t, tmpWork, "push", "origin", "main")
 	headSHA := testGitSHA(t, tmpWork, "HEAD")
 
-	clones := gitclone.New(bareDir, nil)
 	mock := &mockGH{}
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "rootrepo", PlatformHost: "github.com"}}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)

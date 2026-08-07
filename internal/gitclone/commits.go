@@ -38,7 +38,7 @@ func (m *Manager) ListCommits(
 	ctx context.Context,
 	platform, host, owner, name, mergeBase, headSHA string,
 ) ([]Commit, error) {
-	dir, err := m.ClonePath(platform, host, owner, name)
+	dir, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (m *Manager) CommitTimelineSinceTag(
 		limit = 1
 	}
 
-	dir, err := m.ClonePath(platform, host, owner, name)
+	dir, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -253,7 +253,7 @@ func (m *Manager) ParentOf(
 	ctx context.Context,
 	platform, host, owner, name, sha string,
 ) (string, error) {
-	dir, err := m.ClonePath(platform, host, owner, name)
+	dir, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return "", err
 	}

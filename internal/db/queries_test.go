@@ -5115,6 +5115,73 @@ func TestHTTPEtagPersistence(t *testing.T) {
 	assert.Equal(`"etag-v2"`, etag)
 }
 
+func TestUpsertHTTPEtagIfRouteFenceRejectsConcurrentPathReuse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	observedAt := time.Now().UTC()
+	originalIdentity := RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "original-repo",
+		Owner: "acme", Name: "alpha", RepoPath: "acme/alpha",
+	}
+	original, _, err := database.ReconcileRepositoryObservation(
+		ctx, originalIdentity, observedAt,
+	)
+	require.NoError(err)
+	fence, found, err := database.CurrentRepositoryRouteFence(
+		ctx, originalIdentity, original.Repository.ID,
+	)
+	require.NoError(err)
+	require.True(found)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	type result struct {
+		committed bool
+		err       error
+	}
+	done := make(chan result, 1)
+	go func() {
+		close(started)
+		<-release
+		committed, upsertErr := database.UpsertHTTPEtagIfRouteFence(
+			ctx, originalIdentity, fence,
+			"pull_request", 7, `"stale-etag"`,
+		)
+		done <- result{committed: committed, err: upsertErr}
+	}()
+	<-started
+	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "original-repo",
+		Owner: "acme", Name: "beta", RepoPath: "acme/beta",
+	}, observedAt.Add(time.Minute))
+	require.NoError(err)
+	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement-repo",
+		Owner: "acme", Name: "alpha", RepoPath: "acme/alpha",
+	}, observedAt.Add(2*time.Minute))
+	require.NoError(err)
+	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement-repo",
+		Owner: "acme", Name: "gamma", RepoPath: "acme/gamma",
+	}, observedAt.Add(3*time.Minute))
+	require.NoError(err)
+	_, _, err = database.ReconcileRepositoryObservation(ctx, originalIdentity,
+		observedAt.Add(4*time.Minute))
+	require.NoError(err)
+	close(release)
+	got := <-done
+	require.NoError(got.err)
+	assert.False(got.committed)
+
+	etag, err := database.GetHTTPEtag(
+		ctx, "github", "github.com", "acme", "alpha", "pull_request", 7,
+	)
+	require.NoError(err)
+	assert.Empty(etag)
+}
+
 func TestUpsertIssue_StoresAssignees(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

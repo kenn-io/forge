@@ -77,7 +77,7 @@ func (d *DB) EnsureItemWorkflowState(
 	if err := validateItemWorkflowType(itemType); err != nil {
 		return err
 	}
-	_, err := d.rw.ExecContext(ctx,
+	_, err := d.execContext(ctx,
 		`INSERT INTO forge_item_workflow_state (repo_id, item_type, item_number, status)
 		 VALUES (?, ?, ?, 'new')
 		 ON CONFLICT(repo_id, item_type, item_number) DO NOTHING`,

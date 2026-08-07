@@ -2,17 +2,64 @@ package gitclone
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/tokenauth"
 )
+
+type countingRepoBrowserRouteResolver struct {
+	calls atomic.Int64
+}
+
+func (r *countingRepoBrowserRouteResolver) SourceForRepo(_, _, _, _ string) tokenauth.Source {
+	r.calls.Add(1)
+	return nil
+}
+
+func (*countingRepoBrowserRouteResolver) FallbackSource(string) tokenauth.Source { return nil }
+
+type blockingRepoBrowserRouteResolver struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (r *blockingRepoBrowserRouteResolver) SourceForRepo(_, _, _, _ string) tokenauth.Source {
+	r.once.Do(func() {
+		close(r.started)
+		<-r.release
+	})
+	return nil
+}
+
+func (*blockingRepoBrowserRouteResolver) FallbackSource(string) tokenauth.Source { return nil }
+
+type callbackRepoBrowserRouteResolver struct {
+	calls  atomic.Int64
+	onCall func(int64)
+}
+
+func (r *callbackRepoBrowserRouteResolver) SourceForRepo(_, _, _, _ string) tokenauth.Source {
+	call := r.calls.Add(1)
+	if r.onCall != nil {
+		r.onCall(call)
+	}
+	return nil
+}
+
+func (*callbackRepoBrowserRouteResolver) FallbackSource(string) tokenauth.Source { return nil }
 
 func TestRepoBrowserListRefsDisambiguatesBranchAndTag(t *testing.T) {
 	require := require.New(t)
@@ -115,6 +162,589 @@ func TestRefreshRepoBrowserClonesUsesSeededExistingClones(t *testing.T) {
 	assert.Equal(updatedSHA, resolved.SHA)
 }
 
+func TestRefreshRepoBrowserClonesEvictsStaleRegistrationBeforeFetch(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, _ := setupRepoBrowserTestRepo(t)
+	routes := &countingRepoBrowserRouteResolver{}
+	restarted := New(mgr.baseDir, routes)
+	valid := true
+	repo.RouteFence = NewRepoBrowserRouteFence(1, 2, 3)
+	repo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		return valid, nil
+	}
+	repo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(repo.ValidateRouteFence)
+
+	registered, err := restarted.RegisterExistingRepoBrowserClone(t.Context(), repo)
+	require.NoError(err)
+	require.True(registered)
+	valid = false
+
+	restarted.RefreshRepoBrowserClones(t.Context())
+
+	assert.Zero(routes.calls.Load(), "a stale registration must not resolve credentials or fetch")
+	assert.Empty(restarted.repoBrowserReposSnapshot())
+}
+
+func TestRefreshRepoBrowserCloneKeepsPublishedCloneWhenStagingIsInvalidated(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+	routes := &blockingRepoBrowserRouteResolver{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	restarted := New(mgr.baseDir, routes)
+	var valid atomic.Bool
+	valid.Store(true)
+	repo.RouteFence = NewRepoBrowserRouteFence(1, 2, 3)
+	repo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		return valid.Load(), nil
+	}
+	repo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(repo.ValidateRouteFence)
+	registered, err := restarted.RegisterExistingRepoBrowserClone(t.Context(), repo)
+	require.NoError(err)
+	require.True(registered)
+	clonePath, err := restarted.repoBrowserClonePath(repo)
+	require.NoError(err)
+	before := repoBrowserCloneSnapshot(t, clonePath)
+
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "update readme")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- restarted.RefreshRepoBrowserClone(t.Context(), repo)
+	}()
+	<-routes.started
+	valid.Store(false)
+	close(routes.release)
+
+	require.ErrorIs(<-done, ErrRepoBrowserRouteFenceChanged)
+	assert.Equal(before, repoBrowserCloneSnapshot(t, clonePath))
+	blob, err := restarted.ReadRepoBrowserBlob(
+		t.Context(), repo,
+		RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"},
+		"README.md",
+	)
+	require.NoError(err)
+	assert.Equal("# Widgets\n", blob.Content)
+	assert.Empty(restarted.repoBrowserReposSnapshot())
+}
+
+func TestEnsureRepoBrowserCloneRemovesCloneInvalidatedDuringInitialFetch(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	_, repo, _ := setupRepoBrowserTestRepo(t)
+	routes := &blockingRepoBrowserRouteResolver{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	mgr := New(filepath.Join(t.TempDir(), "clones"), routes)
+	var valid atomic.Bool
+	valid.Store(true)
+	repo.RouteFence = NewRepoBrowserRouteFence(1, 2, 3)
+	repo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		return valid.Load(), nil
+	}
+	repo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(repo.ValidateRouteFence)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- mgr.EnsureRepoBrowserClone(t.Context(), repo)
+	}()
+	<-routes.started
+	valid.Store(false)
+	close(routes.release)
+
+	require.ErrorIs(<-done, ErrRepoBrowserRouteFenceChanged)
+	clonePath, err := mgr.repoBrowserClonePath(repo)
+	require.NoError(err)
+	assert.NoDirExists(clonePath)
+	assert.Empty(mgr.repoBrowserReposSnapshot())
+}
+
+func TestRepoBrowserReadContinuesWhileStaleStageAwaitsValidation(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, staleRepo, currentRepo, _, _ := setupRepoBrowserRouteReuseRefreshTest(t)
+	postFetchValidation := make(chan struct{})
+	releaseValidation := make(chan struct{})
+	var validations atomic.Int64
+	var postFetchOnce sync.Once
+	staleRepo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		if validations.Add(1) == 1 {
+			return true, nil
+		}
+		postFetchOnce.Do(func() { close(postFetchValidation) })
+		<-releaseValidation
+		return false, nil
+	}
+	staleRepo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(staleRepo.ValidateRouteFence)
+
+	refreshDone := make(chan error, 1)
+	go func() {
+		refreshDone <- mgr.RefreshRepoBrowserClone(t.Context(), staleRepo)
+	}()
+	<-postFetchValidation
+
+	readWaiting := make(chan struct{})
+	var waitingOnce sync.Once
+	mgr.repoBrowserReadWaitingForTest = func(string) {
+		waitingOnce.Do(func() { close(readWaiting) })
+	}
+	type readResult struct {
+		blob RepoBrowserBlob
+		err  error
+	}
+	readDone := make(chan readResult, 1)
+	go func() {
+		blob, err := mgr.ReadRepoBrowserBlob(
+			t.Context(), currentRepo,
+			RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"},
+			"README.md",
+		)
+		readDone <- readResult{blob: blob, err: err}
+	}()
+	select {
+	case result := <-readDone:
+		require.NoError(result.err)
+		assert.Equal("# Widgets\n", result.blob.Content)
+	case <-readWaiting:
+		require.Fail("read waited for unpublished staging refresh")
+	}
+	_, err := mgr.ReadRepoBrowserBlob(
+		t.Context(), currentRepo,
+		RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"},
+		"ONLY_B.md",
+	)
+	require.ErrorIs(err, ErrNotFound)
+
+	close(releaseValidation)
+	require.ErrorIs(<-refreshDone, ErrRepoBrowserRouteFenceChanged)
+}
+
+func TestRepoBrowserPublicationWaitsForAdmittedReader(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+	repo.RouteFence = NewRepoBrowserRouteFence(1, 2, 3)
+	repo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		return true, nil
+	}
+	publishReady := make(chan struct{})
+	releasePublish := make(chan struct{})
+	repo.PublishIfRouteFenceMatches = func(
+		_ context.Context,
+		_ RepoBrowserRouteFence,
+		publish func() error,
+	) (bool, error) {
+		close(publishReady)
+		<-releasePublish
+		return true, publish()
+	}
+
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "update readme")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+
+	refreshDone := make(chan error, 1)
+	go func() {
+		refreshDone <- mgr.RefreshRepoBrowserClone(t.Context(), repo)
+	}()
+	<-publishReady
+
+	readAdmitted := make(chan struct{})
+	releaseRead := make(chan struct{})
+	var admittedOnce sync.Once
+	mgr.repoBrowserAfterReadLockForTest = func(string) {
+		admittedOnce.Do(func() {
+			close(readAdmitted)
+			<-releaseRead
+		})
+	}
+	type readResult struct {
+		blob RepoBrowserBlob
+		err  error
+	}
+	readDone := make(chan readResult, 1)
+	go func() {
+		blob, err := mgr.ReadRepoBrowserBlob(
+			t.Context(), repo,
+			RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"},
+			"README.md",
+		)
+		readDone <- readResult{blob: blob, err: err}
+	}()
+	<-readAdmitted
+	close(releasePublish)
+	close(releaseRead)
+
+	oldRead := <-readDone
+	require.NoError(oldRead.err)
+	assert.Equal("# Widgets\n", oldRead.blob.Content)
+	require.NoError(<-refreshDone)
+
+	newRead, err := mgr.ReadRepoBrowserBlob(
+		t.Context(), repo,
+		RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"},
+		"README.md",
+	)
+	require.NoError(err)
+	assert.Equal("# Updated\n", newRead.Content)
+}
+
+func TestRepoBrowserRefreshValidFollowerRetriesStaleLeader(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, staleRepo, currentRepo, initialSHA, work := setupRepoBrowserRouteReuseRefreshTest(t)
+	postFetchValidation := make(chan struct{})
+	releaseValidation := make(chan struct{})
+	var staleValidations atomic.Int64
+	var postFetchOnce sync.Once
+	staleRepo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		if staleValidations.Add(1) == 1 {
+			return true, nil
+		}
+		postFetchOnce.Do(func() { close(postFetchValidation) })
+		<-releaseValidation
+		return false, nil
+	}
+	staleRepo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(staleRepo.ValidateRouteFence)
+	var currentValidations atomic.Int64
+	currentRepo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		currentValidations.Add(1)
+		return true, nil
+	}
+	currentRepo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(currentRepo.ValidateRouteFence)
+	followerJoined := make(chan struct{})
+	var joinedOnce sync.Once
+	mgr.repoBrowserAfterRefreshJoinForTest = func(fence RepoBrowserRouteFence) {
+		if fence == currentRepo.RouteFence {
+			joinedOnce.Do(func() { close(followerJoined) })
+		}
+	}
+
+	staleDone := make(chan error, 1)
+	go func() {
+		staleDone <- mgr.RefreshRepoBrowserClone(t.Context(), staleRepo)
+	}()
+	<-postFetchValidation
+	commitTestRun(t, work, "git", "push", "--force", "origin", initialSHA+":refs/heads/main")
+	currentDone := make(chan error, 1)
+	go func() {
+		currentDone <- mgr.RefreshRepoBrowserClone(t.Context(), currentRepo)
+	}()
+	<-followerJoined
+	close(releaseValidation)
+
+	require.ErrorIs(<-staleDone, ErrRepoBrowserRouteFenceChanged)
+	require.NoError(<-currentDone)
+	resolved, err := mgr.ResolveRepoBrowserRef(t.Context(), currentRepo, RepoBrowserRef{
+		Type: RepoBrowserRefBranch,
+		Name: "main",
+	})
+	require.NoError(err)
+	assert.Equal(initialSHA, resolved.SHA)
+	assert.Greater(currentValidations.Load(), int64(1),
+		"the valid follower must validate and run its own retry")
+}
+
+func TestRepoBrowserRefreshValidFollowerRetriesStaleLeaderFetchFailure(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, staleRepo, currentRepo, initialSHA, work := setupRepoBrowserRouteReuseRefreshTest(t)
+	var staleCurrent atomic.Bool
+	staleCurrent.Store(true)
+	staleRepo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		return staleCurrent.Load(), nil
+	}
+	staleRepo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(staleRepo.ValidateRouteFence)
+	var currentValidations atomic.Int64
+	currentRepo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		currentValidations.Add(1)
+		return true, nil
+	}
+	currentRepo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(currentRepo.ValidateRouteFence)
+
+	fetchStarted := make(chan struct{})
+	releaseFetch := make(chan struct{})
+	fetchErr := errors.New("stale staging fetch failed")
+	mgr.repoBrowserFetchErrorForTest = func(fence RepoBrowserRouteFence) error {
+		if fence != staleRepo.RouteFence {
+			return nil
+		}
+		close(fetchStarted)
+		<-releaseFetch
+		return fetchErr
+	}
+	followerJoined := make(chan struct{})
+	var joinedOnce sync.Once
+	mgr.repoBrowserAfterRefreshJoinForTest = func(fence RepoBrowserRouteFence) {
+		if fence == currentRepo.RouteFence {
+			joinedOnce.Do(func() { close(followerJoined) })
+		}
+	}
+
+	staleDone := make(chan error, 1)
+	go func() {
+		staleDone <- mgr.RefreshRepoBrowserClone(t.Context(), staleRepo)
+	}()
+	<-fetchStarted
+	currentDone := make(chan error, 1)
+	go func() {
+		currentDone <- mgr.RefreshRepoBrowserClone(t.Context(), currentRepo)
+	}()
+	<-followerJoined
+	staleCurrent.Store(false)
+	commitTestRun(t, work, "git", "push", "--force", "origin", initialSHA+":refs/heads/main")
+	close(releaseFetch)
+
+	staleErr := <-staleDone
+	require.ErrorIs(staleErr, ErrRepoBrowserRouteFenceChanged)
+	require.NoError(<-currentDone)
+	resolved, err := mgr.ResolveRepoBrowserRef(t.Context(), currentRepo, RepoBrowserRef{
+		Type: RepoBrowserRefBranch,
+		Name: "main",
+	})
+	require.NoError(err)
+	assert.Equal(initialSHA, resolved.SHA)
+	assert.Greater(currentValidations.Load(), int64(1),
+		"the valid follower must validate and run its own retry")
+}
+
+func TestRepoBrowserStagingCleanupFailureIsNotRetryable(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, staleRepo, currentRepo, initialSHA, _ := setupRepoBrowserRouteReuseRefreshTest(t)
+	postFetchValidation := make(chan struct{})
+	releaseValidation := make(chan struct{})
+	var staleValidations atomic.Int64
+	var postFetchOnce sync.Once
+	staleRepo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		if staleValidations.Add(1) == 1 {
+			return true, nil
+		}
+		postFetchOnce.Do(func() { close(postFetchValidation) })
+		<-releaseValidation
+		return false, nil
+	}
+	staleRepo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(staleRepo.ValidateRouteFence)
+	var currentValidations atomic.Int64
+	currentRepo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		currentValidations.Add(1)
+		return true, nil
+	}
+	currentRepo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(currentRepo.ValidateRouteFence)
+	cleanupErr := errors.New("staging cleanup failed")
+	mgr.removeRepoBrowserStagingForTest = func(string) error { return cleanupErr }
+	followerJoined := make(chan struct{})
+	var joinedOnce sync.Once
+	var currentJoins atomic.Int64
+	mgr.repoBrowserAfterRefreshJoinForTest = func(fence RepoBrowserRouteFence) {
+		if fence == currentRepo.RouteFence {
+			currentJoins.Add(1)
+			joinedOnce.Do(func() { close(followerJoined) })
+		}
+	}
+
+	staleDone := make(chan error, 1)
+	go func() {
+		staleDone <- mgr.RefreshRepoBrowserClone(t.Context(), staleRepo)
+	}()
+	<-postFetchValidation
+	currentDone := make(chan error, 1)
+	go func() {
+		currentDone <- mgr.RefreshRepoBrowserClone(t.Context(), currentRepo)
+	}()
+	<-followerJoined
+	close(releaseValidation)
+
+	require.ErrorIs(<-staleDone, cleanupErr)
+	require.ErrorIs(<-currentDone, cleanupErr)
+	assert.Equal(int64(1), currentJoins.Load(),
+		"a follower must not retry when the stale clone could not be quarantined")
+	assert.Positive(currentValidations.Load())
+
+	blob, err := mgr.ReadRepoBrowserBlob(
+		t.Context(), currentRepo,
+		RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"},
+		"README.md",
+	)
+	require.NoError(err)
+	assert.Equal("# Widgets\n", blob.Content)
+	_, err = mgr.ReadRepoBrowserBlob(
+		t.Context(), currentRepo,
+		RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"},
+		"ONLY_B.md",
+	)
+	require.ErrorIs(err, ErrNotFound)
+
+	restarted := New(mgr.baseDir, nil)
+	registered, err := restarted.RegisterExistingRepoBrowserClone(t.Context(), currentRepo)
+	require.NoError(err)
+	require.True(registered)
+	resolved, err := restarted.ResolveRepoBrowserRef(t.Context(), currentRepo, RepoBrowserRef{
+		Type: RepoBrowserRefBranch,
+		Name: "main",
+	})
+	require.NoError(err)
+	assert.Equal(initialSHA, resolved.SHA)
+}
+
+func TestRepoBrowserFetchErrorsLeavePublishedCloneUnchanged(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		offlineCall int64
+	}{
+		{name: "branch fetch", offlineCall: 1},
+		{name: "tag fetch", offlineCall: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			mgr, repo, work := setupRepoBrowserTestRepo(t)
+			repo.ProviderRepoID = "provider-repository-a"
+			require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+			clonePath, err := mgr.repoBrowserClonePath(repo)
+			require.NoError(err)
+			before := repoBrowserCloneSnapshot(t, clonePath)
+
+			require.NoError(os.WriteFile(filepath.Join(work, "ONLY_B.md"), []byte("only repository B\n"), 0o644))
+			commitTestRun(t, work, "git", "add", ".")
+			commitTestRun(t, work, "git", "commit", "-m", "replace route with repository B")
+			commitTestRun(t, work, "git", "push", "origin", "main")
+
+			remoteOffline := repo.RemoteURL + ".offline"
+			var offlineOnce sync.Once
+			routes := &callbackRepoBrowserRouteResolver{onCall: func(call int64) {
+				if call == tc.offlineCall {
+					offlineOnce.Do(func() {
+						require.NoError(os.Rename(repo.RemoteURL, remoteOffline))
+					})
+				}
+			}}
+			restarted := New(mgr.baseDir, routes)
+			repo.RouteFence = NewRepoBrowserRouteFence(1, 2, 1)
+			repo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+				return true, nil
+			}
+			repo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(repo.ValidateRouteFence)
+
+			require.Error(restarted.RefreshRepoBrowserClone(t.Context(), repo))
+			assert.Equal(before, repoBrowserCloneSnapshot(t, clonePath))
+			blob, err := restarted.ReadRepoBrowserBlob(
+				t.Context(), repo,
+				RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"},
+				"README.md",
+			)
+			require.NoError(err)
+			assert.Equal("# Widgets\n", blob.Content)
+			_, err = restarted.ReadRepoBrowserBlob(
+				t.Context(), repo,
+				RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"},
+				"ONLY_B.md",
+			)
+			require.ErrorIs(err, ErrNotFound)
+		})
+	}
+}
+
+func TestRepoBrowserPublicationFailureRestoresPublishedClone(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, _, repo, initialSHA, _ := setupRepoBrowserRouteReuseRefreshTest(t)
+	repo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		return true, nil
+	}
+	repo.PublishIfRouteFenceMatches = func(
+		_ context.Context,
+		_ RepoBrowserRouteFence,
+		publish func() error,
+	) (bool, error) {
+		return true, publish()
+	}
+	clonePath, err := mgr.repoBrowserClonePath(repo)
+	require.NoError(err)
+	before := repoBrowserCloneSnapshot(t, clonePath)
+	publishErr := errors.New("publish staging failed")
+	mgr.publishRepoBrowserStagingForTest = func(string, string) error { return publishErr }
+
+	require.ErrorIs(mgr.RefreshRepoBrowserClone(t.Context(), repo), publishErr)
+	assert.Equal(before, repoBrowserCloneSnapshot(t, clonePath))
+	resolved, err := mgr.ResolveRepoBrowserRef(t.Context(), repo, RepoBrowserRef{
+		Type: RepoBrowserRefBranch,
+		Name: "main",
+	})
+	require.NoError(err)
+	assert.Equal(initialSHA, resolved.SHA)
+}
+
+func TestRepoBrowserGuardedPublicationRefusesRouteChangeAfterValidation(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, _, repo, initialSHA, _ := setupRepoBrowserRouteReuseRefreshTest(t)
+	var validations atomic.Int64
+	var routeCurrent atomic.Bool
+	routeCurrent.Store(true)
+	repo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		validations.Add(1)
+		return routeCurrent.Load(), nil
+	}
+	guardCalled := make(chan struct{})
+	repo.PublishIfRouteFenceMatches = func(
+		_ context.Context,
+		_ RepoBrowserRouteFence,
+		_ func() error,
+	) (bool, error) {
+		routeCurrent.Store(false)
+		close(guardCalled)
+		return false, nil
+	}
+	clonePath, err := mgr.repoBrowserClonePath(repo)
+	require.NoError(err)
+	before := repoBrowserCloneSnapshot(t, clonePath)
+
+	require.ErrorIs(mgr.RefreshRepoBrowserClone(t.Context(), repo), ErrRepoBrowserRouteFenceChanged)
+	<-guardCalled
+	assert.GreaterOrEqual(validations.Load(), int64(2))
+	assert.Equal(before, repoBrowserCloneSnapshot(t, clonePath))
+	resolved, err := mgr.ResolveRepoBrowserRef(t.Context(), repo, RepoBrowserRef{
+		Type: RepoBrowserRefBranch,
+		Name: "main",
+	})
+	require.NoError(err)
+	assert.Equal(initialSHA, resolved.SHA)
+}
+
+func TestRepoBrowserBarrierReadAdmissionHonorsContextCancellation(t *testing.T) {
+	barrier := newRepoBrowserBarrier()
+	require.NoError(t, barrier.lockWrite(t.Context()))
+	t.Cleanup(barrier.unlockWrite)
+	ctx, cancel := context.WithCancel(t.Context())
+	waiting := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		err := barrier.lockRead(ctx, func() { close(waiting) })
+		if err == nil {
+			barrier.unlockRead()
+		}
+		done <- err
+	}()
+	<-waiting
+	cancel()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "repo browser read did not abandon blocked barrier admission")
+	}
+}
+
 func TestEnsureRepoBrowserCloneDoesNotRefreshExistingClone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -134,6 +764,29 @@ func TestEnsureRepoBrowserCloneDoesNotRefreshExistingClone(t *testing.T) {
 	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	refreshed := repoBrowserMainRef(t, mgr, repo)
 	assert.Equal(updatedSHA, refreshed.SHA)
+}
+
+func TestEnsureRepoBrowserCloneReleasesReadBarrierBeforeFinalFenceValidation(t *testing.T) {
+	require := require.New(t)
+	mgr, repo, _ := setupRepoBrowserTestRepo(t)
+	repo.RouteFence = NewRepoBrowserRouteFence(1, 2, 3)
+	barrierHeld := errors.New("repo browser read barrier held during final fence validation")
+	var validations atomic.Int64
+	repo.ValidateRouteFence = func(context.Context, RepoBrowserRouteFence) (bool, error) {
+		if validations.Add(1) == 1 {
+			return true, nil
+		}
+		barrier := mgr.repoBrowserCloneBarrier(repo)
+		if !barrier.semaphore.TryAcquire(repoBrowserBarrierCapacity) {
+			return false, barrierHeld
+		}
+		barrier.semaphore.Release(repoBrowserBarrierCapacity)
+		return true, nil
+	}
+	repo.PublishIfRouteFenceMatches = repoBrowserTestPublishGuard(repo.ValidateRouteFence)
+
+	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.Equal(int64(2), validations.Load())
 }
 
 func TestRepoBrowserScheduledRefreshContextStaysCancelable(t *testing.T) {
@@ -629,9 +1282,86 @@ func setupRepoBrowserTestRepo(t *testing.T) (*Manager, RepoBrowserRepoRef, strin
 	return mgr, repo, work
 }
 
+func setupRepoBrowserRouteReuseRefreshTest(
+	t *testing.T,
+) (*Manager, RepoBrowserRepoRef, RepoBrowserRepoRef, string, string) {
+	t.Helper()
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+	repo.ProviderRepoID = "provider-repository-a"
+	require.NoError(t, mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	initialSHA := gitSHA(t, work, "main")
+	require.NoError(t, os.WriteFile(
+		filepath.Join(work, "README.md"), []byte("repository B\n"), 0o644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(work, "ONLY_B.md"), []byte("only repository B\n"), 0o644,
+	))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "replace route with repository B")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+
+	staleRepo := repo
+	staleRepo.RouteFence = NewRepoBrowserRouteFence(1, 2, 1)
+	currentRepo := staleRepo
+	currentRepo.RouteFence = NewRepoBrowserRouteFence(1, 2, 3)
+	return mgr, staleRepo, currentRepo, initialSHA, work
+}
+
 func repoBrowserMainRef(t *testing.T, mgr *Manager, repo RepoBrowserRepoRef) RepoBrowserRef {
 	t.Helper()
 	_, ref, err := mgr.resolveRepoBrowserDefaultBranch(t.Context(), repo, "main")
 	require.NoError(t, err)
 	return RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main", SHA: ref}
+}
+
+func repoBrowserCloneSnapshot(t *testing.T, root string) map[string]string {
+	t.Helper()
+	snapshot := make(map[string]string)
+	require.NoError(t, filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		switch {
+		case entry.IsDir():
+			snapshot[rel] = "dir:" + info.Mode().String()
+		case info.Mode()&os.ModeSymlink != 0:
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			snapshot[rel] = "link:" + target
+		default:
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			snapshot[rel] = fmt.Sprintf("file:%s:%x", info.Mode(), sha256.Sum256(data))
+		}
+		return nil
+	}))
+	return snapshot
+}
+
+func repoBrowserTestPublishGuard(
+	validate RepoBrowserRouteFenceValidator,
+) RepoBrowserRouteFencePublishGuard {
+	return func(
+		ctx context.Context,
+		fence RepoBrowserRouteFence,
+		publish func() error,
+	) (bool, error) {
+		matches, err := validate(ctx, fence)
+		if err != nil || !matches {
+			return false, err
+		}
+		return true, publish()
+	}
 }

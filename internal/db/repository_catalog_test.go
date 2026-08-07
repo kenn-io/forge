@@ -1095,6 +1095,218 @@ func TestUpdateRepoProviderMetadataRejectsStableIDChange(t *testing.T) {
 	require.NotNil(entry)
 }
 
+func TestUpdateRepoProviderObservationRejectsOlderSameRouteSettings(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	identity := RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-a", Owner: "acme", Name: "widget",
+	}
+	older := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Second)
+	entry, accepted, err := d.ReconcileRepositoryObservation(ctx, identity, older)
+	require.NoError(err)
+	require.True(accepted)
+	require.NotNil(entry)
+	_, accepted, err = d.ReconcileRepositoryObservation(ctx, identity, newer)
+	require.NoError(err)
+	require.True(accepted)
+
+	applied, err := d.UpdateRepoProviderObservation(
+		ctx,
+		entry.Repository.ID,
+		newer,
+		RepoProviderMetadata{
+			PlatformRepoID: "repo-a",
+			WebURL:         "https://github.com/acme/widget",
+			CloneURL:       "https://github.com/acme/widget.git",
+			DefaultBranch:  "main",
+		},
+		&RepoMergeSettings{AllowSquashMerge: false, AllowMergeCommit: true},
+		new(true),
+	)
+	require.NoError(err)
+	require.True(applied)
+
+	applied, err = d.UpdateRepoProviderObservation(
+		ctx,
+		entry.Repository.ID,
+		older,
+		RepoProviderMetadata{
+			PlatformRepoID: "repo-a",
+			WebURL:         "https://stale.example/acme/widget",
+			CloneURL:       "https://stale.example/acme/widget.git",
+			DefaultBranch:  "stale",
+		},
+		&RepoMergeSettings{AllowSquashMerge: true},
+		new(false),
+	)
+	require.NoError(err)
+	require.False(applied)
+
+	stored, err := d.GetRepoByID(ctx, entry.Repository.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Equal("https://github.com/acme/widget", stored.WebURL)
+	require.Equal("main", stored.DefaultBranch)
+	require.False(stored.AllowSquashMerge)
+	require.True(stored.AllowMergeCommit)
+	require.True(stored.ViewerCanMerge)
+}
+
+// TestUpdateRepoProviderObservationPersistsViewerOnlySnapshot covers
+// providers that report the viewer's merge permission without repository
+// merge-method settings (for example a GitLab snapshot). The permission must
+// persist on its own; the merge methods keep their stored values.
+func TestUpdateRepoProviderObservationPersistsViewerOnlySnapshot(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	identity := RepoIdentity{
+		Platform: "gitlab", PlatformHost: "gitlab.example.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "group", Name: "project", RepoPath: "group/project",
+	}
+	when := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	entry, accepted, err := d.ReconcileRepositoryObservation(ctx, identity, when)
+	require.NoError(err)
+	require.True(accepted)
+	require.NoError(d.UpdateRepoMergeSettings(
+		ctx, entry.Repository.ID, true, false, true,
+	))
+
+	applied, err := d.UpdateRepoProviderObservation(
+		ctx,
+		entry.Repository.ID,
+		when,
+		RepoProviderMetadata{
+			PlatformRepoID: "gid://gitlab/Project/42",
+			DefaultBranch:  "main",
+		},
+		nil,
+		new(false),
+	)
+	require.NoError(err)
+	require.True(applied)
+
+	stored, err := d.GetRepoByID(ctx, entry.Repository.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.False(stored.ViewerCanMerge)
+	assert.True(stored.AllowSquashMerge)
+	assert.False(stored.AllowMergeCommit)
+	assert.True(stored.AllowRebaseMerge)
+}
+
+// TestUpdateRepoProviderObservationPreservesMetadataOnEmptyFields covers
+// provider snapshots that omit URLs or the default branch (minimal REST
+// payloads and test fixtures): known stored metadata must survive, while the
+// snapshot's merge settings still commit.
+func TestUpdateRepoProviderObservationPreservesMetadataOnEmptyFields(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	identity := RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-a", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	}
+	when := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	entry, accepted, err := d.ReconcileRepositoryObservation(ctx, identity, when)
+	require.NoError(err)
+	require.True(accepted)
+	require.NoError(d.UpdateRepoProviderMetadata(
+		ctx, entry.Repository.ID, RepoProviderMetadata{
+			PlatformRepoID: "repo-a",
+			WebURL:         "https://github.com/acme/widget",
+			CloneURL:       "/fixtures/acme/widget.git",
+			DefaultBranch:  "main",
+		},
+	))
+
+	applied, err := d.UpdateRepoProviderObservation(
+		ctx,
+		entry.Repository.ID,
+		when,
+		RepoProviderMetadata{PlatformRepoID: "repo-a"},
+		&RepoMergeSettings{AllowSquashMerge: true},
+		new(false),
+	)
+	require.NoError(err)
+	require.True(applied)
+
+	stored, err := d.GetRepoByID(ctx, entry.Repository.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("https://github.com/acme/widget", stored.WebURL)
+	assert.Equal("/fixtures/acme/widget.git", stored.CloneURL)
+	assert.Equal("main", stored.DefaultBranch)
+	assert.True(stored.AllowSquashMerge)
+	assert.False(stored.AllowMergeCommit)
+	assert.False(stored.ViewerCanMerge)
+}
+
+func TestUpdateRepoProviderObservationFailsClosedForReplacementOnReusedRoute(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	observedAt := baseTime()
+
+	reconcileCatalogRepository(t, d, "provider-original", "acme", "widget", observedAt)
+	reconcileCatalogRepository(
+		t, d, "provider-original", "acme", "renamed", observedAt.Add(time.Minute),
+	)
+	replacementObservedAt := observedAt.Add(2 * time.Minute)
+	replacement := reconcileCatalogRepository(
+		t, d, "provider-replacement", "acme", "widget", replacementObservedAt,
+	)
+
+	applied, err := d.UpdateRepoProviderObservation(
+		ctx,
+		replacement.Repository.ID,
+		replacementObservedAt,
+		RepoProviderMetadata{PlatformRepoID: "provider-replacement"},
+		nil,
+		nil,
+	)
+	require.NoError(err)
+	require.True(applied)
+
+	stored, err := d.GetRepoByID(ctx, replacement.Repository.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.False(stored.ViewerCanMerge,
+		"a replacement must not inherit the permissive schema default")
+}
+
+func TestUpdateRepoProviderObservationPreservesKnownViewerPermissionWhenOmitted(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	observedAt := baseTime()
+	entry := reconcileCatalogRepository(t, d, "provider-1", "acme", "widget", observedAt)
+	require.NoError(d.UpdateRepoViewerCanMerge(ctx, entry.Repository.ID, true))
+
+	applied, err := d.UpdateRepoProviderObservation(
+		ctx,
+		entry.Repository.ID,
+		observedAt,
+		RepoProviderMetadata{PlatformRepoID: "provider-1"},
+		nil,
+		nil,
+	)
+	require.NoError(err)
+	require.True(applied)
+
+	stored, err := d.GetRepoByID(ctx, entry.Repository.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.True(stored.ViewerCanMerge)
+}
+
 // TestUpsertRepoCachedIdentityDoesNotReclaimReusedRoute covers a delayed
 // cached write: it carries no provider verification, so it must resolve by
 // stable ID without stealing back a route another repository now holds.
@@ -1230,4 +1442,386 @@ func TestReconcileRepositoryObservationAdoptsLegacyRouteOnlyRepository(t *testin
 	require.NoError(err)
 	assert.False(collision,
 		"an adopted route has a single owner and must stay unambiguous")
+}
+
+func TestReconcileRepositoryObservationFailsClosedWhenAdoptingLegacyRepository(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	legacyID, err := d.UpsertRepo(t.Context(), RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Owner: "org-a", Name: "project-a",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoViewerCanMerge(t.Context(), legacyID, true))
+
+	entry := reconcileCatalogRepository(
+		t, d, "provider-1", "org-a", "project-a", baseTime(),
+	)
+	require.Equal(legacyID, entry.Repository.ID)
+
+	stored, err := d.GetRepoByID(t.Context(), legacyID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.False(stored.ViewerCanMerge,
+		"first provider verification must reset a legacy path-only permission")
+}
+
+func TestAdoptLegacyClonesIfSafeRequiresUnreusedVerifiedRoute(t *testing.T) {
+	t.Run("verified route with one owner", func(t *testing.T) {
+		d := openTestDB(t)
+		entry := reconcileCatalogRepository(
+			t, d, "provider-1", "acme", "widget", baseTime(),
+		)
+		called := false
+
+		adopted, err := d.AdoptLegacyClonesIfSafe(
+			t.Context(), RepoIdentity{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformRepoID: "provider-1",
+				Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+			}, entry.Repository.ID,
+			func() error { called = true; return nil },
+		)
+		require.NoError(t, err)
+		assert.True(t, adopted)
+		assert.True(t, called)
+	})
+
+	t.Run("route with a different legacy owner", func(t *testing.T) {
+		d := openTestDB(t)
+		_, err := d.UpsertRepo(t.Context(), RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		})
+		require.NoError(t, err)
+		entry := reconcileCatalogRepository(
+			t, d, "provider-1", "acme", "renamed", baseTime(),
+		)
+		moved, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "provider-1",
+			Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+		}, baseTime().Add(time.Minute))
+		require.NoError(t, err)
+		require.Equal(t, entry.Repository.ID, moved.Repository.ID)
+
+		called := false
+		adopted, err := d.AdoptLegacyClonesIfSafe(
+			t.Context(), RepoIdentity{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformRepoID: "provider-1",
+				Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+			}, moved.Repository.ID,
+			func() error { called = true; return nil },
+		)
+		require.NoError(t, err)
+		assert.False(t, adopted)
+		assert.False(t, called)
+	})
+
+	t.Run("stale route snapshot after reuse", func(t *testing.T) {
+		d := openTestDB(t)
+		original := reconcileCatalogRepository(
+			t, d, "provider-original", "acme", "widget", baseTime(),
+		)
+		_, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "provider-original",
+			Owner:          "acme", Name: "renamed", RepoPath: "acme/renamed",
+		}, baseTime().Add(time.Minute))
+		require.NoError(t, err)
+		reconcileCatalogRepository(
+			t, d, "provider-replacement", "acme", "widget",
+			baseTime().Add(2*time.Minute),
+		)
+		called := false
+
+		adopted, err := d.AdoptLegacyClonesIfSafe(
+			t.Context(), RepoIdentity{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformRepoID: "provider-original",
+				Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+			}, original.Repository.ID,
+			func() error { called = true; return nil },
+		)
+		require.NoError(t, err)
+		assert.False(t, adopted)
+		assert.False(t, called)
+	})
+}
+
+func TestAdoptLegacyClonesIfSafeHoldsRouteGuardThroughAdoption(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	entry := reconcileCatalogRepository(
+		t, d, "provider-1", "acme", "widget", baseTime(),
+	)
+	identity := RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-1",
+		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+	adoptionStarted := make(chan struct{})
+	releaseAdoption := make(chan struct{})
+	adoptionDone := make(chan error, 1)
+	go func() {
+		_, err := d.AdoptLegacyClonesIfSafe(
+			t.Context(), identity, entry.Repository.ID,
+			func() error {
+				close(adoptionStarted)
+				<-releaseAdoption
+				return nil
+			},
+		)
+		adoptionDone <- err
+	}()
+	<-adoptionStarted
+
+	writerWaiting := make(chan struct{})
+	restoreHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
+		close(writerWaiting)
+	})
+	t.Cleanup(restoreHook)
+	renameDone := make(chan error, 1)
+	go func() {
+		_, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "provider-1",
+			Owner:          "acme", Name: "renamed", RepoPath: "acme/renamed",
+		}, baseTime().Add(time.Minute))
+		renameDone <- err
+	}()
+	<-writerWaiting
+	select {
+	case err := <-renameDone:
+		require.Fail("route changed during clone adoption", "unexpected error: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseAdoption)
+	require.NoError(<-adoptionDone)
+	require.NoError(<-renameDone)
+}
+
+func TestReconcileRepositoryObservationClearsVacatedRouteSyncState(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	observedAt := baseTime()
+	number := 7
+
+	original := reconcileCatalogRepository(
+		t, d, "provider-original", "acme", "alpha", observedAt,
+	)
+	require.NoError(d.UpdateNotificationSyncWatermark(
+		ctx, "github", "github.com", "acme", "alpha", observedAt, &observedAt,
+	))
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "acme", "alpha", "pull_request", number, `"old"`,
+	))
+	require.NoError(d.UpsertNotifications(ctx, []Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "linked", RepoOwner: "acme", RepoName: "alpha",
+			SubjectType: "PullRequest", SubjectTitle: "linked", ItemNumber: &number,
+			ItemType: ItemTypePR, Reason: "mention", Unread: true,
+			SourceUpdatedAt: observedAt, SyncedAt: observedAt,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "path-only", RepoOwner: "acme", RepoName: "alpha",
+			SubjectType: "PullRequest", SubjectTitle: "path only", ItemNumber: &number,
+			ItemType: ItemTypePR, Reason: "mention", Unread: true,
+			SourceUpdatedAt: observedAt, SyncedAt: observedAt,
+		},
+	}))
+	_, err := d.WriteDB().ExecContext(ctx,
+		`UPDATE forge_notification_items SET repo_id = NULL
+		 WHERE platform_notification_id = 'path-only'`,
+	)
+	require.NoError(err)
+
+	renamed, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-original",
+		Owner:          "acme", Name: "beta", RepoPath: "acme/beta",
+	}, observedAt.Add(time.Minute))
+	require.NoError(err)
+	assert.Equal(original.Repository.ID, renamed.Repository.ID)
+
+	watermark, err := d.GetNotificationSyncWatermark(
+		ctx, "github", "github.com", "acme", "alpha",
+	)
+	require.NoError(err)
+	assert.Nil(watermark)
+	etag, err := d.GetHTTPEtag(
+		ctx, "github", "github.com", "acme", "alpha", "pull_request", number,
+	)
+	require.NoError(err)
+	assert.Empty(etag)
+	notifications, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(notifications, 1)
+	assert.Equal("linked", notifications[0].PlatformNotificationID)
+	require.NotNil(notifications[0].RepoID)
+	assert.Equal(original.Repository.ID, *notifications[0].RepoID)
+}
+
+func TestReconcileRepositoryObservationClearsHistoricalRouteStateBeforeReuse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	observedAt := baseTime()
+	number := 7
+
+	reconcileCatalogRepository(t, d, "provider-original", "acme", "alpha", observedAt)
+	_, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-original",
+		Owner:          "acme", Name: "beta", RepoPath: "acme/beta",
+	}, observedAt.Add(time.Minute))
+	require.NoError(err)
+
+	require.NoError(d.UpdateNotificationSyncWatermark(
+		ctx, "github", "github.com", "acme", "alpha", observedAt, &observedAt,
+	))
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "acme", "alpha", "pull_request", number, `"stale"`,
+	))
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformNotificationID: "path-only", RepoOwner: "acme", RepoName: "alpha",
+		SubjectType: "PullRequest", SubjectTitle: "stale", ItemNumber: &number,
+		ItemType: ItemTypePR, Reason: "mention", Unread: true,
+		SourceUpdatedAt: observedAt, SyncedAt: observedAt,
+	}}))
+
+	replacement, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-replacement",
+		Owner:          "acme", Name: "alpha", RepoPath: "acme/alpha",
+	}, observedAt.Add(2*time.Minute))
+	require.NoError(err)
+	assert.Equal("provider-replacement", replacement.Repository.PlatformRepoID)
+
+	watermark, err := d.GetNotificationSyncWatermark(
+		ctx, "github", "github.com", "acme", "alpha",
+	)
+	require.NoError(err)
+	assert.Nil(watermark)
+	etag, err := d.GetHTTPEtag(
+		ctx, "github", "github.com", "acme", "alpha", "pull_request", number,
+	)
+	require.NoError(err)
+	assert.Empty(etag)
+	notifications, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	assert.Empty(notifications)
+}
+
+func TestReconcileRepositoryObservationClearsLegacyHistoricalRouteStateBeforeReuse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	observedAt := baseTime()
+	number := 7
+
+	legacyID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "alpha", RepoPath: "acme/alpha",
+	})
+	require.NoError(err)
+	replacement := reconcileCatalogRepository(
+		t, d, "provider-replacement", "acme", "beta", observedAt,
+	)
+	require.NotEqual(legacyID, replacement.Repository.ID)
+
+	require.NoError(d.UpdateNotificationSyncWatermark(
+		ctx, "github", "github.com", "acme", "alpha", observedAt, &observedAt,
+	))
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "acme", "alpha", "pull_request", number, `"stale"`,
+	))
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformNotificationID: "path-only", RepoOwner: "acme", RepoName: "alpha",
+		SubjectType: "PullRequest", SubjectTitle: "stale", ItemNumber: &number,
+		ItemType: ItemTypePR, Reason: "mention", Unread: true,
+		SourceUpdatedAt: observedAt, SyncedAt: observedAt,
+	}}))
+
+	moved, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-replacement",
+		Owner:          "acme", Name: "alpha", RepoPath: "acme/alpha",
+	}, observedAt.Add(time.Minute))
+	require.NoError(err)
+	assert.Equal(replacement.Repository.ID, moved.Repository.ID)
+
+	watermark, err := d.GetNotificationSyncWatermark(
+		ctx, "github", "github.com", "acme", "alpha",
+	)
+	require.NoError(err)
+	assert.Nil(watermark)
+	etag, err := d.GetHTTPEtag(
+		ctx, "github", "github.com", "acme", "alpha", "pull_request", number,
+	)
+	require.NoError(err)
+	assert.Empty(etag)
+	notifications, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	assert.Empty(notifications)
+}
+
+func TestRepositoryRouteGuardRejectsWriteAfterABAReuse(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	observedAt := baseTime()
+	identity := RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-original",
+		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+	original, _, err := d.ReconcileRepositoryObservation(ctx, identity, observedAt)
+	require.NoError(err)
+	require.NoError(d.UpdateRepoMergeSettings(
+		ctx, original.Repository.ID, false, false, false,
+	))
+	fence, found, err := d.CurrentRepositoryRouteFence(
+		ctx, identity, original.Repository.ID,
+	)
+	require.NoError(err)
+	require.True(found)
+	guarded := d.WithRepositoryRouteFence(ctx, identity, fence)
+
+	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-original",
+		Owner:          "acme", Name: "renamed", RepoPath: "acme/renamed",
+	}, observedAt.Add(time.Minute))
+	require.NoError(err)
+	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-replacement",
+		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+	}, observedAt.Add(2*time.Minute))
+	require.NoError(err)
+	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-replacement",
+		Owner:          "acme", Name: "elsewhere", RepoPath: "acme/elsewhere",
+	}, observedAt.Add(3*time.Minute))
+	require.NoError(err)
+	_, _, err = d.ReconcileRepositoryObservation(ctx, identity, observedAt.Add(4*time.Minute))
+	require.NoError(err)
+
+	err = d.UpdateRepoMergeSettings(guarded, original.Repository.ID, true, false, false)
+	require.ErrorIs(err, ErrRepositoryRouteFenceChanged)
+	repo, err := d.GetRepoByID(ctx, original.Repository.ID)
+	require.NoError(err)
+	require.NotNil(repo)
+	require.False(repo.AllowSquashMerge)
 }

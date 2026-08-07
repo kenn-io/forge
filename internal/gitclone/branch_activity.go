@@ -16,7 +16,7 @@ func (m *Manager) ResolveDefaultBranch(
 	ctx context.Context,
 	platform, host, owner, name, preferred string,
 ) (branch string, ref string, err error) {
-	dir, err := m.ClonePath(platform, host, owner, name)
+	dir, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return "", "", err
 	}
@@ -65,7 +65,7 @@ func (m *Manager) ResolveRef(
 	ctx context.Context,
 	platform, host, owner, name, ref string,
 ) (string, error) {
-	dir, err := m.ClonePath(platform, host, owner, name)
+	dir, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return "", err
 	}
@@ -82,7 +82,7 @@ func (m *Manager) ResolveCommit(
 	ctx context.Context,
 	platform, host, owner, name, objectID string,
 ) (string, error) {
-	dir, err := m.ClonePath(platform, host, owner, name)
+	dir, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return "", err
 	}
@@ -94,7 +94,7 @@ func (m *Manager) IsAncestor(
 	ctx context.Context,
 	platform, host, owner, name, ancestor, descendant string,
 ) (bool, error) {
-	dir, err := m.ClonePath(platform, host, owner, name)
+	dir, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return false, err
 	}
@@ -119,7 +119,7 @@ func (m *Manager) ListBranchCommitsSince(
 	afterSHA string,
 	maxCount int,
 ) ([]Commit, error) {
-	dir, err := m.ClonePath(platform, host, owner, name)
+	dir, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return nil, err
 	}

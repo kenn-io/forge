@@ -18,12 +18,16 @@ func TestSeedFixtures_Repos(t *testing.T) {
 	assert.Len(repos, 3)
 
 	names := make([]string, len(repos))
+	mergePermission := make(map[string]bool, len(repos))
 	for i, r := range repos {
 		names[i] = r.FullName()
+		mergePermission[r.FullName()] = r.ViewerCanMerge
 	}
 	assert.Contains(names, "acme/widgets")
 	assert.Contains(names, "acme/tools")
 	assert.Contains(names, "acme/archived")
+	assert.True(mergePermission["acme/widgets"])
+	assert.True(mergePermission["acme/tools"])
 }
 
 func TestSeedFixtures_PRCounts(t *testing.T) {

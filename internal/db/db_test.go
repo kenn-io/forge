@@ -778,6 +778,136 @@ func TestRepositoryCatalogMigrationPreservesDataAndIndexes(t *testing.T) {
 	assertDatabaseIntegrityForTest(t, database.ReadDB())
 }
 
+func TestRepositoryRouteGenerationMigrationClearsHistoricallyReusedRouteState(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dbPath := filepath.Join(t.TempDir(), "repository-route-generation-v46.db")
+
+	openAtVersionForTest(t, dbPath, 46, func(raw *sql.DB) {
+		_, err := raw.Exec(`
+			INSERT INTO forge_repos (
+				id, platform, platform_host, platform_repo_id,
+				owner, name, repo_path, owner_key, name_key, repo_path_key,
+				lifecycle_state
+			) VALUES
+				(1, 'github', 'github.com', 'provider-old',
+				 'acme', 'renamed', 'acme/renamed',
+				 'acme', 'renamed', 'acme/renamed', 'active'),
+				(2, 'github', 'github.com', 'provider-current',
+				 'acme', 'widget', 'acme/widget',
+				 'acme', 'widget', 'acme/widget', 'active');
+
+			INSERT INTO forge_repo_routes (
+				repo_id, platform, platform_host,
+				owner, name, repo_path, owner_key, name_key, repo_path_key,
+				is_current, first_seen_at, last_seen_at
+			) VALUES
+				(1, 'github', 'github.com',
+				 'acme', 'widget', 'acme/widget', 'acme', 'widget', 'acme/widget',
+				 0, '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z'),
+				(1, 'github', 'github.com',
+				 'acme', 'renamed', 'acme/renamed', 'acme', 'renamed', 'acme/renamed',
+				 1, '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z'),
+				(2, 'github', 'github.com',
+				 'acme', 'widget', 'acme/widget', 'acme', 'widget', 'acme/widget',
+				 1, '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z');
+
+			INSERT INTO forge_notification_sync_watermarks (
+				platform, platform_host, repo_owner, repo_name,
+				last_successful_sync_at
+			) VALUES
+				('github', 'github.com', 'acme', 'widget', '2026-01-03T00:00:00Z'),
+				('github', 'github.com', 'acme', 'safe', '2026-01-03T00:00:00Z');
+
+			INSERT INTO forge_http_etags (
+				platform, platform_host, owner_key, name_key,
+				resource_type, resource_number, etag
+			) VALUES
+				('github', 'github.com', 'acme', 'widget', 'pull_request', 7, 'stale'),
+				('github', 'github.com', 'acme', 'safe', 'pull_request', 8, 'keep');
+
+			INSERT INTO forge_notification_items (
+				platform, platform_host, platform_notification_id, repo_id,
+				repo_owner, repo_name, subject_type, subject_title,
+				reason, source_updated_at, synced_at
+			) VALUES
+				('github', 'github.com', 'reused-unlinked', NULL,
+				 'acme', 'widget', 'PullRequest', 'stale',
+				 'mention', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z'),
+				('github', 'github.com', 'reused-linked', 2,
+				 'acme', 'widget', 'PullRequest', 'keep linked',
+				 'mention', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z'),
+				('github', 'github.com', 'safe-unlinked', NULL,
+				 'acme', 'safe', 'PullRequest', 'keep safe',
+				 'mention', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z');
+		`)
+		require.NoError(err)
+	})
+
+	database, err := Open(dbPath)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	entry, accepted, err := database.ReconcileRepositoryObservation(
+		t.Context(), RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "provider-current",
+			Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+		},
+		time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC),
+	)
+	require.NoError(err)
+	require.True(accepted)
+	assert.Equal(int64(2), entry.Repository.ID)
+
+	var reusedWatermarks, safeWatermarks int
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT COUNT(*) FROM forge_notification_sync_watermarks
+		WHERE repo_owner = 'acme' AND repo_name = 'widget'
+	`).Scan(&reusedWatermarks))
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT COUNT(*) FROM forge_notification_sync_watermarks
+		WHERE repo_owner = 'acme' AND repo_name = 'safe'
+	`).Scan(&safeWatermarks))
+	assert.Zero(reusedWatermarks)
+	assert.Equal(1, safeWatermarks)
+
+	var reusedETags, safeETags int
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT COUNT(*) FROM forge_http_etags
+		WHERE owner_key = 'acme' AND name_key = 'widget'
+	`).Scan(&reusedETags))
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT COUNT(*) FROM forge_http_etags
+		WHERE owner_key = 'acme' AND name_key = 'safe'
+	`).Scan(&safeETags))
+	assert.Zero(reusedETags)
+	assert.Equal(1, safeETags)
+
+	rows, err := database.ReadDB().Query(`
+		SELECT platform_notification_id
+		FROM forge_notification_items
+		ORDER BY platform_notification_id
+	`)
+	require.NoError(err)
+	defer rows.Close()
+	var notificationIDs []string
+	for rows.Next() {
+		var id string
+		require.NoError(rows.Scan(&id))
+		notificationIDs = append(notificationIDs, id)
+	}
+	require.NoError(rows.Err())
+	assert.Equal([]string{"reused-linked", "safe-unlinked"}, notificationIDs)
+
+	var minimumGeneration int64
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT MIN(generation) FROM forge_repo_routes
+	`).Scan(&minimumGeneration))
+	assert.Equal(int64(1), minimumGeneration)
+	assertDatabaseIntegrityForTest(t, database.ReadDB())
+}
+
 func TestRepositoryCatalogMigrationDownRestoresRouteIdentity(t *testing.T) {
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "repository-catalog-v45.db")

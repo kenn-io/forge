@@ -100,27 +100,33 @@ Hydration excludes the cooled repository feature only while selecting work in th
 pass, so unaffected due items remain eligible and restart or manual recovery can resume
 immediately. (`internal/archive/scheduler.go::runNextHydrationWork`)
 
-## Single-flight: `Manager.EnsureClone`
+## Shared clone slot: `Manager.EnsureClone`
 
-[`clone.go`](../internal/gitclone/clone.go). `EnsureClone` opens a
-`singleflight` slot keyed on `(host, owner, name)` so concurrent
-callers (periodic syncer, per-PR detail syncs, workspace setup) share
-one underlying clone/fetch instead of stampeding GitHub.
+[`clone.go`](../internal/gitclone/clone.go). `EnsureClone` opens a shared slot
+keyed on storage namespace plus `(host, owner, name)` so concurrent callers
+share one clone/fetch instead of stampeding GitHub. The slot remains occupied
+until every joined caller completes its own route validation gate.
 
 Invariants to preserve:
 
 - **Pre-check `ctx.Err()`**. A caller whose ctx is already canceled
   must not enter the slot, or the runner does work for nobody.
-- **Key shape** `host \x00 owner \x00 name`. The null separator
+- **Key shape** `namespace \x00 host \x00 owner \x00 name`. The null separator
   prevents `foo/barbaz` colliding with `foobar/baz`.
 - **Detached, bounded runner ctx**. The slot runs with
   `context.WithTimeout(context.WithoutCancel(ctx), ensureCloneTimeout)`.
   Detached so one canceled waiter cannot abort work for others;
   bounded so a stuck git subprocess cannot hold the slot forever.
-- **`DoChan`, not `Do`**, so each caller still observes its own
-  `ctx.Done()` via the outer `select`.
+- **Only the slot starter deletes**. The starter's validation runs inside the
+  slot after the fetch and spans the whole fetch window; its failure attempts
+  to remove the clone before releasing waiters. Callers preflight before joining
+  and remain registered through their final route gate; completed flights stay
+  joinable until all gates finish. Followers retry only after successful
+  quarantine and full drain; cleanup failure is terminal. Invalid clones are
+  renamed aside so external readers never observe partial deletion
+  (`internal/gitclone/clone.go::ensureCloneInNamespaceValidated`).
 
-Reach for a singleflight slot whenever multiple in-process call sites
+Reach for a shared slot whenever multiple in-process call sites
 hit the same upstream resource. Prefer dedup over retry — it removes
 the cause, retry just absorbs the effect.
 
@@ -133,7 +139,5 @@ cancelable by each waiter (`internal/server/roborev_repositories.go::roborevRepo
 
 Test the policy decisions, not the library. For retry that means the
 matcher, the `backoff.Permanent` wrap, and the budget constant. For
-dedup that means the key shape and the integration paths that
-exercise the real cloneBare/fetch. Skip tests that assert "the library
-loops" or "DoChan delivers to every waiter" — those are upstream's
-contract.
+dedup that means the key shape, per-caller validation, and integration paths
+that exercise the real cloneBare/fetch.

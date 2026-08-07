@@ -79,6 +79,12 @@ type RepoProviderMetadata struct {
 	DefaultBranch  string
 }
 
+type RepoMergeSettings struct {
+	AllowSquashMerge bool
+	AllowMergeCommit bool
+	AllowRebaseMerge bool
+}
+
 type ArchiveCollectionMode string
 
 const (

@@ -870,6 +870,63 @@ func TestNotificationSyncWatermarksAreScopedByRepoIdentity(t *testing.T) {
 	require.Nil(missing)
 }
 
+func TestConditionalNotificationWritesRejectABARouteReuse(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	observedAt := time.Now().UTC()
+	originalIdentity := RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "original-repo", Owner: "acme", Name: "alpha",
+		RepoPath: "acme/alpha",
+	}
+	original, _, err := database.ReconcileRepositoryObservation(
+		ctx, originalIdentity, observedAt,
+	)
+	require.NoError(err)
+	fence, found, err := database.CurrentRepositoryRouteFence(
+		ctx, originalIdentity, original.Repository.ID,
+	)
+	require.NoError(err)
+	require.True(found)
+
+	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "original-repo", Owner: "acme", Name: "beta",
+		RepoPath: "acme/beta",
+	}, observedAt.Add(time.Minute))
+	require.NoError(err)
+	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "replacement-repo", Owner: "acme", Name: "alpha",
+		RepoPath: "acme/alpha",
+	}, observedAt.Add(2*time.Minute))
+	require.NoError(err)
+	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "replacement-repo", Owner: "acme", Name: "gamma",
+		RepoPath: "acme/gamma",
+	}, observedAt.Add(3*time.Minute))
+	require.NoError(err)
+	_, _, err = database.ReconcileRepositoryObservation(
+		ctx, originalIdentity, observedAt.Add(4*time.Minute),
+	)
+	require.NoError(err)
+
+	committed, err := database.UpsertNotificationsIfRouteFence(
+		ctx, nil, originalIdentity, fence,
+	)
+	require.NoError(err)
+	require.False(committed)
+
+	committed, err = database.UpdateNotificationSyncWatermarkIfRouteFence(
+		ctx, "github", "github.com", "acme", "alpha",
+		fence, observedAt.Add(5*time.Minute), nil,
+	)
+	require.NoError(err)
+	require.False(committed)
+}
+
 func TestQueuedNotificationAcksStayWithinPlatformAndHost(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1065,4 +1122,201 @@ func TestNotificationSummaryGroupsByCurrentRoute(t *testing.T) {
 	assert.Equal(1, summary.ByRepo["github.com/acme/gadget"],
 		"summary must group linked rows by the current route")
 	assert.NotContains(summary.ByRepo, "github.com/acme/widget")
+}
+
+// TestListQueuedNotificationAcksFollowsRenamedRepositoryRoute pins the queued
+// acknowledgement listing to the repository's current route: rows resolved to
+// a stable repository must carry its live owner/name after a rename so
+// propagation fences and routed mark-read calls do not fail against the
+// cached historical route.
+func TestListQueuedNotificationAcksFollowsRenamedRepositoryRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	entry, accepted, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
+	}, now)
+	require.NoError(err)
+	require.True(accepted)
+	repoID := entry.Repository.ID
+	number := 7
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformNotificationID: "thread-1",
+		RepoID:                 &repoID, RepoOwner: "acme", RepoName: "widget",
+		SubjectType: "PullRequest", SubjectTitle: "Please review",
+		WebURL:     "https://github.com/acme/widget/pull/7",
+		ItemNumber: &number, ItemType: "pr", Reason: "mention",
+		Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+	}}))
+	items, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "unread"})
+	require.NoError(err)
+	require.Len(items, 1)
+	_, err = d.MarkNotificationsDone(ctx, []int64{items[0].ID}, now.Add(time.Minute), true)
+	require.NoError(err)
+
+	_, accepted, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_widget", Owner: "acme", Name: "renamed",
+	}, now.Add(2*time.Minute))
+	require.NoError(err)
+	require.True(accepted)
+
+	queued, err := d.ListQueuedNotificationAcks(
+		ctx, "github", "github.com", 10, now.Add(3*time.Minute),
+	)
+	require.NoError(err)
+	require.Len(queued, 1)
+	assert.Equal("acme", queued[0].RepoOwner)
+	assert.Equal("renamed", queued[0].RepoName)
+}
+
+func TestListQueuedNotificationAcksDoesNotLetUnroutableLinkedRowsConsumeLimit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+
+	stale, accepted, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_stale", Owner: "acme", Name: "widget",
+	}, now)
+	require.NoError(err)
+	require.True(accepted)
+	staleNotification := notificationFixture("stale-thread", "mention", now)
+	staleNotification.RepoID = &stale.Repository.ID
+	require.NoError(d.UpsertNotifications(ctx, []Notification{staleNotification}))
+	var staleNotificationID int64
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT id FROM forge_notification_items
+		WHERE platform_notification_id = 'stale-thread'
+	`).Scan(&staleNotificationID))
+	_, err = d.MarkNotificationsDone(
+		ctx, []int64{staleNotificationID}, now.Add(time.Minute), true,
+	)
+	require.NoError(err)
+
+	// Reusing the route leaves the original repository and its queued
+	// acknowledgement linked by stable ID, but without a current route.
+	_, accepted, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_replacement", Owner: "acme", Name: "widget",
+	}, now.Add(2*time.Minute))
+	require.NoError(err)
+	require.True(accepted)
+
+	current, accepted, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_current", Owner: "acme", Name: "gadget",
+	}, now.Add(3*time.Minute))
+	require.NoError(err)
+	require.True(accepted)
+	currentNotification := notificationFixture(
+		"current-thread", "mention", now.Add(3*time.Minute),
+	)
+	currentNotification.RepoID = &current.Repository.ID
+	currentNotification.RepoName = "gadget"
+	require.NoError(d.UpsertNotifications(ctx, []Notification{currentNotification}))
+	var currentNotificationID int64
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT id FROM forge_notification_items
+		WHERE platform_notification_id = 'current-thread'
+	`).Scan(&currentNotificationID))
+	_, err = d.MarkNotificationsDone(
+		ctx, []int64{currentNotificationID}, now.Add(4*time.Minute), true,
+	)
+	require.NoError(err)
+
+	queued, err := d.ListQueuedNotificationAcks(
+		ctx, "github", "github.com", 1, now.Add(5*time.Minute),
+	)
+	require.NoError(err)
+	require.Len(queued, 1)
+	assert.Equal("current-thread", queued[0].PlatformNotificationID)
+
+	var staleStillQueued int
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM forge_notification_items
+		WHERE platform_notification_id = 'stale-thread'
+		  AND source_ack_queued_at IS NOT NULL
+		  AND source_ack_synced_at IS NULL
+	`).Scan(&staleStillQueued))
+	assert.Equal(1, staleStillQueued)
+}
+
+func TestDeferQueuedNotificationAcksUsesStableRepoIDAfterRename(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	entry, accepted, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
+	}, now)
+	require.NoError(err)
+	require.True(accepted)
+	repoID := entry.Repository.ID
+	number := 7
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformNotificationID: "linked-old-route",
+		RepoID:                 &repoID, RepoOwner: "acme", RepoName: "widget",
+		SubjectType: "PullRequest", SubjectTitle: "linked",
+		ItemNumber: &number, ItemType: "pr", Reason: "mention",
+		Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+	}}))
+
+	_, accepted, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_widget", Owner: "acme", Name: "renamed",
+	}, now.Add(time.Minute))
+	require.NoError(err)
+	require.True(accepted)
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformNotificationID: "legacy-current-route",
+		RepoOwner:              "acme", RepoName: "renamed",
+		SubjectType: "PullRequest", SubjectTitle: "legacy current",
+		ItemNumber: &number, ItemType: "pr", Reason: "mention",
+		Unread: true, SourceUpdatedAt: now.Add(time.Minute), SyncedAt: now.Add(time.Minute),
+	}}))
+	_, err = d.WriteDB().ExecContext(ctx, `
+		UPDATE forge_notification_items SET repo_id = NULL
+		WHERE platform_notification_id = 'legacy-current-route'
+	`)
+	require.NoError(err)
+
+	items, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 2)
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	_, err = d.QueueNotificationIDsRead(ctx, ids, now.Add(2*time.Minute))
+	require.NoError(err)
+	nextAttemptAt := now.Add(time.Hour)
+	require.NoError(d.DeferQueuedNotificationAcksForRepos(
+		ctx, "github", "github.com",
+		[]NotificationRepoRef{{RepoID: repoID, Owner: "acme", Name: "renamed"}},
+		nextAttemptAt, "rate_limited",
+	))
+
+	items, err = d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	byThread := make(map[string]Notification, len(items))
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	for _, thread := range []string{"linked-old-route", "legacy-current-route"} {
+		assert.Equal("rate_limited", byThread[thread].SourceAckError)
+		if assert.NotNil(byThread[thread].SourceAckNextAttemptAt) {
+			assert.Equal(nextAttemptAt, *byThread[thread].SourceAckNextAttemptAt)
+		}
+	}
 }

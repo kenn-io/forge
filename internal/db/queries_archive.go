@@ -344,7 +344,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 	args := []any{archiveLifecycleDetailsGeneration, formatDatasetProgressTime(now)}
 	args = append(args, archiveRepoIDArgs(repoIDs)...)
 	args = append(args, archiveLifecycleDetailsGeneration)
-	_, err := d.rw.ExecContext(ctx, fmt.Sprintf(`
+	_, err := d.execContext(ctx, fmt.Sprintf(`
 		UPDATE forge_archive_dataset_progress
 		SET scan_generation = ?,
 			next_cursor = NULL, last_input_cursor = NULL,
@@ -403,7 +403,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 // DeferArchiveRepository records provider-host admission waits without
 // incrementing item attempts. A later successful request clears this state.
 func (d *DB) DeferArchiveRepository(ctx context.Context, repoID int64, retryAt time.Time, detail string, now time.Time) error {
-	result, err := d.rw.ExecContext(ctx, `
+	result, err := d.execContext(ctx, `
 		UPDATE forge_archive_repos
 		SET last_error_code = ?, last_error_detail = ?, next_retry_at = ?, updated_at = ?
 		WHERE repo_id = ?`, ArchiveErrorCodeBudgetExhausted,
@@ -422,7 +422,7 @@ func (d *DB) DeferArchiveRepository(ctx context.Context, repoID int64, retryAt t
 }
 
 func (d *DB) ClearArchiveRepositoryError(ctx context.Context, repoID int64, now time.Time) error {
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := d.execContext(ctx, `
 		UPDATE forge_archive_repos
 		SET last_error_code = CASE WHEN last_error_code = ? THEN NULL ELSE last_error_code END,
 			last_error_detail = CASE WHEN last_error_code = ? THEN NULL ELSE last_error_detail END,
@@ -445,7 +445,7 @@ func (d *DB) RetryArchiveAuthentication(ctx context.Context, repoIDs []int64, no
 		return nil
 	}
 	args := append([]any{now.UTC()}, archiveRepoIDArgs(repoIDs)...)
-	_, err := d.rw.ExecContext(ctx, fmt.Sprintf(`
+	_, err := d.execContext(ctx, fmt.Sprintf(`
 		UPDATE forge_archive_repos
 		SET last_error_code = NULL, last_error_detail = NULL,
 			next_retry_at = NULL, updated_at = MAX(updated_at, ?)

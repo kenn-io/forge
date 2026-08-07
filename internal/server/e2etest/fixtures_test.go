@@ -147,6 +147,7 @@ type mockGH struct {
 	mergePullRequestFn         func(context.Context, string, string, int, string, string, string, string) (*gh.PullRequestMergeResult, error)
 	createReviewWithCommentsFn func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
 	dismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
+	listNotificationsFn        func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
 	getNotificationThreadFn    func(context.Context, string) (ghclient.NotificationThread, error)
 	markNotificationReadFn     func(context.Context, string) error
 }
@@ -241,7 +242,10 @@ func (m *mockGH) CreatePullRequestReviewCommentReply(
 ) (*gh.PullRequestComment, error) {
 	return nil, nil
 }
-func (m *mockGH) ListNotifications(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
+func (m *mockGH) ListNotifications(ctx context.Context, opts ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
+	if m.listNotificationsFn != nil {
+		return m.listNotificationsFn(ctx, opts)
+	}
 	return nil, false, nil
 }
 func (m *mockGH) GetNotificationThread(ctx context.Context, threadID string) (ghclient.NotificationThread, error) {

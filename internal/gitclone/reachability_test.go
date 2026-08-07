@@ -32,6 +32,30 @@ func TestCommitsReachableFrom(t *testing.T) {
 	assert.False(evaluated, "unrepresentable candidates are omitted, not judged")
 }
 
+func TestCommitsReachableFromUsesRepositoryIdentityNamespace(t *testing.T) {
+	mgr, shas := setupAncestryClone(t)
+	ctx := WithRepositoryIdentity(context.Background(), "provider-repo-1")
+	legacyPath, err := mgr.ClonePath(
+		"github", "example.com", "acme", "widgets",
+	)
+	require.NoError(t, err)
+	identityPath, err := mgr.ClonePathForContext(
+		ctx, "github", "example.com", "acme", "widgets",
+	)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(identityPath), 0o755))
+	require.NoError(t, os.Rename(legacyPath, identityPath))
+
+	result, err := mgr.CommitsReachableFrom(
+		ctx, "github", "example.com", "acme", "widgets", shas["c2"],
+		[]string{shas["c1"], shas["c3"]},
+	)
+	require.NoError(t, err)
+	assert.True(t, result.HeadVerified)
+	assert.True(t, result.Live[shas["c1"]])
+	assert.False(t, result.Live[shas["c3"]])
+}
+
 func TestCommitsReachableFromMissingHead(t *testing.T) {
 	ctx := context.Background()
 	mgr, shas := setupAncestryClone(t)

@@ -194,7 +194,7 @@ func (d *DB) UpsertRepoOverview(
 		publishedAt = overview.LatestRelease.PublishedAt
 	}
 
-	_, err = d.rw.ExecContext(ctx, `
+	_, err = d.execContext(ctx, `
 		INSERT INTO forge_repo_overviews
 		    (repo_id, latest_release_tag, latest_release_name,
 		     latest_release_url, latest_release_target,

@@ -51,14 +51,31 @@ func initTestRepo(t *testing.T, dir string) {
 func setupBareClone(t *testing.T, sourceDir, clonesDir, owner, name string) *gitclone.Manager {
 	t.Helper()
 	mgr := gitclone.New(clonesDir, nil)
-	barePath, err := mgr.ClonePath("github", "github.com", owner, name)
+	legacyPath, err := mgr.ClonePath("github", "github.com", owner, name)
 	require.NoError(t, err)
-	gitRun(t, "", "clone", "--bare", sourceDir, barePath)
-	gitRun(t, barePath, "config", "--add", "remote.origin.fetch",
-		"+refs/pull/*/head:refs/pull/*/head")
-	gitRun(t, barePath, "remote", "set-url", "origin", sourceDir)
-	gitRun(t, barePath, "fetch", "--prune", "origin")
+	identityPath := syncTestClonePath(t, mgr, owner, name)
+	for _, barePath := range []string{legacyPath, identityPath} {
+		gitRun(t, "", "clone", "--bare", sourceDir, barePath)
+		gitRun(t, barePath, "config", "--add", "remote.origin.fetch",
+			"+refs/pull/*/head:refs/pull/*/head")
+		gitRun(t, barePath, "remote", "set-url", "origin", sourceDir)
+		gitRun(t, barePath, "fetch", "--prune", "origin")
+	}
 	return mgr
+}
+
+func syncTestClonePath(
+	t *testing.T, mgr *gitclone.Manager, owner, name string,
+) string {
+	t.Helper()
+	path, err := mgr.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(
+			t.Context(), "repo-"+strings.ToLower(owner+"-"+name),
+		),
+		"github", "github.com", owner, name,
+	)
+	require.NoError(t, err)
+	return path
 }
 
 // setupSyncer creates a syncer with a real DB, bare clone manager, and mock client.
@@ -364,8 +381,7 @@ func TestIntegrationSyncOpenToMergedTransition(t *testing.T) {
 	postmergeBaseSHA := gitRun(t, sourceDir, "rev-parse", "main")
 
 	// Re-fetch the bare clone to pick up the merge commit.
-	barePath, err := mgr.ClonePath("github", "github.com", "owner", "repo")
-	require.NoError(err)
+	barePath := syncTestClonePath(t, mgr, "owner", "repo")
 	gitRun(t, barePath, "fetch", "--prune", "origin")
 
 	closedState := "closed"
@@ -513,6 +529,84 @@ func TestIntegrationSyncFirstSeenMergedPR(t *testing.T) {
 	assert.NotEqual(prHead, shas.MergeBaseSHA, "diff should not be empty")
 }
 
+func TestIntegrationSyncClosedMROnProviderRepairsDiffFromStableIdentityClone(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	sourceDir := t.TempDir()
+	clonesDir := t.TempDir()
+
+	initTestRepo(t, sourceDir)
+	forkPoint := gitRun(t, sourceDir, "rev-parse", "HEAD")
+	gitRun(t, sourceDir, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(
+		filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644,
+	))
+	gitRun(t, sourceDir, "add", ".")
+	gitRun(t, sourceDir, "commit", "-m", "add feature")
+	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
+	gitRun(t, sourceDir, "update-ref", "refs/pull/91/head", prHead)
+	gitRun(t, sourceDir, "checkout", "main")
+	gitRun(t, sourceDir, "merge", "--no-ff", "feature", "-m", "Merge feature")
+	mergeCommit := gitRun(t, sourceDir, "rev-parse", "HEAD")
+
+	mgr := gitclone.New(clonesDir, nil)
+	stablePath := syncTestClonePath(t, mgr, "owner", "repo")
+	gitRun(t, "", "clone", "--bare", sourceDir, stablePath)
+	gitRun(t, stablePath, "config", "--add", "remote.origin.fetch",
+		"+refs/pull/*/head:refs/pull/*/head")
+	gitRun(t, stablePath, "remote", "set-url", "origin", sourceDir)
+	gitRun(t, stablePath, "fetch", "--prune", "origin")
+	legacyPath, err := mgr.ClonePath("github", "github.com", "owner", "repo")
+	require.NoError(err)
+	assert.NoDirExists(legacyPath,
+		"the mutation resync must not depend on a legacy route clone")
+
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"),
+	)
+	require.NoError(err)
+	now := time.Now().UTC()
+	openPR := buildOpenPR(91, now)
+	openPR.Head.SHA = &prHead
+	openPR.Base.SHA = &forkPoint
+	normalized, err := NormalizePR(repoID, openPR)
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, normalized)
+	require.NoError(err)
+
+	closedState := "closed"
+	merged := true
+	mergedAt := now.Add(time.Minute)
+	mergedPR := buildOpenPR(91, mergedAt)
+	mergedPR.State = &closedState
+	mergedPR.Merged = &merged
+	mergedPR.MergedAt = makeTimestamp(mergedAt)
+	mergedPR.ClosedAt = makeTimestamp(mergedAt)
+	mergedPR.MergeCommitSHA = &mergeCommit
+	mergedPR.Head.SHA = &prHead
+	mergedPR.Base.SHA = &mergeCommit
+	client := &mockClient{singlePR: mergedPR}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, mgr,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			PlatformExternalID: "repo-owner-repo",
+			Owner:              "owner", Name: "repo", RepoPath: "owner/repo",
+		}},
+		time.Minute, nil, testBudget(100),
+	)
+
+	require.NoError(syncer.SyncClosedMROnProvider(ctx, repoID, 91))
+	shas, err := database.GetDiffSHAsByRepoID(ctx, repoID, 91)
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Equal(prHead, shas.DiffHeadSHA)
+	assert.Equal(forkPoint, shas.DiffBaseSHA)
+	assert.Equal(forkPoint, shas.MergeBaseSHA)
+}
+
 // TestSyncMRWrapsDiffFailureAsDiffSyncError verifies that when SyncMR cannot
 // compute diff SHAs for a merged PR (here: the bare clone is missing the
 // merge commit), it still upserts the PR row, refreshes the timeline, and
@@ -552,8 +646,7 @@ func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	// `git fetch` succeeds but the merge commit never enters the clone.
 	emptyRemote := t.TempDir()
 	initTestRepo(t, emptyRemote)
-	barePath, err := mgr.ClonePath("github", "github.com", "owner", "repo")
-	require.NoError(err)
+	barePath := syncTestClonePath(t, mgr, "owner", "repo")
 	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
 
 	number := 42
@@ -587,7 +680,7 @@ func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
 		time.Minute, nil, nil)
 
-	err = syncer.SyncMR(ctx, "owner", "repo", number)
+	err := syncer.SyncMR(ctx, "owner", "repo", number)
 	require.Error(err)
 	var diffErr *DiffSyncError
 	require.ErrorAs(err, &diffErr)
@@ -659,8 +752,7 @@ func TestIntegrationSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	// reach it via fetch.
 	emptyRemote := t.TempDir()
 	initTestRepo(t, emptyRemote)
-	barePath, err := mgr.ClonePath("github", "github.com", "owner", "repo")
-	require.NoError(err)
+	barePath := syncTestClonePath(t, mgr, "owner", "repo")
 	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
 
 	number := 77

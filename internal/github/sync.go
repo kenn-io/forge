@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/platform"
 	platformgithub "go.kenn.io/forge/internal/platform/github"
+	"go.kenn.io/forge/internal/shutdownbudget"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"golang.org/x/sync/singleflight"
@@ -4532,19 +4533,12 @@ func (w *watchedMRSet) slice() []WatchedMR {
 	return slices.Clone(w.items)
 }
 
-// stopGracePeriod bounds how long Stop will wait for in-flight work
-// to exit after the syncer's lifetime context is canceled. If a
-// misbehaving dependency ignores ctx, Stop gives up and logs a
-// warning rather than deadlocking the caller.
-const stopGracePeriod = 30 * time.Second
-
 // Stop signals the background goroutine to exit. Safe to call
 // multiple times. Cancels the syncer's lifetime context first so
 // blocked RunOnce and TriggerRun goroutines can observe the
-// cancellation and unwind their GitHub calls, then waits for the
-// wait group up to stopGracePeriod. The bounded wait prevents Stop
-// from hanging the process in pathological cases where a client
-// ignores ctx.
+// cancellation and unwind their GitHub calls, then waits through the
+// shared syncer shutdown budget. A dependency that ignores ctx cannot
+// deadlock process shutdown.
 func (s *Syncer) Stop() {
 	s.stopOnce.Do(func() {
 		s.lifecycleMu.Lock()
@@ -4567,9 +4561,9 @@ func (s *Syncer) Stop() {
 	}()
 	select {
 	case <-done:
-	case <-time.After(stopGracePeriod):
+	case <-time.After(shutdownbudget.Syncer):
 		slog.Warn("syncer stop timed out; returning while work is still in flight",
-			"grace", stopGracePeriod)
+			"grace", shutdownbudget.Syncer)
 	}
 }
 

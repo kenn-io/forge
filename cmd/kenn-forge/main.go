@@ -32,6 +32,7 @@ import (
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/fleetapi"
+	"go.kenn.io/forge/internal/shutdownbudget"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -82,9 +83,12 @@ func (h splitLogHandler) WithGroup(name string) slog.Handler {
 }
 
 var (
-	version   = "dev"
-	commit    = "unknown"
-	buildDate = "unknown"
+	version                = "dev"
+	commit                 = "unknown"
+	buildDate              = "unknown"
+	runtimePublishGatePath string
+	runtimeServeGatePath   string
+	runtimeShutdownDelay   string
 )
 
 var runServer = run
@@ -258,22 +262,14 @@ func readConfigValue(configPath, key string, stdout io.Writer) error {
 	}
 }
 
-func writeStatus(configPath string, asJSON bool, stdout io.Writer) error {
-	if err := config.EnsureDefault(configPath); err != nil {
-		return fmt.Errorf("ensure config: %w", err)
-	}
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
-
-	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+func writeRuntimeStatus(dataDir string, asJSON bool, stdout io.Writer) error {
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return fmt.Errorf(
-			"create data directory %s: %w", cfg.DataDir, err,
+			"create data directory %s: %w", dataDir, err,
 		)
 	}
 
-	st, err := runtimelock.Read(cfg.DataDir)
+	st, err := runtimelock.Read(dataDir)
 	if err != nil {
 		return fmt.Errorf("read runtime status: %w", err)
 	}
@@ -286,6 +282,9 @@ func run(opts serve.Options) error {
 	cfg, err := config.LoadOrCreate(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+	if err := validateBackgroundLaunchConfig(cfg); err != nil {
+		return err
 	}
 	slog.Debug(
 		"config loaded",
@@ -357,7 +356,7 @@ func run(opts serve.Options) error {
 	}
 
 	runtimeIdentity, err := daemonruntime.NewIdentity(ln.Addr(), daemonruntime.IdentityOptions{
-		Version: version, Commit: commit, DataDir: cfg.DataDir,
+		Version: version, Commit: commit, DataDir: cfg.DataDir, ConfigPath: configPath,
 		BasePath: cfg.BasePath, RequireAuth: cfg.API.RequireAuth,
 	})
 	if err != nil {
@@ -366,6 +365,10 @@ func run(opts serve.Options) error {
 	}
 	if err := lockHandle.WriteMetadata(runtimeIdentity.LockMetadata); err != nil {
 		slog.Warn("write runtime metadata", "err", err)
+	}
+	if err := waitForRuntimeGate(ctx, runtimePublishGatePath, "publish"); err != nil {
+		_ = ln.Close()
+		return err
 	}
 	runtimePath, err := daemonruntime.Publish(runtimeIdentity.Record)
 	if err != nil {
@@ -386,6 +389,10 @@ func run(opts serve.Options) error {
 	if err != nil {
 		_ = ln.Close()
 		return fmt.Errorf("initialize daemon ping: %w", err)
+	}
+	if err := waitForRuntimeGate(ctx, runtimeServeGatePath, "serve"); err != nil {
+		_ = ln.Close()
+		return err
 	}
 
 	startupHandler := server.NewStartupHandler(
@@ -413,47 +420,49 @@ func run(opts serve.Options) error {
 	var syncer *ghclient.Syncer
 	var telemetryReporter *telemetry.Reporter
 	var profilerSrv *profiler.Server
+	var notificationLoops *notificationLoopHandle
 	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(), 10*time.Second,
-		)
-		defer cancel()
+		if err := waitForRuntimeShutdownDelay(); err != nil {
+			slog.Warn("test shutdown delay", "err", err)
+		}
 		for _, shutdownErr := range runMainShutdown(
-			shutdownCtx,
+			context.Background(),
 			mainShutdownCallbacks{
 				StopSignals: stopSignalsOnce,
-				ShutdownPrimaryHTTP: func(ctx context.Context) error {
-					if srv != nil {
-						return srv.Shutdown(ctx)
+				StopNotificationLoops: func(ctx context.Context) error {
+					if notificationLoops == nil {
+						return nil
 					}
-					return httpSrv.Shutdown(ctx)
+					return notificationLoops.Stop(ctx)
+				},
+				ShutdownPrimaryHTTP: func(shutdownCtx context.Context) error {
+					if srv != nil {
+						return srv.Shutdown(shutdownCtx)
+					}
+					return httpSrv.Shutdown(shutdownCtx)
 				},
 				StopSyncer: func() {
 					if syncer != nil {
 						syncer.Stop()
 					}
 				},
-				ShutdownProfiler: func(context.Context) error {
+				ShutdownProfiler: func(ctx context.Context) error {
 					if profilerSrv != nil {
-						profilerCtx, profilerCancel := context.WithTimeout(
-							context.Background(), 5*time.Second,
-						)
-						defer profilerCancel()
-						return profilerSrv.Shutdown(profilerCtx)
+						return profilerSrv.Shutdown(ctx)
 					}
 					return nil
 				},
 				CloseTelemetry: func() error {
-					if telemetryReporter != nil {
-						return telemetryReporter.Close()
+					if telemetryReporter == nil {
+						return nil
 					}
-					return nil
+					return telemetryReporter.Close()
 				},
 				CloseDatabase: func() error {
-					if database != nil {
-						return database.Close()
+					if database == nil {
+						return nil
 					}
-					return nil
+					return database.Close()
 				},
 			},
 		) {
@@ -639,8 +648,7 @@ func run(opts serve.Options) error {
 	)
 	syncer.Start(ctx)
 	if cfg.NotificationsEnabled() {
-		notificationLoops := startNotificationLoops(ctx, syncer, cfg)
-		defer notificationLoops.Stop()
+		notificationLoops = startNotificationLoops(ctx, syncer, cfg)
 	}
 
 	otelShutdown, err := oteltelemetry.Init(ctx)
@@ -648,7 +656,9 @@ func run(opts serve.Options) error {
 		return err
 	}
 	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), shutdownbudget.OpenTelemetry,
+		)
 		defer cancel()
 		if err := otelShutdown(shutdownCtx); err != nil {
 			slog.Warn("telemetry shutdown failed", "err", err)
@@ -674,13 +684,38 @@ func run(opts serve.Options) error {
 	}
 }
 
+// waitForRuntimeGate is enabled only by an ldflags-injected test build.
+func waitForRuntimeGate(ctx context.Context, gatePath, phase string) error {
+	if gatePath == "" {
+		return nil
+	}
+	if err := os.WriteFile(gatePath+".ready", []byte("ready\n"), 0o600); err != nil {
+		return fmt.Errorf("%s runtime gate readiness: %w", phase, err)
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(gatePath); errors.Is(err, os.ErrNotExist) {
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("inspect runtime %s gate: %w", phase, err)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for runtime %s gate: %w", phase, ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
 type mainShutdownCallbacks struct {
-	StopSignals         func()
-	ShutdownPrimaryHTTP func(context.Context) error
-	StopSyncer          func()
-	ShutdownProfiler    func(context.Context) error
-	CloseTelemetry      func() error
-	CloseDatabase       func() error
+	StopSignals           func()
+	StopNotificationLoops func(context.Context) error
+	ShutdownPrimaryHTTP   func(context.Context) error
+	StopSyncer            func()
+	ShutdownProfiler      func(context.Context) error
+	CloseTelemetry        func() error
+	CloseDatabase         func() error
 }
 
 type mainShutdownError struct {
@@ -696,8 +731,21 @@ func runMainShutdown(
 	if callbacks.StopSignals != nil {
 		callbacks.StopSignals()
 	}
+	if callbacks.StopNotificationLoops != nil {
+		if err := runContextShutdown(
+			ctx, shutdownbudget.NotificationLoop,
+			callbacks.StopNotificationLoops,
+		); err != nil {
+			errs = append(errs, mainShutdownError{
+				message: "notification loops shutdown",
+				err:     err,
+			})
+		}
+	}
 	if callbacks.ShutdownPrimaryHTTP != nil {
-		if err := callbacks.ShutdownPrimaryHTTP(ctx); err != nil {
+		if err := runContextShutdown(
+			ctx, shutdownbudget.PrimaryHTTP, callbacks.ShutdownPrimaryHTTP,
+		); err != nil {
 			errs = append(errs, mainShutdownError{
 				message: "server shutdown",
 				err:     err,
@@ -708,7 +756,9 @@ func runMainShutdown(
 		callbacks.StopSyncer()
 	}
 	if callbacks.ShutdownProfiler != nil {
-		if err := callbacks.ShutdownProfiler(ctx); err != nil {
+		if err := runContextShutdown(
+			ctx, shutdownbudget.Profiler, callbacks.ShutdownProfiler,
+		); err != nil {
 			errs = append(errs, mainShutdownError{
 				message: "profiler shutdown",
 				err:     err,
@@ -716,7 +766,9 @@ func runMainShutdown(
 		}
 	}
 	if callbacks.CloseTelemetry != nil {
-		if err := callbacks.CloseTelemetry(); err != nil {
+		if err := runBoundedShutdown(
+			ctx, shutdownbudget.TelemetryReporter, callbacks.CloseTelemetry,
+		); err != nil {
 			errs = append(errs, mainShutdownError{
 				message: "close telemetry",
 				err:     err,
@@ -724,7 +776,9 @@ func runMainShutdown(
 		}
 	}
 	if callbacks.CloseDatabase != nil {
-		if err := callbacks.CloseDatabase(); err != nil {
+		if err := runBoundedShutdown(
+			ctx, shutdownbudget.Database, callbacks.CloseDatabase,
+		); err != nil {
 			errs = append(errs, mainShutdownError{
 				message: "close database",
 				err:     err,
@@ -732,6 +786,45 @@ func runMainShutdown(
 		}
 	}
 	return errs
+}
+
+func runContextShutdown(
+	parent context.Context,
+	timeout time.Duration,
+	shutdown func(context.Context) error,
+) error {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	return shutdown(ctx)
+}
+
+func runBoundedShutdown(
+	parent context.Context,
+	timeout time.Duration,
+	shutdown func() error,
+) error {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- shutdown() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func waitForRuntimeShutdownDelay() error {
+	if runtimeShutdownDelay == "" {
+		return nil
+	}
+	delay, err := time.ParseDuration(runtimeShutdownDelay)
+	if err != nil {
+		return fmt.Errorf("parse duration %q: %w", runtimeShutdownDelay, err)
+	}
+	time.Sleep(delay)
+	return nil
 }
 
 func profilerSrvDone(srv *profiler.Server) <-chan error {

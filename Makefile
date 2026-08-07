@@ -39,7 +39,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps api-generate roborev-api-generate \
         docs-build docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
-        dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
+        dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check nilaway testify-helper-check \
         profile-workspace-switch otel-lgtm \
         frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
@@ -266,12 +266,12 @@ dev: ensure-embed-dir check-air
 		KENN_FORGE_LOG_LEVEL="$${KENN_FORGE_LOG_LEVEL:-debug}" \
 		KENN_FORGE_LOG_FILE="$${KENN_FORGE_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
 		KENN_FORGE_LOG_STDERR_LEVEL="$${KENN_FORGE_LOG_STDERR_LEVEL:-info}" \
-		"$(AIR_BIN)" -c .air.toml -- -config "$(KENN_FORGE_CONFIG)" $(ARGS); \
+		"$(AIR_BIN)" -c .air.toml -- serve -config "$(KENN_FORGE_CONFIG)" $(ARGS); \
 	else \
 		KENN_FORGE_LOG_LEVEL="$${KENN_FORGE_LOG_LEVEL:-debug}" \
 		KENN_FORGE_LOG_FILE="$${KENN_FORGE_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
 		KENN_FORGE_LOG_STDERR_LEVEL="$${KENN_FORGE_LOG_STDERR_LEVEL:-info}" \
-		"$(AIR_BIN)" -c .air.toml -- $(ARGS); \
+		"$(AIR_BIN)" -c .air.toml -- serve $(ARGS); \
 	fi
 
 # Run backend and frontend dev servers on free ports with isolated config/data.
@@ -368,13 +368,20 @@ vet: ensure-embed-dir
 testify-helper-check: ensure-embed-dir
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./cmd/testify-helper-check ./...
 
-# Lint Go code and auto-fix where possible
-lint: ensure-embed-dir
+# Verify mise is available for pinned repository tools.
+check-mise:
 	@if ! command -v mise >/dev/null 2>&1; then \
 		echo "mise not found. Install with: brew install mise" >&2; \
 		exit 1; \
 	fi
+
+# Lint Go code and auto-fix where possible.
+lint: ensure-embed-dir check-mise
 	mise exec -- golangci-lint run --fix
+
+# Check Go lint without mutating files; used by CI and pre-push.
+lint-check: ensure-embed-dir check-mise
+	mise exec -- golangci-lint run
 
 # Run NilAway against first-party Go packages
 nilaway: ensure-embed-dir
@@ -452,6 +459,7 @@ help:
 	@echo "  gitlab-fixture-bake - Build a reusable GitLab fixture image"
 	@echo "  vet            - Run go vet"
 	@echo "  lint           - Run mise-managed golangci-lint (auto-fix)"
+	@echo "  lint-check     - Run mise-managed golangci-lint without modifying files"
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"
 	@echo "  huma-route-check - Prevent non-Huma Go route registrations"

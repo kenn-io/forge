@@ -5,18 +5,18 @@ and the root event stream.
 
 ## Startup Contracts
 
-- `kenn-forge` and `kenn-forge serve` are raw foreground commands; their
-  authoritative `data_dir` lock keeps duplicate startup as an error
-  (`cmd/kenn-forge/main.go::run`).
-- `kenn-forge start --background` is idempotent: reuse requires verified
-  identity for the same resolved `data_dir`; starts serialize per data
-  directory through the shared daemon manager without blocking unrelated
-  instances (`internal/daemonruntime/lifecycle.go::NewManager`).
+- Bare `kenn-forge` is help-only, `serve` is foreground, and background
+  lifecycle management is under `daemon start|status|stop|restart`
+  (`cmd/kenn-forge/cli.go::newRootCommand`).
+- `daemon start` is idempotent: reuse requires verified identity for the same
+  resolved `data_dir`; incompatible versions require `daemon restart`
+  (`internal/daemonruntime/lifecycle.go::NewManager`).
 - Lifecycle startup mints the API token under the authoritative data-directory
   lock; atomic serialized publication makes concurrent paths retain one
   credential (`internal/runtimelock/token.go::EnsureAuthToken`).
-- Config loading establishes the canonical `data_dir` identity used by startup
-  and reload comparisons (`internal/config/config.go::load`).
+- Lifecycle commands retain caller-spelled paths for initial default migration,
+  then freeze canonical identity for locks, reloads, runtime records, and
+  comparisons (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.lockMutationConfig`).
 - Default-home upgrades copy the legacy config and its referenced credential
   files before marking completion and relocating the database; explicit config
   paths and `KENN_FORGE_HOME` never relocate config
@@ -24,7 +24,49 @@ and the root event stream.
 
 ## Startup Lock
 
-- `middleman.lock` is a stable lock target, not a disposable liveness sentinel.
+- Config identity must converge across relative, symlinked, and filesystem-equivalent
+  name aliases before hashing or comparison
+  (`internal/daemonruntime/runtime.go::CanonicalConfigPath`).
+- Data-directory identity must converge across symlinked and filesystem-equivalent
+  name aliases before hashing, comparison, or runtime publication
+  (`internal/config/data_dir.go::CanonicalDataDir`).
+- Linux without procfs retains the already symlink-resolved spelling instead of
+  making all config-backed commands fail
+  (`internal/pathidentity/canonical_linux.go::CanonicalExisting`).
+- Background lifecycle mutations lock canonical config identity before sorted
+  resolved `data_dir` identities; release but never unlink the stable
+  cross-process paths (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.prepareConfigMutation`).
+- Mutations reload config after locking and retry if `data_dir` changed;
+  detached children reject a config that differs from the locked identity
+  (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.prepareConfigMutation`, `cmd/kenn-forge/start_background.go::validateBackgroundLaunchConfig`).
+- Start, stop, and restart use canonical config identity to lock both prior and
+  current `data_dir` before reusing, replacing, or stopping a moved daemon
+  (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.prepareConfigMutation`).
+- Lifecycle mutations proof-authenticate config-attributed candidates individually;
+  multiple records require one authoritative lock-metadata match before shadows
+  are removed (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.runtimeForConfig`).
+- An unauthenticated record is removable only while its authoritative lock is
+  free or its former `data_dir` no longer exists
+  (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.readCleanupRuntimeStatus`).
+- Config-identified records take precedence over legacy records; a live legacy
+  record remains attributable only while its `data_dir` matches current config
+  (`internal/daemonruntime/runtime.go::ConfigRuntimes`).
+- An authenticated pre-config-identity daemon matches authoritative status only
+  when both discovery and status omit `config_path`; current-directory attribution
+  above remains the boundary (`cmd/kenn-forge/daemon_lifecycle.go::runtimeStatusMatches`).
+- Stop and restart prove the exact candidate record before signaling; moved
+  candidates must also match authoritative config path and PID, while version
+  differences remain stoppable
+  (`internal/daemonruntime/lifecycle.go::FindVerifiedRecord`).
+- Stop prefers authenticated config-identified runtime state under lifecycle locks;
+  malformed TOML is consulted only when no attributable daemon exists
+  (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.loadMutationConfigOrRuntime`).
+- Daemon stop waits through the sum of every bounded shutdown phase plus process
+  exit margin (`internal/shutdownbudget/budget.go::Total`).
+- Unix sends one SIGTERM before requiring manual recovery; force-kill escalation
+  cannot rule out PID reuse
+  (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.stopLocked`).
+- `kenn-forge.lock` is a stable lock target, not a disposable liveness sentinel.
   Never delete it: unlinking a held file lets another daemon lock a different
   inode and use the same data directory concurrently
   (`internal/runtimelock/lock.go::Acquire`).
@@ -38,9 +80,14 @@ and the root event stream.
   config home, even when `config.toml` changes `data_dir`; the record is a
   discovery surface and does not replace the authoritative data-directory
   lock/status (`internal/daemonruntime/runtime.go::Publish`).
+- Status uses authenticated config identity before TOML, including for moved runtimes;
+  invalid config cannot strand an attributable daemon, while proof-unavailable state
+  may report only the configured `data_dir` lock
+  (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.Status`).
 - Record metadata is string-valued `host`, `port`, `read_only=false`,
-  `require_auth`, `data_dir`, and canonical `base_path`; `auth_token_path` is
-  present only when auth is enabled. One typed owner builds and validates it;
+  `require_auth`, `data_dir`, canonical `config_path`, and canonical
+  `base_path`; `auth_token_path` is present only when auth is enabled. One typed
+  owner builds and validates it;
   discovery still requires a live PID and a token-derived proof bound to the
   record's service, version, PID, network, and address
   (`internal/daemonruntime/runtime.go::Compatible`).

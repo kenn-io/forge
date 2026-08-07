@@ -95,7 +95,7 @@ token_env = "KENN_FORGE_ARCHIVE_E2E_TOKEN"
 	require.NoError(err)
 	require.NoError(database.Close())
 
-	daemon := procutil.Command(bin, "--config", cfgPath)
+	daemon := procutil.Command(bin, "serve", "--config", cfgPath)
 	daemon.Stdout = os.Stderr
 	daemon.Stderr = os.Stderr
 	daemon.Env = append(os.Environ(),

@@ -42,7 +42,7 @@ esac
 socat -d0 TCP-LISTEN:18091,fork,bind=0.0.0.0,reuseaddr TCP:127.0.0.1:${backend_port} &
 socat_pid=$!
 
-"$air_bin" -c .air.toml -- -config "$config_path" &
+"$air_bin" -c .air.toml -- serve -config "$config_path" &
 air_pid=$!
 
 set +e

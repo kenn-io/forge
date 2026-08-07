@@ -35,7 +35,7 @@ func TestFormatCollisionBannerWithMetadata(t *testing.T) {
   started at:   2026-05-19T10:30:00Z
   version:      1.2.3
 
-  Run ` + "`kenn-forge status`" + ` to inspect it.
+  Run ` + "`kenn-forge daemon status`" + ` to inspect it.
 `
 	require.Equal(want, buf.String())
 }
@@ -57,7 +57,7 @@ func TestFormatCollisionBannerWithNonDefaultConfig(t *testing.T) {
 	var buf bytes.Buffer
 	FormatCollisionBanner(&buf, cerr, "/etc/kenn-forge/alt.toml", "/home/u/.kenn/forge/config.toml")
 
-	require.Contains(buf.String(), "Run `kenn-forge status --config /etc/kenn-forge/alt.toml` to inspect it.")
+	require.Contains(buf.String(), "Run `kenn-forge daemon status --config /etc/kenn-forge/alt.toml` to inspect it.")
 }
 
 func TestFormatCollisionBannerMetadataUnavailable(t *testing.T) {
@@ -77,7 +77,7 @@ func TestFormatCollisionBannerMetadataUnavailable(t *testing.T) {
   lock file:    /home/u/.kenn/forge/kenn-forge.lock
   metadata:     unavailable (daemon may be early in startup, or metadata is missing/corrupt)
 
-  Run ` + "`kenn-forge status`" + ` to inspect it.
+  Run ` + "`kenn-forge daemon status`" + ` to inspect it.
 `
 	require.Equal(want, buf.String())
 }

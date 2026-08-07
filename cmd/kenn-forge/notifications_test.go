@@ -34,8 +34,9 @@ func TestNotificationLoopStopWaitsForInFlightRun(t *testing.T) {
 	}
 
 	stopped := make(chan struct{})
+	stopErrors := make(chan error, 1)
 	go func() {
-		handle.Stop()
+		stopErrors <- handle.Stop(t.Context())
 		close(stopped)
 	}()
 
@@ -53,16 +54,41 @@ func TestNotificationLoopStopWaitsForInFlightRun(t *testing.T) {
 	}
 	select {
 	case <-stopped:
+		require.NoError(<-stopErrors)
 	case <-time.After(time.Second):
 		require.Fail("Stop did not return after notification run finished")
 	}
+}
+
+func TestNotificationLoopStopHonorsDeadline(t *testing.T) {
+	require := require.New(t)
+	handle := newNotificationLoopHandle(t.Context())
+	started := make(chan struct{})
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	handle.startTicker("test notification", time.Hour, func(context.Context) error {
+		close(started)
+		<-release
+		return nil
+	})
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		require.Fail("notification loop did not start")
+	}
+	stopCtx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+
+	err := handle.Stop(stopCtx)
+
+	require.ErrorIs(err, context.DeadlineExceeded)
 }
 
 func TestNotificationLoopRunsBeforeFirstTickerInterval(t *testing.T) {
 	parent, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	handle := newNotificationLoopHandle(parent)
-	defer handle.Stop()
+	defer func() { require.NoError(t, handle.Stop(t.Context())) }()
 
 	started := make(chan struct{})
 	var startedOnce sync.Once

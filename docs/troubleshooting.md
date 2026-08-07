@@ -5,7 +5,7 @@
 Check the daemon:
 
 ```sh
-kenn-forge status
+kenn-forge daemon status
 ```
 
 If another kenn-forge process uses the same `data_dir`, the startup
@@ -29,6 +29,10 @@ kenn-forge serve --config /path/to/config.toml
 ## Config edits are not showing up
 
 Most config loads at startup. Restart the daemon after editing `config.toml`.
+
+```sh
+kenn-forge daemon restart
+```
 
 If you need isolated state for a test run, set `KENN_FORGE_HOME` before starting
 kenn-forge.
@@ -143,9 +147,9 @@ Forge.
 Set log environment variables before starting the daemon:
 
 ```sh
-KENN_FORGE_LOG_LEVEL=debug kenn-forge
-KENN_FORGE_LOG_FILE=~/.kenn/forge/forge.log kenn-forge
-KENN_FORGE_LOG_STDERR_LEVEL=warn KENN_FORGE_LOG_FILE=~/.kenn/forge/forge.log kenn-forge
+KENN_FORGE_LOG_LEVEL=debug kenn-forge daemon restart
+KENN_FORGE_LOG_FILE=~/.kenn/forge/forge.log kenn-forge daemon restart
+KENN_FORGE_LOG_STDERR_LEVEL=warn KENN_FORGE_LOG_FILE=~/.kenn/forge/forge.log kenn-forge daemon restart
 ```
 
 Logs redact configured token-shaped values.

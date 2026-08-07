@@ -65,7 +65,7 @@ func (r *Runner) EnsureDaemon(
 	}
 }
 
-// probeDaemon runs `status --json` on the peer and reports whether
+// probeDaemon runs `daemon status --json` on the peer and reports whether
 // the daemon is ready to serve api-verb relays (running AND runtime
 // metadata published).
 func (r *Runner) probeDaemon(
@@ -74,7 +74,7 @@ func (r *Runner) probeDaemon(
 ) (bool, error) {
 	out, err := r.RunVerb(
 		ctx, hostKey, destination, remoteCommand,
-		[]string{"status", "--json"},
+		[]string{"daemon", "status", "--json"},
 	)
 	if err != nil {
 		return false, fmt.Errorf("probe daemon: %w", err)

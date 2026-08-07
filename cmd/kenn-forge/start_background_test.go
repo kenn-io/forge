@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
@@ -59,7 +60,8 @@ func TestBackgroundDiscoveryDoesNotDiscloseBearerBeforeProof(t *testing.T) {
 	dataDir := t.TempDir()
 	identity, err := daemonruntime.NewIdentity(
 		attacker.Listener.Addr(), daemonruntime.IdentityOptions{
-			Version: "v-test", DataDir: dataDir, RequireAuth: true,
+			Version: "v-test", DataDir: dataDir,
+			ConfigPath: filepath.Join(dataDir, "config.toml"), RequireAuth: true,
 		},
 	)
 	require.NoError(err)
@@ -88,7 +90,9 @@ func newDiscoveryManager(
 	store := daemon.RuntimeStore{Dir: t.TempDir()}
 	_, err := store.Write(record)
 	require.NoError(t, err)
-	return daemonruntime.NewManager(store, dataDir, version, nil)
+	manager, err := daemonruntime.NewManager(store, dataDir, version, nil)
+	require.NoError(t, err)
+	return manager
 }
 
 func newBackgroundProofRecord(
@@ -99,7 +103,8 @@ func newBackgroundProofRecord(
 	server := httptest.NewUnstartedServer(nil)
 	identity, err := daemonruntime.NewIdentity(
 		server.Listener.Addr(), daemonruntime.IdentityOptions{
-			Version: version, DataDir: dataDir, RequireAuth: true,
+			Version: version, DataDir: dataDir,
+			ConfigPath: filepath.Join(dataDir, "config.toml"), RequireAuth: true,
 		},
 	)
 	require.NoError(t, err)

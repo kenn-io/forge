@@ -1,25 +1,35 @@
 # Commands
 
-Run `kenn-forge --help` for the complete command tree. Most commands accept
-`--config`, `--server`, and `--timeout` where they apply.
+Run `kenn-forge` or `kenn-forge --help` for the complete command tree. Flags
+are scoped to the commands that use them; check command help before scripting.
 
-## Start and inspect the daemon
+## Manage the daemon
 
 ```sh
-kenn-forge
-kenn-forge serve
-kenn-forge serve --config /path/to/config.toml
-kenn-forge start --background
-kenn-forge status
-kenn-forge status --json
+kenn-forge daemon start
+kenn-forge daemon status
+kenn-forge daemon status --json
+kenn-forge daemon restart
+kenn-forge daemon stop
 ```
 
-`kenn-forge` and `kenn-forge serve` run in the foreground. Background start
-returns after the daemon publishes its ready identity. It requires a loopback
-listener and safely reuses a compatible running process.
+`daemon start` and `daemon stop` are idempotent. Start returns after the daemon
+publishes its ready identity and safely reuses a compatible running process.
+Use `daemon restart` after changing startup configuration or replacing the
+binary.
 
-Direct foreground starts still reject a second process using the same data
-directory.
+On Unix, stop sends SIGTERM once. If the daemon does not exit within 15 seconds,
+the command leaves it running and directs you to inspect and terminate it
+manually rather than risking a force-kill of a reused PID.
+
+For foreground development or diagnosis, use:
+
+```sh
+kenn-forge serve
+kenn-forge serve --config /path/to/config.toml
+```
+
+Foreground starts reject a second process using the same data directory.
 
 ## Check build information
 

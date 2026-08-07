@@ -8,7 +8,7 @@ import (
 
 // FormatCollisionBanner writes a multi-line human-readable banner to w
 // describing the collision. configPath and defaultConfigPath are used
-// to render the "Run `kenn-forge status [--config ...]`" hint; when
+// to render the "Run `kenn-forge daemon status [--config ...]`" hint; when
 // configPath is empty or equals defaultConfigPath, the flag is
 // omitted.
 //
@@ -33,9 +33,9 @@ func FormatCollisionBanner(w io.Writer, cerr *CollisionError, configPath, defaul
 
 	fmt.Fprintln(w)
 	if configPath != "" && configPath != defaultConfigPath {
-		fmt.Fprintf(w, "  Run `kenn-forge status --config %s` to inspect it.\n", configPath)
+		fmt.Fprintf(w, "  Run `kenn-forge daemon status --config %s` to inspect it.\n", configPath)
 	} else {
-		fmt.Fprintln(w, "  Run `kenn-forge status` to inspect it.")
+		fmt.Fprintln(w, "  Run `kenn-forge daemon status` to inspect it.")
 	}
 }
 

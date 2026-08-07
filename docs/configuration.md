@@ -238,5 +238,5 @@ or paths.
 Disable telemetry with:
 
 ```sh
-TELEMETRY_ENABLED=0 kenn-forge
+TELEMETRY_ENABLED=0 kenn-forge daemon start
 ```

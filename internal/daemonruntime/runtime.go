@@ -2,15 +2,20 @@
 package daemonruntime
 
 import (
+	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gofrs/flock"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/pathidentity"
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/daemon"
 )
@@ -24,6 +29,7 @@ const (
 	metadataReadOnly      = "read_only"
 	metadataRequireAuth   = "require_auth"
 	metadataDataDir       = "data_dir"
+	metadataConfigPath    = "config_path"
 	metadataAuthTokenPath = "auth_token_path"
 	metadataBasePath      = "base_path"
 )
@@ -34,6 +40,7 @@ type IdentityOptions struct {
 	Version     string
 	Commit      string
 	DataDir     string
+	ConfigPath  string
 	BasePath    string
 	RequireAuth bool
 }
@@ -45,6 +52,14 @@ type Identity struct {
 	LockMetadata runtimelock.Metadata
 }
 
+// ConfigRuntime is an unverified discovery candidate attributed to one
+// canonical config path. Callers must authenticate Record before signaling it.
+type ConfigRuntime struct {
+	Record     daemon.RuntimeRecord
+	DataDir    string
+	ConfigPath string
+}
+
 // Store returns the predictable config-home discovery store.
 func Store() (daemon.RuntimeStore, error) {
 	runtimeDir, err := filepath.Abs(config.DefaultDataDir())
@@ -54,14 +69,120 @@ func Store() (daemon.RuntimeStore, error) {
 	return daemon.RuntimeStore{Dir: runtimeDir}, nil
 }
 
-// StartLockStore returns the kit lock identity for one resolved data directory.
+// StartLockStore returns the kit lock identity for one canonical data directory.
 // The digest avoids exposing filesystem paths in config-home filenames.
-func StartLockStore(discoveryStore daemon.RuntimeStore, dataDir string) daemon.RuntimeStore {
-	digest := sha256.Sum256([]byte(dataDir))
+func StartLockStore(
+	discoveryStore daemon.RuntimeStore,
+	dataDir string,
+) (daemon.RuntimeStore, error) {
+	canonicalDataDir, err := config.CanonicalDataDir(dataDir)
+	if err != nil {
+		return daemon.RuntimeStore{}, err
+	}
+	return scopedLockStore(
+		discoveryStore, Service+"-start", canonicalDataDir,
+	), nil
+}
+
+// LifecycleLockStore returns the lock identity serializing start, stop, and
+// restart for one canonical data directory.
+func LifecycleLockStore(
+	discoveryStore daemon.RuntimeStore,
+	dataDir string,
+) (daemon.RuntimeStore, error) {
+	canonicalDataDir, err := config.CanonicalDataDir(dataDir)
+	if err != nil {
+		return daemon.RuntimeStore{}, err
+	}
+	return scopedLockStore(
+		discoveryStore, Service+"-lifecycle", canonicalDataDir,
+	), nil
+}
+
+// ConfigLifecycleLockStore returns the lock identity serializing lifecycle
+// mutations that originate from one canonical config path.
+func ConfigLifecycleLockStore(
+	discoveryStore daemon.RuntimeStore,
+	configPath string,
+) (daemon.RuntimeStore, error) {
+	canonicalPath, err := CanonicalConfigPath(configPath)
+	if err != nil {
+		return daemon.RuntimeStore{}, err
+	}
+	return scopedLockStore(
+		discoveryStore, Service+"-config-lifecycle", canonicalPath,
+	), nil
+}
+
+func scopedLockStore(
+	discoveryStore daemon.RuntimeStore,
+	prefix, identity string,
+) daemon.RuntimeStore {
+	digest := sha256.Sum256([]byte(identity))
 	return daemon.RuntimeStore{
 		Dir:    discoveryStore.Dir,
-		Prefix: fmt.Sprintf("%s-start-%x", Service, digest[:16]),
+		Prefix: fmt.Sprintf("%s-%x", prefix, digest[:16]),
 	}
+}
+
+// LifecycleLock is a held cross-process daemon lifecycle lock.
+type LifecycleLock struct {
+	file *flock.Flock
+}
+
+// AcquireLifecycleLock waits until it exclusively owns the per-data-directory
+// lifecycle lock or ctx is canceled.
+func AcquireLifecycleLock(
+	ctx context.Context,
+	store daemon.RuntimeStore,
+	dataDir string,
+) (*LifecycleLock, error) {
+	lockStore, err := LifecycleLockStore(store, dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve daemon lifecycle lock: %w", err)
+	}
+	return acquireLifecycleLock(
+		ctx, lockStore, "daemon lifecycle",
+	)
+}
+
+// AcquireConfigLifecycleLock waits until it exclusively owns the lifecycle
+// lock for a canonical config identity or ctx is canceled.
+func AcquireConfigLifecycleLock(
+	ctx context.Context,
+	store daemon.RuntimeStore,
+	configPath string,
+) (*LifecycleLock, error) {
+	lockStore, err := ConfigLifecycleLockStore(store, configPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve daemon config lifecycle lock: %w", err)
+	}
+	return acquireLifecycleLock(ctx, lockStore, "daemon config lifecycle")
+}
+
+func acquireLifecycleLock(
+	ctx context.Context,
+	store daemon.RuntimeStore,
+	description string,
+) (*LifecycleLock, error) {
+	path, err := store.LockPath()
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s lock: %w", description, err)
+	}
+	file := flock.New(path)
+	locked, err := file.TryLockContext(ctx, 50*time.Millisecond)
+	if err != nil {
+		return nil, fmt.Errorf("acquire %s lock: %w", description, err)
+	}
+	if !locked {
+		return nil, fmt.Errorf("acquire %s lock: lock not acquired", description)
+	}
+	return &LifecycleLock{file: file}, nil
+}
+
+// Release unlocks the lifecycle file without unlinking its stable path.
+func (l *LifecycleLock) Release() error {
+	return l.file.Unlock()
 }
 
 // NewIdentity derives both discovery representations from one bound TCP
@@ -70,6 +191,14 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 	tcpAddress, ok := address.(*net.TCPAddr)
 	if !ok {
 		return Identity{}, fmt.Errorf("listener returned non-TCP address %T", address)
+	}
+	configPath, err := CanonicalConfigPath(opts.ConfigPath)
+	if err != nil {
+		return Identity{}, err
+	}
+	dataDir, err := config.CanonicalDataDir(opts.DataDir)
+	if err != nil {
+		return Identity{}, err
 	}
 	host := tcpAddress.IP.String()
 	port := strconv.Itoa(tcpAddress.Port)
@@ -84,10 +213,11 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 		metadataPort:        port,
 		metadataReadOnly:    strconv.FormatBool(false),
 		metadataRequireAuth: strconv.FormatBool(opts.RequireAuth),
-		metadataDataDir:     opts.DataDir,
+		metadataDataDir:     dataDir,
+		metadataConfigPath:  configPath,
 		metadataBasePath:    basePath,
 	}
-	tokenPath := runtimelock.AuthTokenPath(opts.DataDir)
+	tokenPath := runtimelock.AuthTokenPath(dataDir)
 	if opts.RequireAuth {
 		record.Metadata[metadataAuthTokenPath] = tokenPath
 	}
@@ -101,11 +231,162 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 			StartedAt:   record.StartedAt.UTC().Format(time.RFC3339),
 			Version:     record.Version,
 			Commit:      opts.Commit,
+			ConfigPath:  configPath,
 			TokenPath:   tokenPath,
 			BasePath:    basePath,
 			RequireAuth: opts.RequireAuth,
 		},
 	}, nil
+}
+
+// ConfigRuntimes returns live records attributable to one canonical config.
+// Config-identified records take precedence over legacy records; otherwise a
+// legacy record is usable only when it still names the current data directory.
+// The returned records remain untrusted until authenticated by proof.
+func ConfigRuntimes(
+	store daemon.RuntimeStore,
+	configPath, currentDataDir string,
+) ([]ConfigRuntime, error) {
+	return configRuntimes(store, configPath, currentDataDir, true)
+}
+
+// IdentifiedConfigRuntimes returns live records that explicitly name one
+// canonical config path. Legacy records without config identity are ignored.
+func IdentifiedConfigRuntimes(
+	store daemon.RuntimeStore,
+	configPath string,
+) ([]ConfigRuntime, error) {
+	return configRuntimes(store, configPath, "", false)
+}
+
+func configRuntimes(
+	store daemon.RuntimeStore,
+	configPath, currentDataDir string,
+	includeLegacy bool,
+) ([]ConfigRuntime, error) {
+	canonicalPath, err := CanonicalConfigPath(configPath)
+	if err != nil {
+		return nil, err
+	}
+	records, err := store.List()
+	if err != nil {
+		return nil, err
+	}
+	var identified []ConfigRuntime
+	var currentLegacy []ConfigRuntime
+	var unmatchedLegacy []ConfigRuntime
+	for _, record := range records {
+		if record.Service != Service || !daemon.ProcessAlive(record.PID) {
+			continue
+		}
+		recordConfigPath := record.Metadata[metadataConfigPath]
+		if recordConfigPath != "" {
+			rawConfigPath := recordConfigPath
+			recordConfigPath, err = CanonicalConfigPath(rawConfigPath)
+			if err != nil {
+				if filepath.Clean(rawConfigPath) == canonicalPath {
+					return nil, fmt.Errorf(
+						"canonicalize daemon runtime config path for pid %d: %w",
+						record.PID, err,
+					)
+				}
+				continue
+			}
+			if recordConfigPath != canonicalPath {
+				continue
+			}
+		}
+		if recordConfigPath == "" && !includeLegacy {
+			continue
+		}
+		dataDir, err := runtimeRecordDataDir(record)
+		if err != nil {
+			return nil, err
+		}
+		candidate := ConfigRuntime{
+			Record: record, DataDir: dataDir, ConfigPath: recordConfigPath,
+		}
+		if recordConfigPath != "" {
+			identified = append(identified, candidate)
+			continue
+		}
+		if dataDir == currentDataDir {
+			currentLegacy = append(currentLegacy, candidate)
+		} else {
+			unmatchedLegacy = append(unmatchedLegacy, candidate)
+		}
+	}
+	if len(identified) > 0 {
+		return identified, nil
+	}
+	if len(currentLegacy) > 0 {
+		return currentLegacy, nil
+	}
+	if len(unmatchedLegacy) > 0 {
+		candidate := unmatchedLegacy[0]
+		return nil, fmt.Errorf(
+			"live daemon pid %d uses a legacy runtime identity for data_dir %q and does not identify its config; stop it before changing data_dir",
+			candidate.Record.PID, candidate.DataDir,
+		)
+	}
+	return nil, nil
+}
+
+func runtimeRecordDataDir(record daemon.RuntimeRecord) (string, error) {
+	dataDir := record.Metadata[metadataDataDir]
+	if dataDir == "" || !filepath.IsAbs(dataDir) || filepath.Clean(dataDir) != dataDir {
+		return "", fmt.Errorf(
+			"daemon runtime record for pid %d has invalid data_dir %q",
+			record.PID, dataDir,
+		)
+	}
+	canonicalDataDir, err := config.CanonicalDataDir(dataDir)
+	if err != nil {
+		return "", fmt.Errorf(
+			"canonicalize daemon runtime data_dir for pid %d: %w",
+			record.PID, err,
+		)
+	}
+	return canonicalDataDir, nil
+}
+
+// CanonicalConfigPath returns one stable config identity across absolute,
+// relative, and symlinked aliases. Missing suffixes are retained after the
+// nearest existing ancestor is resolved.
+func CanonicalConfigPath(configPath string) (string, error) {
+	if configPath == "" {
+		return "", errors.New("daemon config path is empty")
+	}
+	absolutePath, err := filepath.Abs(configPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve daemon config path: %w", err)
+	}
+	currentPath := filepath.Clean(absolutePath)
+	missingSuffix := make([]string, 0, 1)
+	for {
+		resolvedPath, err := filepath.EvalSymlinks(currentPath)
+		if err == nil {
+			resolvedPath, err = pathidentity.CanonicalExisting(resolvedPath)
+			if err != nil {
+				return "", fmt.Errorf(
+					"resolve daemon config path casing: %w", err,
+				)
+			}
+			for index := len(missingSuffix) - 1; index >= 0; index-- {
+				resolvedPath = filepath.Join(resolvedPath, missingSuffix[index])
+			}
+			return filepath.Clean(resolvedPath), nil
+		}
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("resolve daemon config path symlinks: %w", err)
+		}
+		parent := filepath.Dir(currentPath)
+		if parent == currentPath {
+			return "", fmt.Errorf("resolve daemon config path symlinks: %w", err)
+		}
+		missingSuffix = append(missingSuffix, filepath.Base(currentPath))
+		currentPath = parent
+	}
 }
 
 // URL returns the browser location advertised by a verified runtime record.
@@ -151,8 +432,18 @@ func canonicalBasePath(basePath string) string {
 // local instance before the caller performs its authenticated readiness probe.
 func Compatible(record daemon.RuntimeRecord, dataDir string) bool {
 	if record.Service != Service || record.Network != daemon.NetworkTCP ||
-		record.Metadata[metadataDataDir] != dataDir ||
 		!daemon.ProcessAlive(record.PID) {
+		return false
+	}
+	recordDataDir, err := runtimeRecordDataDir(record)
+	if err != nil {
+		return false
+	}
+	canonicalDataDir, err := config.CanonicalDataDir(dataDir)
+	if err != nil {
+		return false
+	}
+	if recordDataDir != canonicalDataDir {
 		return false
 	}
 	if err := daemon.RequireLoopback(record.Address); err != nil {
@@ -175,7 +466,9 @@ func Compatible(record daemon.RuntimeRecord, dataDir string) bool {
 		return false
 	}
 	if requireAuth {
-		return record.Metadata[metadataAuthTokenPath] == runtimelock.AuthTokenPath(dataDir)
+		return record.Metadata[metadataAuthTokenPath] == runtimelock.AuthTokenPath(
+			record.Metadata[metadataDataDir],
+		)
 	}
 	return record.Metadata[metadataAuthTokenPath] == ""
 }

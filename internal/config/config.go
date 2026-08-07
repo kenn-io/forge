@@ -1145,7 +1145,7 @@ func load(path string) (*Config, error) {
 		cfg.DataDir = DefaultDataDir()
 	}
 	cfg.dataDirWasRelative = !filepath.IsAbs(cfg.DataDir)
-	canonicalDir, err := canonicalDataDir(cfg.DataDir)
+	canonicalDir, err := CanonicalDataDir(cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}

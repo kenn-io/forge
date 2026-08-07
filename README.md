@@ -50,11 +50,14 @@ GitHub users can reuse an authenticated GitHub CLI session:
 
 ```sh
 gh auth login
-kenn-forge
+kenn-forge daemon start
 ```
 
 Open `http://127.0.0.1:8091`. First-run setup connects a code forge, adds
 repositories, runs the first sync, and opens a pull request.
+
+Use `kenn-forge serve` when you want the server attached to the foreground for
+development or diagnosis.
 
 The Repositories panel selects provider hosts and repository patterns. Configure
 non-GitHub and explicit credentials through environment variables or

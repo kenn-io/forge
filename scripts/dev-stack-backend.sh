@@ -40,7 +40,7 @@ if [ -z "$air_bin" ]; then
 fi
 
 if [ -n "${KENN_FORGE_CONFIG:-}" ]; then
-  exec "$air_bin" -c "$air_config" -- -config "$KENN_FORGE_CONFIG" ${BACKEND_ARGS:-}
+  exec "$air_bin" -c "$air_config" -- serve -config "$KENN_FORGE_CONFIG" ${BACKEND_ARGS:-}
 else
-  exec "$air_bin" -c "$air_config" -- ${BACKEND_ARGS:-}
+  exec "$air_bin" -c "$air_config" -- serve ${BACKEND_ARGS:-}
 fi

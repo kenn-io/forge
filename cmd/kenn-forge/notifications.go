@@ -22,12 +22,22 @@ type notificationLoopSettings struct {
 	batchSize           int
 }
 
-func (h *notificationLoopHandle) Stop() {
+func (h *notificationLoopHandle) Stop(ctx context.Context) error {
 	if h == nil {
-		return
+		return nil
 	}
 	h.cancel()
-	h.wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		h.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func startNotificationLoops(ctx context.Context, syncer *ghclient.Syncer, cfg *config.Config) *notificationLoopHandle {

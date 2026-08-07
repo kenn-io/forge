@@ -21,6 +21,7 @@ type Metadata struct {
 	StartedAt  string `json:"started_at"`
 	Version    string `json:"version"`
 	Commit     string `json:"commit"`
+	ConfigPath string `json:"config_path,omitempty"`
 	// TokenPath locates the API auth token file thin clients read
 	// to authenticate (see EnsureAuthToken). The daemon always mints
 	// the token at startup, so the path is always readable by the

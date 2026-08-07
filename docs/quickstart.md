@@ -72,21 +72,21 @@ GitHub users get the shortest setup path with an authenticated GitHub CLI:
 
 ```sh
 gh auth login
-kenn-forge
+kenn-forge daemon start
 ```
 
 You can also provide a GitHub token directly:
 
 ```sh
 export KENN_FORGE_GITHUB_TOKEN=ghp_your_token_here
-kenn-forge
+kenn-forge daemon start
 ```
 
 In PowerShell:
 
 ```powershell
 $env:KENN_FORGE_GITHUB_TOKEN = 'ghp_your_token_here'
-kenn-forge.exe
+kenn-forge.exe daemon start
 ```
 
 For another provider or host, set its token environment variable before
@@ -94,6 +94,9 @@ starting. To use `token_env` or `token_file`, start once to create
 `~/.kenn/forge/config.toml`, edit it, then restart. Settings chooses provider
 hosts and repository patterns, but it does not store credentials. See
 [Configuration](configuration.md#credentials).
+
+Use `kenn-forge serve` instead when you want foreground logs for development or
+diagnosis.
 
 Open `http://127.0.0.1:8091`. kenn-forge creates
 `~/.kenn/forge/config.toml` on first run.

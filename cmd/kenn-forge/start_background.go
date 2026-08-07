@@ -2,78 +2,50 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/daemonruntime"
 	"go.kenn.io/kit/daemon"
 )
 
-const backgroundStartTimeout = 90 * time.Second
+const (
+	backgroundStartTimeout = 90 * time.Second
+	expectedDataDirEnv     = "KENN_FORGE_EXPECTED_DATA_DIR"
+)
 
-type backgroundRunner func(context.Context, string, io.Writer) error
-
-func newStartCommand(run backgroundRunner, stdout io.Writer) *cobra.Command {
-	var background bool
-	var configPath string
-	cmd := &cobra.Command{
-		Use:   "start",
-		Short: "Ensure the kenn-forge daemon is running",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !background {
-				return errors.New("start requires --background")
-			}
-			return run(cmd.Context(), configPath, stdout)
-		},
-	}
-	cmd.Flags().BoolVar(&background, "background", false, "start in the background")
-	cmd.Flags().StringVar(&configPath, "config", config.DefaultConfigPath(), "path to config file")
-	return cmd
-}
-
-func startBackground(
-	ctx context.Context, configPath string, stdout io.Writer,
-) error {
-	cfg, err := config.LoadOrCreate(configPath)
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
+func ensureBackground(
+	ctx context.Context,
+	configPath string,
+	cfg *config.Config,
+) (daemon.RuntimeRecord, error) {
 	if err := validateBackgroundConfig(cfg); err != nil {
-		return err
+		return daemon.RuntimeRecord{}, err
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
-		return fmt.Errorf("create data directory %s: %w", cfg.DataDir, err)
+		return daemon.RuntimeRecord{}, fmt.Errorf(
+			"create data directory %s: %w", cfg.DataDir, err,
+		)
 	}
 	store, err := daemonruntime.Store()
 	if err != nil {
-		return err
+		return daemon.RuntimeRecord{}, err
 	}
-	manager := daemonruntime.NewManager(
+	manager, err := daemonruntime.NewManager(
 		store, cfg.DataDir, version,
 		func(ctx context.Context) error {
 			return startBackgroundProcess(ctx, configPath, cfg.DataDir)
 		},
 	)
+	if err != nil {
+		return daemon.RuntimeRecord{}, err
+	}
 	record, _, err := manager.Ensure(ctx, backgroundStartTimeout)
-	if err != nil {
-		return err
-	}
-	runtimeURL, err := daemonruntime.URL(record)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(
-		stdout, "kenn-forge running at %s (pid %d)\n",
-		runtimeURL, record.PID,
-	)
-	return err
+	return record, err
 }
 
 func validateBackgroundConfig(cfg *config.Config) error {
@@ -84,6 +56,23 @@ func validateBackgroundConfig(cfg *config.Config) error {
 		)
 	}
 	return nil
+}
+
+func validateBackgroundLaunchConfig(cfg *config.Config) error {
+	expectedDataDir := os.Getenv(expectedDataDirEnv)
+	if expectedDataDir == "" {
+		return nil
+	}
+	if err := os.Unsetenv(expectedDataDirEnv); err != nil {
+		return fmt.Errorf("clear background launch identity: %w", err)
+	}
+	if cfg.DataDir != expectedDataDir {
+		return fmt.Errorf(
+			"background launch expected data_dir %q, but config resolved %q",
+			expectedDataDir, cfg.DataDir,
+		)
+	}
+	return validateBackgroundConfig(cfg)
 }
 
 func startBackgroundProcess(
@@ -104,9 +93,21 @@ func startBackgroundProcess(
 	return daemon.StartDetached(ctx, daemon.StartDetachedOptions{
 		Executable:      executable,
 		Args:            []string{"serve", "--config", configPath},
-		Env:             os.Environ(),
+		Env:             backgroundProcessEnvironment(dataDir),
 		Stdout:          logFile,
 		Stderr:          logFile,
 		RefuseEphemeral: true,
 	})
+}
+
+func backgroundProcessEnvironment(dataDir string) []string {
+	prefix := expectedDataDirEnv + "="
+	inherited := os.Environ()
+	env := make([]string, 0, len(inherited)+1)
+	for _, entry := range inherited {
+		if !strings.HasPrefix(entry, prefix) {
+			env = append(env, entry)
+		}
+	}
+	return append(env, prefix+dataDir)
 }

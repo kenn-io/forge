@@ -3,7 +3,6 @@ package main
 import (
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -13,11 +12,11 @@ import (
 )
 
 type cliOptions struct {
-	Stdin           io.Reader
-	Stdout          io.Writer
-	Stderr          io.Writer
-	RunServer       serve.Runner
-	StartBackground backgroundRunner
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+	RunServer    serve.Runner
+	DaemonRunner daemonCommandRunner
 }
 
 func newRootCommand(opts cliOptions) *cobra.Command {
@@ -33,34 +32,24 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 	if opts.RunServer == nil {
 		opts.RunServer = runServer
 	}
-	if opts.StartBackground == nil {
-		opts.StartBackground = startBackground
+	if opts.DaemonRunner == nil {
+		opts.DaemonRunner = newDaemonLifecycle(defaultDaemonLifecycleDeps())
 	}
 
-	serveOptions := serve.Options{}
 	root := &cobra.Command{
 		Use:               "kenn-forge",
-		Short:             "Run and control the kenn-forge daemon",
+		Short:             "Local-first maintainer console",
 		Args:              cobra.NoArgs,
 		SilenceErrors:     true,
 		SilenceUsage:      true,
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			serveOptions.ProfilerAddr = strings.TrimSpace(serveOptions.ProfilerAddr)
-			return opts.RunServer(serveOptions)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
 		},
 	}
 	root.SetIn(opts.Stdin)
 	root.SetOut(opts.Stdout)
 	root.SetErr(opts.Stderr)
-	root.Flags().StringVar(&serveOptions.ConfigPath, "config", config.DefaultConfigPath(), "path to config file")
-	root.Flags().StringVar(
-		&serveOptions.ProfilerAddr,
-		"pprof-addr",
-		strings.TrimSpace(os.Getenv("KENN_FORGE_PPROF_ADDR")),
-		"address for optional net/http/pprof listener (empty disables)",
-	)
-
 	ctl.RegisterCommands(root, ctl.Options{
 		Stdout: opts.Stdout,
 		Stderr: opts.Stderr,
@@ -75,8 +64,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		newDocsCommand(opts.Stdout),
 		newArchiveCommand(opts.Stdout, time.Now),
 		newAgentHookCommand(opts.Stdin, opts.Stdout),
-		newStatusCommand(opts.Stdout),
-		newStartCommand(opts.StartBackground, opts.Stdout),
+		newDaemonCommand(opts.DaemonRunner),
 		newPtyOwnerCommand(),
 		serve.NewCommand(opts.RunServer),
 	)
@@ -175,22 +163,6 @@ func newAgentHookCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
 		leaf.Flags().StringVar(&binary, "binary", "", "kenn-forge binary path used by installed hooks")
 		cmd.AddCommand(leaf)
 	}
-	return cmd
-}
-
-func newStatusCommand(stdout io.Writer) *cobra.Command {
-	var configPath string
-	var asJSON bool
-	cmd := &cobra.Command{
-		Use:   "status",
-		Short: "Show daemon runtime status",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return writeStatus(configPath, asJSON, stdout)
-		},
-	}
-	cmd.Flags().StringVar(&configPath, "config", config.DefaultConfigPath(), "path to config file")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "render output as JSON")
 	return cmd
 }
 

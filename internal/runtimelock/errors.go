@@ -4,7 +4,7 @@ import "fmt"
 
 // MetadataUnavailableReason explains why the runtime metadata file
 // could not be read when reporting a CollisionError or Status. The
-// banner and `kenn-forge status` use it for the metadata-unavailable
+// banner and `kenn-forge daemon status` use it for the metadata-unavailable
 // branch.
 type MetadataUnavailableReason string
 

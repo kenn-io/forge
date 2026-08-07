@@ -192,7 +192,7 @@ jobs:
 
       - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
-          version: v2.10.1
+          version: v2.11.4
 
       - name: Install NilAway
         run: |
@@ -340,11 +340,37 @@ jobs:
       - name: Run localruntime PTY owner smoke test
         run: go test ./internal/workspace/localruntime -run TestManagerLaunchUsesPtyOwnerWhenConfigured -shuffle=on
 
+      - name: Run case-insensitive daemon lifecycle tests
+        run: go test ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
+
       - name: Run Rust PTY manager server e2e tests
         run: go test ./internal/server/workspacetest -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
 
       - name: Run Rust PTY manager tests
         run: cargo test -p kenn-forge-pty-manager
+
+  daemon-path-macos:
+    name: Daemon path identity (macOS)
+    runs-on: macos-15
+    needs: detect_changes
+    if: needs.detect_changes.outputs.backend == 'true'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Stub frontend embed dir
+        run: |
+          mkdir -p internal/web/dist
+          printf 'ok\n' > internal/web/dist/stub.html
+
+      - name: Run Unicode-normalized daemon lifecycle test
+        run: go test ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/unicode-normalization' -shuffle=on
 
   race:
     name: go test -race

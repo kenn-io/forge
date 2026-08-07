@@ -119,7 +119,7 @@ func (r *Runner) Relay(
 	}
 }
 
-// RunVerb executes an arbitrary CLI verb (e.g. "status --json") on
+// RunVerb executes an arbitrary CLI verb (e.g. "daemon status --json") on
 // the peer and returns stdout. Non-zero exits return an error
 // carrying stderr.
 func (r *Runner) RunVerb(

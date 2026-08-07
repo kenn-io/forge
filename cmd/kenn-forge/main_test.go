@@ -141,6 +141,10 @@ func TestRunMainShutdownStopsSignalsBeforeLongCleanup(t *testing.T) {
 		StopSignals: func() {
 			record("signals")
 		},
+		StopNotificationLoops: func(context.Context) error {
+			record("notifications")
+			return nil
+		},
 		ShutdownPrimaryHTTP: func(context.Context) error {
 			record("primary-http")
 			return nil
@@ -165,12 +169,25 @@ func TestRunMainShutdownStopsSignalsBeforeLongCleanup(t *testing.T) {
 	assert.Empty(t, errs)
 	assert.Equal(t, []string{
 		"signals",
+		"notifications",
 		"primary-http",
 		"syncer",
 		"profiler",
 		"telemetry",
 		"database",
 	}, order)
+}
+
+func TestRunBoundedShutdownHonorsDeadline(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+
+	err := runBoundedShutdown(t.Context(), 20*time.Millisecond, func() error {
+		<-release
+		return nil
+	})
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestRunClosesPrimaryListenerWhenProfilerStartFails(t *testing.T) {
@@ -885,8 +902,8 @@ func TestRootHelpListsEveryPublicCommandWithoutStartingServer(t *testing.T) {
 
 	for _, name := range []string{
 		"activity", "agent-hook", "api", "archive", "config", "docs",
-		"issues", "pulls", "quickstart", "rate-limits", "repo-summaries",
-		"repos", "serve", "stacks", "start", "status", "sync", "version", "workspaces",
+		"daemon", "issues", "pulls", "quickstart", "rate-limits", "repo-summaries",
+		"repos", "serve", "stacks", "sync", "version", "workspaces",
 	} {
 		assert.Contains(stdout.String(), name)
 	}
@@ -926,8 +943,10 @@ func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
 		{name: "docs add", args: []string{"docs", "add-folder", "--help"}, want: []string{"--config", "--id", "--name", "--daemon"}},
 		{name: "archive report", args: []string{"archive", "report", "--help"}, want: []string{"--days", "--start", "--end", "--format", "--repo"}},
 		{name: "agent hook run", args: []string{"agent-hook", "run", "--help"}, want: []string{"--agent", "--config", "--source"}},
-		{name: "status", args: []string{"status", "--help"}, want: []string{"--config", "--json"}},
-		{name: "start", args: []string{"start", "--help"}, want: []string{"--background", "--config"}},
+		{name: "daemon start", args: []string{"daemon", "start", "--help"}, want: []string{"--config"}},
+		{name: "daemon status", args: []string{"daemon", "status", "--help"}, want: []string{"--config", "--json"}},
+		{name: "daemon stop", args: []string{"daemon", "stop", "--help"}, want: []string{"--config"}},
+		{name: "daemon restart", args: []string{"daemon", "restart", "--help"}, want: []string{"--config"}},
 		{name: "serve", args: []string{"serve", "--help"}, want: []string{"--config", "--pprof-addr"}},
 		{name: "api", args: []string{"api", "--help"}, want: []string{"list", "--config", "-d", "-i", "--timeout"}},
 	}
@@ -1132,24 +1151,22 @@ func TestRunCLIConfigReadPortCreatesDefaultConfig(t *testing.T) {
 	assert.Contains(string(content), "port = 8091")
 }
 
-func TestRunCLIDefaultsToServe(t *testing.T) {
+func TestRunCLIBareInvocationShowsHelpWithoutStartingServer(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	original := runServer
 	t.Cleanup(func() { runServer = original })
-	var got serve.Options
-	runServer = func(opts serve.Options) error {
-		got = opts
-		return nil
+	runServer = func(serve.Options) error {
+		return errors.New("serve should not start")
 	}
 
 	var stdout bytes.Buffer
 	err := runCLI(nil, &stdout)
 
 	require.NoError(err)
-	assert.Equal(config.DefaultConfigPath(), got.ConfigPath)
-	assert.Empty(got.ProfilerAddr)
-	assert.Empty(stdout.String())
+	assert.Contains(stdout.String(), "Usage:")
+	assert.Contains(stdout.String(), "daemon")
+	assert.Contains(stdout.String(), "serve")
 }
 
 func TestRunCLIServeSubcommandUsesServerRunner(t *testing.T) {

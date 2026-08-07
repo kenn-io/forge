@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,8 @@ func TestDaemonPingContract(t *testing.T) {
 	require.NoError(err)
 	identity, err := daemonruntime.NewIdentity(
 		ts.Listener.Addr(), daemonruntime.IdentityOptions{
-			Version: "v-test", DataDir: t.TempDir(), RequireAuth: true,
+			Version: "v-test", DataDir: t.TempDir(),
+			ConfigPath: filepath.Join(t.TempDir(), "config.toml"), RequireAuth: true,
 		},
 	)
 	require.NoError(err)

@@ -220,6 +220,7 @@ type ensureFakeExec struct {
 	running     bool
 	startCalls  int
 	probeCalls  int
+	fragments   []string
 	startErr    error
 	flipOnStart bool
 	// metadataLagProbes keeps metadata null for this many probes
@@ -233,6 +234,7 @@ func (f *ensureFakeExec) exec(
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	fragment := argv[len(argv)-1]
+	f.fragments = append(f.fragments, fragment)
 	switch {
 	case strings.Contains(fragment, "status"):
 		f.probeCalls++
@@ -277,12 +279,19 @@ func newEnsureRunner(t *testing.T, f *ensureFakeExec) *Runner {
 // TestEnsureDaemonAlreadyRunning: a positive probe short-circuits —
 // no start command is issued.
 func TestEnsureDaemonAlreadyRunning(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	f := &ensureFakeExec{running: true}
 	r := newEnsureRunner(t, f)
-	require.NoError(t, r.EnsureDaemon(
+	require.NoError(r.EnsureDaemon(
 		context.Background(), "studio", "wes@studio.local", "kenn-forge",
 	))
-	assert.Equal(t, 0, f.startCalls)
+	assert.Equal(0, f.startCalls)
+	require.NotEmpty(f.fragments)
+	assert.Equal(shellQuote(
+		normalizedPATH+"; kenn-forge "+
+			shellQuote("daemon")+" "+shellQuote("status")+" "+shellQuote("--json"),
+	), f.fragments[0])
 }
 
 // TestEnsureDaemonStartsAndPolls: a cold daemon gets exactly one

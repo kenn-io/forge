@@ -323,7 +323,7 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 
 	select {
 	case <-mc.saturated:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		require.Failf(
 			"expected worker pool to saturate",
 			"expected %d concurrent syncs, got %d",

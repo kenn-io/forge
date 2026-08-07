@@ -180,7 +180,7 @@
   account: maintainer
   protocol: ssh
 
-<span>$</span> kenn-forge status
+<span>$</span> kenn-forge daemon status
 <strong>✓</strong> gh authenticated
 <strong>✓</strong> git available</pre>
           </div>

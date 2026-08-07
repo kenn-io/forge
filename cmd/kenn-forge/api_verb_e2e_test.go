@@ -40,7 +40,7 @@ func TestAPIVerbE2E(t *testing.T) {
 	writeMinimalConfig(t, cfgPath, dataDir, port)
 	appendConfig(t, cfgPath, "\n[api]\nrequire_auth = true\n")
 
-	daemon := procutil.Command(bin, "--config", cfgPath)
+	daemon := procutil.Command(bin, "serve", "--config", cfgPath)
 	daemon.Stdout = os.Stderr
 	daemon.Stderr = os.Stderr
 	daemon.Env = append(os.Environ(), "KENN_FORGE_LOG_LEVEL=warn")
@@ -161,7 +161,7 @@ func TestAPIVerbE2EWithBasePath(t *testing.T) {
 		0o600,
 	))
 
-	daemon := procutil.Command(bin, "--config", cfgPath)
+	daemon := procutil.Command(bin, "serve", "--config", cfgPath)
 	daemon.Stdout = os.Stderr
 	daemon.Stderr = os.Stderr
 	daemon.Env = append(os.Environ(), "KENN_FORGE_LOG_LEVEL=warn")

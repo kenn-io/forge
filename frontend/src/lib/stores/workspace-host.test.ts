@@ -480,9 +480,11 @@ describe("workspace host store", () => {
 
   it("leaves a deleted active workspace route for the Workspaces list", () => {
     navigate("/terminal/ws-a");
+    const historyLength = history.length;
 
     notifyWorkspaceDeleted("ws-a");
 
+    expect(history.length).toBe(historyLength);
     expect(desiredKey()).toEqual({ workspaceId: "", hostKey: undefined });
   });
 

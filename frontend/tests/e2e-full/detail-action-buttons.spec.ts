@@ -200,6 +200,66 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("merge cleanup deletes the active workspace and replaces its terminal history entry", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const server = isolatedServer;
+      const apiContext = api;
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" && response.url() === `${server.info.base_url}/api/v1/workspaces`,
+      );
+      await page.getByRole("button", { name: "Create Workspace", exact: true }).filter({ visible: true }).click();
+      const createResponse = await createResponsePromise;
+      expect(createResponse.status()).toBe(202);
+      const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(apiContext, createdWorkspace.id);
+
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toBeVisible();
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Open in Workspaces" }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${createdWorkspace.id}$`));
+
+      await page.locator(".terminal-view .panel-toggle-btn", { hasText: "PR" }).click();
+      const sidebar = page.locator(".right-sidebar");
+      await expect(sidebar.locator(".pull-detail")).toBeVisible();
+      await sidebar.locator(".btn--merge").first().click();
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
+      await expect(modal.getByRole("checkbox", { name: "Delete workspace after merge" })).toBeChecked();
+
+      const mergeResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === "/api/v1/pulls/github/acme/widgets/1/merge",
+      );
+      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      expect((await mergeResponse).status()).toBe(200);
+
+      await expect(page).toHaveURL(/\/workspaces$/);
+      expect((await apiContext.get(`/api/v1/workspaces/${createdWorkspace.id}`)).status()).toBe(404);
+      await page.goBack();
+      await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1$/);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("activity feed hosts a created workspace in its workspace pane", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

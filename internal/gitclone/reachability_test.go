@@ -84,8 +84,8 @@ func TestCommitsReachableFromMissingClone(t *testing.T) {
 }
 
 func TestCommitsReachableFromVisitBudget(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
+	assert := assert.New(t)
 	ctx := context.Background()
 	mgr, shas := setupAncestryClone(t)
 	mgr.ancestryVisitBudget = 1
@@ -114,8 +114,8 @@ func TestCommitsReachableFromVisitBudget(t *testing.T) {
 }
 
 func TestCommitsReachableFromRejectsOversizedCommit(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
+	assert := assert.New(t)
 	ctx := context.Background()
 	mgr, shas := setupAncestryClone(t)
 

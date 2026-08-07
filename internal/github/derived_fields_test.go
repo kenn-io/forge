@@ -34,6 +34,7 @@ func TestCarryMergeRequestDerivedFieldsPersistence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
 			assert := assert.New(t)
 			require := require.New(t)
 			database := openTestDB(t)
@@ -84,8 +85,9 @@ func TestCarryMergeRequestDerivedFieldsPersistence(t *testing.T) {
 	}
 
 	t.Run("missing stored row is a no-op", func(t *testing.T) {
+		assert := assert.New(t)
 		normalized := db.MergeRequest{State: db.MergeRequestStateClosed}
 		CarryMergeRequestDerivedFields(&normalized, nil)
-		assert.Zero(t, normalized.CommentCount)
+		assert.Zero(normalized.CommentCount)
 	})
 }

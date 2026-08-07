@@ -303,8 +303,8 @@ func TestCommitLivenessFlagsShaAbsentFromClone(t *testing.T) {
 }
 
 func TestCommitLivenessSkipsNonShaSummaries(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
+	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	events := []db.MREvent{
@@ -356,8 +356,8 @@ func TestCommitLivenessUsesPlatformExternalID(t *testing.T) {
 }
 
 func TestCommitLivenessSkipsUnparseableMetadata(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
+	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	require.NoError(fixture.database.UpsertMREvents(t.Context(), []db.MREvent{{
@@ -378,8 +378,8 @@ func TestCommitLivenessSkipsUnparseableMetadata(t *testing.T) {
 }
 
 func TestCommitLivenessMemoServesSameHeadWithoutClone(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
+	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
@@ -456,8 +456,8 @@ func TestCommitLivenessRelistedEventsKeepFlagsOnSameHead(t *testing.T) {
 }
 
 func TestCommitLivenessStaleRevisionRoundIsInert(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
+	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
@@ -602,8 +602,8 @@ func TestCommitLivenessFailedRoundWritesNothing(t *testing.T) {
 }
 
 func TestCommitLivenessConcurrentMergeRequests(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
+	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	first, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
@@ -695,8 +695,8 @@ func TestCommitLivenessOversizedCandidatesComputeWithoutMemo(t *testing.T) {
 }
 
 func TestCommitLivenessMemoEviction(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
+	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	fixture.syncer.livenessMemoLimit = 1
@@ -919,8 +919,8 @@ func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
 }
 
 func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
+	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	providerRepo := RepoRef{

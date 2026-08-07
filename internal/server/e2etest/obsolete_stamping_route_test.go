@@ -118,7 +118,7 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/repos/owner/repo/pulls/1":
 			// UI state mutation: flip the provider's PR state the way the
 			// real provider does and return the updated pull request; the
-			// handler's canonical post-mutation resync reads it back.
+			// handler commits this response as the transition snapshot.
 			var body struct {
 				State string `json:"state"`
 			}

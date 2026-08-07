@@ -98,10 +98,14 @@ transition (prior stored state open, incoming state not), reads the stored
 events inside the transaction, runs the liveness computation there, and
 lands the flags with the terminal state — together or not at all, computed
 from data no concurrent round can shift. No caller can commit a terminal
-transition without it. Every state transition flows through this one path:
-UI merge and close mutations resync the merge request from the provider
-through the normal sync flow instead of writing local state eagerly, which
-would suppress the transition and push updated_at past the provider's.
+transition without it. Every state transition flows through this one path,
+and UI mutations never write local state eagerly (an eager write would
+suppress the transition and push updated_at past the provider's): merge
+re-reads the provider through the same close-detection flow the periodic
+sync uses, because a merge result is not an MR snapshot, while close and
+reopen commit the merge request the state mutator itself returned —
+provider adapters must return the complete updated MR with authoritative
+timestamps from an edit.
 Already-merged and already-closed MRs are never refetched or recomputed; a
 reopened MR computes again like any open one.
 

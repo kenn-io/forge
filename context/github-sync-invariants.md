@@ -149,10 +149,13 @@ Some PR-derived state is only valid for one head commit.
   liveness state at all; the only cache allowed is a memo of the pure
   (head, candidate-set) reachability function, which can never substitute for a
   write. The open-to-terminal transition is detected and finalized inside the
-  parent snapshot transaction itself, so every state change — including UI
-  merge/close mutations, which must resync from the provider through the normal
-  sync flow rather than write local state eagerly — funnels through that one
-  choke point and no terminal MR is ever recomputed. Local ancestry reads run
+  parent snapshot transaction itself, so every state change funnels through
+  that one choke point and no terminal MR is ever recomputed. UI mutations
+  never write local state eagerly: merge re-reads the provider through the
+  periodic close-detection flow (a merge result is not an MR snapshot), while
+  state edits commit the mutator's returned MR — provider adapters must return
+  the complete updated MR with authoritative timestamps from an edit. Local
+  ancestry reads run
   in-process via go-git with a bounded visit budget, never git subprocesses;
   SHA-256 (64-hex) repositories are out of scope and their commit events are
   never flagged

@@ -56,7 +56,7 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 		})
 		require.NoError(marshalErr)
 		require.NoError(store.HandleHook(
-			strings.NewReader(string(payload)), report.runtimeKey,
+			"codex", strings.NewReader(string(payload)), report.runtimeKey,
 		))
 	}
 
@@ -90,7 +90,7 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NoError(store.HandleHook(
-		strings.NewReader(string(payload)), launch.JSON200.Key,
+		"codex", strings.NewReader(string(payload)), launch.JSON200.Key,
 	))
 	getResponse, err = fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
 	require.NoError(err)

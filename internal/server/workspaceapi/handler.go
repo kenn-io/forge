@@ -261,6 +261,8 @@ func (s *Handler) Register(api huma.API) {
 		httpapi.DocumentOperation("list-workspaces", "List workspaces", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace,
 		httpapi.DocumentOperation("get-workspace", "Get workspace", "Workspaces"))
+	huma.Get(api, "/workspaces/{id}/agent-sessions", s.listWorkspaceAgentSessions,
+		httpapi.DocumentOperation("list-workspace-agent-sessions", "List live coding sessions", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/commits", s.getWorkspaceCommits,
 		httpapi.DocumentOperation("get-workspace-commits", "Get workspace commits", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/diff", s.getWorkspaceDiff,

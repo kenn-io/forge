@@ -815,7 +815,7 @@ func TestWorkspaceRuntimeExitInvalidatesCachedTmuxEnrichment(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NoError(srv.agentActivity.HandleHook(
-		bytes.NewReader(payload), "agent-runtime",
+		"codex", bytes.NewReader(payload), "agent-runtime",
 	))
 	srv.workspaceEnrichmentCache["ws-runtime"] = workspaceEnrichmentCacheEntry{
 		hasTmux:         true,

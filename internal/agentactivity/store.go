@@ -32,6 +32,7 @@ const RuntimeSessionKeyEnv = "KENN_FORGE_RUNTIME_SESSION_KEY"
 const ReportFreshness = 30 * time.Minute
 
 type Report struct {
+	Agent             string    `json:"agent"`
 	SessionID         string    `json:"session_id"`
 	RuntimeSessionKey string    `json:"runtime_session_key"`
 	CWD               string    `json:"cwd"`
@@ -70,7 +71,7 @@ func NewStore(root string) *Store {
 	return &Store{root: root, now: time.Now}
 }
 
-func (s *Store) HandleHook(input io.Reader, runtimeSessionKey string) error {
+func (s *Store) HandleHook(agent string, input io.Reader, runtimeSessionKey string) error {
 	if s == nil || strings.TrimSpace(s.root) == "" {
 		return nil
 	}
@@ -78,21 +79,22 @@ func (s *Store) HandleHook(input io.Reader, runtimeSessionKey string) error {
 	if err := json.NewDecoder(io.LimitReader(input, 1<<20)).Decode(&hook); err != nil {
 		return fmt.Errorf("decode agent hook: %w", err)
 	}
-	return s.HandleEvent(hook, runtimeSessionKey)
+	return s.HandleEvent(agent, hook, runtimeSessionKey)
 }
 
 // HandleEvent records one decoded lifecycle event for a launched runtime
 // session. Events that do not map to a visible activity transition are ignored.
-func (s *Store) HandleEvent(hook HookEvent, runtimeSessionKey string) error {
+func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey string) error {
 	if s == nil || strings.TrimSpace(s.root) == "" {
 		return nil
 	}
 	if hook.AgentID != "" {
 		return nil
 	}
+	agent = strings.ToLower(strings.TrimSpace(agent))
 	hook.SessionID = strings.TrimSpace(hook.SessionID)
 	runtimeSessionKey = strings.TrimSpace(runtimeSessionKey)
-	if hook.SessionID == "" || runtimeSessionKey == "" {
+	if agent == "" || hook.SessionID == "" || runtimeSessionKey == "" {
 		return nil
 	}
 
@@ -101,7 +103,7 @@ func (s *Store) HandleEvent(hook HookEvent, runtimeSessionKey string) error {
 		return nil
 	}
 	if remove {
-		err := os.Remove(s.reportPath(hook.SessionID))
+		err := os.Remove(s.reportPath(agent, hook.SessionID))
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
@@ -116,6 +118,7 @@ func (s *Store) HandleEvent(hook HookEvent, runtimeSessionKey string) error {
 		return nil
 	}
 	report := Report{
+		Agent:             agent,
 		SessionID:         hook.SessionID,
 		RuntimeSessionKey: runtimeSessionKey,
 		CWD:               cwd,
@@ -126,33 +129,7 @@ func (s *Store) HandleEvent(hook HookEvent, runtimeSessionKey string) error {
 }
 
 func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snapshot, bool) {
-	if s == nil || strings.TrimSpace(s.root) == "" || len(liveSessionKeys) == 0 {
-		return Snapshot{}, false
-	}
-	target, err := canonicalWorkspacePath(cwd)
-	if err != nil {
-		return Snapshot{}, false
-	}
-	live := make(map[string]struct{}, len(liveSessionKeys))
-	for _, key := range liveSessionKeys {
-		if key = strings.TrimSpace(key); key != "" {
-			live[key] = struct{}{}
-		}
-	}
-	if len(live) == 0 {
-		return Snapshot{}, false
-	}
-
-	var reports []Report
-	for _, report := range s.reports() {
-		if report.CWD != target {
-			continue
-		}
-		if _, ok := live[report.RuntimeSessionKey]; !ok {
-			continue
-		}
-		reports = append(reports, report)
-	}
+	reports := s.LiveReportsForWorkspace(cwd, liveSessionKeys)
 	if len(reports) == 0 {
 		return Snapshot{}, false
 	}
@@ -163,6 +140,51 @@ func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snap
 		return b.UpdatedAt.Compare(a.UpdatedAt)
 	})
 	return Snapshot{State: reports[0].State, UpdatedAt: reports[0].UpdatedAt}, true
+}
+
+// LiveReportsForWorkspace returns fresh reports whose canonical worktree and
+// runtime-session key match the supplied live inventory.
+func (s *Store) LiveReportsForWorkspace(cwd string, liveSessionKeys []string) []Report {
+	if s == nil || strings.TrimSpace(s.root) == "" || len(liveSessionKeys) == 0 {
+		return nil
+	}
+	target, err := canonicalWorkspacePath(cwd)
+	if err != nil {
+		return nil
+	}
+	live := make(map[string]struct{}, len(liveSessionKeys))
+	for _, key := range liveSessionKeys {
+		if key = strings.TrimSpace(key); key != "" {
+			live[key] = struct{}{}
+		}
+	}
+	if len(live) == 0 {
+		return nil
+	}
+
+	reports := make([]Report, 0)
+	for _, report := range s.reports() {
+		if report.CWD != target {
+			continue
+		}
+		if _, ok := live[report.RuntimeSessionKey]; !ok {
+			continue
+		}
+		reports = append(reports, report)
+	}
+	slices.SortFunc(reports, func(a, b Report) int {
+		if order := b.UpdatedAt.Compare(a.UpdatedAt); order != 0 {
+			return order
+		}
+		if order := strings.Compare(a.Agent, b.Agent); order != 0 {
+			return order
+		}
+		if order := strings.Compare(a.SessionID, b.SessionID); order != 0 {
+			return order
+		}
+		return strings.Compare(a.RuntimeSessionKey, b.RuntimeSessionKey)
+	})
+	return reports
 }
 
 func canonicalWorkspacePath(path string) (string, error) {
@@ -196,7 +218,7 @@ func (s *Store) RemoveRuntimeSession(runtimeSessionKey string) error {
 		if report.RuntimeSessionKey != runtimeSessionKey {
 			continue
 		}
-		if err := os.Remove(s.reportPath(report.SessionID)); err != nil &&
+		if err := os.Remove(s.reportPath(report.Agent, report.SessionID)); err != nil &&
 			!errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, err)
 		}
@@ -243,6 +265,16 @@ func (s *Store) reports() []Report {
 		path := filepath.Join(s.root, entry.Name())
 		report, ok := s.readReport(path)
 		if !ok {
+			continue
+		}
+		report.Agent = strings.ToLower(strings.TrimSpace(report.Agent))
+		if report.Agent == "" {
+			if removeErr := os.Remove(path); removeErr == nil ||
+				errors.Is(removeErr, os.ErrNotExist) {
+				delete(files, entry.Name())
+			} else {
+				cleanupPending = true
+			}
 			continue
 		}
 		expiresAt := report.UpdatedAt.Add(ReportFreshness)
@@ -380,7 +412,7 @@ func (s *Store) writeReport(report Report) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, s.reportPath(report.SessionID)); err != nil {
+	if err := os.Rename(tmpPath, s.reportPath(report.Agent, report.SessionID)); err != nil {
 		return err
 	}
 	s.invalidateCache()
@@ -409,7 +441,7 @@ func (s *Store) readReport(path string) (Report, bool) {
 	return report, true
 }
 
-func (s *Store) reportPath(sessionID string) string {
-	sum := sha256.Sum256([]byte(sessionID))
+func (s *Store) reportPath(agent string, sessionID string) string {
+	sum := sha256.Sum256([]byte(agent + "\x00" + sessionID))
 	return filepath.Join(s.root, hex.EncodeToString(sum[:])+".json")
 }

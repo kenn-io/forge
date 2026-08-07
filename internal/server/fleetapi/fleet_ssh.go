@@ -16,22 +16,29 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/sshfleet"
+	"go.kenn.io/kit/openssh"
 )
 
-// SSH fleet peers are hosts the hub reaches over ssh(1) instead of
-// HTTP: the hub owns one ControlMaster per peer (sshfleet) and
-// relays every API exchange by executing the peer's CLI api verb
-// through it. Reads (raw snapshots) and writes (fleet proxy routes)
-// share that channel; attach-specs come back wrapped in the ssh
-// invocation so clients run them from the hub's host. Connection
-// state transitions broadcast on the event hub as fleet_host_state
+// SSH fleet peers are hosts the hub reaches over ssh(1) instead of HTTP. Kit's
+// OpenSSH manager owns one persistent ControlMaster per peer where supported;
+// otherwise the relay uses explicit masterless commands. Reads, writes, and
+// terminal attach all use generation-bound arguments from the same manager.
+// Connection state transitions broadcast on the event hub as fleet_host_state
 // and feed the enriched snapshot's connectionState.
 
-// sshFleetTransport bundles the connection manager, relay runner,
+// sshFleetTransport bundles the shared connection manager, Forge relay runner,
 // and the configured peer set.
+type persistentConnectionManager interface {
+	sshfleet.ConnectionManager
+	Connect(context.Context, string, openssh.Target) (openssh.Generation, error)
+	State(string) string
+	StartIdleMonitor(context.Context)
+}
+
 type sshFleetTransport struct {
-	conns  *sshfleet.ConnectionManager
-	runner *sshfleet.Runner
+	conns   persistentConnectionManager
+	runner  *sshfleet.Runner
+	initErr error
 
 	mu    sync.RWMutex
 	peers []config.FleetSSHPeer
@@ -40,9 +47,10 @@ type sshFleetTransport struct {
 	// are deliberately left running (ControlPersist semantics): a
 	// restarted daemon adopts live sockets instead of re-dialing, and
 	// the idle monitor reaps masters with no activity.
-	stop      chan struct{}
-	startOnce sync.Once
-	stopOnce  sync.Once
+	monitorCtx context.Context
+	stop       context.CancelFunc
+	startOnce  sync.Once
+	stopOnce   sync.Once
 
 	// inflight single-flights the per-peer snapshot fetch so repeated
 	// snapshot reads against a cold peer share one connect/fetch instead of piling
@@ -59,28 +67,51 @@ type inflightFetch struct {
 	res  fleet.PeerResult
 }
 
+type sshFleetConnectionEvent struct {
+	HostKey string `json:"host_key"`
+	State   string `json:"state"`
+	Message string `json:"message,omitempty"`
+}
+
+type sshRelayResult struct {
+	response   sshfleet.Response
+	connection sshfleet.Connection
+}
+
 // newSSHFleetTransport builds the transport; events broadcast on hub.
 func newSSHFleetTransport(
 	socketDir string,
 	peers []config.FleetSSHPeer,
 	broadcast func(Event) uint64,
 ) *sshFleetTransport {
-	conns := sshfleet.NewConnectionManager(socketDir, sshfleet.Config{
+	monitorCtx, stop := context.WithCancel(context.Background())
+	t := &sshFleetTransport{
+		peers:      peers,
+		monitorCtx: monitorCtx,
+		stop:       stop,
+	}
+	conns, err := sshfleet.NewPersistentManager(socketDir, openssh.PersistentConfig{
 		IdleTimeout: 30 * time.Minute,
-		OnEvent: func(e sshfleet.Event) {
+		OnEvent: func(e openssh.Event) {
 			if broadcast != nil {
 				broadcast(Event{
-					Type: "fleet_host_state", Data: e,
+					Type: "fleet_host_state",
+					Data: sshFleetConnectionEvent{
+						HostKey: e.Identity,
+						State:   e.State,
+						Message: e.Message,
+					},
 				})
 			}
 		},
 	})
-	t := &sshFleetTransport{
-		conns:  conns,
-		runner: sshfleet.NewRunner(conns),
-		peers:  peers,
-		stop:   make(chan struct{}),
+	if err != nil {
+		t.initErr = err
+		stop()
+		return t
 	}
+	t.conns = conns
+	t.runner = sshfleet.NewRunner(conns)
 	return t
 }
 
@@ -88,7 +119,11 @@ func (t *sshFleetTransport) start() {
 	if t == nil {
 		return
 	}
-	t.startOnce.Do(func() { t.conns.StartIdleMonitor(t.stop) })
+	t.startOnce.Do(func() {
+		if t.conns != nil {
+			t.conns.StartIdleMonitor(t.monitorCtx)
+		}
+	})
 }
 
 // shutdown stops the idle monitor. Masters stay alive by design (see
@@ -99,7 +134,7 @@ func (t *sshFleetTransport) shutdown() {
 	}
 	t.stopOnce.Do(func() {
 		if t.stop != nil {
-			close(t.stop)
+			t.stop()
 		}
 	})
 }
@@ -134,6 +169,9 @@ func (t *sshFleetTransport) connectionState(hostKey string) *string {
 	if _, ok := t.peer(hostKey); !ok {
 		return nil
 	}
+	if t.initErr != nil {
+		return fleet.MapConnectionState(openssh.StateError)
+	}
 	return fleet.MapConnectionState(t.conns.State(hostKey))
 }
 
@@ -146,29 +184,44 @@ func (t *sshFleetTransport) relay(
 	peer config.FleetSSHPeer,
 	method, path string,
 	body []byte,
-) (sshfleet.Response, error) {
-	if err := t.conns.Connect(peer.Key, peer.Destination); err != nil {
-		return sshfleet.Response{}, err
+) (sshRelayResult, error) {
+	if t.initErr != nil {
+		return sshRelayResult{}, t.initErr
+	}
+	target, err := openssh.ParseTarget(peer.Destination)
+	if err != nil {
+		return sshRelayResult{}, err
+	}
+	generation, err := t.conns.Connect(ctx, peer.Key, target)
+	if err != nil && !errors.Is(err, openssh.ErrPersistentUnsupported) {
+		return sshRelayResult{}, err
+	}
+	connection := sshfleet.Connection{
+		Identity:   peer.Key,
+		Generation: generation,
+		Target:     target,
+		Persistent: err == nil,
 	}
 	remoteCommand := peer.RemoteCommandOrDefault()
 	resp, err := t.runner.Relay(
-		ctx, peer.Key, peer.Destination, remoteCommand,
+		ctx, connection, remoteCommand,
 		method, path, body,
 	)
 	if !errors.Is(err, sshfleet.ErrRemoteDaemonUnavailable) {
-		return resp, err
+		return sshRelayResult{response: resp, connection: connection}, err
 	}
 	if err := t.runner.EnsureDaemon(
-		ctx, peer.Key, peer.Destination, remoteCommand,
+		ctx, connection, remoteCommand,
 	); err != nil {
-		return sshfleet.Response{}, fmt.Errorf(
+		return sshRelayResult{}, fmt.Errorf(
 			"ensure remote daemon: %w", err,
 		)
 	}
-	return t.runner.Relay(
-		ctx, peer.Key, peer.Destination, remoteCommand,
+	resp, err = t.runner.Relay(
+		ctx, connection, remoteCommand,
 		method, path, body,
 	)
+	return sshRelayResult{response: resp, connection: connection}, err
 }
 
 // fetchSSHPeerResults fans out raw-snapshot fetches to every SSH
@@ -283,20 +336,20 @@ func (s *Handler) fetchSSHPeerRaw(
 		SSHDestination:     &dest,
 		PreferredTransport: "ssh",
 	}
-	resp, err := t.relay(
+	result, err := t.relay(
 		ctx, p, http.MethodGet, "/api/v1/snapshot/raw", nil,
 	)
 	if err != nil {
 		res.Err = errPtr(err)
 		return res
 	}
-	if resp.Status/100 != 2 {
-		msg := "peer returned HTTP " + http.StatusText(resp.Status)
+	if result.response.Status/100 != 2 {
+		msg := "peer returned HTTP " + http.StatusText(result.response.Status)
 		res.Err = &msg
 		return res
 	}
 	var raw fleet.RawSnapshot
-	if err := json.Unmarshal(resp.Body, &raw); err != nil {
+	if err := json.Unmarshal(result.response.Body, &raw); err != nil {
 		msg := "decode raw snapshot: " + err.Error()
 		res.Err = &msg
 		return res
@@ -344,7 +397,7 @@ func (s *Handler) serveSSHFleetRESTProxy(
 	if r.URL.RawQuery != "" {
 		path += "?" + r.URL.RawQuery
 	}
-	resp, err := t.relay(r.Context(), peer, r.Method, path, body)
+	result, err := t.relay(r.Context(), peer, r.Method, path, body)
 	if err != nil {
 		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,
@@ -354,11 +407,20 @@ func (s *Handler) serveSSHFleetRESTProxy(
 		))
 		return
 	}
+	resp := result.response
 	out := resp.Body
 	if resp.Status/100 == 2 && isAttachSpecPath(targetPath) {
-		if wrapped, ok := wrapAttachSpecForSSH(
-			out, t.conns.SocketPath(peer.Key), peer.Destination,
-		); ok {
+		command, commandErr := t.runner.SSHCommand(result.connection, true)
+		if commandErr != nil {
+			writeProblemResponse(w, httpapi.NewProblem(
+				http.StatusBadGateway,
+				httpapi.CodeUpstreamError,
+				"fleet ssh connection changed: "+commandErr.Error(),
+				map[string]any{"hostKey": peer.Key},
+			))
+			return
+		}
+		if wrapped, ok := wrapAttachSpecForSSH(out, command); ok {
 			out = wrapped
 		}
 	}
@@ -371,12 +433,11 @@ func isAttachSpecPath(path string) bool {
 	return strings.HasSuffix(path, "/attach-spec")
 }
 
-// wrapAttachSpecForSSH rewrites a peer's attach-spec so the command
-// runs from the hub host through the peer's ControlMaster: the
-// remote tmux attach rides `ssh -t`, and requires_local_host drops
-// because the spec is now executable wherever the hub's socket is.
+// wrapAttachSpecForSSH rewrites a peer's attach-spec so the remote tmux attach
+// rides `ssh -t`. requires_local_host drops because the spec is now executable
+// from the hub using its persistent or masterless connection arguments.
 func wrapAttachSpecForSSH(
-	body []byte, socketPath, destination string,
+	body []byte, sshCommand []string,
 ) ([]byte, bool) {
 	var spec workspaceapi.RuntimeAttachSpecResponse
 	if err := json.Unmarshal(body, &spec); err != nil {
@@ -385,12 +446,7 @@ func wrapAttachSpecForSSH(
 	if len(spec.Command) == 0 {
 		return nil, false
 	}
-	spec.Command = append([]string{
-		"ssh",
-		"-o", "ControlPath=" + socketPath,
-		"-o", "ControlMaster=no",
-		"-t", destination,
-	}, spec.Command...)
+	spec.Command = append(append([]string(nil), sshCommand...), spec.Command...)
 	spec.RequiresLocalHost = false
 	wrapped, err := json.Marshal(spec)
 	if err != nil {

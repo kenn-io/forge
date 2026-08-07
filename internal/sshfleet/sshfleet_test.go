@@ -1,130 +1,69 @@
 package sshfleet
 
 import (
-	"sync"
-	"time"
-
 	"context"
 	"fmt"
-	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/kit/openssh"
 )
 
-// fakeSSH records ssh invocations and scripts their results. The
-// "-MNf" master spawn creates the socket file like a real master
-// would, so Connect's establish poll succeeds.
-type fakeSSH struct {
-	mgr      *ConnectionManager
-	calls    [][]string
-	checkOK  bool
-	spawnErr error
+type fakeConnectionManager struct {
+	arguments      []string
+	touchAllowed   bool
+	touched        []string
+	lastIdentity   string
+	lastGeneration openssh.Generation
 }
 
-func (f *fakeSSH) run(args []string) (int, error) {
-	f.calls = append(f.calls, args)
-	joined := strings.Join(args, " ")
-	switch {
-	case strings.Contains(joined, "-MNf"):
-		if f.spawnErr != nil {
-			return 255, f.spawnErr
-		}
-		// Real masters create the socket; mirror that.
-		for i, a := range args {
-			if a == "-o" && strings.HasPrefix(args[i+1], "ControlPath=") {
-				path := strings.TrimPrefix(args[i+1], "ControlPath=")
-				_ = os.WriteFile(path, nil, 0o600)
-			}
-		}
-		return 0, nil
-	case strings.Contains(joined, "-O check"):
-		if f.checkOK {
-			return 0, nil
-		}
-		return 255, fmt.Errorf("no master running")
-	}
-	return 0, nil
+func (f *fakeConnectionManager) ConnectionArguments(
+	identity string,
+	generation openssh.Generation,
+) ([]string, error) {
+	f.lastIdentity = identity
+	f.lastGeneration = generation
+	return append([]string(nil), f.arguments...), nil
 }
 
-// TestConnectionManagerLifecycle pins the state machine: connect
-// emits connecting→connected and creates the master; a live same-
-// destination reconnect reuses it without respawning; disconnect
-// tears down and emits.
-func TestConnectionManagerLifecycle(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-
-	var events []Event
-	fake := &fakeSSH{}
-	mgr := NewConnectionManager(t.TempDir(), Config{
-		RunSSH:  fake.run,
-		OnEvent: func(e Event) { events = append(events, e) },
-	})
-	fake.mgr = mgr
-
-	require.NoError(mgr.Connect("studio", "wes@studio.local"))
-	assert.Equal(StateConnected, mgr.State("studio"))
-	assert.Equal("wes@studio.local", mgr.Destination("studio"))
-
-	spawns := 0
-	for _, c := range fake.calls {
-		if strings.Contains(strings.Join(c, " "), "-MNf") {
-			spawns++
-		}
-	}
-	assert.Equal(1, spawns)
-
-	// Same destination with a live master: no respawn.
-	fake.checkOK = true
-	require.NoError(mgr.Connect("studio", "wes@studio.local"))
-	spawns = 0
-	for _, c := range fake.calls {
-		if strings.Contains(strings.Join(c, " "), "-MNf") {
-			spawns++
-		}
-	}
-	assert.Equal(1, spawns, "live master must be reused")
-
-	require.NoError(mgr.Disconnect("studio"))
-	assert.Equal(StateDisconnected, mgr.State("studio"))
-	_, statErr := os.Stat(mgr.SocketPath("studio"))
-	assert.True(os.IsNotExist(statErr), "socket removed on disconnect")
-
-	var states []string
-	for _, e := range events {
-		states = append(states, e.State)
-	}
-	assert.Equal(
-		[]string{StateConnecting, StateConnected, StateDisconnected},
-		states,
-	)
+func (f *fakeConnectionManager) TouchActivity(
+	identity string,
+	generation openssh.Generation,
+) bool {
+	f.touched = append(f.touched, identity)
+	f.lastGeneration = generation
+	return f.touchAllowed
 }
 
-// TestConnectionManagerSpawnFailure pins the error path: a failed
-// master spawn lands in error state with the message preserved.
-func TestConnectionManagerSpawnFailure(t *testing.T) {
-	fake := &fakeSSH{spawnErr: fmt.Errorf("permission denied")}
-	mgr := NewConnectionManager(t.TempDir(), Config{RunSSH: fake.run})
-	err := mgr.Connect("studio", "wes@studio.local")
-	require.Error(t, err)
-	assert.Equal(t, StateError, mgr.State("studio"))
+func testConnection() Connection {
+	return Connection{
+		Identity:   "studio",
+		Generation: 7,
+		Persistent: true,
+		Target: openssh.Target{
+			User: "wes", Hostname: "studio.local",
+		},
+	}
 }
 
 // TestRunnerRelayFramesStatusAndBody pins the relay contract: the
-// remote api -i framing decodes into status + body for both success
-// and HTTP-error exits, the ssh argv rides the peer's ControlMaster
-// with ControlMaster=no, and the remote fragment normalizes PATH and
-// quotes the verb.
+// remote api -i framing decodes into status + body for both success and
+// HTTP-error exits, the ssh argv uses the generation-bound manager arguments,
+// and the remote fragment normalizes PATH and quotes the verb.
 func TestRunnerRelayFramesStatusAndBody(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	mgr := NewConnectionManager(t.TempDir(), Config{
-		RunSSH: func([]string) (int, error) { return 0, nil },
-	})
+	mgr := &fakeConnectionManager{
+		arguments: []string{
+			"-o", "ControlMaster=no", "-S", "/tmp/control.sock",
+		},
+		touchAllowed: true,
+	}
 	runner := NewRunner(mgr)
 
 	var gotArgv []string
@@ -140,7 +79,7 @@ func TestRunnerRelayFramesStatusAndBody(t *testing.T) {
 
 	resp, err := runner.Relay(
 		context.Background(),
-		"studio", "wes@studio.local", "kenn-forge",
+		testConnection(), "kenn-forge",
 		"POST", "/api/v1/projects/prj_1/worktrees",
 		[]byte(`{"branch":"feat"}`),
 	)
@@ -151,12 +90,15 @@ func TestRunnerRelayFramesStatusAndBody(t *testing.T) {
 
 	joined := strings.Join(gotArgv, " ")
 	assert.Equal("ssh", gotArgv[0])
-	assert.Contains(joined, "ControlPath="+mgr.SocketPath("studio"))
+	assert.Contains(joined, "/tmp/control.sock")
 	assert.Contains(joined, "ControlMaster=no")
 	assert.Contains(joined, "wes@studio.local")
 	assert.Contains(joined, "kenn-forge")
 	assert.Contains(joined, "api")
 	assert.Contains(joined, "PATH=")
+	assert.Equal("studio", mgr.lastIdentity)
+	assert.Equal(openssh.Generation(7), mgr.lastGeneration)
+	assert.NotEmpty(mgr.touched)
 
 	// HTTP-error exit still yields the framed problem body.
 	runner.execCommand = func(
@@ -167,7 +109,7 @@ func TestRunnerRelayFramesStatusAndBody(t *testing.T) {
 	}
 	resp, err = runner.Relay(
 		context.Background(),
-		"studio", "wes@studio.local", "kenn-forge",
+		testConnection(), "kenn-forge",
 		"GET", "/api/v1/projects/prj_missing", nil,
 	)
 	require.NoError(err)
@@ -183,7 +125,7 @@ func TestRunnerRelayFramesStatusAndBody(t *testing.T) {
 	}
 	_, err = runner.Relay(
 		context.Background(),
-		"studio", "wes@studio.local", "kenn-forge",
+		testConnection(), "kenn-forge",
 		"GET", "/api/v1/snapshot/raw", nil,
 	)
 	require.Error(err)
@@ -195,9 +137,7 @@ func TestRunnerRelayFramesStatusAndBody(t *testing.T) {
 // request reached the remote daemon) is matchable with errors.Is so
 // callers can trigger daemon auto-start on exactly this failure.
 func TestRelayNoRequestErrorIsTyped(t *testing.T) {
-	mgr := NewConnectionManager(t.TempDir(), Config{
-		RunSSH: func([]string) (int, error) { return 0, nil },
-	})
+	mgr := &fakeConnectionManager{touchAllowed: true}
 	runner := NewRunnerWithExec(mgr, func(
 		context.Context, []string, []byte,
 	) ([]byte, []byte, int, error) {
@@ -206,10 +146,34 @@ func TestRelayNoRequestErrorIsTyped(t *testing.T) {
 	})
 	_, err := runner.Relay(
 		context.Background(),
-		"studio", "wes@studio.local", "kenn-forge",
+		testConnection(), "kenn-forge",
 		"GET", "/api/v1/snapshot/raw", nil,
 	)
 	require.ErrorIs(t, err, ErrRemoteDaemonUnavailable)
+}
+
+func TestSSHCommandRejectsChangedGeneration(t *testing.T) {
+	runner := NewRunner(&fakeConnectionManager{touchAllowed: false})
+
+	_, err := runner.SSHCommand(testConnection(), false)
+
+	require.ErrorIs(t, err, openssh.ErrConnectionChanged)
+}
+
+func TestSSHCommandSupportsMasterlessConnection(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	connections := &fakeConnectionManager{}
+	runner := NewRunner(connections)
+	connection := testConnection()
+	connection.Persistent = false
+
+	arguments, err := runner.SSHCommand(connection, false)
+
+	require.NoError(err)
+	assert.Contains(arguments, "none")
+	assert.Contains(arguments, "wes@studio.local")
+	assert.Empty(connections.touched)
 }
 
 // ensureFakeExec scripts the remote side of EnsureDaemon: status
@@ -267,9 +231,7 @@ func (f *ensureFakeExec) exec(
 
 func newEnsureRunner(t *testing.T, f *ensureFakeExec) *Runner {
 	t.Helper()
-	mgr := NewConnectionManager(t.TempDir(), Config{
-		RunSSH: func([]string) (int, error) { return 0, nil },
-	})
+	mgr := &fakeConnectionManager{touchAllowed: true}
 	r := NewRunnerWithExec(mgr, f.exec)
 	r.ensurePollInterval = 5 * time.Millisecond
 	r.ensureTimeout = 250 * time.Millisecond
@@ -284,7 +246,7 @@ func TestEnsureDaemonAlreadyRunning(t *testing.T) {
 	f := &ensureFakeExec{running: true}
 	r := newEnsureRunner(t, f)
 	require.NoError(r.EnsureDaemon(
-		context.Background(), "studio", "wes@studio.local", "kenn-forge",
+		context.Background(), testConnection(), "kenn-forge",
 	))
 	assert.Equal(0, f.startCalls)
 	require.NotEmpty(f.fragments)
@@ -300,7 +262,7 @@ func TestEnsureDaemonStartsAndPolls(t *testing.T) {
 	f := &ensureFakeExec{flipOnStart: true}
 	r := newEnsureRunner(t, f)
 	require.NoError(t, r.EnsureDaemon(
-		context.Background(), "studio", "wes@studio.local", "kenn-forge",
+		context.Background(), testConnection(), "kenn-forge",
 	))
 	assert.Equal(t, 1, f.startCalls)
 	assert.GreaterOrEqual(t, f.probeCalls, 2,
@@ -313,7 +275,7 @@ func TestEnsureDaemonTimeout(t *testing.T) {
 	f := &ensureFakeExec{}
 	r := newEnsureRunner(t, f)
 	err := r.EnsureDaemon(
-		context.Background(), "studio", "wes@studio.local", "kenn-forge",
+		context.Background(), testConnection(), "kenn-forge",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "wes@studio.local")
@@ -327,7 +289,7 @@ func TestEnsureDaemonWaitsForMetadata(t *testing.T) {
 	f := &ensureFakeExec{flipOnStart: true, metadataLagProbes: 3}
 	r := newEnsureRunner(t, f)
 	require.NoError(t, r.EnsureDaemon(
-		context.Background(), "studio", "wes@studio.local", "kenn-forge",
+		context.Background(), testConnection(), "kenn-forge",
 	))
 	assert.Equal(t, 1, f.startCalls)
 	assert.GreaterOrEqual(t, f.probeCalls, 5,

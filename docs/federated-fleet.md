@@ -21,8 +21,11 @@ HTTP fleet requests do not carry a bearer token. The hub also strips the
 caller's authorization and cookies. An HTTP peer must leave
 `[api].require_auth` disabled.
 
-Use SSH for any peer that requires API authentication. The hub owns one SSH
-ControlMaster per peer and runs the remote kenn-forge CLI through it.
+Use SSH for any peer that requires API authentication. On Unix, the hub owns
+one SSH ControlMaster per peer through kit's shared OpenSSH lifecycle manager.
+When multiplexing is unavailable, including on Windows clients, it uses an
+explicit masterless connection instead. Both modes run the remote kenn-forge
+CLI through the user's system OpenSSH policy.
 
 ## Prepare each machine
 
@@ -72,10 +75,12 @@ details.
 The hub may protect its own API with `require_auth = true`. An HTTP peer may
 not. The HTTP peer must travel over a trusted private network.
 
-For SSH peers, `destination` is passed directly to `ssh`. `remote_command` must
-be a bare executable name or path without flags or shell syntax. Set
-`KENN_FORGE_HOME` in the remote login profile when the peer uses another config
-directory.
+For SSH peers, `destination` accepts a validated `[user@]host`, optional port,
+IPv6 literal, or `ssh://` URI. Host aliases still use the user's `ssh_config`;
+put unusual account names behind a safe alias rather than in the programmatic
+destination. `remote_command` must be a bare executable name or path without
+flags or shell syntax. Set `KENN_FORGE_HOME` in the remote login profile when
+the peer uses another config directory.
 
 Restart the hub after changing API authentication or SSH peer entries.
 
@@ -118,11 +123,13 @@ marked as managed. Unregistered sessions stay redacted unless
 `include_unmanaged_details` is enabled.
 
 An attach action returns the native tmux command for a local session. For an
-SSH peer, the hub wraps that command through the existing SSH ControlMaster.
-Clients do not need to create their own SSH master.
+SSH peer, the hub wraps that command through the generation-checked shared
+connection, or through an explicit masterless SSH command when multiplexing is
+unavailable. Clients do not create their own SSH master.
 
-SSH masters use keepalives and close after 30 minutes without activity. A
-socket left by a previous hub process is reused when it is still alive.
+Persistent SSH masters use keepalives and close after 30 minutes without
+activity. On Unix, a securely owned socket left by a previous hub process is
+reused only when OpenSSH verifies that it is still alive.
 
 ## Troubleshoot a peer
 

@@ -21,6 +21,7 @@ import (
 	platformpkg "go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/kit/openssh"
 )
 
 const (
@@ -691,10 +692,10 @@ type FleetSessions struct {
 	IncludeUnmanagedDetails bool `toml:"include_unmanaged_details,omitempty" json:"include_unmanaged_details,omitempty"`
 }
 
-// FleetSSHPeer is a fleet peer reached over ssh(1) instead of HTTP:
-// the hub holds a ControlMaster to Destination and relays API
-// exchanges by executing the peer's CLI api verb, so the remote
-// listener never leaves its host.
+// FleetSSHPeer is a fleet peer reached over ssh(1) instead of HTTP. The hub
+// uses kit's persistent manager when OpenSSH multiplexing is supported and a
+// direct masterless connection otherwise. API exchanges execute the peer's CLI
+// api verb, so the remote listener never leaves its host.
 type FleetSSHPeer struct {
 	Key         string `toml:"key" json:"key"`
 	Name        string `toml:"name,omitempty" json:"name,omitempty"`
@@ -837,7 +838,7 @@ func isBareExecutable(s string) bool {
 }
 
 // validateFleetSSHPeers rejects ssh peers that would later produce
-// unroutable hosts or merge collisions: empty keys/destinations,
+// unroutable hosts or merge collisions: invalid keys/destinations,
 // duplicate keys, the reserved self alias, and keys colliding with
 // HTTP peers or the local fleet key.
 func (c *Config) validateFleetSSHPeers() error {
@@ -858,13 +859,16 @@ func (c *Config) validateFleetSSHPeers() error {
 				i, key,
 			)
 		}
-		// Destination is passed to ssh(1) as a single positional
-		// argument (never through a shell), so unlike remote_command
-		// it needs no metacharacter whitelist — only presence.
 		if strings.TrimSpace(p.Destination) == "" {
 			return fmt.Errorf(
 				"config: fleet.ssh_peers[%d] (%s): destination is required",
 				i, key,
+			)
+		}
+		if _, err := openssh.ParseTarget(p.Destination); err != nil {
+			return fmt.Errorf(
+				"config: fleet.ssh_peers[%d] (%s): invalid destination: %w",
+				i, key, err,
 			)
 		}
 		if key == strings.TrimSpace(c.Fleet.Key) {

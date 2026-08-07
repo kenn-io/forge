@@ -894,7 +894,9 @@ func (s *Handler) serveSSHFleetWebSocketTerminal(
 		return
 	}
 
-	resp, err := s.sshFleet.relay(r.Context(), peer, http.MethodGet, attachSpecPath, nil)
+	result, err := s.sshFleet.relay(
+		r.Context(), peer, http.MethodGet, attachSpecPath, nil,
+	)
 	if err != nil {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, httpapi.NewProblem(
@@ -905,11 +907,23 @@ func (s *Handler) serveSSHFleetWebSocketTerminal(
 		))
 		return
 	}
+	resp := result.response
 	out := resp.Body
 	if resp.Status/100 == 2 {
-		if wrapped, ok := wrapAttachSpecForSSH(
-			out, s.sshFleet.conns.SocketPath(peer.Key), peer.Destination,
-		); ok {
+		command, commandErr := s.sshFleet.runner.SSHCommand(
+			result.connection, true,
+		)
+		if commandErr != nil {
+			attachSpan.SetAttributes(attribute.Bool("error", true))
+			writeProblemResponse(w, httpapi.NewProblem(
+				http.StatusBadGateway,
+				httpapi.CodeUpstreamError,
+				"fleet ssh connection changed: "+commandErr.Error(),
+				map[string]any{"hostKey": peer.Key},
+			))
+			return
+		}
+		if wrapped, ok := wrapAttachSpecForSSH(out, command); ok {
 			out = wrapped
 		}
 	}

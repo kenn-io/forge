@@ -4091,6 +4091,7 @@ func TestValidateFleetSSHPeers(t *testing.T) {
 	}{
 		{"empty key", []FleetSSHPeer{{Destination: "x@y"}}, "key is required"},
 		{"empty destination", []FleetSSHPeer{{Key: "epyc"}}, "destination is required"},
+		{"unsafe destination", []FleetSSHPeer{{Key: "epyc", Destination: "wes;touch@host"}}, "unsafe SSH user"},
 		{"self collision", []FleetSSHPeer{{Key: "studio", Destination: "x@y"}}, "collides with fleet.key"},
 		{"http peer collision", []FleetSSHPeer{{Key: "mbp", Destination: "x@y"}}, "collides with fleet.peers"},
 		{"duplicate ssh key", []FleetSSHPeer{

@@ -10,15 +10,15 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/kit/openssh"
 )
 
-// The runner relays HTTP requests to a peer's local daemon by
-// executing its CLI `api` verb over the ControlMaster: the remote
-// listener stays private to its host, no ports are forwarded, and
-// auth rides the remote's own token file. The verb's contract is the
-// transport contract: response bytes on stdout (with -i, the exact
-// status line first), exit 0/1/2 for success / HTTP error /
-// no-request-made.
+// The runner relays HTTP requests to a peer's local daemon by executing its CLI
+// `api` verb over generation-bound SSH arguments. The remote listener stays
+// private to its host, no ports are forwarded, and auth rides the remote's own
+// token file. The verb's contract is the transport contract: response bytes on
+// stdout (with -i, the exact status line first), exit 0/1/2 for success / HTTP
+// error / no-request-made.
 
 // remoteExecTimeout bounds one relayed request end to end.
 const remoteExecTimeout = 90 * time.Second
@@ -39,9 +39,17 @@ type Response struct {
 	Body   []byte
 }
 
-// Runner executes remote CLI verbs over a peer's ControlMaster.
+// ConnectionManager is the generation-bound subset of kit's persistent manager
+// that Forge command execution consumes.
+type ConnectionManager interface {
+	ConnectionArguments(string, openssh.Generation) ([]string, error)
+	TouchActivity(string, openssh.Generation) bool
+}
+
+// Runner executes remote CLI verbs over a persistent or masterless SSH
+// connection selected by kit's platform contract.
 type Runner struct {
-	conns *ConnectionManager
+	conns ConnectionManager
 	// execCommand runs argv with stdin and returns stdout, stderr,
 	// and the exit code. Injectable for tests.
 	execCommand func(
@@ -54,14 +62,14 @@ type Runner struct {
 	ensureTimeout      time.Duration
 }
 
-func NewRunner(conns *ConnectionManager) *Runner {
+func NewRunner(conns ConnectionManager) *Runner {
 	return NewRunnerWithExec(conns, execLocal)
 }
 
 // NewRunnerWithExec builds a Runner with a custom executor — the
 // seam consumers use to fake the ssh subprocess in tests.
 func NewRunnerWithExec(
-	conns *ConnectionManager,
+	conns ConnectionManager,
 	exec func(
 		ctx context.Context, argv []string, stdin []byte,
 	) (stdout, stderr []byte, exitCode int, err error),
@@ -79,13 +87,10 @@ func NewRunnerWithExec(
 // invocation (default "kenn-forge"); it may carry flags and is
 // embedded as a shell fragment.
 func (r *Runner) Relay(
-	ctx context.Context,
-	hostKey, destination, remoteCommand string,
+	ctx context.Context, connection Connection, remoteCommand string,
 	method, path string,
 	body []byte,
 ) (Response, error) {
-	r.conns.TouchActivity(hostKey)
-
 	verbArgs := []string{"api", "-i", method, path}
 	var stdin []byte
 	if len(body) > 0 {
@@ -93,13 +98,17 @@ func (r *Runner) Relay(
 		stdin = body
 	}
 
-	argv := r.sshArgv(hostKey, destination, remoteCommand, verbArgs)
+	argv, err := r.sshArgv(connection, remoteCommand, verbArgs)
+	if err != nil {
+		return Response{}, err
+	}
 	execCtx, cancel := context.WithTimeout(ctx, remoteExecTimeout)
 	defer cancel()
 	stdout, stderr, exitCode, err := r.execCommand(execCtx, argv, stdin)
 	if err != nil {
 		return Response{}, fmt.Errorf(
-			"ssh relay %s %s on %s: %w", method, path, destination, err,
+			"ssh relay %s %s on %s: %w",
+			method, path, connection.Target.String(), err,
 		)
 	}
 	switch exitCode {
@@ -109,12 +118,12 @@ func (r *Runner) Relay(
 		return Response{}, fmt.Errorf(
 			"%w on %s: %s",
 			ErrRemoteDaemonUnavailable,
-			destination, strings.TrimSpace(string(stderr)),
+			connection.Target.String(), strings.TrimSpace(string(stderr)),
 		)
 	default:
 		return Response{}, fmt.Errorf(
 			"remote CLI exited %d on %s: %s",
-			exitCode, destination, strings.TrimSpace(string(stderr)),
+			exitCode, connection.Target.String(), strings.TrimSpace(string(stderr)),
 		)
 	}
 }
@@ -123,35 +132,36 @@ func (r *Runner) Relay(
 // the peer and returns stdout. Non-zero exits return an error
 // carrying stderr.
 func (r *Runner) RunVerb(
-	ctx context.Context,
-	hostKey, destination, remoteCommand string,
+	ctx context.Context, connection Connection, remoteCommand string,
 	verbArgs []string,
 ) ([]byte, error) {
-	r.conns.TouchActivity(hostKey)
-	argv := r.sshArgv(hostKey, destination, remoteCommand, verbArgs)
+	argv, err := r.sshArgv(connection, remoteCommand, verbArgs)
+	if err != nil {
+		return nil, err
+	}
 	execCtx, cancel := context.WithTimeout(ctx, remoteExecTimeout)
 	defer cancel()
 	stdout, stderr, exitCode, err := r.execCommand(execCtx, argv, nil)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"ssh verb on %s: %w", destination, err,
+			"ssh verb on %s: %w", connection.Target.String(), err,
 		)
 	}
 	if exitCode != 0 {
 		return nil, fmt.Errorf(
 			"remote verb exited %d on %s: %s",
-			exitCode, destination, strings.TrimSpace(string(stderr)),
+			exitCode, connection.Target.String(), strings.TrimSpace(string(stderr)),
 		)
 	}
 	return stdout, nil
 }
 
-// sshArgv builds the ssh(1) invocation that runs the remote CLI verb
-// through the peer's ControlMaster.
+// sshArgv builds the ssh(1) invocation that runs the remote CLI verb through
+// the generation-bound connection.
 func (r *Runner) sshArgv(
-	hostKey, destination, remoteCommand string,
+	connection Connection, remoteCommand string,
 	verbArgs []string,
-) []string {
+) ([]string, error) {
 	var b strings.Builder
 	b.WriteString(normalizedPATH)
 	b.WriteString("; ")
@@ -160,13 +170,49 @@ func (r *Runner) sshArgv(
 		b.WriteByte(' ')
 		b.WriteString(shellQuote(arg))
 	}
-	return []string{
-		"ssh",
-		"-o", "ControlPath=" + r.conns.SocketPath(hostKey),
-		"-o", "ControlMaster=no",
-		destination,
-		"sh", "-lc", shellQuote(b.String()),
+	arguments, err := r.SSHCommand(connection, false)
+	if err != nil {
+		return nil, err
 	}
+	return append(arguments, "sh", "-lc", shellQuote(b.String())), nil
+}
+
+// SSHCommand returns a generation-checked ssh command prefix for a remote
+// execution or terminal attachment. Activity is touched immediately before
+// arguments are issued, matching kit's touch-before-use contract.
+func (r *Runner) SSHCommand(
+	connection Connection,
+	allocateTTY bool,
+) ([]string, error) {
+	var connectionArguments []string
+	if !connection.Persistent {
+		var err error
+		connectionArguments, err = openssh.ClientArguments("")
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if !r.conns.TouchActivity(connection.Identity, connection.Generation) {
+			return nil, openssh.ErrConnectionChanged
+		}
+		var err error
+		connectionArguments, err = r.conns.ConnectionArguments(
+			connection.Identity,
+			connection.Generation,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+	arguments := append([]string{"ssh"}, connectionArguments...)
+	if allocateTTY {
+		arguments = append(arguments, "-t")
+	}
+	destination, port := connection.Target.CommandDestination()
+	if port != 0 {
+		arguments = append(arguments, "-p", strconv.Itoa(port))
+	}
+	return append(arguments, "--", destination), nil
 }
 
 // parseStatusFramedResponse decodes the verb's -i framing: a status

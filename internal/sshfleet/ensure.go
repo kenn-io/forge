@@ -26,10 +26,9 @@ const (
 // remote daemon keeps its own lifecycle — a concurrent start loses
 // the runtime lock and exits, so double-starts are harmless.
 func (r *Runner) EnsureDaemon(
-	ctx context.Context,
-	hostKey, destination, remoteCommand string,
+	ctx context.Context, connection Connection, remoteCommand string,
 ) error {
-	running, err := r.probeDaemon(ctx, hostKey, destination, remoteCommand)
+	running, err := r.probeDaemon(ctx, connection, remoteCommand)
 	if err != nil {
 		return err
 	}
@@ -38,7 +37,7 @@ func (r *Runner) EnsureDaemon(
 	}
 
 	if err := r.startDaemonDetached(
-		ctx, hostKey, destination, remoteCommand,
+		ctx, connection, remoteCommand,
 	); err != nil {
 		return err
 	}
@@ -51,7 +50,7 @@ func (r *Runner) EnsureDaemon(
 		case <-time.After(r.ensurePollInterval):
 		}
 		running, err := r.probeDaemon(
-			ctx, hostKey, destination, remoteCommand,
+			ctx, connection, remoteCommand,
 		)
 		if err == nil && running {
 			return nil
@@ -59,7 +58,7 @@ func (r *Runner) EnsureDaemon(
 		if time.Now().After(deadline) {
 			return fmt.Errorf(
 				"daemon on %s did not come up within %s",
-				destination, r.ensureTimeout,
+				connection.Target.String(), r.ensureTimeout,
 			)
 		}
 	}
@@ -69,11 +68,10 @@ func (r *Runner) EnsureDaemon(
 // the daemon is ready to serve api-verb relays (running AND runtime
 // metadata published).
 func (r *Runner) probeDaemon(
-	ctx context.Context,
-	hostKey, destination, remoteCommand string,
+	ctx context.Context, connection Connection, remoteCommand string,
 ) (bool, error) {
 	out, err := r.RunVerb(
-		ctx, hostKey, destination, remoteCommand,
+		ctx, connection, remoteCommand,
 		[]string{"daemon", "status", "--json"},
 	)
 	if err != nil {
@@ -98,29 +96,25 @@ func (r *Runner) probeDaemon(
 // stdio detached so the ssh exec returns immediately while the daemon
 // survives the session.
 func (r *Runner) startDaemonDetached(
-	ctx context.Context,
-	hostKey, destination, remoteCommand string,
+	ctx context.Context, connection Connection, remoteCommand string,
 ) error {
-	r.conns.TouchActivity(hostKey)
 	fragment := normalizedPATH + "; nohup " + remoteCommand +
 		" serve >/dev/null 2>&1 </dev/null &"
-	argv := []string{
-		"ssh",
-		"-o", "ControlPath=" + r.conns.SocketPath(hostKey),
-		"-o", "ControlMaster=no",
-		destination,
-		"sh", "-lc", shellQuote(fragment),
+	argv, err := r.SSHCommand(connection, false)
+	if err != nil {
+		return err
 	}
+	argv = append(argv, "sh", "-lc", shellQuote(fragment))
 	execCtx, cancel := context.WithTimeout(ctx, remoteExecTimeout)
 	defer cancel()
 	_, stderr, exitCode, err := r.execCommand(execCtx, argv, nil)
 	if err != nil {
-		return fmt.Errorf("start daemon on %s: %w", destination, err)
+		return fmt.Errorf("start daemon on %s: %w", connection.Target.String(), err)
 	}
 	if exitCode != 0 {
 		return fmt.Errorf(
 			"start daemon on %s exited %d: %s",
-			destination, exitCode, strings.TrimSpace(string(stderr)),
+			connection.Target.String(), exitCode, strings.TrimSpace(string(stderr)),
 		)
 	}
 	return nil

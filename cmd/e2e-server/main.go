@@ -1182,9 +1182,13 @@ func buildAppState(
 	if opts.preferPtyOwner {
 		tmuxCommand = []string{filepath.Join(tmpDir, "missing-tmux")}
 	}
-	tmuxGate, guardedTmuxCommand, err := newTmuxCreationGate(tmpDir, tmuxCommand)
-	if err != nil {
-		return nil, err
+	var tmuxGate *tmuxCreationGate
+	guardedTmuxCommand := tmuxCommand
+	if !opts.preferPtyOwner {
+		tmuxGate, guardedTmuxCommand, err = newTmuxCreationGate(tmpDir, tmuxCommand)
+		if err != nil {
+			return nil, err
+		}
 	}
 	cfg := &config.Config{
 		SyncInterval:        "5m",

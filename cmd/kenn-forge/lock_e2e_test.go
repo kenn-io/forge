@@ -48,6 +48,9 @@ func buildForgeWithLDFlags(t *testing.T, ldflags string) string {
 	t.Helper()
 	binDir := t.TempDir()
 	binPath := filepath.Join(binDir, "kenn-forge")
+	if runtime.GOOS == "windows" {
+		binPath += ".exe"
+	}
 	args := []string{"build", "-o", binPath}
 	if ldflags != "" {
 		args = append(args, "-ldflags="+ldflags)

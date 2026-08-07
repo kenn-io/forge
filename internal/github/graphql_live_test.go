@@ -14,7 +14,7 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	skipUnlessLiveGitHubTests(t)
 	token := requireLiveGitHubToken(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	httpClient := oauth2.NewClient(
@@ -27,11 +27,29 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	vars := map[string]any{
 		"owner":    githubv4.String("kenn-io"),
 		"name":     githubv4.String("middleman"),
-		"pageSize": githubv4.Int(1),
+		"pageSize": githubv4.Int(topLevelPageSize),
 		"cursor":   (*githubv4.String)(nil),
 	}
 	err := client.Query(ctx, &prQuery, vars)
 	require.NoError(t, err, "bulk PR GraphQL query should validate against GitHub")
+
+	type prDetailQuery struct {
+		Repository struct {
+			PullRequest *gqlPR `graphql:"pullRequest(number: $number)"`
+		} `graphql:"repository(owner: $owner, name: $name)"`
+	}
+	var detailQuery prDetailQuery
+	err = client.Query(ctx, &detailQuery, map[string]any{
+		"owner":  githubv4.String("kenn-io"),
+		"name":   githubv4.String("forge"),
+		"number": githubv4.Int(830),
+	})
+	require.NoError(t, err, "combined PR detail GraphQL query should validate against GitHub")
+	require.NotNil(t, detailQuery.Repository.PullRequest, "live PR fixture should exist")
+	require.NotEmpty(t, detailQuery.Repository.PullRequest.Comments.Nodes,
+		"combined live query should return conversation comments")
+	require.NotEmpty(t, detailQuery.Repository.PullRequest.ReviewThreads.Nodes,
+		"combined live query should return review threads")
 
 	var issueQuery gqlIssueQuery
 	err = client.Query(ctx, &issueQuery, vars)

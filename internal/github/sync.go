@@ -9154,6 +9154,17 @@ func (s *Syncer) syncOpenMRFromBulk(
 	if !accepted {
 		return nil
 	}
+	if !bulk.CommentsComplete || !bulk.ReviewsComplete ||
+		!bulk.ReviewThreadsComplete || !bulk.CommitsComplete ||
+		!bulk.TimelineComplete || !bulk.CIComplete {
+		detailCleared, err := s.db.ClearMRDetailFetchedSnapshot(ctx, mrID, revision)
+		if err != nil {
+			return fmt.Errorf("clear detail fetch marker for MR #%d: %w", number, err)
+		}
+		if !detailCleared {
+			return nil
+		}
+	}
 
 	// UpsertMergeRequest preserves ci_had_pending across upserts, so
 	// the head-changed reset above doesn't actually persist that field
@@ -9246,6 +9257,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	}
 	bulkAllComplete := bulk.CommentsComplete &&
 		bulk.ReviewsComplete &&
+		bulk.ReviewThreadsComplete &&
 		bulk.CommitsComplete &&
 		bulk.TimelineComplete &&
 		bulk.CIComplete
@@ -9272,12 +9284,17 @@ func (s *Syncer) syncOpenMRFromBulk(
 		}
 		derived = &fields
 	}
-	if bulk.CommentsComplete || bulk.ReviewsComplete || len(events) > 0 {
+	var inline []db.MREvent
+	var reviewThreads []db.MRReviewThread
+	if bulk.ReviewThreadsComplete {
+		inline, reviewThreads = platform.DBReviewThreads(bulk.ReviewThreads)
+	}
+	if bulk.CommentsComplete || bulk.ReviewsComplete || bulk.ReviewThreadsComplete || len(events) > 0 {
 		applied, err := s.commitMergeRequestDatasets(
 			ctx, repo, mrID, number, revision,
 			comments, bulk.CommentsComplete,
 			reviews,
-			nil, nil, false, events, derived,
+			inline, reviewThreads, bulk.ReviewThreadsComplete, events, derived,
 			livenessHeadForRound(normalized, nil),
 		)
 		if err != nil {
@@ -9287,44 +9304,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 			return nil
 		}
 	}
-	commentsComplete := bulk.CommentsComplete
-	if !commentsComplete {
-		client, err := s.clientFor(repo)
-		if err != nil {
-			return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
-		}
-		restComments, err := client.ListIssueComments(ctx, repo.Owner, repo.Name, number)
-		if err != nil {
-			return fmt.Errorf("list comments for MR #%d: %w", number, err)
-		}
-		nonCommentLatest, err := s.db.GetMRLatestNonCommentEventTime(ctx, mrID)
-		if err != nil {
-			return fmt.Errorf("latest non-comment event for MR #%d: %w", number, err)
-		}
-		fields := db.MRDerivedFields{
-			ReviewDecision: normalized.ReviewDecision,
-			CommentCount:   len(restComments),
-			LastActivityAt: computePRCommentRefreshLastActivity(
-				normalized, restComments, nonCommentLatest,
-			),
-		}
-		applied, err := s.replacePRCommentEvents(
-			ctx, repo, number, mrID, revision, restComments, &fields,
-			bulk.CommentVisibility,
-		)
-		if err != nil {
-			return fmt.Errorf("replace REST comments for MR #%d: %w", number, err)
-		}
-		if !applied {
-			return nil
-		}
-		commentsComplete = true
-	}
-	allComplete := commentsComplete &&
-		bulk.ReviewsComplete &&
-		bulk.CommitsComplete &&
-		bulk.TimelineComplete &&
-		bulk.CIComplete
+	allComplete := bulkAllComplete
 	if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, bulk.PR, normalized.MergedAt); err != nil {
 		return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
 	}

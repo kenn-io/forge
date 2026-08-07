@@ -9305,12 +9305,13 @@ func TestSyncOpenMRFromBulkPersistsMergedActorEventFromPullRequest(t *testing.T)
 	)
 
 	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
-		PR:               pr,
-		CommentsComplete: true,
-		ReviewsComplete:  true,
-		CommitsComplete:  true,
-		TimelineComplete: true,
-		CIComplete:       true,
+		PR:                    pr,
+		CommentsComplete:      true,
+		ReviewsComplete:       true,
+		ReviewThreadsComplete: true,
+		CommitsComplete:       true,
+		TimelineComplete:      true,
+		CIComplete:            true,
 	}, true)
 	require.NoError(err)
 
@@ -17279,13 +17280,14 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	assert.Equal(commentURL, events[0].DirectURL)
 
 	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
-		PR:               buildOpenPR(1, secondUpdatedAt),
-		Comments:         []*gh.IssueComment{},
-		CommentsComplete: true,
-		ReviewsComplete:  true,
-		CommitsComplete:  true,
-		TimelineComplete: true,
-		CIComplete:       true,
+		PR:                    buildOpenPR(1, secondUpdatedAt),
+		Comments:              []*gh.IssueComment{},
+		CommentsComplete:      true,
+		ReviewsComplete:       true,
+		ReviewThreadsComplete: true,
+		CommitsComplete:       true,
+		TimelineComplete:      true,
+		CIComplete:            true,
 	}, false)
 	require.NoError(err)
 
@@ -17301,7 +17303,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	_ = commentTotal
 }
 
-func TestSyncOpenMRFromBulkMergesPaginatedVisibilityIntoRESTComments(t *testing.T) {
+func TestSyncOpenMRFromBulkLeavesDetailStaleWhenReviewThreadsAreIncomplete(t *testing.T) {
 	ctx := t.Context()
 	database := openTestDB(t)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
@@ -17309,38 +17311,57 @@ func TestSyncOpenMRFromBulkMergesPaginatedVisibilityIntoRESTComments(t *testing.
 	require.NoError(t, err)
 
 	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
-	commentID := int64(202)
-	commentBody := "hidden after the first GraphQL page"
-	commentAuthor := "reviewer"
-	commentTime := gh.Timestamp{Time: now.Add(time.Minute)}
-	client := &mockClient{comments: []*gh.IssueComment{{
-		ID: &commentID, Body: &commentBody, User: &gh.User{Login: &commentAuthor},
-		CreatedAt: &commentTime, UpdatedAt: &commentTime,
-	}}}
+	line := 12
+	client := &mockClient{}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": client}, database, nil, []RepoRef{repo},
 		time.Minute, nil, nil,
 	)
 
 	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
-		PR:                buildOpenPR(1, now),
-		CommentVisibility: map[int64]CommentVisibility{commentID: {Hidden: true, Reason: "ABUSE"}},
-		CommentsComplete:  false,
-		ReviewsComplete:   true,
-		CommitsComplete:   true,
-		TimelineComplete:  true,
-		CIComplete:        true,
+		PR:                    buildOpenPR(1, now),
+		CommentsComplete:      true,
+		ReviewsComplete:       true,
+		ReviewThreadsComplete: true,
+		ReviewThreads: []platform.MergeRequestReviewThread{{
+			ProviderThreadID: "thread-1", ProviderCommentID: "comment-1",
+			Body: "stored inline comment", AuthorLogin: "reviewer",
+			Range: platform.DiffReviewLineRange{
+				Path: "src/main.go", Side: "right", Line: line, NewLine: &line,
+			},
+			CreatedAt: now, UpdatedAt: now,
+		}},
+		CommitsComplete:  true,
+		TimelineComplete: true,
+		CIComplete:       true,
 	}, false)
 	require.NoError(t, err)
-	assert.Equal(t, int32(1), client.listIssueCommentsCalled.Load())
 
 	mr, err := database.GetMergeRequest(ctx, "github", "github.com", repo.Owner, repo.Name, 1)
 	require.NoError(t, err)
 	require.NotNil(t, mr)
-	events, err := database.ListMREvents(ctx, mr.ID)
+	require.NotNil(t, mr.DetailFetchedAt)
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:                    buildOpenPR(1, now),
+		CommentsComplete:      true,
+		ReviewsComplete:       true,
+		ReviewThreadsComplete: false,
+		CommitsComplete:       true,
+		TimelineComplete:      true,
+		CIComplete:            true,
+	}, false)
 	require.NoError(t, err)
-	require.Len(t, events, 1)
-	assert.JSONEq(t, `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, events[0].MetadataJSON)
+
+	mr, err = database.GetMergeRequest(ctx, "github", "github.com", repo.Owner, repo.Name, 1)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	assert.Nil(t, mr.DetailFetchedAt)
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(t, err)
+	require.Len(t, threads, 1)
+	assert.Equal(t, "thread-1", threads[0].ProviderThreadID)
+	assert.Zero(t, client.listIssueCommentsCalled.Load())
 }
 
 // TestSyncOpenMRFromBulkPersistsWorkflowApproval verifies the GraphQL
@@ -17381,13 +17402,14 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
 	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
-		PR:               pr,
-		Comments:         []*gh.IssueComment{},
-		CommentsComplete: true,
-		ReviewsComplete:  true,
-		CommitsComplete:  true,
-		TimelineComplete: true,
-		CIComplete:       true,
+		PR:                    pr,
+		Comments:              []*gh.IssueComment{},
+		CommentsComplete:      true,
+		ReviewsComplete:       true,
+		ReviewThreadsComplete: true,
+		CommitsComplete:       true,
+		TimelineComplete:      true,
+		CIComplete:            true,
 	}, false)
 	require.NoError(err)
 
@@ -17627,11 +17649,12 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 			DeletedCommentAuthor: "reviewer",
 			CreatedAt:            timelineAt.Add(time.Minute),
 		}},
-		CommentsComplete: true,
-		ReviewsComplete:  true,
-		CommitsComplete:  true,
-		TimelineComplete: true,
-		CIComplete:       true,
+		CommentsComplete:      true,
+		ReviewsComplete:       true,
+		ReviewThreadsComplete: true,
+		CommitsComplete:       true,
+		TimelineComplete:      true,
+		CIComplete:            true,
 	}, false)
 	require.NoError(err)
 

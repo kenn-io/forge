@@ -16,7 +16,7 @@
 </script>
 
 {#if labels.length > 0}
-  <span class={["label-row", compact && "label-row--compact"]}>
+  <span class={["label-row", compact && "label-row--compact", compact && labels.length === 1 && "label-row--single"]}>
     {#each visible as label (label.name)}
       {#if compact}
         <ColorLabel size="sm" name={label.name} color={label.color} />
@@ -47,6 +47,10 @@
      * author-vs-repo idiom on the meta line). */
     flex: 0 4 auto;
     min-width: 0;
+  }
+
+  .label-row--single {
+    flex-shrink: 0;
   }
 
   .label-row--compact :global(.kit-color-label) {

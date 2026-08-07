@@ -12,3 +12,6 @@
   failures and structured retry/ambiguity state (`internal/mcpserver/tools_stack.go::isStackAbsentError`).
 - Initial-message receipts store no prompt or digest and survive runtime-row
   cleanup; only workspace deletion cascades them (`internal/db/migrations/000047_agent_initial_message_receipts.up.sql`).
+- Receipt reuse requires matching agent, coding session, and normalized byte
+  count; recover pending rows only after the daemon runtime lock is held, never
+  during generic DB open (`internal/db/queries_agent_message.go::DB.ReserveAgentInitialMessage`, `cmd/kenn-forge/main.go::run`).

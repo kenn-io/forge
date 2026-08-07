@@ -206,8 +206,12 @@ Useful flags:
 ```bash
 kenn-forge mcp --config /path/to/config.toml
 kenn-forge mcp --transport stdio
-kenn-forge mcp --transport http --addr 127.0.0.1:0 --http-token-env KENN_FORGE_MCP_TOKEN
+kenn-forge mcp --transport http --addr 127.0.0.1:8092 --http-token-env KENN_FORGE_MCP_TOKEN
 ```
+
+The public HTTP command requires an explicit nonzero port so the launching
+client knows the endpoint. Port `0` remains available only to in-process server
+tests and embedders that can read the selected listener address directly.
 
 These flags are the user-facing contract:
 
@@ -400,11 +404,22 @@ could fingerprint low-entropy prompt content. The delivery states are
 4. Mark or recover an interrupted `pending` receipt as `uncertain`.
 
 Once a receipt exists, the daemon never sends another initial message to that
-runtime. A repeated request returns the existing receipt or a conflict instead
-of writing again. This provides an at-most-once delivery attempt across retries;
-because terminal input has no transactional acknowledgement from the coding
-agent, an `uncertain` result must not be described as delivered and must not be
-retried automatically.
+runtime. A repeated request with the same normalized agent, coding session ID,
+and normalized message byte count returns the existing receipt without writing.
+A different agent, coding session ID, or byte count for the same
+workspace/runtime key is a typed conflict. The daemon cannot persist prompt text
+or a digest, so callers are responsible for reusing identical text when those
+three metadata fields match. This provides an at-most-once delivery attempt
+across retries; because terminal input has no transactional acknowledgement
+from the coding agent, an `uncertain` result must not be described as delivered
+and must not be retried automatically.
+
+Receipt-state recovery is explicit: an exact duplicate returns `pending` while
+the owning daemon may still be writing, `delivered` after a proven complete
+write, and `uncertain` after a possibly partial write or daemon restart. Only
+daemon startup after acquiring exclusive runtime ownership recovers abandoned
+`pending` rows to `uncertain`; generic database opens never do. The receipt GET
+is authoritative after a lost POST response in every state.
 
 ## Daemon API Additions
 
@@ -488,15 +503,17 @@ reports, or historical IDs.
 durable receipt without requiring a live runtime or fresh hook report. It
 returns not found when no attempt was reserved and never returns prompt text or
 a digest. The POST checks for an existing receipt before liveness validation
-and returns that receipt without writing, making exact response recovery
-receipt-only and idempotent.
+and returns an exact-identity receipt without writing, making exact response
+recovery receipt-only and idempotent. A mismatched agent, coding session, or
+normalized byte count returns conflict before liveness validation.
 
 `POST /workspaces/{id}/runtime/sessions/{session_key}/initial-message` accepts
 the normalized `agent`, coding `session_id`, and required `message`. It rejects
 an absent or mismatched live report, a non-agent runtime, a stale session, a
-message over 64 KiB, invalid UTF-8, NUL, and non-whitespace control characters.
-Line endings normalize to LF. A single-line message is written as text followed
-by one carriage-return submit action. A multiline message requires the
+blank or whitespace-only message, a message over 64 KiB, invalid UTF-8, NUL,
+and non-whitespace control characters. Line endings normalize to LF and
+`message_bytes` is the UTF-8 byte length after that normalization. A single-line
+message is written as text followed by one carriage-return submit action. A multiline message requires the
 runtime's tracked bracketed-paste mode and is sent as one bracketed paste
 (`\x1b[200~`, normalized message, `\x1b[201~`) followed by one
 carriage-return; if the mode is not active, delivery fails
@@ -1015,6 +1032,13 @@ Spawn errors carry structured partial state with `last_completed_stage`,
 `failed_stage`, `message_delivered = false`, and every identifier learned before
 failure. Error text must not include the initial message.
 
+Workspace creation and runtime launch remain non-idempotent v1 mutations. A
+transport failure after either commit is explicitly ambiguous and may lack the
+new identifier; the companion must not retry or clean up. It may reconcile a
+workspace only through ordinary source-identity reads when the result is unique.
+Operation receipts for generated ad-hoc branches and runtime launches are a
+future design, not an implicit retry path in this version.
+
 ## Timeouts, Retries, And Compatibility
 
 Each MCP tool call should use a bounded daemon request timeout. The default is
@@ -1041,6 +1065,12 @@ retryable. Candidate discovery enriches stack context only after sorting and
 truncating to the requested limit, bounding stack requests by that limit. Only
 a typed not-stacked response means absent; authentication, timeout,
 malformed-response, and other stack failures propagate.
+
+Runtime-session keys are immutable launch identifiers and must not be
+deliberately reused within a workspace. Current keys include cryptographic
+randomness; if an accidental collision reaches receipt reservation after an old
+runtime row was cleaned up, the retained receipt's correlation check conflicts
+rather than treating the new runtime as already messaged.
 
 Daemon discovery and capability checking are lazy and uniform across
 transports: companion startup never contacts the daemon, and `kenn-forge mcp`
@@ -1228,14 +1258,18 @@ No Playwright coverage is required unless implementation changes visible UI.
 
 ## Rollout
 
-1. Add one schema migration that creates generic workflow-state and
-   initial-message receipt storage and copies existing PR kanban rows. If the
-   generic workflow migration is still PR-local, amend it rather than adding a
-   second migration; if it has shipped, land receipt storage as a separate
-   forward-migration PR.
-2. Add DB query helpers for generic PR/issue workflow state and message
-   receipts, including effective `new`, expected-status conflicts, metadata
-   limits, closed filtering, cursor ordering, and receipt transitions.
-3. Update PR kanban read/write paths to use generic workflow state while keeping
-   the public API stable.
-4. Add issue workflow-state API exposure.
+1. Preserve the shipped generic workflow-state migrations unchanged and add
+   receipt storage only in forward migration `000047`.
+2. Add the metadata-only receipt query and transition API, with recovery called
+   only after daemon runtime ownership is acquired.
+3. Expose provider-neutral exact/list workflow routes and the cached review MCP
+   tools through the public Cobra command.
+4. Store normalized agent identity in hook reports and expose the live
+   workspace coding-session projection.
+5. Add verified one-time runtime input, receipt GET/POST routes, and
+   `suppress_auto_assign` for MCP-created item workspaces.
+6. Add agent-target and live-session MCP reads, then the bounded spawn
+   orchestration for PR, issue, and ad-hoc sources.
+7. Regenerate API clients and publish the twelve-tool guidance.
+8. Prove Cobra stdio, daemon discovery, SQLite state, live hook correlation,
+   one message attempt, receipt recovery, and temp-file cleanup end to end.

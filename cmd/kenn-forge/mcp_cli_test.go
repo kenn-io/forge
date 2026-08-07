@@ -103,3 +103,59 @@ func TestMCPCommandDefaultsToStdioAndRejectsUnknownTransport(t *testing.T) {
 	assert.Contains(err.Error(), "unsupported transport")
 	assert.Equal(1, runs)
 }
+
+func TestMCPCommandRejectsFlagsThatCannotAffectExecution(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "stdio address",
+			args: []string{"--addr", "127.0.0.1:8092"},
+			want: "--addr requires --transport=http",
+		},
+		{
+			name: "stdio token environment",
+			args: []string{"--http-token-env", "KENN_FORGE_MCP_TOKEN"},
+			want: "--http-token-env requires --transport=http",
+		},
+		{
+			name: "zero daemon timeout",
+			args: []string{"--daemon-timeout", "0s"},
+			want: "--daemon-timeout must be positive",
+		},
+		{
+			name: "negative daemon timeout",
+			args: []string{"--daemon-timeout=-1s"},
+			want: "--daemon-timeout must be positive",
+		},
+		{
+			name: "http implicit ephemeral address",
+			args: []string{"--transport", "http"},
+			want: "--addr with an explicit nonzero port is required",
+		},
+		{
+			name: "http explicit ephemeral address",
+			args: []string{"--transport", "http", "--addr", "127.0.0.1:0"},
+			want: "--addr with an explicit nonzero port is required",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runs := 0
+			cmd := newMCPCommand(func(
+				context.Context, mcpserver.Options, io.Reader, io.Writer,
+			) error {
+				runs++
+				return nil
+			}, strings.NewReader(""), io.Discard)
+			cmd.SetArgs(tc.args)
+
+			err := cmd.Execute()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Zero(t, runs)
+		})
+	}
+}

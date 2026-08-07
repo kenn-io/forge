@@ -30,6 +30,14 @@
 
 ---
 
+## Pre-execution design gate
+
+Before Task 1, verify the July design is byte-identical to `origin/main` and
+resolve all current behavior in the August superseding design. Repeat the byte
+comparison in Task 8, but do not defer design consistency decisions until then.
+
+---
+
 ### Task 1: Restore provider-neutral workflow-state daemon routes
 
 **Files:**
@@ -231,8 +239,9 @@ type AgentInitialMessageReceipt struct {
 
 Tests prove one row per workspace/runtime, strict states, no message/digest
 column, workspace foreign-key cleanup, runtime-row deletion retaining the
-receipt, reserve conflict returning the existing receipt, delivered transition,
-and startup recovery of pending rows to uncertain.
+receipt, exact-identity duplicate recovery, mismatched-identity conflict,
+delivered transition, and daemon-owned startup recovery of pending rows to
+uncertain.
 
 - [ ] **Step 2: Verify DB tests fail**
 
@@ -245,9 +254,11 @@ Expected: FAIL with missing migration/table/query symbols.
 Create `forge_agent_initial_message_receipts` with a composite primary key,
 workspace foreign key, strict state and byte-count checks, UTC text timestamps,
 and no prompt material. Reserve in a transaction that first returns an existing
-receipt, then verifies the runtime row before inserting; reject every second
-reservation. Do not foreign-key the runtime row because its cleanup must not
-delete lost-response recovery evidence.
+exact-identity receipt, conflicts on changed agent/coding-session/byte metadata,
+then verifies the runtime row before inserting. Do not foreign-key the runtime
+row because its cleanup must not delete lost-response recovery evidence. Keep
+pending recovery out of generic `db.Open`; invoke it only during daemon startup
+after exclusive runtime ownership is acquired.
 
 - [ ] **Step 4: Run DB and migration checks**
 
@@ -321,7 +332,13 @@ git commit -m "feat: expose live coding sessions for workspaces"
 
 - [ ] **Step 1: Write failing validation, input, receipt, and auto-assign tests**
 
-Cover required live identity match, normalized 64 KiB limit, UTF-8/NUL/control rejection, CRLF normalization, single-line text plus one CR, multiline `\x1b[200~` + text + `\x1b[201~` plus one CR, inactive-mode rejection before any write, reserve-before-write, delivered/uncertain transitions, duplicate recovery, durable receipt GET after runtime exit, and suppression for PR/issue creation while omitted preserves existing behavior.
+Cover required live identity match, normalized 64 KiB limit, blank and
+whitespace-only rejection, UTF-8/NUL/control rejection, CRLF normalization,
+single-line text plus one CR, multiline `\x1b[200~` + text + `\x1b[201~` plus
+one CR, inactive-mode rejection before any write, reserve-before-write,
+delivered/uncertain transitions, exact duplicate recovery, mismatched duplicate
+conflict, durable receipt GET after runtime exit, and suppression for PR/issue
+creation while omitted preserves existing behavior.
 
 - [ ] **Step 2: Verify tests fail**
 
@@ -336,8 +353,10 @@ write `\x1b[200~`, normalized multiline text, `\x1b[201~`, and one `\r`.
 Validate tracked bracketed-paste mode before any multiline write. Reserve
 pending before attachment, mark delivered after successful write, and mark
 uncertain on possibly partial failures. Return an existing receipt before
-liveness validation and expose a receipt-only GET for lost-response recovery.
-Guard only the optional auto-assignment branch with `SuppressAutoAssign`.
+liveness validation only when its agent, coding-session ID, and normalized byte
+count match; otherwise return conflict. Expose a receipt-only GET for
+lost-response recovery. Guard only the optional auto-assignment branch with
+`SuppressAutoAssign`.
 
 - [ ] **Step 4: Run tests and commit**
 
@@ -360,22 +379,33 @@ git commit -m "feat: submit one verified initial agent prompt"
 - Produces: `kenn_forge_list_agent_targets`, `kenn_forge_list_workspace_agent_sessions`, and `kenn_forge_spawn_workspace_with_agent`.
 - Consumes: Tasks 5–6 APIs plus workspace create/detail/runtime routes.
 
-- [ ] **Step 1: Write failing exact-surface and orchestration tests**
+- [ ] **Step 1: Add the target and live-session read tools with failing tests**
 
-Update the exact registry to 12 tools. Prove target filtering requires both
+Update the exact registry to 11 tools, prove target filtering requires both
 `kind=agent` and a supported `agenthook.Profiles()` identity without exposing
-argv; cover PR/issue/ad-hoc request shapes, `suppress_auto_assign: true`, branch
-forwarding, validation before creation, readiness polling, always-new launch,
-hook correlation, receipt-only recovery after a lost message response, five
-stages, timeout cap, no mutation retry, partial errors, and no cleanup.
+argv, and cover deterministic live-session mapping. Implement and verify these
+read-only tools before adding spawn orchestration.
 
-- [ ] **Step 2: Verify tests fail**
+- [ ] **Step 2: Add core PR spawn orchestration with failing tests**
+
+Add the twelfth tool and cover validation before creation, PR workspace reuse,
+`suppress_auto_assign: true`, readiness polling, always-new launch, hook
+correlation, five stages, timeout cap, partial errors, and no cleanup.
+
+- [ ] **Step 3: Add issue/ad-hoc variants and ambiguity recovery tests**
+
+Cover issue and ad-hoc request shapes, branch forwarding, receipt-only recovery
+after a lost message response, and explicit ambiguous create/launch failures
+without mutation retry. The v1 tool reports identifiers it knows and does not
+invent operation receipts or reconciliation for an unknown mutation result.
+
+- [ ] **Step 4: Verify tests fail**
 
 Run: `go test ./internal/mcpserver -run 'AgentTarget|WorkspaceAgent|RegisteredTools' -shuffle=on`
 
 Expected: FAIL because the three tools are absent.
 
-- [ ] **Step 3: Implement schemas and bounded orchestration**
+- [ ] **Step 5: Implement schemas and bounded orchestration**
 
 ```go
 type spawnWorkspaceWithAgentInput struct {
@@ -388,7 +418,7 @@ type spawnWorkspaceWithAgentInput struct {
 
 Return stages, partial identifiers, receipt state, and `message_delivered`; retry only idempotent reads after daemon rediscovery.
 
-- [ ] **Step 4: Update guidance, run tests, and commit**
+- [ ] **Step 6: Update guidance, run tests, and commit**
 
 Run: `go test ./internal/mcpserver -shuffle=on`
 

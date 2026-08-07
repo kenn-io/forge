@@ -91,10 +91,11 @@ To inspect already claimed or paused work, call
 Treat stale cache fields, missing detail, and old sync timestamps as lower
 confidence signals, not as proof that no provider-side activity exists.
 
-Workflow lists default to 50 items and cap requests at 200. Rows are ordered by
-the newer of the local workflow update and provider activity, then by provider,
-repository, item type, and number. A same-state write intentionally refreshes
-local metadata and this ordering. Tool errors are JSON envelopes with stable
+Workflow lists default to 50 items and cap requests at 200. A stored workflow
+row orders by its local update time; an item without one orders by provider
+activity. Provider activity is the second key, followed by provider, repository,
+item type, and number. A same-state write intentionally refreshes local metadata
+and this ordering. Tool errors are JSON envelopes with stable
 `kind`, daemon `code`, structured `details`, `retryable`, and `ambiguous`
 fields; never retry an ambiguous mutation.
 

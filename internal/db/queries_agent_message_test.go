@@ -82,13 +82,61 @@ func TestReserveAgentInitialMessageReturnsExistingReceiptBeforeRuntimeValidation
 	existing, reserved, err := database.ReserveAgentInitialMessage(ctx, AgentInitialMessageReceipt{
 		WorkspaceID:       "ws-existing-receipt",
 		RuntimeSessionKey: "runtime-existing",
-		Agent:             "claude",
-		CodingSessionID:   "coding-retry",
-		MessageBytes:      999,
+		Agent:             "codex",
+		CodingSessionID:   "coding-original",
+		MessageBytes:      12,
 	})
 	require.NoError(err)
 	assert.False(reserved)
 	assert.Equal(first, existing)
+}
+
+func TestReserveAgentInitialMessageRejectsMismatchedExistingReceipt(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	insertAgentReceiptTestRuntime(t, database, "ws-receipt-conflict", "runtime-conflict")
+	original := AgentInitialMessageReceipt{
+		WorkspaceID:       "ws-receipt-conflict",
+		RuntimeSessionKey: "runtime-conflict",
+		Agent:             "codex",
+		CodingSessionID:   "coding-original",
+		MessageBytes:      12,
+	}
+	_, reserved, err := database.ReserveAgentInitialMessage(ctx, original)
+	require.NoError(err)
+	require.True(reserved)
+	require.NoError(database.DeleteWorkspaceRuntimeSession(
+		ctx, original.WorkspaceID, original.RuntimeSessionKey,
+	))
+
+	for _, tc := range []struct {
+		name   string
+		change func(*AgentInitialMessageReceipt)
+	}{
+		{name: "agent", change: func(receipt *AgentInitialMessageReceipt) {
+			receipt.Agent = "claude"
+		}},
+		{name: "coding session", change: func(receipt *AgentInitialMessageReceipt) {
+			receipt.CodingSessionID = "coding-other"
+		}},
+		{name: "message bytes", change: func(receipt *AgentInitialMessageReceipt) {
+			receipt.MessageBytes++
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			retry := original
+			tc.change(&retry)
+			_, reserved, reserveErr := database.ReserveAgentInitialMessage(ctx, retry)
+			require.ErrorIs(reserveErr, ErrAgentInitialMessageReceiptConflict)
+			require.False(reserved)
+			var conflict *AgentInitialMessageReceiptConflictError
+			require.ErrorAs(reserveErr, &conflict)
+			require.Equal(original.Agent, conflict.Existing.Agent)
+			require.Equal(original.CodingSessionID, conflict.Existing.CodingSessionID)
+			require.Equal(original.MessageBytes, conflict.Existing.MessageBytes)
+		})
+	}
 }
 
 func TestReserveAgentInitialMessageRequiresStoredRuntime(t *testing.T) {
@@ -155,7 +203,7 @@ func TestAgentInitialMessageReceiptTransitions(t *testing.T) {
 	require.ErrorIs(err, ErrAgentInitialMessageReceiptNotPending)
 }
 
-func TestOpenRecoversPendingAgentInitialMessagesAsUncertain(t *testing.T) {
+func TestPendingAgentInitialMessageRecoveryRequiresExplicitDaemonStartupStep(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	databasePath := filepath.Join(t.TempDir(), "agent-message-recovery.db")
@@ -187,6 +235,16 @@ func TestOpenRecoversPendingAgentInitialMessagesAsUncertain(t *testing.T) {
 	t.Cleanup(func() { require.NoError(database.Close()) })
 
 	pending, err := database.GetAgentInitialMessageReceipt(
+		ctx, "ws-recovery", "runtime-pending",
+	)
+	require.NoError(err)
+	require.NotNil(pending)
+	assert.Equal(AgentInitialMessagePending, pending.State)
+
+	recovered, err := database.RecoverPendingAgentInitialMessages(ctx)
+	require.NoError(err)
+	assert.Equal(int64(1), recovered)
+	pending, err = database.GetAgentInitialMessageReceipt(
 		ctx, "ws-recovery", "runtime-pending",
 	)
 	require.NoError(err)

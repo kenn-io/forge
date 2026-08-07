@@ -231,7 +231,15 @@ func (c *daemonClient) do(
 			return nil
 		}
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-			return &daemonError{Kind: "daemon_error", Message: "decode response: " + err.Error()}
+			responseErr := &daemonError{
+				Kind:    "daemon_error",
+				Message: "decode response: " + err.Error(),
+			}
+			if method != http.MethodGet {
+				responseErr.Ambiguous = true
+				responseErr.Retryable = false
+			}
+			return responseErr
 		}
 		return nil
 	}

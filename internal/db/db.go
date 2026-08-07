@@ -87,9 +87,6 @@ func (d *DB) init() error {
 			return fmt.Errorf("repair legacy timestamp storage: %w", err)
 		}
 	}
-	if _, err := d.RecoverPendingAgentInitialMessages(context.Background()); err != nil {
-		return err
-	}
 	return nil
 }
 

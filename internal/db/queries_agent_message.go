@@ -11,7 +11,22 @@ var (
 	ErrAgentInitialMessageRuntimeNotFound   = errors.New("agent initial message runtime not found")
 	ErrAgentInitialMessageReceiptNotFound   = errors.New("agent initial message receipt not found")
 	ErrAgentInitialMessageReceiptNotPending = errors.New("agent initial message receipt is not pending")
+	ErrAgentInitialMessageReceiptConflict   = errors.New("agent initial message receipt identity conflict")
 )
+
+// AgentInitialMessageReceiptConflictError reports an existing attempt whose
+// correlation metadata does not match the proposed retry.
+type AgentInitialMessageReceiptConflictError struct {
+	Existing AgentInitialMessageReceipt
+}
+
+func (e *AgentInitialMessageReceiptConflictError) Error() string {
+	return ErrAgentInitialMessageReceiptConflict.Error()
+}
+
+func (e *AgentInitialMessageReceiptConflictError) Unwrap() error {
+	return ErrAgentInitialMessageReceiptConflict
+}
 
 // ReserveAgentInitialMessage records the one permitted delivery attempt. An
 // existing receipt wins even after its runtime row has been cleaned up.
@@ -27,6 +42,11 @@ func (d *DB) ReserveAgentInitialMessage(
 			return err
 		}
 		if existing != nil {
+			if existing.Agent != receipt.Agent ||
+				existing.CodingSessionID != receipt.CodingSessionID ||
+				existing.MessageBytes != receipt.MessageBytes {
+				return &AgentInitialMessageReceiptConflictError{Existing: *existing}
+			}
 			stored = *existing
 			return nil
 		}

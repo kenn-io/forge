@@ -12,6 +12,9 @@ screenshots, or the Zensical site.
   docs build and must not be tracked in Git. Playwright captures in
   `docs/screenshots/` use the real seeded e2e backend, not mocked API fixtures
   or a developer daemon.
+- Generated workflow screenshots must use native SVG geometry, not XHTML in
+  `foreignObject`; WebKit clips responsive `foreignObject` images.
+  (`docs/screenshots/docs-screenshots.spec.ts::nativeSVGSnapshot`)
 - Static Codex terminal overlays reproduce a one-off real Codex TUI capture,
   including its composer and model/path status; sanitize local paths to the
   public synthetic repository. (`docs/screenshots/docs-screenshots.spec.ts::embedSyntheticCodexTranscript`)

@@ -1,6 +1,9 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import {
   startIsolatedE2EServerWithOptions,
@@ -8,6 +11,7 @@ import {
 } from "../../frontend/tests/e2e-full/support/e2eServer";
 
 const outputDir = process.env.KENN_FORGE_DOCS_SCREENSHOT_DIR;
+const execFileAsync = promisify(execFile);
 
 type ThemeName = "light" | "dark";
 
@@ -534,7 +538,38 @@ async function prepareFirstRunPage(page: Page, baseURL: string): Promise<void> {
   });
 }
 
-async function svgDOMSnapshot(
+function escapeXMLText(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function normalizeNativeSVG(
+  svg: string,
+  input: {
+    title: string;
+    description: string;
+    width: number;
+    height: number;
+  },
+): string {
+  const svgStart = svg.indexOf("<svg");
+  const openingTagEnd = svg.indexOf(">", svgStart);
+  if (svgStart < 0 || openingTagEnd < 0) {
+    throw new Error("pdftocairo output did not contain an SVG root element");
+  }
+
+  const openingTag = svg
+    .slice(svgStart, openingTagEnd + 1)
+    .replace(/\swidth="[^"]*"/, ` width="${input.width}"`)
+    .replace(/\sheight="[^"]*"/, ` height="${input.height}"`)
+    .replace(/>$/, ' role="img" aria-labelledby="title desc">');
+  const metadata =
+    `<title id="title">${escapeXMLText(input.title)}</title>` +
+    `<desc id="desc">${escapeXMLText(input.description)}</desc>`;
+
+  return `${svg.slice(0, svgStart)}${openingTag}${metadata}${svg.slice(openingTagEnd + 1).trimEnd()}\n`;
+}
+
+async function nativeSVGSnapshot(
   page: Page,
   input: {
     title: string;
@@ -543,139 +578,29 @@ async function svgDOMSnapshot(
     height: number;
   },
 ): Promise<string> {
-  return page.evaluate(async ({ title, description, width, height }) => {
-    const svgNS = "http://www.w3.org/2000/svg";
-    const xhtmlNS = "http://www.w3.org/1999/xhtml";
+  const temporaryDir = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-svg-"));
+  const pdfPath = path.join(temporaryDir, "capture.pdf");
+  const svgPath = path.join(temporaryDir, "capture.svg");
 
-    const styles = Array.from(document.styleSheets)
-      .map((sheet) => {
-        try {
-          return Array.from(sheet.cssRules)
-            .map((rule) => rule.cssText)
-            .join("\n");
-        } catch {
-          return "";
-        }
-      })
-      .filter(Boolean)
-      .join("\n\n");
-    const normalizedStyles = styles.replace(/[ \t]+$/gm, "");
-    const rootStyle = getComputedStyle(document.documentElement);
-    const rootCustomProperties = Array.from(rootStyle)
-      .filter((name) => name.startsWith("--"))
-      .map((name) => `${name}: ${rootStyle.getPropertyValue(name).trim()};`)
-      .join(" ");
-
-    const svgDoc = document.implementation.createDocument(svgNS, "svg", null);
-    const svg = svgDoc.documentElement;
-    svg.setAttribute("xmlns", svgNS);
-    svg.setAttribute("width", String(width));
-    svg.setAttribute("height", String(height));
-    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-    svg.setAttribute("role", "img");
-    svg.setAttribute("aria-labelledby", "title desc");
-
-    const titleNode = svgDoc.createElementNS(svgNS, "title");
-    titleNode.setAttribute("id", "title");
-    titleNode.textContent = title;
-    svg.appendChild(titleNode);
-
-    const descNode = svgDoc.createElementNS(svgNS, "desc");
-    descNode.setAttribute("id", "desc");
-    descNode.textContent = description;
-    svg.appendChild(descNode);
-
-    const foreignObject = svgDoc.createElementNS(svgNS, "foreignObject");
-    foreignObject.setAttribute("x", "0");
-    foreignObject.setAttribute("y", "0");
-    foreignObject.setAttribute("width", String(width));
-    foreignObject.setAttribute("height", String(height));
-
-    const htmlDoc = document.implementation.createDocument(xhtmlNS, "html", null);
-    const html = htmlDoc.documentElement;
-    for (const attr of Array.from(document.documentElement.attributes)) {
-      if (attr.name === "xmlns") continue;
-      html.setAttribute(attr.name, attr.value);
+  try {
+    await page.emulateMedia({ media: "screen" });
+    await page.pdf({
+      path: pdfPath,
+      width: `${input.width}px`,
+      height: `${input.height}px`,
+      printBackground: true,
+      margin: { top: "0", right: "0", bottom: "0", left: "0" },
+      pageRanges: "1",
+    });
+    try {
+      await execFileAsync("pdftocairo", ["-svg", "-f", "1", "-l", "1", pdfPath, svgPath]);
+    } catch (error) {
+      throw new Error("pdftocairo failed; install Poppler to generate documentation screenshots", { cause: error });
     }
-    html.setAttribute("xmlns", xhtmlNS);
-    html.setAttribute(
-      "style",
-      [
-        document.documentElement.getAttribute("style") ?? "",
-        rootCustomProperties,
-        `width: ${width}px`,
-        `height: ${height}px`,
-        "margin: 0",
-        "padding: 0",
-        "overflow: hidden",
-      ]
-        .filter(Boolean)
-        .join("; "),
-    );
-
-    const head = htmlDoc.createElementNS(xhtmlNS, "head");
-    const style = htmlDoc.createElementNS(xhtmlNS, "style");
-    style.textContent = `
-${normalizedStyles}
-
-html,
-body {
-  width: ${width}px !important;
-  height: ${height}px !important;
-  margin: 0 !important;
-  overflow: hidden !important;
-}
-
-*,
-*::before,
-*::after {
-  animation: none !important;
-  transition: none !important;
-  caret-color: transparent !important;
-}
-`;
-    head.appendChild(style);
-    html.appendChild(head);
-
-    const body = htmlDoc.createElementNS(xhtmlNS, "body");
-    for (const attr of Array.from(document.body.attributes)) {
-      body.setAttribute(attr.name, attr.value);
-    }
-    body.setAttribute(
-      "style",
-      `${document.body.getAttribute("style") ?? ""}; width: ${width}px; height: ${height}px; margin: 0; overflow: hidden;`,
-    );
-    for (const child of Array.from(document.body.childNodes)) {
-      body.appendChild(htmlDoc.importNode(child.cloneNode(true), true));
-    }
-    for (const script of Array.from(body.querySelectorAll("script"))) {
-      script.remove();
-    }
-
-    const liveImages = Array.from(document.body.querySelectorAll("img"));
-    const clonedImages = Array.from(body.querySelectorAll("img"));
-    await Promise.all(
-      liveImages.map(async (liveImage, index) => {
-        const clonedImage = clonedImages[index];
-        const source = liveImage.currentSrc || liveImage.src;
-        if (!clonedImage || !source || source.startsWith("data:")) return;
-
-        const sourceURL = new URL(source, document.baseURI);
-        if (!sourceURL.pathname.toLowerCase().endsWith(".svg")) return;
-
-        const response = await fetch(sourceURL);
-        const svgImage = await response.text();
-        clonedImage.setAttribute("src", `data:image/svg+xml,${encodeURIComponent(svgImage)}`);
-        clonedImage.removeAttribute("srcset");
-      }),
-    );
-    html.appendChild(body);
-
-    foreignObject.appendChild(svgDoc.importNode(html, true));
-    svg.appendChild(foreignObject);
-
-    return `${new XMLSerializer().serializeToString(svg).replace(/[ \t]+$/gm, "")}\n`;
-  }, input);
+    return normalizeNativeSVG(await readFile(svgPath, "utf8"), input);
+  } finally {
+    await rm(temporaryDir, { recursive: true, force: true });
+  }
 }
 
 async function captureCase(page: Page, baseURL: string, capture: CaptureCase): Promise<void> {
@@ -722,30 +647,20 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
     expect(statusBox!.y + statusBox!.height).toBeLessThanOrEqual(terminalBox!.y + terminalBox!.height);
   }
 
-  const svg = await svgDOMSnapshot(page, {
+  const svg = await nativeSVGSnapshot(page, {
     title: `${capture.name} ${capture.theme}`,
     description: capture.description,
     width: page.viewportSize()?.width ?? 1280,
     height: page.viewportSize()?.height ?? 820,
   });
-  if (capture.theme === "dark") {
-    expect(svg).toMatch(/<html[^>]*class="[^"]*\bdark\b[^"]*"/);
-  } else {
-    expect(svg).not.toMatch(/<html[^>]*class="[^"]*\bdark\b[^"]*"/);
-  }
-  expect(svg).not.toMatch(/>\s*Syncing(?:\.\.\.)?\s*</i);
-  expect(svg).not.toMatch(/>\s*syncing(?:\u2026|\s*\([^<]*\))?\s*</i);
-  expect(svg).not.toMatch(/\b(?:aria-label|title)="Syncing"/);
-  expect(svg).not.toMatch(/<img[^>]+src="(?:https?:|\/)/i);
-  expect(svg).not.toMatch(/data:image\/(?:avif|gif|jpe?g|png|webp)/i);
+  expect(svg).not.toMatch(/<foreignObject\b/);
+  expect(svg).not.toMatch(/<script\b/i);
+  expect(svg).not.toMatch(/\b(?:href|xlink:href)="https?:/i);
   expect(svg).not.toMatch(/\/var\/folders|kenn-forge-e2e-\d+/i);
-  if (capture.name === "workspace-codex-session" || capture.name === "maintainer-overview") {
-    expect(svg).toContain("Implemented in-flight request coalescing.");
-    expect(svg).toContain("3 passed, 0 failed.");
-    expect(svg).toContain("Summarize recent commits");
-    expect(svg).toContain("gpt-5.6-sol high");
-    expect(svg).toContain("~/src/kenn-io/forge");
-  }
+  expect(svg).toContain(`width="${page.viewportSize()?.width ?? 1280}"`);
+  expect(svg).toContain(`height="${page.viewportSize()?.height ?? 820}"`);
+  expect(svg).toContain(`<title id="title">${capture.name} ${capture.theme}</title>`);
+  expect(svg).toMatch(/<path\b/);
   await writeFile(path.join(outputDir!, `${capture.name}-${capture.theme}.svg`), svg);
 }
 

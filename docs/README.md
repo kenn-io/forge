@@ -1,5 +1,9 @@
 # Documentation development
 
+The screenshot generator requires Poppler's `pdftocairo` command. On macOS,
+install it with `brew install poppler`; on Debian or Ubuntu, install the
+`poppler-utils` package.
+
 Build and verify the public site, including the generated workflow screenshots:
 
 ```sh

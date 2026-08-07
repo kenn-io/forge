@@ -35,5 +35,5 @@ RUN node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(
       -o Acquire::ForceIPv4=true \
       -o Acquire::http::Timeout=30 \
       -o Acquire::https::Timeout=30 \
-      install -y --no-install-recommends tmux \
+      install -y --no-install-recommends poppler-utils tmux \
     && rm -rf /var/lib/apt/lists/*

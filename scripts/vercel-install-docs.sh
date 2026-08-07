@@ -30,9 +30,9 @@ esac
 
 install_system_packages() {
   if [ "$(id -u)" -eq 0 ]; then
-    dnf install -y tmux nspr nss
+    dnf install -y tmux nspr nss poppler-utils
   else
-    sudo dnf install -y tmux nspr nss
+    sudo dnf install -y tmux nspr nss poppler-utils
   fi
 }
 

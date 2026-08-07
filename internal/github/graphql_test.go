@@ -77,8 +77,10 @@ func TestAdaptPR(t *testing.T) {
 
 func TestConvertGQLCommentsPreservesMinimizedVisibility(t *testing.T) {
 	reason := githubv4.ReportedContentClassifiersOffTopic
+	fullDatabaseID := int64(3714845345)
 	comment := gqlComment{
 		DatabaseId:      73,
+		FullDatabaseId:  graphQLInt64(fullDatabaseID),
 		IsMinimized:     true,
 		MinimizedReason: &reason,
 	}
@@ -108,8 +110,8 @@ func TestConvertGQLCommentsPreservesMinimizedVisibility(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			visibility := tt.convert()
-			require.Contains(t, visibility, int64(73))
-			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "OFF_TOPIC"}, visibility[73])
+			require.Contains(t, visibility, fullDatabaseID)
+			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "OFF_TOPIC"}, visibility[fullDatabaseID])
 		})
 	}
 }
@@ -156,7 +158,7 @@ func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 	}{
 		{
 			name:         "pull request",
-			responseData: `{"repository":{"pullRequest":{"comments":{"nodes":[{"databaseId":202,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`,
+			responseData: `{"repository":{"pullRequest":{"comments":{"nodes":[{"databaseId":202,"fullDatabaseId":"3714845345","isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`,
 			complete: func(t *testing.T, fetcher *GraphQLFetcher) map[int64]CommentVisibility {
 				pr := gqlPR{Number: 7}
 				pr.Comments.PageInfo = pageInfo{HasNextPage: true, EndCursor: "comment-100"}
@@ -169,7 +171,7 @@ func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 		},
 		{
 			name:         "issue",
-			responseData: `{"repository":{"issue":{"comments":{"nodes":[{"databaseId":202,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`,
+			responseData: `{"repository":{"issue":{"comments":{"nodes":[{"databaseId":202,"fullDatabaseId":"3714845345","isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`,
 			complete: func(t *testing.T, fetcher *GraphQLFetcher) map[int64]CommentVisibility {
 				issue := gqlIssue{Number: 8}
 				issue.Comments.PageInfo = pageInfo{HasNextPage: true, EndCursor: "comment-100"}
@@ -203,7 +205,7 @@ func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 			visibility := tt.complete(t, fetcher)
 
 			assert.Equal(t, "comment-100", cursor)
-			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "ABUSE"}, visibility[202])
+			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "ABUSE"}, visibility[3714845345])
 		})
 	}
 }
@@ -237,8 +239,8 @@ func TestGraphQLFetcherFetchesCurrentCommentVisibility(t *testing.T) {
 				assert.Contains(t, string(body), tt.queryKey)
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = fmt.Fprint(w, `{"data":{"repository":{`+map[string]string{
-					"pullRequest(number:": `"pullRequest":{"comments":{"nodes":[{"databaseId":202,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`,
-					"issue(number:":       `"issue":{"comments":{"nodes":[{"databaseId":202,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`,
+					"pullRequest(number:": `"pullRequest":{"comments":{"nodes":[{"databaseId":202,"fullDatabaseId":"3714845345","isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`,
+					"issue(number:":       `"issue":{"comments":{"nodes":[{"databaseId":202,"fullDatabaseId":"3714845345","isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`,
 				}[tt.queryKey]+`}}}`)
 			}))
 			defer srv.Close()
@@ -248,7 +250,7 @@ func TestGraphQLFetcherFetchesCurrentCommentVisibility(t *testing.T) {
 			)
 			visibility, err := tt.fetch(t.Context(), fetcher)
 			require.NoError(t, err)
-			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "ABUSE"}, visibility[202])
+			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "ABUSE"}, visibility[3714845345])
 		})
 	}
 }
@@ -258,17 +260,18 @@ func TestAdaptComment(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	gql := gqlComment{
-		DatabaseId: 100,
-		Body:       "LGTM",
-		URL:        "https://github.com/acme/widgets/issues/7#issuecomment-100",
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		DatabaseId:     100,
+		FullDatabaseId: 3714845345,
+		Body:           "LGTM",
+		URL:            "https://github.com/acme/widgets/issues/7#issuecomment-100",
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	gql.Author.Login = "bob"
 
 	c := adaptComment(&gql)
 
-	assert.Equal(int64(100), c.GetID())
+	assert.Equal(int64(3714845345), c.GetID())
 	assert.Equal("LGTM", c.GetBody())
 	assert.Equal("https://github.com/acme/widgets/issues/7#issuecomment-100", c.GetHTMLURL())
 	assert.Equal("bob", c.GetUser().GetLogin())

@@ -143,6 +143,7 @@ func (r gqlReviewRequest) Login() string {
 
 type gqlComment struct {
 	DatabaseId      int64
+	FullDatabaseId  graphQLInt64
 	Author          struct{ Login string }
 	Body            string
 	URL             string `graphql:"url"`
@@ -154,6 +155,7 @@ type gqlComment struct {
 
 type gqlCommentVisibilityNode struct {
 	DatabaseId      int64
+	FullDatabaseId  graphQLInt64
 	IsMinimized     bool
 	MinimizedReason *githubv4.ReportedContentClassifiers
 }
@@ -563,7 +565,7 @@ func adaptComment(gql *gqlComment) *gh.IssueComment {
 	created := gh.Timestamp{Time: gql.CreatedAt}
 	updated := gh.Timestamp{Time: gql.UpdatedAt}
 	return &gh.IssueComment{
-		ID:        new(gql.DatabaseId),
+		ID:        new(firstPositiveInt64(int64(gql.FullDatabaseId), gql.DatabaseId)),
 		Body:      new(gql.Body),
 		HTMLURL:   new(gql.URL),
 		User:      &gh.User{Login: new(gql.Author.Login)},
@@ -747,7 +749,9 @@ func convertGQLIssue(gql *gqlIssue) BulkIssue {
 	for i := range gql.Comments.Nodes {
 		comment := &gql.Comments.Nodes[i]
 		bulk.Comments = append(bulk.Comments, adaptComment(comment))
-		bulk.CommentVisibility[comment.DatabaseId] = gqlCommentVisibility(comment)
+		bulk.CommentVisibility[firstPositiveInt64(
+			int64(comment.FullDatabaseId), comment.DatabaseId,
+		)] = gqlCommentVisibility(comment)
 	}
 	for i := range gql.TimelineItems.Nodes {
 		event, ok := adaptIssueTimelineEvent(&gql.TimelineItems.Nodes[i])
@@ -1276,7 +1280,9 @@ func mergeCommentVisibility(
 ) {
 	for i := range comments {
 		comment := &comments[i]
-		visibility[comment.DatabaseId] = commentVisibility(comment.IsMinimized, comment.MinimizedReason)
+		visibility[firstPositiveInt64(
+			int64(comment.FullDatabaseId), comment.DatabaseId,
+		)] = commentVisibility(comment.IsMinimized, comment.MinimizedReason)
 	}
 }
 
@@ -1302,7 +1308,9 @@ func convertGQLPR(gql *gqlPR) BulkPR {
 	for i := range gql.Comments.Nodes {
 		comment := &gql.Comments.Nodes[i]
 		bulk.Comments = append(bulk.Comments, adaptComment(comment))
-		bulk.CommentVisibility[comment.DatabaseId] = gqlCommentVisibility(comment)
+		bulk.CommentVisibility[firstPositiveInt64(
+			int64(comment.FullDatabaseId), comment.DatabaseId,
+		)] = gqlCommentVisibility(comment)
 	}
 	for i := range gql.Reviews.Nodes {
 		bulk.Reviews = append(bulk.Reviews, adaptReview(&gql.Reviews.Nodes[i]))

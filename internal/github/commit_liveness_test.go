@@ -303,6 +303,7 @@ func TestCommitLivenessFlagsShaAbsentFromClone(t *testing.T) {
 }
 
 func TestCommitLivenessSkipsNonShaSummaries(t *testing.T) {
+	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
@@ -324,13 +325,13 @@ func TestCommitLivenessSkipsNonShaSummaries(t *testing.T) {
 			DedupeKey:      "non-commit",
 		},
 	}
-	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), events))
+	require.NoError(fixture.database.UpsertMREvents(t.Context(), events))
 
 	setLivenessFixtureHead(t, fixture, h.b2)
-	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	require.True(runLivenessRound(t, fixture, h.b2, nil))
 	stored, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
-	require.NoError(t, err)
-	require.Len(t, stored, 2)
+	require.NoError(err)
+	require.Len(stored, 2)
 	byKey := map[string]db.MREvent{stored[0].DedupeKey: stored[0], stored[1].DedupeKey: stored[1]}
 	assert.JSONEq(`{"commit_order_key":1}`, byKey["non-sha"].MetadataJSON)
 	assert.JSONEq(`{"review":"approved"}`, byKey["non-commit"].MetadataJSON)
@@ -355,10 +356,11 @@ func TestCommitLivenessUsesPlatformExternalID(t *testing.T) {
 }
 
 func TestCommitLivenessSkipsUnparseableMetadata(t *testing.T) {
+	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
-	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), []db.MREvent{{
+	require.NoError(fixture.database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: fixture.mrID,
 		EventType:      "commit",
 		Summary:        h.a1,
@@ -368,43 +370,44 @@ func TestCommitLivenessSkipsUnparseableMetadata(t *testing.T) {
 	}}))
 
 	setLivenessFixtureHead(t, fixture, h.b2)
-	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	require.True(runLivenessRound(t, fixture, h.b2, nil))
 	stored, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
-	require.NoError(t, err)
-	require.Len(t, stored, 1)
+	require.NoError(err)
+	require.Len(stored, 1)
 	assert.Equal(`[1,2]`, stored[0].MetadataJSON)
 }
 
 func TestCommitLivenessMemoServesSameHeadWithoutClone(t *testing.T) {
+	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
 	setLivenessFixtureHead(t, fixture, h.b2)
 
-	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	require.True(runLivenessRound(t, fixture, h.b2, nil))
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true,
 	})
 	before, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
-	require.NoError(t, err)
+	require.NoError(err)
 	clonePath, err := h.manager.ClonePath("github", "github.com", "owner", "repo")
-	require.NoError(t, err)
-	require.NoError(t, os.RemoveAll(clonePath))
+	require.NoError(err)
+	require.NoError(os.RemoveAll(clonePath))
 
 	// The verified walk was memoized for this exact (head, candidate set), so
 	// the steady-state round replays the verdicts without touching the
 	// now-missing clone; the flags are already correct, so no row changes.
-	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	require.True(runLivenessRound(t, fixture, h.b2, nil))
 	after, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(before, after)
 
 	// A different head misses the memo and attempts a fresh verification. The
 	// clone is gone, so the head is unverifiable and the round commits without
 	// liveness changes: the b2-round flags survive.
 	setLivenessFixtureHead(t, fixture, h.a3)
-	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	require.True(runLivenessRound(t, fixture, h.a3, nil))
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true,
 	})
@@ -453,6 +456,7 @@ func TestCommitLivenessRelistedEventsKeepFlagsOnSameHead(t *testing.T) {
 }
 
 func TestCommitLivenessStaleRevisionRoundIsInert(t *testing.T) {
+	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
@@ -461,8 +465,8 @@ func TestCommitLivenessStaleRevisionRoundIsInert(t *testing.T) {
 	stale, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
 		t.Context(), fixture.repoID, 1,
 	)
-	require.NoError(t, err)
-	require.NotNil(t, stale)
+	require.NoError(err)
+	require.NotNil(stale)
 
 	// The MR advances to b2 after the a3 round captured its revision. The
 	// revision CAS rejects the whole stale snapshot, liveness flags included.
@@ -471,7 +475,7 @@ func TestCommitLivenessStaleRevisionRoundIsInert(t *testing.T) {
 		t.Context(), fixture.repo, fixture.mrID, 1, stale.SnapshotRevision,
 		nil, false, nil, nil, nil, false, nil, nil, h.a3,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.False(applied)
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false, h.b1: false, h.b2: false,
@@ -479,7 +483,7 @@ func TestCommitLivenessStaleRevisionRoundIsInert(t *testing.T) {
 
 	// A current-revision round for the real head must still compute freshly:
 	// the rejected round may not have recorded any liveness hint.
-	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	require.True(runLivenessRound(t, fixture, h.b2, nil))
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
 	})
@@ -548,10 +552,11 @@ func TestCommitLivenessRestampsRestoredHeadAfterUnverifiedRound(t *testing.T) {
 }
 
 func TestCommitLivenessFailedRoundWritesNothing(t *testing.T) {
+	require := require.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
-	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	require.True(runLivenessRound(t, fixture, h.a3, nil))
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false,
 	})
@@ -563,7 +568,7 @@ func TestCommitLivenessFailedRoundWritesNothing(t *testing.T) {
 		BEGIN
 			SELECT RAISE(ABORT, 'reject obsolete metadata');
 		END`)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// The b2 head verifies and the round reaches the snapshot transaction, but
 	// the metadata write fails inside it: the transaction rolls back whole and
@@ -571,40 +576,41 @@ func TestCommitLivenessFailedRoundWritesNothing(t *testing.T) {
 	mr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
 		t.Context(), fixture.repoID, 1,
 	)
-	require.NoError(t, err)
-	require.NotNil(t, mr)
+	require.NoError(err)
+	require.NotNil(mr)
 	_, err = fixture.syncer.commitMergeRequestDatasets(
 		t.Context(), fixture.repo, fixture.mrID, 1, mr.SnapshotRevision,
 		nil, false, nil, nil, nil, false, nil, nil, h.b2,
 	)
-	require.ErrorContains(t, err, "reject obsolete metadata")
+	require.ErrorContains(err, "reject obsolete metadata")
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false,
 	})
 	_, err = fixture.database.WriteDB().ExecContext(
 		t.Context(), `DROP TRIGGER reject_obsolete_metadata`,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// The failed round may have memoized its verified walk — the verdicts are
 	// a pure function of git history, so that is sound. The retry must land
 	// the b2 flags the failed transaction rolled back, whether it recomputes
 	// or replays the memo against the still-stale stored rows.
-	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	require.True(runLivenessRound(t, fixture, h.b2, nil))
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true,
 	})
 }
 
 func TestCommitLivenessConcurrentMergeRequests(t *testing.T) {
+	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	first, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
 		t.Context(), fixture.repoID, 1,
 	)
-	require.NoError(t, err)
-	require.NotNil(t, first)
+	require.NoError(err)
+	require.NotNil(first)
 	second := *first
 	second.ID = 0
 	second.PlatformID = 2
@@ -615,7 +621,7 @@ func TestCommitLivenessConcurrentMergeRequests(t *testing.T) {
 	second.UpdatedAt = second.UpdatedAt.Add(time.Minute)
 	second.LastActivityAt = second.UpdatedAt
 	secondMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &second)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	secondFixture := fixture
 	secondFixture.mrID = secondMRID
@@ -625,13 +631,13 @@ func TestCommitLivenessConcurrentMergeRequests(t *testing.T) {
 	firstRow, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
 		t.Context(), fixture.repoID, 1,
 	)
-	require.NoError(t, err)
-	require.NotNil(t, firstRow)
+	require.NoError(err)
+	require.NotNil(firstRow)
 	secondRow, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
 		t.Context(), fixture.repoID, 2,
 	)
-	require.NoError(t, err)
-	require.NotNil(t, secondRow)
+	require.NoError(err)
+	require.NotNil(secondRow)
 
 	start := make(chan struct{})
 	errs := make(chan error, 2)
@@ -689,6 +695,7 @@ func TestCommitLivenessOversizedCandidatesComputeWithoutMemo(t *testing.T) {
 }
 
 func TestCommitLivenessMemoEviction(t *testing.T) {
+	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
@@ -697,8 +704,8 @@ func TestCommitLivenessMemoEviction(t *testing.T) {
 	first, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
 		t.Context(), fixture.repoID, 1,
 	)
-	require.NoError(t, err)
-	require.NotNil(t, first)
+	require.NoError(err)
+	require.NotNil(first)
 	second := *first
 	second.ID = 0
 	second.PlatformID = 2
@@ -709,24 +716,24 @@ func TestCommitLivenessMemoEviction(t *testing.T) {
 	second.UpdatedAt = second.UpdatedAt.Add(time.Minute)
 	second.LastActivityAt = second.UpdatedAt
 	secondMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &second)
-	require.NoError(t, err)
+	require.NoError(err)
 	secondFixture := fixture
 	secondFixture.mrID = secondMRID
 
 	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
 	seedLivenessCommitEvents(t, secondFixture, h.a1, h.b2)
 
-	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	require.True(runLivenessRound(t, fixture, h.a3, nil))
 	secondRow, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
 		t.Context(), fixture.repoID, 2,
 	)
-	require.NoError(t, err)
-	require.NotNil(t, secondRow)
+	require.NoError(err)
+	require.NotNil(secondRow)
 	_, err = fixture.syncer.commitMergeRequestDatasets(
 		t.Context(), fixture.repo, secondMRID, 2, secondRow.SnapshotRevision,
 		nil, false, nil, nil, nil, false, nil, nil, h.b2,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	fixture.syncer.livenessMemoMu.Lock()
 	memoLen := len(fixture.syncer.livenessMemos)
@@ -734,7 +741,7 @@ func TestCommitLivenessMemoEviction(t *testing.T) {
 	assert.Equal(1, memoLen, "memo must stay at its entry cap")
 
 	// The evicted MR just recomputes: flags remain correct.
-	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	require.True(runLivenessRound(t, fixture, h.a3, nil))
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false,
 	})
@@ -869,12 +876,13 @@ func TestLivenessHeadForRound(t *testing.T) {
 }
 
 func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
+	require := require.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	seedLivenessCommitEvents(t, fixture, h.a1)
 
 	livenessTestGit(t, h.sourceDir, "checkout", "-b", "repair-head", "feature-b")
-	require.NoError(t, os.WriteFile(
+	require.NoError(os.WriteFile(
 		filepath.Join(h.sourceDir, "repair.txt"), []byte("repair\n"), 0o644,
 	))
 	livenessTestGit(t, h.sourceDir, "add", "repair.txt")
@@ -887,11 +895,11 @@ func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
 	_, err := fixture.syncer.markUnchangedMRDetailFetched(
 		t.Context(), fixture.repo, fixture.repoID, 1, existing, 1,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	assertLivenessCommitFlags(t, fixture, map[string]bool{h.a1: false})
 
 	clonePath, err := h.manager.ClonePath("github", "github.com", "owner", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 	livenessTestGit(
 		t, clonePath, "fetch", h.sourceDir,
 		"refs/heads/repair-head:refs/heads/repair-head",
@@ -901,11 +909,12 @@ func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
 	_, err = fixture.syncer.markUnchangedMRDetailFetched(
 		t.Context(), fixture.repo, fixture.repoID, 1, existing, 1,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	assertLivenessCommitFlags(t, fixture, map[string]bool{h.a1: true})
 }
 
 func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
+	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
@@ -921,12 +930,12 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 	barePath, err := h.manager.ClonePath(
 		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	livenessTestGit(t, "", "clone", "--bare", h.sourceDir, barePath)
 	providerRepoID, err := fixture.database.UpsertRepo(
 		t.Context(), verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	now := time.Date(2026, 8, 5, 12, 1, 0, 0, time.UTC)
 	providerMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID:             providerRepoID,
@@ -945,7 +954,7 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 		UpdatedAt:          now.Add(-time.Minute),
 		LastActivityAt:     now.Add(-time.Minute),
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 	providerFixture := fixture
 	providerFixture.repo = providerRepo
 	providerFixture.repoID = providerRepoID
@@ -997,7 +1006,7 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 		},
 	}
 	registry, err := platform.NewRegistry(provider)
-	require.NoError(t, err)
+	require.NoError(err)
 	syncer := NewSyncerWithRegistry(
 		registry, fixture.database, h.manager, []RepoRef{providerRepo},
 		time.Minute, nil, nil,
@@ -1007,12 +1016,12 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 	_, err = syncer.fetchProviderMRDetail(
 		t.Context(), provider, providerRepo, providerRepoID, 1,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	assertLivenessCommitFlags(t, providerFixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
 	})
 	events, err := fixture.database.ListMREvents(t.Context(), providerMRID)
-	require.NoError(t, err)
+	require.NoError(err)
 	seenReplacement := map[string]bool{h.b1: false, h.b2: false}
 	for _, event := range events {
 		if _, ok := seenReplacement[event.PlatformExternalID]; ok {
@@ -1024,6 +1033,7 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 }
 
 func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
+	require := require.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	providerRepo := RepoRef{
@@ -1038,12 +1048,12 @@ func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
 	barePath, err := h.manager.ClonePath(
 		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	livenessTestGit(t, "", "clone", "--bare", h.sourceDir, barePath)
 	providerRepoID, err := fixture.database.UpsertRepo(
 		t.Context(), verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	now := time.Date(2026, 8, 5, 12, 1, 0, 0, time.UTC)
 	providerMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID:             providerRepoID,
@@ -1062,7 +1072,7 @@ func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
 		UpdatedAt:          now.Add(-time.Minute),
 		LastActivityAt:     now.Add(-time.Minute),
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 	providerFixture := fixture
 	providerFixture.repo = providerRepo
 	providerFixture.repoID = providerRepoID
@@ -1099,14 +1109,14 @@ func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
 		}},
 	}
 	registry, err := platform.NewRegistry(provider)
-	require.NoError(t, err)
+	require.NoError(err)
 	syncer := NewSyncerWithRegistry(
 		registry, fixture.database, h.manager, []RepoRef{providerRepo},
 		time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
 
-	require.NoError(t, syncer.fetchAndUpdateClosedMergeRequest(
+	require.NoError(syncer.fetchAndUpdateClosedMergeRequest(
 		t.Context(), provider, providerRepo, providerRepoID, 1, false,
 	))
 	assertLivenessCommitFlags(t, providerFixture, map[string]bool{

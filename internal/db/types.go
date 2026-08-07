@@ -799,6 +799,11 @@ type ItemWorkflowState struct {
 	UpdatedReason string
 }
 
+type SetItemWorkflowStateResult struct {
+	PreviousStatus string
+	State          ItemWorkflowState
+}
+
 // WorkflowStateConflictError reports an expected-status mismatch on a
 // conditional workflow-state write. Current is the effective status at
 // write time; a missing row reads as "new".
@@ -1283,6 +1288,25 @@ type WorkspaceRuntimeSession struct {
 	Scope         string
 	TmuxSession   string
 	CreatedAt     time.Time
+}
+
+const (
+	AgentInitialMessagePending   = "pending"
+	AgentInitialMessageDelivered = "delivered"
+	AgentInitialMessageUncertain = "uncertain"
+)
+
+// AgentInitialMessageReceipt records one initial-message delivery attempt
+// without retaining the message or a content-derived fingerprint.
+type AgentInitialMessageReceipt struct {
+	WorkspaceID       string
+	RuntimeSessionKey string
+	Agent             string
+	CodingSessionID   string
+	MessageBytes      int
+	State             string
+	ReservedAt        time.Time
+	DeliveredAt       *time.Time
 }
 
 // ListActivityOpts holds filters and pagination for the activity feed.

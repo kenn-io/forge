@@ -24,6 +24,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/daemonruntime"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -901,6 +902,60 @@ func TestDaemonLifecycleCreatesRuntimeStoreForExplicitConfigE2E(t *testing.T) {
 	require.NoError(err, stderr)
 	require.Eventually(func() bool {
 		return !daemon.ProcessAlive(records[0].PID)
+	}, 5*time.Second, 20*time.Millisecond)
+}
+
+func TestDaemonStartupRecoversPendingInitialMessageReceiptE2E(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := newDaemonLifecycleFixture(t, buildForge(t))
+	dataDir := fixture.dataDir("receipt-recovery")
+	fixture.writeConfig(dataDir)
+	databasePath := filepath.Join(dataDir, "forge.db")
+
+	database := dbtest.OpenWithMigrationsAt(t, databasePath)
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-recovery", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widgets",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+		GitHeadRef: "feature/recovery", WorkspaceBranch: "feature/recovery",
+		WorktreePath: filepath.Join(dataDir, "worktree"),
+		TmuxSession:  "forge-ws-recovery", Status: "ready",
+	}))
+	require.NoError(database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{
+		WorkspaceID: "ws-recovery", SessionKey: "runtime-recovery",
+		TargetKey: "codex", Label: "Codex", Kind: "agent", Scope: "session",
+	}))
+	_, reserved, err := database.ReserveAgentInitialMessage(t.Context(), db.AgentInitialMessageReceipt{
+		WorkspaceID: "ws-recovery", RuntimeSessionKey: "runtime-recovery",
+		Agent: "codex", CodingSessionID: "coding-recovery", MessageBytes: 12,
+	})
+	require.NoError(err)
+	require.True(reserved)
+	require.NoError(database.Close())
+
+	ordinaryOpen := dbtest.OpenPreparedAt(t, databasePath)
+	receipt, err := ordinaryOpen.GetAgentInitialMessageReceipt(
+		t.Context(), "ws-recovery", "runtime-recovery",
+	)
+	require.NoError(err)
+	require.NotNil(receipt)
+	assert.Equal(db.AgentInitialMessagePending, receipt.State)
+	require.NoError(ordinaryOpen.Close())
+
+	_, stderr, err := fixture.run("start")
+	require.NoError(err, stderr)
+	t.Cleanup(func() {
+		_, _, _ = fixture.run("stop")
+	})
+
+	recoveredDB := dbtest.OpenPreparedAt(t, databasePath)
+	require.Eventually(func() bool {
+		current, getErr := recoveredDB.GetAgentInitialMessageReceipt(
+			t.Context(), "ws-recovery", "runtime-recovery",
+		)
+		return getErr == nil && current != nil &&
+			current.State == db.AgentInitialMessageUncertain
 	}, 5*time.Second, 20*time.Millisecond)
 }
 

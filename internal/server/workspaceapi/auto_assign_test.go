@@ -144,9 +144,14 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), *repo, tt.number, tt.issue))
+			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), *repo, tt.number, tt.issue, false))
 			assert.Equal([]string{"reviewer", "maintainer"}, tt.assigned())
 			assert.Equal([]string{"reviewer", "maintainer"}, tt.stored())
+
+			provider.pullAssigned = nil
+			provider.issueAssigned = nil
+			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), *repo, tt.number, tt.issue, true))
+			assert.Nil(tt.assigned())
 		})
 	}
 }

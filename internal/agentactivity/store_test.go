@@ -2,6 +2,7 @@ package agentactivity
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -146,7 +147,7 @@ func TestHandleEventRecordsWorkingState(t *testing.T) {
 	store := NewStore(t.TempDir())
 	worktree := t.TempDir()
 
-	require.NoError(t, store.HandleEvent(HookEvent{
+	require.NoError(t, store.HandleEvent("codex", HookEvent{
 		SessionID:     "agent-1",
 		CWD:           worktree,
 		HookEventName: "UserPromptSubmit",
@@ -157,9 +158,106 @@ func TestHandleEventRecordsWorkingState(t *testing.T) {
 	assert.Equal(t, StateWorking, snapshot.State)
 }
 
+func TestStoreKeysReportsByAgentAndCodingSession(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	workspace := t.TempDir()
+	store := NewStore(t.TempDir())
+
+	reportAgentHook(t, store, "codex", "runtime-codex", map[string]any{
+		"session_id": "shared-session", "cwd": workspace,
+		"hook_event_name": "UserPromptSubmit",
+	})
+	reportAgentHook(t, store, "claude", "runtime-claude", map[string]any{
+		"session_id": "shared-session", "cwd": workspace,
+		"hook_event_name": "Stop",
+	})
+
+	reports := store.LiveReportsForWorkspace(
+		workspace, []string{"runtime-codex", "runtime-claude"},
+	)
+	require.Len(reports, 2)
+	assert.Equal("claude", reports[0].Agent)
+	assert.Equal(StateDone, reports[0].State)
+	assert.Equal("codex", reports[1].Agent)
+	assert.Equal(StateWorking, reports[1].State)
+
+	reportAgentHook(t, store, "codex", "runtime-codex", map[string]any{
+		"session_id": "shared-session", "cwd": workspace,
+		"hook_event_name": "SessionEnd",
+	})
+	reports = store.LiveReportsForWorkspace(
+		workspace, []string{"runtime-codex", "runtime-claude"},
+	)
+	require.Len(reports, 1)
+	assert.Equal("claude", reports[0].Agent)
+}
+
+func TestStoreLiveReportsExcludeWrongWorkspaceDeadAndNestedSessions(t *testing.T) {
+	assert := assert.New(t)
+	workspace := t.TempDir()
+	otherWorkspace := t.TempDir()
+	store := NewStore(t.TempDir())
+
+	reportAgentHook(t, store, "codex", "runtime-live", map[string]any{
+		"session_id": "live", "cwd": workspace,
+		"hook_event_name": "Interrupt",
+	})
+	reportAgentHook(t, store, "codex", "runtime-dead", map[string]any{
+		"session_id": "dead", "cwd": workspace,
+		"hook_event_name": "UserPromptSubmit",
+	})
+	reportAgentHook(t, store, "codex", "runtime-wrong-cwd", map[string]any{
+		"session_id": "wrong-cwd", "cwd": otherWorkspace,
+		"hook_event_name": "UserPromptSubmit",
+	})
+	reportAgentHook(t, store, "codex", "runtime-nested", map[string]any{
+		"session_id": "nested", "agent_id": "child", "cwd": workspace,
+		"hook_event_name": "UserPromptSubmit",
+	})
+
+	reports := store.LiveReportsForWorkspace(workspace, []string{
+		"runtime-live", "runtime-wrong-cwd", "runtime-nested",
+	})
+	require.Len(t, reports, 1)
+	assert.Equal("live", reports[0].SessionID)
+	assert.Equal(StateDone, reports[0].State)
+}
+
+func TestStoreRemovesLegacyAgentlessReportsDuringScan(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	root := t.TempDir()
+	workspace := t.TempDir()
+	legacyPath := filepath.Join(root, "legacy.json")
+	require.NoError(os.WriteFile(legacyPath, fmt.Appendf(nil,
+		`{"session_id":"legacy","runtime_session_key":"runtime-legacy","cwd":%q,"state":"working","updated_at":"2026-08-07T12:00:00Z"}`,
+		workspace,
+	), 0o600))
+	store := NewStore(root)
+	store.now = func() time.Time {
+		return time.Date(2026, 8, 7, 12, 1, 0, 0, time.UTC)
+	}
+
+	assert.Empty(store.LiveReportsForWorkspace(workspace, []string{"runtime-legacy"}))
+	_, err := os.Stat(legacyPath)
+	require.ErrorIs(err, os.ErrNotExist)
+}
+
 func reportHook(t *testing.T, store *Store, runtimeKey string, input map[string]any) {
+	t.Helper()
+	reportAgentHook(t, store, "codex", runtimeKey, input)
+}
+
+func reportAgentHook(
+	t *testing.T,
+	store *Store,
+	agent string,
+	runtimeKey string,
+	input map[string]any,
+) {
 	t.Helper()
 	data, err := json.Marshal(input)
 	require.NoError(t, err)
-	require.NoError(t, store.HandleHook(strings.NewReader(string(data)), runtimeKey))
+	require.NoError(t, store.HandleHook(agent, strings.NewReader(string(data)), runtimeKey))
 }

@@ -725,6 +725,165 @@ func (e ProblemErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for SetWorkflowStateBody0ExpectedStatus.
+const (
+	SetWorkflowStateBody0ExpectedStatusAwaitingMerge SetWorkflowStateBody0ExpectedStatus = "awaiting_merge"
+	SetWorkflowStateBody0ExpectedStatusNew           SetWorkflowStateBody0ExpectedStatus = "new"
+	SetWorkflowStateBody0ExpectedStatusReviewing     SetWorkflowStateBody0ExpectedStatus = "reviewing"
+	SetWorkflowStateBody0ExpectedStatusWaiting       SetWorkflowStateBody0ExpectedStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the SetWorkflowStateBody0ExpectedStatus enum.
+func (e SetWorkflowStateBody0ExpectedStatus) Valid() bool {
+	switch e {
+	case SetWorkflowStateBody0ExpectedStatusAwaitingMerge:
+		return true
+	case SetWorkflowStateBody0ExpectedStatusNew:
+		return true
+	case SetWorkflowStateBody0ExpectedStatusReviewing:
+		return true
+	case SetWorkflowStateBody0ExpectedStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetWorkflowStateBody0Status.
+const (
+	SetWorkflowStateBody0StatusAwaitingMerge SetWorkflowStateBody0Status = "awaiting_merge"
+	SetWorkflowStateBody0StatusNew           SetWorkflowStateBody0Status = "new"
+	SetWorkflowStateBody0StatusReviewing     SetWorkflowStateBody0Status = "reviewing"
+	SetWorkflowStateBody0StatusWaiting       SetWorkflowStateBody0Status = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the SetWorkflowStateBody0Status enum.
+func (e SetWorkflowStateBody0Status) Valid() bool {
+	switch e {
+	case SetWorkflowStateBody0StatusAwaitingMerge:
+		return true
+	case SetWorkflowStateBody0StatusNew:
+		return true
+	case SetWorkflowStateBody0StatusReviewing:
+		return true
+	case SetWorkflowStateBody0StatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetWorkflowStateBody1Force.
+const (
+	True SetWorkflowStateBody1Force = true
+)
+
+// Valid indicates whether the value is a known member of the SetWorkflowStateBody1Force enum.
+func (e SetWorkflowStateBody1Force) Valid() bool {
+	switch e {
+	case True:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetWorkflowStateBody1Status.
+const (
+	SetWorkflowStateBody1StatusAwaitingMerge SetWorkflowStateBody1Status = "awaiting_merge"
+	SetWorkflowStateBody1StatusNew           SetWorkflowStateBody1Status = "new"
+	SetWorkflowStateBody1StatusReviewing     SetWorkflowStateBody1Status = "reviewing"
+	SetWorkflowStateBody1StatusWaiting       SetWorkflowStateBody1Status = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the SetWorkflowStateBody1Status enum.
+func (e SetWorkflowStateBody1Status) Valid() bool {
+	switch e {
+	case SetWorkflowStateBody1StatusAwaitingMerge:
+		return true
+	case SetWorkflowStateBody1StatusNew:
+		return true
+	case SetWorkflowStateBody1StatusReviewing:
+		return true
+	case SetWorkflowStateBody1StatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkflowStateChangeResponsePreviousStatus.
+const (
+	WorkflowStateChangeResponsePreviousStatusAwaitingMerge WorkflowStateChangeResponsePreviousStatus = "awaiting_merge"
+	WorkflowStateChangeResponsePreviousStatusNew           WorkflowStateChangeResponsePreviousStatus = "new"
+	WorkflowStateChangeResponsePreviousStatusReviewing     WorkflowStateChangeResponsePreviousStatus = "reviewing"
+	WorkflowStateChangeResponsePreviousStatusWaiting       WorkflowStateChangeResponsePreviousStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the WorkflowStateChangeResponsePreviousStatus enum.
+func (e WorkflowStateChangeResponsePreviousStatus) Valid() bool {
+	switch e {
+	case WorkflowStateChangeResponsePreviousStatusAwaitingMerge:
+		return true
+	case WorkflowStateChangeResponsePreviousStatusNew:
+		return true
+	case WorkflowStateChangeResponsePreviousStatusReviewing:
+		return true
+	case WorkflowStateChangeResponsePreviousStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkflowStateChangeResponseStatus.
+const (
+	WorkflowStateChangeResponseStatusAwaitingMerge WorkflowStateChangeResponseStatus = "awaiting_merge"
+	WorkflowStateChangeResponseStatusNew           WorkflowStateChangeResponseStatus = "new"
+	WorkflowStateChangeResponseStatusReviewing     WorkflowStateChangeResponseStatus = "reviewing"
+	WorkflowStateChangeResponseStatusWaiting       WorkflowStateChangeResponseStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the WorkflowStateChangeResponseStatus enum.
+func (e WorkflowStateChangeResponseStatus) Valid() bool {
+	switch e {
+	case WorkflowStateChangeResponseStatusAwaitingMerge:
+		return true
+	case WorkflowStateChangeResponseStatusNew:
+		return true
+	case WorkflowStateChangeResponseStatusReviewing:
+		return true
+	case WorkflowStateChangeResponseStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkflowStateListMetaResponseStatus.
+const (
+	WorkflowStateListMetaResponseStatusAwaitingMerge WorkflowStateListMetaResponseStatus = "awaiting_merge"
+	WorkflowStateListMetaResponseStatusNew           WorkflowStateListMetaResponseStatus = "new"
+	WorkflowStateListMetaResponseStatusReviewing     WorkflowStateListMetaResponseStatus = "reviewing"
+	WorkflowStateListMetaResponseStatusWaiting       WorkflowStateListMetaResponseStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the WorkflowStateListMetaResponseStatus enum.
+func (e WorkflowStateListMetaResponseStatus) Valid() bool {
+	switch e {
+	case WorkflowStateListMetaResponseStatusAwaitingMerge:
+		return true
+	case WorkflowStateListMetaResponseStatusNew:
+		return true
+	case WorkflowStateListMetaResponseStatusReviewing:
+		return true
+	case WorkflowStateListMetaResponseStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkflowStateMetaResponseStatus.
 const (
 	WorkflowStateMetaResponseStatusAwaitingMerge WorkflowStateMetaResponseStatus = "awaiting_merge"
@@ -743,6 +902,30 @@ func (e WorkflowStateMetaResponseStatus) Valid() bool {
 	case WorkflowStateMetaResponseStatusReviewing:
 		return true
 	case WorkflowStateMetaResponseStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkflowStatePointResponseStatus.
+const (
+	WorkflowStatePointResponseStatusAwaitingMerge WorkflowStatePointResponseStatus = "awaiting_merge"
+	WorkflowStatePointResponseStatusNew           WorkflowStatePointResponseStatus = "new"
+	WorkflowStatePointResponseStatusReviewing     WorkflowStatePointResponseStatus = "reviewing"
+	WorkflowStatePointResponseStatusWaiting       WorkflowStatePointResponseStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the WorkflowStatePointResponseStatus enum.
+func (e WorkflowStatePointResponseStatus) Valid() bool {
+	switch e {
+	case WorkflowStatePointResponseStatusAwaitingMerge:
+		return true
+	case WorkflowStatePointResponseStatusNew:
+		return true
+	case WorkflowStatePointResponseStatusReviewing:
+		return true
+	case WorkflowStatePointResponseStatusWaiting:
 		return true
 	default:
 		return false
@@ -860,6 +1043,42 @@ func (e ResolveRepoItemOnHostParamsItemType) Valid() bool {
 	}
 }
 
+// Defines values for GetWorkflowStateOnHostParamsItemType.
+const (
+	GetWorkflowStateOnHostParamsItemTypeIssue GetWorkflowStateOnHostParamsItemType = "issue"
+	GetWorkflowStateOnHostParamsItemTypePr    GetWorkflowStateOnHostParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkflowStateOnHostParamsItemType enum.
+func (e GetWorkflowStateOnHostParamsItemType) Valid() bool {
+	switch e {
+	case GetWorkflowStateOnHostParamsItemTypeIssue:
+		return true
+	case GetWorkflowStateOnHostParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetWorkflowStateOnHostParamsItemType.
+const (
+	SetWorkflowStateOnHostParamsItemTypeIssue SetWorkflowStateOnHostParamsItemType = "issue"
+	SetWorkflowStateOnHostParamsItemTypePr    SetWorkflowStateOnHostParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the SetWorkflowStateOnHostParamsItemType enum.
+func (e SetWorkflowStateOnHostParamsItemType) Valid() bool {
+	switch e {
+	case SetWorkflowStateOnHostParamsItemTypeIssue:
+		return true
+	case SetWorkflowStateOnHostParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SearchKataTaskReferencesParamsStatus.
 const (
 	SearchKataTaskReferencesParamsStatusAll  SearchKataTaskReferencesParamsStatus = "all"
@@ -956,6 +1175,42 @@ func (e ResolveRepoItemParamsItemType) Valid() bool {
 	}
 }
 
+// Defines values for GetWorkflowStateParamsItemType.
+const (
+	GetWorkflowStateParamsItemTypeIssue GetWorkflowStateParamsItemType = "issue"
+	GetWorkflowStateParamsItemTypePr    GetWorkflowStateParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkflowStateParamsItemType enum.
+func (e GetWorkflowStateParamsItemType) Valid() bool {
+	switch e {
+	case GetWorkflowStateParamsItemTypeIssue:
+		return true
+	case GetWorkflowStateParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetWorkflowStateParamsItemType.
+const (
+	SetWorkflowStateParamsItemTypeIssue SetWorkflowStateParamsItemType = "issue"
+	SetWorkflowStateParamsItemTypePr    SetWorkflowStateParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the SetWorkflowStateParamsItemType enum.
+func (e SetWorkflowStateParamsItemType) Valid() bool {
+	switch e {
+	case SetWorkflowStateParamsItemTypeIssue:
+		return true
+	case SetWorkflowStateParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetWorkspaceFilePreviewParamsBase.
 const (
 	Head        GetWorkspaceFilePreviewParamsBase = "head"
@@ -994,16 +1249,16 @@ func (e GetWorkspaceFilePreviewParamsWhitespace) Valid() bool {
 
 // Defines values for GetWorkspaceFilePreviewParamsSide.
 const (
-	GetWorkspaceFilePreviewParamsSideNew GetWorkspaceFilePreviewParamsSide = "new"
-	GetWorkspaceFilePreviewParamsSideOld GetWorkspaceFilePreviewParamsSide = "old"
+	New GetWorkspaceFilePreviewParamsSide = "new"
+	Old GetWorkspaceFilePreviewParamsSide = "old"
 )
 
 // Valid indicates whether the value is a known member of the GetWorkspaceFilePreviewParamsSide enum.
 func (e GetWorkspaceFilePreviewParamsSide) Valid() bool {
 	switch e {
-	case GetWorkspaceFilePreviewParamsSideNew:
+	case New:
 		return true
-	case GetWorkspaceFilePreviewParamsSideOld:
+	case Old:
 		return true
 	default:
 		return false
@@ -1111,6 +1366,18 @@ type AgentHookResponse struct {
 type AgentHookSpecificOutput struct {
 	AdditionalContext string `json:"additionalContext"`
 	HookEventName     string `json:"hookEventName"`
+}
+
+// AgentInitialMessageReceiptResponse defines model for AgentInitialMessageReceiptResponse.
+type AgentInitialMessageReceiptResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string    `json:"$schema,omitempty"`
+	Agent        string     `json:"agent"`
+	DeliveredAt  *time.Time `json:"delivered_at,omitempty"`
+	MessageBytes int64      `json:"message_bytes"`
+	ReservedAt   time.Time  `json:"reserved_at"`
+	SessionId    string     `json:"session_id"`
+	State        string     `json:"state"`
 }
 
 // ApplyReviewSuggestionHostInputBody defines model for ApplyReviewSuggestionHostInputBody.
@@ -1570,6 +1837,7 @@ type CreateIssueWorkspaceHostInputBody struct {
 	GitHeadRef             *string `json:"git_head_ref,omitempty"`
 	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
 	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
+	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
 }
 
 // CreateIssueWorkspaceInputBody defines model for CreateIssueWorkspaceInputBody.
@@ -1579,17 +1847,19 @@ type CreateIssueWorkspaceInputBody struct {
 	GitHeadRef             *string `json:"git_head_ref,omitempty"`
 	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
 	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
+	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
 }
 
 // CreateWorkspaceInputBody defines model for CreateWorkspaceInputBody.
 type CreateWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string `json:"$schema,omitempty"`
-	MrNumber     int64   `json:"mr_number"`
-	Name         string  `json:"name"`
-	Owner        string  `json:"owner"`
-	PlatformHost string  `json:"platform_host"`
-	Provider     string  `json:"provider"`
+	Schema             *string `json:"$schema,omitempty"`
+	MrNumber           int64   `json:"mr_number"`
+	Name               string  `json:"name"`
+	Owner              string  `json:"owner"`
+	PlatformHost       string  `json:"platform_host"`
+	Provider           string  `json:"provider"`
+	SuppressAutoAssign *bool   `json:"suppress_auto_assign,omitempty"`
 }
 
 // CreateWorktreeFromMergeRequestInputBody defines model for CreateWorktreeFromMergeRequestInputBody.
@@ -2607,6 +2877,13 @@ type ListUserRepositoriesOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema       *string           `json:"$schema,omitempty"`
 	Repositories *[]UserRepository `json:"repositories"`
+}
+
+// ListWorkspaceAgentSessionsOutputBody defines model for ListWorkspaceAgentSessionsOutputBody.
+type ListWorkspaceAgentSessionsOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string                          `json:"$schema,omitempty"`
+	Sessions *[]WorkspaceAgentSessionResponse `json:"sessions"`
 }
 
 // ListWorkspacesOutputBody defines model for ListWorkspacesOutputBody.
@@ -3867,6 +4144,43 @@ type SetReviewersRequest struct {
 	Reviewers []string `json:"reviewers"`
 }
 
+// SetWorkflowStateBody defines model for SetWorkflowStateBody.
+type SetWorkflowStateBody struct {
+	union json.RawMessage
+}
+
+// SetWorkflowStateBody0 defines model for .
+type SetWorkflowStateBody0 struct {
+	Actor *string `json:"actor,omitempty"`
+
+	// ExpectedStatus Required unless force is true. Omit force when expected_status is provided. This compares against the effective current local workflow state before writing.
+	ExpectedStatus SetWorkflowStateBody0ExpectedStatus `json:"expected_status"`
+	Reason         *string                             `json:"reason,omitempty"`
+	Source         *string                             `json:"source,omitempty"`
+	Status         SetWorkflowStateBody0Status         `json:"status"`
+}
+
+// SetWorkflowStateBody0ExpectedStatus Required unless force is true. Omit force when expected_status is provided. This compares against the effective current local workflow state before writing.
+type SetWorkflowStateBody0ExpectedStatus string
+
+// SetWorkflowStateBody0Status defines model for SetWorkflowStateBody.0.Status.
+type SetWorkflowStateBody0Status string
+
+// SetWorkflowStateBody1 defines model for .
+type SetWorkflowStateBody1 struct {
+	Actor  *string                     `json:"actor,omitempty"`
+	Force  SetWorkflowStateBody1Force  `json:"force"`
+	Reason *string                     `json:"reason,omitempty"`
+	Source *string                     `json:"source,omitempty"`
+	Status SetWorkflowStateBody1Status `json:"status"`
+}
+
+// SetWorkflowStateBody1Force defines model for SetWorkflowStateBody.1.Force.
+type SetWorkflowStateBody1Force bool
+
+// SetWorkflowStateBody1Status defines model for SetWorkflowStateBody.1.Status.
+type SetWorkflowStateBody1Status string
+
 // SetWorktreeHiddenInputBody defines model for SetWorktreeHiddenInputBody.
 type SetWorktreeHiddenInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -3973,6 +4287,15 @@ type StarredRequest struct {
 	Owner        string  `json:"owner"`
 	PlatformHost string  `json:"platform_host"`
 	Provider     string  `json:"provider"`
+}
+
+// SubmitInitialMessageInputBody defines model for SubmitInitialMessageInputBody.
+type SubmitInitialMessageInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	Agent     string  `json:"agent"`
+	Message   string  `json:"message"`
+	SessionId string  `json:"session_id"`
 }
 
 // SyncStatus defines model for SyncStatus.
@@ -4124,6 +4447,62 @@ type WorkflowApprovalResponse struct {
 	Required bool  `json:"required"`
 }
 
+// WorkflowStateChangeResponse defines model for WorkflowStateChangeResponse.
+type WorkflowStateChangeResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string                                   `json:"$schema,omitempty"`
+	PreviousStatus WorkflowStateChangeResponsePreviousStatus `json:"previous_status"`
+	Status         WorkflowStateChangeResponseStatus         `json:"status"`
+	UpdatedActor   *string                                   `json:"updated_actor,omitempty"`
+	UpdatedAt      time.Time                                 `json:"updated_at"`
+	UpdatedReason  *string                                   `json:"updated_reason,omitempty"`
+	UpdatedSource  string                                    `json:"updated_source"`
+}
+
+// WorkflowStateChangeResponsePreviousStatus defines model for WorkflowStateChangeResponse.PreviousStatus.
+type WorkflowStateChangeResponsePreviousStatus string
+
+// WorkflowStateChangeResponseStatus defines model for WorkflowStateChangeResponse.Status.
+type WorkflowStateChangeResponseStatus string
+
+// WorkflowStateItemResponse defines model for WorkflowStateItemResponse.
+type WorkflowStateItemResponse struct {
+	Author         string                        `json:"author"`
+	IsDraft        bool                          `json:"is_draft"`
+	ItemType       string                        `json:"item_type"`
+	LastActivityAt time.Time                     `json:"last_activity_at"`
+	Name           string                        `json:"name"`
+	Number         int64                         `json:"number"`
+	Owner          string                        `json:"owner"`
+	PlatformHost   string                        `json:"platform_host"`
+	Provider       string                        `json:"provider"`
+	RepoPath       string                        `json:"repo_path"`
+	State          string                        `json:"state"`
+	Title          string                        `json:"title"`
+	Url            string                        `json:"url"`
+	Workflow       WorkflowStateListMetaResponse `json:"workflow"`
+}
+
+// WorkflowStateListMetaResponse defines model for WorkflowStateListMetaResponse.
+type WorkflowStateListMetaResponse struct {
+	Status        WorkflowStateListMetaResponseStatus `json:"status"`
+	UpdatedActor  *string                             `json:"updated_actor,omitempty"`
+	UpdatedAt     *time.Time                          `json:"updated_at,omitempty"`
+	UpdatedReason *string                             `json:"updated_reason,omitempty"`
+	UpdatedSource *string                             `json:"updated_source,omitempty"`
+}
+
+// WorkflowStateListMetaResponseStatus defines model for WorkflowStateListMetaResponse.Status.
+type WorkflowStateListMetaResponseStatus string
+
+// WorkflowStateListResponse defines model for WorkflowStateListResponse.
+type WorkflowStateListResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                      `json:"$schema,omitempty"`
+	Items      *[]WorkflowStateItemResponse `json:"items"`
+	NextCursor *string                      `json:"next_cursor,omitempty"`
+}
+
 // WorkflowStateMetaResponse defines model for WorkflowStateMetaResponse.
 type WorkflowStateMetaResponse struct {
 	Status        WorkflowStateMetaResponseStatus `json:"status"`
@@ -4135,6 +4514,31 @@ type WorkflowStateMetaResponse struct {
 
 // WorkflowStateMetaResponseStatus defines model for WorkflowStateMetaResponse.Status.
 type WorkflowStateMetaResponseStatus string
+
+// WorkflowStatePointResponse defines model for WorkflowStatePointResponse.
+type WorkflowStatePointResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string                          `json:"$schema,omitempty"`
+	Status        WorkflowStatePointResponseStatus `json:"status"`
+	UpdatedActor  *string                          `json:"updated_actor,omitempty"`
+	UpdatedAt     *time.Time                       `json:"updated_at,omitempty"`
+	UpdatedReason *string                          `json:"updated_reason,omitempty"`
+	UpdatedSource *string                          `json:"updated_source,omitempty"`
+}
+
+// WorkflowStatePointResponseStatus defines model for WorkflowStatePointResponse.Status.
+type WorkflowStatePointResponseStatus string
+
+// WorkspaceAgentSessionResponse defines model for WorkspaceAgentSessionResponse.
+type WorkspaceAgentSessionResponse struct {
+	Agent             string                              `json:"agent"`
+	InitialMessage    *AgentInitialMessageReceiptResponse `json:"initial_message,omitempty"`
+	RuntimeSessionKey string                              `json:"runtime_session_key"`
+	SessionId         string                              `json:"session_id"`
+	State             string                              `json:"state"`
+	TargetKey         string                              `json:"target_key"`
+	UpdatedAt         time.Time                           `json:"updated_at"`
+}
 
 // WorkspaceDiffWatchResponse defines model for WorkspaceDiffWatchResponse.
 type WorkspaceDiffWatchResponse struct {
@@ -4666,6 +5070,12 @@ type ResolveRepoItemOnHostParams struct {
 // ResolveRepoItemOnHostParamsItemType defines parameters for ResolveRepoItemOnHost.
 type ResolveRepoItemOnHostParamsItemType string
 
+// GetWorkflowStateOnHostParamsItemType defines parameters for GetWorkflowStateOnHost.
+type GetWorkflowStateOnHostParamsItemType string
+
+// SetWorkflowStateOnHostParamsItemType defines parameters for SetWorkflowStateOnHost.
+type SetWorkflowStateOnHostParamsItemType string
+
 // ListIssuesParams defines parameters for ListIssues.
 type ListIssuesParams struct {
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
@@ -4891,6 +5301,29 @@ type TriggerSyncParams struct {
 	// OnlyRepo Optional repository filters to sync exclusively. Accepts repeated provider|platform_host/repo_path values or comma-separated values.
 	OnlyRepo *[]string `form:"only_repo,omitempty" json:"only_repo,omitempty"`
 }
+
+// ListWorkflowStateParams defines parameters for ListWorkflowState.
+type ListWorkflowStateParams struct {
+	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
+	Repo *string `form:"repo,omitempty" json:"repo,omitempty"`
+
+	// ItemType Optional item type filter: pr, issue.
+	ItemType *[]string `form:"item_type,omitempty" json:"item_type,omitempty"`
+
+	// State Optional effective workflow states to include.
+	State         *[]string `form:"state,omitempty" json:"state,omitempty"`
+	IncludeClosed *bool     `form:"include_closed,omitempty" json:"include_closed,omitempty"`
+	Limit         *int64    `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Opaque keyset cursor from a previous response. Reuse only with the same repo, item_type, state, and include_closed filters; pages are best-effort under concurrent writes.
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetWorkflowStateParamsItemType defines parameters for GetWorkflowState.
+type GetWorkflowStateParamsItemType string
+
+// SetWorkflowStateParamsItemType defines parameters for SetWorkflowState.
+type SetWorkflowStateParamsItemType string
 
 // DeleteWorkspaceParams defines parameters for DeleteWorkspace.
 type DeleteWorkspaceParams struct {
@@ -5134,6 +5567,9 @@ type CreateRepoWorkspaceOnHostJSONRequestBody = CreateAdHocWorkspaceHostInputBod
 // UpdateRepoWorktreeBaseOnHostJSONRequestBody defines body for UpdateRepoWorktreeBaseOnHost for application/json ContentType.
 type UpdateRepoWorktreeBaseOnHostJSONRequestBody = RepoWorktreeBaseRequest
 
+// SetWorkflowStateOnHostJSONRequestBody defines body for SetWorkflowStateOnHost for application/json ContentType.
+type SetWorkflowStateOnHostJSONRequestBody = SetWorkflowStateBody
+
 // CreateIssueJSONRequestBody defines body for CreateIssue for application/json ContentType.
 type CreateIssueJSONRequestBody = CreateIssueInputBody
 
@@ -5290,6 +5726,9 @@ type CaptureTelemetryEventJSONRequestBody = TelemetryEventInputBody
 // SetActiveWorktreeJSONRequestBody defines body for SetActiveWorktree for application/json ContentType.
 type SetActiveWorktreeJSONRequestBody = SetActiveWorktreeInputBody
 
+// SetWorkflowStateJSONRequestBody defines body for SetWorkflowState for application/json ContentType.
+type SetWorkflowStateJSONRequestBody = SetWorkflowStateBody
+
 // CreateWorkspaceJSONRequestBody defines body for CreateWorkspace for application/json ContentType.
 type CreateWorkspaceJSONRequestBody = CreateWorkspaceInputBody
 
@@ -5298,6 +5737,9 @@ type LaunchWorkspaceRuntimeSessionJSONRequestBody = LaunchWorkspaceRuntimeSessio
 
 // RenameWorkspaceRuntimeSessionJSONRequestBody defines body for RenameWorkspaceRuntimeSession for application/json ContentType.
 type RenameWorkspaceRuntimeSessionJSONRequestBody = RenameWorkspaceRuntimeSessionInputBody
+
+// SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody defines body for SubmitWorkspaceRuntimeSessionInitialMessage for application/json ContentType.
+type SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody = SubmitInitialMessageInputBody
 
 // RemoveStaleWorktreeJSONRequestBody defines body for RemoveStaleWorktree for application/json ContentType.
 type RemoveStaleWorktreeJSONRequestBody = RemoveStaleWorktreeInputBody
@@ -5452,6 +5894,68 @@ func (a HookEvent) MarshalJSON() ([]byte, error) {
 		}
 	}
 	return json.Marshal(object)
+}
+
+// AsSetWorkflowStateBody0 returns the union data inside the SetWorkflowStateBody as a SetWorkflowStateBody0
+func (t SetWorkflowStateBody) AsSetWorkflowStateBody0() (SetWorkflowStateBody0, error) {
+	var body SetWorkflowStateBody0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSetWorkflowStateBody0 overwrites any union data inside the SetWorkflowStateBody as the provided SetWorkflowStateBody0
+func (t *SetWorkflowStateBody) FromSetWorkflowStateBody0(v SetWorkflowStateBody0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSetWorkflowStateBody0 performs a merge with any union data inside the SetWorkflowStateBody, using the provided SetWorkflowStateBody0
+func (t *SetWorkflowStateBody) MergeSetWorkflowStateBody0(v SetWorkflowStateBody0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSetWorkflowStateBody1 returns the union data inside the SetWorkflowStateBody as a SetWorkflowStateBody1
+func (t SetWorkflowStateBody) AsSetWorkflowStateBody1() (SetWorkflowStateBody1, error) {
+	var body SetWorkflowStateBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSetWorkflowStateBody1 overwrites any union data inside the SetWorkflowStateBody as the provided SetWorkflowStateBody1
+func (t *SetWorkflowStateBody) FromSetWorkflowStateBody1(v SetWorkflowStateBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSetWorkflowStateBody1 performs a merge with any union data inside the SetWorkflowStateBody, using the provided SetWorkflowStateBody1
+func (t *SetWorkflowStateBody) MergeSetWorkflowStateBody1(v SetWorkflowStateBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t SetWorkflowStateBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *SetWorkflowStateBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
 }
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
@@ -6040,6 +6544,14 @@ type ClientInterface interface {
 
 	UpdateRepoWorktreeBaseOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoWorktreeBaseOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetWorkflowStateOnHost request
+	GetWorkflowStateOnHost(ctx context.Context, platformHost string, itemType GetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetWorkflowStateOnHostWithBody request with any body
+	SetWorkflowStateOnHostWithBody(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetWorkflowStateOnHost(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListIssues request
 	ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -6537,6 +7049,17 @@ type ClientInterface interface {
 	// GetVersion request
 	GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListWorkflowState request
+	ListWorkflowState(ctx context.Context, params *ListWorkflowStateParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkflowState request
+	GetWorkflowState(ctx context.Context, itemType GetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetWorkflowStateWithBody request with any body
+	SetWorkflowStateWithBody(ctx context.Context, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetWorkflowState(ctx context.Context, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListWorkspaces request
 	ListWorkspaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -6550,6 +7073,9 @@ type ClientInterface interface {
 
 	// GetWorkspace request
 	GetWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWorkspaceAgentSessions request
+	ListWorkspaceAgentSessions(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetWorkspaceCommits request
 	GetWorkspaceCommits(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6599,6 +7125,14 @@ type ClientInterface interface {
 
 	// GetWorkspaceRuntimeSessionAttachSpec request
 	GetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspaceRuntimeSessionInitialMessage request
+	GetWorkspaceRuntimeSessionInitialMessage(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitWorkspaceRuntimeSessionInitialMessageWithBody request with any body
+	SubmitWorkspaceRuntimeSessionInitialMessageWithBody(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SubmitWorkspaceRuntimeSessionInitialMessage(ctx context.Context, id string, sessionKey string, body SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RemoveStaleWorktreeWithBody request with any body
 	RemoveStaleWorktreeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -8862,6 +9396,42 @@ func (c *Client) UpdateRepoWorktreeBaseOnHost(ctx context.Context, platformHost 
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetWorkflowStateOnHost(ctx context.Context, platformHost string, itemType GetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkflowStateOnHostRequest(c.Server, platformHost, itemType, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetWorkflowStateOnHostWithBody(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorkflowStateOnHostRequestWithBody(c.Server, platformHost, itemType, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetWorkflowStateOnHost(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorkflowStateOnHostRequest(c.Server, platformHost, itemType, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListIssuesRequest(c.Server, params)
 	if err != nil {
@@ -11058,6 +11628,54 @@ func (c *Client) GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) 
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListWorkflowState(ctx context.Context, params *ListWorkflowStateParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkflowStateRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkflowState(ctx context.Context, itemType GetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkflowStateRequest(c.Server, itemType, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetWorkflowStateWithBody(ctx context.Context, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorkflowStateRequestWithBody(c.Server, itemType, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetWorkflowState(ctx context.Context, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorkflowStateRequest(c.Server, itemType, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListWorkspaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListWorkspacesRequest(c.Server)
 	if err != nil {
@@ -11108,6 +11726,18 @@ func (c *Client) DeleteWorkspace(ctx context.Context, id string, params *DeleteW
 
 func (c *Client) GetWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspaceRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListWorkspaceAgentSessions(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkspaceAgentSessionsRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -11312,6 +11942,42 @@ func (c *Client) RenameWorkspaceRuntimeSession(ctx context.Context, id string, s
 
 func (c *Client) GetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspaceRuntimeSessionAttachSpecRequest(c.Server, id, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkspaceRuntimeSessionInitialMessage(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspaceRuntimeSessionInitialMessageRequest(c.Server, id, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessageWithBody(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitWorkspaceRuntimeSessionInitialMessageRequestWithBody(c.Server, id, sessionKey, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessage(ctx context.Context, id string, sessionKey string, body SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitWorkspaceRuntimeSessionInitialMessageRequest(c.Server, id, sessionKey, body)
 	if err != nil {
 		return nil, err
 	}
@@ -20384,6 +21050,157 @@ func NewUpdateRepoWorktreeBaseOnHostRequestWithBody(server string, platformHost 
 	return req, nil
 }
 
+// NewGetWorkflowStateOnHostRequest generates requests for GetWorkflowStateOnHost
+func NewGetWorkflowStateOnHostRequest(server string, platformHost string, itemType GetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "item_type", itemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/workflow-state/%s/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetWorkflowStateOnHostRequest calls the generic SetWorkflowStateOnHost builder with application/json body
+func NewSetWorkflowStateOnHostRequest(server string, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetWorkflowStateOnHostRequestWithBody(server, platformHost, itemType, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetWorkflowStateOnHostRequestWithBody generates requests for SetWorkflowStateOnHost with any type of body
+func NewSetWorkflowStateOnHostRequestWithBody(server string, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "item_type", itemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/workflow-state/%s/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListIssuesRequest generates requests for ListIssues
 func NewListIssuesRequest(server string, params *ListIssuesParams) (*http.Request, error) {
 	var err error
@@ -28006,6 +28823,257 @@ func NewGetVersionRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListWorkflowStateRequest generates requests for ListWorkflowState
+func NewListWorkflowStateRequest(server string, params *ListWorkflowStateParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workflow-state")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Repo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo", *params.Repo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ItemType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "item_type", *params.ItemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeClosed != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "include_closed", *params.IncludeClosed, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWorkflowStateRequest generates requests for GetWorkflowState
+func NewGetWorkflowStateRequest(server string, itemType GetWorkflowStateParamsItemType, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "item_type", itemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workflow-state/%s/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetWorkflowStateRequest calls the generic SetWorkflowState builder with application/json body
+func NewSetWorkflowStateRequest(server string, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetWorkflowStateRequestWithBody(server, itemType, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetWorkflowStateRequestWithBody generates requests for SetWorkflowState with any type of body
+func NewSetWorkflowStateRequestWithBody(server string, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "item_type", itemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workflow-state/%s/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListWorkspacesRequest generates requests for ListWorkspaces
 func NewListWorkspacesRequest(server string) (*http.Request, error) {
 	var err error
@@ -28151,6 +29219,40 @@ func NewGetWorkspaceRequest(server string, id string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/workspaces/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListWorkspaceAgentSessionsRequest generates requests for ListWorkspaceAgentSessions
+func NewListWorkspaceAgentSessionsRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/agent-sessions", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -29037,6 +30139,101 @@ func NewGetWorkspaceRuntimeSessionAttachSpecRequest(server string, id string, se
 	return req, nil
 }
 
+// NewGetWorkspaceRuntimeSessionInitialMessageRequest generates requests for GetWorkspaceRuntimeSessionInitialMessage
+func NewGetWorkspaceRuntimeSessionInitialMessageRequest(server string, id string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime/sessions/%s/initial-message", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSubmitWorkspaceRuntimeSessionInitialMessageRequest calls the generic SubmitWorkspaceRuntimeSessionInitialMessage builder with application/json body
+func NewSubmitWorkspaceRuntimeSessionInitialMessageRequest(server string, id string, sessionKey string, body SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSubmitWorkspaceRuntimeSessionInitialMessageRequestWithBody(server, id, sessionKey, "application/json", bodyReader)
+}
+
+// NewSubmitWorkspaceRuntimeSessionInitialMessageRequestWithBody generates requests for SubmitWorkspaceRuntimeSessionInitialMessage with any type of body
+func NewSubmitWorkspaceRuntimeSessionInitialMessageRequestWithBody(server string, id string, sessionKey string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime/sessions/%s/initial-message", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewRemoveStaleWorktreeRequest calls the generic RemoveStaleWorktree builder with application/json body
 func NewRemoveStaleWorktreeRequest(server string, body RemoveStaleWorktreeJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -29630,6 +30827,14 @@ type ClientWithResponsesInterface interface {
 
 	UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoWorktreeBaseOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoWorktreeBaseOnHostResponse, error)
 
+	// GetWorkflowStateOnHostWithResponse request
+	GetWorkflowStateOnHostWithResponse(ctx context.Context, platformHost string, itemType GetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetWorkflowStateOnHostResponse, error)
+
+	// SetWorkflowStateOnHostWithBodyWithResponse request with any body
+	SetWorkflowStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorkflowStateOnHostResponse, error)
+
+	SetWorkflowStateOnHostWithResponse(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorkflowStateOnHostResponse, error)
+
 	// ListIssuesWithResponse request
 	ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error)
 
@@ -30124,6 +31329,17 @@ type ClientWithResponsesInterface interface {
 	// GetVersionWithResponse request
 	GetVersionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVersionResponse, error)
 
+	// ListWorkflowStateWithResponse request
+	ListWorkflowStateWithResponse(ctx context.Context, params *ListWorkflowStateParams, reqEditors ...RequestEditorFn) (*ListWorkflowStateResponse, error)
+
+	// GetWorkflowStateWithResponse request
+	GetWorkflowStateWithResponse(ctx context.Context, itemType GetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetWorkflowStateResponse, error)
+
+	// SetWorkflowStateWithBodyWithResponse request with any body
+	SetWorkflowStateWithBodyWithResponse(ctx context.Context, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorkflowStateResponse, error)
+
+	SetWorkflowStateWithResponse(ctx context.Context, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorkflowStateResponse, error)
+
 	// ListWorkspacesWithResponse request
 	ListWorkspacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWorkspacesResponse, error)
 
@@ -30137,6 +31353,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspaceWithResponse request
 	GetWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceResponse, error)
+
+	// ListWorkspaceAgentSessionsWithResponse request
+	ListWorkspaceAgentSessionsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*ListWorkspaceAgentSessionsResponse, error)
 
 	// GetWorkspaceCommitsWithResponse request
 	GetWorkspaceCommitsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceCommitsResponse, error)
@@ -30186,6 +31405,14 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspaceRuntimeSessionAttachSpecWithResponse request
 	GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeSessionAttachSpecResponse, error)
+
+	// GetWorkspaceRuntimeSessionInitialMessageWithResponse request
+	GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeSessionInitialMessageResponse, error)
+
+	// SubmitWorkspaceRuntimeSessionInitialMessageWithBodyWithResponse request with any body
+	SubmitWorkspaceRuntimeSessionInitialMessageWithBodyWithResponse(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResponse, error)
+
+	SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, id string, sessionKey string, body SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResponse, error)
 
 	// RemoveStaleWorktreeWithBodyWithResponse request with any body
 	RemoveStaleWorktreeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveStaleWorktreeResponse, error)
@@ -33305,6 +34532,52 @@ func (r UpdateRepoWorktreeBaseOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type GetWorkflowStateOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkflowStatePointResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkflowStateOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkflowStateOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetWorkflowStateOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkflowStateChangeResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetWorkflowStateOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetWorkflowStateOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListIssuesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -36272,6 +37545,75 @@ func (r GetVersionResponse) StatusCode() int {
 	return 0
 }
 
+type ListWorkflowStateResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkflowStateListResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWorkflowStateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWorkflowStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetWorkflowStateResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkflowStatePointResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkflowStateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkflowStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetWorkflowStateResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkflowStateChangeResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetWorkflowStateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetWorkflowStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListWorkspacesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -36357,6 +37699,29 @@ func (r GetWorkspaceResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListWorkspaceAgentSessionsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListWorkspaceAgentSessionsOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWorkspaceAgentSessionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWorkspaceAgentSessionsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -36700,6 +38065,52 @@ func (r GetWorkspaceRuntimeSessionAttachSpecResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetWorkspaceRuntimeSessionAttachSpecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetWorkspaceRuntimeSessionInitialMessageResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *AgentInitialMessageReceiptResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspaceRuntimeSessionInitialMessageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspaceRuntimeSessionInitialMessageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SubmitWorkspaceRuntimeSessionInitialMessageResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *AgentInitialMessageReceiptResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SubmitWorkspaceRuntimeSessionInitialMessageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SubmitWorkspaceRuntimeSessionInitialMessageResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -38361,6 +39772,32 @@ func (c *ClientWithResponses) UpdateRepoWorktreeBaseOnHostWithResponse(ctx conte
 	return ParseUpdateRepoWorktreeBaseOnHostResponse(rsp)
 }
 
+// GetWorkflowStateOnHostWithResponse request returning *GetWorkflowStateOnHostResponse
+func (c *ClientWithResponses) GetWorkflowStateOnHostWithResponse(ctx context.Context, platformHost string, itemType GetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetWorkflowStateOnHostResponse, error) {
+	rsp, err := c.GetWorkflowStateOnHost(ctx, platformHost, itemType, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkflowStateOnHostResponse(rsp)
+}
+
+// SetWorkflowStateOnHostWithBodyWithResponse request with arbitrary body returning *SetWorkflowStateOnHostResponse
+func (c *ClientWithResponses) SetWorkflowStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorkflowStateOnHostResponse, error) {
+	rsp, err := c.SetWorkflowStateOnHostWithBody(ctx, platformHost, itemType, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorkflowStateOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetWorkflowStateOnHostWithResponse(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorkflowStateOnHostResponse, error) {
+	rsp, err := c.SetWorkflowStateOnHost(ctx, platformHost, itemType, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorkflowStateOnHostResponse(rsp)
+}
+
 // ListIssuesWithResponse request returning *ListIssuesResponse
 func (c *ClientWithResponses) ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error) {
 	rsp, err := c.ListIssues(ctx, params, reqEditors...)
@@ -39947,6 +41384,41 @@ func (c *ClientWithResponses) GetVersionWithResponse(ctx context.Context, reqEdi
 	return ParseGetVersionResponse(rsp)
 }
 
+// ListWorkflowStateWithResponse request returning *ListWorkflowStateResponse
+func (c *ClientWithResponses) ListWorkflowStateWithResponse(ctx context.Context, params *ListWorkflowStateParams, reqEditors ...RequestEditorFn) (*ListWorkflowStateResponse, error) {
+	rsp, err := c.ListWorkflowState(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorkflowStateResponse(rsp)
+}
+
+// GetWorkflowStateWithResponse request returning *GetWorkflowStateResponse
+func (c *ClientWithResponses) GetWorkflowStateWithResponse(ctx context.Context, itemType GetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetWorkflowStateResponse, error) {
+	rsp, err := c.GetWorkflowState(ctx, itemType, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkflowStateResponse(rsp)
+}
+
+// SetWorkflowStateWithBodyWithResponse request with arbitrary body returning *SetWorkflowStateResponse
+func (c *ClientWithResponses) SetWorkflowStateWithBodyWithResponse(ctx context.Context, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorkflowStateResponse, error) {
+	rsp, err := c.SetWorkflowStateWithBody(ctx, itemType, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorkflowStateResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetWorkflowStateWithResponse(ctx context.Context, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorkflowStateResponse, error) {
+	rsp, err := c.SetWorkflowState(ctx, itemType, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorkflowStateResponse(rsp)
+}
+
 // ListWorkspacesWithResponse request returning *ListWorkspacesResponse
 func (c *ClientWithResponses) ListWorkspacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWorkspacesResponse, error) {
 	rsp, err := c.ListWorkspaces(ctx, reqEditors...)
@@ -39989,6 +41461,15 @@ func (c *ClientWithResponses) GetWorkspaceWithResponse(ctx context.Context, id s
 		return nil, err
 	}
 	return ParseGetWorkspaceResponse(rsp)
+}
+
+// ListWorkspaceAgentSessionsWithResponse request returning *ListWorkspaceAgentSessionsResponse
+func (c *ClientWithResponses) ListWorkspaceAgentSessionsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*ListWorkspaceAgentSessionsResponse, error) {
+	rsp, err := c.ListWorkspaceAgentSessions(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorkspaceAgentSessionsResponse(rsp)
 }
 
 // GetWorkspaceCommitsWithResponse request returning *GetWorkspaceCommitsResponse
@@ -40140,6 +41621,32 @@ func (c *ClientWithResponses) GetWorkspaceRuntimeSessionAttachSpecWithResponse(c
 		return nil, err
 	}
 	return ParseGetWorkspaceRuntimeSessionAttachSpecResponse(rsp)
+}
+
+// GetWorkspaceRuntimeSessionInitialMessageWithResponse request returning *GetWorkspaceRuntimeSessionInitialMessageResponse
+func (c *ClientWithResponses) GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeSessionInitialMessageResponse, error) {
+	rsp, err := c.GetWorkspaceRuntimeSessionInitialMessage(ctx, id, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspaceRuntimeSessionInitialMessageResponse(rsp)
+}
+
+// SubmitWorkspaceRuntimeSessionInitialMessageWithBodyWithResponse request with arbitrary body returning *SubmitWorkspaceRuntimeSessionInitialMessageResponse
+func (c *ClientWithResponses) SubmitWorkspaceRuntimeSessionInitialMessageWithBodyWithResponse(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResponse, error) {
+	rsp, err := c.SubmitWorkspaceRuntimeSessionInitialMessageWithBody(ctx, id, sessionKey, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitWorkspaceRuntimeSessionInitialMessageResponse(rsp)
+}
+
+func (c *ClientWithResponses) SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, id string, sessionKey string, body SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResponse, error) {
+	rsp, err := c.SubmitWorkspaceRuntimeSessionInitialMessage(ctx, id, sessionKey, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitWorkspaceRuntimeSessionInitialMessageResponse(rsp)
 }
 
 // RemoveStaleWorktreeWithBodyWithResponse request with arbitrary body returning *RemoveStaleWorktreeResponse
@@ -44535,6 +46042,72 @@ func ParseUpdateRepoWorktreeBaseOnHostResponse(rsp *http.Response) (*UpdateRepoW
 	return response, nil
 }
 
+// ParseGetWorkflowStateOnHostResponse parses an HTTP response from a GetWorkflowStateOnHostWithResponse call
+func ParseGetWorkflowStateOnHostResponse(rsp *http.Response) (*GetWorkflowStateOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkflowStateOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowStatePointResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetWorkflowStateOnHostResponse parses an HTTP response from a SetWorkflowStateOnHostWithResponse call
+func ParseSetWorkflowStateOnHostResponse(rsp *http.Response) (*SetWorkflowStateOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetWorkflowStateOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowStateChangeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListIssuesResponse parses an HTTP response from a ListIssuesWithResponse call
 func ParseListIssuesResponse(rsp *http.Response) (*ListIssuesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -48664,6 +50237,105 @@ func ParseGetVersionResponse(rsp *http.Response) (*GetVersionResponse, error) {
 	return response, nil
 }
 
+// ParseListWorkflowStateResponse parses an HTTP response from a ListWorkflowStateWithResponse call
+func ParseListWorkflowStateResponse(rsp *http.Response) (*ListWorkflowStateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorkflowStateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowStateListResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkflowStateResponse parses an HTTP response from a GetWorkflowStateWithResponse call
+func ParseGetWorkflowStateResponse(rsp *http.Response) (*GetWorkflowStateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkflowStateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowStatePointResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetWorkflowStateResponse parses an HTTP response from a SetWorkflowStateWithResponse call
+func ParseSetWorkflowStateResponse(rsp *http.Response) (*SetWorkflowStateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetWorkflowStateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowStateChangeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListWorkspacesResponse parses an HTTP response from a ListWorkspacesWithResponse call
 func ParseListWorkspacesResponse(rsp *http.Response) (*ListWorkspacesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -48772,6 +50444,39 @@ func ParseGetWorkspaceResponse(rsp *http.Response) (*GetWorkspaceResponse, error
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest WorkspaceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWorkspaceAgentSessionsResponse parses an HTTP response from a ListWorkspaceAgentSessionsWithResponse call
+func ParseListWorkspaceAgentSessionsResponse(rsp *http.Response) (*ListWorkspaceAgentSessionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorkspaceAgentSessionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListWorkspaceAgentSessionsOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -49253,6 +50958,72 @@ func ParseGetWorkspaceRuntimeSessionAttachSpecResponse(rsp *http.Response) (*Get
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest RuntimeAttachSpecResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspaceRuntimeSessionInitialMessageResponse parses an HTTP response from a GetWorkspaceRuntimeSessionInitialMessageWithResponse call
+func ParseGetWorkspaceRuntimeSessionInitialMessageResponse(rsp *http.Response) (*GetWorkspaceRuntimeSessionInitialMessageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspaceRuntimeSessionInitialMessageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentInitialMessageReceiptResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSubmitWorkspaceRuntimeSessionInitialMessageResponse parses an HTTP response from a SubmitWorkspaceRuntimeSessionInitialMessageWithResponse call
+func ParseSubmitWorkspaceRuntimeSessionInitialMessageResponse(rsp *http.Response) (*SubmitWorkspaceRuntimeSessionInitialMessageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SubmitWorkspaceRuntimeSessionInitialMessageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentInitialMessageReceiptResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

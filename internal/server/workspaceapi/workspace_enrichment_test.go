@@ -427,7 +427,7 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 	assert.Equal(now, got.divergenceRefreshedAt)
 	assert.Equal(lastGood.tmuxRefreshedAt, got.tmuxRefreshedAt)
 	assert.Equal(now, got.lastAttemptAt)
-	assert.Contains(got.lastError, "exit status 1")
+	assert.Contains(got.lastError, "tmux display-message")
 
 	missingSummary := db.WorkspaceSummary{Workspace: db.Workspace{
 		ID:           "ws-partial-refresh",
@@ -456,7 +456,7 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 	synchronous := srv.refreshWorkspaceResponse(context.Background(), &synchronousSummary)
 	assert.Equal(workspaceEnrichmentFailed, synchronous.EnrichmentStatus)
 	require.NotNil(synchronous.EnrichmentError)
-	assert.Contains(*synchronous.EnrichmentError, "exit status 1")
+	assert.Contains(*synchronous.EnrichmentError, "tmux display-message")
 	require.NotNil(synchronous.CommitsAhead)
 	require.NotNil(synchronous.CommitsBehind)
 	require.NotNil(synchronous.TmuxPaneTitle)
@@ -596,7 +596,7 @@ func TestWorkspaceRuntimeExitInvalidatesCachedTmuxEnrichment(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NoError(srv.agentActivity.HandleHook(
-		bytes.NewReader(payload), "agent-runtime",
+		"codex", bytes.NewReader(payload), "agent-runtime",
 	))
 	srv.workspaceEnrichmentCache["ws-runtime"] = workspaceEnrichmentCacheEntry{
 		hasTmux:         true,

@@ -2259,6 +2259,49 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 	}, pty.resizes())
 }
 
+func TestManagerSubmitInitialMessageFramesSingleAndMultilineInput(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	pty := &fakeRuntimePTY{output: make(chan []byte), done: make(chan struct{})}
+	s := &session{
+		info: SessionInfo{
+			Key: "agent-1", WorkspaceID: "ws-1", Kind: LaunchTargetAgent,
+			Status: SessionStatusRunning,
+		},
+		pty: pty, done: make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	mgr := NewManager(Options{})
+	mgr.sessions[s.info.Key] = s
+
+	require.NoError(mgr.SubmitInitialMessage("ws-1", "agent-1", "review this"))
+	assert.Equal("review this\r", string(pty.written()))
+
+	pty.resetWrites()
+	s.broadcast([]byte("\x1b[?2004h"))
+	require.NoError(mgr.SubmitInitialMessage("ws-1", "agent-1", "first\nsecond"))
+	assert.Equal("\x1b[200~first\nsecond\x1b[201~\r", string(pty.written()))
+}
+
+func TestManagerSubmitInitialMessageRejectsMultilineWithoutBracketedPaste(t *testing.T) {
+	require := require.New(t)
+	pty := &fakeRuntimePTY{output: make(chan []byte), done: make(chan struct{})}
+	s := &session{
+		info: SessionInfo{
+			Key: "agent-1", WorkspaceID: "ws-1", Kind: LaunchTargetAgent,
+			Status: SessionStatusRunning,
+		},
+		pty: pty, done: make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	mgr := NewManager(Options{})
+	mgr.sessions[s.info.Key] = s
+
+	err := mgr.SubmitInitialMessage("ws-1", "agent-1", "first\nsecond")
+	require.ErrorIs(err, ErrBracketedPasteInactive)
+	assert.Empty(t, pty.written())
+}
+
 type fakeRuntimePtyOwner struct {
 	startedSession      string
 	startedCwd          string
@@ -2347,6 +2390,8 @@ type fakeRuntimePTY struct {
 	output      chan []byte
 	done        chan struct{}
 	resizeCalls []terminalResize
+	writes      []byte
+	writeErr    error
 }
 
 type terminalResize struct {
@@ -2358,7 +2403,27 @@ func (f *fakeRuntimePTY) Output() <-chan []byte { return f.output }
 
 func (f *fakeRuntimePTY) Done() <-chan struct{} { return f.done }
 
-func (f *fakeRuntimePTY) Write([]byte) error { return nil }
+func (f *fakeRuntimePTY) Write(data []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+	f.writes = append(f.writes, data...)
+	return nil
+}
+
+func (f *fakeRuntimePTY) written() []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.writes)
+}
+
+func (f *fakeRuntimePTY) resetWrites() {
+	f.mu.Lock()
+	f.writes = nil
+	f.mu.Unlock()
+}
 
 func (f *fakeRuntimePTY) Resize(cols, rows int) error {
 	f.mu.Lock()

@@ -60,6 +60,7 @@ type createIssueWorkspaceHostInput struct {
 		GitHeadRef             *string `json:"git_head_ref,omitempty"`
 		ReuseExistingBranch    bool    `json:"reuse_existing_branch,omitempty"`
 		ReuseExistingDirectory bool    `json:"reuse_existing_directory,omitempty"`
+		SuppressAutoAssign     bool    `json:"suppress_auto_assign,omitempty"`
 	}
 }
 

@@ -339,6 +339,16 @@ func (s *Handler) Register(api huma.API) {
 		Summary:     "Get workspace runtime session attach spec",
 		Tags:        []string{"Workspaces"},
 	}, s.getWorkspaceRuntimeSessionAttachSpec)
+	huma.Get(api, "/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
+		s.getInitialMessageReceipt,
+		httpapi.DocumentOperation("get-workspace-runtime-session-initial-message", "Get initial agent message receipt", "Workspaces"))
+	huma.Register(api, huma.Operation{
+		OperationID: "submit-workspace-runtime-session-initial-message",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
+		Summary:     "Submit initial agent message",
+		Tags:        []string{"Workspaces"},
+	}, s.submitInitialMessage)
 	huma.Register(api, huma.Operation{
 		OperationID: "rename-workspace-runtime-session",
 		Method:      http.MethodPatch,

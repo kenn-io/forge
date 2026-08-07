@@ -94,6 +94,11 @@ func (s *Server) registerAgentTools() {
 		Description: "List fresh hook-authoritative coding sessions joined to live agent runtimes for one workspace. " +
 			"This is a live projection, not session history.",
 	}, wrapTool(s.listWorkspaceAgentSessions))
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name: "kenn_forge_spawn_workspace_with_agent",
+		Description: "Create or reuse a workspace, launch one configured coding agent, observe its hook session, " +
+			"and submit exactly one initial message. Partial resources are never cleaned up automatically.",
+	}, wrapTool(s.spawnWorkspaceWithAgent))
 }
 
 func (s *Server) listAgentTargets(

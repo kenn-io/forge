@@ -15,15 +15,22 @@ Recommended flow:
    order respects the stack.
 6. Prefer cached evidence over assumptions, and report stale cache signals or
    uncertainty.
-7. Avoid provider writes. The only MCP write is
-   `kenn_forge_set_item_workflow_state`, which changes kenn-forge-local workflow
-   state.
+7. Avoid provider writes. MCP mutations are limited to Kenn Forge-local workflow
+   state and an explicitly requested local workspace/agent handoff.
 8. Set workflow state only when the reason is clear. Include `expected_status`
    when marking an item so a stale agent run does not overwrite humans or other
    agents. Use `force: true` only for a deliberate unconditional local
    override.
 9. Treat `awaiting_merge` as a PR-oriented state. Avoid setting it on issues
    unless the user explicitly asks for that state.
+10. Launch a coding agent only when the user explicitly requests a handoff.
+    Discover valid keys with `kenn_forge_list_agent_targets`, then call
+    `kenn_forge_spawn_workspace_with_agent` with one PR, issue, or ad-hoc source
+    and one initial message. Report the workspace and runtime identifiers even
+    when a later stage fails.
+11. Use `kenn_forge_list_workspace_agent_sessions` for fresh hook-reported
+    coding session IDs. Do not infer IDs from terminal text. Follow-up messaging
+    to an existing coding session is outside this MCP surface.
 
 Example guidance flow:
 
@@ -36,4 +43,15 @@ Example guidance flow:
    status="reviewing", expected_status from the candidate row, and a short
    reason.
 5. Report what was claimed and what was skipped.
+```
+
+Handoff flow:
+
+```text
+1. Call kenn_forge_list_agent_targets and select an available coding agent.
+2. Call kenn_forge_spawn_workspace_with_agent once with the selected source,
+   target, and initial message.
+3. Do not retry an ambiguous workspace, runtime, or message mutation. The tool
+   performs receipt-only recovery when an initial-message response is lost.
+4. Report every returned workspace, runtime, and coding-session identifier.
 ```

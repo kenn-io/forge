@@ -18,8 +18,11 @@
 - Receipt reuse requires matching agent, coding session, and normalized byte
   count; recover pending rows only after the daemon runtime lock is held, never
   during generic DB open (`internal/db/queries_agent_message.go::DB.ReserveAgentInitialMessage`, `cmd/kenn-forge/main.go::run`).
-- Initial input requires the exact live hook identity, safe normalized UTF-8,
-  and tracked bracketed-paste mode for multiline text; one reserved attempt is
-  never resent (`internal/server/workspaceapi/initial_message.go::Handler.submitInitialMessage`).
+- Initial input requires exact live hook identity, LF or printable Unicode, and
+  tracked bracketed paste for multiline text. Proven no-write rejection releases
+  its reservation; possible writes finalize without client cancellation (`internal/server/workspaceapi/initial_message.go::Handler.submitInitialMessage`).
 - MCP-created PR/issue workspaces must set `suppress_auto_assign`; ordinary UI
   omission preserves configured self-assignment (`internal/server/workspaceapi/routes_handlers.go::Handler.createWorkspace`).
+- MCP can create/reuse PR, issue, or ad-hoc workspaces and launch one new agent
+  runtime with one initial message. Ambiguous mutations are never retried or
+  cleaned up; only a lost message response permits receipt-only recovery (`internal/mcpserver/tools_agent_spawn.go::Server.spawnWorkspaceWithAgent`).

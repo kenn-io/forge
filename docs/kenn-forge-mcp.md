@@ -1,8 +1,9 @@
 # Kenn Forge MCP
 
 `kenn-forge mcp` starts a companion MCP server for local agents. It exposes
-cached Kenn Forge data and one local workflow-state write. It does not force
-provider refreshes. In v1, it writes only Kenn Forge-local workflow state.
+cached Kenn Forge data, local workflow state, and an explicit local coding-agent
+handoff. It does not force provider refreshes or perform provider writes. When
+not explicitly handing off work, it writes only Kenn Forge-local workflow state.
 
 ## Stdio Client Configuration
 
@@ -98,6 +99,31 @@ item type, and number. A same-state write intentionally refreshes local metadata
 and this ordering. Tool errors are JSON envelopes with stable
 `kind`, daemon `code`, structured `details`, `retryable`, and `ambiguous`
 fields; never retry an ambiguous mutation.
+
+## Coding-agent handoff
+
+Call `kenn_forge_list_agent_targets` to discover configured coding-agent keys
+and whether each target is currently available. To hand off work, call
+`kenn_forge_spawn_workspace_with_agent` with exactly one source:
+
+- a provider-aware PR or issue reference; or
+- an ad-hoc provider-aware repository reference with an optional branch.
+
+The tool creates or reuses the workspace, waits for it to become ready, launches
+a new agent runtime, waits for the agent hook to report its coding session ID,
+and submits exactly one initial message. Item-backed workspaces suppress optional
+automatic provider assignment. Existing workspaces still receive a new runtime.
+
+The response reports the last completed stage plus every workspace, runtime,
+and coding-session identifier learned so far. Created resources remain running
+after a later failure. Do not retry an ambiguous create, launch, or message
+mutation; the companion performs only receipt lookup after a lost initial-message
+response.
+
+Use `kenn_forge_list_workspace_agent_sessions` to list fresh, live coding
+session IDs reported by hooks for a workspace. It intentionally omits expired
+or historical sessions. Sending follow-up messages to an existing coding
+session is outside the current MCP surface.
 
 ## Troubleshooting
 

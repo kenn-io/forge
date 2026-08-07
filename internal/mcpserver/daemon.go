@@ -166,6 +166,15 @@ func (c *daemonClient) putJSON(ctx context.Context, path string, body, out any) 
 	return err
 }
 
+func (c *daemonClient) postJSON(ctx context.Context, path string, body, out any) error {
+	err := c.do(ctx, http.MethodPost, path, nil, body, out)
+	var derr *daemonError
+	if errors.As(err, &derr) && derr.Kind == "daemon_unavailable" {
+		_ = c.discover()
+	}
+	return err
+}
+
 func (c *daemonClient) do(
 	ctx context.Context,
 	method string,

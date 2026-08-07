@@ -400,8 +400,17 @@ could fingerprint low-entropy prompt content. The delivery states are
 
 1. Reserve `pending` before writing any terminal input.
 2. Submit the bounded UTF-8 message through the input adapter defined below.
-3. Mark the receipt `delivered` only after the runtime input write succeeds.
-4. Mark or recover an interrupted `pending` receipt as `uncertain`.
+3. If the adapter proves that it wrote no bytes, as when tracked bracketed-paste
+   mode is inactive, release that exact pending reservation so a corrected
+   request may try once.
+4. Mark the receipt `delivered` only after the runtime input write succeeds.
+5. Mark or recover a possibly written or interrupted `pending` receipt as
+   `uncertain`.
+
+Receipt release and the delivered/uncertain transitions use a bounded
+daemon-owned context after reservation, so client cancellation cannot strand a
+completed write in `pending`. This context changes only receipt finalization;
+it never extends or retries terminal input.
 
 Once a receipt exists, the daemon never sends another initial message to that
 runtime. A repeated request with the same normalized agent, coding session ID,
@@ -515,7 +524,7 @@ normalized byte count returns conflict before liveness validation.
 the normalized `agent`, coding `session_id`, and required `message`. It rejects
 an absent or mismatched live report, a non-agent runtime, a stale session, a
 blank or whitespace-only message, a message over 64 KiB, invalid UTF-8, NUL,
-and non-whitespace control characters. Line endings normalize to LF and
+and every rune other than LF or printable Unicode. Line endings normalize to LF and
 `message_bytes` is the UTF-8 byte length after that normalization. A single-line
 message is written as text followed by one carriage-return submit action. A multiline message requires the
 runtime's tracked bracketed-paste mode and is sent as one bracketed paste

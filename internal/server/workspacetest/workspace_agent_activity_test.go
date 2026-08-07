@@ -72,6 +72,31 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	assert.Equal("live-agent", (*sessionsResponse.JSON200.Sessions)[0].SessionId)
 	assert.Equal(launch.JSON200.Key, (*sessionsResponse.JSON200.Sessions)[0].RuntimeSessionKey)
 
+	messageResponse, err := fixture.client.HTTP.SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(
+		ctx, ws.Id, launch.JSON200.Key,
+		generated.SubmitInitialMessageInputBody{
+			Agent: "codex", SessionId: "live-agent", Message: "review this",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, messageResponse.StatusCode(), string(messageResponse.Body))
+	require.NotNil(messageResponse.JSON200)
+	assert.Equal("delivered", messageResponse.JSON200.State)
+	assert.Equal(int64(11), messageResponse.JSON200.MessageBytes)
+	assert.Equal(time.UTC, messageResponse.JSON200.ReservedAt.Location())
+	require.NotNil(messageResponse.JSON200.DeliveredAt)
+	assert.Equal(time.UTC, messageResponse.JSON200.DeliveredAt.Location())
+
+	sessionsResponse, err = fixture.client.HTTP.ListWorkspaceAgentSessionsWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, sessionsResponse.StatusCode(), string(sessionsResponse.Body))
+	require.NotNil(sessionsResponse.JSON200)
+	require.NotNil(sessionsResponse.JSON200.Sessions)
+	require.Len(*sessionsResponse.JSON200.Sessions, 1)
+	require.NotNil((*sessionsResponse.JSON200.Sessions)[0].InitialMessage)
+	assert.Equal("delivered", (*sessionsResponse.JSON200.Sessions)[0].InitialMessage.State)
+	assert.Equal(int64(11), (*sessionsResponse.JSON200.Sessions)[0].InitialMessage.MessageBytes)
+
 	getResponse, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
 	require.NoError(err)
 	require.Equal(http.StatusOK, getResponse.StatusCode())

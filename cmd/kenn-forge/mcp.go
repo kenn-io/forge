@@ -48,7 +48,7 @@ func newMCPCommand(run mcpRunner, stdin io.Reader, stdout io.Writer) *cobra.Comm
 			case "http":
 				_, port, err := net.SplitHostPort(opts.Addr)
 				portNumber, portErr := strconv.Atoi(port)
-				if !cmd.Flags().Changed("addr") || err != nil || portErr != nil ||
+				if !cmd.Flags().Changed("addr") || err != nil || !asciiDigits(port) || portErr != nil ||
 					portNumber < 1 || portNumber > 65535 {
 					return fmt.Errorf("--addr with an explicit nonzero port is required for --transport=http")
 				}
@@ -64,6 +64,18 @@ func newMCPCommand(run mcpRunner, stdin io.Reader, stdout io.Writer) *cobra.Comm
 	cmd.Flags().StringVar(&opts.HTTPTokenEnv, "http-token-env", "", "environment variable holding the HTTP bearer token")
 	cmd.Flags().DurationVar(&opts.DaemonTimeout, "daemon-timeout", opts.DaemonTimeout, "per-request daemon timeout")
 	return cmd
+}
+
+func asciiDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for index := range value {
+		if value[index] < '0' || value[index] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func runMCP(

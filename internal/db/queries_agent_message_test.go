@@ -326,6 +326,37 @@ func TestMarkAgentInitialMessageMissingReceipt(t *testing.T) {
 	require.ErrorIs(err, ErrAgentInitialMessageReceiptNotFound)
 }
 
+func TestReleasePendingAgentInitialMessageAllowsRetryAfterProvenNoWrite(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	insertAgentReceiptTestRuntime(t, database, "ws-release", "runtime-release")
+	receipt := AgentInitialMessageReceipt{
+		WorkspaceID: "ws-release", RuntimeSessionKey: "runtime-release",
+		Agent: "codex", CodingSessionID: "coding-release", MessageBytes: 12,
+	}
+	_, reserved, err := database.ReserveAgentInitialMessage(ctx, receipt)
+	require.NoError(err)
+	require.True(reserved)
+
+	released, err := database.ReleasePendingAgentInitialMessage(ctx, receipt)
+	require.NoError(err)
+	assert.True(released)
+	stored, err := database.GetAgentInitialMessageReceipt(ctx, "ws-release", "runtime-release")
+	require.NoError(err)
+	assert.Nil(stored)
+
+	_, reserved, err = database.ReserveAgentInitialMessage(ctx, receipt)
+	require.NoError(err)
+	assert.True(reserved)
+	_, err = database.MarkAgentInitialMessageDelivered(ctx, "ws-release", "runtime-release")
+	require.NoError(err)
+	released, err = database.ReleasePendingAgentInitialMessage(ctx, receipt)
+	require.NoError(err)
+	assert.False(released)
+}
+
 func insertAgentReceiptTestRuntime(
 	t *testing.T,
 	database *DB,

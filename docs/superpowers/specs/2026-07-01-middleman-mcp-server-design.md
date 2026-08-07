@@ -14,6 +14,13 @@ and mark selected items as `reviewing` in middleman-local workflow state. The
 periodic system itself is out of scope. Middleman only needs to provide the MCP
 primitives that make such a system safe and useful.
 
+The second use case is handing selected work to a coding agent. An MCP client
+should be able to create or reuse a PR-, issue-, or ad-hoc-backed workspace,
+launch one configured coding-agent target in it, wait until the agent hook
+reports the live coding session ID for that runtime, and submit one initial
+message. Clients should also be able to inspect the live coding session IDs
+currently associated with a workspace without scraping terminal output.
+
 The MCP server must not become a mirror of the full middleman HTTP API. The
 surface should be task-shaped, small, and explicitly model-friendly.
 
@@ -36,6 +43,12 @@ surface should be task-shaped, small, and explicitly model-friendly.
 - Preserve the existing PR kanban API and UI behavior.
 - Let MCP clients set local item workflow state, including `reviewing`.
 - Include workspace and stack context because those affect review decisions.
+- Expose configured coding-agent launch targets so clients do not guess target
+  keys.
+- Let MCP clients create or reuse PR-, issue-, and ad-hoc-backed workspaces and
+  launch a selected coding agent with one initial message.
+- Expose fresh, live coding session IDs reported by agent hooks and correlated
+  to a workspace runtime session.
 - Include a guidance document for configuring and using the MCP capabilities.
 
 ## Success Criteria
@@ -55,6 +68,14 @@ surface should be task-shaped, small, and explicitly model-friendly.
   on companion shutdown.
 - Existing PR kanban list/detail and state mutation behavior remains compatible
   with current clients and the board UI.
+- An MCP client can discover an available coding-agent target, spawn it in a
+  ready PR-, issue-, or ad-hoc-backed workspace, and receive the hook-reported
+  coding session ID after one at-most-once initial-message delivery attempt.
+- An MCP client can list only the fresh coding sessions whose hook reports match
+  the workspace worktree and a currently live runtime-session key.
+- A spawn timeout or late-stage failure returns the completed stage and every
+  known workspace, runtime, and coding-session identifier without tearing down
+  resources that were already created.
 - No MCP tool can perform provider writes.
 - The HTTP MCP transport accepts only loopback, token-authenticated,
   same-origin requests.
@@ -69,8 +90,12 @@ surface should be task-shaped, small, and explicitly model-friendly.
 - Mirroring the full OpenAPI surface as MCP tools.
 - Designing a new issue kanban UI.
 - Adding workflow-state history in this version.
-- Exposing Kata, Docs, Messages, repo browser, terminal, or fleet controls
-  through MCP.
+- Creating Kata-backed workspaces through MCP.
+- Exposing Docs, Messages, repo browser, raw terminal, shell, stop/delete, or
+  fleet controls through MCP.
+- Sending follow-up messages to an existing coding session after its initial
+  spawn message. A future design may add that capability using the same verified
+  workspace/runtime/session identity.
 - Supporting non-loopback remote MCP access in v1.
 
 ## Recommended Approach
@@ -96,6 +121,12 @@ Add one new middleman-owned workflow-state model for provider PRs and issues.
 Existing PR kanban behavior is preserved by backing the current PR kanban route
 and board data with the new generic state. Issues use the same status vocabulary
 as PRs: `new`, `reviewing`, `waiting`, and `awaiting_merge`.
+
+For coding-agent handoff, keep orchestration in the MCP companion but keep every
+stateful primitive in the daemon. The companion sequences source-specific
+workspace creation, readiness polling, configured runtime launch, hook-session
+discovery, and verified initial-message delivery. It never opens a terminal
+WebSocket or invokes an agent CLI directly.
 
 ## Alternatives Considered
 
@@ -127,6 +158,28 @@ This is rejected. The desired MCP use case needs curated maintainer primitives,
 not every mutation and detail path. A full mapping would expose provider writes
 that are explicitly out of scope and would push too much API selection burden
 onto the model.
+
+### MCP Companion Drives The Terminal WebSocket
+
+The companion could attach to the runtime terminal and write the initial prompt
+itself after polling hook reports.
+
+This is rejected. It would duplicate terminal authentication, framing, input
+mode, and lifecycle rules in the MCP package. It would also let a model-facing
+component drift toward arbitrary terminal control. The daemon already owns the
+runtime input boundary and can validate the workspace/runtime/coding-session
+join immediately before writing.
+
+### Agent-Specific Resume Or Submission Commands
+
+The companion could use each coding agent's native CLI to resume the reported
+session ID and submit a message.
+
+This is rejected for v1. Codex, Claude, Cursor, Gemini, and the other supported
+hook profiles do not share a stable submission contract. Per-agent adapters
+would multiply process, version, quoting, and authentication behavior and could
+accidentally launch a second agent instead of addressing the runtime Middleman
+already owns.
 
 ## Architecture
 
@@ -171,6 +224,10 @@ The daemon owns:
 - activity feed queries;
 - PR and issue list/detail behavior;
 - workspace and stack lookup;
+- workspace creation/reuse, readiness, runtime launch, and runtime input;
+- configured launch-target validation;
+- agent-hook report storage and live runtime/session correlation;
+- one-time initial-message delivery receipts;
 - generic local workflow state;
 - PR kanban route compatibility;
 - API auth, CSRF, host checks, and problem envelopes.
@@ -183,6 +240,8 @@ The MCP companion owns:
 - daemon discovery and authenticated loopback requests;
 - compact model-oriented response shapes;
 - candidate grouping from daemon responses;
+- orchestration of the bounded create/reuse, ready, launch, hook-discovery, and
+  initial-message sequence through daemon-owned APIs;
 - translating daemon problem documents into MCP errors.
 
 ### MCP Library And HTTP Safety
@@ -205,6 +264,12 @@ HTTP MCP requests must be protected independently from the daemon auth token:
   logs.
 
 Errors that mention daemon discovery paths should avoid leaking secrets.
+
+Workspace spawning is a consequential local write even though it never writes
+to a provider: it may create a Git worktree and branch, start a coding-agent
+process, and submit text to that process. The spawn tool must be annotated and
+described as mutating. HTTP clients receive no weaker approval or authentication
+treatment for this tool than stdio clients.
 
 ## Local Workflow State
 
@@ -291,6 +356,51 @@ board or visible issue-state UI. Issue list/detail responses expose
 `WorkflowStatus` and local workflow metadata so API consumers do not need to
 special-case PRs for local review state.
 
+## Live Coding Sessions And Initial Message Receipts
+
+Agent hooks remain the authority for coding-agent session IDs. Each accepted
+top-level hook report stores the normalized agent name in addition to the
+existing coding `session_id`, runtime-session key, canonical working directory,
+activity state, and update time. Report identity is `(agent, session_id)` so two
+agent integrations may use the same opaque session ID without colliding.
+Nested-agent reports with `agent_id` remain excluded.
+
+The daemon exposes a coding session for a workspace only when all of these are
+true at read time:
+
+- the report is within the existing 30-minute freshness window;
+- its canonical working directory matches the workspace worktree;
+- its runtime-session key belongs to a currently live workspace runtime;
+- that runtime's recorded kind is `agent`, even if its target configuration
+  changed after launch; and
+- the report identifies a supported normalized agent.
+
+This is a live projection, not a historical session registry. Natural runtime
+exit, explicit runtime cleanup, hook stop/interrupt handling, or report expiry
+removes the session from the projection. Existing ephemeral reports need no
+historical migration: reports without normalized agent identity are invalid for
+the new projection and the report-store scan removes them instead of guessing
+an agent from a target label or command.
+
+Initial-message delivery is scoped to one verified live runtime and coding
+session. The daemon persists a receipt keyed by workspace and runtime-session
+key with the normalized agent, coding session ID, message byte count, delivery
+state, and UTC timestamps. It never persists the message text or a digest that
+could fingerprint low-entropy prompt content. The delivery states are
+`pending`, `delivered`, and `uncertain`:
+
+1. Reserve `pending` before writing any terminal input.
+2. Submit the bounded UTF-8 message through the input adapter defined below.
+3. Mark the receipt `delivered` only after the runtime input write succeeds.
+4. Mark or recover an interrupted `pending` receipt as `uncertain`.
+
+Once a receipt exists, the daemon never sends another initial message to that
+runtime. A repeated request returns the existing receipt or a conflict instead
+of writing again. This provides an at-most-once delivery attempt across retries;
+because terminal input has no transactional acknowledgement from the coding
+agent, an `uncertain` result must not be described as delivered and must not be
+retried automatically.
+
 ## Daemon API Additions
 
 The companion should use existing daemon routes where they already fit:
@@ -305,12 +415,24 @@ The companion should use existing daemon routes where they already fit:
 - `GET /issues/{provider}/{owner}/{name}/{number}`
 - `GET /pulls/{provider}/{owner}/{name}/{number}/stack`
 - `GET /workspaces`
+- `GET /settings` for configured launch-target discovery
+- `POST /workspaces` for PR-backed workspace creation/reuse
+- `POST /issues/{provider}/{owner}/{name}/{number}/workspace` for issue-backed
+  workspace creation/reuse, including the existing host-prefixed variant
+- `POST /repo/{provider}/{owner}/{name}/workspaces` for ad-hoc workspace
+  creation/reuse, including the existing host-prefixed variant
+- `GET /workspaces/{id}` for readiness polling
+- `GET /workspaces/{id}/runtime` for live runtime and launch-target state
+- `POST /workspaces/{id}/runtime/sessions` for configured agent launch
 
-Add focused daemon endpoints only for the generic local workflow state:
+Add focused daemon endpoints for generic local workflow state and verified
+coding-session message delivery:
 
 - `GET /workflow-state`
 - `PUT /workflow-state/{item_type}/{provider}/{owner}/{name}/{number}`
 - host-prefixed variants for non-default provider hosts
+- `GET /workspaces/{id}/agent-sessions`
+- `POST /workspaces/{id}/runtime/sessions/{session_key}/initial-message`
 
 `GET /workflow-state` supports repo, item type, state, `include_closed`, limit,
 and cursor filters. It returns compact provider-aware item refs and last-writer
@@ -335,6 +457,32 @@ provider mutator.
 
 The existing PR kanban route remains because it is part of the current public
 API and UI contract.
+
+`GET /workspaces/{id}/agent-sessions` joins fresh agent-hook reports to the
+workspace's canonical worktree and current live runtime inventory. It returns
+`agent`, coding `session_id`, `runtime_session_key`, configured `target_key`,
+activity `state`, `updated_at`, and the initial-message receipt state when one
+exists. It never returns stale reports, dead runtime sessions, nested-agent
+reports, or historical IDs.
+
+`POST /workspaces/{id}/runtime/sessions/{session_key}/initial-message` accepts
+the normalized `agent`, coding `session_id`, and required `message`. It rejects
+an absent or mismatched live report, a non-agent runtime, a stale session, a
+message over 64 KiB, invalid UTF-8, NUL, and non-whitespace control characters.
+Line endings normalize to LF. A single-line message is written as text followed
+by one carriage-return submit action. A multiline message requires the
+runtime's tracked bracketed-paste mode and is sent as one bracketed paste
+followed by one carriage-return; if the mode is not active, delivery fails
+before writing rather than risk submitting multiple commands. The endpoint does
+not expose arbitrary terminal bytes, implements the receipt state machine
+above, and never calls a provider.
+
+The PR and issue workspace-creation requests gain an explicit
+`suppress_auto_assign` boolean. The MCP companion always sends `true`; ordinary
+UI callers preserve their existing configured self-assignment behavior when it
+is omitted. The flag affects only the optional post-persistence provider
+self-assignment step and does not change workspace identity, creation, reuse, or
+local setup semantics.
 
 ## MCP Surface
 
@@ -484,7 +632,9 @@ Behavior:
 - Returns the previous and new status plus metadata.
 - Returns conflict when `expected_status` does not match.
 
-This is the only v1 MCP write tool.
+This and `middleman_spawn_workspace_with_agent` are the only v1 MCP write
+tools. Workflow state is the only persisted item-state write; spawning performs
+local workspace/runtime mutations and one bounded initial-message submission.
 
 ### Tool: `middleman_list_activity`
 
@@ -530,6 +680,18 @@ The response wraps `GET /repos/summary` into compact rows:
 Guidance should tell periodic agents to call this first: it doubles as a
 staleness map, since a repo whose last sync failed or is old should reduce
 confidence in candidates from that repo.
+
+### Tool: `middleman_list_agent_targets`
+
+List configured coding-agent launch targets so an MCP client can choose a valid
+`agent_target` instead of guessing a config key.
+
+Inputs: none.
+
+The response filters the daemon's launch-target inventory to `kind = "agent"`
+and returns only `key`, `label`, `source`, `available`, and `disabled_reason`.
+It never exposes configured command argv or environment. Unavailable targets
+remain visible so a client can report why the requested agent cannot launch.
 
 ### Tool: `middleman_search_items`
 
@@ -669,6 +831,74 @@ This complements the four-field stack summary in candidate rows: candidates
 say "this PR is in a stack"; this tool answers "what should be reviewed before
 it".
 
+### Tool: `middleman_spawn_workspace_with_agent`
+
+Create or reuse a workspace, launch one configured coding agent, wait for its
+hook-reported coding session ID, and submit one initial message.
+
+Inputs:
+
+- `source`: exactly one tagged source:
+  - `item` with a provider-aware `pr` or `issue` ref; or
+  - `adhoc` with a provider-aware repo ref and optional `branch`. An omitted
+    branch uses the daemon's existing generated-branch behavior.
+- `agent_target`: required key returned by `middleman_list_agent_targets`.
+- `initial_message`: required UTF-8 text, capped at 64 KiB after line-ending
+  normalization.
+- `timeout`: total orchestration duration such as `5m`; default `5m`, maximum
+  `15m`.
+
+The companion performs these stages in order:
+
+1. Validate that `agent_target` exists, is `kind = "agent"`, and is available.
+2. Resolve cached item data when the source is a PR or issue, then call the
+   existing source-specific workspace create/reuse route. MCP-originated item
+   creation explicitly suppresses optional automatic provider self-assignment,
+   so this tool cannot acquire a provider write through ordinary UI creation
+   policy.
+3. Poll workspace detail until status is `ready` or the total timeout expires.
+4. Launch a new runtime session for `agent_target`. Reusing a workspace never
+   silently reuses an older coding-agent runtime.
+5. Poll the live workspace agent-session endpoint until a report matches the
+   new runtime-session key and canonical worktree.
+6. Submit `initial_message` through the verified one-time endpoint and return
+   its receipt.
+
+The success response contains:
+
+- `stage = "message_delivered"`;
+- workspace ID, status, source identity, and whether the workspace was reused;
+- runtime-session key, target key, status, and creation time;
+- normalized agent, coding `session_id`, activity state, and report time; and
+- initial-message state, byte count, and delivery time.
+
+The stage vocabulary is `workspace_created`, `workspace_ready`,
+`runtime_launched`, `coding_session_observed`, and `message_delivered`. A
+failure or timeout returns the last completed stage, the failed stage, and all
+identifiers known at that point as structured error details. Resources already
+created are left running; the companion never stops a runtime, deletes a
+workspace, or retries the whole spawn sequence automatically. An `uncertain`
+message receipt is surfaced as an error with `message_delivered = false`.
+
+This tool is consequential local mutation. It may create a worktree and branch,
+start a local process, and submit text to that process, but it never performs a
+provider write and never accepts an arbitrary command or terminal byte stream.
+
+### Tool: `middleman_list_workspace_agent_sessions`
+
+List the fresh, live coding sessions currently associated with one workspace.
+
+Inputs:
+
+- `workspace_id`: required persisted workspace ID.
+
+Each result includes normalized `agent`, coding `session_id`,
+`runtime_session_key`, configured `target_key`, activity `state`, `updated_at`,
+and any initial-message receipt state and delivery time. Ordering is
+`updated_at DESC`, then `(agent, session_id, runtime_session_key)` for stable
+ties. The tool returns an empty list when no live reports qualify; it never
+returns historical or expired IDs.
+
 ### Resource: `middleman://mcp/guidance`
 
 Expose the guidance document content as an MCP resource so a client can load the
@@ -694,6 +924,11 @@ tell the model to:
 - include `expected_status` when marking an item;
 - treat `awaiting_merge` as a PR-oriented state and avoid setting it on issues
   unless the user prompt explicitly asks for that state;
+- launch a coding agent only when the user or periodic-job prompt explicitly
+  requests handoff, discover its key with `middleman_list_agent_targets`, and
+  report every local resource created by the spawn;
+- use `middleman_list_workspace_agent_sessions` to inspect live coding session
+  IDs instead of inferring them from terminal output;
 - report uncertainty and stale-cache signals.
 
 ## Candidate Semantics
@@ -731,11 +966,22 @@ Important cases:
 - item not found;
 - invalid workflow status;
 - expected-status conflict;
+- invalid, non-agent, disabled, or unavailable launch target;
+- invalid or ambiguous PR, issue, repository, or branch source;
+- workspace setup failure or readiness timeout;
+- runtime launch failure or exit before message delivery;
+- hook-session discovery timeout or identity mismatch;
+- invalid or oversized initial message;
+- an existing initial-message receipt, including `uncertain` delivery;
 - daemon route unavailable due to version mismatch;
 - daemon timeout.
 
 Provider errors should appear only on read paths that depend on cached daemon
-behavior. MCP workflow writes never call provider APIs.
+behavior. MCP workflow writes never call provider APIs, and MCP workspace
+creation suppresses the existing optional provider self-assignment side effect.
+Spawn errors carry structured partial state with `last_completed_stage`,
+`failed_stage`, `message_delivered = false`, and every identifier learned before
+failure. Error text must not include the initial message.
 
 ## Timeouts, Retries, And Compatibility
 
@@ -746,19 +992,28 @@ daemon runtime metadata. Workflow writes do not retry automatically because a
 retry could obscure whether a local state transition was applied before the
 connection failed.
 
+`middleman_spawn_workspace_with_agent` has a separate total orchestration
+timeout supplied by its `timeout` input, defaulting to five minutes and capped
+at fifteen minutes. The existing daemon request timeout still bounds each
+individual request; it does not cap readiness or hook-discovery polling. The
+companion may retry idempotent reads inside the sequence after rediscovery, but
+it never automatically retries workspace creation, runtime launch, initial
+message submission, or the complete spawn operation. The persisted message
+receipt is authoritative after a lost response.
+
 Daemon discovery and capability checking are lazy and uniform across
 transports: companion startup never contacts the daemon, and `middleman mcp`
 starts successfully with no daemon running — tools then return a clear
-daemon-unavailable error when called. The workflow-state capability probe
-runs on the first workflow tool call after a successful discovery, before
-that tool executes. Its result is cached keyed by the daemon identity from
-runtime metadata (PID plus start time), so a daemon restart or upgrade while
-the companion stays alive invalidates the cache and triggers a re-probe.
+daemon-unavailable error when called. Focused capability probes run before the
+first workflow or workspace-agent tool call that needs them. Results are cached
+keyed by the daemon identity from runtime metadata (PID plus start time), so a
+daemon restart or upgrade while the companion stays alive invalidates the cache
+and triggers a re-probe.
 
-If the daemon is older than the MCP companion expects, the workflow tools
-return a version/capability error that names the missing route or capability.
-The companion must not silently downgrade into partial semantics that change
-tool behavior.
+If the daemon is older than the MCP companion expects, the affected workflow or
+workspace-agent tools return a version/capability error that names the missing
+route or capability. The companion must not silently downgrade into partial
+semantics that change tool behavior.
 
 ## Staleness And Cache Signals
 
@@ -769,7 +1024,9 @@ daemon can provide it:
 - PR/issue `detail_loaded`;
 - `detail_fetched_at`;
 - repository `last_sync_completed_at` when available;
-- whether the activity response was capped.
+- whether the activity response was capped;
+- coding-session hook `updated_at` and activity state; and
+- current runtime liveness and initial-message receipt state.
 
 The MCP server must not hide stale or missing detail. The guidance doc should
 teach users to treat stale cache as lower confidence, not as absence of
@@ -785,7 +1042,10 @@ The guidance doc should cover:
 - how to use the HTTP transport locally when needed;
 - that the MCP server reads cached middleman data and does not force provider
   refreshes;
-- that v1 writes only middleman-local workflow state;
+- that v1 mutations are limited to middleman-local workflow state and local
+  workspace/agent spawning with one initial message;
+- that MCP workspace creation suppresses optional provider self-assignment and
+  performs no provider write;
 - example periodic-agent flows;
 - safe prompts for "find recent review candidates";
 - discovering repo filters with `middleman_list_repos` before filtering other
@@ -797,6 +1057,14 @@ The guidance doc should cover:
 - when to mark an item `reviewing`;
 - how to use `expected_status` to avoid overwriting humans or other agents;
 - how to inspect already reviewing/waiting items;
+- discovering configured agent keys with `middleman_list_agent_targets`;
+- spawning PR-, issue-, and ad-hoc-backed workspaces with an initial message;
+- interpreting partial spawn stages without retrying the full operation;
+- listing fresh live coding session IDs with
+  `middleman_list_workspace_agent_sessions`;
+- the at-most-once initial-message receipt states, especially that `uncertain`
+  must not be retried or reported as delivered;
+- that follow-up message submission is intentionally not exposed in v1;
 - how to interpret stale cache fields;
 - troubleshooting daemon discovery and auth errors.
 
@@ -811,6 +1079,20 @@ Example guidance flow:
    status="reviewing", expected_status from the candidate row, and a short
    reason.
 5. Report what was claimed and what was skipped.
+```
+
+Example coding-agent handoff flow:
+
+```text
+1. Call middleman_list_agent_targets and choose an available agent key.
+2. Call middleman_spawn_workspace_with_agent with an item or ad-hoc source and
+   one explicit initial_message.
+3. If it succeeds, report the workspace ID, runtime-session key, coding
+   session_id, and delivered receipt.
+4. If it fails after creating local resources, report the returned partial
+   stage and identifiers. Do not retry the whole spawn automatically.
+5. Call middleman_list_workspace_agent_sessions when current live session IDs
+   need to be inspected later; do not infer IDs from terminal output.
 ```
 
 ## Testing
@@ -828,7 +1110,19 @@ Backend tests:
   pagination, and expected-status conflict;
 - existing PR kanban API tests continue to pass against the generic store;
 - issue list/detail API tests cover `WorkflowStatus` and local workflow
-  metadata exposure.
+  metadata exposure;
+- agent-hook report tests key reports by `(agent, session_id)` and retain the
+  normalized agent while continuing to ignore nested-agent reports;
+- live coding-session API tests exclude expired reports, dead or wrong runtime
+  keys, mismatched canonical worktrees, non-agent targets, and unsupported
+  agents, including equal session IDs reported by two agent integrations;
+- initial-message API tests cover the 64 KiB UTF-8/control-character boundary,
+  single-line submission, multiline bracketed-paste submission and inactive-mode
+  rejection, receipt transitions, duplicate rejection, interrupted `pending`
+  recovery to `uncertain`, and absence of persisted message text or digest;
+- PR and issue workspace API tests prove `suppress_auto_assign` preserves
+  ordinary callers while preventing the MCP path from invoking a provider
+  mutator.
 
 MCP tests:
 
@@ -840,6 +1134,8 @@ MCP tests:
   mapping;
 - repo listing tool test maps `/repos/summary` rows to compact refs including
   sync freshness fields;
+- agent-target listing test filters out shell/command targets, retains
+  unavailable agent targets and their reason, and omits command argv;
 - search tool test merges PR and issue results from controlled daemon
   responses in `last_activity_at` order and never includes bodies;
 - diff tool tests cover the summary-only default, `emit_diff_file` writing a
@@ -850,16 +1146,29 @@ MCP tests:
   calls and removal on companion shutdown;
 - stack context tool test covers `present: false` and ordered members with the
   requested PR marked;
+- workspace-agent spawn tests cover PR, issue, and ad-hoc sources, generated and
+  explicit branches, workspace reuse followed by a new runtime launch, target
+  validation, readiness polling, hook correlation, one-time delivery, and the
+  five-stage success response;
+- spawn failure tests cover each stage, total timeout capping, runtime exit,
+  `uncertain` delivery, structured partial identifiers, retained local
+  resources, and the absence of automatic mutation retries;
+- live workspace agent-session tool tests cover deterministic ordering and
+  empty, expired, dead, mismatched, and cross-agent report sets;
 - daemon discovery/auth tests reuse the runtime metadata pattern used by the
-  API CLI where possible.
+  API CLI where possible;
 - full-stack stdio MCP e2e starts a real middleman daemon against SQLite,
   connects through MCP, lists candidates from seeded cached data, performs a
   workflow-state write, and verifies the state through the daemon API; the
   same e2e also exercises `middleman_list_repos`, `middleman_search_items`,
   `middleman_get_item_context`, `middleman_get_item_diff` (summary and
-  emitted file), and `middleman_get_stack_context` against the real daemon so
-  route selection, JSON casing, and temp-file output are proven outside
-  fake-daemon unit tests;
+  emitted file), and `middleman_get_stack_context` against the real daemon. It
+  also discovers a controlled agent target, creates item- and ad-hoc-backed
+  workspaces, launches a fake agent runtime, submits a synthetic hook report,
+  verifies one initial message and its receipt, and lists the resulting live
+  coding session. This proves route selection, JSON casing, temp-file output,
+  runtime correlation, and local mutation behavior outside fake-daemon unit
+  tests;
 - HTTP transport e2e covers token-required startup, non-loopback bind rejection,
   accepted loopback requests with a bearer token, and rejected missing-token or
   cross-origin requests.
@@ -878,20 +1187,28 @@ No Playwright coverage is required unless implementation changes visible UI.
 
 ## Rollout
 
-1. Add the schema migration that creates generic workflow-state storage and
-   copies existing PR kanban rows.
-2. Add DB query helpers for generic PR/issue workflow state, including effective
-   `new`, expected-status conflicts, metadata limits, closed filtering, and
-   cursor ordering.
+1. Add one schema migration that creates generic workflow-state and
+   initial-message receipt storage and copies existing PR kanban rows. If the
+   generic workflow migration is still PR-local, amend it rather than adding a
+   second migration; if it has shipped, land receipt storage as a separate
+   forward-migration PR.
+2. Add DB query helpers for generic PR/issue workflow state and message
+   receipts, including effective `new`, expected-status conflicts, metadata
+   limits, closed filtering, cursor ordering, and receipt transitions.
 3. Update PR kanban read/write paths to use generic workflow state while keeping
    the public API stable.
 4. Add issue workflow-state API exposure.
 5. Add the workflow-state daemon API endpoints and regenerate API artifacts.
-6. Add `docs/middleman-mcp.md`.
-7. Add `middleman mcp` with stdio transport, curated read tools, the workflow
-   write tool, and the guidance resource.
-8. Add HTTP MCP transport with token, Host, Origin, and loopback checks.
+6. Extend agent-hook reports with normalized agent identity and add the live
+   coding-session and one-time initial-message daemon APIs.
+7. Add `suppress_auto_assign` to PR/issue workspace creation and prove the MCP
+   creation path has no provider write.
+8. Add `docs/middleman-mcp.md`.
+9. Add `middleman mcp` with stdio transport, curated read tools, workflow
+   mutation, agent-target discovery, workspace-agent spawning, live coding
+   session listing, and the guidance resource.
+10. Add HTTP MCP transport with token, Host, Origin, and loopback checks.
 
-The implementation plan can split these into smaller commits, but the generic
-workflow state should land before MCP write tools so the MCP surface does not
-depend on a PR-only concept.
+The implementation plan can split these into smaller commits while preserving
+the repository's one-migration-per-PR rule. Generic workflow state and message
+receipt storage should land before the MCP mutation tools that depend on them.

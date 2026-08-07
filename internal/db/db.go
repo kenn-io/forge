@@ -80,13 +80,15 @@ func (d *DB) init() error {
 	if err != nil {
 		return err
 	}
-	if !dbupgrade.NeedsLegacyTimestampRepair(startVersion) {
-		return nil
+	if dbupgrade.NeedsLegacyTimestampRepair(startVersion) {
+		if err := d.Tx(context.Background(), func(tx *sql.Tx) error {
+			return dbupgrade.RepairLegacyTimestamps(context.Background(), tx)
+		}); err != nil {
+			return fmt.Errorf("repair legacy timestamp storage: %w", err)
+		}
 	}
-	if err := d.Tx(context.Background(), func(tx *sql.Tx) error {
-		return dbupgrade.RepairLegacyTimestamps(context.Background(), tx)
-	}); err != nil {
-		return fmt.Errorf("repair legacy timestamp storage: %w", err)
+	if _, err := d.RecoverPendingAgentInitialMessages(context.Background()); err != nil {
+		return err
 	}
 	return nil
 }

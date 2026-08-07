@@ -10,3 +10,5 @@
   enforcement (`internal/mcpserver/http.go::Server.httpGuard`).
 - Treat only typed not-stacked responses as absence; surface other evidence
   failures and structured retry/ambiguity state (`internal/mcpserver/tools_stack.go::isStackAbsentError`).
+- Initial-message receipts store no prompt or digest and survive runtime-row
+  cleanup; only workspace deletion cascades them (`internal/db/migrations/000047_agent_initial_message_receipts.up.sql`).

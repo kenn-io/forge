@@ -208,7 +208,9 @@ git commit -m "feat: add the Kenn Forge MCP companion command"
 
 **Interfaces:**
 - Produces: `AgentInitialMessageReceipt`, `ReserveAgentInitialMessage`, `MarkAgentInitialMessageDelivered`, `MarkAgentInitialMessageUncertain`, and `GetAgentInitialMessageReceipt`.
-- Consumes: workspace/runtime foreign keys and UTC DB clock.
+- Consumes: the workspace foreign key, transactional runtime-row validation,
+  and the UTC DB clock. The runtime key is deliberately not a foreign key:
+  runtime exit deletes that row while the durable receipt remains readable.
 
 - [ ] **Step 1: Load migration and test-scope skills, then write failing tests**
 
@@ -227,7 +229,10 @@ type AgentInitialMessageReceipt struct {
 }
 ```
 
-Tests prove one row per workspace/runtime, strict states, no message/digest column, foreign-key cleanup, reserve conflict returning the existing receipt, delivered transition, and startup recovery of pending rows to uncertain.
+Tests prove one row per workspace/runtime, strict states, no message/digest
+column, workspace foreign-key cleanup, runtime-row deletion retaining the
+receipt, reserve conflict returning the existing receipt, delivered transition,
+and startup recovery of pending rows to uncertain.
 
 - [ ] **Step 2: Verify DB tests fail**
 
@@ -237,7 +242,12 @@ Expected: FAIL with missing migration/table/query symbols.
 
 - [ ] **Step 3: Implement migration and transactional DB API**
 
-Create `forge_agent_initial_message_receipts` with composite primary key, workspace/runtime foreign key, strict state and byte-count checks, UTC text timestamps, and no prompt material. Reserve in a transaction before runtime input and reject every second reservation.
+Create `forge_agent_initial_message_receipts` with a composite primary key,
+workspace foreign key, strict state and byte-count checks, UTC text timestamps,
+and no prompt material. Reserve in a transaction that first returns an existing
+receipt, then verifies the runtime row before inserting; reject every second
+reservation. Do not foreign-key the runtime row because its cleanup must not
+delete lost-response recovery evidence.
 
 - [ ] **Step 4: Run DB and migration checks**
 

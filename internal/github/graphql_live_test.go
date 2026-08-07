@@ -65,6 +65,11 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	)
 	require.NoError(t, err, "review-thread GraphQL query should validate against GitHub")
 	require.NotEmpty(t, threads, "live review fixture should contain a review thread")
+	require.NotEmpty(t, threads[0].Comments, "live review fixture should contain a review comment")
+	require.False(t, threads[0].Comments[0].CreatedAt.IsZero(),
+		"review-thread GraphQL query should return comment creation time")
+	require.False(t, threads[0].Comments[0].UpdatedAt.IsZero(),
+		"review-thread GraphQL query should return comment update time")
 
 	comments, _, _, err := reviewClient.listReviewThreadCommentsPage(
 		ctx, "kenn-io", "forge", 830,
@@ -76,4 +81,8 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	require.NoError(t, err, "review-thread comment GraphQL query should validate against GitHub")
 	require.NotEmpty(t, comments, "live review fixture should return its review thread")
 	require.NotEmpty(t, comments[0].Comments, "live review fixture should contain a review comment")
+	require.False(t, comments[0].Comments[0].CreatedAt.IsZero(),
+		"paginated review-comment query should return creation time")
+	require.False(t, comments[0].Comments[0].UpdatedAt.IsZero(),
+		"paginated review-comment query should return update time")
 }

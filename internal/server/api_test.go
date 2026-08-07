@@ -2268,6 +2268,7 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	now := time.Date(2026, 5, 27, 16, 1, 31, 0, time.UTC)
+	reviewUpdatedAt := now.Add(time.Minute)
 	prNumber := 42
 	line := 1
 	headSHA := "head-sha"
@@ -2324,7 +2325,7 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 					IsMinimized:      true,
 					MinimizedReason:  "OFF_TOPIC",
 					CreatedAt:        now,
-					UpdatedAt:        now,
+					UpdatedAt:        reviewUpdatedAt,
 				}},
 			}}, nil
 		},
@@ -2339,6 +2340,7 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Events)
+	assert.Equal(reviewUpdatedAt, resp.JSON200.MergeRequest.LastActivityAt)
 	require.Len(*resp.JSON200.Events, 1)
 	event := (*resp.JSON200.Events)[0]
 	assert.Equal("review_comment", event.EventType)
@@ -13648,7 +13650,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Empty(*secondResp.JSON200.Events)
 }
 
-func TestE2EPRDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *testing.T) {
+func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -13658,6 +13660,9 @@ func TestE2EPRDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *tes
 	secondUpdatedAt := now.Add(time.Minute).Format(time.RFC3339)
 	currentUpdatedAt := firstUpdatedAt
 	firstVisibility := `"isMinimized":true,"minimizedReason":"OFF_TOPIC"`
+	reviewCreatedAt := now.Add(3 * time.Minute)
+	reviewUpdatedAt := now.Add(4 * time.Minute)
+	reviewThreadsPageInfo := `{"hasNextPage":false,"endCursor":null}`
 
 	commentsJSON := func() string {
 		return `{"nodes":[{
@@ -13670,6 +13675,39 @@ func TestE2EPRDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *tes
 			` + firstVisibility + `
 		}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor"}}`
 	}
+	reviewThreadsJSON := func() string {
+		return `{"nodes":[{
+			"id":"PRRT_combined",
+			"isResolved":false,
+			"isOutdated":false,
+			"path":"src/main.go",
+			"line":12,
+			"originalLine":12,
+			"startLine":null,
+			"originalStartLine":null,
+			"diffSide":"RIGHT",
+			"comments":{"nodes":[{
+				"id":"PRRC_combined",
+				"databaseId":9233,
+				"fullDatabaseId":9233,
+				"body":"hidden inline reply",
+				"path":"src/main.go",
+				"line":12,
+				"originalLine":12,
+				"subjectType":"LINE",
+				"diffHunk":"@@ -12 +12 @@",
+				"url":"https://github.com/acme/widget/pull/177#discussion_r9233",
+				"author":{"login":"reviewer"},
+				"commit":{"oid":"deadbeef"},
+				"originalCommit":{"oid":"deadbeef"},
+				"pullRequestReview":{"databaseId":991},
+				"isMinimized":true,
+				"minimizedReason":"ABUSE",
+				"createdAt":"` + reviewCreatedAt.Format(time.RFC3339) + `",
+				"updatedAt":"` + reviewUpdatedAt.Format(time.RFC3339) + `"
+			}],"pageInfo":{"hasNextPage":false,"endCursor":null}}
+		}],"pageInfo":` + reviewThreadsPageInfo + `}`
+	}
 
 	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -13678,8 +13716,14 @@ func TestE2EPRDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *tes
 		if bytes.Contains(body, []byte("pullRequest(number:")) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"comments":{"nodes":[{
 				"databaseId":9232,
+				"fullDatabaseId":9232,
+				"author":{"login":"commenter"},
+				"body":"outside the first GraphQL page",
+				"url":"https://github.com/acme/widget/pull/177#issuecomment-9232",
 				"isMinimized":true,
-				"minimizedReason":"OFF_TOPIC"
+				"minimizedReason":"OFF_TOPIC",
+				"createdAt":"` + now.Add(2*time.Minute).Format(time.RFC3339) + `",
+				"updatedAt":"` + now.Add(2*time.Minute).Format(time.RFC3339) + `"
 			}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
 			return
 		}
@@ -13708,6 +13752,7 @@ func TestE2EPRDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *tes
 				"headRepository":{"url":"https://github.com/acme/widget"},
 				"labels":{"nodes":[]},
 				"comments":` + commentsJSON() + `,
+				"reviewThreads":` + reviewThreadsJSON() + `,
 				"reviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
 				"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
 				"lastCommit":{"nodes":[]},
@@ -13726,25 +13771,8 @@ func TestE2EPRDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *tes
 	prState := "open"
 	prURL := "https://github.com/acme/widget/pull/177"
 	prTime := gh.Timestamp{Time: now}
-	commentAuthor := "commenter"
 	firstCommentID := int64(9231)
 	secondCommentID := int64(9232)
-	firstCommentBody := "visible after moderation review"
-	secondCommentBody := "outside the first GraphQL page"
-	firstCommentTime := gh.Timestamp{Time: now.Add(time.Minute)}
-	secondCommentTime := gh.Timestamp{Time: now.Add(2 * time.Minute)}
-	restComments := []*gh.IssueComment{
-		{
-			ID: &firstCommentID, Body: &firstCommentBody,
-			User:      &gh.User{Login: &commentAuthor},
-			CreatedAt: &firstCommentTime, UpdatedAt: &firstCommentTime,
-		},
-		{
-			ID: &secondCommentID, Body: &secondCommentBody,
-			User:      &gh.User{Login: &commentAuthor},
-			CreatedAt: &secondCommentTime, UpdatedAt: &secondCommentTime,
-		},
-	}
 	var restCommentCalls atomic.Int32
 	mock := &mockGH{
 		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -13764,7 +13792,7 @@ func TestE2EPRDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *tes
 		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
 			require.Equal(prNumber, number)
 			restCommentCalls.Add(1)
-			return restComments, nil
+			return nil, nil
 		},
 	}
 
@@ -13786,39 +13814,74 @@ func TestE2EPRDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *tes
 	client := setupTestClient(t, srv)
 
 	srv.syncer.RunOnce(ctx)
-	assert.Equal(int32(1), restCommentCalls.Load())
+	assert.Zero(restCommentCalls.Load())
 	firstResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
 	require.NotNil(firstResp.JSON200)
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 2)
+	require.Len(*firstResp.JSON200.Events, 3)
+	assert.Equal(reviewUpdatedAt, firstResp.JSON200.MergeRequest.LastActivityAt)
 	firstMetadata := make(map[int64]string, len(*firstResp.JSON200.Events))
+	inlineFound := false
 	for _, event := range *firstResp.JSON200.Events {
+		if event.EventType == "review_comment" {
+			inlineFound = true
+			assert.Equal("hidden inline reply", event.Body)
+			assert.Equal(reviewCreatedAt, event.CreatedAt)
+			assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, event.MetadataJSON)
+			require.NotNil(event.DiffThread)
+			require.NotNil(event.DiffThread.MetadataJson)
+			assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, *event.DiffThread.MetadataJson)
+			continue
+		}
 		require.NotNil(event.PlatformID)
 		firstMetadata[*event.PlatformID] = event.MetadataJSON
 	}
+	require.True(inlineFound)
 	assert.Contains(firstMetadata[firstCommentID], `"provider_hidden":true`)
 	assert.Contains(firstMetadata[secondCommentID], `"provider_hidden":true`)
+	storedMR, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", prNumber)
+	require.NoError(err)
+	require.NotNil(storedMR)
+	require.NotNil(storedMR.DetailFetchedAt)
+	assert.Equal(reviewUpdatedAt, storedMR.LastActivityAt)
+	storedThreads, err := database.ListMRReviewThreads(ctx, storedMR.ID)
+	require.NoError(err)
+	require.Len(storedThreads, 1)
+	assert.Equal(reviewCreatedAt, storedThreads[0].CreatedAt)
+	assert.Equal(reviewUpdatedAt, storedThreads[0].UpdatedAt)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, storedThreads[0].MetadataJSON)
 
 	currentUpdatedAt = secondUpdatedAt
 	firstVisibility = `"isMinimized":false,"minimizedReason":null`
+	reviewThreadsPageInfo = `{"hasNextPage":true,"endCursor":"thread-cursor"}`
 	srv.syncer.RunOnce(ctx)
-	assert.Equal(int32(2), restCommentCalls.Load())
+	assert.Zero(restCommentCalls.Load())
 	secondResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
 	require.NotNil(secondResp.JSON200)
 	require.NotNil(secondResp.JSON200.Events)
-	require.Len(*secondResp.JSON200.Events, 2)
+	require.Len(*secondResp.JSON200.Events, 3)
+	assert.Equal(reviewUpdatedAt, secondResp.JSON200.MergeRequest.LastActivityAt)
 	secondMetadata := make(map[int64]string, len(*secondResp.JSON200.Events))
 	for _, event := range *secondResp.JSON200.Events {
+		if event.EventType == "review_comment" {
+			assert.Contains(event.MetadataJSON, `"provider_hidden":true`)
+			continue
+		}
 		require.NotNil(event.PlatformID)
 		secondMetadata[*event.PlatformID] = event.MetadataJSON
 	}
 	assert.NotContains(secondMetadata[firstCommentID], `"provider_hidden":true`)
 	assert.Contains(secondMetadata[secondCommentID], `"provider_hidden":true`)
 	assert.Contains(secondMetadata[secondCommentID], `"provider_hidden_reason":"OFF_TOPIC"`)
+	storedMR, err = database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", prNumber)
+	require.NoError(err)
+	require.NotNil(storedMR)
+	assert.Nil(storedMR.DetailFetchedAt)
+	assert.Equal(reviewUpdatedAt, storedMR.LastActivityAt)
 }
 
 // TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteReviews

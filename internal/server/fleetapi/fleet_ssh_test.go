@@ -3,6 +3,7 @@ package fleetapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -94,6 +95,115 @@ func TestSSHFleetRelayFallsBackToMasterlessSSH(t *testing.T) {
 	assert.Equal(http.StatusOK, result.response.Status)
 	assert.False(result.connection.Persistent)
 	assert.Contains(argv, "none")
+}
+
+func TestFleetSnapshotReportsMasterlessSSHState(t *testing.T) {
+	tests := []struct {
+		name          string
+		relayErr      error
+		wantState     string
+		wantReachable bool
+		wantEvents    []string
+	}{
+		{
+			name:          "successful relay is online",
+			wantState:     "online",
+			wantReachable: true,
+			wantEvents: []string{
+				openssh.StateConnecting,
+				openssh.StateConnected,
+			},
+		},
+		{
+			name:      "failed relay is offline",
+			relayErr:  errors.New("ssh unavailable"),
+			wantState: "offline",
+			wantEvents: []string{
+				openssh.StateConnecting,
+				openssh.StateError,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			connections := &fakePersistentConnections{
+				connectErr: openssh.ErrPersistentUnsupported,
+			}
+			exec := func(
+				context.Context,
+				[]string,
+				[]byte,
+			) ([]byte, []byte, int, error) {
+				if tt.relayErr != nil {
+					return nil, nil, -1, tt.relayErr
+				}
+				raw := `{"schemaVersion":2,"host":{"hostname":"build","platform":"linux"}}`
+				return []byte(framedJSON(http.StatusOK, raw)), nil, 0, nil
+			}
+			var eventMu sync.Mutex
+			var eventStates []string
+			transport := &sshFleetTransport{
+				conns:  connections,
+				runner: sshfleet.NewRunnerWithExec(connections, exec),
+				peers: []config.FleetSSHPeer{{
+					Key: "build", Destination: "maintainer@build.example",
+				}},
+				broadcast: func(event Event) uint64 {
+					stateEvent, ok := event.Data.(sshFleetConnectionEvent)
+					if event.Type == "fleet_host_state" && ok {
+						eventMu.Lock()
+						eventStates = append(eventStates, stateEvent.State)
+						eventMu.Unlock()
+					}
+					return 0
+				},
+			}
+
+			srv, _ := setupTestServer(t)
+			setTestFleetConfig(srv, func(cfg *config.Config) {
+				cfg.Fleet.Enabled = true
+				cfg.Fleet.Key = "studio"
+			})
+			srv.sshFleet = transport
+			ts := httptest.NewServer(srv.localHandler())
+			defer ts.Close()
+
+			resp := httpDo(
+				t, ts, http.MethodGet,
+				"/api/v1/snapshot?include_peers=true", nil,
+			)
+			require.Equal(http.StatusOK, resp.StatusCode)
+			var snapshot struct {
+				Hosts []struct {
+					ConfigKey       string  `json:"configKey"`
+					Reachable       bool    `json:"reachable"`
+					ConnectionState *string `json:"connectionState"`
+				} `json:"hosts"`
+			}
+			require.NoError(json.NewDecoder(resp.Body).Decode(&snapshot))
+			resp.Body.Close()
+
+			var buildHost *struct {
+				ConfigKey       string  `json:"configKey"`
+				Reachable       bool    `json:"reachable"`
+				ConnectionState *string `json:"connectionState"`
+			}
+			for i := range snapshot.Hosts {
+				if snapshot.Hosts[i].ConfigKey == "build" {
+					buildHost = &snapshot.Hosts[i]
+				}
+			}
+			require.NotNil(buildHost)
+			require.NotNil(buildHost.ConnectionState)
+			assert.Equal(tt.wantState, *buildHost.ConnectionState)
+			assert.Equal(tt.wantReachable, buildHost.Reachable)
+			eventMu.Lock()
+			assert.Equal(tt.wantEvents, eventStates)
+			eventMu.Unlock()
+		})
+	}
 }
 
 func (f *fakePersistentConnections) State(string) string {

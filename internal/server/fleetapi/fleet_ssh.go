@@ -36,12 +36,16 @@ type persistentConnectionManager interface {
 }
 
 type sshFleetTransport struct {
-	conns   persistentConnectionManager
-	runner  *sshfleet.Runner
-	initErr error
+	conns     persistentConnectionManager
+	runner    *sshfleet.Runner
+	initErr   error
+	broadcast func(Event) uint64
 
 	mu    sync.RWMutex
 	peers []config.FleetSSHPeer
+
+	masterlessMu    sync.RWMutex
+	masterlessState map[string]sshFleetConnectionEvent
 
 	// stop ends the idle monitor on shutdown. ControlMaster processes
 	// are deliberately left running (ControlPersist semantics): a
@@ -89,6 +93,7 @@ func newSSHFleetTransport(
 		peers:      peers,
 		monitorCtx: monitorCtx,
 		stop:       stop,
+		broadcast:  broadcast,
 	}
 	conns, err := sshfleet.NewPersistentManager(socketDir, openssh.PersistentConfig{
 		IdleTimeout: 30 * time.Minute,
@@ -172,7 +177,43 @@ func (t *sshFleetTransport) connectionState(hostKey string) *string {
 	if t.initErr != nil {
 		return fleet.MapConnectionState(openssh.StateError)
 	}
+	t.masterlessMu.RLock()
+	masterless, ok := t.masterlessState[hostKey]
+	t.masterlessMu.RUnlock()
+	if ok {
+		return fleet.MapConnectionState(masterless.State)
+	}
 	return fleet.MapConnectionState(t.conns.State(hostKey))
+}
+
+func (t *sshFleetTransport) setMasterlessState(
+	hostKey, state, message string,
+) {
+	event := sshFleetConnectionEvent{
+		HostKey: hostKey,
+		State:   state,
+		Message: message,
+	}
+	t.masterlessMu.Lock()
+	previous, exists := t.masterlessState[hostKey]
+	if exists && previous == event {
+		t.masterlessMu.Unlock()
+		return
+	}
+	if t.masterlessState == nil {
+		t.masterlessState = make(map[string]sshFleetConnectionEvent)
+	}
+	t.masterlessState[hostKey] = event
+	t.masterlessMu.Unlock()
+	if t.broadcast != nil {
+		t.broadcast(Event{Type: "fleet_host_state", Data: event})
+	}
+}
+
+func (t *sshFleetTransport) clearMasterlessState(hostKey string) {
+	t.masterlessMu.Lock()
+	delete(t.masterlessState, hostKey)
+	t.masterlessMu.Unlock()
 }
 
 // relay ensures the peer's master is up and relays one API exchange.
@@ -193,14 +234,31 @@ func (t *sshFleetTransport) relay(
 		return sshRelayResult{}, err
 	}
 	generation, err := t.conns.Connect(ctx, peer.Key, target)
-	if err != nil && !errors.Is(err, openssh.ErrPersistentUnsupported) {
+	masterless := errors.Is(err, openssh.ErrPersistentUnsupported)
+	if err != nil && !masterless {
+		t.clearMasterlessState(peer.Key)
 		return sshRelayResult{}, err
+	}
+	if masterless {
+		t.setMasterlessState(peer.Key, openssh.StateConnecting, "")
+	} else {
+		t.clearMasterlessState(peer.Key)
 	}
 	connection := sshfleet.Connection{
 		Identity:   peer.Key,
 		Generation: generation,
 		Target:     target,
-		Persistent: err == nil,
+		Persistent: !masterless,
+	}
+	finishMasterless := func(relayErr error) {
+		if !masterless {
+			return
+		}
+		if relayErr != nil {
+			t.setMasterlessState(peer.Key, openssh.StateError, relayErr.Error())
+			return
+		}
+		t.setMasterlessState(peer.Key, openssh.StateConnected, "")
 	}
 	remoteCommand := peer.RemoteCommandOrDefault()
 	resp, err := t.runner.Relay(
@@ -208,19 +266,23 @@ func (t *sshFleetTransport) relay(
 		method, path, body,
 	)
 	if !errors.Is(err, sshfleet.ErrRemoteDaemonUnavailable) {
+		finishMasterless(err)
 		return sshRelayResult{response: resp, connection: connection}, err
 	}
 	if err := t.runner.EnsureDaemon(
 		ctx, connection, remoteCommand,
 	); err != nil {
-		return sshRelayResult{}, fmt.Errorf(
+		err = fmt.Errorf(
 			"ensure remote daemon: %w", err,
 		)
+		finishMasterless(err)
+		return sshRelayResult{}, err
 	}
 	resp, err = t.runner.Relay(
 		ctx, connection, remoteCommand,
 		method, path, body,
 	)
+	finishMasterless(err)
 	return sshRelayResult{response: resp, connection: connection}, err
 }
 

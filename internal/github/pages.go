@@ -399,7 +399,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
           node {
             id isResolved isOutdated path line originalLine startLine originalStartLine diffSide
             comments(first: 100) {
-              nodes { id databaseId fullDatabaseId pullRequestReview { databaseId } subjectType body author { login } path line originalLine diffHunk url commit { oid } originalCommit { oid } createdAt updatedAt }
+              nodes { id databaseId fullDatabaseId pullRequestReview { databaseId } subjectType body author { login } path line originalLine diffHunk url commit { oid } originalCommit { oid } isMinimized minimizedReason createdAt updatedAt }
               pageInfo { hasNextPage endCursor }
             }
           }

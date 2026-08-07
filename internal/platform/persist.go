@@ -48,7 +48,8 @@ func DBReviewThreads(threads []MergeRequestReviewThread) ([]db.MREvent, []db.MRR
 		events = append(events, db.MREvent{
 			PlatformExternalID: externalID, EventType: "review_comment",
 			Author: thread.AuthorLogin, Body: thread.Body, CreatedAt: thread.CreatedAt,
-			DedupeKey: "review_comment:" + externalID, DirectURL: thread.DirectURL,
+			MetadataJSON: thread.MetadataJSON,
+			DedupeKey:    "review_comment:" + externalID, DirectURL: thread.DirectURL,
 			ThreadID: &threadIDCopy,
 		})
 	}
@@ -85,6 +86,24 @@ func MarshalUserNamesJSON(names []string) string {
 		return string(b)
 	}
 	return ""
+}
+
+// PreserveProviderHiddenMetadata keeps moderation metadata when a provider
+// mutation response omits visibility fields. REST edit responses do not carry
+// GitHub's GraphQL-only minimized state, so an edit must not clear a previously
+// confirmed hidden marker until a subsequent GraphQL sync explicitly observes
+// the comment as visible.
+func PreserveProviderHiddenMetadata(existingMetadata, incomingMetadata string) string {
+	if incomingMetadata != "" || existingMetadata == "" {
+		return incomingMetadata
+	}
+	var existing struct {
+		Hidden bool `json:"provider_hidden"`
+	}
+	if err := json.Unmarshal([]byte(existingMetadata), &existing); err != nil || !existing.Hidden {
+		return incomingMetadata
+	}
+	return existingMetadata
 }
 
 func DBRepoIdentity(ref RepoRef) db.RepoIdentity {

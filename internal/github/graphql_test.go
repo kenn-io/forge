@@ -2,6 +2,7 @@ package github
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -74,22 +75,239 @@ func TestAdaptPR(t *testing.T) {
 	assert.Equal("merge-admin", pr.GetMergedBy().GetLogin())
 }
 
+func TestConvertGQLCommentsPreservesMinimizedVisibility(t *testing.T) {
+	reason := githubv4.ReportedContentClassifiersOffTopic
+	fullDatabaseID := int64(3714845345)
+	comment := gqlComment{
+		DatabaseId:      73,
+		FullDatabaseId:  graphQLInt64(fullDatabaseID),
+		IsMinimized:     true,
+		MinimizedReason: &reason,
+	}
+
+	tests := []struct {
+		name    string
+		convert func() map[int64]CommentVisibility
+	}{
+		{
+			name: "pull request",
+			convert: func() map[int64]CommentVisibility {
+				input := gqlPR{}
+				input.Comments.Nodes = []gqlComment{comment}
+				return convertGQLPR(&input).CommentVisibility
+			},
+		},
+		{
+			name: "issue",
+			convert: func() map[int64]CommentVisibility {
+				input := gqlIssue{}
+				input.Comments.Nodes = []gqlComment{comment}
+				return convertGQLIssue(&input).CommentVisibility
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			visibility := tt.convert()
+			require.Contains(t, visibility, fullDatabaseID)
+			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "OFF_TOPIC"}, visibility[fullDatabaseID])
+		})
+	}
+}
+
+func TestConvertGQLCommentsRecordsObservedVisibleComments(t *testing.T) {
+	comment := gqlComment{DatabaseId: 74}
+
+	tests := []struct {
+		name    string
+		convert func() map[int64]CommentVisibility
+	}{
+		{
+			name: "pull request",
+			convert: func() map[int64]CommentVisibility {
+				input := gqlPR{}
+				input.Comments.Nodes = []gqlComment{comment}
+				return convertGQLPR(&input).CommentVisibility
+			},
+		},
+		{
+			name: "issue",
+			convert: func() map[int64]CommentVisibility {
+				input := gqlIssue{}
+				input.Comments.Nodes = []gqlComment{comment}
+				return convertGQLIssue(&input).CommentVisibility
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			visibility := tt.convert()
+			require.Contains(t, visibility, int64(74))
+			assert.Equal(t, CommentVisibility{}, visibility[74])
+		})
+	}
+}
+
+func TestConvertGQLPRIncludesReviewThreads(t *testing.T) {
+	reason := githubv4.ReportedContentClassifiersAbuse
+	line := 12
+	input := gqlPR{}
+	threadInput := gqlReviewThread{
+		ID:         githubv4.ID("PRRT_1"),
+		Path:       "src/main.go",
+		Line:       line,
+		DiffSide:   "RIGHT",
+		IsResolved: false,
+		IsOutdated: false,
+	}
+	threadInput.Comments.Nodes = []gqlReviewThreadComment{{
+		ID:              githubv4.ID("PRRC_1"),
+		DatabaseId:      101,
+		FullDatabaseId:  3714845345,
+		Body:            "hidden inline comment",
+		Path:            "src/main.go",
+		Line:            line,
+		SubjectType:     "LINE",
+		IsMinimized:     true,
+		MinimizedReason: &reason,
+	}}
+	input.ReviewThreads.Nodes = []gqlReviewThread{threadInput}
+
+	bulk := convertGQLPR(&input)
+
+	require.True(t, bulk.ReviewThreadsComplete)
+	require.Len(t, bulk.ReviewThreads, 1)
+	thread := bulk.ReviewThreads[0]
+	assert.Equal(t, "PRRT_1", thread.ProviderThreadID)
+	assert.Equal(t, "3714845345", thread.ProviderCommentID)
+	assert.Equal(t, "hidden inline comment", thread.Body)
+	assert.JSONEq(t, `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, thread.MetadataJSON)
+}
+
+func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
+	tests := []struct {
+		name         string
+		responseData string
+		complete     func(*testing.T, *GraphQLFetcher) map[int64]CommentVisibility
+	}{
+		{
+			name:         "pull request",
+			responseData: `{"repository":{"pullRequest":{"comments":{"nodes":[{"databaseId":202,"fullDatabaseId":"3714845345","isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`,
+			complete: func(t *testing.T, fetcher *GraphQLFetcher) map[int64]CommentVisibility {
+				pr := gqlPR{Number: 7}
+				pr.Comments.PageInfo = pageInfo{HasNextPage: true, EndCursor: "comment-100"}
+				bulk := convertGQLPR(&pr)
+				require.NoError(t, fetcher.completePRComments(
+					t.Context(), "owner", "repo", &pr, &bulk,
+				))
+				return bulk.CommentVisibility
+			},
+		},
+		{
+			name:         "issue",
+			responseData: `{"repository":{"issue":{"comments":{"nodes":[{"databaseId":202,"fullDatabaseId":"3714845345","isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`,
+			complete: func(t *testing.T, fetcher *GraphQLFetcher) map[int64]CommentVisibility {
+				issue := gqlIssue{Number: 8}
+				issue.Comments.PageInfo = pageInfo{HasNextPage: true, EndCursor: "comment-100"}
+				bulk := convertGQLIssue(&issue)
+				require.NoError(t, fetcher.completeIssueCommentVisibility(
+					t.Context(), "owner", "repo", &issue, &bulk,
+				))
+				return bulk.CommentVisibility
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cursor string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request graphQLRequest
+				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+					http.Error(w, "invalid request", http.StatusBadRequest)
+					return
+				}
+				cursor, _ = request.Variables["cursor"].(string)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"data":%s}`, tt.responseData)
+			}))
+			defer srv.Close()
+
+			fetcher := NewGraphQLFetcherWithClient(
+				githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+			)
+			visibility := tt.complete(t, fetcher)
+
+			assert.Equal(t, "comment-100", cursor)
+			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "ABUSE"}, visibility[3714845345])
+		})
+	}
+}
+
+func TestGraphQLFetcherFetchesCurrentCommentVisibility(t *testing.T) {
+	tests := []struct {
+		name     string
+		queryKey string
+		fetch    func(context.Context, *GraphQLFetcher) (map[int64]CommentVisibility, error)
+	}{
+		{
+			name:     "pull request",
+			queryKey: "pullRequest(number:",
+			fetch: func(ctx context.Context, fetcher *GraphQLFetcher) (map[int64]CommentVisibility, error) {
+				return fetcher.FetchPullRequestCommentVisibility(ctx, "owner", "repo", 7)
+			},
+		},
+		{
+			name:     "issue",
+			queryKey: "issue(number:",
+			fetch: func(ctx context.Context, fetcher *GraphQLFetcher) (map[int64]CommentVisibility, error) {
+				return fetcher.FetchIssueCommentVisibility(ctx, "owner", "repo", 8)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				assert.Contains(t, string(body), tt.queryKey)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, `{"data":{"repository":{`+map[string]string{
+					"pullRequest(number:": `"pullRequest":{"comments":{"nodes":[{"databaseId":202,"fullDatabaseId":"3714845345","isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`,
+					"issue(number:":       `"issue":{"comments":{"nodes":[{"databaseId":202,"fullDatabaseId":"3714845345","isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`,
+				}[tt.queryKey]+`}}}`)
+			}))
+			defer srv.Close()
+
+			fetcher := NewGraphQLFetcherWithClient(
+				githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+			)
+			visibility, err := tt.fetch(t.Context(), fetcher)
+			require.NoError(t, err)
+			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "ABUSE"}, visibility[3714845345])
+		})
+	}
+}
+
 func TestAdaptComment(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	gql := gqlComment{
-		DatabaseId: 100,
-		Body:       "LGTM",
-		URL:        "https://github.com/acme/widgets/issues/7#issuecomment-100",
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		DatabaseId:     100,
+		FullDatabaseId: 3714845345,
+		Body:           "LGTM",
+		URL:            "https://github.com/acme/widgets/issues/7#issuecomment-100",
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	gql.Author.Login = "bob"
 
 	c := adaptComment(&gql)
 
-	assert.Equal(int64(100), c.GetID())
+	assert.Equal(int64(3714845345), c.GetID())
 	assert.Equal("LGTM", c.GetBody())
 	assert.Equal("https://github.com/acme/widgets/issues/7#issuecomment-100", c.GetHTMLURL())
 	assert.Equal("bob", c.GetUser().GetLogin())

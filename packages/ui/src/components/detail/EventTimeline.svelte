@@ -3,6 +3,7 @@
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import CopyIcon from "@lucide/svelte/icons/copy";
+  import EyeOffIcon from "@lucide/svelte/icons/eye-off";
   import LinkIcon from "@lucide/svelte/icons/link";
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
   import PencilIcon from "@lucide/svelte/icons/pencil";
@@ -864,6 +865,8 @@
     event: PREvent | IssueEvent,
     reviewThread: TimelineReviewThread | undefined,
   ): string {
+    const hiddenState = providerHiddenState(event);
+    if (hiddenState) return providerHiddenLabel(hiddenState);
     if (event.EventType === "review") {
       return compactReviewSummary(event);
     }
@@ -921,6 +924,24 @@
 
     if (title && reference) return `${title} ${reference}`;
     return title ?? fallback;
+  }
+
+  type ProviderHiddenState = {
+    reason: string | null;
+  };
+
+  function providerHiddenState(event: PREvent | IssueEvent): ProviderHiddenState | null {
+    const metadata = parseMetadata(event);
+    if (metadata.provider_hidden !== true) return null;
+    return { reason: metadataString(metadata, "provider_hidden_reason") };
+  }
+
+  function providerHiddenLabel(state: ProviderHiddenState): string {
+    if (!state.reason) return "Hidden on GitHub";
+    const reason = state.reason === "OFF_TOPIC"
+      ? "off-topic"
+      : state.reason.toLowerCase().replaceAll("_", " ");
+    return `Hidden on GitHub: ${reason.charAt(0).toUpperCase()}${reason.slice(1)}`;
   }
 
   type CrossReferenceLink = {
@@ -992,6 +1013,7 @@
   let deletingId = $state<number | null>(null);
   let deleteError = $state<string | null>(null);
   let collapsedThreads = $state<string[]>([]);
+  let expandedProviderHiddenComments = $state<number[]>([]);
   let expandedCompactRows = $state<string[]>([]);
   let expandedObsoleteGroups = $state<string[]>([]);
   let replyingThreadID = $state<string | null>(null);
@@ -1075,6 +1097,9 @@
   }
 
   function startEdit(event: PREvent | IssueEvent): void {
+    if (providerHiddenState(event) && !expandedProviderHiddenComments.includes(event.ID)) {
+      expandedProviderHiddenComments = [...expandedProviderHiddenComments, event.ID];
+    }
     editingId = event.ID;
     editDraft = event.Body;
     editError = null;
@@ -1129,6 +1154,16 @@
     collapsedThreads = collapsedThreads.includes(id)
       ? collapsedThreads.filter((item) => item !== id)
       : [...collapsedThreads, id];
+  }
+
+  function isProviderHiddenExpanded(event: PREvent | IssueEvent): boolean {
+    return expandedProviderHiddenComments.includes(event.ID);
+  }
+
+  function toggleProviderHidden(event: PREvent | IssueEvent): void {
+    expandedProviderHiddenComments = expandedProviderHiddenComments.includes(event.ID)
+      ? expandedProviderHiddenComments.filter((id) => id !== event.ID)
+      : [...expandedProviderHiddenComments, event.ID];
   }
 
   function isObsoleteGroupExpanded(entry: TimelineEntry): boolean {
@@ -1487,6 +1522,22 @@
   {/if}
 {/snippet}
 
+{#snippet providerHiddenNotice(event: PREvent | IssueEvent, state: ProviderHiddenState)}
+  {@const expanded = isProviderHiddenExpanded(event)}
+  <div class="provider-hidden-notice">
+    <EyeOffIcon size={14} aria-hidden="true" />
+    <span>{providerHiddenLabel(state)}</span>
+    <button
+      class="provider-hidden-toggle"
+      type="button"
+      onclick={() => toggleProviderHidden(event)}
+      aria-expanded={expanded}
+    >
+      {expanded ? "Collapse" : "Show comment"}
+    </button>
+  </div>
+{/snippet}
+
 {#snippet eventBody(
   event: PREvent | IssueEvent,
   nested = false,
@@ -1758,6 +1809,7 @@
     <Timeline ariaLabel="Item activity">
       {#each renderedTimelineEntries as entry (entry.key)}
       {@const event = entry.event}
+      {@const hiddenState = providerHiddenState(event)}
       {@const targetID = replyTargetID(entry)}
       {@const hasReplyOnlyAction = entry.replies.length === 0 && canReplyToThread(entry)}
       {#if entry.obsoleteCommits}
@@ -1840,7 +1892,14 @@
                     {compactContext}
                   </span>
                   <span class="compact-event-summary" title={compactSummary}>
-                    {compactSummary}
+                    {#if hiddenState}
+                      <span class="compact-hidden-summary">
+                        <EyeOffIcon size={13} aria-hidden="true" />
+                        <span>{compactSummary}</span>
+                      </span>
+                    {:else}
+                      {compactSummary}
+                    {/if}
                   </span>
                   <span class="event-time compact-event-time">{formatRelativeTime(event.CreatedAt)}</span>
                 </button>
@@ -1970,7 +2029,10 @@
           {/if}
         {:else}
           <CommentCard
-            class={hasReplyOnlyAction ? "event-card--reply-inline" : ""}
+            class={[
+              hasReplyOnlyAction && "event-card--reply-inline",
+              hiddenState && "event-card--provider-hidden",
+            ].filter(Boolean).join(" ")}
             typeLabel={typeLabels[event.EventType] ?? event.EventType}
             tone={eventTimelineTone(event.EventType)}
             author={event.Author || undefined}
@@ -1983,8 +2045,13 @@
             {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push")}
               <p class="event-summary">{event.Summary}</p>
             {/if}
-            {@render eventBody(event, false, entry.reviewThread, hasReplyOnlyAction ? entry : undefined)}
-            {#if entry.replies.length > 0 || (canReplyToThread(entry) && !hasReplyOnlyAction)}
+            {#if hiddenState}
+              {@render providerHiddenNotice(event, hiddenState)}
+            {/if}
+            {#if !hiddenState || isProviderHiddenExpanded(event) || editingId === event.ID}
+              {@render eventBody(event, false, entry.reviewThread, hasReplyOnlyAction ? entry : undefined)}
+            {/if}
+            {#if (!hiddenState || isProviderHiddenExpanded(event)) && (entry.replies.length > 0 || (canReplyToThread(entry) && !hasReplyOnlyAction))}
               <div class="thread-controls">
                 {#if entry.replies.length > 0}
                   <button
@@ -2018,6 +2085,7 @@
               {#if !isThreadCollapsed(entry)}
                 <ol class="thread-replies" aria-label="Threaded replies">
                   {#each entry.replies as reply, index (reply.ID)}
+                    {@const replyHiddenState = providerHiddenState(reply)}
                     <li
                       class="thread-reply"
                       class:thread-reply--first={index === 0}
@@ -2037,7 +2105,12 @@
                             {@render eventActions(reply, undefined)}
                           </span>
                         </div>
-                        {@render eventBody(reply, true)}
+                        {#if replyHiddenState}
+                          {@render providerHiddenNotice(reply, replyHiddenState)}
+                        {/if}
+                        {#if !replyHiddenState || isProviderHiddenExpanded(reply) || editingId === reply.ID}
+                          {@render eventBody(reply, true)}
+                        {/if}
                       </div>
                     </li>
                   {/each}
@@ -2203,6 +2276,45 @@
   .compact-event-summary {
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
+  }
+
+  .compact-hidden-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--focus-detail-space-xs, 6px);
+    max-width: 100%;
+    color: var(--text-muted);
+  }
+
+  .compact-hidden-summary span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .provider-hidden-notice {
+    display: flex;
+    align-items: center;
+    gap: var(--focus-detail-space-xs, 6px);
+    min-height: 28px;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .provider-hidden-toggle {
+    margin-left: auto;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+
+  .provider-hidden-toggle:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface-hover);
+  }
+
+  .provider-hidden-toggle:focus-visible {
+    outline: 2px solid var(--focus-ring, var(--accent-blue));
+    outline-offset: 2px;
   }
 
   .compact-event-time {

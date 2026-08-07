@@ -1001,6 +1001,19 @@ func (s *Handler) editComment(ctx context.Context, input *editCommentInput) (*ed
 	platformEvent.MergeRequestNumber = input.Number
 
 	event := platform.DBMREvent(mrID, platformEvent)
+	existingEvents, err := s.db.ListMREvents(ctx, mrID)
+	if err != nil {
+		return nil, httpapi.Internal("load existing comment metadata failed")
+	}
+	for _, existing := range existingEvents {
+		if existing.EventType == "issue_comment" && existing.PlatformID != nil &&
+			*existing.PlatformID == input.CommentID {
+			event.MetadataJSON = platform.PreserveProviderHiddenMetadata(
+				existing.MetadataJSON, event.MetadataJSON,
+			)
+			break
+		}
+	}
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		return nil, httpapi.Internal("persist edited comment failed")
 	}
@@ -1331,7 +1344,7 @@ func (s *Handler) requestChangesPR(ctx context.Context, input *requestChangesPRI
 	err = mutator.RequestChanges(ctx, platformRepoRefFromDB(*repo), input.Number, body, expectedHeadSHA)
 	if err != nil {
 		if errors.Is(err, platform.ErrStaleState) {
-			s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
+			s.syncAfterReviewDraftPublish(*repo, input.Number)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,

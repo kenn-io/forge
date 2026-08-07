@@ -1717,6 +1717,7 @@ type DiffReviewThreadResponse struct {
 	Id                string  `json:"id"`
 	Line              int64   `json:"line"`
 	LineType          string  `json:"line_type"`
+	MetadataJson      *string `json:"metadata_json,omitempty"`
 	NewLine           *int64  `json:"new_line,omitempty"`
 	OldLine           *int64  `json:"old_line,omitempty"`
 	OldPath           *string `json:"old_path,omitempty"`

@@ -446,6 +446,89 @@ describe("EventTimeline", () => {
     expect(bodyWrap!.querySelector(".kit-card")).toBeNull();
   });
 
+  it("defaults provider-hidden comments to a collapsed reason notice", async () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            Body: "This comment stays available on demand.",
+            EventType: "issue_comment",
+            MetadataJSON: JSON.stringify({
+              provider_hidden: true,
+              provider_hidden_reason: "OFF_TOPIC",
+            }),
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("Hidden on GitHub: Off-topic")).toBeTruthy();
+    expect(screen.queryByText("This comment stays available on demand.")).toBeNull();
+    expect(container.querySelector(".provider-hidden-notice svg")).toBeTruthy();
+
+    const toggle = screen.getByRole("button", { name: "Show comment" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    await fireEvent.click(toggle);
+
+    expect(screen.getByText("This comment stays available on demand.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Collapse" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("defaults provider-hidden review replies to a collapsed reason notice", async () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 2,
+            EventType: "review_comment",
+            Body: "Hidden inline reply body.",
+            ThreadID: "review-thread",
+            MetadataJSON: JSON.stringify({
+              provider_hidden: true,
+              provider_hidden_reason: "ABUSE",
+            }),
+            CreatedAt: "2024-06-01T12:01:00Z",
+          }),
+          makeEvent({
+            ID: 1,
+            EventType: "review_comment",
+            Body: "Visible inline root.",
+            ThreadID: "review-thread",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("Hidden on GitHub: Abuse")).toBeTruthy();
+    expect(screen.queryByText("Hidden inline reply body.")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Show comment" }));
+
+    expect(screen.getByText("Hidden inline reply body.")).toBeTruthy();
+  });
+
+  it("does not preview provider-hidden comment text in compact rows", async () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        activityViewMode: "compact",
+        events: [
+          makeEvent({
+            Body: "A compact hidden comment body.",
+            EventType: "issue_comment",
+            MetadataJSON: JSON.stringify({ provider_hidden: true }),
+          }),
+        ],
+      },
+    });
+
+    expect(container.querySelector(".compact-hidden-summary")?.textContent).toContain("Hidden on GitHub");
+    expect(container.textContent).not.toContain("A compact hidden comment body.");
+
+    await fireEvent.click(screen.getByTitle("Expand activity"));
+    expect(screen.getByText("A compact hidden comment body.")).toBeTruthy();
+  });
+
   it("groups discussion comments with the root comment first and reverse-chronological replies", () => {
     const { container } = render(EventTimeline, {
       props: {

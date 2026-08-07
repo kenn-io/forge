@@ -145,6 +145,7 @@ type diffReviewThreadResponse struct {
 	DiffHeadSHA       string `json:"diff_head_sha,omitempty"`
 	CommitSHA         string `json:"commit_sha,omitempty"`
 	Body              string `json:"body"`
+	MetadataJSON      string `json:"metadata_json,omitempty"`
 	AuthorLogin       string `json:"author_login,omitempty"`
 	Resolved          bool   `json:"resolved"`
 	CanResolve        bool   `json:"can_resolve"`

@@ -175,6 +175,9 @@ stale tabs.
 - During active tmux SGR drags outside xterm bounds, add only clamped edge wheel, drag, and release reports; forward
   all other mouse reports unchanged, and never retain unsent drag state across a WebSocket boundary
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`).
+- Agent TUIs in the normal buffer with no local scrollback receive vertical wheel gestures as cursor input; xterm/tmux
+  keep ownership when scrollback, the alternate buffer, or mouse tracking is active
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalWheel`).
 - macOS loopback clipboard fallback must run `pbcopy` with `LC_ALL=en_US.UTF-8`; service launchers may omit
   a UTF-8 locale and make `pbcopy` reinterpret unchanged UTF-8 input
   (`internal/systemclipboard/systemclipboard.go::nativeWriter.WriteText`).

@@ -1529,6 +1529,7 @@
           workspaceHostKey,
         ),
         status: session.status,
+        cursorWheelInput: session.kind === "agent",
         disabled: actionsBlocked,
       });
     }

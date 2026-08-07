@@ -47,6 +47,7 @@ export interface MountedSession {
   hostKey: SessionHostKey;
   websocketPath: string;
   status: string;
+  cursorWheelInput?: boolean;
   disabled?: boolean;
 }
 
@@ -159,6 +160,7 @@ export function noteSessionMounted(session: MountedSession): void {
     if (
       existing.websocketPath === session.websocketPath &&
       existing.status === session.status &&
+      (existing.cursorWheelInput ?? false) === (session.cursorWheelInput ?? false) &&
       (existing.disabled ?? false) === (session.disabled ?? false)
     ) {
       return;

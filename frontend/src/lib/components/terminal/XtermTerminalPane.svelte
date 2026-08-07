@@ -53,6 +53,7 @@
     reconnectOnExit?: boolean | undefined;
     active?: boolean | undefined;
     autoFocus?: boolean | undefined;
+    cursorWheelInput?: boolean;
     disabled?: boolean;
     onExit?: ((code: number) => void) | undefined;
     // When the session is not attachable at mount time, skip the
@@ -67,6 +68,7 @@
     reconnectOnExit = true,
     active = true,
     autoFocus = true,
+    cursorWheelInput = false,
     disabled = false,
     onExit,
     initialStatus,
@@ -300,6 +302,31 @@
   function handleTerminalKeyDown(event: KeyboardEvent): void {
     if (disposed || disabled || event.isComposing || !event.isTrusted) return;
     clipboardWriter?.authorizeKeyboardGesture();
+  }
+
+  function handleTerminalWheel(event: WheelEvent): void {
+    if (
+      disposed ||
+      disabled ||
+      !cursorWheelInput ||
+      event.deltaY === 0 ||
+      event.shiftKey ||
+      !terminal ||
+      !terminalSession?.isConnected()
+    ) return;
+
+    const activeBuffer = terminal.buffer.active;
+    if (
+      activeBuffer.type !== "normal" ||
+      activeBuffer.baseY > 0 ||
+      terminal.modes.mouseTrackingMode !== "none"
+    ) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const cursorPrefix = terminal.modes.applicationCursorKeysMode ? "O" : "[";
+    const cursorDirection = event.deltaY < 0 ? "A" : "B";
+    terminalSession.send(encoder.encode(`\x1b${cursorPrefix}${cursorDirection}`));
   }
 
   function hasPointerSelectionIntent(event: PointerEvent): boolean {
@@ -1023,6 +1050,7 @@
   onpointerdowncapture={handleTerminalPointerDown}
   onlostpointercapture={handleTerminalLostPointerCapture}
   onkeydowncapture={handleTerminalKeyDown}
+  onwheel={handleTerminalWheel}
   onfocusout={handleTerminalFocusOut}
 >
   {#if hoveredTerminalLink}

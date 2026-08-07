@@ -186,6 +186,7 @@
     disabled={session.disabled ?? false}
     active={active && attached}
     autoFocus={false}
+    cursorWheelInput={session.cursorWheelInput ?? false}
     initialStatus={session.status}
     onExit={(code) => onExit(code)}
   />

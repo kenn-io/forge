@@ -40,10 +40,15 @@ const {
   webLinksAddonCtor: vi.fn(),
   xtermFitAddons: [] as Array<{ fit: ReturnType<typeof vi.fn>; proposeDimensions: ReturnType<typeof vi.fn> }>,
   xtermInstances: [] as Array<{
+    buffer: { active: { baseY: number; type: "normal" | "alternate" } };
     clearTextureAtlas: ReturnType<typeof vi.fn>;
     cols: number;
     focus: ReturnType<typeof vi.fn>;
-    modes: { bracketedPasteMode: boolean };
+    modes: {
+      applicationCursorKeysMode: boolean;
+      bracketedPasteMode: boolean;
+      mouseTrackingMode: "none" | "x10" | "vt200" | "drag" | "any";
+    };
     refresh: ReturnType<typeof vi.fn>;
     rows: number;
     write: ReturnType<typeof vi.fn>;
@@ -183,10 +188,17 @@ vi.mock("@xterm/xterm", () => ({
     // The real xterm Terminal is a class instance, which Svelte leaves opaque.
     // Keep the double equally opaque so fit updates the same object the pane reads.
     class MockTerminal {}
+    const bufferType: "normal" = "normal";
+    const mouseTrackingMode: "none" = "none";
     const terminal = Object.assign(new MockTerminal(), {
+      buffer: { active: { baseY: 0, type: bufferType } },
       cols: initialTerminalDimensions.cols,
       rows: initialTerminalDimensions.rows,
-      modes: { bracketedPasteMode: false },
+      modes: {
+        applicationCursorKeysMode: false,
+        bracketedPasteMode: false,
+        mouseTrackingMode,
+      },
       options: { ...options },
       clearTextureAtlas: vi.fn(),
       dispose: vi.fn(),
@@ -968,6 +980,26 @@ describe("TerminalPane", () => {
 
     const socket = mockSockets[0]!;
     await waitFor(() => expect(sentText(socket, socket.sent.length - 1)).toBe(drag));
+  });
+
+  it("forwards wheel input to an agent TUI that owns no terminal scrollback", async () => {
+    const { container } = render(TerminalPane, {
+      props: { workspaceId: "ws-123", cursorWheelInput: true },
+    });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitFor(() => expect(xtermInstances).toHaveLength(1));
+    const socket = mockSockets[0]!;
+    socket.sent = [];
+    const terminalContainer = container.querySelector(".terminal-container");
+    expect(terminalContainer).not.toBeNull();
+
+    const defaultAllowed = terminalContainer!.dispatchEvent(
+      new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120 }),
+    );
+
+    expect(defaultAllowed).toBe(false);
+    await waitFor(() => expect(socket.sent.map((_, index) => sentText(socket, index))).toContain("\x1b[A"));
   });
 
   it("does not replay input received while disconnected", async () => {

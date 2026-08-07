@@ -754,31 +754,43 @@ func TestDaemonStartRejectsRuntimeAfterConfiguredDataDirectoryChangesE2E(t *test
 	assert.Equal(first.PID, records[0].PID)
 }
 
-func TestDaemonStartDiscardsUnauthenticatedConfigRuntimeE2E(t *testing.T) {
+func TestDaemonStartDiscardsUnauthenticatedRuntimeE2E(t *testing.T) {
 	bin := buildForge(t)
-	for _, sameDataDir := range []bool{true, false} {
-		name := "moved-data-dir"
-		if sameDataDir {
-			name = "same-data-dir"
-		}
-		t.Run(name, func(t *testing.T) {
+	tests := []struct {
+		name        string
+		sameDataDir bool
+		legacy      bool
+	}{
+		{name: "same-data-dir", sameDataDir: true},
+		{name: "moved-data-dir"},
+		{name: "moved-legacy-runtime", legacy: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			fixture := newDaemonLifecycleFixture(t, bin)
 			dataDir := fixture.dataDir("configured-data")
 			staleDataDir := fixture.dataDir("stale-data")
-			if sameDataDir {
+			if test.sameDataDir {
 				staleDataDir = dataDir
 			}
 			fixture.writeConfig(dataDir)
-			fixture.writeUnauthenticatedRuntime(staleDataDir)
+			stale := fixture.writeUnauthenticatedRuntime(staleDataDir)
+			if test.legacy {
+				delete(stale.Metadata, "config_path")
+				_, err := fixture.store.Write(stale)
+				require.NoError(err)
+			}
 
 			_, stderr, err := fixture.run("start")
 			require.NoError(err, stderr)
+			running := fixture.verifiedRuntime(dataDir)
 			records, err := fixture.store.List()
 			require.NoError(err)
 			require.Len(records, 1)
-			assert.NotEqual(os.Getpid(), records[0].PID)
+			assert.Equal(running.PID, records[0].PID)
+			assert.NotEqual(stale.PID, running.PID)
 
 			_, stderr, err = fixture.run("stop")
 			require.NoError(err, stderr)

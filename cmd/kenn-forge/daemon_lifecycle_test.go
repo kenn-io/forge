@@ -226,49 +226,6 @@ func TestDaemonStopReportsNotRunning(t *testing.T) {
 	assert.Contains(t, output.String(), "not running")
 }
 
-func TestRuntimeForConfigRemovesStaleMovedLegacyRecord(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	store := daemon.RuntimeStore{Dir: t.TempDir()}
-	currentDataDir := t.TempDir()
-	staleDataDir := t.TempDir()
-	record := daemon.NewRuntimeRecord(
-		daemonruntime.Service,
-		"dev",
-		daemon.Endpoint{Network: daemon.NetworkTCP, Address: "127.0.0.1:1"},
-	)
-	record.Metadata = map[string]string{"data_dir": staleDataDir}
-	_, err := store.Write(record)
-	require.NoError(err)
-
-	deps, _ := daemonLifecycleTestDeps(t)
-	proofChecked := false
-	deps.findVerifiedRecord = func(
-		context.Context, daemon.RuntimeRecord, string,
-	) (daemon.PingInfo, bool, error) {
-		proofChecked = true
-		return daemon.PingInfo{}, false, nil
-	}
-	lockChecked := false
-	deps.readStatus = func(string) (runtimelock.Status, error) {
-		lockChecked = true
-		return runtimelock.Status{}, nil
-	}
-	deps.remove = os.Remove
-	target, err := (&daemonLifecycle{deps: deps}).runtimeForConfig(
-		t.Context(), "daemon start", store,
-		filepath.Join(t.TempDir(), "config.toml"), currentDataDir,
-	)
-
-	require.NoError(err)
-	require.Nil(target)
-	assert.True(proofChecked)
-	assert.True(lockChecked)
-	records, err := store.List()
-	require.NoError(err)
-	assert.Empty(records)
-}
-
 func TestDaemonStopRefusesUnauthenticatedRunningProcess(t *testing.T) {
 	deps, _ := daemonLifecycleTestDeps(t)
 	deps.readStatus = func(string) (runtimelock.Status, error) {

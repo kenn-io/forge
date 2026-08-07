@@ -29,6 +29,31 @@ const syntheticCodexTranscript = [
   "Test result: node --test — 3 passed, 0 failed.",
 ].join("\n");
 
+const syntheticCodexPalettes = {
+  light: {
+    background: "oklch(97.5% 0.008 250)",
+    foreground: "oklch(30% 0.025 255)",
+    promptBackground: "oklch(93.5% 0.012 250)",
+    promptBorder: "oklch(83% 0.02 250)",
+    promptMarker: "oklch(27% 0.025 255)",
+    promptText: "oklch(52% 0.025 250)",
+    model: "oklch(47% 0.105 80)",
+    separator: "oklch(63% 0.02 250)",
+    workingDirectory: "oklch(48% 0.085 150)",
+  },
+  dark: {
+    background: "#0d1117",
+    foreground: "#c9d1d9",
+    promptBackground: "#343941",
+    promptBorder: "#444b55",
+    promptMarker: "#f0f3f6",
+    promptText: "#9da4ad",
+    model: "#f6e2b7",
+    separator: "#6e7681",
+    workingDirectory: "#abdfa7",
+  },
+} as const;
+
 type CaptureCase = {
   name:
     | "maintainer-overview"
@@ -46,7 +71,7 @@ type CaptureCase = {
   loadingText?: RegExp;
   waitForSync?: boolean;
   prepare?: (page: Page, baseURL: string) => Promise<void>;
-  afterReady?: (page: Page) => Promise<void>;
+  afterReady?: (page: Page, theme: ThemeName) => Promise<void>;
   description: string;
 };
 
@@ -55,10 +80,10 @@ async function openCodexLaunchMenu(page: Page): Promise<void> {
   await expect(page.getByRole("menuitem", { name: "Codex" })).toBeVisible();
 }
 
-async function embedSyntheticCodexTranscript(workspace: Locator): Promise<void> {
+async function embedSyntheticCodexTranscript(workspace: Locator, theme: ThemeName): Promise<void> {
   const terminal = workspace.locator(".terminal-container:visible").first();
   await expect(terminal).toBeVisible();
-  await terminal.evaluate((element, transcript) => {
+  await terminal.evaluate((element, { transcript, palette }) => {
     const existing = element.querySelector(".docs-codex-transcript");
     if (existing) existing.remove();
 
@@ -71,8 +96,8 @@ async function embedSyntheticCodexTranscript(workspace: Locator): Promise<void> 
       "z-index: 3",
       "box-sizing: border-box",
       "overflow: hidden",
-      "background: #0d1117",
-      "color: #c9d1d9",
+      `background: ${palette.background}`,
+      `color: ${palette.foreground}`,
       'font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
       "font-size: 12.5px",
       "line-height: 1.4",
@@ -106,17 +131,17 @@ async function embedSyntheticCodexTranscript(workspace: Locator): Promise<void> 
       "gap: 10px",
       "min-height: 44px",
       "padding: 10px 14px",
-      "border: 1px solid #444b55",
-      "background: #343941",
+      `border: 1px solid ${palette.promptBorder}`,
+      `background: ${palette.promptBackground}`,
     ].join("; ");
 
     const promptMarker = document.createElement("span");
     promptMarker.textContent = "›";
-    promptMarker.style.cssText = "color: #f0f3f6; font-weight: 700";
+    promptMarker.style.cssText = `color: ${palette.promptMarker}; font-weight: 700`;
 
     const promptText = document.createElement("span");
     promptText.textContent = "Summarize recent commits";
-    promptText.style.cssText = "color: #9da4ad";
+    promptText.style.cssText = `color: ${palette.promptText}`;
     prompt.append(promptMarker, promptText);
 
     const status = document.createElement("div");
@@ -132,24 +157,24 @@ async function embedSyntheticCodexTranscript(workspace: Locator): Promise<void> 
 
     const model = document.createElement("span");
     model.textContent = "gpt-5.6-sol high";
-    model.style.cssText = "color: #f6e2b7";
+    model.style.cssText = `color: ${palette.model}`;
 
     const separator = document.createElement("span");
     separator.textContent = "·";
-    separator.style.cssText = "color: #6e7681";
+    separator.style.cssText = `color: ${palette.separator}`;
 
     const workingDirectory = document.createElement("span");
     workingDirectory.textContent = "~/src/kenn-io/forge";
-    workingDirectory.style.cssText = "color: #abdfa7";
+    workingDirectory.style.cssText = `color: ${palette.workingDirectory}`;
     status.append(model, separator, workingDirectory);
 
     composer.append(prompt, status);
     content.append(output, composer);
     element.appendChild(content);
-  }, syntheticCodexTranscript);
+  }, { transcript: syntheticCodexTranscript, palette: syntheticCodexPalettes[theme] });
 }
 
-async function showCodexWorkspace(page: Page): Promise<void> {
+async function showCodexWorkspace(page: Page, theme: ThemeName): Promise<void> {
   const row = page.locator(".workspace-list-sidebar .ws-row", { hasText: "Add widget caching layer" });
   await row.click();
   await expect(row).toHaveClass(/\bselected\b/);
@@ -158,7 +183,7 @@ async function showCodexWorkspace(page: Page): Promise<void> {
   await expect(codexTab).toBeVisible();
   await codexTab.click();
   await expect(codexTab).toHaveAttribute("aria-selected", "true");
-  await embedSyntheticCodexTranscript(workspace);
+  await embedSyntheticCodexTranscript(workspace, theme);
 
   const syntheticPath = "/worktrees/github/github.com/acme/widgets/pr-1";
   await page.locator(".meta-chip.mono.path").evaluate((element, replacement) => {
@@ -169,7 +194,7 @@ async function showCodexWorkspace(page: Page): Promise<void> {
   }, syntheticPath);
 }
 
-async function showActivityCodexWorkspace(page: Page): Promise<void> {
+async function showActivityCodexWorkspace(page: Page, theme: ThemeName): Promise<void> {
   const prRow = page
     .locator(".activity-row")
     .filter({ has: page.locator(".badge", { hasText: "PR" }) })
@@ -189,7 +214,7 @@ async function showActivityCodexWorkspace(page: Page): Promise<void> {
   await codexTab.click();
   await expect(codexTab).toHaveAttribute("aria-selected", "true");
   await expect(workspace.locator(".terminal-view")).toBeVisible();
-  await embedSyntheticCodexTranscript(workspace);
+  await embedSyntheticCodexTranscript(workspace, theme);
   await waitForIdleSync(page);
 }
 
@@ -676,7 +701,7 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
   if (capture.waitForSync) {
     await waitForIdleSync(page);
   }
-  await capture.afterReady?.(page);
+  await capture.afterReady?.(page, capture.theme);
   await expect
     .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
     .toBe(capture.theme === "dark");
@@ -697,6 +722,32 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
     expect(statusBox).not.toBeNull();
     expect(composerBox!.y + composerBox!.height).toBeLessThanOrEqual(terminalBox!.y + terminalBox!.height);
     expect(statusBox!.y + statusBox!.height).toBeLessThanOrEqual(terminalBox!.y + terminalBox!.height);
+
+    const [terminalLightness, composerLightness] = await terminal.evaluate((element) => {
+      const sample = (target: Element): number => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("2D canvas context is unavailable");
+        context.fillStyle = getComputedStyle(target).backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3)).reduce(
+          (sum, channel) => sum + channel,
+          0,
+        );
+      };
+      const prompt = element.querySelector('[aria-label="Codex prompt composer"] > div');
+      if (!prompt) throw new Error("Codex prompt surface was not found");
+      return [sample(element), sample(prompt)];
+    });
+    if (capture.theme === "light") {
+      expect(terminalLightness).toBeGreaterThan(650);
+      expect(composerLightness).toBeGreaterThan(600);
+    } else {
+      expect(terminalLightness).toBeLessThan(100);
+      expect(composerLightness).toBeLessThan(250);
+    }
   }
 
   const svg = await nativeSVGSnapshot(page, {

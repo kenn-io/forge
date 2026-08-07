@@ -379,33 +379,48 @@ git commit -m "feat: submit one verified initial agent prompt"
 - Produces: `kenn_forge_list_agent_targets`, `kenn_forge_list_workspace_agent_sessions`, and `kenn_forge_spawn_workspace_with_agent`.
 - Consumes: Tasks 5–6 APIs plus workspace create/detail/runtime routes.
 
-- [ ] **Step 1: Add the target and live-session read tools with failing tests**
+- [ ] **Step 1: Write failing target and live-session read-tool tests**
 
 Update the exact registry to 11 tools, prove target filtering requires both
 `kind=agent` and a supported `agenthook.Profiles()` identity without exposing
-argv, and cover deterministic live-session mapping. Implement and verify these
-read-only tools before adding spawn orchestration.
+argv, and cover deterministic live-session mapping.
 
-- [ ] **Step 2: Add core PR spawn orchestration with failing tests**
+- [ ] **Step 2: Verify the read-tool tests fail, then implement and commit them**
+
+Run: `go test ./internal/mcpserver -run 'AgentTarget|WorkspaceAgent|RegisteredTools' -shuffle=on`
+
+Expected before implementation: FAIL because the two read tools are absent.
+Implement the read-only tools, rerun the focused tests, and commit the verified
+11-tool surface before starting spawn orchestration.
+
+- [ ] **Step 3: Write failing core PR spawn-orchestration tests**
 
 Add the twelfth tool and cover validation before creation, PR workspace reuse,
 `suppress_auto_assign: true`, readiness polling, always-new launch, hook
 correlation, five stages, timeout cap, partial errors, and no cleanup.
 
-- [ ] **Step 3: Add issue/ad-hoc variants and ambiguity recovery tests**
+- [ ] **Step 4: Verify the PR tests fail, then implement and commit PR orchestration**
+
+Run: `go test ./internal/mcpserver -run 'SpawnWorkspace.*Pull|RegisteredTools' -shuffle=on`
+
+Expected before implementation: FAIL because the spawn tool is absent. Implement
+the core PR path, rerun the focused tests, and commit it before adding source
+variants.
+
+- [ ] **Step 5: Write failing issue/ad-hoc and ambiguity-recovery tests**
 
 Cover issue and ad-hoc request shapes, branch forwarding, receipt-only recovery
 after a lost message response, and explicit ambiguous create/launch failures
 without mutation retry. The v1 tool reports identifiers it knows and does not
 invent operation receipts or reconciliation for an unknown mutation result.
 
-- [ ] **Step 4: Verify tests fail**
+- [ ] **Step 6: Verify the variant tests fail**
 
-Run: `go test ./internal/mcpserver -run 'AgentTarget|WorkspaceAgent|RegisteredTools' -shuffle=on`
+Run: `go test ./internal/mcpserver -run 'SpawnWorkspace.*Issue|SpawnWorkspace.*AdHoc|Ambigu' -shuffle=on`
 
-Expected: FAIL because the three tools are absent.
+Expected: FAIL because issue/ad-hoc routing and ambiguity recovery are absent.
 
-- [ ] **Step 5: Implement schemas and bounded orchestration**
+- [ ] **Step 7: Implement source variants and bounded recovery**
 
 ```go
 type spawnWorkspaceWithAgentInput struct {
@@ -418,7 +433,7 @@ type spawnWorkspaceWithAgentInput struct {
 
 Return stages, partial identifiers, receipt state, and `message_delivered`; retry only idempotent reads after daemon rediscovery.
 
-- [ ] **Step 6: Update guidance, run tests, and commit**
+- [ ] **Step 8: Update guidance, run tests, and commit the completed surface**
 
 Run: `go test ./internal/mcpserver -shuffle=on`
 

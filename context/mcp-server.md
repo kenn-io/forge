@@ -10,6 +10,9 @@
   enforcement (`internal/mcpserver/http.go::Server.httpGuard`).
 - Treat only typed not-stacked responses as absence; surface other evidence
   failures and structured retry/ambiguity state (`internal/mcpserver/tools_stack.go::isStackAbsentError`).
+- Confirm a mutation only from exactly one complete JSON response value;
+  malformed or trailing response data is ambiguous and non-retryable
+  (`internal/mcpserver/daemon.go::daemonClient.do`).
 - Initial-message receipts store no prompt or digest and survive runtime-row
   cleanup; only workspace deletion cascades them (`internal/db/migrations/000047_agent_initial_message_receipts.up.sql`).
 - Receipt reuse requires matching agent, coding session, and normalized byte

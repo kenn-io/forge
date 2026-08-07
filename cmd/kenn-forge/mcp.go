@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -46,7 +47,9 @@ func newMCPCommand(run mcpRunner, stdin io.Reader, stdout io.Writer) *cobra.Comm
 				}
 			case "http":
 				_, port, err := net.SplitHostPort(opts.Addr)
-				if !cmd.Flags().Changed("addr") || err != nil || port == "0" {
+				portNumber, portErr := strconv.Atoi(port)
+				if !cmd.Flags().Changed("addr") || err != nil || portErr != nil ||
+					portNumber < 1 || portNumber > 65535 {
 					return fmt.Errorf("--addr with an explicit nonzero port is required for --transport=http")
 				}
 			default:

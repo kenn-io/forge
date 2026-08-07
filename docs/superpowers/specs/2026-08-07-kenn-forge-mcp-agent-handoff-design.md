@@ -421,6 +421,10 @@ daemon startup after acquiring exclusive runtime ownership recovers abandoned
 `pending` rows to `uncertain`; generic database opens never do. The receipt GET
 is authoritative after a lost POST response in every state.
 
+Receipts are retained for the lifetime of their owning workspace and removed
+by workspace deletion. V1 has no independent age-based receipt collection
+because the runtime key remains the recovery identity after runtime exit.
+
 ## Daemon API Additions
 
 The companion should use existing daemon routes where they already fit:

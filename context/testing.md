@@ -205,6 +205,8 @@ and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.t
   the root removes it only after every published child exits (`frontend/tests/e2e-full/support/e2eServer.ts::waitForSharedServerOwners`).
 - Once e2e-server tmux shutdown starts, no new session may be admitted; cleanup waits
   for an admitted creation before killing the private server (`cmd/e2e-server/main.go::tmuxCreationGate`).
+- Keep explicit PTY-owner test mode unwrapped so its missing tmux command remains
+  unavailable to backend selection (`cmd/e2e-server/main.go::buildAppState`).
 
 Mounting `KataWorkspace.svelte` in Vitest always fetches the daemon roster and
 opens the live SSE event stream; mock both fetch routes (see

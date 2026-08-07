@@ -27009,6 +27009,8 @@ func pinWorkspaceMergeRequestForReview(
 }
 
 func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
@@ -27022,19 +27024,19 @@ func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) 
 		"delete_workspace_id": ws.Id,
 	})
 
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var response struct {
 		Merged                  bool   `json:"merged"`
 		WorkspaceCleanupWarning string `json:"workspace_cleanup_warning"`
 	}
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
-	assert.True(t, response.Merged)
-	assert.Empty(t, response.WorkspaceCleanupWarning)
+	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
+	assert.True(response.Merged)
+	assert.Empty(response.WorkspaceCleanupWarning)
 	stored, err := database.GetWorkspace(ctx, ws.Id)
-	require.NoError(t, err)
-	assert.Nil(t, stored)
+	require.NoError(err)
+	assert.Nil(stored)
 	_, err = os.Stat(ws.WorktreePath)
-	assert.ErrorIs(t, err, os.ErrNotExist)
+	assert.ErrorIs(err, os.ErrNotExist)
 }
 
 func TestWorkspaceDiffCacheHitReturnsWhileGitCapacityIsHeldE2E(t *testing.T) {

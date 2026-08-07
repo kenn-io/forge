@@ -2,7 +2,7 @@
   import { setContext, onDestroy } from "svelte";
   import {
     API_CLIENT_KEY, ACTIONS_KEY, NAVIGATE_KEY, EVENT_KEY,
-    PREPARE_ROUTE_KEY, WORKSPACE_COMMAND_KEY,
+    PREPARE_ROUTE_KEY, WORKSPACE_COMMAND_KEY, WORKSPACE_DELETED_KEY,
     STORES_KEY, UI_CONFIG_KEY, SIDEBAR_KEY, HOST_STATE_KEY,
     ROBOREV_CLIENT_KEY,
   } from "./context.js";
@@ -21,7 +21,7 @@
   } from "./stores/roborev/log.svelte.js";
   import type {
     ForgeClient, ActionRegistry, NavigateCallback,
-    EventCallback, PrepareRouteCallback, WorkspaceCommandCallback,
+    EventCallback, PrepareRouteCallback, WorkspaceCommandCallback, WorkspaceDeletedCallback,
     HostStateAccessors, StoreInstances, UIConfig,
     SidebarAccessors,
   } from "./types.js";
@@ -90,6 +90,7 @@
     onEvent?: EventCallback;
     prepareRoute?: PrepareRouteCallback;
     onWorkspaceCommand?: WorkspaceCommandCallback | undefined;
+    onWorkspaceDeleted?: WorkspaceDeletedCallback | undefined;
     hostState?: HostStateAccessors;
     config?: UIConfig;
     sidebar?: SidebarAccessors;
@@ -110,6 +111,7 @@
     onEvent = () => {},
     prepareRoute = undefined,
     onWorkspaceCommand = undefined,
+    onWorkspaceDeleted = undefined,
     hostState = {},
     config = {},
     sidebar = {
@@ -139,6 +141,7 @@
     evt: EventCallback,
     prep: PrepareRouteCallback | undefined,
     workspaceCmd: WorkspaceCommandCallback | undefined,
+    workspaceDeletedCb: WorkspaceDeletedCallback | undefined,
     sb: SidebarAccessors,
     gp: () => string,
     getSelectedActivity: () => RoutedItemRef | null,
@@ -475,6 +478,7 @@
     setContext(EVENT_KEY, evt);
     setContext(PREPARE_ROUTE_KEY, prep ?? null);
     setContext(WORKSPACE_COMMAND_KEY, workspaceCmd ?? null);
+    setContext(WORKSPACE_DELETED_KEY, workspaceDeletedCb ?? null);
     setContext(STORES_KEY, si);
     setContext(UI_CONFIG_KEY, cfg);
     setContext(SIDEBAR_KEY, sb);
@@ -487,7 +491,7 @@
   stores = init(
     client, hostState, config, actions,
     onNavigate, onEvent, prepareRoute,
-    onWorkspaceCommand,
+    onWorkspaceCommand, onWorkspaceDeleted,
     sidebar, getPage, getActivitySelection,
     roborevBaseUrl, onError, onWarning, onNotification,
   );

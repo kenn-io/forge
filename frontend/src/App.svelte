@@ -94,7 +94,11 @@
     getSelectedPRFromRoute,
     type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
-  import { getInlineWorkspaceController, tabSlotAttachment } from "./lib/stores/workspace-host.svelte.ts";
+  import {
+    getInlineWorkspaceController,
+    notifyWorkspaceDeleted,
+    tabSlotAttachment,
+  } from "./lib/stores/workspace-host.svelte.ts";
   import {
     buildActivitySelectionSearch,
     parseActivitySelection,
@@ -980,6 +984,7 @@
       else navigate(path);
     }}
     onWorkspaceCommand={emitWorkspaceCommand}
+    onWorkspaceDeleted={notifyWorkspaceDeleted}
     actions={{
       pull: getPullRequestActions().map((a) => ({
         id: a.id,

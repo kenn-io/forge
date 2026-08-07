@@ -5,6 +5,11 @@ import type { Mock } from "vite-plus/test";
 import MergeModal from "./MergeModal.svelte";
 import { API_CLIENT_KEY } from "../../context.js";
 import { getStackDepth, getTopFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
+import {
+  isWorkspaceDeletionPending,
+  isWorkspaceIdDeleted,
+  resetWorkspaceCreatePendingForTest,
+} from "../../stores/workspace-create-pending.svelte.js";
 
 const baseProps = {
   owner: "octo",
@@ -28,6 +33,7 @@ const baseProps = {
 describe("MergeModal modal frame integration", () => {
   beforeEach(() => {
     resetModalStack();
+    resetWorkspaceCreatePendingForTest();
   });
 
   afterEach(() => {
@@ -61,6 +67,7 @@ describe("MergeModal modal frame integration", () => {
 describe("MergeModal head pinning", () => {
   beforeEach(() => {
     resetModalStack();
+    resetWorkspaceCreatePendingForTest();
   });
 
   afterEach(() => {
@@ -88,12 +95,18 @@ describe("MergeModal head pinning", () => {
     });
   }
 
-  function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  function deferred<T>(): {
+    promise: Promise<T>;
+    resolve: (value: T) => void;
+    reject: (reason?: unknown) => void;
+  } {
     let resolve!: (value: T) => void;
-    const promise = new Promise<T>((res) => {
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
       resolve = res;
+      reject = rej;
     });
-    return { promise, resolve };
+    return { promise, resolve, reject };
   }
 
   async function confirmMerge(): Promise<void> {
@@ -303,7 +316,8 @@ describe("MergeModal head pinning", () => {
   });
 
   it("omits the workspace ID when cleanup is unchecked", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
+    const request = deferred<{ data: Record<string, never>; error: undefined; response: Response }>();
+    const post = vi.fn().mockReturnValue(request.promise);
     renderModal(post, { workspaceId: "ws-1" });
     await fireEvent.click(screen.getByRole("checkbox", { name: "Delete workspace after merge" }));
 
@@ -312,6 +326,26 @@ describe("MergeModal head pinning", () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     const [, init] = post.mock.calls[0];
     expect(init.body).not.toHaveProperty("delete_workspace_id");
+    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false);
+    request.resolve({ data: {}, error: undefined, response: new Response("{}") });
+  });
+
+  it("publishes local deletion state throughout successful immediate cleanup", async () => {
+    const request = deferred<{ data: Record<string, never>; error: undefined; response: Response }>();
+    const post = vi.fn().mockReturnValue(request.promise);
+    const onmerged = vi.fn();
+    renderModal(post, { workspaceId: "ws-1", onmerged });
+
+    await confirmMerge();
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(true);
+    expect(isWorkspaceDeletionPending("ws-1", "github.com")).toBe(false);
+
+    request.resolve({ data: {}, error: undefined, response: new Response("{}") });
+    await waitFor(() => expect(onmerged).toHaveBeenCalledWith(undefined, "ws-1"));
+    expect(isWorkspaceIdDeleted("ws-1")).toBe(true);
+    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false);
   });
 
   it("passes an immediate cleanup warning to the merged callback", async () => {
@@ -325,6 +359,25 @@ describe("MergeModal head pinning", () => {
 
     await confirmMerge();
 
-    await waitFor(() => expect(onmerged).toHaveBeenCalledWith("workspace has uncommitted changes"));
+    await waitFor(() => expect(onmerged).toHaveBeenCalledWith("workspace has uncommitted changes", undefined));
+    expect(isWorkspaceIdDeleted("ws-1")).toBe(false);
+    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false);
+  });
+
+  it("releases local deletion state when the immediate merge request fails", async () => {
+    const request = deferred<never>();
+    const post = vi.fn().mockReturnValue(request.promise);
+    const onmerged = vi.fn();
+    renderModal(post, { workspaceId: "ws-1", onmerged });
+
+    await confirmMerge();
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(true);
+    request.reject(new Error("merge request failed"));
+
+    await waitFor(() => expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false));
+    expect(isWorkspaceIdDeleted("ws-1")).toBe(false);
+    expect(onmerged).not.toHaveBeenCalled();
   });
 });

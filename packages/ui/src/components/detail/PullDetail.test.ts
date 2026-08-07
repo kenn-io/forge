@@ -1,7 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffResult, PullDetail } from "../../api/types.js";
-import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
+import {
+  ACTIONS_KEY,
+  API_CLIENT_KEY,
+  NAVIGATE_KEY,
+  STORES_KEY,
+  UI_CONFIG_KEY,
+  WORKSPACE_DELETED_KEY,
+} from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
@@ -207,6 +214,7 @@ function renderPullDetail(
     actions?: { pull: unknown[] };
     detailSyncing?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
+    onWorkspaceDeleted?: ReturnType<typeof vi.fn>;
   } = {},
 ) {
   const actions = options.actions ?? { pull: [] };
@@ -260,6 +268,7 @@ function renderPullDetail(
       [ACTIONS_KEY, actions],
       [UI_CONFIG_KEY, { hideStar: true }],
       [NAVIGATE_KEY, navigate],
+      [WORKSPACE_DELETED_KEY, options.onWorkspaceDeleted ?? null],
     ]),
   });
   return {
@@ -1254,6 +1263,57 @@ describe("PullDetail approvals", () => {
         }),
       );
       expect(detailStore.loadDetail).toHaveBeenCalled();
+    });
+  });
+
+  it("publishes successful merge cleanup through the workspace deletion callback", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.workspace = { id: "ws-1", status: "ready" };
+    const onWorkspaceDeleted = vi.fn();
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          AllowSquashMerge: true,
+          AllowMergeCommit: false,
+          AllowRebaseMerge: false,
+          ViewerCanMerge: true,
+        },
+      })),
+      POST: vi.fn(async () => ({
+        data: { merged: true, sha: "merge-sha", message: "merged" },
+        error: undefined,
+      })),
+    };
+    renderPullDetail(
+      detail,
+      {
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: false,
+        ViewerCanMerge: true,
+      },
+      apiClient,
+      { onWorkspaceDeleted },
+    );
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
+        name: "Squash and merge",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(onWorkspaceDeleted).toHaveBeenCalledWith("ws-1", undefined, {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: 1,
+        itemType: "pull",
+      });
     });
   });
 

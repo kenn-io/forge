@@ -348,6 +348,15 @@ describe("App feature routes", () => {
     }
   });
 
+  it("routes Provider workspace deletions through the authoritative host invalidation", async () => {
+    const { default: App } = await import("./App.svelte");
+    const { notifyWorkspaceDeleted } = await import("./lib/stores/workspace-host.svelte.ts");
+    render(App, { target: createAppTarget() });
+
+    await waitFor(() => expect(appSurfaceProps.provider).not.toBeNull());
+    expect(appSurfaceProps.provider?.onWorkspaceDeleted).toBe(notifyWorkspaceDeleted);
+  });
+
   it("isolates the Kata workspace client from cross-surface searches", async () => {
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/kata");

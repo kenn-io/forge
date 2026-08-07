@@ -18,7 +18,7 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
     getStores, getClient, getActions,
-    getUIConfig, getNavigate,
+    getUIConfig, getNavigate, getWorkspaceDeletedCallback,
   } from "../../context.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { buildPullRequestFilesRoute } from "../../routes.js";
@@ -120,6 +120,7 @@
   const actions = getActions();
   const uiConfig = getUIConfig();
   const navigate = getNavigate();
+  const notifyWorkspaceDeleted = getWorkspaceDeletedCallback();
 
   const defaultProviderCapabilities: ProviderCapabilities = {
     read_repositories: true,
@@ -2699,8 +2700,11 @@
               repoPath,
             });
           }}
-          onmerged={(cleanupWarning: string | undefined) => {
+          onmerged={(cleanupWarning: string | undefined, deletedWorkspaceId: string | undefined) => {
             showMergeModal = false;
+            if (deletedWorkspaceId) {
+              notifyWorkspaceDeleted?.(deletedWorkspaceId, undefined, $state.snapshot(itemIdentity));
+            }
             if (cleanupWarning) {
               showFlash(
                 `Pull request merged, but the workspace was not pruned: ${cleanupWarning}`,

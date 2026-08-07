@@ -12,6 +12,11 @@
   import { getClient } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
+  import {
+    beginWorkspaceDeletion,
+    endWorkspaceDeletion,
+    markWorkspaceIdDeleted,
+  } from "../../stores/workspace-create-pending.svelte.js";
 
   const client = getClient();
 
@@ -49,7 +54,7 @@
     /** Warning shown when the configured override permits a mid-stack merge. */
     midStackWarning?: string | undefined;
     onclose: () => void;
-    onmerged: (cleanupWarning?: string) => void;
+    onmerged: (cleanupWarning?: string, deletedWorkspaceId?: string) => void;
     /** Called when a deferred merge was accepted and now waits on CI. */
     onqueued: () => void;
     onstateconflict?: ((
@@ -195,12 +200,21 @@
         onqueued();
         return;
       }
-      const { data, error } = await client.POST(providerItemPath("pulls", ref, "/merge"), {
-        params: { path: { ...providerRouteParams(ref), number } },
-        body: params,
-      });
-      if (error && handleMergeError(error)) return;
-      onmerged(data?.workspace_cleanup_warning);
+      const cleanupWorkspaceId = params.delete_workspace_id;
+      if (cleanupWorkspaceId) beginWorkspaceDeletion(cleanupWorkspaceId, undefined);
+      try {
+        const { data, error } = await client.POST(providerItemPath("pulls", ref, "/merge"), {
+          params: { path: { ...providerRouteParams(ref), number } },
+          body: params,
+        });
+        if (error && handleMergeError(error)) return;
+        const cleanupWarning = data?.workspace_cleanup_warning;
+        const deletedWorkspaceId = cleanupWorkspaceId && !cleanupWarning ? cleanupWorkspaceId : undefined;
+        if (deletedWorkspaceId) markWorkspaceIdDeleted(deletedWorkspaceId);
+        onmerged(cleanupWarning, deletedWorkspaceId);
+      } finally {
+        if (cleanupWorkspaceId) endWorkspaceDeletion(cleanupWorkspaceId, undefined);
+      }
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {

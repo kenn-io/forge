@@ -9,8 +9,10 @@ import {
   startTabbedPanelTabDrag,
 } from "@kenn-forge/ui";
 import {
+  beginWorkspaceDeletion,
   discardWorkspaceLaunch,
-  pendingWorkspaceLaunchTarget,
+  endWorkspaceDeletion,
+  pendingWorkspaceLaunch,
   queueWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
 } from "@kenn-forge/ui/stores/workspace-create-pending";
@@ -2614,6 +2616,78 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
   });
 
+  it("keeps an accepted create-and-launch intent across an empty refresh and remount", async () => {
+    const eventListeners: Record<string, () => void> = {};
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener(type: string, callback: () => void): void {
+          eventListeners[type] = callback;
+        }
+        close(): void {}
+      },
+    );
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
+    claimForPrs();
+
+    const firstView = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+
+    await waitFor(() => {
+      expect(pendingWorkspaceLaunch("ws-1", undefined)).toMatchObject({
+        phase: "awaiting_session",
+        sessionKey: runningSession.key,
+      });
+    });
+    expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+
+    firstView.unmount();
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(3));
+    expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    eventListeners["reconnect.stale"]?.();
+
+    await waitFor(() => expect(pendingWorkspaceLaunch("ws-1", undefined)).toBeNull());
+    await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+    expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles an accepted launch that never appears after the reconciliation window", async () => {
+    const launchRequest = deferred<typeof runningSession>();
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    vi.useFakeTimers();
+    try {
+      launchRequest.resolve(runningSession);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(pendingWorkspaceLaunch("ws-1", undefined)).toMatchObject({ phase: "awaiting_session" });
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(pendingWorkspaceLaunch("ws-1", undefined)).toBeNull();
+      expect(mocks.showFlash).toHaveBeenCalledWith("Codex launched, but its session did not become available", {
+        tone: "danger",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not apply a local launch intent to a same-ID fleet workspace", async () => {
     queueWorkspaceLaunch("ws-1", "codex", undefined);
     vi.stubGlobal(
@@ -2637,10 +2711,10 @@ describe("WorkspaceTerminalView", () => {
 
     expect(await screen.findByRole("dialog", { name: "Launch a session" })).toBeTruthy();
     expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
-    expect(pendingWorkspaceLaunchTarget("ws-1", undefined)).toBe("codex");
+    expect(pendingWorkspaceLaunch("ws-1", undefined)?.targetKey).toBe("codex");
   });
 
-  it("settles only the claimed workspace intent after navigating during launch", async () => {
+  it("publishes an accepted launch for its workspace after navigating during launch", async () => {
     const launchRequest = deferred<typeof runningSession>();
     const workspaceB = { ...workspaceResponse, id: "ws-2", status: "provisioning" };
     vi.stubGlobal(
@@ -2667,8 +2741,13 @@ describe("WorkspaceTerminalView", () => {
     queueWorkspaceLaunch("ws-2", "codex", undefined);
     launchRequest.resolve(runningSession);
 
-    await waitFor(() => expect(pendingWorkspaceLaunchTarget("ws-1", undefined)).toBeNull());
-    expect(pendingWorkspaceLaunchTarget("ws-2", undefined)).toBe("codex");
+    await waitFor(() => {
+      expect(pendingWorkspaceLaunch("ws-1", undefined)).toMatchObject({
+        phase: "awaiting_session",
+        sessionKey: runningSession.key,
+      });
+    });
+    expect(pendingWorkspaceLaunch("ws-2", undefined)?.targetKey).toBe("codex");
   });
 
   it("reacts when intent is queued after an already-ready workspace renders", async () => {
@@ -3074,6 +3153,23 @@ describe("WorkspaceTerminalView", () => {
 
     await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+  });
+
+  it("blocks workspace actions while merge-triggered deletion is pending", async () => {
+    beginWorkspaceDeletion("ws-1", undefined);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    render(WorkspacePaneControls);
+
+    const launch = await screen.findByRole("button", { name: "Launch session" });
+    expect(launch.hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+    endWorkspaceDeletion("ws-1", undefined);
   });
 
   it("leaves workspace strip actions off a broken workspace, whose error panel owns delete", async () => {

@@ -6,6 +6,7 @@ import type {
   EventCallback,
   PrepareRouteCallback,
   WorkspaceCommandCallback,
+  WorkspaceDeletedCallback,
   HostStateAccessors,
   StoreInstances,
   UIConfig,
@@ -19,6 +20,7 @@ export const NAVIGATE_KEY = Symbol("kenn-forge-navigate");
 export const EVENT_KEY = Symbol("kenn-forge-event");
 export const PREPARE_ROUTE_KEY = Symbol("kenn-forge-prepare-route");
 export const WORKSPACE_COMMAND_KEY = Symbol("kenn-forge-workspace-command");
+export const WORKSPACE_DELETED_KEY = Symbol("kenn-forge-workspace-deleted");
 export const STORES_KEY = Symbol("kenn-forge-stores");
 export const UI_CONFIG_KEY = Symbol("kenn-forge-ui-config");
 export const SIDEBAR_KEY = Symbol("kenn-forge-sidebar");
@@ -41,6 +43,9 @@ export function getPrepareRoute(): PrepareRouteCallback | null {
 }
 export function getWorkspaceCommand(): WorkspaceCommandCallback | null {
   return getContext(WORKSPACE_COMMAND_KEY);
+}
+export function getWorkspaceDeletedCallback(): WorkspaceDeletedCallback | null {
+  return getContext(WORKSPACE_DELETED_KEY);
 }
 export function getStores(): StoreInstances {
   return getContext(STORES_KEY);

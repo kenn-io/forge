@@ -37,12 +37,24 @@ export function nextWorkspaceLifecycleTick(): number {
 // deletion must invalidate views currently showing the dead workspace.
 let deletedIds = $state<ReadonlySet<string>>(new Set());
 
+type PendingWorkspaceDeletion = {
+  workspaceId: string;
+  workspaceHostKey: string | undefined;
+};
+
+let pendingWorkspaceDeletions = $state<PendingWorkspaceDeletion[]>([]);
+
 type PendingWorkspaceLaunch = {
   workspaceId: string;
   workspaceHostKey: string | undefined;
   targetKey: string;
+  phase: "queued" | "launching" | "awaiting_session";
   claimToken: symbol | null;
+  sessionKey?: string;
+  acceptedAt?: number;
 };
+
+export type WorkspaceLaunchIntent = Readonly<Omit<PendingWorkspaceLaunch, "claimToken">>;
 
 export type WorkspaceLaunchClaim = Readonly<{
   workspaceId: string;
@@ -52,6 +64,30 @@ export type WorkspaceLaunchClaim = Readonly<{
 }>;
 
 let pendingWorkspaceLaunches = $state<PendingWorkspaceLaunch[]>([]);
+
+function workspaceLifecycleMatches(
+  entry: { workspaceId: string; workspaceHostKey: string | undefined },
+  workspaceId: string,
+  workspaceHostKey: string | undefined,
+): boolean {
+  return entry.workspaceId === workspaceId && entry.workspaceHostKey === workspaceHostKey;
+}
+
+export function beginWorkspaceDeletion(workspaceId: string, workspaceHostKey: string | undefined): void {
+  if (!workspaceId || isWorkspaceDeletionPending(workspaceId, workspaceHostKey)) return;
+  pendingWorkspaceDeletions = [...pendingWorkspaceDeletions, { workspaceId, workspaceHostKey }];
+}
+
+export function endWorkspaceDeletion(workspaceId: string, workspaceHostKey: string | undefined): void {
+  if (!isWorkspaceDeletionPending(workspaceId, workspaceHostKey)) return;
+  pendingWorkspaceDeletions = pendingWorkspaceDeletions.filter(
+    (entry) => !workspaceLifecycleMatches(entry, workspaceId, workspaceHostKey),
+  );
+}
+
+export function isWorkspaceDeletionPending(workspaceId: string, workspaceHostKey: string | undefined): boolean {
+  return pendingWorkspaceDeletions.some((entry) => workspaceLifecycleMatches(entry, workspaceId, workspaceHostKey));
+}
 
 export function markWorkspaceIdDeleted(workspaceId: string): void {
   if (deletedIds.has(workspaceId)) return;
@@ -69,7 +105,7 @@ function workspaceLaunchMatches(
   workspaceId: string,
   workspaceHostKey: string | undefined,
 ): boolean {
-  return entry.workspaceId === workspaceId && entry.workspaceHostKey === workspaceHostKey;
+  return workspaceLifecycleMatches(entry, workspaceId, workspaceHostKey);
 }
 
 export function queueWorkspaceLaunch(
@@ -81,15 +117,20 @@ export function queueWorkspaceLaunch(
   if (!workspaceId || !normalized) return;
   pendingWorkspaceLaunches = [
     ...pendingWorkspaceLaunches.filter((entry) => !workspaceLaunchMatches(entry, workspaceId, workspaceHostKey)),
-    { workspaceId, workspaceHostKey, targetKey: normalized, claimToken: null },
+    { workspaceId, workspaceHostKey, targetKey: normalized, phase: "queued", claimToken: null },
   ];
 }
 
-export function pendingWorkspaceLaunchTarget(workspaceId: string, workspaceHostKey: string | undefined): string | null {
-  return (
-    pendingWorkspaceLaunches.find((entry) => workspaceLaunchMatches(entry, workspaceId, workspaceHostKey))?.targetKey ??
-    null
+export function pendingWorkspaceLaunch(
+  workspaceId: string,
+  workspaceHostKey: string | undefined,
+): WorkspaceLaunchIntent | null {
+  const entry = pendingWorkspaceLaunches.find((candidate) =>
+    workspaceLaunchMatches(candidate, workspaceId, workspaceHostKey),
   );
+  if (!entry) return null;
+  const { claimToken: _claimToken, ...intent } = entry;
+  return intent;
 }
 
 export function claimWorkspaceLaunch(
@@ -99,13 +140,15 @@ export function claimWorkspaceLaunch(
   const entry = pendingWorkspaceLaunches.find((candidate) =>
     workspaceLaunchMatches(candidate, workspaceId, workspaceHostKey),
   );
-  if (!entry || entry.claimToken !== null) return null;
+  if (!entry || entry.phase !== "queued" || entry.claimToken !== null) return null;
   // Keep the entry visible while one view owns the request. A second live view
   // for the same workspace must suppress its empty-state launcher without
   // starting a duplicate session.
   const token = Symbol("workspace-launch-claim");
   pendingWorkspaceLaunches = pendingWorkspaceLaunches.map((candidate) =>
-    workspaceLaunchMatches(candidate, workspaceId, workspaceHostKey) ? { ...candidate, claimToken: token } : candidate,
+    workspaceLaunchMatches(candidate, workspaceId, workspaceHostKey)
+      ? { ...candidate, phase: "launching", claimToken: token }
+      : candidate,
   );
   return { workspaceId, workspaceHostKey, targetKey: entry.targetKey, token };
 }
@@ -114,22 +157,68 @@ export function discardWorkspaceLaunch(workspaceId: string, workspaceHostKey: st
   const entry = pendingWorkspaceLaunches.find((candidate) =>
     workspaceLaunchMatches(candidate, workspaceId, workspaceHostKey),
   );
-  if (!entry || entry.claimToken !== null) return null;
+  if (!entry || entry.phase !== "queued" || entry.claimToken !== null) return null;
   pendingWorkspaceLaunches = pendingWorkspaceLaunches.filter(
     (entry) => !workspaceLaunchMatches(entry, workspaceId, workspaceHostKey),
   );
   return entry.targetKey;
 }
 
-export function completeWorkspaceLaunch(claim: WorkspaceLaunchClaim): boolean {
-  const owned = pendingWorkspaceLaunches.some(
-    (entry) =>
-      workspaceLaunchMatches(entry, claim.workspaceId, claim.workspaceHostKey) && entry.claimToken === claim.token,
+function ownsWorkspaceLaunchClaim(entry: PendingWorkspaceLaunch, claim: WorkspaceLaunchClaim): boolean {
+  return (
+    workspaceLaunchMatches(entry, claim.workspaceId, claim.workspaceHostKey) &&
+    entry.phase === "launching" &&
+    entry.claimToken === claim.token
   );
+}
+
+export function acceptWorkspaceLaunch(
+  claim: WorkspaceLaunchClaim,
+  sessionKey: string,
+  acceptedAt = Date.now(),
+): boolean {
+  const normalizedSessionKey = sessionKey.trim();
+  if (!normalizedSessionKey) return false;
+  const owned = pendingWorkspaceLaunches.some((entry) => ownsWorkspaceLaunchClaim(entry, claim));
   if (!owned) return false;
+  pendingWorkspaceLaunches = pendingWorkspaceLaunches.map((entry) =>
+    ownsWorkspaceLaunchClaim(entry, claim)
+      ? {
+          ...entry,
+          phase: "awaiting_session",
+          claimToken: null,
+          sessionKey: normalizedSessionKey,
+          acceptedAt,
+        }
+      : entry,
+  );
+  return true;
+}
+
+export function failWorkspaceLaunch(claim: WorkspaceLaunchClaim): boolean {
+  const owned = pendingWorkspaceLaunches.some((entry) => ownsWorkspaceLaunchClaim(entry, claim));
+  if (!owned) return false;
+  pendingWorkspaceLaunches = pendingWorkspaceLaunches.filter((entry) => !ownsWorkspaceLaunchClaim(entry, claim));
+  return true;
+}
+
+export function completeAcceptedWorkspaceLaunch(
+  workspaceId: string,
+  workspaceHostKey: string | undefined,
+  sessionKey: string,
+): boolean {
+  const matched = pendingWorkspaceLaunches.some(
+    (entry) =>
+      workspaceLaunchMatches(entry, workspaceId, workspaceHostKey) &&
+      entry.phase === "awaiting_session" &&
+      entry.sessionKey === sessionKey,
+  );
+  if (!matched) return false;
   pendingWorkspaceLaunches = pendingWorkspaceLaunches.filter(
     (entry) =>
-      !workspaceLaunchMatches(entry, claim.workspaceId, claim.workspaceHostKey) || entry.claimToken !== claim.token,
+      !workspaceLaunchMatches(entry, workspaceId, workspaceHostKey) ||
+      entry.phase !== "awaiting_session" ||
+      entry.sessionKey !== sessionKey,
   );
   return true;
 }
@@ -224,5 +313,6 @@ export function resetWorkspaceCreatePendingForTest(): void {
   created = [];
   lifecycleClock = 0;
   deletedIds = new Set();
+  pendingWorkspaceDeletions = [];
   pendingWorkspaceLaunches = [];
 }

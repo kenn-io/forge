@@ -130,11 +130,16 @@
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import { showFlash } from "@kenn-forge/ui/stores/flash";
   import {
+    acceptWorkspaceLaunch,
     claimWorkspaceLaunch,
-    completeWorkspaceLaunch,
+    completeAcceptedWorkspaceLaunch,
     discardWorkspaceLaunch,
+    failWorkspaceLaunch,
     isWorkspaceCreatePending,
-    pendingWorkspaceLaunchTarget,
+    isWorkspaceDeletionPending,
+    isWorkspaceIdDeleted,
+    pendingWorkspaceLaunch,
+    type WorkspaceLaunchClaim,
   } from "@kenn-forge/ui/stores/workspace-create-pending";
   import { createTerminalZoomController } from "./terminalZoom";
 
@@ -684,7 +689,7 @@
     const identity = workspaceIdentitySnapshot(workspaceId);
     return (
       (identity !== undefined && isWorkspaceCreatePending(identity)) ||
-      pendingWorkspaceLaunchTarget(workspaceId, workspaceHostKey) !== null ||
+      pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null ||
       launchingKey !== null
     );
   }
@@ -1135,7 +1140,9 @@
   const deletingSelectedWorkspace = $derived(
     deletingWorkspaceTargets.some((target) =>
       isDeletingWorkspaceTarget(target, workspaceId, workspaceHostKey),
-    ),
+    ) ||
+      isWorkspaceDeletionPending(workspaceId, workspaceHostKey) ||
+      isWorkspaceIdDeleted(workspaceId),
   );
   const actionsBlocked = $derived(transitioning || deletingSelectedWorkspace || forceDeleting);
   const inlineDockMode = $derived(inlineDock?.getMode() ?? null);
@@ -1971,7 +1978,10 @@
     return fetchPromise;
   }
 
-  async function handleLaunch(targetKey: string): Promise<void> {
+  async function handleLaunch(
+    targetKey: string,
+    launchClaim: WorkspaceLaunchClaim | null = null,
+  ): Promise<void> {
     if (!workspaceId || launchingKey || actionsBlocked) return;
     // Capture id so post-await steps bail if workspace changes mid-launch.
     const id = workspaceId;
@@ -1982,9 +1992,13 @@
         hostKey,
         region: "workflow",
       });
+      if (launchClaim && !acceptWorkspaceLaunch(launchClaim, session.key)) return;
       if (!isCurrentWorkspace(id, hostKey)) return;
       const refreshed = await fetchRuntime({ force: true });
       if (!isCurrentWorkspace(id, hostKey)) return;
+      // Explicit create-and-launch intent is reconciled by exact session key below.
+      // An empty first refresh is an expected propagation gap, not a failed launch.
+      if (launchClaim) return;
       clearClosedSession(session);
       moveSessionToWorkflow(session.key);
       mountSessionTerminal(session.key);
@@ -2002,6 +2016,7 @@
         });
       }
     } catch (err) {
+      if (launchClaim) failWorkspaceLaunch(launchClaim);
       if (!isCurrentWorkspace(id, hostKey)) return;
       showFlash(err instanceof Error ? err.message : "Launch failed", {
         tone: "danger",
@@ -3535,27 +3550,66 @@
   $effect(() => {
     if (!workspaceId || !runtimeLive || workspace?.status !== "ready") return;
     if (actionsBlocked || launchingKey !== null) return;
-    const targetKey = pendingWorkspaceLaunchTarget(workspaceId, workspaceHostKey);
-    if (targetKey === null) return;
+    const intent = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
+    if (intent === null || intent.phase !== "queued") return;
     if (runtimeSessions.length > 0) {
       discardWorkspaceLaunch(workspaceId, workspaceHostKey);
       return;
     }
     const target = launchTargets.find(
-      (candidate) => candidate.key === targetKey,
+      (candidate) => candidate.key === intent.targetKey,
     );
     if (!target || target.kind !== "agent" || !target.available) {
       if (discardWorkspaceLaunch(workspaceId, workspaceHostKey) === null) return;
       const reason =
         target?.disabled_reason ?? "is not available in this workspace";
-      showFlash(`Agent "${targetKey}" could not launch: ${reason}`, {
+      showFlash(`Agent "${intent.targetKey}" could not launch: ${reason}`, {
         tone: "danger",
       });
       return;
     }
     const claim = claimWorkspaceLaunch(workspaceId, workspaceHostKey);
     if (claim === null) return;
-    void handleLaunch(claim.targetKey).finally(() => completeWorkspaceLaunch(claim));
+    void handleLaunch(claim.targetKey, claim);
+  });
+
+  $effect(() => {
+    if (!workspaceId || !runtimeLive) return;
+    const intent = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
+    if (
+      intent?.phase !== "awaiting_session" ||
+      intent.sessionKey === undefined ||
+      intent.acceptedAt === undefined
+    ) {
+      return;
+    }
+    const session = runtimeSessions.find((candidate) => candidate.key === intent.sessionKey);
+    if (session) {
+      const completed = untrack(() =>
+        completeAcceptedWorkspaceLaunch(workspaceId, workspaceHostKey, session.key),
+      );
+      if (!completed) return;
+      untrack(() => {
+        clearClosedSession(session);
+        moveSessionToWorkflow(session.key);
+        mountSessionTerminal(session.key);
+        selectWorkspaceTab(workflowTabKeyForSession(session.key));
+        closeLauncher();
+        requestSessionFocus(sessionHostKeyFor(session));
+      });
+      return;
+    }
+
+    const remaining = Math.max(0, 15_000 - (Date.now() - intent.acceptedAt));
+    const targetLabel = launchTargets.find((target) => target.key === intent.targetKey)?.label ?? intent.targetKey;
+    const sessionKey = intent.sessionKey;
+    const timeout = setTimeout(() => {
+      if (!completeAcceptedWorkspaceLaunch(workspaceId, workspaceHostKey, sessionKey)) return;
+      showFlash(`${targetLabel} launched, but its session did not become available`, {
+        tone: "danger",
+      });
+    }, remaining);
+    return () => clearTimeout(timeout);
   });
 </script>
 

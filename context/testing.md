@@ -197,8 +197,9 @@ start; launch the test process with `TZ` or stub the locale formatter instead
 
 Full-stack e2e serves the frontend embedded in the e2e-server binary, not live
 sources. The Playwright runner must prepare those assets and build one run-owned
-`cmd/e2e-server`; workers inherit its direct path so signal cleanup targets the
-server instead of a `go run` wrapper. An explicit binary remains externally owned
+`cmd/e2e-server` with VCS stamping disabled; workers inherit its direct path so signal
+cleanup targets the server instead of a `go run` wrapper. An explicit binary remains
+externally owned
 and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2EServerBinary`).
 - Full-stack Playwright workers must publish child ownership in the shared tmux root;
   the root removes it only after every published child exits (`frontend/tests/e2e-full/support/e2eServer.ts::waitForSharedServerOwners`).

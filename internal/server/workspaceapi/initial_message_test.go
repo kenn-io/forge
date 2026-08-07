@@ -33,7 +33,10 @@ func TestNormalizeInitialAgentMessage(t *testing.T) {
 		wantErr   string
 	}{
 		{name: "line endings", message: "first\r\nsecond\rthird", want: "first\nsecond\nthird", wantBytes: 18},
-		{name: "tabs are safe whitespace", message: "review\tthis", want: "review\tthis", wantBytes: 11},
+		{name: "tab", message: "review\tthis", wantErr: "control character"},
+		{name: "vertical tab", message: "review\vthis", wantErr: "control character"},
+		{name: "form feed", message: "review\fthis", wantErr: "control character"},
+		{name: "next line", message: "review\u0085this", wantErr: "control character"},
 		{name: "maximum", message: strings.Repeat("a", 64<<10), wantBytes: 64 << 10},
 		{name: "blank", message: " \n\t ", wantErr: "must not be blank"},
 		{name: "invalid utf8", message: string([]byte{0xff}), wantErr: "valid UTF-8"},
@@ -105,20 +108,27 @@ func TestInitialMessageRoutesDeliverOnceAndKeepReceiptAfterRuntimeExit(t *testin
 	handler.Register(api)
 	endpoint := "/api/v1/workspaces/" + workspaceID +
 		"/runtime/sessions/" + session.Key + "/initial-message"
-	post := func(target, agent, codingSession, message string) *httptest.ResponseRecorder {
+	postContext := func(requestContext context.Context, target, agent, codingSession, message string) *httptest.ResponseRecorder {
 		t.Helper()
 		body, marshalErr := json.Marshal(map[string]string{
 			"agent": agent, "session_id": codingSession, "message": message,
 		})
 		require.NoError(marshalErr)
-		request := httptest.NewRequest(http.MethodPost, target, bytes.NewReader(body))
+		request := httptest.NewRequest(http.MethodPost, target, bytes.NewReader(body)).WithContext(requestContext)
 		request.Header.Set("Content-Type", "application/json")
 		recorder := httptest.NewRecorder()
 		mux.ServeHTTP(recorder, request)
 		return recorder
 	}
+	post := func(target, agent, codingSession, message string) *httptest.ResponseRecorder {
+		t.Helper()
+		return postContext(ctx, target, agent, codingSession, message)
+	}
 
-	response := post(endpoint, "CoDeX", "coding-session", "review this")
+	requestContext, cancelRequest := context.WithCancel(ctx)
+	owner.pty.setOnWrite(cancelRequest)
+	response := postContext(requestContext, endpoint, "CoDeX", "coding-session", "review this")
+	owner.pty.setOnWrite(nil)
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	var receipt struct {
 		Agent        string     `json:"agent"`
@@ -183,8 +193,7 @@ func TestInitialMessageRoutesDeliverOnceAndKeepReceiptAfterRuntimeExit(t *testin
 		ctx, workspaceID, inactivePasteSession.Key,
 	)
 	require.NoError(err)
-	require.NotNil(inactiveReceipt)
-	assert.Equal(db.AgentInitialMessageUncertain, inactiveReceipt.State)
+	assert.Nil(inactiveReceipt)
 
 	unreportedSession := launchSession("coding-unreported", false)
 	response = post(
@@ -253,6 +262,7 @@ type initialMessagePTY struct {
 	done     chan struct{}
 	writes   []byte
 	writeErr error
+	onWrite  func()
 	once     sync.Once
 }
 
@@ -263,17 +273,28 @@ func (p *initialMessagePTY) Resize(int, int) error { return nil }
 
 func (p *initialMessagePTY) Write(data []byte) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.writeErr != nil {
+		p.mu.Unlock()
 		return p.writeErr
 	}
 	p.writes = append(p.writes, data...)
+	onWrite := p.onWrite
+	p.mu.Unlock()
+	if onWrite != nil {
+		onWrite()
+	}
 	return nil
 }
 
 func (p *initialMessagePTY) setWriteError(err error) {
 	p.mu.Lock()
 	p.writeErr = err
+	p.mu.Unlock()
+}
+
+func (p *initialMessagePTY) setOnWrite(onWrite func()) {
+	p.mu.Lock()
+	p.onWrite = onWrite
 	p.mu.Unlock()
 }
 

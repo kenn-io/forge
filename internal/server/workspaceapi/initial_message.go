@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -45,7 +46,7 @@ func normalizeInitialAgentMessage(message string) (string, int, error) {
 		return "", 0, errors.New("message must not be blank")
 	}
 	for _, value := range message {
-		if unicode.IsControl(value) && !unicode.IsSpace(value) {
+		if value != '\n' && !unicode.IsPrint(value) {
 			return "", 0, fmt.Errorf("message contains unsafe control character U+%04X", value)
 		}
 	}
@@ -164,19 +165,27 @@ func (s *Handler) submitInitialMessage(
 	if !reserved {
 		return &initialMessageOutput{Body: *receiptResponse(receipt)}, nil
 	}
+	finalizeCtx, cancelFinalize := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancelFinalize()
 
 	if err := s.runtime.SubmitInitialMessage(input.ID, input.SessionKey, message); err != nil {
+		if errors.Is(err, localruntime.ErrBracketedPasteInactive) {
+			released, releaseErr := s.db.ReleasePendingAgentInitialMessage(finalizeCtx, proposed)
+			if releaseErr != nil || !released {
+				return nil, httpapi.Internal("submit initial message and release unused receipt failed")
+			}
+			return nil, httpapi.Validation("body.message", err.Error())
+		}
 		if _, markErr := s.db.MarkAgentInitialMessageUncertain(
-			ctx, input.ID, input.SessionKey,
+			finalizeCtx, input.ID, input.SessionKey,
 		); markErr != nil {
 			return nil, httpapi.Internal("submit initial message and record uncertain receipt failed")
 		}
-		if errors.Is(err, localruntime.ErrBracketedPasteInactive) {
-			return nil, httpapi.Validation("body.message", err.Error())
-		}
 		return nil, httpapi.Internal("submit initial message failed")
 	}
-	delivered, err := s.db.MarkAgentInitialMessageDelivered(ctx, input.ID, input.SessionKey)
+	delivered, err := s.db.MarkAgentInitialMessageDelivered(
+		finalizeCtx, input.ID, input.SessionKey,
+	)
 	if err != nil {
 		return nil, httpapi.Internal("mark initial message delivered failed")
 	}

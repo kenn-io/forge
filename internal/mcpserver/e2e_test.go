@@ -18,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/runtimelock"
@@ -69,6 +70,14 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 
 	diffRepo, err := testutil.SetupDiffRepo(ctx, t.TempDir(), database)
 	require.NoError(err)
+	agentDisabled := false
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key: "codex", Label: "Codex", Command: []string{"codex"}, Enabled: &agentDisabled,
+		}},
+		PullRequests: config.PullRequests{PreferGitHubNativeStacks: true},
+		Tmux:         config.Tmux{Command: []string{"kenn-forge-test-missing-tmux"}},
+	}
 	syncer := ghclient.NewSyncer(
 		nil,
 		database,
@@ -79,11 +88,18 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 		nil,
 	)
 	t.Cleanup(syncer.Stop)
-	apiServer := forgeserver.New(database, syncer, nil, "/", nil, forgeserver.ServerOptions{
+	apiServer := forgeserver.New(database, syncer, nil, "/", cfg, forgeserver.ServerOptions{
 		DaemonAccess: forgeserver.DaemonAccessOptions{
 			Token: token, RequireAPIAuth: true,
 		},
-		Clones: diffRepo.Manager,
+		Clones:                             diffRepo.Manager,
+		WorktreeDir:                        t.TempDir(),
+		DisableWorkspaceBackgroundMonitors: true,
+		DisableWorkspaceEnrichment:         true,
+		HostCheck: forgeserver.HostCheckOptions{
+			Bind: config.HostKey{Host: "127.0.0.1", Port: "8080"},
+		},
+		HostCheckAllowLoopbackAnyPort: true,
 	})
 	t.Cleanup(func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -100,6 +116,11 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 		require.NoError(mcpServer.Close())
 	})
 	session := connectMCPTestSession(t, mcpServer)
+	targets := callMCPTool[listAgentTargetsOutput](t, session, "kenn_forge_list_agent_targets", map[string]any{})
+	codexTarget, found := findAgentTarget(targets.Targets, "codex")
+	require.True(found)
+	assert.False(codexTarget.Available)
+	assert.NotEmpty(codexTarget.DisabledReason)
 
 	repos := callMCPTool[listReposOutput](t, session, "kenn_forge_list_repos", map[string]any{})
 	require.Len(repos.Repos, 1)
@@ -265,6 +286,27 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 	require.Len(stack.Members, 2)
 	assert.Equal(1, stack.Members[1].Number)
 	assert.True(stack.Members[1].IsRequested)
+
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:              "ws-mcp-agent-sessions",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widgets",
+		ItemType:        db.WorkspaceItemTypeAdHoc,
+		ItemKey:         db.AdHocWorkspaceItemKey("mcp-sessions"),
+		ItemNumber:      0,
+		GitHeadRef:      "mcp-sessions",
+		WorkspaceBranch: "mcp-sessions",
+		WorktreePath:    filepath.Join(t.TempDir(), "workspace"),
+		TmuxSession:     "kenn-forge-mcp-agent-sessions",
+		Status:          "ready",
+	}))
+	liveSessions := callMCPTool[listWorkspaceAgentSessionsOutput](
+		t, session, "kenn_forge_list_workspace_agent_sessions",
+		map[string]any{"workspace_id": "ws-mcp-agent-sessions"},
+	)
+	assert.Empty(liveSessions.Sessions)
 
 	claim := callMCPTool[setWorkflowOutput](t, session, "kenn_forge_set_item_workflow_state", map[string]any{
 		"item":            item,

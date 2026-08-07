@@ -123,6 +123,37 @@ func (d *DB) MarkAgentInitialMessageUncertain(
 	)
 }
 
+// ReleasePendingAgentInitialMessage removes an exact reservation when the
+// runtime proves that it wrote no input bytes. Delivered or uncertain attempts,
+// and reservations with different correlation metadata, are preserved.
+func (d *DB) ReleasePendingAgentInitialMessage(
+	ctx context.Context,
+	receipt AgentInitialMessageReceipt,
+) (bool, error) {
+	result, err := d.rw.ExecContext(ctx, `
+		DELETE FROM forge_agent_initial_message_receipts
+		WHERE workspace_id = ?
+		  AND runtime_session_key = ?
+		  AND agent = ?
+		  AND coding_session_id = ?
+		  AND message_bytes = ?
+		  AND state = 'pending'`,
+		receipt.WorkspaceID,
+		receipt.RuntimeSessionKey,
+		receipt.Agent,
+		receipt.CodingSessionID,
+		receipt.MessageBytes,
+	)
+	if err != nil {
+		return false, fmt.Errorf("release pending agent initial message: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("release pending agent initial message rows: %w", err)
+	}
+	return count == 1, nil
+}
+
 // RecoverPendingAgentInitialMessages marks attempts interrupted by daemon
 // restart as uncertain before any new delivery orchestration begins.
 func (d *DB) RecoverPendingAgentInitialMessages(ctx context.Context) (int64, error) {

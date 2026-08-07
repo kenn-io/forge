@@ -160,6 +160,11 @@ func TestMCPCommandRejectsFlagsThatCannotAffectExecution(t *testing.T) {
 			args: []string{"--transport", "http", "--addr", "127.0.0.1:http"},
 			want: "--addr with an explicit nonzero port is required",
 		},
+		{
+			name: "http signed address",
+			args: []string{"--transport", "http", "--addr", "127.0.0.1:+8080"},
+			want: "--addr with an explicit nonzero port is required",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

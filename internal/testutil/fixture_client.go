@@ -1033,18 +1033,34 @@ func (c *FixtureClient) MergePullRequest(
 		return nil, c.mergePullRequestError
 	}
 
-	pr := c.findPullRequest(owner, repo, number)
-	if pr == nil {
-		return nil, nil
-	}
+	// Mutate the PR in BOTH the OpenPRs and PRs maps — like EditPullRequest —
+	// so the canonical post-merge resync's GetPullRequest sees the merged
+	// state instead of the pristine seed, and advance updated_at the way the
+	// real provider does so the monotonic snapshot guard accepts the resync.
 	now := gh.Timestamp{Time: time.Now().UTC()}
 	state := "closed"
 	merged := true
-	pr.State = &state
-	pr.Merged = &merged
-	pr.ClosedAt = &now
-	pr.MergedAt = &now
-	sha := pr.GetHead().GetSHA()
+	var sha string
+	found := false
+	for _, prs := range []map[string][]*gh.PullRequest{c.OpenPRs, c.PRs} {
+		for _, pr := range prs[repoKey(owner, repo)] {
+			if pr.GetNumber() != number {
+				continue
+			}
+			pr.State = &state
+			pr.Merged = &merged
+			pr.ClosedAt = &now
+			pr.MergedAt = &now
+			pr.UpdatedAt = &now
+			if !found {
+				sha = pr.GetHead().GetSHA()
+				found = true
+			}
+		}
+	}
+	if !found {
+		return nil, nil
+	}
 	msg := "merged"
 	return &gh.PullRequestMergeResult{SHA: &sha, Merged: &merged, Message: &msg}, nil
 }

@@ -112,7 +112,7 @@ func (s *Server) spawnWorkspaceWithAgent(
 	out := spawnWorkspaceWithAgentOutput{Source: in.Source}
 	workspace, reused, err := s.resolveOrCreateWorkspace(ctx, in.Source)
 	if err != nil {
-		return out, handoffFailure(err, out, "", "workspace_created")
+		return out, handoffFailure(ctx, err, out, "", "workspace_created")
 	}
 	if in.Source.AdHoc != nil && in.Source.AdHoc.Branch == "" {
 		out.Source.AdHoc.Branch = workspace.GitHeadRef
@@ -122,7 +122,7 @@ func (s *Server) spawnWorkspaceWithAgent(
 
 	workspace, err = s.waitForWorkspaceReady(ctx, workspace.ID)
 	if err != nil {
-		return out, handoffFailure(err, out, "workspace_created", "workspace_ready")
+		return out, handoffFailure(ctx, err, out, "workspace_created", "workspace_ready")
 	}
 	out.Stage = "workspace_ready"
 	out.Workspace.Status = workspace.Status
@@ -134,10 +134,11 @@ func (s *Server) spawnWorkspaceWithAgent(
 		map[string]any{"target_key": in.AgentTarget},
 		&runtime,
 	); err != nil {
-		return out, handoffFailure(err, out, "workspace_ready", "runtime_launched")
+		return out, handoffFailure(ctx, err, out, "workspace_ready", "runtime_launched")
 	}
 	if strings.TrimSpace(runtime.Key) == "" {
 		return out, handoffFailure(
+			ctx,
 			errors.New("daemon runtime response missing key"), out,
 			"workspace_ready", "runtime_launched",
 		)
@@ -152,7 +153,7 @@ func (s *Server) spawnWorkspaceWithAgent(
 
 	codingSession, err := s.waitForCodingSession(ctx, workspace.ID, runtime.Key)
 	if err != nil {
-		return out, handoffFailure(err, out, "runtime_launched", "coding_session_observed")
+		return out, handoffFailure(ctx, err, out, "runtime_launched", "coding_session_observed")
 	}
 	out.Stage = "coding_session_observed"
 	out.CodingSession = codingSession
@@ -161,11 +162,12 @@ func (s *Server) spawnWorkspaceWithAgent(
 		ctx, workspace.ID, runtime.Key, codingSession, in.InitialMessage,
 	)
 	if err != nil {
-		return out, handoffFailure(err, out, "coding_session_observed", "message_delivered")
+		return out, handoffFailure(ctx, err, out, "coding_session_observed", "message_delivered")
 	}
 	out.InitialMessage = &receipt
 	if receipt.State != "delivered" {
 		return out, handoffFailure(
+			ctx,
 			fmt.Errorf("initial message receipt state is %s", receipt.State), out,
 			"coding_session_observed", "message_delivered",
 		)
@@ -565,6 +567,7 @@ func (s *Server) submitInitialAgentMessage(
 }
 
 func handoffFailure(
+	ctx context.Context,
 	cause error,
 	state spawnWorkspaceWithAgentOutput,
 	lastCompletedStage string,
@@ -580,7 +583,10 @@ func handoffFailure(
 		},
 	}
 	var daemonErr *daemonError
-	if errors.As(cause, &daemonErr) {
+	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+		result.Kind = "agent_handoff_timeout"
+		result.Message = "agent handoff timed out"
+	} else if errors.As(cause, &daemonErr) {
 		result.Kind = daemonErr.Kind
 		result.Code = daemonErr.Code
 		result.Message = daemonErr.Message

@@ -170,11 +170,11 @@ func TestSpawnWorkspaceWithAgentTimeoutReturnsPartialStateWithoutCleanup(t *test
 		}
 		writeJSONResponse(w, `{"id":"ws-timeout","status":"creating","created":true}`)
 	})
-	mux.HandleFunc("/api/v1/workspaces/ws-timeout", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/workspaces/ws-timeout", func(_ http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			deletes++
 		}
-		writeJSONResponse(w, `{"id":"ws-timeout","status":"creating"}`)
+		<-r.Context().Done()
 	})
 	s := newMCPTestServer(t, mux)
 

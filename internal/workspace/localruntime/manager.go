@@ -41,7 +41,8 @@ var (
 	ErrSessionUnavailable = errors.New(
 		"runtime session is temporarily unavailable",
 	)
-	errWorkspaceStopping = errors.New(
+	ErrBracketedPasteInactive = errors.New("bracketed paste mode is not active")
+	errWorkspaceStopping      = errors.New(
 		"workspace is being stopped",
 	)
 )
@@ -212,12 +213,13 @@ type Attachment struct {
 	Output <-chan []byte
 	Done   <-chan struct{}
 
-	info            func() SessionInfo
-	write           func([]byte) error
-	resize          func(cols, rows int) error
-	refresh         func(context.Context) error
-	setResizeActive func(active bool)
-	close           func()
+	info                 func() SessionInfo
+	write                func([]byte) error
+	submitInitialMessage func(string) error
+	resize               func(cols, rows int) error
+	refresh              func(context.Context) error
+	setResizeActive      func(active bool)
+	close                func()
 
 	// sessionOutputClosed reports whether the underlying session's
 	// PTY EOF has been observed by drainOutput (s.outputClosed=true).
@@ -1147,6 +1149,25 @@ func (m *Manager) AttachSessionWithOptions(
 		"session_key", key,
 	)
 	return attachment, nil
+}
+
+// SubmitInitialMessage writes one bounded, already-normalized initial prompt
+// through a live agent runtime. Multiline input is safe only while the
+// session's tracked terminal state has bracketed-paste mode enabled.
+func (m *Manager) SubmitInitialMessage(
+	workspaceID string,
+	sessionKey string,
+	message string,
+) error {
+	attachment, err := m.AttachSession(workspaceID, sessionKey)
+	if err != nil {
+		return err
+	}
+	defer attachment.Close()
+	if attachment.Info().Kind != LaunchTargetAgent {
+		return errors.New("runtime session is not an agent")
+	}
+	return attachment.submitInitialMessage(message)
 }
 
 func (a *Attachment) Write(data []byte) error {
@@ -2384,6 +2405,7 @@ func attachToSession(
 			_, err := s.ptmx.Write(data)
 			return err
 		},
+		submitInitialMessage: s.submitInitialMessage,
 		resize: func(cols, rows int) error {
 			if cols <= 0 || rows <= 0 {
 				return nil
@@ -2420,4 +2442,27 @@ func attachToSession(
 			return s.outputClosed
 		},
 	}, nil
+}
+
+func (s *session) submitInitialMessage(message string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data := make([]byte, 0, len(message)+13)
+	if strings.Contains(message, "\n") {
+		if !s.inputModes.observed[2004] {
+			return ErrBracketedPasteInactive
+		}
+		data = append(data, "\x1b[200~"...)
+		data = append(data, message...)
+		data = append(data, "\x1b[201~"...)
+	} else {
+		data = append(data, message...)
+	}
+	data = append(data, '\r')
+	if s.pty != nil {
+		return s.pty.Write(data)
+	}
+	_, err := s.ptmx.Write(data)
+	return err
 }

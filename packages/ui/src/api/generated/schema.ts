@@ -4383,6 +4383,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{id}/runtime/sessions/{session_key}/initial-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get initial agent message receipt */
+        get: operations["get-workspace-runtime-session-initial-message"];
+        put?: never;
+        /** Submit initial agent message */
+        post: operations["submit-workspace-runtime-session-initial-message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/worktrees/remove-stale": {
         parameters: {
             query?: never;
@@ -4506,12 +4524,20 @@ export interface components {
             hookEventName: string;
         };
         AgentInitialMessageReceiptResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/AgentInitialMessageReceiptResponse.json
+             */
+            readonly $schema?: string;
+            agent: string;
             /** Format: date-time */
             delivered_at?: string;
             /** Format: int64 */
             message_bytes: number;
             /** Format: date-time */
             reserved_at: string;
+            session_id: string;
             state: string;
         };
         ApplyReviewSuggestionHostInputBody: {
@@ -4968,6 +4994,7 @@ export interface components {
             git_head_ref?: string;
             reuse_existing_branch?: boolean;
             reuse_existing_directory?: boolean;
+            suppress_auto_assign?: boolean;
         };
         CreateIssueWorkspaceInputBody: {
             /**
@@ -4979,6 +5006,7 @@ export interface components {
             git_head_ref?: string;
             reuse_existing_branch?: boolean;
             reuse_existing_directory?: boolean;
+            suppress_auto_assign?: boolean;
         };
         CreateWorkspaceInputBody: {
             /**
@@ -4993,6 +5021,7 @@ export interface components {
             owner: string;
             platform_host: string;
             provider: string;
+            suppress_auto_assign?: boolean;
         };
         CreateWorktreeFromMergeRequestInputBody: {
             /**
@@ -7714,6 +7743,17 @@ export interface components {
             owner: string;
             platform_host: string;
             provider: string;
+        };
+        SubmitInitialMessageInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SubmitInitialMessageInputBody.json
+             */
+            readonly $schema?: string;
+            agent: string;
+            message: string;
+            session_id: string;
         };
         SyncStatus: {
             /**
@@ -18189,6 +18229,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuntimeAttachSpecResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-workspace-runtime-session-initial-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                session_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentInitialMessageReceiptResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "submit-workspace-runtime-session-initial-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                session_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitInitialMessageInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentInitialMessageReceiptResponse"];
                 };
             };
             /** @description Error */

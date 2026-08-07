@@ -1370,9 +1370,13 @@ type AgentHookSpecificOutput struct {
 
 // AgentInitialMessageReceiptResponse defines model for AgentInitialMessageReceiptResponse.
 type AgentInitialMessageReceiptResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string    `json:"$schema,omitempty"`
+	Agent        string     `json:"agent"`
 	DeliveredAt  *time.Time `json:"delivered_at,omitempty"`
 	MessageBytes int64      `json:"message_bytes"`
 	ReservedAt   time.Time  `json:"reserved_at"`
+	SessionId    string     `json:"session_id"`
 	State        string     `json:"state"`
 }
 
@@ -1833,6 +1837,7 @@ type CreateIssueWorkspaceHostInputBody struct {
 	GitHeadRef             *string `json:"git_head_ref,omitempty"`
 	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
 	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
+	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
 }
 
 // CreateIssueWorkspaceInputBody defines model for CreateIssueWorkspaceInputBody.
@@ -1842,17 +1847,19 @@ type CreateIssueWorkspaceInputBody struct {
 	GitHeadRef             *string `json:"git_head_ref,omitempty"`
 	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
 	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
+	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
 }
 
 // CreateWorkspaceInputBody defines model for CreateWorkspaceInputBody.
 type CreateWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string `json:"$schema,omitempty"`
-	MrNumber     int64   `json:"mr_number"`
-	Name         string  `json:"name"`
-	Owner        string  `json:"owner"`
-	PlatformHost string  `json:"platform_host"`
-	Provider     string  `json:"provider"`
+	Schema             *string `json:"$schema,omitempty"`
+	MrNumber           int64   `json:"mr_number"`
+	Name               string  `json:"name"`
+	Owner              string  `json:"owner"`
+	PlatformHost       string  `json:"platform_host"`
+	Provider           string  `json:"provider"`
+	SuppressAutoAssign *bool   `json:"suppress_auto_assign,omitempty"`
 }
 
 // CreateWorktreeFromMergeRequestInputBody defines model for CreateWorktreeFromMergeRequestInputBody.
@@ -4282,6 +4289,15 @@ type StarredRequest struct {
 	Provider     string  `json:"provider"`
 }
 
+// SubmitInitialMessageInputBody defines model for SubmitInitialMessageInputBody.
+type SubmitInitialMessageInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	Agent     string  `json:"agent"`
+	Message   string  `json:"message"`
+	SessionId string  `json:"session_id"`
+}
+
 // SyncStatus defines model for SyncStatus.
 type SyncStatus struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -5722,6 +5738,9 @@ type LaunchWorkspaceRuntimeSessionJSONRequestBody = LaunchWorkspaceRuntimeSessio
 // RenameWorkspaceRuntimeSessionJSONRequestBody defines body for RenameWorkspaceRuntimeSession for application/json ContentType.
 type RenameWorkspaceRuntimeSessionJSONRequestBody = RenameWorkspaceRuntimeSessionInputBody
 
+// SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody defines body for SubmitWorkspaceRuntimeSessionInitialMessage for application/json ContentType.
+type SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody = SubmitInitialMessageInputBody
+
 // RemoveStaleWorktreeJSONRequestBody defines body for RemoveStaleWorktree for application/json ContentType.
 type RemoveStaleWorktreeJSONRequestBody = RemoveStaleWorktreeInputBody
 
@@ -7106,6 +7125,14 @@ type ClientInterface interface {
 
 	// GetWorkspaceRuntimeSessionAttachSpec request
 	GetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspaceRuntimeSessionInitialMessage request
+	GetWorkspaceRuntimeSessionInitialMessage(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitWorkspaceRuntimeSessionInitialMessageWithBody request with any body
+	SubmitWorkspaceRuntimeSessionInitialMessageWithBody(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SubmitWorkspaceRuntimeSessionInitialMessage(ctx context.Context, id string, sessionKey string, body SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RemoveStaleWorktreeWithBody request with any body
 	RemoveStaleWorktreeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -11915,6 +11942,42 @@ func (c *Client) RenameWorkspaceRuntimeSession(ctx context.Context, id string, s
 
 func (c *Client) GetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspaceRuntimeSessionAttachSpecRequest(c.Server, id, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkspaceRuntimeSessionInitialMessage(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspaceRuntimeSessionInitialMessageRequest(c.Server, id, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessageWithBody(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitWorkspaceRuntimeSessionInitialMessageRequestWithBody(c.Server, id, sessionKey, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessage(ctx context.Context, id string, sessionKey string, body SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitWorkspaceRuntimeSessionInitialMessageRequest(c.Server, id, sessionKey, body)
 	if err != nil {
 		return nil, err
 	}
@@ -30076,6 +30139,101 @@ func NewGetWorkspaceRuntimeSessionAttachSpecRequest(server string, id string, se
 	return req, nil
 }
 
+// NewGetWorkspaceRuntimeSessionInitialMessageRequest generates requests for GetWorkspaceRuntimeSessionInitialMessage
+func NewGetWorkspaceRuntimeSessionInitialMessageRequest(server string, id string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime/sessions/%s/initial-message", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSubmitWorkspaceRuntimeSessionInitialMessageRequest calls the generic SubmitWorkspaceRuntimeSessionInitialMessage builder with application/json body
+func NewSubmitWorkspaceRuntimeSessionInitialMessageRequest(server string, id string, sessionKey string, body SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSubmitWorkspaceRuntimeSessionInitialMessageRequestWithBody(server, id, sessionKey, "application/json", bodyReader)
+}
+
+// NewSubmitWorkspaceRuntimeSessionInitialMessageRequestWithBody generates requests for SubmitWorkspaceRuntimeSessionInitialMessage with any type of body
+func NewSubmitWorkspaceRuntimeSessionInitialMessageRequestWithBody(server string, id string, sessionKey string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime/sessions/%s/initial-message", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewRemoveStaleWorktreeRequest calls the generic RemoveStaleWorktree builder with application/json body
 func NewRemoveStaleWorktreeRequest(server string, body RemoveStaleWorktreeJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -31247,6 +31405,14 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspaceRuntimeSessionAttachSpecWithResponse request
 	GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeSessionAttachSpecResponse, error)
+
+	// GetWorkspaceRuntimeSessionInitialMessageWithResponse request
+	GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeSessionInitialMessageResponse, error)
+
+	// SubmitWorkspaceRuntimeSessionInitialMessageWithBodyWithResponse request with any body
+	SubmitWorkspaceRuntimeSessionInitialMessageWithBodyWithResponse(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResponse, error)
+
+	SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, id string, sessionKey string, body SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResponse, error)
 
 	// RemoveStaleWorktreeWithBodyWithResponse request with any body
 	RemoveStaleWorktreeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveStaleWorktreeResponse, error)
@@ -37905,6 +38071,52 @@ func (r GetWorkspaceRuntimeSessionAttachSpecResponse) StatusCode() int {
 	return 0
 }
 
+type GetWorkspaceRuntimeSessionInitialMessageResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *AgentInitialMessageReceiptResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspaceRuntimeSessionInitialMessageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspaceRuntimeSessionInitialMessageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SubmitWorkspaceRuntimeSessionInitialMessageResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *AgentInitialMessageReceiptResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SubmitWorkspaceRuntimeSessionInitialMessageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SubmitWorkspaceRuntimeSessionInitialMessageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type RemoveStaleWorktreeResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -41409,6 +41621,32 @@ func (c *ClientWithResponses) GetWorkspaceRuntimeSessionAttachSpecWithResponse(c
 		return nil, err
 	}
 	return ParseGetWorkspaceRuntimeSessionAttachSpecResponse(rsp)
+}
+
+// GetWorkspaceRuntimeSessionInitialMessageWithResponse request returning *GetWorkspaceRuntimeSessionInitialMessageResponse
+func (c *ClientWithResponses) GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeSessionInitialMessageResponse, error) {
+	rsp, err := c.GetWorkspaceRuntimeSessionInitialMessage(ctx, id, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspaceRuntimeSessionInitialMessageResponse(rsp)
+}
+
+// SubmitWorkspaceRuntimeSessionInitialMessageWithBodyWithResponse request with arbitrary body returning *SubmitWorkspaceRuntimeSessionInitialMessageResponse
+func (c *ClientWithResponses) SubmitWorkspaceRuntimeSessionInitialMessageWithBodyWithResponse(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResponse, error) {
+	rsp, err := c.SubmitWorkspaceRuntimeSessionInitialMessageWithBody(ctx, id, sessionKey, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitWorkspaceRuntimeSessionInitialMessageResponse(rsp)
+}
+
+func (c *ClientWithResponses) SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, id string, sessionKey string, body SubmitWorkspaceRuntimeSessionInitialMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResponse, error) {
+	rsp, err := c.SubmitWorkspaceRuntimeSessionInitialMessage(ctx, id, sessionKey, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitWorkspaceRuntimeSessionInitialMessageResponse(rsp)
 }
 
 // RemoveStaleWorktreeWithBodyWithResponse request with arbitrary body returning *RemoveStaleWorktreeResponse
@@ -50720,6 +50958,72 @@ func ParseGetWorkspaceRuntimeSessionAttachSpecResponse(rsp *http.Response) (*Get
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest RuntimeAttachSpecResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspaceRuntimeSessionInitialMessageResponse parses an HTTP response from a GetWorkspaceRuntimeSessionInitialMessageWithResponse call
+func ParseGetWorkspaceRuntimeSessionInitialMessageResponse(rsp *http.Response) (*GetWorkspaceRuntimeSessionInitialMessageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspaceRuntimeSessionInitialMessageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentInitialMessageReceiptResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSubmitWorkspaceRuntimeSessionInitialMessageResponse parses an HTTP response from a SubmitWorkspaceRuntimeSessionInitialMessageWithResponse call
+func ParseSubmitWorkspaceRuntimeSessionInitialMessageResponse(rsp *http.Response) (*SubmitWorkspaceRuntimeSessionInitialMessageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SubmitWorkspaceRuntimeSessionInitialMessageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentInitialMessageReceiptResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

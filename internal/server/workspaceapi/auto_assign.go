@@ -15,8 +15,9 @@ func (s *Handler) autoAssignWorkspaceItem(
 	repo db.Repo,
 	number int,
 	issue bool,
+	suppress bool,
 ) error {
-	if !s.configSnapshot().AutoAssignOnCreate || s.syncer == nil {
+	if suppress || !s.configSnapshot().AutoAssignOnCreate || s.syncer == nil {
 		return nil
 	}
 

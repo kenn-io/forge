@@ -18,6 +18,8 @@ type listWorkspaceAgentSessionsInput struct {
 }
 
 type agentInitialMessageReceiptResponse struct {
+	Agent        string     `json:"agent"`
+	SessionID    string     `json:"session_id"`
 	State        string     `json:"state"`
 	MessageBytes int        `json:"message_bytes"`
 	ReservedAt   time.Time  `json:"reserved_at"`
@@ -123,6 +125,8 @@ func (s *Handler) listWorkspaceAgentSessions(
 
 func receiptResponse(receipt db.AgentInitialMessageReceipt) *agentInitialMessageReceiptResponse {
 	response := &agentInitialMessageReceiptResponse{
+		Agent:        receipt.Agent,
+		SessionID:    receipt.CodingSessionID,
 		State:        receipt.State,
 		MessageBytes: receipt.MessageBytes,
 		ReservedAt:   receipt.ReservedAt.UTC(),

@@ -23,11 +23,12 @@ import (
 
 type createWorkspaceInput struct {
 	Body struct {
-		Provider     string `json:"provider"`
-		PlatformHost string `json:"platform_host"`
-		Owner        string `json:"owner"`
-		Name         string `json:"name"`
-		MRNumber     int    `json:"mr_number"`
+		Provider           string `json:"provider"`
+		PlatformHost       string `json:"platform_host"`
+		Owner              string `json:"owner"`
+		Name               string `json:"name"`
+		MRNumber           int    `json:"mr_number"`
+		SuppressAutoAssign bool   `json:"suppress_auto_assign,omitempty"`
 	}
 }
 
@@ -41,6 +42,7 @@ type createIssueWorkspaceInput struct {
 		GitHeadRef             *string `json:"git_head_ref,omitempty"`
 		ReuseExistingBranch    bool    `json:"reuse_existing_branch,omitempty"`
 		ReuseExistingDirectory bool    `json:"reuse_existing_directory,omitempty"`
+		SuppressAutoAssign     bool    `json:"suppress_auto_assign,omitempty"`
 	}
 }
 
@@ -231,7 +233,7 @@ func (s *Handler) createWorkspace(
 		return nil, httpapi.Internal("create workspace: " + err.Error())
 	}
 
-	if s.configSnapshot().AutoAssignOnCreate {
+	if s.configSnapshot().AutoAssignOnCreate && !input.Body.SuppressAutoAssign {
 		repo, lookupErr := s.lookupRepoByProviderRoute(
 			ctx, provider, input.Body.PlatformHost, input.Body.Owner, input.Body.Name,
 		)
@@ -245,7 +247,7 @@ func (s *Handler) createWorkspace(
 				"err", lookupErr,
 			)
 		} else if assignErr := s.autoAssignWorkspaceItem(
-			ctx, *repo, input.Body.MRNumber, false,
+			ctx, *repo, input.Body.MRNumber, false, input.Body.SuppressAutoAssign,
 		); assignErr != nil {
 			slog.Warn("automatically assign pull request workspace",
 				"provider", repo.Platform,
@@ -622,7 +624,9 @@ func (s *Handler) createIssueWorkspace(
 	}
 
 	createdBranch := ws.WorkspaceBranch != ""
-	if assignErr := s.autoAssignWorkspaceItem(ctx, *repo, input.Number, true); assignErr != nil {
+	if assignErr := s.autoAssignWorkspaceItem(
+		ctx, *repo, input.Number, true, input.Body.SuppressAutoAssign,
+	); assignErr != nil {
 		slog.Warn("automatically assign issue workspace",
 			"provider", repo.Platform,
 			"platform_host", repo.PlatformHost,

@@ -232,6 +232,15 @@ components:
     AgentInitialMessageReceiptResponse:
       additionalProperties: false
       properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/AgentInitialMessageReceiptResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        agent:
+          type: string
         delivered_at:
           format: date-time
           type: string
@@ -241,9 +250,13 @@ components:
         reserved_at:
           format: date-time
           type: string
+        session_id:
+          type: string
         state:
           type: string
       required:
+        - agent
+        - session_id
         - state
         - message_bytes
         - reserved_at
@@ -1266,6 +1279,8 @@ components:
           type: boolean
         reuse_existing_directory:
           type: boolean
+        suppress_auto_assign:
+          type: boolean
       type: object
     CreateIssueWorkspaceInputBody:
       additionalProperties: false
@@ -1282,6 +1297,8 @@ components:
         reuse_existing_branch:
           type: boolean
         reuse_existing_directory:
+          type: boolean
+        suppress_auto_assign:
           type: boolean
       type: object
     CreateWorkspaceInputBody:
@@ -1305,6 +1322,8 @@ components:
           type: string
         provider:
           type: string
+        suppress_auto_assign:
+          type: boolean
       required:
         - provider
         - platform_host
@@ -7436,6 +7455,27 @@ components:
         - name
         - number
         - platform_host
+      type: object
+    SubmitInitialMessageInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SubmitInitialMessageInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        agent:
+          type: string
+        message:
+          type: string
+        session_id:
+          type: string
+      required:
+        - agent
+        - session_id
+        - message
       type: object
     SyncStatus:
       additionalProperties: false
@@ -20075,6 +20115,71 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get workspace runtime session attach spec
+      tags:
+        - Workspaces
+  /workspaces/{id}/runtime/sessions/{session_key}/initial-message:
+    get:
+      operationId: get-workspace-runtime-session-initial-message
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentInitialMessageReceiptResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get initial agent message receipt
+      tags:
+        - Workspaces
+    post:
+      operationId: submit-workspace-runtime-session-initial-message
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitInitialMessageInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentInitialMessageReceiptResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Submit initial agent message
       tags:
         - Workspaces
   /worktrees/remove-stale:

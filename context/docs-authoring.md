@@ -7,12 +7,18 @@ screenshots, or the Zensical site.
 
 - `context/` owns current internal architecture, cross-cutting invariants, and
   maintainer constraints; update or remove each rule with its implementation.
-- Zensical owns current user workflows, not internal architecture or API detail.
-- ADRs retain useful decision rationale; reports retain reproducible outcomes.
-- Do not retain completed plans, superseded proposals, review notes, prototype
-  comparisons, or rollout narratives after extracting current contracts.
+- Staged Zensical pages under `docs/`, including `docs/workflows/`, own current
+  user and maintainer workflows, not internal architecture or API detail.
+- Promote rationale to an ADR only when it explains a constraint that still
+  binds current code and is not derivable from it; reports retain reproducible
+  outcomes.
+- Do not retain completed plans or design specs, superseded proposals, review
+  notes, prototype comparisons, or rollout narratives after extracting current
+  contracts.
 - Verify candidate documentation against implementation and tests before
   promoting it into living documentation.
+
+## Authoring Conventions
 
 - Keep user guidance concise and workflow-oriented: describe UI capabilities
   and maintainer workflows without overexplaining internals. Treat the HTTP API

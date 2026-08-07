@@ -11148,7 +11148,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 			"updatedAt":"` + now + `",
 			"closedAt":null,
 			"labels":{"nodes":[{"name":"bug","color":"d73a4a","description":"","isDefault":false}]},
-			"comments":{"totalCount":1,"nodes":[{"databaseId":801,"author":{"login":"judy"},"body":"full stack comment","createdAt":"` + now + `","updatedAt":"` + now + `"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+			"comments":{"totalCount":1,"nodes":[{"databaseId":801,"fullDatabaseId":"3714845345","author":{"login":"judy"},"body":"full stack comment","isMinimized":true,"minimizedReason":"ABUSE","createdAt":"` + now + `","updatedAt":"` + now + `"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
 		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
 		_, _ = w.Write([]byte(resp))
 	}))
@@ -11218,6 +11218,14 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	require.NotNil(detailResp.JSON200)
 	assert.Equal("Synced through the HTTP API", detailResp.JSON200.Issue.Body)
 	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
+	require.NotNil(detailResp.JSON200.Events)
+	require.Len(*detailResp.JSON200.Events, 1)
+	require.NotNil((*detailResp.JSON200.Events)[0].PlatformID)
+	assert.Equal(int64(3714845345), *(*detailResp.JSON200.Events)[0].PlatformID)
+	assert.JSONEq(
+		`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`,
+		(*detailResp.JSON200.Events)[0].MetadataJSON,
+	)
 }
 
 func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {

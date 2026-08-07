@@ -1687,9 +1687,7 @@ func (s *Handler) mergePRWithBody(
 	// next periodic round repairs it through the same path; the response
 	// below still reports the provider's merge result.
 	if syncErr := s.syncer.SyncClosedMROnProvider(
-		ctx,
-		repoProviderKind(*repo), repoProviderHost(*repo),
-		repo.Owner, repo.Name, repo.ID, number,
+		ctx, repo.ID, number,
 	); syncErr != nil {
 		slog.Warn("sync after merge",
 			"owner", repo.Owner, "repo", repo.Name,
@@ -2081,6 +2079,11 @@ func (s *Handler) setPRGitHubState(
 	// itself succeeded.
 	if updatedMR.Number == input.Number {
 		normalized := platform.DBMergeRequest(repo.ID, updatedMR)
+		// Edit responses cannot represent sync-derived columns (CI state,
+		// review decision, comment count); carry them from the stored row
+		// so a UI close does not erase them from a row no later sync will
+		// ever refetch.
+		ghclient.CarryMergeRequestDerivedFields(normalized, mr)
 		if _, _, _, commitErr := s.syncer.CommitMergeRequestParentSnapshot(
 			ctx, mergeRequestRepoRef(*repo), normalized,
 		); commitErr != nil {

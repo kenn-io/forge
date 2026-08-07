@@ -8900,7 +8900,10 @@ func TestAPIClosePR(t *testing.T) {
 		},
 	}
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRHeadSHA("head-sha"),
+		withSeedPRCI("success", `[{"name":"build","status":"completed","conclusion":"success","url":"","app":"GitHub Actions"}]`),
+	)
 	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	updatedAt := providerClosedAt.Add(-time.Hour)
@@ -8935,6 +8938,10 @@ func TestAPIClosePR(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(db.MergeRequestStateClosed, pr.State)
 	assertTimePtrEqualsUTC(t, pr.ClosedAt, providerClosedAt)
+	// The edit response cannot carry CI state; closing must not erase the
+	// cached columns of a row no later sync will refetch.
+	assert.Equal("success", pr.CIStatus)
+	assert.Contains(pr.CIChecksJSON, `"name":"build"`)
 	doneNotifications, err := database.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "done"})
 	require.NoError(err)
 	require.Len(doneNotifications, 1)

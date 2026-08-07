@@ -7551,7 +7551,7 @@ func (s *Syncer) BackfillMergedActorEventOnProvider(
 		}
 		repo = routed
 	}
-	repo = repoRefForMergedActorBackfill(repo, *stored)
+	repo = repoRefFromStoredIdentity(repo, *stored)
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {
 		return false, fmt.Errorf(
@@ -7564,9 +7564,9 @@ func (s *Syncer) BackfillMergedActorEventOnProvider(
 	return s.backfillMergedActorEvent(ctx, repo, repoID, number)
 }
 
-// repoRefForMergedActorBackfill preserves the current provider-verified route
+// repoRefFromStoredIdentity preserves the current provider-verified route
 // while attaching stable identity and non-routing metadata from persistence.
-func repoRefForMergedActorBackfill(tracked RepoRef, stored db.Repo) RepoRef {
+func repoRefFromStoredIdentity(tracked RepoRef, stored db.Repo) RepoRef {
 	repo := tracked
 	repo.Platform = platform.Kind(stored.Platform)
 	repo.PlatformHost = stored.PlatformHost
@@ -11279,29 +11279,51 @@ func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) err
 // through the one parent-snapshot choke point, which finalizes commit
 // liveness inside the transition's own transaction, and local rows always
 // carry provider timestamps instead of eager local ones that would leave
-// later resyncs rejected as stale.
+// later resyncs rejected as stale. The provider target is resolved from the
+// stable repository row for repoID — the same discipline the merged-actor
+// backfill used — so a rename or route reuse between the mutation and this
+// resync cannot fetch from a different repository than the row being updated.
 func (s *Syncer) SyncClosedMROnProvider(
 	ctx context.Context,
-	kind platform.Kind,
-	host, owner, name string,
 	repoID int64,
 	number int,
 ) error {
-	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
-	if !ok {
-		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
-		return fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			owner, name, kind, host,
-		)
+	stored, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil {
+		return fmt.Errorf("get repo %d for closed-MR resync: %w", repoID, err)
 	}
-	repo.Owner = owner
-	repo.Name = name
-	repo.PlatformHost = repoHost(repo)
+	if stored == nil {
+		return fmt.Errorf("repo %d is not known for closed-MR resync", repoID)
+	}
+	kind := platform.Kind(stored.Platform)
+	repo, ok := s.trackedRepoByProviderID(
+		kind, stored.PlatformHost, strings.TrimSpace(stored.PlatformRepoID),
+	)
+	if !ok {
+		routed, routeOK := s.trackedRepoByIdentity(
+			kind, stored.Owner, stored.Name, stored.PlatformHost,
+		)
+		if !routeOK {
+			return fmt.Errorf(
+				"repo %s/%s on %s/%s is not tracked",
+				stored.Owner, stored.Name, stored.Platform, stored.PlatformHost,
+			)
+		}
+		if routedID := strings.TrimSpace(routed.PlatformExternalID); routedID != "" &&
+			routedID != strings.TrimSpace(stored.PlatformRepoID) {
+			return fmt.Errorf(
+				"tracked repo %s/%s provider ID %q does not match stored provider ID %q",
+				stored.Owner, stored.Name, routedID, stored.PlatformRepoID,
+			)
+		}
+		repo = routed
+	}
+	repo = repoRefFromStoredIdentity(repo, *stored)
 	reader, err := s.mergeRequestReaderFor(repo)
 	if err != nil {
 		return fmt.Errorf(
-			"resolve merge request reader for %s/%s: %w", owner, name, err,
+			"resolve merge request reader for %s/%s: %w",
+			stored.Owner, stored.Name, err,
 		)
 	}
 	return s.fetchAndUpdateClosedMergeRequest(ctx, reader, repo, repoID, number, true)
@@ -12150,6 +12172,30 @@ func (s *Syncer) SyncItemByNumber(
 	return "issue", nil
 }
 
+// CarryMergeRequestDerivedFields copies sync-derived columns a provider
+// snapshot cannot represent — comment count, review decision, CI state, and
+// the detail-fetched marker — from the stored row onto normalized, so
+// committing a fetched or mutation-returned snapshot does not erase them.
+// CI state is head-derived and is carried only while the head is unchanged
+// (see the SHA-sensitive sync rules); the detail-fetched marker is dropped
+// when the snapshot reopens the MR, so the next sync refreshes detail
+// instead of trusting a pre-close fetch.
+func CarryMergeRequestDerivedFields(normalized, existing *db.MergeRequest) {
+	if normalized == nil || existing == nil {
+		return
+	}
+	normalized.CommentCount = existing.CommentCount
+	normalized.ReviewDecision = existing.ReviewDecision
+	if strings.EqualFold(normalized.PlatformHeadSHA, existing.PlatformHeadSHA) {
+		normalized.CIStatus = existing.CIStatus
+		normalized.CIChecksJSON = existing.CIChecksJSON
+		normalized.CIHadPending = existing.CIHadPending
+	}
+	if normalized.State != db.MergeRequestStateOpen {
+		normalized.DetailFetchedAt = existing.DetailFetchedAt
+	}
+}
+
 // fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.
 func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID int64, number int, cloneFetchOK bool) error {
 	client, err := s.clientFor(repo)
@@ -12181,14 +12227,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	if err != nil {
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}
-	if existing != nil {
-		normalized.CommentCount = existing.CommentCount
-		normalized.ReviewDecision = existing.ReviewDecision
-		normalized.CIStatus = existing.CIStatus
-		normalized.CIChecksJSON = existing.CIChecksJSON
-		normalized.CIHadPending = existing.CIHadPending
-		normalized.DetailFetchedAt = existing.DetailFetchedAt
-	}
+	CarryMergeRequestDerivedFields(normalized, existing)
 	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("commit closed MR #%d: %w", number, err)
@@ -12355,6 +12394,11 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}
 	normalized := platform.DBMergeRequest(repoID, mr)
+	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("get stored closed MR #%d: %w", number, err)
+	}
+	CarryMergeRequestDerivedFields(normalized, existing)
 	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert closed MR #%d: %w", number, err)

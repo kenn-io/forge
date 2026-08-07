@@ -61,8 +61,14 @@ Create a workspace when an issue is ready for implementation.
 
 ## Browse repository source
 
-Open **Repos** to inspect repository summaries, switch branches, search paths,
-and read source files. Provider links return to the original item when needed.
+Open **Repos**, choose a repository card, or use **View repository source** in
+the command palette. Switch among branches and tags, filter the path tree, and
+read a selected file as source. Markdown files also offer a rendered preview,
+and the history rail shows commits for the selected file.
+
+The URL records the repository, ref, path, and preview mode, so copied links and
+browser back/forward navigation restore the same view. Provider links return to
+the original repository when needed.
 
 ## Work in local sessions
 

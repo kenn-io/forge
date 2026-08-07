@@ -58,17 +58,17 @@ kenn-forge's durable agent context lives in two places:
   etc.). Deep enough to hold real rationale; narrow enough to load only when relevant.
 
 The README, Makefile, and source tree own discoverable inventories, key-file lists, and
-development commands. Do not copy them into the always-loaded hub.
-
-Specs and plans live under `docs/superpowers/specs/` and `docs/superpowers/plans/`;
-durable, dated decisions live under `docs/adr/`.
+development commands. Do not copy them into the always-loaded hub. Transient design and
+implementation notes stay outside the long-lived repository documentation; durable,
+dated decisions live under `docs/adr/`.
 
 ### The Sorting Test
 
 When a new fact arrives, ask: does it describe the *whole project's* shape or workflow
 (→ root `CLAUDE.md`), one *concern in depth* (→ the matching `context/*.md`), a *dated
-decision* you chose between alternatives (→ `docs/adr/`), or a *feature still being
-designed* (→ `docs/superpowers/specs/`)? Put it in exactly one home and route to it.
+decision* whose rationale still constrains the code (→ `docs/adr/`), or transient work
+(→ the task workspace, issue, or pull request)? Put durable facts in exactly one home
+and route them to it.
 
 ## Anchored Claims
 
@@ -145,6 +145,7 @@ Silencing a failing guard without recording the decision is forbidden.
 | Activity notification sync, persistence, and presentation | `context/notifications-in-activity.md` | User-scoped notification state |
 | Schema evolution rules | `context/db-migrations.md` | Migrations are the source of truth |
 | Daemon startup, Host validation, SSE replay | `context/server-runtime.md` | Root server lifecycle and request boundary |
+| Fleet aggregation and peer transport | `context/fleet-architecture.md` | One-hop host ownership and routing |
 | API error envelopes + frontend branching | `context/error-handling.md` | Stable contract |
 | Retry/backoff/single-flight | `context/retries-and-backoffs.md` | Upstream flakiness |
 | Test commands and common Go conventions | `context/testing-basics.md` | Everyday test construction |
@@ -156,8 +157,8 @@ Silencing a failing guard without recording the decision is forbidden.
 | Phone-first mobile workflow | `context/mobile-ux.md` | `/m` is its own UX |
 | Kata daemon integration | `context/kata-mode.md`, `context/workspace-apis.md` | External authority and workspace contracts |
 | Docs mode integration | `context/docs-mode.md` | Local filesystem and git-publish boundary |
+| Repository source browsing | `context/repository-source-browser.md` | Read-only clone and ref coherence |
 | A decision chosen over an alternative | `docs/adr/NNNN-title.md` | Dated, durable rationale |
-| A feature still being designed | `docs/superpowers/specs/YYYY-MM-DD-topic-design.md` | Loaded only when needed |
 
 Every new topic doc MUST get a routing reference from root `CLAUDE.md` (or from another
 reachable doc). Unreachable context is invisible to agents.
@@ -171,7 +172,6 @@ deleting substance. They are not a mandate to shrink today's docs.
 |------|----------------|-----------|
 | Each `context/*.md` topic doc | ~250 | One concern, deep but scannable |
 | `docs/adr/*` entry | ~80 | One decision |
-| `docs/superpowers/specs/*` | as needed | Design surface, archived after landing |
 
 The root `CLAUDE.md` should remain near 100 lines and behave as a router plus a concise
 universal conventions list. Push conditional procedures or rationale into a topic doc

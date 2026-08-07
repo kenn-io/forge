@@ -66,6 +66,7 @@ knowledge that changes what future agents should do.
 | `db` | `context/db-migrations.md` | `internal/db/`, `internal/db/migrations/` |
 | `deferred-merge` | `context/deferred-merge.md` | deferred merge paths in `internal/server/` |
 | `embeds` | `context/embeds.md` | embed routes, shell, and host bridge paths |
+| `fleet` | `context/fleet-architecture.md`, `context/workspace-runtime-lifecycle.md` | `internal/fleet/`, `internal/server/fleetapi/`, `internal/sshfleet/`; fleet-owned settings, frontend, and tests |
 | `server` | `context/server-runtime.md`, `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `cmd/kenn-forge/`, `internal/daemonruntime/`, `internal/runtimelock/`; server/workspace-owned paths in `internal/config/`, `internal/workspace/`, `internal/agentactivity/`, `internal/server/`, `internal/apiclient/generated/`, `frontend/`, and `packages/ui/`, including shared app and configuration files |
 | `errors` | `context/error-handling.md` | error envelopes and frontend error branching |
 | `retries` | `context/retries-and-backoffs.md` | retry, backoff, and single-flight paths |
@@ -74,6 +75,7 @@ knowledge that changes what future agents should do.
 | `pull-requests` | `context/pull-request-workflow.md` | push and pull-request delivery workflow |
 | `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/`, `packages/ui/src/` |
 | `inline-review` | `context/inline-review-comments.md` | review-owned paths in `internal/db/`, `internal/github/`, `internal/platform/`, `internal/server/`, and `packages/ui/` |
+| `repo-browser` | `context/repository-source-browser.md`, `context/platform-sync-invariants.md` | `internal/gitclone/repo_browser.go`, `internal/server/repobrowserapi/`; repository-browser frontend, routes, and tests |
 | `mobile` | `context/mobile-ux.md` | frontend `/m` routes and phone-first components |
 | `kata` | `context/kata-mode.md`, `context/workspace-apis.md` | `internal/kata/`; Kata-owned paths in `internal/server/`, `internal/config/`, and `frontend/`, including shared app and configuration files |
 | `docs` | `context/docs-mode.md` | `internal/docs/`; Docs-owned paths in `internal/server/`, `internal/config/`, and `frontend/`, including shared app and configuration files |

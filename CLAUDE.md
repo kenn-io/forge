@@ -39,6 +39,7 @@ only routes to them.
 | Deferred merge behavior | `context/deferred-merge.md` |
 | Embed routes or host bridges | `context/embeds.md` |
 | Daemon startup, discovery, host/origin validation, or SSE replay | `context/server-runtime.md` |
+| Fleet settings, snapshots, host routing, or peer transports | `context/fleet-architecture.md` |
 | API failures or frontend error branching | `context/error-handling.md` |
 | Retries, rate limits, scheduling, or single-flight work | `context/retries-and-backoffs.md` |
 | Go test commands, assertions, fixtures, or shell tests | `context/testing-basics.md` |
@@ -52,6 +53,7 @@ only routes to them.
 | Workflow or terminal panel interaction models | `context/vscode-workflow-panel-interaction-spec.md` |
 | Workspace APIs, creation, item identity, lifecycle hooks, or generated launch context | `context/workspace-apis.md` |
 | Workspace deletion, runtime sessions, tmux, or terminal UI | `context/workspace-runtime-lifecycle.md` |
+| Repository source-browser routes, clones, refs, or previews | `context/repository-source-browser.md` |
 | Inline diff review drafts, comments, or threads | `context/inline-review-comments.md` |
 | Kata task authority, daemon integration, task UI, or Kata workspaces | `context/kata-mode.md`, `context/workspace-apis.md` |
 | Markdown folders, Docs APIs, or git publishing | `context/docs-mode.md` |

@@ -17,7 +17,7 @@ test("docs staging includes only public site inputs", async (t) => {
   await mkdir(path.join(source, "workflows"), { recursive: true });
   await mkdir(path.join(source, "overrides"), { recursive: true });
   await mkdir(path.join(source, "assets", "generated"), { recursive: true });
-  await mkdir(path.join(source, "superpowers", "plans"), { recursive: true });
+  await mkdir(path.join(source, "internal"), { recursive: true });
   await mkdir(path.join(source, "adr"), { recursive: true });
   await mkdir(path.join(source, "reports"), { recursive: true });
   await mkdir(path.join(source, "screenshots"), { recursive: true });
@@ -28,7 +28,7 @@ test("docs staging includes only public site inputs", async (t) => {
   await writeFile(path.join(source, "overrides", "main.html"), "<script>palette</script>\n");
   await writeFile(path.join(source, "overrides", "internal.html"), "<script>private</script>\n");
   await writeFile(path.join(source, "assets", "generated", "stale.svg"), "<svg />\n");
-  await writeFile(path.join(source, "superpowers", "plans", "private.md"), "# Private\n");
+  await writeFile(path.join(source, "internal", "private.md"), "# Private\n");
   await writeFile(path.join(source, "adr", "0001-private.md"), "# Private\n");
   await writeFile(path.join(source, "reports", "private.md"), "# Private\n");
   await writeFile(path.join(source, "screenshots", "README.md"), "# Build only\n");
@@ -49,7 +49,7 @@ test("docs staging includes only public site inputs", async (t) => {
 
   for (const internalPath of [
     "assets/generated/stale.svg",
-    "superpowers/plans/private.md",
+    "internal/private.md",
     "adr/0001-private.md",
     "reports/private.md",
     "screenshots/README.md",

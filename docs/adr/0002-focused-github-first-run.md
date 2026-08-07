@@ -4,7 +4,7 @@ Date: 2026-08-02
 
 ## Status
 
-Accepted
+Superseded by [ADR 0003](0003-provider-readiness-onboarding.md)
 
 ## Context
 

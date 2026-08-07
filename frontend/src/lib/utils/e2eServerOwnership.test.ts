@@ -826,6 +826,86 @@ describe("owned server lifecycle", () => {
     await rm(dir, { force: true, recursive: true });
   });
 
+  it("waits for a worker-owned server before removing the shared tmux root", async () => {
+    if (process.platform === "win32" || spawnSync("tmux", ["-V"], { stdio: "ignore" }).status !== 0) {
+      return;
+    }
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    const helperFile = path.join(dir, "worker-helper.ts");
+    const workerReadyFile = path.join(dir, "worker-ready");
+    const workerStartedFile = path.join(dir, "worker-started");
+    const lateMarker = path.join(dir, "late-created");
+    const moduleURL = pathToFileURL(path.resolve("tests/e2e-full/support/e2eServer.ts")).href;
+    const fakeServer = writeFakeE2EServer(dir);
+    process.env.PLAYWRIGHT_E2E_SERVER_BINARY = fakeServer;
+    process.env.FAKE_E2E_STARTED_FILE = path.join(dir, "root-started");
+    delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
+
+    const rootServer = await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true });
+    const tmuxDir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
+    expect(tmuxDir).toBeTruthy();
+    writeFileSync(
+      helperFile,
+      `import { writeFile } from "node:fs/promises";
+import process from "node:process";
+import { startIsolatedE2EServerWithOptions } from ${JSON.stringify(moduleURL)};
+await startIsolatedE2EServerWithOptions({ freshProcess: true, fleetKey: "slow" });
+await writeFile(process.env.FAKE_OWNER_READY_FILE, "ready");
+process.exit(0);
+`,
+    );
+    const owner = spawn("bun", [helperFile], {
+      env: {
+        ...process.env,
+        PLAYWRIGHT_E2E_SERVER_BINARY: fakeServer,
+        FAKE_E2E_STARTED_FILE: workerStartedFile,
+        FAKE_E2E_CREATE_LATE_TMUX: "1",
+        FAKE_E2E_LATE_MARKER: lateMarker,
+        FAKE_OWNER_READY_FILE: workerReadyFile,
+      },
+      stdio: "ignore",
+    });
+    let workerPID: number | null = null;
+
+    try {
+      const ownerExit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+        owner.once("exit", (code, signal) => resolve({ code, signal }));
+      });
+      await waitForFile(workerReadyFile);
+      workerPID = Number.parseInt(await readFile(workerStartedFile, "utf8"), 10);
+      await expect(ownerExit).resolves.toEqual({ code: 0, signal: null });
+
+      const shutdown = e2eServerModule.shutdownOwnedServers();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(await fileExists(tmuxDir ?? "")).toBe(true);
+      await shutdown;
+
+      await expect(readFile(lateMarker, "utf8")).resolves.toBe(JSON.stringify({ rootWasPreserved: true, status: 0 }));
+      expect(() => process.kill(workerPID ?? 0, 0)).toThrow();
+      expect(await fileExists(tmuxDir ?? "")).toBe(false);
+    } finally {
+      if (owner.exitCode === null && owner.signalCode === null) {
+        owner.kill("SIGKILL");
+        await new Promise<void>((resolve) => owner.once("exit", () => resolve()));
+      }
+      if (
+        workerPID &&
+        (() => {
+          try {
+            process.kill(workerPID, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        })()
+      ) {
+        process.kill(workerPID, "SIGKILL");
+      }
+      await rootServer.stop();
+      await rm(dir, { force: true, recursive: true });
+    }
+  }, 20_000);
+
   it("keeps the shared tmux root until concurrent fresh-server stops have exited", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
     process.env.PLAYWRIGHT_E2E_SERVER_BINARY = writeFakeE2EServer(dir);

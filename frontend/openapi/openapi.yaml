@@ -6878,6 +6878,67 @@ components:
       required:
         - reviewers
       type: object
+    SetWorkflowStateBody:
+      oneOf:
+        - additionalProperties: false
+          properties:
+            actor:
+              maxLength: 120
+              type: string
+            expected_status:
+              description: Required unless force is true. Omit force when expected_status is provided. This compares against the effective current local workflow state before writing.
+              enum:
+                - new
+                - reviewing
+                - waiting
+                - awaiting_merge
+              type: string
+            reason:
+              maxLength: 500
+              type: string
+            source:
+              pattern: ^[a-z][a-z0-9_-]{0,39}$
+              type: string
+            status:
+              enum:
+                - new
+                - reviewing
+                - waiting
+                - awaiting_merge
+              type: string
+          required:
+            - status
+            - expected_status
+          type: object
+        - additionalProperties: false
+          properties:
+            actor:
+              maxLength: 120
+              type: string
+            force:
+              enum:
+                - true
+              type: boolean
+            reason:
+              maxLength: 500
+              type: string
+            source:
+              pattern: ^[a-z][a-z0-9_-]{0,39}$
+              type: string
+            status:
+              enum:
+                - new
+                - reviewing
+                - waiting
+                - awaiting_merge
+              type: string
+          required:
+            - status
+            - force
+          type: object
+      properties: {}
+      required: []
+      type: object
     SetWorktreeHiddenInputBody:
       additionalProperties: false
       properties:
@@ -7556,6 +7617,137 @@ components:
         - checked
         - required
         - count
+      type: object
+    WorkflowStateChangeResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkflowStateChangeResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        previous_status:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
+          type: string
+        status:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
+          type: string
+        updated_actor:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        updated_reason:
+          type: string
+        updated_source:
+          type: string
+      required:
+        - previous_status
+        - status
+        - updated_at
+        - updated_source
+      type: object
+    WorkflowStateItemResponse:
+      additionalProperties: false
+      properties:
+        author:
+          type: string
+        is_draft:
+          type: boolean
+        item_type:
+          type: string
+        last_activity_at:
+          format: date-time
+          type: string
+        name:
+          type: string
+        number:
+          format: int64
+          type: integer
+        owner:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+        state:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+        workflow:
+          $ref: "#/components/schemas/WorkflowStateListMetaResponse"
+      required:
+        - provider
+        - platform_host
+        - owner
+        - name
+        - repo_path
+        - item_type
+        - number
+        - title
+        - state
+        - url
+        - author
+        - is_draft
+        - last_activity_at
+        - workflow
+      type: object
+    WorkflowStateListMetaResponse:
+      additionalProperties: false
+      properties:
+        status:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
+          type: string
+        updated_actor:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        updated_reason:
+          type: string
+        updated_source:
+          type: string
+      required:
+        - status
+      type: object
+    WorkflowStateListResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkflowStateListResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/WorkflowStateItemResponse"
+          type:
+            - array
+            - "null"
+        next_cursor:
+          type: string
+      required:
+        - items
       type: object
     WorkflowStateMetaResponse:
       additionalProperties: false
@@ -14397,6 +14589,66 @@ paths:
       summary: Update repository worktree base
       tags:
         - Settings
+  /host/{platform_host}/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}:
+    put:
+      operationId: set-workflow-state-on-host
+      parameters:
+        - in: path
+          name: item_type
+          required: true
+          schema:
+            enum:
+              - pr
+              - issue
+            type: string
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetWorkflowStateBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowStateChangeResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set item workflow state
+      tags:
+        - Activity
   /issues:
     get:
       operationId: list-issues
@@ -19730,6 +19982,128 @@ paths:
       summary: Get server version
       tags:
         - System
+  /workflow-state:
+    get:
+      operationId: list-workflow-state
+      parameters:
+        - description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
+          explode: false
+          in: query
+          name: repo
+          schema:
+            description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
+            type: string
+        - description: "Optional item type filter: pr, issue."
+          explode: false
+          in: query
+          name: item_type
+          schema:
+            description: "Optional item type filter: pr, issue."
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - description: Optional effective workflow states to include.
+          explode: false
+          in: query
+          name: state
+          schema:
+            description: Optional effective workflow states to include.
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - explode: false
+          in: query
+          name: include_closed
+          schema:
+            type: boolean
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+        - description: Opaque keyset cursor from a previous response. Reuse only with the same repo, item_type, state, and include_closed filters; pages are best-effort under concurrent writes.
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque keyset cursor from a previous response. Reuse only with the same repo, item_type, state, and include_closed filters; pages are best-effort under concurrent writes.
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowStateListResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List item workflow state
+      tags:
+        - Activity
+  /workflow-state/{item_type}/{provider}/{owner}/{name}/{number}:
+    put:
+      operationId: set-workflow-state
+      parameters:
+        - in: path
+          name: item_type
+          required: true
+          schema:
+            enum:
+              - pr
+              - issue
+            type: string
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetWorkflowStateBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowStateChangeResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set item workflow state
+      tags:
+        - Activity
   /workspaces:
     get:
       operationId: list-workspaces

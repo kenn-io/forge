@@ -2185,6 +2185,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set item workflow state */
+        put: operations["set-workflow-state-on-host"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/issues": {
         parameters: {
             query?: never;
@@ -4291,6 +4308,40 @@ export interface paths {
         /** Get server version */
         get: operations["get-version"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List item workflow state */
+        get: operations["list-workflow-state"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set item workflow state */
+        put: operations["set-workflow-state"];
         post?: never;
         delete?: never;
         options?: never;
@@ -7722,6 +7773,26 @@ export interface components {
             readonly $schema?: string;
             reviewers: string[];
         };
+        SetWorkflowStateBody: {
+            actor?: string;
+            /**
+             * @description Required unless force is true. Omit force when expected_status is provided. This compares against the effective current local workflow state before writing.
+             * @enum {string}
+             */
+            expected_status: "new" | "reviewing" | "waiting" | "awaiting_merge";
+            reason?: string;
+            source?: string;
+            /** @enum {string} */
+            status: "new" | "reviewing" | "waiting" | "awaiting_merge";
+        } | {
+            actor?: string;
+            /** @enum {boolean} */
+            force: true;
+            reason?: string;
+            source?: string;
+            /** @enum {string} */
+            status: "new" | "reviewing" | "waiting" | "awaiting_merge";
+        };
         SetWorktreeHiddenInputBody: {
             /**
              * Format: uri
@@ -8028,6 +8099,60 @@ export interface components {
             /** Format: int64 */
             count: number;
             required: boolean;
+        };
+        WorkflowStateChangeResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkflowStateChangeResponse.json
+             */
+            readonly $schema?: string;
+            /** @enum {string} */
+            previous_status: "new" | "reviewing" | "waiting" | "awaiting_merge";
+            /** @enum {string} */
+            status: "new" | "reviewing" | "waiting" | "awaiting_merge";
+            updated_actor?: string;
+            /** Format: date-time */
+            updated_at: string;
+            updated_reason?: string;
+            updated_source: string;
+        };
+        WorkflowStateItemResponse: {
+            author: string;
+            is_draft: boolean;
+            item_type: string;
+            /** Format: date-time */
+            last_activity_at: string;
+            name: string;
+            /** Format: int64 */
+            number: number;
+            owner: string;
+            platform_host: string;
+            provider: string;
+            repo_path: string;
+            state: string;
+            title: string;
+            url: string;
+            workflow: components["schemas"]["WorkflowStateListMetaResponse"];
+        };
+        WorkflowStateListMetaResponse: {
+            /** @enum {string} */
+            status: "new" | "reviewing" | "waiting" | "awaiting_merge";
+            updated_actor?: string;
+            /** Format: date-time */
+            updated_at?: string;
+            updated_reason?: string;
+            updated_source?: string;
+        };
+        WorkflowStateListResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkflowStateListResponse.json
+             */
+            readonly $schema?: string;
+            items: components["schemas"]["WorkflowStateItemResponse"][] | null;
+            next_cursor?: string;
         };
         WorkflowStateMetaResponse: {
             /** @enum {string} */
@@ -13286,6 +13411,46 @@ export interface operations {
             };
         };
     };
+    "set-workflow-state-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_type: "pr" | "issue";
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkflowStateBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowStateChangeResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "list-issues": {
         parameters: {
             query?: {
@@ -18154,6 +18319,85 @@ export interface operations {
             };
         };
     };
+    "list-workflow-state": {
+        parameters: {
+            query?: {
+                /** @description Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
+                repo?: string;
+                /** @description Optional item type filter: pr, issue. */
+                item_type?: string[] | null;
+                /** @description Optional effective workflow states to include. */
+                state?: string[] | null;
+                include_closed?: boolean;
+                limit?: number;
+                /** @description Opaque keyset cursor from a previous response. Reuse only with the same repo, item_type, state, and include_closed filters; pages are best-effort under concurrent writes. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowStateListResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-workflow-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_type: "pr" | "issue";
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkflowStateBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowStateChangeResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "list-workspaces": {
         parameters: {
             query?: never;
@@ -18938,8 +19182,10 @@ export const pathsActivityGetParametersQueryProjectionValues: ReadonlyArray<Flat
 export const pathsActivityThreadEventsGetParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/activity/thread-events"]["get"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const pathsHostPlatform_hostWorkflowStateItem_typeProviderOwnerNameNumberPutParametersPathItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}"]["put"]["parameters"]["path"]["item_type"]> = ["pr", "issue"];
 export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const pathsWorkflowStateItem_typeProviderOwnerNameNumberPutParametersPathItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}"]["put"]["parameters"]["path"]["item_type"]> = ["pr", "issue"];
 export const pathsWorkspacesIdFilePreviewGetParametersQueryBaseValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["base"]> = ["head", "pushed", "merge-target"];
 export const pathsWorkspacesIdFilePreviewGetParametersQueryWhitespaceValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["whitespace"]> = ["hide"];
 export const pathsWorkspacesIdFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
@@ -18973,7 +19219,19 @@ export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<compon
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
 export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "mutationOutcomeUnknown", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "resyncRequired", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceDeletionInProgress", "workspaceDirectoryNotReusable", "workspaceNotFound", "workspaceSetupInProgress", "worktreeDirty"];
+export const setWorkflowStateBodyOneOf0Expected_statusValues: ReadonlyArray<Extract<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"], {
+    expected_status: unknown;
+}>["expected_status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const setWorkflowStateBodyOneOf0StatusValues: ReadonlyArray<Extract<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"], {
+    status: unknown;
+}>["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const setWorkflowStateBodyOneOf1StatusValues: ReadonlyArray<Extract<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"], {
+    status: unknown;
+}>["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const syncStatusLast_error_codeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SyncStatus"]["last_error_code"]> = ["localSyncCeilingExhausted"];
+export const workflowStateChangeResponsePrevious_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateChangeResponse"]["previous_status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const workflowStateChangeResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateChangeResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const workflowStateListMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateListMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workflowStateMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval", "done"];
 export const workspaceResponseEnrichment_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["enrichment_status"]> = ["not_applicable", "pending", "fresh", "stale", "failed"];

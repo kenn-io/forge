@@ -5158,6 +5158,10 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
 		`    printf 'middleman-0000000000000001:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
 		`    printf 'middleman-0000000000000001-57de4cf40144bdf7:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf '%s:%s\n' "$STORED_HOST_SESSION" "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf '%s:%s\n' "$STORED_PROJECT_SESSION" "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf '%s:%s\n' "$ORPHAN_HOST_SESSION" "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf '%s:%s\n' "$ORPHAN_PROJECT_SESSION" "$KENN_FORGE_TMUX_OWNER"` + "\n" +
 		`    printf 'forge-aaaaaaaaaaaaaaaa-c857d09db23e6822:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
@@ -5170,6 +5174,10 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	t.Setenv("KENN_FORGE_TMUX_OWNER", mgr.tmuxOwnerMarker())
+	storedHostSession := "forge-host-1111111111111111"
+	orphanHostSession := "forge-host-2222222222222222"
+	t.Setenv("STORED_HOST_SESSION", storedHostSession)
+	t.Setenv("ORPHAN_HOST_SESSION", orphanHostSession)
 
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
 		ID:           "0000000000000001",
@@ -5188,6 +5196,37 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		"codex", "middleman-0000000000000001-57de4cf40144bdf7",
 		time.Time{},
 	)
+	require.NoError(d.UpsertHostRuntimeTmuxSession(
+		context.Background(), &db.HostRuntimeTmuxSession{
+			SessionKey:  "host-live",
+			SessionName: storedHostSession,
+		},
+	))
+	project, err := d.CreateProject(context.Background(), db.CreateProjectInput{
+		DisplayName: "runtime-project",
+		LocalPath:   filepath.Join(t.TempDir(), "project"),
+	})
+	require.NoError(err)
+	worktree, err := d.CreateProjectWorktree(
+		context.Background(), db.CreateProjectWorktreeInput{
+			ProjectID: project.ID,
+			Branch:    "feature/runtime",
+			Path:      filepath.Join(t.TempDir(), "worktree"),
+		},
+	)
+	require.NoError(err)
+	storedProjectSession := "forge-project-worktree-" + worktree.ID +
+		"-3333333333333333"
+	orphanProjectSession := "forge-project-worktree-unrecorded-4444444444444444"
+	t.Setenv("STORED_PROJECT_SESSION", storedProjectSession)
+	t.Setenv("ORPHAN_PROJECT_SESSION", orphanProjectSession)
+	require.NoError(d.UpsertProjectWorktreeTmuxSession(
+		context.Background(), &db.ProjectWorktreeTmuxSession{
+			WorktreeID:  worktree.ID,
+			SessionKey:  "project-live",
+			SessionName: storedProjectSession,
+		},
+	))
 
 	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
 
@@ -5196,9 +5235,21 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		"wrap", "kill-session", "-t",
 		"forge-aaaaaaaaaaaaaaaa-c857d09db23e6822",
 	})
+	assert.Contains(argvs, []string{
+		"wrap", "kill-session", "-t", orphanHostSession,
+	})
+	assert.Contains(argvs, []string{
+		"wrap", "kill-session", "-t", orphanProjectSession,
+	})
 	assert.NotContains(argvs, []string{
 		"wrap", "kill-session", "-t",
 		"middleman-0000000000000001-57de4cf40144bdf7",
+	})
+	assert.NotContains(argvs, []string{
+		"wrap", "kill-session", "-t", storedHostSession,
+	})
+	assert.NotContains(argvs, []string{
+		"wrap", "kill-session", "-t", storedProjectSession,
 	})
 }
 

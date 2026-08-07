@@ -1316,6 +1316,9 @@ func (s *Handler) ensureProjectWorktreeRuntimeShell(
 				"record project worktree runtime tmux session: " + err.Error(),
 			)
 		}
+		s.forgetProjectWorktreeRuntimeSessionIfExited(
+			ctx, scope, worktree.ID, session,
+		)
 	}
 	return &projectWorktreeRuntimeSessionOutput{
 		Body: projectWorktreeRuntimeSessionFromRuntime(session, input.ProjectID, worktree.ID),
@@ -1391,6 +1394,9 @@ func (s *Handler) launchProjectWorktreeRuntimeSession(
 				"record project worktree runtime tmux session: " + err.Error(),
 			)
 		}
+		s.forgetProjectWorktreeRuntimeSessionIfExited(
+			ctx, scope, worktree.ID, session,
+		)
 	}
 	return &projectWorktreeRuntimeSessionOutput{
 		Body: projectWorktreeRuntimeSessionFromRuntime(session, input.ProjectID, worktree.ID),
@@ -1461,7 +1467,7 @@ func (s *Handler) launchProjectWorktreeRuntimeCommandSession(
 		}
 		return nil, projectWorktreeRuntimeLaunchError(err)
 	}
-	s.forgetProjectWorktreeCommandSessionIfExited(ctx, scope, worktree.ID, session)
+	s.forgetProjectWorktreeRuntimeSessionIfExited(ctx, scope, worktree.ID, session)
 	return &projectWorktreeRuntimeSessionOutput{
 		Body: projectWorktreeRuntimeSessionFromRuntime(
 			session, input.ProjectID, worktree.ID,
@@ -1469,11 +1475,11 @@ func (s *Handler) launchProjectWorktreeRuntimeCommandSession(
 	}, nil
 }
 
-// forgetProjectWorktreeCommandSessionIfExited reconciles a command that exited
+// forgetProjectWorktreeRuntimeSessionIfExited reconciles a session that exited
 // while its metadata write was still in flight: the async exit handler's
 // generation-qualified delete can run before the row exists, so a short-lived
-// command could otherwise leave a durable row for a dead session.
-func (s *Handler) forgetProjectWorktreeCommandSessionIfExited(
+// launch could otherwise leave a durable row for a dead session.
+func (s *Handler) forgetProjectWorktreeRuntimeSessionIfExited(
 	ctx context.Context,
 	scope string,
 	worktreeID string,

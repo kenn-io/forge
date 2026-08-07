@@ -90,17 +90,19 @@ still exists.
   cleanup.
 - Removal of a created runtime backend is attempted when launch or persistence
   fails; it is best-effort, not retried, and a backend that survives a failed
-  compensation is unrecorded until startup reaping. Caller-keyed command ensure
-  uses one manager transaction, and per-worktree shell discovery uses one handler
-  transaction, through persistence and compensation so rollback authority cannot race adoption (`internal/workspace/localruntime/command_session.go::EnsureCommandSessionAndPersist`, `internal/server/workspaceapi/projects_handlers.go::Handler.ensureProjectWorktreeRuntimeShell`).
+  compensation is unrecorded until startup reaping. Reaping must protect stored
+  workspace, host, and project-worktree sessions while recognizing every owned
+  scope-derived tmux name (`internal/workspace/manager.go::ReapOrphanTmuxSessions`).
+  Caller-keyed command ensure uses one manager transaction, and per-worktree shell
+  discovery uses one handler transaction, through persistence and compensation so rollback authority cannot race adoption (`internal/workspace/localruntime/command_session.go::EnsureCommandSessionAndPersist`, `internal/server/workspaceapi/projects_handlers.go::Handler.ensureProjectWorktreeRuntimeShell`).
 - Persistence failures stay client-visible; compensation failures are logged.
   Ptyowner rollback needs a live owned entry, and tmux fallback cleanup must
   match the launch marker, which adoption rewrites so a stale creator rollback
   cannot kill an adopted backend (`internal/workspace/localruntime/manager.go::RollbackLaunch`).
-- A command can exit while its metadata write is still in flight, so command
-  launch handlers must reconcile after persistence: live means both key and
+- A runtime can exit while its metadata write is still in flight, so every
+  launch path must reconcile after persistence: live means both key and
   `CreatedAt` match, and a replacement must not suppress deletion of the exited
-  generation's row (`internal/server/host_runtime_handlers.go::forgetHostRuntimeCommandSessionIfExited`).
+  generation's row (`internal/server/host_runtime_handlers.go::Server.forgetHostRuntimeCommandSessionIfExited`, `internal/server/workspaceapi/projects_handlers.go::Handler.forgetProjectWorktreeRuntimeSessionIfExited`).
 - During kenn-forge shutdown, detach/restart behavior is different: do not treat
   normal server shutdown as a natural user exit that should erase recoverable
   base runtime state.

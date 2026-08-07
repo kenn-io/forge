@@ -964,20 +964,27 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPre
 	assert.FileExists(fixture.tmux.statePath)
 }
 
-func TestCommandSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
+func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 	requirePTYAvailable(t)
 	tests := []struct {
-		name       string
-		sessionKey string
-		path       func(runtimeLaunchRollbackFixture) string
-		scope      func(runtimeLaunchRollbackFixture) string
-		countRows  func(*testing.T, runtimeLaunchRollbackFixture) int
+		name      string
+		path      func(runtimeLaunchRollbackFixture) string
+		body      func(*testing.T) []byte
+		scope     func(runtimeLaunchRollbackFixture) string
+		countRows func(*testing.T, runtimeLaunchRollbackFixture) int
 	}{
 		{
-			name:       "host_command",
-			sessionKey: "surface:exit-race:host",
+			name: "host_command",
 			path: func(runtimeLaunchRollbackFixture) string {
 				return "/api/v1/runtime/sessions"
+			},
+			body: func(t *testing.T) []byte {
+				return mustMarshal(t, map[string]any{
+					"session_key": "surface:exit-race:host",
+					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
+					"label":       "Exit-race command",
+					"cwd":         t.TempDir(),
+				})
 			},
 			scope: func(runtimeLaunchRollbackFixture) string {
 				return hostRuntimeScope
@@ -991,11 +998,56 @@ func TestCommandSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 			},
 		},
 		{
-			name:       "project_command",
-			sessionKey: "surface:exit-race:project",
+			name: "project_shell",
+			path: func(fixture runtimeLaunchRollbackFixture) string {
+				return "/api/v1/projects/" + fixture.projectID +
+					"/worktrees/" + fixture.worktreeID + "/runtime/shell"
+			},
+			body: func(*testing.T) []byte { return nil },
+			scope: func(fixture runtimeLaunchRollbackFixture) string {
+				return workspaceapi.ProjectWorktreeRuntimeScope(fixture.worktreeID)
+			},
+			countRows: func(t *testing.T, fixture runtimeLaunchRollbackFixture) int {
+				rows, err := fixture.server.db.ListProjectWorktreeTmuxSessions(
+					context.Background(), fixture.worktreeID,
+				)
+				require.NoError(t, err)
+				return len(rows)
+			},
+		},
+		{
+			name: "project_configured_target",
 			path: func(fixture runtimeLaunchRollbackFixture) string {
 				return "/api/v1/projects/" + fixture.projectID +
 					"/worktrees/" + fixture.worktreeID + "/runtime/sessions"
+			},
+			body: func(t *testing.T) []byte {
+				return mustMarshal(t, map[string]any{"target_key": "helper"})
+			},
+			scope: func(fixture runtimeLaunchRollbackFixture) string {
+				return workspaceapi.ProjectWorktreeRuntimeScope(fixture.worktreeID)
+			},
+			countRows: func(t *testing.T, fixture runtimeLaunchRollbackFixture) int {
+				rows, err := fixture.server.db.ListProjectWorktreeTmuxSessions(
+					context.Background(), fixture.worktreeID,
+				)
+				require.NoError(t, err)
+				return len(rows)
+			},
+		},
+		{
+			name: "project_command",
+			path: func(fixture runtimeLaunchRollbackFixture) string {
+				return "/api/v1/projects/" + fixture.projectID +
+					"/worktrees/" + fixture.worktreeID + "/runtime/sessions"
+			},
+			body: func(t *testing.T) []byte {
+				return mustMarshal(t, map[string]any{
+					"session_key": "surface:exit-race:project",
+					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
+					"label":       "Exit-race command",
+					"cwd":         t.TempDir(),
+				})
 			},
 			scope: func(fixture runtimeLaunchRollbackFixture) string {
 				return workspaceapi.ProjectWorktreeRuntimeScope(fixture.worktreeID)
@@ -1016,17 +1068,12 @@ func TestCommandSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 			require := require.New(t)
 			fixture := setupRuntimeLaunchRollbackFixture(t, false)
 			scope := test.scope(fixture)
-			body := mustMarshal(t, map[string]any{
-				"session_key": test.sessionKey,
-				"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
-				"label":       "Exit-race command",
-				"cwd":         t.TempDir(),
-			})
 			transaction := occupyRuntimeWriter(t, fixture.server.db)
 			baseline := fixture.server.db.WriteDB().Stats().WaitCount
 
 			responses := serveRuntimeRequestAsync(
-				fixture.server, t.Context(), http.MethodPost, test.path(fixture), body,
+				fixture.server, t.Context(), http.MethodPost, test.path(fixture),
+				test.body(t),
 			)
 			require.Eventually(func() bool {
 				return len(fixture.server.runtime.ListSessions(scope)) == 1
@@ -1046,7 +1093,7 @@ func TestCommandSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 
 			assert.Equal(http.StatusOK, recorder.Code)
 			assert.Zero(test.countRows(t, fixture),
-				"a command that exited before its metadata write completed"+
+				"a session that exited before its metadata write completed"+
 					" must not leave a durable row")
 		})
 	}

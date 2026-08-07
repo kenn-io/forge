@@ -23,6 +23,9 @@ screenshots, or the Zensical site.
   copied into `internal/web/dist`, then pass the prebuilt binary through
   `PLAYWRIGHT_E2E_SERVER_BINARY` so screenshot readiness excludes Go compile
   time. (`scripts/vercel-build-docs.sh`)
+- Vercel restricts rendered-site checks to Chromium because its runtime lacks
+  Playwright WebKit dependencies; the browser-image docs CI lane runs Chromium
+  and WebKit. (`scripts/vercel-build-docs.sh`, `.github/workflows/ci.yml::docs`)
 - Production docs use a default-branch `workflow_run`; the released SHA must be
   on `main` and latest before build and before/after promotion. A stale attempt
   dispatches trusted latest-release reconciliation. No Vercel Git app or GitHub environment. (`.github/workflows/deploy-docs.yml`)

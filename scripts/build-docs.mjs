@@ -56,6 +56,11 @@ function run(command, args, options = {}) {
   });
 }
 
+export function docsSiteProjectArgs(env = process.env) {
+  const project = env.KENN_FORGE_DOCS_SITE_PROJECT;
+  return project && project !== "all" ? [`--project=${project}`] : [];
+}
+
 export async function buildDocs() {
   const sourceDir = path.join(repoRoot, "docs");
   const siteDir = path.join(repoRoot, "site");
@@ -103,6 +108,7 @@ export async function buildDocs() {
         "test",
         "--config",
         path.join(repoRoot, "docs", "site", "playwright.config.ts"),
+        ...docsSiteProjectArgs(),
         "--output",
         path.join(stagingRoot, "site-test-results"),
       ],

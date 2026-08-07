@@ -2,7 +2,8 @@
 
 The screenshot generator requires Poppler's `pdftocairo` command. On macOS,
 install it with `brew install poppler`; on Debian or Ubuntu, install the
-`poppler-utils` package.
+`poppler-utils` package. Local verification also uses Chromium and WebKit;
+install both with `node node_modules/.bin/playwright install chromium webkit`.
 
 Build and verify the public site, including the generated workflow screenshots:
 

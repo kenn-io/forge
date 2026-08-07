@@ -4,7 +4,16 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { stageDocsSource } from "./build-docs.mjs";
+import * as docsBuild from "./build-docs.mjs";
+
+const { stageDocsSource } = docsBuild;
+
+test("docs site browser projects can be restricted by the deployment environment", () => {
+  const projectArgs = docsBuild.docsSiteProjectArgs?.({ KENN_FORGE_DOCS_SITE_PROJECT: "chromium" }) ?? [];
+
+  assert.deepEqual(projectArgs, ["--project=chromium"]);
+  assert.deepEqual(docsBuild.docsSiteProjectArgs?.({ KENN_FORGE_DOCS_SITE_PROJECT: "all" }), []);
+});
 
 test("docs staging includes only public site inputs", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-build-test-"));

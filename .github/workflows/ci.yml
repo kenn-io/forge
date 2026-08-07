@@ -29,6 +29,7 @@ jobs:
       frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend == 'true' || steps.filter.outputs.ci == 'true' }}
       rust: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.rust == 'true' || steps.filter.outputs.ci == 'true' }}
       e2e: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.e2e == 'true' || steps.filter.outputs.ci == 'true' }}
+      docs: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.docs == 'true' || steps.filter.outputs.ci == 'true' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -68,6 +69,13 @@ jobs:
               - scripts/e2e/**
               - scripts/run-roborev-e2e.sh
               - tests/integration/**
+            docs:
+              - docs/**
+              - scripts/build-docs.mjs
+              - scripts/build-docs.test.mjs
+              - scripts/docs-screenshots-command.test.mjs
+              - scripts/vercel-build-docs.sh
+              - scripts/vercel-install-docs.sh
             ci:
               - .github/workflows/ci.yml
               - .github/docker/**
@@ -77,7 +85,7 @@ jobs:
     name: Ensure Playwright CI image
     runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'kenn-linux-x64-public' || 'ubuntu-latest' }}
     needs: detect_changes
-    if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+    if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true' || needs.detect_changes.outputs.docs == 'true'
     permissions:
       contents: read
       packages: write
@@ -149,6 +157,51 @@ jobs:
           fi
 
           echo "image=${PLAYWRIGHT_CI_IMAGE}@${manifest_digest}" >> "$GITHUB_OUTPUT"
+
+  docs:
+    name: Documentation build
+    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'kenn-linux-x64-public' || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    needs: [detect_changes, ensure_playwright_image]
+    if: needs.detect_changes.outputs.docs == 'true'
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.ensure_playwright_image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.12.1"
+          enable-cache: false
+
+      - name: Restore Bun package cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /usr/local/install/cache
+          key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
+          restore-keys: |
+            browser-bun-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build and verify documentation in Chromium and WebKit
+        env:
+          KENN_FORGE_DOCS_SITE_PROJECT: all
+        run: bash scripts/vercel-build-docs.sh
 
   lint:
     runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'kenn-linux-x64-public' || 'ubuntu-latest' }}

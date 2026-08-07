@@ -16,5 +16,6 @@ mkdir -p .vercel/bin
 GOFLAGS="${GOFLAGS:+$GOFLAGS }-buildvcs=false" \
   go build -o .vercel/bin/e2e-server ./cmd/e2e-server
 
-PLAYWRIGHT_E2E_SERVER_BINARY="$repo_root/.vercel/bin/e2e-server" \
+KENN_FORGE_DOCS_SITE_PROJECT="${KENN_FORGE_DOCS_SITE_PROJECT:-chromium}" \
+  PLAYWRIGHT_E2E_SERVER_BINARY="$repo_root/.vercel/bin/e2e-server" \
   node scripts/build-docs.mjs

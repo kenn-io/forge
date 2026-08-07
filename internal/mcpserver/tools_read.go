@@ -33,7 +33,7 @@ type listReposOutput struct {
 
 type listActivityInput struct {
 	Since  string          `json:"since,omitempty" jsonschema:"RFC3339 timestamp or duration such as 24h; default 24h"`
-	Repo   repoFilterInput `json:"repo,omitempty"`
+	Repo   repoFilterInput `json:"repo,omitzero"`
 	Types  []string        `json:"types,omitempty"`
 	Search string          `json:"search,omitempty"`
 	Limit  int             `json:"limit,omitempty"`
@@ -61,7 +61,7 @@ type listActivityOutput struct {
 type searchItemsInput struct {
 	Query     string          `json:"query"`
 	ItemTypes []string        `json:"item_types,omitempty" jsonschema:"item types to include: pr, issue"`
-	Repo      repoFilterInput `json:"repo,omitempty"`
+	Repo      repoFilterInput `json:"repo,omitzero"`
 	State     string          `json:"state,omitempty" jsonschema:"open, closed, merged, or all; default open"`
 	Limit     int             `json:"limit,omitempty"`
 }

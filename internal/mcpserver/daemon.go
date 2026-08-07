@@ -19,14 +19,21 @@ import (
 )
 
 type daemonError struct {
-	Kind    string
-	Code    string
-	Message string
-	Details map[string]any
+	Kind      string         `json:"kind"`
+	Code      string         `json:"code,omitempty"`
+	Message   string         `json:"message"`
+	Details   map[string]any `json:"details,omitempty"`
+	Retryable bool           `json:"retryable"`
+	Ambiguous bool           `json:"ambiguous"`
 }
 
 func (e *daemonError) Error() string {
-	return e.Kind + ": " + e.Message
+	data, err := json.Marshal(e)
+	if err == nil {
+		return string(data)
+	}
+	return fmt.Sprintf(`{"kind":%q,"message":%q,"retryable":false,"ambiguous":%t}`,
+		e.Kind, e.Message, e.Ambiguous)
 }
 
 type daemonClient struct {
@@ -210,7 +217,12 @@ func (c *daemonClient) do(
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return daemonRequestError(err)
+		requestErr := daemonRequestError(err)
+		if method != http.MethodGet {
+			requestErr.Retryable = false
+			requestErr.Ambiguous = true
+		}
+		return requestErr
 	}
 	defer resp.Body.Close()
 
@@ -223,21 +235,25 @@ func (c *daemonClient) do(
 		}
 		return nil
 	}
-	return problemToDaemonError(resp)
+	responseErr := problemToDaemonError(resp)
+	if method != http.MethodGet && resp.StatusCode >= 500 {
+		responseErr.Ambiguous = true
+	}
+	return responseErr
 }
 
-func daemonRequestError(err error) error {
+func daemonRequestError(err error) *daemonError {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return &daemonError{Kind: "daemon_timeout", Message: "daemon request timed out"}
+		return &daemonError{Kind: "daemon_timeout", Message: "daemon request timed out", Retryable: true}
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) || errors.Is(err, io.EOF) {
-		return &daemonError{Kind: "daemon_unavailable", Message: "daemon connection failed"}
+		return &daemonError{Kind: "daemon_unavailable", Message: "daemon connection failed", Retryable: true}
 	}
-	return &daemonError{Kind: "daemon_unavailable", Message: "daemon request failed"}
+	return &daemonError{Kind: "daemon_unavailable", Message: "daemon request failed", Retryable: true}
 }
 
-func problemToDaemonError(resp *http.Response) error {
+func problemToDaemonError(resp *http.Response) *daemonError {
 	var prob struct {
 		Status  int            `json:"status"`
 		Code    string         `json:"code"`

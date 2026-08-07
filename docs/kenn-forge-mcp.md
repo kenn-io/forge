@@ -20,7 +20,8 @@ Configure stdio clients to launch the companion command:
 ```
 
 The companion discovers the running daemon from the configured Kenn Forge data
-directory. Start `kenn-forge` before using tools that read or write daemon data.
+directory. Start it with `kenn-forge daemon start` before using tools that read
+or write daemon data.
 
 ## HTTP Transport
 
@@ -90,11 +91,22 @@ To inspect already claimed or paused work, call
 Treat stale cache fields, missing detail, and old sync timestamps as lower
 confidence signals, not as proof that no provider-side activity exists.
 
+Workflow lists default to 50 items and cap requests at 200. Rows are ordered by
+the newer of the local workflow update and provider activity, then by provider,
+repository, item type, and number. A same-state write intentionally refreshes
+local metadata and this ordering. Tool errors are JSON envelopes with stable
+`kind`, daemon `code`, structured `details`, `retryable`, and `ambiguous`
+fields; never retry an ambiguous mutation.
+
 ## Troubleshooting
 
 `no Kenn Forge daemon is running on <data_dir>` means the companion could not find
-a running daemon for that config. Start `kenn-forge` with the same config path.
+a running daemon for that config. Start `kenn-forge daemon start --config
+<config_path>` with the same config path.
 
 Auth errors usually mean the daemon runtime `auth_token` file is missing,
 unreadable, or does not match the running daemon. Check the data directory and
 file permissions.
+
+Run the companion and daemon from the same Kenn Forge installation. Endpoint
+capability errors mean the daemon must be upgraded before that tool can run.

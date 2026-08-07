@@ -902,7 +902,7 @@ func TestRootHelpListsEveryPublicCommandWithoutStartingServer(t *testing.T) {
 
 	for _, name := range []string{
 		"activity", "agent-hook", "api", "archive", "config", "docs",
-		"daemon", "issues", "pulls", "quickstart", "rate-limits", "repo-summaries",
+		"daemon", "issues", "mcp", "pulls", "quickstart", "rate-limits", "repo-summaries",
 		"repos", "serve", "stacks", "sync", "version", "workspaces",
 	} {
 		assert.Contains(stdout.String(), name)
@@ -947,6 +947,7 @@ func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
 		{name: "daemon status", args: []string{"daemon", "status", "--help"}, want: []string{"--config", "--json"}},
 		{name: "daemon stop", args: []string{"daemon", "stop", "--help"}, want: []string{"--config"}},
 		{name: "daemon restart", args: []string{"daemon", "restart", "--help"}, want: []string{"--config"}},
+		{name: "mcp", args: []string{"mcp", "--help"}, want: []string{"--config", "--transport", "--addr", "--http-token-env", "--daemon-timeout"}},
 		{name: "serve", args: []string{"serve", "--help"}, want: []string{"--config", "--pprof-addr"}},
 		{name: "api", args: []string{"api", "--help"}, want: []string{"list", "--config", "-d", "-i", "--timeout"}},
 	}

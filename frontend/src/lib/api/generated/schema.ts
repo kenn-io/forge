@@ -2192,7 +2192,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get item workflow state */
+        get: operations["get-workflow-state-on-host"];
         /** Set item workflow state */
         put: operations["set-workflow-state-on-host"];
         post?: never;
@@ -4339,7 +4340,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get item workflow state */
+        get: operations["get-workflow-state"];
         /** Set item workflow state */
         put: operations["set-workflow-state"];
         post?: never;
@@ -7981,6 +7983,9 @@ export interface components {
             /** Format: int64 */
             scrollback: number;
         };
+        TerminalClipboardInputBody: {
+            text: string;
+        };
         TmuxSessionInfo: {
             createdAt?: string;
             managed: boolean;
@@ -8155,6 +8160,21 @@ export interface components {
             next_cursor?: string;
         };
         WorkflowStateMetaResponse: {
+            /** @enum {string} */
+            status: "new" | "reviewing" | "waiting" | "awaiting_merge";
+            updated_actor?: string;
+            /** Format: date-time */
+            updated_at?: string;
+            updated_reason?: string;
+            updated_source?: string;
+        };
+        WorkflowStatePointResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkflowStatePointResponse.json
+             */
+            readonly $schema?: string;
             /** @enum {string} */
             status: "new" | "reviewing" | "waiting" | "awaiting_merge";
             updated_actor?: string;
@@ -13411,6 +13431,42 @@ export interface operations {
             };
         };
     };
+    "get-workflow-state-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_type: "pr" | "issue";
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowStatePointResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "set-workflow-state-on-host": {
         parameters: {
             query?: never;
@@ -18359,6 +18415,41 @@ export interface operations {
             };
         };
     };
+    "get-workflow-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_type: "pr" | "issue";
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowStatePointResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "set-workflow-state": {
         parameters: {
             query?: never;
@@ -19182,9 +19273,11 @@ export const pathsActivityGetParametersQueryProjectionValues: ReadonlyArray<Flat
 export const pathsActivityThreadEventsGetParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/activity/thread-events"]["get"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const pathsHostPlatform_hostWorkflowStateItem_typeProviderOwnerNameNumberGetParametersPathItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}"]["get"]["parameters"]["path"]["item_type"]> = ["pr", "issue"];
 export const pathsHostPlatform_hostWorkflowStateItem_typeProviderOwnerNameNumberPutParametersPathItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}"]["put"]["parameters"]["path"]["item_type"]> = ["pr", "issue"];
 export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const pathsWorkflowStateItem_typeProviderOwnerNameNumberGetParametersPathItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}"]["get"]["parameters"]["path"]["item_type"]> = ["pr", "issue"];
 export const pathsWorkflowStateItem_typeProviderOwnerNameNumberPutParametersPathItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}"]["put"]["parameters"]["path"]["item_type"]> = ["pr", "issue"];
 export const pathsWorkspacesIdFilePreviewGetParametersQueryBaseValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["base"]> = ["head", "pushed", "merge-target"];
 export const pathsWorkspacesIdFilePreviewGetParametersQueryWhitespaceValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["whitespace"]> = ["hide"];
@@ -19233,6 +19326,7 @@ export const workflowStateChangeResponsePrevious_statusValues: ReadonlyArray<Fla
 export const workflowStateChangeResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateChangeResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workflowStateListMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateListMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workflowStateMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const workflowStatePointResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStatePointResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval", "done"];
 export const workspaceResponseEnrichment_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["enrichment_status"]> = ["not_applicable", "pending", "fresh", "stale", "failed"];
 export const workspaceResponseMr_head_repo_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["mr_head_repo_kind"]> = ["same_repo", "fork", "unknown"];

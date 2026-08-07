@@ -17,6 +17,7 @@ type cliOptions struct {
 	Stderr       io.Writer
 	RunServer    serve.Runner
 	DaemonRunner daemonCommandRunner
+	MCPRunner    mcpRunner
 }
 
 func newRootCommand(opts cliOptions) *cobra.Command {
@@ -34,6 +35,9 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 	}
 	if opts.DaemonRunner == nil {
 		opts.DaemonRunner = newDaemonLifecycle(defaultDaemonLifecycleDeps())
+	}
+	if opts.MCPRunner == nil {
+		opts.MCPRunner = runMCP
 	}
 
 	root := &cobra.Command{
@@ -65,6 +69,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		newArchiveCommand(opts.Stdout, time.Now),
 		newAgentHookCommand(opts.Stdin, opts.Stdout),
 		newDaemonCommand(opts.DaemonRunner),
+		newMCPCommand(opts.MCPRunner, opts.Stdin, opts.Stdout),
 		newPtyOwnerCommand(),
 		serve.NewCommand(opts.RunServer),
 	)

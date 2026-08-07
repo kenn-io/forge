@@ -32,6 +32,7 @@ test("docs staging includes only public site inputs", async (t) => {
   await mkdir(path.join(source, "screenshots"), { recursive: true });
   await mkdir(path.dirname(favicon), { recursive: true });
   await writeFile(path.join(source, "index.md"), "# Docs\n");
+  await writeFile(path.join(source, "kenn-forge-mcp.md"), "# MCP\n");
   await writeFile(path.join(source, "workflows", "code-reviewer.md"), "# Reviewer\n");
   await writeFile(path.join(source, "stylesheets", "extra.css"), ":root {}\n");
   await writeFile(path.join(source, "overrides", "main.html"), "<script>palette</script>\n");
@@ -48,6 +49,7 @@ test("docs staging includes only public site inputs", async (t) => {
   await stageDocsSource(source, staged, favicon);
 
   assert.equal(await readFile(path.join(staged, "index.md"), "utf8"), "# Docs\n");
+  assert.equal(await readFile(path.join(staged, "kenn-forge-mcp.md"), "utf8"), "# MCP\n");
   assert.equal(await readFile(path.join(staged, "workflows", "code-reviewer.md"), "utf8"), "# Reviewer\n");
   assert.equal(await readFile(path.join(staged, "stylesheets", "extra.css"), "utf8"), ":root {}\n");
   assert.equal(await readFile(path.join(staged, "overrides", "main.html"), "utf8"), "<script>palette</script>\n");

@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,23 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/runtimelock"
 )
+
+func TestDaemonErrorUsesStableStructuredEnvelope(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	err := (&daemonError{
+		Kind: "conflict", Code: "conflict", Message: "workflow state changed",
+		Details:   map[string]any{"current_status": "waiting"},
+		Retryable: false, Ambiguous: true,
+	}).Error()
+	var envelope map[string]any
+	require.NoError(json.Unmarshal([]byte(err), &envelope))
+	assert.Equal("conflict", envelope["kind"])
+	assert.Equal("conflict", envelope["code"])
+	assert.Equal("workflow state changed", envelope["message"])
+	assert.Equal(false, envelope["retryable"])
+	assert.Equal(true, envelope["ambiguous"])
+}
 
 func writeFakeDaemonFiles(t *testing.T, ts *httptest.Server, token string) string {
 	t.Helper()

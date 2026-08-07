@@ -67,10 +67,7 @@ func (s *Server) getStackContext(
 	var stack daemonFullStackContext
 	if err := s.daemon.getJSON(ctx, itemPath("pulls", in.Item)+"/stack", nil, &stack); err != nil {
 		var derr *daemonError
-		if errors.As(err, &derr) &&
-			derr.Kind == "not_found" &&
-			derr.Code == "notFound" &&
-			strings.Contains(derr.Message, "not part of a stack") {
+		if errors.As(err, &derr) && isStackAbsentError(derr) {
 			return getStackContextOutput{Present: false}, nil
 		}
 		return getStackContextOutput{}, err
@@ -108,6 +105,17 @@ func (s *Server) getStackContext(
 		})
 	}
 	return out, nil
+}
+
+func isStackAbsentError(err *daemonError) bool {
+	if err == nil || err.Kind != "not_found" {
+		return false
+	}
+	if err.Code != "notFound" && err.Code != "not_found" {
+		return false
+	}
+	message := strings.ToLower(err.Message)
+	return strings.Contains(message, "not part of a stack") || strings.Contains(message, "not stacked")
 }
 
 func (s *Server) stackWorkflowStatuses(

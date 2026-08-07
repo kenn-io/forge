@@ -15,6 +15,7 @@ const publishedFiles = new Set([
   "federated-fleet.md",
   "index.md",
   "integrations.md",
+  "kenn-forge-mcp.md",
   "quickstart.md",
   "settings.md",
   path.join("overrides", "main.html"),

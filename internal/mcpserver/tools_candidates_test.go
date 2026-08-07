@@ -252,6 +252,42 @@ func TestFindReviewCandidatesWorkflowFilters(t *testing.T) {
 	assert.Equal(1, stackCalls)
 }
 
+func TestFindReviewCandidatesPropagatesStackLookupFailure(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/activity", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[{
+			"id":"pr-42","activity_type":"comment",
+			"repo":{"provider":"github","platform_host":"github.com","repo_path":"acme/widget","owner":"acme","name":"widget"},
+			"item_type":"pr","item_number":42,"item_title":"Candidate",
+			"item_url":"https://example.test/pr/42","item_state":"open",
+			"created_at":"2026-07-01T14:00:00Z"
+		}]}`))
+	})
+	mux.HandleFunc("/api/v1/pulls", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"Number":42,"Title":"Candidate","State":"open",
+			"repo":{"provider":"github","platform_host":"github.com","repo_path":"acme/widget","owner":"acme","name":"widget"}}]`))
+	})
+	mux.HandleFunc("/api/v1/issues", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	})
+	handleEmptyWorkflowState(mux)
+	mux.HandleFunc("/api/v1/host/github.com/pulls/github/acme/widget/42/stack", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"status":500,"code":"internal","detail":"stack cache unavailable"}`))
+	})
+	s := newMCPTestServer(t, mux)
+
+	_, err := s.findReviewCandidates(t.Context(), findCandidatesInput{})
+	var derr *daemonError
+	require.ErrorAs(err, &derr)
+	require.Equal("daemon_error", derr.Kind)
+}
+
 func TestFindReviewCandidatesDraftHandling(t *testing.T) {
 	require := require.New(t)
 	mux := http.NewServeMux()
@@ -281,6 +317,11 @@ func TestFindReviewCandidatesDraftHandling(t *testing.T) {
 		_, _ = w.Write([]byte(`[]`))
 	})
 	handleEmptyWorkflowState(mux)
+	mux.HandleFunc("/api/v1/host/github.com/pulls/github/acme/widget/42/stack", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"status":404,"code":"notFound","detail":"PR is not part of a stack"}`))
+	})
 	s := newMCPTestServer(t, mux)
 
 	out, err := s.findReviewCandidates(t.Context(), findCandidatesInput{})
@@ -469,5 +510,5 @@ func TestFindReviewCandidatesStopsStackLookupsAfterCappedResult(t *testing.T) {
 	require.Len(out.Candidates, 1)
 	assert.True(out.Capped)
 	assert.Equal(3, out.Candidates[0].Item.Number)
-	assert.Equal(2, stackCalls)
+	assert.Equal(1, stackCalls)
 }

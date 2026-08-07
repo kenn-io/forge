@@ -111,6 +111,9 @@ Interactive surfaces must agree on which item is selected.
   surface immediately and reconcile the tombstone away — an ID-less tombstone
   would mask it forever, because the workspace-absent envelope it waits for
   never arrives once the item has a new workspace.
+  Deleting the exact `(hostKey, workspaceId)` named by the active terminal route
+  must also return to the Workspaces list; route identity otherwise keeps the
+  dead workspace hosted (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
 - Automatic launchers and workspace mutations stay blocked during inline or merge-triggered deletion and explicit
   startup; merge cleanup uses local host identity and the full host deletion notification before pending state clears
   (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).

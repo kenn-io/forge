@@ -476,6 +476,10 @@ export function notifyWorkspaceDeleted(workspaceId: string, hostKey?: string, id
   // The Workspaces tab restores the last /terminal route; it must not
   // restore one whose workspace was just deleted.
   forgetWorkspaceRoute(workspaceId, hostKey);
+  const route = getRoute();
+  if (route.page === "terminal" && route.workspaceId === workspaceId && route.hostKey === hostKey) {
+    navigate("/workspaces");
+  }
 }
 
 /**

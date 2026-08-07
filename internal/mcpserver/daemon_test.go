@@ -309,3 +309,28 @@ func TestDaemonClientPutRefreshesDiscoveryAfterUnavailableWithoutReplaying(t *te
 	require.NoError(c.putJSON(t.Context(), "/api/v1/workflow-state/pr/gh/acme/widget/1", map[string]any{"status": "reviewing"}, &out))
 	assert.Equal(1, secondCalls)
 }
+
+func TestDaemonClientMutationDecodeFailureIsAmbiguous(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	committed := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		committed = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"reviewing"`))
+	}))
+	defer ts.Close()
+	cfg := writeFakeDaemonFiles(t, ts, "")
+
+	var out map[string]any
+	err := newDaemonClient(cfg, 5*time.Second).putJSON(
+		t.Context(), "/api/v1/workflow-state/pr/github/acme/widget/1",
+		map[string]any{"status": "reviewing"}, &out,
+	)
+	var daemonErr *daemonError
+	require.ErrorAs(err, &daemonErr)
+	assert.True(committed)
+	assert.Equal("daemon_error", daemonErr.Kind)
+	assert.True(daemonErr.Ambiguous)
+	assert.False(daemonErr.Retryable)
+}

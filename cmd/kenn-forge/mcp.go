@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,8 +33,22 @@ func newMCPCommand(run mcpRunner, stdin io.Reader, stdout io.Writer) *cobra.Comm
 		Short: "Expose cached maintainer workflows to MCP clients",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if opts.DaemonTimeout <= 0 {
+				return fmt.Errorf("--daemon-timeout must be positive")
+			}
 			switch opts.Transport {
-			case "stdio", "http":
+			case "stdio":
+				if cmd.Flags().Changed("addr") {
+					return fmt.Errorf("--addr requires --transport=http")
+				}
+				if cmd.Flags().Changed("http-token-env") {
+					return fmt.Errorf("--http-token-env requires --transport=http")
+				}
+			case "http":
+				_, port, err := net.SplitHostPort(opts.Addr)
+				if !cmd.Flags().Changed("addr") || err != nil || port == "0" {
+					return fmt.Errorf("--addr with an explicit nonzero port is required for --transport=http")
+				}
 			default:
 				return fmt.Errorf("unsupported transport %q: use stdio or http", opts.Transport)
 			}

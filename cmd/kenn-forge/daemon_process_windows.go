@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -12,5 +13,7 @@ func signalDaemonProcess(pid int) error {
 	if err != nil {
 		return fmt.Errorf("find process %d: %w", pid, err)
 	}
-	return process.Kill()
+	killErr := process.Kill()
+	releaseErr := process.Release()
+	return errors.Join(killErr, releaseErr)
 }

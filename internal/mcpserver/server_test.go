@@ -35,8 +35,10 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 		"kenn_forge_get_item_diff",
 		"kenn_forge_get_stack_context",
 		"kenn_forge_list_activity",
+		"kenn_forge_list_agent_targets",
 		"kenn_forge_list_items_by_workflow_state",
 		"kenn_forge_list_repos",
+		"kenn_forge_list_workspace_agent_sessions",
 		"kenn_forge_search_items",
 		"kenn_forge_set_item_workflow_state",
 	}, toolNames)

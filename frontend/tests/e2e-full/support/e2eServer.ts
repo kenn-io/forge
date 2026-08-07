@@ -467,7 +467,7 @@ async function buildE2EServerBinary(rootDir: string): Promise<string> {
 
   try {
     await new Promise<void>((resolve, reject) => {
-      const build = spawn("go", ["build", "-o", binary, "./cmd/e2e-server"], {
+      const build = spawn("go", ["build", "-buildvcs=false", "-o", binary, "./cmd/e2e-server"], {
         cwd: rootDir,
         stdio: "inherit",
         env: process.env,

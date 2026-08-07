@@ -492,7 +492,7 @@ writeFileSync(process.env.FAKE_GO_BUILD_ARGS_FILE, JSON.stringify(args));
     await expect(readFile(binary, "utf8")).resolves.toBe("built e2e server");
     await expect(readFile(embeddedIndex, "utf8")).resolves.toBe("current frontend");
     await expect(readFile(buildArgsFile, "utf8")).resolves.toBe(
-      JSON.stringify(["build", "-o", binary, "./cmd/e2e-server"]),
+      JSON.stringify(["build", "-buildvcs=false", "-o", binary, "./cmd/e2e-server"]),
     );
 
     process.env.PLAYWRIGHT_E2E_SERVER_BINARY_OWNER_PID = String(process.pid + 1);

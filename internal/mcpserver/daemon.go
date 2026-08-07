@@ -230,10 +230,23 @@ func (c *daemonClient) do(
 		if out == nil {
 			return nil
 		}
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		decoder := json.NewDecoder(resp.Body)
+		if err := decoder.Decode(out); err != nil {
 			responseErr := &daemonError{
 				Kind:    "daemon_error",
 				Message: "decode response: " + err.Error(),
+			}
+			if method != http.MethodGet {
+				responseErr.Ambiguous = true
+				responseErr.Retryable = false
+			}
+			return responseErr
+		}
+		var trailing any
+		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+			responseErr := &daemonError{
+				Kind:    "daemon_error",
+				Message: "decode response: trailing data",
 			}
 			if method != http.MethodGet {
 				responseErr.Ambiguous = true

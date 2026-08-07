@@ -140,6 +140,26 @@ func TestMCPCommandRejectsFlagsThatCannotAffectExecution(t *testing.T) {
 			args: []string{"--transport", "http", "--addr", "127.0.0.1:0"},
 			want: "--addr with an explicit nonzero port is required",
 		},
+		{
+			name: "http equivalent zero address",
+			args: []string{"--transport", "http", "--addr", "127.0.0.1:00"},
+			want: "--addr with an explicit nonzero port is required",
+		},
+		{
+			name: "http negative address",
+			args: []string{"--transport", "http", "--addr", "127.0.0.1:-1"},
+			want: "--addr with an explicit nonzero port is required",
+		},
+		{
+			name: "http oversized address",
+			args: []string{"--transport", "http", "--addr", "127.0.0.1:65536"},
+			want: "--addr with an explicit nonzero port is required",
+		},
+		{
+			name: "http nonnumeric address",
+			args: []string{"--transport", "http", "--addr", "127.0.0.1:http"},
+			want: "--addr with an explicit nonzero port is required",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

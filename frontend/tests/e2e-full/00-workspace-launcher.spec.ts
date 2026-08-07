@@ -13,6 +13,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import {
+  devices,
   expect,
   request as playwrightRequest,
   test,
@@ -146,6 +147,54 @@ test.describe("embedded workspace launcher", () => {
       await api?.dispose();
       await isolatedServer?.stop();
     }
+  });
+
+  test.describe("touch terminal input", () => {
+    const iPhone13 = devices["iPhone 13"];
+    test.use({
+      viewport: iPhone13.viewport,
+      deviceScaleFactor: iPhone13.deviceScaleFactor,
+      userAgent: iPhone13.userAgent,
+      hasTouch: iPhone13.hasTouch,
+    });
+
+    test("focuses a workspace session when its terminal surface is tapped", async ({ page }) => {
+      test.skip(
+        !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+        "git and tmux are required for the real workspace flow",
+      );
+
+      let isolatedServer: IsolatedE2EServer | null = null;
+      let api: APIRequestContext | null = null;
+      try {
+        isolatedServer = await startIsolatedWorkspaceE2EServer();
+        api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+        const workspace = await createIssueWorkspace(api, 10);
+
+        await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+        await page.getByRole("region", { name: "Worktree Home" }).getByRole("button", { name: "Shell" }).click();
+
+        const terminal = page.locator(".workspace-tab-slot .terminal-container");
+        await expect(terminal).toBeVisible();
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await expect
+          .poll(() => page.evaluate(() => document.activeElement?.classList.contains("xterm-helper-textarea")))
+          .toBe(false);
+
+        await terminal.tap({ position: { x: 10, y: 10 } });
+
+        await expect
+          .poll(() => page.evaluate(() => document.activeElement?.classList.contains("xterm-helper-textarea")))
+          .toBe(true);
+        const markerPath = path.join(workspace.worktree_path, "touch-input-marker");
+        await page.keyboard.type(`touch '${markerPath}'`);
+        await page.keyboard.press("Enter");
+        await expect.poll(() => existsSync(markerPath), { timeout: 15_000 }).toBe(true);
+      } finally {
+        await api?.dispose();
+        await isolatedServer?.stop();
+      }
+    });
   });
 
   test("the palette opens the launcher over a pane the user had put away", async ({ page }) => {

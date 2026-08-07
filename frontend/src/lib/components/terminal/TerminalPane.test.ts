@@ -847,6 +847,27 @@ describe("TerminalPane", () => {
     expect(xtermInstances[0]!.focus).not.toHaveBeenCalled();
   });
 
+  it("focuses the terminal input when its active surface is touched", async () => {
+    render(TerminalPane, {
+      props: { workspaceId: "ws-123", active: true, autoFocus: false },
+    });
+
+    await waitFor(() => expect(xtermInstances.length).toBe(1));
+    const terminal = xtermInstances[0]!;
+    const container = document.querySelector<HTMLElement>(".terminal-container");
+    expect(container).not.toBeNull();
+
+    container!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerType: "touch",
+      }),
+    );
+
+    expect(terminal.focus).toHaveBeenCalledOnce();
+  });
+
   it("repaints after container resize without rebuilding the WebGL atlas", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 

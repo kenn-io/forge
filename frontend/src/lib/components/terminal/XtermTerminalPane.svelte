@@ -193,7 +193,14 @@
   };
 
   function handleTerminalPointerDown(event: PointerEvent): void {
-    if (disposed || disabled || event.button !== 0 || !event.isTrusted) return;
+    if (disposed || disabled || event.button !== 0) return;
+    // xterm focuses its hidden textarea from mousedown, but its touch gesture
+    // path only handles scrolling. Focus synchronously while the touch/pen
+    // activation is live so mobile browsers can open their software keyboard.
+    if (active && (event.pointerType === "touch" || event.pointerType === "pen")) {
+      terminal?.focus();
+    }
+    if (!event.isTrusted) return;
     if (activePointerId !== null) {
       cancelTerminalPointerGesture();
     }

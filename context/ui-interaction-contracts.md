@@ -279,6 +279,9 @@ Keyboard handlers must have one clear owner for each key press.
   `shouldReclaimFocus`)
   (`frontend/src/lib/components/terminal/terminal-focus.ts`,
   `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::start`).
+- Active terminals must synchronously focus xterm on primary touch or pen
+  pointerdown; xterm's built-in focus path is mouse-only, so a delayed handoff
+  leaves the software keyboard closed (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalPointerDown`).
 - A maximized inline workspace reuses the live hosted shell and fills the pane
   edge-to-edge; never add outer chrome or mutate the shell's workflow/terminal
   layout state (`frontend/src/lib/components/terminal/WorkspaceHost.browser.svelte.ts`).

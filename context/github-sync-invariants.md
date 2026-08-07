@@ -70,8 +70,9 @@ For pull requests, that means:
 
 - Detail freshness must cover comments, reviews, review threads, commits, and
   stored PR system timeline events together.
-- `last_activity_at` and similar derived fields must follow the freshest
-  persisted activity, not just one subset of the detail payload.
+- `last_activity_at` must include provider creation and update times for inline
+  review replies; never replace missing provider timestamps with the local clock.
+  (`internal/github/sync.go::latestReviewThreadActivity`)
 - Background sync cooldowns are allowed, but user-initiated refreshes must still
   be able to promote a stronger sync intent over an in-flight background fetch.
 - The hot set is the last 10 unique open PR details viewed and persists across

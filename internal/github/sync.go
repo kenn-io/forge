@@ -8742,6 +8742,23 @@ func (s *Syncer) syncOpenMRFromBulk(
 		} else if nonCommentLatest.After(fields.LastActivityAt) {
 			fields.LastActivityAt = nonCommentLatest
 		}
+		if !bulk.ReviewThreadsComplete && existing != nil {
+			storedThreads, threadErr := s.db.ListMRReviewThreads(ctx, mrID)
+			if threadErr != nil {
+				slog.Warn("stored review-thread activity lookup failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", number, "err", threadErr,
+				)
+			} else if len(storedThreads) > 0 &&
+				existing.LastActivityAt.After(fields.LastActivityAt) {
+				fields.LastActivityAt = existing.LastActivityAt
+			}
+		}
+		if bulk.ReviewThreadsComplete {
+			fields.LastActivityAt = latestReviewThreadActivity(
+				fields.LastActivityAt, bulk.ReviewThreads,
+			)
+		}
 		derived = &fields
 	}
 	var inline []db.MREvent
@@ -9445,14 +9462,23 @@ func (s *Syncer) syncProviderMRReviewThreads(
 		return calls, err
 	}
 
-	for i := range threads {
-		if threads[i].CreatedAt.IsZero() {
-			threads[i].CreatedAt = time.Now().UTC()
-		}
+	current, err := s.db.GetMergeRequest(
+		ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, number,
+	)
+	if err != nil {
+		return calls, err
+	}
+	if current == nil || current.ID != mrID || current.SnapshotRevision != expectedRevision {
+		return calls, errParentSnapshotAdvanced
+	}
+	derived := &db.MRDerivedFields{
+		ReviewDecision: current.ReviewDecision,
+		LastActivityAt: latestReviewThreadActivity(current.LastActivityAt, threads),
 	}
 	events, dbThreads := platform.DBReviewThreads(threads)
 	applied, err := s.commitMergeRequestDatasets(
-		ctx, repo, mrID, number, expectedRevision, nil, false, nil, events, dbThreads, true, nil, nil, "",
+		ctx, repo, mrID, number, expectedRevision,
+		nil, false, nil, events, dbThreads, true, nil, derived, "",
 	)
 	if err != nil {
 		return calls, err
@@ -10161,6 +10187,22 @@ func computeLastActivity(
 	for _, event := range timelineEvents {
 		if event.CreatedAt.After(latest) {
 			latest = event.CreatedAt
+		}
+	}
+	return latest
+}
+
+func latestReviewThreadActivity(
+	latest time.Time,
+	threads []platform.MergeRequestReviewThread,
+) time.Time {
+	for i := range threads {
+		thread := &threads[i]
+		if thread.UpdatedAt.After(latest) {
+			latest = thread.UpdatedAt
+		}
+		if thread.CreatedAt.After(latest) {
+			latest = thread.CreatedAt
 		}
 	}
 	return latest

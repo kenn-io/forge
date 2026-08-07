@@ -229,6 +229,25 @@ components:
         - hookEventName
         - additionalContext
       type: object
+    AgentInitialMessageReceiptResponse:
+      additionalProperties: false
+      properties:
+        delivered_at:
+          format: date-time
+          type: string
+        message_bytes:
+          format: int64
+          type: integer
+        reserved_at:
+          format: date-time
+          type: string
+        state:
+          type: string
+      required:
+        - state
+        - message_bytes
+        - reserved_at
+      type: object
     ApplyReviewSuggestionHostInputBody:
       additionalProperties: false
       properties:
@@ -3805,6 +3824,25 @@ components:
             - "null"
       required:
         - repositories
+      type: object
+    ListWorkspaceAgentSessionsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ListWorkspaceAgentSessionsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        sessions:
+          items:
+            $ref: "#/components/schemas/WorkspaceAgentSessionResponse"
+          type:
+            - array
+            - "null"
+      required:
+        - sessions
       type: object
     ListWorkspacesOutputBody:
       additionalProperties: false
@@ -7913,6 +7951,32 @@ components:
           type: string
       required:
         - status
+      type: object
+    WorkspaceAgentSessionResponse:
+      additionalProperties: false
+      properties:
+        agent:
+          type: string
+        initial_message:
+          $ref: "#/components/schemas/AgentInitialMessageReceiptResponse"
+        runtime_session_key:
+          type: string
+        session_id:
+          type: string
+        state:
+          type: string
+        target_key:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - agent
+        - session_id
+        - runtime_session_key
+        - target_key
+        - state
+        - updated_at
       type: object
     WorkspaceDiffWatchResponse:
       additionalProperties: false
@@ -19437,6 +19501,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get workspace
+      tags:
+        - Workspaces
+  /workspaces/{id}/agent-sessions:
+    get:
+      operationId: list-workspace-agent-sessions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListWorkspaceAgentSessionsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List live coding sessions
       tags:
         - Workspaces
   /workspaces/{id}/commits:

@@ -30,6 +30,9 @@ Rules:
 - The shell drawer is a singleton per workspace, but a tmux-backed shell should
   survive kenn-forge server restarts until the shell exits or the workspace is
   deleted.
+- Coding-agent session IDs are hook-authoritative and live-only: expose only fresh,
+  supported reports joined by canonical worktree and runtime key to a live `agent`
+  runtime (`internal/server/workspaceapi/agent_sessions.go::Handler.listWorkspaceAgentSessions`).
 
 ## Natural Exit Rules
 

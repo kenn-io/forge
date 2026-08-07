@@ -1368,6 +1368,14 @@ type AgentHookSpecificOutput struct {
 	HookEventName     string `json:"hookEventName"`
 }
 
+// AgentInitialMessageReceiptResponse defines model for AgentInitialMessageReceiptResponse.
+type AgentInitialMessageReceiptResponse struct {
+	DeliveredAt  *time.Time `json:"delivered_at,omitempty"`
+	MessageBytes int64      `json:"message_bytes"`
+	ReservedAt   time.Time  `json:"reserved_at"`
+	State        string     `json:"state"`
+}
+
 // ApplyReviewSuggestionHostInputBody defines model for ApplyReviewSuggestionHostInputBody.
 type ApplyReviewSuggestionHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -2862,6 +2870,13 @@ type ListUserRepositoriesOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema       *string           `json:"$schema,omitempty"`
 	Repositories *[]UserRepository `json:"repositories"`
+}
+
+// ListWorkspaceAgentSessionsOutputBody defines model for ListWorkspaceAgentSessionsOutputBody.
+type ListWorkspaceAgentSessionsOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string                          `json:"$schema,omitempty"`
+	Sessions *[]WorkspaceAgentSessionResponse `json:"sessions"`
 }
 
 // ListWorkspacesOutputBody defines model for ListWorkspacesOutputBody.
@@ -4497,6 +4512,17 @@ type WorkflowStatePointResponse struct {
 
 // WorkflowStatePointResponseStatus defines model for WorkflowStatePointResponse.Status.
 type WorkflowStatePointResponseStatus string
+
+// WorkspaceAgentSessionResponse defines model for WorkspaceAgentSessionResponse.
+type WorkspaceAgentSessionResponse struct {
+	Agent             string                              `json:"agent"`
+	InitialMessage    *AgentInitialMessageReceiptResponse `json:"initial_message,omitempty"`
+	RuntimeSessionKey string                              `json:"runtime_session_key"`
+	SessionId         string                              `json:"session_id"`
+	State             string                              `json:"state"`
+	TargetKey         string                              `json:"target_key"`
+	UpdatedAt         time.Time                           `json:"updated_at"`
+}
 
 // WorkspaceDiffWatchResponse defines model for WorkspaceDiffWatchResponse.
 type WorkspaceDiffWatchResponse struct {
@@ -7028,6 +7054,9 @@ type ClientInterface interface {
 
 	// GetWorkspace request
 	GetWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWorkspaceAgentSessions request
+	ListWorkspaceAgentSessions(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetWorkspaceCommits request
 	GetWorkspaceCommits(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -11670,6 +11699,18 @@ func (c *Client) DeleteWorkspace(ctx context.Context, id string, params *DeleteW
 
 func (c *Client) GetWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspaceRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListWorkspaceAgentSessions(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkspaceAgentSessionsRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -29132,6 +29173,40 @@ func NewGetWorkspaceRequest(server string, id string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListWorkspaceAgentSessionsRequest generates requests for ListWorkspaceAgentSessions
+func NewListWorkspaceAgentSessionsRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/agent-sessions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetWorkspaceCommitsRequest generates requests for GetWorkspaceCommits
 func NewGetWorkspaceCommitsRequest(server string, id string) (*http.Request, error) {
 	var err error
@@ -31120,6 +31195,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspaceWithResponse request
 	GetWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceResponse, error)
+
+	// ListWorkspaceAgentSessionsWithResponse request
+	ListWorkspaceAgentSessionsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*ListWorkspaceAgentSessionsResponse, error)
 
 	// GetWorkspaceCommitsWithResponse request
 	GetWorkspaceCommitsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceCommitsResponse, error)
@@ -37461,6 +37539,29 @@ func (r GetWorkspaceResponse) StatusCode() int {
 	return 0
 }
 
+type ListWorkspaceAgentSessionsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListWorkspaceAgentSessionsOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWorkspaceAgentSessionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWorkspaceAgentSessionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetWorkspaceCommitsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -41148,6 +41249,15 @@ func (c *ClientWithResponses) GetWorkspaceWithResponse(ctx context.Context, id s
 		return nil, err
 	}
 	return ParseGetWorkspaceResponse(rsp)
+}
+
+// ListWorkspaceAgentSessionsWithResponse request returning *ListWorkspaceAgentSessionsResponse
+func (c *ClientWithResponses) ListWorkspaceAgentSessionsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*ListWorkspaceAgentSessionsResponse, error) {
+	rsp, err := c.ListWorkspaceAgentSessions(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorkspaceAgentSessionsResponse(rsp)
 }
 
 // GetWorkspaceCommitsWithResponse request returning *GetWorkspaceCommitsResponse
@@ -50096,6 +50206,39 @@ func ParseGetWorkspaceResponse(rsp *http.Response) (*GetWorkspaceResponse, error
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest WorkspaceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWorkspaceAgentSessionsResponse parses an HTTP response from a ListWorkspaceAgentSessionsWithResponse call
+func ParseListWorkspaceAgentSessionsResponse(rsp *http.Response) (*ListWorkspaceAgentSessionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorkspaceAgentSessionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListWorkspaceAgentSessionsOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

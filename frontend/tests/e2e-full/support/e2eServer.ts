@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -55,6 +56,7 @@ const defaultPlatformHost = "github.com";
 const tmuxDirPrefix = "kf-e2e-tmux-";
 const tmuxBaseDir = process.platform === "win32" ? os.tmpdir() : "/tmp";
 const tmuxOwnerFile = "owner.json";
+const serverOwnerFilePrefix = "server-owner-";
 const gracefulStopTimeoutMs = 15_000;
 
 type ManagedChildLike = {
@@ -78,6 +80,7 @@ let serverBinaryPromise: Promise<string> | null = null;
 let generatedServerBinaryDir: string | null = null;
 const standaloneServers = new Set<OwnedServerProcess>();
 const startingServers = new Set<ChildProcess>();
+const serverOwnerFiles = new WeakMap<ChildProcess, string>();
 
 type E2ETmuxOwner = {
   pid: number;
@@ -240,6 +243,70 @@ async function ensureE2ETmuxDir(): Promise<string> {
   process.env[tmuxDirEnvVar] = dir;
   ownedTmuxDir = dir;
   return dir;
+}
+
+async function registerSharedServerOwner(dir: string, child: ChildProcess): Promise<void> {
+  if (!child.pid) {
+    throw new Error("e2e server process has no pid");
+  }
+  const ownerFile = path.join(dir, `${serverOwnerFilePrefix}${randomUUID()}.json`);
+  await writeFile(ownerFile, JSON.stringify({ pid: child.pid }) + "\n", { flag: "wx", mode: 0o600 });
+  serverOwnerFiles.set(child, ownerFile);
+}
+
+async function removeSharedServerOwner(child: ChildProcess): Promise<void> {
+  const ownerFile = serverOwnerFiles.get(child);
+  if (!ownerFile) {
+    return;
+  }
+  await rm(ownerFile, { force: true });
+  serverOwnerFiles.delete(child);
+}
+
+async function waitForSharedServerOwners(dir: string, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      return error instanceof Error && "code" in error && error.code === "ENOENT";
+    }
+
+    let liveOwner = false;
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.startsWith(serverOwnerFilePrefix) || !entry.name.endsWith(".json")) {
+        continue;
+      }
+      const ownerFile = path.join(dir, entry.name);
+      if (!(await isCurrentUserOwnedPath(ownerFile, (stats) => stats.isFile()))) {
+        return false;
+      }
+      let owner: E2ETmuxOwner;
+      try {
+        const parsed: unknown = JSON.parse(await readFile(ownerFile, "utf8"));
+        if (typeof parsed !== "object" || parsed === null || !("pid" in parsed) || typeof parsed.pid !== "number") {
+          return false;
+        }
+        owner = { pid: parsed.pid };
+      } catch {
+        return false;
+      }
+      if (isLiveProcess(owner.pid)) {
+        liveOwner = true;
+      } else {
+        await rm(ownerFile, { force: true });
+      }
+    }
+
+    if (!liveOwner) {
+      return true;
+    }
+    if (Date.now() >= deadline) {
+      return false;
+    }
+    await delay(25);
+  }
 }
 
 async function fileMtimeMs(filePath: string): Promise<number | null> {
@@ -599,7 +666,7 @@ async function spawnServer(
   if (signalCleanupStarted) {
     throw new Error("e2e server shutdown started before spawn");
   }
-  await ensureE2ETmuxDir();
+  const tmuxDir = await ensureE2ETmuxDir();
   if (signalCleanupStarted) {
     throw new Error("e2e server shutdown started before spawn");
   }
@@ -633,6 +700,7 @@ async function spawnServer(
   startingServers.add(child);
 
   try {
+    await registerSharedServerOwner(tmuxDir, child);
     const info = await waitForServerInfo(infoFile, child);
     if (signalCleanupStarted) {
       await terminateServerProcess(child, info.pid);
@@ -641,7 +709,7 @@ async function spawnServer(
     return { child, info };
   } catch (error) {
     if (await terminateServerProcess(child, undefined)) {
-      startingServers.delete(child);
+      await releaseOwnedChild(child);
     }
     throw error;
   }
@@ -754,7 +822,8 @@ async function cleanupOwnedTmuxDirIfIdle(): Promise<void> {
   }
 }
 
-function releaseOwnedChild(child: ChildProcess): void {
+async function releaseOwnedChild(child: ChildProcess): Promise<void> {
+  await removeSharedServerOwner(child);
   startingServers.delete(child);
   if (managedChild === child) {
     managedChild = null;
@@ -803,10 +872,11 @@ async function shutdownOwnedServersOnce(): Promise<void> {
   );
   for (const result of stopped) {
     if (result.exited) {
-      releaseOwnedChild(result.child);
+      await releaseOwnedChild(result.child);
     }
   }
-  if (tmuxDir && noOwnedServersRemain()) {
+  const sharedServersExited = tmuxDir ? await waitForSharedServerOwners(tmuxDir, gracefulStopTimeoutMs) : true;
+  if (tmuxDir && noOwnedServersRemain() && sharedServersExited) {
     const removed = await cleanupE2ETmuxDir(tmuxDir);
     if (removed && ownedTmuxDir === tmuxDir) {
       ownedTmuxDir = null;
@@ -877,9 +947,14 @@ async function cleanupAfterSignal(exitCode: number): Promise<void> {
     return;
   }
   signalCleanupStarted = true;
-  await shutdownOwnedServers();
-  await cleanupE2ERunnerArtifacts();
-  process.exit(exitCode);
+  try {
+    await shutdownOwnedServers();
+    await cleanupE2ERunnerArtifacts();
+  } catch (error) {
+    console.error("[e2e] signal cleanup failed", error);
+  } finally {
+    process.exit(exitCode);
+  }
 }
 
 async function startManagedServer(): Promise<E2EServerInfo> {
@@ -1121,7 +1196,7 @@ async function dropPooledServer(server: PooledServer): Promise<void> {
   if (!(await terminateServerProcess(server.child, server.info.pid))) {
     throw new Error(`e2e server ${server.info.pid} did not exit after forced termination`);
   }
-  releaseOwnedChild(server.child);
+  await releaseOwnedChild(server.child);
 }
 
 async function spawnPooledServer(options: PooledServerOptions): Promise<PooledServer> {
@@ -1176,7 +1251,7 @@ export async function startIsolatedE2EServerWithOptions(
           if (!(await terminateServerProcess(started.child, started.info.pid))) {
             throw new Error(`e2e server ${started.info.pid} did not exit after forced termination`);
           }
-          standaloneServers.delete(started);
+          await releaseOwnedChild(started.child);
           await removeServerInfo(infoFile);
           await rm(infoDir, { force: true, recursive: true });
           await cleanupOwnedTmuxDirIfIdle();

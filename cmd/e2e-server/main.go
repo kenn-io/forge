@@ -832,6 +832,7 @@ type appState struct {
 	cfgPath      string
 	worktreeDir  string
 	tmuxCommand  []string
+	tmuxGate     *tmuxCreationGate
 	ptyOwner     bool
 	clones       *gitclone.Manager
 	handlerWG    sync.WaitGroup
@@ -923,6 +924,80 @@ func instanceTmuxCommand() []string {
 	return []string{"tmux", "-f", "/dev/null", "-L", name}
 }
 
+type tmuxCreationGate struct {
+	dir string
+}
+
+func newTmuxCreationGate(root string, tmuxCmd []string) (*tmuxCreationGate, []string, error) {
+	dir := filepath.Join(root, "tmux-gate")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return nil, nil, fmt.Errorf("create e2e tmux gate: %w", err)
+	}
+	script := filepath.Join(dir, "tmux")
+	content := `#!/bin/sh
+gate=$1
+shift
+case " $* " in
+  *" new-session "*) ;;
+  *) exec "$@" ;;
+esac
+if [ -e "$gate/killing" ]; then
+  echo "e2e tmux shutdown has started" >&2
+  exit 75
+fi
+while ! mkdir "$gate/creation.lock" 2>/dev/null; do
+  if [ -e "$gate/killing" ]; then
+    echo "e2e tmux shutdown has started" >&2
+    exit 75
+  fi
+  sleep 0.01
+done
+trap 'rmdir "$gate/creation.lock"' EXIT HUP INT TERM
+if [ -e "$gate/killing" ]; then
+  echo "e2e tmux shutdown has started" >&2
+  exit 75
+fi
+"$@"
+`
+	if err := os.WriteFile(script, []byte(content), 0o700); err != nil {
+		return nil, nil, fmt.Errorf("write e2e tmux gate: %w", err)
+	}
+	command := make([]string, 0, 2+len(tmuxCmd))
+	command = append(command, script, dir)
+	command = append(command, tmuxCmd...)
+	return &tmuxCreationGate{dir: dir}, command, nil
+}
+
+func (g *tmuxCreationGate) stop(kill func()) {
+	if g == nil {
+		kill()
+		return
+	}
+	marker := filepath.Join(g.dir, "killing")
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		slog.Warn("mark e2e tmux killing", "err", err)
+	}
+	lock := filepath.Join(g.dir, "creation.lock")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := os.Mkdir(lock, 0o700)
+		if err == nil {
+			defer os.Remove(lock)
+			break
+		}
+		if !errors.Is(err, os.ErrExist) {
+			slog.Warn("acquire e2e tmux creation gate", "err", err)
+			break
+		}
+		if time.Now().After(deadline) {
+			slog.Warn("wait for e2e tmux creation gate", "err", context.DeadlineExceeded)
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	kill()
+}
+
 // killTmuxServer tears down the per-instance tmux server. It only
 // acts on sockets named by instanceTmuxCommand so a misconfigured
 // command can never kill a developer's real tmux server.
@@ -962,7 +1037,9 @@ func isOwnedE2ETmuxCommand(tmuxCmd []string) bool {
 
 func (st *appState) stopTmux() {
 	st.tmuxStopOnce.Do(func() {
-		killTmuxServer(st.tmuxCommand)
+		st.tmuxGate.stop(func() {
+			killTmuxServer(st.tmuxCommand)
+		})
 	})
 }
 
@@ -1105,6 +1182,10 @@ func buildAppState(
 	if opts.preferPtyOwner {
 		tmuxCommand = []string{filepath.Join(tmpDir, "missing-tmux")}
 	}
+	tmuxGate, guardedTmuxCommand, err := newTmuxCreationGate(tmpDir, tmuxCommand)
+	if err != nil {
+		return nil, err
+	}
 	cfg := &config.Config{
 		SyncInterval:        "5m",
 		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
@@ -1121,7 +1202,7 @@ func buildAppState(
 		// (parallel Playwright workers, multiple worktrees) never
 		// contend on one tmux server. This is what lets workspace
 		// tests run unserialized.
-		Tmux: config.Tmux{Command: tmuxCommand},
+		Tmux: config.Tmux{Command: guardedTmuxCommand},
 	}
 	cfg.Fleet.Key = strings.TrimSpace(opts.fleetKey)
 	if opts.visibleImportedModes {
@@ -2405,7 +2486,8 @@ func buildAppState(
 		handler:     rootHandler,
 		cfgPath:     cfgPath,
 		worktreeDir: e2eWorktreeDir,
-		tmuxCommand: cfg.TmuxCommand(),
+		tmuxCommand: tmuxCommand,
+		tmuxGate:    tmuxGate,
 		ptyOwner:    opts.preferPtyOwner,
 		clones:      diffRepo.Manager,
 	}, nil

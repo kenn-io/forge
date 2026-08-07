@@ -197,6 +197,10 @@ sources. The Playwright runner must prepare those assets and build one run-owned
 `cmd/e2e-server`; workers inherit its direct path so signal cleanup targets the
 server instead of a `go run` wrapper. An explicit binary remains externally owned
 and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2EServerBinary`).
+- Full-stack Playwright workers must publish child ownership in the shared tmux root;
+  the root removes it only after every published child exits (`frontend/tests/e2e-full/support/e2eServer.ts::waitForSharedServerOwners`).
+- Once e2e-server tmux shutdown starts, no new session may be admitted; cleanup waits
+  for an admitted creation before killing the private server (`cmd/e2e-server/main.go::tmuxCreationGate`).
 
 Mounting `KataWorkspace.svelte` in Vitest always fetches the daemon roster and
 opens the live SSE event stream; mock both fetch routes (see

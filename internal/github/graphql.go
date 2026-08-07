@@ -13,6 +13,7 @@ import (
 
 	gh "github.com/google/go-github/v89/github"
 	"github.com/shurcooL/githubv4"
+	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -76,6 +77,10 @@ type gqlPR struct {
 		Nodes    []gqlComment
 		PageInfo pageInfo
 	} `graphql:"comments(first: 100)"`
+	ReviewThreads struct {
+		Nodes    []gqlReviewThread
+		PageInfo pageInfo
+	} `graphql:"reviewThreads(first: 100)"`
 	Reviews struct {
 		Nodes    []gqlReview
 		PageInfo pageInfo
@@ -158,6 +163,49 @@ type gqlCommentVisibilityNode struct {
 	FullDatabaseId  graphQLInt64
 	IsMinimized     bool
 	MinimizedReason *githubv4.ReportedContentClassifiers
+}
+
+type gqlReviewThread struct {
+	ID                githubv4.ID `graphql:"id"`
+	IsResolved        bool
+	IsOutdated        bool
+	Path              string
+	Line              int
+	OriginalLine      int
+	StartLine         *int
+	OriginalStartLine *int
+	DiffSide          string
+	Comments          struct {
+		Nodes    []gqlReviewThreadComment
+		PageInfo pageInfo
+	} `graphql:"comments(first: 100)"`
+}
+
+type gqlReviewThreadComment struct {
+	ID             githubv4.ID `graphql:"id"`
+	DatabaseId     int64
+	FullDatabaseId graphQLInt64
+	Body           string
+	Path           string
+	Line           int
+	OriginalLine   int
+	SubjectType    string
+	DiffHunk       string
+	URL            string `graphql:"url"`
+	Author         struct{ Login string }
+	Commit         *struct {
+		OID string `graphql:"oid"`
+	}
+	OriginalCommit *struct {
+		OID string `graphql:"oid"`
+	}
+	PullRequestReview *struct {
+		DatabaseId int64
+	}
+	IsMinimized     bool
+	MinimizedReason *githubv4.ReportedContentClassifiers
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type gqlReview struct {
@@ -324,6 +372,17 @@ type gqlIssueQuery struct {
 }
 
 type gqlPRCommentPageQuery struct {
+	Repository struct {
+		PullRequest *struct {
+			Comments struct {
+				Nodes    []gqlComment
+				PageInfo pageInfo
+			} `graphql:"comments(first: 100, after: $cursor)"`
+		} `graphql:"pullRequest(number: $number)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+type gqlPRCommentVisibilityPageQuery struct {
 	Repository struct {
 		PullRequest *struct {
 			Comments struct {
@@ -698,19 +757,21 @@ type BulkPR struct {
 	// or empty when the repository enforces no decision). It is computed by the
 	// provider over the PR's full review history, so it does not depend on the
 	// Reviews connection being complete.
-	ReviewDecision    string
-	Comments          []*gh.IssueComment
-	CommentVisibility map[int64]CommentVisibility
-	Reviews           []*gh.PullRequestReview
-	Commits           []*gh.RepositoryCommit
-	TimelineEvents    []PullRequestTimelineEvent
-	CheckRuns         []*gh.CheckRun
-	Statuses          []*gh.RepoStatus
-	CommentsComplete  bool
-	ReviewsComplete   bool
-	CommitsComplete   bool
-	TimelineComplete  bool
-	CIComplete        bool
+	ReviewDecision        string
+	Comments              []*gh.IssueComment
+	CommentVisibility     map[int64]CommentVisibility
+	Reviews               []*gh.PullRequestReview
+	ReviewThreads         []platform.MergeRequestReviewThread
+	Commits               []*gh.RepositoryCommit
+	TimelineEvents        []PullRequestTimelineEvent
+	CheckRuns             []*gh.CheckRun
+	Statuses              []*gh.RepoStatus
+	CommentsComplete      bool
+	ReviewsComplete       bool
+	ReviewThreadsComplete bool
+	CommitsComplete       bool
+	TimelineComplete      bool
+	CIComplete            bool
 }
 
 // CommentVisibility carries GitHub GraphQL-only moderation state alongside
@@ -722,6 +783,70 @@ type CommentVisibility struct {
 
 func gqlCommentVisibility(comment *gqlComment) CommentVisibility {
 	return commentVisibility(comment.IsMinimized, comment.MinimizedReason)
+}
+
+func gqlReviewThreadsComplete(threads []gqlReviewThread, hasNextPage bool) bool {
+	if hasNextPage {
+		return false
+	}
+	for i := range threads {
+		if threads[i].Comments.PageInfo.HasNextPage {
+			return false
+		}
+	}
+	return true
+}
+
+func platformReviewThreadsFromGQL(threads []gqlReviewThread) []platform.MergeRequestReviewThread {
+	var out []platform.MergeRequestReviewThread
+	for i := range threads {
+		thread := &threads[i]
+		normalizedThread := PullRequestReviewThread{
+			NodeID:            fmt.Sprint(thread.ID),
+			IsResolved:        thread.IsResolved,
+			IsOutdated:        thread.IsOutdated,
+			Path:              thread.Path,
+			Side:              thread.DiffSide,
+			StartLine:         thread.StartLine,
+			OriginalStartLine: thread.OriginalStartLine,
+			Line:              thread.Line,
+			OriginalLine:      thread.OriginalLine,
+		}
+		for j := range thread.Comments.Nodes {
+			comment := &thread.Comments.Nodes[j]
+			reason := ""
+			if comment.MinimizedReason != nil {
+				reason = string(*comment.MinimizedReason)
+			}
+			normalizedComment := PullRequestReviewThreadComment{
+				NodeID:          fmt.Sprint(comment.ID),
+				DatabaseID:      firstPositiveInt64(int64(comment.FullDatabaseId), comment.DatabaseId),
+				SubjectType:     comment.SubjectType,
+				Body:            comment.Body,
+				AuthorLogin:     comment.Author.Login,
+				Path:            comment.Path,
+				Line:            comment.Line,
+				OriginalLine:    comment.OriginalLine,
+				DiffHunk:        comment.DiffHunk,
+				URL:             comment.URL,
+				IsMinimized:     comment.IsMinimized,
+				MinimizedReason: reason,
+				CreatedAt:       comment.CreatedAt,
+				UpdatedAt:       comment.UpdatedAt,
+			}
+			if comment.Commit != nil {
+				normalizedComment.CommitID = comment.Commit.OID
+			}
+			if comment.OriginalCommit != nil {
+				normalizedComment.OriginalCommitID = comment.OriginalCommit.OID
+			}
+			if comment.PullRequestReview != nil {
+				normalizedComment.ReviewDatabaseID = comment.PullRequestReview.DatabaseId
+			}
+			out = append(out, githubReviewThreadComment(normalizedThread, normalizedComment))
+		}
+	}
+	return out
 }
 
 func commentVisibility(
@@ -1019,7 +1144,7 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		result.PullRequests = make([]BulkPR, 0, len(gqlPRs))
 		for i := range gqlPRs {
 			bulk := convertGQLPRWithNativeStacks(&gqlPRs[i])
-			if err := g.completePRCommentVisibility(ctx, owner, name, &gqlPRs[i].gqlPR, &bulk); err != nil {
+			if err := g.completePRComments(ctx, owner, name, &gqlPRs[i].gqlPR, &bulk); err != nil {
 				return nil, err
 			}
 			result.PullRequests = append(result.PullRequests, bulk)
@@ -1034,7 +1159,7 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		result.PullRequests = make([]BulkPR, 0, len(gqlPRs))
 		for i := range gqlPRs {
 			bulk := convertGQLPR(&gqlPRs[i])
-			if err := g.completePRCommentVisibility(ctx, owner, name, &gqlPRs[i], &bulk); err != nil {
+			if err := g.completePRComments(ctx, owner, name, &gqlPRs[i], &bulk); err != nil {
 				return nil, err
 			}
 			result.PullRequests = append(result.PullRequests, bulk)
@@ -1132,7 +1257,7 @@ func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 	return result, nil
 }
 
-func (g *GraphQLFetcher) completePRCommentVisibility(
+func (g *GraphQLFetcher) completePRComments(
 	ctx context.Context,
 	owner, name string,
 	pr *gqlPR,
@@ -1142,11 +1267,34 @@ func (g *GraphQLFetcher) completePRCommentVisibility(
 		return nil
 	}
 	startAfter := nonEmptyCursor(pr.Comments.PageInfo.EndCursor)
-	visibility, err := g.fetchPRCommentVisibility(ctx, owner, name, pr.Number, startAfter)
+	comments, err := fetchAllPages(ctx, func(
+		ctx context.Context, cursor *string,
+	) ([]gqlComment, pageInfo, error) {
+		var q gqlPRCommentPageQuery
+		err := g.client.Query(ctx, &q, map[string]any{
+			"owner": githubv4.String(owner), "name": githubv4.String(name),
+			"number": githubv4.Int(pr.Number), "cursor": commentVisibilityCursor(startAfter, cursor),
+		})
+		if err != nil {
+			return nil, pageInfo{}, err
+		}
+		if q.Repository.PullRequest == nil {
+			return nil, pageInfo{}, fmt.Errorf("fetch comments for pull request #%d: missing pull request", pr.Number)
+		}
+		return q.Repository.PullRequest.Comments.Nodes,
+			q.Repository.PullRequest.Comments.PageInfo, nil
+	})
 	if err != nil {
 		return fmt.Errorf("paginate comments for pull request #%d: %w", pr.Number, err)
 	}
-	mergeCommentVisibilityMap(bulk.CommentVisibility, visibility)
+	for i := range comments {
+		comment := &comments[i]
+		bulk.Comments = append(bulk.Comments, adaptComment(comment))
+		bulk.CommentVisibility[firstPositiveInt64(
+			int64(comment.FullDatabaseId), comment.DatabaseId,
+		)] = gqlCommentVisibility(comment)
+	}
+	bulk.CommentsComplete = true
 	return nil
 }
 
@@ -1171,7 +1319,7 @@ func (g *GraphQLFetcher) fetchPRCommentVisibility(
 	comments, err := fetchAllPages(ctx, func(
 		ctx context.Context, cursor *string,
 	) ([]gqlCommentVisibilityNode, pageInfo, error) {
-		var q gqlPRCommentPageQuery
+		var q gqlPRCommentVisibilityPageQuery
 		err := g.client.Query(ctx, &q, map[string]any{
 			"owner": githubv4.String(owner), "name": githubv4.String(name),
 			"number": githubv4.Int(number), "cursor": commentVisibilityCursor(startAfter, cursor),
@@ -1301,8 +1449,11 @@ func convertGQLPR(gql *gqlPR) BulkPR {
 		CommentVisibility: make(map[int64]CommentVisibility),
 		CommentsComplete:  !gql.Comments.PageInfo.HasNextPage,
 		ReviewsComplete:   !gql.Reviews.PageInfo.HasNextPage,
-		CommitsComplete:   !gql.AllCommits.PageInfo.HasNextPage,
-		TimelineComplete:  !gql.TimelineItems.PageInfo.HasNextPage,
+		ReviewThreadsComplete: gqlReviewThreadsComplete(
+			gql.ReviewThreads.Nodes, gql.ReviewThreads.PageInfo.HasNextPage,
+		),
+		CommitsComplete:  !gql.AllCommits.PageInfo.HasNextPage,
+		TimelineComplete: !gql.TimelineItems.PageInfo.HasNextPage,
 	}
 
 	for i := range gql.Comments.Nodes {
@@ -1315,6 +1466,7 @@ func convertGQLPR(gql *gqlPR) BulkPR {
 	for i := range gql.Reviews.Nodes {
 		bulk.Reviews = append(bulk.Reviews, adaptReview(&gql.Reviews.Nodes[i]))
 	}
+	bulk.ReviewThreads = platformReviewThreadsFromGQL(gql.ReviewThreads.Nodes)
 	for i := range gql.AllCommits.Nodes {
 		bulk.Commits = append(bulk.Commits, adaptCommit(&gql.AllCommits.Nodes[i]))
 	}

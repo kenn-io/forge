@@ -150,6 +150,42 @@ func TestConvertGQLCommentsRecordsObservedVisibleComments(t *testing.T) {
 	}
 }
 
+func TestConvertGQLPRIncludesReviewThreads(t *testing.T) {
+	reason := githubv4.ReportedContentClassifiersAbuse
+	line := 12
+	input := gqlPR{}
+	threadInput := gqlReviewThread{
+		ID:         githubv4.ID("PRRT_1"),
+		Path:       "src/main.go",
+		Line:       line,
+		DiffSide:   "RIGHT",
+		IsResolved: false,
+		IsOutdated: false,
+	}
+	threadInput.Comments.Nodes = []gqlReviewThreadComment{{
+		ID:              githubv4.ID("PRRC_1"),
+		DatabaseId:      101,
+		FullDatabaseId:  3714845345,
+		Body:            "hidden inline comment",
+		Path:            "src/main.go",
+		Line:            line,
+		SubjectType:     "LINE",
+		IsMinimized:     true,
+		MinimizedReason: &reason,
+	}}
+	input.ReviewThreads.Nodes = []gqlReviewThread{threadInput}
+
+	bulk := convertGQLPR(&input)
+
+	require.True(t, bulk.ReviewThreadsComplete)
+	require.Len(t, bulk.ReviewThreads, 1)
+	thread := bulk.ReviewThreads[0]
+	assert.Equal(t, "PRRT_1", thread.ProviderThreadID)
+	assert.Equal(t, "3714845345", thread.ProviderCommentID)
+	assert.Equal(t, "hidden inline comment", thread.Body)
+	assert.JSONEq(t, `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, thread.MetadataJSON)
+}
+
 func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -163,7 +199,7 @@ func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 				pr := gqlPR{Number: 7}
 				pr.Comments.PageInfo = pageInfo{HasNextPage: true, EndCursor: "comment-100"}
 				bulk := convertGQLPR(&pr)
-				require.NoError(t, fetcher.completePRCommentVisibility(
+				require.NoError(t, fetcher.completePRComments(
 					t.Context(), "owner", "repo", &pr, &bulk,
 				))
 				return bulk.CommentVisibility

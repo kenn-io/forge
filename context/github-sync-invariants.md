@@ -52,9 +52,13 @@ what "current" means.
   one item.
 - If a PR or issue is marked as detail-fetched, the persisted fields that power
   the user-visible detail view must match that claim.
-- A partial GraphQL comment page is observation-only: merge its visible and
-  minimized states over stored moderation metadata before REST completion so
-  unseen comments retain their last known state. (`internal/github/sync.go::refreshIssueTimeline`)
+- A partial GraphQL issue-comment page is observation-only: merge its visible
+  and minimized states over stored moderation metadata before REST completion.
+  (`internal/github/sync.go::refreshIssueTimeline`)
+- PR conversation comments and review threads share one bulk GraphQL freshness
+  boundary. Fetch their first pages together, paginate comment content and moderation
+  through GraphQL, and keep detail stale while either family is incomplete.
+  (`internal/github/graphql.go::gqlPR`, `internal/github/sync.go::syncOpenMRFromBulk`)
 - A parent `304 Not Modified` is not a moderation freshness signal. When GraphQL
   admission permits, re-observe conversation and review-thread visibility under
   the parent revision guard (`internal/github/sync.go::markUnchangedMRDetailFetched`).
@@ -64,8 +68,8 @@ what "current" means.
 
 For pull requests, that means:
 
-- Detail freshness must cover comments, reviews, commits, and stored PR system
-  timeline events together.
+- Detail freshness must cover comments, reviews, review threads, commits, and
+  stored PR system timeline events together.
 - `last_activity_at` and similar derived fields must follow the freshest
   persisted activity, not just one subset of the detail payload.
 - Background sync cooldowns are allowed, but user-initiated refreshes must still

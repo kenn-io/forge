@@ -1002,6 +1002,30 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(socket.sent.map((_, index) => sentText(socket, index))).toContain("\x1b[A"));
   });
 
+  it("leaves Ctrl-wheel gestures with the browser", async () => {
+    const { container } = render(TerminalPane, {
+      props: { workspaceId: "ws-123", cursorWheelInput: true },
+    });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    const socket = mockSockets[0]!;
+    socket.sent = [];
+    const terminalContainer = container.querySelector(".terminal-container");
+    expect(terminalContainer).not.toBeNull();
+
+    const defaultAllowed = terminalContainer!.dispatchEvent(
+      new WheelEvent("wheel", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        deltaY: -120,
+      }),
+    );
+
+    expect(defaultAllowed).toBe(true);
+    expect(socket.sent).toHaveLength(0);
+  });
+
   it("does not replay input received while disconnected", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 

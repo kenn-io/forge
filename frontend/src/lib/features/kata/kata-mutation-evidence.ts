@@ -308,8 +308,8 @@ export function recurrencePatchMatches(recurrence: KataRecurrence, input: KataPa
     (input.timezone === undefined || recurrence.timezone === input.timezone) &&
     (template?.title === undefined || recurrence.template_title === template.title) &&
     (template?.body === undefined || recurrence.template_body === template.body) &&
-    (template?.owner === undefined || recurrence.template_owner === template.owner) &&
-    (template?.priority === undefined || recurrence.template_priority === template.priority) &&
+    (template?.owner === undefined || recurrence.template_owner === (template.owner ?? undefined)) &&
+    (template?.priority === undefined || recurrence.template_priority === (template.priority ?? undefined)) &&
     (template?.labels === undefined || stringArrayEqual(recurrence.template_labels, template.labels)) &&
     (template?.metadata === undefined || metadataMatches(recurrence.template_metadata, template.metadata))
   );

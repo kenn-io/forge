@@ -350,6 +350,58 @@ describe("WorkspaceRuntimeWorkflow", () => {
     ),
   );
 
+  it.effect("transfers an uncertain delete when its retained presenter leaves", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const failDelete = yield* Deferred.make<void>();
+        const retainedStates: string[] = [];
+        const replacementStates: string[] = [];
+        const port: WorkspaceRuntimePort = {
+          read: () => Effect.fail(TransientTransportError.make({ operation: "read runtime", cause: "offline" })),
+          launch: unusedPortMethod,
+          rename: unusedPortMethod,
+          stop: unusedPortMethod,
+          refresh: unusedPortMethod,
+          retry: unusedPortMethod,
+          delete: () =>
+            Deferred.await(failDelete).pipe(
+              Effect.andThen(
+                Effect.fail(TransientTransportError.make({ operation: "delete workspace", cause: "lost response" })),
+              ),
+            ),
+        };
+        const workflow = yield* makeWorkspaceRuntimeWorkflow(port);
+        const target = { workspaceId: "ws-1" };
+        yield* workflow.claimPresenter(
+          target,
+          "retained-delete",
+          (state) =>
+            Effect.sync(() => {
+              retainedStates.push(`${state.operation}:${state.kind}`);
+              return state.kind === "uncertain" && state.operation === "Delete";
+            }),
+          { releaseWhenAcknowledged: true },
+        );
+        yield* workflow.delete(target, {
+          force: false,
+          presenterID: "retained-delete",
+        });
+        yield* Deferred.succeed(failDelete, undefined);
+        for (let attempt = 0; attempt < 10; attempt += 1) yield* Effect.yieldNow;
+        assert.deepStrictEqual(retainedStates, ["Delete:pending", "Delete:uncertain"]);
+        yield* workflow.releasePresenter(target, "retained-delete");
+        yield* workflow.claimPresenter(target, "replacement", (state) =>
+          Effect.sync(() => {
+            replacementStates.push(`${state.operation}:${state.kind}`);
+            return state.kind === "uncertain" && state.operation === "Delete";
+          }),
+        );
+        for (let attempt = 0; attempt < 10; attempt += 1) yield* Effect.yieldNow;
+        assert.deepStrictEqual(replacementStates, ["Delete:uncertain"]);
+      }),
+    ),
+  );
+
   it.effect("delivers a completed refresh only to the replacement presenter", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -81,12 +81,22 @@ function configuredRepo() {
   };
 }
 
-function storeFixture(options: { configured?: boolean; pulls?: PullRequest[]; pullsError?: string | null } = {}) {
+function storeFixture(
+  options: {
+    configured?: boolean;
+    pulls?: PullRequest[];
+    pullsError?: string | null;
+    syncTrigger?: Effect.Effect<void, Error>;
+  } = {},
+) {
   const pulls = options.pulls ?? [pullRequest()];
   const settings = createSettingsStore();
   const setConfiguredRepos = vi.spyOn(settings, "setConfiguredRepos");
   if (options.configured) settings.setConfiguredRepos([configuredRepo()]);
   const triggerSync = vi.fn();
+  const triggerSyncEffect = vi.fn(() =>
+    Effect.sync(triggerSync).pipe(Effect.andThen(options.syncTrigger ?? Effect.void)),
+  );
   const loadPulls = vi.fn();
   const stores = {
     settings,
@@ -97,6 +107,7 @@ function storeFixture(options: { configured?: boolean; pulls?: PullRequest[]; pu
         last_error: "",
       }),
       triggerSync,
+      triggerSyncEffect,
       subscribeSyncComplete: () => () => {},
     },
     pulls: {
@@ -289,6 +300,20 @@ describe("OnboardingFlow", () => {
     await waitFor(() => expect(fixture.triggerSync).toHaveBeenCalledOnce());
     expect(screen.queryByRole("heading", { name: "Connect a code forge" })).toBeNull();
     expect(mocks.listUserRepositories).not.toHaveBeenCalled();
+  });
+
+  it("offers a retry when the sync trigger fails after onboarding starts", async () => {
+    renderFlow(
+      storeFixture({
+        configured: true,
+        syncTrigger: Effect.yieldNow.pipe(Effect.andThen(Effect.fail(new Error("sync endpoint unavailable")))),
+      }).stores,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain("sync endpoint unavailable");
+    });
+    expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
   });
 
   it("starts sync when repositories become configured while onboarding remains mounted", async () => {

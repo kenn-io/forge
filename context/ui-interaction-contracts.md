@@ -95,10 +95,10 @@ Interactive surfaces must agree on which item is selected.
   local and fleet workspaces, while layout churn must not discard the command
   (`frontend/src/lib/components/workspace/WorkspaceCreateSplitButton.svelte::selectTarget`,
   `frontend/src/lib/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`,
-  `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::pendingWorkspaceLaunchTarget`).
-  Once claimed, the intent stays globally pending until its ownership token settles it:
+  `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::handleLaunch`).
+  A successful claim stays pending until the exact session appears or bounded reconciliation expires;
   sibling views suppress their empty fallback and may discard only unclaimed intents
-  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::completeWorkspaceLaunch`).
+  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and
@@ -221,7 +221,8 @@ Persisted controls must state their scope clearly.
   (`frontend/src/lib/components/terminal/WorkspaceEmbedShell.svelte::loadTerminalSettings`).
 - Concurrent startup and embedded-shell callers share the last successful settings snapshot;
   every accepted settings command invalidates that cache entry through the same acknowledged
-  workflow, and an invalidated in-flight read cannot publish into the next generation
+  workflow, backend readiness is not part of the settings-request timeout, and an invalidated
+  in-flight read cannot publish into the next generation
   (`frontend/src/lib/app/startup-workflow.ts::StartupWorkflowLive`, `frontend/src/lib/stores/settings-workflow.ts::SettingsWorkflowLive`).
 
 Whenever a control persists, document and test:
@@ -691,7 +692,8 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   (`frontend/src/lib/components/terminal/project-mutation-workflow.ts::ProjectMutationWorkflow`).
 - Workspace runtime commands remain application-owned after acceptance and retain presentation by
   `(hostKey, workspaceId)` across surface replacement; one-shot delete presenters may shadow the route presenter,
-  while failures from an abandoned visit must not surface in its replacement. Presenter replacement interrupts
+  but retained uncertainty transfers when that presenter leaves. Failures from an abandoned visit must not surface
+  in its replacement. Presenter replacement interrupts
   stale asynchronous delivery before it can publish. A transport failure retains a retry fence until fresh runtime
   authority proves applied or not applied; presets retain per-session progress so recovery never relaunches a
   completed step. A known API or payload failure is a definite mutation failure, while a failed refresh after an

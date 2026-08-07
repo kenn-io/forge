@@ -6,6 +6,7 @@ import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
+import { createSettingsStore } from "../../stores/settings.svelte.js";
 
 import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
@@ -36,6 +37,54 @@ const workspace = {
 };
 
 const emptyRuntime = { launch_targets: [], sessions: [] };
+const agentRuntime = {
+  launch_targets: [],
+  sessions: [
+    {
+      key: "ws-1:helper",
+      workspace_id: "ws-1",
+      target_key: "helper",
+      label: "Helper",
+      kind: "agent",
+      status: "running",
+      display_region: "workflow",
+      created_at: "2026-04-29T00:00:00Z",
+    },
+  ],
+};
+
+const controlledSockets: ControlledWebSocket[] = [];
+
+class ControlledWebSocket extends EventTarget {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+  readonly CONNECTING = ControlledWebSocket.CONNECTING;
+  readonly OPEN = ControlledWebSocket.OPEN;
+  readonly CLOSING = ControlledWebSocket.CLOSING;
+  readonly CLOSED = ControlledWebSocket.CLOSED;
+  binaryType: BinaryType = "arraybuffer";
+  readyState = ControlledWebSocket.CONNECTING;
+  readonly sent: Array<string | ArrayBufferView> = [];
+
+  constructor(readonly url: string) {
+    super();
+    controlledSockets.push(this);
+    queueMicrotask(() => {
+      this.readyState = ControlledWebSocket.OPEN;
+      this.dispatchEvent(new Event("open"));
+    });
+  }
+
+  close(): void {
+    this.readyState = ControlledWebSocket.CLOSED;
+  }
+
+  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    if (typeof data === "string" || ArrayBuffer.isView(data)) this.sent.push(data);
+  }
+}
 
 function workspaceRoutes(): MockRouteOverride {
   return (req) => {
@@ -92,6 +141,69 @@ describe("WorkspaceTerminalView hostVisible", () => {
 
   beforeEach(() => {
     runtime = makeAppRuntime();
+    controlledSockets.length = 0;
+  });
+
+  it("routes wheel input for an agent session mounted by the workspace", async () => {
+    const api = createMockApiFetch([
+      (request) =>
+        request.url.pathname === "/api/v1/workspaces/ws-1/runtime" && request.method === "GET"
+          ? jsonResponse(agentRuntime)
+          : null,
+      workspaceRoutes(),
+    ]);
+    const originalFetch = globalThis.fetch;
+    const originalEventSource = globalThis.EventSource;
+    globalThis.fetch = api.fetch;
+    globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
+    vi.stubGlobal("WebSocket", ControlledWebSocket);
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+    const target = document.createElement("div");
+    target.style.width = "800px";
+    target.style.height = "600px";
+    document.body.appendChild(target);
+    const settingsStore = createSettingsStore();
+    const instance = mount(WorkspaceTerminalView, {
+      target,
+      props: {
+        runtime,
+        workspaceId: "ws-1",
+        hideWorkspaceList: true,
+        hideRightSidebar: true,
+      },
+      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+    });
+
+    try {
+      await vi.waitFor(() => {
+        expect(controlledSockets).toHaveLength(1);
+        expect(target.querySelector(".xterm-screen")).not.toBeNull();
+      }, WAIT);
+      const socket = controlledSockets[0];
+      if (socket === undefined) throw new Error("agent terminal socket was not created");
+      socket.sent.length = 0;
+
+      const screen = target.querySelector(".xterm-screen");
+      if (screen === null) throw new Error("agent terminal screen was not created");
+      const defaultAllowed = screen.dispatchEvent(
+        new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120 }),
+      );
+
+      expect(defaultAllowed).toBe(false);
+      await vi.waitFor(() => {
+        const frames = socket.sent.map((frame) =>
+          typeof frame === "string" ? frame : new TextDecoder().decode(frame),
+        );
+        expect(frames).toContain("\x1b[A");
+      }, WAIT);
+    } finally {
+      flushSync(() => unmount(instance));
+      target.remove();
+      globalThis.fetch = originalFetch;
+      globalThis.EventSource = originalEventSource;
+      vi.unstubAllGlobals();
+      localStorage.removeItem("kenn-forge-workspace-active-tab:ws-1");
+    }
   });
 
   afterEach(async () => {

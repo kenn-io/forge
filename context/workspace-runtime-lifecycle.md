@@ -176,7 +176,7 @@ stale tabs.
   all other mouse reports unchanged, and never retain unsent drag state across a WebSocket boundary
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`).
 - Agent TUIs in the normal buffer with no local scrollback receive vertical wheel gestures as cursor input; xterm/tmux
-  keep ownership when scrollback, the alternate buffer, or mouse tracking is active
+  keep ownership when scrollback, the alternate buffer, mouse tracking, or browser Ctrl-wheel zoom is active
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalWheel`).
 - macOS loopback clipboard fallback must run `pbcopy` with `LC_ALL=en_US.UTF-8`; service launchers may omit
   a UTF-8 locale and make `pbcopy` reinterpret unchanged UTF-8 input

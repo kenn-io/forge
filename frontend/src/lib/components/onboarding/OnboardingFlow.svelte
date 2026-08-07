@@ -289,9 +289,17 @@
       yield* Effect.sync(() => {
         syncStartIssued = true;
         syncError = null;
-        stores.sync.triggerSync();
       });
-      yield* Effect.yieldNow;
+      let triggerFailed = false;
+      yield* stores.sync.triggerSyncEffect().pipe(
+        Effect.catch((failure) =>
+          Effect.sync(() => {
+            triggerFailed = true;
+            syncError = stores.sync.getSyncState()?.last_error || errorMessage(failure);
+          }),
+        ),
+      );
+      if (triggerFailed) return;
       const state = stores.sync.getSyncState();
       if (!state?.running) {
         const lastError = state?.last_error;

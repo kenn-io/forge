@@ -86,7 +86,7 @@ export interface WorkspaceRuntimeReadOptions {
 export type WorkspaceRuntimeLaunchPlacement =
   | {
       readonly _tag: "Workflow";
-      readonly onSettled?: (() => void) | undefined;
+      readonly onSettled?: ((settlement: WorkspaceRuntimeLaunchSettlement) => void) | undefined;
     }
   | { readonly _tag: "Terminal"; readonly insertIntoTree: boolean }
   | {
@@ -95,6 +95,10 @@ export type WorkspaceRuntimeLaunchPlacement =
       readonly groupID: string;
       readonly targetLeafID?: string | undefined;
     };
+
+export type WorkspaceRuntimeLaunchSettlement =
+  | { readonly _tag: "Accepted"; readonly sessionKey: string }
+  | { readonly _tag: "Rejected" };
 
 interface WorkspaceRuntimeMutationRequestBase {
   readonly target: WorkspaceRuntimeTarget;
@@ -452,6 +456,22 @@ export function makeWorkspaceRuntimeWorkflow(
     const mutationRecoveryLock = yield* Semaphore.make(1);
     const mutationPresentations = yield* FiberMap.make<string, void, never>();
 
+    const selectMutationPresenter = (
+      state: WorkspaceRuntimeMutationState,
+      presenters: ReadonlyArray<WorkspaceRuntimeMutationPresenter>,
+    ): WorkspaceRuntimeMutationPresenter | undefined => {
+      if (state.operation === "Delete") {
+        return (
+          presenters.find((candidate) => candidate.sessionID === state.request.options.presenterID) ?? presenters.at(-1)
+        );
+      }
+      const presenterID =
+        state.kind === "failed" || state.kind === "uncertain"
+          ? state.request.originPresenterID
+          : presenters.at(-1)?.sessionID;
+      return presenters.find((candidate) => candidate.sessionID === presenterID);
+    };
+
     const mutationKey = (request: WorkspaceRuntimeMutationRequest): string => {
       const target = runtimeTargetKey(request.target.workspaceId, request.target.hostKey);
       switch (request._tag) {
@@ -486,13 +506,7 @@ export function makeWorkspaceRuntimeWorkflow(
                 Effect.gen(function* () {
                   if ((yield* Ref.get(mutationStates)).get(state.request.key) !== state) return undefined;
                   const presenters = (yield* Ref.get(mutationPresenters)).get(targetKey) ?? [];
-                  const presenterID =
-                    state.operation === "Delete"
-                      ? state.request.options.presenterID
-                      : state.kind === "failed" || state.kind === "uncertain"
-                        ? state.request.originPresenterID
-                        : presenters.at(-1)?.sessionID;
-                  const selected = presenters.find((candidate) => candidate.sessionID === presenterID);
+                  const selected = selectMutationPresenter(state, presenters);
                   if (selected === undefined && state.kind === "failed") {
                     yield* Ref.update(mutationStates, (current) => {
                       if (current.get(state.request.key) !== state) return current;
@@ -516,13 +530,7 @@ export function makeWorkspaceRuntimeWorkflow(
               yield* mutationLock.withPermit(
                 Effect.gen(function* () {
                   const currentPresenters = (yield* Ref.get(mutationPresenters)).get(targetKey) ?? [];
-                  const selectedPresenterID =
-                    state.operation === "Delete"
-                      ? state.request.options.presenterID
-                      : state.kind === "failed" || state.kind === "uncertain"
-                        ? state.request.originPresenterID
-                        : currentPresenters.at(-1)?.sessionID;
-                  if (selectedPresenterID !== presenter.sessionID) return;
+                  if (selectMutationPresenter(state, currentPresenters)?.sessionID !== presenter.sessionID) return;
                   if (state.kind !== "uncertain") {
                     yield* Ref.update(mutationStates, (current) => {
                       if (current.get(state.request.key) !== state) return current;
@@ -558,6 +566,16 @@ export function makeWorkspaceRuntimeWorkflow(
         Ref.update(mutationStates, (current) => new Map(current).set(state.request.key, state)),
       );
       yield* presentStoredMutation(state);
+      if (state.operation === "Launch" && state.request.placement._tag === "Workflow") {
+        const onSettled = state.request.placement.onSettled;
+        if (onSettled !== undefined) {
+          yield* Effect.sync(() =>
+            onSettled(
+              state.kind === "succeeded" ? { _tag: "Accepted", sessionKey: state.session.key } : { _tag: "Rejected" },
+            ),
+          );
+        }
+      }
     });
 
     const clearFence = (fence: WorkspaceRuntimeMutationFence): Effect.Effect<void> =>
@@ -905,11 +923,6 @@ export function makeWorkspaceRuntimeWorkflow(
                 );
               },
             }),
-            Effect.ensuring(
-              request.placement._tag === "Workflow" && request.placement.onSettled !== undefined
-                ? Effect.sync(request.placement.onSettled)
-                : Effect.void,
-            ),
           );
           return;
         }

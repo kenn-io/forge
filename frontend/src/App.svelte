@@ -202,6 +202,7 @@
     runtime: appRuntime,
     roborevBaseUrl: "/api/roborev",
     onError: (message) => showFlash(message, { tone: "danger" }),
+    onWarning: (message) => showFlash(message, { tone: "warning" }),
     onNotification: showFlash,
     onNavigate: appNavigate,
     hostState: {

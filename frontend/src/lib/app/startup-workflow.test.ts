@@ -245,16 +245,29 @@ it.layer(StartupTestLayer)("startup retry after failure", (it) => {
 });
 
 it.layer(StartupTestLayer)("startup timeout", (it) => {
-  it.effect("times out while backend readiness never succeeds", () =>
+  it.effect("keeps waiting for backend readiness beyond the settings request timeout", () =>
     Effect.gen(function* () {
-      vi.stubGlobal("fetch", (() => Promise.resolve(Response.json({}, { status: 503 }))) satisfies typeof fetch);
+      let ready = false;
+      const settingsResponse = { delayed: true };
+      vi.stubGlobal("fetch", ((input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(input);
+        const pathname = new URL(request.url).pathname;
+        if (pathname.endsWith("/healthz")) {
+          return Promise.resolve(Response.json({}, { status: ready ? 200 : 503 }));
+        }
+        return Promise.resolve(Response.json(settingsResponse));
+      }) satisfies typeof fetch);
 
       const startup = yield* StartupWorkflow;
-      const fiber = yield* Effect.forkChild(Effect.exit(startup.start));
+      const fiber = yield* Effect.forkChild(startup.start);
+      yield* Effect.yieldNow;
       yield* TestClock.adjust("8 seconds");
-      const exit = yield* Fiber.join(fiber);
+      assert.isUndefined(fiber.pollUnsafe());
 
-      assert.isTrue(Exit.isFailure(exit));
+      ready = true;
+      yield* TestClock.adjust("1500 millis");
+      yield* Effect.yieldNow;
+      assert.deepStrictEqual(yield* Fiber.join(fiber), settingsResponse);
     }),
   );
 });

@@ -310,6 +310,7 @@
       disabled ||
       !cursorWheelInput ||
       event.deltaY === 0 ||
+      event.ctrlKey ||
       event.shiftKey ||
       !terminal ||
       !terminalSession?.isConnected()

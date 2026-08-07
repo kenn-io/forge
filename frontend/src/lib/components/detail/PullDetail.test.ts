@@ -8,7 +8,7 @@ import { ACTIONS_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../cont
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
-import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
+import { dismissFlash, getFlashes, showFlash } from "../../stores/flash.svelte.js";
 import {
   discardWorkspaceLaunch,
   markWorkspaceIdDeleted,
@@ -239,6 +239,10 @@ function renderPullDetail(
         callbacks.onProblem?.(error);
         callbacks.onFailure?.(error.detail ?? error.title ?? "provider action failed");
       } else {
+        const warning = result.data?.workspace_cleanup_warning;
+        if (warning) {
+          showFlash(`Pull request merged, but the workspace was not pruned: ${warning}`, { tone: "warning" });
+        }
         callbacks.onSuccess?.();
       }
       callbacks.onSettled?.();

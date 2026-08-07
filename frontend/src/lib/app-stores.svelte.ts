@@ -43,6 +43,7 @@ export interface AppStoreOptions {
   getActivitySelection?: () => RoutedItemRef | null;
   roborevBaseUrl?: string;
   onError?: (msg: string) => void;
+  onWarning?: (msg: string) => void;
   onNotification?: (msg: string) => void;
 }
 
@@ -61,6 +62,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     getActivitySelection = () => null,
     roborevBaseUrl,
     onError,
+    onWarning,
     onNotification,
   } = options;
   const appRuntime = runtime;
@@ -71,6 +73,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const getSelectedActivity = getActivitySelection;
   const roborevBase = roborevBaseUrl;
   const errorCb = onError;
+  const warningCb = onWarning;
   const notificationCb = onNotification;
   const grouping = createGroupingStore();
   const detailActivityView = createDetailActivityViewStore();
@@ -283,7 +286,13 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
         yield* Effect.all(refreshes, { concurrency: "unbounded", discard: true });
         yield* Effect.sync(() => {
           if (event.status === "merged") {
-            notificationCb?.(`${event.owner}/${event.name}#${event.number} merged after CI passed.`);
+            if (event.workspace_cleanup_warning) {
+              warningCb?.(
+                `${event.owner}/${event.name}#${event.number} merged, but the workspace was not pruned: ${event.workspace_cleanup_warning}`,
+              );
+            } else {
+              notificationCb?.(`${event.owner}/${event.name}#${event.number} merged after CI passed.`);
+            }
           } else {
             errorCb?.(
               `Deferred merge for ${event.owner}/${event.name}#${event.number} failed: ${event.error ?? "checks did not pass"}`,

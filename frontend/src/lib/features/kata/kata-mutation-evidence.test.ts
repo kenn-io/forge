@@ -12,6 +12,7 @@ import {
   ownerMutationEvidence,
   priorityMutationEvidence,
   projectCreateMutationEvidence,
+  reconcileRecurrenceMutation,
   recurrenceCreateMatches,
   recurrencePatchMatches,
   statusMutationEvidence,
@@ -184,5 +185,46 @@ it.effect("matches recurrence creation and patch evidence against authoritative 
     );
     assert.isTrue(recurrencePatchMatches(recurrence, { actor: "fixture-user", timezone: "UTC" }));
     assert.isFalse(recurrencePatchMatches(recurrence, { actor: "fixture-user", timezone: "America/New_York" }));
+  }),
+);
+
+it.effect("recognizes a lost-response recurrence clear from normalized authority", () =>
+  Effect.gen(function* () {
+    const baseline: KataRecurrence = {
+      id: 1,
+      uid: "recurrence-1",
+      project_id: 2,
+      rrule: "FREQ=WEEKLY",
+      dtstart: "2026-08-04",
+      timezone: "UTC",
+      template_title: "Review backlog",
+      template_body: "",
+      template_owner: "agent:new",
+      template_priority: 2,
+      template_labels: [],
+      template_metadata: {},
+      author: "fixture-user",
+      revision: 2,
+      created_at: "2026-08-01T00:00:00Z",
+      updated_at: "2026-08-04T00:00:00Z",
+    };
+    const cleared: KataRecurrence = {
+      ...baseline,
+      template_owner: undefined,
+      template_priority: undefined,
+      revision: 3,
+    };
+    const patch = {
+      actor: "fixture-user",
+      template: { owner: null, priority: null },
+    } as const;
+
+    const resolution = yield* reconcileRecurrenceMutation(
+      [baseline],
+      Effect.succeed({ recurrences: [cleared], fetched_at: "2026-08-04T00:01:00Z" }),
+      (recurrences) => recurrencePatchMatches(recurrences[0]!, patch),
+    );
+
+    assert.strictEqual(resolution, "applied");
   }),
 );

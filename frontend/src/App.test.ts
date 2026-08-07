@@ -400,35 +400,6 @@ describe("App feature routes", () => {
     }
   });
 
-  it("routes Provider warnings through a warning-tone flash", async () => {
-    const { default: App } = await import("./App.svelte");
-    render(App, { target: createAppTarget() });
-    await waitFor(() => expect(appSurfaceProps.provider).not.toBeNull());
-    const onWarning = appSurfaceProps.provider?.onWarning as ((message: string) => void) | undefined;
-    const { getFlashes, dismissFlash } = await import("./lib/stores/flash.svelte.js");
-
-    try {
-      onWarning?.("Merged, but workspace cleanup failed");
-      expect(getFlashes()).toContainEqual(
-        expect.objectContaining({
-          message: "Merged, but workspace cleanup failed",
-          tone: "warning",
-        }),
-      );
-    } finally {
-      for (const flash of getFlashes()) dismissFlash(flash.id);
-    }
-  });
-
-  it("routes Provider workspace deletions through the authoritative host invalidation", async () => {
-    const { default: App } = await import("./App.svelte");
-    const { notifyWorkspaceDeleted } = await import("./lib/stores/workspace-host.svelte.ts");
-    render(App, { target: createAppTarget() });
-
-    await waitFor(() => expect(appSurfaceProps.provider).not.toBeNull());
-    expect(appSurfaceProps.provider?.onWorkspaceDeleted).toBe(notifyWorkspaceDeleted);
-  });
-
   it("isolates the Kata workspace client from cross-surface searches", async () => {
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/kata");

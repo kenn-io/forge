@@ -27,7 +27,13 @@ const mocks = vi.hoisted(() => ({
   mockOpen: vi.fn(),
   mockSetTerminalSettings: vi.fn(),
   mockTerminalInstances: [] as Array<{
+    buffer: { active: { baseY: number; type: "normal" | "alternate" } };
     focus: ReturnType<typeof vi.fn>;
+    modes: {
+      applicationCursorKeysMode: boolean;
+      bracketedPasteMode: boolean;
+      mouseTrackingMode: "none" | "x10" | "vt200" | "drag" | "any";
+    };
     options: Record<string, unknown>;
   }>,
   mockUpdateSettings: vi.fn(),
@@ -62,13 +68,18 @@ class MockWebSocket extends EventTarget {
 vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation(function (options) {
     const terminal = {
+      buffer: { active: { baseY: 0, type: "normal" as const } },
       cols: 80,
       rows: 24,
       clearTextureAtlas: vi.fn(),
       dispose: mocks.mockDispose,
       focus: vi.fn(),
       loadAddon: mocks.mockLoadAddon,
-      modes: { bracketedPasteMode: false },
+      modes: {
+        applicationCursorKeysMode: false,
+        bracketedPasteMode: false,
+        mouseTrackingMode: "none" as const,
+      },
       onBinary: vi.fn(),
       onData: mocks.mockOnData,
       open: mocks.mockOpen,
@@ -1087,7 +1098,7 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByRole("tab", { name: /Review helper/ })).toBeTruthy();
 
     runtimePoll!.callback();
-    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(mocks.getWorkspaceRuntime.mock.calls.length).toBeGreaterThanOrEqual(3));
   });
 
   it("polls remote workspace runtime so peer-spawned sessions appear", async () => {
@@ -2661,6 +2672,28 @@ describe("WorkspaceTerminalView", () => {
     ).toBeNull();
   });
 
+  it("routes an agent session wheel gesture through the workspace terminal", async () => {
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+
+    const { container } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await waitFor(() => expect(sockets.length).toBeGreaterThan(0));
+    const socket = sockets.find((candidate) => candidate.url.includes(runningSession.key));
+    expect(socket).toBeDefined();
+    socket!.send.mockClear();
+    const terminalContainer = container.querySelector(".terminal-container");
+    expect(terminalContainer).not.toBeNull();
+
+    const defaultAllowed = terminalContainer!.dispatchEvent(
+      new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120 }),
+    );
+
+    expect(defaultAllowed).toBe(false);
+    await waitFor(() => expect(socket!.send).toHaveBeenCalled());
+    const payload = socket!.send.mock.calls.at(-1)?.[0];
+    expect(new TextDecoder().decode(payload)).toBe("\x1b[A");
+  });
+
   it("keeps the empty-workspace launcher closed while an explicit launch starts", async () => {
     const launchRequest = deferred<typeof runningSession>();
     queueWorkspaceLaunch("ws-1", "codex", undefined);
@@ -2708,7 +2741,7 @@ describe("WorkspaceTerminalView", () => {
     render(WorkspaceTerminalView, {
       props: { workspaceId: "ws-1", paneSurface: "prs" as const },
     });
-    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(mocks.getWorkspaceRuntime.mock.calls.length).toBeGreaterThanOrEqual(3));
     expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
 

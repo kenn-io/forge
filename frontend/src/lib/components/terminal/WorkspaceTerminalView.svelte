@@ -1,6 +1,6 @@
 <script lang="ts">
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
-  import { Context, Deferred, Effect, Fiber, Option, Schedule, Stream } from "effect";
+  import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
   import { onDestroy, tick, untrack } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
@@ -135,9 +135,12 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
     claimWorkspaceLaunch,
+    acceptWorkspaceLaunch,
+    completeAcceptedWorkspaceLaunch,
     discardWorkspaceLaunch,
     failWorkspaceLaunch,
     isWorkspaceCreatePending,
+    isWorkspaceDeletionPending,
     pendingWorkspaceLaunch,
     type WorkspaceLaunchClaim,
   } from "../../stores/workspace-create-pending.svelte.js";
@@ -1263,7 +1266,7 @@
   const deletingSelectedWorkspace = $derived(
     deletingWorkspaceTargets.some((target) =>
       isDeletingWorkspaceTarget(target, workspaceId, workspaceHostKey),
-    ),
+    ) || isWorkspaceDeletionPending(workspaceId, workspaceHostKey),
   );
   const actionsBlocked = $derived(transitioning || deletingSelectedWorkspace || forceDeleting);
   const inlineDockMode = $derived(inlineDock?.getMode() ?? null);
@@ -2028,6 +2031,14 @@
         });
         if (!isCurrentWorkspace(id, hostKey)) return null;
         const fingerprint = JSON.stringify(data);
+        const acceptedLaunch = pendingWorkspaceLaunch(id, hostKey);
+        if (
+          acceptedLaunch?.phase === "awaiting_session" &&
+          acceptedLaunch.sessionKey !== undefined &&
+          data.sessions.some((session) => session.key === acceptedLaunch.sessionKey)
+        ) {
+          completeAcceptedWorkspaceLaunch(id, hostKey, acceptedLaunch.sessionKey);
+        }
         if (
           hasAppliedRuntimeFor(id, hostKey) &&
           appliedRuntimeState?.fingerprint === fingerprint
@@ -2126,7 +2137,9 @@
           state.request.target.hostKey,
         );
         if (state.request.options.force) forceDeleting = false;
-        clearRetainedDeletePresentation(state.request.target);
+        if (state.kind !== "uncertain") {
+          clearRetainedDeletePresentation(state.request.target);
+        }
     }
   }
 
@@ -2406,7 +2419,15 @@
         _tag: "Workflow",
         ...(launchClaim === undefined
           ? {}
-          : { onSettled: () => failWorkspaceLaunch(launchClaim) }),
+          : {
+              onSettled: (settlement) => {
+                if (settlement._tag === "Accepted") {
+                  acceptWorkspaceLaunch(launchClaim, settlement.sessionKey);
+                } else {
+                  failWorkspaceLaunch(launchClaim);
+                }
+              },
+            }),
       }),
       {
         operation: "workspace.session.launch",
@@ -3692,9 +3713,77 @@
 
   $effect(() => {
     if (!workspaceId || !runtimeLive || workspace?.status !== "ready") return;
+    const intent = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
+    if (
+      intent?.phase !== "awaiting_session" ||
+      intent.sessionKey === undefined ||
+      intent.acceptedAt === undefined
+    ) {
+      return;
+    }
+    const acceptedWorkspaceId = workspaceId;
+    const acceptedWorkspaceHostKey = workspaceHostKey;
+    const acceptedSessionKey = intent.sessionKey;
+    const acceptedAt = intent.acceptedAt;
+    if (runtimeSessions.some((session) => session.key === acceptedSessionKey)) {
+      completeAcceptedWorkspaceLaunch(acceptedWorkspaceId, acceptedWorkspaceHostKey, acceptedSessionKey);
+      return;
+    }
+    const remaining = Math.max(0, 15_000 - (Date.now() - acceptedAt));
+    const label = launchTargets.find((target) => target.key === intent.targetKey)?.label ?? intent.targetKey;
+    const stillAwaitingSession = () => {
+      const current = pendingWorkspaceLaunch(acceptedWorkspaceId, acceptedWorkspaceHostKey);
+      return (
+        current?.phase === "awaiting_session" &&
+        current.sessionKey === acceptedSessionKey &&
+        current.acceptedAt === acceptedAt
+      );
+    };
+    const execution = untrack(() =>
+      appRuntime.runCommand(
+        Effect.raceFirst(
+          Effect.gen(function* () {
+            while (stillAwaitingSession()) {
+              yield* Effect.sleep("500 millis");
+              if (!stillAwaitingSession()) return;
+              yield* fetchRuntimeProgram({ force: true });
+            }
+          }),
+          Effect.sleep(Duration.millis(remaining)).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                if (!stillAwaitingSession()) return;
+              if (
+                !completeAcceptedWorkspaceLaunch(
+                  acceptedWorkspaceId,
+                  acceptedWorkspaceHostKey,
+                  acceptedSessionKey,
+                )
+              ) {
+                return;
+              }
+                showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
+              }),
+            ),
+          ),
+        ),
+        {
+          operation: "reconcile accepted workspace launch",
+          safeContext: { surface: "workspace" },
+          onFailure: () => undefined,
+        },
+      ),
+    );
+    return execution.interrupt;
+  });
+
+  $effect(() => {
+    if (!workspaceId || !runtimeLive || workspace?.status !== "ready") return;
     if (actionsBlocked || launchingKey !== null) return;
-    const targetKey = pendingWorkspaceLaunch(workspaceId, workspaceHostKey)?.targetKey ?? null;
+    const pendingLaunch = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
+    const targetKey = pendingLaunch?.targetKey ?? null;
     if (targetKey === null) return;
+    if (pendingLaunch?.phase === "awaiting_session") return;
     if (runtimeSessions.length > 0) {
       discardWorkspaceLaunch(workspaceId, workspaceHostKey);
       return;

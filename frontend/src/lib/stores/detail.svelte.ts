@@ -754,6 +754,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     deferred: boolean,
     callbacks: ProviderActionCallbacks = {},
   ): void {
+    let workspaceCleanupWarning: string | undefined;
     const commit = (ref: DetailRequestRef) =>
       deferred
         ? executeGeneratedApiRequest("POST deferred pull request merge", (client, signal) =>
@@ -769,8 +770,25 @@ export function createDetailStore(opts: DetailStoreOptions) {
               body: input,
               signal,
             }),
-          ).pipe(Effect.asVoid);
-    runPullAction(ref, number, deferred ? "schedule pull request merge" : "merge pull request", commit, callbacks);
+          ).pipe(
+            Effect.tap((result) =>
+              Effect.sync(() => {
+                workspaceCleanupWarning = result.workspace_cleanup_warning;
+              }),
+            ),
+            Effect.asVoid,
+          );
+    runPullAction(ref, number, deferred ? "schedule pull request merge" : "merge pull request", commit, {
+      ...callbacks,
+      onSuccess: () => {
+        if (workspaceCleanupWarning) {
+          showFlash(`Pull request merged, but the workspace was not pruned: ${workspaceCleanupWarning}`, {
+            tone: "warning",
+          });
+        }
+        callbacks.onSuccess?.();
+      },
+    });
   }
 
   // A refreshed payload whose content matches the displayed detail must

@@ -52,8 +52,8 @@ type Identity struct {
 	LockMetadata runtimelock.Metadata
 }
 
-// ConfigRuntime is an unverified discovery candidate attributed to one
-// canonical config path. Callers must authenticate Record before signaling it.
+// ConfigRuntime is an unverified discovery candidate relevant to one canonical
+// config path. Callers must authenticate Record before signaling it.
 type ConfigRuntime struct {
 	Record     daemon.RuntimeRecord
 	DataDir    string
@@ -239,9 +239,10 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 	}, nil
 }
 
-// ConfigRuntimes returns live records attributable to one canonical config.
-// Config-identified records take precedence over legacy records; otherwise a
-// legacy record is usable only when it still names the current data directory.
+// ConfigRuntimes returns live records relevant to resolving one canonical config.
+// Config-identified records take precedence over legacy records. Legacy
+// records for another data directory are returned only when no closer match
+// exists so the caller can authenticate or safely discard them.
 // The returned records remain untrusted until authenticated by proof.
 func ConfigRuntimes(
 	store daemon.RuntimeStore,
@@ -323,11 +324,7 @@ func configRuntimes(
 		return currentLegacy, nil
 	}
 	if len(unmatchedLegacy) > 0 {
-		candidate := unmatchedLegacy[0]
-		return nil, fmt.Errorf(
-			"live daemon pid %d uses a legacy runtime identity for data_dir %q and does not identify its config; stop it before changing data_dir",
-			candidate.Record.PID, candidate.DataDir,
-		)
+		return unmatchedLegacy, nil
 	}
 	return nil, nil
 }

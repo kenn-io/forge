@@ -464,7 +464,19 @@ func (l *daemonLifecycle) runtimeForConfig(
 	if err != nil {
 		return nil, err
 	}
-	return l.runtimeFromCandidates(ctx, operation, configPath, runtimes)
+	target, err := l.runtimeFromCandidates(
+		ctx, operation, configPath, runtimes,
+	)
+	if err != nil || target == nil {
+		return target, err
+	}
+	if target.ConfigPath == "" && target.DataDir != currentDataDir {
+		return nil, fmt.Errorf(
+			"live daemon pid %d uses a legacy runtime identity for data_dir %q and does not identify its config; stop it before changing data_dir",
+			target.Record.PID, target.DataDir,
+		)
+	}
+	return target, nil
 }
 
 func (l *daemonLifecycle) identifiedRuntimeForConfig(

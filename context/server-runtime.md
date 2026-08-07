@@ -51,6 +51,9 @@ and the root event stream.
 - Config-identified records take precedence over legacy records; a live legacy
   record remains attributable only while its `data_dir` matches current config
   (`internal/daemonruntime/runtime.go::ConfigRuntimes`).
+- Authenticate moved legacy candidates before rejection; discard an unauthenticated
+  stale record only when its authoritative data-directory lock is free
+  (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.runtimeForConfig`).
 - An authenticated pre-config-identity daemon matches authoritative status only
   when both discovery and status omit `config_path`; current-directory attribution
   above remains the boundary (`cmd/kenn-forge/daemon_lifecycle.go::runtimeStatusMatches`).

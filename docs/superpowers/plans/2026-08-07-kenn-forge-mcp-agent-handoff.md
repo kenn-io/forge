@@ -4,7 +4,7 @@
 
 **Goal:** Expose Kenn Forge's cached review workflow and a daemon-authoritative MCP handoff that creates PR-, issue-, or ad-hoc-backed workspaces, launches a configured coding agent, observes its live hook session ID, and submits one initial message.
 
-**Approved spec/design:** `docs/superpowers/specs/2026-07-01-middleman-mcp-server-design.md`
+**Approved spec/design:** `docs/superpowers/specs/2026-08-07-kenn-forge-mcp-agent-handoff-design.md`, extending the preserved historical review design in `docs/superpowers/specs/2026-07-01-middleman-mcp-server-design.md`.
 
 **Architecture:** Port the already-tested MCP review primitives from `origin/middleman/pr-633` onto the current modular Kenn Forge server, using the daemon for every stateful operation and the companion only for bounded orchestration. Add one forward migration for at-most-once initial-message receipts, project live coding sessions from normalized agent-hook reports joined to live runtime sessions, and expose no raw terminal or provider mutation surface.
 
@@ -24,6 +24,9 @@
 - Follow-up message submission, raw terminal control, stop/delete, Kata workspace creation, and fleet operations remain out of scope.
 - Add exactly one migration pair in this PR; migration 000047 is the next current version and shipped migrations remain immutable.
 - Use TDD for every behavior change and run `make api-generate` after final route/schema changes.
+- Before every commit step in Tasks 1–8, invoke the repository `context-sync`
+  skill in `--commit` mode, then invoke the mandatory commit skill. The shown
+  `git add`/message blocks identify scope; they do not replace either workflow.
 
 ---
 
@@ -37,7 +40,9 @@
 
 **Interfaces:**
 - Consumes: `db.ListItemWorkflowStates(ctx, db.ListWorkflowStatesOpts)` and `db.SetItemWorkflowState(ctx, db.SetItemWorkflowStateParams)` already present on main.
-- Produces: `GET /api/v1/workflow-state`, `PUT /api/v1/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}`, and the host-prefixed PUT variant.
+- Produces: collection and exact-item `GET /api/v1/workflow-state...` routes,
+  guarded `PUT /api/v1/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}`,
+  and host-prefixed variants.
 
 - [ ] **Step 1: Port failing route-contract tests from the feature branch**
 
@@ -56,7 +61,7 @@ type setWorkflowStateBody struct {
 
 - [ ] **Step 2: Run the new tests and confirm missing-route failure**
 
-Run: `go test ./internal/server ./internal/server/apitest -run 'WorkflowState' -count=1`
+Run: `go test ./internal/server ./internal/server/apitest -run 'WorkflowState' -shuffle=on`
 
 Expected: FAIL with missing route/404 or undefined workflow route symbols.
 
@@ -66,7 +71,7 @@ Adapt `origin/middleman/pr-633:internal/server/workflow_state_routes.go` to the 
 
 - [ ] **Step 4: Run focused route and DB tests**
 
-Run: `go test ./internal/db ./internal/server ./internal/server/apitest -run 'Workflow|Kanban' -count=1`
+Run: `go test ./internal/db ./internal/server ./internal/server/apitest -run 'Workflow|Kanban' -shuffle=on`
 
 Expected: PASS.
 
@@ -112,7 +117,7 @@ Assert resource `kenn-forge://mcp/guidance`, prompt `kenn-forge-review-candidate
 
 - [ ] **Step 2: Verify package tests fail before implementation exists**
 
-Run: `go test ./internal/mcpserver -count=1`
+Run: `go test ./internal/mcpserver -shuffle=on`
 
 Expected: FAIL because the package implementation is absent.
 
@@ -133,7 +138,7 @@ func New(opts Options) (*Server, error) {
 
 - [ ] **Step 4: Run all MCP package tests**
 
-Run: `go test ./internal/mcpserver -count=1`
+Run: `go test ./internal/mcpserver -shuffle=on`
 
 Expected: PASS.
 
@@ -160,7 +165,7 @@ Assert `newRootCommand` contains one public `mcp` command; flags are `--config`,
 
 - [ ] **Step 2: Verify CLI tests fail**
 
-Run: `go test ./cmd/kenn-forge -run 'MCP|RootCommand' -count=1`
+Run: `go test ./cmd/kenn-forge -run 'MCP|RootCommand' -shuffle=on`
 
 Expected: FAIL because `mcp` is not registered.
 
@@ -183,7 +188,7 @@ Use injected stdin/stdout for stdio tests and current Cobra conventions. Do not 
 
 Document cached reads, stdio/HTTP setup, workflow claiming, repo discovery, diff handoff, no provider writes, and the agent-spawn tools added later in this plan.
 
-Run: `go test ./cmd/kenn-forge ./internal/mcpserver -count=1`
+Run: `go test ./cmd/kenn-forge ./internal/mcpserver -shuffle=on`
 
 Expected: PASS.
 
@@ -226,7 +231,7 @@ Tests prove one row per workspace/runtime, strict states, no message/digest colu
 
 - [ ] **Step 2: Verify DB tests fail**
 
-Run: `go test ./internal/db -run 'AgentInitialMessage|Migration' -count=1`
+Run: `go test ./internal/db -run 'AgentInitialMessage|Migration' -shuffle=on`
 
 Expected: FAIL with missing migration/table/query symbols.
 
@@ -236,7 +241,7 @@ Create `forge_agent_initial_message_receipts` with composite primary key, worksp
 
 - [ ] **Step 4: Run DB and migration checks**
 
-Run: `go test ./internal/db -run 'AgentInitialMessage|Migration|Fresh' -count=1`
+Run: `go test ./internal/db -run 'AgentInitialMessage|Migration|Fresh' -shuffle=on`
 
 Run: `KENN_FORGE_MIGRATION_BASE_REF=HEAD go run ./tools/migrationhistorycheck`
 
@@ -261,11 +266,15 @@ git commit -m "feat: prevent duplicate initial agent prompts"
 
 - [ ] **Step 1: Write failing report identity and live-projection tests**
 
-Cover `(agent, session_id)` identity, same opaque ID across two agents, agentless report removal, nested-agent exclusion, freshness expiry, wrong CWD, dead runtime key, non-agent runtime kind, deterministic ordering, and receipt metadata.
+Cover `(agent, session_id)` identity, same opaque ID across two agents,
+agentless report removal, nested-agent exclusion, freshness expiry, wrong CWD,
+dead runtime key, non-agent runtime kind, `Stop`/`Interrupt` retention as done
+while the runtime lives, `SessionEnd` removal, deterministic ordering, and
+receipt metadata.
 
 - [ ] **Step 2: Verify tests fail**
 
-Run: `go test ./internal/agentactivity ./internal/server/workspaceapi -run 'AgentSession|AgentHook|LiveReport' -count=1`
+Run: `go test ./internal/agentactivity ./internal/server/workspaceapi -run 'AgentSession|AgentHook|LiveReport' -shuffle=on`
 
 Expected: FAIL because reports do not retain agent identity or expose a list route.
 
@@ -281,7 +290,7 @@ Key report filenames with a hash of agent plus session ID, remove agentless file
 
 - [ ] **Step 4: Run focused tests and commit**
 
-Run: `go test ./internal/agentactivity ./internal/server/workspaceapi -run 'AgentSession|AgentHook|LiveReport' -count=1`
+Run: `go test ./internal/agentactivity ./internal/server/workspaceapi -run 'AgentSession|AgentHook|LiveReport' -shuffle=on`
 
 Expected: PASS.
 
@@ -302,21 +311,27 @@ git commit -m "feat: expose live coding sessions for workspaces"
 
 - [ ] **Step 1: Write failing validation, input, receipt, and auto-assign tests**
 
-Cover required live identity match, normalized 64 KiB limit, UTF-8/NUL/control rejection, CRLF normalization, single-line text plus one CR, multiline bracketed paste plus one CR, inactive-mode rejection before write, reserve-before-write, delivered/uncertain transitions, duplicate conflict, and suppression for PR/issue creation while omitted preserves existing behavior.
+Cover required live identity match, normalized 64 KiB limit, UTF-8/NUL/control rejection, CRLF normalization, single-line text plus one CR, multiline `\x1b[200~` + text + `\x1b[201~` plus one CR, inactive-mode rejection before any write, reserve-before-write, delivered/uncertain transitions, duplicate recovery, durable receipt GET after runtime exit, and suppression for PR/issue creation while omitted preserves existing behavior.
 
 - [ ] **Step 2: Verify tests fail**
 
-Run: `go test ./internal/workspace/localruntime ./internal/server/workspaceapi -run 'InitialMessage|SuppressAutoAssign' -count=1`
+Run: `go test ./internal/workspace/localruntime ./internal/server/workspaceapi -run 'InitialMessage|SuppressAutoAssign' -shuffle=on`
 
 Expected: FAIL with absent API/input methods and request fields.
 
 - [ ] **Step 3: Implement the narrow input adapter and receipt orchestration**
 
-Attach through `AttachSession`, write text and one `\r`, close the attachment, and use tracked input-mode state for multiline gating. Reserve pending before attachment, mark delivered after successful write, and mark uncertain on possibly partial failures. Guard only the optional auto-assignment branch with `SuppressAutoAssign`.
+Attach through `AttachSession`; write a single-line message and one `\r`, or
+write `\x1b[200~`, normalized multiline text, `\x1b[201~`, and one `\r`.
+Validate tracked bracketed-paste mode before any multiline write. Reserve
+pending before attachment, mark delivered after successful write, and mark
+uncertain on possibly partial failures. Return an existing receipt before
+liveness validation and expose a receipt-only GET for lost-response recovery.
+Guard only the optional auto-assignment branch with `SuppressAutoAssign`.
 
 - [ ] **Step 4: Run tests and commit**
 
-Run: `go test ./internal/workspace/localruntime ./internal/server/workspaceapi -run 'InitialMessage|SuppressAutoAssign|RuntimeSession' -count=1`
+Run: `go test ./internal/workspace/localruntime ./internal/server/workspaceapi -run 'InitialMessage|SuppressAutoAssign|RuntimeSession' -shuffle=on`
 
 Expected: PASS.
 
@@ -337,11 +352,16 @@ git commit -m "feat: submit one verified initial agent prompt"
 
 - [ ] **Step 1: Write failing exact-surface and orchestration tests**
 
-Update the exact registry to 12 tools. Prove target filtering without argv, PR/issue/ad-hoc request shapes, `suppress_auto_assign: true`, branch forwarding, validation before creation, readiness polling, always-new launch, hook correlation, initial-message submission, five stages, timeout cap, no mutation retry, partial errors, and no cleanup.
+Update the exact registry to 12 tools. Prove target filtering requires both
+`kind=agent` and a supported `agenthook.Profiles()` identity without exposing
+argv; cover PR/issue/ad-hoc request shapes, `suppress_auto_assign: true`, branch
+forwarding, validation before creation, readiness polling, always-new launch,
+hook correlation, receipt-only recovery after a lost message response, five
+stages, timeout cap, no mutation retry, partial errors, and no cleanup.
 
 - [ ] **Step 2: Verify tests fail**
 
-Run: `go test ./internal/mcpserver -run 'AgentTarget|WorkspaceAgent|RegisteredTools' -count=1`
+Run: `go test ./internal/mcpserver -run 'AgentTarget|WorkspaceAgent|RegisteredTools' -shuffle=on`
 
 Expected: FAIL because the three tools are absent.
 
@@ -360,7 +380,7 @@ Return stages, partial identifiers, receipt state, and `message_delivered`; retr
 
 - [ ] **Step 4: Update guidance, run tests, and commit**
 
-Run: `go test ./internal/mcpserver -count=1`
+Run: `go test ./internal/mcpserver -shuffle=on`
 
 Expected: PASS with exactly 12 tools.
 
@@ -374,16 +394,18 @@ git commit -m "feat: hand MCP work to live coding agents"
 **Files:**
 - Modify: `frontend/openapi/openapi.yaml`, `internal/apiclient/generated/client.gen.go`, `packages/ui/src/api/generated/schema.ts`
 - Create: `cmd/kenn-forge/mcp_stdio_e2e_test.go`
-- Modify: `internal/mcpserver/e2e_test.go`, `docs/superpowers/specs/2026-07-01-middleman-mcp-server-design.md`
+- Modify: `internal/mcpserver/e2e_test.go`, `docs/superpowers/specs/2026-08-07-kenn-forge-mcp-agent-handoff-design.md`
 - Modify if required by context-sync: `context/mcp-server.md`, `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md`, `CLAUDE.md`
 
 **Interfaces:**
 - Consumes: every previous task.
 - Produces: checked-in API artifacts, real-daemon stdio coverage, current-brand spec, and durable routed context.
 
-- [ ] **Step 1: Rename the approved spec to current canonical surface**
+- [ ] **Step 1: Validate the superseding design and preserve the original record**
 
-Replace command/tool/resource/prompt names with Kenn Forge names, retain historical rationale, and remove no substantive approved requirement.
+Keep the July design byte-for-byte historical. Confirm the August superseding
+design carries current command/tool/resource/prompt names and every approved
+handoff requirement.
 
 - [ ] **Step 2: Regenerate API artifacts**
 
@@ -398,7 +420,7 @@ Start a hermetic daemon against temp SQLite and synthetic provider data, connect
 - [ ] **Step 4: Run focused and broad verification**
 
 ```bash
-go test ./internal/db ./internal/agentactivity ./internal/server/workspaceapi ./internal/server/apitest ./internal/mcpserver ./cmd/kenn-forge -count=1
+go test ./internal/db ./internal/agentactivity ./internal/server/workspaceapi ./internal/server/apitest ./internal/mcpserver ./cmd/kenn-forge -shuffle=on
 make api-generate
 make lint
 RUSTUP_TOOLCHAIN=1.95.0-aarch64-apple-darwin make test-short
@@ -411,7 +433,7 @@ Expected: all commands PASS; the second generation run produces no diff.
 Use `context-sync --commit`, apply only clear MCP/workspace invariants, then the mandatory commit skill:
 
 ```bash
-git add frontend/openapi/openapi.yaml internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts cmd/kenn-forge/mcp_stdio_e2e_test.go internal/mcpserver/e2e_test.go docs/kenn-forge-mcp.md docs/superpowers/specs/2026-07-01-middleman-mcp-server-design.md
+git add frontend/openapi/openapi.yaml internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts cmd/kenn-forge/mcp_stdio_e2e_test.go internal/mcpserver/e2e_test.go docs/kenn-forge-mcp.md docs/superpowers/specs/2026-08-07-kenn-forge-mcp-agent-handoff-design.md
 git commit -m "test: prove MCP coding-agent handoff end to end"
 ```
 

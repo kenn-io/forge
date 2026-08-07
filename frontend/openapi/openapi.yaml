@@ -7885,6 +7885,35 @@ components:
       required:
         - status
       type: object
+    WorkflowStatePointResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkflowStatePointResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
+          type: string
+        updated_actor:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        updated_reason:
+          type: string
+        updated_source:
+          type: string
+      required:
+        - status
+      type: object
     WorkspaceDiffWatchResponse:
       additionalProperties: false
       properties:
@@ -14110,6 +14139,59 @@ paths:
       tags:
         - Settings
   /host/{platform_host}/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}:
+    get:
+      operationId: get-workflow-state-on-host
+      parameters:
+        - in: path
+          name: item_type
+          required: true
+          schema:
+            enum:
+              - pr
+              - issue
+            type: string
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowStatePointResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get item workflow state
+      tags:
+        - Activity
     put:
       operationId: set-workflow-state-on-host
       parameters:
@@ -19162,6 +19244,54 @@ paths:
       tags:
         - Activity
   /workflow-state/{item_type}/{provider}/{owner}/{name}/{number}:
+    get:
+      operationId: get-workflow-state
+      parameters:
+        - in: path
+          name: item_type
+          required: true
+          schema:
+            enum:
+              - pr
+              - issue
+            type: string
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowStatePointResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get item workflow state
+      tags:
+        - Activity
     put:
       operationId: set-workflow-state
       parameters:

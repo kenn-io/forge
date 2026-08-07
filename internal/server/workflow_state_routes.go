@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"time"
+	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
@@ -170,6 +171,34 @@ type setWorkflowStateHostInput struct {
 	Body         setWorkflowStateBody
 }
 
+type getWorkflowStateInput struct {
+	ItemType     string `path:"item_type" enum:"pr,issue"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+}
+
+type getWorkflowStateHostInput struct {
+	ItemType     string `path:"item_type" enum:"pr,issue"`
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+}
+
+type workflowStatePointResponse struct {
+	Status        db.KanbanStatus `json:"status" enum:"new,reviewing,waiting,awaiting_merge"`
+	UpdatedAt     string          `json:"updated_at,omitempty" format:"date-time"`
+	UpdatedSource string          `json:"updated_source,omitempty"`
+	UpdatedActor  string          `json:"updated_actor,omitempty"`
+	UpdatedReason string          `json:"updated_reason,omitempty"`
+}
+
+type getWorkflowStateOutput = httpapi.BodyOutput[workflowStatePointResponse]
+
 type workflowStateChangeResponse struct {
 	PreviousStatus db.KanbanStatus `json:"previous_status" enum:"new,reviewing,waiting,awaiting_merge"`
 	Status         db.KanbanStatus `json:"status" enum:"new,reviewing,waiting,awaiting_merge"`
@@ -186,6 +215,10 @@ var workflowSourcePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,39}$`)
 func (s *Server) registerWorkflowStateAPI(api huma.API) {
 	huma.Get(api, "/workflow-state", s.listWorkflowState,
 		httpapi.DocumentOperation("list-workflow-state", "List item workflow state", "Activity"))
+	huma.Get(api, "/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}", s.getWorkflowState,
+		httpapi.DocumentOperation("get-workflow-state", "Get item workflow state", "Activity"))
+	huma.Get(api, "/host/{platform_host}/workflow-state/{item_type}/{provider}/{owner}/{name}/{number}", s.getWorkflowStateOnHost,
+		httpapi.DocumentOperation("get-workflow-state-on-host", "Get item workflow state", "Activity"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-workflow-state",
 		Method:        http.MethodPut,
@@ -235,7 +268,7 @@ func (s *Server) listWorkflowState(
 		Cursor:        input.Cursor,
 	})
 	if err != nil {
-		if input.Cursor != "" {
+		if errors.Is(err, db.ErrInvalidWorkflowCursor) {
 			return nil, httpapi.Validation("query.cursor", "invalid cursor")
 		}
 		return nil, httpapi.Internal("list workflow state failed")
@@ -285,42 +318,15 @@ func (s *Server) setWorkflowState(
 		source = "api"
 	}
 
-	owner, err := url.PathUnescape(input.Owner)
-	if err != nil {
-		return nil, httpapi.Validation("path.owner", "owner must be valid URL path text")
-	}
-	name, err := url.PathUnescape(input.Name)
-	if err != nil {
-		return nil, httpapi.Validation("path.name", "name must be valid URL path text")
-	}
-	repo, err := s.repoResolver.LookupRoute(
-		ctx, input.Provider, input.PlatformHost, owner, name,
+	repo, err := s.resolveWorkflowItem(
+		ctx, input.ItemType, input.Provider, input.PlatformHost,
+		input.Owner, input.Name, input.Number,
 	)
 	if err != nil {
-		return nil, httpapi.ProviderRouteLookupError(err)
-	}
-	switch input.ItemType {
-	case db.ItemTypePR:
-		item, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
-		if err != nil {
-			return nil, httpapi.Internal("read pull request failed")
-		}
-		if item == nil {
-			return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
-		}
-	case db.ItemTypeIssue:
-		item, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
-		if err != nil {
-			return nil, httpapi.Internal("read issue failed")
-		}
-		if item == nil {
-			return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
-		}
-	default:
-		return nil, httpapi.Validation("path.item_type", "item_type must be one of: pr, issue", "pr", "issue")
+		return nil, err
 	}
 
-	previous, err := s.db.SetItemWorkflowState(ctx, db.SetItemWorkflowStateParams{
+	result, err := s.db.SetItemWorkflowState(ctx, db.SetItemWorkflowStateParams{
 		RepoID:         repo.ID,
 		ItemType:       input.ItemType,
 		ItemNumber:     input.Number,
@@ -341,17 +347,13 @@ func (s *Server) setWorkflowState(
 		return nil, httpapi.Internal("set workflow state failed")
 	}
 
-	row, err := s.db.GetItemWorkflowState(ctx, repo.ID, input.ItemType, input.Number)
-	if err != nil || row == nil {
-		return nil, httpapi.Internal("read workflow state failed")
-	}
 	return &setWorkflowStateOutput{Body: workflowStateChangeResponse{
-		PreviousStatus: normalizeWorkflowStatusForAPI(previous),
-		Status:         normalizeWorkflowStatusForAPI(row.Status),
-		UpdatedAt:      row.UpdatedAt.UTC().Format(time.RFC3339),
-		UpdatedSource:  row.UpdatedSource,
-		UpdatedActor:   row.UpdatedActor,
-		UpdatedReason:  row.UpdatedReason,
+		PreviousStatus: normalizeWorkflowStatusForAPI(result.PreviousStatus),
+		Status:         normalizeWorkflowStatusForAPI(result.State.Status),
+		UpdatedAt:      result.State.UpdatedAt.UTC().Format(time.RFC3339),
+		UpdatedSource:  result.State.UpdatedSource,
+		UpdatedActor:   result.State.UpdatedActor,
+		UpdatedReason:  result.State.UpdatedReason,
 	}}, nil
 }
 
@@ -384,11 +386,11 @@ func validateSetWorkflowStateBody(body setWorkflowStateBody) error {
 	if body.Source != "" && !workflowSourcePattern.MatchString(body.Source) {
 		return httpapi.Validation("body.source", "source must match ^[a-z][a-z0-9_-]{0,39}$")
 	}
-	if len(body.Actor) > 120 {
-		return httpapi.Validation("body.actor", "actor must be at most 120 bytes")
+	if utf8.RuneCountInString(body.Actor) > 120 {
+		return httpapi.Validation("body.actor", "actor must be at most 120 characters")
 	}
-	if len(body.Reason) > 500 {
-		return httpapi.Validation("body.reason", "reason must be at most 500 bytes")
+	if utf8.RuneCountInString(body.Reason) > 500 {
+		return httpapi.Validation("body.reason", "reason must be at most 500 characters")
 	}
 	return nil
 }
@@ -407,4 +409,81 @@ func (s *Server) setWorkflowStateOnHost(
 		Body:         input.Body,
 	}
 	return s.setWorkflowState(ctx, &next)
+}
+
+func (s *Server) getWorkflowState(
+	ctx context.Context,
+	input *getWorkflowStateInput,
+) (*getWorkflowStateOutput, error) {
+	repo, err := s.resolveWorkflowItem(
+		ctx, input.ItemType, input.Provider, input.PlatformHost,
+		input.Owner, input.Name, input.Number,
+	)
+	if err != nil {
+		return nil, err
+	}
+	state, err := s.db.GetItemWorkflowState(ctx, repo.ID, input.ItemType, input.Number)
+	if err != nil {
+		return nil, httpapi.Internal("read workflow state failed")
+	}
+	out := workflowStatePointResponse{Status: db.KanbanStatusNew}
+	if state != nil {
+		out.Status = normalizeWorkflowStatusForAPI(state.Status)
+		out.UpdatedAt = formatUTCRFC3339(state.UpdatedAt)
+		out.UpdatedSource = state.UpdatedSource
+		out.UpdatedActor = state.UpdatedActor
+		out.UpdatedReason = state.UpdatedReason
+	}
+	return &getWorkflowStateOutput{Body: out}, nil
+}
+
+func (s *Server) getWorkflowStateOnHost(
+	ctx context.Context,
+	input *getWorkflowStateHostInput,
+) (*getWorkflowStateOutput, error) {
+	return s.getWorkflowState(ctx, &getWorkflowStateInput{
+		ItemType: input.ItemType, Provider: input.Provider,
+		PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name,
+		Number: input.Number,
+	})
+}
+
+func (s *Server) resolveWorkflowItem(
+	ctx context.Context,
+	itemType, provider, platformHost, escapedOwner, escapedName string,
+	number int,
+) (*db.Repo, error) {
+	owner, err := url.PathUnescape(escapedOwner)
+	if err != nil {
+		return nil, httpapi.Validation("path.owner", "owner must be valid URL path text")
+	}
+	name, err := url.PathUnescape(escapedName)
+	if err != nil {
+		return nil, httpapi.Validation("path.name", "name must be valid URL path text")
+	}
+	repo, err := s.repoResolver.LookupRoute(ctx, provider, platformHost, owner, name)
+	if err != nil {
+		return nil, httpapi.ProviderRouteLookupError(err)
+	}
+	switch itemType {
+	case db.ItemTypePR:
+		item, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+		if err != nil {
+			return nil, httpapi.Internal("read pull request failed")
+		}
+		if item == nil {
+			return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
+		}
+	case db.ItemTypeIssue:
+		item, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, number)
+		if err != nil {
+			return nil, httpapi.Internal("read issue failed")
+		}
+		if item == nil {
+			return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
+		}
+	default:
+		return nil, httpapi.Validation("path.item_type", "item_type must be one of: pr, issue", "pr", "issue")
+	}
+	return repo, nil
 }

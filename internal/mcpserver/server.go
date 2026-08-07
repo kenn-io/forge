@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"io"
 	"sync"
 	"time"
 
@@ -54,9 +55,16 @@ func (s *Server) registerTools() {
 	s.registerGuidance()
 }
 
-func (s *Server) RunStdio(ctx context.Context) error {
-	return s.mcp.Run(ctx, &mcp.StdioTransport{})
+func (s *Server) RunStdio(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+	return s.mcp.Run(ctx, &mcp.IOTransport{
+		Reader: io.NopCloser(stdin),
+		Writer: nopWriteCloser{Writer: stdout},
+	})
 }
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
 
 func (s *Server) Close() error {
 	s.diffMu.Lock()

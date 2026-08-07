@@ -52,7 +52,7 @@ type getItemContextOutput struct {
 	Events         []contextEvent      `json:"events,omitempty"`
 	Checks         []contextCheck      `json:"checks,omitempty"`
 	Workspace      *daemonWorkspaceRef `json:"workspace,omitempty"`
-	Stack          candidateStack      `json:"stack,omitempty"`
+	Stack          candidateStack      `json:"stack,omitzero"`
 	Workflow       candidateWorkflow   `json:"workflow"`
 	Cache          candidateCache      `json:"cache"`
 	LastActivityAt string              `json:"last_activity_at,omitempty"`
@@ -61,7 +61,7 @@ type getItemContextOutput struct {
 type listByWorkflowInput struct {
 	States        []string        `json:"states,omitempty"`
 	ItemTypes     []string        `json:"item_types,omitempty"`
-	Repo          repoFilterInput `json:"repo,omitempty"`
+	Repo          repoFilterInput `json:"repo,omitzero"`
 	IncludeClosed bool            `json:"include_closed,omitempty"`
 	Limit         int             `json:"limit,omitempty"`
 	Cursor        string          `json:"cursor,omitempty"`

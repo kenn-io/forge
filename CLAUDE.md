@@ -50,6 +50,7 @@ only routes to them.
 | Frontend interaction, route state, persistence, or input semantics | `context/ui-interaction-contracts.md` |
 | Phone routes, narrow layouts, or touch UX | `context/mobile-ux.md` |
 | Workflow or terminal panel interaction models | `context/vscode-workflow-panel-interaction-spec.md` |
+| MCP companion tools, transports, safety boundary, or agent handoff | `context/mcp-server.md` |
 | Workspace APIs, creation, item identity, lifecycle hooks, or generated launch context | `context/workspace-apis.md` |
 | Workspace deletion, runtime sessions, tmux, or terminal UI | `context/workspace-runtime-lifecycle.md` |
 | Inline diff review drafts, comments, or threads | `context/inline-review-comments.md` |

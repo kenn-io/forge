@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -14,7 +15,7 @@ import (
 
 type findCandidatesInput struct {
 	Since                 string          `json:"since,omitempty"`
-	Repo                  repoFilterInput `json:"repo,omitempty"`
+	Repo                  repoFilterInput `json:"repo,omitzero"`
 	ItemTypes             []string        `json:"item_types,omitempty"`
 	WorkflowStates        []string        `json:"workflow_states,omitempty"`
 	ExcludeWorkflowStates []string        `json:"exclude_workflow_states,omitempty"`
@@ -206,7 +207,6 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 		if excludeWorkflow[status] {
 			continue
 		}
-		s.enrichCandidateStack(ctx, &cand)
 		candidates = append(candidates, cand)
 		if len(candidates) > limit {
 			capped = true
@@ -216,6 +216,11 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 	sortCandidates(candidates)
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
+	}
+	for i := range candidates {
+		if err := s.enrichCandidateStack(ctx, &candidates[i]); err != nil {
+			return findCandidatesOutput{}, err
+		}
 	}
 	return findCandidatesOutput{Candidates: candidates, Capped: capped}, nil
 }
@@ -416,24 +421,33 @@ func (s *Server) buildCandidate(
 	}
 }
 
-func (s *Server) enrichCandidateStack(ctx context.Context, cand *candidate) {
+func (s *Server) enrichCandidateStack(ctx context.Context, cand *candidate) error {
 	if cand == nil || cand.Item.Type != "pr" {
-		return
+		return nil
 	}
-	cand.Stack = s.stackForCandidate(ctx, cand.Item)
+	stack, err := s.stackForCandidate(ctx, cand.Item)
+	if err != nil {
+		return err
+	}
+	cand.Stack = stack
+	return nil
 }
 
-func (s *Server) stackForCandidate(ctx context.Context, item itemRef) candidateStack {
+func (s *Server) stackForCandidate(ctx context.Context, item itemRef) (candidateStack, error) {
 	var stack daemonStackContext
 	if err := s.daemon.getJSON(ctx, stackPath(item), nil, &stack); err != nil {
-		return candidateStack{}
+		var derr *daemonError
+		if errors.As(err, &derr) && isStackAbsentError(derr) {
+			return candidateStack{}, nil
+		}
+		return candidateStack{}, err
 	}
 	return candidateStack{
 		Present:  true,
 		Position: stack.Position,
 		Size:     stack.Size,
 		Health:   stack.Health,
-	}
+	}, nil
 }
 
 func stackPath(item itemRef) string {

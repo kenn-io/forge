@@ -6,11 +6,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server"
 )
@@ -57,8 +59,15 @@ func TestWorkflowStatePutAndGet(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 42)
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = database.WriteDB().ExecContext(t.Context(),
+		`DELETE FROM forge_item_workflow_state WHERE repo_id = ? AND item_type = 'pr' AND item_number = 42`,
+		repo.ID)
+	require.NoError(err)
 	seedIssue(t, database, "acme", "widget", 7, "open")
-	_, err := database.WriteDB().ExecContext(t.Context(),
+	_, err = database.WriteDB().ExecContext(t.Context(),
 		`UPDATE forge_issues SET last_activity_at = '2026-07-01 10:00:00' WHERE number = 7`)
 	require.NoError(err)
 
@@ -146,6 +155,72 @@ func TestWorkflowStatePutConflict(t *testing.T) {
 	workflow, ok := item["workflow"].(map[string]any)
 	require.True(ok)
 	assert.Equal("reviewing", workflow["status"])
+}
+
+func TestWorkflowStateGetExactItem(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 42)
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = database.WriteDB().ExecContext(t.Context(),
+		`DELETE FROM forge_item_workflow_state WHERE repo_id = ? AND item_type = 'pr' AND item_number = 42`,
+		repo.ID)
+	require.NoError(err)
+
+	code, body := workflowStateRequest(t, srv, http.MethodGet,
+		"/workflow-state/pr/gh/acme/widget/42", nil)
+	require.Equal(http.StatusOK, code)
+	assert.Equal("new", body["status"])
+	assert.NotContains(body, "updated_at")
+
+	code, _ = workflowStateRequest(t, srv, http.MethodPut,
+		"/workflow-state/pr/gh/acme/widget/42",
+		map[string]any{
+			"status": "reviewing", "expected_status": "new",
+			"source": "mcp", "actor": "agent-a", "reason": "claim",
+		})
+	require.Equal(http.StatusOK, code)
+
+	code, body = workflowStateRequest(t, srv, http.MethodGet,
+		"/workflow-state/pr/gh/acme/widget/42", nil)
+	require.Equal(http.StatusOK, code)
+	assert.Equal("reviewing", body["status"])
+	assert.Equal("mcp", body["updated_source"])
+	assert.Equal("agent-a", body["updated_actor"])
+	assert.Equal("claim", body["updated_reason"])
+	assert.NotEmpty(body["updated_at"])
+
+	code, body = workflowStateRequest(t, srv, http.MethodGet,
+		"/workflow-state/pr/gh/acme/widget/99", nil)
+	assert.Equal(http.StatusNotFound, code)
+	assert.Equal("pullNotFound", body["code"])
+}
+
+func TestWorkflowStateUnicodeMetadataLimitsUseCharacters(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 42)
+
+	code, body := workflowStateRequest(t, srv, http.MethodPut,
+		"/workflow-state/pr/gh/acme/widget/42",
+		map[string]any{
+			"status": "reviewing", "force": true,
+			"actor":  strings.Repeat("é", 120),
+			"reason": strings.Repeat("界", 500),
+		})
+	require.Equal(http.StatusOK, code, body)
+
+	code, _ = workflowStateRequest(t, srv, http.MethodPut,
+		"/workflow-state/pr/gh/acme/widget/42",
+		map[string]any{
+			"status": "waiting", "force": true,
+			"actor": strings.Repeat("é", 121),
+		})
+	assert.Equal(http.StatusUnprocessableEntity, code)
 }
 
 func TestWorkflowStatePutValidation(t *testing.T) {
@@ -357,6 +432,64 @@ func TestWorkflowStateHostVariantUsesEscapedNestedRepoPath(t *testing.T) {
 	workflow, ok := item["workflow"].(map[string]any)
 	require.True(ok)
 	assert.Equal("reviewing", workflow["status"])
+}
+
+func TestWorkflowStateGeneratedClientSupportsGuardedAndForcedNestedHostWrites(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	srv, database := setupTestServer(t)
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "gitlab", PlatformHost: "gitlab.example.com", PlatformRepoID: "generated-420",
+		Owner: "Group/SubGroup", Name: "My_Project", RepoPath: "Group/SubGroup/My_Project",
+	})
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 42000, Number: 42,
+		URL:   "https://gitlab.example.com/Group/SubGroup/My_Project/-/merge_requests/42",
+		Title: "Nested path PR", Author: "testuser", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	client := setupTestClient(t, srv)
+
+	var guarded generated.SetWorkflowStateBody
+	require.NoError(guarded.FromSetWorkflowStateBody0(generated.SetWorkflowStateBody0{
+		Status:         generated.SetWorkflowStateBody0StatusReviewing,
+		ExpectedStatus: generated.SetWorkflowStateBody0ExpectedStatusNew,
+	}))
+	guardedResp, err := client.HTTP.SetWorkflowStateOnHostWithResponse(
+		ctx, "gitlab.example.com", generated.SetWorkflowStateOnHostParamsItemTypePr,
+		"gl", "Group/SubGroup", "My_Project", 42, guarded,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, guardedResp.StatusCode(), string(guardedResp.Body))
+	require.NotNil(guardedResp.JSON200)
+	assert.Equal(generated.WorkflowStateChangeResponseStatusReviewing, guardedResp.JSON200.Status)
+
+	var forced generated.SetWorkflowStateBody
+	require.NoError(forced.FromSetWorkflowStateBody1(generated.SetWorkflowStateBody1{
+		Status: generated.SetWorkflowStateBody1StatusWaiting,
+		Force:  generated.True,
+	}))
+	forcedResp, err := client.HTTP.SetWorkflowStateOnHostWithResponse(
+		ctx, "gitlab.example.com", generated.SetWorkflowStateOnHostParamsItemTypePr,
+		"gl", "Group/SubGroup", "My_Project", 42, forced,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, forcedResp.StatusCode(), string(forcedResp.Body))
+	require.NotNil(forcedResp.JSON200)
+	assert.Equal(generated.WorkflowStateChangeResponseStatusWaiting, forcedResp.JSON200.Status)
+
+	getResp, err := client.HTTP.GetWorkflowStateOnHostWithResponse(
+		ctx, "gitlab.example.com", generated.GetWorkflowStateOnHostParamsItemTypePr,
+		"gl", "Group/SubGroup", "My_Project", 42,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode(), string(getResp.Body))
+	require.NotNil(getResp.JSON200)
+	assert.Equal(generated.WorkflowStatePointResponseStatusWaiting, getResp.JSON200.Status)
 }
 
 func TestWorkflowStateListFilters(t *testing.T) {

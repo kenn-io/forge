@@ -908,6 +908,30 @@ func (e WorkflowStateMetaResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for WorkflowStatePointResponseStatus.
+const (
+	WorkflowStatePointResponseStatusAwaitingMerge WorkflowStatePointResponseStatus = "awaiting_merge"
+	WorkflowStatePointResponseStatusNew           WorkflowStatePointResponseStatus = "new"
+	WorkflowStatePointResponseStatusReviewing     WorkflowStatePointResponseStatus = "reviewing"
+	WorkflowStatePointResponseStatusWaiting       WorkflowStatePointResponseStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the WorkflowStatePointResponseStatus enum.
+func (e WorkflowStatePointResponseStatus) Valid() bool {
+	switch e {
+	case WorkflowStatePointResponseStatusAwaitingMerge:
+		return true
+	case WorkflowStatePointResponseStatusNew:
+		return true
+	case WorkflowStatePointResponseStatusReviewing:
+		return true
+	case WorkflowStatePointResponseStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkspaceResponseAgentState.
 const (
 	Approval WorkspaceResponseAgentState = "approval"
@@ -1013,6 +1037,24 @@ func (e ResolveRepoItemOnHostParamsItemType) Valid() bool {
 	case ResolveRepoItemOnHostParamsItemTypeIssue:
 		return true
 	case ResolveRepoItemOnHostParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetWorkflowStateOnHostParamsItemType.
+const (
+	GetWorkflowStateOnHostParamsItemTypeIssue GetWorkflowStateOnHostParamsItemType = "issue"
+	GetWorkflowStateOnHostParamsItemTypePr    GetWorkflowStateOnHostParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkflowStateOnHostParamsItemType enum.
+func (e GetWorkflowStateOnHostParamsItemType) Valid() bool {
+	switch e {
+	case GetWorkflowStateOnHostParamsItemTypeIssue:
+		return true
+	case GetWorkflowStateOnHostParamsItemTypePr:
 		return true
 	default:
 		return false
@@ -1133,6 +1175,24 @@ func (e ResolveRepoItemParamsItemType) Valid() bool {
 	}
 }
 
+// Defines values for GetWorkflowStateParamsItemType.
+const (
+	GetWorkflowStateParamsItemTypeIssue GetWorkflowStateParamsItemType = "issue"
+	GetWorkflowStateParamsItemTypePr    GetWorkflowStateParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkflowStateParamsItemType enum.
+func (e GetWorkflowStateParamsItemType) Valid() bool {
+	switch e {
+	case GetWorkflowStateParamsItemTypeIssue:
+		return true
+	case GetWorkflowStateParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SetWorkflowStateParamsItemType.
 const (
 	SetWorkflowStateParamsItemTypeIssue SetWorkflowStateParamsItemType = "issue"
@@ -1189,16 +1249,16 @@ func (e GetWorkspaceFilePreviewParamsWhitespace) Valid() bool {
 
 // Defines values for GetWorkspaceFilePreviewParamsSide.
 const (
-	GetWorkspaceFilePreviewParamsSideNew GetWorkspaceFilePreviewParamsSide = "new"
-	GetWorkspaceFilePreviewParamsSideOld GetWorkspaceFilePreviewParamsSide = "old"
+	New GetWorkspaceFilePreviewParamsSide = "new"
+	Old GetWorkspaceFilePreviewParamsSide = "old"
 )
 
 // Valid indicates whether the value is a known member of the GetWorkspaceFilePreviewParamsSide enum.
 func (e GetWorkspaceFilePreviewParamsSide) Valid() bool {
 	switch e {
-	case GetWorkspaceFilePreviewParamsSideNew:
+	case New:
 		return true
-	case GetWorkspaceFilePreviewParamsSideOld:
+	case Old:
 		return true
 	default:
 		return false
@@ -4424,6 +4484,20 @@ type WorkflowStateMetaResponse struct {
 // WorkflowStateMetaResponseStatus defines model for WorkflowStateMetaResponse.Status.
 type WorkflowStateMetaResponseStatus string
 
+// WorkflowStatePointResponse defines model for WorkflowStatePointResponse.
+type WorkflowStatePointResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string                          `json:"$schema,omitempty"`
+	Status        WorkflowStatePointResponseStatus `json:"status"`
+	UpdatedActor  *string                          `json:"updated_actor,omitempty"`
+	UpdatedAt     *time.Time                       `json:"updated_at,omitempty"`
+	UpdatedReason *string                          `json:"updated_reason,omitempty"`
+	UpdatedSource *string                          `json:"updated_source,omitempty"`
+}
+
+// WorkflowStatePointResponseStatus defines model for WorkflowStatePointResponse.Status.
+type WorkflowStatePointResponseStatus string
+
 // WorkspaceDiffWatchResponse defines model for WorkspaceDiffWatchResponse.
 type WorkspaceDiffWatchResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -4954,6 +5028,9 @@ type ResolveRepoItemOnHostParams struct {
 // ResolveRepoItemOnHostParamsItemType defines parameters for ResolveRepoItemOnHost.
 type ResolveRepoItemOnHostParamsItemType string
 
+// GetWorkflowStateOnHostParamsItemType defines parameters for GetWorkflowStateOnHost.
+type GetWorkflowStateOnHostParamsItemType string
+
 // SetWorkflowStateOnHostParamsItemType defines parameters for SetWorkflowStateOnHost.
 type SetWorkflowStateOnHostParamsItemType string
 
@@ -5199,6 +5276,9 @@ type ListWorkflowStateParams struct {
 	// Cursor Opaque keyset cursor from a previous response. Reuse only with the same repo, item_type, state, and include_closed filters; pages are best-effort under concurrent writes.
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
+
+// GetWorkflowStateParamsItemType defines parameters for GetWorkflowState.
+type GetWorkflowStateParamsItemType string
 
 // SetWorkflowStateParamsItemType defines parameters for SetWorkflowState.
 type SetWorkflowStateParamsItemType string
@@ -6419,6 +6499,9 @@ type ClientInterface interface {
 
 	UpdateRepoWorktreeBaseOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoWorktreeBaseOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetWorkflowStateOnHost request
+	GetWorkflowStateOnHost(ctx context.Context, platformHost string, itemType GetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// SetWorkflowStateOnHostWithBody request with any body
 	SetWorkflowStateOnHostWithBody(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -6923,6 +7006,9 @@ type ClientInterface interface {
 
 	// ListWorkflowState request
 	ListWorkflowState(ctx context.Context, params *ListWorkflowStateParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkflowState request
+	GetWorkflowState(ctx context.Context, itemType GetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetWorkflowStateWithBody request with any body
 	SetWorkflowStateWithBody(ctx context.Context, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -9254,6 +9340,18 @@ func (c *Client) UpdateRepoWorktreeBaseOnHost(ctx context.Context, platformHost 
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetWorkflowStateOnHost(ctx context.Context, platformHost string, itemType GetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkflowStateOnHostRequest(c.Server, platformHost, itemType, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) SetWorkflowStateOnHostWithBody(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetWorkflowStateOnHostRequestWithBody(c.Server, platformHost, itemType, provider, owner, name, number, contentType, body)
 	if err != nil {
@@ -11476,6 +11574,18 @@ func (c *Client) GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) 
 
 func (c *Client) ListWorkflowState(ctx context.Context, params *ListWorkflowStateParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListWorkflowStateRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkflowState(ctx context.Context, itemType GetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkflowStateRequest(c.Server, itemType, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -20836,6 +20946,75 @@ func NewUpdateRepoWorktreeBaseOnHostRequestWithBody(server string, platformHost 
 	return req, nil
 }
 
+// NewGetWorkflowStateOnHostRequest generates requests for GetWorkflowStateOnHost
+func NewGetWorkflowStateOnHostRequest(server string, platformHost string, itemType GetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "item_type", itemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/workflow-state/%s/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewSetWorkflowStateOnHostRequest calls the generic SetWorkflowStateOnHost builder with application/json body
 func NewSetWorkflowStateOnHostRequest(server string, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateOnHostJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -28654,6 +28833,68 @@ func NewListWorkflowStateRequest(server string, params *ListWorkflowStateParams)
 	return req, nil
 }
 
+// NewGetWorkflowStateRequest generates requests for GetWorkflowState
+func NewGetWorkflowStateRequest(server string, itemType GetWorkflowStateParamsItemType, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "item_type", itemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workflow-state/%s/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewSetWorkflowStateRequest calls the generic SetWorkflowState builder with application/json body
 func NewSetWorkflowStateRequest(server string, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, body SetWorkflowStateJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -30353,6 +30594,9 @@ type ClientWithResponsesInterface interface {
 
 	UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoWorktreeBaseOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoWorktreeBaseOnHostResponse, error)
 
+	// GetWorkflowStateOnHostWithResponse request
+	GetWorkflowStateOnHostWithResponse(ctx context.Context, platformHost string, itemType GetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetWorkflowStateOnHostResponse, error)
+
 	// SetWorkflowStateOnHostWithBodyWithResponse request with any body
 	SetWorkflowStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorkflowStateOnHostResponse, error)
 
@@ -30854,6 +31098,9 @@ type ClientWithResponsesInterface interface {
 
 	// ListWorkflowStateWithResponse request
 	ListWorkflowStateWithResponse(ctx context.Context, params *ListWorkflowStateParams, reqEditors ...RequestEditorFn) (*ListWorkflowStateResponse, error)
+
+	// GetWorkflowStateWithResponse request
+	GetWorkflowStateWithResponse(ctx context.Context, itemType GetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetWorkflowStateResponse, error)
 
 	// SetWorkflowStateWithBodyWithResponse request with any body
 	SetWorkflowStateWithBodyWithResponse(ctx context.Context, itemType SetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorkflowStateResponse, error)
@@ -34041,6 +34288,29 @@ func (r UpdateRepoWorktreeBaseOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type GetWorkflowStateOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkflowStatePointResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkflowStateOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkflowStateOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type SetWorkflowStateOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -37054,6 +37324,29 @@ func (r ListWorkflowStateResponse) StatusCode() int {
 	return 0
 }
 
+type GetWorkflowStateResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkflowStatePointResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkflowStateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkflowStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type SetWorkflowStateResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -39166,6 +39459,15 @@ func (c *ClientWithResponses) UpdateRepoWorktreeBaseOnHostWithResponse(ctx conte
 	return ParseUpdateRepoWorktreeBaseOnHostResponse(rsp)
 }
 
+// GetWorkflowStateOnHostWithResponse request returning *GetWorkflowStateOnHostResponse
+func (c *ClientWithResponses) GetWorkflowStateOnHostWithResponse(ctx context.Context, platformHost string, itemType GetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetWorkflowStateOnHostResponse, error) {
+	rsp, err := c.GetWorkflowStateOnHost(ctx, platformHost, itemType, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkflowStateOnHostResponse(rsp)
+}
+
 // SetWorkflowStateOnHostWithBodyWithResponse request with arbitrary body returning *SetWorkflowStateOnHostResponse
 func (c *ClientWithResponses) SetWorkflowStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, itemType SetWorkflowStateOnHostParamsItemType, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorkflowStateOnHostResponse, error) {
 	rsp, err := c.SetWorkflowStateOnHostWithBody(ctx, platformHost, itemType, provider, owner, name, number, contentType, body, reqEditors...)
@@ -40776,6 +41078,15 @@ func (c *ClientWithResponses) ListWorkflowStateWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseListWorkflowStateResponse(rsp)
+}
+
+// GetWorkflowStateWithResponse request returning *GetWorkflowStateResponse
+func (c *ClientWithResponses) GetWorkflowStateWithResponse(ctx context.Context, itemType GetWorkflowStateParamsItemType, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetWorkflowStateResponse, error) {
+	rsp, err := c.GetWorkflowState(ctx, itemType, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkflowStateResponse(rsp)
 }
 
 // SetWorkflowStateWithBodyWithResponse request with arbitrary body returning *SetWorkflowStateResponse
@@ -45383,6 +45694,39 @@ func ParseUpdateRepoWorktreeBaseOnHostResponse(rsp *http.Response) (*UpdateRepoW
 	return response, nil
 }
 
+// ParseGetWorkflowStateOnHostResponse parses an HTTP response from a GetWorkflowStateOnHostWithResponse call
+func ParseGetWorkflowStateOnHostResponse(rsp *http.Response) (*GetWorkflowStateOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkflowStateOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowStatePointResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseSetWorkflowStateOnHostResponse parses an HTTP response from a SetWorkflowStateOnHostWithResponse call
 func ParseSetWorkflowStateOnHostResponse(rsp *http.Response) (*SetWorkflowStateOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -49561,6 +49905,39 @@ func ParseListWorkflowStateResponse(rsp *http.Response) (*ListWorkflowStateRespo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest WorkflowStateListResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkflowStateResponse parses an HTTP response from a GetWorkflowStateWithResponse call
+func ParseGetWorkflowStateResponse(rsp *http.Response) (*GetWorkflowStateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkflowStateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowStatePointResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

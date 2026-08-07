@@ -799,6 +799,11 @@ type ItemWorkflowState struct {
 	UpdatedReason string
 }
 
+type SetItemWorkflowStateResult struct {
+	PreviousStatus string
+	State          ItemWorkflowState
+}
+
 // WorkflowStateConflictError reports an expected-status mismatch on a
 // conditional workflow-state write. Current is the effective status at
 // write time; a missing row reads as "new".

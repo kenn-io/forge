@@ -52,6 +52,7 @@ func (s *Server) registerTools() {
 	s.registerDiffTools()
 	s.registerStackTools()
 	s.registerWorkflowTools()
+	s.registerAgentTools()
 	s.registerGuidance()
 }
 

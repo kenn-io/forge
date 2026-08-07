@@ -14,8 +14,13 @@ The build stages the docs in a temporary directory, writes the generated SVGs
 there, and then builds the complete site into `site/`. Generated screenshots
 are build output and are not tracked in Git.
 
-Each SVG serializes the real app DOM and CSS into an SVG `foreignObject`; it
-must not embed PNG, JPEG, or other raster screenshot payloads:
+Each capture prints the stabilized Chromium page to a one-page vector PDF.
+Poppler's `pdftocairo` converts that page into native SVG paths, clips,
+gradients, and embedded icon data so responsive images render consistently in
+WebKit. Install Poppler before running the build (`brew install poppler` on
+macOS or the `poppler-utils` package on Linux).
+
+The generated files are:
 
 - `issue-triager-light.svg`
 - `issue-triager-dark.svg`
@@ -39,18 +44,17 @@ credentials.
 
 The maintainer overview opens the seeded pull request from Activity, hosts its
 ready workspace in the detail layout, and selects the running Codex session
-before serialization.
+before export.
 
 The visible Codex pane contains a short static transcript derived from a
 one-time real Codex run in a synthetic widget-cache repository. The capture
-harness injects the sanitized text into the terminal DOM because canvas pixels
-cannot be preserved by the SVG serializer. Its prompt composer and model/path
-status reproduce the same captured Codex TUI with the temporary path replaced
-by the public synthetic repository path. Docs builds never run Codex or read
-agent credentials.
+harness injects the sanitized text into the terminal DOM before printing. Its
+prompt composer and model/path status reproduce the same captured Codex TUI
+with the temporary path replaced by the public synthetic repository path. Docs
+builds never run Codex or read agent credentials.
 
-Dark captures must render as dark when opened as standalone SVG files. The
-capture task preserves the live root theme class and computed CSS custom
-properties because the app's `:root.dark` selectors do not apply inside an SVG
-`foreignObject` by themselves. Captures also wait for sync UI to return to idle
-so workflow images do not show transient syncing spinners.
+Dark captures print with the active screen theme. Before export, the task waits
+for sync UI to return to idle and rejects transient syncing labels or private
+temporary paths. The generated SVG contract rejects `foreignObject`, scripts,
+remote asset URLs, and private build paths; the rendered-site suite also checks
+responsive painting in iPhone-sized WebKit.

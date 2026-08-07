@@ -569,6 +569,29 @@ function normalizeNativeSVG(
   return `${svg.slice(0, svgStart)}${openingTag}${metadata}${svg.slice(openingTagEnd + 1).trimEnd()}\n`;
 }
 
+async function validateCaptureDOM(page: Page): Promise<void> {
+  const captureText = await page.evaluate(() => {
+    const attributeNames = ["aria-label", "title", "alt", "placeholder"];
+    const attributes = Array.from(document.querySelectorAll("*"), (element) =>
+      attributeNames.flatMap((name) => {
+        const value = element.getAttribute(name);
+        return value ? [value] : [];
+      }),
+    ).flat();
+    const inputValues = Array.from(document.querySelectorAll("input, textarea"), (element) =>
+      element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.value : "",
+    ).filter(Boolean);
+    return [document.body.innerText, ...attributes, ...inputValues].join("\n");
+  });
+
+  if (/\/var\/folders|kenn-forge-e2e-\d+/i.test(captureText)) {
+    throw new Error("Documentation screenshot contains a private path");
+  }
+  if (/\bsyncing\b/i.test(captureText)) {
+    throw new Error("Documentation screenshot contains a transient syncing state");
+  }
+}
+
 async function nativeSVGSnapshot(
   page: Page,
   input: {
@@ -583,6 +606,7 @@ async function nativeSVGSnapshot(
   const svgPath = path.join(temporaryDir, "capture.svg");
 
   try {
+    await validateCaptureDOM(page);
     await page.emulateMedia({ media: "screen" });
     await page.pdf({
       path: pdfPath,
@@ -602,6 +626,34 @@ async function nativeSVGSnapshot(
     await rm(temporaryDir, { recursive: true, force: true });
   }
 }
+
+test.describe("docs screenshot export safety", () => {
+  test("rejects private paths before text becomes SVG glyphs", async ({ page }) => {
+    await page.setContent("<main>Workspace: /var/folders/private/kenn-forge-e2e-123</main>");
+
+    await expect(
+      nativeSVGSnapshot(page, {
+        title: "unsafe path",
+        description: "unsafe path fixture",
+        width: 1280,
+        height: 820,
+      }),
+    ).rejects.toThrow(/private path/i);
+  });
+
+  test("rejects transient syncing attributes before export", async ({ page }) => {
+    await page.setContent('<main><span aria-label="Syncing">Repository activity</span></main>');
+
+    await expect(
+      nativeSVGSnapshot(page, {
+        title: "unsafe sync state",
+        description: "unsafe sync state fixture",
+        width: 1280,
+        height: 820,
+      }),
+    ).rejects.toThrow(/syncing/i);
+  });
+});
 
 async function captureCase(page: Page, baseURL: string, capture: CaptureCase): Promise<void> {
   await preparePage(page, capture.theme);

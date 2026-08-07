@@ -18,9 +18,18 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      grepInvert: /\[webkit\]/,
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1280, height: 800 },
+      },
+    },
+    {
+      name: "webkit-iphone",
+      grep: /\[webkit\]/,
+      use: {
+        ...devices["iPhone 13"],
+        browserName: "webkit",
       },
     },
   ],

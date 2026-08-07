@@ -270,3 +270,82 @@ test("persists an explicit light override on a dark system", async ({ browser })
   await expect(page.locator("body")).toHaveAttribute("data-md-color-scheme", "default");
   await context.close();
 });
+
+test("[webkit] scales the complete generated workflow screenshot responsively", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "webkit-iphone");
+
+  await page.goto("/");
+  await page.setContent(`
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      html, body { margin: 0; }
+      .frame { width: 360px; height: 230.625px; overflow: hidden; }
+      #responsive { display: block; width: 360px; height: auto; }
+      #scaled-natural { display: block; width: 1280px; height: 820px; transform: scale(0.28125); transform-origin: top left; }
+    </style>
+    <div class="frame"><img id="responsive" src="/assets/generated/maintainer-overview-light.svg" alt="Responsive rendering"></div>
+    <div style="height: 20px"></div>
+    <div class="frame"><img id="scaled-natural" src="/assets/generated/maintainer-overview-light.svg" alt="Scaled natural rendering"></div>
+  `);
+
+  const responsive = page.locator("#responsive");
+  const scaledNatural = page.locator("#scaled-natural");
+  await expect(responsive).toHaveJSProperty("complete", true);
+  await expect(responsive).toHaveJSProperty("naturalWidth", 1280);
+  await expect(responsive).toHaveJSProperty("naturalHeight", 820);
+  await expect(scaledNatural).toHaveJSProperty("complete", true);
+
+  const [responsiveBox, scaledNaturalBox, screenshot] = await Promise.all([
+    responsive.boundingBox(),
+    scaledNatural.boundingBox(),
+    page.screenshot(),
+  ]);
+  expect(responsiveBox).not.toBeNull();
+  expect(scaledNaturalBox).not.toBeNull();
+
+  const meanPixelDifference = await page.evaluate(
+    async ({ screenshotURL, responsiveRect, referenceRect }) => {
+      const image = new Image();
+      image.src = screenshotURL;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) throw new Error("2D canvas context is unavailable");
+      context.drawImage(image, 0, 0);
+
+      const scale = window.devicePixelRatio;
+      let difference = 0;
+      let channels = 0;
+      for (let y = 0; y < responsiveRect.height; y += 2) {
+        for (let x = 0; x < responsiveRect.width; x += 2) {
+          const responsivePixel = context.getImageData(
+            Math.round((responsiveRect.x + x) * scale),
+            Math.round((responsiveRect.y + y) * scale),
+            1,
+            1,
+          ).data;
+          const referencePixel = context.getImageData(
+            Math.round((referenceRect.x + x) * scale),
+            Math.round((referenceRect.y + y) * scale),
+            1,
+            1,
+          ).data;
+          for (let channel = 0; channel < 3; channel++) {
+            difference += Math.abs(responsivePixel[channel] - referencePixel[channel]);
+            channels++;
+          }
+        }
+      }
+      return difference / channels;
+    },
+    {
+      screenshotURL: `data:image/png;base64,${screenshot.toString("base64")}`,
+      responsiveRect: responsiveBox!,
+      referenceRect: scaledNaturalBox!,
+    },
+  );
+
+  expect(meanPixelDifference).toBeLessThan(12);
+});

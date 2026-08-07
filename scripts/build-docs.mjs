@@ -103,7 +103,6 @@ export async function buildDocs() {
         "test",
         "--config",
         path.join(repoRoot, "docs", "site", "playwright.config.ts"),
-        "--project=chromium",
         "--output",
         path.join(stagingRoot, "site-test-results"),
       ],

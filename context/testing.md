@@ -121,6 +121,9 @@ owner:
 - Real-tmux Playwright tests observe user-visible state through the per-instance socket;
   never replace global key bindings, which can leak into developer sessions and prove only event receipt
   (`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts::expectWheelScroll`).
+- Real-tmux websocket tests retry asynchronous resize probes on a bounded timer, never per repaint; repaint-coupled
+  input creates a feedback loop that can overflow subscriber buffers
+  (`internal/server/api_test.go::TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E`).
 - Clipboard-race tests must emit OSC 52 through the attached tmux client, not print
   an application OSC 52 sequence that tmux blocks, and must assert the socket observed
   OSC 52 before trusting clipboard ordering (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts::typeScheduledTmuxClipboardWrite`).

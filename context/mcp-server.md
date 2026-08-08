@@ -8,6 +8,8 @@
   provider mutations, arbitrary commands, terminal bytes, or lifecycle cleanup.
 - HTTP transport is loopback-only with independent bearer, Host, and Origin
   enforcement (`internal/mcpserver/http.go::Server.httpGuard`).
+- Target MCP `2026-07-28`: keep HTTP sessionless and do not advertise deprecated
+  logging or change notifications for the static catalog (`internal/mcpserver/server.go::New`, `internal/mcpserver/http.go::Server.RunHTTP`).
 - Treat only typed not-stacked responses as absence; surface other evidence
   failures and structured retry/ambiguity state (`internal/mcpserver/tools_stack.go::isStackAbsentError`).
 - Confirm a mutation only from exactly one complete JSON response value;

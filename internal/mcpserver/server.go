@@ -40,7 +40,14 @@ func New(opts Options) (*Server, error) {
 		opts:   opts,
 		daemon: newDaemonClient(opts.ConfigPath, opts.DaemonTimeout),
 	}
-	s.mcp = mcp.NewServer(&mcp.Implementation{Name: "kenn-forge", Version: opts.Version}, nil)
+	s.mcp = mcp.NewServer(
+		&mcp.Implementation{Name: "kenn-forge", Version: opts.Version},
+		&mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{
+			Prompts:   &mcp.PromptCapabilities{},
+			Resources: &mcp.ResourceCapabilities{},
+			Tools:     &mcp.ToolCapabilities{},
+		}},
+	)
 	s.registerTools()
 	return s, nil
 }

@@ -217,10 +217,13 @@ export const RepoSummaryWorkflowLive = Layer.effect(RepoSummaryWorkflow)(
           };
         }),
       );
-      yield* issueCommands.accept(admission.accepted).pipe(
+      const acknowledgement = yield* issueCommands.accept(admission.accepted).pipe(
         Effect.tapError(() => rollbackAdmission),
         Effect.onInterrupt(() => rollbackAdmission),
       );
+      // Admission is the command boundary here. The ordered queue owns execution,
+      // while this caller immediately publishes the accepted pending state.
+      void acknowledgement;
       yield* presentStoredIssueState(admission.pending);
     });
 

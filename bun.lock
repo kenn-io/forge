@@ -52,6 +52,7 @@
         "svelte-tiptap": "3.0.1",
       },
       "devDependencies": {
+        "@effect/language-service": "0.87.1",
         "@effect/vitest": "4.0.0-beta.102",
         "@playwright/test": "1.61.1",
         "@sveltejs/vite-plugin-svelte": "7.1.2",
@@ -158,6 +159,8 @@
     "@csstools/css-syntax-patches-for-csstree": ["@csstools/css-syntax-patches-for-csstree@1.1.6", "", { "peerDependencies": { "css-tree": "^3.2.1" }, "optionalPeers": ["css-tree"] }, "sha512-TcJCWFbXLPpJYq6z7bfOyjWYJDiDg2/I4gyUC9pqPNqHFRIey0EB0q0L5cSnQDfWJg8Jd6VadakxdIez/3zkqQ=="],
 
     "@csstools/css-tokenizer": ["@csstools/css-tokenizer@4.0.0", "", {}, "sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA=="],
+
+    "@effect/language-service": ["@effect/language-service@0.87.1", "", { "bin": { "effect-language-service": "cli.js" } }, "sha512-kcljlJmEgqg5mFAM6UShJYJjMqJb3TbHHxrK8Qoubvwugc0aVWpRkbdgQvK5b17puOt3BKXXKOmcV+oQt0oQqQ=="],
 
     "@effect/platform-browser": ["@effect/platform-browser@4.0.0-beta.102", "", { "dependencies": { "multipasta": "^0.2.8" }, "peerDependencies": { "effect": "^4.0.0-beta.102" } }, "sha512-DXXVt+oOpukqI3lEaGvvXQxSobzIy3lAsIQvlpVK+MuYBm1o4FHZrHKbrOFItDUvSR1t0kiTncFPRi01YaJUmA=="],
 

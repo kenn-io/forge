@@ -1,4 +1,5 @@
 {
+  "$schema": "./node_modules/@effect/language-service/schema.json",
   "extends": "@tsconfig/svelte/tsconfig.json",
   "compilerOptions": {
     "target": "ESNext",
@@ -16,7 +17,12 @@
     "noImplicitReturns": true,
     "noImplicitOverride": true,
     "verbatimModuleSyntax": true,
-    "types": ["node"]
+    "types": ["node"],
+    "plugins": [
+      {
+        "name": "@effect/language-service"
+      }
+    ]
   },
   "include": [
     "src/**/*.ts",

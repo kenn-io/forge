@@ -97,8 +97,11 @@ Interactive surfaces must agree on which item is selected.
   `frontend/src/lib/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`,
   `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::handleLaunch`).
   A successful claim stays pending until the exact session appears or bounded reconciliation expires;
-  sibling views suppress their empty fallback and may discard only unclaimed intents
-  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`).
+  reconciliation runs on the application runtime, survives the initiating view's teardown, treats transient
+  runtime reads as observations rather than terminal failures, and releases its read owner on exact-session
+  evidence or timeout. Sibling views suppress their empty fallback and may discard only unclaimed intents
+  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`,
+  `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::reconcileAcceptedWorkspaceLaunch`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and
@@ -123,6 +126,10 @@ Interactive surfaces must agree on which item is selected.
 - Automatic launchers and workspace mutations stay blocked during inline or merge-triggered deletion and explicit
   startup; merge cleanup uses local host identity and the full host deletion notification before pending state clears
   (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
+- Immediate and deferred merge cleanup is optional partial success, represented by the generated
+  `delete_workspace_id` request field and `workspace_cleanup_warning` result. A warning keeps the workspace live and
+  is presented as a warning, while only a warning-free immediate acknowledgement publishes the deleted workspace ID
+  (`frontend/src/lib/components/detail/MergeModal.svelte`, `frontend/src/lib/stores/detail.svelte.ts::mergePull`).
 - Catalog-backed routes must normalize missing selections even when the catalog
   is empty: select the first available item or `null`, and clear dependent route
   identity (`frontend/src/lib/components/docs/DocsWorkspace.svelte::loadFolders`).
@@ -224,6 +231,10 @@ Persisted controls must state their scope clearly.
   workflow, backend readiness is not part of the settings-request timeout, and an invalidated
   in-flight read cannot publish into the next generation
   (`frontend/src/lib/app/startup-workflow.ts::StartupWorkflowLive`, `frontend/src/lib/stores/settings-workflow.ts::SettingsWorkflowLive`).
+- Backend readiness polling belongs to the active application-startup fiber: stopping the full app shell interrupts
+  the poll and closes its scoped response, while a ready backend starts the separately bounded settings read. A
+  settings failure invalidates the startup cache so the next startup attempt performs fresh readiness and settings
+  work (`frontend/src/lib/utils/appStartup.ts::runAppStartup`, `frontend/src/lib/utils/backendReadiness.ts`).
 
 Whenever a control persists, document and test:
 
@@ -835,6 +846,9 @@ responses, and discard stale responses instead of patching another item.
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::runAuthorityMutation`).
 - A recurrence 412 is not an acknowledged mutation: if revision reconciliation fails, keep the stale dialog and all mutations fenced until Retry refreshes both snapshot and recurrence data; Retry must never repeat the delete
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::beginRecurrenceConflictRecovery`).
+- Onboarding repository setup owns its initial sync through `triggerSyncEffect`: a rejected trigger returns the flow
+  to a retryable repository step with the failure visible, while an accepted trigger advances only after the ordered
+  sync command settles (`frontend/src/lib/components/onboarding/OnboardingFlow.svelte::startSync`).
 
 ## Testing Expectations
 

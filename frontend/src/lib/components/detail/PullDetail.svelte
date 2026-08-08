@@ -118,6 +118,7 @@
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
   } from "../../stores/workspace-create-pending.svelte.js";
+  import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
 
   type ChipTrailing = ComponentProps<typeof Chip>["trailing"];
 
@@ -2792,6 +2793,7 @@
           routeGeneration={mutationRouteGeneration}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           alreadyQueued={deferredMergePending}
+          workspaceId={d.workspace?.id}
           midStackWarning={midStackBlocker
             ? `This is stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}. Branch #${midStackBlocker.number} below it has not been merged.`
             : undefined}
@@ -2807,7 +2809,10 @@
               repoPath,
             });
           }}
-          onmerged={() => {
+          onmerged={(_cleanupWarning, deletedWorkspaceId) => {
+            if (deletedWorkspaceId) {
+              notifyWorkspaceDeleted(deletedWorkspaceId, undefined, itemIdentity);
+            }
             showMergeModal = false;
             detailStore.loadDetail(owner, name, number, {
               provider,

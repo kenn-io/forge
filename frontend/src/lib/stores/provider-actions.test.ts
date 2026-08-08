@@ -244,4 +244,38 @@ describe("provider action mutations", () => {
 
     expect(onProblem).toHaveBeenCalledWith(requestConflict.error);
   });
+
+  it("returns the workspace cleanup warning with a successful immediate merge", async () => {
+    const store = createDetailStore({
+      client: {
+        GET: vi.fn(async () => ({ data: detail() })),
+        POST: vi.fn().mockResolvedValue({
+          data: {
+            merged: true,
+            sha: "merge-sha",
+            message: "merged",
+            workspace_cleanup_warning: "workspace has uncommitted changes",
+          },
+          response: new Response(null, { status: 200 }),
+        }),
+        PUT: vi.fn(),
+        DELETE: vi.fn(),
+      } as unknown as GeneratedClient,
+    });
+    store.loadDetail("octo", "repo", 1, { ...routeRef, sync: false });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    const onSuccess = vi.fn();
+    const settled = Promise.withResolvers<void>();
+
+    store.mergePull(
+      routeRef,
+      1,
+      { commit_message: "", commit_title: "Merge pull request", method: "merge", delete_workspace_id: "ws-1" },
+      false,
+      { onSuccess, onSettled: settled.resolve },
+    );
+    await settled.promise;
+
+    expect(onSuccess).toHaveBeenCalledWith({ cleanupWarning: "workspace has uncommitted changes" });
+  });
 });

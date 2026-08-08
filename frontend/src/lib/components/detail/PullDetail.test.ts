@@ -19,10 +19,11 @@ import {
 import type { GeneratedClient } from "../../api/generated-api.js";
 import type { ProblemBody } from "../../api/problems.js";
 import type { ProviderRouteRef } from "../../api/provider-routes.js";
-import type { ProviderActionCallbacks } from "../../stores/detail.svelte.js";
+import type { MergePullCallbacks, ProviderActionCallbacks } from "../../stores/detail.svelte.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/inlineWorkspaceTestController.svelte.js";
+import * as workspaceHost from "../../stores/workspace-host.svelte.js";
 
 const launchTargets = [
   {
@@ -248,6 +249,22 @@ function renderPullDetail(
       callbacks.onSettled?.();
     });
   };
+  const runMergeAction = (path: string, body: unknown, callbacks: MergePullCallbacks): void => {
+    void apiClient.POST(path, { body }).then((result) => {
+      const error = "error" in result ? (result.error as ProblemBody | undefined) : undefined;
+      if (error !== undefined) {
+        callbacks.onProblem?.(error);
+        callbacks.onFailure?.(error.detail ?? error.title ?? "provider action failed");
+      } else {
+        const warning = result.data?.workspace_cleanup_warning;
+        if (warning) {
+          showFlash(`Pull request merged, but the workspace was not pruned: ${warning}`, { tone: "warning" });
+        }
+        callbacks.onSuccess?.(warning === undefined ? {} : { cleanupWarning: warning });
+      }
+      callbacks.onSettled?.();
+    });
+  };
   const detailStore = {
     loadDetail: vi.fn(async () => undefined),
     startDetailPolling: vi.fn(),
@@ -298,8 +315,8 @@ function renderPullDetail(
       runProviderAction("/approve-workflows", undefined, callbacks),
     ),
     mergePull: vi.fn(
-      (_ref: ProviderRouteRef, _number: number, body: unknown, deferred: boolean, callbacks: ProviderActionCallbacks) =>
-        runProviderAction(deferred ? "/merge/deferred" : "/merge", body, callbacks),
+      (_ref: ProviderRouteRef, _number: number, body: unknown, deferred: boolean, callbacks: MergePullCallbacks) =>
+        runMergeAction(deferred ? "/merge/deferred" : "/merge", body, callbacks),
     ),
     editComment: vi.fn(),
     savePRBodyInBackground: vi.fn(),
@@ -1442,6 +1459,7 @@ describe("PullDetail approvals", () => {
   });
 
   it("warns after a successful merge when workspace cleanup fails", async () => {
+    const notifyWorkspaceDeleted = vi.spyOn(workspaceHost, "notifyWorkspaceDeleted");
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
     detail.workspace = { id: "ws-1", status: "ready" };
@@ -1476,6 +1494,7 @@ describe("PullDetail approvals", () => {
     );
 
     await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+    expect(screen.getByRole<HTMLInputElement>("checkbox", { name: "Delete workspace after merge" }).checked).toBe(true);
     await fireEvent.click(
       within(screen.getByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
         name: "Squash and merge",
@@ -1491,6 +1510,64 @@ describe("PullDetail approvals", () => {
       );
       expect(detailStore.loadDetail).toHaveBeenCalled();
     });
+    expect(apiClient.POST.mock.calls.at(-1)?.[1]).toMatchObject({ body: { delete_workspace_id: "ws-1" } });
+    expect(notifyWorkspaceDeleted).not.toHaveBeenCalled();
+    notifyWorkspaceDeleted.mockRestore();
+  });
+
+  it("publishes confirmed merge cleanup with the full pull identity", async () => {
+    const notifyWorkspaceDeleted = vi.spyOn(workspaceHost, "notifyWorkspaceDeleted");
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.workspace = { id: "ws-1", status: "ready" };
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          AllowSquashMerge: true,
+          AllowMergeCommit: false,
+          AllowRebaseMerge: false,
+          ViewerCanMerge: true,
+        },
+      })),
+      POST: vi.fn(async () => ({
+        data: {
+          merged: true,
+          sha: "merge-sha",
+          message: "merged",
+        },
+        error: undefined,
+      })),
+    };
+    renderPullDetail(
+      detail,
+      {
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: false,
+        ViewerCanMerge: true,
+      },
+      apiClient,
+    );
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
+        name: "Squash and merge",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(notifyWorkspaceDeleted).toHaveBeenCalledWith("ws-1", undefined, {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: 1,
+        itemType: "pull",
+      });
+    });
+    notifyWorkspaceDeleted.mockRestore();
   });
 
   it("opens the merge modal in deferred mode when aggregate CI is pending without check rows", async () => {

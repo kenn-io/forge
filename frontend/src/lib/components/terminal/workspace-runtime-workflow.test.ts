@@ -402,6 +402,46 @@ describe("WorkspaceRuntimeWorkflow", () => {
     ),
   );
 
+  it.effect("keeps a definite delete failure with its initiating presenter", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const failDelete = yield* Deferred.make<void>();
+        const replacementStates: string[] = [];
+        const port: WorkspaceRuntimePort = {
+          read: () => Effect.succeed(emptyRuntime),
+          launch: unusedPortMethod,
+          rename: unusedPortMethod,
+          stop: unusedPortMethod,
+          refresh: unusedPortMethod,
+          retry: unusedPortMethod,
+          delete: () =>
+            Deferred.await(failDelete).pipe(
+              Effect.andThen(
+                Effect.fail(TransientTransportError.make({ operation: "delete workspace", cause: "lost response" })),
+              ),
+            ),
+          isDeleted: () => Effect.succeed(false),
+        };
+        const workflow = yield* makeWorkspaceRuntimeWorkflow(port);
+        const target = { workspaceId: "ws-1" };
+        yield* workflow.claimPresenter(target, "first", () => Effect.succeed(false));
+        yield* workflow.delete(target, { force: false, presenterID: "first" });
+        yield* workflow.releasePresenter(target, "first");
+        yield* workflow.claimPresenter(target, "replacement", (state) =>
+          Effect.sync(() => {
+            replacementStates.push(`${state.operation}:${state.kind}`);
+            return state.kind !== "pending";
+          }),
+        );
+
+        yield* Deferred.succeed(failDelete, undefined);
+        for (let attempt = 0; attempt < 10; attempt += 1) yield* Effect.yieldNow;
+
+        assert.deepStrictEqual(replacementStates, []);
+      }),
+    ),
+  );
+
   it.effect("delivers a completed refresh only to the replacement presenter", () =>
     Effect.scoped(
       Effect.gen(function* () {

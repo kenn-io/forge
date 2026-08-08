@@ -93,6 +93,14 @@ export interface ProviderActionCallbacks extends MutationCallbacks {
   readonly onProblem?: (problem: ProblemBody) => void;
 }
 
+export interface MergePullOutcome {
+  readonly cleanupWarning?: string;
+}
+
+export type MergePullCallbacks = Omit<ProviderActionCallbacks, "onSuccess"> & {
+  readonly onSuccess?: (outcome: MergePullOutcome) => void;
+};
+
 export interface DetailRefreshCallbacks extends MutationCallbacks {}
 
 export interface DetailSyncCallbacks {
@@ -752,7 +760,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     number: number,
     input: MergeParams,
     deferred: boolean,
-    callbacks: ProviderActionCallbacks = {},
+    callbacks: MergePullCallbacks = {},
   ): void {
     let workspaceCleanupWarning: string | undefined;
     const commit = (ref: DetailRequestRef) =>
@@ -786,7 +794,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
             tone: "warning",
           });
         }
-        callbacks.onSuccess?.();
+        callbacks.onSuccess?.(workspaceCleanupWarning === undefined ? {} : { cleanupWarning: workspaceCleanupWarning });
       },
     });
   }

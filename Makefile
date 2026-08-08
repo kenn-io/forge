@@ -166,6 +166,7 @@ frontend-check-no-deps: check-vite-plus-bin
 	$(VITE_PLUS_BIN) lint frontend packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!frontend/src/lib/api/generated/**' '!frontend/src/lib/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
 	cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src
 	$(VITE_PLUS_BIN) run svelte-check
+	cd frontend && node node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format text --severity error
 
 # Build and verify the public documentation, including generated screenshots.
 docs-build: frontend-deps

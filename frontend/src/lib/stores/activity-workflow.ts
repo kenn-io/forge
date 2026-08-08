@@ -37,6 +37,10 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
       return Ref.get(projectionGeneration).pipe(Effect.map((current) => current === generation));
     }
 
+    // The overloads preserve both generic channels; the language service cannot
+    // currently associate those contracts with the nested generator.
+    // @effect-diagnostics effect/missingEffectContext:off
+    // @effect-diagnostics effect/missingEffectError:off
     function projectRead<A, E, R, ProjectError, ProjectRequirements>(
       owner: "foreground" | "poll",
       read: Effect.Effect<A, E, R>,
@@ -79,6 +83,8 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
         }
       });
     }
+    // @effect-diagnostics effect/missingEffectContext:error
+    // @effect-diagnostics effect/missingEffectError:error
 
     function poll<E, R>(pollOnce: Effect.Effect<void, E, R>, interval: Duration.Input): Effect.Effect<void, E, R> {
       const program = Stream.fromEffectSchedule(pollOnce, Schedule.spaced(interval)).pipe(Stream.runDrain);

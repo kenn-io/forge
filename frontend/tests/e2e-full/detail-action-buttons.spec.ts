@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, writeFile } from "node:fs/promises";
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
   startIsolatedE2EServer,
@@ -213,7 +213,6 @@ test.describe("detail action buttons", () => {
       api = await playwrightRequest.newContext({
         baseURL: isolatedServer.info.base_url,
       });
-
       const server = isolatedServer;
       const apiContext = api;
 
@@ -254,6 +253,120 @@ test.describe("detail action buttons", () => {
       expect((await apiContext.get(`/api/v1/workspaces/${createdWorkspace.id}`)).status()).toBe(404);
       await page.goBack();
       await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1$/);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("merging a pull request deletes its linked workspace by default", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const server = isolatedServer;
+      const apiContext = api;
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" && response.url() === `${server.info.base_url}/api/v1/workspaces`,
+      );
+      await page.getByRole("button", { name: "Create Workspace", exact: true }).filter({ visible: true }).click();
+      const createResponse = await createResponsePromise;
+      expect(createResponse.status()).toBe(202);
+      const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(apiContext, createdWorkspace.id);
+
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toBeVisible();
+      await launcher.getByRole("button", { name: "Close" }).click();
+      await expect(launcher).toBeHidden();
+
+      await page.locator(".btn--merge").first().click();
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
+      await expect(modal).toBeVisible();
+      await expect(modal.getByRole("checkbox", { name: "Delete workspace after merge" })).toBeChecked();
+      const mergeRequestPromise = page.waitForRequest((request) => {
+        const url = new URL(request.url());
+        return request.method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
+      });
+      const mergeResponsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
+      });
+      const immediateMerge = modal.getByRole("button", { name: "Merge Anyway" });
+      await expect(immediateMerge).toBeVisible();
+      await immediateMerge.click();
+
+      const mergeRequest = await mergeRequestPromise;
+      expect(mergeRequest.postDataJSON()).toMatchObject({ delete_workspace_id: createdWorkspace.id });
+      expect((await mergeResponsePromise).status()).toBe(200);
+      await expect
+        .poll(async () => (await apiContext.get(`/api/v1/workspaces/${createdWorkspace.id}`)).status())
+        .toBe(404);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toHaveCount(0);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("a merge cleanup warning keeps the linked workspace and reports partial success", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const server = isolatedServer;
+      const apiContext = api;
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" && response.url() === `${server.info.base_url}/api/v1/workspaces`,
+      );
+      await page.getByRole("button", { name: "Create Workspace", exact: true }).filter({ visible: true }).click();
+      const createResponse = await createResponsePromise;
+      const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
+      const readyWorkspace = await waitForWorkspaceReady(apiContext, createdWorkspace.id);
+      await writeFile(`${readyWorkspace.worktree_path}/uncommitted-review-note.txt`, "keep this workspace\n", "utf8");
+
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toBeVisible();
+      await launcher.getByRole("button", { name: "Close" }).click();
+      await expect(launcher).toBeHidden();
+
+      await page.locator(".btn--merge").first().click();
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
+      await expect(modal.getByRole("checkbox", { name: "Delete workspace after merge" })).toBeChecked();
+      const mergeResponsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
+      });
+      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+
+      const mergeResponse = await mergeResponsePromise;
+      expect(mergeResponse.status()).toBe(200);
+      expect(await mergeResponse.json()).toMatchObject({
+        workspace_cleanup_warning: expect.stringMatching(/uncommitted changes/i),
+      });
+      await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("workspace was not pruned");
+      expect((await apiContext.get(`/api/v1/workspaces/${createdWorkspace.id}`)).status()).toBe(200);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

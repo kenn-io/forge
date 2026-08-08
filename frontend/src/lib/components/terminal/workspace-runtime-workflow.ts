@@ -461,9 +461,10 @@ export function makeWorkspaceRuntimeWorkflow(
       presenters: ReadonlyArray<WorkspaceRuntimeMutationPresenter>,
     ): WorkspaceRuntimeMutationPresenter | undefined => {
       if (state.operation === "Delete") {
-        return (
-          presenters.find((candidate) => candidate.sessionID === state.request.options.presenterID) ?? presenters.at(-1)
+        const initiatingPresenter = presenters.find(
+          (candidate) => candidate.sessionID === state.request.options.presenterID,
         );
+        return state.kind === "uncertain" ? (initiatingPresenter ?? presenters.at(-1)) : initiatingPresenter;
       }
       const presenterID =
         state.kind === "failed" || state.kind === "uncertain"

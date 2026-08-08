@@ -153,7 +153,7 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
       Effect.retry(terminalReconnectSchedule),
       Effect.catchTag("TerminalDisconnected", () => Effect.never),
     );
-    yield* Effect.forever(
+    return yield* Effect.forever(
       connectUntilProcessExit.pipe(
         Effect.flatMap((decision) =>
           decision === "stop" ? Effect.never : Effect.sleep(decision === "restart" ? "2 seconds" : "1 second"),

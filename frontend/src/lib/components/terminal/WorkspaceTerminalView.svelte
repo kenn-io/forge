@@ -2188,6 +2188,7 @@
         if (!current && state.operation !== "Delete") return false;
         if (
           state.operation === "Delete" &&
+          state.kind === "failed" &&
           (state.request.options.presenterID !== presenterID || !failurePresentationIsCurrent())
         ) {
           clearRuntimeMutationPending(state);
@@ -2422,7 +2423,18 @@
           : {
               onSettled: (settlement) => {
                 if (settlement._tag === "Accepted") {
-                  acceptWorkspaceLaunch(launchClaim, settlement.sessionKey);
+                  const acceptedAt = Date.now();
+                  if (acceptWorkspaceLaunch(launchClaim, settlement.sessionKey, acceptedAt)) {
+                    const label = launchTargets.find((target) => target.key === launchClaim.targetKey)?.label
+                      ?? launchClaim.targetKey;
+                    reconcileAcceptedWorkspaceLaunch(
+                      launchClaim.workspaceId,
+                      launchClaim.workspaceHostKey,
+                      settlement.sessionKey,
+                      acceptedAt,
+                      label,
+                    );
+                  }
                 } else {
                   failWorkspaceLaunch(launchClaim);
                 }
@@ -2438,6 +2450,62 @@
         },
       },
     );
+  }
+
+  function reconcileAcceptedWorkspaceLaunch(
+    acceptedWorkspaceId: string,
+    acceptedWorkspaceHostKey: string | undefined,
+    acceptedSessionKey: string,
+    acceptedAt: number,
+    label: string,
+  ): void {
+    const owner = makeWorkspaceRuntimeOwner("accepted-launch");
+    const stillAwaitingSession = () => {
+      const current = pendingWorkspaceLaunch(acceptedWorkspaceId, acceptedWorkspaceHostKey);
+      return (
+        current?.phase === "awaiting_session" &&
+        current.sessionKey === acceptedSessionKey &&
+        current.acceptedAt === acceptedAt
+      );
+    };
+    const program = Effect.gen(function* () {
+      const workflow = yield* WorkspaceRuntimeWorkflow;
+      yield* Effect.gen(function* () {
+        while (stillAwaitingSession()) {
+          const remaining = 15_000 - (Date.now() - acceptedAt);
+          if (remaining <= 0) break;
+          const result = yield* workflow
+            .read(owner, acceptedWorkspaceId, acceptedWorkspaceHostKey, { force: true })
+            .pipe(Effect.catch(() => Effect.succeed(Option.none())));
+          if (
+            Option.isSome(result) &&
+            result.value.sessions.some((session) => session.key === acceptedSessionKey)
+          ) {
+            completeAcceptedWorkspaceLaunch(
+              acceptedWorkspaceId,
+              acceptedWorkspaceHostKey,
+              acceptedSessionKey,
+            );
+            return;
+          }
+          yield* Effect.sleep(Duration.millis(Math.min(500, remaining)));
+        }
+        if (
+          completeAcceptedWorkspaceLaunch(
+            acceptedWorkspaceId,
+            acceptedWorkspaceHostKey,
+            acceptedSessionKey,
+          )
+        ) {
+          showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
+        }
+      }).pipe(Effect.ensuring(workflow.release(owner)));
+    });
+    appRuntime.runCommand(program, {
+      operation: "reconcile accepted workspace launch",
+      safeContext: { surface: "workspace" },
+      onFailure: () => undefined,
+    });
   }
 
   function openSession(sessionKey: string): void {
@@ -3709,72 +3777,6 @@
       return;
     }
     void loadEmptyLaunchTargets();
-  });
-
-  $effect(() => {
-    if (!workspaceId || !runtimeLive || workspace?.status !== "ready") return;
-    const intent = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
-    if (
-      intent?.phase !== "awaiting_session" ||
-      intent.sessionKey === undefined ||
-      intent.acceptedAt === undefined
-    ) {
-      return;
-    }
-    const acceptedWorkspaceId = workspaceId;
-    const acceptedWorkspaceHostKey = workspaceHostKey;
-    const acceptedSessionKey = intent.sessionKey;
-    const acceptedAt = intent.acceptedAt;
-    if (runtimeSessions.some((session) => session.key === acceptedSessionKey)) {
-      completeAcceptedWorkspaceLaunch(acceptedWorkspaceId, acceptedWorkspaceHostKey, acceptedSessionKey);
-      return;
-    }
-    const remaining = Math.max(0, 15_000 - (Date.now() - acceptedAt));
-    const label = launchTargets.find((target) => target.key === intent.targetKey)?.label ?? intent.targetKey;
-    const stillAwaitingSession = () => {
-      const current = pendingWorkspaceLaunch(acceptedWorkspaceId, acceptedWorkspaceHostKey);
-      return (
-        current?.phase === "awaiting_session" &&
-        current.sessionKey === acceptedSessionKey &&
-        current.acceptedAt === acceptedAt
-      );
-    };
-    const execution = untrack(() =>
-      appRuntime.runCommand(
-        Effect.raceFirst(
-          Effect.gen(function* () {
-            while (stillAwaitingSession()) {
-              yield* Effect.sleep("500 millis");
-              if (!stillAwaitingSession()) return;
-              yield* fetchRuntimeProgram({ force: true });
-            }
-          }),
-          Effect.sleep(Duration.millis(remaining)).pipe(
-            Effect.andThen(
-              Effect.sync(() => {
-                if (!stillAwaitingSession()) return;
-              if (
-                !completeAcceptedWorkspaceLaunch(
-                  acceptedWorkspaceId,
-                  acceptedWorkspaceHostKey,
-                  acceptedSessionKey,
-                )
-              ) {
-                return;
-              }
-                showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
-              }),
-            ),
-          ),
-        ),
-        {
-          operation: "reconcile accepted workspace launch",
-          safeContext: { surface: "workspace" },
-          onFailure: () => undefined,
-        },
-      ),
-    );
-    return execution.interrupt;
   });
 
   $effect(() => {

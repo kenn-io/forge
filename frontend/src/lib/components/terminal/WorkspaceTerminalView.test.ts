@@ -2442,6 +2442,51 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 
+  it("surfaces uncertain delete feedback through the replacement workspace presenter", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    const deleteRequest = Promise.withResolvers<Response>();
+    let readsFail = false;
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      const { pathname } = new URL(url, "http://localhost");
+      if (method === "DELETE" && pathname.endsWith("/workspaces/ws-1")) {
+        return deleteRequest.promise;
+      }
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return readsFail
+          ? Promise.reject(new TypeError("workspace read unavailable"))
+          : Promise.resolve(Response.json(workspaceResponse));
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState({}, "", "/terminal/ws-1");
+
+    const firstVisit = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("button", { name: "Delete" });
+    await clickDeleteAndConfirm();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => input instanceof Request && input.method === "DELETE")).toBe(true);
+    });
+
+    firstVisit.unmount();
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("button", { name: "Delete" });
+    readsFail = true;
+    deleteRequest.reject(new TypeError("delete response unavailable"));
+
+    await waitFor(() => {
+      expect(mocks.showFlash).toHaveBeenCalledWith(
+        "Could not confirm whether the delete completed. Retry will check workspace state before sending anything.",
+        { tone: "danger" },
+      );
+    });
+  });
+
   it("reports a successful delete even after switching to another workspace", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const deleteRequest = deferred<Response>();
@@ -2710,16 +2755,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("keeps an accepted create-and-launch intent across an empty refresh and remount", async () => {
-    const eventListeners: Record<string, () => void> = {};
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        addEventListener(type: string, callback: () => void): void {
-          eventListeners[type] = callback;
-        }
-        close(): void {}
-      },
-    );
+    const eventSources = installEventSourceRecorder();
     queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
     mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
@@ -2746,11 +2782,75 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
 
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
-    eventListeners["reconnect.stale"]?.();
+    await waitFor(() => {
+      expect(eventSources.length).toBeGreaterThanOrEqual(2);
+      expect(latestWorkspaceEventListeners(eventSources)["reconnect.stale"]).toBeTypeOf("function");
+    });
+    latestWorkspaceEventListeners(eventSources)["reconnect.stale"]?.();
 
     await waitFor(() => expect(pendingWorkspaceLaunch("ws-1", undefined)).toBeNull());
     await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
     expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues accepted-launch reconciliation after the initiating view unmounts", async () => {
+    const launchRequest = deferred<typeof runningSession>();
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+    claimForPrs();
+
+    const firstView = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+
+    vi.useFakeTimers();
+    try {
+      launchRequest.resolve(runningSession);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(pendingWorkspaceLaunch("ws-1", undefined)).toMatchObject({
+        phase: "awaiting_session",
+        sessionKey: runningSession.key,
+      });
+
+      firstView.unmount();
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(pendingWorkspaceLaunch("ws-1", undefined)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the accepted-launch deadline active across transient runtime read failures", async () => {
+    const launchRequest = deferred<typeof runningSession>();
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+
+    vi.useFakeTimers();
+    try {
+      mocks.getWorkspaceRuntime
+        .mockRejectedValueOnce(new TypeError("runtime temporarily unavailable"))
+        .mockResolvedValue(runtimeWithCodexTarget());
+      launchRequest.resolve(runningSession);
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      expect(pendingWorkspaceLaunch("ws-1", undefined)).toBeNull();
+      expect(mocks.showFlash).toHaveBeenCalledWith("Codex launched, but its session did not become available", {
+        tone: "danger",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("settles an accepted launch that never appears after the reconciliation window", async () => {

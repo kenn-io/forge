@@ -3,24 +3,196 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/testsignal"
 	"go.kenn.io/forge/internal/web"
 )
+
+var testTmux = newTestTmuxTracker()
+
+type testTmuxTracker struct {
+	mu           sync.Mutex
+	commands     map[string][]string
+	shuttingDown bool
+}
+
+func newTestTmuxTracker() *testTmuxTracker {
+	return &testTmuxTracker{commands: make(map[string][]string)}
+}
+
+func TestMain(m *testing.M) {
+	runCleanup, stopSignalCleanup := testsignal.Install(testTmux.cleanup, func(err error) {
+		fmt.Fprintf(os.Stderr, "cleanup e2e-server test tmux: %v\n", err)
+	})
+	code := m.Run()
+	if err := runCleanup(); err != nil {
+		fmt.Fprintf(os.Stderr, "cleanup e2e-server test tmux: %v\n", err)
+		if code == 0 {
+			code = 1
+		}
+	}
+	stopSignalCleanup()
+	os.Exit(code)
+}
+
+func (tracker *testTmuxTracker) start(
+	tmuxCommand, args []string,
+	afterStart func(),
+) (func() error, error) {
+	trackedCommand := testTmuxCommandIdentity(tmuxCommand)
+	key := strings.Join(trackedCommand, "\x00")
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	if tracker.shuttingDown {
+		return nil, errors.New("e2e-server test tmux cleanup has started")
+	}
+	tracker.commands[key] = append([]string{}, trackedCommand...)
+	output, err := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
+	if err != nil {
+		delete(tracker.commands, key)
+		return nil, fmt.Errorf("start e2e-server test tmux: %w: %s", err, output)
+	}
+	if afterStart != nil {
+		afterStart()
+	}
+	return func() error { return tracker.stop(key, trackedCommand) }, nil
+}
+
+func testTmuxCommandIdentity(tmuxCommand []string) []string {
+	if len(tmuxCommand) >= 3 && tmuxCommand[0] == filepath.Join(tmuxCommand[1], "tmux") {
+		return tmuxCommand[2:]
+	}
+	return tmuxCommand
+}
+
+func (tracker *testTmuxTracker) cleanup() error {
+	tracker.mu.Lock()
+	tracker.shuttingDown = true
+	commands := make(map[string][]string, len(tracker.commands))
+	for key, command := range tracker.commands {
+		commands[key] = append([]string{}, command...)
+	}
+	tracker.mu.Unlock()
+	var cleanupErr error
+	for key, command := range commands {
+		cleanupErr = errors.Join(cleanupErr, tracker.stop(key, command))
+	}
+	return cleanupErr
+}
+
+func (tracker *testTmuxTracker) stop(key string, tmuxCommand []string) error {
+	args := append([]string{}, tmuxCommand[1:]...)
+	args = append(args, "kill-server")
+	killOutput, killErr := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
+	args[len(args)-1] = "list-sessions"
+	listOutput, listErr := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
+	if listErr == nil {
+		return fmt.Errorf(
+			"stop e2e-server test tmux: %v: %s; server still accepts commands: %s",
+			killErr, killOutput, listOutput,
+		)
+	}
+	var listExitErr *exec.ExitError
+	if !errors.As(listErr, &listExitErr) {
+		return fmt.Errorf("verify e2e-server test tmux stopped: %w: %s", listErr, listOutput)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(string(listOutput)), "no server running on ") {
+		return fmt.Errorf("verify e2e-server test tmux stopped: %w: %s", listErr, listOutput)
+	}
+	tracker.mu.Lock()
+	if current, ok := tracker.commands[key]; ok && strings.Join(current, "\x00") == key {
+		delete(tracker.commands, key)
+	}
+	tracker.mu.Unlock()
+	return nil
+}
+
+func TestTestTmuxTrackerRetainsFailedCleanupForRetry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell tmux tracker probe is not supported on Windows")
+	}
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	stateFile := filepath.Join(dir, "state")
+	failFile := filepath.Join(dir, "fail")
+	command := filepath.Join(dir, "tmux-probe")
+	require.NoError(os.WriteFile(command, []byte(`#!/bin/sh
+case "$*" in
+  *new-session*) : > "$KF_TEST_TMUX_STATE" ;;
+  *kill-server*)
+    [ ! -e "$KF_TEST_TMUX_FAIL" ] || exit 1
+    rm -f "$KF_TEST_TMUX_STATE"
+    ;;
+  *list-sessions*)
+    if [ -e "$KF_TEST_TMUX_STATE" ]; then
+      exit 0
+    fi
+    echo "no server running on test socket" >&2
+    exit 1
+    ;;
+esac
+`), 0o700))
+	t.Setenv("KF_TEST_TMUX_STATE", stateFile)
+	t.Setenv("KF_TEST_TMUX_FAIL", failFile)
+	require.NoError(os.WriteFile(failFile, nil, 0o600))
+
+	tracker := newTestTmuxTracker()
+	_, err := tracker.start([]string{command}, []string{"new-session"}, nil)
+	require.NoError(err)
+	require.Error(tracker.cleanup())
+	require.FileExists(stateFile)
+	require.NoError(os.Remove(failFile))
+	require.NoError(tracker.cleanup())
+	assert.NoFileExists(stateFile)
+}
+
+func TestTestTmuxTrackerRetainsUnverifiedListFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell tmux tracker probe is not supported on Windows")
+	}
+	require := require.New(t)
+	dir := t.TempDir()
+	stateFile := filepath.Join(dir, "state")
+	command := filepath.Join(dir, "tmux-probe")
+	require.NoError(os.WriteFile(command, []byte(`#!/bin/sh
+case "$*" in
+  *new-session*) : > "$KF_TEST_TMUX_STATE" ;;
+  *kill-server*) exit 1 ;;
+  *list-sessions*) echo "permission denied" >&2; exit 2 ;;
+esac
+`), 0o700))
+	t.Setenv("KF_TEST_TMUX_STATE", stateFile)
+
+	tracker := newTestTmuxTracker()
+	_, err := tracker.start([]string{command}, []string{"new-session"}, nil)
+	require.NoError(err)
+	require.Error(tracker.cleanup())
+	require.FileExists(stateFile)
+}
 
 func TestWriteServerInfoFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "server-info.json")
@@ -54,6 +226,7 @@ func TestCleanupServerInfoFileRemovesFile(t *testing.T) {
 }
 
 func TestInstanceTmuxCommandUsesPrivateSocketAndDefaultConfig(t *testing.T) {
+	t.Setenv(e2eTmuxDirEnv, "")
 	command := instanceTmuxCommand()
 
 	require.Len(t, command, 5)
@@ -63,6 +236,89 @@ func TestInstanceTmuxCommandUsesPrivateSocketAndDefaultConfig(t *testing.T) {
 	assert.Equal("/dev/null", command[2])
 	assert.Equal("-L", command[3])
 	assert.Regexp(`^mm-e2e-\d+-\d+-[0-9a-f]{8}$`, command[4])
+}
+
+func TestInstanceTmuxCommandUsesPlaywrightOwnedSocketDirectory(t *testing.T) {
+	dir, err := os.MkdirTemp("", "kf-e2e-tmux-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	t.Setenv(e2eTmuxDirEnv, dir)
+
+	command := instanceTmuxCommand()
+
+	require.Len(t, command, 5)
+	assert := assert.New(t)
+	assert.Equal("tmux", command[0])
+	assert.Equal("-S", command[3])
+	assert.Equal(dir, filepath.Dir(command[4]))
+	assert.Regexp(`^mm-e2e-\d+-\d+-[0-9a-f]{8}\.sock$`, filepath.Base(command[4]))
+	assert.True(isOwnedE2ETmuxCommand(command))
+}
+
+func TestTmuxCreationGateRejectsNewSessionsAfterShutdownStarts(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell tmux gate probe is not supported on Windows")
+	}
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	started := filepath.Join(dir, "started")
+	release := filepath.Join(dir, "release")
+	logPath := filepath.Join(dir, "commands")
+	command := filepath.Join(dir, "tmux-probe")
+	require.NoError(os.WriteFile(command, []byte(`#!/bin/sh
+case " $* " in
+  *" new-session "*)
+    echo new-session >> "$KF_TEST_TMUX_LOG"
+    : > "$KF_TEST_TMUX_STARTED"
+    while [ ! -e "$KF_TEST_TMUX_RELEASE" ]; do sleep 0.01; done
+    ;;
+  *" kill-server "*) echo kill-server >> "$KF_TEST_TMUX_LOG" ;;
+esac
+`), 0o700))
+	t.Setenv("KF_TEST_TMUX_STARTED", started)
+	t.Setenv("KF_TEST_TMUX_RELEASE", release)
+	t.Setenv("KF_TEST_TMUX_LOG", logPath)
+
+	gate, guarded, err := newTmuxCreationGate(dir, []string{command})
+	require.NoError(err)
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- procutil.Command(guarded[0], append(guarded[1:], "new-session")...).Run()
+	}()
+	require.Eventually(func() bool {
+		_, statErr := os.Stat(started)
+		return statErr == nil
+	}, time.Second, 10*time.Millisecond)
+
+	stopDone := make(chan struct{})
+	go func() {
+		gate.stop(func() {
+			_ = procutil.Command(command, "kill-server").Run()
+		})
+		close(stopDone)
+	}()
+	require.Eventually(func() bool {
+		_, statErr := os.Stat(filepath.Join(gate.dir, "killing"))
+		return statErr == nil
+	}, time.Second, 10*time.Millisecond)
+
+	output, startErr := procutil.Command(
+		guarded[0], append(guarded[1:], "new-session")...,
+	).CombinedOutput()
+	require.Error(startErr)
+	assert.Contains(string(output), "e2e tmux shutdown has started")
+	require.NoError(os.WriteFile(release, nil, 0o600))
+	require.NoError(<-firstDone)
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		require.Fail("tmux stop did not acquire the creation gate")
+	}
+
+	logBytes, err := os.ReadFile(logPath)
+	require.NoError(err)
+	assert.Equal("new-session\nkill-server\n", string(logBytes))
 }
 
 func TestPatchFixturePRSHAsUpdatesOpenPRs(t *testing.T) {
@@ -141,7 +397,7 @@ func TestAppStateRegistryWaitsForInFlightHandlersAfterSwap(t *testing.T) {
 	drained := make(chan struct{})
 	go func() {
 		defer close(drained)
-		swapped.waitForHandlers()
+		_ = swapped.waitForHandlers(context.Background())
 	}()
 
 	select {
@@ -379,6 +635,104 @@ func TestRunPprofListenerFromEnv(t *testing.T) {
 	}
 }
 
+func TestRunCancellationStopsPrivateTmuxBeforeShutdown(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+	tmuxDir, err := os.MkdirTemp("/tmp", "kf-e2e-tmux-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(tmuxDir) })
+	t.Setenv(e2eTmuxDirEnv, tmuxDir)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", "", false, false)
+	}()
+	info := waitForServerInfo(t, serverInfoFile, done)
+	tmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)
+
+	cancel()
+	select {
+	case runErr := <-done:
+		require.NoError(t, runErr)
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "run() did not exit within 10s of cancellation")
+	}
+	requirePrivateTmuxServerStopped(t, tmuxCommand)
+}
+
+func TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM(t *testing.T) {
+	if os.Getenv("KENN_FORGE_E2E_SIGNAL_HELPER") == "1" {
+		tmuxCommand := instanceTmuxCommand()
+		args := append([]string{}, tmuxCommand[1:]...)
+		args = append(args, "new-session", "-d", "-s", "signal-cleanup", "sleep 30")
+		encoded, err := json.Marshal(tmuxCommand)
+		if err != nil {
+			os.Exit(3)
+		}
+		_, err = testTmux.start(tmuxCommand, args, func() {
+			if writeErr := os.WriteFile(os.Getenv("KENN_FORGE_E2E_SIGNAL_READY"), encoded, 0o600); writeErr != nil {
+				os.Exit(4)
+			}
+			time.Sleep(250 * time.Millisecond)
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		select {}
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not support the tmux signal-cleanup probe")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+
+	require := require.New(t)
+	tmuxDir, err := os.MkdirTemp("/tmp", "kf-e2e-tmux-")
+	require.NoError(err)
+	t.Cleanup(func() { _ = os.RemoveAll(tmuxDir) })
+	readyFile := filepath.Join(t.TempDir(), "ready.json")
+	cmd := procutil.Command(os.Args[0], "-test.run=^TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM$")
+	cmd.Env = append(os.Environ(),
+		"KENN_FORGE_E2E_SIGNAL_HELPER=1",
+		"KENN_FORGE_E2E_SIGNAL_READY="+readyFile,
+		e2eTmuxDirEnv+"="+tmuxDir,
+	)
+	require.NoError(cmd.Start())
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+		}
+	})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, readErr := os.ReadFile(readyFile)
+		if readErr == nil {
+			var tmuxCommand []string
+			require.NoError(json.Unmarshal(data, &tmuxCommand))
+			t.Cleanup(func() { killTmuxServer(tmuxCommand) })
+			require.NoError(cmd.Process.Signal(syscall.SIGTERM))
+			waitErr := cmd.Wait()
+			var exitErr *exec.ExitError
+			require.ErrorAs(waitErr, &exitErr)
+			require.Equal(143, exitErr.ExitCode())
+			requirePrivateTmuxServerStopped(t, tmuxCommand)
+			return
+		}
+		if time.Now().After(deadline) {
+			require.FailNow("signal helper did not create its private tmux server")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestResetSwapsFixtureState pins the /__e2e/reset contract that the
 // Playwright server pool depends on: a reset discards mutations made
 // against the old state, serves the rebuilt state on the same port,
@@ -466,6 +820,65 @@ func TestResetSwapsFixtureState(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		require.Fail("run() did not exit within 10s of cancellation")
 	}
+}
+
+func TestResetStopsOldPrivateTmuxServerBeforeReturning(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+	require := require.New(t)
+	tmuxDir, err := os.MkdirTemp("/tmp", "kf-e2e-tmux-")
+	require.NoError(err)
+	t.Cleanup(func() { _ = os.RemoveAll(tmuxDir) })
+	t.Setenv(e2eTmuxDirEnv, tmuxDir)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", "", false, false)
+	}()
+	info := waitForServerInfo(t, serverInfoFile, done)
+	oldTmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)
+
+	resp, err := http.Post(info.BaseURL+"/__e2e/reset", "application/json", nil)
+	require.NoError(err)
+	resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+	requirePrivateTmuxServerStopped(t, oldTmuxCommand)
+
+	cancel()
+	select {
+	case runErr := <-done:
+		require.NoError(runErr)
+	case <-time.After(10 * time.Second):
+		require.Fail("run() did not exit within 10s of cancellation")
+	}
+}
+
+func startPrivateE2ETmuxServer(t *testing.T, configPath string) []string {
+	t.Helper()
+	cfg, err := config.Load(configPath)
+	require.NoError(t, err)
+	tmuxCommand := cfg.TmuxCommand()
+	require.True(t, isOwnedE2ETmuxCommand(tmuxCommand))
+	args := append([]string{}, tmuxCommand[1:]...)
+	args = append(args, "new-session", "-d", "-s", "forge-e2e-shutdown-test", "sleep 30")
+	stop, err := testTmux.start(tmuxCommand, args, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, stop())
+	})
+	return testTmuxCommandIdentity(tmuxCommand)
+}
+
+func requirePrivateTmuxServerStopped(t *testing.T, tmuxCommand []string) {
+	t.Helper()
+	args := append([]string{}, tmuxCommand[1:]...)
+	args = append(args, "list-sessions")
+	output, err := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
+	require.Error(t, err, "private tmux server still accepts commands: %s", output)
 }
 
 func readInfoFile(t *testing.T, path string) e2eServerInfo {

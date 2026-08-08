@@ -195,14 +195,18 @@ Timezone-sensitive Vitest tests must not mutate `process.env.TZ` after workers
 start; launch the test process with `TZ` or stub the locale formatter instead
 (`packages/ui/src/components/detail/operation-gates.test.ts:8`).
 
-Full-stack e2e serves the frontend embedded in the e2e-server binary
-(`internal/web/dist`), not live sources: run `make frontend` before building
-`cmd/e2e-server` locally, or the suite silently validates a stale bundle and
-passes on frontend changes that CI then fails.
-Set `PLAYWRIGHT_E2E_SERVER_BINARY` to an explicit prebuilt `cmd/e2e-server`
-binary when startup must exclude `go run` compilation, such as Vercel's docs
-screenshot build. Build the frontend before compiling that binary so it embeds
-the current SPA.
+Full-stack e2e serves the frontend embedded in the e2e-server binary, not live
+sources. The Playwright runner must prepare those assets and build one run-owned
+`cmd/e2e-server` with VCS stamping disabled; workers inherit its direct path so signal
+cleanup targets the server instead of a `go run` wrapper. An explicit binary remains
+externally owned
+and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2EServerBinary`).
+- Full-stack Playwright workers must publish child ownership in the shared tmux root;
+  the root removes it only after every published child exits (`frontend/tests/e2e-full/support/e2eServer.ts::waitForSharedServerOwners`).
+- Once e2e-server tmux shutdown starts, no new session may be admitted; cleanup waits
+  for an admitted creation before killing the private server (`cmd/e2e-server/main.go::tmuxCreationGate`).
+- Keep explicit PTY-owner test mode unwrapped so its missing tmux command remains
+  unavailable to backend selection (`cmd/e2e-server/main.go::buildAppState`).
 
 Mounting `KataWorkspace.svelte` in Vitest always fetches the daemon roster and
 opens the live SSE event stream; mock both fetch routes (see
@@ -366,6 +370,21 @@ session names, temp dirs, sockets, and cleanup. If the bottleneck is external
 resource pressure rather than correctness, keep `t.Parallel()` and gate the
 expensive section with a package-level `golang.org/x/sync/semaphore.Weighted`
 instead of serializing the whole test.
+
+- E2e processes must stop private tmux servers before bounded graceful shutdown;
+  Go defers and Node `exit` callbacks cannot clean up after forced termination
+  (`cmd/e2e-server/main.go::appState.stopTmux`).
+- Playwright workers share one run-owned socket directory; new runs reap those
+  whose recorded owner PID is dead
+  (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2ETmuxDir`).
+- Keep every child owned and the shared socket root intact through child exit;
+  terminating children can still daemonize tmux after the first cleanup sweep
+  (`frontend/tests/e2e-full/support/e2eServer.ts::shutdownOwnedServers`).
+- Stale recovery may connect only to tmux roots, owner files, and sockets owned
+  by the current user; matching a private test name is not ownership
+  (`frontend/tests/e2e-full/support/e2eServer.ts::cleanupE2ETmuxDir`).
+- Real-tmux Go test binaries install signal cleanup because termination skips
+  code after `m.Run` and `t.Cleanup` (`internal/testutil/testsignal.Install`).
 
 Windows test binaries that launch restart-durable PTY processes must contain
 their descendants in a kill-on-close Job Object; test timeouts bypass normal

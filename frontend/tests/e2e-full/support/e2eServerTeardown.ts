@@ -1,5 +1,9 @@
-import { stopE2EServer } from "./e2eServer";
+import { cleanupE2ERunnerArtifacts, stopE2EServer } from "./e2eServer";
 
 export default async function globalTeardown(): Promise<void> {
-  await stopE2EServer();
+  try {
+    await stopE2EServer();
+  } finally {
+    await cleanupE2ERunnerArtifacts();
+  }
 }

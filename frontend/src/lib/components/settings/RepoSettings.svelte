@@ -9,11 +9,12 @@
     removeRepo,
     getSettings,
     refreshRepo,
+    updateRepoVisibility,
     updateRepoWorktreeBasePath,
   } from "../../api/settings.js";
-  import SettingsIcon from "@lucide/svelte/icons/settings";
   import XIcon from "@lucide/svelte/icons/x";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
+  import RepoConfigMenu from "./RepoConfigMenu.svelte";
   import RepoImportModal from "./RepoImportModal.svelte";
   import RepoPromoteModal from "./RepoPromoteModal.svelte";
 
@@ -38,6 +39,7 @@
   let refreshingByKey = $state<Record<string, boolean>>({});
   let worktreeBaseDrafts = $state<Record<string, string>>({});
   let savingWorktreeBaseByKey = $state<Record<string, boolean>>({});
+  let savingVisibilityByKey = $state<Record<string, boolean>>({});
   let cloneEditorOpen = $state<Record<string, boolean>>({});
   let promoteRepo = $state<ConfigRepo | null>(null);
 
@@ -149,6 +151,29 @@
     }
   }
 
+  async function handleVisibilityChange(repo: ConfigRepo): Promise<void> {
+    if (embedded) return;
+    const key = repoKey(repo);
+    savingVisibilityByKey = { ...savingVisibilityByKey, [key]: true };
+    try {
+      const settings = await updateRepoVisibility(
+        repo.owner,
+        repo.name,
+        {
+          provider: repo.provider,
+          host: repo.platform_host,
+        },
+        !repo.hide_from_ui,
+      );
+      onUpdate(settings.repos);
+      void sync.refreshSyncStatus();
+    } catch (err) {
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
+    } finally {
+      savingVisibilityByKey = { ...savingVisibilityByKey, [key]: false };
+    }
+  }
+
   function handleInputKeydown(e: KeyboardEvent): void {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -240,19 +265,18 @@
               >
                 {refreshingByKey[key] ? "Refreshing..." : "Refresh"}
               </Button>
-            {:else}
-              <IconButton
-                size="sm"
-                tone="info"
-                ariaLabel={`Local clone for ${repoDisplayLabel(repo)}`}
-                ariaExpanded={Boolean(cloneEditorOpen[key])}
-                ariaPressed={Boolean(repo.worktree_base_path) || Boolean(cloneEditorOpen[key])}
-                title={repo.worktree_base_path ? `Local clone: ${repo.worktree_base_path}` : "Set local clone"}
-                onclick={() => {
-                  cloneEditorOpen = { ...cloneEditorOpen, [key]: !cloneEditorOpen[key] };
-                }}
-              ><SettingsIcon size={14} aria-hidden="true" /></IconButton>
             {/if}
+            <RepoConfigMenu
+              repoLabel={repoDisplayLabel(repo)}
+              hidden={Boolean(repo.hide_from_ui)}
+              isGlob={repo.is_glob}
+              {embedded}
+              visibilityPending={Boolean(savingVisibilityByKey[key])}
+              onEditLocalClone={() => {
+                cloneEditorOpen = { ...cloneEditorOpen, [key]: !cloneEditorOpen[key] };
+              }}
+              onToggleVisibility={() => void handleVisibilityChange(repo)}
+            />
             <IconButton
               size="sm"
               tone="danger"

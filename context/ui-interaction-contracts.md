@@ -193,6 +193,10 @@ Persisted controls must state their scope clearly.
 - Activity filters remain URL-backed and session-scoped. Missing filter params on a
   partial Activity URL inherit the last validated route before store hydration, while
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
+- Revalidate persisted repository selectors only after settings and the authoritative
+  interactive catalog load. Resolved config rows must use that catalog's current identity;
+  add only zero-match exact rows as fallbacks so hidden renamed repos stay absent
+  (`frontend/src/App.svelte::getNormalizedGlobalRepo`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
 - Concurrent controls for one server-backed settings object must share a
@@ -683,6 +687,9 @@ Not every visibility control means "remove this entity entirely."
 
 - Controls that toggle detail visibility should preserve the parent row unless
   the feature explicitly removes that category from the result set.
+- Repository UI visibility filters only the interactive catalog; Settings,
+  sync, archive, reports, and direct routes retain hidden configured repositories.
+  (`internal/server/huma_routes.go::listRepos`, `internal/server/settings_handlers.go::buildLocalSettingsResponse`)
 - When two data sources race, prefer the source that matches the user's current
   filter/scope rather than a stale but faster preview.
 - Empty states should make it clear when filters, not missing data, are hiding

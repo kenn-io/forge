@@ -83,6 +83,7 @@ func TestChildSnapshotEventMetadataUpdates(t *testing.T) {
 }
 
 func TestChildSnapshotEventMetadataUpdatesRejectStaleRevision(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -104,7 +105,7 @@ func TestChildSnapshotEventMetadataUpdatesRejectStaleRevision(t *testing.T) {
 		},
 	})
 	require.NoError(err)
-	assert.False(t, applied)
+	assert.False(applied)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1}`)
 }
 

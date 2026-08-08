@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -102,6 +103,39 @@ func (s *Server) filterConfiguredRepos(repos []db.Repo) []db.Repo {
 		}
 	}
 	return filtered
+}
+
+func (s *Server) filterInteractiveRepos(repos []db.Repo) []db.Repo {
+	visible := s.trackedInteractiveRepoSet()
+	filtered := make([]db.Repo, 0, len(repos))
+	for _, repo := range repos {
+		if _, ok := visible[configuredDBRepoKey(repo)]; ok {
+			filtered = append(filtered, repo)
+		}
+	}
+	return filtered
+}
+
+func (s *Server) trackedInteractiveRepoSet() map[string]struct{} {
+	s.cfgMu.Lock()
+	configured := slices.Clone(s.cfg.Repos)
+	s.cfgMu.Unlock()
+
+	trackedRepos := s.syncer.TrackedRepos()
+	visible := make(map[string]struct{}, len(trackedRepos))
+	for _, repo := range trackedRepos {
+		hidden := false
+		for _, raw := range configured {
+			if raw.HideFromUI && repoMatchesConfig(repo, raw) {
+				hidden = true
+				break
+			}
+		}
+		if !hidden {
+			visible[trackedRepoKey(repo)] = struct{}{}
+		}
+	}
+	return visible
 }
 
 func (s *Server) filterConfiguredRepoSummaries(

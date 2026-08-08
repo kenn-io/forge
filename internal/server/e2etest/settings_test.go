@@ -764,6 +764,56 @@ func TestRepoConfigAPIE2EUpdatesWorktreeBasePath(t *testing.T) {
 	assert.Empty(cfgAfterClear.Repos[0].WorktreeBasePath)
 }
 
+func TestRepoConfigAPIE2EUpdatesVisibility(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repos]]
+platform_host = "ghe.example.com"
+owner = "archive"
+name = "*"
+`, &mockGH{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	for _, path := range []string{
+		"/api/v1/repo/github/acme/widget/visibility",
+		"/api/v1/host/ghe.example.com/repo/github/archive/*/visibility",
+	} {
+		resp := doServerJSON(
+			t, ts.Client(), http.MethodPut, ts.URL+path,
+			map[string]bool{"hide_from_ui": true},
+		)
+		defer resp.Body.Close()
+		require.Equal(http.StatusOK, resp.StatusCode)
+		var settings map[string]any
+		require.NoError(json.NewDecoder(resp.Body).Decode(&settings))
+	}
+
+	cfgAfterUpdate, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfgAfterUpdate.Repos, 2)
+	assert.True(cfgAfterUpdate.Repos[0].HideFromUI)
+	assert.True(cfgAfterUpdate.Repos[1].HideFromUI)
+
+	missing := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/api/v1/repo/github/nope/missing/visibility",
+		map[string]bool{"hide_from_ui": true},
+	)
+	defer missing.Body.Close()
+	require.Equal(http.StatusNotFound, missing.StatusCode)
+}
+
 func TestRepoConfigAPIE2ERejectsUnsafeWorktreeScopedBaseConfig(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -165,6 +165,29 @@ export async function updateRepoWorktreeBasePath(
   return data;
 }
 
+export async function updateRepoVisibility(
+  owner: string,
+  name: string,
+  options: RepoRequestOptions,
+  hideFromUI: boolean,
+): Promise<Settings> {
+  const ref = {
+    provider: options.provider,
+    platformHost: options.host,
+    owner,
+    name,
+    repoPath: `${owner}/${name}`,
+  };
+  const { data, error, response } = await client.PUT(providerRepoPath(ref, "/visibility"), {
+    params: { path: providerRouteParams(ref) },
+    body: { hide_from_ui: hideFromUI },
+  });
+  if (!data) {
+    throw new Error(requestErrorMessage(error, `PUT /repos/{owner}/{name}/visibility -> ${response.status}`));
+  }
+  return data;
+}
+
 export async function previewRepos(
   owner: string,
   pattern: string,

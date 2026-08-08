@@ -467,6 +467,21 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	)
 }
 
+func TestHandleUpdateRepoVisibilityRollsBackOnSaveFailure(t *testing.T) {
+	srv, _, _ := setupTestServerWithConfig(t)
+	srv.configReloadMu.Lock()
+	srv.cfgPath = t.TempDir()
+	srv.configReloadMu.Unlock()
+
+	rr := doJSON(
+		t, srv, http.MethodPut,
+		"/api/v1/repo/github/acme/widget/visibility",
+		repoVisibilityRequest{HideFromUI: true},
+	)
+	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
+	require.False(t, srv.cfg.Repos[0].HideFromUI)
+}
+
 func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

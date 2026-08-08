@@ -2414,6 +2414,28 @@ endpoint = "http://custom:9999"
 	assert.Equal("http://custom:9999", cfg2.RoborevEndpoint())
 }
 
+func TestRepoVisibilityConfigRoundTrip(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "acme"
+name = "archive"
+hide_from_ui = true
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.Len(cfg.Repos, 1)
+	assert.True(cfg.Repos[0].HideFromUI)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(cfg.Save(savePath))
+	reloaded, err := Load(savePath)
+	require.NoError(err)
+	require.Len(reloaded.Repos, 1)
+	assert.True(reloaded.Repos[0].HideFromUI)
+}
+
 func TestPullRequestsConfigRoundTrip(t *testing.T) {
 	assert := assert.New(t)
 	path := writeConfig(t, `

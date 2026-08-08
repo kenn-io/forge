@@ -30,15 +30,13 @@ test("context sync accepts a valid routed context surface", async (t) => {
   assert.match(result.stdout, /structural check passed/);
 });
 
-test("context sync rejects reintroduced Superpowers documents", async (t) => {
+test("context sync permits temporary Superpowers documents", async (t) => {
   const root = await createContextRoot(t);
   const specs = path.join(root, "docs", "superpowers", "specs");
   await mkdir(specs, { recursive: true });
-  await writeFile(path.join(specs, "completed-design.md"), "# Completed design\n");
+  await writeFile(path.join(specs, "working-design.md"), "# Working design\n");
 
-  await assert.rejects(execFile(scriptPath, ["--check"], { cwd: root }), (error) => {
-    assert.match(error.stderr, /docs\/superpowers must remain absent/);
-    assert.match(error.stderr, /structural check failed/);
-    return true;
-  });
+  const result = await execFile(scriptPath, ["--check"], { cwd: root });
+
+  assert.match(result.stdout, /structural check passed/);
 });

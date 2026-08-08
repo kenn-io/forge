@@ -6,6 +6,7 @@
     displayRepoFilterValue,
     getStores,
     normalizeRepoFilterSelection,
+    unresolvedInteractiveConfigRepos,
   } from "@kenn-forge/ui";
   import { client } from "../api/runtime.js";
   import type { ConfigRepo, Repo } from "@kenn-forge/ui/api/types";
@@ -145,7 +146,7 @@
       merged.push(option);
     };
 
-    for (const repo of configured) {
+    for (const repo of unresolvedInteractiveConfigRepos(configured)) {
       const option = optionFromConfigRepo(repo);
       if (option) addOption(option);
     }

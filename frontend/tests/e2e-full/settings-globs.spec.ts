@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
+import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 type RepoSummary = {
@@ -18,6 +18,43 @@ let localRepo: string | undefined;
 
 function git(dir: string, ...args: string[]): void {
   execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+}
+
+async function catalogRepoNames(owner: string): Promise<string[]> {
+  if (!api) throw new Error("settings-globs API context not initialized");
+  const response = await api.get("/api/v1/repos");
+  expect(response.ok()).toBe(true);
+  const repos = (await response.json()) as RepoSummary[];
+  return repos
+    .filter((repo) => repo.Owner === owner)
+    .map((repo) => repo.Name)
+    .sort();
+}
+
+async function toggleVisibility(page: Page, repoLabel: string, action: "Hide from UI" | "Show in UI"): Promise<void> {
+  const row = page.locator(".repo-row", { hasText: repoLabel });
+  await row.getByRole("button", { name: `Configure ${repoLabel}` }).click();
+  const responsePromise = page.waitForResponse(
+    (response) => response.url().includes("/visibility") && response.request().method() === "PUT",
+  );
+  await row.getByRole("menuitem", { name: action }).click();
+  const response = await responsePromise;
+  expect(response.status(), await response.text()).toBe(200);
+}
+
+async function expectRepoInInteractiveSurfaces(page: Page, repoPath: string, visible: boolean): Promise<void> {
+  const expectedCount = visible ? 1 : 0;
+
+  await page.goto(`${isolatedServer!.info.base_url}/pulls`);
+  const selector = page.getByRole("button", { name: /^Select repository:/ });
+  await selector.click();
+  await expect(page.getByRole("option", { name: repoPath })).toHaveCount(expectedCount);
+
+  await page.goto(`${isolatedServer!.info.base_url}/workspaces`);
+  await page.getByRole("button", { name: "New workspace" }).click();
+  const dialog = page.getByRole("dialog", { name: "New workspace" });
+  await dialog.getByRole("button", { name: "Filter repositories" }).click();
+  await expect(dialog.getByRole("option", { name: repoPath })).toHaveCount(expectedCount);
 }
 
 test.beforeEach(async () => {
@@ -94,6 +131,46 @@ test("settings shows glob match counts and refresh updates tracked repos", async
     path: "test-results/settings-globs-pr.png",
     fullPage: true,
   });
+});
+
+test("repository visibility gear persists exact and glob choices across interactive surfaces", async ({ page }) => {
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+
+  await toggleVisibility(page, "acme/widgets", "Hide from UI");
+  await expect.poll(() => catalogRepoNames("acme")).not.toContain("widgets");
+  await page.reload();
+  const hiddenExact = page.locator(".repo-row", { hasText: "acme/widgets" });
+  await hiddenExact.getByRole("button", { name: "Configure acme/widgets" }).click();
+  await expect(hiddenExact.getByRole("menuitem", { name: "Show in UI" })).toBeVisible();
+  await expectRepoInInteractiveSurfaces(page, "acme/widgets", false);
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await toggleVisibility(page, "acme/widgets", "Show in UI");
+  await expect.poll(() => catalogRepoNames("acme")).toContain("widgets");
+  await page.reload();
+  const shownExact = page.locator(".repo-row", { hasText: "acme/widgets" });
+  await shownExact.getByRole("button", { name: "Configure acme/widgets" }).click();
+  await expect(shownExact.getByRole("menuitem", { name: "Hide from UI" })).toBeVisible();
+  await expectRepoInInteractiveSurfaces(page, "acme/widgets", true);
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await toggleVisibility(page, "roborev-dev/*", "Hide from UI");
+  await expect.poll(() => catalogRepoNames("roborev-dev")).toEqual([]);
+  await page.reload();
+  const hiddenGlob = page.locator(".repo-row", { hasText: "roborev-dev/*" });
+  await hiddenGlob.getByRole("button", { name: "Configure roborev-dev/*" }).click();
+  await expect(hiddenGlob.getByRole("menuitem", { name: "Show in UI" })).toBeVisible();
+  await expectRepoInInteractiveSurfaces(page, "roborev-dev/kenn-forge", false);
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await toggleVisibility(page, "roborev-dev/*", "Show in UI");
+  await expect.poll(() => catalogRepoNames("roborev-dev")).toEqual(["archived", "kenn-forge", "worker"]);
+  await page.reload();
+  const shownGlob = page.locator(".repo-row", { hasText: "roborev-dev/*" });
+  await shownGlob.getByRole("button", { name: "Configure roborev-dev/*" }).click();
+  await expect(shownGlob.getByRole("menuitem", { name: "Hide from UI" })).toBeVisible();
+  await expectRepoInInteractiveSurfaces(page, "roborev-dev/kenn-forge", true);
 });
 
 test("settings imports a selected subset from a repository glob", async ({ page }) => {
@@ -208,9 +285,10 @@ test("settings promotes a glob match to a persisted exact repo with a local clon
   await expect(dialog).toHaveCount(0);
   const exactRow = page.locator(".repo-row", { hasText: "roborev-dev/kenn-forge" });
   await expect(exactRow).toBeVisible();
-  await expect(exactRow.getByRole("button", { name: "Local clone for roborev-dev/kenn-forge" })).toHaveAttribute(
-    "title",
-    `Local clone: ${localRepo}`,
+  await exactRow.getByRole("button", { name: "Configure roborev-dev/kenn-forge" }).click();
+  await exactRow.getByRole("menuitem", { name: "Edit local clone path…" }).click();
+  await expect(exactRow.getByLabel("Local clone path for roborev-dev/kenn-forge", { exact: true })).toHaveValue(
+    localRepo,
   );
 
   if (!api) throw new Error("settings-globs API context not initialized");

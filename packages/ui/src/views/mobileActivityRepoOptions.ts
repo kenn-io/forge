@@ -5,6 +5,7 @@ import {
   providerQualifiedRepoFilterLabel,
   repoFilterValueNeedsProvider,
 } from "../utils/repo-filter-values.js";
+import { interactiveConfigRepos } from "../utils/repo-visibility.js";
 
 export interface MobileActivityRepoOption {
   value: string;
@@ -22,8 +23,9 @@ function repoFilterIdentity(repo: ConfigRepo) {
 }
 
 export function buildMobileActivityRepoOptions(repos: ConfigRepo[]): MobileActivityRepoOption[] {
+  const interactiveRepos = interactiveConfigRepos(repos);
   const valuesByRepoPath = new Map<string, Set<string>>();
-  for (const repo of repos) {
+  for (const repo of interactiveRepos) {
     const value = concreteRepoFilterValue(repoFilterIdentity(repo));
     if (!value) continue;
     const repoPath = repo.repo_path.trim();
@@ -35,10 +37,10 @@ export function buildMobileActivityRepoOptions(repos: ConfigRepo[]): MobileActiv
     values.add(value);
   }
 
-  const identities = repos.map(repoFilterIdentity);
+  const identities = interactiveRepos.map(repoFilterIdentity);
   const seen = new Set<string>();
   const options: MobileActivityRepoOption[] = [];
-  for (const repo of repos) {
+  for (const repo of interactiveRepos) {
     const identity = repoFilterIdentity(repo);
     const concreteValue = concreteRepoFilterValue(identity);
     if (!concreteValue) continue;

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
 
+import { interactiveConfigRepos } from "@kenn-forge/ui";
 import type { Repo } from "@kenn-forge/ui/api/types";
 import { createSettingsStore } from "@kenn-forge/ui/stores/settings";
 import { client } from "../api/runtime.js";
@@ -33,7 +34,15 @@ describe("RepoTypeahead", () => {
     localStorage.clear();
     settingsStore = createSettingsStore();
     settingsStore.setConfiguredRepos([]);
-    getRepos.mockResolvedValue({ data: [], error: undefined });
+    getRepos.mockImplementation(async () => ({
+      data: interactiveConfigRepos(settingsStore.getConfiguredRepos()).map((repo) => ({
+        Platform: repo.provider,
+        PlatformHost: repo.platform_host,
+        Owner: repo.owner,
+        Name: repo.name,
+      })) as Repo[],
+      error: undefined,
+    }));
   });
 
   afterEach(() => {
@@ -66,6 +75,106 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(screen.getByRole("option", { name: /import-lab\/api/i })).toBeTruthy();
     });
+  });
+
+  it("omits hidden configured repos and clears an active hidden selection", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "archive",
+        repo_path: "import-lab/archive",
+        is_glob: false,
+        matched_repo_count: 1,
+        hide_from_ui: true,
+      },
+    ]);
+
+    render(RepoTypeahead, {
+      props: {
+        selected: "github|github.com/import-lab/archive",
+        onchange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(onchange).toHaveBeenCalledWith(undefined);
+    });
+    await fireEvent.click(screen.getByRole("button", { name: /import-lab\/archive/i }));
+    expect(screen.queryByRole("option", { name: /import-lab\/archive/i })).toBeNull();
+  });
+
+  it("does not re-add an exact repo hidden by an overlapping glob", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "archive-*",
+        repo_path: "import-lab/archive-*",
+        is_glob: true,
+        matched_repo_count: 1,
+        hide_from_ui: true,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "archive-api",
+        repo_path: "import-lab/archive-api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hide_from_ui: false,
+      },
+    ]);
+
+    render(RepoTypeahead, {
+      props: { selected: undefined, onchange: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    expect(screen.queryByRole("option", { name: /import-lab\/archive-api/i })).toBeNull();
+  });
+
+  it("does not re-add a resolved stale path when the renamed repository is hidden", async () => {
+    const onchange = vi.fn();
+    getRepos.mockResolvedValue({ data: [], error: undefined });
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "legacy-service",
+        repo_path: "import-lab/legacy-service",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "archive-*",
+        repo_path: "import-lab/archive-*",
+        is_glob: true,
+        matched_repo_count: 1,
+        hide_from_ui: true,
+      },
+    ]);
+
+    render(RepoTypeahead, {
+      props: {
+        selected: "github|github.com/import-lab/legacy-service",
+        onchange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(onchange).toHaveBeenCalledWith(undefined);
+    });
+    await fireEvent.click(screen.getByRole("button", { name: /legacy-service/i }));
+    expect(screen.queryByRole("option", { name: /legacy-service/i })).toBeNull();
   });
 
   it("keeps fetched repos for glob-backed settings entries", async () => {

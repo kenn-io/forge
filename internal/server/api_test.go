@@ -4293,6 +4293,114 @@ func TestAPIListRepos(t *testing.T) {
 	require.Equal("widget", (*resp.JSON200)[0].Name)
 }
 
+func TestAPIListReposOmitsRepositoriesHiddenFromUI(t *testing.T) {
+	tests := []struct {
+		name      string
+		repos     []config.Repo
+		tracked   []ghclient.RepoRef
+		wantNames []string
+		wantHosts []string
+	}{
+		{
+			name: "exact entry",
+			repos: []config.Repo{
+				{Owner: "acme", Name: "visible"},
+				{Owner: "acme", Name: "archive", HideFromUI: true},
+			},
+			tracked: []ghclient.RepoRef{
+				{Owner: "acme", Name: "visible", PlatformHost: "github.com"},
+				{Owner: "acme", Name: "archive", PlatformHost: "github.com"},
+			},
+			wantNames: []string{"visible"},
+		},
+		{
+			name: "glob entry",
+			repos: []config.Repo{
+				{Owner: "acme", Name: "archive-*", HideFromUI: true},
+				{Owner: "acme", Name: "visible"},
+			},
+			tracked: []ghclient.RepoRef{
+				{Owner: "acme", Name: "archive-docs", PlatformHost: "github.com"},
+				{Owner: "acme", Name: "archive-api", PlatformHost: "github.com"},
+				{Owner: "acme", Name: "visible", PlatformHost: "github.com"},
+			},
+			wantNames: []string{"visible"},
+		},
+		{
+			name: "hidden entry wins overlap",
+			repos: []config.Repo{
+				{Owner: "acme", Name: "*"},
+				{Owner: "acme", Name: "archive", HideFromUI: true},
+			},
+			tracked: []ghclient.RepoRef{
+				{Owner: "acme", Name: "visible", PlatformHost: "github.com"},
+				{Owner: "acme", Name: "archive", PlatformHost: "github.com"},
+			},
+			wantNames: []string{"visible"},
+		},
+		{
+			name: "renamed exact entry provenance",
+			repos: []config.Repo{
+				{Owner: "acme", Name: "archive", HideFromUI: true},
+				{Owner: "acme", Name: "visible"},
+			},
+			tracked: []ghclient.RepoRef{
+				{
+					Owner: "acme-renamed", Name: "archive-next", RepoPath: "acme-renamed/archive-next",
+					PlatformHost: "github.com", ConfiguredRepoPath: "acme/archive",
+				},
+				{Owner: "acme", Name: "visible", PlatformHost: "github.com"},
+			},
+			wantNames: []string{"visible"},
+		},
+		{
+			name: "hidden entry is scoped to its provider host",
+			repos: []config.Repo{
+				{Owner: "acme", Name: "archive", HideFromUI: true},
+				{PlatformHost: "ghe.example.com", Owner: "acme", Name: "archive"},
+			},
+			tracked: []ghclient.RepoRef{
+				{Owner: "acme", Name: "archive", PlatformHost: "github.com"},
+				{Owner: "acme", Name: "archive", PlatformHost: "ghe.example.com"},
+			},
+			wantNames: []string{"archive"},
+			wantHosts: []string{"ghe.example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			srv, database, _ := setupTestServerWithConfig(t)
+			srv.cfg.Repos = tt.repos
+			srv.syncer.SetRepos(tt.tracked)
+			for _, repo := range tt.tracked {
+				identity := verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name)
+				identity.RepoPath = repo.RepoPath
+				_, err := database.UpsertRepo(t.Context(), identity)
+				require.NoError(err)
+			}
+
+			client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+			resp, err := client.HTTP.ListReposWithResponse(t.Context())
+			require.NoError(err)
+			require.Equal(http.StatusOK, resp.StatusCode())
+			require.NotNil(resp.JSON200)
+			names := make([]string, 0, len(*resp.JSON200))
+			hosts := make([]string, 0, len(*resp.JSON200))
+			for _, repo := range *resp.JSON200 {
+				names = append(names, repo.Name)
+				hosts = append(hosts, repo.PlatformHost)
+			}
+			assert.ElementsMatch(tt.wantNames, names)
+			if tt.wantHosts != nil {
+				assert.ElementsMatch(tt.wantHosts, hosts)
+			}
+		})
+	}
+}
+
 func TestAPIRouteReuseServesOnlyCurrentRepository(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

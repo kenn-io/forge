@@ -105,6 +105,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 			Name:             raw.Name,
 			RepoPath:         configRepoPath(raw),
 			WorktreeBasePath: raw.WorktreeBasePath,
+			HideFromUI:       raw.HideFromUI,
 			IsGlob:           raw.HasNameGlob(),
 			MatchedRepoCount: matchedRepoCount(raw, tracked),
 		}
@@ -1011,6 +1012,79 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos[idx].WorktreeBasePath = prev
+		s.cfgMu.Unlock()
+		return nil, httpapi.Internal("save config: " + err.Error())
+	}
+	s.cfgMu.Unlock()
+
+	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
+}
+
+func (s *Server) updateConfiguredRepoVisibility(
+	_ context.Context, input *repoVisibilityInput,
+) (*settingsOutput, error) {
+	return s.updateConfiguredRepoHideFromUI(repoConfigInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+	}, input.Body.HideFromUI)
+}
+
+func (s *Server) updateConfiguredRepoVisibilityOnHost(
+	_ context.Context, input *repoVisibilityHostInput,
+) (*settingsOutput, error) {
+	return s.updateConfiguredRepoHideFromUI(repoConfigInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+	}, input.Body.HideFromUI)
+}
+
+func (s *Server) updateConfiguredRepoHideFromUI(
+	ref repoConfigInput, hideFromUI bool,
+) (*settingsOutput, error) {
+	if s.cfgPath == "" {
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+	}
+
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
+
+	provider, err := normalizeRouteProvider(ref.Provider)
+	if err != nil {
+		return nil, httpapi.Validation("path.provider", err.Error())
+	}
+	target := config.Repo{
+		Platform: provider, PlatformHost: ref.PlatformHost,
+		Owner: ref.Owner, Name: ref.Name,
+	}
+
+	s.cfgMu.Lock()
+	idx := -1
+	for i, repo := range s.cfg.Repos {
+		if sameConfiguredRepo(repo, target) {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		s.cfgMu.Unlock()
+		return nil, httpapi.NotFound(
+			httpapi.CodeRepoNotFound, ref.Owner+"/"+ref.Name+" is not configured", nil,
+		)
+	}
+
+	previous := s.cfg.Repos[idx].HideFromUI
+	s.cfg.Repos[idx].HideFromUI = hideFromUI
+	if err := s.cfg.Validate(); err != nil {
+		s.cfg.Repos[idx].HideFromUI = previous
+		s.cfgMu.Unlock()
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+	}
+	if err := s.cfg.Save(s.cfgPath); err != nil {
+		s.cfg.Repos[idx].HideFromUI = previous
 		s.cfgMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}

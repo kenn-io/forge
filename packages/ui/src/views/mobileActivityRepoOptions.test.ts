@@ -129,4 +129,77 @@ describe("buildMobileActivityRepoOptions", () => {
       },
     ]);
   });
+
+  it("omits hidden exact repos and exact repos matched by hidden globs", () => {
+    const options = buildMobileActivityRepoOptions([
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        name: "hidden",
+        repo_path: "acme/hidden",
+        hide_from_ui: true,
+      },
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        name: "archive-*",
+        repo_path: "acme/archive-*",
+        is_glob: true,
+        hide_from_ui: true,
+      },
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        name: "archive-api",
+        repo_path: "acme/archive-api",
+        hide_from_ui: false,
+      },
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        name: "visible",
+        repo_path: "acme/visible",
+        hide_from_ui: false,
+      },
+    ]);
+
+    expect(options).toEqual([
+      {
+        value: "github|github.com/acme/visible",
+        label: "github/github.com/acme/visible",
+        triggerLabel: "acme/visible",
+      },
+    ]);
+  });
+
+  it("scopes hidden globs by provider and host", () => {
+    const options = buildMobileActivityRepoOptions([
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        name: "archive-*",
+        repo_path: "acme/archive-*",
+        is_glob: true,
+        hide_from_ui: true,
+      },
+      {
+        ...baseRepo,
+        provider: "gitea",
+        platform_host: "github.com",
+        name: "archive-api",
+        repo_path: "acme/archive-api",
+      },
+      {
+        ...baseRepo,
+        platform_host: "ghe.example.com",
+        name: "archive-api",
+        repo_path: "acme/archive-api",
+      },
+    ]);
+
+    expect(options.map((option) => option.value)).toEqual([
+      "gitea|github.com/acme/archive-api",
+      "github|ghe.example.com/acme/archive-api",
+    ]);
+  });
 });

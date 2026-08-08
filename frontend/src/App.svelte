@@ -9,10 +9,12 @@
     MobileActivityView,
     ReviewsView,
     FocusListView,
+    canonicalRepoFilterValue,
     normalizeRepoFilterSelection,
+    unresolvedInteractiveConfigRepos,
   } from "@kenn-forge/ui";
   import type { StoreInstances } from "@kenn-forge/ui";
-  import type { ActivityItem, ModeVisibility } from "@kenn-forge/ui/api/types";
+  import type { ActivityItem, ModeVisibility, Repo } from "@kenn-forge/ui/api/types";
   import {
     buildFocusPullRequestFilesRoute,
     buildFocusPullRequestRoute,
@@ -110,6 +112,7 @@
     applyConfigRepo,
     setGlobalRepo,
     parseRepoFilterValue,
+    serializeRepoFilterValue,
   } from "./lib/stores/filter.svelte.js";
   import {
     getUIConfig,
@@ -154,6 +157,8 @@
 
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
+  let interactiveRepoCatalog = $state.raw<Repo[]>([]);
+  let interactiveRepoCatalogLoaded = $state(false);
   let viewportWidth = $state(window.innerWidth);
   let renderedHeaderHeight = $state(0);
   let renderedMobileHeaderHeight = $state(0);
@@ -171,6 +176,8 @@
   });
   let cleanupFullAppShell: (() => void) | undefined;
   let fullShellStores: StoreInstances | undefined;
+  let interactiveRepoCatalogFetchVersion = 0;
+  let latestInteractiveRepoCatalogFetchKey = "";
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
   const kataAPI = createKataTaskAPI();
   const kataWorkspaceAPI = createKataTaskAPI();
@@ -226,6 +233,9 @@
     cleanupFullAppShell = undefined;
     fullShellStores = undefined;
     appReady = false;
+    interactiveRepoCatalog = [];
+    interactiveRepoCatalogLoaded = false;
+    latestInteractiveRepoCatalogFetchKey = "";
   }
 
   function syncGlobalRepoWithRoute(
@@ -489,6 +499,28 @@
   });
 
   $effect(() => {
+    const appStores = stores;
+    if (!appStores?.settings.isSettingsLoaded() || !shouldUseFullAppShell(getPage())) return;
+
+    const configuredRepoKey = appStores.settings.getConfiguredRepos()
+      .map((repo) => `${repo.provider}/${repo.platform_host}/${repo.repo_path}/${repo.hide_from_ui === true}`)
+      .join("\0");
+    const fetchKey = `${++interactiveRepoCatalogFetchVersion}:${configuredRepoKey}`;
+    latestInteractiveRepoCatalogFetchKey = fetchKey;
+    interactiveRepoCatalogLoaded = false;
+    const abort = new AbortController();
+
+    void client.GET("/repos", { signal: abort.signal }).then(({ data, error }) => {
+      if (abort.signal.aborted || fetchKey !== latestInteractiveRepoCatalogFetchKey) return;
+      if (error || data === undefined) return;
+      interactiveRepoCatalog = data ?? [];
+      interactiveRepoCatalogLoaded = true;
+    }).catch(() => {});
+
+    return () => abort.abort();
+  });
+
+  $effect(() => {
     const route = getRoute();
     if (route.page !== "docs") return;
     docsRoute = {
@@ -625,14 +657,31 @@
   }
 
   function getNormalizedGlobalRepo(repo: string | undefined = getGlobalRepo()): string | undefined {
-    return normalizeRepoFilterSelection(
-      repo,
-      (stores?.settings.getConfiguredRepos?.() ?? []).map((configuredRepo) => ({
-        provider: configuredRepo.provider,
-        platformHost: configuredRepo.platform_host,
-        repoPath: configuredRepo.repo_path,
-        isGlob: configuredRepo.is_glob,
-      })),
+    const configuredRepos = stores?.settings.getConfiguredRepos?.() ?? [];
+    if (!stores?.settings.isSettingsLoaded() || !interactiveRepoCatalogLoaded) return repo;
+
+    const configuredRepoIdentities = unresolvedInteractiveConfigRepos(configuredRepos).map((configuredRepo) => ({
+      provider: configuredRepo.provider,
+      platformHost: configuredRepo.platform_host,
+      repoPath: configuredRepo.repo_path,
+      isGlob: configuredRepo.is_glob,
+    }));
+    const catalogRepoIdentities = interactiveRepoCatalog.map((catalogRepo) => ({
+      provider: catalogRepo.Platform,
+      platformHost: catalogRepo.PlatformHost,
+      repoPath: `${catalogRepo.Owner}/${catalogRepo.Name}`,
+      isGlob: false,
+    }));
+    const repoIdentities = [...catalogRepoIdentities, ...configuredRepoIdentities];
+    const normalized = normalizeRepoFilterSelection(repo, repoIdentities);
+
+    const visibleRepoValues = new Set<string>();
+    for (const identity of repoIdentities) {
+      const value = canonicalRepoFilterValue(identity, repoIdentities);
+      if (value !== null) visibleRepoValues.add(value);
+    }
+    return serializeRepoFilterValue(
+      parseRepoFilterValue(normalized).filter((value) => visibleRepoValues.has(value)),
     );
   }
 

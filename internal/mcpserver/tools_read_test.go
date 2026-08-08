@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +20,7 @@ func newMCPTestServer(t *testing.T, mux *http.ServeMux) *Server {
 	cfg := writeFakeDaemonFiles(t, ts, "")
 	s, err := New(Options{ConfigPath: cfg, Version: "test"})
 	require.NoError(err)
+	s.agentHandoffPollInterval = 10 * time.Millisecond
 	t.Cleanup(func() {
 		require.NoError(s.Close())
 	})

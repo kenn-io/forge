@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	defaultAgentHandoffTimeout = 5 * time.Minute
-	maxAgentHandoffTimeout     = 15 * time.Minute
-	agentHandoffPollInterval   = 10 * time.Millisecond
-	maxAgentInitialMessage     = 64 << 10
+	defaultAgentHandoffTimeout      = 5 * time.Minute
+	maxAgentHandoffTimeout          = 15 * time.Minute
+	defaultAgentHandoffPollInterval = 250 * time.Millisecond
+	receiptRecoveryTimeout          = 6 * time.Second
+	maxAgentInitialMessage          = 64 << 10
 )
 
 type workspaceSourceInput struct {
@@ -93,9 +94,10 @@ func (s *Server) spawnWorkspaceWithAgent(
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	out := spawnWorkspaceWithAgentOutput{Source: in.Source}
 	targets, err := s.listAgentTargets(ctx, listAgentTargetsInput{})
 	if err != nil {
-		return spawnWorkspaceWithAgentOutput{}, err
+		return out, handoffFailure(ctx, err, out, "", "")
 	}
 	target, ok := findAgentTarget(targets.Targets, in.AgentTarget)
 	if !ok {
@@ -109,7 +111,6 @@ func (s *Server) spawnWorkspaceWithAgent(
 		)
 	}
 
-	out := spawnWorkspaceWithAgentOutput{Source: in.Source}
 	workspace, reused, err := s.resolveOrCreateWorkspace(ctx, in.Source)
 	if err != nil {
 		return out, handoffFailure(ctx, err, out, "", "workspace_created")
@@ -121,6 +122,7 @@ func (s *Server) spawnWorkspaceWithAgent(
 	out.Workspace = spawnedWorkspace{ID: workspace.ID, Status: workspace.Status, Reused: reused}
 
 	workspace, err = s.waitForWorkspaceReady(ctx, workspace.ID)
+	out.Workspace.Status = workspace.Status
 	if err != nil {
 		return out, handoffFailure(ctx, err, out, "workspace_created", "workspace_ready")
 	}
@@ -467,7 +469,7 @@ func (s *Server) waitForWorkspaceReady(
 			}
 			return workspace, errors.New(message)
 		}
-		if err := waitAgentHandoffPoll(ctx); err != nil {
+		if err := s.waitAgentHandoffPoll(ctx); err != nil {
 			return workspace, err
 		}
 	}
@@ -493,7 +495,7 @@ func (s *Server) waitForCodingSession(
 		if err := s.ensureRuntimeStillLive(ctx, workspaceID, runtimeSessionKey); err != nil {
 			return workspaceAgentSessionRow{}, err
 		}
-		if err := waitAgentHandoffPoll(ctx); err != nil {
+		if err := s.waitAgentHandoffPoll(ctx); err != nil {
 			return workspaceAgentSessionRow{}, err
 		}
 	}
@@ -522,8 +524,12 @@ func (s *Server) ensureRuntimeStillLive(
 	return fmt.Errorf("agent runtime exited before its coding session was observed")
 }
 
-func waitAgentHandoffPoll(ctx context.Context) error {
-	timer := time.NewTimer(agentHandoffPollInterval)
+func (s *Server) waitAgentHandoffPoll(ctx context.Context) error {
+	interval := s.agentHandoffPollInterval
+	if interval <= 0 {
+		interval = defaultAgentHandoffPollInterval
+	}
+	timer := time.NewTimer(interval)
 	defer timer.Stop()
 	select {
 	case <-timer.C:
@@ -553,8 +559,10 @@ func (s *Server) submitInitialAgentMessage(
 		if !errors.As(err, &daemonErr) || !daemonErr.Ambiguous {
 			return agentInitialMessageRow{}, err
 		}
-		if getErr := s.daemon.getJSON(ctx, path, nil, &receipt); getErr != nil {
-			return agentInitialMessageRow{}, err
+		if recoveryErr := s.recoverInitialMessageReceipt(
+			ctx, path, daemonErr, &receipt,
+		); recoveryErr != nil {
+			return agentInitialMessageRow{}, recoveryErr
 		}
 	}
 	row := agentInitialMessageRow{
@@ -564,6 +572,49 @@ func (s *Server) submitInitialAgentMessage(
 		row.DeliveredAt = formatMCPTime(*receipt.DeliveredAt)
 	}
 	return row, nil
+}
+
+func (s *Server) recoverInitialMessageReceipt(
+	ctx context.Context,
+	path string,
+	original *daemonError,
+	receipt *daemonAgentInitialMessage,
+) error {
+	timeout := receiptRecoveryTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 && remaining < timeout {
+			timeout = remaining
+		}
+	}
+	recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+
+	for {
+		var recovered daemonAgentInitialMessage
+		if err := s.daemon.getJSON(recoveryCtx, path, nil, &recovered); err != nil {
+			return original
+		}
+		*receipt = recovered
+		if recovered.State == "delivered" {
+			return nil
+		}
+		if recovered.State != "pending" {
+			return initialMessageRecoveryError(original, recovered.State)
+		}
+		if err := s.waitAgentHandoffPoll(recoveryCtx); err != nil {
+			return initialMessageRecoveryError(original, recovered.State)
+		}
+	}
+}
+
+func initialMessageRecoveryError(original *daemonError, state string) *daemonError {
+	recovered := *original
+	recovered.Details = maps.Clone(original.Details)
+	if recovered.Details == nil {
+		recovered.Details = make(map[string]any)
+	}
+	recovered.Details["initial_message_state"] = state
+	return &recovered
 }
 
 func handoffFailure(
@@ -578,23 +629,26 @@ func handoffFailure(
 		Message:   cause.Error(),
 		Retryable: false,
 		Details: map[string]any{
-			"failed_stage":      failedStage,
 			"message_delivered": false,
 		},
 	}
 	var daemonErr *daemonError
-	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
-		result.Kind = "agent_handoff_timeout"
-		result.Message = "agent handoff timed out"
-	} else if errors.As(cause, &daemonErr) {
+	if errors.As(cause, &daemonErr) {
 		result.Kind = daemonErr.Kind
 		result.Code = daemonErr.Code
 		result.Message = daemonErr.Message
 		result.Ambiguous = daemonErr.Ambiguous
 		maps.Copy(result.Details, daemonErr.Details)
-	} else if errors.Is(cause, context.DeadlineExceeded) {
+	}
+	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
 		result.Kind = "agent_handoff_timeout"
 		result.Message = "agent handoff timed out"
+	} else if daemonErr == nil && errors.Is(cause, context.DeadlineExceeded) {
+		result.Kind = "agent_handoff_timeout"
+		result.Message = "agent handoff timed out"
+	}
+	if failedStage != "" {
+		result.Details["failed_stage"] = failedStage
 	}
 	if lastCompletedStage != "" {
 		result.Details["last_completed_stage"] = lastCompletedStage

@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	forgeserver "go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
@@ -68,15 +70,20 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 	require.NoError(err)
 	require.Nil(initialWorkflow, "MCP e2e claim must prove expected_status=new against missing workflow storage")
 
-	diffRepo, err := testutil.SetupDiffRepo(ctx, t.TempDir(), database)
+	diffRoot := t.TempDir()
+	diffRepo, err := testutil.SetupDiffRepo(ctx, diffRoot, database)
 	require.NoError(err)
-	agentDisabled := false
+	disableTmuxAgentSessions := false
 	cfg := &config.Config{
 		Agents: []config.Agent{{
-			Key: "codex", Label: "Codex", Command: []string{"codex"}, Enabled: &agentDisabled,
+			Key: "codex", Label: "Codex",
+			Command: []string{"/bin/sh", "-c", "while :; do sleep 1; done"},
 		}},
 		PullRequests: config.PullRequests{PreferGitHubNativeStacks: true},
-		Tmux:         config.Tmux{Command: []string{"kenn-forge-test-missing-tmux"}},
+		Workspaces:   config.Workspaces{AutoAssignOnCreate: true},
+		Tmux: config.Tmux{
+			Command: []string{"kenn-forge-test-missing-tmux"}, AgentSessions: &disableTmuxAgentSessions,
+		},
 	}
 	syncer := ghclient.NewSyncer(
 		nil,
@@ -88,6 +95,19 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 		nil,
 	)
 	t.Cleanup(syncer.Stop)
+	tmuxPath := filepath.Join(dataDir, "fake-tmux")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+if [ "${1:-}" = "-u" ]; then shift; fi
+case "${1:-}" in
+  has-session)
+    exit 1
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`), 0o755))
+	cfg.Tmux.Command = []string{tmuxPath}
 	apiServer := forgeserver.New(database, syncer, nil, "/", cfg, forgeserver.ServerOptions{
 		DaemonAccess: forgeserver.DaemonAccessOptions{
 			Token: token, RequireAPIAuth: true,
@@ -96,6 +116,7 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 		DisableWorkspaceEnrichment:         true,
+		PtyOwnerInProcess:                  true,
 		HostCheck: forgeserver.HostCheckOptions{
 			Bind: config.HostKey{Host: "127.0.0.1", Port: "8080"},
 		},
@@ -119,8 +140,7 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 	targets := callMCPTool[listAgentTargetsOutput](t, session, "kenn_forge_list_agent_targets", map[string]any{})
 	codexTarget, found := findAgentTarget(targets.Targets, "codex")
 	require.True(found)
-	assert.False(codexTarget.Available)
-	assert.NotEmpty(codexTarget.DisabledReason)
+	assert.True(codexTarget.Available)
 
 	repos := callMCPTool[listReposOutput](t, session, "kenn_forge_list_repos", map[string]any{})
 	require.Len(repos.Repos, 1)
@@ -278,6 +298,12 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 	longDiffData, err := os.ReadFile(longDiff.DiffFile.Path)
 	require.NoError(err)
 	assert.Contains(string(longDiffData), "diff --git")
+	require.NoError(os.Rename(longClone, sourceClone))
+	_, stderr, err := gitcmd.New().Run(
+		ctx, filepath.Join(diffRoot, "workrepo"), nil,
+		"update-ref", "refs/pull/1/head", diffRepo.HeadSHA,
+	)
+	require.NoError(err, string(stderr))
 
 	stack := callMCPTool[getStackContextOutput](t, session, "kenn_forge_get_stack_context", map[string]any{
 		"item": item,
@@ -307,6 +333,114 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 		map[string]any{"workspace_id": "ws-mcp-agent-sessions"},
 	)
 	assert.Empty(liveSessions.Sessions)
+
+	existingWorkspace, err := database.GetWorkspaceByMRForProvider(
+		ctx, "github", "github.com", "acme", "widgets", 1,
+	)
+	require.NoError(err)
+	require.Nil(existingWorkspace)
+	type spawnCallResult struct {
+		result *mcp.CallToolResult
+		err    error
+	}
+	spawnResult := make(chan spawnCallResult, 1)
+	go func() {
+		result, callErr := session.CallTool(ctx, &mcp.CallToolParams{
+			Name: "kenn_forge_spawn_workspace_with_agent",
+			Arguments: map[string]any{
+				"source": map[string]any{
+					"type": "item",
+					"item": map[string]any{
+						"type": "pr", "provider": "github", "platform_host": "github.com",
+						"owner": "acme", "name": "widgets", "number": 1,
+					},
+				},
+				"agent_target": "codex", "initial_message": "review cache change", "timeout": "5s",
+			},
+		})
+		spawnResult <- spawnCallResult{result: result, err: callErr}
+	}()
+
+	var handoffWorkspace *db.Workspace
+	require.Eventually(func() bool {
+		var lookupErr error
+		handoffWorkspace, lookupErr = database.GetWorkspaceByMRForProvider(
+			ctx, "github", "github.com", "acme", "widgets", 1,
+		)
+		return lookupErr == nil && handoffWorkspace != nil && handoffWorkspace.Status == "ready"
+	}, 5*time.Second, 10*time.Millisecond)
+
+	var runtimeSession db.WorkspaceRuntimeSession
+	runtimeObserved := assert.Eventually(func() bool {
+		runtimeSessions, listErr := database.ListWorkspaceRuntimeSessions(ctx, handoffWorkspace.ID)
+		if listErr != nil || len(runtimeSessions) != 1 {
+			return false
+		}
+		runtimeSession = runtimeSessions[0]
+		return runtimeSession.TargetKey == "codex"
+	}, 5*time.Second, 10*time.Millisecond)
+	if !runtimeObserved {
+		select {
+		case completed := <-spawnResult:
+			require.NoError(completed.err)
+			var content strings.Builder
+			if completed.result != nil {
+				for _, item := range completed.result.Content {
+					if text, ok := item.(*mcp.TextContent); ok {
+						content.WriteString(text.Text)
+					}
+				}
+			}
+			require.FailNow("MCP handoff ended before storing a runtime", "%s", content.String())
+		default:
+			require.FailNow("MCP handoff did not store a runtime")
+		}
+	}
+
+	hookBody, err := json.Marshal(map[string]any{
+		"session_id": "coding-e2e", "cwd": handoffWorkspace.WorktreePath,
+		"hook_event_name": "UserPromptSubmit",
+	})
+	require.NoError(err)
+	hookReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, httpServer.URL+"/api/v1/agent-hooks/codex", bytes.NewReader(hookBody),
+	)
+	require.NoError(err)
+	hookReq.Header.Set("Authorization", "Bearer "+token)
+	hookReq.Header.Set("Content-Type", "application/json")
+	hookReq.Header.Set("X-Kenn-Forge-Runtime-Session-Key", runtimeSession.SessionKey)
+	hookResp, err := http.DefaultClient.Do(hookReq)
+	require.NoError(err)
+	require.Equal(http.StatusOK, hookResp.StatusCode)
+	require.NoError(hookResp.Body.Close())
+
+	var completed spawnCallResult
+	select {
+	case completed = <-spawnResult:
+	case <-time.After(5 * time.Second):
+		require.FailNow("MCP handoff did not complete after hook correlation")
+	}
+	require.NoError(completed.err)
+	require.NotNil(completed.result)
+	require.False(completed.result.IsError, "handoff returned error content: %#v", completed.result.Content)
+	require.NotNil(completed.result.StructuredContent)
+	spawnData, err := json.Marshal(completed.result.StructuredContent)
+	require.NoError(err)
+	var spawn spawnWorkspaceWithAgentOutput
+	require.NoError(json.Unmarshal(spawnData, &spawn))
+	assert.Equal("message_delivered", spawn.Stage)
+	assert.True(spawn.MessageDelivered)
+	assert.Equal(handoffWorkspace.ID, spawn.Workspace.ID)
+	assert.Equal(runtimeSession.SessionKey, spawn.Runtime.SessionKey)
+	assert.Equal("coding-e2e", spawn.CodingSession.SessionID)
+	require.NotNil(spawn.InitialMessage)
+	assert.Equal("delivered", spawn.InitialMessage.State)
+
+	receipt, err := database.GetAgentInitialMessageReceipt(ctx, handoffWorkspace.ID, runtimeSession.SessionKey)
+	require.NoError(err)
+	require.NotNil(receipt)
+	assert.Equal(db.AgentInitialMessageDelivered, receipt.State)
+	assert.Equal(len("review cache change"), receipt.MessageBytes)
 
 	claim := callMCPTool[setWorkflowOutput](t, session, "kenn_forge_set_item_workflow_state", map[string]any{
 		"item":            item,

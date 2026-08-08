@@ -3994,13 +3994,14 @@ type StarredRequest struct {
 // SyncStatus defines model for SyncStatus.
 type SyncStatus struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string                  `json:"$schema,omitempty"`
-	CurrentRepo   *string                  `json:"current_repo,omitempty"`
-	LastError     *string                  `json:"last_error,omitempty"`
-	LastErrorCode *SyncStatusLastErrorCode `json:"last_error_code,omitempty"`
-	LastRunAt     *time.Time               `json:"last_run_at,omitempty"`
-	Progress      *string                  `json:"progress,omitempty"`
-	Running       bool                     `json:"running"`
+	Schema              *string                  `json:"$schema,omitempty"`
+	CurrentRepo         *string                  `json:"current_repo,omitempty"`
+	LastError           *string                  `json:"last_error,omitempty"`
+	LastErrorCeilingKey *string                  `json:"last_error_ceiling_key,omitempty"`
+	LastErrorCode       *SyncStatusLastErrorCode `json:"last_error_code,omitempty"`
+	LastRunAt           *time.Time               `json:"last_run_at,omitempty"`
+	Progress            *string                  `json:"progress,omitempty"`
+	Running             bool                     `json:"running"`
 }
 
 // SyncStatusLastErrorCode defines model for SyncStatus.LastErrorCode.

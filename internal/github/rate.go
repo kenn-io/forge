@@ -1,6 +1,7 @@
 package github
 
 import (
+	"strings"
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
@@ -37,6 +38,16 @@ func NewPlatformRateTracker(
 
 func RateBucketKey(platformName, platformHost, ratePrincipal string) string {
 	return ratelimit.RateBucketKey(platformName, platformHost, ratePrincipal)
+}
+
+// RateStatusKey returns the public API key for one provider credential's rate
+// and local-ceiling status. Internal bucket keys use NUL separators for
+// unambiguous map partitioning; API keys remain printable and stable.
+func RateStatusKey(platformName, platformHost, ratePrincipal string) string {
+	if ratePrincipal == "" || ratePrincipal == "host" {
+		return RateBucketKey(platformName, platformHost, "host")
+	}
+	return strings.Join([]string{platformName, platformHost, ratePrincipal}, ":")
 }
 
 func rateFromGitHub(rate gh.Rate) Rate {

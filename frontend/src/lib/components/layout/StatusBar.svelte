@@ -165,17 +165,16 @@
   );
 
   let localCeilingFailure = $derived.by(() => {
-    if (sync.getSyncState()?.last_error_code !== "localSyncCeilingExhausted") return null;
-    const exhausted = Object.values(rateLimits.local_ceilings).filter(
-      (ceiling) => ceiling.limit > 0 && ceiling.remaining <= 0,
-    );
+    const status = sync.getSyncState();
+    if (status?.last_error_code !== "localSyncCeilingExhausted") return null;
+    const ceiling = status.last_error_ceiling_key
+      ? rateLimits.local_ceilings[status.last_error_ceiling_key]
+      : undefined;
+    if (!ceiling) return null;
     return {
-      spent: exhausted.reduce((total, ceiling) => total + ceiling.spent, 0),
-      limit: exhausted.reduce((total, ceiling) => total + ceiling.limit, 0),
-      resetAt: exhausted
-        .map((ceiling) => ceiling.reset_at)
-        .filter(Boolean)
-        .sort()[0] ?? "",
+      spent: ceiling.spent,
+      limit: ceiling.limit,
+      resetAt: ceiling.reset_at,
     };
   });
 

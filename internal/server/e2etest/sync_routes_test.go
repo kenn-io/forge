@@ -2,6 +2,7 @@ package e2etest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -205,6 +206,103 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 	assert.True(resetAt.After(time.Now().UTC()))
 }
 
+func TestSyncItemBudgetExhaustionIdentifiesLocalCeilingE2E(t *testing.T) {
+	require := require.New(t)
+
+	var commentRequests atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/acme/widget/pulls", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	})
+	mux.HandleFunc("/api/v3/repos/acme/widget/issues", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{
+			"id": 7,
+			"number": 7,
+			"title": "Budget regression",
+			"state": "open",
+			"html_url": "https://example.com/acme/widget/issues/7",
+			"body": "",
+			"created_at": "2026-08-07T20:00:00Z",
+			"updated_at": "2026-08-07T20:00:00Z"
+		}]`))
+	})
+	mux.HandleFunc("/api/v3/repos/acme/widget/issues/7/comments", func(w http.ResponseWriter, _ *http.Request) {
+		commentRequests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	})
+	githubAPI := httptest.NewServer(mux)
+	defer githubAPI.Close()
+
+	database := dbtest.Open(t)
+	restTracker := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	budget := ghclient.NewSyncBudget(2)
+	client, err := ghclient.NewClient(
+		staticTokenSource("token"),
+		"github.com",
+		restTracker,
+		budget,
+		ghclient.WithBaseURLForTesting(githubAPI.URL),
+	)
+	require.NoError(err)
+
+	registry, err := platform.NewRegistry(gitHubIndexListProvider{
+		host:   "github.com",
+		client: client,
+	})
+	require.NoError(err)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Owner: "acme", Name: "widget",
+			PlatformHost:       "github.com",
+			PlatformRepoID:     101,
+			PlatformExternalID: "R_101",
+		}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{"github.com": restTracker},
+		map[string]*ghclient.SyncBudget{"github.com": budget},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+	})
+	forge := httptest.NewServer(srv)
+	defer forge.Close()
+
+	trigger, err := http.NewRequestWithContext(
+		t.Context(), http.MethodPost, forge.URL+"/api/v1/sync", nil,
+	)
+	require.NoError(err)
+	trigger.Header.Set("Content-Type", "application/json")
+	triggerResponse, err := forge.Client().Do(trigger)
+	require.NoError(err)
+	defer triggerResponse.Body.Close()
+	require.Equal(http.StatusAccepted, triggerResponse.StatusCode)
+
+	require.Eventually(func() bool {
+		return !syncer.Status().Running && !syncer.Status().LastRunAt.IsZero()
+	}, 5*time.Second, 10*time.Millisecond)
+
+	statusResponse, err := forge.Client().Get(forge.URL + "/api/v1/sync/status")
+	require.NoError(err)
+	defer statusResponse.Body.Close()
+	require.Equal(http.StatusOK, statusResponse.StatusCode)
+	var status struct {
+		LastErrorCode       string `json:"last_error_code"`
+		LastErrorCeilingKey string `json:"last_error_ceiling_key"`
+	}
+	require.NoError(json.NewDecoder(statusResponse.Body).Decode(&status))
+	require.Equal("localSyncCeilingExhausted", status.LastErrorCode)
+	require.Equal("github.com", status.LastErrorCeilingKey)
+	require.Zero(commentRequests.Load(), "the refused request must not reach the provider")
+}
+
 type gitHubIndexListProvider struct {
 	host   string
 	client ghclient.Client
@@ -300,15 +398,12 @@ func (p gitHubIndexListProvider) GetIssue(
 }
 
 func (p gitHubIndexListProvider) ListIssueEvents(
-	context.Context,
-	platform.RepoRef,
-	int,
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
 ) ([]platform.IssueEvent, error) {
-	return nil, platform.UnsupportedCapability(
-		platform.KindGitHub,
-		p.host,
-		"read_issue_events",
-	)
+	_, err := p.client.ListIssueComments(ctx, ref.Owner, ref.Name, number)
+	return nil, err
 }
 
 func writeGitHubListResponse(

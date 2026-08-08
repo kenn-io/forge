@@ -7617,6 +7617,7 @@ export interface components {
             readonly $schema?: string;
             current_repo?: string;
             last_error?: string;
+            last_error_ceiling_key?: string;
             /** @enum {string} */
             last_error_code?: "localSyncCeilingExhausted";
             /** Format: date-time */

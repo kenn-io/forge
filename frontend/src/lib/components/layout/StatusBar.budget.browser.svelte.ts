@@ -282,20 +282,31 @@ describe("budget display", () => {
   });
 
   it("identifies a local ceiling failure while provider quota remains healthy", async () => {
-    const resetAt = new Date(Date.now() + 30 * 60_000).toISOString();
+    const failedResetAt = new Date(Date.now() + 30 * 60_000).toISOString();
+    const unrelatedResetAt = new Date(Date.now() + 5 * 60_000).toISOString();
     await mountStatusBar([
       rateLimits(
         { "github.com": knownHost },
         {
-          "github.com": {
+          "github:github.com:user:7": {
             provider: "github",
             platform_host: "github.com",
-            rate_principal: "host",
-            principal_label: "Host credential",
+            rate_principal: "user:7",
+            principal_label: "GitHub user maintainer",
             limit: 500,
-            spent: 500,
+            spent: 450,
+            remaining: 50,
+            reset_at: failedResetAt,
+          },
+          "gitlab:gitlab.example.com": {
+            provider: "gitlab",
+            platform_host: "gitlab.example.com",
+            rate_principal: "host",
+            principal_label: "Unrelated host credential",
+            limit: 900,
+            spent: 900,
             remaining: 0,
-            reset_at: resetAt,
+            reset_at: unrelatedResetAt,
           },
         },
       ),
@@ -304,14 +315,17 @@ describe("budget display", () => {
         last_run_at: "2026-08-07T20:00:00Z",
         last_error: "list open PRs: local sync emergency ceiling exhausted",
         last_error_code: "localSyncCeilingExhausted",
+        last_error_ceiling_key: "github:github.com:user:7",
       }),
     ]);
 
     const failure = document.querySelector<HTMLElement>(".status-item--local-ceiling");
     expect(failure).not.toBeNull();
     expect(failure?.textContent).toContain("local sync ceiling reached");
-    expect(failure?.textContent).toContain("500 / 500");
-    expect(failure?.title).toContain("resets");
+    expect(failure?.textContent).toContain("450 / 500");
+    expect(failure?.textContent).not.toContain("900 / 900");
+    expect(failure?.title).toContain("resets in 30m");
+    expect(failure?.title).not.toContain("resets in 5m");
 
     const restFill = document.querySelector<HTMLElement>(".budget-fill");
     expect(restFill?.style.background).toBe("var(--budget-green)");

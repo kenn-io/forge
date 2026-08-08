@@ -174,13 +174,10 @@
       ? rateLimits.local_ceilings[status.last_error_ceiling_key]
       : undefined;
     if (!ceiling) return null;
-    const failedAt = new Date(status.last_run_at ?? "").getTime();
-    const resetAt = new Date(ceiling.reset_at).getTime();
-    const resetBelongsToFailureWindow = Number.isFinite(failedAt)
-      && Number.isFinite(resetAt)
-      && resetAt > failedAt
-      && resetAt <= failedAt + 60 * 60_000;
-    if (!resetBelongsToFailureWindow) return null;
+    if (
+      !status.last_error_ceiling_reset_at
+      || ceiling.reset_at !== status.last_error_ceiling_reset_at
+    ) return null;
     return {
       spent: ceiling.spent,
       limit: ceiling.limit,

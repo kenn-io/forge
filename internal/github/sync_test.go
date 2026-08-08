@@ -1111,6 +1111,38 @@ type syncTestMergeRequestOnlyProvider struct {
 	listMRCalls   atomic.Int32
 }
 
+type syncTestBudgetThenBrokenIssueProvider struct {
+	syncTestProvider
+	getMRErr error
+}
+
+func (p *syncTestBudgetThenBrokenIssueProvider) Capabilities() platform.Capabilities {
+	return platform.Capabilities{ReadMergeRequests: true, ReadIssues: true}
+}
+
+func (p *syncTestBudgetThenBrokenIssueProvider) ListOpenMergeRequests(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.MergeRequest, error) {
+	return nil, nil
+}
+
+func (p *syncTestBudgetThenBrokenIssueProvider) GetMergeRequest(
+	context.Context,
+	platform.RepoRef,
+	int,
+) (platform.MergeRequest, error) {
+	return platform.MergeRequest{}, p.getMRErr
+}
+
+func (p *syncTestBudgetThenBrokenIssueProvider) ListMergeRequestEvents(
+	context.Context,
+	platform.RepoRef,
+	int,
+) ([]platform.MergeRequestEvent, error) {
+	return nil, nil
+}
+
 func (p *syncTestMergeRequestOnlyProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{ReadMergeRequests: true}
 }
@@ -7287,6 +7319,55 @@ func TestRunOncePreservesLocalCeilingStatusAcrossLaterRepoFailure(t *testing.T) 
 	assert.NotContains(status.LastError, "unrelated repository failure")
 	assert.Equal(SyncErrorCodeLocalCeilingExhausted, status.LastErrorCode)
 	assert.Equal("github.com", status.LastErrorCeilingKey)
+}
+
+func TestRunOncePreservesItemCeilingStatusAcrossLaterHardRepoFailure(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	resetAt := now.Add(35 * time.Minute)
+	repo := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformExternalID: "repo-acme-widget",
+	}
+	repoID, err := database.UpsertRepo(t.Context(), verifiedDBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), platform.DBMergeRequest(repoID, platform.MergeRequest{
+		PlatformID:     700,
+		Number:         7,
+		URL:            "https://github.com/acme/widget/pull/7",
+		Title:          "Previously open",
+		State:          "open",
+		HeadSHA:        "abc123",
+		BaseSHA:        "def456",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}))
+	require.NoError(err)
+
+	provider := &syncTestBudgetThenBrokenIssueProvider{
+		syncTestProvider: syncTestProvider{kind: platform.KindGitHub, host: "github.com"},
+		getMRErr:         newSyncBudgetExhaustedError(resetAt),
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+
+	syncer.RunOnce(t.Context())
+
+	status := syncer.Status()
+	assert.Contains(status.LastError, "one or more merge request sync items failed")
+	assert.Contains(status.LastError, "resolve issue reader")
+	assert.Equal(SyncErrorCodeLocalCeilingExhausted, status.LastErrorCode)
+	assert.Equal("github.com", status.LastErrorCeilingKey)
+	assert.Equal(resetAt.Format(time.RFC3339), status.LastErrorCeilingResetAt)
 }
 
 func TestSyncStatusUpdatedUsesUTC(t *testing.T) {

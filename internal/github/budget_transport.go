@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"sync/atomic"
+	"time"
 
 	"go.kenn.io/forge/internal/platform"
 )
@@ -239,6 +240,22 @@ type budgetTransport struct {
 	budget *SyncBudget
 }
 
+type syncBudgetExhaustedError struct {
+	resetAt time.Time
+}
+
+func newSyncBudgetExhaustedError(resetAt time.Time) error {
+	return &syncBudgetExhaustedError{resetAt: resetAt.UTC()}
+}
+
+func (e *syncBudgetExhaustedError) Error() string {
+	return platform.ErrSyncBudgetExhausted.Error()
+}
+
+func (e *syncBudgetExhaustedError) Unwrap() error {
+	return platform.ErrSyncBudgetExhausted
+}
+
 func WrapSyncBudgetTransport(base http.RoundTripper, budget *SyncBudget) http.RoundTripper {
 	if budget == nil {
 		return base
@@ -274,16 +291,12 @@ func (t *budgetTransport) RoundTrip(
 	var window BudgetWindow
 	if counted {
 		var reserved bool
-		switch {
-		case archive:
-			window, reserved = t.budget.TrySpendArchive(1)
-		case IsEssentialSyncBudgetContext(req.Context()):
-			window, reserved = t.budget.TrySpendEssential(1)
-		default:
-			window, reserved = t.budget.TrySpend(1)
-		}
+		var resetAt time.Time
+		window, reserved, resetAt = t.budget.trySpendForTransport(
+			1, archive, IsEssentialSyncBudgetContext(req.Context()),
+		)
 		if !reserved {
-			return nil, platform.ErrSyncBudgetExhausted
+			return nil, newSyncBudgetExhaustedError(resetAt)
 		}
 	}
 	resp, err := t.base.RoundTrip(req)

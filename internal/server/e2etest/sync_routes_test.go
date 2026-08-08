@@ -294,12 +294,14 @@ func TestSyncItemBudgetExhaustionIdentifiesLocalCeilingE2E(t *testing.T) {
 	defer statusResponse.Body.Close()
 	require.Equal(http.StatusOK, statusResponse.StatusCode)
 	var status struct {
-		LastErrorCode       string `json:"last_error_code"`
-		LastErrorCeilingKey string `json:"last_error_ceiling_key"`
+		LastErrorCode           string `json:"last_error_code"`
+		LastErrorCeilingKey     string `json:"last_error_ceiling_key"`
+		LastErrorCeilingResetAt string `json:"last_error_ceiling_reset_at"`
 	}
 	require.NoError(json.NewDecoder(statusResponse.Body).Decode(&status))
 	require.Equal("localSyncCeilingExhausted", status.LastErrorCode)
 	require.Equal("github.com", status.LastErrorCeilingKey)
+	require.Equal(budget.ResetAt().UTC().Format(time.RFC3339), status.LastErrorCeilingResetAt)
 	require.Zero(commentRequests.Load(), "the refused request must not reach the provider")
 }
 

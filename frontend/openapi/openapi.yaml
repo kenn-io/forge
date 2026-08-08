@@ -7357,6 +7357,9 @@ components:
           type: string
         last_error_ceiling_key:
           type: string
+        last_error_ceiling_reset_at:
+          format: date-time
+          type: string
         last_error_code:
           enum:
             - localSyncCeilingExhausted

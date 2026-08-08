@@ -7618,6 +7618,8 @@ export interface components {
             current_repo?: string;
             last_error?: string;
             last_error_ceiling_key?: string;
+            /** Format: date-time */
+            last_error_ceiling_reset_at?: string;
             /** @enum {string} */
             last_error_code?: "localSyncCeilingExhausted";
             /** Format: date-time */

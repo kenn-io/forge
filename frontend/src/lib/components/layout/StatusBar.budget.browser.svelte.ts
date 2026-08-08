@@ -317,6 +317,7 @@ describe("budget display", () => {
         last_error: "list open PRs: local sync emergency ceiling exhausted",
         last_error_code: "localSyncCeilingExhausted",
         last_error_ceiling_key: "github:github.com:user:7",
+        last_error_ceiling_reset_at: failedResetAt,
       }),
     ]);
 
@@ -332,8 +333,9 @@ describe("budget display", () => {
     expect(restFill?.style.background).toBe("var(--budget-green)");
   });
 
-  it("does not pair a prior-window failure with a recovered live ceiling", async () => {
-    const failedAt = new Date(Date.now() - 65 * 60_000).toISOString();
+  it("does not pair a long-running prior-window failure with the next live ceiling", async () => {
+    const failedResetAt = new Date(Date.now() - 5 * 60_000).toISOString();
+    const completedAt = new Date(Date.now()).toISOString();
     const liveResetAt = new Date(Date.now() + 55 * 60_000).toISOString();
     await mountStatusBar([
       rateLimits(
@@ -353,10 +355,11 @@ describe("budget display", () => {
       ),
       syncStatus({
         running: false,
-        last_run_at: failedAt,
+        last_run_at: completedAt,
         last_error: "list open PRs: local sync emergency ceiling exhausted",
         last_error_code: "localSyncCeilingExhausted",
         last_error_ceiling_key: "github:github.com:user:7",
+        last_error_ceiling_reset_at: failedResetAt,
       }),
     ]);
 

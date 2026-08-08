@@ -455,6 +455,10 @@ type SyncStatus struct {
 	LastError           string        `json:"last_error,omitempty"`
 	LastErrorCode       SyncErrorCode `json:"last_error_code,omitempty" enum:"localSyncCeilingExhausted"`
 	LastErrorCeilingKey string        `json:"last_error_ceiling_key,omitempty"`
+	// LastErrorCeilingResetAt identifies the exact local budget window that
+	// produced LastError. Clients must match it against the live ceiling row
+	// before displaying counters or reset details from that row.
+	LastErrorCeilingResetAt string `json:"last_error_ceiling_reset_at,omitempty" format:"date-time"`
 }
 
 func formatRateLimitWait(wait time.Duration) string {
@@ -5454,12 +5458,13 @@ func (s *Syncer) clearRecoveredRateLimitGates(
 // worker pool. Extracted into a struct so runWorker can be a
 // directly testable method instead of an inline closure.
 type runState struct {
-	completed           *atomic.Int32
-	maxShown            *atomic.Int32
-	errMu               *sync.Mutex
-	lastErr             *string
-	lastErrorCode       *SyncErrorCode
-	lastErrorCeilingKey *string
+	completed               *atomic.Int32
+	maxShown                *atomic.Int32
+	errMu                   *sync.Mutex
+	lastErr                 *string
+	lastErrorCode           *SyncErrorCode
+	lastErrorCeilingKey     *string
+	lastErrorCeilingResetAt *string
 	// canceled is latched to true at the moment any goroutine
 	// observes ctx cancellation while work is still outstanding.
 	// RunOnce uses this flag (rather than a completed-count
@@ -5496,12 +5501,17 @@ func (s *Syncer) recordRunError(
 ) {
 	errorCode := syncErrorCodeFor(err)
 	ceilingKey := ""
+	ceilingResetAt := ""
 	if errorCode == SyncErrorCodeLocalCeilingExhausted {
 		identity, identityErr := s.identityForRepo(repo, false)
 		if identityErr == nil {
 			ceilingKey = RateStatusKey(
 				string(repoPlatform(repo)), identity.Host, identity.Principal,
 			)
+		}
+		var exhausted *syncBudgetExhaustedError
+		if errors.As(err, &exhausted) {
+			ceilingResetAt = exhausted.resetAt.UTC().Format(time.RFC3339)
 		}
 	}
 
@@ -5514,6 +5524,7 @@ func (s *Syncer) recordRunError(
 	*state.lastErr = errMessage
 	*state.lastErrorCode = errorCode
 	*state.lastErrorCeilingKey = ceilingKey
+	*state.lastErrorCeilingResetAt = ceilingResetAt
 }
 
 // runWorker drains the work channel until it is closed or ctx
@@ -5801,27 +5812,29 @@ func (s *Syncer) runOnce(
 	eligibleBuckets := s.repoEligibility(repos, nextAfter)
 
 	var (
-		completed           atomic.Int32
-		maxShown            atomic.Int32
-		errMu               sync.Mutex
-		lastErr             string
-		lastErrorCode       SyncErrorCode
-		lastErrorCeilingKey string
-		canceled            atomic.Bool
-		wg                  sync.WaitGroup
+		completed               atomic.Int32
+		maxShown                atomic.Int32
+		errMu                   sync.Mutex
+		lastErr                 string
+		lastErrorCode           SyncErrorCode
+		lastErrorCeilingKey     string
+		lastErrorCeilingResetAt string
+		canceled                atomic.Bool
+		wg                      sync.WaitGroup
 	)
 
 	state := &runState{
-		completed:           &completed,
-		maxShown:            &maxShown,
-		errMu:               &errMu,
-		lastErr:             &lastErr,
-		lastErrorCode:       &lastErrorCode,
-		lastErrorCeilingKey: &lastErrorCeilingKey,
-		canceled:            &canceled,
-		total:               total,
-		results:             results,
-		exhausted:           &sync.Map{},
+		completed:               &completed,
+		maxShown:                &maxShown,
+		errMu:                   &errMu,
+		lastErr:                 &lastErr,
+		lastErrorCode:           &lastErrorCode,
+		lastErrorCeilingKey:     &lastErrorCeilingKey,
+		lastErrorCeilingResetAt: &lastErrorCeilingResetAt,
+		canceled:                &canceled,
+		total:                   total,
+		results:                 results,
+		exhausted:               &sync.Map{},
 	}
 	for range workers {
 		wg.Go(func() {
@@ -5933,11 +5946,12 @@ dispatch:
 	}
 
 	s.publishStatus(&SyncStatus{
-		Running:             false,
-		LastRunAt:           time.Now().UTC(),
-		LastError:           lastErr,
-		LastErrorCode:       lastErrorCode,
-		LastErrorCeilingKey: lastErrorCeilingKey,
+		Running:                 false,
+		LastRunAt:               time.Now().UTC(),
+		LastError:               lastErr,
+		LastErrorCode:           lastErrorCode,
+		LastErrorCeilingKey:     lastErrorCeilingKey,
+		LastErrorCeilingResetAt: lastErrorCeilingResetAt,
 	})
 }
 
@@ -7623,7 +7637,10 @@ func (s *Syncer) indexSyncRepo(
 			if failedScope != 0 {
 				s.markRepoFailed(repo, failedScope)
 			}
-			return fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
+			return errors.Join(
+				partialCause,
+				fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err),
+			)
 		}
 		issueProviderAttempted = true
 
@@ -7836,7 +7853,9 @@ func (s *Syncer) syncMergeRequestsFromList(
 	)
 	if err != nil {
 		s.markRepoFailed(repo, failMR)
-		return fmt.Errorf("get previously open MRs: %w", err)
+		return joinPartialFailureCause(
+			budgetCause, fmt.Errorf("get previously open MRs: %w", err),
+		)
 	}
 	for _, number := range closedNumbers {
 		if err := s.fetchAndUpdateClosedMergeRequest(
@@ -8836,7 +8855,9 @@ func (s *Syncer) doSyncRepoGraphQL(
 		ctx, repoID, stillOpen,
 	)
 	if err != nil {
-		return fmt.Errorf("get previously open MRs: %w", err)
+		return joinPartialFailureCause(
+			budgetCause, fmt.Errorf("get previously open MRs: %w", err),
+		)
 	}
 	for _, number := range closedNumbers {
 		if err := s.fetchAndUpdateClosed(
@@ -8910,7 +8931,9 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 		ctx, repoID, stillOpen,
 	)
 	if err != nil {
-		return fmt.Errorf("get previously open issues: %w", err)
+		return joinPartialFailureCause(
+			budgetCause, fmt.Errorf("get previously open issues: %w", err),
+		)
 	}
 	for _, number := range closedNumbers {
 		if err := s.fetchAndUpdateClosedIssue(
@@ -10932,7 +10955,9 @@ func (s *Syncer) syncIssuesFromList(
 		ctx, repoID, stillOpen,
 	)
 	if err != nil {
-		return fmt.Errorf("get previously open issues: %w", err)
+		return joinPartialFailureCause(
+			budgetCause, fmt.Errorf("get previously open issues: %w", err),
+		)
 	}
 	for _, number := range closedNumbers {
 		if err := s.fetchAndUpdateClosedIssue(
@@ -11000,7 +11025,9 @@ func (s *Syncer) syncPlatformIssuesFromList(
 		ctx, repoID, stillOpen,
 	)
 	if err != nil {
-		return fmt.Errorf("get previously open issues: %w", err)
+		return joinPartialFailureCause(
+			budgetCause, fmt.Errorf("get previously open issues: %w", err),
+		)
 	}
 	for _, number := range closedNumbers {
 		if err := s.fetchAndUpdateClosedPlatformIssue(

@@ -3,6 +3,7 @@
   import type { DiffFile, FilePreview } from "../../api/types.js";
   import { getStores } from "../../context.js";
   import type { DiffViewMode } from "../../stores/diff.svelte.js";
+  import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import {
     buildMarkdownRichPreview,
@@ -28,7 +29,7 @@
     reviewThreads?: ReviewThread[];
     canReplyToThreads?: boolean;
     diffHeadSHA?: string | undefined;
-    onreply?: ((thread: ReviewThread, body: string) => Promise<boolean>) | undefined;
+    onreply?: ((thread: ReviewThread, body: string, callbacks: MutationCallbacks) => void) | undefined;
   }
 
   const {
@@ -88,23 +89,29 @@
 
   $effect(() => {
     const sourceFile = file;
-    if (!active || isMarkdownFile) return;
     const version = ++requestVersion;
+    if (!active || isMarkdownFile) {
+      loading = false;
+      error = null;
+      preview = null;
+      return;
+    }
     loading = true;
     error = null;
     preview = null;
-    void diffStore.loadFilePreview(owner, name, number, sourceFile.path)
-      .then((result) => {
+    diffStore.loadFilePreview(owner, name, number, sourceFile.path, undefined, {
+      onSuccess: (result) => {
         if (version !== requestVersion) return;
         preview = result;
-      })
-      .catch((err: unknown) => {
+      },
+      onFailure: (message) => {
         if (version !== requestVersion) return;
-        error = err instanceof Error ? err.message : String(err);
-      })
-      .finally(() => {
+        error = message;
+      },
+      onSettled: () => {
         if (version === requestVersion) loading = false;
-      });
+      },
+    });
   });
 
   function decodeText(content: string): string {

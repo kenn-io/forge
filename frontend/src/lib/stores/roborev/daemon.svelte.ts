@@ -1,12 +1,19 @@
+import { Duration, Effect, Option, Schedule } from "effect";
+import type { AppRuntime } from "../../app/runtime.js";
+import { TransientTransportError } from "../../api/effect-errors.js";
 import type { RoborevClient } from "../../api/roborev/client.js";
-import type { ForgeClient } from "../../types.js";
+import type { components as RoborevComponents } from "../../api/roborev/generated/schema.js";
+import { RoborevDaemonWorkflow } from "./daemon-workflow.js";
 
 const UNAVAILABLE_POLL_INTERVAL_MS = 1_000;
 const AVAILABLE_POLL_INTERVAL_MS = 30_000;
+const STATUS_TIMEOUT = "5 seconds";
+
+type DaemonStatus = RoborevComponents["schemas"]["DaemonStatus"];
 
 export interface DaemonStoreOptions {
   client: RoborevClient;
-  forgeClient: ForgeClient;
+  runtime: AppRuntime;
   onRecover?: () => void;
 }
 
@@ -23,125 +30,119 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
   let canceledJobs = $state(0);
   let activeWorkers = $state(0);
   let maxWorkers = $state(0);
-  let pollHandle: ReturnType<typeof setTimeout> | null = null;
-  let pollGeneration = 0;
-  let activeHealthCheck: {
-    generation: number;
-    result: Promise<boolean>;
-  } | null = null;
 
-  async function runHealthCheckForGeneration(generation: number): Promise<boolean> {
-    const isCurrent = () => generation === pollGeneration;
-    if (!isCurrent()) return false;
+  function clearStatus(): void {
+    queuedJobs = 0;
+    runningJobs = 0;
+    completedJobs = 0;
+    failedJobs = 0;
+    canceledJobs = 0;
+    activeWorkers = 0;
+    maxWorkers = 0;
+  }
 
-    let recovered = false;
-    loading = true;
-    try {
-      const { data, error } = await opts.forgeClient.GET("/roborev/status");
-      if (!isCurrent()) return false;
+  function applyStatus(status: DaemonStatus): void {
+    queuedJobs = status.queued_jobs;
+    runningJobs = status.running_jobs;
+    completedJobs = status.completed_jobs;
+    failedJobs = status.failed_jobs;
+    canceledJobs = status.canceled_jobs;
+    activeWorkers = status.active_workers;
+    maxWorkers = status.max_workers;
+    if (status.version) version = status.version;
+  }
 
-      if (error || !data) {
+  const loadStatusProgram = Effect.tryPromise({
+    try: (signal) => opts.client.GET("/api/status", { signal }),
+    catch: (cause) => TransientTransportError.make({ operation: "GET Roborev daemon status", cause }),
+  }).pipe(
+    Effect.flatMap((result) =>
+      result.data === undefined
+        ? Effect.fail(
+            TransientTransportError.make({
+              operation: "GET Roborev daemon status",
+              cause: result.error ?? new Error("Roborev status response was empty"),
+            }),
+          )
+        : Effect.succeed(result.data),
+    ),
+    Effect.tap((status) => Effect.sync(() => applyStatus(status))),
+    Effect.timeout(STATUS_TIMEOUT),
+  );
+
+  const healthProgram = Effect.gen(function* () {
+    const workflow = yield* RoborevDaemonWorkflow;
+    yield* Effect.sync(() => {
+      loading = true;
+    });
+    const result = yield* workflow.health.pipe(Effect.option);
+
+    if (Option.isNone(result)) {
+      yield* Effect.sync(() => {
         available = false;
-        queuedJobs = 0;
-        runningJobs = 0;
-        completedJobs = 0;
-        failedJobs = 0;
-        canceledJobs = 0;
-        activeWorkers = 0;
-        maxWorkers = 0;
-        return false;
-      }
-      const prevAvailable = available;
-      available = data.available;
-      version = data.version;
-      endpoint = data.endpoint;
-      recovered = available && !prevAvailable;
-    } catch {
-      if (!isCurrent()) return false;
-
-      available = false;
-      queuedJobs = 0;
-      runningJobs = 0;
-      completedJobs = 0;
-      failedJobs = 0;
-      canceledJobs = 0;
-      activeWorkers = 0;
-      maxWorkers = 0;
-    } finally {
-      if (isCurrent()) loading = false;
+        clearStatus();
+      });
+      return false;
     }
 
+    const previous = available;
+    yield* Effect.sync(() => {
+      available = result.value.available;
+      version = result.value.version;
+      endpoint = result.value.endpoint;
+      if (!available) clearStatus();
+    });
+    const recovered = available && !previous;
     if (recovered) {
-      // Fire onRecover on ANY false→true transition,
-      // including the first connect after a failed startup.
-      // The mount-time loadJobs may have failed if the
-      // daemon was unreachable; this ensures data loads
-      // once the daemon becomes available.
-      wasEverAvailable = true;
-      void loadStatus();
-      opts.onRecover?.();
+      yield* Effect.sync(() => {
+        wasEverAvailable = true;
+        opts.onRecover?.();
+      });
     }
     return recovered;
-  }
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        loading = false;
+      }),
+    ),
+  );
 
-  function checkHealthForGeneration(generation: number): Promise<boolean> {
-    if (generation !== pollGeneration) return Promise.resolve(false);
-    if (activeHealthCheck?.generation === generation) return activeHealthCheck.result;
-
-    const result = runHealthCheckForGeneration(generation);
-    const check = { generation, result };
-    activeHealthCheck = check;
-    const clear = () => {
-      if (activeHealthCheck === check) activeHealthCheck = null;
-    };
-    void result.then(clear, clear);
-    return result;
-  }
-
-  async function checkHealth(): Promise<void> {
-    const generation = pollGeneration;
-    await checkHealthForGeneration(generation);
-  }
-
-  async function loadStatus(): Promise<void> {
-    const { data, error } = await opts.client.GET("/api/status");
-    if (error || !data) return;
-    queuedJobs = data.queued_jobs;
-    runningJobs = data.running_jobs;
-    completedJobs = data.completed_jobs;
-    failedJobs = data.failed_jobs;
-    canceledJobs = data.canceled_jobs;
-    activeWorkers = data.active_workers;
-    maxWorkers = data.max_workers;
-    if (data.version) version = data.version;
-  }
-
-  async function poll(generation: number): Promise<void> {
-    const recovered = await checkHealthForGeneration(generation);
-    if (generation !== pollGeneration) return;
-
-    if (available && !recovered) void loadStatus();
-
-    const interval = available ? AVAILABLE_POLL_INTERVAL_MS : UNAVAILABLE_POLL_INTERVAL_MS;
-    pollHandle = setTimeout(() => {
-      pollHandle = null;
-      void poll(generation);
-    }, interval);
-  }
-
-  function startPolling(): void {
-    stopPolling();
-    const generation = pollGeneration;
-    void poll(generation);
-  }
-
-  function stopPolling(): void {
-    pollGeneration += 1;
-    loading = false;
-    if (pollHandle !== null) {
-      clearTimeout(pollHandle);
-      pollHandle = null;
+  const pollOnce = Effect.gen(function* () {
+    yield* healthProgram;
+    if (available) {
+      yield* loadStatusProgram.pipe(Effect.catch(() => Effect.void));
     }
+  });
+
+  const pollingSchedule = Schedule.forever.pipe(
+    Schedule.addDelay(() =>
+      Effect.succeed(Duration.millis(available ? AVAILABLE_POLL_INTERVAL_MS : UNAVAILABLE_POLL_INTERVAL_MS)),
+    ),
+  );
+  const pollingEffect = pollOnce.pipe(
+    Effect.repeat(pollingSchedule),
+    Effect.ensuring(
+      Effect.sync(() => {
+        loading = false;
+      }),
+    ),
+  );
+
+  function checkHealth(): void {
+    opts.runtime.runCommand(healthProgram, {
+      operation: "check Roborev daemon health",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
+  function loadStatus(): void {
+    opts.runtime.runCommand(loadStatusProgram, {
+      operation: "load Roborev daemon status",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   function isAvailable(): boolean {
@@ -196,8 +197,7 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
     getWasEverAvailable,
     checkHealth,
     loadStatus,
-    startPolling,
-    stopPolling,
+    pollingEffect,
   };
 }
 

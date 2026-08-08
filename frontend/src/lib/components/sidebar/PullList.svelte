@@ -106,15 +106,15 @@
   );
 
   $effect(() => {
-    void pulls.loadPulls();
+    pulls.loadPulls();
 
     refreshHandle = setInterval(() => {
-      void pulls.loadPulls();
+      pulls.loadPulls();
     }, 15_000);
 
     // If sync is currently running on first load, refresh when it completes
     if (sync.getSyncState()?.running) {
-      sync.onNextSyncComplete(() => void pulls.loadPulls());
+      sync.onNextSyncComplete(pulls.loadPulls);
     }
 
     return () => {
@@ -128,7 +128,7 @@
     if (debounceHandle !== null) clearTimeout(debounceHandle);
     debounceHandle = setTimeout(() => {
       pulls.setSearchQuery(value.trim() === "" ? undefined : value.trim());
-      void pulls.loadPulls();
+      pulls.loadPulls();
     }, 300);
   }
 
@@ -151,7 +151,7 @@
 
   function setPullState(state: string): void {
     pulls.setFilterState(state);
-    void pulls.loadPulls();
+    pulls.loadPulls();
   }
 
   function resetCompactView(): void {
@@ -458,7 +458,7 @@
     <button
       class="star-filter-btn"
       class:star-filter-btn--active={pulls.getFilterStarred()}
-      onclick={() => { pulls.setFilterStarred(!pulls.getFilterStarred()); void pulls.loadPulls(); }}
+      onclick={() => { pulls.setFilterStarred(!pulls.getFilterStarred()); pulls.loadPulls(); }}
       title={pulls.getFilterStarred() ? "Show all" : "Show starred only"}
     >
       {#if pulls.getFilterStarred()}

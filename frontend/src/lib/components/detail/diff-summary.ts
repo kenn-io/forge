@@ -1,4 +1,4 @@
-import type { DiffFile } from "../../api/types.js";
+import type { DiffFileWire } from "../../api/types.js";
 import { categorizeDiffFile, type DiffFileCategory } from "../../utils/diff-categories.js";
 
 export { categorizeDiffFile };
@@ -9,24 +9,20 @@ export interface DiffLineTotals {
   deletions: number;
 }
 
+type DiffSummaryFile = Pick<DiffFileWire, "path" | "additions" | "deletions" | "is_binary" | "is_generated">;
+
 export type DiffLineSummary = Record<DiffSummaryCategory | "total", DiffLineTotals>;
 
 export class DiffSummaryFilesResult {
   constructor(
     readonly stale: boolean,
-    readonly files: DiffFile[],
+    readonly files: DiffSummaryFile[],
   ) {}
 
   clone(): DiffSummaryFilesResult {
     return new DiffSummaryFilesResult(
       this.stale,
-      this.files.map((file) => ({
-        ...file,
-        hunks: file.hunks.map((hunk) => ({
-          ...hunk,
-          lines: hunk.lines.map((line) => ({ ...line })),
-        })),
-      })),
+      this.files.map((file) => ({ ...file })),
     );
   }
 }
@@ -44,7 +40,7 @@ function emptySummary(): DiffLineSummary {
   };
 }
 
-export function summarizeDiffFiles(files: DiffFile[]): DiffLineSummary {
+export function summarizeDiffFiles(files: DiffSummaryFile[]): DiffLineSummary {
   const summary = emptySummary();
   for (const file of files) {
     const category = categorizeDiffFile(file);

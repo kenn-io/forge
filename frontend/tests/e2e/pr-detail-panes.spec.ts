@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+import type { components } from "../../src/lib/api/generated/schema";
 import { mockApi } from "./support/mockApi";
 import { splitFocusedPane } from "./support/paneCommands";
 
@@ -51,14 +52,14 @@ const diffResponse = {
           new_start: 1,
           new_count: 1,
           lines: [
-            { type: "removed", content: "old", old_num: 1 },
-            { type: "added", content: "new", new_num: 1 },
+            { type: "delete", content: "old", old_num: 1 },
+            { type: "add", content: "new", new_num: 1 },
           ],
         },
       ],
     },
   ],
-};
+} satisfies components["schemas"]["DiffResponse"];
 
 async function fulfillJson(route: Route, body: unknown): Promise<void> {
   await route.fulfill({

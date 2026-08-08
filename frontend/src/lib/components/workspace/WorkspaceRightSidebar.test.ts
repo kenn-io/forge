@@ -1,13 +1,21 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import type { StoreInstances } from "../../types.js";
 import WorkspaceRightSidebar from "./WorkspaceRightSidebar.svelte";
 
+let runtime: OwnedAppRuntime;
+
+beforeEach(() => {
+  runtime = makeAppRuntime();
+});
+
 function makeStores(): Pick<StoreInstances, "diff"> & Partial<StoreInstances> {
   return {
-    diff: createDiffStore(),
+    diff: createDiffStore({ runtime }),
     roborevDaemon: {
       isAvailable: () => false,
     } as StoreInstances["roborevDaemon"],
@@ -77,9 +85,10 @@ function renderKataSidebarWithoutPR() {
 }
 
 describe("WorkspaceRightSidebar", () => {
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
     vi.restoreAllMocks();
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("preserves the workspace diff base and selected commit across refreshes", async () => {

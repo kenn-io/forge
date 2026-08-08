@@ -1,6 +1,18 @@
-import type { ActivityItem, ActivityParams, ActivitySettings } from "../api/types.js";
-import type { ForgeClient } from "../types.js";
+import { Effect } from "effect";
+import type { AppRuntime } from "../app/runtime.js";
+import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
+import { executeGeneratedApiRequest } from "../api/generated-api.js";
+import { retryIdempotentRead } from "../api/retry-policy.js";
+import type {
+  ActivityItem,
+  ActivityParams,
+  ActivityResponse,
+  ActivitySettings,
+  NotificationBulkResponse,
+} from "../api/types.js";
+import { ActivityWorkflow } from "./activity-workflow.js";
 import { showFlash } from "./flash.svelte.js";
+import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
@@ -83,8 +95,17 @@ const RANGE_MS: Record<TimeRange, number> = {
   "90d": 90 * 24 * 60 * 60 * 1000,
 };
 
+interface OwnedActivityResponse {
+  readonly response: ActivityResponse;
+  readonly startedAt: number;
+}
+
+type ActivityPollProjection =
+  | { readonly mode: "append"; readonly result: OwnedActivityResponse }
+  | { readonly mode: "replace"; readonly result: OwnedActivityResponse };
+
 export interface ActivityStoreOptions {
-  client: ForgeClient;
+  runtime: AppRuntime;
   getGlobalRepo?: () => string | undefined;
   getBasePath?: () => string;
 }
@@ -93,8 +114,15 @@ function apiErrorMessage(error: { detail?: string; title?: string }, fallback: s
   return error.detail ?? error.title ?? fallback;
 }
 
+function readErrorMessage(error: ApiProblemError | TransientTransportError): string {
+  if (error._tag === "ApiProblemError") {
+    return apiErrorMessage(error.problem, "failed to load activity");
+  }
+  return "Could not reach Kenn Forge";
+}
+
 export function createActivityStore(opts: ActivityStoreOptions) {
-  const apiClient = opts.client;
+  const runtime = opts.runtime;
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
   const getBasePath = opts.getBasePath ?? (() => "/");
 
@@ -112,11 +140,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let rollUpCommits = $state(false);
   let collapseThreadsDefault = false;
   let expandOverrides = $state<Set<string>>(new Set());
-  let pollHandle: ReturnType<typeof setInterval> | null = null;
-  let pollInFlight = false;
-  let requestVersion = 0;
   let pollCount = 0;
   const FULL_REFRESH_EVERY = 4;
+  let activityLifecycleTick = 0;
+  const notificationStateOwnership = new Map<string, { readonly tick: number; readonly state: string }>();
 
   let hideClosedMerged = $state(false);
   let hideBots = $state(false);
@@ -282,152 +309,247 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return p;
   }
 
-  async function loadActivity(): Promise<void> {
-    const version = ++requestVersion;
-    loading = true;
-    storeError = null;
-    try {
-      const { data, error: requestError } = await apiClient.GET("/activity", {
-        params: { query: buildParams() },
-      });
-      if (requestError) {
-        throw new Error(apiErrorMessage(requestError, "failed to load activity"));
-      }
-      if (version !== requestVersion) return;
-      items = data?.items ?? [];
-      capped = data?.capped ?? false;
-    } catch (err) {
-      if (version !== requestVersion) return;
-      storeError = err instanceof Error ? err.message : String(err);
-    } finally {
-      if (version === requestVersion) loading = false;
-    }
+  function activityRead(params: ActivityParams) {
+    return Effect.sync(() => ++activityLifecycleTick).pipe(
+      Effect.flatMap((startedAt) =>
+        executeGeneratedApiRequest("GET /activity", (client, signal) =>
+          client.GET("/activity", { params: { query: params }, signal }),
+        ).pipe(
+          retryIdempotentRead,
+          Effect.map((response) => ({ response, startedAt })),
+        ),
+      ),
+    );
   }
 
-  async function refreshActivity(): Promise<void> {
-    const versionAtStart = requestVersion;
-    try {
-      const { data, error: requestError } = await apiClient.GET("/activity", {
-        params: { query: buildParams() },
-      });
-      if (requestError || versionAtStart !== requestVersion) return;
-      const fresh = data?.items ?? [];
-      if (fresh.length === 0) return;
-      const freshById = new Map(fresh.map((it) => [it.id, it]));
-      items = items.map((it) => {
-        const updated = freshById.get(it.id);
-        if (updated && updated.item_state !== it.item_state) {
-          return { ...it, item_state: updated.item_state };
-        }
-        return it;
-      });
-    } catch {
-      // silent
+  function projectOwnedNotificationStates(result: OwnedActivityResponse, completeSnapshot = true): ActivityItem[] {
+    const projected = (result.response.items ?? []).map((item) => {
+      const owned = notificationStateOwnership.get(item.id);
+      if (owned === undefined) return item;
+      if (owned.tick > result.startedAt) return { ...item, item_state: owned.state };
+      notificationStateOwnership.delete(item.id);
+      return item;
+    });
+    if (completeSnapshot) {
+      const present = new Set(projected.map((item) => item.id));
+      for (const [id, owned] of notificationStateOwnership) {
+        if (owned.tick <= result.startedAt && !present.has(id)) notificationStateOwnership.delete(id);
+      }
     }
+    return projected;
+  }
+
+  function loadActivityProgram(params: ActivityParams, owner: "foreground" | "poll" = "foreground") {
+    return Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const read = activityRead(params);
+      const project = (result: OwnedActivityResponse) =>
+        Effect.sync(() => {
+          items = projectOwnedNotificationStates(result);
+          capped = result.response.capped;
+          loading = false;
+        });
+      const clearLoading = Effect.sync(() => {
+        loading = false;
+      });
+      yield* owner === "foreground"
+        ? workflow.load(read, project, clearLoading)
+        : workflow.pollRead(read, project, clearLoading);
+    });
+  }
+
+  function loadActivityEffect() {
+    return Effect.sync(() => {
+      loading = true;
+      storeError = null;
+    }).pipe(
+      Effect.andThen(Effect.suspend(() => loadActivityProgram(buildParams()))),
+      Effect.tapError((failure) =>
+        Effect.sync(() => {
+          storeError = readErrorMessage(failure);
+          loading = false;
+        }),
+      ),
+    );
+  }
+
+  function reconcileActivityEffect() {
+    return Effect.suspend(() => {
+      const params = buildParams();
+      const read = activityRead(params);
+      const project = (result: OwnedActivityResponse) =>
+        Effect.sync(() => {
+          items = projectOwnedNotificationStates(result);
+          capped = result.response.capped;
+          loading = false;
+        });
+      return Effect.gen(function* () {
+        const workflow = yield* ActivityWorkflow;
+        yield* workflow.reconcileRead(read, project);
+      });
+    });
+  }
+
+  function loadActivity(): void {
+    runtime.runCommand(loadActivityEffect(), {
+      operation: "load activity",
+      safeContext: {},
+      onFailure: (failure) => {
+        storeError = readErrorMessage(failure);
+        loading = false;
+      },
+    });
+  }
+
+  function refreshActivityProgram(params: ActivityParams) {
+    return Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      yield* workflow.pollRead(activityRead(params), (result) => {
+        const fresh = projectOwnedNotificationStates(result);
+        if (fresh.length === 0) return Effect.void;
+        return Effect.sync(() => {
+          const freshById = new Map(fresh.map((item) => [item.id, item]));
+          items = items.map((item) => {
+            const updated = freshById.get(item.id);
+            return updated && updated.item_state !== item.item_state
+              ? { ...item, item_state: updated.item_state }
+              : item;
+          });
+        });
+      });
+    });
   }
 
   // Mark a notification feed row as seen: queues the GitHub read
   // propagation backend-side and flips the row to read locally so the
   // unread affordance clears without waiting for the next sync. The
   // activity item id for a notification is "ntf:<db id>".
-  async function markNotificationSeen(item: ActivityItem): Promise<void> {
+  function markNotificationSeen(item: ActivityItem): void {
     const id = notificationDbId(item.id);
     if (id === null) return;
-    // Optimistically flip locally; QueueNotificationIDsRead persists
-    // unread=0, so a later feed reload agrees.
-    items = items.map((it) => (it.id === item.id ? { ...it, item_state: "read" } : it));
-    const rollback = () => {
-      items = items.map((it) => (it.id === item.id ? { ...it, item_state: "unread" } : it));
-    };
-    try {
-      const { data, error: requestError } = await apiClient.POST("/notifications/read", {
-        body: { ids: [id] },
+    const mutationTick = ++activityLifecycleTick;
+    const baseline = item.item_state;
+    let acknowledged = false;
+    const apply = (state: string) =>
+      Effect.sync(() => {
+        notificationStateOwnership.set(item.id, { tick: mutationTick, state });
+        items = items.map((candidate) => (candidate.id === item.id ? { ...candidate, item_state: state } : candidate));
       });
-      // The endpoint is bulk-shaped and can return 200 while reporting
-      // this id in `failed`. Only keep the optimistic flip when the id
-      // was actually queued/acknowledged.
-      const acked = !!data && [...(data.succeeded ?? []), ...(data.queued ?? [])].includes(id);
-      if (requestError || !acked) {
-        rollback();
-        showFlash(
-          requestError
-            ? apiErrorMessage(requestError, "failed to mark notification as read")
-            : "Failed to mark notification as read.",
-          { tone: "danger" },
-        );
+    const program = Effect.gen(function* () {
+      const mutations = yield* ProviderMutations;
+      const commit = executeGeneratedApiRequest<NotificationBulkResponse>(
+        "POST mark notification read",
+        (client, signal) =>
+          client.POST("/notifications/read", {
+            body: { ids: [id] },
+            signal,
+          }),
+      ).pipe(
+        Effect.map((response) => {
+          acknowledged = [...(response.succeeded ?? []), ...(response.queued ?? [])].includes(id);
+          return acknowledged ? "read" : baseline;
+        }),
+      );
+      yield* mutations.submit({
+        key: `notification\u0000${encodeURIComponent(String(id))}\u0000seen`,
+        baseline,
+        optimistic: "read",
+        apply,
+        commit,
+        refreshOnStale: Effect.succeed(baseline),
+      });
+      if (acknowledged) {
+        const acknowledgementTick = ++activityLifecycleTick;
+        notificationStateOwnership.set(item.id, { tick: acknowledgementTick, state: "read" });
+        items = items.map((candidate) => (candidate.id === item.id ? { ...candidate, item_state: "read" } : candidate));
+      } else {
+        notificationStateOwnership.delete(item.id);
+        showFlash("Failed to mark notification as read.", { tone: "danger" });
       }
-    } catch (err) {
-      rollback();
-      showFlash(err instanceof Error ? err.message : "Failed to mark notification as read.", { tone: "danger" });
-    }
+    });
+    runtime.runCommand(program, {
+      operation: "mark notification read",
+      safeContext: { notificationId: id },
+      onFailure: (failure) => {
+        showFlash(providerMutationFailureMessage(failure, "failed to mark notification as read"), { tone: "danger" });
+      },
+    });
   }
 
-  async function pollNewItems(): Promise<void> {
-    if (pollInFlight) return;
-    pollInFlight = true;
-    try {
-      await doPoll();
-    } finally {
-      pollInFlight = false;
-    }
-  }
-
-  async function doPoll(): Promise<void> {
-    if (loading) return;
-    pollCount++;
+  const pollNewItems = Effect.suspend(() => {
+    if (loading) return Effect.void;
+    pollCount += 1;
+    const params = buildParams();
     if (items.length === 0) {
-      await loadActivity();
-      return;
+      loading = true;
+      return loadActivityProgram(params, "poll");
     }
     if (pollCount % FULL_REFRESH_EVERY === 0) {
-      await refreshActivity();
-      return;
+      return refreshActivityProgram(params);
     }
-    const versionAtStart = requestVersion;
-    try {
-      const params = buildParams();
-      params.after = items[0]!.cursor;
-      const { data, error: requestError } = await apiClient.GET("/activity", {
-        params: { query: params },
-      });
-      if (requestError) {
-        throw new Error(apiErrorMessage(requestError, "failed to poll activity"));
-      }
-      if (versionAtStart !== requestVersion) return;
-      const resp = data;
-      if (!resp) return;
-      if (resp.capped) {
-        await loadActivity();
-        return;
-      }
-      const nextItems = resp.items ?? [];
-      if (nextItems.length > 0) {
-        const existingIds = new Set(items.map((it) => it.id));
-        const newItems = nextItems.filter((it) => !existingIds.has(it.id));
-        if (newItems.length > 0) {
-          items = [...newItems, ...items];
+    const newestItem = items[0];
+    if (newestItem === undefined) return Effect.void;
+    params.after = newestItem.cursor;
+    return Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const pollRead = Effect.gen(function* () {
+        const result = yield* activityRead(params);
+        if (!result.response.capped) {
+          return { mode: "append", result } satisfies ActivityPollProjection;
         }
-      }
-    } catch {
-      // Silent poll failure
-    }
-    if (versionAtStart !== requestVersion) return;
-    const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
-    items = items.filter((it) => new Date(it.created_at) >= cutoff);
-  }
+        const replacement = yield* activityRead(buildParams());
+        return { mode: "replace", result: replacement } satisfies ActivityPollProjection;
+      });
+      yield* workflow.pollRead(
+        pollRead,
+        ({ mode, result }) =>
+          Effect.sync(() => {
+            if (mode === "replace") {
+              items = projectOwnedNotificationStates(result);
+              capped = result.response.capped;
+              loading = false;
+              return;
+            }
+            const existingIds = new Set(items.map((item) => item.id));
+            const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
+            if (newItems.length > 0) {
+              items = [...newItems, ...items];
+            }
+            const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
+            items = items.filter((item) => new Date(item.created_at) >= cutoff);
+          }),
+        Effect.sync(() => {
+          loading = false;
+        }),
+      );
+    });
+  }).pipe(
+    Effect.catch(() => Effect.void),
+    Effect.asVoid,
+  );
 
   function startActivityPolling(): void {
-    stopActivityPolling();
-    pollHandle = setInterval(() => {
-      void pollNewItems();
-    }, 15_000);
+    const program = Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      yield* workflow.poll(pollNewItems, "15 seconds");
+    });
+    runtime.runCommand(program, {
+      operation: "poll activity",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   function stopActivityPolling(): void {
-    if (pollHandle !== null) {
-      clearInterval(pollHandle);
-      pollHandle = null;
-    }
+    const program = Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      yield* workflow.stopPolling;
+    });
+    runtime.runCommand(program, {
+      operation: "stop activity polling",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   // deriveFiltersFromTypes reconstructs the dropdown state from the
@@ -565,6 +687,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     hydrateDefaults,
     initializeFromMount,
     loadActivity,
+    loadActivityEffect,
+    reconcileActivityEffect,
     markNotificationSeen,
     startActivityPolling,
     stopActivityPolling,

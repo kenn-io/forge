@@ -1,7 +1,11 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY } from "../../context.js";
-import StackStatus from "./StackStatus.svelte";
+import type { OwnedAppRuntime } from "../../app/runtime.js";
+import type { GeneratedClient } from "../../api/generated-api.js";
+import { NAVIGATE_KEY, STORES_KEY } from "../../context.js";
+import { makeTestAppRuntime } from "../../testing/effect-layers.js";
+import StackStatusTestHarness from "./StackStatusTestHarness.svelte";
 
 interface StackMember {
   number: number;
@@ -67,28 +71,83 @@ const baseProps = {
   expanded: true,
 };
 
-function renderStackStatus(initialStack: StackContext | null) {
-  return render(StackStatus, {
+const runtimes = new Set<OwnedAppRuntime>();
+
+function renderStackStatus(
+  initialStack: StackContext | null,
+  options: {
+    readonly client?: GeneratedClient;
+    readonly sync?: { readonly subscribeSyncComplete: (callback: () => void) => () => void };
+  } = {},
+) {
+  const client = options.client ?? ({ GET: vi.fn(async () => ({ data: null })) } as unknown as GeneratedClient);
+  const runtime = makeTestAppRuntime(client);
+  runtimes.add(runtime);
+  const rendered = render(StackStatusTestHarness, {
     props: {
-      ...baseProps,
-      initialStack,
+      runtime,
+      stackProps: {
+        ...baseProps,
+        initialStack,
+      },
     },
     context: new Map<symbol, unknown>([
-      [
-        API_CLIENT_KEY,
-        {
-          GET: vi.fn(async () => ({ data: null })),
-        },
-      ],
-      [STORES_KEY, {}],
+      [STORES_KEY, options.sync === undefined ? {} : { sync: options.sync }],
       [NAVIGATE_KEY, vi.fn()],
     ]),
   });
+  return {
+    ...rendered,
+    rerenderStackStatus: (nextStack: StackContext | null) =>
+      rendered.rerender({
+        runtime,
+        stackProps: {
+          ...baseProps,
+          initialStack: nextStack,
+        },
+      }),
+  };
 }
 
 describe("StackStatus", () => {
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await Promise.all(Array.from(runtimes, (runtime) => Effect.runPromise(runtime.disposeEffect)));
+    runtimes.clear();
+  });
+
+  it("keeps a later stack refresh authoritative when an older response finishes last", async () => {
+    const first = Promise.withResolvers<{ data: StackContext; response: Response }>();
+    const latest = stack({
+      size: 2,
+      health: "healthy",
+      members: [member({ number: 1, position: 1 }), member({ number: 2, position: 2 })],
+    });
+    const get = vi
+      .fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce({ data: latest, response: new Response(null, { status: 200 }) });
+    let refresh = () => undefined;
+    renderStackStatus(stack(), {
+      client: { GET: get } as unknown as GeneratedClient,
+      sync: {
+        subscribeSyncComplete: (callback) => {
+          refresh = callback;
+          return () => undefined;
+        },
+      },
+    });
+
+    refresh();
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    refresh();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Stacked: 2\/2/i })).toBeTruthy());
+
+    first.resolve({ data: stack(), response: new Response(null, { status: 200 }) });
+    await Promise.resolve();
+
+    expect(screen.getByRole("button", { name: /Stacked: 2\/2/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Stacked: 2\/3/i })).toBeNull();
   });
 
   it("replaces cached stack data with the latest detail stack", async () => {
@@ -100,14 +159,13 @@ describe("StackStatus", () => {
       }),
     ).toBeTruthy();
 
-    await rendered.rerender({
-      ...baseProps,
-      initialStack: stack({
+    await rendered.rerenderStackStatus(
+      stack({
         size: 2,
         health: "healthy",
         members: [member({ number: 1, position: 1 }), member({ number: 2, position: 2 })],
       }),
-    });
+    );
 
     expect(screen.getByRole("button", { name: /Stacked: 2\/2/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Stacked: 2\/3/i })).toBeNull();
@@ -119,10 +177,7 @@ describe("StackStatus", () => {
 
     expect(screen.getByRole("button", { name: /Stacked: 2\/3/i })).toBeTruthy();
 
-    await rendered.rerender({
-      ...baseProps,
-      initialStack: null,
-    });
+    await rendered.rerenderStackStatus(null);
 
     expect(screen.queryByRole("button", { name: /Stacked:/i })).toBeNull();
   });

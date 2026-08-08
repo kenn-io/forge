@@ -1,4 +1,6 @@
+import { Effect, Exit } from "effect";
 import type { TerminalSettings } from "../api/types.js";
+import { SettingsWorkflow, type SettingsError } from "./settings-workflow.js";
 
 export interface TerminalSettingsStore {
   getTerminalSettings: () => TerminalSettings;
@@ -15,13 +17,11 @@ interface SaveQueue {
   mutationGeneration: number;
   pending: number;
   previewGeneration: number;
-  tail: Promise<void>;
 }
 
 interface SaveTerminalSettingsOptions {
   baseline: TerminalSettings;
   changes: Partial<TerminalSettings>;
-  persist: (settings: TerminalSettings) => Promise<TerminalSettings>;
   store: TerminalSettingsStore;
 }
 
@@ -39,9 +39,19 @@ export interface TerminalSettingsHydration {
 
 const saveQueues = new WeakMap<TerminalSettingsStore, SaveQueue>();
 const previews = new WeakMap<TerminalSettingsStore, TerminalSettingsPreview>();
+const TERMINAL_SETTINGS_KEYS = [
+  "font_family",
+  "font_size",
+  "scrollback",
+  "line_height",
+  "letter_spacing",
+  "cursor_blink",
+  "font_ligatures",
+  "hide_tmux_status",
+] satisfies ReadonlyArray<keyof TerminalSettings>;
 
-function changedKeys<T extends object>(settings: T): (keyof T)[] {
-  return Object.keys(settings) as (keyof T)[];
+function changedKeys(settings: Partial<Record<keyof TerminalSettings, unknown>>): Array<keyof TerminalSettings> {
+  return TERMINAL_SETTINGS_KEYS.filter((key) => key in settings);
 }
 
 function previewOwnsField(queue: SaveQueue, preview: TerminalSettingsPreview, key: keyof TerminalSettings): boolean {
@@ -96,7 +106,6 @@ function getSaveQueue(store: TerminalSettingsStore, baseline: TerminalSettings):
       mutationGeneration: 0,
       pending: 0,
       previewGeneration: 0,
-      tail: Promise.resolve(),
     };
     saveQueues.set(store, queue);
   }
@@ -275,70 +284,72 @@ export function hydrateTerminalSettings(hydration: TerminalSettingsHydration, se
   store.setTerminalSettings(hydrated);
 }
 
-export function saveTerminalSettings({
+export const saveTerminalSettings = Effect.fn("TerminalSettings.save")(function* ({
   baseline,
   changes,
-  persist,
   store,
-}: SaveTerminalSettingsOptions): Promise<TerminalSettings> {
-  const activeQueue = getSaveQueue(store, baseline);
-  if (activeQueue.pending === 0) {
-    activeQueue.confirmed = settingsWithoutPreview(store);
-  }
-  activeQueue.mutationGeneration += 1;
-  const mutationGeneration = activeQueue.mutationGeneration;
-  for (const key of changedKeys(changes)) {
-    addPendingMutation(activeQueue, key, mutationGeneration);
-    activeQueue.fieldOptimisticGenerations[key] = mutationGeneration;
-    delete activeQueue.fieldPreviewGenerations[key];
-  }
-  activeQueue.pending += 1;
-  store.setTerminalSettings({
-    ...store.getTerminalSettings(),
-    ...changes,
-  });
-
-  const save = activeQueue.tail.then(async () => {
-    const request = { ...activeQueue.confirmed, ...changes };
-    try {
-      const saved = await persist(request);
-      const confirmed = { ...activeQueue.confirmed };
-      for (const key of changedKeys(changes)) {
-        Object.assign(confirmed, { [key]: saved[key] });
-        activeQueue.fieldConfirmedGenerations[key] = mutationGeneration;
-      }
-      activeQueue.confirmed = confirmed;
-      confirmPreviewChanges(store, changes);
-      reconcileSettings(
-        store,
-        changes,
-        saved,
-        (key) => activeQueue.fieldOptimisticGenerations[key] === mutationGeneration,
-      );
-      return saved;
-    } catch (error) {
-      reconcileSettings(
-        store,
-        changes,
-        activeQueue.confirmed,
-        (key) => activeQueue.fieldOptimisticGenerations[key] === mutationGeneration,
-      );
-      throw error;
+}: SaveTerminalSettingsOptions) {
+  const workflow = yield* SettingsWorkflow;
+  const state = yield* Effect.sync(() => {
+    const activeQueue = getSaveQueue(store, baseline);
+    if (activeQueue.pending === 0) {
+      activeQueue.confirmed = settingsWithoutPreview(store);
     }
-  });
-  const result = save.finally(() => {
+    activeQueue.mutationGeneration += 1;
+    const mutationGeneration = activeQueue.mutationGeneration;
     for (const key of changedKeys(changes)) {
-      settlePendingMutation(activeQueue, key, mutationGeneration);
-      if (activeQueue.fieldOptimisticGenerations[key] === mutationGeneration) {
-        delete activeQueue.fieldOptimisticGenerations[key];
-      }
+      addPendingMutation(activeQueue, key, mutationGeneration);
+      activeQueue.fieldOptimisticGenerations[key] = mutationGeneration;
+      delete activeQueue.fieldPreviewGenerations[key];
     }
-    activeQueue.pending -= 1;
+    activeQueue.pending += 1;
+    store.setTerminalSettings({
+      ...store.getTerminalSettings(),
+      ...changes,
+    });
+    return { activeQueue, mutationGeneration };
   });
-  activeQueue.tail = result.then(
-    () => undefined,
-    () => undefined,
-  );
+  const save = workflow
+    .enqueue({
+      request: Effect.sync(() => ({ terminal: { ...state.activeQueue.confirmed, ...changes } })),
+    })
+    .pipe(Effect.map((settings) => settings.terminal));
 
-  return result;
-}
+  return yield* save.pipe(
+    Effect.onExit((exit) =>
+      Effect.sync(() => {
+        if (Exit.isSuccess(exit)) {
+          const saved = exit.value;
+          const confirmed = { ...state.activeQueue.confirmed };
+          for (const key of changedKeys(changes)) {
+            Object.assign(confirmed, { [key]: saved[key] });
+            state.activeQueue.fieldConfirmedGenerations[key] = state.mutationGeneration;
+          }
+          state.activeQueue.confirmed = confirmed;
+          confirmPreviewChanges(store, changes);
+          reconcileSettings(
+            store,
+            changes,
+            saved,
+            (key) => state.activeQueue.fieldOptimisticGenerations[key] === state.mutationGeneration,
+          );
+        } else {
+          reconcileSettings(
+            store,
+            changes,
+            state.activeQueue.confirmed,
+            (key) => state.activeQueue.fieldOptimisticGenerations[key] === state.mutationGeneration,
+          );
+        }
+
+        for (const key of changedKeys(changes)) {
+          settlePendingMutation(state.activeQueue, key, state.mutationGeneration);
+          if (state.activeQueue.fieldOptimisticGenerations[key] === state.mutationGeneration) {
+            delete state.activeQueue.fieldOptimisticGenerations[key];
+          }
+        }
+        state.activeQueue.pending -= 1;
+      }),
+    ),
+  );
+}) satisfies (options: SaveTerminalSettingsOptions) => Effect.Effect<TerminalSettings, SettingsError, SettingsWorkflow>;

@@ -1,10 +1,94 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Deferred, Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { ProblemCodes, type ProblemBody } from "../api/problems.js";
 import type { PullDetail } from "../api/types.js";
-import type { ForgeClient } from "../types.js";
-import { createDetailStore } from "./detail.svelte.js";
+import type { OwnedAppRuntime } from "../app/runtime.js";
+import type { GeneratedClient } from "../api/generated-api.js";
+import { makeTestAppRuntime } from "../testing/effect-layers.js";
+import type { ApplySuggestionRequest } from "../utils/markdown-suggestions.js";
+import {
+  type ApplySuggestionConflict,
+  createDetailStore as createRuntimeDetailStore,
+  type DetailRequestOptions,
+  type DetailStore,
+  type DetailStoreOptions,
+} from "./detail.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
+
+let runtime: OwnedAppRuntime | undefined;
+
+type TestDetailStoreOptions = Omit<DetailStoreOptions, "runtime"> & { readonly client: GeneratedClient };
+
+function createDetailStore(options: TestDetailStoreOptions) {
+  const { client, ...storeOptions } = options;
+  runtime = makeTestAppRuntime(client);
+  return createRuntimeDetailStore({ ...storeOptions, runtime });
+}
+
+async function loadDetail(store: DetailStore, ...args: Parameters<DetailStore["loadDetail"]>): Promise<void> {
+  store.loadDetail(...args);
+  await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+}
+
+function refreshDetail(
+  store: DetailStore,
+  owner: string,
+  name: string,
+  number: number,
+  identity: DetailRequestOptions,
+): Promise<void> {
+  const settled = Promise.withResolvers<void>();
+  const result = store.refreshDetailOnly(owner, name, number, identity, {
+    onSettled: settled.resolve,
+  });
+  expect(result).toBeUndefined();
+  return settled.promise;
+}
+
+function syncDetail(
+  store: DetailStore,
+  owner: string,
+  name: string,
+  number: number,
+  identity: DetailRequestOptions,
+): Promise<boolean> {
+  const settled = Promise.withResolvers<boolean>();
+  const result = store.syncDetailNow(owner, name, number, identity, {
+    onSuccess: settled.resolve,
+    onFailure: () => settled.resolve(false),
+  });
+  expect(result).toBeUndefined();
+  return settled.promise;
+}
+
+function applyReviewSuggestions(
+  store: DetailStore,
+  owner: string,
+  name: string,
+  number: number,
+  input: ApplySuggestionRequest,
+  onConflict?: (conflict: ApplySuggestionConflict) => void,
+): Promise<boolean> {
+  const settled = Promise.withResolvers<boolean>();
+  const result = store.applyReviewSuggestions(
+    {
+      provider: "github",
+      platformHost: "github.com",
+      owner,
+      name,
+      repoPath: `${owner}/${name}`,
+    },
+    number,
+    input,
+    {
+      ...(onConflict !== undefined && { onConflict }),
+      onResult: settled.resolve,
+    },
+  );
+  expect(result).toBeUndefined();
+  return settled.promise;
+}
 
 function pullDetail(headSHA: string): PullDetail {
   return {
@@ -58,7 +142,7 @@ function conflictProblem(reason: string): ProblemBody {
   };
 }
 
-function mockClient(overrides: Partial<ForgeClient> = {}): ForgeClient {
+function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
   return {
     GET: vi.fn(),
     POST: vi.fn(),
@@ -69,15 +153,20 @@ function mockClient(overrides: Partial<ForgeClient> = {}): ForgeClient {
     HEAD: vi.fn(),
     TRACE: vi.fn(),
     ...overrides,
-  } as unknown as ForgeClient;
+  } as unknown as GeneratedClient;
 }
 
 describe("createDetailStore", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    runtime = undefined;
+  });
+
+  afterEach(async () => {
     for (const item of getFlashes()) dismissFlash(item.id);
     localStorage.clear();
     vi.restoreAllMocks();
     vi.useRealTimers();
+    if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("keeps the displayed detail object when a refresh returns identical content", async () => {
@@ -95,17 +184,17 @@ describe("createDetailStore", () => {
       client: mockClient({ GET: get }),
       getPage: () => "pulls",
     });
-    await store.loadDetail("acme", "widget", 7, { ...routeIdentity, sync: false });
+    await loadDetail(store, "acme", "widget", 7, { ...routeIdentity, sync: false });
     const displayed = store.getDetail();
 
     // Only the sync timestamp moved: the polling refresh must not swap
     // in an equal-but-new object, or the PR panel re-renders every cycle.
-    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    await refreshDetail(store, "acme", "widget", 7, routeIdentity);
     expect(store.getDetail()).toBe(displayed);
     expect(store.getDetail()?.detail_fetched_at).toBe("2026-07-15T10:00:00Z");
 
     // Real content changes still apply.
-    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    await refreshDetail(store, "acme", "widget", 7, routeIdentity);
     expect(store.getDetail()).not.toBe(displayed);
     expect(store.getDetail()?.platform_head_sha).toBe("new-head");
   });
@@ -125,18 +214,45 @@ describe("createDetailStore", () => {
       repoPath: `acme/${name}`,
       sync: false as const,
     });
-    await store.loadDetail("acme", "widget-a", 7, identity("widget-a"));
+    await loadDetail(store, "acme", "widget-a", 7, identity("widget-a"));
 
-    const loadingB = store.loadDetail("acme", "widget-b", 8, identity("widget-b"));
-    const refreshingA = store.refreshDetailOnly("acme", "widget-a", 7, identity("widget-a"));
+    store.loadDetail("acme", "widget-b", 8, identity("widget-b"));
+    const refreshingA = refreshDetail(store, "acme", "widget-a", 7, identity("widget-a"));
     loadB.resolve({ data: pullDetailFor("widget-b", 8, "head-b") });
-    await loadingB;
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
     refreshA.resolve({ data: pullDetailFor("widget-a", 7, "late-head-a") });
     await refreshingA;
 
     expect(store.getDetail()?.repo_name).toBe("widget-b");
     expect(store.getDetail()?.merge_request.Number).toBe(8);
     expect(store.getDetail()?.platform_head_sha).toBe("head-b");
+  });
+
+  it("aborts the previous detail request when the selection changes", async () => {
+    let firstSignal: AbortSignal | undefined;
+    const firstStarted = deferred<void>();
+    const get = vi.fn((_path: string, request: { signal?: AbortSignal; params: { path: { number: number } } }) => {
+      if (request.params.path.number === 7) {
+        firstSignal = request.signal;
+        firstStarted.resolve();
+        return new Promise<never>(() => {});
+      }
+      return Promise.resolve({ data: pullDetailFor("widget-b", 8, "head-b") });
+    });
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    const identity = (name: string) => ({
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: `acme/${name}`,
+      sync: false as const,
+    });
+
+    store.loadDetail("acme", "widget-a", 7, identity("widget-a"));
+    await firstStarted.promise;
+    store.loadDetail("acme", "widget-b", 8, identity("widget-b"));
+
+    await vi.waitFor(() => expect(firstSignal?.aborted).toBe(true));
+    await vi.waitFor(() => expect(store.getDetail()?.repo_name).toBe("widget-b"));
   });
 
   it("rejects an initial load that resolves after a newer refresh for the same selection", async () => {
@@ -151,12 +267,12 @@ describe("createDetailStore", () => {
       sync: false as const,
     };
 
-    const loading = store.loadDetail("acme", "widget", 7, identity);
-    const refreshing = store.refreshDetailOnly("acme", "widget", 7, identity);
+    store.loadDetail("acme", "widget", 7, identity);
+    const refreshing = refreshDetail(store, "acme", "widget", 7, identity);
     newerRefresh.resolve({ data: pullDetail("newer-head") });
     await refreshing;
     initialLoad.resolve({ data: pullDetail("older-head") });
-    await loading;
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
 
     expect(store.getDetail()?.platform_head_sha).toBe("newer-head");
   });
@@ -179,12 +295,12 @@ describe("createDetailStore", () => {
     const syncPost = deferred<{ data: PullDetail }>();
     const post = vi.fn().mockReturnValueOnce(syncPost.promise);
     const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
-    await store.loadDetail("acme", "widget", 7, { ...routeIdentity, sync: false });
+    await loadDetail(store, "acme", "widget", 7, { ...routeIdentity, sync: false });
 
     // The sync's request starts before the refresh below applies a newer
     // envelope carrying the workspace.
-    const syncing = store.syncDetailNow("acme", "widget", 7, routeIdentity);
-    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    const syncing = syncDetail(store, "acme", "widget", 7, routeIdentity);
+    await refreshDetail(store, "acme", "widget", 7, routeIdentity);
     expect(store.getDetail()?.workspace?.id).toBe("ws-1");
     const newerTick = store.getDetailEnvelopeTick();
 
@@ -207,12 +323,12 @@ describe("createDetailStore", () => {
       sync: false as const,
     };
 
-    const loading = store.loadDetail("acme", "widget", 7, identity);
-    const refreshing = store.refreshDetailOnly("acme", "widget", 7, identity);
+    store.loadDetail("acme", "widget", 7, identity);
+    const refreshing = refreshDetail(store, "acme", "widget", 7, identity);
     newerRefresh.resolve({ error: conflictProblem("detail_refresh_failed") });
     await refreshing;
     initialLoad.resolve({ data: pullDetail("loaded-head") });
-    await loading;
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
 
     expect(store.getDetail()?.platform_head_sha).toBe("loaded-head");
   });
@@ -233,9 +349,9 @@ describe("createDetailStore", () => {
       .mockResolvedValueOnce({ data: pullDetail("refreshed-head") });
     const store = createDetailStore({ client: mockClient({ GET: get }) });
     const identity = { repoPath: "acme/widget", sync: false as const };
-    await store.loadDetail("acme", "widget", 7, { ...identity, ...loaded });
+    await loadDetail(store, "acme", "widget", 7, { ...identity, ...loaded });
 
-    await store.refreshDetailOnly("acme", "widget", 7, {
+    await refreshDetail(store, "acme", "widget", 7, {
       repoPath: identity.repoPath,
       ...refreshed,
     });
@@ -262,14 +378,14 @@ describe("createDetailStore", () => {
       client: mockClient({ GET: get }),
       getPage: () => "pulls",
     });
-    await store.loadDetail("acme", "widget", 7, { ...routeIdentity, sync: false });
+    await loadDetail(store, "acme", "widget", 7, { ...routeIdentity, sync: false });
 
-    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    await refreshDetail(store, "acme", "widget", 7, routeIdentity);
     expect((store.getDetail() as { warnings?: string[] } | null)?.warnings).toEqual(["diff unavailable"]);
 
     // The same warnings again are not a change.
     const displayed = store.getDetail();
-    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    await refreshDetail(store, "acme", "widget", 7, routeIdentity);
     expect(store.getDetail()).toBe(displayed);
   });
 
@@ -286,22 +402,28 @@ describe("createDetailStore", () => {
       .mockResolvedValueOnce({ data: { ...pullDetail("head"), detail_fetched_at: "2026-07-15T10:01:00Z" } })
       .mockResolvedValueOnce({ data: { ...pullDetail("head"), detail_fetched_at: "2026-07-15T10:01:00Z" } })
       .mockResolvedValue({ data: { ...pullDetail("new-head"), detail_fetched_at: "2026-07-15T10:02:00Z" } });
-    const post = vi.fn().mockResolvedValue({ error: undefined });
+    const post = vi.fn().mockResolvedValue({ data: undefined, error: undefined });
     const store = createDetailStore({
       client: mockClient({ GET: get, POST: post }),
       getPage: () => "pulls",
     });
-    await store.loadDetail("acme", "widget", 7, { ...routeIdentity, sync: false });
+    await loadDetail(store, "acme", "widget", 7, { ...routeIdentity, sync: false });
     // Content-identical refresh: the store timestamp freezes at 10:00
     // while the server clock is at 10:01.
-    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    await refreshDetail(store, "acme", "widget", 7, routeIdentity);
 
     // The next polling cycle's first re-GET still returns 10:01. Judged
     // against the frozen store timestamp that would look like completion
     // and drop the real change; against the observed baseline the loop
     // keeps going and applies the new head from the finished sync.
     store.startDetailPolling("acme", "widget", 7, routeIdentity);
-    await vi.advanceTimersByTimeAsync(60_000 + 300 + 700 + 100);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(300);
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+    await vi.advanceTimersByTimeAsync(700);
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(4));
 
     expect(store.getDetail()?.platform_head_sha).toBe("new-head");
     store.stopDetailPolling();
@@ -321,18 +443,254 @@ describe("createDetailStore", () => {
         optimisticKanbanUpdate,
       },
     });
-    await store.loadDetail("acme", "widget", 7, {
+    await loadDetail(store, "acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
       sync: false,
     });
 
-    await store.updateKanbanState("acme", "widget", 7, "reviewing");
+    const result = store.updateKanbanState(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      },
+      7,
+      "reviewing",
+    );
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(getFlash()?.message).toBe("permission denied"));
 
     expect(getFlash()).toMatchObject({ message: "permission denied", tone: "danger" });
     expect(store.getDetailError()).toBeNull();
     expect(optimisticKanbanUpdate).toHaveBeenLastCalledWith(expect.anything(), 7, "new");
+  });
+
+  it("launches pull content updates synchronously and settles from the canonical response", async () => {
+    const initial = pullDetail("head");
+    initial.merge_request.Title = "Old title";
+    initial.merge_request.Body = "Old body";
+    const canonical = pullDetail("head");
+    canonical.merge_request.Title = "Canonical title";
+    canonical.merge_request.Body = "Old body";
+    const store = createDetailStore({
+      client: mockClient({
+        GET: vi.fn().mockResolvedValue({ data: initial }),
+        PATCH: vi.fn().mockResolvedValue({ data: canonical, error: undefined }),
+      }),
+    });
+    await loadDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    const settled = Promise.withResolvers<void>();
+    const onSuccess = vi.fn();
+
+    const result = store.updatePRContent(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      },
+      7,
+      { title: "Draft title" },
+      { onSuccess, onSettled: settled.resolve },
+    );
+
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(store.getDetail()?.merge_request.Title).toBe("Draft title"));
+    await settled.promise;
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(store.getDetail()?.merge_request.Title).toBe("Canonical title");
+  });
+
+  it("launches star updates synchronously and restores the confirmed value on failure", async () => {
+    const initial = pullDetail("head");
+    initial.merge_request.Starred = false;
+    const store = createDetailStore({
+      client: mockClient({
+        GET: vi.fn().mockResolvedValue({ data: initial }),
+        PUT: vi.fn().mockResolvedValue({ error: { detail: "could not star" } }),
+      }),
+    });
+    await loadDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+
+    const result = store.toggleDetailPRStar(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      },
+      7,
+      false,
+    );
+
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(getFlash()?.message).toBe("could not star"));
+    expect(store.getDetail()?.merge_request.Starred).toBe(false);
+  });
+
+  it("rebases pending content, kanban, and star mutations over a refreshed envelope", async () => {
+    const initial = pullDetail("head");
+    initial.merge_request.Title = "Old title";
+    initial.merge_request.Body = "Old body";
+    initial.merge_request.KanbanStatus = "new";
+    initial.merge_request.Starred = false;
+    const refreshed = pullDetail("head");
+    refreshed.merge_request.Title = "Server title";
+    refreshed.merge_request.Body = "Server body";
+    refreshed.merge_request.KanbanStatus = "new";
+    refreshed.merge_request.Starred = false;
+    const contentCommit = deferred<{ data: PullDetail; error: undefined }>();
+    const kanbanCommit = deferred<{ data: undefined; error: undefined }>();
+    const starCommit = deferred<{ data: undefined; error: undefined }>();
+    const get = vi.fn().mockResolvedValueOnce({ data: initial }).mockResolvedValue({ data: refreshed });
+    const put = vi.fn((path: string) => (path === "/starred" ? starCommit.promise : kanbanCommit.promise));
+    const pulls = {
+      loadPulls: vi.fn(),
+      getPullKanbanStatus: vi.fn(() => "new" as const),
+      optimisticKanbanUpdate: vi.fn(),
+    };
+    const store = createDetailStore({
+      client: mockClient({ GET: get, PATCH: vi.fn(() => contentCommit.promise), PUT: put }),
+      pulls,
+    });
+    const routeRef = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+    };
+    await loadDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+
+    store.updatePRContent(routeRef, 7, { title: "Draft title" });
+    store.updateKanbanState(routeRef, 7, "reviewing");
+    store.toggleDetailPRStar(routeRef, 7, false);
+    await vi.waitFor(() => expect(store.getDetail()?.merge_request.Title).toBe("Draft title"));
+    await vi.waitFor(() => expect(store.getDetail()?.merge_request.KanbanStatus).toBe("reviewing"));
+    await vi.waitFor(() => expect(store.getDetail()?.merge_request.Starred).toBe(true));
+
+    await refreshDetail(store, "acme", "widget", 7, routeRef);
+
+    expect(store.getDetail()?.merge_request.Title).toBe("Draft title");
+    expect(store.getDetail()?.merge_request.KanbanStatus).toBe("reviewing");
+    expect(store.getDetail()?.merge_request.Starred).toBe(true);
+    const confirmedContent = pullDetail("head");
+    confirmedContent.merge_request.Title = "Draft title";
+    confirmedContent.merge_request.Body = "Old body";
+    contentCommit.resolve({ data: confirmedContent, error: undefined });
+    kanbanCommit.resolve({ data: undefined, error: undefined });
+    starCommit.resolve({ data: undefined, error: undefined });
+  });
+
+  it("does not let an older refresh overwrite a settled star mutation", async () => {
+    const initial = pullDetail("head");
+    initial.merge_request.Starred = false;
+    const stale = pullDetail("head");
+    stale.merge_request.Starred = false;
+    const refresh = deferred<{ data: PullDetail }>();
+    const get = vi.fn().mockResolvedValueOnce({ data: initial }).mockReturnValueOnce(refresh.promise);
+    const store = createDetailStore({
+      client: mockClient({
+        GET: get,
+        PUT: vi.fn().mockResolvedValue({ data: undefined, error: undefined }),
+      }),
+    });
+    const routeRef = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+    };
+    await loadDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+    const refreshing = refreshDetail(store, "acme", "widget", 7, routeRef);
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+
+    store.toggleDetailPRStar(routeRef, 7, false);
+    await vi.waitFor(() => expect(store.getDetail()?.merge_request.Starred).toBe(true));
+    refresh.resolve({ data: stale });
+    await refreshing;
+
+    expect(store.getDetail()?.merge_request.Starred).toBe(true);
+  });
+
+  it("acknowledges pull state changes through a synchronous store action", async () => {
+    const store = createDetailStore({
+      client: mockClient({
+        GET: vi.fn().mockResolvedValue({ data: pullDetail("head") }),
+        POST: vi.fn().mockResolvedValue({ data: undefined, error: undefined }),
+      }),
+    });
+    await loadDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    const settled = Promise.withResolvers<void>();
+    const onSuccess = vi.fn();
+
+    const result = store.setPullState(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      },
+      7,
+      "closed",
+      { onSuccess, onSettled: settled.resolve },
+    );
+
+    expect(result).toBeUndefined();
+    await settled.promise;
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes the pull list when state changed even if detail reconciliation fails", async () => {
+    const pulls = { loadPulls: vi.fn() };
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("head") })
+      .mockRejectedValueOnce(new Error("detail unavailable"));
+    const store = createDetailStore({
+      client: mockClient({
+        GET: get,
+        POST: vi.fn().mockResolvedValue({ data: undefined, error: undefined }),
+      }),
+      getPage: () => "pulls",
+      pulls,
+    });
+    const routeRef = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+    };
+    await loadDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+
+    store.setPullState(routeRef, 7, "closed");
+
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(pulls.loadPulls).toHaveBeenCalledTimes(1));
   });
 
   it("syncs detail and resolves after applying the refreshed head", async () => {
@@ -348,7 +706,7 @@ describe("createDetailStore", () => {
       pulls,
     });
 
-    const refreshed = await store.syncDetailNow("acme", "widget", 7, {
+    const refreshed = await syncDetail(store, "acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
@@ -366,7 +724,7 @@ describe("createDetailStore", () => {
       }),
     });
 
-    const refreshed = await store.syncDetailNow("acme", "widget", 7, {
+    const refreshed = await syncDetail(store, "acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
@@ -378,7 +736,7 @@ describe("createDetailStore", () => {
 
   it("enqueues background sync when active detail polling fires", async () => {
     vi.useFakeTimers();
-    const post = vi.fn().mockResolvedValue({ error: undefined });
+    const post = vi.fn().mockResolvedValue({ data: undefined, error: undefined });
     const get = vi.fn().mockResolvedValue({ data: pullDetail("cached-head") });
     const store = createDetailStore({
       client: mockClient({ GET: get, POST: post }),
@@ -401,7 +759,49 @@ describe("createDetailStore", () => {
           number: 7,
         },
       },
+      signal: expect.any(AbortSignal),
     });
+  });
+
+  it("does not overlap detail polling iterations", async () => {
+    vi.useFakeTimers();
+    const firstSync = deferred<{ data: undefined; error: undefined }>();
+    const post = vi.fn(() => firstSync.promise);
+    const store = createDetailStore({ client: mockClient({ POST: post }) });
+
+    store.startDetailPolling("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(post).toHaveBeenCalledTimes(1);
+    store.stopDetailPolling();
+    firstSync.resolve({ data: undefined, error: undefined });
+  });
+
+  it("continues detail polling after one synchronization failure", async () => {
+    vi.useFakeTimers();
+    const post = vi
+      .fn()
+      .mockResolvedValueOnce({ error: conflictProblem("poll_failed") })
+      .mockResolvedValue({ data: undefined, error: undefined });
+    const store = createDetailStore({ client: mockClient({ POST: post }) });
+
+    store.startDetailPolling("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    store.stopDetailPolling();
   });
 
   it("awaits a sync-enabled refresh after apply-suggestion success", async () => {
@@ -420,14 +820,14 @@ describe("createDetailStore", () => {
       getPage: () => "pulls",
       pulls: { loadPulls: vi.fn().mockResolvedValue(undefined) },
     });
-    await store.loadDetail("acme", "widget", 7, {
+    await loadDetail(store, "acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
       sync: false,
     });
 
-    const ok = await store.applyReviewSuggestions("acme", "widget", 7, {
+    const ok = await applyReviewSuggestions(store, "acme", "widget", 7, {
       suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
     });
 
@@ -461,14 +861,14 @@ describe("createDetailStore", () => {
       return { error: undefined };
     });
     const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
-    await store.loadDetail("acme", "widget", 7, {
+    await loadDetail(store, "acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
       sync: false,
     });
 
-    const ok = await store.applyReviewSuggestions("acme", "widget", 7, {
+    const ok = await applyReviewSuggestions(store, "acme", "widget", 7, {
       suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
     });
 
@@ -502,14 +902,14 @@ describe("createDetailStore", () => {
         getPage: () => "pulls",
         pulls: { loadPulls: vi.fn().mockResolvedValue(undefined) },
       });
-      await store.loadDetail("acme", "widget", 7, {
+      await loadDetail(store, "acme", "widget", 7, {
         provider: "github",
         platformHost: "github.com",
         repoPath: "acme/widget",
         sync: false,
       });
 
-      const ok = await store.applyReviewSuggestions("acme", "widget", 7, {
+      const ok = await applyReviewSuggestions(store, "acme", "widget", 7, {
         suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
       });
 
@@ -536,7 +936,7 @@ describe("createDetailStore", () => {
       return { error: undefined };
     });
     const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
-    await store.loadDetail("acme", "widget", 7, {
+    await loadDetail(store, "acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
@@ -544,7 +944,8 @@ describe("createDetailStore", () => {
     });
     const onConflict = vi.fn();
 
-    const ok = await store.applyReviewSuggestions(
+    const ok = await applyReviewSuggestions(
+      store,
       "acme",
       "widget",
       7,
@@ -570,6 +971,66 @@ describe("createDetailStore", () => {
     expect(post.mock.calls.some(([path]) => String(path).endsWith("/sync"))).toBe(false);
   });
 
+  it("does not retarget a queued suggestion after navigation to a colliding provider identity", async () => {
+    const commandGate = Effect.runSync(Deferred.make<void>());
+    const get = vi.fn(
+      async (_path: string, options: { params: { path: { provider: string; name: string; number: number } } }) => {
+        const loaded = pullDetail(options.params.path.provider === "github" ? "github-head" : "gitlab-head");
+        loaded.repo.provider = options.params.path.provider;
+        loaded.repo.platform_host = options.params.path.provider === "github" ? "github.com" : "gitlab.example.com";
+        loaded.repo.repo_path = `acme/${options.params.path.name}`;
+        loaded.repo_name = options.params.path.name;
+        loaded.merge_request.Number = options.params.path.number;
+        return { data: loaded };
+      },
+    );
+    const post = vi.fn().mockResolvedValue({ data: { status: "applied" }, error: undefined });
+    const baseRuntime = makeTestAppRuntime(mockClient({ GET: get, POST: post }));
+    runtime = {
+      disposeEffect: baseRuntime.disposeEffect,
+      runCommand: (program, options) =>
+        baseRuntime.runCommand(
+          options.operation === "apply pull request review suggestions"
+            ? Deferred.await(commandGate).pipe(Effect.andThen(program))
+            : program,
+          options,
+        ),
+    };
+    const store = createRuntimeDetailStore({ runtime });
+    await loadDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    const settled = Promise.withResolvers<boolean>();
+
+    const result = store.applyReviewSuggestions(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      },
+      7,
+      { suggestions: [{ threadID: "thread-1", replacement: "return publish();" }] },
+      { onResult: settled.resolve },
+    );
+    expect(result).toBeUndefined();
+    await loadDetail(store, "acme", "widget", 7, {
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    await Effect.runPromise(Deferred.succeed(commandGate, undefined));
+
+    await expect(settled.promise).resolves.toBe(false);
+    expect(post.mock.calls.some(([path]) => String(path).endsWith("/review-suggestions/apply"))).toBe(false);
+    expect(store.getDetail()?.repo.provider).toBe("gitlab");
+  });
+
   it("ignores a delayed suggestion conflict after an A-to-B-to-A route cycle", async () => {
     let resolveApply!: (value: { error: ProblemBody }) => void;
     const applyResponse = new Promise<{ error: ProblemBody }>((resolve) => {
@@ -588,7 +1049,7 @@ describe("createDetailStore", () => {
     });
     const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
     const load = (name: string, number: number) =>
-      store.loadDetail("acme", name, number, {
+      loadDetail(store, "acme", name, number, {
         provider: "github",
         platformHost: "github.com",
         repoPath: `acme/${name}`,
@@ -596,7 +1057,8 @@ describe("createDetailStore", () => {
       });
     await load("widget", 7);
     const onConflict = vi.fn();
-    const applying = store.applyReviewSuggestions(
+    const applying = applyReviewSuggestions(
+      store,
       "acme",
       "widget",
       7,
@@ -631,9 +1093,10 @@ describe("createDetailStore", () => {
       repoPath: "acme/widget",
       sync: false as const,
     };
-    await store.loadDetail("acme", "widget", 7, options);
+    await loadDetail(store, "acme", "widget", 7, options);
     const onConflict = vi.fn();
-    const applying = store.applyReviewSuggestions(
+    const applying = applyReviewSuggestions(
+      store,
       "acme",
       "widget",
       7,
@@ -641,7 +1104,7 @@ describe("createDetailStore", () => {
       onConflict,
     );
 
-    await store.loadDetail("acme", "widget", 7, options);
+    await loadDetail(store, "acme", "widget", 7, options);
     resolveApply({ error: conflictProblem("stale_state") });
 
     await expect(applying).resolves.toBe(false);
@@ -672,14 +1135,14 @@ describe("createDetailStore", () => {
     });
     const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
     const load = (name: string, number: number) =>
-      store.loadDetail("acme", name, number, {
+      loadDetail(store, "acme", name, number, {
         provider: "github",
         platformHost: "github.com",
         repoPath: `acme/${name}`,
         sync: false,
       });
     await load("widget", 7);
-    const applying = store.applyReviewSuggestions("acme", "widget", 7, {
+    const applying = applyReviewSuggestions(store, "acme", "widget", 7, {
       suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
     });
 
@@ -715,14 +1178,14 @@ describe("createDetailStore", () => {
     });
     const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
     const load = (name: string, number: number) =>
-      store.loadDetail("acme", name, number, {
+      loadDetail(store, "acme", name, number, {
         provider: "github",
         platformHost: "github.com",
         repoPath: `acme/${name}`,
         sync: false,
       });
     await load("widget", 7);
-    const applying = store.applyReviewSuggestions("acme", "widget", 7, {
+    const applying = applyReviewSuggestions(store, "acme", "widget", 7, {
       suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
     });
 
@@ -767,14 +1230,14 @@ describe("createDetailStore", () => {
       const store = createDetailStore({
         client: mockClient({ GET: get, POST: post }),
       });
-      await store.loadDetail("acme", "widget", 7, {
+      await loadDetail(store, "acme", "widget", 7, {
         provider: "github",
         platformHost: "github.com",
         repoPath: "acme/widget",
         sync: false,
       });
 
-      const ok = await store.applyReviewSuggestions("acme", "widget", 7, {
+      const ok = await applyReviewSuggestions(store, "acme", "widget", 7, {
         suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
       });
 
@@ -790,7 +1253,7 @@ describe("createDetailStore", () => {
     // comparison would silently drop the optimistic toggle.
     const get = vi.fn().mockResolvedValueOnce({ data: pullDetail("head") });
     const store = createDetailStore({ client: mockClient({ GET: get }) });
-    await store.loadDetail("acme", "widget", 7, {
+    await loadDetail(store, "acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
@@ -801,5 +1264,183 @@ describe("createDetailStore", () => {
 
     expect(store.getDetail()?.merge_request.Body).toBe("- [x] done");
     expect(store.hasUnsavedLocalBody()).toBe(true);
+  });
+
+  it("clears the matching unsaved body after the server normalizes it", async () => {
+    const initial = pullDetail("head");
+    initial.merge_request.Body = "initial";
+    const canonical = pullDetail("head");
+    canonical.merge_request.Body = "submitted\n";
+    const patch = vi.fn().mockResolvedValue({ data: canonical, error: undefined });
+    const store = createDetailStore({
+      client: mockClient({ GET: vi.fn().mockResolvedValue({ data: initial }), PATCH: patch }),
+    });
+    const routeRef = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+    };
+    await loadDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+
+    store.setLocalPRBody("github", "github.com", "acme", "widget", 7, "submitted");
+    store.savePRBodyInBackground(routeRef, 7, "submitted");
+
+    await vi.waitFor(() => expect(store.hasUnsavedLocalBody()).toBe(false));
+    expect(store.getDetail()?.merge_request.Body).toBe("submitted\n");
+  });
+
+  it("submits a captured background body after navigation", async () => {
+    const first = pullDetailFor("widget-a", 7, "first-head");
+    first.merge_request.Body = "initial";
+    const second = pullDetailFor("widget-b", 8, "second-head");
+    const canonical = pullDetailFor("widget-a", 7, "first-head");
+    canonical.merge_request.Body = "captured edit";
+    const get = vi.fn().mockResolvedValueOnce({ data: first }).mockResolvedValueOnce({ data: second });
+    const patch = vi.fn().mockResolvedValue({ data: canonical, error: undefined });
+    const store = createDetailStore({ client: mockClient({ GET: get, PATCH: patch }) });
+    const firstRef = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget-a",
+      repoPath: "acme/widget-a",
+    };
+    await loadDetail(store, "acme", "widget-a", 7, { ...firstRef, sync: false });
+    store.setLocalPRBody("github", "github.com", "acme", "widget-a", 7, "captured edit");
+    await loadDetail(store, "acme", "widget-b", 8, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget-b",
+      sync: false,
+    });
+
+    store.savePRBodyInBackground(firstRef, 7, "captured edit");
+
+    await vi.waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+    expect(store.getDetail()?.repo_name).toBe("widget-b");
+  });
+
+  it("coalesces pending background body saves to the latest value", async () => {
+    const initial = pullDetail("head");
+    initial.merge_request.Body = "initial";
+    const firstResponse = deferred<{ data: PullDetail; error: undefined }>();
+    const patch = vi.fn(
+      (_path: string, options: { body?: { body?: string } }): Promise<{ data: PullDetail; error: undefined }> => {
+        const response = pullDetail("head");
+        response.merge_request.Body = options.body?.body ?? "";
+        return options.body?.body === "first"
+          ? firstResponse.promise
+          : Promise.resolve({ data: response, error: undefined });
+      },
+    );
+    const store = createDetailStore({
+      client: mockClient({ GET: vi.fn().mockResolvedValue({ data: initial }), PATCH: patch }),
+    });
+    const routeRef = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+    };
+    await loadDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+
+    store.setLocalPRBody("github", "github.com", "acme", "widget", 7, "first");
+    const first = store.savePRBodyInBackground(routeRef, 7, "first");
+    expect(first).toBeUndefined();
+    await vi.waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+    store.setLocalPRBody("github", "github.com", "acme", "widget", 7, "second");
+    store.savePRBodyInBackground(routeRef, 7, "second");
+    store.setLocalPRBody("github", "github.com", "acme", "widget", 7, "third");
+    const latest = store.savePRBodyInBackground(routeRef, 7, "third");
+
+    expect(latest).toBeUndefined();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const confirmedFirst = pullDetail("head");
+    confirmedFirst.merge_request.Body = "first";
+    firstResponse.resolve({ data: confirmedFirst, error: undefined });
+    await vi.waitFor(() => expect(patch).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(store.hasUnsavedLocalBody()).toBe(false));
+    expect(patch.mock.calls.map(([, options]) => options.body?.body)).toEqual(["first", "third"]);
+    expect(store.getDetail()?.merge_request.Body).toBe("third");
+  });
+
+  it("does not let a queued background body overwrite a newer explicit save", async () => {
+    const initial = pullDetail("head");
+    initial.merge_request.Body = "initial";
+    const firstResponse = deferred<{ data: PullDetail; error: undefined }>();
+    const patch = vi.fn(
+      (_path: string, options: { body?: { body?: string } }): Promise<{ data: PullDetail; error: undefined }> => {
+        const response = pullDetail("head");
+        response.merge_request.Body = options.body?.body ?? "";
+        return options.body?.body === "first"
+          ? firstResponse.promise
+          : Promise.resolve({ data: response, error: undefined });
+      },
+    );
+    const store = createDetailStore({
+      client: mockClient({ GET: vi.fn().mockResolvedValue({ data: initial }), PATCH: patch }),
+    });
+    const routeRef = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+    };
+    await loadDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+
+    store.setLocalPRBody("github", "github.com", "acme", "widget", 7, "first");
+    store.savePRBodyInBackground(routeRef, 7, "first");
+    await vi.waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+    store.setLocalPRBody("github", "github.com", "acme", "widget", 7, "queued");
+    store.savePRBodyInBackground(routeRef, 7, "queued");
+    const settled = Promise.withResolvers<void>();
+    store.updatePRContent(routeRef, 7, { body: "explicit" }, { onSettled: settled.resolve });
+
+    const confirmedFirst = pullDetail("head");
+    confirmedFirst.merge_request.Body = "first";
+    firstResponse.resolve({ data: confirmedFirst, error: undefined });
+    await settled.promise;
+    await vi.waitFor(() => expect(patch).toHaveBeenCalledTimes(2));
+
+    expect(patch.mock.calls.map(([, options]) => options.body?.body)).toEqual(["first", "explicit"]);
+    expect(store.getDetail()?.merge_request.Body).toBe("explicit");
+  });
+
+  it("rolls back a failed explicit body save so the same draft can be retried", async () => {
+    const initial = pullDetail("head");
+    initial.merge_request.Body = "initial";
+    const canonical = pullDetail("head");
+    canonical.merge_request.Body = "edited";
+    const patch = vi
+      .fn()
+      .mockResolvedValueOnce({ error: { detail: "save failed" } })
+      .mockResolvedValueOnce({ data: canonical, error: undefined });
+    const store = createDetailStore({
+      client: mockClient({ GET: vi.fn().mockResolvedValue({ data: initial }), PATCH: patch }),
+    });
+    const routeRef = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+    };
+    await loadDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+
+    store.updatePRContent(routeRef, 7, { body: "edited" });
+    await vi.waitFor(() => expect(getFlash()?.message).toBe("save failed"));
+    expect(store.getDetail()?.merge_request.Body).toBe("initial");
+    expect(store.hasUnsavedLocalBody()).toBe(false);
+
+    const settled = Promise.withResolvers<void>();
+    store.updatePRContent(routeRef, 7, { body: "edited" }, { onSettled: settled.resolve });
+    await settled.promise;
+
+    expect(patch).toHaveBeenCalledTimes(2);
+    expect(store.getDetail()?.merge_request.Body).toBe("edited");
   });
 });

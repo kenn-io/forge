@@ -35,12 +35,13 @@
   const error = $derived(diffReviewDraft.getError());
   const draftActionDisabled = $derived(submitting || pendingCommentEdits);
 
-  async function publish(): Promise<void> {
+  function publish(): void {
     if (pendingCommentEdits) return;
-    const ok = await diffReviewDraft.publish(selectedAction, body);
-    if (ok) {
-      body = "";
-    }
+    diffReviewDraft.publish(selectedAction, body, {
+      onSuccess: () => {
+        body = "";
+      },
+    });
   }
 
   function reviewActionLabel(option: string): string {
@@ -65,7 +66,7 @@
         size="sm"
         tone="danger"
         ariaLabel="Discard review draft"
-        onclick={() => void diffReviewDraft.discard()}
+        onclick={() => diffReviewDraft.discard()}
         disabled={draftActionDisabled}
       >
         <TrashIcon size={14} />
@@ -78,8 +79,9 @@
           location={commentLocation(comment)}
           disabled={submitting}
           {onjump}
-          ondelete={(id) => void diffReviewDraft.deleteComment(id)}
-          onsave={(draftComment, draftBody) => diffReviewDraft.editComment(draftComment, draftBody)}
+          ondelete={(id) => diffReviewDraft.deleteComment(id)}
+          onsave={(draftComment, draftBody, callbacks) =>
+            diffReviewDraft.editComment(draftComment, draftBody, callbacks)}
           oneditstatechange={(id, state) => diffReviewDraft.setCommentEditState(id, state)}
         />
       {/each}
@@ -108,7 +110,7 @@
         surface="solid"
         size="sm"
         title={pendingCommentEdits ? "Save or cancel draft comment edits before publishing" : undefined}
-        onclick={() => void publish()}
+        onclick={publish}
         disabled={draftActionDisabled || supportedActions.length === 0}
       >
         <SendIcon size={14} />

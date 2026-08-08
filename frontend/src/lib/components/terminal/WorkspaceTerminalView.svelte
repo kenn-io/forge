@@ -118,7 +118,8 @@
     RefreshIcon,
   } from "../../icons.ts";
   import { apiErrorMessage, client } from "../../api/runtime.js";
-  import { updateSettings } from "../../api/settings.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { settingsErrorMessage } from "../../stores/settings-workflow.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
@@ -234,6 +235,7 @@
     window.__BASE_PATH__ ?? "/"
   ).replace(/\/$/, "");
   const { settings: settingsStore } = getStores();
+  const appRuntime = getAppRuntime();
   // Launcher, controls, and pending-write state is keyed by workspace identity
   // rather than held as bare flags: one embedded view serves every selection on its
   // surface, so a switch would otherwise inherit the previous workspace's open
@@ -247,10 +249,10 @@
   let terminalZoomSaving = $state(false);
   let terminalOptionsSaving = $state(false);
   const terminalZoom = createTerminalZoomController({
+    runtime: appRuntime,
     store: settingsStore,
-    persist: async (terminal) => (await updateSettings({ terminal })).terminal,
     reportError: (error) => {
-      const detail = error instanceof Error ? error.message : "Unknown error";
+      const detail = settingsErrorMessage(error);
       showFlash(`Couldn't save terminal font size: ${detail}`, {
         tone: "danger",
       });
@@ -323,6 +325,7 @@
   let workspaceGen = 0;
   onDestroy(() => {
     workspaceGen += 1;
+    terminalZoom.dispose();
   });
   let runtimeError = $state<string | null>(null);
   let pollTimer = $state<ReturnType<

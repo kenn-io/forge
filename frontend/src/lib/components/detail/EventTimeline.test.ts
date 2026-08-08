@@ -1,8 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { compile } from "svelte/compiler";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import type { ComponentProps } from "svelte";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import componentSource from "./EventTimeline.svelte?raw";
 import EventTimeline from "./EventTimeline.svelte";
+import EventTimelineTestHarness from "./EventTimelineTestHarness.svelte";
 import { STORES_KEY } from "../../context.js";
 import { copyToClipboard } from "@kenn-io/kit-ui";
 import type { DiffResult, PREvent } from "../../api/types.js";
@@ -25,6 +29,21 @@ type GlobalWithCSSStyleSheet = {
 let originalResizeObserver: unknown;
 let originalResizeObserverExisted = false;
 let originalReplaceSync: unknown;
+let runtime: OwnedAppRuntime;
+
+function renderTimeline(options: { props: ComponentProps<typeof EventTimeline>; context?: Map<symbol, unknown> }) {
+  let timelineProps = options.props;
+  const rendered = render(EventTimelineTestHarness, {
+    props: { runtime, timelineProps, context: options.context },
+  });
+  return {
+    ...rendered,
+    rerender: (next: ComponentProps<typeof EventTimeline>) => {
+      timelineProps = next;
+      return rendered.rerender({ runtime, timelineProps, context: options.context });
+    },
+  };
+}
 
 beforeAll(() => {
   originalResizeObserverExisted = "ResizeObserver" in globalThis;
@@ -63,6 +82,19 @@ afterEach(() => {
   vi.mocked(copyToClipboard).mockClear();
   resetModalStack();
 });
+
+type SuggestionApplyResult = boolean | { readonly ok: boolean; readonly error?: string | undefined };
+type SuggestionApplyCallbacks = {
+  readonly onResult: (result: SuggestionApplyResult) => void;
+  readonly onSettled: () => void;
+};
+
+function suggestionResult(result: SuggestionApplyResult) {
+  return vi.fn((_input: unknown, callbacks: SuggestionApplyCallbacks) => {
+    callbacks.onResult(result);
+    callbacks.onSettled();
+  });
+}
 
 function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
   return {
@@ -205,14 +237,19 @@ async function expectSuggestionPierreText(pattern: RegExp): Promise<void> {
 }
 
 describe("EventTimeline", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    runtime = makeAppRuntime();
+  });
+
+  afterEach(async () => {
     cleanup();
     vi.restoreAllMocks();
     vi.useRealTimers();
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("renders force-push label, actor, and SHA transition", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [makeEvent()],
       },
@@ -227,7 +264,7 @@ describe("EventTimeline", () => {
   });
 
   it("renders lifecycle event labels with actor bylines", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -271,7 +308,7 @@ describe("EventTimeline", () => {
   });
 
   it("uses merged status styling for merged lifecycle events", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -288,7 +325,7 @@ describe("EventTimeline", () => {
   });
 
   it("renders compact activity lifecycle rows with actor bylines", () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         activityViewMode: "compact",
         events: [
@@ -310,7 +347,7 @@ describe("EventTimeline", () => {
   });
 
   it("collapses duplicate merge lifecycle rows into the single authored transition", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -349,7 +386,7 @@ describe("EventTimeline", () => {
   });
 
   it("uses the authored close transition when an anonymous merged row is coalesced", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -380,7 +417,7 @@ describe("EventTimeline", () => {
   });
 
   it("keeps pre-merge close lifecycle rows when the PR was reopened before merging", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -420,7 +457,7 @@ describe("EventTimeline", () => {
   });
 
   it("keeps the timeline entry card while rendering body content without a nested card surface", () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -447,7 +484,7 @@ describe("EventTimeline", () => {
   });
 
   it("groups discussion comments with the root comment first and reverse-chronological replies", () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -505,7 +542,7 @@ describe("EventTimeline", () => {
   });
 
   it("renders positioned discussion threads with the same root and reply ordering", async () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -584,8 +621,8 @@ describe("EventTimeline", () => {
   });
 
   it("renders GitHub suggestion fences as applicable diff blocks", async () => {
-    const applySuggestion = vi.fn(async () => true);
-    render(EventTimeline, {
+    const applySuggestion = suggestionResult(true);
+    renderTimeline({
       props: {
         events: [
           makeReviewThreadEvent({
@@ -626,24 +663,27 @@ describe("EventTimeline", () => {
     await expectSuggestionPierreText(/return client\.publishThreads\(\);/);
 
     await fireEvent.click(screen.getByRole("button", { name: "Commit suggestion" }));
-    expect(applySuggestion).toHaveBeenCalledWith({
-      suggestions: [
-        {
-          threadID: "thread-1",
-          replacement: "return client.publishThreads();",
-        },
-      ],
-    });
+    expect(applySuggestion).toHaveBeenCalledWith(
+      {
+        suggestions: [
+          {
+            threadID: "thread-1",
+            replacement: "return client.publishThreads();",
+          },
+        ],
+      },
+      expect.any(Object),
+    );
   });
 
   it("blocks concurrent individual and batch suggestion submissions", async () => {
     let resolveApplication: ((value: boolean) => void) | undefined;
-    const applySuggestion = vi.fn(
-      () =>
-        new Promise<boolean>((resolve) => {
-          resolveApplication = resolve;
-        }),
-    );
+    const applySuggestion = vi.fn((_input: unknown, callbacks: SuggestionApplyCallbacks) => {
+      resolveApplication = (value) => {
+        callbacks.onResult(value);
+        callbacks.onSettled();
+      };
+    });
     const baseThread = makeReviewThreadEvent().diff_thread!;
     const first = makeReviewThreadEvent({
       ID: 1,
@@ -657,7 +697,7 @@ describe("EventTimeline", () => {
       Body: ["Second suggestion.", "", "```suggestion", "return secondSuggestion();", "```"].join("\n"),
       diff_thread: { ...baseThread, id: "thread-2", diff_head_sha: "abc123" },
     });
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [first, second],
         provider: "github",
@@ -711,11 +751,11 @@ describe("EventTimeline", () => {
   });
 
   it("shows an inline error only when suggestion application reports a durable conflict", async () => {
-    const applySuggestion = vi.fn(async () => ({
+    const applySuggestion = suggestionResult({
       ok: false,
       error: "pull request state changed",
-    }));
-    render(EventTimeline, {
+    });
+    renderTimeline({
       props: {
         events: [
           makeReviewThreadEvent({
@@ -760,7 +800,7 @@ describe("EventTimeline", () => {
   });
 
   it("does not reuse a stale detail error for a generic suggestion failure", async () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeReviewThreadEvent({
@@ -778,7 +818,7 @@ describe("EventTimeline", () => {
         repoPath: "acme/widget",
         number: 7,
         currentHeadSHA: "abc123",
-        onApplySuggestion: vi.fn(async () => false),
+        onApplySuggestion: suggestionResult(false),
       },
       context: new Map([
         [
@@ -800,7 +840,7 @@ describe("EventTimeline", () => {
   });
 
   it("keeps hidden selected suggestions in the batch apply request", async () => {
-    const applySuggestion = vi.fn(async () => true);
+    const applySuggestion = suggestionResult(true);
     const baseThread = makeReviewThreadEvent().diff_thread!;
     const first = makeReviewThreadEvent({
       ID: 1,
@@ -845,7 +885,7 @@ describe("EventTimeline", () => {
         },
       ],
     ]);
-    const { rerender } = render(EventTimeline, { props, context });
+    const { rerender } = renderTimeline({ props, context });
 
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: "Add suggestion to batch" })).toHaveLength(2);
@@ -875,14 +915,12 @@ describe("EventTimeline", () => {
   });
 
   it("clears a batch error before a successful retry", async () => {
-    const applySuggestion = vi
-      .fn()
-      .mockImplementationOnce(async () => ({
-        ok: false,
-        error: "pull request state changed",
-      }))
-      .mockImplementationOnce(async () => true);
-    render(EventTimeline, {
+    const suggestionResults: SuggestionApplyResult[] = [{ ok: false, error: "pull request state changed" }, true];
+    const applySuggestion = vi.fn((_input: unknown, callbacks: SuggestionApplyCallbacks) => {
+      callbacks.onResult(suggestionResults.shift() ?? false);
+      callbacks.onSettled();
+    });
+    renderTimeline({
       props: {
         events: [
           makeReviewThreadEvent({
@@ -926,8 +964,8 @@ describe("EventTimeline", () => {
   });
 
   it("disables suggestion application when the reviewed head is missing", async () => {
-    const applySuggestion = vi.fn(async () => true);
-    render(EventTimeline, {
+    const applySuggestion = suggestionResult(true);
+    renderTimeline({
       props: {
         events: [
           makeReviewThreadEvent({
@@ -965,8 +1003,8 @@ describe("EventTimeline", () => {
   });
 
   it("disables suggestion application when the reviewed head is stale", async () => {
-    const applySuggestion = vi.fn(async () => true);
-    render(EventTimeline, {
+    const applySuggestion = suggestionResult(true);
+    renderTimeline({
       props: {
         events: [
           makeReviewThreadEvent({
@@ -1011,8 +1049,8 @@ describe("EventTimeline", () => {
   });
 
   it("disables suggestion application when the current head is unknown", async () => {
-    const applySuggestion = vi.fn(async () => true);
-    render(EventTimeline, {
+    const applySuggestion = suggestionResult(true);
+    renderTimeline({
       props: {
         events: [
           makeReviewThreadEvent({
@@ -1056,7 +1094,7 @@ describe("EventTimeline", () => {
   });
 
   it("drops suggestions batched on an older head from batch submit and keeps them removable", async () => {
-    const applySuggestion = vi.fn(async () => true);
+    const applySuggestion = suggestionResult(true);
     const baseThread = makeReviewThreadEvent().diff_thread!;
     const staleEvent = makeReviewThreadEvent({
       ID: 1,
@@ -1101,7 +1139,7 @@ describe("EventTimeline", () => {
         },
       ],
     ]);
-    const { rerender } = render(EventTimeline, { props, context });
+    const { rerender } = renderTimeline({ props, context });
 
     const batchButtons = await waitFor(() => {
       const buttons = screen.getAllByRole("button", { name: "Add suggestion to batch" });
@@ -1121,14 +1159,17 @@ describe("EventTimeline", () => {
     expect(screen.getByText("1 suggestion in batch")).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: "Commit batch" }));
     expect(applySuggestion).toHaveBeenCalledTimes(1);
-    expect(applySuggestion).toHaveBeenCalledWith({
-      suggestions: [
-        {
-          threadID: "thread-2",
-          replacement: "return secondSuggestion();",
-        },
-      ],
-    });
+    expect(applySuggestion).toHaveBeenCalledWith(
+      {
+        suggestions: [
+          {
+            threadID: "thread-2",
+            replacement: "return secondSuggestion();",
+          },
+        ],
+      },
+      expect.any(Object),
+    );
 
     // The stale batched suggestion stays removable even though it cannot apply.
     const removeButton = screen.getByRole("button", { name: "Remove from batch" }) as HTMLButtonElement;
@@ -1138,7 +1179,7 @@ describe("EventTimeline", () => {
   });
 
   it("marks the suggestion preview outdated and reloads when the cached diff predates the current head", async () => {
-    const applySuggestion = vi.fn(async () => true);
+    const applySuggestion = suggestionResult(true);
     const loadDiff = vi.fn();
     const diffStore = makeDiffStore({
       getDiff: () =>
@@ -1156,7 +1197,7 @@ describe("EventTimeline", () => {
       }),
       loadDiff,
     } as unknown as Partial<DiffStore>);
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeReviewThreadEvent({
@@ -1208,7 +1249,7 @@ describe("EventTimeline", () => {
   });
 
   it("keeps suggestion apply enabled when the cached diff matches the current head", async () => {
-    const applySuggestion = vi.fn(async () => true);
+    const applySuggestion = suggestionResult(true);
     const diffStore = makeDiffStore({
       getDiff: () =>
         ({
@@ -1216,7 +1257,7 @@ describe("EventTimeline", () => {
           diff_head_sha: "new-head",
         }) as DiffResult,
     } as unknown as Partial<DiffStore>);
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeReviewThreadEvent({
@@ -1258,7 +1299,7 @@ describe("EventTimeline", () => {
   });
 
   it("renders threaded comments as separate compact rows with one-line previews", async () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         activityViewMode: "compact",
         events: [
@@ -1311,7 +1352,7 @@ describe("EventTimeline", () => {
   });
 
   it("expands compact commit rows to show the full commit message", async () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         activityViewMode: "compact",
         events: [
@@ -1338,7 +1379,7 @@ describe("EventTimeline", () => {
   });
 
   it("keeps compact commit details collapsed when commit details are hidden", () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         activityViewMode: "compact",
         showCommitDetails: false,
@@ -1361,7 +1402,7 @@ describe("EventTimeline", () => {
   });
 
   it("renders compact review verdicts and review comment context", () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         activityViewMode: "compact",
         events: [
@@ -1411,7 +1452,7 @@ describe("EventTimeline", () => {
   });
 
   it("keeps review thread replies available when compact rows expand", async () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         activityViewMode: "compact",
         events: [
@@ -1509,7 +1550,7 @@ describe("EventTimeline", () => {
       number: 7,
       canReplyToThreads: true,
     } as const;
-    const { container, rerender } = render(EventTimeline, {
+    const { container, rerender } = renderTimeline({
       props,
       context: new Map([
         [
@@ -1539,7 +1580,7 @@ describe("EventTimeline", () => {
   });
 
   it("can collapse and expand threaded replies", async () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -1576,7 +1617,7 @@ describe("EventTimeline", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
 
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -1604,7 +1645,7 @@ describe("EventTimeline", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
 
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -1627,7 +1668,7 @@ describe("EventTimeline", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
 
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -1650,7 +1691,7 @@ describe("EventTimeline", () => {
   it("renders force pushes as boundaries between commit generations", () => {
     const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
     const newHead = "ffffffffffffffffffffffffffffffffffffffff";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -1750,7 +1791,7 @@ describe("EventTimeline", () => {
       }),
     ];
 
-    const grouped = render(EventTimeline, { props: { events } });
+    const grouped = renderTimeline({ props: { events } });
     const groupedText = grouped.container.textContent ?? "";
     expect(groupedText.indexOf("new C3 after rebase")).toBeLessThan(
       groupedText.indexOf("comment between commits and push"),
@@ -1758,7 +1799,7 @@ describe("EventTimeline", () => {
     expect(groupedText).toContain("old C3 before rebase");
     cleanup();
 
-    const chronological = render(EventTimeline, {
+    const chronological = renderTimeline({
       props: { events, timelineOrder: "chronological" },
     });
     const text = chronological.container.textContent ?? "";
@@ -1851,7 +1892,7 @@ describe("EventTimeline", () => {
   it("expands collapsed obsolete commits on demand in strict date order", async () => {
     const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
     const newHead = "ffffffffffffffffffffffffffffffffffffffff";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -1909,7 +1950,7 @@ describe("EventTimeline", () => {
   it("keeps strictly chronological order in compact view when timelineOrder is chronological", () => {
     const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
     const newHead = "ffffffffffffffffffffffffffffffffffffffff";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -1961,7 +2002,7 @@ describe("EventTimeline", () => {
   it("orders force-push generations from commit ancestry even when database IDs are not generation order", () => {
     const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
     const newHead = "ffffffffffffffffffffffffffffffffffffffff";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2018,7 +2059,7 @@ describe("EventTimeline", () => {
   it("orders force-push generations by stable commit keys when list positions collide", () => {
     const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
     const newHead = "ffffffffffffffffffffffffffffffffffffffff";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2069,7 +2110,7 @@ describe("EventTimeline", () => {
   it("keeps later commits in chronological order after force-push generations", () => {
     const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
     const newHead = "ffffffffffffffffffffffffffffffffffffffff";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2126,7 +2167,7 @@ describe("EventTimeline", () => {
     const oldHead = "3333333333333333333333333333333333333333";
     const firstHead = "6666666666666666666666666666666666666666";
     const secondHead = "9999999999999999999999999999999999999999";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2185,7 +2226,7 @@ describe("EventTimeline", () => {
     const oldHead = "3333333333333333333333333333333333333333";
     const firstHead = "6666666666666666666666666666666666666666";
     const secondHead = "9999999999999999999999999999999999999999";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2244,7 +2285,7 @@ describe("EventTimeline", () => {
     const oldHead = "3333333333333333333333333333333333333333";
     const firstHead = "6666666666666666666666666666666666666666";
     const secondHead = "9999999999999999999999999999999999999999";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2311,7 +2352,7 @@ describe("EventTimeline", () => {
   it("keeps same-timestamp unrelated events outside force-push boundary buckets", () => {
     const oldHead = "3333333333333333333333333333333333333333";
     const newHead = "6666666666666666666666666666666666666666";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2378,7 +2419,7 @@ describe("EventTimeline", () => {
         CreatedAt: "2024-06-01T10:00:00Z",
       }),
     ];
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: visibleEvents,
         orderingEvents: [
@@ -2405,7 +2446,7 @@ describe("EventTimeline", () => {
   it("falls back to after-sha when the old force-push anchor was never imported", () => {
     const missingOldHead = "3333333333333333333333333333333333333333";
     const newHead = "6666666666666666666666666666666666666666";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2446,7 +2487,7 @@ describe("EventTimeline", () => {
     const firstHead = "6666666666666666666666666666666666666666";
     const missingSecondBefore = "8888888888888888888888888888888888888888";
     const secondHead = "9999999999999999999999999999999999999999";
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2505,7 +2546,7 @@ describe("EventTimeline", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
 
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2581,7 +2622,7 @@ describe("EventTimeline", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
 
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2626,7 +2667,7 @@ describe("EventTimeline", () => {
   });
 
   it("keeps compact cross-reference summaries navigable", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2671,7 +2712,7 @@ describe("EventTimeline", () => {
   });
 
   it("keeps external cross-reference links when item metadata is incomplete", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2699,7 +2740,7 @@ describe("EventTimeline", () => {
   });
 
   it("falls back to non-link cross-reference text when metadata is invalid", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2726,7 +2767,7 @@ describe("EventTimeline", () => {
   });
 
   it("shows filtered empty copy when filters hide all events", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [],
         filtered: true,
@@ -2737,7 +2778,7 @@ describe("EventTimeline", () => {
   });
 
   it("keeps comment actions available in compact activity rows", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         activityViewMode: "compact",
         events: [
@@ -2794,7 +2835,7 @@ describe("EventTimeline", () => {
   });
 
   it("opens the editor when editing a collapsed compact comment", async () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         activityViewMode: "compact",
         events: [
@@ -2824,7 +2865,7 @@ describe("EventTimeline", () => {
     ["empty", ""],
     ["whitespace-only", "   "],
   ])("opens the editor for an %s compact comment", async (_label, body) => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         activityViewMode: "compact",
         events: [
@@ -2851,7 +2892,7 @@ describe("EventTimeline", () => {
   });
 
   it("keeps comment actions available on threaded replies", () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2893,7 +2934,7 @@ describe("EventTimeline", () => {
   });
 
   it("shows inline edit controls for editable issue comments", async () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2918,7 +2959,7 @@ describe("EventTimeline", () => {
   });
 
   it("hides inline edit controls when comment editing is unavailable", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2938,7 +2979,7 @@ describe("EventTimeline", () => {
 
   it("confirms comment deletion with author and excerpt before calling the provider", async () => {
     const onDeleteComment = vi.fn().mockResolvedValue(null);
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -2967,32 +3008,52 @@ describe("EventTimeline", () => {
   });
 
   it("submits comment deletion once and closes after success", async () => {
-    let finishDelete: (error: string | null) => void = () => {};
+    let finishDelete: () => void = () => {};
     const onDeleteComment = vi.fn(
-      () =>
-        new Promise<string | null>((resolve) => {
-          finishDelete = resolve;
-        }),
+      (
+        _event: PREvent,
+        callbacks: {
+          readonly onSuccess: () => void;
+          readonly onFailure: (message: string) => void;
+          readonly onSettled: () => void;
+        },
+      ): void => {
+        finishDelete = () => {
+          callbacks.onSuccess();
+          callbacks.onSettled();
+        };
+      },
     );
     const comment = makeEvent({ Body: "Delete me", EventType: "issue_comment", PlatformID: 44 });
-    render(EventTimeline, { props: { events: [comment], onDeleteComment } });
+    renderTimeline({ props: { events: [comment], onDeleteComment } });
 
     await fireEvent.click(screen.getByRole("button", { name: "Delete comment" }));
     await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     expect(onDeleteComment).toHaveBeenCalledTimes(1);
-    expect(onDeleteComment).toHaveBeenCalledWith(comment);
     expect(screen.getByRole("button", { name: "Deleting..." }).hasAttribute("disabled")).toBe(true);
 
-    finishDelete(null);
+    finishDelete();
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Delete comment?" })).toBeNull();
     });
   });
 
   it("keeps the confirmation open with the provider error after deletion fails", async () => {
-    const onDeleteComment = vi.fn().mockResolvedValue("provider denied deletion");
-    render(EventTimeline, {
+    const onDeleteComment = vi.fn(
+      (
+        _event: PREvent,
+        callbacks: {
+          readonly onSuccess: () => void;
+          readonly onFailure: (message: string) => void;
+          readonly onSettled: () => void;
+        },
+      ): void => {
+        callbacks.onFailure("provider denied deletion");
+        callbacks.onSettled();
+      },
+    );
+    renderTimeline({
       props: {
         events: [makeEvent({ Body: "Keep me", EventType: "issue_comment", PlatformID: 44 })],
         onDeleteComment,
@@ -3008,9 +3069,9 @@ describe("EventTimeline", () => {
     expect(screen.getByRole("dialog", { name: "Delete comment?" })).toBeTruthy();
   });
 
-  it("shows a stable error when the deletion callback rejects", async () => {
-    const onDeleteComment = vi.fn().mockRejectedValue(new Error("transport exploded"));
-    render(EventTimeline, {
+  it("keeps the confirmation open until the Effect command settles", async () => {
+    const onDeleteComment = vi.fn((_event: PREvent): void => {});
+    renderTimeline({
       props: {
         events: [makeEvent({ Body: "Keep me", EventType: "issue_comment", PlatformID: 44 })],
         onDeleteComment,
@@ -3020,14 +3081,12 @@ describe("EventTimeline", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Delete comment" }));
     await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-    await waitFor(() => {
-      expect(screen.getByText("transport exploded")).toBeTruthy();
-    });
+    expect(screen.getByRole("button", { name: "Deleting..." }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("dialog", { name: "Delete comment?" })).toBeTruthy();
   });
 
   it("hides comment deletion when the callback is unavailable", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [makeEvent({ Body: "Keep me", EventType: "issue_comment", PlatformID: 44 })],
         onDeleteComment: undefined,
@@ -3038,7 +3097,7 @@ describe("EventTimeline", () => {
   });
 
   it("copies a direct comment link when the event exposes one", async () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -3059,7 +3118,7 @@ describe("EventTimeline", () => {
   });
 
   it("does not render a direct link action for comments without a direct URL", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -3078,7 +3137,7 @@ describe("EventTimeline", () => {
     const jumpToReviewThread = vi.fn();
     const diff = makeDiffStore();
 
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [makeReviewThreadEvent()],
         provider: "github",
@@ -3162,7 +3221,7 @@ describe("EventTimeline", () => {
       }),
     });
 
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeReviewThreadEvent({
@@ -3209,7 +3268,7 @@ describe("EventTimeline", () => {
   });
 
   it("shows a reply composer for review threads when thread replies are available", async () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [makeReviewThreadEvent()],
         provider: "github",
@@ -3264,7 +3323,7 @@ describe("EventTimeline", () => {
   });
 
   it("does not expose replies when a timeline item lacks a local review thread", () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -3311,7 +3370,7 @@ describe("EventTimeline", () => {
       }),
     });
 
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [makeReviewThreadEvent()],
         provider: "github",

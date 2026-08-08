@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { page } from "vite-plus/test/browser";
 
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
-import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
 
@@ -158,6 +158,7 @@ function settingsResponse(): MockRouteOverride {
       return null;
     }
     return jsonResponse({
+      ...mockSettings,
       repos: [
         {
           provider: "github",
@@ -178,18 +179,8 @@ function settingsResponse(): MockRouteOverride {
           matched_repo_count: 1,
         },
       ],
-      activity: { view_mode: "flat", time_range: "7d", hide_closed: false, hide_bots: false, collapse_threads: false },
+      activity: { ...mockSettings.activity, view_mode: "flat", collapse_threads: false },
       issues: { hide_bots: hideBotIssues },
-      terminal: {
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-      },
-      agents: [],
     });
   };
 }
@@ -367,12 +358,18 @@ describe("grouping toggle", () => {
     await selectCompactFilterItem("Hide bot-authored issues");
 
     await vi.waitFor(() => expect(document.body.textContent).not.toContain("Dependency Dashboard"), WAIT);
-    const settingsUpdate = mounted.api.requests.find(
-      (request) => request.method === "PUT" && request.url.pathname === "/api/v1/settings",
-    );
+    const app = mounted;
+    if (app === null) throw new Error("browser app was not mounted");
+    let settingsUpdate: (typeof app.api.requests)[number] | undefined;
+    await vi.waitFor(() => {
+      settingsUpdate = app.api.requests.find(
+        (request) => request.method === "PUT" && request.url.pathname === "/api/v1/settings",
+      );
+      expect(settingsUpdate).toBeDefined();
+    }, WAIT);
     expect(JSON.parse(settingsUpdate?.bodyText ?? "null")).toEqual({ issues: { hide_bots: true } });
 
-    mounted.unmount();
+    app.unmount();
     mounted = await mountBrowserApp("/issues", { overrides: overrides() });
     await vi.waitFor(() => expect(document.querySelector(".issue-item")).not.toBeNull(), WAIT);
     expect(document.body.textContent).not.toContain("Dependency Dashboard");

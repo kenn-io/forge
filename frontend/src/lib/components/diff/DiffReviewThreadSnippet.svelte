@@ -23,7 +23,7 @@
     thread: ReviewThread;
     context?: ReviewThreadContext | null;
     canResolve?: boolean;
-    onchanged?: (() => void | Promise<void>) | undefined;
+    onchanged?: (() => void) | undefined;
     jumpToDiff?: (() => void) | undefined;
   }
 
@@ -49,15 +49,11 @@
     }),
   }]);
 
-  async function toggleResolved(): Promise<void> {
+  function toggleResolved(): void {
     if (!canResolve || !diffReviewDraft) return;
-    const ok = await diffReviewDraft.setThreadResolved(
-      thread.id,
-      !thread.resolved,
-    );
-    if (ok) {
-      await onchanged?.();
-    }
+    diffReviewDraft.setThreadResolved(thread.id, !thread.resolved, {
+      onSuccess: () => onchanged?.(),
+    });
   }
 
   function pierreSide(side: "left" | "right"): "deletions" | "additions" {
@@ -145,7 +141,7 @@
       {#if canResolve}
         <button
           class="thread-action"
-          onclick={() => void toggleResolved()}
+          onclick={toggleResolved}
           disabled={submitting}
         >
           {#if thread.resolved}

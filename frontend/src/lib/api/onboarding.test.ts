@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-
-import type { PullRequest } from "./types.ts";
+import type { PullRequest } from "./types.js";
 
 const runtime = vi.hoisted(() => ({
   post: vi.fn(),

@@ -1,27 +1,30 @@
 <script lang="ts">
-  import Provider from "../../Provider.svelte";
-  import type { StoreInstances } from "../../types.js";
-  import { client } from "../../api/runtime.js";
+  import { setContext, untrack } from "svelte";
+  import { createAppStores } from "../../app-stores.svelte.js";
+  import type { AppRuntime } from "../../app/runtime.js";
+  import { STORES_KEY } from "../../context.js";
   import { getPage } from "../../stores/router.svelte.ts";
   import StatusBar from "./StatusBar.svelte";
 
-  let stores = $state<StoreInstances>();
-  let loaded = false;
+  let { runtime }: { runtime: AppRuntime } = $props();
 
-  $effect(() => {
-    if (!stores || loaded) return;
-    loaded = true;
-    stores.activity.initializeFromMount();
-    stores.sync.startPolling();
-    void Promise.all([
-      stores.pulls.loadPulls(),
-      stores.issues.loadIssues(),
-      stores.activity.loadActivity(),
-    ]);
-    return () => stores?.sync.stopPolling();
-  });
+  const stores = createAppStores({ runtime: untrack(() => runtime), getPage }).stores;
+  setContext(STORES_KEY, stores);
+
+  $effect(() =>
+    untrack(() => {
+      stores.activity.initializeFromMount();
+      const polling = runtime.runCommand(stores.sync.pollingEffect, {
+        operation: "poll sync status in status bar test host",
+        safeContext: {},
+        onFailure: () => {},
+      });
+      stores.pulls.loadPulls();
+      stores.issues.loadIssues();
+      stores.activity.loadActivity();
+      return polling.interrupt;
+    }),
+  );
 </script>
 
-<Provider {client} {getPage} bind:stores>
-  <StatusBar />
-</Provider>
+<StatusBar />

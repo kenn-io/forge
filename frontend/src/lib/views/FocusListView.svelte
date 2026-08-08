@@ -53,25 +53,25 @@
 
   $effect(() => {
     if (listType === "mrs") {
-      void pulls.loadPulls(repoParams);
+      pulls.loadPulls(repoParams);
     } else {
-      void issues.loadIssues(repoParams);
+      issues.loadIssues(repoParams);
     }
 
     refreshHandle = setInterval(() => {
       if (listType === "mrs") {
-        void pulls.loadPulls(repoParams);
+        pulls.loadPulls(repoParams);
       } else {
-        void issues.loadIssues(repoParams);
+        issues.loadIssues(repoParams);
       }
     }, 15_000);
 
     if (sync.getSyncState()?.running) {
       sync.onNextSyncComplete(() => {
         if (listType === "mrs") {
-          void pulls.loadPulls(repoParams);
+          pulls.loadPulls(repoParams);
         } else {
-          void issues.loadIssues(repoParams);
+          issues.loadIssues(repoParams);
         }
       });
     }
@@ -90,10 +90,10 @@
         value.trim() === "" ? undefined : value.trim();
       if (listType === "mrs") {
         pulls.setSearchQuery(q);
-        void pulls.loadPulls(repoParams);
+        pulls.loadPulls(repoParams);
       } else {
         issues.setIssueSearchQuery(q);
-        void issues.loadIssues(repoParams);
+        issues.loadIssues(repoParams);
       }
     }, 300);
   }
@@ -197,7 +197,7 @@
             class:state-btn--active={prFilterState === s}
             onclick={() => {
               pulls.setFilterState(s);
-              void pulls.loadPulls(repoParams);
+              pulls.loadPulls(repoParams);
             }}
           >
             {s === "open"
@@ -214,7 +214,7 @@
             class:state-btn--active={issueFilterState === s}
             onclick={() => {
               issues.setIssueFilterState(s);
-              void issues.loadIssues(repoParams);
+              issues.loadIssues(repoParams);
             }}
           >
             {s === "open"

@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1628,9 +1629,13 @@ func buildAppState(
 			return
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/activity/pr-comment" {
-			if srv.SubscriberCount() == 0 {
+			if r.URL.Query().Get("require_subscriber") != "false" && srv.SubscriberCount() == 0 {
 				http.Error(w, "event stream not connected", http.StatusConflict)
 				return
+			}
+			body := r.URL.Query().Get("body")
+			if body == "" {
+				body = "Persisted live Activity comment"
 			}
 			mr, err := database.GetMergeRequest(
 				r.Context(), "github", "github.com", "acme", "widgets", 1,
@@ -1640,7 +1645,7 @@ func buildAppState(
 				return
 			}
 			comment, err := fc.CreateIssueComment(
-				r.Context(), "acme", "widgets", 1, "Persisted live Activity comment",
+				r.Context(), "acme", "widgets", 1, body,
 			)
 			if err != nil {
 				http.Error(w, "create fixture pull request comment", http.StatusInternalServerError)
@@ -1652,7 +1657,39 @@ func buildAppState(
 				http.Error(w, "persist pull request event", http.StatusInternalServerError)
 				return
 			}
-			srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			eventID := srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			w.Header().Set("X-Kenn-E2E-Event-ID", strconv.FormatUint(eventID, 10))
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/activity/pr-comments/sync" {
+			number, err := strconv.Atoi(r.URL.Query().Get("number"))
+			if err != nil || number <= 0 {
+				http.Error(w, "positive pull request number required", http.StatusBadRequest)
+				return
+			}
+			mr, err := database.GetMergeRequest(
+				r.Context(), "github", "github.com", "acme", "widgets", number,
+			)
+			if err != nil || mr == nil {
+				http.Error(w, "pull request not found", http.StatusNotFound)
+				return
+			}
+			comments, err := fc.ListIssueComments(r.Context(), "acme", "widgets", number)
+			if err != nil {
+				http.Error(w, "read fixture pull request comments", http.StatusInternalServerError)
+				return
+			}
+			events := make([]db.MREvent, 0, len(comments))
+			for _, comment := range comments {
+				events = append(events, ghclient.NormalizeCommentEvent(mr.ID, comment))
+			}
+			if err := database.ReplaceMRCommentEvents(r.Context(), mr.ID, events, nil); err != nil {
+				http.Error(w, "reconcile fixture pull request comments", http.StatusInternalServerError)
+				return
+			}
+			eventID := srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			w.Header().Set("X-Kenn-E2E-Event-ID", strconv.FormatUint(eventID, 10))
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

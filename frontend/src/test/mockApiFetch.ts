@@ -10,6 +10,10 @@
 // This module must stay free of @playwright/test imports. Unhandled paths
 // get a JSON 404 so optional endpoints fail softly in both suites.
 
+import type { components } from "../lib/api/generated/schema.js";
+
+type SettingsResponse = components["schemas"]["SettingsResponse"];
+
 const defaultProviderCapabilities = {
   read_repositories: true,
   read_merge_requests: true,
@@ -270,6 +274,9 @@ export const mockSettings = {
     },
   ],
   activity: {
+    collapse_threads: false,
+    default_branch_max_commits: 5000,
+    default_branch_retention_days: 90,
     view_mode: "threaded",
     time_range: "7d",
     hide_closed: false,
@@ -286,7 +293,14 @@ export const mockSettings = {
     auto_assign_on_create: false,
   },
   modes: {
+    activity: true,
+    docs: true,
+    issues: true,
     kata: true,
+    pulls: true,
+    repos: true,
+    reviews: true,
+    workspaces: true,
   },
   kata_projects: [],
   terminal: {
@@ -297,8 +311,12 @@ export const mockSettings = {
     letter_spacing: 0,
     cursor_blink: true,
     font_ligatures: false,
+    hide_tmux_status: false,
   },
   agents: [],
+  notifications: {
+    enabled: true,
+  },
   fleet: {
     enabled: false,
     key: "",
@@ -310,7 +328,7 @@ export const mockSettings = {
     ssh_peers: [],
     restart_required: false,
   },
-};
+} satisfies SettingsResponse;
 
 export function makeRateLimits() {
   const now = Date.now();

@@ -10,17 +10,17 @@ import {
 } from "../api/types.js";
 
 export function createSettingsStore() {
-  let repos = $state<ConfigRepo[]>([]);
-  let terminalSettings = $state<TerminalSettings>({
+  let repos = $state.raw<ConfigRepo[]>([]);
+  let terminalSettings = $state.raw<TerminalSettings>({
     ...DEFAULT_TERMINAL_SETTINGS,
   });
-  let modeVisibility = $state<ModeVisibility>({
+  let modeVisibility = $state.raw<ModeVisibility>({
     ...DEFAULT_MODE_VISIBILITY,
   });
-  let pullRequestSettings = $state<PullRequestSettings>({
+  let pullRequestSettings = $state.raw<PullRequestSettings>({
     ...DEFAULT_PULL_REQUEST_SETTINGS,
   });
-  let launchTargets = $state<LaunchTarget[]>([]);
+  let launchTargets = $state.raw<LaunchTarget[]>([]);
   let loaded = $state(false);
 
   function getConfiguredRepos(): ConfigRepo[] {

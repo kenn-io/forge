@@ -4,6 +4,7 @@
   import type { DiffFile as DiffFileType } from "../../api/types.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
+  import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import { STORES_KEY, getStores } from "../../context.js";
   import DiffInlineCommentComposer from "./DiffInlineCommentComposer.svelte";
   import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
@@ -16,7 +17,6 @@
     type ReviewThread,
   } from "./review-thread-context.js";
   import PierreFileDiff from "./PierreFileDiff.svelte";
-  import type { DiffContextPrefetchScheduler } from "./diff-context-prefetch.js";
 
   const stores = getStores();
   const diffStore = stores.diff;
@@ -25,7 +25,6 @@
   interface Props {
     file: DiffFileType;
     contextPrefetchIdentity?: string | undefined;
-    contextPrefetchScheduler?: DiffContextPrefetchScheduler | undefined;
     provider: string;
     platformHost?: string | undefined;
     owner: string;
@@ -45,7 +44,6 @@
   const {
     file,
     contextPrefetchIdentity = "",
-    contextPrefetchScheduler,
     provider,
     platformHost,
     owner,
@@ -191,9 +189,20 @@
     diffStore.toggleFileCollapsed(owner, name, number, file.path);
   }
 
-  async function loadDiffText(side: "old" | "new"): Promise<string> {
-    const preview = await diffStore.loadFilePreview(owner, name, number, file.path, side);
-    return decodePreviewText(preview.content);
+  function loadDiffContext(callbacks: {
+    readonly onSuccess: (context: { readonly oldText: string; readonly newText: string }) => void;
+    readonly onFailure: (message: string) => void;
+    readonly onSettled: () => void;
+  }): void {
+    diffStore.loadFileContextPreviews(owner, name, number, file, {
+      onSuccess: (previews) =>
+        callbacks.onSuccess({
+          oldText: previews.old === null ? "" : decodePreviewText(previews.old.content),
+          newText: previews.new === null ? "" : decodePreviewText(previews.new.content),
+        }),
+      onFailure: callbacks.onFailure,
+      onSettled: callbacks.onSettled,
+    });
   }
 
   function decodePreviewText(content: string): string {
@@ -495,8 +504,14 @@
     }
   }
 
-  async function replyToThread(thread: ReviewThread, body: string): Promise<boolean> {
-    return await stores.detail?.replyToDiscussion(owner, name, number, thread.id, body) ?? false;
+  function replyToThread(thread: ReviewThread, body: string, callbacks: MutationCallbacks): void {
+    const detailStore = stores.detail;
+    if (detailStore === undefined) {
+      callbacks.onFailure?.("Pull request details are unavailable");
+      callbacks.onSettled?.();
+      return;
+    }
+    detailStore.replyToDiscussion(owner, name, number, thread.id, body, callbacks);
   }
 
   function closeComposer(): void {
@@ -592,11 +607,10 @@
               {file}
               active={inViewport}
               {contextPrefetchIdentity}
-              {contextPrefetchScheduler}
               {viewMode}
               {wordWrap}
               {tabWidth}
-              loadFileText={contextExpansionEnabled ? loadDiffText : undefined}
+              loadFileContext={contextExpansionEnabled ? loadDiffContext : undefined}
               lineAnnotations={pierreLineAnnotations}
               transientLineAnnotation={pierreComposerAnnotation}
               selectedRange={selectedRange}

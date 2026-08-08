@@ -1,227 +1,194 @@
-import { describe, expect, it } from "vite-plus/test";
-import { createDiffContextPrefetchScheduler } from "./diff-context-prefetch.js";
+import { assert, it } from "@effect/vitest";
+import { Deferred, Effect, Fiber, Ref } from "effect";
+import { TestClock } from "effect/testing";
+import { DiffContextPrefetch, makeDiffContextPrefetchLayer } from "./diff-context-prefetch.js";
 
-function controlledTask(
-  starts: string[],
-  id: string,
-): {
-  resolve: () => void;
-  run: (signal: AbortSignal) => Promise<void>;
-  signal: () => AbortSignal | undefined;
-} {
-  let resolve = (): void => {};
-  let capturedSignal: AbortSignal | undefined;
-  return {
-    resolve: () => resolve(),
-    run: (signal) => {
-      starts.push(id);
-      capturedSignal = signal;
-      return new Promise<void>((done) => {
-        resolve = done;
-      });
-    },
-    signal: () => capturedSignal,
-  };
-}
+const deferredBackgroundTurn = Effect.sleep("50 millis");
+const concurrencyTwo = makeDiffContextPrefetchLayer({
+  concurrency: 2,
+  deferBackground: deferredBackgroundTurn,
+});
+const concurrencyOne = makeDiffContextPrefetchLayer({
+  concurrency: 1,
+  deferBackground: deferredBackgroundTurn,
+});
 
-function deferredCallbacks(): {
-  runNext: () => void;
-  scheduleDeferred: (callback: () => void) => () => void;
-} {
-  const callbacks: Array<{ callback: () => void; cancelled: boolean }> = [];
-  return {
-    runNext: () => {
-      const next = callbacks.shift();
-      if (next && !next.cancelled) next.callback();
-    },
-    scheduleDeferred: (callback) => {
-      const entry = { callback, cancelled: false };
-      callbacks.push(entry);
-      return () => {
-        entry.cancelled = true;
-      };
-    },
-  };
-}
+it.layer(concurrencyTwo)("bounded diff context prefetch", (it) => {
+  it.effect("starts no more work than the configured concurrency and reuses a released slot", () =>
+    Effect.gen(function* () {
+      const prefetch = yield* DiffContextPrefetch;
+      const starts = yield* Ref.make<readonly string[]>([]);
+      const started = yield* Effect.all([Deferred.make<void>(), Deferred.make<void>(), Deferred.make<void>()]);
+      const releases = yield* Effect.all([Deferred.make<void>(), Deferred.make<void>(), Deferred.make<void>()]);
 
-describe("diff context prefetch scheduler", () => {
-  it("runs at most four file tasks and reuses a released slot", async () => {
-    const starts: string[] = [];
-    const tasks = Array.from({ length: 5 }, (_, index) => controlledTask(starts, String(index + 1)));
-    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 4 });
+      const start = (id: string, index: number) =>
+        Effect.forkChild(
+          prefetch.run({
+            generation: "diff-a",
+            id,
+            priority: "foreground",
+            task: () =>
+              Ref.update(starts, (current) => [...current, id]).pipe(
+                Effect.andThen(Deferred.succeed(started[index]!, undefined)),
+                Effect.andThen(Deferred.await(releases[index]!)),
+              ),
+          }),
+        );
 
-    tasks.forEach((task, index) => scheduler.schedule(String(index), "foreground", task.run));
+      const first = yield* start("one", 0);
+      yield* Deferred.await(started[0]!);
+      const second = yield* start("two", 1);
+      yield* Deferred.await(started[1]!);
+      const third = yield* start("three", 2);
+      yield* Effect.yieldNow;
+      assert.isFalse(yield* Deferred.isDone(started[2]!));
+      assert.deepStrictEqual(yield* Ref.get(starts), ["one", "two"]);
 
-    expect(starts).toEqual(["1", "2", "3", "4"]);
-    tasks[0]!.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(starts).toEqual(["1", "2", "3", "4", "5"]);
-  });
+      yield* Deferred.succeed(releases[0]!, undefined);
+      yield* Deferred.await(started[2]!);
+      assert.deepStrictEqual(yield* Ref.get(starts), ["one", "two", "three"]);
 
-  it("waits for a deferred turn before starting background work", () => {
-    const starts: string[] = [];
-    const deferred = deferredCallbacks();
-    const task = controlledTask(starts, "background");
-    const scheduler = createDiffContextPrefetchScheduler({
-      concurrency: 4,
-      scheduleDeferred: deferred.scheduleDeferred,
-    });
+      yield* Effect.forEach(releases, (release) => Deferred.succeed(release, undefined));
+      yield* Effect.forEach([first, second, third], Fiber.join);
+    }),
+  );
+});
 
-    scheduler.schedule("background", "background", task.run);
-    expect(starts).toEqual([]);
+it.layer(concurrencyOne)("background diff context prefetch", (it) => {
+  it.effect("defers background work until the browser background turn", () =>
+    Effect.gen(function* () {
+      const prefetch = yield* DiffContextPrefetch;
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const fiber = yield* Effect.forkChild(
+        prefetch.run({
+          generation: "diff-a",
+          id: "background",
+          priority: "background",
+          task: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release))),
+        }),
+      );
 
-    deferred.runNext();
-    expect(starts).toEqual(["background"]);
-  });
+      yield* Effect.yieldNow;
+      assert.isFalse(yield* Deferred.isDone(started));
 
-  it("promotes queued background work ahead of the background queue", async () => {
-    const starts: string[] = [];
-    const deferred = deferredCallbacks();
-    const blocker = controlledTask(starts, "blocker");
-    const firstBackground = controlledTask(starts, "first-background");
-    const promoted = controlledTask(starts, "promoted");
-    const scheduler = createDiffContextPrefetchScheduler({
-      concurrency: 1,
-      scheduleDeferred: deferred.scheduleDeferred,
-    });
+      yield* TestClock.adjust("50 millis");
+      yield* Deferred.await(started);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(fiber);
+    }),
+  );
+});
 
-    scheduler.schedule("blocker", "foreground", blocker.run);
-    scheduler.schedule("first-background", "background", firstBackground.run);
-    const promotedHandle = scheduler.schedule("promoted", "background", promoted.run);
-    promotedHandle.setPriority("foreground");
+it.layer(concurrencyOne)("priority changes", (it) => {
+  it.effect("promotes foreground work ahead of deferred background work", () =>
+    Effect.gen(function* () {
+      const prefetch = yield* DiffContextPrefetch;
+      const starts = yield* Ref.make<readonly string[]>([]);
+      const blockerStarted = yield* Deferred.make<void>();
+      const blockerRelease = yield* Deferred.make<void>();
+      const promotedRelease = yield* Deferred.make<void>();
+      const backgroundRelease = yield* Deferred.make<void>();
+      const promotedStarted = yield* Deferred.make<void>();
+      const backgroundStarted = yield* Deferred.make<void>();
 
-    blocker.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(starts).toEqual(["blocker", "promoted"]);
+      const blocker = yield* Effect.forkChild(
+        prefetch.run({
+          generation: "diff-a",
+          id: "blocker",
+          priority: "foreground",
+          task: () =>
+            Ref.update(starts, (current) => [...current, "blocker"]).pipe(
+              Effect.andThen(Deferred.succeed(blockerStarted, undefined)),
+              Effect.andThen(Deferred.await(blockerRelease)),
+            ),
+        }),
+      );
+      yield* Deferred.await(blockerStarted);
+      const background = yield* Effect.forkChild(
+        prefetch.run({
+          generation: "diff-a",
+          id: "background",
+          priority: "background",
+          task: () =>
+            Ref.update(starts, (current) => [...current, "background"]).pipe(
+              Effect.andThen(Deferred.succeed(backgroundStarted, undefined)),
+              Effect.andThen(Deferred.await(backgroundRelease)),
+            ),
+        }),
+      );
+      const promoted = yield* Effect.forkChild(
+        prefetch.run({
+          generation: "diff-a",
+          id: "promoted",
+          priority: "background",
+          task: () =>
+            Ref.update(starts, (current) => [...current, "promoted"]).pipe(
+              Effect.andThen(Deferred.succeed(promotedStarted, undefined)),
+              Effect.andThen(Deferred.await(promotedRelease)),
+            ),
+        }),
+      );
 
-    promoted.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(starts).toEqual(["blocker", "promoted"]);
-    deferred.runNext();
-    expect(starts).toEqual(["blocker", "promoted", "first-background"]);
-  });
+      yield* Effect.yieldNow;
+      yield* prefetch.setPriority("diff-a", "promoted", "foreground");
+      yield* Deferred.succeed(blockerRelease, undefined);
+      yield* Deferred.await(promotedStarted);
+      assert.deepStrictEqual(yield* Ref.get(starts), ["blocker", "promoted"]);
 
-  it("cancels queued work and aborts active work on reset", () => {
-    const starts: string[] = [];
-    const active = controlledTask(starts, "active");
-    const queued = controlledTask(starts, "queued");
-    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 1 });
+      yield* Deferred.succeed(promotedRelease, undefined);
+      yield* TestClock.adjust("50 millis");
+      yield* Deferred.await(backgroundStarted);
+      assert.deepStrictEqual(yield* Ref.get(starts), ["blocker", "promoted", "background"]);
 
-    scheduler.schedule("active", "foreground", active.run);
-    scheduler.schedule("queued", "foreground", queued.run);
-    scheduler.reset();
+      yield* Deferred.succeed(backgroundRelease, undefined);
+      yield* Effect.forEach([blocker, promoted, background], Fiber.join);
+    }),
+  );
+});
 
-    expect(active.signal()?.aborted).toBe(true);
-    expect(starts).toEqual(["active"]);
-  });
+it.layer(concurrencyOne)("generation replacement", (it) => {
+  it.effect("cancels the old generation without releasing its active slot early", () =>
+    Effect.gen(function* () {
+      const prefetch = yield* DiffContextPrefetch;
+      const oldStarted = yield* Deferred.make<void>();
+      const oldRelease = yield* Deferred.make<void>();
+      const cancellationProbe = yield* Deferred.make<Effect.Effect<boolean>>();
+      const currentStarted = yield* Deferred.make<void>();
+      const currentRelease = yield* Deferred.make<void>();
 
-  it("ignores stale completion from a prior generation", async () => {
-    const starts: string[] = [];
-    const oldTask = controlledTask(starts, "old");
-    const currentTask = controlledTask(starts, "current");
-    const waitingTask = controlledTask(starts, "waiting");
-    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 1 });
+      const old = yield* Effect.forkChild(
+        prefetch.run({
+          generation: "diff-old",
+          id: "old",
+          priority: "foreground",
+          task: (isCancelled) =>
+            Deferred.succeed(cancellationProbe, isCancelled).pipe(
+              Effect.andThen(Deferred.succeed(oldStarted, undefined)),
+              Effect.andThen(Deferred.await(oldRelease)),
+            ),
+        }),
+      );
+      yield* Deferred.await(oldStarted);
+      yield* prefetch.setGeneration("diff-current");
+      const current = yield* Effect.forkChild(
+        prefetch.run({
+          generation: "diff-current",
+          id: "current",
+          priority: "foreground",
+          task: () => Deferred.succeed(currentStarted, undefined).pipe(Effect.andThen(Deferred.await(currentRelease))),
+        }),
+      );
 
-    scheduler.schedule("old", "foreground", oldTask.run);
-    scheduler.reset();
-    scheduler.schedule("current", "foreground", currentTask.run);
-    scheduler.schedule("waiting", "foreground", waitingTask.run);
+      const isCancelled = yield* Deferred.await(cancellationProbe);
+      assert.isTrue(yield* isCancelled);
+      yield* Effect.yieldNow;
+      assert.isFalse(yield* Deferred.isDone(currentStarted));
 
-    expect(starts).toEqual(["old"]);
-
-    oldTask.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(starts).toEqual(["old", "current"]);
-
-    currentTask.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(starts).toEqual(["old", "current", "waiting"]);
-  });
-
-  it("keeps unresolved work inside the concurrency ceiling across repeated resets", async () => {
-    const starts: string[] = [];
-    const oldTasks = [controlledTask(starts, "old-1"), controlledTask(starts, "old-2")];
-    const abandonedTasks = [controlledTask(starts, "abandoned-1"), controlledTask(starts, "abandoned-2")];
-    const currentTasks = [controlledTask(starts, "current-1"), controlledTask(starts, "current-2")];
-    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 2 });
-
-    oldTasks.forEach((task, index) => scheduler.schedule(`old-${index}`, "foreground", task.run));
-    scheduler.reset();
-    abandonedTasks.forEach((task, index) => scheduler.schedule(`abandoned-${index}`, "foreground", task.run));
-    scheduler.reset();
-    currentTasks.forEach((task, index) => scheduler.schedule(`current-${index}`, "foreground", task.run));
-
-    expect(starts).toEqual(["old-1", "old-2"]);
-
-    oldTasks[0]!.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(starts).toEqual(["old-1", "old-2", "current-1"]);
-
-    oldTasks[1]!.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(starts).toEqual(["old-1", "old-2", "current-1", "current-2"]);
-  });
-
-  it("aligns mounted task registration with the latest diff generation", async () => {
-    const starts: string[] = [];
-    const oldTask = controlledTask(starts, "old");
-    const currentTask = controlledTask(starts, "current");
-    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 1 });
-
-    scheduler.setGeneration("old-diff");
-    scheduler.schedule("old", "foreground", oldTask.run);
-    scheduler.setGeneration("current-diff");
-    scheduler.schedule("current", "foreground", currentTask.run);
-    scheduler.setGeneration("current-diff");
-
-    expect(starts).toEqual(["old"]);
-    oldTask.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(starts).toEqual(["old", "current"]);
-  });
-
-  it("cancels an individual queued task", () => {
-    const starts: string[] = [];
-    const deferred = deferredCallbacks();
-    const queued = controlledTask(starts, "queued");
-    const scheduler = createDiffContextPrefetchScheduler({
-      concurrency: 1,
-      scheduleDeferred: deferred.scheduleDeferred,
-    });
-    const handle = scheduler.schedule("queued", "background", queued.run);
-
-    handle.cancel();
-    deferred.runNext();
-
-    expect(starts).toEqual([]);
-  });
-
-  it("aborts an individually cancelled active task", () => {
-    const starts: string[] = [];
-    const active = controlledTask(starts, "active");
-    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 1 });
-    const handle = scheduler.schedule("active", "foreground", active.run);
-
-    handle.cancel();
-
-    expect(active.signal()?.aborted).toBe(true);
-  });
-
-  it("does not accept new work after disposal", () => {
-    const starts: string[] = [];
-    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 1 });
-    scheduler.dispose();
-
-    scheduler.schedule("late", "foreground", controlledTask(starts, "late").run);
-
-    expect(starts).toEqual([]);
-  });
+      yield* Deferred.succeed(oldRelease, undefined);
+      yield* Deferred.await(currentStarted);
+      yield* Deferred.succeed(currentRelease, undefined);
+      yield* Effect.forEach([old, current], Fiber.join);
+    }),
+  );
 });

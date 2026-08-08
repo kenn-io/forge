@@ -1,21 +1,27 @@
+import { Effect, Exit, Result } from "effect";
 import type { CommitInfo, DiffFile, DiffHunk, DiffLine, DiffResult, FilePreview, FilesResult } from "../api/types.js";
-import { createAPIClient } from "../api/generated/client.js";
-import { configuredAPIBaseURL } from "../api/runtime-base.js";
+import { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
+import { executeGeneratedApiRequest, GeneratedApi, type GeneratedClient } from "../api/generated-api.js";
+import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import {
   providerItemPath,
   providerRepoPath,
   providerRouteParams,
+  resolvedPlatformHost,
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
 import type { components } from "../api/generated/schema.js";
-import type { ForgeClient } from "../types.js";
 import { isProblem, ProblemCodes } from "../api/problems.js";
+import { retryIdempotentRead } from "../api/retry-policy.js";
 import {
   countDiffFilesByCategory,
   filterDiffFilesByCategory,
   type DiffFileCategoryCounts,
   type DiffFileCategoryFilter,
 } from "../utils/diff-categories.js";
+import { DiffWorkflow, type DiffReadError, type ProviderDiffRead } from "./diff-workflow.js";
+import { FilePreviewUnavailable, FilePreviewWorkflow, type FilePreviewReadError } from "./diff-preview-workflow.js";
+import { providerItemKey } from "./provider-key.js";
 
 export type DiffScope =
   | { kind: "head" }
@@ -36,6 +42,29 @@ interface LoadCommitsOptions {
   force?: boolean;
 }
 
+export interface DiffLoadCallbacks {
+  readonly onSuccess?: () => void;
+  readonly onFailure?: (message: string) => void;
+  readonly onSettled?: () => void;
+}
+
+export interface FilePreviewCallbacks {
+  readonly onSuccess?: (preview: FilePreview) => void;
+  readonly onFailure?: (message: string) => void;
+  readonly onSettled?: () => void;
+}
+
+export interface FileContextPreviews {
+  readonly old: FilePreview | null;
+  readonly new: FilePreview | null;
+}
+
+export interface FileContextPreviewCallbacks {
+  readonly onSuccess?: (previews: FileContextPreviews) => void;
+  readonly onFailure?: (message: string) => void;
+  readonly onSettled?: () => void;
+}
+
 export type DiffScrollTarget = {
   path: string;
   line?: number | undefined;
@@ -43,12 +72,89 @@ export type DiffScrollTarget = {
 };
 
 export interface DiffStoreOptions {
-  client?: ForgeClient;
-  getBasePath?: () => string;
+  runtime: AppRuntime;
+}
+
+interface ProviderDiffReadOptions {
+  readonly invalidate: boolean;
+  readonly loadFiles: boolean;
 }
 
 function apiErrorMessage(error: { detail?: string; title?: string } | undefined, fallback: string): string {
   return error?.detail ?? error?.title ?? fallback;
+}
+
+function diffReadErrorMessage(error: ApiProblemError | TransientTransportError): string {
+  if (error._tag === "ApiProblemError") {
+    return apiErrorMessage(error.problem, "failed to load diff");
+  }
+  return "Could not reach Kenn Forge";
+}
+
+function requestErrorMessage(error: ApiProblemError | TransientTransportError, fallback: string): string {
+  if (error._tag === "ApiProblemError") {
+    return apiErrorMessage(error.problem, fallback);
+  }
+  return "Could not reach Kenn Forge";
+}
+
+function filePreviewErrorMessage(error: FilePreviewReadError): string {
+  if (error._tag === "FilePreviewUnavailable") return error.message;
+  return requestErrorMessage(error, "failed to load file preview");
+}
+
+const executeGeneratedDefaultResponse = Effect.fn("GeneratedApi.executeDefaultResponse")(function* <A>(
+  operation: string,
+  request: (client: GeneratedClient, signal: AbortSignal) => Promise<unknown>,
+  isSuccess: (value: unknown) => value is A,
+) {
+  const api = yield* GeneratedApi;
+  const result = yield* Effect.tryPromise({
+    try: (signal) => request(api.client, signal),
+    catch: (cause) => TransientTransportError.make({ operation, cause }),
+  });
+  if (typeof result !== "object" || result === null) {
+    return yield* Effect.fail(
+      TransientTransportError.make({ operation, cause: new Error("Generated request returned an invalid result") }),
+    );
+  }
+  const data = "data" in result ? result.data : undefined;
+  const error = "error" in result ? result.error : undefined;
+  const payload = data ?? error;
+  if (payload !== undefined && isSuccess(payload)) return payload;
+  if (payload !== undefined && isProblem(payload)) {
+    return yield* Effect.fail(new ApiProblemError({ operation, problem: payload }));
+  }
+  return yield* Effect.fail(
+    TransientTransportError.make({ operation, cause: new Error("Generated request returned no response body") }),
+  );
+});
+
+const invokeLoadCallback = (callback: (() => void) | undefined): Effect.Effect<void> =>
+  callback === undefined ? Effect.void : Effect.sync(callback).pipe(Effect.catchCause(() => Effect.void));
+
+const invokeFilePreviewSuccess = (
+  callback: ((preview: FilePreview) => void) | undefined,
+  preview: FilePreview,
+): Effect.Effect<void> =>
+  callback === undefined
+    ? Effect.void
+    : Effect.sync(() => callback(preview)).pipe(Effect.catchCause(() => Effect.void));
+
+const invokeFileContextPreviewSuccess = (
+  callback: ((previews: FileContextPreviews) => void) | undefined,
+  previews: FileContextPreviews,
+): Effect.Effect<void> =>
+  callback === undefined
+    ? Effect.void
+    : Effect.sync(() => callback(previews)).pipe(Effect.catchCause(() => Effect.void));
+
+function invokeLoadFailure(callback: ((message: string) => void) | undefined, message: string): void {
+  try {
+    callback?.(message);
+  } catch {
+    // Presentation callbacks do not own the request outcome.
+  }
 }
 
 function isSnapshotChanged(error: unknown): boolean {
@@ -57,6 +163,26 @@ function isSnapshotChanged(error: unknown): boolean {
 
 type DiffResponse = components["schemas"]["DiffResponse"];
 type FilesResponse = components["schemas"]["FilesResponse"];
+type CommitsResponse = components["schemas"]["CommitsResponse"];
+type FilePreviewResponse = components["schemas"]["FilePreviewResponse"];
+
+function isFilePreviewResponse(value: unknown): value is FilePreviewResponse {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !isProblem(value) &&
+    "content" in value &&
+    typeof value.content === "string" &&
+    "encoding" in value &&
+    typeof value.encoding === "string" &&
+    "media_type" in value &&
+    typeof value.media_type === "string" &&
+    "path" in value &&
+    typeof value.path === "string" &&
+    "size" in value &&
+    typeof value.size === "number"
+  );
+}
 
 function normalizeDiffLine(line: components["schemas"]["Line"]): DiffLine {
   switch (line.type) {
@@ -114,10 +240,6 @@ function withVisibleFiles<T extends DiffResult | FilesResult>(result: T, files: 
   };
 }
 
-function apiBaseURL(basePath: string): string {
-  return configuredAPIBaseURL(basePath);
-}
-
 function safeGetItem(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -138,19 +260,6 @@ const VALID_TAB_WIDTHS = [1, 2, 4, 8];
 const VALID_DIFF_VIEW_MODES: DiffViewMode[] = ["unified", "split"];
 const workspaceDiffRetryInitialDelay = 1_000;
 const workspaceDiffRetryMaxDelay = 30_000;
-
-function waitForWorkspaceDiffRetry(signal: AbortSignal, delay: number): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => {
-      clearTimeout(timeout);
-      signal.removeEventListener("abort", done);
-      resolve();
-    };
-    const timeout = setTimeout(done, delay);
-    signal.addEventListener("abort", done, { once: true });
-  });
-}
 
 function loadTabWidth(): number {
   const raw = parseInt(safeGetItem("diff-tab-width") ?? "4", 10);
@@ -184,18 +293,15 @@ function saveCollapsedFiles(cf: Record<string, string[]>): void {
   safeSetItem("diff-collapsed-files", JSON.stringify(cf));
 }
 
-export function createDiffStore(opts?: DiffStoreOptions) {
-  const getBasePath = opts?.getBasePath ?? (() => "/");
-  const apiClient =
-    opts?.client ??
-    createAPIClient(apiBaseURL(getBasePath()), {
-      fetch: globalThis.fetch.bind(globalThis),
-    });
+export function createDiffStore(opts: DiffStoreOptions) {
+  const runtime = opts.runtime;
 
   let diff = $state<DiffResult | null>(null);
   let loading = $state(false);
   let storeError = $state<string | null>(null);
   let abortController: AbortController | null = null;
+  let activeCommitLoad: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
+  let activeWorkspaceLoad: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
 
   let fileList = $state<FilesResult | null>(null);
   let fileListLoading = $state(false);
@@ -216,11 +322,11 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let commitsLoading = $state(false);
   let commitsError = $state<string | null>(null);
   let commitsGeneration = 0;
+  let activeCommitsLoad: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
   let workspaceLoadGeneration = 0;
   let currentWorkspaceLoadToken: object | undefined;
   let scope = $state<DiffScope>({ kind: "head" });
   let filePreviewGeneration = $state(0);
-  const filePreviewCache = new Map<string, Promise<FilePreview>>();
 
   let currentOwner = $state("");
   let currentName = $state("");
@@ -424,11 +530,11 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     hideWhitespace = v;
     safeSetItem("diff-hide-whitespace", String(v));
     if (currentOwner && currentName && currentNumber) {
-      void reloadDiffOnly();
+      reloadDiffOnly();
     } else if (currentOwner && currentName && currentCommitSHA) {
-      void reloadCommitDiffOnly();
+      reloadCommitDiffOnly();
     } else if (currentWorkspaceID) {
-      void reloadWorkspaceDiffOnly();
+      reloadWorkspaceDiffOnly();
     }
   }
 
@@ -437,62 +543,151 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     safeSetItem("diff-view-mode", mode);
   }
 
-  async function reloadDiffOnly(): Promise<void> {
-    abortController?.abort();
-    // Abort any in-flight /files request so a late response from a
-    // prior loadDiff() cannot repopulate fileList after we clear it.
-    fileListAbortController?.abort();
-    fileListAbortController = null;
-    fileListLoading = false;
-    const ac = new AbortController();
-    abortController = ac;
-    fileList = null;
-    clearFilePreviewCache();
-
-    loading = true;
-    storeError = null;
-    const ref = currentRouteRef();
-    try {
-      const { data, error, response } = await apiClient.GET(providerItemPath("pulls", ref, "/diff"), {
-        params: {
-          path: {
-            ...providerRouteParams(ref),
-            number: currentNumber,
-          },
-          query: diffQuery(),
-        },
-        signal: ac.signal,
-      });
-      if (abortController !== ac) return;
-      if (!data) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-      }
-      const result = normalizeDiffResult(data);
-      diff = result;
-      setActiveIfNeeded(getVisibleDiffFiles());
-    } catch (err) {
-      if (ac.signal.aborted) return;
-      if (abortController !== ac) return;
-      storeError = err instanceof Error ? err.message : String(err);
-      diff = null;
-    } finally {
-      if (!ac.signal.aborted && abortController === ac) {
-        loading = false;
-      }
-    }
-  }
-
-  async function reloadWorkspaceDiffOnly(): Promise<void> {
-    await loadWorkspaceDiff(
-      currentWorkspaceID,
-      currentWorkspaceBase,
-      currentWorkspaceStacked,
-      currentWorkspaceOptions(),
+  function clearProviderDiffRead(): void {
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* DiffWorkflow;
+        yield* workflow.clear;
+      }),
+      {
+        operation: "clear provider diff read",
+        safeContext: {},
+        onFailure: () => {},
+      },
     );
   }
 
-  async function reloadCommitDiffOnly(): Promise<void> {
-    await loadCommitDiff(currentRouteRef(), currentCommitSHA);
+  function providerDiffReadKey(ref: ProviderRouteRef, number: number, includeFiles: boolean): string {
+    const itemKey = providerItemKey({
+      provider: ref.provider,
+      platformHost: resolvedPlatformHost(ref.provider, ref.platformHost),
+      owner: ref.owner,
+      name: ref.name,
+      number,
+    });
+    return [
+      itemKey,
+      scopeCacheKey(),
+      hideWhitespace ? "hide-whitespace" : "show-whitespace",
+      includeFiles ? "with-files" : "diff-only",
+    ].join("\u0000");
+  }
+
+  function providerDiffRequest(
+    ref: ProviderRouteRef,
+    number: number,
+    generation: number,
+    includeFiles: boolean,
+  ): Effect.Effect<ProviderDiffRead, DiffReadError, GeneratedApi> {
+    const filesRead = includeFiles
+      ? executeGeneratedApiRequest("GET pull request files", (client, signal) =>
+          client.GET(providerItemPath("pulls", ref, "/files"), {
+            params: { path: { ...providerRouteParams(ref), number } },
+            signal,
+          }),
+        ).pipe(
+          retryIdempotentRead,
+          Effect.catch(() => Effect.succeed(null)),
+          Effect.tap((data) =>
+            Effect.sync(() => {
+              if (generation !== workspaceLoadGeneration) return;
+              if (data !== null) applyFilesResult(data);
+              fileListLoading = false;
+            }),
+          ),
+        )
+      : Effect.succeed(null);
+    const diffRead = executeGeneratedApiRequest("GET pull request diff", (client, signal) =>
+      client.GET(providerItemPath("pulls", ref, "/diff"), {
+        params: {
+          path: { ...providerRouteParams(ref), number },
+          query: diffQuery(),
+        },
+        signal,
+      }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.tap((data) =>
+        Effect.sync(() => {
+          if (generation !== workspaceLoadGeneration) return;
+          applyDiffResult(data);
+          loading = false;
+        }),
+      ),
+    );
+    return Effect.all({ diff: diffRead, files: filesRead }, { concurrency: "unbounded" });
+  }
+
+  function startProviderDiffRead(
+    ref: ProviderRouteRef,
+    number: number,
+    generation: number,
+    options: ProviderDiffReadOptions,
+  ): void {
+    prepareProviderDiffRead(options.loadFiles);
+    const key = providerDiffReadKey(ref, number, options.loadFiles);
+    const request = providerDiffRequest(ref, number, generation, options.loadFiles);
+    const program = Effect.gen(function* () {
+      const workflow = yield* DiffWorkflow;
+      if (options.invalidate) yield* workflow.invalidate(key);
+      const result = yield* workflow.read(key, request);
+      if (generation !== workspaceLoadGeneration) return;
+      yield* Effect.sync(() => {
+        if (result.files !== null) applyFilesResult(result.files);
+        applyDiffResult(result.diff);
+      });
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (generation !== workspaceLoadGeneration) return;
+          loading = false;
+          fileListLoading = false;
+        }),
+      ),
+    );
+    runtime.runCommand(program, {
+      operation: "load pull request diff",
+      safeContext: {
+        provider: ref.provider,
+        platformHost: resolvedPlatformHost(ref.provider, ref.platformHost),
+        owner: ref.owner,
+        name: ref.name,
+        number,
+      },
+      onFailure: (failure) => {
+        if (generation !== workspaceLoadGeneration) return;
+        storeError = diffReadErrorMessage(failure);
+        diff = null;
+        fileList = null;
+      },
+    });
+  }
+
+  function prepareProviderDiffRead(includeFiles: boolean): void {
+    abortController?.abort();
+    abortController = null;
+    fileListAbortController?.abort();
+    fileListAbortController = null;
+    fileList = null;
+    diff = null;
+    clearFilePreviewCache();
+    loading = true;
+    fileListLoading = includeFiles;
+    storeError = null;
+  }
+
+  function reloadDiffOnly(): void {
+    const generation = ++workspaceLoadGeneration;
+    const ref = currentRouteRef();
+    startProviderDiffRead(ref, currentNumber, generation, { invalidate: true, loadFiles: false });
+  }
+
+  function reloadWorkspaceDiffOnly(): void {
+    loadWorkspaceDiff(currentWorkspaceID, currentWorkspaceBase, currentWorkspaceStacked, currentWorkspaceOptions());
+  }
+
+  function reloadCommitDiffOnly(): void {
+    loadCommitDiff(currentRouteRef(), currentCommitSHA);
   }
 
   function toggleFileCollapsed(owner: string, name: string, number: number, filePath: string): void {
@@ -555,57 +750,71 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   }
 
   function clearFilePreviewCache(): void {
-    filePreviewCache.clear();
     filePreviewGeneration += 1;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* FilePreviewWorkflow;
+        yield* workflow.invalidateAll;
+      }),
+      {
+        operation: "invalidate file previews",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
-  async function loadFilePreview(
+  function providerFilePreviewEffect(
     owner: string,
     name: string,
     number: number,
     path: string,
     side?: "old" | "new",
-  ): Promise<FilePreview> {
-    if (currentWorkspaceID) {
-      return loadWorkspaceFilePreview(path, side);
-    }
-
+  ): Effect.Effect<FilePreview, FilePreviewReadError, FilePreviewWorkflow> {
     const ref = currentRouteRef();
-    const key = `${ref.provider}:${ref.platformHost ?? ""}:${ref.repoPath}#${number}:${scopeCacheKey()}:${path}:${side ?? "preview"}`;
-    const cached = filePreviewCache.get(key);
-    if (cached) return cached;
-
-    const request = (async () => {
-      const { data, error, response } = await apiClient.GET(providerItemPath("pulls", ref, "/file-preview"), {
+    const requestScope = scope;
+    const generation = filePreviewGeneration;
+    const key = [
+      providerItemKey({
+        provider: ref.provider,
+        platformHost: resolvedPlatformHost(ref.provider, ref.platformHost),
+        owner,
+        name,
+        number,
+      }),
+      ref.repoPath,
+      generation,
+      scopeCacheKey(),
+      path,
+      side ?? "preview",
+    ].join("\u0000");
+    const request = executeGeneratedApiRequest<FilePreviewResponse>("GET pull request file preview", (client, signal) =>
+      client.GET(providerItemPath("pulls", ref, "/file-preview"), {
         params: {
           path: { ...providerRouteParams(ref), number },
           query: {
             path,
             ...(side && { side }),
-            ...(scope.kind === "commit" && { commit: scope.sha }),
-            ...(scope.kind === "range" && {
-              from: scope.fromSha,
-              to: scope.toSha,
+            ...(requestScope.kind === "commit" && { commit: requestScope.sha }),
+            ...(requestScope.kind === "range" && {
+              from: requestScope.fromSha,
+              to: requestScope.toSha,
             }),
           },
         },
-      });
-      if (!data) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-      }
-      return data as FilePreview;
-    })();
-
-    filePreviewCache.set(key, request);
-    try {
-      return await request;
-    } catch (err) {
-      filePreviewCache.delete(key);
-      throw err;
-    }
+        signal,
+      }),
+    ).pipe(retryIdempotentRead);
+    return Effect.gen(function* () {
+      const workflow = yield* FilePreviewWorkflow;
+      return yield* workflow.read(key, request);
+    });
   }
 
-  async function loadWorkspaceFilePreview(path: string, side?: "old" | "new"): Promise<FilePreview> {
+  function workspaceFilePreviewEffect(
+    path: string,
+    side?: "old" | "new",
+  ): Effect.Effect<FilePreview, FilePreviewReadError, FilePreviewWorkflow> {
     const workspaceID = currentWorkspaceID;
     const workspaceHostKey = currentWorkspaceHostKey;
     const workspaceBase = currentWorkspaceBase;
@@ -613,79 +822,176 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const workspaceLoadToken = currentWorkspaceLoadToken;
     const workspaceGeneration = workspaceLoadGeneration;
     const revision = fileList?.snapshot_version ?? diff?.snapshot_version;
-    const key =
-      `workspace:${workspaceHostKey ?? "self"}:${workspaceID}:` +
-      `${workspaceBase}:${scopeCacheKey()}:${revision ?? "latest"}:${path}:${side ?? "preview"}`;
-    const cached = filePreviewCache.get(key);
-    if (cached) return cached;
-
-    const request = (async () => {
+    const generation = filePreviewGeneration;
+    const requestScope = scope;
+    const key = [
+      "workspace",
+      workspaceHostKey ?? "self",
+      workspaceID,
+      workspaceBase,
+      generation,
+      scopeCacheKey(),
+      revision ?? "latest",
+      path,
+      side ?? "preview",
+    ].join("\u0000");
+    const workspaceIsCurrent = (expectedGeneration: number): boolean =>
+      currentWorkspaceID === workspaceID &&
+      currentWorkspaceHostKey === workspaceHostKey &&
+      currentWorkspaceBase === workspaceBase &&
+      currentWorkspaceLoadToken === workspaceLoadToken &&
+      workspaceLoadGeneration === expectedGeneration;
+    const request = Effect.gen(function* () {
+      let previewGeneration = workspaceGeneration;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const currentRevision = fileList?.snapshot_version ?? diff?.snapshot_version;
-        const params = {
-          query: {
-            ...workspaceDiffQuery(workspaceBase),
-            path,
-            ...(side && { side }),
-            ...(currentRevision && { revision: currentRevision }),
-          },
+        const query: {
+          base: WorkspaceDiffBase;
+          whitespace?: "hide";
+          commit?: string;
+          from?: string;
+          to?: string;
+          path: string;
+          side?: "old" | "new";
+          revision?: string;
+        } = {
+          base: workspaceBase,
+          ...(hideWhitespace && { whitespace: "hide" }),
+          ...(requestScope.kind === "commit" && { commit: requestScope.sha }),
+          ...(requestScope.kind === "range" && {
+            from: requestScope.fromSha,
+            to: requestScope.toSha,
+          }),
+          path,
+          ...(side && { side }),
+          ...(currentRevision && { revision: currentRevision }),
         };
-        const { data, error, response } = workspaceHostKey
-          ? await apiClient.GET("/fleet/hosts/{host_key}/workspaces/{id}/file-preview", {
-              params: {
-                ...params,
-                path: { host_key: workspaceHostKey, id: workspaceID },
-              },
-            })
-          : await apiClient.GET("/workspaces/{id}/file-preview", {
-              params: {
-                ...params,
-                path: { id: workspaceID },
-              },
-            });
-        if (data) return data as FilePreview;
-        if (!isSnapshotChanged(error) || attempt > 0) {
-          throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+        const params = { query };
+        const previewRequest = workspaceHostKey
+          ? executeGeneratedDefaultResponse<FilePreviewResponse>(
+              "GET remote workspace file preview",
+              (client, signal) =>
+                client.GET("/fleet/hosts/{host_key}/workspaces/{id}/file-preview", {
+                  params: {
+                    ...params,
+                    path: { host_key: workspaceHostKey, id: workspaceID },
+                  },
+                  signal,
+                }),
+              isFilePreviewResponse,
+            )
+          : executeGeneratedApiRequest<FilePreviewResponse>("GET workspace file preview", (client, signal) =>
+              client.GET("/workspaces/{id}/file-preview", {
+                params: {
+                  ...params,
+                  path: { id: workspaceID },
+                },
+                signal,
+              }),
+            );
+        const previewResult = yield* Effect.result(retryIdempotentRead(previewRequest));
+        if (!workspaceIsCurrent(previewGeneration)) {
+          return yield* Effect.fail(
+            new FilePreviewUnavailable({ message: "Workspace changed while refreshing file preview" }),
+          );
         }
+        if (Result.isSuccess(previewResult)) return previewResult.success;
         if (
-          currentWorkspaceID !== workspaceID ||
-          currentWorkspaceHostKey !== workspaceHostKey ||
-          currentWorkspaceBase !== workspaceBase ||
-          currentWorkspaceLoadToken !== workspaceLoadToken ||
-          workspaceLoadGeneration !== workspaceGeneration
+          previewResult.failure._tag !== "ApiProblemError" ||
+          !isSnapshotChanged(previewResult.failure.problem) ||
+          attempt > 0
         ) {
-          throw new Error("Workspace changed while refreshing file preview");
+          return yield* Effect.fail(previewResult.failure);
         }
-        const recovery = loadWorkspaceDiff(workspaceID, workspaceBase, workspaceStacked, {
+        const recovery = startWorkspaceDiff(workspaceID, workspaceBase, workspaceStacked, {
           workspaceHostKey,
           preserveVisible: true,
           loadToken: workspaceLoadToken,
         });
         const recoveryGeneration = workspaceLoadGeneration;
-        await recovery;
-        if (
-          currentWorkspaceID !== workspaceID ||
-          currentWorkspaceHostKey !== workspaceHostKey ||
-          currentWorkspaceBase !== workspaceBase ||
-          currentWorkspaceLoadToken !== workspaceLoadToken ||
-          workspaceLoadGeneration !== recoveryGeneration
-        ) {
-          throw new Error("Workspace changed while refreshing file preview");
+        const recoveryExit = yield* recovery.await;
+        if (!workspaceIsCurrent(recoveryGeneration)) {
+          return yield* Effect.fail(
+            new FilePreviewUnavailable({ message: "Workspace changed while refreshing file preview" }),
+          );
+        }
+        if (Exit.isFailure(recoveryExit)) {
+          return yield* Effect.fail(
+            new FilePreviewUnavailable({ message: storeError ?? "Workspace file preview could not be refreshed" }),
+          );
         }
         if (!getVisibleFileList()?.files.some((file) => file.path === path)) {
-          throw new Error("File is no longer present in the workspace diff");
+          return yield* Effect.fail(
+            new FilePreviewUnavailable({ message: "File is no longer present in the workspace diff" }),
+          );
         }
+        previewGeneration = recoveryGeneration;
       }
-      throw new Error("Workspace file preview could not be refreshed");
-    })();
+      return yield* Effect.fail(
+        new FilePreviewUnavailable({ message: "Workspace file preview could not be refreshed" }),
+      );
+    });
+    return Effect.gen(function* () {
+      const workflow = yield* FilePreviewWorkflow;
+      return yield* workflow.read(key, request);
+    });
+  }
 
-    filePreviewCache.set(key, request);
-    try {
-      return await request;
-    } catch (err) {
-      filePreviewCache.delete(key);
-      throw err;
-    }
+  function filePreviewEffect(
+    owner: string,
+    name: string,
+    number: number,
+    path: string,
+    side?: "old" | "new",
+  ): Effect.Effect<FilePreview, FilePreviewReadError, FilePreviewWorkflow> {
+    return currentWorkspaceID
+      ? workspaceFilePreviewEffect(path, side)
+      : providerFilePreviewEffect(owner, name, number, path, side);
+  }
+
+  function loadFilePreview(
+    owner: string,
+    name: string,
+    number: number,
+    path: string,
+    side?: "old" | "new",
+    callbacks: FilePreviewCallbacks = {},
+  ): void {
+    const program = filePreviewEffect(owner, name, number, path, side).pipe(
+      Effect.tap((preview) => invokeFilePreviewSuccess(callbacks.onSuccess, preview)),
+      Effect.ensuring(invokeLoadCallback(callbacks.onSettled)),
+    );
+    runtime.runCommand(program, {
+      operation: "load file preview",
+      safeContext: { owner, name, number, path, ...(side !== undefined && { side }) },
+      onFailure: (failure) => invokeLoadFailure(callbacks.onFailure, filePreviewErrorMessage(failure)),
+    });
+  }
+
+  function loadFileContextPreviews(
+    owner: string,
+    name: string,
+    number: number,
+    source: DiffFile,
+    callbacks: FileContextPreviewCallbacks = {},
+  ): void {
+    const oldPreview =
+      source.status === "added"
+        ? Effect.succeed<FilePreview | null>(null)
+        : filePreviewEffect(owner, name, number, source.path, "old");
+    const newPreview =
+      source.status === "deleted"
+        ? Effect.succeed<FilePreview | null>(null)
+        : filePreviewEffect(owner, name, number, source.path, "new");
+    const program = Effect.all({ old: oldPreview, new: newPreview }, { concurrency: "unbounded" }).pipe(
+      Effect.tap((previews) => invokeFileContextPreviewSuccess(callbacks.onSuccess, previews)),
+      Effect.ensuring(invokeLoadCallback(callbacks.onSettled)),
+    );
+    runtime.runCommand(program, {
+      operation: "load file context previews",
+      safeContext: { owner, name, number, path: source.path },
+      onFailure: (failure) => invokeLoadFailure(callbacks.onFailure, filePreviewErrorMessage(failure)),
+    });
   }
 
   function workspaceDiffQuery(base: WorkspaceDiffBase): {
@@ -731,36 +1037,6 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "head" };
   }
 
-  function startDiffLoad(preserveVisible = false): {
-    diffAc: AbortController;
-    filesAc: AbortController;
-  } {
-    abortController?.abort();
-    fileListAbortController?.abort();
-    const diffAc = new AbortController();
-    const filesAc = new AbortController();
-    abortController = diffAc;
-    fileListAbortController = filesAc;
-
-    if (!preserveVisible) {
-      diff = null;
-      fileList = null;
-    }
-    loading = true;
-    fileListLoading = true;
-    storeError = null;
-
-    return { diffAc, filesAc };
-  }
-
-  function filesLoadIsCurrent(filesAc: AbortController): boolean {
-    return fileListAbortController === filesAc;
-  }
-
-  function diffLoadIsCurrent(diffAc: AbortController): boolean {
-    return abortController === diffAc;
-  }
-
   function workspaceLoadIsCurrent(
     generation: number,
     workspaceID: string,
@@ -775,18 +1051,6 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     );
   }
 
-  function finishFilesLoad(filesAc: AbortController): void {
-    if (!filesAc.signal.aborted && filesLoadIsCurrent(filesAc)) {
-      fileListLoading = false;
-    }
-  }
-
-  function finishDiffLoad(diffAc: AbortController): void {
-    if (!diffAc.signal.aborted && diffLoadIsCurrent(diffAc)) {
-      loading = false;
-    }
-  }
-
   function applyFilesResult(data: FilesResponse): void {
     fileList = normalizeFilesResult(data);
     setActiveIfNeeded(getVisibleFileList()?.files);
@@ -797,33 +1061,32 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     setActiveIfNeeded(getVisibleDiffFiles());
   }
 
-  function failDiffLoad(
-    err: unknown,
-    diffAc: AbortController,
-    filesAc: AbortController,
-    preserveVisible = false,
-  ): void {
-    if (diffAc.signal.aborted || !diffLoadIsCurrent(diffAc)) return;
-
-    if (!preserveVisible) {
-      storeError = err instanceof Error ? err.message : String(err);
-      diff = null;
-      fileList = null;
-    }
-    fileListAbortController = null;
-    filesAc.abort();
-    fileListLoading = false;
-    finishDiffLoad(diffAc);
-  }
-
-  async function loadDiff(owner: string, name: string, number: number, identity: ProviderRouteRef): Promise<void> {
-    workspaceLoadGeneration += 1;
+  function loadDiff(owner: string, name: string, number: number, identity: ProviderRouteRef): void {
+    const generation = ++workspaceLoadGeneration;
+    activeWorkspaceLoad?.interrupt();
+    activeWorkspaceLoad = null;
     currentWorkspaceLoadToken = undefined;
-    const prChanged = owner !== currentOwner || name !== currentName || number !== currentNumber;
+    const currentKey =
+      currentOwner === ""
+        ? ""
+        : providerItemKey({
+            provider: currentProvider,
+            platformHost: resolvedPlatformHost(currentProvider, currentPlatformHost),
+            owner: currentOwner,
+            name: currentName,
+            number: currentNumber,
+          });
+    const nextKey = providerItemKey({
+      provider: identity.provider,
+      platformHost: resolvedPlatformHost(identity.provider, identity.platformHost),
+      owner,
+      name,
+      number,
+    });
+    const prChanged = nextKey !== currentKey;
     currentOwner = owner;
     currentName = name;
     currentNumber = number;
-    clearFilePreviewCache();
     currentWorkspaceID = "";
     currentWorkspaceHostKey = undefined;
     currentCommitSHA = "";
@@ -834,58 +1097,19 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       resetDiffScopeState();
     }
 
-    const { diffAc, filesAc } = startDiffLoad();
-    const ref = currentRouteRef();
-
-    const filesPromise = (async () => {
-      try {
-        const { data } = await apiClient.GET(providerItemPath("pulls", ref, "/files"), {
-          params: { path: { ...providerRouteParams(ref), number } },
-          signal: filesAc.signal,
-        });
-        if (!filesLoadIsCurrent(filesAc)) return;
-        if (!data) return;
-        applyFilesResult(data);
-      } catch {
-        if (filesAc.signal.aborted) return;
-        if (!filesLoadIsCurrent(filesAc)) return;
-        fileList = null;
-      } finally {
-        finishFilesLoad(filesAc);
-      }
-    })();
-
-    const diffPromise = (async () => {
-      try {
-        const { data, error, response } = await apiClient.GET(providerItemPath("pulls", ref, "/diff"), {
-          params: {
-            path: { ...providerRouteParams(ref), number },
-            query: diffQuery(),
-          },
-          signal: diffAc.signal,
-        });
-        if (!diffLoadIsCurrent(diffAc)) return;
-        if (!data) {
-          throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-        }
-        applyDiffResult(data);
-      } catch (_err) {
-        failDiffLoad(_err, diffAc, filesAc);
-      } finally {
-        finishDiffLoad(diffAc);
-      }
-    })();
-
-    await Promise.allSettled([filesPromise, diffPromise]);
+    startProviderDiffRead(currentRouteRef(), number, generation, { invalidate: false, loadFiles: true });
   }
 
-  async function loadWorkspaceDiff(
+  function startWorkspaceDiff(
     workspaceID: string,
     base: WorkspaceDiffBase,
     stacked = false,
     options: LoadWorkspaceDiffOptions = {},
-  ): Promise<void> {
+    callbacks: DiffLoadCallbacks = {},
+  ): AppExecution<void, ApiProblemError | TransientTransportError> {
     const generation = ++workspaceLoadGeneration;
+    activeWorkspaceLoad?.interrupt();
+    clearProviderDiffRead();
     const workspaceHostKey = options.workspaceHostKey;
     currentWorkspaceLoadToken = options.loadToken;
     const workspaceScopeChanged =
@@ -907,130 +1131,176 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     if (workspaceScopeChanged) {
       resetDiffScopeState();
     }
-    if (shouldRefreshCommits) {
-      await loadCommits({ force: true });
-      if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
-      resetScopeIfMissingFromLoadedCommits();
-    }
-
-    if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
-    clearFilePreviewCache();
-    const visibleSnapshotVersion = diff?.snapshot_version;
-    const preserveVisible =
-      options.preserveVisible === true &&
-      !workspaceScopeChanged &&
-      visibleSnapshotVersion !== undefined &&
-      fileList?.snapshot_version === visibleSnapshotVersion;
-    let retryDelay = workspaceDiffRetryInitialDelay;
-    while (workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) {
-      let retrySignal: AbortSignal | null = null;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const preserveAttempt = preserveVisible || attempt > 0;
-        const { diffAc, filesAc } = startDiffLoad(preserveAttempt);
-        let pendingFiles: FilesResponse | null = null;
-
-        try {
-          if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
-          const { data, error, response } = workspaceHostKey
-            ? await apiClient.GET("/fleet/hosts/{host_key}/workspaces/{id}/files", {
-                params: {
-                  path: { host_key: workspaceHostKey, id: workspaceID },
-                  query: workspaceDiffQuery(base),
-                },
-                signal: filesAc.signal,
-              })
-            : await apiClient.GET("/workspaces/{id}/files", {
-                params: {
-                  path: { id: workspaceID },
-                  query: workspaceDiffQuery(base),
-                },
-                signal: filesAc.signal,
-              });
-          if (!filesLoadIsCurrent(filesAc) || !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base))
-            return;
-          if (!data) {
-            throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-          }
-          pendingFiles = data;
-          if (!preserveAttempt) {
-            applyFilesResult(data);
-          }
-        } catch (_err) {
-          if (
-            filesAc.signal.aborted ||
-            !filesLoadIsCurrent(filesAc) ||
-            !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)
-          )
-            return;
-          failDiffLoad(_err, diffAc, filesAc, preserveVisible);
-          if (!preserveVisible) return;
-          retrySignal = diffAc.signal;
-          break;
-        } finally {
-          finishFilesLoad(filesAc);
-        }
-
-        try {
-          if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
-          const query = {
-            ...workspaceDiffQuery(base),
-            ...(pendingFiles?.snapshot_version && { revision: pendingFiles.snapshot_version }),
-          };
-          const { data, error, response } = workspaceHostKey
-            ? await apiClient.GET("/fleet/hosts/{host_key}/workspaces/{id}/diff", {
-                params: {
-                  path: { host_key: workspaceHostKey, id: workspaceID },
-                  query,
-                },
-                signal: diffAc.signal,
-              })
-            : await apiClient.GET("/workspaces/{id}/diff", {
-                params: {
-                  path: { id: workspaceID },
-                  query,
-                },
-                signal: diffAc.signal,
-              });
-          if (!diffLoadIsCurrent(diffAc) || !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base))
-            return;
-          if (!data) {
-            if (isSnapshotChanged(error) && attempt === 0) {
-              continue;
-            }
-            throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-          }
-          if (preserveVisible && (pendingFiles?.stale || data.stale)) {
-            retrySignal = diffAc.signal;
-            break;
-          }
-          if (preserveAttempt && pendingFiles) {
-            fileList = normalizeFilesResult(pendingFiles);
-            diff = normalizeDiffResult(data);
-            setActiveIfNeeded(getVisibleDiffFiles());
-          } else {
-            applyDiffResult(data);
-          }
-          return;
-        } catch (_err) {
-          if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
-          failDiffLoad(_err, diffAc, filesAc, preserveVisible);
-          if (!preserveVisible) return;
-          retrySignal = diffAc.signal;
-          break;
-        } finally {
-          finishDiffLoad(diffAc);
-        }
+    abortController?.abort();
+    abortController = null;
+    fileListAbortController?.abort();
+    fileListAbortController = null;
+    const isCurrent = () => workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base);
+    let acknowledged = false;
+    const program = Effect.gen(function* () {
+      if (shouldRefreshCommits) {
+        yield* loadCommitsEffect({ force: true });
+        if (!isCurrent()) return;
+        resetScopeIfMissingFromLoadedCommits();
       }
 
-      if (!retrySignal) return;
-      await waitForWorkspaceDiffRetry(retrySignal, retryDelay);
-      if (retrySignal.aborted || !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
-      retryDelay = Math.min(retryDelay * 2, workspaceDiffRetryMaxDelay);
-    }
+      if (!isCurrent()) return;
+      clearFilePreviewCache();
+      const visibleSnapshotVersion = diff?.snapshot_version;
+      const preserveVisible =
+        options.preserveVisible === true &&
+        !workspaceScopeChanged &&
+        visibleSnapshotVersion !== undefined &&
+        fileList?.snapshot_version === visibleSnapshotVersion;
+      let retryDelay = workspaceDiffRetryInitialDelay;
+      while (isCurrent()) {
+        let retry = false;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const preserveAttempt = preserveVisible || attempt > 0;
+          yield* Effect.sync(() => {
+            if (!preserveAttempt) {
+              diff = null;
+              fileList = null;
+            }
+            loading = true;
+            fileListLoading = true;
+            storeError = null;
+          });
+          const filesRequest = workspaceHostKey
+            ? executeGeneratedDefaultResponse<FilesResponse>(
+                "GET remote workspace diff files",
+                (client, signal) =>
+                  client.GET("/fleet/hosts/{host_key}/workspaces/{id}/files", {
+                    params: {
+                      path: { host_key: workspaceHostKey, id: workspaceID },
+                      query: workspaceDiffQuery(base),
+                    },
+                    signal,
+                  }),
+                (value): value is FilesResponse =>
+                  typeof value === "object" && value !== null && "files" in value && !isProblem(value),
+              )
+            : executeGeneratedApiRequest<FilesResponse>("GET workspace diff files", (client, signal) =>
+                client.GET("/workspaces/{id}/files", {
+                  params: { path: { id: workspaceID }, query: workspaceDiffQuery(base) },
+                  signal,
+                }),
+              );
+          const filesResult = yield* Effect.result(retryIdempotentRead(filesRequest));
+          if (!isCurrent()) return;
+          if (Result.isFailure(filesResult)) {
+            if (!preserveVisible) return yield* Effect.fail(filesResult.failure);
+            retry = true;
+            break;
+          }
+          const pendingFiles = filesResult.success;
+          if (!preserveAttempt) applyFilesResult(pendingFiles);
+          fileListLoading = false;
+
+          const query = {
+            ...workspaceDiffQuery(base),
+            ...(pendingFiles.snapshot_version && { revision: pendingFiles.snapshot_version }),
+          };
+          const diffRequest = workspaceHostKey
+            ? executeGeneratedDefaultResponse<DiffResponse>(
+                "GET remote workspace diff",
+                (client, signal) =>
+                  client.GET("/fleet/hosts/{host_key}/workspaces/{id}/diff", {
+                    params: { path: { host_key: workspaceHostKey, id: workspaceID }, query },
+                    signal,
+                  }),
+                (value): value is DiffResponse =>
+                  typeof value === "object" && value !== null && "files" in value && !isProblem(value),
+              )
+            : executeGeneratedApiRequest<DiffResponse>("GET workspace diff", (client, signal) =>
+                client.GET("/workspaces/{id}/diff", {
+                  params: { path: { id: workspaceID }, query },
+                  signal,
+                }),
+              );
+          const diffResult = yield* Effect.result(retryIdempotentRead(diffRequest));
+          if (!isCurrent()) return;
+          if (Result.isFailure(diffResult)) {
+            if (
+              diffResult.failure._tag === "ApiProblemError" &&
+              isSnapshotChanged(diffResult.failure.problem) &&
+              attempt === 0
+            ) {
+              continue;
+            }
+            if (!preserveVisible) return yield* Effect.fail(diffResult.failure);
+            retry = true;
+            break;
+          }
+          if (preserveVisible && (pendingFiles.stale || diffResult.success.stale)) {
+            retry = true;
+            break;
+          }
+          if (preserveAttempt) {
+            fileList = normalizeFilesResult(pendingFiles);
+            diff = normalizeDiffResult(diffResult.success);
+            setActiveIfNeeded(getVisibleDiffFiles());
+          } else {
+            applyDiffResult(diffResult.success);
+          }
+          acknowledged = true;
+          yield* invokeLoadCallback(callbacks.onSuccess);
+          yield* invokeLoadCallback(callbacks.onSettled);
+          return;
+        }
+
+        if (!retry) return;
+        yield* Effect.sleep(retryDelay);
+        retryDelay = Math.min(retryDelay * 2, workspaceDiffRetryMaxDelay);
+      }
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          yield* Effect.sync(() => {
+            if (isCurrent()) {
+              loading = false;
+              fileListLoading = false;
+            }
+          });
+          if (!acknowledged) yield* invokeLoadCallback(callbacks.onSettled);
+        }),
+      ),
+    );
+    activeWorkspaceLoad = runtime.runCommand(program, {
+      operation: "load workspace diff",
+      safeContext: {
+        workspaceID,
+        ...(workspaceHostKey !== undefined && { workspaceHostKey }),
+      },
+      onFailure: (failure) => {
+        if (!isCurrent()) return;
+        const message = requestErrorMessage(failure, "failed to load workspace diff");
+        storeError = message;
+        if (!options.preserveVisible) {
+          diff = null;
+          fileList = null;
+        }
+        invokeLoadFailure(callbacks.onFailure, message);
+      },
+    });
+    return activeWorkspaceLoad;
   }
 
-  async function loadCommitDiff(identity: ProviderRouteRef, sha: string): Promise<void> {
-    workspaceLoadGeneration += 1;
+  function loadWorkspaceDiff(
+    workspaceID: string,
+    base: WorkspaceDiffBase,
+    stacked = false,
+    options: LoadWorkspaceDiffOptions = {},
+    callbacks: DiffLoadCallbacks = {},
+  ): void {
+    startWorkspaceDiff(workspaceID, base, stacked, options, callbacks);
+  }
+
+  function loadCommitDiff(identity: ProviderRouteRef, sha: string, callbacks: DiffLoadCallbacks = {}): void {
+    const generation = ++workspaceLoadGeneration;
+    activeWorkspaceLoad?.interrupt();
+    activeWorkspaceLoad = null;
+    clearProviderDiffRead();
     currentWorkspaceLoadToken = undefined;
     const commitChanged = identity.owner !== currentOwner || identity.name !== currentName || sha !== currentCommitSHA;
     currentOwner = identity.owner;
@@ -1047,20 +1317,20 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     }
     clearFilePreviewCache();
 
-    abortController?.abort();
+    activeCommitLoad?.interrupt();
     fileListAbortController?.abort();
     fileListAbortController = null;
     fileListLoading = false;
-    const diffAc = new AbortController();
-    abortController = diffAc;
     diff = null;
     fileList = null;
     loading = true;
     storeError = null;
 
     const ref = currentRouteRef();
-    try {
-      const { data, error, response } = await apiClient.GET(providerRepoPath(ref, "/commits/{sha}/diff"), {
+    let settled = false;
+    const isCurrent = () => generation === workspaceLoadGeneration && currentCommitSHA === sha;
+    const program = executeGeneratedApiRequest("GET repository commit diff", (client, signal) =>
+      client.GET(providerRepoPath(ref, "/commits/{sha}/diff"), {
         params: {
           path: {
             ...providerRouteParams(ref),
@@ -1070,27 +1340,61 @@ export function createDiffStore(opts?: DiffStoreOptions) {
             ...(hideWhitespace && { whitespace: "hide" }),
           },
         },
-        signal: diffAc.signal,
-      });
-      if (!diffLoadIsCurrent(diffAc)) return;
-      if (!data) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-      }
-      applyDiffResult(data);
-    } catch (err) {
-      if (diffAc.signal.aborted || !diffLoadIsCurrent(diffAc)) return;
-      storeError = err instanceof Error ? err.message : String(err);
-      diff = null;
-      fileList = null;
-    } finally {
-      finishDiffLoad(diffAc);
-    }
+        signal,
+      }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.tap((data) =>
+        Effect.sync(() => {
+          if (isCurrent()) applyDiffResult(data);
+        }),
+      ),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          settled = true;
+        }),
+      ),
+      Effect.andThen(invokeLoadCallback(callbacks.onSuccess)),
+      Effect.andThen(invokeLoadCallback(callbacks.onSettled)),
+      Effect.ensuring(
+        Effect.gen(function* () {
+          yield* Effect.sync(() => {
+            if (isCurrent()) loading = false;
+          });
+          if (!settled) yield* invokeLoadCallback(callbacks.onSettled);
+        }),
+      ),
+    );
+    activeCommitLoad = runtime.runCommand(program, {
+      operation: "load repository commit diff",
+      safeContext: {
+        provider: ref.provider,
+        platformHost: resolvedPlatformHost(ref.provider, ref.platformHost),
+        owner: ref.owner,
+        name: ref.name,
+      },
+      onFailure: (failure) => {
+        if (!isCurrent()) return;
+        const message = requestErrorMessage(failure, "failed to load commit diff");
+        storeError = message;
+        diff = null;
+        fileList = null;
+        invokeLoadFailure(callbacks.onFailure, message);
+      },
+    });
   }
 
   function clearDiff(): void {
     workspaceLoadGeneration += 1;
+    clearProviderDiffRead();
     currentWorkspaceLoadToken = undefined;
     commitsGeneration += 1;
+    activeCommitLoad?.interrupt();
+    activeCommitLoad = null;
+    activeWorkspaceLoad?.interrupt();
+    activeWorkspaceLoad = null;
+    activeCommitsLoad?.interrupt();
+    activeCommitsLoad = null;
     abortController?.abort();
     abortController = null;
     fileListAbortController?.abort();
@@ -1129,6 +1433,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     workspaceLoadGeneration += 1;
     currentWorkspaceLoadToken = undefined;
     commitsGeneration += 1;
+    activeCommitLoad?.interrupt();
+    activeCommitLoad = null;
+    activeWorkspaceLoad?.interrupt();
+    activeWorkspaceLoad = null;
+    activeCommitsLoad?.interrupt();
+    activeCommitsLoad = null;
     abortController?.abort();
     abortController = null;
     fileListAbortController?.abort();
@@ -1140,85 +1450,119 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     clearFilePreviewCache();
   }
 
-  async function loadCommits(options: LoadCommitsOptions = {}): Promise<void> {
-    if (options.force) {
-      commitsGeneration += 1;
-      commits = null;
-      commitsLoading = false;
-      commitsError = null;
-    } else if (commits || commitsLoading) {
-      return;
-    }
-    if (!currentWorkspaceID && (!currentOwner || !currentName || !currentNumber)) {
-      return;
-    }
-
-    commitsLoading = true;
-    commitsError = null;
-    const generation = commitsGeneration;
-    const owner = currentOwner;
-    const name = currentName;
-    const number = currentNumber;
-    const workspaceID = currentWorkspaceID;
-    const workspaceHostKey = currentWorkspaceHostKey;
-    const ref = currentRouteRef();
-    try {
-      const { data, error, response } = workspaceID
-        ? workspaceHostKey
-          ? await apiClient.GET("/fleet/hosts/{host_key}/workspaces/{id}/commits", {
-              params: { path: { host_key: workspaceHostKey, id: workspaceID } },
-            })
-          : await apiClient.GET("/workspaces/{id}/commits", {
-              params: { path: { id: workspaceID } },
-            })
-        : await apiClient.GET(providerItemPath("pulls", ref, "/commits"), {
-            params: { path: { ...providerRouteParams(ref), number } },
-          });
-      if (
-        currentWorkspaceID !== workspaceID ||
-        currentWorkspaceHostKey !== workspaceHostKey ||
-        currentOwner !== owner ||
-        currentName !== name ||
-        currentNumber !== number ||
-        generation !== commitsGeneration
-      )
-        return;
-      if (!data) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+  function loadCommitsEffect(
+    options: LoadCommitsOptions = {},
+  ): Effect.Effect<boolean, ApiProblemError | TransientTransportError, GeneratedApi> {
+    return Effect.suspend(() => {
+      if (options.force) {
+        activeCommitsLoad?.interrupt();
+        commitsGeneration += 1;
+        commits = null;
+        commitsLoading = false;
+        commitsError = null;
+      } else if (commits || commitsLoading) {
+        return Effect.succeed(false);
       }
-      if (
-        currentWorkspaceID !== workspaceID ||
-        currentWorkspaceHostKey !== workspaceHostKey ||
-        currentOwner !== owner ||
-        currentName !== name ||
-        currentNumber !== number ||
-        generation !== commitsGeneration
-      )
-        return;
-      commits = data.commits ?? [];
-    } catch (err) {
-      if (
-        currentWorkspaceID !== workspaceID ||
-        currentWorkspaceHostKey !== workspaceHostKey ||
-        currentOwner !== owner ||
-        currentName !== name ||
-        currentNumber !== number ||
-        generation !== commitsGeneration
-      )
-        return;
-      commitsError = err instanceof Error ? err.message : String(err);
-    } finally {
-      if (
+      if (!currentWorkspaceID && (!currentOwner || !currentName || !currentNumber)) {
+        return Effect.succeed(false);
+      }
+
+      commitsLoading = true;
+      commitsError = null;
+      const generation = commitsGeneration;
+      const owner = currentOwner;
+      const name = currentName;
+      const number = currentNumber;
+      const workspaceID = currentWorkspaceID;
+      const workspaceHostKey = currentWorkspaceHostKey;
+      const ref = currentRouteRef();
+      const isCurrent = () =>
         currentWorkspaceID === workspaceID &&
         currentWorkspaceHostKey === workspaceHostKey &&
         currentOwner === owner &&
         currentName === name &&
         currentNumber === number &&
-        generation === commitsGeneration
-      ) {
-        commitsLoading = false;
-      }
-    }
+        generation === commitsGeneration;
+      const request = workspaceID
+        ? workspaceHostKey
+          ? executeGeneratedDefaultResponse<CommitsResponse>(
+              "GET remote workspace commits",
+              (client, signal) =>
+                client.GET("/fleet/hosts/{host_key}/workspaces/{id}/commits", {
+                  params: { path: { host_key: workspaceHostKey, id: workspaceID } },
+                  signal,
+                }),
+              (value): value is CommitsResponse =>
+                typeof value === "object" && value !== null && "commits" in value && !isProblem(value),
+            )
+          : executeGeneratedApiRequest<CommitsResponse>("GET workspace commits", (client, signal) =>
+              client.GET("/workspaces/{id}/commits", {
+                params: { path: { id: workspaceID } },
+                signal,
+              }),
+            )
+        : executeGeneratedApiRequest<CommitsResponse>("GET pull request commits", (client, signal) =>
+            client.GET(providerItemPath("pulls", ref, "/commits"), {
+              params: { path: { ...providerRouteParams(ref), number } },
+              signal,
+            }),
+          );
+      return request.pipe(
+        retryIdempotentRead,
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            if (isCurrent()) commits = data.commits ?? [];
+          }),
+        ),
+        Effect.as(true),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (isCurrent()) commitsLoading = false;
+          }),
+        ),
+      );
+    });
+  }
+
+  function loadCommits(options: LoadCommitsOptions = {}, callbacks: DiffLoadCallbacks = {}): void {
+    let settled = false;
+    const program = Effect.gen(function* () {
+      const loaded = yield* loadCommitsEffect(options);
+      if (loaded) yield* invokeLoadCallback(callbacks.onSuccess);
+      settled = true;
+      yield* invokeLoadCallback(callbacks.onSettled);
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          if (!settled) yield* invokeLoadCallback(callbacks.onSettled);
+        }),
+      ),
+    );
+    const workspaceID = currentWorkspaceID;
+    const workspaceHostKey = currentWorkspaceHostKey;
+    const owner = currentOwner;
+    const name = currentName;
+    const number = currentNumber;
+    const generation = commitsGeneration + (options.force ? 1 : 0);
+    const isCurrent = () =>
+      currentWorkspaceID === workspaceID &&
+      currentWorkspaceHostKey === workspaceHostKey &&
+      currentOwner === owner &&
+      currentName === name &&
+      currentNumber === number &&
+      generation === commitsGeneration;
+    activeCommitsLoad = runtime.runCommand(program, {
+      operation: "load diff commits",
+      safeContext: {
+        ...(workspaceID ? { workspaceID } : { owner, name, number }),
+      },
+      onFailure: (failure) => {
+        if (!isCurrent()) return;
+        const message = requestErrorMessage(failure, "failed to load commits");
+        commitsError = message;
+        invokeLoadFailure(callbacks.onFailure, message);
+      },
+    });
   }
 
   function getScope(): DiffScope {
@@ -1241,14 +1585,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "commit", sha };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
+      loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     } else if (currentWorkspaceID) {
-      void loadWorkspaceDiff(
-        currentWorkspaceID,
-        currentWorkspaceBase,
-        currentWorkspaceStacked,
-        currentWorkspaceOptions(),
-      );
+      loadWorkspaceDiff(currentWorkspaceID, currentWorkspaceBase, currentWorkspaceStacked, currentWorkspaceOptions());
     }
   }
 
@@ -1261,14 +1600,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "range", fromSha: older, toSha: newer };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
+      loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     } else if (currentWorkspaceID) {
-      void loadWorkspaceDiff(
-        currentWorkspaceID,
-        currentWorkspaceBase,
-        currentWorkspaceStacked,
-        currentWorkspaceOptions(),
-      );
+      loadWorkspaceDiff(currentWorkspaceID, currentWorkspaceBase, currentWorkspaceStacked, currentWorkspaceOptions());
     }
   }
 
@@ -1276,20 +1610,15 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "head" };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
+      loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     } else if (currentWorkspaceID) {
-      void loadWorkspaceDiff(
-        currentWorkspaceID,
-        currentWorkspaceBase,
-        currentWorkspaceStacked,
-        currentWorkspaceOptions(),
-      );
+      loadWorkspaceDiff(currentWorkspaceID, currentWorkspaceBase, currentWorkspaceStacked, currentWorkspaceOptions());
     }
   }
 
   function stepPrev(): void {
     if (!commits) {
-      void loadCommits();
+      loadCommits();
       return;
     }
     if (commits.length === 0) return;
@@ -1306,7 +1635,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   function stepNext(): void {
     if (!commits) {
-      void loadCommits();
+      loadCommits();
       return;
     }
     if (commits.length === 0) return;
@@ -1364,6 +1693,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     loadDiff,
     loadCommitDiff,
     loadFilePreview,
+    loadFileContextPreviews,
     loadWorkspaceDiff,
     cancelWorkspaceDiff,
     clearDiff,

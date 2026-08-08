@@ -1,6 +1,6 @@
 import { getContext } from "svelte";
+import type { GeneratedClient } from "./api/generated-api.js";
 import type {
-  ForgeClient,
   ActionRegistry,
   NavigateCallback,
   EventCallback,
@@ -26,7 +26,7 @@ export const UI_CONFIG_KEY = Symbol("kenn-forge-ui-config");
 export const SIDEBAR_KEY = Symbol("kenn-forge-sidebar");
 export const HOST_STATE_KEY = Symbol("kenn-forge-host-state");
 
-export function getClient(): ForgeClient {
+export function getClient(): GeneratedClient {
   return getContext(API_CLIENT_KEY);
 }
 export function getActions(): ActionRegistry {

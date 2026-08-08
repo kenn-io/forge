@@ -1,7 +1,9 @@
 import { page } from "vite-plus/test/browser";
 import { flushSync, mount, unmount } from "svelte";
+import { Effect } from "effect";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 
 import { STORES_KEY } from "../../context.js";
@@ -13,7 +15,7 @@ import {
   registerSlotElement,
   resetWorkspaceHostForTest,
 } from "../../stores/workspace-host.svelte.ts";
-import WorkspaceHost from "./WorkspaceHost.svelte";
+import WorkspaceHost from "./WorkspaceHostTestHarness.svelte";
 import InlineWorkspacePaneHarness from "./InlineWorkspacePaneHarness.svelte";
 import { createPaneLayoutStore } from "../../stores/paneLayout.svelte.js";
 
@@ -115,8 +117,10 @@ describe("WorkspaceHost", () => {
   let tabSlot: HTMLElement;
   let prsSlot: HTMLElement;
   let instance: object | null = null;
+  let runtime: OwnedAppRuntime;
 
   beforeEach(() => {
+    runtime = makeAppRuntime();
     resetWorkspaceHostForTest();
     navigate("/workspaces");
 
@@ -141,7 +145,7 @@ describe("WorkspaceHost", () => {
     registerSlotElement("prs", prsSlot);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     if (instance) flushSync(() => unmount(instance as never));
     instance = null;
     hostContainer.remove();
@@ -149,6 +153,7 @@ describe("WorkspaceHost", () => {
     prsSlot.remove();
     globalThis.fetch = originalFetch;
     globalThis.EventSource = originalEventSource;
+    await Effect.runPromise(runtime.disposeEffect);
     resetWorkspaceHostForTest();
     navigate("/workspaces");
   });
@@ -156,6 +161,7 @@ describe("WorkspaceHost", () => {
   it("reparents the live WTV wrapper between slots without recreating it", async () => {
     instance = mount(WorkspaceHost, {
       target: hostContainer,
+      props: { runtime },
       context: new Map([[STORES_KEY, { settings: settingsStore }]]),
     });
 
@@ -210,6 +216,7 @@ describe("WorkspaceHost", () => {
   it("parks synchronously when the displaying slot's element is torn down", async () => {
     instance = mount(WorkspaceHost, {
       target: hostContainer,
+      props: { runtime },
       context: new Map([[STORES_KEY, { settings: settingsStore }]]),
     });
 
@@ -255,6 +262,7 @@ describe("WorkspaceHost", () => {
   it("focuses the host wrapper once it reveals after reopening a collapsed dock", async () => {
     instance = mount(WorkspaceHost, {
       target: hostContainer,
+      props: { runtime },
       context: new Map([[STORES_KEY, { settings: settingsStore }]]),
     });
 
@@ -304,6 +312,7 @@ describe("WorkspaceHost", () => {
   it("keeps the workspace's own chrome out of every inline slot", async () => {
     instance = mount(WorkspaceHost, {
       target: hostContainer,
+      props: { runtime },
       context: new Map([[STORES_KEY, { settings: settingsStore }]]),
     });
 
@@ -390,6 +399,7 @@ describe("WorkspaceHost", () => {
     try {
       instance = mount(WorkspaceHost, {
         target: hostContainer,
+        props: { runtime },
         context: new Map([[STORES_KEY, { settings: settingsStore }]]),
       });
 
@@ -432,11 +442,12 @@ describe("WorkspaceHost", () => {
     // store from context. Created after beforeEach's fetch swap so its API
     // calls hit the mock (and fail harmlessly into the panel's error state
     // — this test only asserts sidebar presence).
-    const diffStore = createDiffStore();
+    const diffStore = createDiffStore({ runtime });
     localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
     try {
       instance = mount(WorkspaceHost, {
         target: hostContainer,
+        props: { runtime },
         context: new Map([[STORES_KEY, { settings: settingsStore, diff: diffStore }]]),
       });
 

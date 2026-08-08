@@ -1,5 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { PullRequest } from "../../api/types.js";
+import { createSettingsStore } from "../../stores/settings.svelte.js";
+import type { StoreInstances } from "../../types.js";
 
 import type { PullRequest } from "../../api/types.ts";
 import { createSettingsStore } from "../../stores/settings.svelte.ts";

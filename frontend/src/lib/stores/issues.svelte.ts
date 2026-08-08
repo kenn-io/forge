@@ -1,4 +1,19 @@
-import type { Issue, IssueDetail, IssuesParams, IssueSettings, Label } from "../api/types.js";
+import { Effect } from "effect";
+import type { AppRuntime } from "../app/runtime.js";
+import { TransientTransportError } from "../api/effect-errors.js";
+import type { ApiProblemError } from "../api/effect-errors.js";
+import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
+import type {
+  GithubStateInputBody,
+  Issue,
+  IssueDetail,
+  IssueEvent,
+  IssuesParams,
+  IssueSettings,
+  Label,
+  StarredRequest,
+} from "../api/types.js";
+import { retryIdempotentRead } from "../api/retry-policy.js";
 import {
   canonicalProvider,
   providerDefaultHost,
@@ -7,11 +22,21 @@ import {
   resolvedPlatformHost,
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
-import type { ForgeClient } from "../types.js";
 import { showFlash } from "./flash.svelte.js";
+import { IssuesWorkflow, type IssueDetailSyncMode } from "./issues-workflow.js";
+import {
+  invokeMutationCallback,
+  invokeMutationFailure,
+  ProviderMutations,
+  providerMutationFailureMessage,
+  type MutationCallbacks,
+  type ProviderMutationFailure,
+} from "./ordered-mutations.js";
+import { providerItemKey } from "./provider-key.js";
+import { SettingsWorkflow, settingsErrorMessage } from "./settings-workflow.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
 
-export type IssueDetailSyncMode = boolean | "background";
+export type { IssueDetailSyncMode } from "./issues-workflow.js";
 
 export interface IssueSelection {
   provider: string;
@@ -38,13 +63,19 @@ type IssueDetailRequestRef = {
   repoPath: string;
 };
 
+interface IssueCommentMutationState {
+  readonly event: IssueEvent;
+  readonly index: number;
+  readonly present: boolean;
+}
+
 export interface IssuesStoreOptions {
-  client: ForgeClient;
+  runtime: AppRuntime;
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
   getPage?: () => string;
   sync?: {
-    refreshSyncStatus?: () => Promise<void>;
+    refreshSyncStatus?: () => void;
   };
 }
 
@@ -52,18 +83,11 @@ function apiErrorMessage(error: { detail?: string; title?: string }, fallback: s
   return error.detail ?? error.title ?? fallback;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function syncIntentRank(mode: IssueDetailSyncMode): number {
-  if (mode === true) return 2;
-  if (mode === "background") return 1;
-  return 0;
-}
-
-function strongerSyncMode(a: IssueDetailSyncMode, b: IssueDetailSyncMode): IssueDetailSyncMode {
-  return syncIntentRank(b) > syncIntentRank(a) ? b : a;
+function readErrorMessage(error: ApiProblemError | TransientTransportError): string {
+  if (error._tag === "ApiProblemError") {
+    return apiErrorMessage(error.problem, "failed to load issues");
+  }
+  return "Could not reach Kenn Forge";
 }
 
 const GITLAB_RESOURCE_BOT_USERNAME = /^(?:project|group)_\d+_bot_[a-z0-9]+$/;
@@ -77,15 +101,15 @@ function isBotAuthor(issue: Issue): boolean {
 }
 
 export function createIssuesStore(opts: IssuesStoreOptions) {
-  const apiClient = opts.client;
+  const runtime = opts.runtime;
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
   const getGroupByRepo = opts.getGroupByRepo ?? (() => false);
   const getPage = opts.getPage ?? (() => "");
   const syncDep = opts.sync;
 
-  async function refreshIssuesIfActive(): Promise<void> {
+  function refreshIssuesIfActive(): void {
     if (getPage() === "issues") {
-      await loadIssues();
+      loadIssues();
     }
   }
 
@@ -95,7 +119,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let hideBots = $state(false);
   let confirmedHideBots = false;
   let hideBotsMutationGeneration = 0;
-  let hideBotsSave: Promise<void> | null = null;
   let loading = $state(false);
   let storeError = $state<string | null>(null);
   let filterStarred = $state(false);
@@ -126,18 +149,18 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     owner: string;
     name: string;
     number: number;
+    body: string;
   };
   let unsavedLocalBody = $state<UnsavedIssueTarget | null>(null);
-  let detailPollHandle: ReturnType<typeof setInterval> | null = null;
   let issueSyncGeneration = 0;
-  let activeDetailLoad: {
-    key: string;
-    promise: Promise<void> | null;
-    syncMode: IssueDetailSyncMode;
-  } | null = null;
+  let issuePollingGeneration = 0;
   // Provider synchronization is eventually complete. Keep a successfully
   // deleted comment hidden locally until an ordinary sync no longer returns it.
   const hiddenDeletedCommentIDs: Record<string, number[]> = {};
+  const pendingCommentMutationStates = new Map<
+    number,
+    { readonly baseline: IssueCommentMutationState; readonly count: number }
+  >();
 
   // --- list reads ---
 
@@ -200,6 +223,16 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       issue.repo.repo_path === sel.repoPath &&
       issue.repo.owner === sel.owner &&
       issue.repo.name === sel.name
+    );
+  }
+
+  function issueMatchesRef(issue: Issue, ref: ProviderRouteRef, number: number): boolean {
+    return (
+      issue.Number === number &&
+      issue.repo.owner === ref.owner &&
+      issue.repo.name === ref.name &&
+      issue.repo.repo_path === ref.repoPath &&
+      sameBodyTarget(issue.repo.provider, issue.repo.platform_host, ref.provider, ref.platformHost)
     );
   }
 
@@ -271,37 +304,28 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     confirmedHideBots = settings.hide_bots;
   }
 
-  async function persistHideBots(): Promise<void> {
-    for (;;) {
-      const generation = hideBotsMutationGeneration;
-      const value = hideBots;
-      try {
-        const { data, error: requestError } = await apiClient.PUT("/settings", {
-          body: { issues: { hide_bots: value } },
-        });
-        if (!data) {
-          throw new Error(apiErrorMessage(requestError ?? {}, "failed to save issue visibility"));
-        }
-        confirmedHideBots = data.issues.hide_bots;
-        if (generation !== hideBotsMutationGeneration) continue;
-        hideBots = confirmedHideBots;
-        return;
-      } catch (err) {
-        if (generation !== hideBotsMutationGeneration) continue;
-        hideBots = confirmedHideBots;
-        showFlash(err instanceof Error ? err.message : "failed to save issue visibility", { tone: "danger" });
-        return;
-      }
-    }
-  }
-
-  async function setHideBots(value: boolean): Promise<void> {
+  function setHideBots(value: boolean): void {
     hideBots = value;
-    hideBotsMutationGeneration += 1;
-    hideBotsSave ??= persistHideBots().finally(() => {
-      hideBotsSave = null;
+    const generation = ++hideBotsMutationGeneration;
+    const program = Effect.gen(function* () {
+      const workflow = yield* SettingsWorkflow;
+      const settings = yield* workflow.enqueue({
+        request: Effect.succeed({ issues: { hide_bots: value } }),
+      });
+      yield* Effect.sync(() => {
+        confirmedHideBots = settings.issues.hide_bots;
+        if (generation === hideBotsMutationGeneration) hideBots = confirmedHideBots;
+      });
     });
-    await hideBotsSave;
+    runtime.runCommand(program, {
+      operation: "save issue visibility",
+      safeContext: { hideBots: value },
+      onFailure: (failure) => {
+        if (generation !== hideBotsMutationGeneration) return;
+        hideBots = confirmedHideBots;
+        showFlash(settingsErrorMessage(failure), { tone: "danger" });
+      },
+    });
   }
 
   function selectIssue(
@@ -325,35 +349,82 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     selectedIssue = null;
   }
 
-  async function loadIssues(params?: IssuesParams): Promise<void> {
-    loading = true;
-    storeError = null;
-    try {
+  function loadIssuesEffect(params?: IssuesParams) {
+    const globalRepo = getGlobalRepo();
+    const query: IssuesParams = {
+      state: filterState,
+      ...(globalRepo !== undefined && { repo: globalRepo }),
+      ...(filterStarred && { starred: true }),
+      ...(searchQuery !== undefined && { q: searchQuery }),
+      ...params,
+    };
+    const read = executeGeneratedApiRequest("GET /issues", (client, signal) =>
+      client.GET("/issues", { params: { query }, signal }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.map((result) => result ?? []),
+    );
+    return Effect.sync(() => {
+      loading = true;
+      storeError = null;
+    }).pipe(
+      Effect.andThen(
+        Effect.gen(function* () {
+          const workflow = yield* IssuesWorkflow;
+          return yield* workflow.list(read);
+        }),
+      ),
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          issues = result;
+          loading = false;
+        }),
+      ),
+      Effect.tapError((failure) =>
+        Effect.sync(() => {
+          storeError = readErrorMessage(failure);
+          loading = false;
+        }),
+      ),
+    );
+  }
+
+  function reconcileIssuesEffect(params?: IssuesParams) {
+    return Effect.suspend(() => {
       const globalRepo = getGlobalRepo();
-      const { data, error: requestError } = await apiClient.GET("/issues", {
-        params: {
-          query: {
-            state: filterState,
-            ...(globalRepo !== undefined && {
-              repo: globalRepo,
-            }),
-            ...(filterStarred && { starred: true }),
-            ...(searchQuery !== undefined && {
-              q: searchQuery,
-            }),
-            ...params,
-          },
-        },
+      const query: IssuesParams = {
+        state: filterState,
+        ...(globalRepo !== undefined && { repo: globalRepo }),
+        ...(filterStarred && { starred: true }),
+        ...(searchQuery !== undefined && { q: searchQuery }),
+        ...params,
+      };
+      const read = executeGeneratedApiRequest("GET /issues after provider event", (client, signal) =>
+        client.GET("/issues", { params: { query }, signal }),
+      ).pipe(
+        retryIdempotentRead,
+        Effect.map((result) => result ?? []),
+      );
+      return Effect.gen(function* () {
+        const workflow = yield* IssuesWorkflow;
+        yield* workflow.reconcile(read, (result) =>
+          Effect.sync(() => {
+            issues = [...result];
+          }),
+        );
       });
-      if (requestError) {
-        throw new Error(apiErrorMessage(requestError, "failed to load issues"));
-      }
-      issues = (data ?? []) as Issue[];
-    } catch (err) {
-      storeError = err instanceof Error ? err.message : String(err);
-    } finally {
-      loading = false;
-    }
+    });
+  }
+
+  function loadIssues(params?: IssuesParams): void {
+    runtime.runCommand(loadIssuesEffect(params), {
+      operation: "load issues",
+      safeContext: {},
+      onFailure: (failure) => {
+        storeError = readErrorMessage(failure);
+        loading = false;
+      },
+    });
   }
 
   // --- detail writes ---
@@ -390,7 +461,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     }
     return {
       ...next,
-      issue: { ...next.issue, Body: issueDetail.issue.Body },
+      issue: { ...next.issue, Body: unsavedLocalBody.body },
     };
   }
 
@@ -489,202 +560,308 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     };
   }
 
-  async function loadIssueDetail(
-    owner: string,
-    name: string,
-    number: number,
-    options: IssueDetailRequestOptions,
-  ): Promise<void> {
-    const requestRef = issueDetailRequestRef(owner, name, number, options);
-    const syncMode = options.sync ?? true;
-    // Dedup by item identity only. A second caller with a different
-    // sync mode joins the in-flight load and may promote the sync
-    // intent if its requested mode is stronger.
-    const key = `${requestRef.provider}:${requestRef.platformHost}:${requestRef.repoPath}/${number}`;
-    if (detailLoading && activeDetailLoad?.key === key && activeDetailLoad.promise !== null) {
-      activeDetailLoad.syncMode = strongerSyncMode(activeDetailLoad.syncMode, syncMode);
-      return activeDetailLoad.promise;
+  function issueMutationKey(ref: IssueDetailRequestRef, family: string): string {
+    return `issue\u0000${providerItemKey({
+      provider: ref.provider,
+      platformHost: concretePlatformHost(ref),
+      owner: ref.owner,
+      name: ref.name,
+      number: ref.number,
+    })}\u0000${family}`;
+  }
+
+  function issueCommentState(
+    events: ReadonlyArray<IssueEvent>,
+    commentID: number,
+    fallback: IssueCommentMutationState,
+  ): IssueCommentMutationState {
+    const index = events.findIndex((event) => event.EventType === "issue_comment" && event.PlatformID === commentID);
+    const event = events[index];
+    return index === -1 || event === undefined ? { ...fallback, present: false } : { event, index, present: true };
+  }
+
+  function applyIssueCommentState(
+    ref: IssueDetailRequestRef,
+    commentID: number,
+    state: IssueCommentMutationState,
+  ): Effect.Effect<void> {
+    return Effect.sync(() => {
+      if (!isIssueDetailShowingRef(ref) || issueDetail === null) return;
+      const events = [...(issueDetail.events ?? [])];
+      const currentIndex = events.findIndex(
+        (event) => event.EventType === "issue_comment" && event.PlatformID === commentID,
+      );
+      if (!state.present) {
+        if (currentIndex !== -1) events.splice(currentIndex, 1);
+      } else if (currentIndex === -1) {
+        events.splice(Math.min(state.index, events.length), 0, state.event);
+      } else {
+        events[currentIndex] = state.event;
+      }
+      issueDetail = { ...issueDetail, events };
+    });
+  }
+
+  function trackIssueCommentMutation(commentID: number, baseline: IssueCommentMutationState): void {
+    const current = pendingCommentMutationStates.get(commentID);
+    pendingCommentMutationStates.set(commentID, {
+      baseline: current?.baseline ?? baseline,
+      count: (current?.count ?? 0) + 1,
+    });
+  }
+
+  function releaseIssueCommentMutation(commentID: number): void {
+    const current = pendingCommentMutationStates.get(commentID);
+    if (current === undefined || current.count === 1) {
+      pendingCommentMutationStates.delete(commentID);
+      return;
     }
+    pendingCommentMutationStates.set(commentID, { ...current, count: current.count - 1 });
+  }
 
-    const gen = ++issueSyncGeneration;
-    const currentLoad: {
-      key: string;
-      promise: Promise<void> | null;
-      syncMode: IssueDetailSyncMode;
-    } = { key, promise: null, syncMode };
-    activeDetailLoad = currentLoad;
+  function rebaseIssueMutations(
+    ref: IssueDetailRequestRef,
+    authoritative: IssueDetail,
+    installEnvelope: () => boolean,
+  ) {
+    return Effect.gen(function* () {
+      const mutations = yield* ProviderMutations;
+      const labels = authoritative.issue.labels ?? [];
+      const entries: Array<{ readonly key: string; readonly confirmed: Effect.Effect<void> }> = [
+        {
+          key: issueMutationKey(ref, "body"),
+          confirmed: applyIssueBody(ref, authoritative.issue.Body),
+        },
+        {
+          key: issueMutationKey(ref, "star"),
+          confirmed: applyIssueStar(ref, Boolean(authoritative.issue.Starred), 0),
+        },
+        {
+          key: issueMutationKey(ref, "labels"),
+          confirmed: Effect.sync(() => {
+            if (isIssueDetailShowingRef(ref) && issueDetail !== null) {
+              issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, labels } };
+            }
+          }),
+        },
+      ];
+      const assignees = authoritative.issue.assignees ?? [];
+      entries.push({
+        key: issueMutationKey(ref, "assignees"),
+        confirmed: Effect.sync(() => {
+          if (isIssueDetailShowingRef(ref) && issueDetail !== null) {
+            issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, assignees } };
+          }
+        }),
+      });
+      for (const [commentID, tracked] of pendingCommentMutationStates) {
+        const state = issueCommentState(authoritative.events ?? [], commentID, tracked.baseline);
+        entries.push({
+          key: issueMutationKey(ref, `comment\u0000${commentID}`),
+          confirmed: applyIssueCommentState(ref, commentID, state),
+        });
+      }
+      return yield* mutations.rebaseAll(Effect.sync(installEnvelope), entries);
+    });
+  }
 
+  function applyIssueBody(ref: IssueDetailRequestRef, body: string): Effect.Effect<void> {
+    return Effect.sync(() => {
+      if (!isIssueDetailShowingRef(ref) || issueDetail === null) return;
+      const projectedBody =
+        unsavedLocalBody !== null &&
+        sameBodyTarget(unsavedLocalBody.provider, unsavedLocalBody.platformHost, ref.provider, ref.platformHost) &&
+        unsavedLocalBody.owner === ref.owner &&
+        unsavedLocalBody.name === ref.name &&
+        unsavedLocalBody.number === ref.number &&
+        unsavedLocalBody.body !== body
+          ? unsavedLocalBody.body
+          : body;
+      issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, Body: projectedBody } };
+    });
+  }
+
+  function applyIssueStar(ref: IssueDetailRequestRef, starred: boolean, envelopeTick: number): Effect.Effect<void> {
+    return Effect.sync(() => {
+      issues = issues.map((issue) =>
+        issueMatchesRef(issue, ref, ref.number) ? { ...issue, Starred: starred } : issue,
+      );
+      if (isIssueDetailShowingRef(ref) && issueDetail !== null) {
+        issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, Starred: starred } };
+        issueDetailEnvelopeTick = Math.max(issueDetailEnvelopeTick, envelopeTick);
+      }
+    });
+  }
+
+  function applyIssueState(ref: IssueDetailRequestRef, state: string): Effect.Effect<void> {
+    return Effect.sync(() => {
+      issues = issues.map((issue) => (issueMatchesRef(issue, ref, ref.number) ? { ...issue, State: state } : issue));
+      if (isIssueDetailShowingRef(ref) && issueDetail !== null) {
+        issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, State: state } };
+      }
+    });
+  }
+
+  function issueDetailKey(ref: IssueDetailRequestRef): string {
+    return providerItemKey({
+      provider: ref.provider,
+      platformHost: concretePlatformHost(ref),
+      owner: ref.owner,
+      name: ref.name,
+      number: ref.number,
+    });
+  }
+
+  function readIssueDetail(ref: IssueDetailRequestRef, operation: string) {
+    return executeGeneratedApiRequest(operation, (client, signal) =>
+      client.GET(providerItemPath("issues", ref, ""), {
+        params: { path: { ...providerRouteParams(ref), number: ref.number } },
+        signal,
+      }),
+    ).pipe(Effect.map((data): IssueDetail => ({ ...data, events: data.events ?? [] })));
+  }
+
+  function installIssueDetail(
+    ref: IssueDetailRequestRef,
+    authoritative: IssueDetail,
+    envelopeTick: number,
+    expectedGeneration: number,
+    requireVisible: boolean,
+  ) {
+    const next = withPreservedLocalBody(authoritative);
+    return rebaseIssueMutations(ref, authoritative, () => {
+      if (expectedGeneration !== issueSyncGeneration) return false;
+      if (requireVisible && !isIssueDetailShowingRef(ref)) return false;
+      let applied = false;
+      applyEnvelopeAt(envelopeTick, () => {
+        issueDetail = next;
+        issueDetailLoaded = authoritative.detail_loaded ?? issueDetailLoaded;
+        applied = true;
+      });
+      return applied;
+    });
+  }
+
+  function refreshIssueDetailProgram(ref: IssueDetailRequestRef, expectedGeneration: number) {
+    const envelopeTick = nextWorkspaceLifecycleTick();
+    return readIssueDetail(ref, "GET issue detail refresh").pipe(
+      Effect.flatMap((authoritative) => installIssueDetail(ref, authoritative, envelopeTick, expectedGeneration, true)),
+    );
+  }
+
+  function syncIssueDetailEffect(ref: IssueDetailRequestRef, expectedGeneration: number) {
+    const envelopeTick = nextWorkspaceLifecycleTick();
+    const sync = executeGeneratedApiRequest("POST issue detail sync", (client, signal) =>
+      client.POST(providerItemPath("issues", ref, "/sync"), {
+        params: { path: { ...providerRouteParams(ref), number: ref.number } },
+        signal,
+      }),
+    ).pipe(
+      Effect.map((data): IssueDetail => ({ ...data, events: data.events ?? [] })),
+      Effect.flatMap((authoritative) =>
+        installIssueDetail(ref, authoritative, envelopeTick, expectedGeneration, false),
+      ),
+      Effect.tap((applied) =>
+        Effect.sync(() => {
+          if (applied) detailError = null;
+        }),
+      ),
+      Effect.catch(() => Effect.succeed(false)),
+    );
+    return Effect.sync(() => {
+      if (expectedGeneration === issueSyncGeneration) detailSyncing = true;
+    }).pipe(
+      Effect.andThen(sync),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (expectedGeneration === issueSyncGeneration) {
+            detailSyncing = false;
+            refreshIssuesIfActive();
+          }
+          syncDep?.refreshSyncStatus?.();
+        }),
+      ),
+    );
+  }
+
+  function enqueueBackgroundIssueSyncEffect(
+    ref: IssueDetailRequestRef,
+    expectedGeneration: number,
+    previousFetchedAt: string | undefined,
+  ) {
+    const refreshUntilFresh = Effect.gen(function* () {
+      for (const delay of [300, 700, 1_500, 3_000, 5_000]) {
+        yield* Effect.sleep(delay);
+        if (expectedGeneration !== issueSyncGeneration) return;
+        yield* refreshIssueDetailProgram(ref, expectedGeneration).pipe(Effect.catch(() => Effect.succeed(false)));
+        if (expectedGeneration !== issueSyncGeneration) return;
+        const fetchedAt = issueDetail?.detail_fetched_at;
+        if (fetchedAt && fetchedAt !== previousFetchedAt) return;
+      }
+    });
+    const sync = executeGeneratedApiRequest("POST async issue detail sync", (client, signal) =>
+      client.POST(providerItemPath("issues", ref, "/sync/async"), {
+        params: { path: { ...providerRouteParams(ref), number: ref.number } },
+        signal,
+      }),
+    ).pipe(
+      Effect.andThen(refreshUntilFresh),
+      Effect.catch(() => Effect.void),
+    );
+    return Effect.sync(() => {
+      if (expectedGeneration === issueSyncGeneration) detailSyncing = true;
+    }).pipe(
+      Effect.andThen(sync),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (expectedGeneration === issueSyncGeneration) detailSyncing = false;
+          syncDep?.refreshSyncStatus?.();
+        }),
+      ),
+    );
+  }
+
+  function loadIssueDetail(owner: string, name: string, number: number, options: IssueDetailRequestOptions): void {
+    const ref = issueDetailRequestRef(owner, name, number, options);
+    const syncMode = options.sync ?? true;
+    const generation = ++issueSyncGeneration;
+    const envelopeTick = nextWorkspaceLifecycleTick();
     detailLoading = true;
     detailSyncing = false;
     detailError = null;
-    const envelopeTick = nextWorkspaceLifecycleTick();
-    const promise = (async () => {
-      try {
-        const { data, error: requestError } = await apiClient.GET(providerItemPath("issues", requestRef, ""), {
-          params: {
-            path: {
-              ...providerRouteParams(requestRef),
-              number: requestRef.number,
-            },
-          },
-        });
-        if (gen !== issueSyncGeneration) return;
-        if (requestError) {
-          throw new Error(apiErrorMessage(requestError, "failed to load issue"));
-        }
-        applyEnvelopeAt(envelopeTick, () => {
-          issueDetail = data
-            ? withPreservedLocalBody({
-                ...data,
-                events: data.events ?? [],
-              } as IssueDetail)
-            : null;
-          issueDetailLoaded = data?.detail_loaded ?? false;
-        });
-      } catch (err) {
-        if (gen !== issueSyncGeneration) return;
-        detailError = err instanceof Error ? err.message : String(err);
-      } finally {
-        if (gen === issueSyncGeneration) detailLoading = false;
-        if (activeDetailLoad === currentLoad) activeDetailLoad = null;
+    const program = Effect.gen(function* () {
+      const workflow = yield* IssuesWorkflow;
+      const result = yield* workflow.detail(issueDetailKey(ref), syncMode, readIssueDetail(ref, "GET issue detail"));
+      const applied = yield* installIssueDetail(ref, result.detail, envelopeTick, generation, false);
+      if (generation === issueSyncGeneration) detailLoading = false;
+      if (!applied || generation !== issueSyncGeneration) return;
+      if (result.syncMode === true) {
+        yield* syncIssueDetailEffect(ref, generation);
+      } else if (result.syncMode === "background") {
+        yield* enqueueBackgroundIssueSyncEffect(ref, generation, issueDetail?.detail_fetched_at);
       }
-
-      // Use the latest promoted sync intent so a stronger caller's
-      // request isn't lost when it joined an in-flight load.
-      const finalSyncMode = currentLoad.syncMode;
-      if (gen === issueSyncGeneration && finalSyncMode === true) {
-        void syncIssueDetail(owner, name, number, gen, requestRef);
-      } else if (gen === issueSyncGeneration && finalSyncMode === "background") {
-        void enqueueBackgroundIssueSync(owner, name, number, gen, issueDetail?.detail_fetched_at, requestRef);
-      }
-    })();
-    currentLoad.promise = promise;
-    return promise;
-  }
-
-  async function enqueueBackgroundIssueSync(
-    owner: string,
-    name: string,
-    number: number,
-    gen: number,
-    previousFetchedAt: string | undefined,
-    requestRef: IssueDetailRequestRef,
-  ): Promise<void> {
-    detailSyncing = true;
-    try {
-      const { error: requestError } = await apiClient.POST(providerItemPath("issues", requestRef, "/sync/async"), {
-        params: {
-          path: {
-            ...providerRouteParams(requestRef),
-            number: requestRef.number,
-          },
-        },
-      });
-      if (requestError) return;
-      await refreshAfterBackgroundIssueSync(owner, name, number, gen, previousFetchedAt, requestRef);
-    } finally {
-      if (gen === issueSyncGeneration) detailSyncing = false;
-      void syncDep?.refreshSyncStatus?.();
-    }
-  }
-
-  async function refreshAfterBackgroundIssueSync(
-    owner: string,
-    name: string,
-    number: number,
-    gen: number,
-    previousFetchedAt: string | undefined,
-    requestRef: IssueDetailRequestRef,
-  ): Promise<void> {
-    for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
-      await delay(ms);
-      if (gen !== issueSyncGeneration) return;
-      await refreshIssueDetail(owner, name, number, requestRef, gen);
-      if (gen !== issueSyncGeneration) return;
-      const fetchedAt = issueDetail?.detail_fetched_at;
-      if (fetchedAt && fetchedAt !== previousFetchedAt) {
-        return;
-      }
-    }
-  }
-
-  async function syncIssueDetail(
-    owner: string,
-    name: string,
-    number: number,
-    gen: number,
-    ref: IssueDetailRequestRef,
-  ): Promise<void> {
-    detailSyncing = true;
-    const envelopeTick = nextWorkspaceLifecycleTick();
-    try {
-      const { data, error: requestError } = await apiClient.POST(providerItemPath("issues", ref, "/sync"), {
-        params: {
-          path: { ...providerRouteParams(ref), number: ref.number },
-        },
-      });
-      if (gen !== issueSyncGeneration) return;
-      if (requestError) {
-        throw new Error(apiErrorMessage(requestError, "sync failed"));
-      }
-      if (data) {
-        detailError = null;
-        applyEnvelopeAt(envelopeTick, () => {
-          issueDetail = withPreservedLocalBody({
-            ...data,
-            events: data.events ?? [],
-          } as IssueDetail);
-          issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
-        });
-      }
-    } catch {
-      // Sync failure is non-fatal.
-    } finally {
-      if (gen === issueSyncGeneration) detailSyncing = false;
-    }
-    // Always refresh rate limits -- the API calls happened
-    // regardless of whether user navigated away.
-    void syncDep?.refreshSyncStatus?.();
-    if (gen === issueSyncGeneration) {
-      await refreshIssuesIfActive();
-    }
-  }
-
-  async function refreshIssueDetail(
-    owner: string,
-    name: string,
-    number: number,
-    ref: IssueDetailRequestRef,
-    expectedGen: number = issueSyncGeneration,
-  ): Promise<{ ok: boolean; error?: string }> {
-    const envelopeTick = nextWorkspaceLifecycleTick();
-    try {
-      const { data, error: requestError } = await apiClient.GET(providerItemPath("issues", ref, ""), {
-        params: {
-          path: { ...providerRouteParams(ref), number: ref.number },
-        },
-      });
-      // Re-check the generation after the awaited request: if the
-      // selected issue changed mid-flight, dropping the assignment
-      // keeps the new selection's data from being clobbered.
-      if (expectedGen !== issueSyncGeneration) return { ok: false };
-      if (requestError) {
-        return { ok: false, error: apiErrorMessage(requestError, "failed to refresh issue") };
-      }
-      if (data !== undefined) {
-        applyEnvelopeAt(envelopeTick, () => {
-          issueDetail = withPreservedLocalBody({
-            ...data,
-            events: data.events ?? [],
-          } as IssueDetail);
-          issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
-        });
-        return { ok: true };
-      }
-      return { ok: false, error: "Issue refresh returned no detail" };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (generation === issueSyncGeneration) detailLoading = false;
+        }),
+      ),
+    );
+    runtime.runCommand(program, {
+      operation: "load issue detail",
+      safeContext: {
+        provider: ref.provider,
+        platformHost: concretePlatformHost(ref),
+        owner,
+        name,
+        number,
+      },
+      onFailure: (failure) => {
+        if (generation !== issueSyncGeneration) return;
+        detailError = readErrorMessage(failure);
+        detailLoading = false;
+      },
+    });
   }
 
   function startIssueDetailPolling(
@@ -693,182 +870,503 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     number: number,
     options: IssueDetailRequestOptions,
   ): void {
-    const requestRef = issueDetailRequestRef(owner, name, number, options);
-    stopIssueDetailPolling();
-    detailPollHandle = setInterval(() => {
-      void refreshIssueDetail(owner, name, number, requestRef);
-    }, 60_000);
+    const ref = issueDetailRequestRef(owner, name, number, options);
+    const pollingGeneration = ++issuePollingGeneration;
+    const pollOnce = Effect.suspend(() => refreshIssueDetailProgram(ref, issueSyncGeneration)).pipe(
+      Effect.catch(() => Effect.succeed(false)),
+      Effect.asVoid,
+    );
+    const program = Effect.gen(function* () {
+      const workflow = yield* IssuesWorkflow;
+      yield* workflow.poll(pollingGeneration, pollOnce, "60 seconds");
+    });
+    runtime.runCommand(program, {
+      operation: "poll issue detail",
+      safeContext: {
+        provider: ref.provider,
+        platformHost: concretePlatformHost(ref),
+        owner,
+        name,
+        number,
+      },
+      onFailure: () => {},
+    });
   }
 
   function stopIssueDetailPolling(): void {
-    if (detailPollHandle !== null) {
-      clearInterval(detailPollHandle);
-      detailPollHandle = null;
-    }
+    const pollingGeneration = ++issuePollingGeneration;
+    const program = Effect.gen(function* () {
+      const workflow = yield* IssuesWorkflow;
+      yield* workflow.stopPolling(pollingGeneration);
+    });
+    runtime.runCommand(program, {
+      operation: "stop issue detail polling",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   function clearIssueDetail(): void {
     ++issueSyncGeneration;
-    activeDetailLoad = null;
     issueDetail = null;
     detailLoading = false;
     detailSyncing = false;
     detailError = null;
     issueDetailLoaded = false;
     unsavedLocalBody = null;
+    stopIssueDetailPolling();
   }
 
-  async function setIssueLabels(owner: string, name: string, number: number, labels: string[]): Promise<Label[]> {
-    const ref = currentIssueDetailRef(owner, name, number);
-    const { data, error: requestError } = await apiClient.PUT(providerItemPath("issues", ref, "/labels"), {
-      params: {
-        path: { ...providerRouteParams(ref), number },
-      },
-      body: { labels },
-    });
-    if (requestError) {
-      const message = apiErrorMessage(requestError, "failed to update labels");
-      showFlash(message, { tone: "danger" });
-      throw new Error(message);
-    }
-    const nextLabels = (data?.labels ?? []) as Label[];
-    if (isIssueDetailShowingRef(ref) && issueDetail) {
-      issueDetail = {
-        ...issueDetail,
-        issue: {
-          ...issueDetail.issue,
-          labels: nextLabels,
-        },
+  function refreshIssueDetailEffect(
+    owner: string,
+    name: string,
+    number: number,
+    ref: IssueDetailRequestRef,
+  ): Effect.Effect<void, ApiProblemError | TransientTransportError, GeneratedApi | ProviderMutations> {
+    return Effect.suspend(() => {
+      const expectedGeneration = issueSyncGeneration;
+      const envelopeTick = nextWorkspaceLifecycleTick();
+      const ownership = (): "current" | "irrelevant" | "superseded" => {
+        if (!isIssueDetailShowingRef(ref)) return "irrelevant";
+        return expectedGeneration === issueSyncGeneration ? "current" : "superseded";
       };
-    }
-    void refreshIssuesIfActive();
-    return nextLabels;
+      const superseded = () =>
+        TransientTransportError.make({
+          operation: "reconcile issue detail after superseded provider event",
+          cause: new Error("a foreground issue detail read replaced event reconciliation"),
+        });
+      const read = executeGeneratedApiRequest("GET issue detail after provider event", (client, signal) =>
+        client.GET(providerItemPath("issues", ref, ""), {
+          params: { path: { ...providerRouteParams(ref), number: ref.number } },
+          signal,
+        }),
+      );
+      return read.pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(ownership).pipe(
+              Effect.flatMap((status) =>
+                status === "current"
+                  ? Effect.fail(failure)
+                  : status === "superseded"
+                    ? Effect.fail(superseded())
+                    : Effect.void,
+              ),
+            ),
+          onSuccess: (data) =>
+            Effect.gen(function* () {
+              const status = ownership();
+              if (status === "irrelevant") return;
+              if (status === "superseded") return yield* Effect.fail(superseded());
+              const next: IssueDetail = { ...data, events: data.events ?? [] };
+              let supersededWhileInstalling = false;
+              yield* rebaseIssueMutations(ref, next, () => {
+                const installStatus = ownership();
+                if (installStatus === "irrelevant") return false;
+                if (installStatus === "superseded") {
+                  supersededWhileInstalling = true;
+                  return false;
+                }
+                let applied = false;
+                applyEnvelopeAt(envelopeTick, () => {
+                  issueDetail = withPreservedLocalBody(next);
+                  issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
+                  applied = true;
+                });
+                return applied;
+              });
+              if (supersededWhileInstalling) return yield* Effect.fail(superseded());
+            }),
+        }),
+      );
+    }).pipe(Effect.asVoid);
   }
 
-  async function setIssueAssignees(
+  function setIssueLabels(
+    owner: string,
+    name: string,
+    number: number,
+    labels: Label[],
+    callbacks: MutationCallbacks = {},
+  ): void {
+    const program = Effect.gen(function* () {
+      const ref = yield* Effect.try({
+        try: () => currentIssueDetailRef(owner, name, number),
+        catch: (cause) => TransientTransportError.make({ operation: "update issue labels", cause }),
+      });
+      const key = `issue\u0000${providerItemKey({
+        provider: ref.provider,
+        platformHost: concretePlatformHost(ref),
+        owner,
+        name,
+        number,
+      })}\u0000labels`;
+      const previousLabels = issueDetail?.issue.labels ?? [];
+      const mutations = yield* ProviderMutations;
+      const commit = executeGeneratedApiRequest("PUT issue labels", (client, signal) =>
+        client.PUT(providerItemPath("issues", ref, "/labels"), {
+          params: { path: { ...providerRouteParams(ref), number } },
+          body: { labels: labels.map((label) => label.name) },
+          signal,
+        }),
+      ).pipe(Effect.map((response) => response.labels ?? []));
+      const refreshOnStale = executeGeneratedApiRequest("sync issue after stale label mutation", (client, signal) =>
+        client.POST(providerItemPath("issues", ref, "/sync"), {
+          params: { path: { ...providerRouteParams(ref), number } },
+          signal,
+        }),
+      ).pipe(Effect.map((response) => response.issue.labels ?? []));
+      const apply = (nextLabels: Label[]) =>
+        Effect.sync(() => {
+          if (isIssueDetailShowingRef(ref) && issueDetail) {
+            issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, labels: nextLabels } };
+          }
+        });
+      yield* mutations.submit({
+        key,
+        baseline: previousLabels,
+        optimistic: labels,
+        apply,
+        commit,
+        refreshOnStale,
+      });
+      yield* Effect.sync(refreshIssuesIfActive);
+      yield* invokeMutationCallback(callbacks.onSuccess);
+    }).pipe(Effect.ensuring(invokeMutationCallback(callbacks.onSettled)));
+
+    runtime.runCommand(program, {
+      operation: "update issue labels",
+      safeContext: { owner, name, number },
+      onFailure: (failure) => {
+        const message = providerMutationFailureMessage(failure, "failed to update labels");
+        showFlash(message, { tone: "danger" });
+        invokeMutationFailure(callbacks.onFailure, message);
+      },
+    });
+  }
+
+  function setIssueAssignees(
     owner: string,
     name: string,
     number: number,
     assignees: string[],
-  ): Promise<string[]> {
-    const ref = currentIssueDetailRef(owner, name, number);
-    const { data, error: requestError } = await apiClient.PUT(providerItemPath("issues", ref, "/assignees"), {
-      params: {
-        path: { ...providerRouteParams(ref), number },
-      },
-      body: { assignees },
-    });
-    if (requestError) {
-      const message = apiErrorMessage(requestError, "failed to update assignees");
-      throw new Error(message);
-    }
-    const nextAssignees = data?.assignees ?? [];
-    if (isIssueDetailShowingRef(ref) && issueDetail) {
-      issueDetail = {
-        ...issueDetail,
-        issue: {
-          ...issueDetail.issue,
-          assignees: nextAssignees,
-        },
-      };
-    }
-    void refreshIssuesIfActive();
-    return nextAssignees;
-  }
-
-  async function submitIssueComment(owner: string, name: string, number: number, body: string): Promise<boolean> {
-    const ref = currentIssueDetailRef(owner, name, number);
-    try {
-      const { error: requestError } = await apiClient.POST(providerItemPath("issues", ref, "/comments"), {
-        params: {
-          path: { ...providerRouteParams(ref), number },
-        },
-        body: { body },
+    callbacks: MutationCallbacks = {},
+  ): void {
+    const program = Effect.gen(function* () {
+      const ref = yield* Effect.try({
+        try: () => currentIssueDetailRef(owner, name, number),
+        catch: (cause) => TransientTransportError.make({ operation: "update issue assignees", cause }),
       });
-      if (requestError) {
-        throw new Error(apiErrorMessage(requestError, "failed to post comment"));
-      }
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-      return false;
-    }
-    // Supersede any in-flight syncIssueDetail so its stale response
-    // cannot overwrite the detail we are about to fetch.
-    const gen = ++issueSyncGeneration;
-    detailSyncing = false;
-    // Silent refresh: avoid flipping loading flag, which would
-    // unmount the detail tree and reset scroll position.
-    await refreshIssueDetail(owner, name, number, ref);
-    // Pull authoritative state from GitHub so issue row metadata
-    // catches up. Skip if the user navigated away mid-refresh.
-    if (gen === issueSyncGeneration) {
-      void syncIssueDetail(owner, name, number, gen, ref);
-    }
-    return true;
+      const key = `issue\u0000${providerItemKey({
+        provider: ref.provider,
+        platformHost: concretePlatformHost(ref),
+        owner,
+        name,
+        number,
+      })}\u0000assignees`;
+      const previousAssignees = issueDetail?.issue.assignees ?? [];
+      const mutations = yield* ProviderMutations;
+      const commit = executeGeneratedApiRequest("PUT issue assignees", (client, signal) =>
+        client.PUT(providerItemPath("issues", ref, "/assignees"), {
+          params: { path: { ...providerRouteParams(ref), number } },
+          body: { assignees },
+          signal,
+        }),
+      ).pipe(Effect.map((response) => response.assignees ?? []));
+      const refreshOnStale = executeGeneratedApiRequest("sync issue after stale assignee mutation", (client, signal) =>
+        client.POST(providerItemPath("issues", ref, "/sync"), {
+          params: { path: { ...providerRouteParams(ref), number } },
+          signal,
+        }),
+      ).pipe(Effect.map((response) => response.issue.assignees ?? []));
+      const apply = (nextAssignees: string[]) =>
+        Effect.sync(() => {
+          if (isIssueDetailShowingRef(ref) && issueDetail) {
+            issueDetail = {
+              ...issueDetail,
+              issue: { ...issueDetail.issue, assignees: nextAssignees },
+            };
+          }
+        });
+      yield* mutations.submit({
+        key,
+        baseline: previousAssignees,
+        optimistic: assignees,
+        apply,
+        commit,
+        refreshOnStale,
+      });
+      yield* Effect.sync(refreshIssuesIfActive);
+      yield* invokeMutationCallback(callbacks.onSuccess);
+    }).pipe(Effect.ensuring(invokeMutationCallback(callbacks.onSettled)));
+
+    runtime.runCommand(program, {
+      operation: "update issue assignees",
+      safeContext: { owner, name, number },
+      onFailure: (failure) => {
+        const message = providerMutationFailureMessage(failure, "failed to update assignees");
+        showFlash(message, { tone: "danger" });
+        invokeMutationFailure(callbacks.onFailure, message);
+      },
+    });
   }
 
-  async function editIssueComment(
+  function submitIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+    callbacks: MutationCallbacks = {},
+  ): void {
+    let mutationSettled = false;
+    const program = Effect.gen(function* () {
+      const ref = yield* Effect.try({
+        try: () => currentIssueDetailRef(owner, name, number),
+        catch: (cause) => TransientTransportError.make({ operation: "post issue comment", cause }),
+      });
+      const key = issueMutationKey(ref, "comment-posts");
+      const mutations = yield* ProviderMutations;
+      const commit = executeGeneratedApiRequest("POST issue comment", (client, signal) =>
+        client.POST(providerItemPath("issues", ref, "/comments"), {
+          params: { path: { ...providerRouteParams(ref), number } },
+          body: { body },
+          signal,
+        }),
+      ).pipe(Effect.asVoid);
+      yield* mutations.submit({
+        key,
+        baseline: undefined,
+        optimistic: undefined,
+        apply: () => Effect.void,
+        commit,
+        refreshOnStale: executeGeneratedApiRequest("sync issue after stale comment submission", (client, signal) =>
+          client.POST(providerItemPath("issues", ref, "/sync"), {
+            params: { path: { ...providerRouteParams(ref), number } },
+            signal,
+          }),
+        ).pipe(Effect.asVoid),
+      });
+      const gen = yield* Effect.sync(() => {
+        mutationSettled = true;
+        if (!isIssueDetailShowingRef(ref)) return undefined;
+        detailSyncing = false;
+        return ++issueSyncGeneration;
+      });
+      yield* invokeMutationCallback(callbacks.onSuccess);
+      yield* invokeMutationCallback(callbacks.onSettled);
+      if (gen === undefined) return;
+      yield* refreshIssueDetailEffect(owner, name, number, ref);
+      if (gen === issueSyncGeneration) {
+        yield* syncIssueDetailEffect(ref, gen);
+      }
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          if (!mutationSettled) yield* invokeMutationCallback(callbacks.onSettled);
+        }),
+      ),
+    );
+
+    runtime.runCommand(program, {
+      operation: "post issue comment",
+      safeContext: { owner, name, number },
+      onFailure: (failure) => {
+        if (mutationSettled) {
+          showFlash("Comment was posted, but the latest discussion could not be refreshed.", { tone: "danger" });
+          return;
+        }
+        const message = providerMutationFailureMessage(failure, "failed to post comment");
+        showFlash(message, { tone: "danger" });
+        invokeMutationFailure(callbacks.onFailure, message);
+      },
+    });
+  }
+
+  function editIssueComment(
     owner: string,
     name: string,
     number: number,
     commentID: number,
     body: string,
-  ): Promise<boolean> {
-    const ref = currentIssueDetailRef(owner, name, number);
-
-    try {
-      const { error: requestError } = await apiClient.PATCH(providerItemPath("issues", ref, "/comments/{comment_id}"), {
-        params: {
-          path: {
-            ...providerRouteParams(ref),
-            number,
-            comment_id: commentID,
-          },
-        },
-        body: { body },
+    callbacks: MutationCallbacks = {},
+  ): void {
+    let mutationSettled = false;
+    const program = Effect.gen(function* () {
+      const ref = yield* Effect.try({
+        try: () => currentIssueDetailRef(owner, name, number),
+        catch: (cause) => TransientTransportError.make({ operation: "edit issue comment", cause }),
       });
-      if (requestError) {
-        throw new Error(apiErrorMessage(requestError, "failed to edit comment"));
+      const previousEvents = issueDetail?.events ?? [];
+      const previousIndex = previousEvents.findIndex(
+        (event) => event.EventType === "issue_comment" && event.PlatformID === commentID,
+      );
+      const previousEvent = previousEvents[previousIndex];
+      if (previousIndex === -1 || previousEvent === undefined) {
+        return yield* Effect.fail(
+          TransientTransportError.make({
+            operation: "edit issue comment",
+            cause: new Error("comment is no longer present in the selected issue"),
+          }),
+        );
       }
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-      return false;
-    }
-    await refreshIssueDetail(owner, name, number, ref);
-    return true;
+      const key = issueMutationKey(ref, `comment\u0000${commentID}`);
+      const baseline: IssueCommentMutationState = { event: previousEvent, index: previousIndex, present: true };
+      const optimistic: IssueCommentMutationState = { ...baseline, event: { ...previousEvent, Body: body } };
+      const mutations = yield* ProviderMutations;
+      const commit = executeGeneratedApiRequest("PATCH issue comment", (client, signal) =>
+        client.PATCH(providerItemPath("issues", ref, "/comments/{comment_id}"), {
+          params: { path: { ...providerRouteParams(ref), number, comment_id: commentID } },
+          body: { body },
+          signal,
+        }),
+      ).pipe(Effect.as(optimistic));
+      const refreshOnStale = executeGeneratedApiRequest("sync issue after stale comment edit", (client, signal) =>
+        client.POST(providerItemPath("issues", ref, "/sync"), {
+          params: { path: { ...providerRouteParams(ref), number } },
+          signal,
+        }),
+      ).pipe(Effect.map((response) => issueCommentState(response.events ?? [], commentID, baseline)));
+      const apply = (state: IssueCommentMutationState) => applyIssueCommentState(ref, commentID, state);
+      yield* Effect.sync(() => trackIssueCommentMutation(commentID, baseline));
+      yield* mutations
+        .submit({
+          key,
+          baseline,
+          optimistic,
+          apply,
+          commit,
+          refreshOnStale,
+        })
+        .pipe(Effect.ensuring(Effect.sync(() => releaseIssueCommentMutation(commentID))));
+      const shouldReconcile = yield* Effect.sync(() => {
+        mutationSettled = true;
+        return isIssueDetailShowingRef(ref);
+      });
+      yield* invokeMutationCallback(callbacks.onSuccess);
+      yield* invokeMutationCallback(callbacks.onSettled);
+      if (shouldReconcile) yield* refreshIssueDetailEffect(owner, name, number, ref);
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          if (!mutationSettled) yield* invokeMutationCallback(callbacks.onSettled);
+        }),
+      ),
+    );
+
+    runtime.runCommand(program, {
+      operation: "edit issue comment",
+      safeContext: { owner, name, number, commentID },
+      onFailure: (failure) => {
+        if (mutationSettled) {
+          showFlash("Comment was edited, but the latest discussion could not be refreshed.", { tone: "danger" });
+          return;
+        }
+        const message = providerMutationFailureMessage(failure, "failed to edit comment");
+        showFlash(message, { tone: "danger" });
+        invokeMutationFailure(callbacks.onFailure, message);
+      },
+    });
   }
 
-  async function deleteIssueComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
-    const ref = currentIssueDetailRef(owner, name, number);
-    detailError = null;
-    try {
-      const { error: requestError } = await apiClient.DELETE(
-        providerItemPath("issues", ref, "/comments/{comment_id}"),
-        {
-          headers: { "Content-Type": "application/json" },
-          params: {
-            path: {
-              ...providerRouteParams(ref),
-              number,
-              comment_id: commentID,
-            },
-          },
-        },
+  function deleteIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    commentID: number,
+    callbacks: MutationCallbacks = {},
+  ): void {
+    let mutationSettled = false;
+    let mutationRef: IssueDetailRequestRef | undefined;
+    const program = Effect.gen(function* () {
+      const ref = yield* Effect.try({
+        try: () => currentIssueDetailRef(owner, name, number),
+        catch: (cause) => TransientTransportError.make({ operation: "delete issue comment", cause }),
+      });
+      mutationRef = ref;
+      const previousEvents = issueDetail?.events ?? [];
+      const commentIndex = previousEvents.findIndex(
+        (event) => event.EventType === "issue_comment" && event.PlatformID === commentID,
       );
-      if (requestError) {
-        throw new Error(apiErrorMessage(requestError, "failed to delete comment"));
+      const previousEvent = previousEvents[commentIndex];
+      if (commentIndex === -1 || previousEvent === undefined) {
+        return yield* Effect.fail(
+          TransientTransportError.make({
+            operation: "delete issue comment",
+            cause: new Error("comment is no longer present in the selected issue"),
+          }),
+        );
       }
-    } catch (err) {
-      if (isIssueDetailShowingRef(ref)) {
-        detailError = err instanceof Error ? err.message : String(err);
+      const key = issueMutationKey(ref, `comment\u0000${commentID}`);
+      const baseline: IssueCommentMutationState = { event: previousEvent, index: commentIndex, present: true };
+      const optimistic: IssueCommentMutationState = { ...baseline, present: false };
+      const mutations = yield* ProviderMutations;
+      const commit = executeGeneratedApiRequest("DELETE issue comment", (client, signal) =>
+        client.DELETE(providerItemPath("issues", ref, "/comments/{comment_id}"), {
+          headers: { "Content-Type": "application/json" },
+          params: { path: { ...providerRouteParams(ref), number, comment_id: commentID } },
+          signal,
+        }),
+      ).pipe(Effect.as(optimistic));
+      const refreshOnStale = executeGeneratedApiRequest("sync issue after stale comment deletion", (client, signal) =>
+        client.POST(providerItemPath("issues", ref, "/sync"), {
+          params: { path: { ...providerRouteParams(ref), number } },
+          signal,
+        }),
+      ).pipe(Effect.map((response) => issueCommentState(response.events ?? [], commentID, baseline)));
+      const apply = (state: IssueCommentMutationState) => applyIssueCommentState(ref, commentID, state);
+      yield* Effect.sync(() => {
+        detailError = null;
+        trackIssueCommentMutation(commentID, baseline);
+      });
+      yield* mutations
+        .submit({
+          key,
+          baseline,
+          optimistic,
+          apply,
+          commit,
+          refreshOnStale,
+        })
+        .pipe(Effect.ensuring(Effect.sync(() => releaseIssueCommentMutation(commentID))));
+      yield* Effect.sync(() => hideDeletedComment(ref, commentID));
+      const shouldReconcile = yield* Effect.sync(() => {
+        mutationSettled = true;
+        return isIssueDetailShowingRef(ref);
+      });
+      yield* invokeMutationCallback(callbacks.onSuccess);
+      yield* invokeMutationCallback(callbacks.onSettled);
+      if (shouldReconcile) {
+        const reconciled = yield* syncIssueDetailEffect(ref, issueSyncGeneration);
+        if (!reconciled && isIssueDetailShowingRef(ref)) {
+          return yield* Effect.fail(
+            TransientTransportError.make({
+              operation: "refresh issue after comment deletion",
+              cause: new Error("issue synchronization did not return detail"),
+            }),
+          );
+        }
       }
-      return false;
-    }
-    hideDeletedComment(ref, commentID);
-    if (isIssueDetailShowingRef(ref)) {
-      void syncIssueDetail(owner, name, number, issueSyncGeneration, ref);
-    }
-    return true;
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          if (!mutationSettled) yield* invokeMutationCallback(callbacks.onSettled);
+        }),
+      ),
+    );
+
+    runtime.runCommand(program, {
+      operation: "delete issue comment",
+      safeContext: { owner, name, number, commentID },
+      onFailure: (failure) => {
+        if (mutationSettled) {
+          showFlash("Comment was deleted, but the latest discussion could not be refreshed.", { tone: "danger" });
+          return;
+        }
+        const message = providerMutationFailureMessage(failure, "failed to delete comment");
+        if (mutationRef !== undefined && isIssueDetailShowingRef(mutationRef)) detailError = message;
+        invokeMutationFailure(callbacks.onFailure, message);
+      },
+    });
   }
 
   // Replaces the in-memory issue body without touching the server. Pair
@@ -893,116 +1391,117 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     ) {
       return;
     }
-    unsavedLocalBody = { provider, platformHost, owner, name, number };
+    unsavedLocalBody = { provider, platformHost, owner, name, number, body };
     issueDetail = {
       ...issueDetail,
       issue: { ...issueDetail.issue, Body: body },
     };
   }
 
-  // Single-flight body-save state, keyed per issue. Each entry
-  // tracks the in-flight PATCH and the latest queued body waiting
-  // to send once the in-flight save completes. The queue collapses
-  // to a single pending body so out-of-order PATCH responses can't
-  // overwrite a newer body with an older one.
-  type QueuedIssueSave = {
-    body: string;
-    routeRef: {
-      provider: string;
-      platformHost?: string | undefined;
-      repoPath: string;
-    };
-  };
-  const inflightIssueSaves = new Map<string, Promise<void>>();
-  const queuedIssueSaves = new Map<string, QueuedIssueSave>();
-  function issueSaveQueueKey(
-    provider: string,
-    platformHost: string | undefined,
-    owner: string,
-    name: string,
-    number: number,
-  ): string {
-    // JSON encoding stores each field as its own array element, so
-    // an owner or name that contains a delimiter character can't
-    // forge a collision with a different target. provider and
-    // platformHost are part of the key so the same owner/name/number
-    // on different hosts or providers can't share a queue slot —
-    // canonicalized, so an aliased route re-expression of the same
-    // issue can't hold two queue slots with out-of-order saves.
-    const canonical = canonicalProvider(provider);
-    return JSON.stringify([canonical, resolvedPlatformHost(canonical, platformHost), owner, name, number]);
-  }
-
-  async function runIssueBodyPatch(
+  function issueBodyUpdate(
     owner: string,
     name: string,
     number: number,
     body: string,
-    routeRef: QueuedIssueSave["routeRef"],
-  ): Promise<void> {
+    routeRef: {
+      provider: string;
+      platformHost?: string | undefined;
+      repoPath: string;
+    },
+  ): {
+    readonly ref: IssueDetailRequestRef;
+    readonly program: Effect.Effect<void, ProviderMutationFailure, ProviderMutations>;
+  } {
     const ref = issueDetailRequestRef(owner, name, number, routeRef);
-    let succeeded = false;
-    // Capture whether the locally-displayed body still equals what we
-    // sent BEFORE we overwrite `issueDetail` with the server response.
-    // A server-side body normalization (e.g. line endings) would
-    // otherwise masquerade as a newer user edit on a post-overwrite
-    // check and strand `unsavedLocalBody`. Also include provider +
-    // platform host so a stale response from a since-navigated-away
-    // host can't replace the now-displayed issue from another host
-    // that happens to share owner/name/number.
-    let localBodyMatchesSent = false;
-    const envelopeTick = nextWorkspaceLifecycleTick();
-    try {
-      const { data, error: requestError } = await apiClient.PATCH(providerItemPath("issues", ref, ""), {
-        params: {
-          path: {
-            ...providerRouteParams(ref),
-            number,
-          },
-        },
-        body: { body },
+    const baseline = isIssueDetailShowingRef(ref) && issueDetail !== null ? issueDetail.issue.Body : body;
+    let confirmed: { readonly detail: IssueDetail; readonly envelopeTick: number } | undefined;
+    let acknowledgedUnsavedTarget: UnsavedIssueTarget | null = null;
+    const program = Effect.gen(function* () {
+      const mutations = yield* ProviderMutations;
+      const commit = Effect.suspend(() => {
+        const envelopeTick = nextWorkspaceLifecycleTick();
+        return executeGeneratedApiRequest("PATCH issue body", (client, signal) =>
+          client.PATCH(providerItemPath("issues", ref, ""), {
+            params: { path: { ...providerRouteParams(ref), number } },
+            body: { body },
+            signal,
+          }),
+        ).pipe(
+          Effect.map((detail): IssueDetail => ({ ...detail, events: detail.events ?? [] })),
+          Effect.tap((detail) =>
+            Effect.sync(() => {
+              confirmed = { detail, envelopeTick };
+              if (
+                unsavedLocalBody !== null &&
+                unsavedLocalBody.body === body &&
+                sameBodyTarget(
+                  unsavedLocalBody.provider,
+                  unsavedLocalBody.platformHost,
+                  ref.provider,
+                  ref.platformHost,
+                ) &&
+                unsavedLocalBody.owner === owner &&
+                unsavedLocalBody.name === name &&
+                unsavedLocalBody.number === number
+              ) {
+                acknowledgedUnsavedTarget = unsavedLocalBody;
+              }
+            }),
+          ),
+          Effect.map((detail) => detail.issue.Body),
+        );
       });
-      if (requestError) {
-        throw new Error(apiErrorMessage(requestError, "failed to update issue"));
+      const refreshOnStale = Effect.suspend(() => {
+        const envelopeTick = nextWorkspaceLifecycleTick();
+        return executeGeneratedApiRequest("sync issue after stale body mutation", (client, signal) =>
+          client.POST(providerItemPath("issues", ref, "/sync"), {
+            params: { path: { ...providerRouteParams(ref), number } },
+            signal,
+          }),
+        ).pipe(
+          Effect.map((detail): IssueDetail => ({ ...detail, events: detail.events ?? [] })),
+          Effect.tap((detail) =>
+            rebaseIssueMutations(ref, detail, () => {
+              if (!isIssueDetailShowingRef(ref)) return false;
+              let applied = false;
+              applyEnvelopeAt(envelopeTick, () => {
+                issueDetail = withPreservedLocalBody(detail);
+                issueDetailLoaded = detail.detail_loaded ?? issueDetailLoaded;
+                applied = true;
+              });
+              return applied;
+            }),
+          ),
+          Effect.map((detail) => detail.issue.Body),
+        );
+      }).pipe(Effect.provideService(ProviderMutations, mutations));
+      yield* mutations.submit({
+        key: issueMutationKey(ref, "body"),
+        baseline,
+        optimistic: body,
+        apply: (nextBody) => applyIssueBody(ref, nextBody),
+        commit,
+        refreshOnStale,
+      });
+      if (acknowledgedUnsavedTarget !== null && unsavedLocalBody === acknowledgedUnsavedTarget) {
+        unsavedLocalBody = null;
       }
-      succeeded = true;
-      localBodyMatchesSent =
-        issueDetail !== null &&
-        sameBodyTarget(
-          issueDetail.repo?.provider,
-          issueDetail.repo?.platform_host,
-          routeRef.provider,
-          routeRef.platformHost,
-        ) &&
-        issueDetail.repo_owner === owner &&
-        issueDetail.repo_name === name &&
-        issueDetail.issue.Number === number &&
-        issueDetail.issue.Body === body;
-      if (data && localBodyMatchesSent) {
-        applyEnvelopeAt(envelopeTick, () => {
-          issueDetail = data as IssueDetail;
+      const response = confirmed;
+      if (response !== undefined) {
+        yield* rebaseIssueMutations(ref, response.detail, () => {
+          if (!isIssueDetailShowingRef(ref)) return false;
+          let applied = false;
+          applyEnvelopeAt(response.envelopeTick, () => {
+            issueDetail = withPreservedLocalBody(response.detail);
+            issueDetailLoaded = response.detail.detail_loaded ?? issueDetailLoaded;
+            applied = true;
+          });
+          return applied;
         });
       }
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    }
-    if (
-      succeeded &&
-      localBodyMatchesSent &&
-      unsavedLocalBody &&
-      sameBodyTarget(
-        unsavedLocalBody.provider,
-        unsavedLocalBody.platformHost,
-        routeRef.provider,
-        routeRef.platformHost,
-      ) &&
-      unsavedLocalBody.owner === owner &&
-      unsavedLocalBody.name === name &&
-      unsavedLocalBody.number === number
-    ) {
-      unsavedLocalBody = null;
-    }
-    refreshIssuesIfActive().catch(() => {});
+      refreshIssuesIfActive();
+    });
+    return { ref, program };
   }
 
   // Fire-and-forget PATCH for the issue body. Does NOT apply an
@@ -1024,66 +1523,181 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       platformHost?: string | undefined;
       repoPath: string;
     },
-  ): Promise<void> {
-    const key = issueSaveQueueKey(routeRef.provider, routeRef.platformHost, owner, name, number);
-    queuedIssueSaves.set(key, { body, routeRef });
-    const existing = inflightIssueSaves.get(key);
-    if (existing) return existing;
-    const flight = (async () => {
-      try {
-        while (queuedIssueSaves.has(key)) {
-          const next = queuedIssueSaves.get(key)!;
-          queuedIssueSaves.delete(key);
-          await runIssueBodyPatch(owner, name, number, next.body, next.routeRef);
-        }
-      } finally {
-        inflightIssueSaves.delete(key);
-      }
-    })();
-    inflightIssueSaves.set(key, flight);
-    return flight;
+  ): void {
+    const update = issueBodyUpdate(owner, name, number, body, routeRef);
+    const program = Effect.gen(function* () {
+      const workflow = yield* IssuesWorkflow;
+      const mutations = yield* ProviderMutations;
+      yield* workflow.submitLatestWrite(
+        issueDetailKey(update.ref),
+        update.program.pipe(Effect.provideService(ProviderMutations, mutations)),
+      );
+    });
+    runtime.runCommand(program, {
+      operation: "save issue body in background",
+      safeContext: {
+        provider: update.ref.provider,
+        platformHost: concretePlatformHost(update.ref),
+        owner,
+        name,
+        number,
+      },
+      onFailure: (failure) => {
+        showFlash(providerMutationFailureMessage(failure, "failed to update issue body"), { tone: "danger" });
+      },
+    });
   }
 
-  async function toggleIssueStar(ref: ProviderRouteRef, number: number, currentlyStarred: boolean): Promise<void> {
-    try {
-      if (currentlyStarred) {
-        const { error: requestError } = await apiClient.DELETE("/starred", {
-          body: {
-            item_type: "issue",
-            provider: ref.provider,
-            platform_host: concretePlatformHost(ref),
-            owner: ref.owner,
-            name: ref.name,
-            number,
-          },
-        });
-        if (requestError) {
-          throw new Error(apiErrorMessage(requestError, "failed to unstar issue"));
-        }
-      } else {
-        const { error: requestError } = await apiClient.PUT("/starred", {
-          body: {
-            item_type: "issue",
-            provider: ref.provider,
-            platform_host: concretePlatformHost(ref),
-            owner: ref.owner,
-            name: ref.name,
-            number,
-          },
-        });
-        if (requestError) {
-          throw new Error(apiErrorMessage(requestError, "failed to star issue"));
-        }
+  function toggleIssueStar(ref: ProviderRouteRef, number: number, currentlyStarred: boolean): void {
+    const platformHost = concretePlatformHost(ref);
+    const detailRef = issueDetailRequestRef(ref.owner, ref.name, number, ref);
+    const body: StarredRequest = {
+      item_type: "issue",
+      provider: ref.provider,
+      platform_host: platformHost,
+      owner: ref.owner,
+      name: ref.name,
+      number,
+    };
+    const baseline =
+      issues.find((issue) => issueMatchesRef(issue, ref, number))?.Starred ??
+      (isIssueDetailShowingRef(detailRef) ? issueDetail?.issue.Starred : undefined) ??
+      currentlyStarred;
+    const nextStarred = !currentlyStarred;
+    let mutationTick = 0;
+    let mutationSettled = false;
+    const program = Effect.gen(function* () {
+      const mutations = yield* ProviderMutations;
+      mutationTick = nextWorkspaceLifecycleTick();
+      const commit = (
+        currentlyStarred
+          ? executeGeneratedApiRequest<void>("DELETE issue star", (client, signal) =>
+              client.DELETE("/starred", { body, signal }),
+            )
+          : executeGeneratedApiRequest<void>("PUT issue star", (client, signal) =>
+              client.PUT("/starred", { body, signal }),
+            )
+      ).pipe(Effect.as(nextStarred));
+      const refreshOnStale = readIssueDetail(detailRef, "GET issue after stale star mutation").pipe(
+        Effect.map((detail) => Boolean(detail.issue.Starred)),
+      );
+      yield* mutations.submit({
+        key: issueMutationKey(detailRef, "star"),
+        baseline: Boolean(baseline),
+        optimistic: nextStarred,
+        apply: (starred) => applyIssueStar(detailRef, starred, mutationTick),
+        commit,
+        refreshOnStale,
+      });
+      mutationSettled = true;
+      yield* loadIssuesEffect();
+      if (isIssueDetailShowingRef(detailRef)) {
+        yield* refreshIssueDetailProgram(detailRef, issueSyncGeneration).pipe(
+          Effect.catch(() => Effect.succeed(false)),
+        );
       }
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
+    });
+    runtime.runCommand(program, {
+      operation: currentlyStarred ? "unstar issue" : "star issue",
+      safeContext: { provider: ref.provider, platformHost, owner: ref.owner, name: ref.name, number },
+      onFailure: (failure) => {
+        if (mutationSettled) {
+          storeError = providerMutationFailureMessage(failure, "failed to refresh issues");
+          return;
+        }
+        showFlash(
+          providerMutationFailureMessage(failure, currentlyStarred ? "failed to unstar issue" : "failed to star issue"),
+          { tone: "danger" },
+        );
+      },
+    });
+  }
+
+  function setIssueState(
+    routeRef: ProviderRouteRef,
+    number: number,
+    state: GithubStateInputBody["state"],
+    callbacks: MutationCallbacks = {},
+  ): void {
+    const ref = issueDetailRequestRef(routeRef.owner, routeRef.name, number, routeRef);
+    if (!isIssueDetailShowingRef(ref)) {
+      const message = "The selected issue changed before the state update started.";
+      invokeMutationFailure(callbacks.onFailure, message);
+      try {
+        callbacks.onSettled?.();
+      } catch {
+        // Presentation callbacks do not own command acceptance.
+      }
       return;
     }
-    await loadIssues();
-    const detailRef = issueDetailRequestRef(ref.owner, ref.name, number, ref);
-    if (isIssueDetailShowingRef(detailRef)) {
-      await loadIssueDetail(ref.owner, ref.name, number, detailRef);
-    }
+    let mutationSettled = false;
+    const baseline = issueDetail?.issue.State ?? state;
+    const program = Effect.gen(function* () {
+      const mutations = yield* ProviderMutations;
+      const refreshOnStale = Effect.suspend(() => {
+        const envelopeTick = nextWorkspaceLifecycleTick();
+        return executeGeneratedApiRequest("sync issue after stale state mutation", (client, signal) =>
+          client.POST(providerItemPath("issues", ref, "/sync"), {
+            params: { path: { ...providerRouteParams(ref), number } },
+            signal,
+          }),
+        ).pipe(
+          Effect.map((detail): IssueDetail => ({ ...detail, events: detail.events ?? [] })),
+          Effect.tap((detail) =>
+            rebaseIssueMutations(ref, detail, () => {
+              if (!isIssueDetailShowingRef(ref)) return false;
+              let applied = false;
+              applyEnvelopeAt(envelopeTick, () => {
+                issueDetail = withPreservedLocalBody(detail);
+                issueDetailLoaded = detail.detail_loaded ?? issueDetailLoaded;
+                applied = true;
+              });
+              return applied;
+            }),
+          ),
+          Effect.map((detail) => detail.issue.State),
+        );
+      }).pipe(Effect.provideService(ProviderMutations, mutations));
+      yield* mutations.submit({
+        key: issueMutationKey(ref, "actions"),
+        baseline,
+        optimistic: state,
+        apply: (nextState) => applyIssueState(ref, nextState),
+        commit: executeGeneratedApiRequest("POST issue state", (client, signal) =>
+          client.POST(providerItemPath("issues", ref, "/github-state"), {
+            params: { path: { ...providerRouteParams(ref), number } },
+            body: { state },
+            signal,
+          }),
+        ).pipe(Effect.as(state)),
+        refreshOnStale,
+      });
+      mutationSettled = true;
+      yield* loadIssuesEffect();
+      if (isIssueDetailShowingRef(ref)) {
+        yield* refreshIssueDetailProgram(ref, issueSyncGeneration);
+      }
+      yield* invokeMutationCallback(callbacks.onSuccess);
+    }).pipe(Effect.ensuring(invokeMutationCallback(callbacks.onSettled)));
+    runtime.runCommand(program, {
+      operation: "change issue state",
+      safeContext: {
+        provider: ref.provider,
+        platformHost: concretePlatformHost(ref),
+        owner: ref.owner,
+        name: ref.name,
+        number,
+      },
+      onFailure: (failure) => {
+        if (mutationSettled) {
+          showFlash("The issue state changed, but the latest issue could not be refreshed.", { tone: "danger" });
+          return;
+        }
+        const message = providerMutationFailureMessage(failure, "failed to change issue state");
+        if (callbacks.onFailure === undefined) showFlash(message, { tone: "danger" });
+        invokeMutationFailure(callbacks.onFailure, message);
+      },
+    });
   }
 
   // --- navigation ---
@@ -1184,6 +1798,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     selectIssue,
     clearIssueSelection,
     loadIssues,
+    loadIssuesEffect,
+    reconcileIssuesEffect,
     getIssueDetail,
     getIssueDetailEnvelopeTick,
     isIssueDetailLoading,
@@ -1204,6 +1820,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     saveIssueBodyInBackground,
     hasUnsavedLocalBody,
     toggleIssueStar,
+    setIssueState,
     selectNextIssue,
     selectPrevIssue,
   };

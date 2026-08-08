@@ -11,6 +11,9 @@ interface CommandEntry<Input, Output, Error> {
 }
 
 export interface OrderedCommandQueue<Input, Output, Error> {
+  readonly accept: (
+    input: Input,
+  ) => Effect.Effect<Effect.Effect<Output, Error | CommandQueueClosed>, CommandQueueClosed>;
   readonly submit: (input: Input) => Effect.Effect<Output, Error | CommandQueueClosed>;
   readonly shutdown: Effect.Effect<void>;
 }
@@ -50,24 +53,26 @@ export const makeOrderedCommandQueue = <Input, Output, Error, Requirements>(
     });
     yield* Effect.addFinalizer(() => shutdown);
 
+    const accept = (input: Input) =>
+      Effect.gen(function* () {
+        if (yield* Ref.get(closed)) {
+          return yield* Effect.fail(new CommandQueueClosed({ queue: name }));
+        }
+        const acknowledgement = yield* Deferred.make<Exit.Exit<Output, Error | CommandQueueClosed>>();
+        yield* Effect.sync(() => pending.add(acknowledgement));
+        const offered = yield* Queue.offer(commands, { input, acknowledgement }).pipe(
+          Effect.onInterrupt(() => Effect.sync(() => pending.delete(acknowledgement))),
+        );
+        if (!offered) {
+          yield* Effect.sync(() => pending.delete(acknowledgement));
+          return yield* Effect.fail(new CommandQueueClosed({ queue: name }));
+        }
+        return Deferred.await(acknowledgement).pipe(Effect.flatMap((exit) => exit));
+      });
+
     return {
-      submit: (input) =>
-        Effect.gen(function* () {
-          if (yield* Ref.get(closed)) {
-            return yield* Effect.fail(new CommandQueueClosed({ queue: name }));
-          }
-          const acknowledgement = yield* Deferred.make<Exit.Exit<Output, Error | CommandQueueClosed>>();
-          yield* Effect.sync(() => pending.add(acknowledgement));
-          const offered = yield* Queue.offer(commands, { input, acknowledgement }).pipe(
-            Effect.onInterrupt(() => Effect.sync(() => pending.delete(acknowledgement))),
-          );
-          if (!offered) {
-            yield* Effect.sync(() => pending.delete(acknowledgement));
-            return yield* Effect.fail(new CommandQueueClosed({ queue: name }));
-          }
-          const exit = yield* Deferred.await(acknowledgement);
-          return yield* exit;
-        }),
+      accept,
+      submit: (input) => accept(input).pipe(Effect.flatMap((acknowledgement) => acknowledgement)),
       shutdown,
     };
   });

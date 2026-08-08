@@ -1,5 +1,5 @@
 import { apiErrorMessage, client } from "./runtime.ts";
-import type { PullRequest } from "./types.ts";
+import type { PullRequest } from "./types.js";
 
 export interface CreatedWorkspace {
   id: string;

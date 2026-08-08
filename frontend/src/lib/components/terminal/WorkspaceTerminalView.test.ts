@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../../stores/paneLayout.svelte.js";
@@ -29,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   }>,
   mockUpdateSettings: vi.fn(),
   renameWorkspaceSession: vi.fn(),
+  runtime: undefined as unknown as OwnedAppRuntime,
   showFlash: vi.fn(),
   stopWorkspaceSession: vi.fn(),
   terminalWrite: vi.fn(),
@@ -140,6 +143,10 @@ vi.mock("../../context.js", async (importOriginal) => {
     }),
   };
 });
+
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => mocks.runtime,
+}));
 
 vi.mock("../../api/workspace-runtime.js", () => ({
   getWorkspaceRuntime: mocks.getWorkspaceRuntime,
@@ -528,6 +535,7 @@ function fakeDataTransfer(): DataTransfer {
 
 describe("WorkspaceTerminalView", () => {
   beforeEach(() => {
+    mocks.runtime = makeAppRuntime();
     delete window.__BASE_PATH__;
     localStorage.clear();
     resetSessionHostForTest();
@@ -536,7 +544,7 @@ describe("WorkspaceTerminalView", () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
     sockets = [];
     resetWorkspaceCreatePendingForTest();
-    mocks.diffStore = createDiffStore();
+    mocks.diffStore = createDiffStore({ runtime: mocks.runtime });
     mocks.getWorkspaceRuntime.mockReset();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
     mocks.launchWorkspaceSession.mockReset();
@@ -560,9 +568,16 @@ describe("WorkspaceTerminalView", () => {
 
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation((input: Request | URL | string) => {
-        const url = input instanceof Request ? input.url : String(input);
+      vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const url = request.url;
         const { pathname } = new URL(url, "http://localhost");
+        if (request.method === "PUT" && pathname.endsWith("/api/v1/settings")) {
+          return request
+            .clone()
+            .json()
+            .then((body) => mocks.mockUpdateSettings(body).then((settings) => Response.json(settings)));
+        }
         if (pathname.endsWith("/workspaces/ws-1")) {
           return Promise.resolve(Response.json(workspaceResponse));
         }
@@ -599,8 +614,9 @@ describe("WorkspaceTerminalView", () => {
     vi.stubGlobal("cancelAnimationFrame", () => undefined);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await Effect.runPromise(mocks.runtime.disposeEffect);
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();

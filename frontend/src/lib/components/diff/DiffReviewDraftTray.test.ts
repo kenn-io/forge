@@ -1,12 +1,17 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
 
 import { STORES_KEY } from "../../context.js";
-import type { ForgeClient } from "../../types.js";
+import type { OwnedAppRuntime } from "../../app/runtime.js";
+import type { GeneratedClient } from "../../api/generated-api.js";
 import type { ProviderRouteRef } from "../../api/provider-routes.js";
 import { createDiffReviewDraftStore } from "../../stores/diff-review-draft.svelte.js";
+import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
 import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
+
+const runtimes = new Set<OwnedAppRuntime>();
 
 function providerRef(): ProviderRouteRef {
   return {
@@ -72,11 +77,14 @@ async function renderTray(publishResult: boolean) {
     DELETE: vi.fn(() => {
       discard();
       return Promise.resolve({
+        data: undefined,
         response: { ok: true, status: 200 },
       });
     }),
-  } as unknown as ForgeClient;
-  const diffReviewDraft = createDiffReviewDraftStore({ client });
+  } as unknown as GeneratedClient;
+  const runtime = makeTestAppRuntime(client);
+  runtimes.add(runtime);
+  const diffReviewDraft = createDiffReviewDraftStore({ runtime });
   diffReviewDraft.setContext(providerRef(), 12, true, "head-sha");
   await waitFor(() => {
     expect(diffReviewDraft.getComments()).toHaveLength(1);
@@ -89,8 +97,10 @@ async function renderTray(publishResult: boolean) {
 }
 
 describe("DiffReviewDraftTray", () => {
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await Promise.all(Array.from(runtimes, (runtime) => Effect.runPromise(runtime.disposeEffect)));
+    runtimes.clear();
   });
 
   it("keeps review summary text when publishing fails", async () => {

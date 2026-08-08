@@ -3,10 +3,36 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import ApproveButton from "./ApproveButton.svelte";
 import { API_CLIENT_KEY, STORES_KEY } from "../../context.js";
+import type { ProblemBody } from "../../api/problems.js";
+import type { ProviderRouteRef } from "../../api/provider-routes.js";
+import type { ProviderActionCallbacks } from "../../stores/detail.svelte.js";
 
 const { showFlash } = vi.hoisted(() => ({ showFlash: vi.fn() }));
 
 vi.mock("../../stores/flash.svelte.js", () => ({ showFlash }));
+
+function detailActions(post: ReturnType<typeof vi.fn>) {
+  const run = (path: string, body: unknown, callbacks: ProviderActionCallbacks) => {
+    post(path, { body }).then((result: { error?: ProblemBody }) => {
+      if (result.error !== undefined) {
+        callbacks.onProblem?.(result.error);
+        callbacks.onFailure?.(result.error.detail ?? result.error.title ?? "provider action failed");
+      } else {
+        callbacks.onSuccess?.();
+      }
+      callbacks.onSettled?.();
+    });
+  };
+  return {
+    approvePull: vi.fn((_ref: ProviderRouteRef, _number: number, body: unknown, callbacks: ProviderActionCallbacks) =>
+      run("/approve", body, callbacks),
+    ),
+    requestPullChanges: vi.fn(
+      (_ref: ProviderRouteRef, _number: number, body: unknown, callbacks: ProviderActionCallbacks) =>
+        run("/request-changes", body, callbacks),
+    ),
+  };
+}
 
 describe("ApproveButton", () => {
   afterEach(() => {
@@ -51,7 +77,7 @@ describe("ApproveButton", () => {
         [
           STORES_KEY,
           {
-            detail: { loadDetail: vi.fn() },
+            detail: detailActions(post),
             pulls: { loadPulls: vi.fn() },
           },
         ],
@@ -110,7 +136,7 @@ describe("ApproveButton", () => {
         props,
         context: new Map<symbol, unknown>([
           [API_CLIENT_KEY, { POST: post }],
-          [STORES_KEY, { detail: { loadDetail: vi.fn() }, pulls: { loadPulls: vi.fn() } }],
+          [STORES_KEY, { detail: detailActions(post), pulls: { loadPulls: vi.fn() } }],
         ]),
       });
 
@@ -157,7 +183,7 @@ describe("ApproveButton", () => {
       },
       context: new Map<symbol, unknown>([
         [API_CLIENT_KEY, { POST: post }],
-        [STORES_KEY, { detail: { loadDetail: vi.fn() }, pulls: { loadPulls: vi.fn() } }],
+        [STORES_KEY, { detail: detailActions(post), pulls: { loadPulls: vi.fn() } }],
       ]),
     });
 
@@ -197,7 +223,7 @@ describe("ApproveButton", () => {
         [
           STORES_KEY,
           {
-            detail: { loadDetail: vi.fn().mockResolvedValue(undefined) },
+            detail: detailActions(post),
             pulls: { loadPulls: vi.fn().mockResolvedValue(undefined) },
           },
         ],
@@ -213,7 +239,7 @@ describe("ApproveButton", () => {
     expect(init.body.expected_head_sha).toBe("platform-head-sha");
   });
 
-  it("closes a successful approval before reporting a refresh failure", async () => {
+  it("closes a successful approval and launches both refreshes", async () => {
     const post = vi.fn().mockResolvedValue({
       data: { status: "approved" },
       error: undefined,
@@ -235,8 +261,8 @@ describe("ApproveButton", () => {
         [
           STORES_KEY,
           {
-            detail: { loadDetail: vi.fn().mockRejectedValue(new Error("refresh failed")) },
-            pulls: { loadPulls: vi.fn().mockResolvedValue(undefined) },
+            detail: detailActions(post),
+            pulls: { loadPulls: vi.fn() },
           },
         ],
       ]),
@@ -248,8 +274,5 @@ describe("ApproveButton", () => {
 
     await waitFor(() => expect(oncompleted).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
-    await waitFor(() => {
-      expect(showFlash).toHaveBeenCalledWith("Pull request approved, but it could not be refreshed.");
-    });
   });
 });

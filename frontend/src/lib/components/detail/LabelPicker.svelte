@@ -17,8 +17,8 @@
      * already open. Closing stays enabled. */
     disabled?: boolean;
     disabledReason?: string | undefined;
-    ontoggle: (name: string) => void | Promise<void>;
-    onclear?: () => void | Promise<void>;
+    ontoggle: (name: string) => void;
+    onclear?: () => void;
     onclose: () => void;
   }
 
@@ -54,12 +54,12 @@
 
   function clearSelectedLabels(): void {
     if (disabled || pendingLabel !== null || selectedNames.size === 0) return;
-    void onclear?.();
+    onclear?.();
   }
 
   function toggleLabelRow(name: string): void {
     if (disabled) return;
-    void ontoggle(name);
+    ontoggle(name);
   }
 </script>
 

@@ -245,4 +245,38 @@ test.describe("PR timeline filters", () => {
       await server.stop();
     }
   });
+
+  test("persists a review-thread reply before refreshing the timeline", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await gotoWithWebKitRetry(page, `${server.info.base_url}/pulls/github/acme/widgets/1`);
+      const detail = page.locator(".pull-detail");
+      await expect(detail).toBeVisible();
+      const threadCard = detail.locator(".event-card--reply-inline", {
+        hasText: "Regroup root review thread comment.",
+      });
+      await expect(threadCard).toBeVisible();
+      await threadCard.locator(".thread-reply-action--inline").click();
+      const replyPanel = threadCard.locator(".thread-reply-panel");
+      const replyBody = "Review reply persisted through the provider";
+      await replyPanel.locator(".comment-editor-input").fill(replyBody);
+      const replyResponse = page.waitForResponse((response) => {
+        const path = new URL(response.url()).pathname;
+        return (
+          response.request().method() === "POST" &&
+          /\/api\/v1\/pulls\/github\/acme\/widgets\/1\/discussions\/[^/]+\/reply$/.test(path)
+        );
+      });
+      await replyPanel.getByRole("button", { name: "Reply", exact: true }).click();
+      expect((await replyResponse).status()).toBe(201);
+      await expect(detail.getByText(replyBody, { exact: true })).toBeVisible();
+
+      const persisted = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
+      expect(persisted.ok()).toBe(true);
+      const persistedDetail: { events?: Array<{ Body?: string }> } = await persisted.json();
+      expect(persistedDetail.events?.some((event) => event.Body === replyBody)).toBe(true);
+    } finally {
+      await server.stop();
+    }
+  });
 });

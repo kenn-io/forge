@@ -1,9 +1,14 @@
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { GeneratedClient } from "../api/generated-api.js";
+import type { OwnedAppRuntime } from "../app/runtime.js";
 import type { ActivityItem, ActivitySettings } from "../api/types.js";
+import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import {
   buildActivityItemTypeFilter,
   buildActivityFilterTypes,
-  createActivityStore,
+  createActivityStore as createRuntimeActivityStore,
+  type ActivityStoreOptions,
   DEFAULT_ACTIVITY_ITEM_TYPES,
   DEFAULT_EVENT_TYPES,
   isActivityItemTypeEnabled,
@@ -11,12 +16,22 @@ import {
 } from "./activity.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 
+let runtime: OwnedAppRuntime | undefined;
+
 const fakeClient = {
   GET: async () => ({
     data: { items: [], capped: false },
     error: null,
   }),
-} as unknown as Parameters<typeof createActivityStore>[0]["client"];
+} as unknown as GeneratedClient;
+
+type TestActivityStoreOptions = Omit<ActivityStoreOptions, "runtime"> & { readonly client: GeneratedClient };
+
+function createActivityStore(options: TestActivityStoreOptions) {
+  const { client, ...storeOptions } = options;
+  runtime = makeTestAppRuntime(client);
+  return createRuntimeActivityStore({ ...storeOptions, runtime });
+}
 
 function settings(collapse: boolean): ActivitySettings {
   return {
@@ -25,6 +40,8 @@ function settings(collapse: boolean): ActivitySettings {
     hide_closed: false,
     hide_bots: false,
     collapse_threads: collapse,
+    default_branch_retention_days: 90,
+    default_branch_max_commits: 5000,
   };
 }
 
@@ -33,11 +50,13 @@ function makeStore() {
 }
 
 beforeEach(() => {
+  runtime = undefined;
   window.history.replaceState(null, "", "/");
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const item of getFlashes()) dismissFlash(item.id);
+  if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
 });
 
 describe("activity store collapse state", () => {
@@ -430,29 +449,38 @@ describe("activity store markNotificationSeen", () => {
     const client = {
       GET: async () => ({ data: { items: [notificationItem("ntf:42", "unread")], capped: false }, error: null }),
       POST: post,
-    } as unknown as Parameters<typeof createActivityStore>[0]["client"];
+    } as unknown as GeneratedClient;
     return createActivityStore({ client });
   }
 
   it("flips the row to read and queues the upstream GitHub read", async () => {
     const post = vi.fn(async () => ({ data: { queued: [42], succeeded: [], failed: [] }, error: null }));
     const s = storeWith(post);
-    await s.loadActivity();
+    s.loadActivity();
+    await vi.waitFor(() => expect(s.isActivityLoading()).toBe(false));
     expect(s.getActivityItems()[0]!.item_state).toBe("unread");
 
-    await s.markNotificationSeen(s.getActivityItems()[0]!);
+    const result = s.markNotificationSeen(s.getActivityItems()[0]!);
 
-    expect(post).toHaveBeenCalledWith("/notifications/read", { body: { ids: [42] } });
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith("/notifications/read", {
+      body: { ids: [42] },
+      signal: expect.any(AbortSignal),
+    });
     expect(s.getActivityItems()[0]!.item_state).toBe("read");
   });
 
   it("rolls back the optimistic flip when the request fails", async () => {
-    const post = vi.fn(async () => ({ data: null, error: { detail: "boom" } }));
+    const post = vi.fn(async () => ({ error: { detail: "boom" }, response: new Response(null, { status: 500 }) }));
     const s = storeWith(post);
-    await s.loadActivity();
+    s.loadActivity();
+    await vi.waitFor(() => expect(s.isActivityLoading()).toBe(false));
 
-    await s.markNotificationSeen(s.getActivityItems()[0]!);
+    const result = s.markNotificationSeen(s.getActivityItems()[0]!);
 
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(s.getActivityItems()[0]!.item_state).toBe("unread"));
     expect(s.getActivityItems()[0]!.item_state).toBe("unread");
     expect(getFlash()).toMatchObject({ message: "boom", tone: "danger" });
   });
@@ -463,21 +491,203 @@ describe("activity store markNotificationSeen", () => {
       error: null,
     }));
     const s = storeWith(post);
-    await s.loadActivity();
+    s.loadActivity();
+    await vi.waitFor(() => expect(s.isActivityLoading()).toBe(false));
 
-    await s.markNotificationSeen(s.getActivityItems()[0]!);
+    const result = s.markNotificationSeen(s.getActivityItems()[0]!);
 
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(s.getActivityItems()[0]!.item_state).toBe("unread"));
     expect(s.getActivityItems()[0]!.item_state).toBe("unread");
     expect(getFlash()).toMatchObject({ message: "Failed to mark notification as read.", tone: "danger" });
+  });
+
+  it("does not let an older failed acknowledgement roll back a newer read", async () => {
+    const first = Promise.withResolvers<{
+      error: { detail: string };
+      response: Response;
+    }>();
+    const post = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue({ data: { queued: [42], succeeded: [], failed: [] }, error: null });
+    const s = storeWith(post);
+    s.loadActivity();
+    await vi.waitFor(() => expect(s.isActivityLoading()).toBe(false));
+
+    s.markNotificationSeen(s.getActivityItems()[0]!);
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    s.markNotificationSeen(s.getActivityItems()[0]!);
+    first.resolve({ error: { detail: "boom" }, response: new Response(null, { status: 500 }) });
+
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(s.getActivityItems()[0]!.item_state).toBe("read"));
+  });
+
+  it("does not let an activity read started before acknowledgement restore unread state", async () => {
+    const olderRead = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: boolean };
+      error: null;
+    }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { items: [notificationItem("ntf:42", "unread")], capped: false }, error: null })
+      .mockReturnValueOnce(olderRead.promise);
+    const post = vi.fn().mockResolvedValue({
+      data: { queued: [42], succeeded: [], failed: [] },
+      error: null,
+    });
+    const s = createActivityStore({ client: { GET: get, POST: post } as unknown as GeneratedClient });
+    s.loadActivity();
+    await vi.waitFor(() => expect(s.isActivityLoading()).toBe(false));
+
+    s.loadActivity();
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    s.markNotificationSeen(s.getActivityItems()[0]!);
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    olderRead.resolve({ data: { items: [notificationItem("ntf:42", "unread")], capped: false }, error: null });
+
+    await vi.waitFor(() => expect(s.isActivityLoading()).toBe(false));
+    expect(s.getActivityItems()[0]!.item_state).toBe("read");
+  });
+
+  it("keeps the acknowledgement authoritative over a read started while the mutation is pending", async () => {
+    const pendingRead = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: boolean };
+      error: null;
+    }>();
+    const acknowledgement = Promise.withResolvers<{
+      data: { queued: number[]; succeeded: number[]; failed: never[] };
+      error: null;
+    }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { items: [notificationItem("ntf:42", "unread")], capped: false }, error: null })
+      .mockReturnValueOnce(pendingRead.promise);
+    const post = vi.fn(() => acknowledgement.promise);
+    const s = createActivityStore({ client: { GET: get, POST: post } as unknown as GeneratedClient });
+    s.loadActivity();
+    await vi.waitFor(() => expect(s.isActivityLoading()).toBe(false));
+
+    s.markNotificationSeen(s.getActivityItems()[0]!);
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    s.loadActivity();
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    acknowledgement.resolve({ data: { queued: [42], succeeded: [], failed: [] }, error: null });
+    await vi.waitFor(() => expect(s.getActivityItems()[0]!.item_state).toBe("read"));
+    pendingRead.resolve({ data: { items: [notificationItem("ntf:42", "unread")], capped: false }, error: null });
+
+    await vi.waitFor(() => expect(s.isActivityLoading()).toBe(false));
+    expect(s.getActivityItems()[0]!.item_state).toBe("read");
   });
 
   it("ignores rows that are not notification feed rows", async () => {
     const post = vi.fn(async () => ({ data: { queued: [], succeeded: [], failed: [] }, error: null }));
     const s = storeWith(post);
-    await s.loadActivity();
+    s.loadActivity();
+    await vi.waitFor(() => expect(s.isActivityLoading()).toBe(false));
 
-    await s.markNotificationSeen({ ...s.getActivityItems()[0]!, id: "pr:7" });
+    const result = s.markNotificationSeen({ ...s.getActivityItems()[0]!, id: "pr:7" });
 
+    expect(result).toBeUndefined();
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe("activity polling recovery", () => {
+  it("does not project a poll started before a newer foreground search", async () => {
+    const pendingPoll = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: boolean };
+      error: null;
+    }>();
+    const pollReturned = Promise.withResolvers<void>();
+    const now = new Date().toISOString();
+    const initial = { ...notificationItem("ntf:1", "unread"), created_at: now };
+    const stalePollItem = { ...notificationItem("ntf:2", "unread"), created_at: now };
+    const foregroundItem = { ...notificationItem("ntf:3", "unread"), created_at: now };
+    let calls = 0;
+    const client = {
+      GET: vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) return { data: { items: [initial], capped: false }, error: null };
+        if (calls === 2) {
+          const response = await pendingPoll.promise;
+          pollReturned.resolve();
+          return response;
+        }
+        if (calls === 3) return { data: { items: [foregroundItem], capped: false }, error: null };
+        throw new Error(`unexpected activity request ${calls}`);
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:1"]));
+
+    store.startActivityPolling();
+    await vi.waitFor(() => expect(calls).toBe(2));
+    store.setActivitySearch("new selection");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:3"]));
+
+    pendingPoll.resolve({ data: { items: [stalePollItem], capped: false }, error: null });
+    await pollReturned.promise;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:3"]);
+  });
+
+  it("clears loading after an empty-feed poll reload fails", async () => {
+    let calls = 0;
+    const client = {
+      GET: vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) return { data: { items: [], capped: false } };
+        return {
+          error: {
+            code: "validationError",
+            detail: "activity unavailable",
+            title: "Invalid request",
+            type: "about:blank",
+          },
+          response: new Response(null, { status: 400 }),
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    store.startActivityPolling();
+    await vi.waitFor(() => expect(calls).toBe(2));
+
+    expect(store.isActivityLoading()).toBe(false);
+  });
+
+  it("clears loading after a capped poll reload fails", async () => {
+    let calls = 0;
+    const client = {
+      GET: vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) return { data: { items: [notificationItem("ntf:42", "unread")], capped: false } };
+        if (calls === 2) return { data: { items: [], capped: true } };
+        return {
+          error: {
+            code: "validationError",
+            detail: "activity unavailable",
+            title: "Invalid request",
+            type: "about:blank",
+          },
+          response: new Response(null, { status: 400 }),
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    store.startActivityPolling();
+    await vi.waitFor(() => expect(calls).toBe(3));
+
+    expect(store.isActivityLoading()).toBe(false);
   });
 });

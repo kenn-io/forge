@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
-import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "./lib/api/types.js";
+import { Effect } from "effect";
+import type { TerminalSettings } from "./lib/api/types.js";
 
 import { createTerminalZoomController } from "./lib/components/terminal/terminalZoom.js";
 import {
@@ -40,14 +41,6 @@ function navLabels(): string[] {
   );
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
 describe("terminal settings response races", () => {
   let mounted: MountedBrowserApp | null = null;
 
@@ -71,6 +64,7 @@ describe("terminal settings response races", () => {
                 controller.enqueue(
                   new TextEncoder().encode(
                     JSON.stringify({
+                      ...mockSettings,
                       terminal: {
                         ...mockSettings.terminal,
                         font_family: savedFontFamily,
@@ -135,6 +129,7 @@ describe("terminal settings response races", () => {
     await page.viewport(1280, 900);
     let delaySettingsHydration = false;
     let releaseSettingsHydration: (() => void) | undefined;
+    let releaseZoomSave: (() => void) | undefined;
     mounted = await mountBrowserApp("/", {
       overrides: [
         (request) => {
@@ -164,6 +159,27 @@ describe("terminal settings response races", () => {
             headers: { "content-type": "application/json" },
           });
         },
+        (request) => {
+          if (request.method !== "PUT" || request.url.pathname !== "/api/v1/settings") return null;
+          const responseBody = new ReadableStream<Uint8Array>({
+            start(controller) {
+              releaseZoomSave = () => {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    JSON.stringify({
+                      ...mockSettings,
+                      terminal: { ...mockSettings.terminal, font_size: 13 },
+                    }),
+                  ),
+                );
+                controller.close();
+              };
+            },
+          });
+          return new Response(responseBody, {
+            headers: { "content-type": "application/json" },
+          });
+        },
       ],
     });
     await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
@@ -174,15 +190,15 @@ describe("terminal settings response races", () => {
     firePopstate("/");
     await vi.waitFor(() => expect(document.querySelector(".settings-page")).toBeNull(), WAIT);
 
-    const pendingSave = deferred<TerminalSettings>();
     const settingsStore = settingsStoreCapture.current!;
     const zoom = createTerminalZoomController({
+      runtime: mounted.runtime,
       store: settingsStore,
-      persist: () => pendingSave.promise,
       reportError: vi.fn(),
     });
     zoom.setFontSize(13);
     expect(settingsStore.getTerminalSettings().font_size).toBe(13);
+    await vi.waitFor(() => expect(releaseZoomSave).toBeTypeOf("function"), WAIT);
 
     releaseSettingsHydration!();
     await vi.waitFor(
@@ -191,11 +207,8 @@ describe("terminal settings response races", () => {
     );
     expect(settingsStore.getTerminalSettings().font_size).toBe(13);
 
-    pendingSave.resolve({
-      ...DEFAULT_TERMINAL_SETTINGS,
-      font_size: 13,
-    });
-    await zoom.whenIdle();
+    releaseZoomSave!();
+    await Effect.runPromise(zoom.whenIdle());
     expect(settingsStore.getTerminalSettings().font_size).toBe(13);
   });
 
@@ -203,6 +216,7 @@ describe("terminal settings response races", () => {
     await page.viewport(1280, 900);
     let delayConfigReload = false;
     let releaseConfigReload: (() => void) | undefined;
+    let releaseZoomSave: (() => void) | undefined;
     mounted = await mountBrowserApp("/", {
       overrides: [
         (request) => {
@@ -232,19 +246,40 @@ describe("terminal settings response races", () => {
             headers: { "content-type": "application/json" },
           });
         },
+        (request) => {
+          if (request.method !== "PUT" || request.url.pathname !== "/api/v1/settings") return null;
+          const responseBody = new ReadableStream<Uint8Array>({
+            start(controller) {
+              releaseZoomSave = () => {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    JSON.stringify({
+                      ...mockSettings,
+                      terminal: { ...mockSettings.terminal, font_size: 13 },
+                    }),
+                  ),
+                );
+                controller.close();
+              };
+            },
+          });
+          return new Response(responseBody, {
+            headers: { "content-type": "application/json" },
+          });
+        },
       ],
     });
     await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
     await vi.waitFor(() => expect(getBrowserEventSourceCount()).toBe(1), WAIT);
 
-    const pendingSave = deferred<TerminalSettings>();
     const settingsStore = settingsStoreCapture.current!;
     const zoom = createTerminalZoomController({
+      runtime: mounted.runtime,
       store: settingsStore,
-      persist: () => pendingSave.promise,
       reportError: vi.fn(),
     });
     zoom.setFontSize(13);
+    await vi.waitFor(() => expect(releaseZoomSave).toBeTypeOf("function"), WAIT);
 
     delayConfigReload = true;
     emitBrowserEventSource("config.changed", {
@@ -259,11 +294,8 @@ describe("terminal settings response races", () => {
     );
     const fontSizeAfterReload = settingsStore.getTerminalSettings().font_size;
 
-    pendingSave.resolve({
-      ...DEFAULT_TERMINAL_SETTINGS,
-      font_size: 13,
-    });
-    await zoom.whenIdle();
+    releaseZoomSave!();
+    await Effect.runPromise(zoom.whenIdle());
 
     expect(fontSizeAfterReload).toBe(13);
     expect(settingsStore.getTerminalSettings().font_size).toBe(13);

@@ -1,9 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import type { ComponentProps } from "svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { API_CLIENT_KEY, STORES_KEY } from "../context.js";
-import CommentBox from "./detail/CommentBox.svelte";
-import IssueCommentBox from "./detail/IssueCommentBox.svelte";
+import type { GeneratedClient } from "../api/generated-api.js";
+import type { OwnedAppRuntime } from "../app/runtime.js";
+import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import {
   finishCommentSubmit,
   getCommentDraft,
@@ -11,6 +13,12 @@ import {
   setCommentDraft,
 } from "./detail/comment-drafts.svelte.js";
 import CommentBoxContextHarness from "./CommentBoxContextHarness.svelte";
+
+type HarnessProps = Omit<ComponentProps<typeof CommentBoxContextHarness>, "runtime">;
+
+let runtime: OwnedAppRuntime;
+let runtimeAutocompleteResponse: AutocompleteResponse = { users: [], references: [] };
+let runtimeAutocompleteQuery: ((query: Record<string, unknown> | undefined) => void) | undefined;
 
 interface AutocompleteResponse {
   users: string[];
@@ -22,13 +30,34 @@ interface AutocompleteResponse {
   }>;
 }
 
-function mockAutocompleteClient(response: AutocompleteResponse = { users: [], references: [] }) {
+function mockAutocompleteClient() {
   return {
-    GET: async (path: string) => {
-      if (path === "/repo/{provider}/{owner}/{name}/comment-autocomplete") {
-        return { data: response };
+    GET: async (
+      path: string,
+      options?: { params?: { path?: Record<string, unknown>; query?: Record<string, unknown> } },
+    ) => {
+      if (
+        path === "/repo/{provider}/{owner}/{name}/comment-autocomplete" ||
+        path === "/host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete"
+      ) {
+        runtimeAutocompleteQuery?.(options?.params);
+        return { data: runtimeAutocompleteResponse };
       }
       return { data: undefined, error: { title: "not mocked" } };
+    },
+  };
+}
+
+function renderCommentHarness(props: HarnessProps) {
+  runtimeAutocompleteResponse = props.autocompleteResponse ?? { users: [], references: [] };
+  runtimeAutocompleteQuery = props.onAutocompleteQuery;
+  const rendered = render(CommentBoxContextHarness, { props: { ...props, runtime } });
+  return {
+    ...rendered,
+    rerender: (next: HarnessProps) => {
+      runtimeAutocompleteResponse = next.autocompleteResponse ?? { users: [], references: [] };
+      runtimeAutocompleteQuery = next.onAutocompleteQuery;
+      return rendered.rerender({ ...next, runtime });
     },
   };
 }
@@ -71,57 +100,37 @@ function deferredByNumber(numbers: number[]): Map<number, ReturnType<typeof defe
 }
 
 function renderPullCommentBox(owner = "octo", name = "repo", number = 1) {
-  return render(CommentBox, {
-    props: {
-      provider: "github",
-      platformHost: "github.com",
-      owner,
-      name,
-      repoPath: `${owner}/${name}`,
-      number,
-    },
-    context: new Map<symbol, unknown>([
-      [API_CLIENT_KEY, mockAutocompleteClient()],
-      [
-        STORES_KEY,
-        {
-          detail: {
-            submitComment: async () => true,
-            getDetailError: () => null,
-          },
-        },
-      ],
-    ]),
+  return renderCommentHarness({
+    kind: "pull",
+    provider: "github",
+    platformHost: "github.com",
+    owner,
+    name,
+    repoPath: `${owner}/${name}`,
+    number,
   });
 }
 
 function renderIssueCommentBox(owner = "octo", name = "repo", number = 1) {
-  return render(IssueCommentBox, {
-    props: {
-      provider: "github",
-      platformHost: "github.com",
-      owner,
-      name,
-      repoPath: `${owner}/${name}`,
-      number,
-    },
-    context: new Map<symbol, unknown>([
-      [API_CLIENT_KEY, mockAutocompleteClient()],
-      [
-        STORES_KEY,
-        {
-          issues: {
-            submitIssueComment: async () => true,
-            getIssueDetailError: () => null,
-          },
-        },
-      ],
-    ]),
+  return renderCommentHarness({
+    kind: "issue",
+    provider: "github",
+    platformHost: "github.com",
+    owner,
+    name,
+    repoPath: `${owner}/${name}`,
+    number,
   });
 }
 
 describe("comment draft persistence", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    runtimeAutocompleteResponse = { users: [], references: [] };
+    runtimeAutocompleteQuery = undefined;
+    runtime = makeTestAppRuntime(mockAutocompleteClient() as unknown as GeneratedClient);
+  });
+
+  afterEach(async () => {
     setCommentDraft("pull", "octo", "repo", 1, "");
     setCommentDraft("pull", "octo", "repo", 2, "");
     setCommentDraft("issue", "octo", "repo", 1, "");
@@ -143,6 +152,7 @@ describe("comment draft persistence", () => {
     finishCommentSubmit("pull", "group", "project", 1, "gitlab.example.com");
     finishCommentSubmit("issue", "group", "project", 1, "gitlab.example.com");
     cleanup();
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("keeps the pull request comment draft when the box remounts", async () => {
@@ -194,14 +204,12 @@ describe("comment draft persistence", () => {
   });
 
   it.each(["pull", "issue"] as const)("keeps %s comment drafts isolated by platform host", async (kind) => {
-    const { rerender } = render(CommentBoxContextHarness, {
-      props: {
-        kind,
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        platformHost: "github.com",
-      },
+    const { rerender } = renderCommentHarness({
+      kind,
+      owner: "octo",
+      name: "repo",
+      number: 1,
+      platformHost: "github.com",
     });
 
     setCommentDraft(kind, "octo", "repo", 1, "github draft", "github.com");
@@ -238,11 +246,9 @@ describe("comment draft persistence", () => {
   });
 
   it.each(["pull", "issue"] as const)("keeps the %s draft when submission fails", async (kind) => {
-    render(CommentBoxContextHarness, {
-      props: {
-        kind,
-        submitComment: async () => false,
-      },
+    renderCommentHarness({
+      kind,
+      submitComment: async () => false,
     });
     setCommentDraft(kind, "octo", "repo", 1, "retry this", "github.com");
     await waitForCommentButtonEnabled();
@@ -258,14 +264,12 @@ describe("comment draft persistence", () => {
     async (kind) => {
       setCommentDraft(kind, "octo", "repo", 1, "legacy draft");
 
-      render(CommentBoxContextHarness, {
-        props: {
-          kind,
-          owner: "octo",
-          name: "repo",
-          number: 1,
-          platformHost: "ghe.example.com",
-        },
+      renderCommentHarness({
+        kind,
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        platformHost: "ghe.example.com",
       });
 
       await waitFor(() => {
@@ -276,14 +280,12 @@ describe("comment draft persistence", () => {
 
   it("does not clear the newly selected pull request draft when an earlier submit resolves", async () => {
     const submit = deferred();
-    const { rerender } = render(CommentBoxContextHarness, {
-      props: {
-        kind: "pull",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment: async () => submit.promise,
-      },
+    const { rerender } = renderCommentHarness({
+      kind: "pull",
+      owner: "octo",
+      name: "repo",
+      number: 1,
+      submitComment: async () => submit.promise,
     });
 
     setCommentDraft("pull", "octo", "repo", 1, "old pull draft");
@@ -325,14 +327,12 @@ describe("comment draft persistence", () => {
 
   it("does not clear the newly selected issue draft when an earlier submit resolves", async () => {
     const submit = deferred();
-    const { rerender } = render(CommentBoxContextHarness, {
-      props: {
-        kind: "issue",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment: async () => submit.promise,
-      },
+    const { rerender } = renderCommentHarness({
+      kind: "issue",
+      owner: "octo",
+      name: "repo",
+      number: 1,
+      submitComment: async () => submit.promise,
     });
 
     setCommentDraft("issue", "octo", "repo", 1, "old issue draft");
@@ -377,14 +377,12 @@ describe("comment draft persistence", () => {
     const submitComment = async (_owner: string, _name: string, number: number) => {
       await submits.get(number)?.promise;
     };
-    const { rerender } = render(CommentBoxContextHarness, {
-      props: {
-        kind: "pull",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment,
-      },
+    const { rerender } = renderCommentHarness({
+      kind: "pull",
+      owner: "octo",
+      name: "repo",
+      number: 1,
+      submitComment,
     });
 
     setCommentDraft("pull", "octo", "repo", 1, "old pull draft");
@@ -447,14 +445,12 @@ describe("comment draft persistence", () => {
     const submitComment = async (_owner: string, _name: string, number: number) => {
       await submits.get(number)?.promise;
     };
-    const { rerender } = render(CommentBoxContextHarness, {
-      props: {
-        kind: "issue",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment,
-      },
+    const { rerender } = renderCommentHarness({
+      kind: "issue",
+      owner: "octo",
+      name: "repo",
+      number: 1,
+      submitComment,
     });
 
     setCommentDraft("issue", "octo", "repo", 1, "old issue draft");
@@ -514,14 +510,12 @@ describe("comment draft persistence", () => {
 
   it("keeps a pull request pending submit disabled across remounts", async () => {
     const submit = deferred();
-    const firstRender = render(CommentBoxContextHarness, {
-      props: {
-        kind: "pull",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment: async () => submit.promise,
-      },
+    const firstRender = renderCommentHarness({
+      kind: "pull",
+      owner: "octo",
+      name: "repo",
+      number: 1,
+      submitComment: async () => submit.promise,
     });
 
     setCommentDraft("pull", "octo", "repo", 1, "draft review note");
@@ -530,14 +524,12 @@ describe("comment draft persistence", () => {
     expect(isCommentSubmitPending("pull", "octo", "repo", 1, "github.com")).toBe(true);
 
     firstRender.unmount();
-    render(CommentBoxContextHarness, {
-      props: {
-        kind: "pull",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment: async () => submit.promise,
-      },
+    renderCommentHarness({
+      kind: "pull",
+      owner: "octo",
+      name: "repo",
+      number: 1,
+      submitComment: async () => submit.promise,
     });
 
     await waitFor(() => {
@@ -552,14 +544,12 @@ describe("comment draft persistence", () => {
 
   it("keeps an issue pending submit disabled across remounts", async () => {
     const submit = deferred();
-    const firstRender = render(CommentBoxContextHarness, {
-      props: {
-        kind: "issue",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment: async () => submit.promise,
-      },
+    const firstRender = renderCommentHarness({
+      kind: "issue",
+      owner: "octo",
+      name: "repo",
+      number: 1,
+      submitComment: async () => submit.promise,
     });
 
     setCommentDraft("issue", "octo", "repo", 1, "draft issue note");
@@ -568,14 +558,12 @@ describe("comment draft persistence", () => {
     expect(isCommentSubmitPending("issue", "octo", "repo", 1, "github.com")).toBe(true);
 
     firstRender.unmount();
-    render(CommentBoxContextHarness, {
-      props: {
-        kind: "issue",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment: async () => submit.promise,
-      },
+    renderCommentHarness({
+      kind: "issue",
+      owner: "octo",
+      name: "repo",
+      number: 1,
+      submitComment: async () => submit.promise,
     });
 
     await waitFor(() => {
@@ -589,13 +577,11 @@ describe("comment draft persistence", () => {
   });
 
   it("shows username autocomplete suggestions and inserts the selected mention", async () => {
-    render(CommentBoxContextHarness, {
-      props: {
-        kind: "pull",
-        autocompleteResponse: {
-          users: ["alice", "albert"],
-          references: [],
-        },
+    renderCommentHarness({
+      kind: "pull",
+      autocompleteResponse: {
+        users: ["alice", "albert"],
+        references: [],
       },
     });
 
@@ -618,26 +604,24 @@ describe("comment draft persistence", () => {
   });
 
   it("shows issue and pull request reference suggestions and inserts the selected item", async () => {
-    render(CommentBoxContextHarness, {
-      props: {
-        kind: "issue",
-        autocompleteResponse: {
-          users: [],
-          references: [
-            {
-              kind: "pull",
-              number: 12,
-              title: "Polish mentions",
-              state: "open",
-            },
-            {
-              kind: "issue",
-              number: 17,
-              title: "Mention bug",
-              state: "open",
-            },
-          ],
-        },
+    renderCommentHarness({
+      kind: "issue",
+      autocompleteResponse: {
+        users: [],
+        references: [
+          {
+            kind: "pull",
+            number: 12,
+            title: "Polish mentions",
+            state: "open",
+          },
+          {
+            kind: "issue",
+            number: 17,
+            title: "Mention bug",
+            state: "open",
+          },
+        ],
       },
     });
 
@@ -662,34 +646,32 @@ describe("comment draft persistence", () => {
   it("uses GitLab issue and merge request reference prefixes for autocomplete", async () => {
     const autocompleteQueries: Array<Record<string, unknown> | undefined> = [];
 
-    render(CommentBoxContextHarness, {
-      props: {
-        kind: "issue",
-        provider: "gitlab",
-        platformHost: "gitlab.example.com",
-        owner: "group",
-        name: "project",
-        repoPath: "group/project",
-        autocompleteResponse: {
-          users: [],
-          references: [
-            {
-              kind: "pull",
-              number: 12,
-              title: "Polish mentions",
-              state: "open",
-            },
-            {
-              kind: "issue",
-              number: 17,
-              title: "Mention bug",
-              state: "open",
-            },
-          ],
-        },
-        onAutocompleteQuery: (query: Record<string, unknown> | undefined) => {
-          autocompleteQueries.push(query);
-        },
+    renderCommentHarness({
+      kind: "issue",
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      owner: "group",
+      name: "project",
+      repoPath: "group/project",
+      autocompleteResponse: {
+        users: [],
+        references: [
+          {
+            kind: "pull",
+            number: 12,
+            title: "Polish mentions",
+            state: "open",
+          },
+          {
+            kind: "issue",
+            number: 17,
+            title: "Mention bug",
+            state: "open",
+          },
+        ],
+      },
+      onAutocompleteQuery: (query: Record<string, unknown> | undefined) => {
+        autocompleteQueries.push(query);
       },
     });
 
@@ -739,17 +721,15 @@ describe("comment draft persistence", () => {
   it.each(["pull", "issue"] as const)("passes the platform host to %s comment autocomplete", async (kind) => {
     const autocompleteQueries: Array<Record<string, unknown> | undefined> = [];
 
-    render(CommentBoxContextHarness, {
-      props: {
-        kind,
-        platformHost: "ghe.example.com",
-        autocompleteResponse: {
-          users: ["alice"],
-          references: [],
-        },
-        onAutocompleteQuery: (query: Record<string, unknown> | undefined) => {
-          autocompleteQueries.push(query);
-        },
+    renderCommentHarness({
+      kind,
+      platformHost: "ghe.example.com",
+      autocompleteResponse: {
+        users: ["alice"],
+        references: [],
+      },
+      onAutocompleteQuery: (query: Record<string, unknown> | undefined) => {
+        autocompleteQueries.push(query);
       },
     });
 
@@ -772,13 +752,11 @@ describe("comment draft persistence", () => {
   });
 
   it("does not accept an autocomplete suggestion while IME composition is active", async () => {
-    render(CommentBoxContextHarness, {
-      props: {
-        kind: "pull",
-        autocompleteResponse: {
-          users: ["alice", "albert"],
-          references: [],
-        },
+    renderCommentHarness({
+      kind: "pull",
+      autocompleteResponse: {
+        users: ["alice", "albert"],
+        references: [],
       },
     });
 
@@ -813,14 +791,12 @@ describe("comment draft persistence", () => {
     const submitComment = async () => Promise.resolve();
     const submitSpy = vi.fn(submitComment);
 
-    render(CommentBoxContextHarness, {
-      props: {
-        kind: "pull",
-        submitComment: submitSpy,
-        autocompleteResponse: {
-          users: ["alice", "albert"],
-          references: [],
-        },
+    renderCommentHarness({
+      kind: "pull",
+      submitComment: submitSpy,
+      autocompleteResponse: {
+        users: ["alice", "albert"],
+        references: [],
       },
     });
 
@@ -845,9 +821,7 @@ describe("comment draft persistence", () => {
   });
 
   it("persists the first typed change after syncing the editor from props", async () => {
-    render(CommentBoxContextHarness, {
-      props: { kind: "pull" },
-    });
+    renderCommentHarness({ kind: "pull" });
 
     setCommentDraft("pull", "octo", "repo", 1, "draft review note");
     await waitFor(() => {
@@ -871,11 +845,9 @@ describe("comment draft persistence", () => {
     const submitComment = async () => Promise.resolve();
     const submitSpy = vi.fn(submitComment);
 
-    render(CommentBoxContextHarness, {
-      props: {
-        kind: "pull",
-        submitComment: submitSpy,
-      },
+    renderCommentHarness({
+      kind: "pull",
+      submitComment: submitSpy,
     });
 
     setCommentDraft("pull", "octo", "repo", 1, "hello @alice");

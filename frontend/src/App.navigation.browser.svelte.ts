@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { page } from "vite-plus/test/browser";
 
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
-import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
 
@@ -122,40 +122,11 @@ function flatSettings(): MockRouteOverride {
   return (req) => {
     if (req.method !== "GET" || req.url.pathname !== "/api/v1/settings") return null;
     return jsonResponse({
-      repos: [
-        {
-          provider: "github",
-          platform_host: "github.com",
-          owner: "acme",
-          name: "widgets",
-          repo_path: "acme/widgets",
-          is_glob: false,
-          matched_repo_count: 1,
-        },
-      ],
-      activity: { view_mode: "flat", time_range: "7d", hide_closed: false, hide_bots: false, collapse_threads: false },
-      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-      workspaces: { auto_assign_on_create: false },
-      terminal: {
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-      },
-      agents: [],
-      // The settings-gear case routes to /settings, which renders FleetSettings;
-      // it dereferences fleet.sessions, so the override must carry a fleet block.
-      fleet: {
-        enabled: false,
-        key: "",
-        peer_timeout: "2s",
-        sessions: { include_unmanaged_details: false },
-        peers: [],
-        ssh_peers: [],
-        restart_required: false,
+      ...mockSettings,
+      activity: {
+        ...mockSettings.activity,
+        view_mode: "flat",
+        collapse_threads: false,
       },
     });
   };

@@ -7,6 +7,7 @@ vi.mock("./detail/PullDetail.svelte", async () => ({
 
 import DetailDrawer from "./DetailDrawer.svelte";
 import MergeModal from "./detail/MergeModal.svelte";
+import { STORES_KEY } from "../context.js";
 import { getStackDepth, resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 
 const drawerProps = {
@@ -62,6 +63,7 @@ describe("DetailDrawer Escape layering", () => {
     const onMergeClose = vi.fn();
     const modal = render(MergeModal, {
       props: { ...mergeModalProps, onclose: onMergeClose },
+      context: new Map([[STORES_KEY, { detail: { mergePull: vi.fn() } }]]),
     });
     expect(getStackDepth()).toBe(1);
 

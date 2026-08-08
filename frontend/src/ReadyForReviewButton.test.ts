@@ -1,20 +1,12 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-const mockPost = vi.fn();
-const mockLoadDetail = vi.fn();
-const mockLoadPulls = vi.fn();
+const mockMarkPullReady = vi.fn();
 
 vi.mock("./lib/context.js", () => ({
-  getClient: () => ({
-    POST: mockPost,
-  }),
   getStores: () => ({
     detail: {
-      loadDetail: mockLoadDetail,
-    },
-    pulls: {
-      loadPulls: mockLoadPulls,
+      markPullReady: mockMarkPullReady,
     },
   }),
 }));
@@ -23,20 +15,21 @@ import ReadyForReviewButton from "./lib/components/detail/ReadyForReviewButton.s
 
 describe("ReadyForReviewButton", () => {
   beforeEach(() => {
-    mockPost.mockReset();
-    mockLoadDetail.mockReset();
-    mockLoadPulls.mockReset();
-    mockLoadDetail.mockResolvedValue(undefined);
-    mockLoadPulls.mockResolvedValue(undefined);
+    mockMarkPullReady.mockReset();
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it("refreshes detail and pull lists after marking ready for review", async () => {
-    mockPost.mockResolvedValue({
-      data: { status: "ready_for_review" },
+  it("stays pending until the acknowledged ready command settles", async () => {
+    let settle = () => {};
+    mockMarkPullReady.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as { onSuccess?: () => void; onSettled?: () => void };
+      settle = () => {
+        callbacks.onSuccess?.();
+        callbacks.onSettled?.();
+      };
     });
 
     render(ReadyForReviewButton, {
@@ -53,20 +46,27 @@ describe("ReadyForReviewButton", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /ready for review/i }));
 
-    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "kenn-forge", 141, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "wesm/kenn-forge",
-    });
-    expect(mockLoadPulls).toHaveBeenCalledTimes(1);
+    expect(mockMarkPullReady).toHaveBeenCalledWith(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "wesm",
+        name: "kenn-forge",
+        repoPath: "wesm/kenn-forge",
+      },
+      141,
+      expect.any(Object),
+    );
+    expect(screen.getByRole("button", { name: "Publishing…" })).toBeTruthy();
+    settle();
+    await waitFor(() => expect(screen.getByRole("button", { name: /ready for review/i })).toBeTruthy());
   });
 
-  it("refreshes stale draft state after a GitHub 404", async () => {
-    mockPost.mockResolvedValue({
-      error: {
-        detail:
-          "marking wesm/kenn-forge#141 ready for review: POST https://api.github.com/repos/wesm/kenn-forge/pulls/141/ready_for_review: 404 Not Found []",
-      },
+  it("settles after an acknowledged failure", async () => {
+    mockMarkPullReady.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as { onFailure?: (message: string) => void; onSettled?: () => void };
+      callbacks.onFailure?.("permission denied");
+      callbacks.onSettled?.();
     });
 
     render(ReadyForReviewButton, {
@@ -83,11 +83,7 @@ describe("ReadyForReviewButton", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /ready for review/i }));
 
-    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "kenn-forge", 141, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "wesm/kenn-forge",
-    });
-    expect(mockLoadPulls).toHaveBeenCalledTimes(1);
+    expect(mockMarkPullReady).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: /ready for review/i })).toBeTruthy();
   });
 });

@@ -1,13 +1,15 @@
 import { page } from "vite-plus/test/browser";
 import { flushSync, mount, unmount } from "svelte";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
 
 import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
-import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
+import WorkspaceTerminalView from "./WorkspaceTerminalViewTestHarness.svelte";
 
 const WAIT = 10_000;
 
@@ -86,6 +88,16 @@ class NoopEventSource {
 }
 
 describe("WorkspaceTerminalView hostVisible", () => {
+  let runtime: OwnedAppRuntime;
+
+  beforeEach(() => {
+    runtime = makeAppRuntime();
+  });
+
+  afterEach(async () => {
+    await Effect.runPromise(runtime.disposeEffect);
+  });
+
   it("unmounts an open dialog while hidden and restores it when visible", async () => {
     const api = createMockApiFetch([workspaceRoutes()]);
     const originalFetch = globalThis.fetch;
@@ -118,6 +130,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const instance = mount(WorkspaceTerminalView, {
       target,
       props: {
+        runtime,
         workspaceId: "ws-1",
         hideWorkspaceList: true,
         hideRightSidebar: true,
@@ -175,7 +188,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     // diff store from context. Created after the fetch swap so its API
     // calls hit the mock (and fail harmlessly into the panel's error
     // state — this test only asserts sidebar presence).
-    const diffStore = createDiffStore();
+    const diffStore = createDiffStore({ runtime });
 
     localStorage.removeItem("kenn-forge-workspace-sidebar-open");
     localStorage.setItem("kenn-forge-workspace-sidebar-width", "400");
@@ -190,6 +203,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const instance = mount(WorkspaceTerminalView, {
       target,
       props: {
+        runtime,
         workspaceId: "ws-1",
         hideWorkspaceList: true,
         hideRightSidebar: false,
@@ -262,7 +276,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
     };
-    const diffStore = createDiffStore();
+    const diffStore = createDiffStore({ runtime });
 
     localStorage.removeItem("kenn-forge-workspace-sidebar-open");
     localStorage.setItem("kenn-forge-workspace-sidebar-width", "400");
@@ -275,6 +289,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const instance = mount(WorkspaceTerminalView, {
       target,
       props: {
+        runtime,
         workspaceId: "ws-1",
         hideWorkspaceList: true,
         hideRightSidebar: false,
@@ -339,6 +354,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const instance = mount(WorkspaceTerminalView, {
       target,
       props: {
+        runtime,
         workspaceId: "ws-1",
         hideWorkspaceList: true,
         hideRightSidebar: true,
@@ -425,6 +441,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const instance = mount(WorkspaceTerminalView, {
       target,
       props: {
+        runtime,
         workspaceId: "ws-1",
         hideWorkspaceList: true,
         hideRightSidebar: true,
@@ -490,6 +507,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const instance = mount(WorkspaceTerminalView, {
       target,
       props: {
+        runtime,
         workspaceId: "ws-1",
         hideWorkspaceList: true,
         hideRightSidebar: true,
@@ -545,6 +563,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const instance = mount(WorkspaceTerminalView, {
       target,
       props: {
+        runtime,
         workspaceId: "ws-1",
         hideWorkspaceList: false,
         hideRightSidebar: true,

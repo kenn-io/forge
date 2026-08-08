@@ -1,9 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { runAppStartup } from "./appStartup.js";
+import { afterEach, assert, it, vi } from "@effect/vitest";
+import { Deferred, Effect, Fiber, Layer } from "effect";
 import type { StoreInstances } from "../types.js";
-import { DEFAULT_TERMINAL_SETTINGS, type Settings, type TerminalSettings } from "../api/types.js";
+import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "../api/types.js";
+import { TransientTransportError } from "../api/effect-errors.js";
+import { StartupWorkflow, type StartupSnapshot } from "../app/startup-workflow.js";
+import { appStartupProgram } from "./appStartup.js";
 
-type LaunchTargets = NonNullable<Settings["launch_targets"]>;
+type LaunchTargets = NonNullable<StartupSnapshot["launch_targets"]>;
 
 const codexTarget = {
   key: "codex",
@@ -15,7 +18,12 @@ const codexTarget = {
   disabled_reason: "",
 } satisfies LaunchTargets[number];
 
-function makeStores(): StoreInstances {
+function makeStores(
+  options: {
+    readonly syncPolling?: Effect.Effect<never>;
+    readonly providerEvents?: Effect.Effect<never>;
+  } = {},
+): StoreInstances {
   let terminalSettings = { ...DEFAULT_TERMINAL_SETTINGS };
   let launchTargets: LaunchTargets = [];
   return {
@@ -35,295 +43,223 @@ function makeStores(): StoreInstances {
     },
     activity: {
       hydrateDefaults: vi.fn(),
-      loadActivity: vi.fn().mockResolvedValue(undefined),
+      loadActivity: vi.fn(),
     },
     sync: {
-      startPolling: vi.fn(),
+      pollingEffect: options.syncPolling ?? Effect.never,
     },
     pulls: {
-      loadPulls: vi.fn().mockResolvedValue(undefined),
+      loadPulls: vi.fn(),
     },
     issues: {
       hydrateDefaults: vi.fn(),
-      loadIssues: vi.fn().mockResolvedValue(undefined),
+      loadIssues: vi.fn(),
     },
     events: {
-      connect: vi.fn(),
-      disconnect: vi.fn(),
+      streamEffect: options.providerEvents ?? Effect.never,
     },
-    // Fields App.svelte doesn't touch during startup — cast to
-    // StoreInstances so we don't have to stub every field.
   } as unknown as StoreInstances;
 }
 
-function makeSettings(): Settings {
-  return {
-    repos: [],
-    pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-    workspaces: { auto_assign_on_create: false },
-    issues: { hide_bots: true },
-    kata_projects: [],
-    fleet: {
-      enabled: false,
-      sessions: {},
-      peers: [],
-      ssh_peers: [],
-      restart_required: false,
-    },
-    activity: {
-      view_mode: "threaded",
-      time_range: "7d",
-      hide_closed: false,
-      hide_bots: false,
-      collapse_threads: false,
-      default_branch_retention_days: 90,
-      default_branch_max_commits: 5000,
-    },
-    terminal: {
-      font_family: '"Fira Code", monospace',
-      font_size: 14,
-      scrollback: 1000,
-      line_height: 1,
-      letter_spacing: 0,
-      cursor_blink: true,
-      font_ligatures: false,
-      hide_tmux_status: false,
-    },
-    modes: {
-      activity: true,
-      repos: true,
-      kata: false,
-      docs: false,
-      pulls: true,
-      issues: true,
-      reviews: true,
-      workspaces: true,
-    },
-    notifications: { enabled: true },
-    agents: [],
-    launch_targets: [codexTarget],
-  };
-}
+const settings = {
+  repos: [],
+  pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+  workspaces: { auto_assign_on_create: false },
+  issues: { hide_bots: true },
+  kata_projects: [],
+  fleet: {
+    enabled: false,
+    sessions: {},
+    peers: [],
+    ssh_peers: [],
+    restart_required: false,
+  },
+  activity: {
+    view_mode: "threaded",
+    time_range: "7d",
+    hide_closed: false,
+    hide_bots: false,
+    collapse_threads: false,
+    default_branch_retention_days: 90,
+    default_branch_max_commits: 5000,
+  },
+  terminal: {
+    font_family: '"Fira Code", monospace',
+    font_size: 14,
+    scrollback: 1000,
+    line_height: 1,
+    letter_spacing: 0,
+    cursor_blink: true,
+    font_ligatures: false,
+    hide_tmux_status: false,
+  },
+  modes: {
+    activity: true,
+    repos: true,
+    kata: false,
+    docs: false,
+    pulls: true,
+    issues: true,
+    reviews: true,
+    workspaces: true,
+  },
+  notifications: { enabled: true },
+  agents: [],
+  launch_targets: [codexTarget],
+} satisfies StartupSnapshot;
 
-async function flushMicrotasks(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
-}
+const SuccessfulStartup = Layer.succeed(StartupWorkflow)({
+  start: Effect.succeed(settings),
+  invalidate: Effect.void,
+});
 
-function deferred<T>() {
-  let resolve: (value: T) => void = () => {};
-  let reject: (reason?: unknown) => void = () => {};
-  const promise = new Promise<T>((innerResolve, innerReject) => {
-    resolve = innerResolve;
-    reject = innerReject;
-  });
-  return { promise, resolve, reject };
-}
+const FailedStartup = Layer.succeed(StartupWorkflow)({
+  start: Effect.fail(TransientTransportError.make({ operation: "GET /settings", cause: new Error("offline") })),
+  invalidate: Effect.void,
+});
 
-describe("runAppStartup", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-  });
+const PendingStartup = Layer.succeed(StartupWorkflow)({
+  start: Effect.never,
+  invalidate: Effect.void,
+});
 
-  it("runs post-settings side effects on the happy path", async () => {
-    const stores = makeStores();
-    const settings = makeSettings();
-    const onReady = vi.fn();
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
-    runAppStartup({
-      getSettings: () => Promise.resolve(settings),
-      getStores: () => stores,
-      onReady,
-    });
+it.layer(SuccessfulStartup)("application startup hydration", (it) => {
+  it.effect("owns sync polling and provider events for the startup lifetime", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let syncStarted = false;
+        let syncReleased = false;
+        let eventsStarted = false;
+        let eventsReleased = false;
+        const syncPolling = Effect.scoped(
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              syncStarted = true;
+            }),
+            () =>
+              Effect.sync(() => {
+                syncReleased = true;
+              }),
+          ).pipe(Effect.andThen(Effect.never)),
+        );
+        const providerEvents = Effect.scoped(
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              eventsStarted = true;
+            }),
+            () =>
+              Effect.sync(() => {
+                eventsReleased = true;
+              }),
+          ).pipe(Effect.andThen(Effect.never)),
+        );
+        const stores = makeStores({ syncPolling, providerEvents });
+        const ready = yield* Deferred.make<void>();
+        const fiber = yield* Effect.forkScoped(
+          appStartupProgram({
+            stores,
+            onReady: () => Deferred.doneUnsafe(ready, Effect.void),
+          }),
+        );
 
-    await flushMicrotasks();
+        yield* Deferred.await(ready);
+        yield* Effect.yieldNow;
 
-    expect(stores.settings.setConfiguredRepos).toHaveBeenCalledWith(settings.repos);
-    expect(stores.settings.setModeVisibility).toHaveBeenCalledWith(settings.modes);
-    expect(stores.settings.setTerminalSettings).toHaveBeenCalledWith(settings.terminal);
-    expect(stores.settings.setLaunchTargets).toHaveBeenCalledWith(settings.launch_targets);
-    expect(stores.activity.hydrateDefaults).toHaveBeenCalledWith(settings.activity);
-    expect(stores.issues.hydrateDefaults).toHaveBeenCalledWith(settings.issues);
-    expect(onReady).toHaveBeenCalledTimes(1);
-    expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);
-    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
-    expect(stores.issues.loadIssues).toHaveBeenCalledTimes(1);
-    expect(stores.events.connect).toHaveBeenCalledTimes(1);
-  });
+        assert.strictEqual(syncStarted, true);
+        assert.strictEqual(eventsStarted, true);
 
-  it("clears stale launch targets when startup receives an empty inventory", async () => {
-    const stores = makeStores();
-    stores.settings.setLaunchTargets([codexTarget]);
-    const settings = makeSettings();
-    settings.launch_targets = [];
+        yield* Fiber.interrupt(fiber);
 
-    runAppStartup({
-      getSettings: () => Promise.resolve(settings),
-      getStores: () => stores,
-      onReady: vi.fn(),
-    });
+        assert.strictEqual(syncReleased, true);
+        assert.strictEqual(eventsReleased, true);
+      }),
+    ),
+  );
 
-    await flushMicrotasks();
+  it.effect("hydrates settings before making the application ready", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stores = makeStores();
+        const ready = yield* Deferred.make<void>();
+        const pullsStarted = yield* Deferred.make<void>();
+        const issuesStarted = yield* Deferred.make<void>();
+        const beforeInitialLoad = vi.fn();
+        vi.mocked(stores.pulls.loadPulls).mockImplementation(() => {
+          Deferred.doneUnsafe(pullsStarted, Effect.void);
+        });
+        vi.mocked(stores.issues.loadIssues).mockImplementation(() => {
+          Deferred.doneUnsafe(issuesStarted, Effect.void);
+        });
+        const program = appStartupProgram({
+          stores,
+          beforeInitialLoad,
+          onReady: () => {
+            Deferred.doneUnsafe(ready, Effect.void);
+          },
+        });
 
-    expect(stores.settings.getLaunchTargets()).toEqual([]);
-  });
+        const fiber = yield* Effect.forkScoped(program);
+        yield* Deferred.await(ready);
+        yield* Deferred.await(pullsStarted);
+        yield* Deferred.await(issuesStarted);
 
-  it("waits for backend readiness before fetching settings or loading data", async () => {
-    const stores = makeStores();
-    const ready = deferred<void>();
-    const getSettings = vi.fn(() => Promise.resolve(makeSettings()));
-    const onReady = vi.fn();
+        assert.deepStrictEqual(stores.settings.getLaunchTargets(), [codexTarget]);
+        assert.strictEqual(vi.mocked(stores.settings.setConfiguredRepos).mock.calls.length, 1);
+        assert.strictEqual(vi.mocked(stores.settings.setTerminalSettings).mock.calls.length, 1);
+        assert.strictEqual(beforeInitialLoad.mock.calls.length, 1);
+        assert.strictEqual(vi.mocked(stores.pulls.loadPulls).mock.calls.length, 1);
+        assert.strictEqual(vi.mocked(stores.issues.loadIssues).mock.calls.length, 1);
+        yield* Fiber.interrupt(fiber);
+      }),
+    ),
+  );
+});
 
-    runAppStartup({
-      waitUntilBackendReady: () => ready.promise,
-      getSettings,
-      getStores: () => stores,
-      onReady,
-    });
+it.layer(FailedStartup)("application startup defaults", (it) => {
+  it.effect("continues with defaults after a settings failure", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stores = makeStores();
+        const ready = yield* Deferred.make<void>();
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        const fiber = yield* Effect.forkScoped(
+          appStartupProgram({
+            stores,
+            onReady: () => {
+              Deferred.doneUnsafe(ready, Effect.void);
+            },
+          }),
+        );
 
-    await flushMicrotasks();
+        yield* Deferred.await(ready);
 
-    expect(getSettings).not.toHaveBeenCalled();
-    expect(onReady).not.toHaveBeenCalled();
-    expect(stores.sync.startPolling).not.toHaveBeenCalled();
-    expect(stores.pulls.loadPulls).not.toHaveBeenCalled();
-    expect(stores.issues.loadIssues).not.toHaveBeenCalled();
-    expect(stores.events.connect).not.toHaveBeenCalled();
+        assert.strictEqual(vi.mocked(stores.settings.setConfiguredRepos).mock.calls.length, 0);
+        assert.strictEqual(warn.mock.calls.length, 1);
+        yield* Fiber.interrupt(fiber);
+      }),
+    ),
+  );
+});
 
-    ready.resolve();
-    await flushMicrotasks();
+it.layer(PendingStartup)("application startup interruption", (it) => {
+  it.effect("stops silently before post-startup side effects", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stores = makeStores();
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        const onReady = vi.fn();
+        const fiber = yield* Effect.forkScoped(appStartupProgram({ stores, onReady }));
+        yield* Effect.yieldNow;
 
-    expect(getSettings).toHaveBeenCalledTimes(1);
-    expect(onReady).toHaveBeenCalledTimes(1);
-    expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);
-    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
-    expect(stores.issues.loadIssues).toHaveBeenCalledTimes(1);
-    expect(stores.events.connect).toHaveBeenCalledTimes(1);
-  });
+        yield* Fiber.interrupt(fiber);
 
-  it("runs the pre-load hook before marking the app ready and loading lists", async () => {
-    const stores = makeStores();
-    const beforeInitialLoad = vi.fn();
-    const onReady = vi.fn();
-
-    runAppStartup({
-      getSettings: () => Promise.resolve(makeSettings()),
-      getStores: () => stores,
-      beforeInitialLoad,
-      onReady,
-    });
-
-    await flushMicrotasks();
-
-    expect(beforeInitialLoad).toHaveBeenCalledTimes(1);
-    const beforeOrder = beforeInitialLoad.mock.invocationCallOrder[0] ?? 0;
-    const readyOrder = onReady.mock.invocationCallOrder[0] ?? 0;
-    const pullLoadOrder = vi.mocked(stores.pulls.loadPulls).mock.invocationCallOrder[0] ?? 0;
-    const issueLoadOrder = vi.mocked(stores.issues.loadIssues).mock.invocationCallOrder[0] ?? 0;
-    expect(beforeOrder).toBeLessThan(readyOrder);
-    expect(beforeOrder).toBeLessThan(pullLoadOrder);
-    expect(beforeOrder).toBeLessThan(issueLoadOrder);
-  });
-
-  it("skips every post-await side effect when cancelled before settings resolve", async () => {
-    const stores = makeStores();
-    let resolveSettings: (value: Settings) => void = () => {};
-    const settingsPromise = new Promise<Settings>((resolve) => {
-      resolveSettings = resolve;
-    });
-    const onReady = vi.fn();
-
-    const cancel = runAppStartup({
-      getSettings: () => settingsPromise,
-      getStores: () => stores,
-      onReady,
-    });
-
-    cancel();
-    resolveSettings(makeSettings());
-    await flushMicrotasks();
-
-    expect(stores.settings.setConfiguredRepos).not.toHaveBeenCalled();
-    expect(stores.settings.setTerminalFontFamily).not.toHaveBeenCalled();
-    expect(stores.activity.hydrateDefaults).not.toHaveBeenCalled();
-    expect(onReady).not.toHaveBeenCalled();
-    expect(stores.sync.startPolling).not.toHaveBeenCalled();
-    expect(stores.pulls.loadPulls).not.toHaveBeenCalled();
-    expect(stores.issues.loadIssues).not.toHaveBeenCalled();
-    expect(stores.events.connect).not.toHaveBeenCalled();
-  });
-
-  it("still runs post-await side effects after a rejected getSettings when not cancelled", async () => {
-    const stores = makeStores();
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const onReady = vi.fn();
-
-    runAppStartup({
-      getSettings: () => Promise.reject(new Error("boom")),
-      getStores: () => stores,
-      onReady,
-    });
-
-    await flushMicrotasks();
-
-    expect(warn).toHaveBeenCalled();
-    expect(stores.settings.setConfiguredRepos).not.toHaveBeenCalled();
-    expect(stores.settings.setTerminalFontFamily).not.toHaveBeenCalled();
-    expect(onReady).toHaveBeenCalledTimes(1);
-    expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);
-    expect(stores.events.connect).toHaveBeenCalledTimes(1);
-
-    warn.mockRestore();
-  });
-
-  it("continues startup with defaults when getSettings never settles", async () => {
-    vi.useFakeTimers();
-    const stores = makeStores();
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const onReady = vi.fn();
-
-    runAppStartup({
-      getSettings: () => new Promise<Settings>(() => {}),
-      getStores: () => stores,
-      onReady,
-    });
-
-    await vi.advanceTimersByTimeAsync(10_000);
-
-    expect(stores.settings.setConfiguredRepos).not.toHaveBeenCalled();
-    expect(stores.settings.setTerminalFontFamily).not.toHaveBeenCalled();
-    expect(stores.activity.hydrateDefaults).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith("Failed to load settings, using defaults:", expect.any(Error));
-    expect(onReady).toHaveBeenCalledTimes(1);
-    expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);
-    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
-    expect(stores.issues.loadIssues).toHaveBeenCalledTimes(1);
-    expect(stores.events.connect).toHaveBeenCalledTimes(1);
-  });
-
-  it("skips post-await side effects when cancelled after a rejected getSettings", async () => {
-    const stores = makeStores();
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    let rejectSettings: (err: Error) => void = () => {};
-    const settingsPromise = new Promise<Settings>((_, reject) => {
-      rejectSettings = reject;
-    });
-    const onReady = vi.fn();
-
-    const cancel = runAppStartup({
-      getSettings: () => settingsPromise,
-      getStores: () => stores,
-      onReady,
-    });
-
-    cancel();
-    rejectSettings(new Error("boom"));
-    await flushMicrotasks();
-
-    expect(onReady).not.toHaveBeenCalled();
-    expect(stores.sync.startPolling).not.toHaveBeenCalled();
-    expect(stores.events.connect).not.toHaveBeenCalled();
-
-    warn.mockRestore();
-  });
+        assert.strictEqual(onReady.mock.calls.length, 0);
+        assert.strictEqual(warn.mock.calls.length, 0);
+      }),
+    ),
+  );
 });

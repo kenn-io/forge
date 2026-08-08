@@ -1,22 +1,25 @@
 <script lang="ts">
-  import { onDestroy, onMount, untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
+  import { Effect } from "effect";
   import {
     Button,
     EmptyState,
     FlashBanner,
     Spinner,
   } from "@kenn-io/kit-ui";
-  import Provider from "../../Provider.svelte";
   import WorkspaceRightSidebar from "../workspace/WorkspaceRightSidebar.svelte";
   import type { StoreInstances } from "../../types.js";
 
-  import { client } from "../../api/runtime.js";
-  import { getSettings } from "../../api/settings.js";
+  import { getStores } from "../../context.js";
+  import {
+    StartupWorkflow,
+    startupErrorMessage,
+    type StartupError,
+  } from "../../app/startup-workflow.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import {
     getBasePath,
-    getPage,
     getRoute,
-    navigate,
   } from "../../stores/router.svelte.ts";
   import {
     cleanupTheme,
@@ -24,15 +27,8 @@
     reapplyTheme,
   } from "../../stores/theme.svelte.js";
   import {
-    emitWorkspaceCommand,
-    getActiveWorktreeKey,
-    getIssueActions,
-    getPullRequestActions,
-    getUIConfig,
     initWorkspaceBridge,
-    invokeAction,
   } from "../../stores/embed-config.svelte.js";
-  import { getGlobalRepo } from "../../stores/filter.svelte.js";
   import SessionTerminalPool from "./SessionTerminalPool.svelte";
   import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
@@ -45,12 +41,12 @@
   } from "../../stores/terminal-settings-persistence.js";
   import { showFlash } from "../../stores/flash.svelte.js";
 
-  let stores = $state<StoreInstances | undefined>();
+  const stores: StoreInstances = getStores();
   let terminalSettingsReady = $state(false);
   let terminalSettingsError = $state<string | null>(null);
-  let settingsLoadSequence = 0;
-  let settingsLoadController: AbortController | undefined;
-  const terminalSettingsTimeoutMs = 8_000;
+  const runtime = getAppRuntime();
+  let interruptSettingsLoad = () => {};
+  const r = $derived(getRoute());
 
   onMount(() => {
     initTheme();
@@ -60,129 +56,53 @@
     };
   });
 
-  onDestroy(() => {
-    stores?.events.disconnect();
-  });
-
   $effect(() => {
     reapplyTheme();
   });
 
   $effect(() => {
-    const activeStores = stores;
-    if (!activeStores) return;
-
-    void loadTerminalSettings(activeStores);
+    untrack(() => loadTerminalSettings(stores));
     return () => {
-      settingsLoadSequence += 1;
-      settingsLoadController?.abort();
-      settingsLoadController = undefined;
+      interruptSettingsLoad();
+      interruptSettingsLoad = () => {};
     };
   });
 
-  async function getSettingsWithTimeout(controller: AbortController) {
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        getSettings({ signal: controller.signal }),
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => {
-            const error = new Error("Timed out loading terminal settings");
-            controller.abort(error);
-            reject(error);
-          }, terminalSettingsTimeoutMs);
-        }),
-      ]);
-    } finally {
-      if (timeout !== undefined) clearTimeout(timeout);
-    }
-  }
-
-  async function loadTerminalSettings(activeStores: StoreInstances): Promise<void> {
-    settingsLoadController?.abort();
-    const controller = new AbortController();
-    settingsLoadController = controller;
-    const sequence = ++settingsLoadSequence;
+  function loadTerminalSettings(activeStores: StoreInstances, refresh = false): void {
+    interruptSettingsLoad();
     const terminalHydration = untrack(() =>
       beginTerminalSettingsHydration(activeStores.settings)
     );
     terminalSettingsReady = false;
     terminalSettingsError = null;
-    try {
-      const settings = await getSettingsWithTimeout(controller);
-      if (sequence !== settingsLoadSequence) return;
-      hydrateTerminalSettings(terminalHydration, settings.terminal);
-      terminalSettingsReady = true;
-    } catch (error) {
-      if (sequence !== settingsLoadSequence) return;
-      const detail = error instanceof Error ? error.message : "Unknown error";
-      terminalSettingsError = detail;
-      showFlash(`Couldn't load terminal settings: ${detail}`, {
-        tone: "danger",
+    const program = Effect.gen(function* () {
+      const startup = yield* StartupWorkflow;
+      if (refresh) yield* startup.invalidate;
+      const settings = yield* startup.start;
+      yield* Effect.sync(() => {
+        hydrateTerminalSettings(terminalHydration, settings.terminal);
+        terminalSettingsReady = true;
       });
-    } finally {
-      if (settingsLoadController === controller) {
-        settingsLoadController = undefined;
-      }
-    }
+    });
+    const execution = runtime.runCommand(program, {
+      operation: "load embedded terminal settings",
+      safeContext: {},
+      onFailure: (failure: StartupError) => {
+        const detail = startupErrorMessage(failure);
+        terminalSettingsError = detail;
+        showFlash(`Couldn't load terminal settings: ${detail}`, {
+          tone: "danger",
+        });
+      },
+    });
+    interruptSettingsLoad = execution.interrupt;
   }
 
   function retryTerminalSettings(): void {
-    const activeStores = stores;
-    if (!activeStores) return;
-    void loadTerminalSettings(activeStores);
+    loadTerminalSettings(stores, true);
   }
 </script>
 
-<Provider
-  {client}
-  roborevBaseUrl="/api/roborev"
-  onError={(msg) => showFlash(msg, { tone: "danger" })}
-  onNavigate={(e) =>
-    navigate(typeof e === "string" ? e : e.path)}
-  onWorkspaceCommand={emitWorkspaceCommand}
-  actions={{
-    pull: getPullRequestActions().map((a) => ({
-      id: a.id,
-      label: a.label,
-      handler: (ctx) => invokeAction(a, {
-        surface: ctx.surface,
-        owner: ctx.owner,
-        name: ctx.name,
-        number: ctx.number,
-        ...ctx.meta != null && { meta: ctx.meta },
-      }),
-    })),
-    issue: getIssueActions().map((a) => ({
-      id: a.id,
-      label: a.label,
-      handler: (ctx) => invokeAction(a, {
-        surface: ctx.surface,
-        owner: ctx.owner,
-        name: ctx.name,
-        number: ctx.number,
-        ...ctx.meta != null && { meta: ctx.meta },
-      }),
-    })),
-  }}
-  config={{
-    hideStar: getUIConfig().hideStar,
-    basePath: getBasePath(),
-  }}
-  hostState={{
-    getGlobalRepo,
-    getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
-    getActiveWorktreeKey,
-  }}
-  {getPage}
-  sidebar={{
-    isEmbedded: () => true,
-    isSidebarToggleEnabled: () => false,
-    toggleSidebar: () => {},
-  }}
-  bind:stores
->
-  {@const r = getRoute()}
   <!-- Embed routes have no app header, so the shared flash banner pins to the
        top of the pane. Without this mount, showFlash from embed surfaces
        (provider errors, workspace actions) lands in the shared store with no
@@ -251,7 +171,6 @@
       />
     {/if}
   </main>
-</Provider>
 
 <style>
   .embed-layout {

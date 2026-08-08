@@ -49,7 +49,7 @@
     isCommentSubmitPending("pull", owner, name, number, platformHost),
   );
 
-  async function handleSubmit(): Promise<void> {
+  function handleSubmit(): void {
     if (isEmpty || isPostingCurrent || disabled) return;
     const submittedOwner = owner;
     const submittedName = name;
@@ -63,14 +63,8 @@
       submittedNumber,
       submittedPlatformHost,
     );
-    try {
-      const posted = await detail.submitComment(
-        submittedOwner,
-        submittedName,
-        submittedNumber,
-        submittedBody,
-      );
-      if (posted) {
+    detail.submitComment(submittedOwner, submittedName, submittedNumber, submittedBody, {
+      onSuccess: () => {
         clearCommentDraft(
           "pull",
           submittedOwner,
@@ -78,16 +72,17 @@
           submittedNumber,
           submittedPlatformHost,
         );
-      }
-    } finally {
-      finishCommentSubmit(
+      },
+      onSettled: () => {
+        finishCommentSubmit(
         "pull",
         submittedOwner,
         submittedName,
         submittedNumber,
         submittedPlatformHost,
-      );
-    }
+        );
+      },
+    });
   }
 </script>
 
@@ -106,12 +101,12 @@
           setCommentDraft("pull", owner, name, number, nextBody, platformHost);
         }}
         onsubmit={() => {
-          void handleSubmit();
+          handleSubmit();
         }}
       />
       <button
         class="submit-btn"
-        onclick={() => void handleSubmit()}
+        onclick={handleSubmit}
         disabled={isEmpty || isPostingCurrent || disabled}
         title={disabled && disabledReason !== undefined ? disabledReason : undefined}
       >

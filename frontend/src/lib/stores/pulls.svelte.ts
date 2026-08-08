@@ -1,19 +1,24 @@
-import type { KanbanStatus, PullRequest } from "../api/types.js";
+import { Effect } from "effect";
+import { executeGeneratedApiRequest, GeneratedApi } from "../api/generated-api.js";
+import { TransientTransportError, type ApiProblemError } from "../api/effect-errors.js";
+import { retryIdempotentRead } from "../api/retry-policy.js";
+import type { KanbanStatus, PullRequest, PullsParams, StarredRequest } from "../api/types.js";
+import type { AppRuntime } from "../app/runtime.js";
 import {
   providerDefaultHost,
   providerItemPath,
   providerRouteParams,
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
-import type { ForgeClient } from "../types.js";
 import { bucketCIChecks, parseCIChecks } from "../utils/ci-buckets.js";
 import { normalizeKanbanStatus } from "./workflow.svelte.js";
 import { showFlash } from "./flash.svelte.js";
+import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
+import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
+import { providerItemKey, providerMutationKey } from "./provider-key.js";
+import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
 
-export type FetchPullResult =
-  | { status: "found"; pull: PullRequest }
-  | { status: "not-found" }
-  | { status: "error"; message: string };
+export type { FetchPullResult } from "./pulls-workflow.js";
 
 export interface PullSelection {
   provider: string;
@@ -26,30 +31,28 @@ export interface PullSelection {
 
 type PullIdentityRef = ProviderRouteRef;
 
-type PullsParams = {
-  repo?: string;
-  state?: string;
-  kanban?: KanbanStatus;
-  starred?: boolean;
-  q?: string;
-  limit?: number;
-  offset?: number;
-};
-
 export type PullAttributeFilter = "approved" | "draft" | "ready" | "merge_conflicts" | "failed_ci" | "has_workspace";
 
 export interface PullsStoreOptions {
-  client: ForgeClient;
+  runtime: AppRuntime;
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
+  optimisticDetailStarUpdate?: (ref: ProviderRouteRef, number: number, starred: boolean, envelopeTick: number) => void;
 }
 
 function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
   return error.detail ?? error.title ?? fallback;
 }
 
+function readErrorMessage(error: ApiProblemError | TransientTransportError): string {
+  if (error._tag === "ApiProblemError") {
+    return apiErrorMessage(error.problem, "failed to load pulls");
+  }
+  return "Could not reach Kenn Forge";
+}
+
 export function createPullsStore(opts: PullsStoreOptions) {
-  const apiClient = opts.client;
+  const runtime = opts.runtime;
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
   const getGroupByRepo = opts.getGroupByRepo ?? (() => false);
 
@@ -286,115 +289,239 @@ export function createPullsStore(opts: PullsStoreOptions) {
     pulls = pulls.map((pr) => (pullMatchesRef(pr, ref, number) ? { ...pr, KanbanStatus: status } : pr));
   }
 
-  async function togglePRStar(ref: PullIdentityRef, number: number, currentlyStarred: boolean): Promise<void> {
-    try {
-      if (currentlyStarred) {
-        const { error } = await apiClient.DELETE("/starred", {
-          body: {
-            item_type: "pr",
-            provider: ref.provider,
-            platform_host: concretePlatformHost(ref),
-            owner: ref.owner,
-            name: ref.name,
-            number,
-          },
-        });
-        if (error) {
-          throw new Error(apiErrorMessage(error, "failed to unstar PR"));
-        }
-      } else {
-        const { error } = await apiClient.PUT("/starred", {
-          body: {
-            item_type: "pr",
-            provider: ref.provider,
-            platform_host: concretePlatformHost(ref),
-            owner: ref.owner,
-            name: ref.name,
-            number,
-          },
-        });
-        if (error) {
-          throw new Error(apiErrorMessage(error, "failed to star PR"));
-        }
-      }
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-      return;
-    }
-    await loadPulls();
+  function optimisticStarUpdate(ref: PullIdentityRef, number: number, starred: boolean): void {
+    pulls = pulls.map((pr) => (pullMatchesRef(pr, ref, number) ? { ...pr, Starred: starred } : pr));
   }
 
-  async function fetchSinglePull(
+  function togglePRStar(ref: PullIdentityRef, number: number, currentlyStarred: boolean): void {
+    const platformHost = concretePlatformHost(ref);
+    const body: StarredRequest = {
+      item_type: "pr",
+      provider: ref.provider,
+      platform_host: platformHost,
+      owner: ref.owner,
+      name: ref.name,
+      number,
+    };
+    const nextStarred = !currentlyStarred;
+    const mutationTick = nextWorkspaceLifecycleTick();
+    let mutationSettled = false;
+    const program = Effect.gen(function* () {
+      const mutations = yield* ProviderMutations;
+      const commit = (
+        currentlyStarred
+          ? executeGeneratedApiRequest<void>("DELETE pull request star", (client, signal) =>
+              client.DELETE("/starred", { body, signal }),
+            )
+          : executeGeneratedApiRequest<void>("PUT pull request star", (client, signal) =>
+              client.PUT("/starred", { body, signal }),
+            )
+      ).pipe(Effect.as(nextStarred));
+      const refreshOnStale = executeGeneratedApiRequest(
+        "GET pull request after stale list star mutation",
+        (client, signal) =>
+          client.GET(providerItemPath("pulls", ref, ""), {
+            params: { path: { ...providerRouteParams(ref), number } },
+            signal,
+          }),
+      ).pipe(Effect.map((response) => Boolean(response.merge_request.Starred)));
+      yield* mutations.submit({
+        key: providerMutationKey(
+          "pull",
+          { provider: ref.provider, platformHost, owner: ref.owner, name: ref.name, number },
+          "star",
+        ),
+        baseline: currentlyStarred,
+        optimistic: nextStarred,
+        apply: (starred) =>
+          Effect.sync(() => {
+            optimisticStarUpdate(ref, number, starred);
+            opts.optimisticDetailStarUpdate?.(ref, number, starred, mutationTick);
+          }),
+        commit,
+        refreshOnStale,
+      });
+      mutationSettled = true;
+      const workflow = yield* PullsWorkflow;
+      yield* workflow.invalidate(
+        providerItemKey({ provider: ref.provider, platformHost, owner: ref.owner, name: ref.name, number }),
+      );
+      yield* loadPullsEffect();
+    });
+    runtime.runCommand(program, {
+      operation: currentlyStarred ? "unstar pull request from list" : "star pull request from list",
+      safeContext: { provider: ref.provider, platformHost, owner: ref.owner, name: ref.name, number },
+      onFailure: (failure) => {
+        if (mutationSettled) {
+          storeError = providerMutationFailureMessage(failure, "failed to refresh pull requests");
+          return;
+        }
+        showFlash(
+          providerMutationFailureMessage(failure, currentlyStarred ? "failed to unstar PR" : "failed to star PR"),
+          { tone: "danger" },
+        );
+      },
+    });
+  }
+
+  function fetchSinglePull(
     owner: string,
     name: string,
     number: number,
     identity: ProviderRouteRef,
-  ): Promise<FetchPullResult> {
+    onResult: (result: FetchPullResult) => void,
+  ): void {
     const ref = identity;
-    try {
-      const { data, error, response } = await apiClient.GET(providerItemPath("pulls", ref, ""), {
-        params: {
-          path: { ...providerRouteParams(ref), number },
-        },
-      });
-      if (error || !data) {
-        if (response?.status === 404) {
-          return { status: "not-found" };
-        }
-        return {
-          status: "error",
-          message: `API returned ${response?.status ?? "unknown"}`,
-        };
-      }
-      const mr = data.merge_request;
-      return {
-        status: "found",
-        pull: {
-          ...mr,
-          repo: data.repo,
-          platform_host: data.platform_host,
-          repo_owner: data.repo_owner,
-          repo_name: data.repo_name,
-          detail_loaded: data.detail_loaded,
-          detail_fetched_at: data.detail_fetched_at,
-          worktree_links: data.worktree_links,
-        } as PullRequest,
-      };
-    } catch (err) {
-      return {
-        status: "error",
-        message: err instanceof Error ? err.message : "network error",
-      };
-    }
+    const key = providerItemKey({
+      provider: ref.provider,
+      platformHost: concretePlatformHost(ref),
+      owner,
+      name,
+      number,
+    });
+    const program = Effect.gen(function* () {
+      const api = yield* GeneratedApi;
+      const request = Effect.tryPromise({
+        try: (signal) =>
+          api.client.GET(providerItemPath("pulls", ref, ""), {
+            params: {
+              path: { ...providerRouteParams(ref), number },
+            },
+            signal,
+          }),
+        catch: (cause) => TransientTransportError.make({ operation: "GET pull request", cause }),
+      }).pipe(
+        Effect.map(({ data, error, response }): FetchPullResult => {
+          if (error || !data) {
+            return response.status === 404
+              ? { status: "not-found" }
+              : { status: "error", message: `API returned ${response.status}` };
+          }
+          const pull: PullRequest = {
+            ...data.merge_request,
+            repo: data.repo,
+            platform_host: data.platform_host,
+            repo_owner: data.repo_owner,
+            repo_name: data.repo_name,
+            detail_loaded: data.detail_loaded,
+            ...(data.detail_fetched_at !== undefined && { detail_fetched_at: data.detail_fetched_at }),
+            worktree_links: data.worktree_links,
+          };
+          return { status: "found", pull };
+        }),
+        Effect.catch((failure) => {
+          const result: FetchPullResult = { status: "error", message: readErrorMessage(failure) };
+          return Effect.succeed(result);
+        }),
+      );
+      const workflow = yield* PullsWorkflow;
+      const result = yield* workflow.refresh(key, request);
+      yield* Effect.sync(() => onResult(result));
+    });
+    runtime.runCommand(program, {
+      operation: "refresh pull request",
+      safeContext: { provider: ref.provider, platformHost: concretePlatformHost(ref), owner, name, number },
+      onFailure: () => {},
+    });
   }
 
-  async function loadPulls(params?: PullsParams): Promise<void> {
-    loading = true;
-    storeError = null;
-    try {
+  function invalidatePullRefresh(ref: PullIdentityRef, number: number): void {
+    const key = providerItemKey({
+      provider: ref.provider,
+      platformHost: concretePlatformHost(ref),
+      owner: ref.owner,
+      name: ref.name,
+      number,
+    });
+    const program = Effect.gen(function* () {
+      const workflow = yield* PullsWorkflow;
+      yield* workflow.invalidate(key);
+    });
+    runtime.runCommand(program, {
+      operation: "invalidate pull request refresh",
+      safeContext: { provider: ref.provider, platformHost: concretePlatformHost(ref), number },
+      onFailure: () => {},
+    });
+  }
+
+  function loadPullsEffect(params?: PullsParams) {
+    const globalRepo = getGlobalRepo();
+    const query: PullsParams = {
+      state: filterState,
+      ...(globalRepo !== undefined && { repo: globalRepo }),
+      ...(filterKanban !== undefined && { kanban: filterKanban }),
+      ...(filterStarred && { starred: true }),
+      ...(searchQuery !== undefined && { q: searchQuery }),
+      ...params,
+    };
+    const read = executeGeneratedApiRequest("GET /pulls", (client, signal) =>
+      client.GET("/pulls", { params: { query }, signal }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.map((result) => result ?? []),
+    );
+    return Effect.sync(() => {
+      loading = true;
+      storeError = null;
+    }).pipe(
+      Effect.andThen(
+        Effect.gen(function* () {
+          const workflow = yield* PullsWorkflow;
+          return yield* workflow.list(read);
+        }),
+      ),
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          pulls = result;
+          loading = false;
+        }),
+      ),
+      Effect.tapError((failure) =>
+        Effect.sync(() => {
+          storeError = readErrorMessage(failure);
+          loading = false;
+        }),
+      ),
+    );
+  }
+
+  function reconcilePullsEffect(params?: PullsParams) {
+    return Effect.suspend(() => {
       const globalRepo = getGlobalRepo();
-      const merged = {
+      const query: PullsParams = {
         state: filterState,
         ...(globalRepo !== undefined && { repo: globalRepo }),
-        ...(filterKanban !== undefined && {
-          kanban: filterKanban,
-        }),
+        ...(filterKanban !== undefined && { kanban: filterKanban }),
         ...(filterStarred && { starred: true }),
         ...(searchQuery !== undefined && { q: searchQuery }),
         ...params,
       };
-      const { data, error } = await apiClient.GET("/pulls", {
-        params: { query: merged },
+      const read = executeGeneratedApiRequest("GET /pulls after provider event", (client, signal) =>
+        client.GET("/pulls", { params: { query }, signal }),
+      ).pipe(
+        retryIdempotentRead,
+        Effect.map((result) => result ?? []),
+      );
+      return Effect.gen(function* () {
+        const workflow = yield* PullsWorkflow;
+        yield* workflow.reconcile(read, (result) =>
+          Effect.sync(() => {
+            pulls = [...result];
+          }),
+        );
       });
-      if (error) {
-        throw new Error(apiErrorMessage(error, "failed to load pulls"));
-      }
-      pulls = (data as PullRequest[]) ?? [];
-    } catch (err) {
-      storeError = err instanceof Error ? err.message : String(err);
-    } finally {
-      loading = false;
-    }
+    });
+  }
+
+  function loadPulls(params?: PullsParams): void {
+    runtime.runCommand(loadPullsEffect(params), {
+      operation: "load pull requests",
+      safeContext: {},
+      onFailure: (failure) => {
+        storeError = readErrorMessage(failure);
+        loading = false;
+      },
+    });
   }
 
   function toggleFilterValue<T extends string>(values: T[], value: T): T[] {
@@ -470,9 +597,13 @@ export function createPullsStore(opts: PullsStoreOptions) {
     clearSelection,
     getPullKanbanStatus,
     optimisticKanbanUpdate,
+    optimisticStarUpdate,
     togglePRStar,
     loadPulls,
+    loadPullsEffect,
+    reconcilePullsEffect,
     fetchSinglePull,
+    invalidatePullRefresh,
   };
 }
 

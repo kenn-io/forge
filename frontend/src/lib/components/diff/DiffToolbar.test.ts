@@ -1,11 +1,19 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import DiffToolbar from "./DiffToolbar.svelte";
 
+let runtime: OwnedAppRuntime;
+
+beforeEach(() => {
+  runtime = makeAppRuntime();
+});
+
 function renderToolbar(options: { compact?: boolean; showRichPreview?: boolean } = {}) {
-  const diff = createDiffStore();
+  const diff = createDiffStore({ runtime });
   render(DiffToolbar, {
     props: options,
     context: new Map([[STORES_KEY, { diff }]]),
@@ -14,10 +22,11 @@ function renderToolbar(options: { compact?: boolean; showRichPreview?: boolean }
 }
 
 describe("DiffToolbar", () => {
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
     localStorage.removeItem("diff-word-wrap");
     localStorage.removeItem("diff-view-mode");
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("defaults the changed file category filter to all and renders category buttons", async () => {

@@ -1,8 +1,24 @@
-import type { ForgeClient } from "../types.js";
+import { Effect } from "effect";
+import type { AppExecution, AppRuntime } from "../app/runtime.js";
+import { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
+import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import type { components } from "../api/generated/schema.js";
-import { isProblem, problemConflictReason } from "../api/problems.js";
-import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
+import {
+  providerItemPath,
+  providerRouteParams,
+  resolvedPlatformHost,
+  type ProviderRouteRef,
+} from "../api/provider-routes.js";
 import { showFlash } from "./flash.svelte.js";
+import {
+  invokeMutationCallback,
+  invokeMutationFailure,
+  ProviderMutations,
+  providerMutationFailureMessage,
+  type MutationCallbacks,
+  type ProviderMutationError,
+} from "./ordered-mutations.js";
+import { providerItemKey } from "./provider-key.js";
 
 export type DiffReviewDraft = components["schemas"]["DiffReviewDraftResponse"];
 export type DiffReviewDraftComment = components["schemas"]["DiffReviewDraftComment"];
@@ -14,17 +30,19 @@ export interface DiffReviewDraftCommentEditState {
 }
 
 export interface DiffReviewDraftStoreOptions {
-  client: ForgeClient;
-  onPublished?: (ref: ProviderRouteRef, number: number) => Promise<void> | void;
-  onStalePublish?: (ref: ProviderRouteRef, number: number) => Promise<void> | void;
-}
-
-function apiErrorMessage(error: { detail?: string; title?: string } | undefined, fallback: string): string {
-  return error?.detail ?? error?.title ?? fallback;
+  runtime: AppRuntime;
+  onPublished?: (
+    ref: ProviderRouteRef,
+    number: number,
+  ) => Effect.Effect<void, ApiProblemError | TransientTransportError, GeneratedApi | ProviderMutations>;
+  onStalePublish?: (
+    ref: ProviderRouteRef,
+    number: number,
+  ) => Effect.Effect<void, ApiProblemError | TransientTransportError, GeneratedApi | ProviderMutations>;
 }
 
 export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
-  const apiClient = opts.client;
+  const runtime = opts.runtime;
 
   let enabled = $state(false);
   let ref = $state<ProviderRouteRef | null>(null);
@@ -39,6 +57,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
   let wasEnabled = false;
   let draftVersion = 0;
   let submitVersion = 0;
+  let activeDraftLoad: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
 
   function isEnabled(): boolean {
     return enabled;
@@ -97,13 +116,6 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     return Object.values(commentEditStates).some((state) => state.active || state.dirty);
   }
 
-  function currentParams() {
-    if (!ref || !number) return null;
-    return {
-      path: { ...providerRouteParams(ref), number },
-    };
-  }
-
   function requestKey(): string {
     if (!ref || !number) return "";
     return [
@@ -114,6 +126,16 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       number,
       diffHeadSHA ?? "",
     ].join(":");
+  }
+
+  function mutationKey(selectedRef: ProviderRouteRef, selectedNumber: number): string {
+    return `review-draft\u0000${providerItemKey({
+      provider: selectedRef.provider,
+      platformHost: resolvedPlatformHost(selectedRef.provider, selectedRef.platformHost),
+      owner: selectedRef.owner,
+      name: selectedRef.name,
+      number: selectedNumber,
+    })}`;
   }
 
   function beginSubmit(): number {
@@ -131,6 +153,14 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
   function cancelSubmit(): void {
     submitVersion += 1;
     submitting = false;
+  }
+
+  function settleRejectedMutation(callbacks: MutationCallbacks): void {
+    try {
+      callbacks.onSettled?.();
+    } catch {
+      // Presentation callbacks do not own command acceptance.
+    }
   }
 
   function draftCommentRange(comment: DiffReviewDraftComment): DiffReviewLineRange {
@@ -182,7 +212,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       storeWarning = null;
       clearCommentEditStates();
       cancelSubmit();
-      void loadDraft();
+      loadDraft();
     }
   }
 
@@ -205,6 +235,8 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
   }
 
   function invalidateDraftLoad(): void {
+    activeDraftLoad?.interrupt();
+    activeDraftLoad = null;
     draftVersion += 1;
     loading = false;
   }
@@ -224,54 +256,82 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     clearCommentEditStates();
   }
 
-  async function loadDraft(): Promise<void> {
+  function normalizeDraft(next: DiffReviewDraft): DiffReviewDraft {
+    return {
+      ...next,
+      comments: next.comments ?? [],
+      supported_actions: next.supported_actions ?? [],
+    };
+  }
+
+  function readDraft(
+    selectedRef: ProviderRouteRef,
+    selectedNumber: number,
+  ): Effect.Effect<DiffReviewDraft, ApiProblemError | TransientTransportError, GeneratedApi> {
+    return executeGeneratedApiRequest("GET pull request review draft", (client, signal) =>
+      client.GET(providerItemPath("pulls", selectedRef, "/review-draft"), {
+        params: { path: { ...providerRouteParams(selectedRef), number: selectedNumber } },
+        signal,
+      }),
+    ).pipe(Effect.map(normalizeDraft));
+  }
+
+  function draftReadFailureMessage(failure: ApiProblemError | TransientTransportError): string {
+    return failure._tag === "ApiProblemError"
+      ? (failure.problem.detail ?? failure.problem.title ?? "failed to load review draft")
+      : "Could not reach Kenn Forge";
+  }
+
+  function loadDraft(): void {
     if (!enabled || !ref) return;
-    const params = currentParams();
-    if (!params) return;
+    const selectedRef = ref;
+    const selectedNumber = number;
     const key = requestKey();
     const version = ++draftVersion;
     const isCurrent = () => requestKey() === key && draftVersion === version;
+    activeDraftLoad?.interrupt();
     loading = true;
     storeError = null;
-    try {
-      const { data, error, response } = await apiClient.GET(providerItemPath("pulls", ref, "/review-draft"), {
-        params,
-      });
-      if (!data) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-      }
-      if (!isCurrent()) return;
-      draft = {
-        ...data,
-        comments: data.comments ?? [],
-        supported_actions: data.supported_actions ?? [],
-      };
-    } catch (err) {
-      if (!isCurrent()) return;
-      storeError = err instanceof Error ? err.message : String(err);
-    } finally {
-      if (isCurrent()) {
-        loading = false;
-      }
-    }
+    const program = readDraft(selectedRef, selectedNumber).pipe(
+      Effect.tap((next) =>
+        Effect.sync(() => {
+          if (isCurrent()) draft = next;
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (isCurrent()) loading = false;
+        }),
+      ),
+      Effect.asVoid,
+    );
+    const execution = runtime.runCommand(program, {
+      operation: "load pull request review draft",
+      safeContext: { owner: selectedRef.owner, name: selectedRef.name, number: selectedNumber },
+      onFailure: (failure) => {
+        if (isCurrent()) storeError = draftReadFailureMessage(failure);
+      },
+    });
+    activeDraftLoad = execution;
   }
 
-  async function recoverAfterStalePublish(staleRef: ProviderRouteRef, staleNumber: number, key: string): Promise<void> {
-    try {
-      await opts.onStalePublish?.(staleRef, staleNumber);
-    } catch {
-      // The publish already failed with a stale-head conflict. Keep that
-      // original error visible if the recovery refresh also fails.
-    }
-    if (requestKey() === key) {
-      await loadDraft();
-    }
-  }
-
-  async function createComment(body: string, range: DiffReviewLineRange): Promise<boolean> {
-    if (!enabled || !ref) return false;
-    const params = currentParams();
-    if (!params) return false;
+  function launchDraftMutation({
+    selectedRef,
+    selectedNumber,
+    operation,
+    fallback,
+    commit,
+    reconciliation,
+    callbacks,
+  }: {
+    selectedRef: ProviderRouteRef;
+    selectedNumber: number;
+    operation: string;
+    fallback: string;
+    commit: Effect.Effect<void, ProviderMutationError, GeneratedApi>;
+    reconciliation: "refresh" | "clear" | "none";
+    callbacks: MutationCallbacks;
+  }): void {
     const key = requestKey();
     invalidateDraftLoad();
     const version = draftVersion;
@@ -279,120 +339,151 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     const submitToken = beginSubmit();
     storeError = null;
     storeWarning = null;
-    try {
-      const { data, error, response } = await apiClient.POST(providerItemPath("pulls", ref, "/review-draft/comments"), {
-        params,
-        body: { body, range },
+    let mutationAcknowledged = false;
+    const refreshDraft = readDraft(selectedRef, selectedNumber).pipe(
+      Effect.tap((next) =>
+        Effect.sync(() => {
+          if (isCurrent()) draft = next;
+        }),
+      ),
+      Effect.asVoid,
+    );
+    const program = Effect.gen(function* () {
+      const mutations = yield* ProviderMutations;
+      yield* mutations.submit({
+        key: mutationKey(selectedRef, selectedNumber),
+        baseline: undefined,
+        optimistic: undefined,
+        apply: () => Effect.void,
+        commit,
+        refreshOnStale: refreshDraft,
       });
-      if (!data) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-      }
-      if (!isCurrent()) return true;
-      await loadDraft();
-      return true;
-    } catch (err) {
-      if (isCurrent()) {
-        showFlash(err instanceof Error ? err.message : String(err), {
-          tone: "danger",
-        });
-      }
-      return false;
-    } finally {
-      finishSubmit(submitToken);
-    }
+      yield* Effect.sync(() => {
+        mutationAcknowledged = true;
+        finishSubmit(submitToken);
+        if (reconciliation === "clear" && isCurrent()) draft = null;
+      });
+      yield* invokeMutationCallback(callbacks.onSuccess);
+      yield* invokeMutationCallback(callbacks.onSettled);
+      if (reconciliation === "refresh" && isCurrent()) yield* refreshDraft;
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          yield* Effect.sync(() => finishSubmit(submitToken));
+          if (!mutationAcknowledged) yield* invokeMutationCallback(callbacks.onSettled);
+        }),
+      ),
+    );
+
+    runtime.runCommand(program, {
+      operation,
+      safeContext: { owner: selectedRef.owner, name: selectedRef.name, number: selectedNumber },
+      onFailure: (failure) => {
+        if (mutationAcknowledged) {
+          showFlash("The change was saved, but the latest review draft could not be refreshed.", { tone: "danger" });
+          return;
+        }
+        const message = providerMutationFailureMessage(failure, fallback);
+        if (isCurrent()) {
+          if (failure._tag === "MutationNeedsReview") {
+            storeError = failure.problem.detail ?? failure.problem.title ?? message;
+          } else if (callbacks.onFailure === undefined) {
+            showFlash(message, { tone: "danger" });
+          }
+        }
+        invokeMutationFailure(callbacks.onFailure, message);
+      },
+    });
   }
 
-  async function deleteComment(commentID: string): Promise<boolean> {
-    if (!enabled || !ref) return false;
-    const params = currentParams();
-    if (!params) return false;
-    const key = requestKey();
-    invalidateDraftLoad();
-    const version = draftVersion;
-    const isCurrent = () => requestKey() === key && draftVersion === version;
-    const submitToken = beginSubmit();
-    storeError = null;
-    storeWarning = null;
-    try {
-      const { error, response } = await apiClient.DELETE(
-        providerItemPath("pulls", ref, "/review-draft/comments/{draft_comment_id}"),
-        {
+  function createComment(body: string, range: DiffReviewLineRange, callbacks: MutationCallbacks = {}): void {
+    if (!enabled || !ref || !number) {
+      settleRejectedMutation(callbacks);
+      return;
+    }
+    const selectedRef = ref;
+    const selectedNumber = number;
+    launchDraftMutation({
+      selectedRef,
+      selectedNumber,
+      operation: "create pull request review draft comment",
+      fallback: "failed to create review draft comment",
+      commit: executeGeneratedApiRequest("POST pull request review draft comment", (client, signal) =>
+        client.POST(providerItemPath("pulls", selectedRef, "/review-draft/comments"), {
+          params: { path: { ...providerRouteParams(selectedRef), number: selectedNumber } },
+          body: { body, range },
+          signal,
+        }),
+      ).pipe(Effect.asVoid),
+      reconciliation: "refresh",
+      callbacks,
+    });
+  }
+
+  function deleteComment(commentID: string, callbacks: MutationCallbacks = {}): void {
+    if (!enabled || !ref || !number) {
+      settleRejectedMutation(callbacks);
+      return;
+    }
+    const selectedRef = ref;
+    const selectedNumber = number;
+    launchDraftMutation({
+      selectedRef,
+      selectedNumber,
+      operation: "delete pull request review draft comment",
+      fallback: "failed to delete review draft comment",
+      commit: executeGeneratedApiRequest("DELETE pull request review draft comment", (client, signal) =>
+        client.DELETE(providerItemPath("pulls", selectedRef, "/review-draft/comments/{draft_comment_id}"), {
           params: {
             path: {
-              ...params.path,
+              ...providerRouteParams(selectedRef),
+              number: selectedNumber,
               draft_comment_id: commentID,
             },
           },
-        },
-      );
-      if (!response.ok) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-      }
-      if (!isCurrent()) return true;
-      await loadDraft();
-      return true;
-    } catch (err) {
-      if (isCurrent()) {
-        showFlash(err instanceof Error ? err.message : String(err), {
-          tone: "danger",
-        });
-      }
-      return false;
-    } finally {
-      finishSubmit(submitToken);
-    }
+          signal,
+        }),
+      ).pipe(Effect.asVoid),
+      reconciliation: "refresh",
+      callbacks,
+    });
   }
 
-  async function editComment(comment: DiffReviewDraftComment, body: string): Promise<boolean> {
-    if (!enabled || !ref) return false;
-    const params = currentParams();
-    if (!params) return false;
-    const key = requestKey();
-    invalidateDraftLoad();
-    const version = draftVersion;
-    const isCurrent = () => requestKey() === key && draftVersion === version;
-    const submitToken = beginSubmit();
-    storeError = null;
-    storeWarning = null;
-    try {
-      const { data, error, response } = await apiClient.PATCH(
-        providerItemPath("pulls", ref, "/review-draft/comments/{draft_comment_id}"),
-        {
+  function editComment(comment: DiffReviewDraftComment, body: string, callbacks: MutationCallbacks = {}): void {
+    if (!enabled || !ref || !number) {
+      settleRejectedMutation(callbacks);
+      return;
+    }
+    const selectedRef = ref;
+    const selectedNumber = number;
+    launchDraftMutation({
+      selectedRef,
+      selectedNumber,
+      operation: "edit pull request review draft comment",
+      fallback: "failed to edit review draft comment",
+      commit: executeGeneratedApiRequest("PATCH pull request review draft comment", (client, signal) =>
+        client.PATCH(providerItemPath("pulls", selectedRef, "/review-draft/comments/{draft_comment_id}"), {
           params: {
             path: {
-              ...params.path,
+              ...providerRouteParams(selectedRef),
+              number: selectedNumber,
               draft_comment_id: comment.id,
             },
           },
-          body: {
-            body,
-            range: draftCommentRange(comment),
-          },
-        },
-      );
-      if (!data) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-      }
-      if (!isCurrent()) return true;
-      await loadDraft();
-      return true;
-    } catch (err) {
-      if (isCurrent()) {
-        showFlash(err instanceof Error ? err.message : String(err), {
-          tone: "danger",
-        });
-      }
-      return false;
-    } finally {
-      finishSubmit(submitToken);
-    }
+          body: { body, range: draftCommentRange(comment) },
+          signal,
+        }),
+      ).pipe(Effect.asVoid),
+      reconciliation: "refresh",
+      callbacks,
+    });
   }
 
-  async function publish(action: string, body = ""): Promise<boolean> {
-    if (!enabled || !ref) return false;
-    if (hasPendingCommentEdits()) return false;
-    const params = currentParams();
-    if (!params) return false;
+  function publish(action: string, body = "", callbacks: MutationCallbacks = {}): void {
+    if (!enabled || !ref || !number || hasPendingCommentEdits()) {
+      settleRejectedMutation(callbacks);
+      return;
+    }
     const publishedRef = ref;
     const publishedNumber = number;
     const key = requestKey();
@@ -402,118 +493,152 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     const submitToken = beginSubmit();
     storeError = null;
     storeWarning = null;
-    try {
-      const { data, error, response } = await apiClient.POST(providerItemPath("pulls", ref, "/review-draft/publish"), {
-        params,
-        body: { action, body },
+    let mutationAcknowledged = false;
+    let partial = false;
+    const program = Effect.gen(function* () {
+      const mutations = yield* ProviderMutations;
+      const commit = executeGeneratedApiRequest("POST publish pull request review draft", (client, signal) =>
+        client.POST(providerItemPath("pulls", publishedRef, "/review-draft/publish"), {
+          params: { path: { ...providerRouteParams(publishedRef), number: publishedNumber } },
+          body: { action, body },
+          signal,
+        }),
+      ).pipe(
+        Effect.tap((response) =>
+          Effect.sync(() => {
+            partial = response.status === "partially_published";
+          }),
+        ),
+        Effect.asVoid,
+      );
+      const refreshOnStale = Effect.gen(function* () {
+        if (opts.onStalePublish !== undefined) {
+          yield* opts.onStalePublish(publishedRef, publishedNumber);
+        }
+        const refreshed = yield* readDraft(publishedRef, publishedNumber);
+        yield* Effect.sync(() => {
+          if (requestKey() === key) draft = refreshed;
+        });
+      }).pipe(Effect.provideService(ProviderMutations, mutations));
+      yield* mutations.submit({
+        key: mutationKey(publishedRef, publishedNumber),
+        baseline: undefined,
+        optimistic: undefined,
+        apply: () => Effect.void,
+        commit,
+        refreshOnStale,
       });
-      if (!response.ok) {
-        const message = apiErrorMessage(error, `HTTP ${response.status}`);
-        if (isProblem(error) && problemConflictReason(error) === "stale_state" && isCurrent()) {
-          await recoverAfterStalePublish(publishedRef, publishedNumber, key);
-          if (requestKey() === key) {
-            storeError = message;
+      yield* Effect.sync(() => {
+        mutationAcknowledged = true;
+        finishSubmit(submitToken);
+        if (!isCurrent()) return;
+        draft = null;
+        if (partial) {
+          storeWarning =
+            "Review was partially published. Some inline comments or the selected review action may not have been submitted.";
+        }
+      });
+      yield* invokeMutationCallback(callbacks.onSuccess);
+      yield* invokeMutationCallback(callbacks.onSettled);
+      if (opts.onPublished !== undefined) {
+        yield* opts.onPublished(publishedRef, publishedNumber).pipe(
+          Effect.catch(() =>
+            Effect.sync(() => {
+              showFlash("Review was published, but the pull request timeline could not be refreshed.", {
+                tone: "danger",
+              });
+            }),
+          ),
+        );
+      }
+      if (!isCurrent()) return;
+      const refreshed = yield* readDraft(publishedRef, publishedNumber);
+      yield* Effect.sync(() => {
+        if (requestKey() === key) draft = refreshed;
+      });
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          yield* Effect.sync(() => finishSubmit(submitToken));
+          if (!mutationAcknowledged) yield* invokeMutationCallback(callbacks.onSettled);
+        }),
+      ),
+    );
+
+    runtime.runCommand(program, {
+      operation: "publish pull request review draft",
+      safeContext: { owner: publishedRef.owner, name: publishedRef.name, number: publishedNumber },
+      onFailure: (failure) => {
+        if (mutationAcknowledged) {
+          showFlash("Review was published, but the latest draft could not be refreshed.", { tone: "danger" });
+          return;
+        }
+        const message = providerMutationFailureMessage(failure, "failed to publish review draft");
+        if (isCurrent()) {
+          if (failure._tag === "MutationNeedsReview") {
+            storeError = failure.problem.detail ?? failure.problem.title ?? message;
+          } else if (callbacks.onFailure === undefined) {
+            showFlash(message, { tone: "danger" });
           }
-          return false;
         }
-        throw new Error(message);
-      }
-      const partial = data?.status === "partially_published";
-      if (!isCurrent()) return true;
-      draft = null;
-      await loadDraft();
-      if (partial && requestKey() === key) {
-        storeWarning =
-          "Review was partially published. Some inline comments or the selected review action may not have been submitted.";
-      }
-      if (requestKey() === key) {
-        try {
-          await opts.onPublished?.(publishedRef, publishedNumber);
-        } catch {
-          // The provider publish already succeeded. Detail refresh is best-effort.
-        }
-      }
-      return true;
-    } catch (err) {
-      if (isCurrent()) {
-        showFlash(err instanceof Error ? err.message : String(err), {
-          tone: "danger",
-        });
-      }
-      return false;
-    } finally {
-      finishSubmit(submitToken);
-    }
+        invokeMutationFailure(callbacks.onFailure, message);
+      },
+    });
   }
 
-  async function discard(): Promise<boolean> {
-    if (!enabled || !ref) return false;
-    if (hasPendingCommentEdits()) return false;
-    const params = currentParams();
-    if (!params) return false;
-    const key = requestKey();
-    invalidateDraftLoad();
-    const version = draftVersion;
-    const isCurrent = () => requestKey() === key && draftVersion === version;
-    const submitToken = beginSubmit();
-    storeError = null;
-    storeWarning = null;
-    try {
-      const { error, response } = await apiClient.DELETE(providerItemPath("pulls", ref, "/review-draft"), {
-        params,
-      });
-      if (!response.ok) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-      }
-      if (!isCurrent()) return true;
-      draft = null;
-      return true;
-    } catch (err) {
-      if (isCurrent()) {
-        showFlash(err instanceof Error ? err.message : String(err), {
-          tone: "danger",
-        });
-      }
-      return false;
-    } finally {
-      finishSubmit(submitToken);
+  function discard(callbacks: MutationCallbacks = {}): void {
+    if (!enabled || !ref || !number || hasPendingCommentEdits()) {
+      settleRejectedMutation(callbacks);
+      return;
     }
+    const selectedRef = ref;
+    const selectedNumber = number;
+    launchDraftMutation({
+      selectedRef,
+      selectedNumber,
+      operation: "discard pull request review draft",
+      fallback: "failed to discard review draft",
+      commit: executeGeneratedApiRequest("DELETE pull request review draft", (client, signal) =>
+        client.DELETE(providerItemPath("pulls", selectedRef, "/review-draft"), {
+          params: { path: { ...providerRouteParams(selectedRef), number: selectedNumber } },
+          signal,
+        }),
+      ).pipe(Effect.asVoid),
+      reconciliation: "clear",
+      callbacks,
+    });
   }
 
-  async function setThreadResolved(threadID: string, resolved: boolean): Promise<boolean> {
-    if (!ref || !number) return false;
-    const params = currentParams();
-    if (!params) return false;
-    const key = requestKey();
-    const version = ++draftVersion;
-    const isCurrent = () => requestKey() === key && draftVersion === version;
-    const submitToken = beginSubmit();
-    storeError = null;
-    storeWarning = null;
-    try {
-      const path = resolved ? "/review-threads/{thread_id}/resolve" : "/review-threads/{thread_id}/unresolve";
-      const { error, response } = await apiClient.POST(providerItemPath("pulls", ref, path), {
-        params: {
-          path: {
-            ...params.path,
-            thread_id: threadID,
-          },
-        },
-      });
-      if (!response.ok) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-      }
-      return true;
-    } catch (err) {
-      if (isCurrent()) {
-        showFlash(err instanceof Error ? err.message : String(err), {
-          tone: "danger",
-        });
-      }
-      return false;
-    } finally {
-      finishSubmit(submitToken);
+  function setThreadResolved(threadID: string, resolved: boolean, callbacks: MutationCallbacks = {}): void {
+    if (!ref || !number) {
+      settleRejectedMutation(callbacks);
+      return;
     }
+    const selectedRef = ref;
+    const selectedNumber = number;
+    const path = resolved ? "/review-threads/{thread_id}/resolve" : "/review-threads/{thread_id}/unresolve";
+    launchDraftMutation({
+      selectedRef,
+      selectedNumber,
+      operation: resolved ? "resolve pull request review thread" : "unresolve pull request review thread",
+      fallback: resolved ? "failed to resolve review thread" : "failed to unresolve review thread",
+      commit: executeGeneratedApiRequest(
+        resolved ? "POST resolve pull request review thread" : "POST unresolve pull request review thread",
+        (client, signal) =>
+          client.POST(providerItemPath("pulls", selectedRef, path), {
+            params: {
+              path: {
+                ...providerRouteParams(selectedRef),
+                number: selectedNumber,
+                thread_id: threadID,
+              },
+            },
+            signal,
+          }),
+      ).pipe(Effect.asVoid),
+      reconciliation: "none",
+      callbacks,
+    });
   }
 
   return {

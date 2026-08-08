@@ -9,6 +9,8 @@ import type { Page } from "@playwright/test";
 
 import { createMockApiHandler } from "../../../src/test/mockApiFetch";
 
+export { mockSettings } from "../../../src/test/mockApiFetch";
+
 export async function mockApi(page: Page): Promise<void> {
   const api = createMockApiHandler();
 

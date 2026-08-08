@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
+  import type { AppExecution, AppServices } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import {
     DiffSummaryFilesResult,
     summarizeDiffFiles,
@@ -10,7 +14,7 @@
     additions: number;
     deletions: number;
     summaryKey?: string;
-    loadFiles: () => Promise<DiffSummaryFilesResult>;
+    loadFiles: () => Effect.Effect<DiffSummaryFilesResult, Error, AppServices>;
   }
 
   const {
@@ -19,6 +23,8 @@
     summaryKey = "",
     loadFiles,
   }: Props = $props();
+
+  const runtime = getAppRuntime();
 
   /* kit Tooltip sets aria-describedby on its non-focusable wrapper span, not
      on the real trigger. Reference the tooltip content from the button
@@ -34,6 +40,8 @@
   let summary = $state<DiffLineSummary | null>(null);
   let loadedSummaryKey = $state<string | null>(null);
   let currentSummaryKey = $state<string | null>(null);
+  let summaryExecution: AppExecution<void, Error> | null = null;
+  let summaryGeneration = 0;
 
   const rows = $derived([
     { key: "plansDocs" as const, label: "Plans/docs" },
@@ -51,7 +59,7 @@
         }),
   );
 
-  async function ensureSummary(): Promise<void> {
+  function ensureSummary(): void {
     const requestedKey = summaryKey;
     currentSummaryKey ??= requestedKey;
     if (loadedSummaryKey !== requestedKey) {
@@ -60,39 +68,45 @@
       loadedSummaryKey = null;
     }
     if (summary !== null || loading) return;
+    const generation = ++summaryGeneration;
     loading = true;
     error = null;
-    try {
-      const result = (await loadFiles()).clone();
-      if (requestedKey !== summaryKey) {
-        return;
-      }
-      if (result.stale) {
-        summary = null;
-        loadedSummaryKey = null;
-        error = "Changed files are still refreshing.";
-        return;
-      }
-      summary = summarizeDiffFiles(result.files);
-      loadedSummaryKey = requestedKey;
-    } catch (err) {
-      if (requestedKey === summaryKey) {
-        error = err instanceof Error ? err.message : String(err);
-      }
-    } finally {
-      loading = false;
-      if (requestedKey !== summaryKey) {
-        summary = null;
-        error = null;
-        loadedSummaryKey = null;
-        if (active) void ensureSummary();
-      }
-    }
+    const isCurrent = () => generation === summaryGeneration && requestedKey === summaryKey;
+    const program = loadFiles().pipe(
+      Effect.map((result) => result.clone()),
+      Effect.flatMap((result) =>
+        Effect.sync(() => {
+          if (!isCurrent()) return;
+          if (result.stale) {
+            summary = null;
+            loadedSummaryKey = null;
+            error = "Changed files are still refreshing.";
+            return;
+          }
+          summary = summarizeDiffFiles(result.files);
+          loadedSummaryKey = requestedKey;
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (isCurrent()) loading = false;
+        }),
+      ),
+    );
+    summaryExecution = runtime.runCommand(program, {
+      operation: "load pull request diff summary",
+      safeContext: { summaryKey: requestedKey },
+      onFailure: (failure) => {
+        if (isCurrent()) {
+          error = failure instanceof Error ? failure.message : String(failure);
+        }
+      },
+    });
   }
 
   function handleEnter(): void {
     active = true;
-    void ensureSummary();
+    ensureSummary();
   }
 
   function handleLeave(): void {
@@ -106,10 +120,19 @@
     }
     if (currentSummaryKey === summaryKey) return;
     currentSummaryKey = summaryKey;
+    summaryGeneration += 1;
+    summaryExecution?.interrupt();
+    summaryExecution = null;
+    loading = false;
     summary = null;
     error = null;
     loadedSummaryKey = null;
-    if (active) void ensureSummary();
+    if (active) ensureSummary();
+  });
+
+  onDestroy(() => {
+    summaryGeneration += 1;
+    summaryExecution?.interrupt();
   });
 </script>
 

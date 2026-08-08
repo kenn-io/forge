@@ -57,7 +57,7 @@
     reportEditState(true);
   }
 
-  async function saveEdit(): Promise<void> {
+  function saveEdit(): void {
     const nextBody = draftBody.trim();
     if (!nextBody || saveDisabled) return;
     if (nextBody === comment.body) {
@@ -66,15 +66,15 @@
       return;
     }
     saving = true;
-    try {
-      const ok = await diffReviewDraft.editComment(comment, nextBody);
-      if (ok) {
+    diffReviewDraft.editComment(comment, nextBody, {
+      onSuccess: () => {
         editing = false;
         reportEditState(false);
-      }
-    } finally {
-      saving = false;
-    }
+      },
+      onSettled: () => {
+        saving = false;
+      },
+    });
   }
 
   onDestroy(() => {
@@ -97,7 +97,7 @@
           type="button"
           title="Save draft comment"
           aria-label="Save draft comment"
-          onclick={() => void saveEdit()}
+          onclick={saveEdit}
           disabled={saveDisabled}
         >
           <CheckIcon size={13} />
@@ -128,7 +128,7 @@
           type="button"
           title="Delete draft comment"
           aria-label="Delete draft comment"
-          onclick={() => void diffReviewDraft.deleteComment(comment.id)}
+          onclick={() => diffReviewDraft.deleteComment(comment.id)}
           disabled={submitting}
         >
           <XIcon size={13} />

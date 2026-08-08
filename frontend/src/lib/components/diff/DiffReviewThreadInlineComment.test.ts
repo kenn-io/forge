@@ -80,7 +80,7 @@ describe("DiffReviewThreadInlineComment", () => {
   });
 
   it("keeps a failed reply open without adding a duplicate inline action error", async () => {
-    const onreply = vi.fn().mockResolvedValue(false);
+    const onreply = vi.fn((_thread, _body, callbacks) => callbacks.onSettled?.());
     render(DiffReviewThreadInlineComment, {
       props: {
         thread: makeReviewThread(),
@@ -96,7 +96,11 @@ describe("DiffReviewThreadInlineComment", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 
     await waitFor(() => {
-      expect(onreply).toHaveBeenCalledWith(expect.objectContaining({ id: "thread-1" }), "Please take another look");
+      expect(onreply).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "thread-1" }),
+        "Please take another look",
+        expect.objectContaining({ onSettled: expect.any(Function), onSuccess: expect.any(Function) }),
+      );
     });
     expect(screen.getByDisplayValue("Please take another look")).toBeTruthy();
     expect(screen.queryByText("Could not reply to thread")).toBeNull();

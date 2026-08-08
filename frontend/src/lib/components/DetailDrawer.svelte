@@ -18,7 +18,6 @@
     repoPath: string;
     number: number;
     onClose: () => void;
-    onPullsRefresh?: () => Promise<void>;
   }
 
   let {
@@ -30,7 +29,6 @@
     repoPath,
     number,
     onClose,
-    onPullsRefresh,
   }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent): void {
@@ -73,7 +71,6 @@
             {name}
             {repoPath}
             {number}
-            {...(onPullsRefresh ? { onPullsRefresh } : {})}
           />
         {:else}
           <IssueDetail {provider} {platformHost} {owner} {name} {repoPath} {number} />

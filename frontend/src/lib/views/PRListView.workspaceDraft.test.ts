@@ -9,6 +9,16 @@ import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 import { resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import { createClaimTestController } from "./viewWorkspaceTestDoubles.svelte.js";
 
+const appRuntime = vi.hoisted(() => ({
+  runCommand: vi.fn(() => ({
+    interrupt: vi.fn(),
+  })),
+}));
+
+vi.mock("../app/runtime-context.js", () => ({
+  getAppRuntime: () => appRuntime,
+}));
+
 // This spec mounts the real PullDetail (unlike PRListView.test.ts, which
 // mocks it out) because the behavior under test — an unsaved title draft
 // surviving a dock expand/collapse round trip — depends on PullDetail's own

@@ -4,6 +4,7 @@
   import SendIcon from "@lucide/svelte/icons/send";
   import XIcon from "@lucide/svelte/icons/x";
   import { tick } from "svelte";
+  import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import type { ReviewThread } from "./review-thread-context.js";
   import { reviewThreadLineLabel } from "./review-thread-context.js";
 
@@ -11,7 +12,7 @@
     thread: ReviewThread;
     fileLevel?: boolean;
     canReply?: boolean;
-    onreply?: ((thread: ReviewThread, body: string) => Promise<boolean>) | undefined;
+    onreply?: ((thread: ReviewThread, body: string, callbacks: MutationCallbacks) => void) | undefined;
   }
 
   const {
@@ -101,7 +102,7 @@
     error = null;
   }
 
-  async function submitReply(): Promise<void> {
+  function submitReply(): void {
     const body = replyBody.trim();
     if (!body) {
       error = "Reply body must not be empty";
@@ -110,14 +111,12 @@
     if (!onreply) return;
     submitting = true;
     error = null;
-    try {
-      const ok = await onreply(thread, body);
-      if (ok) {
-        cancelReply();
-      }
-    } finally {
-      submitting = false;
-    }
+    onreply(thread, body, {
+      onSuccess: cancelReply,
+      onSettled: () => {
+        submitting = false;
+      },
+    });
   }
 </script>
 

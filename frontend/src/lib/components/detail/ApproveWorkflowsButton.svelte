@@ -2,13 +2,10 @@
   import { Button } from "@kenn-io/kit-ui";
   import WorkflowIcon from "@lucide/svelte/icons/workflow";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { getClient, getStores } from "../../context.js";
-    import {
-    runApproveWorkflows, type PRDetailActionInput,
-  } from "./keyboard-actions.js";
+  import { getStores } from "../../context.js";
+  import { runApproveWorkflows, type PRDetailActionInput } from "./keyboard-actions.js";
 
-  const client = getClient();
-  const { detail, pulls } = getStores();
+  const { detail } = getStores();
 
   interface Props {
     owner: string;
@@ -63,29 +60,26 @@
       },
       repoSettings: null,
       stale: disabled,
-      stores: { detail, pulls },
-      client,
+      stores: { detail },
       ...(oncompleted !== undefined && { onCompleted: oncompleted }),
+      onError: (message) => showFlash(message, { tone: "danger" }),
+      onSettled: () => {
+        submitting = false;
+      },
     };
   }
 
-  async function handleApproveWorkflows(): Promise<void> {
-    if (disabled) return;
+  function handleApproveWorkflows(): void {
+    if (disabled || submitting) return;
     submitting = true;
-    try {
-      await runApproveWorkflows(buildInput());
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      submitting = false;
-    }
+    runApproveWorkflows(buildInput());
   }
 </script>
 
 <div class="workflow-approval-section">
   <Button
     class="btn btn--workflow-approval"
-    onclick={() => void handleApproveWorkflows()}
+    onclick={handleApproveWorkflows}
     disabled={submitting || disabled}
     tone="workflow"
     surface="soft"

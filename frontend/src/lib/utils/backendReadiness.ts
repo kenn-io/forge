@@ -1,47 +1,29 @@
+import { Effect, Schedule, Stream } from "effect";
+import { openStreamingResponse } from "../browser/streaming-fetch.js";
 import { getBasePath } from "../stores/router.svelte.js";
 
-const BACKEND_READY_POLL_MS = 750;
+const BACKEND_READY_POLL_INTERVAL = "750 millis";
 
-function readinessPath(): string {
+function readinessURL(): URL {
   const base = getBasePath().replace(/\/$/, "");
-  return `${base}/healthz`;
+  return new URL(`${base}/healthz`, window.location.origin);
 }
 
-function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException("Aborted", "AbortError");
-}
+const probeBackendReadiness = Effect.fn("StartupWorkflow.probeBackendReadiness")(function* () {
+  const response = yield* Effect.scoped(
+    openStreamingResponse("GET /healthz", readinessURL(), {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    }),
+  ).pipe(Effect.catchTag("TransientTransportError", () => Effect.succeed(undefined)));
+  return response?.ok === true;
+});
 
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) {
-    return Promise.reject(abortReason(signal));
-  }
-  return new Promise((resolve, reject) => {
-    const onAbort = () => {
-      window.clearTimeout(timeout);
-      reject(abortReason(signal));
-    };
-    const timeout = window.setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
+const pollBackendReadiness = Effect.fn("StartupWorkflow.waitUntilBackendReady")(function* () {
+  yield* Stream.fromEffectSchedule(probeBackendReadiness(), Schedule.spaced(BACKEND_READY_POLL_INTERVAL)).pipe(
+    Stream.filter((ready) => ready),
+    Stream.runHead,
+  );
+});
 
-export async function waitUntilBackendReady(signal: AbortSignal): Promise<void> {
-  const path = readinessPath();
-  while (!signal.aborted) {
-    try {
-      const response = await fetch(path, {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-        signal,
-      });
-      if (response.ok) return;
-    } catch (err) {
-      if (signal.aborted) throw err;
-    }
-    await sleep(BACKEND_READY_POLL_MS, signal);
-  }
-  throw abortReason(signal);
-}
+export const waitUntilBackendReady = pollBackendReadiness();

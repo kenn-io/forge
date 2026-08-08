@@ -236,7 +236,7 @@
   function refreshSelectionDetail(): void {
     if (drawerPRSelection) {
       const ref = drawerPRSelection;
-      void detailStore.loadDetail(ref.owner, ref.name, ref.number, {
+      detailStore.loadDetail(ref.owner, ref.name, ref.number, {
         sync: false,
         provider: ref.provider,
         platformHost: ref.platformHost,
@@ -246,7 +246,7 @@
     }
     if (drawerIssueSelection) {
       const ref = drawerIssueSelection;
-      void issuesStore.loadIssueDetail(ref.owner, ref.name, ref.number, {
+      issuesStore.loadIssueDetail(ref.owner, ref.name, ref.number, {
         sync: false,
         provider: ref.provider,
         platformHost: ref.platformHost,

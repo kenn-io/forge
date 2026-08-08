@@ -40,7 +40,12 @@ export type RepoBrowserTreeEntry = components["schemas"]["RepoBrowserTreeEntry"]
 export type ActivityParams = NonNullable<operations["list-activity"]["parameters"]["query"]>;
 export type PullsParams = operations["list-pulls"]["parameters"]["query"];
 export type IssuesParams = operations["list-issues"]["parameters"]["query"];
+export type ApprovePRInputBody = components["schemas"]["ApprovePRInputBody"];
+export type RequestChangesPRInputBody = components["schemas"]["RequestChangesPRInputBody"];
 export type MergeParams = components["schemas"]["MergePRInputBody"];
+export type EditPRContentInputBody = components["schemas"]["EditPRContentInputBody"];
+export type StarredRequest = components["schemas"]["StarredRequest"];
+export type GithubStateInputBody = components["schemas"]["GithubStateInputBody"];
 
 export type WorktreeLink = components["schemas"]["WorktreeLinkResponse"];
 export type LaunchTarget = components["schemas"]["LaunchTarget"];

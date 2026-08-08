@@ -8,6 +8,7 @@
     DiffReviewDraftComment,
     DiffReviewDraftCommentEditState,
   } from "../../stores/diff-review-draft.svelte.js";
+  import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
 
   interface Props {
     comment: DiffReviewDraftComment;
@@ -15,7 +16,7 @@
     disabled: boolean;
     onjump?: ((comment: DiffReviewDraftComment) => void) | undefined;
     ondelete: (id: string) => void;
-    onsave: (comment: DiffReviewDraftComment, body: string) => Promise<boolean> | boolean;
+    onsave: (comment: DiffReviewDraftComment, body: string, callbacks: MutationCallbacks) => void;
     oneditstatechange: (id: string, state: DiffReviewDraftCommentEditState) => void;
   }
 
@@ -87,7 +88,7 @@
     reportEditState(true);
   }
 
-  async function saveEdit(): Promise<void> {
+  function saveEdit(): void {
     const nextBody = draftBody.trim();
     if (!nextBody || saveDisabled) return;
     if (nextBody === comment.body) {
@@ -96,15 +97,15 @@
       return;
     }
     saving = true;
-    try {
-      const ok = await onsave(comment, nextBody);
-      if (ok) {
+    onsave(comment, nextBody, {
+      onSuccess: () => {
         editing = false;
         reportEditState(false);
-      }
-    } finally {
-      saving = false;
-    }
+      },
+      onSettled: () => {
+        saving = false;
+      },
+    });
   }
 
   function scheduleMeasure(_body: string, _expanded: boolean): void {
@@ -173,7 +174,7 @@
           size="sm"
           tone="success"
           ariaLabel="Save draft comment"
-          onclick={() => void saveEdit()}
+          onclick={saveEdit}
           disabled={saveDisabled}
         >
           <CheckIcon size={13} />

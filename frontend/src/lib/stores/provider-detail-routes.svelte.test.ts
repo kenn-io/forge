@@ -1,9 +1,63 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { createDetailStore } from "./detail.svelte.js";
-import { createIssuesStore } from "./issues.svelte.js";
+import type { OwnedAppRuntime } from "../app/runtime.js";
+import {
+  createDetailStore as createRuntimeDetailStore,
+  type DetailRequestOptions,
+  type DetailStore,
+  type DetailStoreOptions,
+} from "./detail.svelte.js";
+import { createIssuesStore as createRuntimeIssuesStore, type IssuesStoreOptions } from "./issues.svelte.js";
 import * as flash from "./flash.svelte.js";
-import type { ForgeClient } from "../types.js";
+import type { GeneratedClient } from "../api/generated-api.js";
+import { makeTestAppRuntime } from "../testing/effect-layers.js";
+
+let runtime: OwnedAppRuntime | undefined;
+
+type TestIssuesStoreOptions = Omit<IssuesStoreOptions, "runtime"> & { readonly client: GeneratedClient };
+
+function createIssuesStore(options: TestIssuesStoreOptions) {
+  const { client, ...storeOptions } = options;
+  runtime = makeTestAppRuntime(client);
+  return createRuntimeIssuesStore({ ...storeOptions, runtime });
+}
+
+type TestDetailStoreOptions = Omit<DetailStoreOptions, "runtime"> & { readonly client: GeneratedClient };
+
+function createDetailStore(options: TestDetailStoreOptions) {
+  const { client, ...storeOptions } = options;
+  runtime = makeTestAppRuntime(client);
+  return createRuntimeDetailStore({ ...storeOptions, runtime });
+}
+
+async function loadDetail(store: DetailStore, ...args: Parameters<DetailStore["loadDetail"]>): Promise<void> {
+  store.loadDetail(...args);
+  await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+}
+
+function refreshPendingCI(
+  store: DetailStore,
+  owner: string,
+  name: string,
+  number: number,
+  identity: DetailRequestOptions,
+): Promise<void> {
+  const settled = Promise.withResolvers<void>();
+  const result = store.refreshPendingCI(owner, name, number, identity, {
+    onSettled: settled.resolve,
+  });
+  expect(result).toBeUndefined();
+  return settled.promise;
+}
+
+beforeEach(() => {
+  runtime = undefined;
+});
+
+afterEach(async () => {
+  if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
+});
 
 describe("provider-aware detail API routes", () => {
   it("loads PR detail through the provider item endpoint", async () => {
@@ -19,10 +73,10 @@ describe("provider-aware detail API routes", () => {
       POST: vi.fn(),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const store = createDetailStore({ client });
 
-    await store.loadDetail("Group/SubGroup", "Project", 12, {
+    await loadDetail(store, "Group/SubGroup", "Project", 12, {
       sync: false,
       provider: "gitlab",
       platformHost: "gitlab.example.com:8443",
@@ -39,6 +93,7 @@ describe("provider-aware detail API routes", () => {
           number: 12,
         },
       },
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -65,17 +120,17 @@ describe("provider-aware detail API routes", () => {
       })),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const store = createDetailStore({ client });
 
-    await store.loadDetail("Group/SubGroup", "Project", 12, {
+    await loadDetail(store, "Group/SubGroup", "Project", 12, {
       sync: false,
       provider: "gitlab",
       platformHost: "gitlab.example.com:8443",
       repoPath: "Group/SubGroup/Project",
     } as never);
 
-    await store.refreshPendingCI("Group/SubGroup", "Project", 12, {
+    await refreshPendingCI(store, "Group/SubGroup", "Project", 12, {
       provider: "gitlab",
       platformHost: "gitlab.example.com:8443",
       repoPath: "Group/SubGroup/Project",
@@ -93,6 +148,7 @@ describe("provider-aware detail API routes", () => {
             number: 12,
           },
         },
+        signal: expect.any(AbortSignal),
       },
     );
   });
@@ -117,19 +173,19 @@ describe("provider-aware detail API routes", () => {
       POST: vi.fn(async () => ({ data: detail })),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const showFlash = vi.spyOn(flash, "showFlash").mockImplementation(() => {});
     showFlash.mockClear();
     const store = createDetailStore({ client });
 
-    await store.loadDetail("acme", "widgets", 1, {
+    await loadDetail(store, "acme", "widgets", 1, {
       sync: false,
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
     } as never);
 
-    await store.refreshPendingCI("acme", "widgets", 1, {
+    await refreshPendingCI(store, "acme", "widgets", 1, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
@@ -162,19 +218,19 @@ describe("provider-aware detail API routes", () => {
       })),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const showFlash = vi.spyOn(flash, "showFlash").mockImplementation(() => {});
     showFlash.mockClear();
     const store = createDetailStore({ client });
 
-    await store.loadDetail("acme", "widgets", 1, {
+    await loadDetail(store, "acme", "widgets", 1, {
       sync: false,
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
     } as never);
 
-    await store.refreshPendingCI("acme", "widgets", 1, {
+    await refreshPendingCI(store, "acme", "widgets", 1, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
@@ -210,22 +266,22 @@ describe("provider-aware detail API routes", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const store = createDetailStore({ client });
 
-    await store.loadDetail("acme", "widgets", 1, {
+    await loadDetail(store, "acme", "widgets", 1, {
       sync: false,
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
     } as never);
 
-    const first = store.refreshPendingCI("acme", "widgets", 1, {
+    const first = refreshPendingCI(store, "acme", "widgets", 1, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
     });
-    const second = store.refreshPendingCI("acme", "widgets", 1, {
+    const second = refreshPendingCI(store, "acme", "widgets", 1, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
@@ -268,17 +324,17 @@ describe("provider-aware detail API routes", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const store = createDetailStore({ client });
 
-    await store.loadDetail("acme", "widgets", 1, {
+    await loadDetail(store, "acme", "widgets", 1, {
       sync: false,
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
     } as never);
 
-    await store.refreshPendingCI("acme", "widgets", 1, {
+    await refreshPendingCI(store, "acme", "widgets", 1, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
@@ -325,17 +381,17 @@ describe("provider-aware detail API routes", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const store = createDetailStore({ client });
 
-    await store.loadDetail("acme", "widgets", 1, {
+    await loadDetail(store, "acme", "widgets", 1, {
       sync: false,
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
     } as never);
 
-    await store.refreshPendingCI("acme", "widgets", 1, {
+    await refreshPendingCI(store, "acme", "widgets", 1, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widgets",
@@ -387,10 +443,10 @@ describe("provider-aware detail API routes", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const store = createDetailStore({ client });
 
-    await store.loadDetail("acme", "widgets", 1, {
+    await loadDetail(store, "acme", "widgets", 1, {
       sync: "background",
       provider: "github",
       platformHost: "github.com",
@@ -438,10 +494,10 @@ describe("provider-aware detail API routes", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const store = createDetailStore({ client });
 
-    await store.loadDetail("acme", "widgets", 1, {
+    await loadDetail(store, "acme", "widgets", 1, {
       sync: "background",
       provider: "github",
       platformHost: "github.com",
@@ -466,15 +522,17 @@ describe("provider-aware detail API routes", () => {
       POST: vi.fn(),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as ForgeClient;
+    } as unknown as GeneratedClient;
     const store = createIssuesStore({ client });
 
-    await store.loadIssueDetail("Group/SubGroup", "Project", 7, {
+    const result = store.loadIssueDetail("Group/SubGroup", "Project", 7, {
       sync: false,
       provider: "gitlab",
       platformHost: "gitlab.example.com:8443",
       repoPath: "Group/SubGroup/Project",
     } as never);
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
 
     expect(client.GET).toHaveBeenCalledWith("/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}", {
       params: {
@@ -486,6 +544,7 @@ describe("provider-aware detail API routes", () => {
           number: 7,
         },
       },
+      signal: expect.any(AbortSignal),
     });
   });
 });

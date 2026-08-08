@@ -20,13 +20,13 @@
     listUserRepositories,
     type DiscoveredUserRepository,
   } from "../../api/project-intake.ts";
+  import type { PullRequest } from "../../api/types.js";
   import { createPullRequestWorkspace } from "../../api/onboarding.ts";
   import { bulkAddRepos } from "../../api/settings.ts";
-  import type { PullRequest } from "../../api/types.ts";
-  import { buildProviderPullRequestRoute } from "../../routes.ts";
+  import { buildProviderPullRequestRoute } from "../../routes.js";
   import { navigate } from "../../stores/router.svelte.ts";
   import { resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
-  import type { StoreInstances } from "../../types.ts";
+  import type { StoreInstances } from "../../types.js";
   import ProviderReadinessStep from "./ProviderReadinessStep.svelte";
 
   type Phase = "repos" | "sync" | "pulls" | "workspace";

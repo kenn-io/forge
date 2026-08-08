@@ -52,7 +52,7 @@
  *                           ?? "failed to approve workflows"`
  *        on success:
  *          await detail.refreshDetailOnly(owner, name, number, ref)
- *          await pulls.loadPulls()
+ *          pulls.loadPulls()
  *          oncompleted?.()
  *        finally -> submitting = false
  *    - Input props: owner, name, number, provider, platformHost,
@@ -75,8 +75,8 @@
  *        on error -> throw `error.detail ?? error.title ?? "failed to
  *                           mark pull request ready for review"`
  *        on success:
- *          await detail.loadDetail(owner, name, number, ref)
- *          await pulls.loadPulls()
+ *          detail.loadDetail(owner, name, number, ref)
+ *          pulls.loadPulls()
  *          oncompleted?.()
  *        on catch:
  *          if message includes "ready for review" + "404 Not Found"
@@ -153,10 +153,8 @@
 
 import type { PullRequest } from "../../api/types.js";
 import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
-import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
-import type { ForgeClient } from "../../types.js";
-import type { DetailStore } from "../../stores/detail.svelte.js";
-import type { PullsStore } from "../../stores/pulls.svelte.js";
+import type { ProviderRouteRef } from "../../api/provider-routes.js";
+import type { DetailStore, ProviderActionCallbacks } from "../../stores/detail.svelte.js";
 
 /** Subset of the loaded PR sufficient for canX/runX decisions. */
 export type PRDetailActionPR = Pick<PullRequest, "State" | "IsDraft" | "MergeableState" | "platform_head_sha">;
@@ -179,8 +177,7 @@ export interface PRDetailRepoSettings {
 
 /** Stores the closures touch on the refresh path. */
 export interface PRDetailActionStores {
-  pulls: Pick<PullsStore, "loadPulls">;
-  detail: Pick<DetailStore, "loadDetail" | "refreshDetailOnly">;
+  detail: Pick<DetailStore, "approvePull" | "markPullReady" | "approvePullWorkflows">;
 }
 
 /** Shared input bundle for every PR-detail action closure pair. */
@@ -193,7 +190,6 @@ export interface PRDetailActionInput {
   /** True iff the PR is stale (route changed mid-load, etc.). */
   stale: boolean;
   stores: PRDetailActionStores;
-  client: ForgeClient;
   /**
    * True when the provider supports mutation head binding
    * (capabilities.mutation_head_binding). Merge is unavailable until the
@@ -245,6 +241,8 @@ export interface PRDetailActionInput {
    * prop (used by the action menu to close itself).
    */
   onCompleted?: () => void;
+  /** Invoked when the acknowledged command succeeds or fails. */
+  onSettled?: () => void;
   /**
    * Optional error reporter. The buttons today render their own inline
    * error text and do not call this; the palette uses it to surface
@@ -261,18 +259,28 @@ function hasReviewedHeadPin(input: PRDetailActionInput): boolean {
   return (input.expectedHeadSha ?? "").trim() !== "";
 }
 
-function describeError(err: { detail?: string; title?: string } | undefined, fallback: string): string {
-  return err?.detail ?? err?.title ?? fallback;
-}
-
 // Approve PR ----------------------------------------------------------
 
 export function canApprovePR(input: PRDetailActionInput): boolean {
   return input.pr.State === "open" && input.viewerCan.approve && !input.stale;
 }
 
-export async function submitApprovePR(input: PRDetailActionInput): Promise<boolean> {
-  if (!canApprovePR(input)) return false;
+function approvalCallbacks(input: PRDetailActionInput, expectedHeadSha: string): ProviderActionCallbacks {
+  return {
+    ...(input.onCompleted !== undefined && { onSuccess: input.onCompleted }),
+    ...(input.onError !== undefined && { onFailure: input.onError }),
+    ...(input.onSettled !== undefined && { onSettled: input.onSettled }),
+    onProblem: (problem) => {
+      const reason = isProblem(problem) ? problemConflictReason(problem) : undefined;
+      if (reason !== "stale_state" && reason !== "head_unknown") return;
+      const context = isProblem(problem) ? problemConflictContext(problem) : undefined;
+      input.onHeadConflict?.(reason, context, expectedHeadSha, input.ref, input.number);
+    },
+  };
+}
+
+export function runApprovePR(input: PRDetailActionInput): void {
+  if (!canApprovePR(input)) return;
   const { ref, number } = input;
   const body = (input.approveCommentBody ?? "").trim();
   // Include the latest synced PR head when available. Providers that
@@ -280,35 +288,15 @@ export async function submitApprovePR(input: PRDetailActionInput): Promise<boole
   // review to the supplied commit or approve the current head. Fall back
   // to reviewed_head_sha only when the provider head is unknown.
   const expectedHeadSha = (input.pr.platform_head_sha ?? input.expectedHeadSha ?? "").trim();
-  const { error } = await input.client.POST(providerItemPath("pulls", ref, "/approve"), {
-    params: { path: { ...providerRouteParams(ref), number } },
-    body: {
+  input.stores.detail.approvePull(
+    ref,
+    number,
+    {
       body,
       ...(expectedHeadSha !== "" && { expected_head_sha: expectedHeadSha }),
     },
-  });
-  if (error) {
-    const reason = isProblem(error) ? problemConflictReason(error) : undefined;
-    if (reason === "stale_state" || reason === "head_unknown") {
-      const context = isProblem(error) ? problemConflictContext(error) : undefined;
-      input.onHeadConflict?.(reason, context, expectedHeadSha, ref, number);
-    }
-    const msg = describeError(error, "failed to approve pull request");
-    input.onError?.(msg);
-    throw new Error(msg);
-  }
-  return true;
-}
-
-export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
-  if (!(await submitApprovePR(input))) return;
-  const { ref, number } = input;
-  await input.stores.detail.loadDetail(ref.owner, ref.name, number, {
-    provider: ref.provider,
-    platformHost: ref.platformHost,
-    repoPath: ref.repoPath,
-  });
-  await input.stores.pulls.loadPulls();
+    approvalCallbacks(input, expectedHeadSha),
+  );
 }
 
 // Open the merge modal -----------------------------------------------
@@ -337,51 +325,14 @@ export function canMarkReady(input: PRDetailActionInput): boolean {
   return input.pr.State === "open" && input.pr.IsDraft === true && input.viewerCan.markReady && !input.stale;
 }
 
-function isStaleDraftRefreshSignal(message: string): boolean {
-  return message.includes("ready for review") && message.includes("404 Not Found");
-}
-
-export async function runMarkReady(input: PRDetailActionInput): Promise<void> {
+export function runMarkReady(input: PRDetailActionInput): void {
   if (!canMarkReady(input)) return;
   const { ref, number } = input;
-  let mutationError: Error | null = null;
-  try {
-    const { error } = await input.client.POST(providerItemPath("pulls", ref, "/ready-for-review"), {
-      params: { path: { ...providerRouteParams(ref), number } },
-    });
-    if (error) {
-      throw new Error(describeError(error, "failed to mark pull request ready for review"));
-    }
-  } catch (err) {
-    mutationError = err instanceof Error ? err : new Error(String(err));
-  }
-
-  if (mutationError === null) {
-    await input.stores.detail.loadDetail(ref.owner, ref.name, number, {
-      provider: ref.provider,
-      platformHost: ref.platformHost,
-      repoPath: ref.repoPath,
-    });
-    await input.stores.pulls.loadPulls();
-    input.onCompleted?.();
-    return;
-  }
-
-  if (isStaleDraftRefreshSignal(mutationError.message)) {
-    try {
-      await input.stores.detail.loadDetail(ref.owner, ref.name, number, {
-        provider: ref.provider,
-        platformHost: ref.platformHost,
-        repoPath: ref.repoPath,
-      });
-      await input.stores.pulls.loadPulls();
-    } catch {
-      // Preserve the original mutation error if the stale-state
-      // refresh also fails.
-    }
-  }
-  input.onError?.(mutationError.message);
-  throw mutationError;
+  input.stores.detail.markPullReady(ref, number, {
+    ...(input.onCompleted !== undefined && { onSuccess: input.onCompleted }),
+    ...(input.onError !== undefined && { onFailure: input.onError }),
+    ...(input.onSettled !== undefined && { onSettled: input.onSettled }),
+  });
 }
 
 // Approve pending workflows ------------------------------------------
@@ -390,22 +341,12 @@ export function canApproveWorkflows(input: PRDetailActionInput): boolean {
   return input.pr.State === "open" && input.viewerCan.approveWorkflows && !input.stale;
 }
 
-export async function runApproveWorkflows(input: PRDetailActionInput): Promise<void> {
+export function runApproveWorkflows(input: PRDetailActionInput): void {
   if (!canApproveWorkflows(input)) return;
   const { ref, number } = input;
-  const { error: requestError } = await input.client.POST(providerItemPath("pulls", ref, "/approve-workflows"), {
-    params: { path: { ...providerRouteParams(ref), number } },
+  input.stores.detail.approvePullWorkflows(ref, number, {
+    ...(input.onCompleted !== undefined && { onSuccess: input.onCompleted }),
+    ...(input.onError !== undefined && { onFailure: input.onError }),
+    ...(input.onSettled !== undefined && { onSettled: input.onSettled }),
   });
-  if (requestError) {
-    const msg = describeError(requestError, "failed to approve workflows");
-    input.onError?.(msg);
-    throw new Error(msg);
-  }
-  await input.stores.detail.refreshDetailOnly(ref.owner, ref.name, number, {
-    provider: ref.provider,
-    platformHost: ref.platformHost,
-    repoPath: ref.repoPath,
-  });
-  await input.stores.pulls.loadPulls();
-  input.onCompleted?.();
 }

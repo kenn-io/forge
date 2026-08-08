@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Checkbox, Modal } from "@kenn-io/kit-ui";
+  import { Button, Modal } from "@kenn-io/kit-ui";
   import { onMount, untrack } from "svelte";
 
   import {
@@ -7,18 +7,15 @@
     problemConflictContext,
     problemConflictReason,
     type ConflictReason,
+    type ProblemBody,
   } from "../../api/problems.js";
-  import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
-  import { getClient } from "../../context.js";
+  import type { ProviderRouteRef } from "../../api/provider-routes.js";
+  import type { MergeParams } from "../../api/types.js";
+  import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
-  import {
-    beginWorkspaceDeletion,
-    endWorkspaceDeletion,
-    markWorkspaceIdDeleted,
-  } from "../../stores/workspace-create-pending.svelte.js";
 
-  const client = getClient();
+  const { detail } = getStores();
 
   onMount(() => pushModalFrame("merge-modal", []));
 
@@ -49,12 +46,10 @@
      * queue) and the modal offers an immediate merge instead.
      */
     alreadyQueued?: boolean;
-    /** Exact workspace to delete after a successful merge. */
-    workspaceId?: string | undefined;
     /** Warning shown when the configured override permits a mid-stack merge. */
     midStackWarning?: string | undefined;
     onclose: () => void;
-    onmerged: (cleanupWarning?: string, deletedWorkspaceId?: string) => void;
+    onmerged: () => void;
     /** Called when a deferred merge was accepted and now waits on CI. */
     onqueued: () => void;
     onstateconflict?: ((
@@ -73,7 +68,7 @@
     allowSquash, allowMerge, allowRebase,
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
-    alreadyQueued = false, workspaceId, midStackWarning,
+    alreadyQueued = false, midStackWarning,
     onclose, onmerged, onqueued, onstateconflict,
   }: Props = $props();
 
@@ -93,14 +88,6 @@
 
   type Method = "merge" | "squash" | "rebase";
   type MethodOption = { value: Method; label: string };
-  type MergeParams = {
-    commit_title: string;
-    commit_message: string;
-    method: Method;
-    expected_head_sha?: string;
-    delete_workspace_id?: string;
-  };
-
   function buildMethods(): MethodOption[] {
     const out: MethodOption[] = [];
     if (allowSquash) {
@@ -139,7 +126,6 @@
   let selectedMethod = $state<Method>(methods[0]?.value ?? "squash");
   let commitTitle = $state(initialCommitTitle());
   let commitMessage = $state(initialCommitMessage());
-  let deleteWorkspaceAfterMerge = $state(true);
 
   let activeMergeSubmission = $state<"deferred" | "immediate" | null>(null);
   let error = $state<string | null>(null);
@@ -150,18 +136,16 @@
       commit_title: commitTitle,
       commit_message: commitMessage,
       method: selectedMethod,
-      ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
     };
   }
 
-  function handleMergeError(requestError: { detail?: string; title?: string; details?: unknown } | undefined): boolean {
-    if (!requestError) return false;
-    const reason = isProblem(requestError) ? problemConflictReason(requestError) : undefined;
+  function handleMergeProblem(problem: ProblemBody): boolean {
+    const reason = isProblem(problem) ? problemConflictReason(problem) : undefined;
     if (reason && reason !== "conflict") {
       onstateconflict?.(
         reason,
-        isProblem(requestError) ? problemConflictContext(requestError) : undefined,
+        isProblem(problem) ? problemConflictContext(problem) : undefined,
         pinnedHeadShaAtOpen,
         { provider, platformHost, owner, name, repoPath },
         number,
@@ -170,68 +154,43 @@
       onclose();
       return true;
     }
-    const message = requestError.detail ?? requestError.title ?? "failed to merge pull request";
+    const message = problem.detail ?? problem.title ?? "failed to merge pull request";
     if (reason === "conflict") {
       error = message;
-    } else {
-      showFlash(message, { tone: "danger" });
+      return true;
     }
-    return true;
+    return false;
   }
 
-  async function submitMerge(deferred: boolean): Promise<void> {
+  function submitMerge(deferred: boolean): void {
     if (headPinMissing) return;
     activeMergeSubmission = deferred ? "deferred" : "immediate";
     error = null;
-    try {
-      // Pin the merge to the head the user reviewed; the server rejects
-      // the request when the synced head has moved past it.
-      const params = mergeParams();
-      const ref = { provider, platformHost, owner, name, repoPath };
-      if (deferred) {
-        const { error } = await client.POST(providerItemPath("pulls", ref, "/merge/deferred"), {
-          params: { path: { ...providerRouteParams(ref), number } },
-          body: params,
-        });
-        // Head-pinning conflicts close the modal: the user must
-        // re-review the refreshed detail before retrying, so an
-        // inline retry from this stale form would be wrong.
-        if (error && handleMergeError(error)) return;
-        onqueued();
-        return;
-      }
-      const cleanupWorkspaceId = params.delete_workspace_id;
-      if (cleanupWorkspaceId) beginWorkspaceDeletion(cleanupWorkspaceId, undefined);
-      try {
-        const { data, error } = await client.POST(providerItemPath("pulls", ref, "/merge"), {
-          params: { path: { ...providerRouteParams(ref), number } },
-          body: params,
-        });
-        if (error && handleMergeError(error)) return;
-        const cleanupWarning = data?.workspace_cleanup_warning;
-        const deletedWorkspaceId = cleanupWorkspaceId && !cleanupWarning ? cleanupWorkspaceId : undefined;
-        if (deletedWorkspaceId) markWorkspaceIdDeleted(deletedWorkspaceId);
-        onmerged(cleanupWarning, deletedWorkspaceId);
-      } finally {
-        if (cleanupWorkspaceId) endWorkspaceDeletion(cleanupWorkspaceId, undefined);
-      }
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      activeMergeSubmission = null;
-    }
+    let problemHandled = false;
+    detail.mergePull({ provider, platformHost, owner, name, repoPath }, number, mergeParams(), deferred, {
+      onProblem: (problem) => {
+        problemHandled = handleMergeProblem(problem);
+      },
+      onFailure: (message) => {
+        if (!problemHandled) showFlash(message, { tone: "danger" });
+      },
+      onSuccess: deferred ? onqueued : onmerged,
+      onSettled: () => {
+        activeMergeSubmission = null;
+      },
+    });
   }
 
   function handleMerge(): void {
     if (offerDeferredMerge) {
-      void submitMerge(true);
+      submitMerge(true);
       return;
     }
-    void submitMerge(false);
+    submitMerge(false);
   }
 
   function handleMergeAnyway(): void {
-    void submitMerge(false);
+    submitMerge(false);
   }
 
   function methodLabel(): string {
@@ -310,16 +269,6 @@
           rows={8}
         ></textarea>
       </div>
-
-      {#if workspaceId}
-        <Checkbox
-          checked={deleteWorkspaceAfterMerge}
-          label="Delete workspace after merge"
-          onchange={(checked) => {
-            deleteWorkspaceAfterMerge = checked;
-          }}
-        />
-      {/if}
 
       {#if error}
         <p class="merge-error">{error}</p>

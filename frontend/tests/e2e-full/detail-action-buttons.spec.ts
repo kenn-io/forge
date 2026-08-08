@@ -1244,6 +1244,35 @@ test.describe("detail action buttons", () => {
     await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("backend down");
   });
 
+  test("closing a pull request persists and reconciles detail plus the open list", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const baseURL = server.info.base_url;
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/6`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      const closeResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/6/github-state`,
+      );
+
+      await activePullAction(page, ".btn--close").click();
+
+      expect((await closeResponse).status()).toBe(200);
+      await expect
+        .poll(async () => {
+          const response = await page.request.get(`${baseURL}/api/v1/pulls/github/acme/widgets/6`);
+          const detail = (await response.json()) as { merge_request: { State: string } };
+          return detail.merge_request.State;
+        })
+        .toBe("closed");
+      await page.goto(`${baseURL}/pulls`);
+      await expect(page.locator(".pull-item").filter({ hasText: "Improve mobile navigation" })).toHaveCount(0);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("narrow actions menu includes supported approve action", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/pulls/github/acme/widgets/6");

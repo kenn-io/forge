@@ -143,10 +143,10 @@
     return pullDetailMatchesRef(detail, selectedPR) ? detail : null;
   });
 
-  function refreshSelectedDetail(): Promise<void> | undefined {
-    if (selectedPR === null) return undefined;
+  function refreshSelectedDetail(): void {
+    if (selectedPR === null) return;
     const ref = selectedPR;
-    return detailStore.loadDetail(ref.owner, ref.name, ref.number, {
+    detailStore.loadDetail(ref.owner, ref.name, ref.number, {
       sync: false,
       provider: ref.provider,
       platformHost: ref.platformHost,

@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import type { components } from "../../src/lib/api/generated/schema.js";
 
 // Seeded issues (6 total):
 //   acme/widgets#10: open, eve, "Widget rendering broken on Safari"
@@ -90,6 +92,88 @@ async function expectRepoNameToClipSafely(
   }));
   expect(labelOverflow.scrollWidth).toBeGreaterThanOrEqual(labelOverflow.clientWidth);
 }
+
+test.describe("issue list mutations", () => {
+  let server: IsolatedE2EServer | undefined;
+
+  test.beforeAll(async () => {
+    server = await startIsolatedE2EServer();
+  });
+
+  test.afterAll(async () => {
+    await server?.stop();
+  });
+
+  test("sidebar star changes persist and remain visible after reload", async ({ page }) => {
+    if (!server) throw new Error("issue list e2e server was not started");
+    const baseURL = server.info.base_url;
+    await page.goto(`${baseURL}/issues`);
+    await waitForIssueList(page);
+    const row = page.locator(".issue-item").filter({ hasText: "Widget rendering broken on Safari" }).first();
+    const star = row.locator(".star-btn");
+    const initialTitle = await star.getAttribute("title");
+    const expectedTitle = initialTitle === "Star" ? "Unstar" : "Star";
+    const method = initialTitle === "Star" ? "PUT" : "DELETE";
+    const mutation = page.waitForResponse(
+      (response) => response.request().method() === method && response.url() === `${baseURL}/api/v1/starred`,
+    );
+
+    await star.click();
+
+    expect((await mutation).status()).toBe(200);
+    await expect(star).toHaveAttribute("title", expectedTitle);
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${baseURL}/api/v1/issues/github/acme/widgets/10`);
+        const detail = (await response.json()) as { issue: { Starred?: boolean } };
+        return Boolean(detail.issue.Starred);
+      })
+      .toBe(expectedTitle === "Unstar");
+    await page.reload();
+    await waitForIssueList(page);
+    await expect(
+      page.locator(".issue-item").filter({ hasText: "Widget rendering broken on Safari" }).first().locator(".star-btn"),
+    ).toHaveAttribute("title", expectedTitle);
+  });
+
+  test("closing and reopening an issue persist through refreshed detail", async ({ page }) => {
+    if (!server) throw new Error("issue list e2e server was not started");
+    const baseURL = server.info.base_url;
+    const detailURL = `${baseURL}/api/v1/issues/github/acme/widgets/10`;
+    const stateURL = `${detailURL}/github-state`;
+    const persistedState = async (): Promise<string> => {
+      const response = await page.request.get(detailURL);
+      const detail = (await response.json()) as components["schemas"]["IssueDetailResponse"];
+      return detail.issue.State;
+    };
+
+    await page.goto(`${baseURL}/issues`);
+    await waitForIssueList(page);
+    await page.locator(".issue-item").filter({ hasText: "Widget rendering broken on Safari" }).first().click();
+    await expect(page.locator(".issue-detail .issue-state-chip")).toHaveText("Open");
+
+    const closed = page.waitForResponse(
+      (response) => response.request().method() === "POST" && response.url() === stateURL,
+    );
+    await page.getByRole("button", { name: "Close issue" }).click();
+    expect((await closed).status()).toBe(200);
+    await expect(page.locator(".issue-detail .issue-state-chip")).toHaveText("Closed");
+    await expect.poll(persistedState).toBe("closed");
+
+    await page.reload();
+    await expect(page.locator(".issue-detail .issue-state-chip")).toHaveText("Closed");
+    const reopened = page.waitForResponse(
+      (response) => response.request().method() === "POST" && response.url() === stateURL,
+    );
+    await page.getByRole("button", { name: "Reopen issue" }).click();
+    expect((await reopened).status()).toBe(200);
+    await expect(page.locator(".issue-detail .issue-state-chip")).toHaveText("Open");
+    await expect.poll(persistedState).toBe("open");
+
+    await page.reload();
+    await expect(page.locator(".issue-detail .issue-state-chip")).toHaveText("Open");
+  });
+});
 
 test.describe("issue list view", () => {
   test.beforeEach(async ({ page }) => {

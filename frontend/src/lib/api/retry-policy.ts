@@ -1,9 +1,13 @@
-import { Effect, Schedule } from "effect";
+import { Duration, Effect, Schedule } from "effect";
 import { TransientTransportError } from "./effect-errors.js";
 
 export const transientRetrySchedule = Schedule.exponential("500 millis").pipe(
   Schedule.jittered,
   Schedule.upTo({ times: 2 }),
+);
+
+export const reconnectSchedule = Schedule.exponential("500 millis").pipe(
+  Schedule.modifyDelay(({ duration }) => Effect.succeed(Duration.min(duration, Duration.seconds(30)))),
 );
 
 export function isTransientFailure(failure: unknown): failure is TransientTransportError {

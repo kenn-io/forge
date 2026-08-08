@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "@effect/vitest";
+import { Effect } from "effect";
 
 import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
 
@@ -11,21 +12,26 @@ function response(name: string, state: { stale?: boolean; syncing?: boolean } = 
 }
 
 describe("loadLabelCatalogWithRefresh", () => {
-  it("reloads while the catalog response is stale or syncing", async () => {
-    const loadOnce = vi
-      .fn()
-      .mockResolvedValueOnce(response("cached", { stale: true, syncing: true }))
-      .mockResolvedValueOnce(response("fresh"));
-    const updates: string[][] = [];
+  it.effect("reloads while the catalog response is stale or syncing", () =>
+    Effect.gen(function* () {
+      const loadOnce = vi
+        .fn()
+        .mockReturnValueOnce(response("cached", { stale: true, syncing: true }))
+        .mockReturnValueOnce(response("fresh"));
+      const updates: string[][] = [];
 
-    await loadLabelCatalogWithRefresh({
-      loadOnce,
-      isActive: () => true,
-      wait: async () => undefined,
-      onUpdate: (catalog) => updates.push(catalog.labels.map((label) => label.name)),
-    });
+      yield* loadLabelCatalogWithRefresh({
+        loadOnce: Effect.sync(loadOnce),
+        isActive: () => true,
+        intervalMs: 0,
+        onUpdate: (catalog) =>
+          Effect.sync(() => {
+            updates.push(catalog.labels.map((label) => label.name));
+          }),
+      });
 
-    expect(loadOnce).toHaveBeenCalledTimes(2);
-    expect(updates).toEqual([["cached"], ["fresh"]]);
-  });
+      expect(loadOnce).toHaveBeenCalledTimes(2);
+      expect(updates).toEqual([["cached"], ["fresh"]]);
+    }),
+  );
 });

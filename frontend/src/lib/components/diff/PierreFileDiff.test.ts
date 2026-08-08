@@ -2,11 +2,12 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffLineAnnotation, FileDiffOptions, Virtualizer } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
-import {
-  createDiffContextPrefetchScheduler,
-  type DiffContextPrefetchScheduler,
-  type DiffContextPrefetchTaskHandle,
-} from "./diff-context-prefetch.js";
+
+type LoadFileContextCallbacks = {
+  readonly onSuccess: (context: { readonly oldText: string; readonly newText: string }) => void;
+  readonly onFailure: (message: string) => void;
+  readonly onSettled: () => void;
+};
 
 type GlobalWithCSSStyleSheet = {
   CSSStyleSheet?: {
@@ -316,35 +317,6 @@ function makeSyntaxStateGapFile(): DiffFile {
   };
 }
 
-function capturingPrefetchScheduler(): {
-  cancel: ReturnType<typeof vi.fn>;
-  run: () => ((signal: AbortSignal) => Promise<void>) | undefined;
-  schedule: ReturnType<typeof vi.fn>;
-  scheduler: DiffContextPrefetchScheduler;
-  setPriority: ReturnType<typeof vi.fn>;
-} {
-  let capturedRun: ((signal: AbortSignal) => Promise<void>) | undefined;
-  const cancel = vi.fn();
-  const setPriority = vi.fn();
-  const schedule = vi.fn((_id, _priority, run) => {
-    capturedRun = run;
-    return handle;
-  });
-  const handle: DiffContextPrefetchTaskHandle = { cancel, setPriority };
-  return {
-    cancel,
-    run: () => capturedRun,
-    schedule,
-    scheduler: {
-      dispose: vi.fn(),
-      reset: vi.fn(),
-      schedule,
-      setGeneration: vi.fn(),
-    },
-    setPriority,
-  };
-}
-
 describe("PierreFileDiff", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -354,7 +326,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("uses Pierre virtualized diffs when a viewer virtualizer is provided", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     const virtualizer = { type: "simple" };
 
     render(PierreFileDiff, {
@@ -370,7 +342,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("retries when Pierre declines an initial render attempt", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     pierre.setRenderResults([false, true]);
 
     render(PierreFileDiff, {
@@ -383,7 +355,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("renders patch text even when structured hunks are absent", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
 
     render(PierreFileDiff, {
       props: { file: makePatchOnlyFile() },
@@ -397,17 +369,20 @@ describe("PierreFileDiff", () => {
   });
 
   it("falls back to sparse rendering when syntax full-context loading fails", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const loadFileText = vi.fn(async () => {
-      throw new Error("preview failed");
-    });
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
+    const loadFileContext = vi.fn(
+      (callbacks: { readonly onFailure: (message: string) => void; readonly onSettled: () => void }) => {
+        callbacks.onFailure("preview failed");
+        callbacks.onSettled();
+      },
+    );
 
     render(PierreFileDiff, {
-      props: { file: makeSyntaxStateGapFile(), loadFileText },
+      props: { file: makeSyntaxStateGapFile(), loadFileContext },
     });
 
     await waitFor(() => {
-      expect(loadFileText).toHaveBeenCalled();
+      expect(loadFileContext).toHaveBeenCalled();
     });
 
     await waitFor(() => {
@@ -416,75 +391,51 @@ describe("PierreFileDiff", () => {
     });
   });
 
-  it("does not preload syntax context for an offscreen virtualized diff", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const loadFileText = vi.fn(async () => "full file text");
+  it("prefetches syntax context for an offscreen virtualized diff", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
+    const loadFileContext = vi.fn((callbacks: LoadFileContextCallbacks) => {
+      callbacks.onSuccess({ oldText: "old context", newText: "new context" });
+      callbacks.onSettled();
+    });
 
     render(PierreFileDiff, {
       props: {
         file: makeSyntaxStateGapFile(),
         active: false,
-        loadFileText,
+        contextPrefetchIdentity: "diff-a",
+        loadFileContext,
         virtualizer: {} as Virtualizer,
       },
     });
 
-    await Promise.resolve();
-    expect(loadFileText).not.toHaveBeenCalled();
-  });
-
-  it("registers offscreen syntax context for proactive prefetch", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const prefetch = capturingPrefetchScheduler();
-    const loadFileText = vi.fn(async () => "full file text");
-
-    render(PierreFileDiff, {
-      props: {
-        file: makeSyntaxStateGapFile(),
-        active: false,
-        contextPrefetchScheduler: prefetch.scheduler,
-        loadFileText,
-        virtualizer: {} as Virtualizer,
-      },
-    });
-
-    const run = await waitFor(() => {
-      expect(prefetch.run()).toBeTypeOf("function");
-      return prefetch.run()!;
-    });
-    expect(loadFileText).not.toHaveBeenCalled();
-
-    await run(new AbortController().signal);
-    expect(loadFileText).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(loadFileContext).toHaveBeenCalledOnce());
   });
 
   it("keeps an active syntax-gap diff hidden while scheduled context is pending", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const prefetch = capturingPrefetchScheduler();
-    const releases: Array<(value: string) => void> = [];
-    const loadFileText = vi.fn(() => new Promise<string>((resolve) => releases.push(resolve)));
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
+    let complete = (): void => {};
+    const loadFileContext = vi.fn((callbacks: LoadFileContextCallbacks) => {
+      complete = () => {
+        callbacks.onSuccess({ oldText: "old context", newText: "new context" });
+        callbacks.onSettled();
+      };
+    });
 
     render(PierreFileDiff, {
       props: {
         file: makeSyntaxStateGapFile(),
         active: true,
-        contextPrefetchScheduler: prefetch.scheduler,
-        loadFileText,
+        contextPrefetchIdentity: "diff-a",
+        loadFileContext,
       },
     });
 
-    const run = await waitFor(() => {
-      expect(prefetch.run()).toBeTypeOf("function");
-      return prefetch.run()!;
-    });
-    const task = run(new AbortController().signal);
-    await waitFor(() => expect(loadFileText).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(loadFileContext).toHaveBeenCalledOnce());
 
     expect(pierre.renderCount()).toBe(0);
     expect(document.querySelector(".pierre-diff-loading")).not.toBeNull();
 
-    releases.forEach((release) => release("full file text"));
-    await task;
+    complete();
 
     await waitFor(() => {
       expect(pierre.renderCount()).toBe(1);
@@ -492,140 +443,89 @@ describe("PierreFileDiff", () => {
     });
   });
 
-  it("keeps the scheduler slot until both paired previews settle", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 1 });
-    let releaseNewPreview = (_value: string): void => {};
-    const loadFileText = vi.fn((side: "old" | "new") => {
-      if (side === "old") return Promise.reject(new Error("old preview failed"));
-      return new Promise<string>((resolve) => {
-        releaseNewPreview = resolve;
-      });
+  it("reports a failed background prefetch after the file becomes active", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
+    let fail = (): void => {};
+    const virtualizer = {} as Virtualizer;
+    const loadFileContext = vi.fn((callbacks: LoadFileContextCallbacks) => {
+      fail = () => {
+        callbacks.onFailure("visible preview failed");
+        callbacks.onSettled();
+      };
     });
-
-    render(PierreFileDiff, {
-      props: {
-        file: makeSyntaxStateGapFile(),
-        active: true,
-        contextPrefetchScheduler: scheduler,
-        loadFileText,
-      },
-    });
-
-    await waitFor(() => expect(loadFileText).toHaveBeenCalledTimes(2));
-    let queuedTaskStarted = false;
-    scheduler.schedule("queued", "foreground", async () => {
-      queuedTaskStarted = true;
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(queuedTaskStarted).toBe(false);
-
-    releaseNewPreview("full file text");
-
-    await waitFor(() => {
-      expect(queuedTaskStarted).toBe(true);
-      expect(document.querySelector(".context-error")?.textContent).toContain("old preview failed");
-      expect(pierre.renderCount()).toBe(1);
-    });
-  });
-
-  it("retries a failed speculative prefetch after the file becomes active", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const prefetch = capturingPrefetchScheduler();
-    const loadFileText = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("temporary preview failure"))
-      .mockRejectedValueOnce(new Error("temporary preview failure"))
-      .mockResolvedValue("full file text");
     const view = render(PierreFileDiff, {
       props: {
         file: makeSyntaxStateGapFile(),
         active: false,
-        contextPrefetchScheduler: prefetch.scheduler,
-        loadFileText,
-        virtualizer: {} as Virtualizer,
+        contextPrefetchIdentity: "diff-a",
+        loadFileContext,
+        virtualizer,
       },
     });
+    await waitFor(() => expect(loadFileContext).toHaveBeenCalledOnce());
 
-    const backgroundRun = await waitFor(() => {
-      expect(prefetch.run()).toBeTypeOf("function");
-      return prefetch.run()!;
+    await view.rerender({
+      file: makeSyntaxStateGapFile(),
+      active: true,
+      contextPrefetchIdentity: "diff-a",
+      loadFileContext,
+      virtualizer,
     });
-    await backgroundRun(new AbortController().signal);
+    fail();
 
-    expect(document.querySelector(".context-error")).toBeNull();
-    await view.rerender({ active: true });
-    const foregroundRun = await waitFor(() => {
-      expect(prefetch.schedule).toHaveBeenCalledTimes(2);
-      return prefetch.run()!;
+    await waitFor(() => {
+      expect(document.querySelector(".context-error")?.textContent).toContain("visible preview failed");
     });
-    await foregroundRun(new AbortController().signal);
-
-    expect(loadFileText).toHaveBeenCalledTimes(4);
-    expect(document.querySelector(".context-error")).toBeNull();
   });
 
-  it("cancels proactive prefetch registration on cleanup", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const prefetch = capturingPrefetchScheduler();
-    const result = render(PierreFileDiff, {
+  it("retries a failed speculative prefetch after the file becomes active", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
+    let attempts = 0;
+    const loadFileContext = vi.fn((callbacks: LoadFileContextCallbacks) => {
+      attempts += 1;
+      if (attempts === 1) {
+        callbacks.onFailure("temporary preview failure");
+      } else {
+        callbacks.onSuccess({ oldText: "old context", newText: "new context" });
+      }
+      callbacks.onSettled();
+    });
+    const view = render(PierreFileDiff, {
       props: {
         file: makeSyntaxStateGapFile(),
         active: false,
-        contextPrefetchScheduler: prefetch.scheduler,
-        loadFileText: async () => "full file text",
+        contextPrefetchIdentity: "diff-a",
+        loadFileContext,
         virtualizer: {} as Virtualizer,
       },
     });
-    await waitFor(() => expect(prefetch.run()).toBeTypeOf("function"));
 
-    result.unmount();
-
-    expect(prefetch.cancel).toHaveBeenCalledOnce();
-  });
-
-  it("does not apply syntax context after proactive prefetch is aborted", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const prefetch = capturingPrefetchScheduler();
-    const releases: Array<(value: string) => void> = [];
-    const loadFileText = vi.fn(() => new Promise<string>((resolve) => releases.push(resolve)));
-    render(PierreFileDiff, {
-      props: {
-        file: makeSyntaxStateGapFile(),
-        active: false,
-        contextPrefetchScheduler: prefetch.scheduler,
-        loadFileText,
-        virtualizer: {} as Virtualizer,
-      },
+    await waitFor(() => expect(loadFileContext).toHaveBeenCalledOnce());
+    expect(document.querySelector(".context-error")).toBeNull();
+    await view.rerender({
+      file: makeSyntaxStateGapFile(),
+      active: true,
+      contextPrefetchIdentity: "diff-a",
+      loadFileContext,
+      virtualizer: {} as Virtualizer,
     });
-    const run = await waitFor(() => {
-      expect(prefetch.run()).toBeTypeOf("function");
-      return prefetch.run()!;
-    });
-    const controller = new AbortController();
-    const task = run(controller.signal);
-    await waitFor(() => expect(loadFileText).toHaveBeenCalledTimes(2));
-    const sparseRenderCount = pierre.renderCount();
 
-    controller.abort();
-    releases.forEach((release) => release("full file text"));
-    await task;
-
-    expect(pierre.renderCount()).toBe(sparseRenderCount);
+    await waitFor(() => expect(loadFileContext).toHaveBeenCalledTimes(2));
     expect(document.querySelector(".context-error")).toBeNull();
   });
 
   it("loads manual context expansion without waiting for proactive prefetch", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const prefetch = capturingPrefetchScheduler();
-    const loadFileText = vi.fn(async () => "full file text");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
+    const loadFileContext = vi.fn((callbacks: LoadFileContextCallbacks) => {
+      callbacks.onSuccess({ oldText: "old context", newText: "new context" });
+      callbacks.onSettled();
+    });
     render(PierreFileDiff, {
       props: {
         file: makeSyntaxStateGapFile(),
         active: false,
-        contextPrefetchScheduler: prefetch.scheduler,
-        loadFileText,
+        contextPrefetchIdentity: "diff-a",
+        loadFileContext,
         virtualizer: {} as Virtualizer,
       },
     });
@@ -639,11 +539,11 @@ describe("PierreFileDiff", () => {
     });
     await fireEvent.click(expandButton);
 
-    await waitFor(() => expect(loadFileText).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(loadFileContext).toHaveBeenCalledOnce());
   });
 
   it("shows the empty textual state for metadata-only patches", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     pierre.setMetadata({
       ...pierre.metadata,
       additionLines: [],
@@ -663,9 +563,15 @@ describe("PierreFileDiff", () => {
   });
 
   it("replays context expansion after a deferred full-context render", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const loadFileText = vi.fn(async (side: "old" | "new") =>
-      side === "old" ? "line 1\nold line\n" : "line 1\nnew line\n",
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
+    const loadFileContext = vi.fn(
+      (callbacks: {
+        readonly onSuccess: (context: { readonly oldText: string; readonly newText: string }) => void;
+        readonly onSettled: () => void;
+      }) => {
+        callbacks.onSuccess({ oldText: "line 1\nold line\n", newText: "line 1\nnew line\n" });
+        callbacks.onSettled();
+      },
     );
     const hadCancelAnimationFrame = "cancelAnimationFrame" in globalThis;
     const hadRequestAnimationFrame = "requestAnimationFrame" in globalThis;
@@ -681,7 +587,7 @@ describe("PierreFileDiff", () => {
 
     try {
       render(PierreFileDiff, {
-        props: { file: makeFile(), loadFileText },
+        props: { file: makeFile(), loadFileContext },
       });
 
       const expandButton = await waitFor(() => {
@@ -715,7 +621,7 @@ describe("PierreFileDiff", () => {
         expansionLineCount: undefined,
         hunkIndex: 0,
       });
-      expect(loadFileText).toHaveBeenCalledTimes(2);
+      expect(loadFileContext).toHaveBeenCalledTimes(1);
     } finally {
       if (hadRequestAnimationFrame) {
         globalThis.requestAnimationFrame = originalRequestAnimationFrame;
@@ -731,7 +637,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("logs virtualized render geometry when diff debugging is enabled", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     window.localStorage.setItem("kenn-forge:debug:diff", "1");
     const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
 
@@ -757,7 +663,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("passes split diff style to Pierre when side-by-side mode is enabled", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
 
     render(PierreFileDiff, {
       props: { file: makeFile(), viewMode: "split" },
@@ -771,7 +677,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("caps syntax tokenization line length for Pierre renders", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     const { diffTokenizeMaxLineLength } = await import("./pierre-worker-pool.js");
 
     render(PierreFileDiff, {
@@ -786,7 +692,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("keeps shown content visible when a later post-render has no highlighted spans", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     workerPool.set(makeBusyWorkerPool());
     pierre.setShadowHtml(`
       <pre data-diff-type="unified">
@@ -827,7 +733,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("shows plain-text diffs without waiting for the shared highlight pool to drain", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     workerPool.set(makeBusyWorkerPool());
 
     render(PierreFileDiff, {
@@ -843,7 +749,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("shows massive diffs beyond the tokenize cap without waiting for the highlight pool", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     workerPool.set(makeBusyWorkerPool());
     // Pierre forces plain-text rendering past DEFAULT_TOKENIZE_MAX_LENGTH
     // (100k lines), so styled spans never appear for this file either.
@@ -865,7 +771,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("rerenders when annotation metadata changes without moving lines", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     const file = makeFile();
     const firstAnnotations: DiffLineAnnotation<unknown>[] = [
       {
@@ -898,7 +804,7 @@ describe("PierreFileDiff", () => {
   });
 
   it("does not rerender when transient annotation metadata changes", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { default: PierreFileDiff } = await import("./PierreFileDiffRuntimeHarness.svelte");
     const file = makeFile();
 
     const { rerender } = render(PierreFileDiff, {

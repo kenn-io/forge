@@ -1,8 +1,22 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import type { ComponentProps } from "svelte";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile } from "../../api/types.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import DiffSummaryChip from "./DiffSummaryChip.svelte";
+import DiffSummaryChipTestHarness from "./DiffSummaryChipTestHarness.svelte";
 import { DiffSummaryFilesResult } from "./diff-summary.js";
+
+let runtime: OwnedAppRuntime;
+
+function renderChip(chipProps: ComponentProps<typeof DiffSummaryChip>) {
+  const rendered = render(DiffSummaryChipTestHarness, { props: { runtime, chipProps } });
+  return {
+    ...rendered,
+    rerenderChip: (next: ComponentProps<typeof DiffSummaryChip>) => rendered.rerender({ runtime, chipProps: next }),
+  };
+}
 
 function file(path: string, additions: number, deletions: number): DiffFile {
   return {
@@ -57,29 +71,36 @@ afterAll(() => {
 });
 
 describe("DiffSummaryChip", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    runtime = makeAppRuntime();
+  });
+
+  afterEach(async () => {
     cleanup();
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("loads file totals on hover and shows them by category", async () => {
-    const loadFiles = vi.fn(async () => [
-      file("docs/plan.md", 10, 2),
-      file("src/App.svelte", 40, 6),
-      file("src/App.test.ts", 20, 8),
-      file("mise.toml", 1, 1),
-      file("bun.lock", 1, 1),
-      {
-        ...file("src/api/generated/schema.ts", 2, 2),
-        is_generated: true,
-      },
-    ]);
+    const loadFiles = vi.fn(() =>
+      Effect.succeed(
+        new DiffSummaryFilesResult(false, [
+          file("docs/plan.md", 10, 2),
+          file("src/App.svelte", 40, 6),
+          file("src/App.test.ts", 20, 8),
+          file("mise.toml", 1, 1),
+          file("bun.lock", 1, 1),
+          {
+            ...file("src/api/generated/schema.ts", 2, 2),
+            is_generated: true,
+          },
+        ]),
+      ),
+    );
 
-    render(DiffSummaryChip, {
-      props: {
-        additions: 74,
-        deletions: 20,
-        loadFiles: async () => new DiffSummaryFilesResult(false, await loadFiles()),
-      },
+    renderChip({
+      additions: 74,
+      deletions: 20,
+      loadFiles,
     });
 
     const trigger = screen.getByRole("button", { name: statLabel(74, 20) });
@@ -110,15 +131,14 @@ describe("DiffSummaryChip", () => {
   });
 
   it("hides categories with no changed lines", async () => {
-    render(DiffSummaryChip, {
-      props: {
-        additions: 60,
-        deletions: 14,
-        loadFiles: vi.fn(
-          async () =>
-            new DiffSummaryFilesResult(false, [file("src/App.svelte", 40, 6), file("src/App.test.ts", 20, 8)]),
+    renderChip({
+      additions: 60,
+      deletions: 14,
+      loadFiles: vi.fn(() =>
+        Effect.succeed(
+          new DiffSummaryFilesResult(false, [file("src/App.svelte", 40, 6), file("src/App.test.ts", 20, 8)]),
         ),
-      },
+      ),
     });
 
     await fireEvent.focusIn(screen.getByRole("button", { name: statLabel(60, 14) }));
@@ -136,15 +156,13 @@ describe("DiffSummaryChip", () => {
   it("does not cache stale file responses", async () => {
     const loadFiles = vi
       .fn()
-      .mockResolvedValueOnce(new DiffSummaryFilesResult(true, []))
-      .mockResolvedValueOnce(new DiffSummaryFilesResult(false, [file("src/App.svelte", 4, 1)]));
+      .mockReturnValueOnce(Effect.succeed(new DiffSummaryFilesResult(true, [])))
+      .mockReturnValueOnce(Effect.succeed(new DiffSummaryFilesResult(false, [file("src/App.svelte", 4, 1)])));
 
-    render(DiffSummaryChip, {
-      props: {
-        additions: 4,
-        deletions: 1,
-        loadFiles,
-      },
+    renderChip({
+      additions: 4,
+      deletions: 1,
+      loadFiles,
     });
 
     const trigger = screen.getByRole("button", {
@@ -168,27 +186,31 @@ describe("DiffSummaryChip", () => {
     const loadFiles = vi
       .fn()
       .mockReturnValueOnce(
-        new Promise<DiffSummaryFilesResult>((resolve) => {
-          resolveFirst = resolve;
-        }),
+        Effect.promise(
+          () =>
+            new Promise<DiffSummaryFilesResult>((resolve) => {
+              resolveFirst = resolve;
+            }),
+        ),
       )
       .mockReturnValueOnce(
-        new Promise<DiffSummaryFilesResult>((resolve) => {
-          resolveSecond = resolve;
-        }),
+        Effect.promise(
+          () =>
+            new Promise<DiffSummaryFilesResult>((resolve) => {
+              resolveSecond = resolve;
+            }),
+        ),
       );
 
-    const { rerender } = render(DiffSummaryChip, {
-      props: {
-        additions: 10,
-        deletions: 0,
-        summaryKey: "sha-1",
-        loadFiles,
-      },
+    const { rerenderChip } = renderChip({
+      additions: 10,
+      deletions: 0,
+      summaryKey: "sha-1",
+      loadFiles,
     });
 
     await fireEvent.focusIn(screen.getByRole("button", { name: statLabel(10, 0) }));
-    await rerender({
+    await rerenderChip({
       additions: 5,
       deletions: 1,
       summaryKey: "sha-2",
@@ -208,22 +230,20 @@ describe("DiffSummaryChip", () => {
   it("reloads immediately when the summary key changes while open", async () => {
     const loadFiles = vi
       .fn()
-      .mockResolvedValueOnce(new DiffSummaryFilesResult(false, [file("docs/old.md", 10, 0)]))
-      .mockResolvedValueOnce(new DiffSummaryFilesResult(false, [file("src/new.ts", 5, 1)]));
+      .mockReturnValueOnce(Effect.succeed(new DiffSummaryFilesResult(false, [file("docs/old.md", 10, 0)])))
+      .mockReturnValueOnce(Effect.succeed(new DiffSummaryFilesResult(false, [file("src/new.ts", 5, 1)])));
 
-    const { rerender } = render(DiffSummaryChip, {
-      props: {
-        additions: 10,
-        deletions: 0,
-        summaryKey: "sha-1",
-        loadFiles,
-      },
+    const { rerenderChip } = renderChip({
+      additions: 10,
+      deletions: 0,
+      summaryKey: "sha-1",
+      loadFiles,
     });
 
     await fireEvent.focusIn(screen.getByRole("button", { name: statLabel(10, 0) }));
     expect(await screen.findByText("Plans/docs")).toBeTruthy();
 
-    await rerender({
+    await rerenderChip({
       additions: 5,
       deletions: 1,
       summaryKey: "sha-2",

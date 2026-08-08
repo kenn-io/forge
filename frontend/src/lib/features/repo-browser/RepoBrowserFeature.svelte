@@ -8,7 +8,7 @@
   import PierreFileTree from "../../components/diff/PierreFileTree.svelte";
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import type { FileTreeEntry } from "../../components/diff/file-tree-entry.js";
-  import type { ForgeClient } from "../../types.js";
+  import type { GeneratedClient } from "../../api/generated-api.js";
   import type { SourceBrowserFileEntry } from "../../utils/source-browser-files.js";
   import type { RepoBrowserCommit, RepoBrowserRef } from "../../api/types.js";
   import { providerDefaultHost } from "../../api/provider-routes.js";
@@ -41,7 +41,7 @@
   };
 
   interface Props {
-    client: ForgeClient;
+    client: GeneratedClient;
     route: RepoBrowserFeatureRoute;
     onRouteChange: (route: RepoBrowserRouteRef, options?: { replace?: boolean }) => void;
   }

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import type { ComponentProps } from "svelte";
+  import { untrack, type ComponentProps } from "svelte";
+  import type { AppRuntime } from "../../app/runtime.js";
+  import { setAppRuntime } from "../../app/runtime-context.js";
   import { getInlineWorkspaceController } from "../../stores/workspace-host.svelte.ts";
   import SessionTerminalPool from "./SessionTerminalPool.svelte";
   import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
@@ -9,8 +11,13 @@
   // In the app that pool is mounted by WorkspaceHost, so a test that mounts the
   // view alone would have slots and no terminals.
   type ViewProps = ComponentProps<typeof WorkspaceTerminalView>;
+  type Props = ViewProps & { runtime?: AppRuntime };
 
-  let props: ViewProps = $props();
+  let { runtime, ...props }: Props = $props();
+  const initialRuntime = untrack(() => runtime);
+  if (initialRuntime) {
+    setAppRuntime(initialRuntime);
+  }
   const externalDock = $derived(
     props.paneSurface
       ? getInlineWorkspaceController(props.paneSurface).dockRow()

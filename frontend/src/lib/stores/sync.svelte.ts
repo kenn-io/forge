@@ -1,35 +1,38 @@
+import { Deferred, Duration, Effect, Option } from "effect";
+import type { AppRuntime } from "../app/runtime.js";
+import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
+import { retryIdempotentRead } from "../api/retry-policy.js";
 import type { RateLimitsResponse, SyncStatus } from "../api/types.js";
-import type { ForgeClient } from "../types.js";
+import { SyncWorkflow, type SyncReadError } from "./sync-workflow.js";
 
 export interface SyncStoreOptions {
-  client: ForgeClient;
+  runtime: AppRuntime;
   getPriorityRepos?: (() => string | undefined) | undefined;
 }
 
-export function createSyncStore(opts: SyncStoreOptions) {
-  const apiClient = opts.client;
-  const getPriorityRepos = opts.getPriorityRepos ?? (() => undefined);
+function readErrorMessage(error: SyncReadError, fallback: string): string {
+  if (error._tag === "ApiProblemError") {
+    return error.problem.detail ?? error.problem.title ?? fallback;
+  }
+  return "Could not reach Kenn Forge";
+}
 
-  // --- state ---
+export function createSyncStore(opts: SyncStoreOptions) {
+  const runtime = opts.runtime;
+  const getPriorityRepos = opts.getPriorityRepos ?? (() => undefined);
 
   let status = $state<SyncStatus | null>(null);
   let rateLimits = $state.raw<RateLimitsResponse>({ provider_pools: {}, local_ceilings: {} });
-  let pollingHandle: ReturnType<typeof setInterval> | null = null;
   let wasRunning = false;
   let onSyncCompleteOnce: (() => void) | null = null;
   const syncCompleteListeners = new Set<() => void>();
   let currentIntervalMs = 30_000;
-  // The trigger endpoint acknowledges before the sync goroutine necessarily
-  // updates server status. Until the server observes or completes that run,
-  // an unchanged idle response is still describing the previous run.
-  // undefined means no triggered run is guarded; null means the run started
-  // without an authoritative completion baseline.
+  let refreshGeneration = 0;
+  // The trigger endpoint can acknowledge before status observes the new run.
+  // Retain the optimistic state until status reports running or advances past
+  // the authoritative pre-trigger completion time.
   let triggeredSyncLastRunAt: string | null | undefined;
-  // Monotonic counter incremented by SSE pushes. Poll results
-  // captured before an SSE update are stale and must be dropped.
-  let sseGeneration = 0;
-
-  // --- reads ---
+  let pollWakeSignal: Deferred.Deferred<void> | null = null;
 
   function getSyncState(): SyncStatus | null {
     return status;
@@ -38,8 +41,6 @@ export function createSyncStore(opts: SyncStoreOptions) {
   function getRateLimits(): RateLimitsResponse {
     return rateLimits;
   }
-
-  // --- writes ---
 
   function onNextSyncComplete(fn: () => void): void {
     onSyncCompleteOnce = fn;
@@ -64,54 +65,76 @@ export function createSyncStore(opts: SyncStoreOptions) {
     }
 
     status = next;
-
     if (wasRunning && !isRunning) {
       if (onSyncCompleteOnce) {
-        const cb = onSyncCompleteOnce;
+        const callback = onSyncCompleteOnce;
         onSyncCompleteOnce = null;
-        cb();
+        callback();
       }
-      for (const fn of syncCompleteListeners) fn();
+      for (const listener of syncCompleteListeners) listener();
     }
     wasRunning = isRunning;
-
     adjustPollingSpeed(isRunning);
   }
 
-  async function refreshSyncStatus(): Promise<void> {
-    const gen = sseGeneration;
-    const [syncResult, rateResult] = await Promise.allSettled([
-      apiClient.GET("/sync/status"),
-      apiClient.GET("/rate-limits"),
-    ]);
-
-    // If an SSE push arrived while the poll was in flight, the
-    // SSE data is fresher — drop this stale poll result.
-    if (gen !== sseGeneration) return;
-
-    if (syncResult.status === "fulfilled") {
-      const { data, error } = syncResult.value;
-      if (!error && data) {
-        applySyncStatus(data);
-      }
-    }
-
-    if (rateResult.status === "fulfilled") {
-      const { data, error } = rateResult.value;
-      if (!error && data) {
-        rateLimits = data;
-      }
-    }
+  function syncStatusRead() {
+    return executeGeneratedApiRequest("GET /sync/status", (client) => client.GET("/sync/status")).pipe(
+      retryIdempotentRead,
+    );
   }
+
+  function rateLimitsRead() {
+    return executeGeneratedApiRequest("GET /rate-limits", (client) => client.GET("/rate-limits")).pipe(
+      retryIdempotentRead,
+    );
+  }
+
+  function refreshSyncStatusProgram() {
+    const generation = refreshGeneration;
+    return Effect.gen(function* () {
+      const workflow = yield* SyncWorkflow;
+      const snapshot = yield* workflow.refresh(generation, syncStatusRead(), rateLimitsRead());
+      if (generation !== refreshGeneration) return;
+      yield* Effect.sync(() => {
+        if (Option.isSome(snapshot.status)) {
+          applySyncStatus(snapshot.status.value);
+        }
+        if (Option.isSome(snapshot.rateLimits)) {
+          rateLimits = snapshot.rateLimits.value;
+        }
+      });
+    });
+  }
+
+  function refreshSyncStatus(): void {
+    runtime.runCommand(refreshSyncStatusProgram(), {
+      operation: "refresh sync status",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
+  const refreshSyncStatusEffect = Effect.suspend(refreshSyncStatusProgram);
+
+  function reconcileSyncStatusProgram() {
+    const generation = refreshGeneration;
+    return Effect.gen(function* () {
+      const nextStatus = yield* syncStatusRead();
+      const nextRateLimits = yield* Effect.option(rateLimitsRead());
+      if (generation !== refreshGeneration) return;
+      yield* Effect.sync(() => {
+        applySyncStatus(nextStatus);
+        if (Option.isSome(nextRateLimits)) rateLimits = nextRateLimits.value;
+      });
+    });
+  }
+
+  const reconcileSyncStatusEffect = Effect.suspend(reconcileSyncStatusProgram);
 
   function setSyncStatus(next: SyncStatus): void {
-    sseGeneration++;
+    refreshGeneration += 1;
     applySyncStatus(next);
   }
-
-  type SyncRequest = () => Promise<{
-    error?: { detail?: string | undefined; title?: string | undefined } | undefined;
-  }>;
 
   function lastRunAdvanced(previous: string, next: string): boolean {
     if (next === "") return false;
@@ -119,63 +142,58 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Date.parse(next) > Date.parse(previous);
   }
 
-  async function fetchSyncStatus(): Promise<SyncStatus | null> {
-    try {
-      const { data, error } = await apiClient.GET("/sync/status");
-      return !error && data ? data : null;
-    } catch {
-      return null;
-    }
-  }
+  function runTriggeredSync(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>): void {
+    const previous = status;
+    refreshGeneration += 1;
+    let baselineLastRunAt = previous?.last_run_at ?? null;
 
-  async function runTriggeredSync(request: SyncRequest): Promise<void> {
-    const localPrevious = status;
-    const baselineStatus = localPrevious ?? (await fetchSyncStatus());
-    const baselineLastRunAt = baselineStatus?.last_run_at ?? null;
-
-    // A poll that began before this request cannot describe the triggered run.
-    // Move the generation before publishing the optimistic running state so an
-    // older idle response cannot announce a false completion.
-    sseGeneration++;
-    triggeredSyncLastRunAt = baselineLastRunAt;
-    status = {
-      running: true,
-      last_run_at: baselineLastRunAt ?? "",
-      last_error: "",
-    };
-    wasRunning = true;
-    adjustPollingSpeed(true);
-
-    try {
-      const { error } = await request();
-      if (error) {
-        throw new Error(error.detail ?? error.title ?? "failed to trigger sync");
+    const program = Effect.gen(function* () {
+      if (previous === null) {
+        const baseline = yield* Effect.option(syncStatusRead());
+        baselineLastRunAt = Option.isSome(baseline) ? (baseline.value.last_run_at ?? null) : null;
       }
-      await refreshSyncStatus();
-    } catch (err) {
-      triggeredSyncLastRunAt = undefined;
-      status = {
-        running: false,
-        last_run_at: localPrevious?.last_run_at ?? baselineLastRunAt ?? "",
-        last_error: err instanceof Error ? err.message : "failed to trigger sync",
-      };
-      wasRunning = false;
-      adjustPollingSpeed(false);
-      throw err;
-    }
+      yield* Effect.sync(() => {
+        triggeredSyncLastRunAt = baselineLastRunAt;
+        status = {
+          running: true,
+          last_run_at: baselineLastRunAt ?? "",
+          last_error: "",
+        };
+        wasRunning = true;
+        adjustPollingSpeed(true);
+      });
+      yield* request;
+      yield* Effect.suspend(refreshSyncStatusProgram);
+    });
+    runtime.runCommand(program, {
+      operation: "trigger provider sync",
+      safeContext: {},
+      onFailure: (failure) => {
+        triggeredSyncLastRunAt = undefined;
+        status = {
+          running: false,
+          last_run_at: previous?.last_run_at ?? baselineLastRunAt ?? "",
+          last_error: readErrorMessage(failure, "failed to trigger sync"),
+        };
+        wasRunning = false;
+        adjustPollingSpeed(false);
+      },
+    });
   }
 
-  async function triggerSync(): Promise<void> {
+  function triggerSync(): void {
     const priorityRepos = parsePriorityRepos(getPriorityRepos());
     const syncOptions = priorityRepos.length > 0 ? { params: { query: { priority_repo: priorityRepos } } } : {};
-    await runTriggeredSync(() => apiClient.POST("/sync", syncOptions));
+    runTriggeredSync(executeGeneratedApiRequest("POST /sync", (client) => client.POST("/sync", syncOptions)));
   }
 
-  async function triggerRepoSync(repo: string): Promise<void> {
-    await runTriggeredSync(() =>
-      apiClient.POST("/sync", {
-        params: { query: { only_repo: [repo] } },
-      }),
+  function triggerRepoSync(repo: string): void {
+    runTriggeredSync(
+      executeGeneratedApiRequest("POST /sync", (client) =>
+        client.POST("/sync", {
+          params: { query: { only_repo: [repo] } },
+        }),
+      ),
     );
   }
 
@@ -190,28 +208,40 @@ export function createSyncStore(opts: SyncStoreOptions) {
     const targetMs = running ? 2_000 : 30_000;
     if (targetMs === currentIntervalMs) return;
     currentIntervalMs = targetMs;
-    if (pollingHandle !== null) {
-      clearInterval(pollingHandle);
-      pollingHandle = setInterval(() => {
-        void refreshSyncStatus();
-      }, currentIntervalMs);
+    const signal = pollWakeSignal;
+    if (signal !== null) {
+      runtime.runCommand(Deferred.succeed(signal, undefined), {
+        operation: "wake sync polling for cadence change",
+        safeContext: { intervalMs: targetMs },
+        onFailure: () => {},
+      });
     }
   }
 
-  function startPolling(intervalMs = 30_000): void {
-    if (pollingHandle !== null) return;
-    currentIntervalMs = intervalMs;
-    void refreshSyncStatus();
-    pollingHandle = setInterval(() => {
-      void refreshSyncStatus();
-    }, currentIntervalMs);
-  }
+  const waitForPollingCadence = Effect.gen(function* () {
+    const signal = yield* Deferred.make<void>();
+    const intervalMs = currentIntervalMs;
+    yield* Effect.sync(() => {
+      pollWakeSignal = signal;
+    });
+    yield* Effect.raceFirst(Effect.sleep(Duration.millis(intervalMs)), Deferred.await(signal)).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (pollWakeSignal === signal) pollWakeSignal = null;
+        }),
+      ),
+    );
+  });
 
-  function stopPolling(): void {
-    if (pollingHandle === null) return;
-    clearInterval(pollingHandle);
-    pollingHandle = null;
-  }
+  const pollingEffect = Effect.forever(
+    Effect.suspend(refreshSyncStatusProgram).pipe(Effect.andThen(waitForPollingCadence)),
+  ).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        pollWakeSignal = null;
+      }),
+    ),
+  );
 
   return {
     getSyncState,
@@ -219,11 +249,12 @@ export function createSyncStore(opts: SyncStoreOptions) {
     onNextSyncComplete,
     subscribeSyncComplete,
     refreshSyncStatus,
+    refreshSyncStatusEffect,
+    reconcileSyncStatusEffect,
     setSyncStatus,
     triggerSync,
     triggerRepoSync,
-    startPolling,
-    stopPolling,
+    pollingEffect,
   };
 }
 

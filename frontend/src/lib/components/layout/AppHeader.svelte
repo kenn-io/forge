@@ -106,9 +106,9 @@
     { value: "workspaces", label: "Workspaces", mode: "workspaces" },
   ];
 
-  async function handleSync(): Promise<void> {
+  function handleSync(): void {
     if (sync.getSyncState()?.running) return;
-    await sync.triggerSync();
+    sync.triggerSync();
   }
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
@@ -180,11 +180,11 @@
     syncMenuItemEl?.focus();
   }
 
-  async function handleCurrentRepoSync(): Promise<void> {
+  function handleCurrentRepoSync(): void {
     const repo = currentSyncRepo;
     if (!repo || syncing) return;
     syncMenuOpen = false;
-    await sync.triggerRepoSync(repo);
+    sync.triggerRepoSync(repo);
   }
 
   const hideProviderRepoSelector = $derived(getUIConfig().hideRepoSelector);

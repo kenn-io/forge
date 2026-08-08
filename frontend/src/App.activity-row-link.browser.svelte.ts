@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { page } from "vite-plus/test/browser";
 
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
-import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
 
@@ -58,34 +58,12 @@ function activitySettings(viewMode: "flat" | "threaded"): MockRouteOverride {
   return (req) => {
     if (req.method !== "GET" || req.url.pathname !== "/api/v1/settings") return null;
     return jsonResponse({
-      repos: [
-        {
-          provider: "github",
-          platform_host: "github.com",
-          owner: "acme",
-          name: "widgets",
-          repo_path: "acme/widgets",
-          is_glob: false,
-          matched_repo_count: 1,
-        },
-      ],
+      ...mockSettings,
       activity: {
+        ...mockSettings.activity,
         view_mode: viewMode,
-        time_range: "7d",
-        hide_closed: false,
-        hide_bots: false,
         collapse_threads: false,
       },
-      terminal: {
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-      },
-      agents: [],
     });
   };
 }

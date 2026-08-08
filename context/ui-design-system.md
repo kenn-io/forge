@@ -33,6 +33,8 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 - Diff/file-tree adapters: `frontend/src/lib/components/diff/PierreFileDiff.svelte`
   and `frontend/src/lib/components/diff/PierreFileTree.svelte`
 - Routed item references and URL builders: `frontend/src/lib/routes.ts`
+- SPA code and tests live in `frontend/src`; `packages/ui` is generated-schema output,
+  not an `@kenn-forge/ui` application import surface (`frontend/src/main.ts`, `packages/ui/src/api/generated/schema.ts`).
 - Svelte guidance: `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`)
 - Interaction contracts: `context/ui-interaction-contracts.md`
 - Mobile UX principles: `context/mobile-ux.md`
@@ -111,7 +113,7 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   wrapping stage. Measurement probes must be stateless and hidden from the
   accessibility tree; stateful action controls render exactly once outside the
   probes so dialog drafts and pending state survive stage changes. Inside a `flex-wrap` parent
-  the host needs `flex: 1 1 0` *and* a `min-width` at the
+  the host needs `flex: 1 1 0` _and_ a `min-width` at the
   compact stage's intrinsic width: grow otherwise leaves the host narrower
   than that stage, and the icons paint over the sibling that should have
   wrapped instead. Every stage must expose the same accessible names
@@ -191,7 +193,7 @@ If a new repeated button treatment is needed, extend `ActionButton` rather than 
 
 ### Comment composers
 
-Every comment composer insets its submit button at the bottom-right *inside* the input
+Every comment composer insets its submit button at the bottom-right _inside_ the input
 and reserves that footprint as the input's bottom padding — never a button in a column
 beside the field. Three surfaces repeat this shell today (`CommentBox.svelte`,
 `IssueCommentBox.svelte`, `roborev/ResponseList.svelte`); extract it into a shared
@@ -414,11 +416,23 @@ When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpr
 
 Effect-owned frontend work shares the single main `ManagedRuntime` and reaches it through Svelte context; do not create per-feature runtimes or detach async work from its scope (`frontend/src/lib/app/runtime.ts::makeAppRuntime`, `frontend/src/lib/app/mount.ts::mountApplication`).
 
+App-wide health polling belongs to the root runtime lifetime, not the full-shell lifetime, because embedded routes still depend on daemon availability (`frontend/src/App.svelte::roborevPollingExecution`).
+
+Provider list, activity, and sync controllers expose synchronous launchers; their Effect workflows own cancellation, shared demand, bounded reads, and sequential cadence so Svelte callers never rebuild Promise generations or timer overlap guards (`frontend/src/lib/stores/`).
+
+Diff context prefetch is app-scoped, foreground-prioritized, and concurrency-bounded; generation cancellation must not release an active slot until its shared read settles (`frontend/src/lib/components/diff/diff-context-prefetch.ts::DiffContextPrefetch`).
+
+Detail and diff selection reads are latest-wins; identical full-provider keys share only active reads, while selection changes interrupt the underlying transport (`frontend/src/lib/effect/latest-shared-read.ts::makeLatestSharedRead`).
+
 The standalone GitHub App setup entrypoint owns one scoped Effect program rather than another managed SPA runtime; its Svelte component only projects callbacks and publishes the synchronous Continue command (`packages/github-app-ui/src/main.ts`, `packages/github-app-ui/src/setup-program.ts::makeSetupController`).
 
 Effect root lifetimes survive browser back-forward cache restores: the main SPA stays alive for the JavaScript realm, and standalone entrypoints ignore persisted page hides when deciding teardown (`frontend/src/main.ts`, `packages/github-app-ui/src/main.ts`).
 
 Effect callback streams use explicit bounded buffers: pullable producers suspend for backpressure, while callback-only sources fail with a typed transient overflow so reconnect/replay can recover (`frontend/src/lib/browser/streaming-fetch.ts::byteStreamFromReader`, `frontend/src/lib/browser/event-source.ts::eventSourceStream`).
+
+Provider live updates checkpoint only after their handler succeeds and preserve that cursor across owner handoffs; transient failures stay visibly reconnecting under capped backoff, while decode failures stop visibly until an explicit reconnect (`frontend/src/lib/stores/provider-events-workflow.ts::providerEventsProgram`).
+
+Provider mutations share one app-scoped acknowledged queue: order commands by submission, key rollback versions by full item identity plus mutation family, never retry writes, and turn `stale_state` into refresh-and-review without replay (`frontend/src/lib/stores/ordered-mutations.ts::ProviderMutations`).
 
 A `$state` record written by full-object reassignment (`x = { ...x, k: v }`) that is also read inside the same reactive scope — an `$effect`, or a `{@attach ...}` callback, which Svelte runs as one — is a self-referential dependency: Svelte detects it as `effect_update_depth_exceeded` and the attachment tears itself down and reattaches forever. Mutate the specific key instead (`x[k] = v`) (`frontend/src/lib/stores/workspace-host.svelte.ts::registerSlotElement`).
 

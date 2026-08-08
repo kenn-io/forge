@@ -152,6 +152,9 @@ registry helpers return typed errors for missing providers or capabilities.
   platform error, not break unrelated sync work.
 - Never put foreground deadlines on a shared provider HTTP client; scope them to
   the operation context (`internal/platform/gitlab/client.go::NewClient`).
+- Provider clients with a local sync budget must use the shared transport; duplicate
+  wrappers can lose refusal-window identity and make sync status provider-dependent
+  (`internal/github/budget_transport.go::WrapSyncBudgetTransport`).
 - Resolve opaque provider repo IDs by `repo_path` before numeric-only operations
   (`internal/platform/gitlab/client.go::projectScopedArg`).
 - `priority_repo` reorders a full run; `only_repo` restricts every repo-derived

@@ -17,6 +17,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	platformgithub "go.kenn.io/forge/internal/platform/github"
+	platformgitlab "go.kenn.io/forge/internal/platform/gitlab"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
@@ -303,6 +304,74 @@ func TestSyncItemBudgetExhaustionIdentifiesLocalCeilingE2E(t *testing.T) {
 	require.Equal("github.com", status.LastErrorCeilingKey)
 	require.Equal(budget.ResetAt().UTC().Format(time.RFC3339), status.LastErrorCeilingResetAt)
 	require.Zero(commentRequests.Load(), "the refused request must not reach the provider")
+}
+
+func TestGitLabSyncBudgetExhaustionIncludesWindowE2E(t *testing.T) {
+	require := require.New(t)
+	var requests atomic.Int32
+	gitlabAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(gitlabAPI.Close)
+
+	budget := ghclient.NewSyncBudget(1)
+	budget.Spend(1)
+	client, err := platformgitlab.NewClient(
+		"gitlab.example.com",
+		staticTokenSource("token"),
+		platformgitlab.WithBaseURLForTesting(gitlabAPI.URL+"/api/v4"),
+		platformgitlab.WithoutRetriesForTesting(),
+		platformgitlab.WithSyncBudget(budget),
+	)
+	require.NoError(err)
+	registry, err := ghclient.NewProviderRegistry(nil, client)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:           platform.KindGitLab,
+			PlatformHost:       "gitlab.example.com",
+			PlatformRepoID:     42,
+			PlatformExternalID: "42",
+			Owner:              "group",
+			Name:               "project",
+			RepoPath:           "group/project",
+		}},
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{
+			ghclient.RateBucketKey("gitlab", "gitlab.example.com", "host"): budget,
+		},
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.RunOnce(t.Context())
+
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+	})
+	forge := httptest.NewServer(srv)
+	t.Cleanup(forge.Close)
+	api, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
+	require.NoError(err)
+	status, err := api.HTTP.GetSyncStatusWithResponse(t.Context())
+	require.NoError(err)
+	require.Equal(http.StatusOK, status.StatusCode(), string(status.Body))
+	require.NotNil(status.JSON200)
+	require.NotNil(status.JSON200.LastErrorCode)
+	require.Equal(generated.LocalSyncCeilingExhausted, *status.JSON200.LastErrorCode)
+	require.NotNil(status.JSON200.LastErrorCeilingKey)
+	require.Equal("gitlab:gitlab.example.com", *status.JSON200.LastErrorCeilingKey)
+	require.NotNil(status.JSON200.LastErrorCeilingResetAt)
+	require.Equal(
+		budget.ResetAt().UTC().Format(time.RFC3339),
+		status.JSON200.LastErrorCeilingResetAt.UTC().Format(time.RFC3339),
+	)
+	require.Zero(requests.Load(), "the refused request must not reach GitLab")
 }
 
 type gitHubIndexListProvider struct {

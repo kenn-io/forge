@@ -120,7 +120,7 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 	}
 	baseTransport := http.DefaultTransport
 	if opts.budget != nil {
-		baseTransport = &syncBudgetTransport{base: baseTransport, budget: opts.budget}
+		baseTransport = ghsync.WrapSyncBudgetTransport(baseTransport, opts.budget)
 	}
 	if opts.rateTracker != nil {
 		baseTransport = &rateTrackingTransport{
@@ -153,43 +153,6 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 		userIDs:           make(map[string]int64),
 		projectCloneURLs:  make(map[int64]string),
 	}, nil
-}
-
-type syncBudgetTransport struct {
-	base   http.RoundTripper
-	budget *ghsync.SyncBudget
-}
-
-func (t *syncBudgetTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if !ghsync.ConsumeArchiveAttemptAllowance(req.Context()) {
-		return nil, platform.ErrArchiveAttemptBudget
-	}
-	counted := ghsync.IsSyncBudgetContext(req.Context())
-	archive := ghsync.IsArchiveSyncBudgetContext(req.Context())
-	var window ghsync.BudgetWindow
-	if counted {
-		var reserved bool
-		switch {
-		case archive:
-			window, reserved = t.budget.TrySpendArchive(1)
-		case ghsync.IsEssentialSyncBudgetContext(req.Context()):
-			window, reserved = t.budget.TrySpendEssential(1)
-		default:
-			window, reserved = t.budget.TrySpend(1)
-		}
-		if !reserved {
-			return nil, platform.ErrSyncBudgetExhausted
-		}
-	}
-	resp, err := t.base.RoundTrip(req)
-	if counted && resp != nil && resp.StatusCode == http.StatusNotModified {
-		if archive {
-			t.budget.RefundArchive(window, 1)
-		} else {
-			t.budget.Refund(window, 1)
-		}
-	}
-	return resp, err
 }
 
 type rateTrackingTransport struct {

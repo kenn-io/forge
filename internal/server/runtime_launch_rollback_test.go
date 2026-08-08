@@ -636,7 +636,7 @@ func TestHostRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPreservesPersi
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupRuntimeLaunchRollbackFixture(t, true)
-	var logs bytes.Buffer
+	var logs lockedBuffer
 	previousLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
@@ -918,7 +918,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPre
 	require := require.New(t)
 	fixture := setupRuntimeLaunchRollbackFixture(t, true)
 	scope := workspaceapi.ProjectWorktreeRuntimeScope(fixture.worktreeID)
-	var logs bytes.Buffer
+	var logs lockedBuffer
 	previousLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })

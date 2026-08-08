@@ -229,6 +229,8 @@ can leave new controls paired with old or loading content (`frontend/tests/e2e-f
 Playwright suites with `route.fetch()` proxies must unregister routes with
 `page.unrouteAll({ behavior: "ignoreErrors" })` before page teardown; background refetches can otherwise fail outside the completed test (`frontend/tests/e2e-full/diff-view.spec.ts::mockReviewThreadsOnPreviewMarkdown`).
 
+Tests that redirect process-wide `slog` output must use a concurrency-safe writer; server background monitors can outlive their creating test and log during later assertions (`internal/server/tmux_wrapper_test.go::lockedBuffer`).
+
 CI executes both Playwright suites in Chromium and Firefox. Frontend-owned
 browser workflows using intercepted API responses belong in
 `frontend/tests/e2e/` (`frontend/playwright.config.ts`); workflows that must

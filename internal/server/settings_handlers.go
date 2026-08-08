@@ -131,25 +131,9 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 func matchedRepoCount(
 	raw config.Repo, tracked []ghclient.RepoRef,
 ) int {
-	host := raw.PlatformHostOrDefault()
-	provider := raw.PlatformOrDefault()
 	count := 0
 	for _, repo := range tracked {
-		if !strings.EqualFold(repoProvider(repo), provider) ||
-			!samePlatformHost(repo.PlatformHost, host) ||
-			!strings.EqualFold(repo.Owner, raw.Owner) {
-			continue
-		}
-		if raw.HasNameGlob() {
-			matched, _ := path.Match(
-				strings.ToLower(raw.Name),
-				strings.ToLower(repo.Name),
-			)
-			if matched {
-				count++
-			}
-		} else if strings.EqualFold(trackedRepoPath(repo), configRepoPath(raw)) ||
-			strings.EqualFold(repo.Name, raw.Name) {
+		if repoMatchesConfig(repo, raw) {
 			count++
 		}
 	}

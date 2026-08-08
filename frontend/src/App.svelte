@@ -1224,6 +1224,7 @@
           <FocusListView listType="issues" />
         {:else}
           <MobileActivityView
+            repoCatalog={interactiveRepoCatalog}
             selectedRepo={getNormalizedGlobalRepo()}
             onRepoChange={setGlobalRepo}
             onSelectItem={handleActivitySelect}

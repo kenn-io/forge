@@ -121,7 +121,7 @@ describe("MobileActivityView branch activity", () => {
 
   it("renders branch activity without a fake PR or issue number", () => {
     const { container } = render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     const article = container.querySelector("article");
@@ -136,7 +136,7 @@ describe("MobileActivityView branch activity", () => {
 
   it("exposes independent PR and issue toggles", async () => {
     render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     const prs = screen.getByRole("switch", { name: "PRs" });
@@ -150,7 +150,7 @@ describe("MobileActivityView branch activity", () => {
 
   it("uses the shared repo path by default", () => {
     const { container } = render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     const repoLabel = container.querySelector(".mobile-activity-card__meta span");
@@ -161,7 +161,7 @@ describe("MobileActivityView branch activity", () => {
     hideOrgName.value = true;
 
     const { container } = render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     const repoLabel = container.querySelector(".mobile-activity-card__meta span");
@@ -188,7 +188,7 @@ describe("MobileActivityView branch activity", () => {
     ];
 
     const { container } = render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     const repoLabels = Array.from(container.querySelectorAll(".mobile-activity-card__meta span:first-child")).map(
@@ -211,7 +211,7 @@ describe("MobileActivityView branch activity", () => {
     ];
 
     render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     const timeline = screen.getByRole("list", {
@@ -225,7 +225,7 @@ describe("MobileActivityView branch activity", () => {
 
   it("exposes a mobile hide org toggle", async () => {
     const { getByRole } = render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     const button = getByRole("button", { name: "Hide org" });
@@ -240,7 +240,7 @@ describe("MobileActivityView branch activity", () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
     render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     const event = screen.getByRole("button", { name: /Commit.*a1b2c3d.*Alice Example/ });
@@ -302,7 +302,7 @@ describe("MobileActivityView notifications", () => {
     items.value = [notificationItem("1", "Review me", "open")];
 
     render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     expect(screen.getByText("Review requested", { selector: "strong" })).toBeTruthy();
@@ -312,7 +312,7 @@ describe("MobileActivityView notifications", () => {
     items.value = [notificationItem("1", "Review me", "open")];
 
     const { getByRole } = render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     const button = getByRole("button", { name: "Hide notifications" });
@@ -327,7 +327,7 @@ describe("MobileActivityView notifications", () => {
     items.value = [notificationItem("1", "Review me", "open")];
 
     const { getByRole } = render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     const seen = getByRole("button", { name: "Mark notification seen" });
@@ -360,7 +360,7 @@ describe("MobileActivityView hide closed/merged", () => {
     ];
 
     const { container } = render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     // A notifications-only mobile feed has no sibling PR row, yet the
@@ -375,7 +375,7 @@ describe("MobileActivityView hide closed/merged", () => {
     items.value = [notificationItem("1", "Open subject", "open"), notificationItem("2", "Merged subject", "merged")];
 
     const { container } = render(MobileActivityView, {
-      props: { onSelectItem },
+      props: { repoCatalog: [], onSelectItem },
     });
 
     expect(container.textContent).toContain("Open subject");

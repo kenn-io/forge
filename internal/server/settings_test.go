@@ -373,6 +373,28 @@ command = ["codex", "--full-auto"]
 	assert.Equal([]string{"codex", "--full-auto"}, resp.Agents[0].Command)
 }
 
+func TestHandleGetSettingsCountsRenamedExactRepoByProvenance(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme-renamed",
+		Name:               "widget-next",
+		RepoPath:           "acme-renamed/widget-next",
+		ConfiguredRepoPath: "acme/widget",
+	}})
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
+}
+
 func TestHandleGetSettingsEncodesEmptyKataProjectsAsArray(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

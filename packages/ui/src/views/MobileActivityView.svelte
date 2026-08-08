@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import type { ActivityItem } from "../api/types.js";
+  import type { ActivityItem, Repo } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
     buildActivityFilterTypes,
@@ -44,12 +44,13 @@
   const { activity, settings, sync, grouping } = getStores();
 
   interface Props {
+    repoCatalog: Repo[];
     selectedRepo?: string | undefined;
     onRepoChange?: ((repo: string | undefined) => void) | undefined;
     onSelectItem?: ((item: ActivityItem) => void) | undefined;
   }
 
-  let { selectedRepo, onRepoChange, onSelectItem }: Props = $props();
+  let { repoCatalog, selectedRepo, onRepoChange, onSelectItem }: Props = $props();
 
   type ActivityGroup = {
     key: string;
@@ -72,7 +73,7 @@
   const repoOptions = $derived.by(() =>
     [
       { value: "", label: "All repos" },
-      ...buildMobileActivityRepoOptions(settings.getConfiguredRepos()),
+      ...buildMobileActivityRepoOptions(settings.getConfiguredRepos(), repoCatalog),
     ],
   );
   onMount(() => {

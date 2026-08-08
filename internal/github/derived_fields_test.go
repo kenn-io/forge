@@ -35,6 +35,7 @@ func TestCarryMergeRequestDerivedFieldsPersistence(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
+			require := require.New(t)
 			database := openTestDB(t)
 			ctx := t.Context()
 			now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
@@ -43,7 +44,7 @@ func TestCarryMergeRequestDerivedFieldsPersistence(t *testing.T) {
 				PlatformRepoID: "1", Owner: "owner", Name: "repo",
 				RepoPath: "owner/repo",
 			})
-			require.NoError(t, err)
+			require.NoError(err)
 			seeded := &db.MergeRequest{
 				RepoID: repoID, PlatformID: 1, Number: 1, Title: "Synthetic merge request",
 				State: db.MergeRequestStateOpen, PlatformHeadSHA: "head-sha",
@@ -53,7 +54,7 @@ func TestCarryMergeRequestDerivedFieldsPersistence(t *testing.T) {
 				CreatedAt:       now.Add(-time.Hour), UpdatedAt: now, LastActivityAt: now,
 			}
 			_, err = database.UpsertMergeRequest(ctx, seeded)
-			require.NoError(t, err)
+			require.NoError(err)
 
 			closed := &db.MergeRequest{
 				RepoID: repoID, PlatformID: 1, Number: 1, Title: "Synthetic merge request",
@@ -63,12 +64,12 @@ func TestCarryMergeRequestDerivedFieldsPersistence(t *testing.T) {
 			}
 			CarryMergeRequestDerivedFields(closed, seeded)
 			_, _, accepted, err := database.UpsertMergeRequestSnapshotWithLabels(ctx, closed)
-			require.NoError(t, err)
-			require.True(t, accepted)
+			require.NoError(err)
+			require.True(accepted)
 
 			stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-			require.NoError(t, err)
-			require.NotNil(t, stored)
+			require.NoError(err)
+			require.NotNil(stored)
 			assert.Equal(db.MergeRequestStateClosed, stored.State)
 			assert.Equal(7, stored.CommentCount)
 			assert.Equal("approved", stored.ReviewDecision)
@@ -77,7 +78,7 @@ func TestCarryMergeRequestDerivedFieldsPersistence(t *testing.T) {
 			// Owned by the upsert, not the carry: the stored pending flag
 			// always wins and a set detail marker is never cleared.
 			assert.True(stored.CIHadPending)
-			require.NotNil(t, stored.DetailFetchedAt)
+			require.NotNil(stored.DetailFetchedAt)
 			assert.Equal(now, stored.DetailFetchedAt.UTC())
 		})
 	}

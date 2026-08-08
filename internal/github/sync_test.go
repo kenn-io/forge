@@ -15521,6 +15521,8 @@ func TestSyncerBudgetRefusedPRListSkipsETagEviction(t *testing.T) {
 		"budget refusal must not mark the repo for ETag eviction")
 	assert.Contains(syncer.Status().LastError, "list open PRs",
 		"budget refusal must still surface as a sync error")
+	assert.Equal(SyncErrorCodeLocalCeilingExhausted, syncer.Status().LastErrorCode,
+		"budget refusal must identify the local ceiling independently of provider quota")
 
 	// Cycle 3: budget available again. The list must go through the
 	// conditional path (warm cache → 304), not an eviction-forced refetch.

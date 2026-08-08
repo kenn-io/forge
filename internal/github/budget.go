@@ -195,6 +195,14 @@ func (b *SyncBudget) Limit() int {
 	return b.limit
 }
 
+// ResetAt returns the end of the budget's current local hourly window.
+func (b *SyncBudget) ResetAt() time.Time {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.rollLocked()
+	return b.windowStart.Add(time.Hour)
+}
+
 func (b *SyncBudget) ArchiveSpendCeiling(now time.Time, resetAt *time.Time, liveFloor int) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()

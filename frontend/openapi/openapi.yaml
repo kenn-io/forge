@@ -3861,6 +3861,8 @@ components:
         remaining:
           format: int64
           type: integer
+        reset_at:
+          type: string
         spent:
           format: int64
           type: integer
@@ -3872,6 +3874,7 @@ components:
         - limit
         - spent
         - remaining
+        - reset_at
       type: object
     MergePRBody:
       additionalProperties: false
@@ -7351,6 +7354,10 @@ components:
         current_repo:
           type: string
         last_error:
+          type: string
+        last_error_code:
+          enum:
+            - localSyncCeilingExhausted
           type: string
         last_run_at:
           format: date-time

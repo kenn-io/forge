@@ -202,6 +202,7 @@ type localSyncCeilingStatus struct {
 	Limit          int    `json:"limit"`
 	Spent          int    `json:"spent"`
 	Remaining      int    `json:"remaining"`
+	ResetAt        string `json:"reset_at"`
 }
 
 type rateLimitsResponse struct {

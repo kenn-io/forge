@@ -971,6 +971,7 @@ func (s *Server) getRateLimits(
 			Limit:          budget.Limit(),
 			Spent:          budget.Spent(),
 			Remaining:      budget.Remaining(),
+			ResetAt:        formatUTCRFC3339(budget.ResetAt()),
 		}
 	}
 	return &rateLimitsOutput{

@@ -438,13 +438,22 @@ func commitOrderSHA(summary string) string {
 	return strings.ToLower(strings.TrimSpace(summary))
 }
 
+// SyncErrorCode identifies a sync failure that clients can recover from
+// without parsing LastError.
+type SyncErrorCode string
+
+const (
+	SyncErrorCodeLocalCeilingExhausted SyncErrorCode = "localSyncCeilingExhausted"
+)
+
 // SyncStatus holds the current state of the sync engine.
 type SyncStatus struct {
-	Running     bool      `json:"running"`
-	CurrentRepo string    `json:"current_repo,omitempty"`
-	Progress    string    `json:"progress,omitempty"`
-	LastRunAt   time.Time `json:"last_run_at,omitzero"`
-	LastError   string    `json:"last_error,omitempty"`
+	Running       bool          `json:"running"`
+	CurrentRepo   string        `json:"current_repo,omitempty"`
+	Progress      string        `json:"progress,omitempty"`
+	LastRunAt     time.Time     `json:"last_run_at,omitzero"`
+	LastError     string        `json:"last_error,omitempty"`
+	LastErrorCode SyncErrorCode `json:"last_error_code,omitempty" enum:"localSyncCeilingExhausted"`
 }
 
 func formatRateLimitWait(wait time.Duration) string {
@@ -5416,10 +5425,11 @@ func (s *Syncer) clearRecoveredRateLimitGates(
 // worker pool. Extracted into a struct so runWorker can be a
 // directly testable method instead of an inline closure.
 type runState struct {
-	completed *atomic.Int32
-	maxShown  *atomic.Int32
-	errMu     *sync.Mutex
-	lastErr   *string
+	completed     *atomic.Int32
+	maxShown      *atomic.Int32
+	errMu         *sync.Mutex
+	lastErr       *string
+	lastErrorCode *SyncErrorCode
 	// canceled is latched to true at the moment any goroutine
 	// observes ctx cancellation while work is still outstanding.
 	// RunOnce uses this flag (rather than a completed-count
@@ -5478,6 +5488,7 @@ func (s *Syncer) runWorker(
 		if bucketErr != nil {
 			state.errMu.Lock()
 			*state.lastErr = bucketErr.Error()
+			*state.lastErrorCode = ""
 			state.errMu.Unlock()
 			state.results[item.index].Error = bucketErr.Error()
 			continue
@@ -5545,6 +5556,7 @@ func (s *Syncer) runWorker(
 			)
 			state.errMu.Lock()
 			*state.lastErr = errStr
+			*state.lastErrorCode = syncErrorCodeFor(err)
 			state.errMu.Unlock()
 			// Each index is written by exactly one worker. The partial
 			// typing requires the whole error to be the partial failure:
@@ -5567,6 +5579,13 @@ func (s *Syncer) runWorker(
 		done := state.completed.Add(1)
 		s.publishMonotonicProgress(state, done)
 	}
+}
+
+func syncErrorCodeFor(err error) SyncErrorCode {
+	if errors.Is(err, platform.ErrSyncBudgetExhausted) {
+		return SyncErrorCodeLocalCeilingExhausted
+	}
+	return ""
 }
 
 // revokeExhaustedBuckets clears eligibility for credentials that have reached
@@ -5729,23 +5748,25 @@ func (s *Syncer) runOnce(
 	eligibleBuckets := s.repoEligibility(repos, nextAfter)
 
 	var (
-		completed atomic.Int32
-		maxShown  atomic.Int32
-		errMu     sync.Mutex
-		lastErr   string
-		canceled  atomic.Bool
-		wg        sync.WaitGroup
+		completed     atomic.Int32
+		maxShown      atomic.Int32
+		errMu         sync.Mutex
+		lastErr       string
+		lastErrorCode SyncErrorCode
+		canceled      atomic.Bool
+		wg            sync.WaitGroup
 	)
 
 	state := &runState{
-		completed: &completed,
-		maxShown:  &maxShown,
-		errMu:     &errMu,
-		lastErr:   &lastErr,
-		canceled:  &canceled,
-		total:     total,
-		results:   results,
-		exhausted: &sync.Map{},
+		completed:     &completed,
+		maxShown:      &maxShown,
+		errMu:         &errMu,
+		lastErr:       &lastErr,
+		lastErrorCode: &lastErrorCode,
+		canceled:      &canceled,
+		total:         total,
+		results:       results,
+		exhausted:     &sync.Map{},
 	}
 	for range workers {
 		wg.Go(func() {
@@ -5857,9 +5878,10 @@ dispatch:
 	}
 
 	s.publishStatus(&SyncStatus{
-		Running:   false,
-		LastRunAt: time.Now().UTC(),
-		LastError: lastErr,
+		Running:       false,
+		LastRunAt:     time.Now().UTC(),
+		LastError:     lastErr,
+		LastErrorCode: lastErrorCode,
 	})
 }
 
@@ -7360,6 +7382,7 @@ func (s *Syncer) indexSyncRepo(
 	// still correct and eviction would only add unconditional-refetch
 	// spend to an already-exhausted window.
 	var budgetRefusedScope failScope
+	var partialCause error
 
 	preferNativeStacks := s.preferGitHubNativeStacks.Load() &&
 		repoPlatform(repo) == platform.KindGitHub
@@ -7571,6 +7594,7 @@ func (s *Syncer) indexSyncRepo(
 			} else if errors.Is(issueListErr, platform.ErrSyncBudgetExhausted) {
 				failedScope |= failIssues
 				budgetRefusedScope |= failIssues
+				partialCause = issueListErr
 			} else if s.recordRepositoryFeatureDisabled(
 				repo, platform.RepositoryFeatureIssues, issueListErr,
 			) {
@@ -7581,6 +7605,7 @@ func (s *Syncer) indexSyncRepo(
 					"err", issueListErr,
 				)
 				failedScope |= failIssues
+				partialCause = issueListErr
 			}
 		} else {
 			graphQLIssuesDone := false
@@ -7699,6 +7724,7 @@ func (s *Syncer) indexSyncRepo(
 		return &PartialSyncError{
 			MergeRequests: failedScope&failMR != 0,
 			Issues:        failedScope&failIssues != 0,
+			Cause:         partialCause,
 		}
 	}
 

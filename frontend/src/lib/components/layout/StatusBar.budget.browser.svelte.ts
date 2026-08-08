@@ -40,6 +40,13 @@ function rateLimits(
   };
 }
 
+function syncStatus(status: Record<string, unknown>): MockRouteOverride {
+  return (req) => {
+    if (req.method !== "GET" || req.url.pathname !== "/api/v1/sync/status") return null;
+    return jsonResponse(status);
+  };
+}
+
 function credentialAwareRateLimits(): MockRouteOverride {
   return (req) => {
     if (req.method !== "GET" || req.url.pathname !== "/api/v1/rate-limits") return null;
@@ -272,6 +279,42 @@ describe("budget display", () => {
     expect(spent?.textContent).toBe("500");
     expect(spent?.style.color).toBe("var(--budget-red)");
     expect(popover.textContent).toContain("Local sync ceiling");
+  });
+
+  it("identifies a local ceiling failure while provider quota remains healthy", async () => {
+    const resetAt = new Date(Date.now() + 30 * 60_000).toISOString();
+    await mountStatusBar([
+      rateLimits(
+        { "github.com": knownHost },
+        {
+          "github.com": {
+            provider: "github",
+            platform_host: "github.com",
+            rate_principal: "host",
+            principal_label: "Host credential",
+            limit: 500,
+            spent: 500,
+            remaining: 0,
+            reset_at: resetAt,
+          },
+        },
+      ),
+      syncStatus({
+        running: false,
+        last_run_at: "2026-08-07T20:00:00Z",
+        last_error: "list open PRs: local sync emergency ceiling exhausted",
+        last_error_code: "localSyncCeilingExhausted",
+      }),
+    ]);
+
+    const failure = document.querySelector<HTMLElement>(".status-item--local-ceiling");
+    expect(failure).not.toBeNull();
+    expect(failure?.textContent).toContain("local sync ceiling reached");
+    expect(failure?.textContent).toContain("500 / 500");
+    expect(failure?.title).toContain("resets");
+
+    const restFill = document.querySelector<HTMLElement>(".budget-fill");
+    expect(restFill?.style.background).toBe("var(--budget-green)");
   });
 
   it("popover dismisses on Escape and restores focus to the trigger", async () => {

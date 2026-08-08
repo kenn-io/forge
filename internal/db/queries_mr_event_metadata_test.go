@@ -83,6 +83,7 @@ func TestChildSnapshotEventMetadataUpdates(t *testing.T) {
 }
 
 func TestChildSnapshotEventMetadataUpdatesRejectStaleRevision(t *testing.T) {
+	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
 	repoID, mrID, staleRevision := seedMetadataTestMR(t, database)
@@ -92,8 +93,8 @@ func TestChildSnapshotEventMetadataUpdatesRejectStaleRevision(t *testing.T) {
 		State: MergeRequestStateOpen, PlatformHeadSHA: "head2", PlatformBaseSHA: "base",
 		CreatedAt: now.Add(-time.Hour), UpdatedAt: now, LastActivityAt: now,
 	})
-	require.NoError(t, err)
-	require.True(t, accepted)
+	require.NoError(err)
+	require.True(accepted)
 
 	applied, err := database.CommitMergeRequestChildSnapshot(ctx, MergeRequestChildSnapshot{
 		MergeRequestID:   mrID,
@@ -102,7 +103,7 @@ func TestChildSnapshotEventMetadataUpdatesRejectStaleRevision(t *testing.T) {
 			"commit-1": `{"commit_order_key":1,"obsolete":true}`,
 		},
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.False(t, applied)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1}`)
 }
@@ -170,6 +171,8 @@ func TestParentSnapshotComputesTerminalEventMetadataInTransaction(t *testing.T) 
 }
 
 func TestMarkDetailFetchedEventMetadataUpdates(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
 	_, mrID, revision := seedMetadataTestMR(t, database)
@@ -180,8 +183,8 @@ func TestMarkDetailFetchedEventMetadataUpdates(t *testing.T) {
 			"commit-1": `{"commit_order_key":1,"obsolete":true}`,
 		},
 	)
-	require.NoError(t, err)
-	assert.False(t, applied)
+	require.NoError(err)
+	assert.False(applied)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1}`)
 
 	applied, err = database.MarkMergeRequestDetailFetchedSnapshot(
@@ -189,7 +192,7 @@ func TestMarkDetailFetchedEventMetadataUpdates(t *testing.T) {
 			"commit-1": `{"commit_order_key":1,"obsolete":true}`,
 		},
 	)
-	require.NoError(t, err)
-	assert.True(t, applied)
+	require.NoError(err)
+	assert.True(applied)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1,"obsolete":true}`)
 }

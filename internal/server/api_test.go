@@ -21238,6 +21238,9 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	assert.Equal(50000, ceiling.Limit)
 	assert.Equal(42, ceiling.Spent)
 	assert.Equal(49958, ceiling.Remaining)
+	resetAt, err := time.Parse(time.RFC3339, ceiling.ResetAt)
+	require.NoError(err)
+	assert.WithinDuration(time.Now().UTC().Add(time.Hour), resetAt, time.Second)
 }
 
 func TestAPISyncPRIncrementsRequestCount(t *testing.T) {

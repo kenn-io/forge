@@ -725,6 +725,21 @@ func (e ProblemErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for SyncStatusLastErrorCode.
+const (
+	LocalSyncCeilingExhausted SyncStatusLastErrorCode = "localSyncCeilingExhausted"
+)
+
+// Valid indicates whether the value is a known member of the SyncStatusLastErrorCode enum.
+func (e SyncStatusLastErrorCode) Valid() bool {
+	switch e {
+	case LocalSyncCeilingExhausted:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkflowStateMetaResponseStatus.
 const (
 	WorkflowStateMetaResponseStatusAwaitingMerge WorkflowStateMetaResponseStatus = "awaiting_merge"
@@ -2631,6 +2646,7 @@ type LocalSyncCeilingStatus struct {
 	Provider       string `json:"provider"`
 	RatePrincipal  string `json:"rate_principal"`
 	Remaining      int64  `json:"remaining"`
+	ResetAt        string `json:"reset_at"`
 	Spent          int64  `json:"spent"`
 }
 
@@ -3978,13 +3994,17 @@ type StarredRequest struct {
 // SyncStatus defines model for SyncStatus.
 type SyncStatus struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string    `json:"$schema,omitempty"`
-	CurrentRepo *string    `json:"current_repo,omitempty"`
-	LastError   *string    `json:"last_error,omitempty"`
-	LastRunAt   *time.Time `json:"last_run_at,omitempty"`
-	Progress    *string    `json:"progress,omitempty"`
-	Running     bool       `json:"running"`
+	Schema        *string                  `json:"$schema,omitempty"`
+	CurrentRepo   *string                  `json:"current_repo,omitempty"`
+	LastError     *string                  `json:"last_error,omitempty"`
+	LastErrorCode *SyncStatusLastErrorCode `json:"last_error_code,omitempty"`
+	LastRunAt     *time.Time               `json:"last_run_at,omitempty"`
+	Progress      *string                  `json:"progress,omitempty"`
+	Running       bool                     `json:"running"`
 }
+
+// SyncStatusLastErrorCode defines model for SyncStatus.LastErrorCode.
+type SyncStatusLastErrorCode string
 
 // TelemetryEventInputBody defines model for TelemetryEventInputBody.
 type TelemetryEventInputBody struct {

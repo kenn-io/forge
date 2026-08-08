@@ -33,27 +33,29 @@ func TestCommitsReachableFrom(t *testing.T) {
 }
 
 func TestCommitsReachableFromUsesRepositoryIdentityNamespace(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	mgr, shas := setupAncestryClone(t)
 	ctx := WithRepositoryIdentity(context.Background(), "provider-repo-1")
 	legacyPath, err := mgr.ClonePath(
 		"github", "example.com", "acme", "widgets",
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	identityPath, err := mgr.ClonePathForContext(
 		ctx, "github", "example.com", "acme", "widgets",
 	)
-	require.NoError(t, err)
-	require.NoError(t, os.MkdirAll(filepath.Dir(identityPath), 0o755))
-	require.NoError(t, os.Rename(legacyPath, identityPath))
+	require.NoError(err)
+	require.NoError(os.MkdirAll(filepath.Dir(identityPath), 0o755))
+	require.NoError(os.Rename(legacyPath, identityPath))
 
 	result, err := mgr.CommitsReachableFrom(
 		ctx, "github", "example.com", "acme", "widgets", shas["c2"],
 		[]string{shas["c1"], shas["c3"]},
 	)
-	require.NoError(t, err)
-	assert.True(t, result.HeadVerified)
-	assert.True(t, result.Live[shas["c1"]])
-	assert.False(t, result.Live[shas["c3"]])
+	require.NoError(err)
+	assert.True(result.HeadVerified)
+	assert.True(result.Live[shas["c1"]])
+	assert.False(result.Live[shas["c3"]])
 }
 
 func TestCommitsReachableFromMissingHead(t *testing.T) {
@@ -82,6 +84,8 @@ func TestCommitsReachableFromMissingClone(t *testing.T) {
 }
 
 func TestCommitsReachableFromVisitBudget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	ctx := context.Background()
 	mgr, shas := setupAncestryClone(t)
 	mgr.ancestryVisitBudget = 1
@@ -93,9 +97,9 @@ func TestCommitsReachableFromVisitBudget(t *testing.T) {
 		ctx, "github", "example.com", "acme", "widgets", shas["c2"],
 		[]string{strings.Repeat("d", 40)},
 	)
-	require.NoError(t, err)
-	assert.False(t, result.HeadVerified)
-	assert.Empty(t, result.Live)
+	require.NoError(err)
+	assert.False(result.HeadVerified)
+	assert.Empty(result.Live)
 
 	// A budget that covers the history still verifies normally.
 	mgr.ancestryVisitBudget = 100
@@ -103,13 +107,15 @@ func TestCommitsReachableFromVisitBudget(t *testing.T) {
 		ctx, "github", "example.com", "acme", "widgets", shas["c2"],
 		[]string{shas["c1"], strings.Repeat("d", 40)},
 	)
-	require.NoError(t, err)
-	assert.True(t, result.HeadVerified)
-	assert.True(t, result.Live[shas["c1"]])
-	assert.False(t, result.Live[strings.Repeat("d", 40)])
+	require.NoError(err)
+	assert.True(result.HeadVerified)
+	assert.True(result.Live[shas["c1"]])
+	assert.False(result.Live[strings.Repeat("d", 40)])
 }
 
 func TestCommitsReachableFromRejectsOversizedCommit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	ctx := context.Background()
 	mgr, shas := setupAncestryClone(t)
 
@@ -117,16 +123,16 @@ func TestCommitsReachableFromRejectsOversizedCommit(t *testing.T) {
 	// size cap: the walk must refuse to read it and report the head
 	// unverifiable instead of decoding contributor-controlled bulk.
 	clonePath, err := mgr.ClonePath("github", "example.com", "acme", "widgets")
-	require.NoError(t, err)
+	require.NoError(err)
 	work := t.TempDir()
 	commitTestRun(t, work, "git", "clone", clonePath, work)
 	commitTestRun(t, work, "git", "config", "user.email", "alice@test.com")
 	commitTestRun(t, work, "git", "config", "user.name", "Alice")
 	messagePath := filepath.Join(t.TempDir(), "message.txt")
-	require.NoError(t, os.WriteFile(
+	require.NoError(os.WriteFile(
 		messagePath, bytes.Repeat([]byte("padding padding\n"), (1<<20)/16+64), 0o644,
 	))
-	require.NoError(t, os.WriteFile(filepath.Join(work, "huge.txt"), []byte("huge\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "huge.txt"), []byte("huge\n"), 0o644))
 	commitTestRun(t, work, "git", "add", "huge.txt")
 	commitTestRun(t, work, "git", "commit", "-F", messagePath)
 	hugeHead := gitSHA(t, work, "HEAD")
@@ -136,9 +142,9 @@ func TestCommitsReachableFromRejectsOversizedCommit(t *testing.T) {
 		ctx, "github", "example.com", "acme", "widgets", hugeHead,
 		[]string{shas["c1"]},
 	)
-	require.NoError(t, err)
-	assert.False(t, result.HeadVerified, "oversized commit objects must not be decoded")
-	assert.Empty(t, result.Live)
+	require.NoError(err)
+	assert.False(result.HeadVerified, "oversized commit objects must not be decoded")
+	assert.Empty(result.Live)
 }
 
 func TestCommitsReachableFromNoCandidates(t *testing.T) {

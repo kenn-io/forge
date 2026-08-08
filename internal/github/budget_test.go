@@ -186,6 +186,19 @@ func TestSyncBudgetRollsWindowWithoutProviderResponse(t *testing.T) {
 	assert.Equal(1, budget.Spent())
 }
 
+func TestSyncBudgetReportsOwnResetAt(t *testing.T) {
+	budget := NewSyncBudget(2)
+	clock := time.Date(2026, 8, 7, 12, 30, 0, 0, time.UTC)
+	budget.now = func() time.Time { return clock }
+	budget.windowStart = clock
+
+	assert.Equal(t, clock.Add(time.Hour), budget.ResetAt())
+
+	clock = clock.Add(time.Hour)
+	assert.Equal(t, clock.Add(time.Hour), budget.ResetAt(),
+		"reading the reset time must roll an elapsed local window")
+}
+
 func TestSyncBudgetRollsArchiveSpendWithWindow(t *testing.T) {
 	assert := assert.New(t)
 	budget := NewSyncBudget(4)

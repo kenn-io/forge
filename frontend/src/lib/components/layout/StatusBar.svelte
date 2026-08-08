@@ -5,6 +5,7 @@
   import { isActivityItemTypeEnabled } from "@kenn-forge/ui/stores/activity";
   import BudgetBars from "./BudgetBars.svelte";
   import BudgetPopover from "./BudgetPopover.svelte";
+  import { formatCompact } from "./budget-utils";
   import { client } from "../../api/runtime.js";
   import { getPage } from "../../stores/router.svelte.ts";
 
@@ -162,6 +163,37 @@
 	Object.keys(rateLimits.provider_pools).length > 0
 	|| Object.keys(rateLimits.local_ceilings).length > 0,
   );
+
+  let localCeilingFailure = $derived.by(() => {
+    if (sync.getSyncState()?.last_error_code !== "localSyncCeilingExhausted") return null;
+    const exhausted = Object.values(rateLimits.local_ceilings).filter(
+      (ceiling) => ceiling.limit > 0 && ceiling.remaining <= 0,
+    );
+    return {
+      spent: exhausted.reduce((total, ceiling) => total + ceiling.spent, 0),
+      limit: exhausted.reduce((total, ceiling) => total + ceiling.limit, 0),
+      resetAt: exhausted
+        .map((ceiling) => ceiling.reset_at)
+        .filter(Boolean)
+        .sort()[0] ?? "",
+    };
+  });
+
+  function localCeilingFailureText(): string {
+    if (localCeilingFailure === null || localCeilingFailure.limit <= 0) {
+      return "local sync ceiling reached";
+    }
+    return `local sync ceiling reached (${formatCompact(localCeilingFailure.spent)} / ${formatCompact(localCeilingFailure.limit)})`;
+  }
+
+  function localCeilingFailureTitle(): string {
+    void tick;
+    const error = sync.getSyncState()?.last_error ?? "Local sync ceiling reached";
+    if (localCeilingFailure === null || localCeilingFailure.resetAt === "") return error;
+    const resetMs = new Date(localCeilingFailure.resetAt).getTime() - Date.now();
+    if (!Number.isFinite(resetMs) || resetMs <= 0) return error;
+    return `${error}; local ceiling resets in ${Math.ceil(resetMs / 60_000)}m`;
+  }
 </script>
 
 <!-- overflow="visible": the budget popover anchors inside the right section;
@@ -189,7 +221,13 @@
       </span>
       <span class="status-sep">&middot;</span>
     {/if}
-    {#if sync.getSyncState()?.last_error}
+    {#if localCeilingFailure !== null}
+      <span
+        class="status-item status-item--error status-item--local-ceiling"
+        title={localCeilingFailureTitle()}
+      >{localCeilingFailureText()}</span>
+      <span class="status-sep">&middot;</span>
+    {:else if sync.getSyncState()?.last_error}
       <span class="status-item status-item--error" title={sync.getSyncState()?.last_error}>sync error</span>
       <span class="status-sep">&middot;</span>
     {/if}

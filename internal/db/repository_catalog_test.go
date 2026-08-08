@@ -1488,12 +1488,14 @@ func TestAdoptLegacyClonesIfSafeRequiresUnreusedVerifiedRoute(t *testing.T) {
 	})
 
 	t.Run("route with a different legacy owner", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
 		d := openTestDB(t)
 		_, err := d.UpsertRepo(t.Context(), RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
 			Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 		})
-		require.NoError(t, err)
+		require.NoError(err)
 		entry := reconcileCatalogRepository(
 			t, d, "provider-1", "acme", "renamed", baseTime(),
 		)
@@ -1502,8 +1504,8 @@ func TestAdoptLegacyClonesIfSafeRequiresUnreusedVerifiedRoute(t *testing.T) {
 			PlatformRepoID: "provider-1",
 			Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
 		}, baseTime().Add(time.Minute))
-		require.NoError(t, err)
-		require.Equal(t, entry.Repository.ID, moved.Repository.ID)
+		require.NoError(err)
+		require.Equal(entry.Repository.ID, moved.Repository.ID)
 
 		called := false
 		adopted, err := d.AdoptLegacyClonesIfSafe(
@@ -1514,12 +1516,14 @@ func TestAdoptLegacyClonesIfSafeRequiresUnreusedVerifiedRoute(t *testing.T) {
 			}, moved.Repository.ID,
 			func() error { called = true; return nil },
 		)
-		require.NoError(t, err)
-		assert.False(t, adopted)
-		assert.False(t, called)
+		require.NoError(err)
+		assert.False(adopted)
+		assert.False(called)
 	})
 
 	t.Run("stale route snapshot after reuse", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
 		d := openTestDB(t)
 		original := reconcileCatalogRepository(
 			t, d, "provider-original", "acme", "widget", baseTime(),
@@ -1529,7 +1533,7 @@ func TestAdoptLegacyClonesIfSafeRequiresUnreusedVerifiedRoute(t *testing.T) {
 			PlatformRepoID: "provider-original",
 			Owner:          "acme", Name: "renamed", RepoPath: "acme/renamed",
 		}, baseTime().Add(time.Minute))
-		require.NoError(t, err)
+		require.NoError(err)
 		reconcileCatalogRepository(
 			t, d, "provider-replacement", "acme", "widget",
 			baseTime().Add(2*time.Minute),
@@ -1544,9 +1548,9 @@ func TestAdoptLegacyClonesIfSafeRequiresUnreusedVerifiedRoute(t *testing.T) {
 			}, original.Repository.ID,
 			func() error { called = true; return nil },
 		)
-		require.NoError(t, err)
-		assert.False(t, adopted)
-		assert.False(t, called)
+		require.NoError(err)
+		assert.False(adopted)
+		assert.False(called)
 	})
 }
 

@@ -72,9 +72,13 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 
 	var pulls304 atomic.Int32
 	var issues304 atomic.Int32
+	var forcePullRefresh atomic.Bool
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/repos/acme/widget/pulls", func(w http.ResponseWriter, r *http.Request) {
+		if forcePullRefresh.Swap(false) {
+			r.Header.Del("If-None-Match")
+		}
 		writeGitHubListResponse(w, r, `"pulls-v1"`, &pulls304)
 	})
 	mux.HandleFunc("/api/v3/repos/acme/widget/issues", func(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +182,27 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 	assert.Equal(int32(1), pulls304.Load())
 	assert.Equal(int32(1), issues304.Load())
 	assert.Equal(firstSpent, budgetSpent())
+
+	// Make the PR list consume the final budget unit so the following issue
+	// list request is the one refused by the local ceiling.
+	forcePullRefresh.Store(true)
+	triggerSync()
+	status, err := api.HTTP.GetSyncStatusWithResponse(t.Context())
+	require.NoError(err)
+	require.Equal(http.StatusOK, status.StatusCode(), string(status.Body))
+	require.NotNil(status.JSON200)
+	require.NotNil(status.JSON200.LastErrorCode)
+	assert.Equal(generated.LocalSyncCeilingExhausted, *status.JSON200.LastErrorCode)
+
+	rates, err := api.HTTP.GetRateLimitsWithResponse(t.Context())
+	require.NoError(err)
+	require.Equal(http.StatusOK, rates.StatusCode(), string(rates.Body))
+	require.NotNil(rates.JSON200)
+	ceiling, ok := rates.JSON200.LocalCeilings["github.com"]
+	require.True(ok)
+	resetAt, err := time.Parse(time.RFC3339, ceiling.ResetAt)
+	require.NoError(err)
+	assert.True(resetAt.After(time.Now().UTC()))
 }
 
 type gitHubIndexListProvider struct {

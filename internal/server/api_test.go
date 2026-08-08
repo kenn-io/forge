@@ -21205,6 +21205,7 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	)
 	budget := ghclient.NewSyncBudget(50000)
 	budget.Spend(42)
+	expectedCeilingResetAt := budget.ResetAt().UTC().Format(time.RFC3339)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil,
@@ -21238,9 +21239,7 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	assert.Equal(50000, ceiling.Limit)
 	assert.Equal(42, ceiling.Spent)
 	assert.Equal(49958, ceiling.Remaining)
-	resetAt, err := time.Parse(time.RFC3339, ceiling.ResetAt)
-	require.NoError(err)
-	assert.WithinDuration(time.Now().UTC().Add(time.Hour), resetAt, time.Second)
+	assert.Equal(expectedCeilingResetAt, ceiling.ResetAt)
 }
 
 func TestAPISyncPRIncrementsRequestCount(t *testing.T) {

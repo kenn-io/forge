@@ -48,6 +48,16 @@ async function mockMobileRepoSettings(page: Page): Promise<string[]> {
             is_glob: true,
             matched_repo_count: 4,
           },
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "archive",
+            repo_path: "acme/archive",
+            is_glob: false,
+            matched_repo_count: 1,
+            hide_from_ui: true,
+          },
         ],
         activity: {
           view_mode: "threaded",
@@ -55,6 +65,7 @@ async function mockMobileRepoSettings(page: Page): Promise<string[]> {
           hide_closed: false,
           hide_bots: false,
         },
+        issues: { hide_bots: false },
         terminal: {
           font_family: "",
           font_size: 14,
@@ -213,6 +224,18 @@ test.describe("mobile activity repository selector", () => {
         hasText: "2",
       }),
     ).toHaveCount(0);
+  });
+
+  test("clears a persisted hidden repository selection", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("kenn-forge-filter-repo", "github|github.com/acme/archive");
+    });
+    await mockMobileRepoSettings(page);
+
+    await page.goto("/m?range=30d&view=threaded");
+
+    await expect(page.getByRole("combobox", { name: "Repository: All repos" })).toHaveText("All repos");
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("kenn-forge-filter-repo"))).toBeNull();
   });
 });
 

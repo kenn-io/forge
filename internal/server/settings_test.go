@@ -373,6 +373,29 @@ command = ["codex", "--full-auto"]
 	assert.Equal([]string{"codex", "--full-auto"}, resp.Agents[0].Command)
 }
 
+func TestHandleGetSettingsCountsRenamedExactRepoByProvenance(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		PlatformExternalID: "repo-acme-widget",
+		Owner:              "acme-renamed",
+		Name:               "widget-next",
+		RepoPath:           "acme-renamed/widget-next",
+		ConfiguredRepoPath: "acme/widget",
+	}})
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
+}
+
 func TestHandleGetSettingsEncodesEmptyKataProjectsAsArray(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -465,6 +488,21 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 		srv.pullAPI.ConfigSnapshot().AllowMidStackMerges,
 		"failed persistence published an uncommitted Pull config",
 	)
+}
+
+func TestHandleUpdateRepoVisibilityRollsBackOnSaveFailure(t *testing.T) {
+	srv, _, _ := setupTestServerWithConfig(t)
+	srv.configReloadMu.Lock()
+	srv.cfgPath = t.TempDir()
+	srv.configReloadMu.Unlock()
+
+	rr := doJSON(
+		t, srv, http.MethodPut,
+		"/api/v1/repo/github/acme/widget/visibility",
+		repoVisibilityRequest{HideFromUI: true},
+	)
+	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
+	require.False(t, srv.cfg.Repos[0].HideFromUI)
 }
 
 func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
@@ -797,6 +835,57 @@ func TestHandleAddRepo(t *testing.T) {
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	require.Len(t, cfg2.Repos, 2)
+}
+
+func TestHandleAddRepoPersistsResolvedIdentityBeforeResponse(t *testing.T) {
+	var addedResolved atomic.Bool
+	mock := &mockGH{getRepositoryFn: func(
+		ctx context.Context, owner, repo string,
+	) (*gh.Repository, error) {
+		if owner == "other-org" && repo == "other-repo" && addedResolved.Swap(true) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		nodeID := "repo-" + owner + "-" + repo
+		return &gh.Repository{
+			Name: &repo, NodeID: &nodeID,
+			Owner: &gh.User{Login: &owner}, Archived: new(false),
+		}, nil
+	}}
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, mock)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "other-org",
+		"name":     "other-repo",
+	})
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	entry, err := database.GetRepositoryByProviderID(
+		t.Context(), "github", "github.com", "repo-other-org-other-repo",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, entry, "the add response must not precede catalog persistence")
+}
+
+func TestMatchedRepoCountIgnoresIdentitylessTrackedFallback(t *testing.T) {
+	raw := config.Repo{Owner: "acme", Name: "widgets"}
+	tracked := []ghclient.RepoRef{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widgets", RepoPath: "acme/widgets",
+	}}
+
+	assert.Zero(t, matchedRepoCount(raw, tracked))
 }
 
 func TestHandleAddRepoAcceptsArchivedRepo(t *testing.T) {
@@ -1480,16 +1569,22 @@ func TestHandleGetSettingsIncludesGlobCounts(t *testing.T) {
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
 				{
+					ID:       new(int64(101)),
+					NodeID:   new("repo-kenn-forge"),
 					Name:     new("kenn-forge"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
 				{
+					ID:       new(int64(102)),
+					NodeID:   new("repo-globber"),
 					Name:     new("globber"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
 				{
+					ID:       new(int64(103)),
+					NodeID:   new("repo-archived"),
 					Name:     new("archived"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(true),
@@ -1530,16 +1625,22 @@ func TestHandleRefreshRepoRebuildsExpandedSyncSet(t *testing.T) {
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
 				{
+					ID:       new(int64(101)),
+					NodeID:   new("repo-kenn-forge"),
 					Name:     new("kenn-forge"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
 				{
+					ID:       new(int64(102)),
+					NodeID:   new("repo-globber"),
 					Name:     new("globber"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
 				{
+					ID:       new(int64(103)),
+					NodeID:   new("repo-archived"),
 					Name:     new("archived"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(true),
@@ -2087,7 +2188,8 @@ name = "widget"
 		clients, database, nil,
 		[]ghclient.RepoRef{{
 			Owner: "acme", Name: "widget",
-			PlatformHost: "github.com",
+			PlatformHost:       "github.com",
+			PlatformExternalID: "repo-acme-widget",
 		}},
 		time.Minute, nil, nil,
 	)

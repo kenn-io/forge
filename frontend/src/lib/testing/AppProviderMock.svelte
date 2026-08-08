@@ -13,6 +13,7 @@
   const noop = () => {};
   const mockStores = {
     settings: {
+      getConfiguredRepos: () => [],
       hasConfiguredRepos: () => true,
       isSettingsLoaded: () => true,
       isModeVisible: () => true,

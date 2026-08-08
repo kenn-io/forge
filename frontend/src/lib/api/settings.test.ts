@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { bulkAddRepos, previewRepos, removeRepo, updateRepoWorktreeBasePath, updateSettings } from "./settings.js";
+import {
+  bulkAddRepos,
+  previewRepos,
+  removeRepo,
+  updateRepoVisibility,
+  updateRepoWorktreeBasePath,
+  updateSettings,
+} from "./settings.js";
 
 describe("settings api", () => {
   beforeEach(() => {
@@ -187,6 +194,26 @@ describe("settings api", () => {
     expect((request as Request).method).toBe("PUT");
     await expect((request as Request).clone().json()).resolves.toEqual({
       worktree_base_path: "/Users/acme/widgets",
+    });
+  });
+
+  it("updates repository UI visibility", async () => {
+    await updateRepoVisibility(
+      "acme",
+      "archive",
+      {
+        provider: "github",
+        host: "github.com",
+      },
+      true,
+    );
+
+    const request = vi.mocked(fetch).mock.calls[0]?.[0];
+    expect(request).toBeInstanceOf(Request);
+    expect(new URL((request as Request).url).pathname).toBe("/api/v1/repo/github/acme/archive/visibility");
+    expect((request as Request).method).toBe("PUT");
+    await expect((request as Request).clone().json()).resolves.toEqual({
+      hide_from_ui: true,
     });
   });
 

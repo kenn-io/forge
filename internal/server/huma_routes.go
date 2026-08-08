@@ -663,6 +663,7 @@ func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, 
 	}
 	if s.cfg != nil {
 		repos = s.filterConfiguredRepos(repos)
+		repos = s.filterInteractiveRepos(repos)
 	}
 
 	out := make([]repoResponse, 0, len(repos))

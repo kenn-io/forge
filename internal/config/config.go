@@ -69,6 +69,7 @@ type Repo struct {
 	TokenEnv         string `toml:"token_env,omitempty" json:"token_env,omitempty"`
 	TokenFile        string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 	WorktreeBasePath string `toml:"worktree_base_path,omitempty" json:"worktree_base_path,omitempty"`
+	HideFromUI       bool   `toml:"hide_from_ui,omitempty" json:"hide_from_ui,omitempty"`
 }
 
 type KataProjectRepoMapping struct {

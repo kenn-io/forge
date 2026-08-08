@@ -6,6 +6,7 @@
     displayRepoFilterValue,
     getStores,
     normalizeRepoFilterSelection,
+    unresolvedInteractiveConfigRepos,
   } from "@kenn-forge/ui";
   import { client } from "../api/runtime.js";
   import type { ConfigRepo, Repo } from "@kenn-forge/ui/api/types";
@@ -71,6 +72,7 @@
 
   let fetchedRepos = $state<Repo[]>([]);
   let reposLoading = $state(false);
+  let repoCatalogLoadedSuccessfully = $state(false);
   let query = $state("");
   let open = $state(false);
   let highlightIndex = $state(0);
@@ -89,13 +91,17 @@
 
     latestRepoFetchKey = fetchKey;
     reposLoading = true;
-    fetchedRepos = [];
+    repoCatalogLoadedSuccessfully = false;
 
     void client.GET("/repos").then(({ data, error }) => {
       if (fetchKey !== latestRepoFetchKey) return;
       reposLoading = false;
-      if (error) return;
+      if (error || data === undefined) return;
       fetchedRepos = data ?? [];
+      repoCatalogLoadedSuccessfully = true;
+    }).catch(() => {
+      if (fetchKey !== latestRepoFetchKey) return;
+      reposLoading = false;
     });
   });
 
@@ -145,7 +151,7 @@
       merged.push(option);
     };
 
-    for (const repo of configured) {
+    for (const repo of unresolvedInteractiveConfigRepos(configured)) {
       const option = optionFromConfigRepo(repo);
       if (option) addOption(option);
     }
@@ -202,7 +208,7 @@
   }
 
   $effect(() => {
-    if (selectedValues.length === 0 || reposLoading) return;
+    if (selectedValues.length === 0 || reposLoading || !repoCatalogLoadedSuccessfully) return;
     const normalized = normalizeRepoFilterSelection(
       selected,
       options.map((option) => ({

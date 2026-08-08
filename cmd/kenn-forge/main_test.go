@@ -459,16 +459,20 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 
 	assert.ElementsMatch([]ghclient.RepoRef{
 		{
-			Platform:     platform.KindGitHub,
-			Owner:        "acme",
-			Name:         "widgets",
-			PlatformHost: "github.com",
+			Platform:           platform.KindGitHub,
+			Owner:              "acme",
+			Name:               "widgets",
+			PlatformHost:       "github.com",
+			RepoPath:           "acme/widgets",
+			PlatformExternalID: "R_widgets",
 		},
 		{
-			Platform:     platform.KindGitHub,
-			Owner:        "acme",
-			Name:         "tools",
-			PlatformHost: "github.com",
+			Platform:           platform.KindGitHub,
+			Owner:              "acme",
+			Name:               "tools",
+			PlatformHost:       "github.com",
+			RepoPath:           "acme/tools",
+			PlatformExternalID: "R_tools",
 		},
 	}, repos)
 }

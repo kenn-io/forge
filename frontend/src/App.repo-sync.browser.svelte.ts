@@ -27,13 +27,14 @@ import {
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
 import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
-import { setGlobalRepo } from "./lib/stores/filter.svelte.js";
+import { getGlobalRepo, setGlobalRepo } from "./lib/stores/filter.svelte.js";
+import type { ConfigRepo } from "@kenn-forge/ui/api/types";
 
 const WAIT = 10_000;
 
 // Both repos must be configured for the global-repo normalization/sync to resolve
 // them; the default settings fixture configures only acme/widgets.
-const configuredRepos = [
+const configuredRepos: ConfigRepo[] = [
   {
     provider: "github",
     platform_host: "github.com",
@@ -54,12 +55,13 @@ const configuredRepos = [
   },
 ];
 
-function settingsOverride(): MockRouteOverride {
+function settingsOverride(repos: ConfigRepo[] = configuredRepos): MockRouteOverride {
   return (req) => {
     if (req.method !== "GET" || req.url.pathname !== "/api/v1/settings") return null;
     return jsonResponse({
-      repos: configuredRepos,
+      repos,
       activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false },
+      issues: { hide_bots: false },
       terminal: {
         font_family: "",
         font_size: 14,
@@ -80,6 +82,20 @@ function settingsOverride(): MockRouteOverride {
         restart_required: false,
       },
     });
+  };
+}
+
+function repoCatalogOverride(...repos: Array<[owner: string, name: string]>): MockRouteOverride {
+  return (req) => {
+    if (req.method !== "GET" || req.url.pathname !== "/api/v1/repos") return null;
+    return jsonResponse(
+      repos.map(([owner, name]) => ({
+        Platform: "github",
+        PlatformHost: "github.com",
+        Owner: owner,
+        Name: name,
+      })),
+    );
   };
 }
 
@@ -192,7 +208,12 @@ function detailOverride(): MockRouteOverride {
 }
 
 function overrides(): MockRouteOverride[] {
-  return [settingsOverride(), listOverride(), detailOverride()];
+  return [
+    settingsOverride(),
+    repoCatalogOverride(["acme", "widgets"], ["acme", "tools"]),
+    listOverride(),
+    detailOverride(),
+  ];
 }
 
 function typeaheadValue(): string {
@@ -223,6 +244,8 @@ describe("deep-link repo dropdown + sidebar sync", () => {
     mounted = null;
     setGlobalRepo(undefined);
     localStorage.clear();
+    delete window.__kenn_forge_config;
+    window.__kenn_forge_notify_config_changed?.();
     await resetKeyboardModuleState();
   });
 
@@ -261,5 +284,140 @@ describe("deep-link repo dropdown + sidebar sync", () => {
 
     await vi.waitFor(() => expect(document.querySelector(".pull-item")).not.toBeNull(), WAIT);
     await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/widgets"), WAIT);
+  });
+
+  it("preserves a persisted repository discovered through a visible glob", async () => {
+    setGlobalRepo("github|github.com/acme/service");
+    mounted = await mountBrowserApp("/pulls", {
+      overrides: [
+        settingsOverride([
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "*",
+            repo_path: "acme/*",
+            is_glob: true,
+            matched_repo_count: 1,
+          },
+        ]),
+        repoCatalogOverride(["acme", "service"]),
+        listOverride(),
+        detailOverride(),
+      ],
+    });
+
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/service"), WAIT);
+    expect(getGlobalRepo()).toBe("github|github.com/acme/service");
+  });
+
+  it("preserves a newly selected repository whose provider route was renamed", async () => {
+    mounted = await mountBrowserApp("/pulls", {
+      overrides: [
+        settingsOverride([
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "legacy",
+            repo_path: "acme/legacy",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+        ]),
+        repoCatalogOverride(["acme", "renamed"]),
+        listOverride(),
+        detailOverride(),
+      ],
+    });
+
+    await page.getByRole("button", { name: /all repos/i }).click();
+    const renamedOption = page.getByRole("option", { name: /github.com\/acme\/renamed/i });
+    await expect.element(renamedOption).toBeVisible();
+    await renamedOption.click();
+
+    await vi.waitFor(() => expect(getGlobalRepo()).toBe("github|github.com/acme/renamed"), WAIT);
+    (document.querySelector(".typeahead-input") as HTMLInputElement).blur();
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/renamed"), WAIT);
+  });
+
+  it("clears a stale configured path when the resolved renamed repository is hidden", async () => {
+    setGlobalRepo("github|github.com/acme/legacy-service");
+    mounted = await mountBrowserApp("/pulls", {
+      overrides: [
+        settingsOverride([
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "legacy-service",
+            repo_path: "acme/legacy-service",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "archive-*",
+            repo_path: "acme/archive-*",
+            is_glob: true,
+            matched_repo_count: 1,
+            hide_from_ui: true,
+          },
+        ]),
+        (req) => {
+          if (req.method !== "GET" || req.url.pathname !== "/api/v1/repos") return null;
+          return jsonResponse([]);
+        },
+        listOverride(),
+        detailOverride(),
+      ],
+    });
+
+    await vi.waitFor(() => expect(getGlobalRepo()).toBeUndefined(), WAIT);
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("All repos"), WAIT);
+  });
+
+  it("preserves a host-pinned repository outside the interactive catalog", async () => {
+    window.__kenn_forge_config = {
+      ui: {
+        hideRepoSelector: true,
+        repo: {
+          provider: "github",
+          host: "github.com",
+          owner: "acme",
+          name: "archive",
+        },
+      },
+    };
+    window.__kenn_forge_notify_config_changed?.();
+
+    mounted = await mountBrowserApp("/pulls", {
+      overrides: [
+        settingsOverride([
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "archive",
+            repo_path: "acme/archive",
+            is_glob: false,
+            matched_repo_count: 1,
+            hide_from_ui: true,
+          },
+        ]),
+        repoCatalogOverride(),
+        listOverride(),
+        detailOverride(),
+      ],
+    });
+
+    await vi.waitFor(
+      () => expect(mounted?.api.requests.some((req) => req.url.pathname === "/api/v1/repos")).toBe(true),
+      WAIT,
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+    expect(getGlobalRepo()).toBe("github|github.com/acme/archive");
   });
 });

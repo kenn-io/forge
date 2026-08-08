@@ -74,6 +74,12 @@ vi.mock("@kenn-forge/ui", async () => {
         getLaunchTargets: () => [],
       },
     }),
+    canonicalRepoFilterValue: (repo: { provider?: string; platformHost?: string; repoPath?: string }) =>
+      repo.provider && repo.platformHost && repo.repoPath
+        ? `${repo.provider}|${repo.platformHost}/${repo.repoPath}`
+        : null,
+    interactiveConfigRepos: (repos: unknown[]) => repos,
+    unresolvedInteractiveConfigRepos: (repos: unknown[]) => repos,
     normalizeRepoFilterSelection: (repo: string | undefined) => repo,
   };
 });

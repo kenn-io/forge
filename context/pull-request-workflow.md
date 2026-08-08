@@ -20,6 +20,9 @@ request metadata, comments, or review threads.
 - Keep pull request descriptions concise. A bulleted summary of user-visible
   changes is sufficient; omit test plans, implementation details, checklists,
   and marketing language.
+- Temporary `docs/superpowers` plans are allowed during development. Convert
+  agent-created plans into durable context, ADRs, or user docs—or remove them—
+  before opening the pull request.
 - For visible UI changes, use the `capture-playwright` skill before opening the
   pull request and attach the screenshot or short video with `gh image` so the
   description can include the resulting artifact links.

@@ -97,6 +97,7 @@ only routes to them.
   durable decision requires maintainer input.
 - **Never amend commits** — always create new commits for fixes, never use `--amend`
 - **Never change branches** — don't create, switch, or delete branches without explicit permission
+- In linked worktree workflows, never set repository-wide `core.worktree`; it can make commands in one checkout operate on another. Verify each checkout with `git rev-parse --show-toplevel` before restore or cleanup.
 - **Never bypass pre-commit hooks** — all commits must go through a hook-enforced Git commit path. Do not use `jj` or any other workflow to create, rewrite, or finalize commits in a way that skips the repository's Git hooks
 - Use conventional commit messages whose subject explains the reason or user-visible outcome, not just the mechanical change. Good subjects answer "why does this commit exist?" (for example, `fix: restore workspace activity for launched agents`), while vague mechanics such as `fix: run agents under tmux` are not acceptable on their own
 - Commit bodies must add any important context about the bug, regression, constraint, or tradeoff that motivated the change; do not rely on the diff to explain intent

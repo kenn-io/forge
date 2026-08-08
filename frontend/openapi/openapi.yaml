@@ -4868,6 +4868,7 @@ components:
             - hookFailed
             - internalError
             - issueNotFound
+            - mutationOutcomeUnknown
             - notFound
             - payloadTooLarge
             - projectNotFound
@@ -14699,6 +14700,13 @@ paths:
           name: graph_source_uid
           schema:
             type: string
+        - description: Bypass cached daemon authority for mutation reconciliation
+          explode: false
+          in: query
+          name: fresh
+          schema:
+            description: Bypass cached daemon authority for mutation reconciliation
+            type: boolean
       responses:
         "200":
           content:

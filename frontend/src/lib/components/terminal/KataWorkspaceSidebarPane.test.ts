@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataProjectSummary, KataRecurrence, KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
 import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
-import KataWorkspaceSidebarPane from "./KataWorkspaceSidebarPane.svelte";
+import KataWorkspaceSidebarPane from "./KataWorkspaceSidebarPaneRuntimeHarness.svelte";
 
 const { showFlash } = vi.hoisted(() => ({ showFlash: vi.fn() }));
 
@@ -511,8 +511,8 @@ describe("KataWorkspaceSidebarPane", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Retry Kata snapshot" }));
     await waitFor(() => expect(snapshotAttempts).toBe(2));
     await waitFor(() => expect(recurrenceReads).toBe(3));
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
-    expect(screen.getByRole("button", { name: "More actions" }).matches(":disabled")).toBe(false);
+    await waitFor(() => expect(screen.getByRole("button", { name: "More actions" }).matches(":disabled")).toBe(false));
+    expect(screen.queryByRole("alert")).toBeNull();
     expect((within(staleDialog).getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(false);
     expect(deleteAttempts).toBe(1);
   });
@@ -532,12 +532,69 @@ describe("KataWorkspaceSidebarPane", () => {
       expect(showFlash).toHaveBeenCalledWith("Could not move task.", { tone: "danger" });
     });
     expect(screen.getByRole("searchbox", { name: "Find project" })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Roadmap/ }).matches(":disabled")).toBe(false);
+    });
 
     await fireEvent.click(screen.getByRole("button", { name: /Roadmap/ }));
-    expect(moveAttempts()).toBe(2);
+    await waitFor(() => expect(moveAttempts()).toBe(2));
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Move to another project" })).toBeNull();
     });
+  });
+
+  it("keeps embedded mutations fenced when the server outcome is unknown", async () => {
+    let commentAttempts = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input : input.url,
+        window.location.origin,
+      );
+      if (url.pathname === "/api/v1/kata/tasks/snapshot") {
+        return response({
+          server_instance_id: "server-1",
+          daemon_id: "home",
+          intent: { scope: "global", authority: "all" },
+          generation: 1,
+          invalidation_epoch: 1,
+          event_cursor: 0,
+          fetched_at: fetchedAt,
+          projects,
+          member_issue_uids: ["issue-1"],
+          issues: [issue()],
+          enrichment: {
+            selected_issue_uid: "issue-1",
+            selected_detail: {
+              detail: detail(),
+              etag: '"rev-1"',
+              workspace_target: { available: false },
+            },
+            selected_history: [],
+          },
+        });
+      }
+      if (url.pathname.endsWith("/recurrences")) {
+        return response({ recurrences: [], fetched_at: fetchedAt });
+      }
+      if (url.pathname.endsWith("/comments") && init?.method === "POST") {
+        commentAttempts += 1;
+        throw new Error("response lost");
+      }
+      return response({ error: { code: "not_found", message: `Unhandled ${url.pathname}` } }, 404);
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    render(KataWorkspaceSidebarPane, { props: { kata } });
+    await screen.findByRole("heading", { name: issue().title });
+    const composer = screen.getByRole("textbox", { name: "Comment" }) as HTMLTextAreaElement;
+    await fireEvent.input(composer, { target: { value: "Submit once" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+
+    await screen.findByRole("button", { name: "Retry Kata snapshot" });
+    expect(screen.getByRole("alert").textContent).toContain("could not confirm");
+    expect(composer.value).toBe("Submit once");
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    expect(commentAttempts).toBe(1);
   });
 
   it("keeps a successful comment acknowledged and retries only its failed snapshot replacement", async () => {

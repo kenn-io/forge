@@ -4,7 +4,7 @@ import type { ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffResult, Label, PullDetail } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
-import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
+import { ACTIONS_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
@@ -328,7 +328,6 @@ function renderPullDetail(
       detailProps,
     },
     context: new Map<symbol, unknown>([
-      [API_CLIENT_KEY, apiClient],
       [
         STORES_KEY,
         {
@@ -1287,7 +1286,6 @@ describe("PullDetail approvals", () => {
         },
       },
       context: new Map<symbol, unknown>([
-        [API_CLIENT_KEY, apiClient],
         [
           STORES_KEY,
           {

@@ -33,7 +33,7 @@ export function tracedFetch(inner: FetchFn): FetchFn {
   };
 }
 
-export function createRuntimeClient(fetch?: FetchFn, clientBaseURL = baseUrl) {
+export function createRuntimeClient(fetch?: FetchFn, clientBaseURL = configuredAPIBaseURL()) {
   const inner = fetch ?? ((...args: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...args));
   return createAPIClient(clientBaseURL, {
     fetch: csrfFetch(tracedFetch(inner)),

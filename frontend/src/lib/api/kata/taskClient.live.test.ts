@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { describe, expect, test } from "vite-plus/test";
 
 import { createKataTaskAPI } from "./taskClient.js";
@@ -31,16 +32,18 @@ describe.skipIf(process.env.KENN_FORGE_LIVE_KATA_TESTS !== "1")("createKataTaskA
       const options = { daemonId: "live" };
 
       await expect(
-        api.createIssue(
-          seeded.project.id,
-          "kenn-forge-e2e",
-          {
-            title: "Exercise client mutations",
-            body: "Original body",
-            force_new: true,
-          },
-          options,
-          "01KENN_FORGECLIENTMUT000001",
+        Effect.runPromise(
+          api.createIssue(
+            seeded.project.id,
+            "kenn-forge-e2e",
+            {
+              title: "Exercise client mutations",
+              body: "Original body",
+              force_new: true,
+            },
+            options,
+            "01KENN_FORGECLIENTMUT000001",
+          ),
         ),
       ).resolves.toEqual({
         changed: true,
@@ -53,36 +56,46 @@ describe.skipIf(process.env.KENN_FORGE_LIVE_KATA_TESTS !== "1")("createKataTaskA
       });
       const target = { project_id: seeded.project.id, ref: seeded.issue.short_id };
 
-      await expect(api.addComment(target, "kenn-forge-e2e", "Client mutation comment", options)).resolves.toEqual({
+      await expect(
+        Effect.runPromise(api.addComment(target, "kenn-forge-e2e", "Client mutation comment", options)),
+      ).resolves.toEqual({ changed: true });
+      await expect(Effect.runPromise(api.addLabel(target, "kenn-forge-e2e", "ui", options))).resolves.toEqual({
         changed: true,
       });
-      await expect(api.addLabel(target, "kenn-forge-e2e", "ui", options)).resolves.toEqual({ changed: true });
-      await expect(api.removeLabel(target, "kenn-forge-e2e", "ui", options)).resolves.toEqual({ changed: true });
+      await expect(Effect.runPromise(api.removeLabel(target, "kenn-forge-e2e", "ui", options))).resolves.toEqual({
+        changed: true,
+      });
       await expect(
-        api.editIssue(
-          target,
-          "kenn-forge-e2e",
-          {
-            title: "Exercise client mutations updated",
-            body: "Updated body",
-            links_delta: { add_related: [peer.issue.short_id] },
-          },
-          options,
+        Effect.runPromise(
+          api.editIssue(
+            target,
+            "kenn-forge-e2e",
+            {
+              title: "Exercise client mutations updated",
+              body: "Updated body",
+              links_delta: { add_related: [peer.issue.short_id] },
+            },
+            options,
+          ),
         ),
       ).resolves.toEqual({ changed: true });
       await expect(
-        api.closeIssue(
-          target,
-          "kenn-forge-e2e",
-          {
-            reason: "done",
-            message: "Finished through the kenn-forge client mutation coverage.",
-            source: "ui",
-          },
-          options,
+        Effect.runPromise(
+          api.closeIssue(
+            target,
+            "kenn-forge-e2e",
+            {
+              reason: "done",
+              message: "Finished through the kenn-forge client mutation coverage.",
+              source: "ui",
+            },
+            options,
+          ),
         ),
       ).resolves.toEqual({ changed: true });
-      await expect(api.reopenIssue(target, "kenn-forge-e2e", options)).resolves.toEqual({ changed: true });
+      await expect(Effect.runPromise(api.reopenIssue(target, "kenn-forge-e2e", options))).resolves.toEqual({
+        changed: true,
+      });
 
       const detail = await harness.getIssue(seeded.issue.uid);
       expect(detail.issue).toMatchObject({

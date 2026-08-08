@@ -1,3 +1,5 @@
+import type { WorkspaceItemIdentity } from "./workspace-inline.js";
+
 export interface Action {
   id: string;
   label: string;
@@ -54,6 +56,12 @@ export type WorkspaceCommandCallback = (
   command: string,
   payload: Record<string, unknown>,
 ) => WorkspaceCommandResult | Promise<WorkspaceCommandResult>;
+
+export type WorkspaceDeletedCallback = (
+  workspaceId: string,
+  workspaceHostKey?: string,
+  identity?: WorkspaceItemIdentity,
+) => void;
 
 export interface ForgeEvent {
   type: "pr-selected" | "issue-selected" | "pr-state-changed" | "sync-completed" | "detail-loaded";

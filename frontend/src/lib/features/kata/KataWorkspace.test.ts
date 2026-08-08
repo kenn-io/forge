@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -7,7 +8,9 @@ import {
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
 import type { KataTaskLink } from "../../api/kata/taskTypes.js";
-import KataWorkspace from "./KataWorkspace.svelte";
+import { TransientTransportError } from "../../api/effect-errors.js";
+import { KataMutationOutcomeUnknownError } from "../../api/kata/taskClient.js";
+import KataWorkspace from "./KataWorkspaceRuntimeHarness.svelte";
 import { KATA_WORKSPACE_STATE_STORAGE_KEY } from "./kataWorkspacePersistence.js";
 import {
   createWorkspaceAPI,
@@ -140,11 +143,13 @@ describe("KataWorkspace snapshot authority", () => {
         },
       }),
     });
-    const patchIssueMetadata = vi.fn(async () => ({
-      changed: true,
-      issue: { ...selected, title: "Mutation response title" },
-      etag: '"response-etag"',
-    }));
+    const patchIssueMetadata = vi.fn(() =>
+      Effect.succeed({
+        changed: true,
+        issue: { ...selected, title: "Mutation response title" },
+        etag: '"response-etag"',
+      }),
+    );
     api.patchIssueMetadata = patchIssueMetadata;
 
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
@@ -194,11 +199,13 @@ describe("KataWorkspace snapshot authority", () => {
         },
       }),
     });
-    mockCreateKataWorkspaceForTask.mockResolvedValue({
-      id: "workspace-1",
-      status: "ready",
-      item_type: "kata_task",
-    });
+    mockCreateKataWorkspaceForTask.mockReturnValue(
+      Effect.succeed({
+        id: "workspace-1",
+        status: "ready",
+        item_type: "kata_task",
+      }),
+    );
 
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
 
@@ -230,11 +237,13 @@ describe("KataWorkspace snapshot authority", () => {
         },
       }),
     });
-    mockCreateKataWorkspaceForTask.mockResolvedValue({
-      id: "workspace-existing",
-      status: "ready",
-      item_type: "kata_task",
-    });
+    mockCreateKataWorkspaceForTask.mockReturnValue(
+      Effect.succeed({
+        id: "workspace-existing",
+        status: "ready",
+        item_type: "kata_task",
+      }),
+    );
 
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
 
@@ -499,11 +508,13 @@ describe("KataWorkspace snapshot authority", () => {
         };
       },
     });
-    const addComment = vi.fn(async () => ({
-      changed: true,
-      issue: { ...selected, title: "Unaccepted mutation response title", revision: selected.revision + 1 },
-      etag: '"mutation-response-etag"',
-    }));
+    const addComment = vi.fn(() =>
+      Effect.succeed({
+        changed: true,
+        issue: { ...selected, title: "Unaccepted mutation response title", revision: selected.revision + 1 },
+        etag: '"mutation-response-etag"',
+      }),
+    );
     api.addComment = addComment;
 
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
@@ -516,9 +527,7 @@ describe("KataWorkspace snapshot authority", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
 
     await waitFor(() => expect(addComment).toHaveBeenCalledOnce());
-    await Promise.resolve();
-
-    expect(snapshotRequests).toBe(2);
+    await waitFor(() => expect(snapshotRequests).toBe(2));
     expect(screen.getByRole("heading", { name: "Accepted snapshot title" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Unaccepted mutation response title" })).toBeNull();
   });
@@ -527,8 +536,16 @@ describe("KataWorkspace snapshot authority", () => {
     acceptHomeDaemon();
     const selected = initialIssues[0]!;
     const { api } = createWorkspaceAPI(initialIssues);
-    const assignment = deferred<{ changed: boolean }>();
-    const assignOwner = vi.fn(() => assignment.promise);
+    const assignment = deferred<void>();
+    const assignOwner = vi.fn(() =>
+      Effect.promise(() => assignment.promise).pipe(
+        Effect.andThen(
+          Effect.fail(
+            TransientTransportError.make({ operation: "assign test owner", cause: new Error("owner unavailable") }),
+          ),
+        ),
+      ),
+    );
     api.assignOwner = assignOwner;
 
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
@@ -547,13 +564,45 @@ describe("KataWorkspace snapshot authority", () => {
     expect(ownerInput.disabled).toBe(false);
     await fireEvent.keyDown(ownerInput, { key: "Enter" });
     expect(assignOwner).toHaveBeenCalledOnce();
-    assignment.reject(new Error("owner unavailable"));
+    assignment.resolve();
 
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false),
     );
     expect((screen.getByRole("combobox", { name: "Owner" }) as HTMLInputElement).value).toBe("agent:new");
     expect((screen.getByRole("region", { name: "Task detail" }) as HTMLElement & { inert: boolean }).inert).toBe(false);
+  });
+
+  it("keeps mutations fenced when the server outcome is unknown", async () => {
+    acceptHomeDaemon();
+    const selected = initialIssues[0]!;
+    const { api } = createWorkspaceAPI(initialIssues);
+    const assignOwner = vi.fn(() =>
+      Effect.fail(
+        KataMutationOutcomeUnknownError.make({
+          operation: "assign owner",
+          message: "The owner change may have been applied.",
+          cause: new Error("response lost"),
+        }),
+      ),
+    );
+    api.assignOwner = assignOwner;
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await screen.findByRole("heading", { name: selected.title });
+    await waitForWorkspaceWritable();
+    await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
+    const ownerInput = screen.getByRole("combobox", { name: "Owner" }) as HTMLInputElement;
+    await fireEvent.input(ownerInput, { target: { value: "agent:new" } });
+    await fireEvent.keyDown(ownerInput, { key: "Enter" });
+
+    await screen.findByRole("button", { name: "Retry Kata snapshot" });
+    expect(screen.getByRole("alert").textContent).toContain("may have been applied");
+    expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(ownerInput.value).toBe("agent:new");
+    await fireEvent.keyDown(ownerInput, { key: "Enter" });
+    expect(assignOwner).toHaveBeenCalledOnce();
   });
 
   it("keeps the graph source fixed while selecting another snapshot graph node", async () => {

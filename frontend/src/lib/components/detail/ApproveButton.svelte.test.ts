@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import ApproveButton from "./ApproveButton.svelte";
-import { API_CLIENT_KEY, STORES_KEY } from "../../context.js";
+import { STORES_KEY } from "../../context.js";
 import type { ProblemBody } from "../../api/problems.js";
 import type { ProviderRouteRef } from "../../api/provider-routes.js";
 import type { ProviderActionCallbacks } from "../../stores/detail.svelte.js";
@@ -69,12 +69,6 @@ describe("ApproveButton", () => {
       },
       context: new Map<symbol, unknown>([
         [
-          API_CLIENT_KEY,
-          {
-            POST: post,
-          },
-        ],
-        [
           STORES_KEY,
           {
             detail: detailActions(post),
@@ -135,7 +129,6 @@ describe("ApproveButton", () => {
       const { rerender } = render(ApproveButton, {
         props,
         context: new Map<symbol, unknown>([
-          [API_CLIENT_KEY, { POST: post }],
           [STORES_KEY, { detail: detailActions(post), pulls: { loadPulls: vi.fn() } }],
         ]),
       });
@@ -181,10 +174,7 @@ describe("ApproveButton", () => {
         supportedReviewActions: ["request_changes"],
         onheadconflict,
       },
-      context: new Map<symbol, unknown>([
-        [API_CLIENT_KEY, { POST: post }],
-        [STORES_KEY, { detail: detailActions(post), pulls: { loadPulls: vi.fn() } }],
-      ]),
+      context: new Map<symbol, unknown>([[STORES_KEY, { detail: detailActions(post), pulls: { loadPulls: vi.fn() } }]]),
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
@@ -214,12 +204,6 @@ describe("ApproveButton", () => {
         platformHeadSha: "platform-head-sha",
       },
       context: new Map<symbol, unknown>([
-        [
-          API_CLIENT_KEY,
-          {
-            POST: post,
-          },
-        ],
         [
           STORES_KEY,
           {
@@ -257,7 +241,6 @@ describe("ApproveButton", () => {
         oncompleted,
       },
       context: new Map<symbol, unknown>([
-        [API_CLIENT_KEY, { POST: post }],
         [
           STORES_KEY,
           {

@@ -1,12 +1,17 @@
+import { Effect, Stream } from "effect";
 import { describe, expect, test, vi } from "vite-plus/test";
 
+import { makeGeneratedApiLayer } from "../generated-api.js";
+import { createRuntimeClient } from "../runtime.js";
 import { KATA_DAEMON_HEADER } from "./daemons.js";
 import {
+  kataEventStream,
   KataEventStreamError,
   KataEventStreamParser,
-  readKataEventStream,
+  type KataEventStreamOptions,
   type KataTaskEventStreamFrame,
 } from "./eventStream.js";
+import type { KataEventStreamEvent } from "./schemas.js";
 
 function compactFrame(
   id: number,
@@ -35,6 +40,20 @@ function streamFromText(text: string): ReadableStream<Uint8Array> {
       controller.close();
     },
   });
+}
+
+function runEventStream(
+  fetchImpl: typeof fetch,
+  options: KataEventStreamOptions = {},
+  onEvent: (event: KataEventStreamEvent) => void = () => {},
+): Promise<void> {
+  return Effect.runPromise(
+    kataEventStream(options).pipe(
+      Stream.tap((event) => Effect.sync(() => onEvent(event))),
+      Stream.runDrain,
+      Effect.provide(makeGeneratedApiLayer(createRuntimeClient(fetchImpl))),
+    ),
+  );
 }
 
 describe("KataEventStreamParser", () => {
@@ -124,40 +143,12 @@ describe("KataEventStreamParser", () => {
   });
 });
 
-describe("readKataEventStream", () => {
-  test("opens the generated stream endpoint under the configured app base path", async () => {
-    const previousBasePath = window.__BASE_PATH__;
-    window.__BASE_PATH__ = "/kenn-forge/";
-    vi.resetModules();
-    try {
-      const { readKataEventStream: readConfiguredStream } = await import("./eventStream.js");
-      let requestURL = "";
-      const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-        requestURL = input instanceof Request ? input.url : String(input);
-        return new Response(streamFromText(": connected\n\n"), { status: 200 });
-      });
-
-      await expect(readConfiguredStream({ fetchImpl, onMessage: vi.fn() })).rejects.toThrow(
-        "Live updates disconnected",
-      );
-
-      expect(new URL(requestURL, window.location.origin).pathname).toBe("/kenn-forge/api/v1/kata/tasks/events");
-    } finally {
-      if (previousBasePath === undefined) delete window.__BASE_PATH__;
-      else window.__BASE_PATH__ = previousBasePath;
-      vi.resetModules();
-    }
-  });
-
-  test("opens the Kenn Forge stream with daemon selection and snapshot cursor replay", async () => {
-    let requestURL = "";
-    let requestHeaders = new Headers();
-    const onOpen = vi.fn();
-    const onMessage = vi.fn();
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = input instanceof Request ? input : new Request(input, init);
-      requestURL = request.url;
-      requestHeaders = request.headers;
+describe("kataEventStream", () => {
+  test("opens the generated stream with daemon selection and snapshot cursor replay", async () => {
+    let request = new Request(window.location.origin);
+    const events: KataEventStreamEvent[] = [];
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      request = input instanceof Request ? new Request(input, init) : new Request(input, init);
       return new Response(streamFromText(compactFrame(52, "kata.tasks.invalidated")), {
         status: 200,
         headers: { "Content-Type": "text/event-stream" },
@@ -165,31 +156,27 @@ describe("readKataEventStream", () => {
     });
 
     await expect(
-      readKataEventStream({
-        daemonId: "work",
-        fetchImpl,
-        lastEventID: 51,
-        onOpen,
-        onMessage,
-      }),
+      runEventStream(fetchImpl, { daemonId: "work", lastEventID: 51 }, (event) => events.push(event)),
     ).rejects.toMatchObject({
       name: "KataEventStreamError",
       message: "Live updates disconnected",
       retryable: true,
     } satisfies Partial<KataEventStreamError>);
 
-    expect(new URL(requestURL, window.location.origin).pathname).toBe("/api/v1/kata/tasks/events");
-    expect(requestHeaders.get("Accept")).toBe("text/event-stream");
-    expect(requestHeaders.get(KATA_DAEMON_HEADER)).toBe("work");
-    expect(requestHeaders.get("Last-Event-ID")).toBe("51");
-    expect(onOpen).toHaveBeenCalledOnce();
-    expect(onMessage).toHaveBeenCalledWith({
-      kind: "invalidation",
-      server_instance_id: "server-a",
-      daemon_id: "work",
-      epoch: 3,
-      cursor: 52,
-    });
+    expect(new URL(request.url).pathname).toBe("/api/v1/kata/tasks/events");
+    expect(request.headers.get("Accept")).toBe("text/event-stream");
+    expect(request.headers.get(KATA_DAEMON_HEADER)).toBe("work");
+    expect(request.headers.get("Last-Event-ID")).toBe("51");
+    expect(events).toEqual([
+      { opened: true },
+      {
+        kind: "invalidation",
+        server_instance_id: "server-a",
+        daemon_id: "work",
+        epoch: 3,
+        cursor: 52,
+      },
+    ]);
   });
 
   test.each([
@@ -199,18 +186,18 @@ describe("readKataEventStream", () => {
     [400, false],
     [404, false],
   ])("classifies HTTP %i stream setup failures", async (status, retryable) => {
-    const fetchImpl = vi.fn(async () => new Response("setup failed", { status }));
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("setup failed", { status }));
 
-    await expect(readKataEventStream({ fetchImpl, onMessage: vi.fn() })).rejects.toMatchObject({
+    await expect(runEventStream(fetchImpl)).rejects.toMatchObject({
       name: "KataEventStreamError",
       retryable,
     } satisfies Partial<KataEventStreamError>);
   });
 
   test("treats a successful response without a body as nonretryable", async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }));
 
-    await expect(readKataEventStream({ fetchImpl, onMessage: vi.fn() })).rejects.toMatchObject({
+    await expect(runEventStream(fetchImpl)).rejects.toMatchObject({
       name: "KataEventStreamError",
       message: "Kata event stream response has no body",
       retryable: false,
@@ -219,67 +206,14 @@ describe("readKataEventStream", () => {
 
   test("omits an empty Last-Event-ID", async () => {
     let requestHeaders = new Headers();
-    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      requestHeaders = new Headers(init?.headers);
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const request = input instanceof Request ? new Request(input, init) : new Request(input, init);
+      requestHeaders = request.headers;
       return new Response(streamFromText(": connected\n\n"), { status: 200 });
     });
 
-    await expect(readKataEventStream({ fetchImpl, lastEventID: 0, onMessage: vi.fn() })).rejects.toThrow(
-      "Live updates disconnected",
-    );
+    await expect(runEventStream(fetchImpl, { lastEventID: 0 })).rejects.toThrow("Live updates disconnected");
 
     expect(requestHeaders.has("Last-Event-ID")).toBe(false);
-  });
-
-  test("returns without surfacing an error when aborted", async () => {
-    let cancelCalled = false;
-    const controller = new AbortController();
-    const fetchImpl = vi.fn(async () => {
-      return new Response(
-        new ReadableStream<Uint8Array>({
-          start(streamController) {
-            streamController.enqueue(new TextEncoder().encode(": connected\n\n"));
-          },
-          cancel() {
-            cancelCalled = true;
-          },
-        }),
-        { status: 200 },
-      );
-    });
-
-    const stream = readKataEventStream({
-      fetchImpl,
-      signal: controller.signal,
-      onMessage: vi.fn(),
-    });
-    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce());
-    controller.abort();
-
-    await expect(stream).resolves.toBeUndefined();
-    expect(cancelCalled).toBe(true);
-  });
-
-  test("returns cleanly when aborted before reading an already-errored body", async () => {
-    const controller = new AbortController();
-    const fetchImpl = vi.fn(async () => {
-      controller.abort();
-      return new Response(
-        new ReadableStream<Uint8Array>({
-          start(streamController) {
-            streamController.error(new Error("body torn down"));
-          },
-        }),
-        { status: 200 },
-      );
-    });
-
-    await expect(
-      readKataEventStream({
-        fetchImpl,
-        signal: controller.signal,
-        onMessage: vi.fn(),
-      }),
-    ).resolves.toBeUndefined();
   });
 });

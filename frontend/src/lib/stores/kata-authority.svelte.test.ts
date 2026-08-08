@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataSnapshotIntent, KataWorkspaceSnapshotResponse } from "../api/kata/snapshot.js";
-import { createKataAuthorityStore } from "./kata-authority.svelte.js";
+import { createKataAuthorityStore, type KataAuthorityStore } from "./kata-authority.svelte.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -71,6 +71,28 @@ function snapshot(
   };
 }
 
+async function runLoad(
+  store: KataAuthorityStore,
+  loadSnapshot: (intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>,
+  requestedIntent: KataSnapshotIntent,
+): Promise<boolean> {
+  const intent = store.beginLoad(requestedIntent);
+  try {
+    return store.acceptSnapshot(intent, await loadSnapshot(intent));
+  } catch (error) {
+    store.failSnapshot(intent, error);
+    throw error;
+  }
+}
+
+function runRetry(
+  store: KataAuthorityStore,
+  loadSnapshot: (intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>,
+): Promise<boolean> {
+  const intent = store.retryIntent();
+  return intent ? runLoad(store, loadSnapshot, intent) : Promise.resolve(false);
+}
+
 describe("Kata authority store", () => {
   it("normalizes and immutably installs a complete accepted snapshot", async () => {
     const accepted = snapshot({
@@ -106,10 +128,11 @@ describe("Kata authority store", () => {
         graph_fetched_at: "2026-07-20T12:00:00Z",
       },
     });
-    const store = createKataAuthorityStore({ loadSnapshot: vi.fn(async () => accepted) });
+    const loadSnapshot = vi.fn(async () => accepted);
+    const store = createKataAuthorityStore();
 
     await expect(
-      store.loadSnapshot({
+      runLoad(store, loadSnapshot, {
         daemon_id: "home",
         scope: "global",
         authority: "open",
@@ -148,9 +171,10 @@ describe("Kata authority store", () => {
         },
       },
     });
-    const store = createKataAuthorityStore({ loadSnapshot: vi.fn(async () => accepted) });
+    const loadSnapshot = vi.fn(async () => accepted);
+    const store = createKataAuthorityStore();
 
-    await store.loadSnapshot({
+    await runLoad(store, loadSnapshot, {
       daemon_id: "home",
       scope: "global",
       authority: "open",
@@ -168,21 +192,21 @@ describe("Kata authority store", () => {
       generation: 2,
       member_issue_uids: ["issue-a"],
     });
-    const store = createKataAuthorityStore({ loadSnapshot: vi.fn(async () => accepted) });
+    const loadSnapshot = vi.fn(async () => accepted);
+    const store = createKataAuthorityStore();
 
-    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
+    await runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "open" });
 
     expect(store.snapshot?.issues.map((issue) => issue.uid)).toEqual(["issue-a", "issue-b"]);
     expect(store.projection.issues.map((issue) => issue.uid)).toEqual(["issue-a"]);
   });
 
   it("accepts authority when requested selection is not an enrichment outcome", async () => {
-    const store = createKataAuthorityStore({
-      loadSnapshot: vi.fn(async () => snapshot({ generation: 2 })),
-    });
+    const loadSnapshot = vi.fn(async () => snapshot({ generation: 2 }));
+    const store = createKataAuthorityStore();
 
     await expect(
-      store.loadSnapshot({
+      runLoad(store, loadSnapshot, {
         daemon_id: "home",
         scope: "global",
         authority: "open",
@@ -198,17 +222,16 @@ describe("Kata authority store", () => {
     ["a different requested selection", { selected_issue_uid: "issue-a" }, "issue-b"],
     ["an unrequested selection", {}, "issue-a"],
   ])("rejects %s returned as a non-empty enrichment outcome", async (_name, intentOverrides, selectedIssueUID) => {
-    const store = createKataAuthorityStore({
-      loadSnapshot: vi.fn(async () =>
-        snapshot({
-          generation: 2,
-          enrichment: { selected_issue_uid: selectedIssueUID },
-        }),
-      ),
-    });
+    const loadSnapshot = vi.fn(async () =>
+      snapshot({
+        generation: 2,
+        enrichment: { selected_issue_uid: selectedIssueUID },
+      }),
+    );
+    const store = createKataAuthorityStore();
 
     await expect(
-      store.loadSnapshot({
+      runLoad(store, loadSnapshot, {
         daemon_id: "home",
         scope: "global",
         authority: "open",
@@ -226,10 +249,10 @@ describe("Kata authority store", () => {
     const loadSnapshot = vi.fn((intent: KataSnapshotIntent) =>
       intent.authority === "ready" ? ready.promise : open.promise,
     );
-    const store = createKataAuthorityStore({ loadSnapshot });
+    const store = createKataAuthorityStore();
 
-    const openLoad = store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
-    const readyLoad = store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "ready" });
+    const openLoad = runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "open" });
+    const readyLoad = runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "ready" });
     ready.resolve(snapshot({ generation: 8, intent: { scope: "global", authority: "ready" } }));
     await expect(readyLoad).resolves.toBe(true);
     open.resolve(snapshot({ generation: 9, intent: { scope: "global", authority: "open" } }));
@@ -248,11 +271,11 @@ describe("Kata authority store", () => {
       .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()
       .mockResolvedValueOnce(snapshot({ generation: 9 }))
       .mockResolvedValueOnce(snapshot({ generation: 8 }));
-    const store = createKataAuthorityStore({ loadSnapshot });
+    const store = createKataAuthorityStore();
     const intent = { daemon_id: "home", scope: "global", authority: "open" } as const;
 
-    await expect(store.loadSnapshot(intent)).resolves.toBe(true);
-    await expect(store.loadSnapshot(intent)).resolves.toBe(false);
+    await expect(runLoad(store, loadSnapshot, intent)).resolves.toBe(true);
+    await expect(runLoad(store, loadSnapshot, intent)).resolves.toBe(false);
 
     expect(store.snapshot?.generation).toBe(9);
     expect(store.state.phase).toBe("accepted");
@@ -265,18 +288,20 @@ describe("Kata authority store", () => {
       .mockResolvedValueOnce(snapshot({ generation: 10, intent: { scope: "global", authority: "ready" } }))
       .mockResolvedValueOnce(snapshot({ generation: 8, intent: { scope: "global", authority: "open" } }))
       .mockResolvedValueOnce(snapshot({ generation: 11, intent: { scope: "global", authority: "open" } }));
-    const store = createKataAuthorityStore({ loadSnapshot });
+    const store = createKataAuthorityStore();
 
-    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
-    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "ready" });
-    await expect(store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" })).resolves.toBe(false);
+    await runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "open" });
+    await runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "ready" });
+    await expect(runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "open" })).resolves.toBe(
+      false,
+    );
 
     expect(store.authorityKey).toBeNull();
     expect(store.state.phase).toBe("degraded");
     expect(store.state.intent?.authority).toBe("open");
     expect(store.snapshot).toBeNull();
 
-    await expect(store.retry()).resolves.toBe(true);
+    await expect(runRetry(store, loadSnapshot)).resolves.toBe(true);
     expect(loadSnapshot.mock.calls[3]?.[0].authority).toBe("open");
     expect(store.authorityKey?.authority).toBe("open");
   });
@@ -317,10 +342,10 @@ describe("Kata authority store", () => {
           enrichment: { selected_issue_uid: "issue-b" },
         }),
       );
-    const store = createKataAuthorityStore({ loadSnapshot });
+    const store = createKataAuthorityStore();
 
-    await expect(store.loadSnapshot(acceptedIntent)).resolves.toBe(true);
-    await expect(store.loadSnapshot(desiredIntent)).resolves.toBe(false);
+    await expect(runLoad(store, loadSnapshot, acceptedIntent)).resolves.toBe(true);
+    await expect(runLoad(store, loadSnapshot, desiredIntent)).resolves.toBe(false);
 
     expect(store.state.phase).toBe("degraded");
     expect(store.state.intent).toEqual(desiredIntent);
@@ -330,7 +355,7 @@ describe("Kata authority store", () => {
       graph_source_uid: "issue-a",
     });
 
-    await expect(store.retry()).resolves.toBe(true);
+    await expect(runRetry(store, loadSnapshot)).resolves.toBe(true);
     expect(loadSnapshot.mock.calls[2]?.[0]).toEqual(desiredIntent);
     expect(store.snapshot).toMatchObject({
       generation: 10,
@@ -344,19 +369,20 @@ describe("Kata authority store", () => {
       .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()
       .mockResolvedValueOnce(snapshot({ generation: 9, server_instance_id: "server-a" }))
       .mockResolvedValueOnce(snapshot({ generation: 1, server_instance_id: "server-b" }));
-    const store = createKataAuthorityStore({ loadSnapshot });
+    const store = createKataAuthorityStore();
     const intent = { daemon_id: "home", scope: "global", authority: "open" } as const;
 
-    await store.loadSnapshot(intent);
-    await expect(store.loadSnapshot(intent)).resolves.toBe(true);
+    await runLoad(store, loadSnapshot, intent);
+    await expect(runLoad(store, loadSnapshot, intent)).resolves.toBe(true);
 
     expect(store.snapshot).toMatchObject({ server_instance_id: "server-b", generation: 1 });
   });
 
   it("clears accepted authority when the routed daemon is abandoned", async () => {
-    const store = createKataAuthorityStore({ loadSnapshot: vi.fn(async () => snapshot({ generation: 4 })) });
+    const loadSnapshot = vi.fn(async () => snapshot({ generation: 4 }));
+    const store = createKataAuthorityStore();
 
-    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
+    await runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "open" });
     store.abandon("Kata daemon missing is not configured.");
 
     expect(store.state).toMatchObject({
@@ -373,10 +399,10 @@ describe("Kata authority store", () => {
       .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()
       .mockResolvedValueOnce(snapshot({ generation: 4 }))
       .mockImplementationOnce(() => pending.promise);
-    const store = createKataAuthorityStore({ loadSnapshot });
+    const store = createKataAuthorityStore();
 
-    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
-    const pendingLoad = store.loadSnapshot({ daemon_id: "work", scope: "global", authority: "open" });
+    await runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "open" });
+    const pendingLoad = runLoad(store, loadSnapshot, { daemon_id: "work", scope: "global", authority: "open" });
 
     store.abandon("Kata daemon missing is not configured.");
     pending.resolve(snapshot({ daemon_id: "work", generation: 1 }));
@@ -389,7 +415,7 @@ describe("Kata authority store", () => {
       snapshot: null,
     });
     expect(store.authorityKey).toBeNull();
-    await expect(store.retry()).resolves.toBe(false);
+    await expect(runRetry(store, loadSnapshot)).resolves.toBe(false);
   });
 
   it("keeps graph source independent from selected detail", async () => {
@@ -410,9 +436,9 @@ describe("Kata authority store", () => {
         },
       }),
     );
-    const store = createKataAuthorityStore({ loadSnapshot });
+    const store = createKataAuthorityStore();
 
-    await store.loadSnapshot({
+    await runLoad(store, loadSnapshot, {
       daemon_id: "home",
       scope: "global",
       authority: "open",
@@ -428,8 +454,8 @@ describe("Kata authority store", () => {
 
   it("projects text, owner, and label locally without loading another snapshot", async () => {
     const loadSnapshot = vi.fn(async () => snapshot({ generation: 3 }));
-    const store = createKataAuthorityStore({ loadSnapshot });
-    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
+    const store = createKataAuthorityStore();
+    await runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "open" });
 
     store.updatePresentation({ text: "needle", owner: "alice", label: "urgent" });
 
@@ -438,8 +464,9 @@ describe("Kata authority store", () => {
   });
 
   it("includes owner and labels in free-text projection matching", async () => {
-    const store = createKataAuthorityStore({ loadSnapshot: vi.fn(async () => snapshot({ generation: 3 })) });
-    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
+    const loadSnapshot = vi.fn(async () => snapshot({ generation: 3 }));
+    const store = createKataAuthorityStore();
+    await runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "open" });
 
     store.updatePresentation({ text: "alice" });
     expect(store.projection.issues.map((issue) => issue.uid)).toEqual(["issue-a"]);
@@ -451,11 +478,12 @@ describe("Kata authority store", () => {
   it("rejects malformed authority responses before storing them", async () => {
     const malformed = snapshot({ generation: 3 });
     malformed.issues![0]!.status = "paused";
-    const store = createKataAuthorityStore({ loadSnapshot: vi.fn(async () => malformed) });
+    const loadSnapshot = vi.fn(async () => malformed);
+    const store = createKataAuthorityStore();
 
-    await expect(store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" })).rejects.toThrow(
-      /invalid/i,
-    );
+    await expect(
+      runLoad(store, loadSnapshot, { daemon_id: "home", scope: "global", authority: "open" }),
+    ).rejects.toThrow(/invalid/i);
 
     expect(store.snapshot).toBeNull();
     expect(store.state.phase).toBe("degraded");
@@ -466,12 +494,12 @@ describe("Kata authority store", () => {
       .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()
       .mockRejectedValueOnce(new Error("snapshot unavailable"))
       .mockResolvedValueOnce(snapshot({ generation: 5 }));
-    const store = createKataAuthorityStore({ loadSnapshot });
+    const store = createKataAuthorityStore();
     const intent = { daemon_id: "home", scope: "global", authority: "open" } as const;
 
-    await expect(store.loadSnapshot(intent)).rejects.toThrow("snapshot unavailable");
+    await expect(runLoad(store, loadSnapshot, intent)).rejects.toThrow("snapshot unavailable");
     expect(store.state.phase).toBe("degraded");
-    await expect(store.retry()).resolves.toBe(true);
+    await expect(runRetry(store, loadSnapshot)).resolves.toBe(true);
 
     expect(loadSnapshot).toHaveBeenCalledTimes(2);
     expect(loadSnapshot.mock.calls[1]?.[0]).toEqual(intent);

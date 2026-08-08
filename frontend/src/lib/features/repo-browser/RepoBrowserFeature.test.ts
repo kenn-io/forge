@@ -10,7 +10,11 @@ vi.mock("./PierreFileContents.svelte", async () => ({
   default: (await import("./RepoBrowserFeatureTestPierreFileContents.svelte")).default,
 }));
 
-import RepoBrowserFeature from "./RepoBrowserFeature.svelte";
+vi.mock("../../components/diff/PierreFileTree.svelte", async () => ({
+  default: (await import("./RepoBrowserFeatureTestFileTree.svelte")).default,
+}));
+
+import RepoBrowserFeature from "./RepoBrowserFeatureTestHarness.svelte";
 
 const repo = {
   provider: "github",
@@ -36,6 +40,7 @@ type TestGetOptions = {
 };
 
 type TestClientOptions = {
+  readmeBlobResponse?: Promise<unknown>;
   sourceFile?: {
     path: string;
     content: string;
@@ -64,6 +69,35 @@ afterEach(() => {
 });
 
 describe("RepoBrowserFeature", () => {
+  it("keeps a user-selected path when the automatic initial path is superseded", async () => {
+    let resolveReadmeBlob: ((value: unknown) => void) | undefined;
+    const readmeBlobResponse = new Promise<unknown>((resolve) => {
+      resolveReadmeBlob = resolve;
+    });
+    const client = testClient({ readmeBlobResponse });
+    const onRouteChange = vi.fn();
+    render(RepoBrowserFeature, {
+      props: {
+        client,
+        route: { ...route, path: undefined, mode: "source" },
+        onRouteChange,
+      },
+    });
+
+    await fireEvent.click(await screen.findByText("docs/guide.md"));
+    await waitFor(() =>
+      expect(onRouteChange).toHaveBeenLastCalledWith(expect.objectContaining({ path: "docs/guide.md" }), undefined),
+    );
+
+    resolveReadmeBlob?.(blobResponse("README.md", "# README\n"));
+    await waitFor(() =>
+      expect(requestedURLs(client).filter((url) => url.includes("path=README.md"))).not.toHaveLength(0),
+    );
+    await tick();
+
+    expect(onRouteChange).toHaveBeenLastCalledWith(expect.objectContaining({ path: "docs/guide.md" }), undefined);
+  });
+
   it("preserves markdown anchor fragments when opening repo docs", async () => {
     Element.prototype.scrollIntoView = vi.fn();
     const onRouteChange = vi.fn();
@@ -848,6 +882,7 @@ function testClient(clientOptions: TestClientOptions = {}): GeneratedClient {
         url ===
         "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
       ) {
+        if (clientOptions.readmeBlobResponse) return clientOptions.readmeBlobResponse;
         return blobResponse("README.md", "[Guide](docs/guide.md#install)\n\nSee #12.\n");
       }
       if (

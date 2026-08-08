@@ -1,10 +1,50 @@
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { createJobsStore } from "./roborev/jobs.svelte.js";
+import type { OwnedAppRuntime } from "../app/runtime.js";
+import { makeTestAppRuntime } from "../testing/effect-layers.js";
+import {
+  createJobsStore as createRuntimeJobsStore,
+  type JobsStore,
+  type JobsStoreOptions,
+} from "./roborev/jobs.svelte.js";
 import type { components } from "../api/roborev/generated/schema.js";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 
 const originalFetch = globalThis.fetch;
+const runtimes = new Set<OwnedAppRuntime>();
+const storeRuntimes = new WeakMap<JobsStore, OwnedAppRuntime>();
+let ownerSequence = 0;
+
+function fetchSignal(input: RequestInfo | URL, init?: RequestInit): AbortSignal | undefined {
+  return input instanceof Request ? input.signal : init?.signal;
+}
+
+function createJobsStore(options: Omit<JobsStoreOptions, "runtime" | "owner">) {
+  const runtime = makeTestAppRuntime({} as never);
+  runtimes.add(runtime);
+  ownerSequence += 1;
+  const store = createRuntimeJobsStore({ ...options, runtime, owner: `jobs-test:${ownerSequence}` });
+  storeRuntimes.set(store, runtime);
+  return store;
+}
+
+async function loadJobs(store: JobsStore): Promise<void> {
+  const runtime = storeRuntimes.get(store);
+  if (runtime === undefined) throw new Error("test jobs store has no runtime");
+  const execution = runtime.runCommand(store.loadJobsEffect(), {
+    operation: "test load Roborev jobs",
+    safeContext: {},
+    onFailure: () => {},
+  });
+  const exit = await Effect.runPromise(execution.await);
+  expect(exit._tag).toBe("Success");
+}
+
+afterEach(async () => {
+  await Promise.all(Array.from(runtimes, (runtime) => Effect.runPromise(runtime.disposeEffect)));
+  runtimes.clear();
+});
 
 function makeJob(id: number, startedAt?: string, finishedAt?: string): ReviewJob {
   return {
@@ -54,7 +94,7 @@ describe("createJobsStore cost sorting", () => {
       navigate: vi.fn(),
     });
 
-    await store.loadJobs();
+    await loadJobs(store);
     store.setSortColumn("cost");
 
     expect(store.getSortColumn()).toBe("cost");
@@ -102,7 +142,7 @@ describe("createJobsStore elapsed sorting", () => {
       navigate: vi.fn(),
     });
 
-    await store.loadJobs();
+    await loadJobs(store);
     store.setSortColumn("elapsed");
 
     expect(store.getSortColumn()).toBe("elapsed");
@@ -128,23 +168,64 @@ describe("createJobsStore event stream", () => {
     const fetchMock = vi.fn(
       (_input: RequestInfo | URL, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
-          signal = init?.signal ?? undefined;
+          signal = fetchSignal(_input, init);
           signal?.addEventListener("abort", () => {
             reject(new DOMException("Aborted", "AbortError"));
           });
         }),
     );
     globalThis.fetch = fetchMock;
-    const store = createJobsStore({ client: {} as never, navigate: vi.fn() });
+    const client = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
 
-    store.connectEventStream("/api/roborev");
+    const eventOwner = store.connectEventStream("/api/roborev");
     await vi.waitFor(() => expect(signal).toBeDefined());
 
-    store.disconnectEventStream();
+    store.disconnectEventStream(eventOwner);
 
     expect(signal?.aborted).toBe(true);
     await vi.waitFor(() => expect(store.isEventStreamConnected()).toBe(false));
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let stale event teardown disconnect a successor lease", async () => {
+    const signals: AbortSignal[] = [];
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = fetchSignal(input, init);
+      if (signal !== undefined) signals.push(signal);
+      return new Response(new ReadableStream<Uint8Array>(), { status: 200 });
+    });
+    const client = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+
+    const firstLease = store.connectEventStream("/api/roborev");
+    await vi.waitFor(() => expect(signals).toHaveLength(1));
+    const secondLease = store.connectEventStream("/api/roborev");
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
+
+    const testRuntime = storeRuntimes.get(store);
+    if (testRuntime === undefined) throw new Error("test jobs store has no runtime");
+    const staleTeardown = testRuntime.runCommand(store.disconnectEventStreamEffect(firstLease), {
+      operation: "disconnect stale Roborev event lease",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await Effect.runPromise(staleTeardown.await);
+
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+    expect(store.isEventStreamConnected()).toBe(true);
+    store.disconnectEventStream(secondLease);
   });
 
   it("parses split NDJSON events and cancels an active response body", async () => {
@@ -161,7 +242,7 @@ describe("createJobsStore event stream", () => {
       },
     });
     globalThis.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      signal = init?.signal ?? undefined;
+      signal = fetchSignal(_input, init);
       return new Response(body, {
         status: 200,
         headers: { "Content-Type": "application/x-ndjson" },
@@ -175,17 +256,55 @@ describe("createJobsStore event stream", () => {
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
 
-    store.connectEventStream("/api/roborev");
+    const eventOwner = store.connectEventStream("/api/roborev");
     await vi.waitFor(() => expect(store.isEventStreamConnected()).toBe(true));
     bodyController?.enqueue(encoder.encode('{"type":"review.com'));
-    bodyController?.enqueue(encoder.encode('pleted","job_id":42}\n'));
+    bodyController?.enqueue(
+      encoder.encode(
+        'pleted","ts":"2026-08-04T13:00:00Z","job_id":42,"repo":"/workspace/repo","repo_name":"repo","sha":"abc123"}\n',
+      ),
+    );
 
     await vi.waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
-    store.disconnectEventStream();
+    store.disconnectEventStream(eventOwner);
 
     await vi.waitFor(() => expect(bodyCancelled).toBe(true));
-    expect(signal?.aborted).toBe(true);
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
     expect(store.isEventStreamConnected()).toBe(false);
+  });
+
+  it("treats malformed event records as a reconnectable stream failure", async () => {
+    vi.useFakeTimers();
+    const encoder = new TextEncoder();
+    const bodies: ReadableStreamDefaultController<Uint8Array>[] = [];
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              bodies.push(controller);
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    const client = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+
+    const eventOwner = store.connectEventStream("/api/roborev");
+    await vi.waitFor(() => expect(bodies).toHaveLength(1));
+    bodies[0]?.enqueue(encoder.encode("not-json\n"));
+    await vi.waitFor(() => expect(store.isEventStreamConnected()).toBe(false));
+    await vi.advanceTimersByTimeAsync(500);
+
+    await vi.waitFor(() => expect(bodies).toHaveLength(2));
+    expect(client.GET).toHaveBeenCalled();
+    store.disconnectEventStream(eventOwner);
   });
 
   it("cancels an open response body when the stream returns an error status", async () => {
@@ -197,17 +316,17 @@ describe("createJobsStore event stream", () => {
       },
     });
     globalThis.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      signal = init?.signal ?? undefined;
+      signal = fetchSignal(_input, init);
       return new Response(body, { status: 503 });
     });
     const store = createJobsStore({ client: {} as never, navigate: vi.fn() });
 
-    store.connectEventStream("/api/roborev");
+    const eventOwner = store.connectEventStream("/api/roborev");
 
     try {
       await vi.waitFor(() => expect(bodyCancelled).toBe(true));
     } finally {
-      store.disconnectEventStream();
+      store.disconnectEventStream(eventOwner);
     }
     expect(signal?.aborted).toBe(true);
   });
@@ -223,20 +342,106 @@ describe("createJobsStore event stream", () => {
       });
       return new Response(body, { status: 200 });
     });
-    const store = createJobsStore({ client: {} as never, navigate: vi.fn() });
+    const client = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
 
-    store.connectEventStream("/api/roborev");
+    const eventOwner = store.connectEventStream("/api/roborev");
     await vi.waitFor(() => expect(bodies).toHaveLength(1));
     bodies[0]?.close();
-    await vi.advanceTimersByTimeAsync(999);
+    await vi.advanceTimersByTimeAsync(499);
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
 
     await vi.advanceTimersByTimeAsync(1);
     await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(2));
-    store.disconnectEventStream();
+    store.disconnectEventStream(eventOwner);
     await vi.advanceTimersByTimeAsync(60_000);
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("reconciles the last job checkpoint before reconnecting the event stream", async () => {
+    vi.useFakeTimers();
+    const sequence: string[] = [];
+    const bodies: ReadableStreamDefaultController<Uint8Array>[] = [];
+    globalThis.fetch = vi.fn(async () => {
+      sequence.push(`stream:${bodies.length + 1}`);
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            bodies.push(controller);
+          },
+        }),
+        { status: 200 },
+      );
+    });
+    const client = {
+      GET: vi.fn().mockImplementation(async () => {
+        sequence.push("jobs");
+        return {
+          data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+          error: undefined,
+        };
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+
+    const eventOwner = store.connectEventStream("/api/roborev");
+    await vi.waitFor(() => expect(bodies).toHaveLength(1));
+    bodies[0]?.close();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(bodies).toHaveLength(2));
+
+    const secondStream = sequence.indexOf("stream:2");
+    expect(secondStream).toBeGreaterThan(0);
+    expect(sequence.slice(0, secondStream)).toContain("jobs");
+    store.disconnectEventStream(eventOwner);
+  });
+
+  it("does not reopen the event stream until reconnect reconciliation succeeds", async () => {
+    vi.useFakeTimers();
+    const bodies: ReadableStreamDefaultController<Uint8Array>[] = [];
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              bodies.push(controller);
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    let reconciliationRound = 0;
+    const client = {
+      GET: vi.fn().mockImplementation(async () => {
+        reconciliationRound += 1;
+        if (reconciliationRound <= 2) {
+          return { data: undefined, error: { message: "authority unavailable" } };
+        }
+        return {
+          data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+          error: undefined,
+        };
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+
+    const eventOwner = store.connectEventStream("/api/roborev");
+    await vi.waitFor(() => expect(bodies).toHaveLength(1));
+    bodies[0]?.close();
+    await vi.waitFor(() => expect(store.isEventStreamConnected()).toBe(false));
+    await vi.advanceTimersByTimeAsync(500);
+    await Promise.resolve();
+
+    expect(bodies).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(bodies).toHaveLength(2));
+    store.disconnectEventStream(eventOwner);
   });
 });
 
@@ -254,12 +459,15 @@ describe("createJobsStore auto-design filter", () => {
     const client = makeClient();
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
 
-    await store.loadJobs();
+    await loadJobs(store);
 
     expect(store.getFilterShowAutoDesign()).toBe(false);
-    expect(client.GET).toHaveBeenLastCalledWith("/api/jobs", {
-      params: { query: expect.objectContaining({ hide_classify_jobs: "true" }) },
-    });
+    expect(client.GET).toHaveBeenLastCalledWith(
+      "/api/jobs",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ hide_classify_jobs: "true" }) },
+      }),
+    );
 
     store.setFilter("showAutoDesign", true);
     await vi.waitFor(() => {
@@ -281,7 +489,7 @@ describe("createJobsStore filtered status counts", () => {
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
 
-    await store.loadJobs();
+    await loadJobs(store);
 
     expect(store.getFilteredStatusCounts()).toEqual({
       queued: 0,
@@ -289,15 +497,18 @@ describe("createJobsStore filtered status counts", () => {
       done: 1,
       failed: 0,
     });
-    expect(client.GET).toHaveBeenCalledWith("/api/jobs", {
-      params: {
-        query: expect.objectContaining({
-          hide_classify_jobs: "true",
-          limit: 0,
-          omit_prompt: "true",
-        }),
-      },
-    });
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/jobs",
+      expect.objectContaining({
+        params: {
+          query: expect.objectContaining({
+            hide_classify_jobs: "true",
+            limit: 0,
+            omit_prompt: "true",
+          }),
+        },
+      }),
+    );
   });
 
   it("counts the complete filtered result instead of the paginated rows", async () => {
@@ -336,15 +547,18 @@ describe("createJobsStore filtered status counts", () => {
       });
     });
 
-    expect(client.GET).toHaveBeenCalledWith("/api/jobs", {
-      params: {
-        query: expect.objectContaining({
-          repo: ["/workspace/repo"],
-          limit: 0,
-          omit_prompt: "true",
-        }),
-      },
-    });
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/jobs",
+      expect.objectContaining({
+        params: {
+          query: expect.objectContaining({
+            repo: ["/workspace/repo"],
+            limit: 0,
+            omit_prompt: "true",
+          }),
+        },
+      }),
+    );
   });
 
   it("preserves the previous scoped counts while a filtered reload is pending", async () => {
@@ -366,7 +580,7 @@ describe("createJobsStore filtered status counts", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
     expect(store.getFilteredStatusCounts()?.done).toBe(1);
 
     const reload = store.loadJobs();
@@ -400,7 +614,7 @@ describe("createJobsStore filtered status counts", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
 
     store.setFilter("search", "next");
     try {
@@ -425,7 +639,7 @@ describe("createJobsStore filtered status counts", () => {
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
 
-    await store.loadJobs();
+    await loadJobs(store);
 
     expect(store.getJobs().map((job) => job.id)).toEqual([7]);
     expect(store.getError()).toBeNull();
@@ -487,7 +701,7 @@ describe("createJobsStore panel expansion", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
 
     expect(store.isPanelExpanded("run-10")).toBe(false);
     store.togglePanel(parent);
@@ -496,9 +710,12 @@ describe("createJobsStore panel expansion", () => {
       expect(store.getPanelMembers("run-10")).toBeDefined();
     });
     expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([11, 12]);
-    expect(client.GET).toHaveBeenCalledWith("/api/jobs", {
-      params: { query: { panel_run: "run-10", limit: 0, omit_prompt: "true" } },
-    });
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/jobs",
+      expect.objectContaining({
+        params: { query: { panel_run: "run-10", limit: 0, omit_prompt: "true" } },
+      }),
+    );
 
     const calls = client.GET.mock.calls.length;
     store.togglePanel(parent);
@@ -516,14 +733,14 @@ describe("createJobsStore panel expansion", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => expect(store.getPanelMembers("run-10")).toBeDefined());
 
     const before = client.GET.mock.calls.filter(
       (c) => (c[1] as { params: { query: Record<string, unknown> } }).params.query.panel_run === "run-10",
     ).length;
-    await store.loadJobs();
+    await loadJobs(store);
     await vi.waitFor(() => {
       const after = client.GET.mock.calls.filter(
         (c) => (c[1] as { params: { query: Record<string, unknown> } }).params.query.panel_run === "run-10",
@@ -550,7 +767,7 @@ describe("createJobsStore panel expansion", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => {
       expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10, 11, 12]);
@@ -563,7 +780,7 @@ describe("createJobsStore panel expansion", () => {
     expect(store.getHighlightedJobId()).toBe(12);
     store.highlightPrevJob();
     expect(store.getHighlightedJobId()).toBe(11);
-    await store.loadJobs();
+    await loadJobs(store);
     expect(store.getHighlightedJobId()).toBe(11);
   });
 
@@ -597,14 +814,14 @@ describe("createJobsStore panel expansion", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => {
       expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10, 11]);
     });
 
     store.highlightJob(11);
-    await store.loadJobs();
+    await loadJobs(store);
     await vi.waitFor(() => expect(panelCalls).toBe(2));
 
     expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10, 11]);
@@ -645,7 +862,7 @@ describe("createJobsStore panel expansion", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => {
       expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10, 11]);
@@ -682,14 +899,14 @@ describe("createJobsStore panel expansion", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
 
     store.setPanelMemberInterest("run-10");
     await vi.waitFor(() => {
       expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([11]);
     });
 
-    await store.loadJobs();
+    await loadJobs(store);
     await vi.waitFor(() => {
       expect(panelCalls).toBe(2);
       expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([12]);
@@ -724,11 +941,11 @@ describe("createJobsStore panel expansion", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
 
     store.setPanelMemberInterest("run-10");
     await vi.waitFor(() => expect(panelCalls).toBe(1));
-    await store.loadJobs();
+    await loadJobs(store);
     expect(panelCalls).toBe(1);
 
     initialFetch.resolve({
@@ -774,7 +991,7 @@ describe("createJobsStore panel expansion", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
 
     store.setSortColumn("cost");
 
@@ -824,15 +1041,15 @@ describe("createJobsStore panel expansion", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-    await store.loadJobs();
+    await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => {
       expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([11]);
     });
 
-    await store.loadJobs();
+    await loadJobs(store);
     await vi.waitFor(() => expect(panelCalls).toBe(2));
-    await store.loadJobs();
+    await loadJobs(store);
     expect(panelCalls).toBe(2);
 
     slowRefresh.resolve({
@@ -885,15 +1102,15 @@ describe("createJobsStore panel expansion", () => {
       }),
     };
     const store = createJobsStore({ client: client as never, navigate: vi.fn(), onError });
-    await store.loadJobs();
+    await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => {
       expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([11]);
     });
 
-    await store.loadJobs();
+    await loadJobs(store);
     await vi.waitFor(() => expect(panelCalls).toBe(2));
-    await store.loadJobs();
+    await loadJobs(store);
     expect(panelCalls).toBe(2);
 
     staleRefresh.resolve({

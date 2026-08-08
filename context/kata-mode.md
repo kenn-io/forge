@@ -40,6 +40,13 @@ contracts remain in [`ui-interaction-contracts.md`](./ui-interaction-contracts.m
 - Ordinary proxy requests have a total deadline, including response bodies;
   the long-lived event stream is exempt
   (`internal/server/kataapi/proxy.go::kataProxyDeadlineHandler.ServeHTTP`).
+- A non-GET proxy transport failure invalidates the original daemon's snapshot
+  authority and returns `mutationOutcomeUnknown`; clients must reconcile rather
+  than replay the write (`internal/server/kataapi/proxy.go::newKataDaemonProxyEntryWithTransport`).
+- Response-body loss and malformed successful acknowledgements also produce
+  `mutationOutcomeUnknown`; issue creation without the revision needed for a
+  requested metadata follow-up is instead a known partial outcome
+  (`frontend/src/lib/api/kata/taskClient.ts::createKataTaskAPI`).
 - Raw Kata events are invalidation transport, not browser rendering authority.
   The browser reloads its exact snapshot intent and accepts task, detail,
   history, graph, and workspace targets atomically

@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 
+import { Effect } from "effect";
 import { createQuerySerializer, type QuerySerializerOptions } from "openapi-fetch";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import type { GeneratedClient } from "../api/generated-api.js";
+import type { AppServices, OwnedAppRuntime } from "../app/runtime.js";
+import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import { createRepoBrowserStore } from "./repo-browser.svelte.js";
-import type { RepoBrowserStoreOptions } from "./repo-browser.svelte.js";
 
 const repo = {
   provider: "github",
@@ -13,10 +16,11 @@ const repo = {
   repoPath: "acme/widgets",
 };
 
-type TestClient = NonNullable<RepoBrowserStoreOptions["client"]>;
+type TestClient = GeneratedClient;
 type TestGetOptions = {
   params?: { path?: Record<string, string>; query?: Record<string, unknown> };
   querySerializer?: QuerySerializerOptions;
+  signal?: AbortSignal;
 };
 
 const runtimeQuerySerializerOptions: QuerySerializerOptions = {
@@ -225,16 +229,35 @@ function testClient(): TestClient {
   } as unknown as TestClient;
 }
 
-afterEach(() => {
+let runtime: OwnedAppRuntime | undefined;
+
+function createTestRepoBrowserStore(client: TestClient) {
+  runtime = makeTestAppRuntime(client);
+  return createRepoBrowserStore().mount();
+}
+
+async function runStoreEffect<A, E>(program: Effect.Effect<A, E, AppServices>): Promise<A> {
+  if (runtime === undefined) throw new Error("repo browser test runtime is not initialized");
+  const execution = runtime.runCommand(program, {
+    operation: "test repository browser command",
+    safeContext: {},
+    onFailure: () => {},
+  });
+  return Effect.runPromise(execution.await.pipe(Effect.flatMap((exit) => exit)));
+}
+
+afterEach(async () => {
   localStorage.clear();
   vi.restoreAllMocks();
+  if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
+  runtime = undefined;
 });
 
 describe("createRepoBrowserStore", () => {
   it("loads refs, tree metadata, first blob, and file history for a repo", async () => {
-    const store = createRepoBrowserStore({ client: testClient() });
+    const store = createTestRepoBrowserStore(testClient());
 
-    await store.loadRepo(repo);
+    await runStoreEffect(store.loadRepo(repo));
 
     expect(store.getDefaultRef()?.name).toBe("main");
     expect(store.getSelectedPath()).toBe("README.md");
@@ -301,9 +324,9 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
+    const store = createTestRepoBrowserStore(client);
 
-    await store.loadRepo(repo, { path: "src/file-250.ts" });
+    await runStoreEffect(store.loadRepo(repo, { path: "src/file-250.ts" }));
 
     expect(store.getBlob()?.path).toBe("src/file-250.ts");
     await vi.waitFor(() => {
@@ -329,9 +352,9 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
+    const store = createTestRepoBrowserStore(client);
 
-    await store.loadRepo(repo, { path: "src/app.ts" });
+    await runStoreEffect(store.loadRepo(repo, { path: "src/app.ts" }));
 
     expect(store.getSelectedPath()).toBe("src/app.ts");
     expect(store.getBlob()?.path).toBe("src/app.ts");
@@ -358,7 +381,7 @@ describe("createRepoBrowserStore", () => {
   });
 
   it("persists source and preview view mode", () => {
-    const store = createRepoBrowserStore({ client: testClient() });
+    const store = createTestRepoBrowserStore(testClient());
 
     store.setViewMode("preview");
 
@@ -391,21 +414,291 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
-    await store.loadRepo(repo);
+    const store = createTestRepoBrowserStore(client);
+    await runStoreEffect(store.loadRepo(repo));
 
     deferReadme = true;
-    const staleReadme = store.selectPath("README.md");
-    await store.selectPath("src/app.ts");
+    const staleReadme = runStoreEffect(store.selectPath("README.md"));
+    await runStoreEffect(store.selectPath("src/app.ts"));
     readmeBlob.resolve(blobResponse("README.md", "# stale\n"));
     readmeHistory.resolve(historyResponse("README.md", "stale readme"));
-    await staleReadme;
+    await staleReadme.catch(() => undefined);
 
     expect(store.getSelectedPath()).toBe("src/app.ts");
     expect(store.getBlob()?.path).toBe("src/app.ts");
     expect(store.getBlob()?.content).toBe("export const app = true;\n");
     expect(store.getFileHistory().map((item) => item.subject)).toEqual(["app changed"]);
     expect(store.isBlobLoading()).toBe(false);
+  });
+
+  it("keeps the tree usable when a user supersedes the initial path read", async () => {
+    const base = testClient();
+    const initialSignals: AbortSignal[] = [];
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+            "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md" ||
+          url ===
+            "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
+        ) {
+          const signal = options?.signal;
+          if (signal) initialSignals.push(signal);
+          return new Promise((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+          });
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createTestRepoBrowserStore(client);
+
+    const initialLoad = runStoreEffect(store.loadRepo(repo));
+    await vi.waitFor(() => expect(initialSignals).toHaveLength(2));
+    await runStoreEffect(store.selectPath("src/app.ts"));
+    await initialLoad;
+
+    expect(initialSignals.every((signal) => signal.aborted)).toBe(true);
+    expect(store.getTree().map((entry) => entry.path)).toEqual(["README.md", "src/app.ts"]);
+    expect(store.getSelectedPath()).toBe("src/app.ts");
+    expect(store.getBlob()?.path).toBe("src/app.ts");
+    expect(store.isLoading()).toBe(false);
+    expect(store.isBlobLoading()).toBe(false);
+  });
+
+  it("keeps the loaded tree when the initial path read fails", async () => {
+    const base = testClient();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
+        ) {
+          return Promise.resolve({
+            error: { detail: "blob unavailable" },
+            response: new Response(null, { status: 503 }),
+          });
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createTestRepoBrowserStore(client);
+
+    await runStoreEffect(store.loadRepo(repo));
+
+    expect(store.getTree().map((entry) => entry.path)).toEqual(["README.md", "src/app.ts"]);
+    expect(store.getSelectedRef()?.name).toBe("main");
+    expect(store.getError()).toBe("blob unavailable");
+    expect(store.isLoading()).toBe(false);
+  });
+
+  it("aborts a repository read when a newer repository load supersedes it", async () => {
+    let firstSignal: AbortSignal | undefined;
+    const nextRepo = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "gadgets",
+      repoPath: "acme/gadgets",
+    };
+    const base = testClient();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (url === "/repo/github/acme/widgets/browser/refs?repo_path=acme%2Fwidgets") {
+          firstSignal = options?.signal;
+          return new Promise((_resolve, reject) => {
+            firstSignal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          });
+        }
+        if (url === "/repo/github/acme/gadgets/browser/refs?repo_path=acme%2Fgadgets") {
+          return Promise.resolve({
+            data: {
+              repo: nextRepo,
+              refs: [],
+              default_ref: null,
+            },
+            response: new Response(null, { status: 200 }),
+          });
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createTestRepoBrowserStore(client);
+
+    const firstLoad = runStoreEffect(store.loadRepo(repo));
+    await vi.waitFor(() => expect(firstSignal).toBeDefined());
+    await runStoreEffect(store.loadRepo(nextRepo));
+
+    expect(firstSignal?.aborted).toBe(true);
+    expect(store.getRepo()).toEqual(nextRepo);
+    await firstLoad.catch(() => undefined);
+  });
+
+  it("does not let a stale mount publish after its successor", async () => {
+    const staleRefs = deferredResponse();
+    const nextRepo = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "gadgets",
+      repoPath: "acme/gadgets",
+    };
+    const base = testClient();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (url === "/repo/github/acme/widgets/browser/refs?repo_path=acme%2Fwidgets") return staleRefs.promise;
+        if (url === "/repo/github/acme/gadgets/browser/refs?repo_path=acme%2Fgadgets") {
+          return Promise.resolve({
+            data: { repo: nextRepo, refs: [], default_ref: null },
+            response: new Response(null, { status: 200 }),
+          });
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    runtime = makeTestAppRuntime(client);
+    const rootStore = createRepoBrowserStore();
+    const store = rootStore.mount();
+
+    const staleLoad = runStoreEffect(store.loadRepo(repo));
+    await vi.waitFor(() => expect(client.GET).toHaveBeenCalledOnce());
+    const successor = rootStore.mount();
+    await runStoreEffect(successor.loadRepo(nextRepo));
+    staleRefs.resolve({
+      data: {
+        repo,
+        refs: [{ type: "branch", name: "main", sha: "main-sha", stale: false }],
+        default_ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+      },
+      response: new Response(null, { status: 200 }),
+    });
+    await staleLoad.catch(() => undefined);
+
+    expect(successor.getRepo()).toEqual(nextRepo);
+    expect(successor.getRefs()).toEqual([]);
+  });
+
+  it("does not let a stale ref failure roll back its successor", async () => {
+    const staleTree = deferredResponse();
+    let staleTreeRequested = false;
+    const nextRepo = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "gadgets",
+      repoPath: "acme/gadgets",
+    };
+    const base = testClient();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha"
+        ) {
+          staleTreeRequested = true;
+          return staleTree.promise;
+        }
+        if (url === "/repo/github/acme/gadgets/browser/refs?repo_path=acme%2Fgadgets") {
+          return Promise.resolve({
+            data: { repo: nextRepo, refs: [], default_ref: null },
+            response: new Response(null, { status: 200 }),
+          });
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    runtime = makeTestAppRuntime(client);
+    const rootStore = createRepoBrowserStore();
+    const stale = rootStore.mount();
+    await runStoreEffect(stale.loadRepo(repo));
+
+    const staleSelection = runStoreEffect(
+      stale.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false }),
+    );
+    await vi.waitFor(() => expect(staleTreeRequested).toBe(true));
+    const successor = rootStore.mount();
+    await runStoreEffect(successor.loadRepo(nextRepo));
+    staleTree.resolve({
+      error: { detail: "stale tree failed" },
+      response: new Response(null, { status: 500 }),
+    });
+    await staleSelection.catch(() => undefined);
+
+    expect(successor.getRepo()).toEqual(nextRepo);
+    expect(successor.getRefs()).toEqual([]);
+    expect(successor.getSelectedRef()).toBeNull();
+    expect(successor.getTree()).toEqual([]);
+    expect(successor.getError()).toBeNull();
+  });
+
+  it("prefers a root README for a pathless repository load", async () => {
+    const base = testClient();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha"
+        ) {
+          return Promise.resolve({
+            data: {
+              repo,
+              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+              entries: [
+                { path: "src/app.ts", type: "blob", size: 30 },
+                { path: "README.md", type: "blob", size: 12 },
+              ],
+              truncated: false,
+            },
+            response: new Response(null, { status: 200 }),
+          });
+        }
+        if (url.includes("/browser/last-changed?") && url.includes("path=src%2Fapp.ts&path=README.md")) {
+          return Promise.resolve({
+            data: { repo, ref: { type: "branch", name: "main", sha: "main-sha", stale: false }, commits: {} },
+            response: new Response(null, { status: 200 }),
+          });
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createTestRepoBrowserStore(client);
+
+    await runStoreEffect(store.loadRepo(repo));
+
+    expect(store.getSelectedPath()).toBe("README.md");
+  });
+
+  it("aborts repository transport when the route owner stops", async () => {
+    let requestSignal: AbortSignal | undefined;
+    const base = testClient();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (url === "/repo/github/acme/widgets/browser/refs?repo_path=acme%2Fwidgets") {
+          requestSignal = options?.signal;
+          return new Promise((_resolve, reject) => {
+            requestSignal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), {
+              once: true,
+            });
+          });
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createTestRepoBrowserStore(client);
+    const load = runStoreEffect(store.loadRepo(repo));
+    await vi.waitFor(() => expect(requestSignal).toBeDefined());
+    await runStoreEffect(store.stop());
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(store.isLoading()).toBe(false);
+    await load.catch(() => undefined);
   });
 
   it("does not auto-select over a user path selection while last-changed metadata loads", async () => {
@@ -423,13 +716,13 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
+    const store = createTestRepoBrowserStore(client);
 
-    const load = store.loadRepo(repo);
+    const load = runStoreEffect(store.loadRepo(repo));
     await vi.waitFor(() => {
       expect(store.getTree().map((entry) => entry.path)).toEqual(["README.md", "src/app.ts"]);
     });
-    const selectedPath = store.selectPath("src/app.ts");
+    const selectedPath = runStoreEffect(store.selectPath("src/app.ts"));
     lastChanged.resolve({
       data: {
         repo,
@@ -464,13 +757,13 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
+    const store = createTestRepoBrowserStore(client);
 
-    const load = store.loadRepo(repo);
+    const load = runStoreEffect(store.loadRepo(repo));
     await vi.waitFor(() => {
       expect(store.getTree().map((entry) => entry.path)).toEqual(["README.md", "src/app.ts"]);
     });
-    const selectedPath = store.selectPath("src/app.ts");
+    const selectedPath = runStoreEffect(store.selectPath("src/app.ts"));
     lastChanged.resolve({
       error: { detail: "last changed failed" },
       response: new Response(null, { status: 500 }),
@@ -510,11 +803,11 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
-    await store.loadRepo(repo);
+    const store = createTestRepoBrowserStore(client);
+    await runStoreEffect(store.loadRepo(repo));
 
     deferSrc = true;
-    const pending = store.selectPath("src/app.ts");
+    const pending = runStoreEffect(store.selectPath("src/app.ts"));
 
     expect(store.getSelectedPath()).toBe("src/app.ts");
     expect(store.getBlob()).toBeNull();
@@ -561,18 +854,18 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
-    await store.loadRepo(repo);
+    const store = createTestRepoBrowserStore(client);
+    await runStoreEffect(store.loadRepo(repo));
 
-    const stale = store.selectCommit("slow-sha");
+    const stale = runStoreEffect(store.selectCommit("slow-sha"));
     expect(store.getSelectedCommit()).toBeNull();
-    await store.selectCommit("fast-sha");
+    await runStoreEffect(store.selectCommit("fast-sha"));
     expect(store.getSelectedCommit()?.sha).toBe("fast-sha");
     slowCommit.resolve(commitResponse("slow-sha", "slow commit"));
-    await stale;
+    await stale.catch(() => undefined);
     expect(store.getSelectedCommit()?.sha).toBe("fast-sha");
 
-    await store.selectCommit("missing-sha");
+    await runStoreEffect(store.selectCommit("missing-sha"));
     expect(store.getSelectedCommit()).toBeNull();
     expect(store.getError()).toBe("commit failed");
   });
@@ -594,11 +887,13 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
-    await store.loadRepo(repo);
-    await store.selectPath("src/app.ts");
+    const store = createTestRepoBrowserStore(client);
+    await runStoreEffect(store.loadRepo(repo));
+    await runStoreEffect(store.selectPath("src/app.ts"));
 
-    const selected = await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false });
+    const selected = await runStoreEffect(
+      store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false }),
+    );
 
     expect(selected).toBe(false);
     expect(store.getSelectedRef()?.name).toBe("main");
@@ -641,14 +936,16 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
-    await store.loadRepo(repo);
+    const store = createTestRepoBrowserStore(client);
+    await runStoreEffect(store.loadRepo(repo));
 
-    const pendingPath = store.selectPath("src/app.ts");
+    const pendingPath = runStoreEffect(store.selectPath("src/app.ts"));
     expect(store.getSelectedPath()).toBe("src/app.ts");
     expect(store.isBlobLoading()).toBe(true);
 
-    expect(await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false })).toBe(false);
+    expect(await runStoreEffect(store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false }))).toBe(
+      false,
+    );
 
     expect(store.getSelectedRef()?.name).toBe("main");
     expect(store.getSelectedPath()).toBe("README.md");
@@ -659,7 +956,7 @@ describe("createRepoBrowserStore", () => {
 
     srcBlob.resolve(blobResponse("src/app.ts", "export const stale = true;\n"));
     srcHistory.resolve(historyResponse("src/app.ts", "stale app"));
-    await pendingPath;
+    await pendingPath.catch(() => undefined);
 
     expect(store.getSelectedPath()).toBe("README.md");
     expect(store.getBlob()?.content).toBe("# Widgets\n");
@@ -683,9 +980,9 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
+    const store = createTestRepoBrowserStore(client);
 
-    await store.loadRepo(repo, { ref: initialRef, path: "README.md" });
+    await runStoreEffect(store.loadRepo(repo, { ref: initialRef, path: "README.md" }));
 
     expect(store.getRefs().map((ref) => ref.name)).toEqual(["main", "v1.0.0"]);
     expect(store.getDefaultRef()?.name).toBe("main");
@@ -699,11 +996,13 @@ describe("createRepoBrowserStore", () => {
   });
 
   it("preserves the selected path when switching refs if that path still exists", async () => {
-    const store = createRepoBrowserStore({ client: testClient() });
-    await store.loadRepo(repo);
-    await store.selectPath("src/app.ts");
+    const store = createTestRepoBrowserStore(testClient());
+    await runStoreEffect(store.loadRepo(repo));
+    await runStoreEffect(store.selectPath("src/app.ts"));
 
-    expect(await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false })).toBe(true);
+    expect(await runStoreEffect(store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false }))).toBe(
+      true,
+    );
 
     expect(store.getSelectedRef()?.name).toBe("v1.0.0");
     expect(store.getSelectedPath()).toBe("src/app.ts");
@@ -712,9 +1011,9 @@ describe("createRepoBrowserStore", () => {
   });
 
   it("retains an explicit missing initial path instead of selecting an unrelated file", async () => {
-    const store = createRepoBrowserStore({ client: testClient() });
+    const store = createTestRepoBrowserStore(testClient());
 
-    await store.loadRepo(repo, { path: "missing.md" });
+    await runStoreEffect(store.loadRepo(repo, { path: "missing.md" }));
 
     expect(store.getSelectedPath()).toBe("missing.md");
     expect(store.getBlob()).toBeNull();
@@ -725,9 +1024,9 @@ describe("createRepoBrowserStore", () => {
 
   it("retains an explicit directory path without loading it as a blob", async () => {
     const client = testClient();
-    const store = createRepoBrowserStore({ client });
+    const store = createTestRepoBrowserStore(client);
 
-    await store.loadRepo(repo, { path: "src" });
+    await runStoreEffect(store.loadRepo(repo, { path: "src" }));
 
     expect(store.getSelectedPath()).toBe("src");
     expect(store.getBlob()).toBeNull();
@@ -744,10 +1043,10 @@ describe("createRepoBrowserStore", () => {
 
   it("selects an implicit directory path without loading it as a blob", async () => {
     const client = testClient();
-    const store = createRepoBrowserStore({ client });
-    await store.loadRepo(repo);
+    const store = createTestRepoBrowserStore(client);
+    await runStoreEffect(store.loadRepo(repo));
 
-    await store.selectPath("src");
+    await runStoreEffect(store.selectPath("src"));
 
     expect(store.getSelectedPath()).toBe("src");
     expect(store.getBlob()).toBeNull();
@@ -784,10 +1083,10 @@ describe("createRepoBrowserStore", () => {
         return base.GET(path, options);
       }),
     } as unknown as TestClient;
-    const store = createRepoBrowserStore({ client });
-    await store.loadRepo(repo);
+    const store = createTestRepoBrowserStore(client);
+    await runStoreEffect(store.loadRepo(repo));
 
-    const pending = store.selectPath("missing.md");
+    const pending = runStoreEffect(store.selectPath("missing.md"));
 
     expect(store.getSelectedPath()).toBe("missing.md");
     expect(store.isBlobLoading()).toBe(true);

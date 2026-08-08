@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect";
-import type { AppRuntime } from "../app/runtime.js";
+import type { AppRuntime, AppServices } from "../app/runtime.js";
 import { StartupWorkflow } from "../app/startup-workflow.js";
 import type { StoreInstances } from "../types.js";
 import { applySettingsHydration } from "../stores/settings-hydration.js";
@@ -7,7 +7,7 @@ import { beginTerminalSettingsHydration } from "../stores/terminal-settings-pers
 
 export interface AppStartupDeps {
   readonly stores: StoreInstances;
-  readonly afterBackendReady?: Effect.Effect<void>;
+  readonly afterBackendReady?: Effect.Effect<void, never, AppServices>;
   readonly onReady: () => void;
   readonly beforeInitialLoad?: () => void;
 }

@@ -49,6 +49,7 @@ const (
 	CodeHookFailed                    ProblemCode = "hookFailed"
 	CodeInternalError                 ProblemCode = "internalError"
 	CodeIssueNotFound                 ProblemCode = "issueNotFound"
+	CodeMutationOutcomeUnknown        ProblemCode = "mutationOutcomeUnknown"
 	CodeNotFound                      ProblemCode = "notFound"
 	CodePayloadTooLarge               ProblemCode = "payloadTooLarge"
 	CodeProjectNotFound               ProblemCode = "projectNotFound"
@@ -84,6 +85,7 @@ func allProblemCodes() []ProblemCode {
 		CodeHookFailed,
 		CodeInternalError,
 		CodeIssueNotFound,
+		CodeMutationOutcomeUnknown,
 		CodeNotFound,
 		CodePayloadTooLarge,
 		CodeProjectNotFound,
@@ -140,7 +142,7 @@ type ProblemError struct {
 
 	// Code is the machine-readable error code drawn from the closed enum
 	// in allProblemCodes(). Frontend logic branches on this value.
-	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,hookFailed,internalError,issueNotFound,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,serviceUnavailable,settingsUnavailable,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceDirectoryNotReusable,workspaceNotFound,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
+	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,hookFailed,internalError,issueNotFound,mutationOutcomeUnknown,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,serviceUnavailable,settingsUnavailable,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceDirectoryNotReusable,workspaceNotFound,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
 
 	// Details is a free-form map of machine-readable context for this
 	// occurrence (e.g. {capability: "merge_mutation"} or

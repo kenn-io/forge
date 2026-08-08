@@ -1,6 +1,14 @@
+import { assert, it } from "@effect/vitest";
 import { describe, expect, test } from "vite-plus/test";
+import { Deferred, Effect, Fiber } from "effect";
 
-import { createKataTaskAPI, KataTaskAPIError, KataTaskRevisionConflictError } from "./taskClient.js";
+import {
+  createKataTaskAPI,
+  KataMutationOutcomeUnknownError,
+  KataMutationPartiallyAppliedError,
+  KataTaskAPIError,
+  KataTaskRevisionConflictError,
+} from "./taskClient.js";
 import { KATA_DAEMON_HEADER } from "./daemons.js";
 import type { KataProjectSummary, KataTaskSummary } from "./taskTypes.js";
 
@@ -96,7 +104,119 @@ function recurrence(uid: string, revision = 1) {
   };
 }
 
+function runTaskEffect<A>(effect: Effect.Effect<A, unknown>): Promise<A> {
+  return Effect.runPromise(effect);
+}
+
 describe("kata mutation and recurrence HTTP client", () => {
+  it.effect("aborts an in-flight task mutation when its owner is interrupted", () =>
+    Effect.gen(function* () {
+      const requestStarted = yield* Deferred.make<void>();
+      const requestAborted = yield* Deferred.make<void>();
+      const fetchImpl: typeof fetch = (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error("Kata mutation request did not include an AbortSignal"));
+            return;
+          }
+          Deferred.doneUnsafe(requestStarted, Effect.void);
+          signal.addEventListener(
+            "abort",
+            () => {
+              Deferred.doneUnsafe(requestAborted, Effect.void);
+              reject(new DOMException("request aborted", "AbortError"));
+            },
+            { once: true },
+          );
+        });
+      const api = createKataTaskAPI({ fetchImpl });
+      const fiber = yield* api
+        .addComment({ project_id: 7, ref: "issue-1" }, "kenn-forge", "hello", { daemonId: "home" })
+        .pipe(Effect.forkChild);
+
+      yield* Deferred.await(requestStarted);
+      yield* Fiber.interrupt(fiber);
+
+      assert.isTrue(yield* Deferred.isDone(requestAborted));
+    }),
+  );
+
+  test("describes task mutations as interruptible Effects", () => {
+    const api = createKataTaskAPI({ fetchImpl: () => Promise.resolve(Response.json({ changed: true })) });
+
+    expect(Effect.isEffect(api.createProject("New", { daemonId: "home" }))).toBe(true);
+  });
+
+  test("classifies a mutation transport failure as an unknown outcome", async () => {
+    const api = createKataTaskAPI({ fetchImpl: () => Promise.reject(new Error("connection lost")) });
+
+    await expect(
+      runTaskEffect(api.addComment({ project_id: 7, ref: "issue-1" }, "kenn-forge", "hello", { daemonId: "home" })),
+    ).rejects.toBeInstanceOf(KataMutationOutcomeUnknownError);
+  });
+
+  test("maps the Forge proxy outcome-unknown problem to mutation uncertainty", async () => {
+    const { fetchImpl } = createFetchStub({
+      "/api/v1/projects/7/issues/issue-1/comments": {
+        status: 502,
+        body: {
+          title: "Bad Gateway",
+          status: 502,
+          code: "mutationOutcomeUnknown",
+          detail: "Kata could not confirm whether the mutation was applied.",
+        },
+      },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+
+    await expect(
+      runTaskEffect(api.addComment({ project_id: 7, ref: "issue-1" }, "kenn-forge", "hello", { daemonId: "home" })),
+    ).rejects.toBeInstanceOf(KataMutationOutcomeUnknownError);
+  });
+
+  test("treats a successful malformed mutation body as an unknown outcome", async () => {
+    const { fetchImpl } = createFetchStub({
+      "/api/v1/projects/7/issues/issue-1/comments": { body: "not a mutation response" },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+
+    await expect(
+      runTaskEffect(api.addComment({ project_id: 7, ref: "issue-1" }, "kenn-forge", "hello", { daemonId: "home" })),
+    ).rejects.toBeInstanceOf(KataMutationOutcomeUnknownError);
+  });
+
+  test("rejects empty successful acknowledgement objects for each identified mutation family", async () => {
+    const { fetchImpl } = createFetchStub({
+      "/api/v1/projects": { body: {} },
+      "/api/v1/projects/7/issues": { body: {} },
+      "/api/v1/projects/7/issues/issue-1/comments": { body: {} },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+    const options = { daemonId: "home" };
+
+    await expect(runTaskEffect(api.createProject("New", options))).rejects.toBeInstanceOf(
+      KataMutationOutcomeUnknownError,
+    );
+    await expect(runTaskEffect(api.createIssue(7, "kenn-forge", { title: "Capture" }, options))).rejects.toBeInstanceOf(
+      KataMutationOutcomeUnknownError,
+    );
+    await expect(
+      runTaskEffect(api.addComment({ project_id: 7, ref: "issue-1" }, "kenn-forge", "hello", options)),
+    ).rejects.toBeInstanceOf(KataMutationOutcomeUnknownError);
+  });
+
+  test("treats a successful mutation status as acknowledgement when changed is absent", async () => {
+    const { fetchImpl } = createFetchStub({
+      "/api/v1/projects/7/issues/issue-1/comments": { body: { comment: { id: 1 } } },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+
+    await expect(
+      runTaskEffect(api.addComment({ project_id: 7, ref: "issue-1" }, "kenn-forge", "hello", { daemonId: "home" })),
+    ).resolves.toEqual({ changed: true });
+  });
+
   test("pins mutation and recurrence operations to the explicit accepted daemon", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/projects": { body: { project: project("project-new", "New") } },
@@ -108,10 +228,10 @@ describe("kata mutation and recurrence HTTP client", () => {
     const accepted = { daemonId: "accepted" };
     const target = { project_id: 7, ref: "issue-1" };
 
-    await api.createProject("New", accepted);
-    await api.addComment(target, "kenn-forge", "hello", accepted);
-    await api.moveIssue(target, "kenn-forge", "project-next", '"rev-1"', accepted);
-    await api.recurrences(7, accepted);
+    await runTaskEffect(api.createProject("New", accepted));
+    await runTaskEffect(api.addComment(target, "kenn-forge", "hello", accepted));
+    await runTaskEffect(api.moveIssue(target, "kenn-forge", "project-next", '"rev-1"', accepted));
+    await runTaskEffect(api.recurrences(7, accepted));
 
     expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual([
       "accepted",
@@ -147,9 +267,13 @@ describe("kata mutation and recurrence HTTP client", () => {
     const target = { project_id: 7, ref: "issue-1" };
     const options = { daemonId: "accepted" };
 
-    await expect(api.createProject("New", options)).resolves.toEqual({ changed: true });
-    await expect(api.addComment(target, "kenn-forge", "hello", options)).resolves.toEqual({ changed: true });
-    await expect(api.moveIssue(target, "kenn-forge", "project-next", '"rev-1"', options)).resolves.toEqual({
+    await expect(runTaskEffect(api.createProject("New", options))).resolves.toEqual({ changed: true });
+    await expect(runTaskEffect(api.addComment(target, "kenn-forge", "hello", options))).resolves.toEqual({
+      changed: true,
+    });
+    await expect(
+      runTaskEffect(api.moveIssue(target, "kenn-forge", "project-next", '"rev-1"', options)),
+    ).resolves.toEqual({
       changed: true,
     });
   });
@@ -160,7 +284,7 @@ describe("kata mutation and recurrence HTTP client", () => {
     });
     const api = createKataTaskAPI({ fetchImpl });
 
-    await expect(api.createProject("New", { daemonId: "home" })).resolves.toEqual({ changed: true });
+    await expect(runTaskEffect(api.createProject("New", { daemonId: "home" }))).resolves.toEqual({ changed: true });
     expect(calls.map((call) => [proxyPath(call.url), call.method])).toEqual([["/api/v1/projects", "POST"]]);
   });
 
@@ -173,7 +297,7 @@ describe("kata mutation and recurrence HTTP client", () => {
       });
       const api = createKataTaskAPI({ fetchImpl });
 
-      await api.createProject("New", { daemonId: "home" });
+      await runTaskEffect(api.createProject("New", { daemonId: "home" }));
 
       const requestURL = calls[0]?.url;
       if (requestURL === undefined) throw new Error("expected a Kata proxy request");
@@ -206,12 +330,14 @@ describe("kata mutation and recurrence HTTP client", () => {
     const api = createKataTaskAPI({ fetchImpl });
 
     await expect(
-      api.createIssue(
-        7,
-        "kenn-forge",
-        { title: "Capture", metadata: { scheduled_on: "2026-05-20" } },
-        { daemonId: "home" },
-        "01KENN_FORGECAPTURE00000001",
+      runTaskEffect(
+        api.createIssue(
+          7,
+          "kenn-forge",
+          { title: "Capture", metadata: { scheduled_on: "2026-05-20" } },
+          { daemonId: "home" },
+          "01KENN_FORGECAPTURE00000001",
+        ),
       ),
     ).resolves.toEqual({ changed: true });
 
@@ -221,7 +347,7 @@ describe("kata mutation and recurrence HTTP client", () => {
     expect(calls[1]!.headers.get("If-Match")).toBe('"rev-1"');
   });
 
-  test("does not synthesize a revision ETag for create metadata follow-up", async () => {
+  test("reports a created issue with unsent metadata as a known partial outcome", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/projects/7/issues": {
         body: { changed: true, issue: issue("issue-capture", "Capture", "project-inbox") },
@@ -229,15 +355,32 @@ describe("kata mutation and recurrence HTTP client", () => {
     });
     const api = createKataTaskAPI({ fetchImpl });
 
-    await expect(
+    const error = await runTaskEffect(
       api.createIssue(
         7,
         "kenn-forge",
         { title: "Capture", metadata: { scheduled_on: "2026-05-20" } },
         { daemonId: "home" },
       ),
-    ).rejects.toMatchObject({ code: "mutation_precondition_unavailable" });
+    ).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(KataMutationPartiallyAppliedError);
+    expect(error).toMatchObject({
+      operation: "create Kata issue with metadata",
+      issueUID: "issue-capture",
+      incompleteStep: "metadata",
+    });
     expect(calls).toHaveLength(1);
+  });
+
+  test("treats a successful malformed issue create body as an unknown outcome", async () => {
+    const { fetchImpl } = createFetchStub({
+      "/api/v1/projects/7/issues": { body: "not an issue create response" },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+
+    await expect(
+      runTaskEffect(api.createIssue(7, "kenn-forge", { title: "Capture" }, { daemonId: "home" })),
+    ).rejects.toBeInstanceOf(KataMutationOutcomeUnknownError);
   });
 
   test("propagates metadata revision conflict without a direct detail-read reconciliation fallback", async () => {
@@ -254,11 +397,13 @@ describe("kata mutation and recurrence HTTP client", () => {
     const api = createKataTaskAPI({ fetchImpl });
 
     await expect(
-      api.createIssue(
-        7,
-        "kenn-forge",
-        { title: "Capture", metadata: { scheduled_on: "2026-05-20" } },
-        { daemonId: "home" },
+      runTaskEffect(
+        api.createIssue(
+          7,
+          "kenn-forge",
+          { title: "Capture", metadata: { scheduled_on: "2026-05-20" } },
+          { daemonId: "home" },
+        ),
       ),
     ).rejects.toBeInstanceOf(KataTaskRevisionConflictError);
     expect(calls.map((call) => proxyPath(call.url))).toEqual([
@@ -288,18 +433,20 @@ describe("kata mutation and recurrence HTTP client", () => {
     const target = { project_id: 7, ref: "issue-1" };
     const options = { daemonId: "home" };
 
-    await api.addComment(target, "kenn-forge", "hello", options);
-    await api.addLabel(target, "kenn-forge", "money", options);
-    await api.removeLabel(target, "kenn-forge", "money", options);
-    await api.assignOwner(target, "kenn-forge", "alice", options);
-    await api.unassignOwner(target, "kenn-forge", options);
-    await api.setPriority(target, "kenn-forge", 2, options);
-    await api.closeIssue(target, "kenn-forge", { reason: "done", message: "done" }, options);
-    await api.reopenIssue(target, "kenn-forge", options);
-    await api.editIssue(target, "kenn-forge", { title: "Edited" }, options);
-    await api.patchIssueMetadata(target, "kenn-forge", { scheduled_on: "2026-05-20" }, '"rev-1"', {
-      daemonId: "home",
-    });
+    await runTaskEffect(api.addComment(target, "kenn-forge", "hello", options));
+    await runTaskEffect(api.addLabel(target, "kenn-forge", "money", options));
+    await runTaskEffect(api.removeLabel(target, "kenn-forge", "money", options));
+    await runTaskEffect(api.assignOwner(target, "kenn-forge", "alice", options));
+    await runTaskEffect(api.unassignOwner(target, "kenn-forge", options));
+    await runTaskEffect(api.setPriority(target, "kenn-forge", 2, options));
+    await runTaskEffect(api.closeIssue(target, "kenn-forge", { reason: "done", message: "done" }, options));
+    await runTaskEffect(api.reopenIssue(target, "kenn-forge", options));
+    await runTaskEffect(api.editIssue(target, "kenn-forge", { title: "Edited" }, options));
+    await runTaskEffect(
+      api.patchIssueMetadata(target, "kenn-forge", { scheduled_on: "2026-05-20" }, '"rev-1"', {
+        daemonId: "home",
+      }),
+    );
 
     expect(calls.every((call) => call.headers.get(KATA_DAEMON_HEADER) === "home")).toBe(true);
     expect(calls.at(-1)?.headers.get("If-Match")).toBe('"rev-1"');
@@ -316,7 +463,9 @@ describe("kata mutation and recurrence HTTP client", () => {
     const api = createKataTaskAPI({ fetchImpl });
 
     await expect(
-      api.moveIssue({ project_id: 7, ref: "issue-1" }, "kenn-forge", "project-next", '"rev-1"', { daemonId: "home" }),
+      runTaskEffect(
+        api.moveIssue({ project_id: 7, ref: "issue-1" }, "kenn-forge", "project-next", '"rev-1"', { daemonId: "home" }),
+      ),
     ).resolves.toEqual({ changed: true });
     expect(calls[0]!.headers.get("If-Match")).toBe('"rev-1"');
   });
@@ -335,34 +484,70 @@ describe("kata mutation and recurrence HTTP client", () => {
     const api = createKataTaskAPI({ fetchImpl });
     const options = { daemonId: "home" };
 
-    await expect(api.recurrences(7, { daemonId: "work" })).resolves.toMatchObject({
+    await expect(runTaskEffect(api.recurrences(7, { daemonId: "work" }))).resolves.toMatchObject({
       recurrences: [expect.objectContaining({ uid: "recurrence-created" })],
     });
     await expect(
-      api.createRecurrence(
-        7,
-        {
-          actor: "kenn-forge",
-          rrule: "FREQ=WEEKLY",
-          dtstart: "2026-05-20",
-          timezone: "America/New_York",
-          template: { title: "Weekly review" },
-        },
-        options,
+      runTaskEffect(
+        api.createRecurrence(
+          7,
+          {
+            actor: "kenn-forge",
+            rrule: "FREQ=WEEKLY",
+            dtstart: "2026-05-20",
+            timezone: "America/New_York",
+            template: { title: "Weekly review" },
+          },
+          options,
+        ),
       ),
     ).resolves.toMatchObject({ recurrence: expect.objectContaining({ uid: "recurrence-created" }) });
-    await expect(api.showRecurrence(7, "recurrence-existing", options)).resolves.toMatchObject({ etag: '"rev-2"' });
+    await expect(runTaskEffect(api.showRecurrence(7, "recurrence-existing", options))).resolves.toMatchObject({
+      etag: '"rev-2"',
+    });
     await expect(
-      api.patchRecurrence(7, "recurrence-existing", { actor: "kenn-forge", timezone: "UTC" }, '"rev-1"', options),
+      runTaskEffect(
+        api.patchRecurrence(7, "recurrence-existing", { actor: "kenn-forge", timezone: "UTC" }, '"rev-1"', options),
+      ),
     ).resolves.toMatchObject({ changed: true, etag: '"rev-2"' });
     await expect(
-      api.deleteRecurrence(7, "recurrence-existing", "kenn-forge", options, '"rev-2"'),
+      runTaskEffect(api.deleteRecurrence(7, "recurrence-existing", "kenn-forge", options, '"rev-2"')),
     ).resolves.toBeUndefined();
 
     expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("work");
     expect(calls.slice(1).every((call) => call.headers.get(KATA_DAEMON_HEADER) === "home")).toBe(true);
     expect(calls[3]!.headers.get("If-Match")).toBe('"rev-1"');
     expect(calls[4]!.headers.get("If-Match")).toBe('"rev-2"');
+  });
+
+  test("treats successful malformed recurrence mutations as unknown outcomes", async () => {
+    const { fetchImpl } = createFetchStub({
+      "/api/v1/projects/7/recurrences": { body: {} },
+      "/api/v1/projects/7/recurrences/recurrence-existing": { body: {} },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+    const options = { daemonId: "home" };
+
+    await expect(
+      runTaskEffect(
+        api.createRecurrence(
+          7,
+          {
+            actor: "kenn-forge",
+            rrule: "FREQ=WEEKLY",
+            dtstart: "2026-05-20",
+            timezone: "America/New_York",
+            template: { title: "Weekly review" },
+          },
+          options,
+        ),
+      ),
+    ).rejects.toBeInstanceOf(KataMutationOutcomeUnknownError);
+    await expect(
+      runTaskEffect(
+        api.patchRecurrence(7, "recurrence-existing", { actor: "kenn-forge", timezone: "UTC" }, '"rev-1"', options),
+      ),
+    ).rejects.toBeInstanceOf(KataMutationOutcomeUnknownError);
   });
 
   test("surfaces ordinary API errors", async () => {
@@ -374,6 +559,8 @@ describe("kata mutation and recurrence HTTP client", () => {
     });
     const api = createKataTaskAPI({ fetchImpl });
 
-    await expect(api.createProject("New", { daemonId: "home" })).rejects.toBeInstanceOf(KataTaskAPIError);
+    await expect(runTaskEffect(api.createProject("New", { daemonId: "home" }))).rejects.toBeInstanceOf(
+      KataTaskAPIError,
+    );
   });
 });

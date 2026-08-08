@@ -643,9 +643,30 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   inspect; native-disabled triggers swallow clicks and make pending work look
   like broken UI (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::choose`).
 - Keep navigation and context switches available during supersedable reads.
-  Kata snapshot loads are sequence- and intent-fenced; cross-authority changes
-  clear prior authority instead of painting it under the new route
-  (`frontend/src/lib/stores/kata-authority.svelte.ts::KataAuthorityStore.loadSnapshot`).
+  Kata snapshot reads are latest-wins per authority owner and accept only the
+  current intent; cross-authority changes clear prior authority instead of
+  painting it under the new route (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflowService`).
+- Snapshot acceptance and synchronous publication are latest-wins; stream startup
+  uses the same mount-unique owner. A failed same-authority replacement retains the last accepted
+  snapshot, while a cross-authority replacement clears it
+  (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::createKataWorkspaceAuthorityOwner`).
+- Once an ordered Kata mutation is accepted by the application queue, ordinary feature or submitter
+  interruption does not cancel the write; application shutdown still owns final interruption
+  (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflowService`).
+- Unknown and partial Kata mutations remain application-owned under their original daemon and target;
+  matching writes stay fenced across replacement until fresh, newer authority proves the outcome, and
+  Retry never replays the write (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflowService`).
+- Roborev has no event replay cursor: reconnect after authoritative job-list reconciliation; a lost
+  mutation response retains and fences its original target until authoritative observation, never
+  replays the write. A confirmed POST stays acknowledged when its follow-up refresh fails; report
+  refresh degradation separately. Cancel only the exact owner lease on teardown
+  (`frontend/src/lib/stores/roborev/roborev-workflow.ts::RoborevWorkflowService`).
+- Docs publish commands snapshot folder and message and remain application-owned after replacement;
+  same-folder surfaces adopt pending or unacknowledged failure state, while completed success is never
+  replayed into a later session (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflowService`).
+- Repository-browser commands use a mount-bound facade and fence every state publication;
+  automatic README-first selection yields to user selection, and stale teardown cannot affect a successor
+  (`frontend/src/lib/stores/repo-browser.svelte.ts::RepoBrowserMount`).
 - Keep Kata's daemon-scoped project navigation stable across same-daemon
   authority changes; clearing scoped task authority must not clear shared chrome
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::sidebarCatalog`).

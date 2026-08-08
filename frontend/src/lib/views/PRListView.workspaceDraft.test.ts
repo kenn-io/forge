@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullDetail } from "../api/types.js";
-import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY, UI_CONFIG_KEY } from "../context.js";
+import { ACTIONS_KEY, NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY, UI_CONFIG_KEY } from "../context.js";
 import type { PullRequestRouteRef } from "../routes.js";
 import { createDetailActivityViewStore } from "../stores/detail-activity-view.svelte.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
@@ -155,11 +155,6 @@ function renderWithRealPullDetail(
     editComment: vi.fn(),
     applyReviewSuggestions: vi.fn(async () => true),
   };
-  const apiClient = {
-    GET: vi.fn(async () => ({ data: {} })),
-    POST: vi.fn(async () => ({ data: {} })),
-  };
-
   return {
     detailStore,
     ...render(PRListView, {
@@ -170,7 +165,6 @@ function renderWithRealPullDetail(
         inlineWorkspace,
       },
       context: new Map<symbol, unknown>([
-        [API_CLIENT_KEY, apiClient],
         [
           STORES_KEY,
           {

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
-  chooseRepoBrowserInitialPath,
   formatRepoBrowserCommitAge,
   formatRepoBrowserCommitDate,
   formatRepoBrowserFileSize,
   isRepoBrowserMarkdownPath,
 } from "./repoBrowserViewState.js";
+import { chooseRepoBrowserInitialPath } from "../../utils/repo-browser-path.js";
 
 describe("repo browser view state", () => {
   it("prefers a root README when no path is selected", () => {

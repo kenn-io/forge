@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import DocsWorkspace from "./DocsWorkspace.svelte";
+import DocsWorkspace from "./DocsWorkspaceTestHarness.svelte";
 import { createMockDocsBackend } from "./docsTestBackend";
 import { defaultDocsRoute, type DocsRoute } from "../../api/docs/route";
 import {

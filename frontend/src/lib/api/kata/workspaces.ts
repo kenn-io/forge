@@ -1,6 +1,8 @@
+import { Effect } from "effect";
 import type { components } from "../generated/schema.js";
 
-import { apiErrorMessage, client } from "../runtime.js";
+import { InvalidExternalPayload } from "../effect-errors.js";
+import { executeGeneratedApiRequest } from "../generated-api.js";
 import { KATA_DAEMON_HEADER } from "./daemons.js";
 import type { KataTaskSummary } from "./taskTypes.js";
 
@@ -13,10 +15,6 @@ export type KataWorkspaceResponse = components["schemas"]["WorkspaceResponse"] &
 };
 export type KataProjectMappingDiagnostic = components["schemas"]["KataProjectMappingDiagnostic"];
 export type KataProjectMappingsResponse = components["schemas"]["KataProjectMappingsResponse"];
-
-function requestErrorMessage(error: { detail?: string; title?: string } | undefined, fallback: string): string {
-  return apiErrorMessage(error, fallback);
-}
 
 export function kataWorkspaceIdentityFromIssue(
   issue: KataTaskSummary,
@@ -37,25 +35,28 @@ export function kataWorkspaceIdentityFromIssue(
   return identity;
 }
 
-export function createKataWorkspaceForTask(identity: KataWorkspaceTaskIdentity): Promise<KataWorkspaceResponse> {
-  return client
-    .POST("/kata/workspaces", {
-      body: identity,
-    })
-    .then(({ data, error, response }) => {
-      if (!data) {
-        throw new Error(requestErrorMessage(error, `POST /kata/workspaces -> ${response.status}`));
-      }
-      return data as KataWorkspaceResponse;
-    });
-}
-
-export async function getKataProjectMappings(daemonID?: string): Promise<KataProjectMappingsResponse> {
-  const { data, error, response } = await client.GET("/kata/project-mappings", {
-    params: daemonID ? { header: { [KATA_DAEMON_HEADER]: daemonID } } : {},
-  });
-  if (!data) {
-    throw new Error(requestErrorMessage(error, `GET /kata/project-mappings -> ${response.status}`));
+export const createKataWorkspaceForTask = Effect.fn("KataWorkspaces.createForTask")(function* (
+  identity: KataWorkspaceTaskIdentity,
+) {
+  const workspace = yield* executeGeneratedApiRequest("create Kata task workspace", (client, signal) =>
+    client.POST("/kata/workspaces", { body: identity, signal }),
+  );
+  if (workspace.item_type !== "kata_task") {
+    return yield* Effect.fail(
+      InvalidExternalPayload.make({
+        operation: "create Kata task workspace",
+        cause: new Error(`expected kata_task workspace, received ${workspace.item_type}`),
+      }),
+    );
   }
-  return data;
-}
+  return workspace;
+});
+
+export const getKataProjectMappings = Effect.fn("KataWorkspaces.projectMappings")(function* (daemonID?: string) {
+  return yield* executeGeneratedApiRequest("load Kata project mappings", (client, signal) =>
+    client.GET("/kata/project-mappings", {
+      params: daemonID ? { header: { [KATA_DAEMON_HEADER]: daemonID } } : {},
+      signal,
+    }),
+  );
+});

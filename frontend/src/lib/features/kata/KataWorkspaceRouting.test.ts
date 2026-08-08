@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataWorkspaceSnapshotResponse } from "../../api/kata/snapshot.js";
-import KataWorkspace from "./KataWorkspace.svelte";
+import KataWorkspace from "./KataWorkspaceRuntimeHarness.svelte";
 import { saveKataWorkspaceState } from "./kataWorkspacePersistence.js";
 import {
   createWorkspaceAPI,

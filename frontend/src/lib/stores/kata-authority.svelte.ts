@@ -1,5 +1,4 @@
 import {
-  fetchKataWorkspaceSnapshot,
   type KataAuthority,
   type KataAuthorityScope,
   type KataSnapshotIntent,
@@ -50,10 +49,6 @@ export type KataAuthorityState =
       intent: null;
       error: string;
     };
-
-export interface CreateKataAuthorityStoreOptions {
-  loadSnapshot?: ((intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>) | undefined;
-}
 
 const initialState: KataAuthorityState = { phase: "idle", snapshot: null, intent: null, error: null };
 const initialPresentation: KataAuthorityPresentation = {
@@ -160,14 +155,8 @@ export class KataAuthorityStore {
   presentation = $state.raw<KataAuthorityPresentation>(initialPresentation);
   projection = $derived.by(() => projectSnapshot(this.state.snapshot, this.presentation));
 
-  private readonly load: (intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>;
-  private requestSequence = 0;
   private acceptedIntent: KataSnapshotIntent | null = null;
   private acceptedGenerations: Record<string, number> = {};
-
-  constructor(options: CreateKataAuthorityStoreOptions = {}) {
-    this.load = options.loadSnapshot ?? fetchKataWorkspaceSnapshot;
-  }
 
   get snapshot(): KataWorkspaceSnapshotProjection | null {
     return this.state.snapshot;
@@ -182,7 +171,6 @@ export class KataAuthorityStore {
   }
 
   abandon(message: string): void {
-    this.requestSequence += 1;
     this.acceptedIntent = null;
     this.state = {
       phase: "abandoned",
@@ -192,44 +180,28 @@ export class KataAuthorityStore {
     };
   }
 
-  async loadSnapshot(requestedIntent: KataSnapshotIntent): Promise<boolean> {
+  beginLoad(requestedIntent: KataSnapshotIntent): KataSnapshotIntent {
     const intent = normalizeIntent(requestedIntent);
-    const sequence = ++this.requestSequence;
     const currentSnapshot = this.state.snapshot;
     const previousSnapshot =
       currentSnapshot && authorityIdentityMatches(currentSnapshot, intent) ? currentSnapshot : null;
     this.state = { phase: "loading", snapshot: previousSnapshot, intent, error: null };
+    return intent;
+  }
 
-    let response: KataWorkspaceSnapshotResponse;
-    try {
-      response = await this.load(intent);
-    } catch (error) {
-      if (sequence !== this.requestSequence) return false;
-      this.state = {
-        phase: "degraded",
-        snapshot: previousSnapshot,
-        intent,
-        error: errorMessage(error),
-      };
-      throw error;
-    }
-
-    if (sequence !== this.requestSequence) return false;
+  acceptSnapshot(intent: KataSnapshotIntent, response: KataWorkspaceSnapshotResponse): boolean {
+    if (!intentsEqual(this.state.intent, intent)) return false;
+    const previousSnapshot = this.state.snapshot;
     let snapshot: KataWorkspaceSnapshotProjection;
     try {
       snapshot = normalizeKataWorkspaceSnapshot(response);
     } catch (error) {
-      this.state = {
-        phase: "degraded",
-        snapshot: previousSnapshot,
-        intent,
-        error: errorMessage(error),
-      };
+      this.failSnapshot(intent, error);
       throw error;
     }
     if (!responseIdentityMatches(snapshot, intent)) {
       const error = new Error("Kata snapshot response does not match the current request intent");
-      this.state = { phase: "degraded", snapshot: previousSnapshot, intent, error: error.message };
+      this.failSnapshot(intent, error);
       throw error;
     }
 
@@ -255,9 +227,18 @@ export class KataAuthorityStore {
     return true;
   }
 
-  retry(): Promise<boolean> {
-    if (!this.state.intent) return Promise.resolve(false);
-    return this.loadSnapshot(this.state.intent);
+  failSnapshot(intent: KataSnapshotIntent, error: unknown): void {
+    if (!intentsEqual(this.state.intent, intent)) return;
+    this.state = {
+      phase: "degraded",
+      snapshot: this.state.snapshot,
+      intent,
+      error: errorMessage(error),
+    };
+  }
+
+  retryIntent(): KataSnapshotIntent | null {
+    return this.state.intent;
   }
 
   private restoreAcceptedState(snapshot: KataWorkspaceSnapshotProjection | null): void {
@@ -269,6 +250,6 @@ export class KataAuthorityStore {
   }
 }
 
-export function createKataAuthorityStore(options: CreateKataAuthorityStoreOptions = {}): KataAuthorityStore {
-  return new KataAuthorityStore(options);
+export function createKataAuthorityStore(): KataAuthorityStore {
+  return new KataAuthorityStore();
 }

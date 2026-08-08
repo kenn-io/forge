@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   rerunJob: vi.fn(),
   cancelJob: vi.fn(),
   closeReview: vi.fn(),
+  copyOutput: vi.fn(),
 }));
 
 type ReviewJob = components["schemas"]["ReviewJob"];
@@ -68,6 +69,7 @@ vi.mock("../../context.js", () => ({
       getReview: () => ({ id: 1, job_id: 42, output: "review output", closed: false }),
       isClosed: () => false,
       closeReview: state.closeReview,
+      copyOutput: state.copyOutput,
     },
   }),
 }));
@@ -81,6 +83,7 @@ describe("ReviewDrawer", () => {
     state.rerunJob.mockReset();
     state.cancelJob.mockReset();
     state.closeReview.mockReset();
+    state.copyOutput.mockReset();
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -164,5 +167,8 @@ describe("ReviewDrawer", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Close Review" }));
     expect(state.closeReview).toHaveBeenCalledWith(42);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Copy Output" }));
+    expect(state.copyOutput).toHaveBeenCalledTimes(1);
   });
 });

@@ -303,108 +303,108 @@ export interface KataPinnedDaemonOptions {
   daemonId: string;
 }
 
-export interface KataPinnedDaemonRequestOptions extends KataPinnedDaemonOptions {
-  signal?: AbortSignal | undefined;
-}
+export type KataTaskEffect<A> = Effect.Effect<A, KataTaskClientError>;
 
 export interface KataTaskAPI {
-  createProject(name: string, options: KataPinnedDaemonOptions): Promise<KataTaskMutationResponse>;
+  createProject(name: string, options: KataPinnedDaemonOptions): KataTaskEffect<KataTaskMutationResponse>;
   createIssue(
     projectID: number,
     actor: string,
     draft: KataTaskCreateDraft,
     options: KataPinnedDaemonOptions,
     idempotencyKey?: string | undefined,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   addComment(
     target: KataTaskMutationTarget,
     actor: string,
     body: string,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   addLabel(
     target: KataTaskMutationTarget,
     actor: string,
     label: string,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   removeLabel(
     target: KataTaskMutationTarget,
     actor: string,
     label: string,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   assignOwner(
     target: KataTaskMutationTarget,
     actor: string,
     owner: string,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   unassignOwner(
     target: KataTaskMutationTarget,
     actor: string,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   setPriority(
     target: KataTaskMutationTarget,
     actor: string,
     priority: number | null,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   closeIssue(
     target: KataTaskMutationTarget,
     actor: string,
     close: KataTaskCloseOptions,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   reopenIssue(
     target: KataTaskMutationTarget,
     actor: string,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   editIssue(
     target: KataTaskMutationTarget,
     actor: string,
     patch: KataTaskEditPatch,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   patchIssueMetadata(
     target: KataTaskMutationTarget,
     actor: string,
     patch: KataTaskMetadataPatch,
     ifMatch: string,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
   moveIssue(
     target: KataTaskMutationTarget,
     actor: string,
     toProjectUID: string,
     ifMatch: string,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataTaskMutationResponse>;
-  recurrences(projectID: number, options: KataPinnedDaemonRequestOptions): Promise<KataRecurrencesResponse>;
+  ): KataTaskEffect<KataTaskMutationResponse>;
+  recurrences(projectID: number, options: KataPinnedDaemonOptions): KataTaskEffect<KataRecurrencesResponse>;
   createRecurrence(
     projectID: number,
     input: KataCreateRecurrenceInput,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataRecurrenceResponse>;
+  ): KataTaskEffect<KataRecurrenceResponse>;
   showRecurrence(
     projectID: number,
     recurrenceUID: string,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataRecurrenceResponse>;
+  ): KataTaskEffect<KataRecurrenceResponse>;
   patchRecurrence(
     projectID: number,
     recurrenceUID: string,
     patch: KataPatchRecurrenceInput,
     ifMatch: string,
     options: KataPinnedDaemonOptions,
-  ): Promise<KataRecurrenceResponse>;
+  ): KataTaskEffect<KataRecurrenceResponse>;
   deleteRecurrence(
     projectID: number,
     recurrenceUID: string,
     actor: string,
     options: KataPinnedDaemonOptions,
     ifMatch?: string,
-  ): Promise<void>;
+  ): KataTaskEffect<void>;
 }
+import type { Effect } from "effect";
+import type { KataTaskClientError } from "./taskClient.js";

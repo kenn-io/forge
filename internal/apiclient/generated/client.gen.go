@@ -642,6 +642,7 @@ const (
 	HookFailed                    ProblemErrorCode = "hookFailed"
 	InternalError                 ProblemErrorCode = "internalError"
 	IssueNotFound                 ProblemErrorCode = "issueNotFound"
+	MutationOutcomeUnknown        ProblemErrorCode = "mutationOutcomeUnknown"
 	NotFound                      ProblemErrorCode = "notFound"
 	PayloadTooLarge               ProblemErrorCode = "payloadTooLarge"
 	ProjectNotFound               ProblemErrorCode = "projectNotFound"
@@ -685,6 +686,8 @@ func (e ProblemErrorCode) Valid() bool {
 	case InternalError:
 		return true
 	case IssueNotFound:
+		return true
+	case MutationOutcomeUnknown:
 		return true
 	case NotFound:
 		return true
@@ -4732,6 +4735,9 @@ type GetKataTaskSnapshotParams struct {
 	Authority        *GetKataTaskSnapshotParamsAuthority `form:"authority,omitempty" json:"authority,omitempty"`
 	SelectedIssueUid *string                             `form:"selected_issue_uid,omitempty" json:"selected_issue_uid,omitempty"`
 	GraphSourceUid   *string                             `form:"graph_source_uid,omitempty" json:"graph_source_uid,omitempty"`
+
+	// Fresh Bypass cached daemon authority for mutation reconciliation
+	Fresh *bool `form:"fresh,omitempty" json:"fresh,omitempty"`
 
 	// XKennForgeKataDaemon Kata daemon id; the effective default daemon when empty
 	XKennForgeKataDaemon *string `json:"X-Kenn-Forge-Kata-Daemon,omitempty"`
@@ -21586,6 +21592,18 @@ func NewGetKataTaskSnapshotRequest(server string, params *GetKataTaskSnapshotPar
 		if params.GraphSourceUid != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "graph_source_uid", *params.GraphSourceUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Fresh != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "fresh", *params.Fresh, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

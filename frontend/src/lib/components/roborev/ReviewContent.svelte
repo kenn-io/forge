@@ -1,7 +1,36 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
-  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
+  import { renderMarkdownEffect, renderMarkdownSync } from "../../utils/markdown.js";
   const stores = getStores();
+  const runtime = getAppRuntime();
+
+  const output = $derived(stores.roborevReview?.getOutput() ?? "");
+  const fallbackHTML = $derived(renderMarkdownSync(output));
+  let highlighted = $state.raw<{ source: string; html: string } | null>(null);
+  const renderedHTML = $derived(highlighted?.source === output ? highlighted.html : fallbackHTML);
+
+  $effect(() => {
+    const source = output;
+    if (!source) return;
+    const execution = runtime.runCommand(
+      renderMarkdownEffect(source).pipe(
+        Effect.tap((html) =>
+          Effect.sync(() => {
+            highlighted = { source, html };
+          }),
+        ),
+        Effect.catch(() => Effect.void),
+      ),
+      {
+        operation: "render Roborev review output",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
+    return execution.interrupt;
+  });
 </script>
 
 {#if stores.roborevReview?.isLoading()}
@@ -10,13 +39,9 @@
   <div class="review-pending">
     Review in progress...
   </div>
-{:else if stores.roborevReview?.getOutput()}
+{:else if output}
   <div class="review-content markdown-body">
-    {#await renderMarkdown(stores.roborevReview.getOutput())}
-      {@html renderMarkdownSync(stores.roborevReview.getOutput())}
-    {:then html}
-      {@html html}
-    {/await}
+    {@html renderedHTML}
   </div>
 {:else}
   <div class="review-empty">

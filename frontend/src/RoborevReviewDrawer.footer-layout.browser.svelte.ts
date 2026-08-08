@@ -15,11 +15,13 @@
 
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { cleanup, render } from "vitest-browser-svelte";
+import { Effect } from "effect";
 
 // Layout assertions are only meaningful under the production reset and tokens.
 import "./app.css";
+import { makeAppRuntime } from "./lib/app/runtime.js";
 import { STORES_KEY } from "./lib/context.js";
-import ReviewDrawer from "./lib/components/roborev/ReviewDrawer.svelte";
+import ReviewDrawerRuntimeHarness from "./lib/components/roborev/ReviewDrawerRuntimeHarness.svelte";
 
 // A realistic worst case: the blob that originally overflowed the footer.
 const job = {
@@ -47,13 +49,15 @@ const job = {
   }),
 };
 
-function mountAt(widthPx: number): { unmount: () => void } {
+function mountAt(widthPx: number): { unmount: () => Promise<void> } {
   const wrapper = document.createElement("div");
   wrapper.style.width = `${widthPx}px`;
   document.body.appendChild(wrapper);
+  const runtime = makeAppRuntime();
 
-  const { unmount } = render(ReviewDrawer, {
+  const { unmount } = render(ReviewDrawerRuntimeHarness, {
     target: wrapper,
+    props: { runtime },
     context: new Map<symbol, unknown>([
       [
         STORES_KEY,
@@ -91,9 +95,10 @@ function mountAt(widthPx: number): { unmount: () => void } {
   });
 
   return {
-    unmount: () => {
+    unmount: async () => {
       unmount();
       wrapper.remove();
+      await Effect.runPromise(runtime.disposeEffect);
     },
   };
 }
@@ -143,10 +148,10 @@ async function settleActions(): Promise<void> {
 }
 
 describe("review drawer footer layout", () => {
-  let mounted: { unmount: () => void } | null = null;
+  let mounted: { unmount: () => Promise<void> } | null = null;
 
-  afterEach(() => {
-    mounted?.unmount();
+  afterEach(async () => {
+    await mounted?.unmount();
     mounted = null;
     cleanup();
   });

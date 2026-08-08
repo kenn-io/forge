@@ -1,9 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataWorkspaceSnapshotResponse } from "../../api/kata/snapshot.js";
 import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
-import KataWorkspace from "./KataWorkspace.svelte";
+import { TransientTransportError } from "../../api/effect-errors.js";
+import KataWorkspace from "./KataWorkspaceRuntimeHarness.svelte";
 import { saveKataWorkspaceState } from "./kataWorkspacePersistence.js";
 import {
   createWorkspaceAPI,
@@ -14,6 +16,13 @@ import {
   projects,
   resetKataWorkspaceTestState,
 } from "./test/KataWorkspaceSupport.js";
+
+function deferredTaskEffect<A>(promise: Promise<A>) {
+  return Effect.tryPromise({
+    try: () => promise,
+    catch: (cause) => TransientTransportError.make({ operation: "deferred test task", cause }),
+  });
+}
 
 vi.mock("../../context.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../context.js")>();
@@ -335,7 +344,7 @@ describe("KataWorkspace compact snapshot stream", () => {
     const selected = initialIssues[0]!;
     const replacement = { ...selected, title: "Comment accepted by snapshot" };
     const { api } = createWorkspaceAPI();
-    api.addComment = vi.fn(async () => ({ changed: true }));
+    api.addComment = vi.fn(() => Effect.succeed({ changed: true }));
     const harness = installFetchHarness([
       snapshot(selected, {}, true),
       new Response(JSON.stringify({ error: "refresh unavailable" }), {
@@ -378,7 +387,7 @@ describe("KataWorkspace compact snapshot stream", () => {
     const target = initialIssues[1]!;
     const catalog = [source, target] as SnapshotIssue[];
     const { api } = createWorkspaceAPI();
-    api.addComment = vi.fn(async () => ({ changed: true }));
+    api.addComment = vi.fn(() => Effect.succeed({ changed: true }));
     const onSelectedIssueChange = vi.fn();
     const harness = installFetchHarness([
       snapshot(
@@ -442,7 +451,7 @@ describe("KataWorkspace compact snapshot stream", () => {
     const catalog = [source, target] as SnapshotIssue[];
     const mutation = deferred<{ changed: boolean }>();
     const { api } = createWorkspaceAPI();
-    api.addComment = vi.fn(() => mutation.promise);
+    api.addComment = vi.fn(() => deferredTaskEffect(mutation.promise));
     const onSelectedIssueChange = vi.fn();
     const onRouteStateChange = vi.fn();
     const harness = installFetchHarness([
@@ -529,7 +538,7 @@ describe("KataWorkspace compact snapshot stream", () => {
     const mutation = deferred<{ changed: boolean }>();
     const pendingSelection = deferred<Response>();
     const { api } = createWorkspaceAPI();
-    api.addComment = vi.fn(() => mutation.promise);
+    api.addComment = vi.fn(() => deferredTaskEffect(mutation.promise));
     const onSelectedIssueChange = vi.fn();
     const onRouteStateChange = vi.fn();
     const harness = installFetchHarness([
@@ -612,7 +621,7 @@ describe("KataWorkspace compact snapshot stream", () => {
     const pendingMutationReplacement = deferred<Response>();
     const pendingSelection = deferred<Response>();
     const { api } = createWorkspaceAPI();
-    api.addComment = vi.fn(async () => ({ changed: true }));
+    api.addComment = vi.fn(() => Effect.succeed({ changed: true }));
     const onSelectedIssueChange = vi.fn();
     const onRouteStateChange = vi.fn();
     const harness = installFetchHarness([
@@ -1122,7 +1131,7 @@ describe("KataWorkspace compact snapshot stream", () => {
       closed_count: 0,
     };
     const { api } = createWorkspaceAPI();
-    api.createProject = vi.fn(async () => ({ changed: true }));
+    api.createProject = vi.fn(() => Effect.succeed({ changed: true }));
     const onRouteStateChange = vi.fn();
     const harness = installFetchHarness([
       snapshot(initialIssues[0]!),

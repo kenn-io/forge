@@ -1,6 +1,14 @@
+import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { GeneratedApi, makeGeneratedApiLayer } from "../generated-api.js";
+import { createRuntimeClient } from "../runtime.js";
+
 import { fetchKataDaemons, kataProxyPath } from "./daemons.js";
+
+function runDaemons<A, E>(program: Effect.Effect<A, E, GeneratedApi>, fetchImpl: typeof fetch) {
+  return Effect.runPromise(program.pipe(Effect.provide(makeGeneratedApiLayer(createRuntimeClient(fetchImpl)))));
+}
 
 function requestURL(input: RequestInfo | URL): URL {
   if (typeof Request !== "undefined" && input instanceof Request) {
@@ -48,7 +56,7 @@ describe("kata api helpers", () => {
       );
     });
 
-    const daemons = await fetchKataDaemons(fetchMock);
+    const daemons = await runDaemons(fetchKataDaemons(), fetchMock);
 
     expect(seenURL?.pathname).toBe("/api/v1/kata/daemons");
     expect(daemons.map((d) => d.id)).toEqual(["home", "work"]);
@@ -78,7 +86,7 @@ describe("kata api helpers", () => {
         ),
     );
 
-    const daemons = await fetchKataDaemons(fetchMock);
+    const daemons = await runDaemons(fetchKataDaemons(), fetchMock);
 
     expect(daemons[0]?.hint).toBe("local daemon not running; run `kata daemon start`");
   });
@@ -94,7 +102,7 @@ describe("kata api helpers", () => {
       });
     });
 
-    const daemons = await fetchKataDaemons(fetchMock);
+    const daemons = await runDaemons(fetchKataDaemons(), fetchMock);
 
     expect(seenURL?.pathname).toBe("/api/v1/kata/daemons");
     expect(daemons).toEqual([]);
@@ -125,7 +133,7 @@ describe("kata api helpers", () => {
       );
     });
 
-    const daemons = await fetchKataDaemons(fetchMock);
+    const daemons = await runDaemons(fetchKataDaemons(), fetchMock);
 
     expect(seenURL?.pathname).toBe("/kenn-forge/api/v1/kata/daemons");
     expect(daemons.map((d) => d.id)).toEqual(["home"]);
@@ -137,6 +145,6 @@ describe("kata api helpers", () => {
   it("returns an empty roster when the control endpoint is absent", async () => {
     const fetchMock = vi.fn(async () => new Response("not found", { status: 404 }));
 
-    await expect(fetchKataDaemons(fetchMock)).resolves.toEqual([]);
+    await expect(runDaemons(fetchKataDaemons(), fetchMock)).resolves.toEqual([]);
   });
 });

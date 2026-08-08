@@ -1,10 +1,18 @@
 <script lang="ts">
   import { EmptyState, Spinner } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import { onDestroy, type Snippet } from "svelte";
   import { getStores } from "../../context.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import {
     createRoborevClient,
+    executeRoborevRequest,
   } from "../../api/roborev/client.js";
+  import {
+    makeRoborevOwner,
+    RoborevResponseError,
+    RoborevWorkflow,
+  } from "../../stores/roborev/roborev-workflow.js";
   import {
     createJobsStore,
   } from "../../stores/roborev/jobs.svelte.js";
@@ -79,6 +87,7 @@
   }: Props = $props();
 
   const parentStores = getStores();
+  const appRuntime = getAppRuntime();
 
   // svelte-ignore state_referenced_locally — intentional snapshot; stores are created once
   const baseUrl = roborevBaseUrl;
@@ -87,15 +96,21 @@
   const roborevClient = createRoborevClient(
     baseUrl,
   );
+  // svelte-ignore state_referenced_locally — the sidebar stores are scoped to this mounted workspace
+  const roborevOwner = makeRoborevOwner(`workspace-sidebar:${workspaceID}`);
   const sidebarJobs = createJobsStore({
     client: roborevClient,
+    runtime: appRuntime,
+    owner: roborevOwner,
     navigate: () => {},
   });
   const sidebarReview = createReviewStore({
     client: roborevClient,
+    runtime: appRuntime,
+    owner: roborevOwner,
   });
   const sidebarLog = createLogStore({
-    client: roborevClient,
+    runtime: appRuntime,
     baseUrl,
   });
 
@@ -119,76 +134,104 @@
     return `${repoOwner}/${repoName}`;
   }
 
-  async function resolveRepo(): Promise<void> {
-    if (!repoName) {
-      resolvedRootPath = null;
-      repoResolutionError = null;
-      negativeMatch = false;
-      lastResolvedKey = "";
-      return;
+  const resolveRepoEffect = () => {
+    const requestedName = repoName;
+    const requestedOwner = repoOwner;
+    const requestedKey = repoKey();
+    if (!requestedName) {
+      return Effect.sync(() => {
+        resolvedRootPath = null;
+        repoResolutionError = null;
+        negativeMatch = false;
+        lastResolvedKey = "";
+        return null;
+      });
     }
-    const { data } = await roborevClient.GET(
-      "/api/repos",
-    );
-    const repos: RepoWithCount[] =
-      data?.repos ?? [];
-    const matches = repos.filter(
-      (r) =>
-        r.name.toLowerCase() ===
-        repoName.toLowerCase(),
-    );
-    if (matches.length === 0) {
-      resolvedRootPath = null;
-      repoResolutionError = null;
-      negativeMatch = true;
-      return;
-    }
-    if (matches.length === 1) {
-      resolvedRootPath = matches[0]!.root_path;
-      repoResolutionError = null;
-      negativeMatch = false;
-      lastResolvedKey = repoKey();
-      return;
-    }
-    // Multiple matches — disambiguate by owner
-    const ownerMatch = matches.filter((r) =>
-      r.root_path
-        .split("/")
-        .some(
-          (seg) =>
-            seg.toLowerCase() ===
-            repoOwner.toLowerCase(),
+    return Effect.gen(function* () {
+      const workflow = yield* RoborevWorkflow;
+      return yield* workflow.catalog(
+        roborevOwner,
+        executeRoborevRequest("resolve workspace Roborev repository", (signal) =>
+          roborevClient.GET("/api/repos", { signal }),
+        ).pipe(
+          Effect.flatMap((result) =>
+            result.error
+              ? Effect.fail(
+                  RoborevResponseError.make({
+                    operation: "resolve workspace Roborev repository",
+                    message: "Failed to resolve repository",
+                    cause: result.error,
+                  }),
+                )
+              : Effect.succeed(result.data?.repos ?? []),
+          ),
+          Effect.map((repos: RepoWithCount[]) => {
+            const matches = repos.filter(
+              (repo) => repo.name.toLowerCase() === requestedName.toLowerCase(),
+            );
+            if (matches.length === 1) return matches[0]?.root_path ?? null;
+            if (matches.length === 0) return null;
+            const ownerMatches = matches.filter((repo) =>
+              repo.root_path
+                .split("/")
+                .some((segment) => segment.toLowerCase() === requestedOwner.toLowerCase()),
+            );
+            return ownerMatches.length === 1 ? ownerMatches[0]?.root_path ?? null : "ambiguous";
+          }),
+          Effect.tap((resolution) =>
+            Effect.sync(() => {
+              resolvedRootPath = resolution === "ambiguous" ? null : resolution;
+              repoResolutionError = resolution === "ambiguous"
+                ? "Multiple repos matched \u2014 select one on the Reviews page"
+                : null;
+              negativeMatch = resolution === null;
+              if (typeof resolution === "string" && resolution !== "ambiguous") lastResolvedKey = requestedKey;
+            }),
+          ),
+          Effect.map((resolution) => (resolution === "ambiguous" ? null : resolution)),
+          Effect.catch(() =>
+            Effect.sync(() => {
+              resolvedRootPath = null;
+              repoResolutionError = "Failed to resolve repository";
+              negativeMatch = false;
+              return null;
+            }),
+          ),
         ),
+      );
+    });
+  };
+
+  const resolveAndLoadEffect = () =>
+    resolveRepoEffect().pipe(
+      Effect.tap((rootPath) =>
+        rootPath === null
+          ? Effect.void
+          : Effect.sync(() => {
+              sidebarJobs.setRepoBranchFilter(rootPath, branch);
+            }),
+      ),
+      Effect.asVoid,
     );
-    if (ownerMatch.length === 1) {
-      resolvedRootPath = ownerMatch[0]!.root_path;
-      repoResolutionError = null;
-      negativeMatch = false;
-      lastResolvedKey = repoKey();
-      return;
-    }
-    resolvedRootPath = null;
-    repoResolutionError =
-      "Multiple repos matched \u2014 " +
-      "select one on the Reviews page";
-    negativeMatch = false;
+
+  function retryResolve(): void {
+    appRuntime.runCommand(resolveAndLoadEffect(), {
+      operation: "resolve workspace Roborev repository",
+      safeContext: { owner: roborevOwner },
+      onFailure: () => {},
+    });
   }
 
   // Resolve repo on workspace change
   $effect(() => {
     const key = repoKey();
-    if (key !== lastResolvedKey || negativeMatch) {
-      void resolveRepo().then(() => {
-        if (resolvedRootPath) {
-          sidebarJobs.setFilter(
-            "repo",
-            resolvedRootPath,
-          );
-          sidebarJobs.setFilter("branch", branch);
-          void sidebarJobs.loadJobs();
-        }
-      });
-    }
+    if (key === lastResolvedKey && !negativeMatch) return;
+    const execution = appRuntime.runCommand(resolveAndLoadEffect(), {
+      operation: "resolve workspace Roborev repository",
+      safeContext: { owner: roborevOwner },
+      onFailure: () => {},
+    });
+    return execution.interrupt;
   });
 
   // Update branch filter when branch changes within
@@ -199,7 +242,7 @@
     if (branch !== lastBranch && resolvedRootPath) {
       lastBranch = branch;
       sidebarJobs.setFilter("branch", branch);
-      void sidebarJobs.loadJobs();
+      sidebarJobs.loadJobs();
     }
   });
 
@@ -208,6 +251,7 @@
   $effect(() => {
     const id = sidebarJobs.getSelectedJobId();
     sidebarReview.setSelectedJobId(id);
+    if (id !== undefined) sidebarReview.loadReview(id);
   });
 
   // Reset drawer tab when job selected (mirrors
@@ -228,28 +272,16 @@
       parentStores.roborevDaemon?.isAvailable() ??
       false;
     if (available && negativeMatch) {
-      void retryResolve();
+      retryResolve();
     }
   });
 
   // Re-resolve on tab activation when negative
   $effect(() => {
     if (activeTab === "reviews" && negativeMatch) {
-      void retryResolve();
+      retryResolve();
     }
   });
-
-  async function retryResolve(): Promise<void> {
-    await resolveRepo();
-    if (resolvedRootPath) {
-      sidebarJobs.setFilter(
-        "repo",
-        resolvedRootPath,
-      );
-      sidebarJobs.setFilter("branch", branch);
-      void sidebarJobs.loadJobs();
-    }
-  }
 
   // Determine if we have valid context
   const hasRepo = $derived(
@@ -273,23 +305,29 @@
   );
 
   // Connect/disconnect the NDJSON event stream based on daemon availability.
-  let eventStreamStarted = false;
   $effect(() => {
     const available =
       parentStores.roborevDaemon?.isAvailable() ??
       false;
-    if (available && !eventStreamStarted) {
-      sidebarJobs.connectEventStream(baseUrl);
-      eventStreamStarted = true;
-    } else if (!available && eventStreamStarted) {
-      sidebarJobs.disconnectEventStream();
-      eventStreamStarted = false;
+    if (!available) {
+      return;
     }
+    const eventOwner = sidebarJobs.connectEventStream(baseUrl);
+    return () => sidebarJobs.disconnectEventStream(eventOwner);
   });
 
   onDestroy(() => {
-    sidebarJobs.disconnectEventStream();
-    sidebarLog.stopStreaming();
+    appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* RoborevWorkflow;
+        yield* workflow.stop(roborevOwner);
+      }),
+      {
+        operation: "stop workspace Roborev stores",
+        safeContext: { owner: roborevOwner },
+        onFailure: () => {},
+      },
+    );
   });
 </script>
 

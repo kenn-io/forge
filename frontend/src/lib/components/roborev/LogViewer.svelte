@@ -1,6 +1,5 @@
 <script lang="ts">
   import { StatusDot } from "@kenn-io/kit-ui";
-  import { onDestroy } from "svelte";
   import { getStores } from "../../context.js";
 
   interface Props {
@@ -20,14 +19,11 @@
   $effect(() => {
     if (!logStore) return;
     logStore.clear();
-    if (
-      jobStatus === "running" ||
-      jobStatus === "queued"
-    ) {
-      void logStore.startStreaming(jobId);
-    } else {
-      void logStore.loadSnapshot(jobId);
-    }
+    const logOwner =
+      jobStatus === "running" || jobStatus === "queued"
+        ? logStore.startStreaming(jobId)
+        : logStore.loadSnapshot(jobId);
+    return () => logStore.stopStreaming(logOwner);
   });
 
   $effect(() => {
@@ -36,10 +32,6 @@
     if (followMode) {
       container.scrollTop = container.scrollHeight;
     }
-  });
-
-  onDestroy(() => {
-    logStore?.stopStreaming();
   });
 
   function lineClass(lineType: string): string {

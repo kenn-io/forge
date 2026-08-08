@@ -4,7 +4,7 @@ import { render } from "vitest-browser-svelte";
 
 import "../../../app.css";
 import type { GeneratedClient } from "../../api/generated-api.js";
-import RepoBrowserFeature from "./RepoBrowserFeature.svelte";
+import RepoBrowserFeature from "./RepoBrowserFeatureTestHarness.svelte";
 
 const route = {
   mode: "source" as const,

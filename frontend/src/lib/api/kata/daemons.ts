@@ -1,7 +1,8 @@
-import { configuredAPIBaseURL, configuredAPIPath } from "../runtime-base.js";
+import { Effect } from "effect";
 import type { components } from "../generated/schema.js";
-
-import { createRuntimeClient } from "../runtime.js";
+import { TransientTransportError } from "../effect-errors.js";
+import { GeneratedApi } from "../generated-api.js";
+import { configuredAPIPath } from "../runtime-base.js";
 
 export const KATA_DAEMON_HEADER = "X-Kenn-Forge-Kata-Daemon";
 
@@ -9,26 +10,20 @@ export type KataDaemonInfo = components["schemas"]["KataDaemonResponse"];
 
 const KATA_PROXY_ROUTE = "/kata/proxy";
 
-function apiBaseURL(): string {
-  return configuredAPIBaseURL();
-}
-
 export function kataProxyPath(path: string): string {
   const kataUpstreamAPIRoute = "/api/v1";
   const normalized = path.startsWith("/") ? path : `/${path}`;
   return configuredAPIPath(`${KATA_PROXY_ROUTE}${kataUpstreamAPIRoute}${normalized}`);
 }
 
-export async function fetchKataDaemons(fetchImpl: typeof fetch = fetch): Promise<KataDaemonInfo[]> {
-  let data: components["schemas"]["KataDaemonRosterResponse"] | undefined;
-  let response: Response;
-  try {
-    const result = await createRuntimeClient(fetchImpl, apiBaseURL()).GET("/kata/daemons");
-    data = result.data;
-    response = result.response;
-  } catch {
-    return [];
-  }
+export const fetchKataDaemons = Effect.fn("KataDaemons.fetch")(function* () {
+  const { client } = yield* GeneratedApi;
+  const result = yield* Effect.tryPromise({
+    try: (signal) => client.GET("/kata/daemons", { signal }),
+    catch: (cause) => TransientTransportError.make({ operation: "load Kata daemon roster", cause }),
+  }).pipe(Effect.option);
+  if (result._tag === "None") return [];
+  const { data, response } = result.value;
   if (!response.ok) {
     if (response.status !== 404) {
       console.warn(`fetchKataDaemons: daemon roster returned ${response.status}`);
@@ -44,5 +39,5 @@ export async function fetchKataDaemons(fetchImpl: typeof fetch = fetch): Promise
     console.warn("fetchKataDaemons: malformed daemon roster response");
     return [];
   }
-  return daemons as KataDaemonInfo[];
-}
+  return daemons;
+});

@@ -1,13 +1,26 @@
-import type { RoborevClient } from "../../api/roborev/client.js";
+import { Effect, Option } from "effect";
+import type { AppRuntime } from "../../app/runtime.js";
+import { executeRoborevRequest, type RoborevClient, RoborevStreamError } from "../../api/roborev/client.js";
 import type { components, operations } from "../../api/roborev/generated/schema.js";
 import { isPanelParent, panelCostUsd, panelElapsedStart } from "../../utils/roborev-panel.js";
+import {
+  makeRoborevOwner,
+  RoborevMutationError,
+  roborevMutationFailureMessage,
+  RoborevResponseError,
+  RoborevWorkflow,
+} from "./roborev-workflow.js";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 type JobStats = components["schemas"]["JobStats"];
+type CancelJobResponse = components["schemas"]["CancelJobOutputBody"];
+type RerunJobResponse = components["schemas"]["RerunJobOutputBody"];
 type ListJobsQuery = NonNullable<operations["list-jobs"]["parameters"]["query"]>;
 
 export interface JobsStoreOptions {
   client: RoborevClient;
+  runtime: AppRuntime;
+  owner: string;
   navigate: (path: string) => void;
   onError?: (msg: string) => void;
 }
@@ -19,16 +32,20 @@ export interface JobStatusCounts {
   failed: number;
 }
 
-type SortColumn = "id" | "status" | "verdict" | "agent" | "elapsed" | "cost" | "job_type" | "enqueued_at";
-type SortDirection = "asc" | "desc";
-
-interface EventStreamSession {
-  controller: AbortController;
-  reader: ReadableStreamDefaultReader<Uint8Array> | null;
+interface JobsAuthority {
+  readonly jobs: ReadonlyArray<ReviewJob>;
+  readonly hasMore: boolean;
+  readonly stats: JobStats;
+  readonly filteredStatusCounts: Option.Option<JobStatusCounts>;
+  readonly countScope: string;
+  readonly queryScope: string;
 }
 
-const initialReconnectDelayMs = 1_000;
-const maxReconnectDelayMs = 30_000;
+type SortColumn = "id" | "status" | "verdict" | "agent" | "elapsed" | "cost" | "job_type" | "enqueued_at";
+type SortDirection = "asc" | "desc";
+type StringFilterKey = "repo" | "branch" | "status" | "search" | "jobType";
+type BooleanFilterKey = "hideClosed" | "showAutoDesign";
+type FilterKey = StringFilterKey | BooleanFilterKey;
 
 export function createJobsStore(opts: JobsStoreOptions) {
   const client = opts.client;
@@ -64,20 +81,11 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let panelMembers = $state<Record<string, ReviewJob[]>>({});
   let panelMemberErrors = $state<Record<string, string>>({});
   let loadingMembers = $state<Record<string, boolean>>({});
-  let panelRequestedVersions: Record<string, number> = {};
-  let activePanelFetchVersions: Record<string, number> = {};
-  let pendingPanelRefreshes: Record<string, boolean> = {};
   let interestedPanelRun: string | undefined = undefined;
 
   // Roborev streams newline-delimited JSON, not server-sent events.
   let eventStreamConnected = $state(false);
-  let eventStreamUrl: string | null = null;
-  let eventStreamSession: EventStreamSession | null = null;
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let reconnectDelayMs = initialReconnectDelayMs;
-
-  // Version tracking for race conditions
-  let requestVersion = 0;
+  let activeEventOwner: string | undefined;
 
   function buildQuery(): ListJobsQuery {
     const q: ListJobsQuery = { limit: 50 };
@@ -91,16 +99,20 @@ export function createJobsStore(opts: JobsStoreOptions) {
     return q;
   }
 
-  function hasActiveFilters(): boolean {
+  function queryHasActiveFilters(query: ListJobsQuery): boolean {
     return Boolean(
-      filterRepo ||
-      filterBranch ||
-      filterStatus ||
-      filterSearch ||
-      filterHideClosed ||
-      filterJobType ||
-      !filterShowAutoDesign,
+      query.repo ||
+      query.branch ||
+      query.status ||
+      query.git_ref ||
+      query.closed ||
+      query.job_type ||
+      query.hide_classify_jobs,
     );
+  }
+
+  function hasActiveFilters(): boolean {
+    return queryHasActiveFilters(buildQuery());
   }
 
   function countJobsByStatus(filteredJobs: ReviewJob[]): JobStatusCounts {
@@ -176,116 +188,227 @@ export function createJobsStore(opts: JobsStoreOptions) {
     });
   }
 
-  async function loadJobs(): Promise<void> {
-    const version = ++requestVersion;
-    const filtered = hasActiveFilters();
-    loading = true;
-    storeError = null;
-    try {
-      const query = buildQuery();
-      const countQuery = { ...query, limit: 0, omit_prompt: "true" as const };
-      const countScope = JSON.stringify(countQuery);
-      if (filtered && filteredStatusCountsScope !== countScope) {
-        filteredStatusCounts = undefined;
+  const fetchJobsAuthority = Effect.fn("RoborevJobs.fetchAuthority")(function* (
+    query: ListJobsQuery,
+    strictCount: boolean,
+  ) {
+    const filtered = queryHasActiveFilters(query);
+    const countQuery: ListJobsQuery = { ...query, limit: 0, omit_prompt: "true" };
+    const countScope = JSON.stringify(countQuery);
+    const countRequest = executeRoborevRequest("count filtered Roborev jobs", (signal) =>
+      client.GET("/api/jobs", {
+        params: { query: countQuery },
+        signal,
+      }),
+    );
+    const result = yield* Effect.all(
+      {
+        list: executeRoborevRequest("list Roborev jobs", (signal) =>
+          client.GET("/api/jobs", { params: { query }, signal }),
+        ),
+        count: filtered
+          ? strictCount
+            ? countRequest.pipe(Effect.map(Option.some))
+            : countRequest.pipe(Effect.option)
+          : Effect.succeed(Option.none()),
+      },
+      { concurrency: "unbounded" },
+    );
+    if (result.list.error !== undefined) {
+      return yield* Effect.fail(
+        RoborevResponseError.make({
+          operation: "list Roborev jobs",
+          message: "Failed to load jobs",
+          cause: result.list.error,
+        }),
+      );
+    }
+    if (strictCount && Option.isSome(result.count) && result.count.value.error !== undefined) {
+      return yield* Effect.fail(
+        RoborevResponseError.make({
+          operation: "count filtered Roborev jobs",
+          message: "Failed to count filtered jobs",
+          cause: result.count.value.error,
+        }),
+      );
+    }
+    return {
+      jobs: result.list.data?.jobs ?? [],
+      hasMore: result.list.data?.has_more ?? false,
+      stats: result.list.data?.stats ?? { done: 0, closed: 0, open: 0 },
+      filteredStatusCounts: Option.filter(result.count, (count) => count.error === undefined).pipe(
+        Option.map((count) => countJobsByStatus(count.data?.jobs ?? [])),
+      ),
+      countScope,
+      queryScope: JSON.stringify(query),
+    } satisfies JobsAuthority;
+  });
+
+  const publishJobsAuthority = (authority: JobsAuthority) =>
+    Effect.sync(() => {
+      if (JSON.stringify(buildQuery()) !== authority.queryScope) return [];
+      jobs = sortJobs([...authority.jobs]);
+      hasMore = authority.hasMore;
+      stats = authority.stats;
+      if (Option.isSome(authority.filteredStatusCounts)) {
+        filteredStatusCounts = authority.filteredStatusCounts.value;
+        filteredStatusCountsScope = authority.countScope;
       }
-      const [listResult, countResult] = await Promise.all([
-        client.GET("/api/jobs", { params: { query } }),
-        filtered
-          ? client
-              .GET("/api/jobs", {
-                params: {
-                  query: countQuery,
-                },
-              })
-              .catch(() => undefined)
-          : Promise.resolve(undefined),
-      ]);
-      const { data, error } = listResult;
-      if (error) throw new Error("Failed to load jobs");
-      if (version !== requestVersion) return;
-      jobs = sortJobs(data?.jobs ?? []);
-      hasMore = data?.has_more ?? false;
-      stats = data?.stats ?? { done: 0, closed: 0, open: 0 };
-      if (filtered && countResult && !countResult.error) {
-        filteredStatusCounts = countJobsByStatus(countResult.data?.jobs ?? []);
-        filteredStatusCountsScope = countScope;
-      }
-      const expandedRuns: Record<string, true> = {};
+      const runs = new Set<string>();
       for (const job of jobs) {
         const runUuid = job.panel_run_uuid;
-        if (runUuid && wantsPanelMembers(runUuid)) {
-          expandedRuns[runUuid] = true;
-        }
+        if (runUuid && wantsPanelMembers(runUuid)) runs.add(runUuid);
       }
-      if (interestedPanelRun) expandedRuns[interestedPanelRun] = true;
-      for (const runUuid of Object.keys(expandedRuns)) void fetchPanelMembers(runUuid);
-      // Clear highlight if the row is no longer visible.
-      // Do NOT clear selectedJobId — the selected job may
-      // be on a later page (deep link, older job). The
-      // drawer fetches its review independently.
+      if (interestedPanelRun) runs.add(interestedPanelRun);
       adjustHiddenHighlight();
-    } catch (err) {
-      if (version !== requestVersion) return;
-      storeError = err instanceof Error ? err.message : String(err);
-    } finally {
-      if (version === requestVersion) loading = false;
-    }
+      return Array.from(runs);
+    });
+
+  const refreshJobsAuthority = (query: ListJobsQuery, strictCount: boolean) =>
+    fetchJobsAuthority(query, strictCount).pipe(
+      Effect.tap((authority) =>
+        publishJobsAuthority(authority).pipe(
+          Effect.flatMap((expandedRuns) => Effect.forEach(expandedRuns, fetchPanelMembersEffect, { discard: true })),
+        ),
+      ),
+    );
+
+  const loadJobsRequestEffect = (strictCount = false) =>
+    Effect.gen(function* () {
+      const workflow = yield* RoborevWorkflow;
+      const query = buildQuery();
+      return yield* workflow.jobs(
+        opts.owner,
+        Effect.sync(() => {
+          loading = true;
+          storeError = null;
+          const countScope = JSON.stringify({ ...query, limit: 0, omit_prompt: "true" });
+          if (hasActiveFilters() && filteredStatusCountsScope !== countScope) filteredStatusCounts = undefined;
+        }).pipe(
+          Effect.andThen(refreshJobsAuthority(query, strictCount)),
+          Effect.asVoid,
+          Effect.ensuring(
+            Effect.sync(() => {
+              loading = false;
+            }),
+          ),
+        ),
+      );
+    });
+
+  const loadJobsEffect = () =>
+    loadJobsRequestEffect().pipe(
+      Effect.catch((failure) =>
+        Effect.sync(() => {
+          storeError = failure instanceof Error ? failure.message : String(failure);
+        }),
+      ),
+    );
+
+  function loadJobs(): void {
+    opts.runtime.runCommand(loadJobsEffect(), {
+      operation: "load Roborev jobs",
+      safeContext: { owner: opts.owner },
+      onFailure: () => {},
+    });
   }
 
-  async function loadMore(): Promise<void> {
-    if (!hasMore || loading || jobs.length === 0) return;
-    const cursor = Math.min(...jobs.map((j) => j.id));
-    const version = ++requestVersion;
-    loading = true;
-    try {
-      const q = buildQuery();
-      q.before = cursor;
-      const { data, error } = await client.GET("/api/jobs", {
-        params: { query: q },
-      });
-      if (error) {
-        throw new Error("Failed to load more jobs");
-      }
-      if (version !== requestVersion) return;
-      const fresh = data?.jobs ?? [];
-      const existingIds = new Set(jobs.map((j) => j.id));
-      const newJobs = fresh.filter((j) => !existingIds.has(j.id));
-      jobs = sortJobs([...jobs, ...newJobs]);
-      hasMore = data?.has_more ?? false;
-    } catch (err) {
-      if (version !== requestVersion) return;
-      storeError = err instanceof Error ? err.message : String(err);
-    } finally {
-      if (version === requestVersion) loading = false;
-    }
+  const loadMoreEffect = () =>
+    Effect.gen(function* () {
+      if (!hasMore || loading || jobs.length === 0) return;
+      const workflow = yield* RoborevWorkflow;
+      const cursor = Math.min(...jobs.map((job) => job.id));
+      const query = buildQuery();
+      query.before = cursor;
+      yield* workflow.jobs(
+        opts.owner,
+        Effect.gen(function* () {
+          yield* Effect.sync(() => {
+            loading = true;
+            storeError = null;
+          });
+          const result = yield* executeRoborevRequest("load more Roborev jobs", (signal) =>
+            client.GET("/api/jobs", { params: { query }, signal }),
+          );
+          if (result.error) {
+            return yield* Effect.fail(
+              RoborevResponseError.make({
+                operation: "load more Roborev jobs",
+                message: "Failed to load more jobs",
+                cause: result.error,
+              }),
+            );
+          }
+          yield* Effect.sync(() => {
+            const existingIds = new Set(jobs.map((job) => job.id));
+            const fresh = (result.data?.jobs ?? []).filter((job) => !existingIds.has(job.id));
+            jobs = sortJobs([...jobs, ...fresh]);
+            hasMore = result.data?.has_more ?? false;
+          });
+        }).pipe(
+          Effect.catch((failure) =>
+            Effect.sync(() => {
+              storeError = failure instanceof Error ? failure.message : String(failure);
+            }),
+          ),
+          Effect.ensuring(
+            Effect.sync(() => {
+              loading = false;
+            }),
+          ),
+        ),
+      );
+    });
+
+  function loadMore(): void {
+    opts.runtime.runCommand(loadMoreEffect(), {
+      operation: "load more Roborev jobs",
+      safeContext: { owner: opts.owner },
+      onFailure: () => {},
+    });
   }
 
   // Filter actions
-  function setFilter(key: string, value: string | boolean | undefined): void {
+  function setFilter(key: StringFilterKey, value: string | undefined): void;
+  function setFilter(key: BooleanFilterKey, value: boolean): void;
+  function setFilter(key: FilterKey, value: string | boolean | undefined): void {
     switch (key) {
       case "repo":
-        filterRepo = value as string | undefined;
+        if (typeof value === "boolean") return;
+        filterRepo = value;
         break;
       case "branch":
-        filterBranch = value as string | undefined;
+        if (typeof value === "boolean") return;
+        filterBranch = value;
         break;
       case "status":
-        filterStatus = value as string | undefined;
+        if (typeof value === "boolean") return;
+        filterStatus = value;
         break;
       case "search":
-        filterSearch = value as string | undefined;
+        if (typeof value === "boolean") return;
+        filterSearch = value;
         break;
       case "hideClosed":
-        filterHideClosed = value as boolean;
+        if (typeof value !== "boolean") return;
+        filterHideClosed = value;
         break;
       case "jobType":
-        filterJobType = value as string | undefined;
+        if (typeof value === "boolean") return;
+        filterJobType = value;
         break;
       case "showAutoDesign":
-        filterShowAutoDesign = value as boolean;
+        if (typeof value !== "boolean") return;
+        filterShowAutoDesign = value;
         break;
     }
-    void loadJobs();
+    loadJobs();
+  }
+
+  function setRepoBranchFilter(repo: string | undefined, branch: string | undefined): void {
+    filterRepo = repo;
+    filterBranch = branch;
+    loadJobs();
   }
 
   function setSortColumn(col: SortColumn): void {
@@ -299,82 +422,193 @@ export function createJobsStore(opts: JobsStoreOptions) {
   }
 
   // Job actions
-  async function cancelJob(id: number): Promise<void> {
-    const { error } = await client.POST("/api/job/cancel", {
-      body: { job_id: id },
-    });
-    if (error) {
-      opts.onError?.("Failed to cancel job");
-      return;
+  const fetchJobAuthority = Effect.fn("RoborevJobs.fetchJobAuthority")(function* (id: number) {
+    const result = yield* executeRoborevRequest("load authoritative Roborev job", (signal) =>
+      client.GET("/api/jobs", {
+        params: { query: { id, limit: 1, omit_prompt: "true" } satisfies ListJobsQuery },
+        signal,
+      }),
+    );
+    if (result.error !== undefined) {
+      return yield* Effect.fail(
+        RoborevResponseError.make({
+          operation: "load authoritative Roborev job",
+          message: "Failed to revalidate job",
+          cause: result.error,
+        }),
+      );
     }
-    jobs = jobs.map((j) => (j.id === id ? { ...j, status: "canceled" } : j));
-    void loadJobs();
-  }
+    return result.data?.jobs?.[0];
+  });
 
-  async function rerunJob(id: number): Promise<void> {
-    const { error } = await client.POST("/api/job/rerun", {
-      body: { job_id: id },
-    });
-    if (error) {
-      opts.onError?.("Failed to rerun job");
-      return;
-    }
-    void loadJobs();
-  }
+  const reconcileJobMutation = <A>(
+    id: number,
+    query: ListJobsQuery,
+    acknowledged: Option.Option<A>,
+    observedValue: A,
+    isApplied: (job: ReviewJob) => boolean,
+  ) =>
+    Effect.all(
+      {
+        target: fetchJobAuthority(id),
+        page: refreshJobsAuthority(query, true),
+      },
+      { concurrency: "unbounded" },
+    ).pipe(
+      Effect.map(({ target }) =>
+        target !== undefined && isApplied(target)
+          ? Option.some(Option.getOrElse(acknowledged, () => observedValue))
+          : Option.none<A>(),
+      ),
+    );
 
-  async function fetchPanelMembers(runUuid: string): Promise<void> {
-    const version = (panelRequestedVersions[runUuid] ?? 0) + 1;
-    panelRequestedVersions = { ...panelRequestedVersions, [runUuid]: version };
-    if (loadingMembers[runUuid] === true) {
-      pendingPanelRefreshes = { ...pendingPanelRefreshes, [runUuid]: true };
-      return;
-    }
-
-    await runPanelMembersFetch(runUuid, version);
-  }
-
-  async function runPanelMembersFetch(runUuid: string, version: number): Promise<void> {
-    activePanelFetchVersions = { ...activePanelFetchVersions, [runUuid]: version };
-    loadingMembers = { ...loadingMembers, [runUuid]: true };
-    const { [runUuid]: _startedError, ...startedErrors } = panelMemberErrors;
-    panelMemberErrors = startedErrors;
-    try {
-      const { data, error } = await client.GET("/api/jobs", {
-        params: { query: { panel_run: runUuid, limit: 0, omit_prompt: "true" } },
+  const cancelJobEffect = (id: number) =>
+    Effect.gen(function* () {
+      const workflow = yield* RoborevWorkflow;
+      const query = buildQuery();
+      const observedValue = { success: true } satisfies CancelJobResponse;
+      return yield* workflow.mutate({
+        key: `job:${id}`,
+        operation: "cancel Roborev job",
+        mutation: executeRoborevRequest("cancel Roborev job", (signal) =>
+          client.POST("/api/job/cancel", {
+            body: { job_id: id },
+            signal,
+          }),
+        ).pipe(
+          Effect.flatMap((result) =>
+            result.error || !result.data
+              ? Effect.fail(
+                  RoborevMutationError.make({
+                    operation: "cancel Roborev job",
+                    cause: result.error ?? new Error("Roborev cancellation response was empty"),
+                  }),
+                )
+              : Effect.succeed(result.data),
+          ),
+        ),
+        reconcile: (acknowledged) =>
+          reconcileJobMutation(id, query, acknowledged, observedValue, (job) => job.status === "canceled"),
+        onAcknowledgedRefreshFailure: () =>
+          Effect.sync(() => opts.onError?.("Job was canceled, but the refreshed job list is unavailable")),
       });
-      if (error) throw new Error("Failed to load panel members");
-      if (panelRequestedVersions[runUuid] !== version) return;
-      const members = (data?.jobs ?? [])
-        .filter((job) => job.panel_role === "member")
-        .sort((a, b) => (a.panel_member_index ?? 0) - (b.panel_member_index ?? 0));
-      panelMembers = { ...panelMembers, [runUuid]: members };
-      const { [runUuid]: _memberError, ...memberErrors } = panelMemberErrors;
-      panelMemberErrors = memberErrors;
-      adjustHiddenHighlight(runUuid);
-      if (sortColumn === "cost" || sortColumn === "elapsed") {
-        jobs = sortJobs(jobs);
+    });
+
+  function cancelJob(id: number): void {
+    opts.runtime.runCommand(cancelJobEffect(id), {
+      operation: "cancel Roborev job",
+      safeContext: { job_id: id, owner: opts.owner },
+      onFailure: (failure) => opts.onError?.(roborevMutationFailureMessage("Failed to cancel job", failure)),
+    });
+  }
+
+  const rerunJobEffect = (id: number) =>
+    Effect.gen(function* () {
+      const workflow = yield* RoborevWorkflow;
+      const query = buildQuery();
+      const baseline = yield* fetchJobAuthority(id);
+      if (baseline === undefined) {
+        return yield* Effect.fail(
+          RoborevResponseError.make({
+            operation: "load authoritative Roborev rerun baseline",
+            message: "Roborev job was not found before rerun",
+            cause: new Error(`missing Roborev job ${id}`),
+          }),
+        );
       }
-    } catch (err) {
-      if (panelRequestedVersions[runUuid] === version) {
-        const message = err instanceof Error ? err.message : String(err);
-        panelMemberErrors = { ...panelMemberErrors, [runUuid]: message };
-        opts.onError?.(message);
-      }
-    } finally {
-      if (activePanelFetchVersions[runUuid] === version) {
-        const { [runUuid]: _active, ...activeRest } = activePanelFetchVersions;
-        activePanelFetchVersions = activeRest;
-        loadingMembers = { ...loadingMembers, [runUuid]: false };
-        if (pendingPanelRefreshes[runUuid] === true) {
-          const { [runUuid]: _pending, ...rest } = pendingPanelRefreshes;
-          pendingPanelRefreshes = rest;
-          const queuedVersion = panelRequestedVersions[runUuid];
-          if (queuedVersion !== undefined && queuedVersion > version && wantsPanelMembers(runUuid)) {
-            void runPanelMembersFetch(runUuid, queuedVersion);
-          }
-        }
-      }
-    }
+      const observedValue = { success: true } satisfies RerunJobResponse;
+      return yield* workflow.mutate({
+        key: `job:${id}`,
+        operation: "rerun Roborev job",
+        mutation: executeRoborevRequest("rerun Roborev job", (signal) =>
+          client.POST("/api/job/rerun", {
+            body: { job_id: id },
+            signal,
+          }),
+        ).pipe(
+          Effect.flatMap((result) =>
+            result.error || !result.data
+              ? Effect.fail(
+                  RoborevMutationError.make({
+                    operation: "rerun Roborev job",
+                    cause: result.error ?? new Error("Roborev rerun response was empty"),
+                  }),
+                )
+              : Effect.succeed(result.data),
+          ),
+        ),
+        reconcile: (acknowledged) =>
+          reconcileJobMutation(id, query, acknowledged, observedValue, (job) => job.retry_count > baseline.retry_count),
+        onAcknowledgedRefreshFailure: () =>
+          Effect.sync(() => opts.onError?.("Job was rerun, but the refreshed job list is unavailable")),
+      });
+    });
+
+  function rerunJob(id: number): void {
+    opts.runtime.runCommand(rerunJobEffect(id), {
+      operation: "rerun Roborev job",
+      safeContext: { job_id: id, owner: opts.owner },
+      onFailure: (failure) => opts.onError?.(roborevMutationFailureMessage("Failed to rerun job", failure)),
+    });
+  }
+
+  const fetchPanelMembersEffect = (runUuid: string) =>
+    Effect.gen(function* () {
+      const workflow = yield* RoborevWorkflow;
+      yield* workflow.panel(opts.owner, runUuid, {
+        onStart: Effect.sync(() => {
+          loadingMembers = { ...loadingMembers, [runUuid]: true };
+          const { [runUuid]: _startedError, ...startedErrors } = panelMemberErrors;
+          panelMemberErrors = startedErrors;
+        }),
+        read: executeRoborevRequest("load Roborev panel members", (signal) =>
+          client.GET("/api/jobs", {
+            params: { query: { panel_run: runUuid, limit: 0, omit_prompt: "true" } },
+            signal,
+          }),
+        ).pipe(
+          Effect.flatMap((result) =>
+            result.error
+              ? Effect.fail(
+                  RoborevResponseError.make({
+                    operation: "load Roborev panel members",
+                    message: "Failed to load panel members",
+                    cause: result.error,
+                  }),
+                )
+              : Effect.succeed(
+                  (result.data?.jobs ?? [])
+                    .filter((job) => job.panel_role === "member")
+                    .sort((a, b) => (a.panel_member_index ?? 0) - (b.panel_member_index ?? 0)),
+                ),
+          ),
+        ),
+        onSuccess: (members) =>
+          Effect.sync(() => {
+            panelMembers = { ...panelMembers, [runUuid]: members };
+            const { [runUuid]: _memberError, ...memberErrors } = panelMemberErrors;
+            panelMemberErrors = memberErrors;
+            adjustHiddenHighlight(runUuid);
+            if (sortColumn === "cost" || sortColumn === "elapsed") jobs = sortJobs(jobs);
+          }),
+        onFailure: (failure) =>
+          Effect.sync(() => {
+            const message = failure instanceof Error ? failure.message : String(failure);
+            panelMemberErrors = { ...panelMemberErrors, [runUuid]: message };
+            opts.onError?.(message);
+          }),
+        onSettled: Effect.sync(() => {
+          loadingMembers = { ...loadingMembers, [runUuid]: false };
+        }),
+      });
+    });
+
+  function fetchPanelMembers(runUuid: string): void {
+    opts.runtime.runCommand(fetchPanelMembersEffect(runUuid), {
+      operation: "load Roborev panel members",
+      safeContext: { owner: opts.owner },
+      onFailure: () => {},
+    });
   }
 
   function togglePanel(job: ReviewJob): void {
@@ -388,23 +622,23 @@ export function createJobsStore(opts: JobsStoreOptions) {
     }
     expandedPanels = { ...expandedPanels, [runUuid]: !open };
     if (!open && panelMembers[runUuid] === undefined && loadingMembers[runUuid] !== true) {
-      void fetchPanelMembers(runUuid);
+      fetchPanelMembers(runUuid);
     }
   }
 
   function ensurePanelMembers(runUuid: string): void {
     if (panelMembers[runUuid] === undefined && loadingMembers[runUuid] !== true) {
-      void fetchPanelMembers(runUuid);
+      fetchPanelMembers(runUuid);
     }
   }
 
   function setPanelMemberInterest(runUuid: string | undefined): void {
     interestedPanelRun = runUuid;
-    if (runUuid !== undefined) void fetchPanelMembers(runUuid);
+    if (runUuid !== undefined) fetchPanelMembers(runUuid);
   }
 
   function refreshPanelMembers(runUuid: string): void {
-    void fetchPanelMembers(runUuid);
+    fetchPanelMembers(runUuid);
   }
 
   function adjustHiddenHighlight(runUuid?: string): void {
@@ -453,107 +687,68 @@ export function createJobsStore(opts: JobsStoreOptions) {
     opts.navigate("/reviews");
   }
 
-  function handleEventLine(line: string): void {
-    if (line.trim() === "") return;
-    try {
-      const event = JSON.parse(line) as { type?: unknown };
-      reconnectDelayMs = initialReconnectDelayMs;
-      if (typeof event.type === "string" && (event.type.startsWith("job.") || event.type.startsWith("review."))) {
-        void loadJobs();
-      }
-    } catch {
-      // Ignore one malformed event without dropping the stream.
-    }
-  }
-
-  async function cancelUnusedEventStreamResponse(response: Response, session: EventStreamSession): Promise<void> {
-    session.controller.abort();
-    await response.body?.cancel().catch(() => undefined);
-  }
-
-  async function readEventStream(url: string, session: EventStreamSession): Promise<void> {
-    const response = await fetch(url, {
-      headers: { Accept: "application/x-ndjson" },
-      signal: session.controller.signal,
-    });
-    if (!response.ok) {
-      await cancelUnusedEventStreamResponse(response, session);
-      throw new Error(`Roborev event stream returned ${response.status}`);
-    }
-    if (!response.body) {
-      session.controller.abort();
-      throw new Error("Roborev event stream returned no response body");
-    }
-    if (eventStreamSession !== session) {
-      await cancelUnusedEventStreamResponse(response, session);
-      return;
-    }
-
-    eventStreamConnected = true;
-    const reader = response.body.getReader();
-    session.reader = reader;
-    const decoder = new TextDecoder();
-    let pending = "";
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        pending += decoder.decode(value, { stream: true });
-        const lines = pending.split("\n");
-        pending = lines.pop() ?? "";
-        for (const line of lines) handleEventLine(line);
-      }
-      pending += decoder.decode();
-      handleEventLine(pending);
-    } finally {
-      if (session.reader === reader) session.reader = null;
-      reader.releaseLock();
-    }
-  }
-
-  function openEventStream(url: string): void {
-    const session: EventStreamSession = {
-      controller: new AbortController(),
-      reader: null,
-    };
-    eventStreamSession = session;
-    void readEventStream(url, session)
-      .catch(() => {
-        // Connection failures and malformed responses reconnect below.
-      })
-      .finally(() => {
-        if (eventStreamSession !== session) return;
-        eventStreamSession = null;
-        eventStreamConnected = false;
-        if (eventStreamUrl !== url) return;
-
-        const delay = reconnectDelayMs;
-        reconnectDelayMs = Math.min(reconnectDelayMs * 2, maxReconnectDelayMs);
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          if (eventStreamUrl === url) openEventStream(url);
-        }, delay);
+  const connectEventStreamEffect = (baseUrl: string, eventOwner: string) =>
+    Effect.gen(function* () {
+      const workflow = yield* RoborevWorkflow;
+      const reconcile = loadJobsRequestEffect(true).pipe(
+        Effect.provideService(RoborevWorkflow, workflow),
+        Effect.mapError((cause) =>
+          RoborevStreamError.make({
+            operation: "reconcile Roborev jobs before reconnect",
+            retryable: true,
+            cause,
+          }),
+        ),
+      );
+      yield* workflow.connectEvents({
+        owner: eventOwner,
+        baseUrl,
+        onOpen: Effect.sync(() => {
+          if (activeEventOwner !== eventOwner) return;
+          eventStreamConnected = true;
+        }),
+        onEvent: () => reconcile,
+        onReconnect: () => reconcile,
+        onError: () =>
+          Effect.sync(() => {
+            if (activeEventOwner !== eventOwner) return;
+            eventStreamConnected = false;
+          }),
       });
-  }
+    });
 
-  function connectEventStream(baseUrl: string): void {
-    disconnectEventStream();
-    eventStreamUrl = `${baseUrl.replace(/\/$/, "")}/api/stream/events`;
-    reconnectDelayMs = initialReconnectDelayMs;
-    openEventStream(eventStreamUrl);
-  }
-
-  function disconnectEventStream(): void {
-    eventStreamUrl = null;
-    if (reconnectTimer !== null) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    const session = eventStreamSession;
-    eventStreamSession = null;
-    session?.controller.abort();
-    if (session?.reader) void session.reader.cancel().catch(() => undefined);
+  function connectEventStream(baseUrl: string): string {
+    const eventOwner = makeRoborevOwner(`${opts.owner}:events`);
+    activeEventOwner = eventOwner;
     eventStreamConnected = false;
+    opts.runtime.runCommand(connectEventStreamEffect(baseUrl, eventOwner), {
+      operation: "connect Roborev event stream",
+      safeContext: { owner: eventOwner },
+      onFailure: () => {
+        if (activeEventOwner !== eventOwner) return;
+        eventStreamConnected = false;
+      },
+    });
+    return eventOwner;
+  }
+
+  const disconnectEventStreamEffect = (eventOwner: string) =>
+    Effect.gen(function* () {
+      const workflow = yield* RoborevWorkflow;
+      yield* workflow.disconnectEvents(eventOwner);
+      yield* Effect.sync(() => {
+        if (activeEventOwner !== eventOwner) return;
+        activeEventOwner = undefined;
+        eventStreamConnected = false;
+      });
+    });
+
+  function disconnectEventStream(eventOwner: string): void {
+    opts.runtime.runCommand(disconnectEventStreamEffect(eventOwner), {
+      operation: "disconnect Roborev event stream",
+      safeContext: { owner: eventOwner },
+      onFailure: () => {},
+    });
   }
 
   // Selection helpers for keyboard nav
@@ -630,6 +825,9 @@ export function createJobsStore(opts: JobsStoreOptions) {
   function getJobs(): ReviewJob[] {
     return jobs;
   }
+  function getOwner(): string {
+    return opts.owner;
+  }
   function isLoading(): boolean {
     return loading;
   }
@@ -687,6 +885,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
 
   return {
     getJobs,
+    getOwner,
     getVisibleJobs,
     isLoading,
     getHasMore,
@@ -715,11 +914,16 @@ export function createJobsStore(opts: JobsStoreOptions) {
     getPanelMemberError,
     isLoadingMembers,
     loadJobs,
+    loadJobsEffect,
     loadMore,
+    loadMoreEffect,
     setFilter,
+    setRepoBranchFilter,
     setSortColumn,
     cancelJob,
+    cancelJobEffect,
     rerunJob,
+    rerunJobEffect,
     setSelectedJobId,
     selectJob,
     deselectJob,
@@ -729,7 +933,9 @@ export function createJobsStore(opts: JobsStoreOptions) {
     highlightNextJob,
     highlightPrevJob,
     connectEventStream,
+    connectEventStreamEffect,
     disconnectEventStream,
+    disconnectEventStreamEffect,
   };
 }
 

@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   DocsPane,
   createDocsFixture,
+  docsPublishCommitMessage,
   docsPublishRemoteHead,
   startDocsPublishServer,
   startDocsServer,
@@ -296,6 +297,136 @@ test.describe("docs workspace", () => {
     }
   });
 
+  test("keeps a delayed publish success from closing a replacement dialog", async ({ page }) => {
+    const fixture = await startDocsPublishServer(page);
+    const releaseBrowserResponse = Promise.withResolvers<void>();
+    let publishRequests = 0;
+    try {
+      const notesRoot = await createDocsFixture();
+      const notes = await page.request.post(`${fixture.server.info.base_url}/api/v1/docs/folders`, {
+        data: { id: "notes", name: "Notes", path: notesRoot },
+      });
+      expect(notes.status()).toBe(201);
+
+      const backendCommitted = Promise.withResolvers<{ commit: string }>();
+      await page.route("**/api/v1/docs/folders/publish/git/publish", async (route) => {
+        publishRequests += 1;
+        const response = await route.fetch();
+        const body = (await response.json()) as { commit: string };
+        backendCommitted.resolve(body);
+        await releaseBrowserResponse.promise;
+        await route.fulfill({ response });
+      });
+
+      await page.goto(`${fixture.server.info.base_url}/docs?folder=publish&doc=README.md`);
+      await page.getByRole("button", { name: "Publish to git" }).click();
+      const dialog = page.getByRole("dialog", { name: "Commit & Push Docs" });
+      const submittedMessage = "docs: publish the captured folder";
+      await dialog.getByRole("textbox", { name: "Commit message" }).fill(submittedMessage);
+      await dialog.getByRole("button", { name: "Commit & Push" }).click();
+
+      const published = await backendCommitted.promise;
+      expect(docsPublishRemoteHead(fixture)).toBe(published.commit);
+      expect(docsPublishCommitMessage(fixture)).toBe(submittedMessage);
+
+      await replaceDocsRoute(page, "notes", "README.md");
+      await expect(dialog.getByText(/not a git repository/i)).toBeVisible();
+      releaseBrowserResponse.resolve();
+
+      await expect.poll(() => publishRequests).toBe(1);
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText(/not a git repository/i)).toBeVisible();
+
+      await replaceDocsRoute(page, "publish", "README.md");
+      await expect(dialog.getByText("No changed Markdown files to publish.")).toBeVisible();
+      await expect(dialog).toBeVisible();
+    } finally {
+      releaseBrowserResponse.resolve();
+      await page.unroute("**/api/v1/docs/folders/publish/git/publish");
+      await fixture.stop();
+    }
+  });
+
+  test("shows a retained post-commit publish failure after returning to its folder", async ({ page }) => {
+    const fixture = await startDocsPublishServer(page);
+    const releaseBrowserResponse = Promise.withResolvers<void>();
+    let publishRequests = 0;
+    try {
+      const notesRoot = await createDocsFixture();
+      const notes = await page.request.post(`${fixture.server.info.base_url}/api/v1/docs/folders`, {
+        data: { id: "notes", name: "Notes", path: notesRoot },
+      });
+      expect(notes.status()).toBe(201);
+
+      const backendCommitted = Promise.withResolvers<{ commit: string }>();
+      await page.route("**/api/v1/docs/folders/publish/git/publish", async (route) => {
+        publishRequests += 1;
+        const response = await route.fetch();
+        const body = (await response.json()) as { commit: string };
+        backendCommitted.resolve(body);
+        await releaseBrowserResponse.promise;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/problem+json",
+          body: JSON.stringify({
+            title: "Docs publish failed",
+            status: 500,
+            detail: "push failed: response unavailable",
+            code: "docs_git_error",
+            details: { reason: "pushFailedAfterCommit", commit: body.commit },
+          }),
+        });
+      });
+
+      await page.goto(`${fixture.server.info.base_url}/docs?folder=publish&doc=README.md`);
+      await page.getByRole("button", { name: "Publish to git" }).click();
+      const dialog = page.getByRole("dialog", { name: "Commit & Push Docs" });
+      const submittedMessage = "docs: preserve the failed publish outcome";
+      await dialog.getByRole("textbox", { name: "Commit message" }).fill(submittedMessage);
+      const failedResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().includes("/api/v1/docs/folders/publish/git/publish") &&
+          response.status() === 500,
+      );
+      await dialog.getByRole("button", { name: "Commit & Push" }).click();
+
+      const published = await backendCommitted.promise;
+      expect(docsPublishRemoteHead(fixture)).toBe(published.commit);
+      expect(docsPublishCommitMessage(fixture)).toBe(submittedMessage);
+
+      await replaceDocsRoute(page, "notes", "README.md");
+      await expect(dialog.getByText(/not a git repository/i)).toBeVisible();
+      releaseBrowserResponse.resolve();
+      await failedResponse;
+
+      await page.route("**/api/v1/docs/folders/publish/git/changes", async (route) => {
+        await route.fulfill({
+          status: 502,
+          contentType: "application/problem+json",
+          body: JSON.stringify({
+            title: "Docs preview unavailable",
+            status: 502,
+            detail: "preview unavailable",
+            code: "upstreamError",
+          }),
+        });
+      });
+      await replaceDocsRoute(page, "publish", "README.md");
+      await expect(
+        dialog.getByText(new RegExp(`Committed ${published.commit.slice(0, 7)} locally, but push failed`, "i")),
+      ).toBeVisible();
+      await expect(dialog.getByText("preview unavailable")).toBeVisible();
+      await expect(dialog).toBeVisible();
+      await expect.poll(() => publishRequests).toBe(1);
+    } finally {
+      releaseBrowserResponse.resolve();
+      await page.unroute("**/api/v1/docs/folders/publish/git/publish");
+      await page.unroute("**/api/v1/docs/folders/publish/git/changes");
+      await fixture.stop();
+    }
+  });
+
   test("keeps the publish action and explains the block for unsafe git attributes", async ({ page }) => {
     const fixture = await startDocsPublishServer(page);
     try {
@@ -468,4 +599,18 @@ async function replaceEditorText(page: Page, editor: Locator, value: string): Pr
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("Delete");
   await page.keyboard.insertText(value);
+}
+
+async function replaceDocsRoute(page: Page, folder: string, doc: string): Promise<void> {
+  await page.evaluate(
+    ({ nextFolder, nextDoc }) => {
+      const next = new URL(window.location.href);
+      next.searchParams.set("folder", nextFolder);
+      next.searchParams.set("doc", nextDoc);
+      window.history.pushState({}, "", next);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    },
+    { nextFolder: folder, nextDoc: doc },
+  );
+  await expect(page).toHaveURL(new RegExp(`folder=${encodeURIComponent(folder)}`));
 }

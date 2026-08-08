@@ -8,6 +8,7 @@
 // budgets and the shiki style allowlist stay in parity by construction.
 // kit-ui-check-ignore: task-list renderer overrides exceed kit markdown hooks
 import { Marked } from "marked";
+import { Effect, Schema } from "effect";
 // kit-ui-check-ignore: task-list renderer overrides exceed kit markdown hooks
 import type { RendererObject, TokenizerAndRendererExtension, Tokens } from "marked";
 // kit-ui-check-ignore: sanitizer must run app-side around the custom renderer
@@ -28,6 +29,10 @@ export interface RepoContext {
   name: string;
   repoPath: string;
 }
+
+export class MarkdownRenderError extends Schema.TaggedErrorClass<MarkdownRenderError>()("MarkdownRenderError", {
+  cause: Schema.Defect(),
+}) {}
 
 type ItemRefToken = Tokens.Generic & {
   type: "itemRef";
@@ -580,6 +585,17 @@ export function renderMarkdown(raw: string, repo?: RepoContext, opts: RenderMark
   });
   return html;
 }
+
+export const renderMarkdownEffect = Effect.fn("Markdown.render")(function* (
+  raw: string,
+  repo?: RepoContext,
+  opts: RenderMarkdownOpts = {},
+) {
+  return yield* Effect.tryPromise({
+    try: () => renderMarkdown(raw, repo, opts),
+    catch: (cause) => MarkdownRenderError.make({ cause }),
+  });
+});
 
 async function renderMarkdownUncached(
   raw: string,

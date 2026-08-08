@@ -1,8 +1,13 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { Cause, Effect, Exit, Option } from "effect";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { ReadKataEventStreamOptions } from "../../api/kata/eventStream.js";
+import { createRuntimeClient } from "../../api/runtime.js";
 import type { KataSnapshotIntent, KataWorkspaceSnapshotResponse } from "../../api/kata/snapshot.js";
+import { TransientTransportError } from "../../api/effect-errors.js";
+import type { AppServices, OwnedAppRuntime } from "../../app/runtime.js";
+import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import { createKataAuxiliaryAuthority } from "./kataAuxiliaryAuthority.svelte.js";
+import type { KataSnapshotLoader } from "./kataWorkspaceAuthorityController.svelte.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -90,43 +95,83 @@ function snapshot(
   };
 }
 
-function streamHarness() {
-  const streams: ReadKataEventStreamOptions[] = [];
-  const readEventStream = vi.fn(async (options: ReadKataEventStreamOptions) => {
-    streams.push(options);
-    await new Promise<void>((resolve) => {
-      options.signal?.addEventListener("abort", () => resolve(), { once: true });
+const runtimes: OwnedAppRuntime[] = [];
+
+function testRuntime(): OwnedAppRuntime {
+  const fetchImpl: typeof fetch = (input, init) =>
+    new Promise<Response>((_resolve, reject) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      request.signal.addEventListener("abort", () => reject(new DOMException("request aborted", "AbortError")), {
+        once: true,
+      });
     });
-  });
-  return { streams, readEventStream };
+  const runtime = makeTestAppRuntime(createRuntimeClient(fetchImpl));
+  runtimes.push(runtime);
+  return runtime;
 }
 
+function effectLoader(
+  loadSnapshot: (intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>,
+): KataSnapshotLoader {
+  return (intent) =>
+    Effect.tryPromise({
+      try: () => loadSnapshot(intent),
+      catch: (cause) => TransientTransportError.make({ operation: "load test Kata snapshot", cause }),
+    });
+}
+
+async function runAppEffect<A, E>(runtime: OwnedAppRuntime, program: Effect.Effect<A, E, AppServices>): Promise<A> {
+  const execution = runtime.runCommand(program, {
+    operation: "test Kata auxiliary authority",
+    safeContext: {},
+    onFailure: () => {},
+  });
+  const exit = await Effect.runPromise(execution.await);
+  if (Exit.isSuccess(exit)) return exit.value;
+  const failure = Cause.findErrorOption(exit.cause);
+  if (Option.isSome(failure)) {
+    if (failure.value instanceof TransientTransportError && failure.value.cause instanceof Error) {
+      throw failure.value.cause;
+    }
+    throw failure.value;
+  }
+  throw new Error(Cause.pretty(exit.cause));
+}
+
+afterEach(async () => {
+  await Promise.all(runtimes.splice(0).map((runtime) => Effect.runPromise(runtime.disposeEffect)));
+});
+
 describe("Kata auxiliary authority", () => {
+  it("does not restart from work described before terminal stop", async () => {
+    const loadSnapshot = vi.fn(async (intent: KataSnapshotIntent) => snapshot(intent));
+    const runtime = testRuntime();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot: effectLoader(loadSnapshot) });
+    const describedLoad = authority.load("home");
+
+    await runAppEffect(runtime, authority.stop());
+    await expect(runAppEffect(runtime, describedLoad)).resolves.toBe(false);
+
+    expect(loadSnapshot).not.toHaveBeenCalled();
+  });
+
   it("shares one global-all accepted snapshot and replaces it once per invalidation", async () => {
     const loadSnapshot = vi
       .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()
       .mockImplementationOnce(async (intent) => snapshot(intent))
       .mockImplementationOnce(async (intent) => snapshot(intent, { generation: 2 }));
-    const stream = streamHarness();
-    const authority = createKataAuxiliaryAuthority({ loadSnapshot, readEventStream: stream.readEventStream });
+    const runtime = testRuntime();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot: effectLoader(loadSnapshot) });
 
-    await expect(authority.load("home")).resolves.toBe(true);
+    await expect(runAppEffect(runtime, authority.load("home"))).resolves.toBe(true);
     expect(loadSnapshot).toHaveBeenCalledWith({ daemon_id: "home", scope: "global", authority: "all" });
     expect(authority.issues.map((issue) => issue.uid)).toEqual(["issue-1"]);
-    expect(stream.streams).toHaveLength(1);
-
-    await stream.streams[0]!.onMessage({
-      kind: "invalidation",
-      server_instance_id: "server-a",
-      daemon_id: "home",
-      epoch: 2,
-      cursor: 2,
-    });
+    await runAppEffect(runtime, authority.refreshIssues("home"));
 
     expect(loadSnapshot).toHaveBeenCalledTimes(2);
     expect(loadSnapshot.mock.calls[1]?.[0]).toEqual({ daemon_id: "home", scope: "global", authority: "all" });
     expect(authority.issues.map((issue) => issue.uid)).toEqual(["issue-2"]);
-    authority.stop();
+    await runAppEffect(runtime, authority.stop());
   });
 
   it("loads selected enrichment without replacing the shared global-all authority", async () => {
@@ -138,11 +183,11 @@ describe("Kata auxiliary authority", () => {
         event_cursor: generation,
       }),
     );
-    const stream = streamHarness();
-    const authority = createKataAuxiliaryAuthority({ loadSnapshot, readEventStream: stream.readEventStream });
+    const runtime = testRuntime();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot: effectLoader(loadSnapshot) });
 
-    await authority.load("home");
-    const selected = await authority.selectIssue("issue-selected");
+    await runAppEffect(runtime, authority.load("home"));
+    const selected = await runAppEffect(runtime, authority.selectIssue("issue-selected"));
 
     expect(loadSnapshot.mock.calls[1]?.[0]).toEqual({
       daemon_id: "home",
@@ -155,22 +200,14 @@ describe("Kata auxiliary authority", () => {
       detail: { issue: { uid: "issue-selected" }, etag: '"rev-2"' },
     });
 
-    expect(stream.streams).toHaveLength(1);
-
-    await stream.streams[0]!.onMessage({
-      kind: "invalidation",
-      server_instance_id: "server-a",
-      daemon_id: "home",
-      epoch: 3,
-      cursor: 3,
-    });
+    await runAppEffect(runtime, authority.refreshIssues("home"));
 
     expect(loadSnapshot.mock.calls[2]?.[0]).toEqual({
       daemon_id: "home",
       scope: "global",
       authority: "all",
     });
-    authority.stop();
+    await runAppEffect(runtime, authority.stop());
   });
 
   it("returns each concurrently requested selected issue without superseding either request", async () => {
@@ -181,12 +218,12 @@ describe("Kata auxiliary authority", () => {
       if (requestedIntent.selected_issue_uid === "issue-second") return pendingSecond.promise;
       return snapshot(requestedIntent);
     });
-    const stream = streamHarness();
-    const authority = createKataAuxiliaryAuthority({ loadSnapshot, readEventStream: stream.readEventStream });
-    await authority.load("home");
+    const runtime = testRuntime();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot: effectLoader(loadSnapshot) });
+    await runAppEffect(runtime, authority.load("home"));
 
-    const firstSelection = authority.selectIssue("issue-first");
-    const secondSelection = authority.selectIssue("issue-second");
+    const firstSelection = runAppEffect(runtime, authority.selectIssue("issue-first"));
+    const secondSelection = runAppEffect(runtime, authority.selectIssue("issue-second"));
 
     await vi.waitFor(() => expect(loadSnapshot).toHaveBeenCalledTimes(3));
 
@@ -205,7 +242,7 @@ describe("Kata auxiliary authority", () => {
       ),
     );
     await expect(firstSelection).resolves.toMatchObject({ detail: { issue: { uid: "issue-first" } } });
-    authority.stop();
+    await runAppEffect(runtime, authority.stop());
   });
 
   it("selects against the desired daemon while its base load is still pending", async () => {
@@ -214,13 +251,13 @@ describe("Kata auxiliary authority", () => {
       if (intent.daemon_id === "work" && !intent.selected_issue_uid) return pendingWork.promise;
       return snapshot(intent, { generation: intent.daemon_id === "work" ? 2 : 1 });
     });
-    const stream = streamHarness();
-    const authority = createKataAuxiliaryAuthority({ loadSnapshot, readEventStream: stream.readEventStream });
-    await authority.load("home");
+    const runtime = testRuntime();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot: effectLoader(loadSnapshot) });
+    await runAppEffect(runtime, authority.load("home"));
 
-    const switching = authority.load("work");
+    const switching = runAppEffect(runtime, authority.load("work"));
     await vi.waitFor(() => expect(loadSnapshot).toHaveBeenCalledTimes(2));
-    const selected = await authority.selectIssue("issue-work");
+    const selected = await runAppEffect(runtime, authority.selectIssue("issue-work"));
 
     expect(loadSnapshot.mock.calls[2]?.[0]).toMatchObject({
       daemon_id: "work",
@@ -229,7 +266,7 @@ describe("Kata auxiliary authority", () => {
     expect(selected.daemonID).toBe("work");
     pendingWork.resolve(snapshot({ scope: "global", authority: "all", daemon_id: "work" }, { generation: 2 }));
     await expect(switching).resolves.toBe(true);
-    authority.stop();
+    await runAppEffect(runtime, authority.stop());
   });
 
   it("keeps the desired daemon after its base load degrades", async () => {
@@ -237,59 +274,57 @@ describe("Kata auxiliary authority", () => {
       if (intent.daemon_id === "work" && !intent.selected_issue_uid) throw new Error("work unavailable");
       return snapshot(intent, { generation: intent.daemon_id === "work" ? 2 : 1 });
     });
-    const stream = streamHarness();
-    const authority = createKataAuxiliaryAuthority({ loadSnapshot, readEventStream: stream.readEventStream });
-    await authority.load("home");
-    await expect(authority.load("work")).rejects.toThrow("work unavailable");
+    const runtime = testRuntime();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot: effectLoader(loadSnapshot) });
+    await runAppEffect(runtime, authority.load("home"));
+    await expect(runAppEffect(runtime, authority.load("work"))).rejects.toThrow("work unavailable");
 
-    const selected = await authority.selectIssue("issue-work");
+    const selected = await runAppEffect(runtime, authority.selectIssue("issue-work"));
 
     expect(loadSnapshot.mock.calls[2]?.[0]).toMatchObject({
       daemon_id: "work",
       selected_issue_uid: "issue-work",
     });
     expect(selected.daemonID).toBe("work");
-    authority.stop();
+    await runAppEffect(runtime, authority.stop());
   });
 
   it("selects against an explicitly requested daemon over the ambient one", async () => {
     const loadSnapshot = vi.fn(async (intent: KataSnapshotIntent) => snapshot(intent));
-    const stream = streamHarness();
-    const authority = createKataAuxiliaryAuthority({ loadSnapshot, readEventStream: stream.readEventStream });
-    await authority.load("home");
+    const runtime = testRuntime();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot: effectLoader(loadSnapshot) });
+    await runAppEffect(runtime, authority.load("home"));
 
-    const selected = await authority.selectIssue("issue-doc", "docs-daemon");
+    const selected = await runAppEffect(runtime, authority.selectIssue("issue-doc", "docs-daemon"));
 
     expect(loadSnapshot.mock.calls[1]?.[0]).toMatchObject({
       daemon_id: "docs-daemon",
       selected_issue_uid: "issue-doc",
     });
     expect(selected.daemonID).toBe("docs-daemon");
-    authority.stop();
+    await runAppEffect(runtime, authority.stop());
   });
 
-  it("drops a queued refresh that would run after stop", async () => {
+  it("interrupts superseded and active refreshes when the authority stops", async () => {
     const pendingRetry = deferred<KataWorkspaceSnapshotResponse>();
     let loads = 0;
     const loadSnapshot = vi.fn(async (intent: KataSnapshotIntent) => {
       loads += 1;
-      if (loads === 2) return pendingRetry.promise;
+      if (loads > 1) return pendingRetry.promise;
       return snapshot(intent);
     });
-    const stream = streamHarness();
-    const authority = createKataAuxiliaryAuthority({ loadSnapshot, readEventStream: stream.readEventStream });
-    await authority.load("home");
-    expect(stream.streams).toHaveLength(1);
-
-    const first = authority.refreshIssues("home");
+    const runtime = testRuntime();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot: effectLoader(loadSnapshot) });
+    await runAppEffect(runtime, authority.load("home"));
+    const first = runAppEffect(runtime, authority.refreshIssues("home"));
     await vi.waitFor(() => expect(loadSnapshot).toHaveBeenCalledTimes(2));
-    const queued = authority.refreshIssues("home");
-    authority.stop();
+    const queued = runAppEffect(runtime, authority.refreshIssues("home"));
+    await vi.waitFor(() => expect(loadSnapshot).toHaveBeenCalledTimes(3));
+    await runAppEffect(runtime, authority.stop());
+    const outcomes = await Promise.allSettled([first, queued]);
     pendingRetry.resolve(snapshot({ scope: "global", authority: "all", daemon_id: "home" }, { generation: 2 }));
 
-    await expect(first).resolves.toBe(false);
-    await expect(queued).resolves.toBe(false);
-    expect(loadSnapshot).toHaveBeenCalledTimes(2);
-    expect(stream.streams).toHaveLength(1);
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(["rejected", "rejected"]);
+    expect(loadSnapshot).toHaveBeenCalledTimes(3);
   });
 });

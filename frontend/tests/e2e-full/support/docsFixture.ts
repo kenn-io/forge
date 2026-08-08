@@ -201,6 +201,10 @@ export function docsPublishRemoteHead(fixture: DocsPublishFixture, ref = "main")
   }).trim();
 }
 
+export function docsPublishCommitMessage(fixture: DocsPublishFixture, ref = "HEAD"): string {
+  return runFixtureGit(fixture.workDir, fixture.gitEnv, "show", "-s", "--format=%B", ref).trim();
+}
+
 function isolatedFixtureGitEnv(homeDir: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,

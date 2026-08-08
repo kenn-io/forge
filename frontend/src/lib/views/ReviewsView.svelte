@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { copyToClipboard, EmptyState } from "@kenn-io/kit-ui";
-  import { onMount } from "svelte";
+  import { EmptyState } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
+  import { getAppRuntime } from "../app/runtime-context.js";
   import {
     getStores,
     getUIConfig,
@@ -24,6 +25,7 @@
 
   const stores = getStores();
   const uiConfig = getUIConfig();
+  const runtime = getAppRuntime();
 
   let helpOpen = $state(false);
   let activeTab = $state<"review" | "log" | "prompt">(
@@ -154,7 +156,7 @@
           stores.roborevJobs?.getSelectedJobId();
         if (xId !== undefined) {
           e.preventDefault();
-          void stores.roborevJobs?.cancelJob(xId);
+          stores.roborevJobs?.cancelJob(xId);
         }
         break;
       }
@@ -163,7 +165,7 @@
           stores.roborevJobs?.getSelectedJobId();
         if (rId !== undefined) {
           e.preventDefault();
-          void stores.roborevJobs?.rerunJob(rId);
+          stores.roborevJobs?.rerunJob(rId);
         }
         break;
       }
@@ -173,7 +175,7 @@
             stores.roborevJobs?.getSelectedJobId();
           if (aId !== undefined) {
             e.preventDefault();
-            void stores.roborevReview?.closeReview(
+            stores.roborevReview?.closeReview(
               aId,
             );
           }
@@ -182,9 +184,9 @@
       case "c":
         if (drawerOpen) {
           e.preventDefault();
-          const textarea = document.querySelector(
+          const textarea = document.querySelector<HTMLElement>(
             ".comment-input textarea",
-          ) as HTMLElement | null;
+          );
           textarea?.focus();
         }
         break;
@@ -203,9 +205,7 @@
       case "y":
         if (drawerOpen) {
           e.preventDefault();
-          const output =
-            stores.roborevReview?.getOutput() ?? "";
-          void copyToClipboard(output);
+          stores.roborevReview?.copyOutput();
         }
         break;
       case "h":
@@ -228,9 +228,9 @@
         }
         if (!drawerOpen && !daemonDown) {
           e.preventDefault();
-          const searchInput = document.querySelector(
+          const searchInput = document.querySelector<HTMLElement>(
             ".filter-bar .kit-search-input input",
-          ) as HTMLElement | null;
+          );
           searchInput?.focus();
         }
         break;
@@ -250,14 +250,33 @@
       );
   });
 
-  onMount(() => {
-    if (!stores.roborevJobs) return;
-    // Only load jobs if daemon is already available.
-    // If unavailable, the onRecover callback handles
-    // the initial load once the daemon comes up.
-    if (stores.roborevDaemon?.isAvailable()) {
-      void stores.roborevJobs.loadJobs();
-    }
+  $effect(() => {
+    const jobs = stores.roborevJobs;
+    if (!jobs || !stores.roborevDaemon?.isAvailable()) return;
+    const execution = runtime.runCommand(
+      jobs.loadJobsEffect(),
+      {
+        operation: "hydrate mounted Roborev jobs",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
+    return execution.interrupt;
+  });
+
+  $effect(() => {
+    const review = stores.roborevReview;
+    const selectedId = stores.roborevJobs?.getSelectedJobId();
+    if (!review || selectedId === undefined || !stores.roborevDaemon?.isAvailable()) return;
+    const execution = runtime.runCommand(
+      review.loadReviewEffect(selectedId),
+      {
+        operation: "hydrate mounted Roborev review",
+        safeContext: { jobId: selectedId },
+        onFailure: () => {},
+      },
+    );
+    return execution.interrupt;
   });
 
   $effect(() => {
@@ -273,10 +292,10 @@
       "",
     );
     const eventStreamBase = bp + "/api/roborev";
-    jobsStore.connectEventStream(eventStreamBase);
+    const eventOwner = jobsStore.connectEventStream(eventStreamBase);
 
     return () => {
-      jobsStore.disconnectEventStream();
+      jobsStore.disconnectEventStream(eventOwner);
     };
   });
 </script>

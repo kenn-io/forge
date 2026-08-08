@@ -2,8 +2,9 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
+  import { Cause, Effect, Exit, Option } from "effect";
   import { Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
-  import { onMount, untrack } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { Button, Chip, SelectDropdown } from "@kenn-io/kit-ui";
   import type { KataProjectRepoMapping } from "../../api/types.js";
   import { showFlash } from "../../stores/flash.svelte.js";
@@ -15,6 +16,7 @@
     type KataProjectMappingsResponse,
   } from "../../api/kata/workspaces.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
 
   interface Props {
     mappings?: KataProjectRepoMapping[] | undefined;
@@ -44,6 +46,7 @@
   let { mappings, enabled = true, onUpdate }: Props = $props();
 
   const embedded = isEmbedded();
+  const appRuntime = getAppRuntime();
   let nextID = 0;
   let saving = $state(false);
   let daemons = $state.raw<KataDaemonInfo[]>([]);
@@ -53,6 +56,8 @@
   let diagnosticsError = $state<string | null>(null);
   let diagnosticsEnabled = false;
   let previousEnabled = false;
+  let diagnosticsRequest = 0;
+  let interruptDiagnostics: (() => void) | undefined;
   // svelte-ignore state_referenced_locally
   let currentMappings = $state(normalizeMappings(mappings));
   // svelte-ignore state_referenced_locally
@@ -102,6 +107,11 @@
     diagnosticsEnabled = true;
   });
 
+  onDestroy(() => {
+    diagnosticsRequest += 1;
+    interruptDiagnostics?.();
+  });
+
   $effect(() => {
     if (!diagnosticsEnabled) return;
     if (!enabled) {
@@ -118,20 +128,45 @@
   });
 
   async function loadDiagnostics(daemonID = selectedDaemonID): Promise<void> {
+    const request = ++diagnosticsRequest;
+    interruptDiagnostics?.();
     diagnosticsLoading = true;
     diagnosticsError = null;
+    const currentDaemons = daemons;
+    const execution = appRuntime.runCommand(
+      Effect.gen(function* () {
+        const roster = currentDaemons.length === 0 ? yield* fetchKataDaemons() : currentDaemons;
+        const effectiveID = daemonID || roster.find((daemon) => daemon.default)?.id || roster[0]?.id || "";
+        const nextDiagnostics = yield* getKataProjectMappings(effectiveID || undefined);
+        return { roster, effectiveID, diagnostics: nextDiagnostics };
+      }),
+      {
+        operation: "load Kata project mappings",
+        safeContext: { daemonId: daemonID },
+        onFailure: () => {},
+      },
+    );
+    interruptDiagnostics = execution.interrupt;
     try {
-      if (daemons.length === 0) {
-        daemons = await fetchKataDaemons();
+      const exit = await Effect.runPromise(execution.await);
+      if (request !== diagnosticsRequest) return;
+      if (Exit.isFailure(exit)) {
+        const failure = Cause.findErrorOption(exit.cause);
+        if (Option.isSome(failure)) throw failure.value;
+        throw new Error(Cause.pretty(exit.cause));
       }
-      const effectiveID = daemonID || daemons.find((daemon) => daemon.default)?.id || daemons[0]?.id || "";
-      selectedDaemonID = effectiveID;
-      diagnostics = await getKataProjectMappings(effectiveID || undefined);
+      daemons = exit.value.roster;
+      selectedDaemonID = exit.value.effectiveID;
+      diagnostics = exit.value.diagnostics;
     } catch (err) {
+      if (request !== diagnosticsRequest) return;
       diagnosticsError = err instanceof Error ? err.message : String(err);
       diagnostics = null;
     } finally {
-      diagnosticsLoading = false;
+      if (request === diagnosticsRequest) {
+        diagnosticsLoading = false;
+        interruptDiagnostics = undefined;
+      }
     }
   }
 

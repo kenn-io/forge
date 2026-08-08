@@ -416,6 +416,8 @@ When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpr
 
 Effect-owned frontend work shares the single main `ManagedRuntime` and reaches it through Svelte context; do not create per-feature runtimes or detach async work from its scope (`frontend/src/lib/app/runtime.ts::makeAppRuntime`, `frontend/src/lib/app/mount.ts::mountApplication`).
 
+When an `$effect` launches an Effect fiber, wrap `runCommand` itself in `untrack`; fibers begin synchronously, so untracking only program construction can subscribe the outer Svelte effect to the fiber's rune transitions (`frontend/src/App.svelte:542`).
+
 App-wide health polling belongs to the root runtime lifetime, not the full-shell lifetime, because embedded routes still depend on daemon availability (`frontend/src/App.svelte::roborevPollingExecution`).
 
 Provider list, activity, and sync controllers expose synchronous launchers; their Effect workflows own cancellation, shared demand, bounded reads, and sequential cadence so Svelte callers never rebuild Promise generations or timer overlap guards (`frontend/src/lib/stores/`).

@@ -1,23 +1,27 @@
+import { Effect } from "effect";
 import type { QuerySerializerOptions } from "openapi-fetch";
 import type { RepoBrowserBlob, RepoBrowserCommit, RepoBrowserRef, RepoBrowserTreeEntry } from "../api/types.js";
 import { providerRepoPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
-import type { GeneratedClient } from "../api/generated-api.js";
+import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
+import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import type { components } from "../api/generated/schema.js";
+import { retryIdempotentRead } from "../api/retry-policy.js";
 import type { DiffFileCategoryCounts, DiffFileCategoryFilter } from "../utils/diff-categories.js";
+import { chooseRepoBrowserInitialPath } from "../utils/repo-browser-path.js";
 import {
   buildSourceBrowserFileEntries,
   countSourceBrowserFileEntriesByCategory,
   filterSourceBrowserFileEntriesByCategory,
   type SourceBrowserFileEntry,
 } from "../utils/source-browser-files.js";
+import {
+  RepoBrowserWorkflow,
+  type RepoBrowserOwner,
+  type RepoBrowserWorkflowService,
+} from "./repo-browser-workflow.js";
 
 export type RepoBrowserViewMode = "source" | "preview";
 
-export interface RepoBrowserStoreOptions {
-  client?: GeneratedClient;
-}
-
-type Problem = { detail?: string; title?: string };
 type RepoBrowserRefsResponse = components["schemas"]["RepoBrowserRefsResponse"];
 type RepoBrowserTreeResponse = components["schemas"]["RepoBrowserTreeResponse"];
 type RepoBrowserBlobResponse = components["schemas"]["RepoBrowserBlobResponse"];
@@ -43,6 +47,13 @@ const repeatedPathQuerySerializer: QuerySerializerOptions = {
   },
 };
 
+let nextRepoBrowserOwner = 0;
+
+function createRepoBrowserOwner(): RepoBrowserOwner {
+  nextRepoBrowserOwner += 1;
+  return `repo-browser:${nextRepoBrowserOwner}`;
+}
+
 function safeGetItem(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -61,34 +72,36 @@ function safeSetItem(key: string, value: string): void {
 
 function loadViewMode(): RepoBrowserViewMode {
   const raw = safeGetItem(viewModeStorageKey);
-  return validViewModes.includes(raw as RepoBrowserViewMode) ? (raw as RepoBrowserViewMode) : "source";
+  return raw !== null && isRepoBrowserViewMode(raw) ? raw : "source";
 }
 
-function apiErrorMessage(error: Problem | undefined, fallback: string): string {
-  return error?.detail ?? error?.title ?? fallback;
+function isRepoBrowserViewMode(value: string): value is RepoBrowserViewMode {
+  return validViewModes.some((mode) => mode === value);
 }
 
-function defaultRepoBrowserClient(): GeneratedClient {
-  throw new Error("repo browser store requires a client");
+function readErrorMessage(error: ApiProblemError | TransientTransportError, fallback: string): string {
+  if (error._tag === "ApiProblemError") {
+    return error.problem.detail ?? error.problem.title ?? fallback;
+  }
+  return "Could not reach Kenn Forge";
 }
 
 function normalizeRepoBrowserTreePath(path: string): string {
   return path.replace(/^\/+|\/+$/g, "");
 }
 
-export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
-  const client = opts.client ?? defaultRepoBrowserClient();
-
+export function createRepoBrowserStore() {
+  let activeOwner = createRepoBrowserOwner();
   let repo = $state<ProviderRouteRef | null>(null);
-  let refs = $state<RepoBrowserRef[]>([]);
+  let refs = $state.raw<RepoBrowserRef[]>([]);
   let defaultRef = $state<RepoBrowserRef | null>(null);
   let selectedRef = $state<RepoBrowserRef | null>(null);
-  let tree = $state<RepoBrowserTreeEntry[]>([]);
+  let tree = $state.raw<RepoBrowserTreeEntry[]>([]);
   let treeTruncated = $state(false);
-  let lastChanged = $state<Record<string, RepoBrowserCommit>>({});
+  let lastChanged = $state.raw<Record<string, RepoBrowserCommit>>({});
   let selectedPath = $state<string | null>(null);
   let blob = $state<RepoBrowserBlob | null>(null);
-  let fileHistory = $state<RepoBrowserCommit[]>([]);
+  let fileHistory = $state.raw<RepoBrowserCommit[]>([]);
   let selectedCommit = $state<RepoBrowserCommit | null>(null);
   let lastUsablePathState: RepoBrowserPathSnapshot | null = null;
   let fileCategoryFilter = $state<DiffFileCategoryFilter>("all");
@@ -96,13 +109,14 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
   let loading = $state(false);
   let blobLoading = $state(false);
   let error = $state<string | null>(null);
-  let treeRequestGeneration = 0;
-  let pathRequestGeneration = 0;
-  let commitRequestGeneration = 0;
 
   const fileEntries = $derived(buildSourceBrowserFileEntries(tree, lastChanged));
   const visibleFileEntries = $derived(filterSourceBrowserFileEntriesByCategory(fileEntries, fileCategoryFilter));
   const fileCategoryCounts = $derived(countSourceBrowserFileEntriesByCategory(fileEntries));
+
+  function active(owner: RepoBrowserOwner): Effect.Effect<void> {
+    return Effect.suspend(() => (owner === activeOwner ? Effect.void : Effect.interrupt));
+  }
 
   function queryFor(ref: ProviderRouteRef, selected: RepoBrowserRef | null = selectedRef) {
     return {
@@ -133,45 +147,70 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     return [priorityPath, ...paths.slice(0, index), ...paths.slice(index + 1)];
   }
 
-  async function loadRepo(
+  function loadRepo(
+    owner: RepoBrowserOwner,
     nextRepo: ProviderRouteRef,
     initial?: { ref?: RepoBrowserRef; path?: string | null },
-  ): Promise<void> {
-    const generation = nextTreeRequestGeneration();
-    repo = nextRepo;
-    loading = true;
-    error = null;
-    clearRepoData();
-    try {
-      const {
-        data,
-        error: apiError,
-        response,
-      } = await client.GET(providerRepoPath(nextRepo, "/browser/refs"), {
-        params: {
-          path: providerRouteParams(nextRepo),
-          query: { repo_path: nextRepo.repoPath },
-        },
-      });
-      if (!isCurrentTreeRequest(generation)) return;
-      if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
-      applyRefs(data as RepoBrowserRefsResponse, initial?.ref);
-      try {
-        await loadTree(initial?.path ?? null, generation, initial?.path ? "retain" : "fallback");
-      } catch (err) {
-        if (isCurrentTreeRequest(generation)) {
-          error = err instanceof Error ? err.message : String(err);
-          clearTreeData();
-        }
-      }
-    } catch (err) {
-      if (isCurrentTreeRequest(generation)) {
-        error = err instanceof Error ? err.message : String(err);
-        clearRepoData();
-      }
-    } finally {
-      if (isCurrentTreeRequest(generation)) loading = false;
-    }
+  ) {
+    return Effect.gen(function* () {
+      const workflow = yield* RepoBrowserWorkflow;
+      return yield* workflow.repo(
+        owner,
+        active(owner)
+          .pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                repo = nextRepo;
+                loading = true;
+                error = null;
+                clearRepoData();
+              }),
+            ),
+          )
+          .pipe(
+            Effect.andThen(
+              executeGeneratedApiRequest("GET repository refs", (client, signal) =>
+                client.GET(providerRepoPath(nextRepo, "/browser/refs"), {
+                  params: {
+                    path: providerRouteParams(nextRepo),
+                    query: { repo_path: nextRepo.repoPath },
+                  },
+                  signal,
+                }),
+              ).pipe(retryIdempotentRead),
+            ),
+            Effect.tap((response: RepoBrowserRefsResponse) =>
+              active(owner).pipe(Effect.andThen(Effect.sync(() => applyRefs(response, initial?.ref)))),
+            ),
+            Effect.andThen(
+              loadTree(workflow, owner, initial?.path ?? null, initial?.path ? "retain" : "fallback").pipe(
+                Effect.catch((failure) =>
+                  active(owner).pipe(
+                    Effect.andThen(
+                      Effect.sync(() => {
+                        error = readErrorMessage(failure, "failed to load repository tree");
+                        clearTreeData();
+                      }),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Effect.tapError((failure) =>
+              active(owner).pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    error = readErrorMessage(failure, "failed to load repository refs");
+                    clearRepoData();
+                    loading = false;
+                  }),
+                ),
+              ),
+            ),
+            Effect.tap(() => active(owner).pipe(Effect.andThen(Effect.sync(() => (loading = false))))),
+          ),
+      );
+    });
   }
 
   function applyRefs(response: RepoBrowserRefsResponse, requestedRef?: RepoBrowserRef | undefined): void {
@@ -193,184 +232,258 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     return defaultRef ?? refs[0] ?? null;
   }
 
-  async function loadTree(
+  function loadTree(
+    workflow: RepoBrowserWorkflowService,
+    owner: RepoBrowserOwner,
     requestedPath: string | null = null,
-    generation = nextTreeRequestGeneration(),
     missingPathBehavior: MissingRequestedPathBehavior = "fallback",
-  ): Promise<void> {
-    const ref = repo;
-    const requestedRef = selectedRef;
-    if (!ref || !requestedRef) return;
-    const {
-      data,
-      error: apiError,
-      response,
-    } = await client.GET(providerRepoPath(ref, "/browser/tree"), {
-      params: {
-        path: providerRouteParams(ref),
-        query: queryFor(ref, requestedRef),
-      },
-    });
-    if (!isCurrentTreeRequest(generation)) return;
-    if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
-    const payload = data as RepoBrowserTreeResponse;
-    selectedRef = payload.ref ?? requestedRef;
-    tree = payload.entries ?? [];
-    treeTruncated = payload.truncated;
-    lastChanged = {};
-    const autoSelectPathGeneration = pathRequestGeneration;
-    if (pathRequestGeneration !== autoSelectPathGeneration) return;
-    const requestedPathKind = requestedPath ? repoBrowserPathKind(requestedPath) : "missing";
-    const requestedPathExists = requestedPathKind === "file" || requestedPathKind === "directory";
-    const firstPath =
-      requestedPathExists || !requestedPath || missingPathBehavior === "fallback"
-        ? requestedPathExists
-          ? requestedPath
-          : (tree[0]?.path ?? null)
-        : null;
-    if (firstPath) {
-      await selectPath(firstPath);
-    } else if (requestedPath && missingPathBehavior === "retain") {
-      selectedPath = requestedPath;
-      blob = null;
-      fileHistory = [];
-      selectedCommit = null;
-      error = `Path not found: ${requestedPath}`;
-    } else {
-      selectedPath = null;
-      blob = null;
-      fileHistory = [];
-      selectedCommit = null;
-      rememberUsablePathState();
-    }
-    void loadLastChanged(generation, selectedPath ?? firstPath ?? undefined).catch(() => {
-      // Last-changed metadata is decorative; keep the tree/blob usable if it fails.
-    });
-  }
-
-  async function loadLastChanged(generation = treeRequestGeneration, priorityPath?: string): Promise<void> {
-    const ref = repo;
-    const requestedRef = treeContentQueryRef();
-    if (!ref || !requestedRef) return;
-    const paths = prioritizePath(
-      tree.map((entry) => entry.path),
-      priorityPath,
+  ) {
+    return workflow.tree(
+      owner,
+      Effect.suspend(() => {
+        const ref = repo;
+        const requestedRef = selectedRef;
+        if (!ref || !requestedRef) return Effect.void;
+        return executeGeneratedApiRequest("GET repository tree", (client, signal) =>
+          client.GET(providerRepoPath(ref, "/browser/tree"), {
+            params: {
+              path: providerRouteParams(ref),
+              query: queryFor(ref, requestedRef),
+            },
+            signal,
+          }),
+        ).pipe(
+          retryIdempotentRead,
+          Effect.tap(() => active(owner)),
+          Effect.flatMap((payload: RepoBrowserTreeResponse) =>
+            Effect.sync(() => {
+              selectedRef = payload.ref ?? requestedRef;
+              tree = payload.entries ?? [];
+              treeTruncated = payload.truncated;
+              lastChanged = {};
+              const requestedPathKind = requestedPath ? repoBrowserPathKind(requestedPath) : "missing";
+              const requestedPathExists = requestedPathKind === "file" || requestedPathKind === "directory";
+              return requestedPathExists || !requestedPath || missingPathBehavior === "fallback"
+                ? requestedPathExists
+                  ? requestedPath
+                  : chooseRepoBrowserInitialPath(tree)
+                : null;
+            }),
+          ),
+          Effect.flatMap((firstPath) => {
+            if (firstPath) {
+              return workflow.initialPath(
+                owner,
+                selectPathProgram(owner, firstPath).pipe(
+                  Effect.catch((failure) =>
+                    active(owner).pipe(Effect.andThen(Effect.sync(() => applyPathFailure(failure)))),
+                  ),
+                ),
+              );
+            }
+            return Effect.sync(() => {
+              if (requestedPath && missingPathBehavior === "retain") {
+                selectedPath = requestedPath;
+                blob = null;
+                fileHistory = [];
+                selectedCommit = null;
+                error = `Path not found: ${requestedPath}`;
+                return;
+              }
+              selectedPath = null;
+              blob = null;
+              fileHistory = [];
+              selectedCommit = null;
+              rememberUsablePathState();
+            });
+          }),
+          Effect.tap(() =>
+            workflow.startMetadata(owner, loadLastChanged(owner, selectedPath ?? requestedPath ?? undefined)),
+          ),
+        );
+      }),
     );
-    if (paths.length === 0) {
-      lastChanged = {};
-      return;
-    }
-    const commits: Record<string, RepoBrowserCommit> = {};
-    for (let start = 0; start < paths.length; start += lastChangedBatchSize) {
-      const batch = paths.slice(start, start + lastChangedBatchSize);
-      const {
-        data,
-        error: apiError,
-        response,
-      } = await client.GET(providerRepoPath(ref, "/browser/last-changed"), {
-        querySerializer: repeatedPathQuerySerializer,
-        params: {
-          path: providerRouteParams(ref),
-          query: {
-            ...queryFor(ref, requestedRef),
-            path: batch,
-          },
+  }
+
+  function loadLastChanged(
+    owner: RepoBrowserOwner,
+    priorityPath?: string,
+  ): Effect.Effect<void, ApiProblemError | TransientTransportError, GeneratedApi> {
+    return Effect.suspend(() => {
+      const ref = repo;
+      const requestedRef = treeContentQueryRef();
+      if (!ref || !requestedRef) return Effect.void;
+      const paths = prioritizePath(
+        tree.map((entry) => entry.path),
+        priorityPath,
+      );
+      if (paths.length === 0) return Effect.sync(() => (lastChanged = {}));
+      const commits: Record<string, RepoBrowserCommit> = {};
+      return Effect.forEach(
+        Array.from({ length: Math.ceil(paths.length / lastChangedBatchSize) }, (_, index) => index),
+        (index) => {
+          const batch = paths.slice(index * lastChangedBatchSize, (index + 1) * lastChangedBatchSize);
+          return executeGeneratedApiRequest("GET repository last-changed metadata", (client, signal) =>
+            client.GET(providerRepoPath(ref, "/browser/last-changed"), {
+              querySerializer: repeatedPathQuerySerializer,
+              params: {
+                path: providerRouteParams(ref),
+                query: {
+                  ...queryFor(ref, requestedRef),
+                  path: batch,
+                },
+              },
+              signal,
+            }),
+          ).pipe(
+            retryIdempotentRead,
+            Effect.tap(() => active(owner)),
+            Effect.tap((response: RepoBrowserLastChangedResponse) =>
+              Effect.sync(() => {
+                Object.assign(commits, response.commits ?? {});
+                lastChanged = { ...commits };
+              }),
+            ),
+          );
         },
-      });
-      if (!isCurrentTreeRequest(generation)) return;
-      if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
-      Object.assign(commits, (data as RepoBrowserLastChangedResponse).commits ?? {});
-      lastChanged = { ...commits };
-    }
+        { concurrency: 1, discard: true },
+      );
+    });
   }
 
-  async function selectRef(ref: RepoBrowserRef): Promise<boolean> {
-    const generation = nextTreeRequestGeneration();
-    const previousPathState = blobLoading && lastUsablePathState ? lastUsablePathState : currentPathState();
-    const previousState = {
-      selectedRef,
-      tree,
-      treeTruncated,
-      lastChanged,
-      error,
-      ...previousPathState,
-    };
-    selectedRef = ref;
-    loading = true;
-    error = null;
-    clearTreeData();
-    try {
-      await loadTree(previousState.selectedPath, generation);
-      return isCurrentTreeRequest(generation);
-    } catch {
-      if (isCurrentTreeRequest(generation)) {
-        ({ selectedRef, tree, treeTruncated, lastChanged, error, selectedPath, blob, fileHistory, selectedCommit } =
-          previousState);
-        blobLoading = false;
-        rememberUsablePathState();
-      }
-      return false;
-    } finally {
-      if (isCurrentTreeRequest(generation)) loading = false;
-    }
+  function selectRef(owner: RepoBrowserOwner, ref: RepoBrowserRef) {
+    return Effect.gen(function* () {
+      const workflow = yield* RepoBrowserWorkflow;
+      return yield* active(owner).pipe(
+        Effect.andThen(
+          Effect.suspend(() => {
+            const previousPathState = blobLoading && lastUsablePathState ? lastUsablePathState : currentPathState();
+            const previousState = {
+              selectedRef,
+              tree,
+              treeTruncated,
+              lastChanged,
+              error,
+              ...previousPathState,
+            };
+            selectedRef = ref;
+            loading = true;
+            error = null;
+            clearTreeData();
+            return loadTree(workflow, owner, previousState.selectedPath).pipe(
+              Effect.as(true),
+              Effect.catch(() =>
+                active(owner).pipe(
+                  Effect.andThen(
+                    Effect.sync(() => {
+                      ({
+                        selectedRef,
+                        tree,
+                        treeTruncated,
+                        lastChanged,
+                        error,
+                        selectedPath,
+                        blob,
+                        fileHistory,
+                        selectedCommit,
+                      } = previousState);
+                      blobLoading = false;
+                      rememberUsablePathState();
+                      return false;
+                    }),
+                  ),
+                ),
+              ),
+              Effect.tap(() => active(owner).pipe(Effect.andThen(Effect.sync(() => (loading = false))))),
+            );
+          }),
+        ),
+      );
+    });
   }
 
-  async function selectPath(path: string): Promise<void> {
-    const ref = repo;
-    const requestedRef = treeContentQueryRef();
-    if (!ref || !requestedRef) return;
-    const generation = nextPathRequestGeneration();
-    selectedPath = path;
-    const pathKind = repoBrowserPathKind(path);
-    blobLoading = pathKind !== "directory";
-    error = null;
+  function selectPath(owner: RepoBrowserOwner, path: string) {
+    return Effect.gen(function* () {
+      const workflow = yield* RepoBrowserWorkflow;
+      return yield* workflow
+        .path(owner, selectPathProgram(owner, path))
+        .pipe(
+          Effect.catch((failure) => active(owner).pipe(Effect.andThen(Effect.sync(() => applyPathFailure(failure))))),
+        );
+    });
+  }
+
+  function applyPathFailure(failure: ApiProblemError | TransientTransportError): void {
+    error = readErrorMessage(failure, "failed to load repository path");
     blob = null;
     fileHistory = [];
     selectedCommit = null;
-    if (pathKind === "directory") {
-      rememberUsablePathState();
-      return;
-    }
-    try {
-      const [{ data: blobData, error: blobError, response: blobResponse }, historyResponse] = await Promise.all([
-        client.GET(providerRepoPath(ref, "/browser/blob"), {
-          params: {
-            path: providerRouteParams(ref),
-            query: {
-              ...queryFor(ref, requestedRef),
-              path,
+    blobLoading = false;
+  }
+
+  function selectPathProgram(
+    owner: RepoBrowserOwner,
+    path: string,
+  ): Effect.Effect<void, ApiProblemError | TransientTransportError, GeneratedApi> {
+    return active(owner).pipe(
+      Effect.andThen(
+        Effect.suspend(() => {
+          const ref = repo;
+          const requestedRef = treeContentQueryRef();
+          if (!ref || !requestedRef) return Effect.void;
+          selectedPath = path;
+          const pathKind = repoBrowserPathKind(path);
+          blobLoading = pathKind !== "directory";
+          error = null;
+          blob = null;
+          fileHistory = [];
+          selectedCommit = null;
+          if (pathKind === "directory") {
+            rememberUsablePathState();
+            return Effect.void;
+          }
+          const query = {
+            ...queryFor(ref, requestedRef),
+            path,
+          };
+          return Effect.all(
+            {
+              blobResponse: executeGeneratedApiRequest("GET repository blob", (client, signal) =>
+                client.GET(providerRepoPath(ref, "/browser/blob"), {
+                  params: { path: providerRouteParams(ref), query },
+                  signal,
+                }),
+              ).pipe(retryIdempotentRead),
+              historyResponse: executeGeneratedApiRequest("GET repository file history", (client, signal) =>
+                client.GET(providerRepoPath(ref, "/browser/history"), {
+                  params: { path: providerRouteParams(ref), query },
+                  signal,
+                }),
+              ).pipe(retryIdempotentRead),
             },
-          },
+            { concurrency: "unbounded" },
+          ).pipe(
+            Effect.tap(() => active(owner)),
+            Effect.tap(
+              ({
+                blobResponse,
+                historyResponse,
+              }: {
+                blobResponse: RepoBrowserBlobResponse;
+                historyResponse: RepoBrowserHistoryResponse;
+              }) =>
+                Effect.sync(() => {
+                  blob = blobResponse.blob;
+                  fileHistory = historyResponse.commits ?? [];
+                  selectedCommit = fileHistory[0] ?? null;
+                  blobLoading = false;
+                  rememberUsablePathState();
+                }),
+            ),
+          );
         }),
-        client.GET(providerRepoPath(ref, "/browser/history"), {
-          params: {
-            path: providerRouteParams(ref),
-            query: {
-              ...queryFor(ref, requestedRef),
-              path,
-            },
-          },
-        }),
-      ]);
-      if (!isCurrentPathRequest(generation)) return;
-      if (!blobData) throw new Error(apiErrorMessage(blobError, `HTTP ${blobResponse.status}`));
-      if (!historyResponse.data) {
-        throw new Error(apiErrorMessage(historyResponse.error, `HTTP ${historyResponse.response.status}`));
-      }
-      blob = (blobData as RepoBrowserBlobResponse).blob;
-      fileHistory = (historyResponse.data as RepoBrowserHistoryResponse).commits ?? [];
-      selectedCommit = fileHistory[0] ?? null;
-      rememberUsablePathState();
-    } catch (err) {
-      if (isCurrentPathRequest(generation)) {
-        error = err instanceof Error ? err.message : String(err);
-        blob = null;
-        fileHistory = [];
-        selectedCommit = null;
-      }
-    } finally {
-      if (isCurrentPathRequest(generation)) blobLoading = false;
-    }
+      ),
+    );
   }
 
   function repoBrowserPathKind(path: string): RepoBrowserPathKind {
@@ -388,39 +501,60 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     return entry.type === "blob" || entry.type === "file";
   }
 
-  async function selectCommit(sha: string): Promise<void> {
-    const ref = repo;
-    const requestedRef = treeContentQueryRef();
-    const path = selectedPath;
-    if (!ref || !requestedRef || !path) return;
-    const generation = nextCommitRequestGeneration();
-    selectedCommit = null;
-    error = null;
-    try {
-      const {
-        data,
-        error: apiError,
-        response,
-      } = await client.GET(providerRepoPath(ref, "/browser/commit"), {
-        params: {
-          path: providerRouteParams(ref),
-          query: {
-            ...queryFor(ref, requestedRef),
-            path,
-            sha,
-          },
-        },
-      });
-      if (!isCurrentCommitRequest(generation)) return;
-      if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
-      selectedCommit = (data as RepoBrowserCommitResponse).commit;
-      rememberUsablePathState();
-    } catch (err) {
-      if (isCurrentCommitRequest(generation)) {
-        error = err instanceof Error ? err.message : String(err);
-        selectedCommit = null;
-      }
-    }
+  function selectCommit(owner: RepoBrowserOwner, sha: string) {
+    return Effect.gen(function* () {
+      const workflow = yield* RepoBrowserWorkflow;
+      return yield* workflow
+        .commit(
+          owner,
+          active(owner).pipe(
+            Effect.andThen(
+              Effect.suspend(() => {
+                const ref = repo;
+                const requestedRef = treeContentQueryRef();
+                const path = selectedPath;
+                if (!ref || !requestedRef || !path) return Effect.void;
+                selectedCommit = null;
+                error = null;
+                return executeGeneratedApiRequest("GET repository commit", (client, signal) =>
+                  client.GET(providerRepoPath(ref, "/browser/commit"), {
+                    params: {
+                      path: providerRouteParams(ref),
+                      query: {
+                        ...queryFor(ref, requestedRef),
+                        path,
+                        sha,
+                      },
+                    },
+                    signal,
+                  }),
+                ).pipe(
+                  retryIdempotentRead,
+                  Effect.tap(() => active(owner)),
+                  Effect.tap((response: RepoBrowserCommitResponse) =>
+                    Effect.sync(() => {
+                      selectedCommit = response.commit;
+                      rememberUsablePathState();
+                    }),
+                  ),
+                );
+              }),
+            ),
+          ),
+        )
+        .pipe(
+          Effect.catch((failure) =>
+            active(owner).pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  error = readErrorMessage(failure, "failed to load repository commit");
+                  selectedCommit = null;
+                }),
+              ),
+            ),
+          ),
+        );
+    });
   }
 
   function clearRepoData(): void {
@@ -450,36 +584,6 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     blobLoading = false;
   }
 
-  function nextTreeRequestGeneration(): number {
-    treeRequestGeneration += 1;
-    pathRequestGeneration += 1;
-    commitRequestGeneration += 1;
-    return treeRequestGeneration;
-  }
-
-  function nextPathRequestGeneration(): number {
-    pathRequestGeneration += 1;
-    commitRequestGeneration += 1;
-    return pathRequestGeneration;
-  }
-
-  function nextCommitRequestGeneration(): number {
-    commitRequestGeneration += 1;
-    return commitRequestGeneration;
-  }
-
-  function isCurrentTreeRequest(generation: number): boolean {
-    return generation === treeRequestGeneration;
-  }
-
-  function isCurrentPathRequest(generation: number): boolean {
-    return generation === pathRequestGeneration;
-  }
-
-  function isCurrentCommitRequest(generation: number): boolean {
-    return generation === commitRequestGeneration;
-  }
-
   function setFileCategoryFilter(filter: DiffFileCategoryFilter): void {
     fileCategoryFilter = filter;
   }
@@ -489,7 +593,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     safeSetItem(viewModeStorageKey, mode);
   }
 
-  return {
+  const view = {
     getRepo: () => repo,
     getRefs: () => refs,
     getDefaultRef: () => defaultRef,
@@ -509,13 +613,38 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     isLoading: () => loading,
     isBlobLoading: () => blobLoading,
     getError: () => error,
-    loadRepo,
-    selectRef,
-    selectPath,
-    selectCommit,
     setFileCategoryFilter,
     setViewMode,
   };
+
+  function mount() {
+    activeOwner = createRepoBrowserOwner();
+    const owner = activeOwner;
+    return {
+      ...view,
+      loadRepo: (nextRepo: ProviderRouteRef, initial?: { ref?: RepoBrowserRef; path?: string | null }) =>
+        loadRepo(owner, nextRepo, initial),
+      selectRef: (ref: RepoBrowserRef) => selectRef(owner, ref),
+      selectPath: (path: string) => selectPath(owner, path),
+      selectCommit: (sha: string) => selectCommit(owner, sha),
+      stop: () => stop(owner),
+    };
+  }
+
+  function stop(owner: RepoBrowserOwner) {
+    return Effect.gen(function* () {
+      const workflow = yield* RepoBrowserWorkflow;
+      yield* workflow.stop(owner);
+      if (owner !== activeOwner) return;
+      yield* Effect.sync(() => {
+        loading = false;
+        blobLoading = false;
+      });
+    });
+  }
+
+  return { ...view, mount };
 }
 
 export type RepoBrowserStore = ReturnType<typeof createRepoBrowserStore>;
+export type RepoBrowserMount = ReturnType<RepoBrowserStore["mount"]>;

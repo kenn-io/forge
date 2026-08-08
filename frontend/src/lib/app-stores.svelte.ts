@@ -1,14 +1,14 @@
 import { Effect } from "effect";
 import { createRoborevClient } from "./api/roborev/client.js";
 import type { RoborevClient } from "./api/roborev/client.js";
-import { executeGeneratedApiRequest, type GeneratedClient } from "./api/generated-api.js";
-import { client as appClient } from "./api/runtime.js";
+import { executeGeneratedApiRequest } from "./api/generated-api.js";
 import type { ProviderRouteRef } from "./api/provider-routes.js";
 import { retryIdempotentRead } from "./api/retry-policy.js";
 import { createDaemonStore } from "./stores/roborev/daemon.svelte.js";
 import { createJobsStore } from "./stores/roborev/jobs.svelte.js";
 import { createReviewStore } from "./stores/roborev/review.svelte.js";
 import { createLogStore } from "./stores/roborev/log.svelte.js";
+import { makeRoborevOwner } from "./stores/roborev/roborev-workflow.js";
 import type { NavigateCallback, HostStateAccessors, StoreInstances, UIConfig } from "./types.js";
 import type { AppRuntime, AppServices } from "./app/runtime.js";
 import type { ProviderEventsError } from "./stores/provider-events-workflow.js";
@@ -63,7 +63,6 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     onError,
     onNotification,
   } = options;
-  const cl: GeneratedClient = appClient;
   const appRuntime = runtime;
   const hs = hostState;
   const cfg = config;
@@ -135,7 +134,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
 
   const diffOpts: DiffStoreOptions = { runtime: appRuntime };
   const diffStore = createDiffStore(diffOpts);
-  const repoBrowserStore = createRepoBrowserStore({ client: cl });
+  const repoBrowserStore = createRepoBrowserStore();
   const diffReviewDraftStore = createDiffReviewDraftStore({
     runtime: appRuntime,
     onPublished: (ref, number) =>
@@ -332,9 +331,12 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   if (roborevBase) {
     const bp = (cfg.basePath ?? "/").replace(/\/$/, "");
     roborevClient = createRoborevClient(bp + roborevBase);
+    const roborevOwner = makeRoborevOwner("app-reviews");
 
     const jobsOpts: Parameters<typeof createJobsStore>[0] = {
       client: roborevClient,
+      runtime: appRuntime,
+      owner: roborevOwner,
       navigate: nav,
     };
     if (errorCb) jobsOpts.onError = errorCb;
@@ -343,27 +345,23 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
 
     const reviewOpts: Parameters<typeof createReviewStore>[0] = {
       client: roborevClient,
+      runtime: appRuntime,
+      owner: roborevOwner,
     };
     if (errorCb) reviewOpts.onError = errorCb;
     const reviewStore = createReviewStore(reviewOpts);
     si.roborevReview = reviewStore;
 
     const logStore = createLogStore({
-      client: roborevClient,
+      runtime: appRuntime,
       baseUrl: bp + roborevBase,
+      ...(errorCb !== undefined && { onError: errorCb }),
     });
     si.roborevLog = logStore;
 
     const daemon = createDaemonStore({
       client: roborevClient,
       runtime: appRuntime,
-      onRecover: () => {
-        void jobsStore.loadJobs();
-        const selectedId = reviewStore.getSelectedJobId();
-        if (selectedId !== undefined) {
-          void reviewStore.loadReview(selectedId);
-        }
-      },
     });
     si.roborevDaemon = daemon;
   }

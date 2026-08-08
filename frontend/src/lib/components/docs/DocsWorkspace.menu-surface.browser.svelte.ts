@@ -12,13 +12,17 @@ import { render } from "vitest-browser-svelte";
 
 import "../../../app.css";
 import { defaultDocsRoute, type DocsRoute } from "../../api/docs/route";
-import DocsWorkspace from "./DocsWorkspace.svelte";
+import DocsWorkspace from "./DocsWorkspaceTestHarness.svelte";
 import { createMockDocsBackend } from "./docsTestBackend";
 
 function renderWorkspace(overrides: Partial<DocsRoute> = {}) {
   const route: DocsRoute = { ...defaultDocsRoute, ...overrides };
   return render(DocsWorkspace, {
-    props: { route, onRouteChange: vi.fn(), api: createMockDocsBackend() },
+    props: {
+      route,
+      onRouteChange: vi.fn(),
+      api: createMockDocsBackend(),
+    },
   });
 }
 

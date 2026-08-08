@@ -1,19 +1,29 @@
 <script lang="ts">
   import { SearchInput } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { executeRoborevRequest } from "../../api/roborev/client.js";
   import { getStores, getRoborevClient } from "../../context.js";
   import type { components } from "../../api/roborev/generated/schema.js";
+  import {
+    RoborevResponseError,
+    RoborevWorkflow,
+  } from "../../stores/roborev/roborev-workflow.js";
 
   type RepoWithCount = components["schemas"]["RepoWithCount"];
   type BranchWithCount = components["schemas"]["BranchWithCount"];
 
   const stores = getStores();
   const client = getRoborevClient();
+  const runtime = getAppRuntime();
+  const owner = stores.roborevJobs?.getOwner() ?? "roborev-repo-picker";
 
   let open = $state(false);
   let search = $state("");
-  let repos = $state<RepoWithCount[]>([]);
+  let repos = $state.raw<RepoWithCount[]>([]);
   let expandedRepo = $state<string | undefined>(undefined);
-  let branches = $state<BranchWithCount[]>([]);
+  let branches = $state.raw<BranchWithCount[]>([]);
   let loadingBranches = $state(false);
   let pickerRef = $state<HTMLDivElement>();
 
@@ -45,13 +55,42 @@
     return repo?.name ?? rootPath.split("/").pop() ?? rootPath;
   }
 
-  async function loadRepos(): Promise<void> {
-    if (!client) return;
-    const { data } = await client.GET("/api/repos");
-    repos = data?.repos ?? [];
+  const loadReposEffect = client === undefined
+    ? Effect.void
+    : Effect.gen(function* () {
+        const workflow = yield* RoborevWorkflow;
+        yield* workflow.catalog(
+          owner,
+          executeRoborevRequest("list Roborev repositories", (signal) =>
+            client.GET("/api/repos", { signal }),
+          ).pipe(
+            Effect.flatMap((result) =>
+              result.error
+                ? Effect.fail(
+                    RoborevResponseError.make({
+                      operation: "list Roborev repositories",
+                      message: "Failed to load repositories",
+                      cause: result.error,
+                    }),
+                  )
+                : Effect.sync(() => {
+                    repos = result.data?.repos ?? [];
+                  }),
+            ),
+            Effect.catch(() => Effect.void),
+          ),
+        );
+      });
+
+  function loadRepos(): void {
+    runtime.runCommand(loadReposEffect, {
+      operation: "list Roborev repositories",
+      safeContext: { owner },
+      onFailure: () => {},
+    });
   }
 
-  async function toggleRepo(rootPath: string): Promise<void> {
+  function toggleRepo(rootPath: string): void {
     if (expandedRepo === rootPath) {
       expandedRepo = undefined;
       branches = [];
@@ -59,13 +98,49 @@
     }
     expandedRepo = rootPath;
     loadingBranches = true;
-    if (!client) return;
-    const { data } = await client.GET("/api/branches", {
-      params: { query: { repo: [rootPath] } },
-    });
-    if (expandedRepo !== rootPath) return;
-    branches = data?.branches ?? [];
-    loadingBranches = false;
+    if (!client) {
+      loadingBranches = false;
+      return;
+    }
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* RoborevWorkflow;
+        yield* workflow.catalog(
+          owner,
+          executeRoborevRequest("list Roborev branches", (signal) =>
+            client.GET("/api/branches", {
+              params: { query: { repo: [rootPath] } },
+              signal,
+            }),
+          ).pipe(
+            Effect.flatMap((result) =>
+              result.error
+                ? Effect.fail(
+                    RoborevResponseError.make({
+                      operation: "list Roborev branches",
+                      message: "Failed to load branches",
+                      cause: result.error,
+                    }),
+                  )
+                : Effect.sync(() => {
+                    branches = result.data?.branches ?? [];
+                  }),
+            ),
+            Effect.catch(() => Effect.void),
+            Effect.ensuring(
+              Effect.sync(() => {
+                loadingBranches = false;
+              }),
+            ),
+          ),
+        );
+      }),
+      {
+        operation: "list Roborev branches",
+        safeContext: { owner },
+        onFailure: () => {},
+      },
+    );
   }
 
   function selectRepo(rootPath: string): void {
@@ -91,7 +166,7 @@
 
   function toggle(): void {
     open = !open;
-    if (open) void loadRepos();
+    if (open) loadRepos();
   }
 
   function handleKeydown(e: KeyboardEvent): void {
@@ -104,6 +179,20 @@
     if (target instanceof Node && pickerRef?.contains(target)) return;
     open = false;
   }
+
+  onDestroy(() => {
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* RoborevWorkflow;
+        yield* workflow.stopCatalog(owner);
+      }),
+      {
+        operation: "stop Roborev repository picker",
+        safeContext: { owner },
+        onFailure: () => {},
+      },
+    );
+  });
 </script>
 
 <svelte:window onkeydown={handleKeydown} />

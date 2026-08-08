@@ -5488,6 +5488,34 @@ type repoWork struct {
 	repo  RepoRef
 }
 
+func (s *Syncer) recordRunError(
+	state *runState,
+	repo RepoRef,
+	err error,
+	errMessage string,
+) {
+	errorCode := syncErrorCodeFor(err)
+	ceilingKey := ""
+	if errorCode == SyncErrorCodeLocalCeilingExhausted {
+		identity, identityErr := s.identityForRepo(repo, false)
+		if identityErr == nil {
+			ceilingKey = RateStatusKey(
+				string(repoPlatform(repo)), identity.Host, identity.Principal,
+			)
+		}
+	}
+
+	state.errMu.Lock()
+	defer state.errMu.Unlock()
+	if *state.lastErrorCode == SyncErrorCodeLocalCeilingExhausted &&
+		errorCode != SyncErrorCodeLocalCeilingExhausted {
+		return
+	}
+	*state.lastErr = errMessage
+	*state.lastErrorCode = errorCode
+	*state.lastErrorCeilingKey = ceilingKey
+}
+
 // runWorker drains the work channel until it is closed or ctx
 // is canceled. It is the body of each goroutine spawned by
 // RunOnce. Extracted from the inline closure so cancellation
@@ -5516,12 +5544,9 @@ func (s *Syncer) runWorker(
 		}
 		bucket, bucketErr := s.bucketKeyForRepo(repo, false)
 		if bucketErr != nil {
-			state.errMu.Lock()
-			*state.lastErr = bucketErr.Error()
-			*state.lastErrorCode = ""
-			*state.lastErrorCeilingKey = ""
-			state.errMu.Unlock()
-			state.results[item.index].Error = bucketErr.Error()
+			errMessage := bucketErr.Error()
+			s.recordRunError(state, repo, bucketErr, errMessage)
+			state.results[item.index].Error = errMessage
 			continue
 		}
 		// Provider reserve first: this credential's own GitHub pool. The
@@ -5585,20 +5610,7 @@ func (s *Syncer) runWorker(
 			slog.Error("sync repo failed",
 				"repo", repoName, "err", err,
 			)
-			state.errMu.Lock()
-			*state.lastErr = errStr
-			errorCode := syncErrorCodeFor(err)
-			*state.lastErrorCode = errorCode
-			*state.lastErrorCeilingKey = ""
-			if errorCode == SyncErrorCodeLocalCeilingExhausted {
-				identity, identityErr := s.identityForRepo(repo, false)
-				if identityErr == nil {
-					*state.lastErrorCeilingKey = RateStatusKey(
-						string(repoPlatform(repo)), identity.Host, identity.Principal,
-					)
-				}
-			}
-			state.errMu.Unlock()
+			s.recordRunError(state, repo, err, errStr)
 			// Each index is written by exactly one worker. The partial
 			// typing requires the whole error to be the partial failure:
 			// a partial joined with any other failure is hard.

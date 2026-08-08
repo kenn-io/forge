@@ -7244,6 +7244,51 @@ func TestSyncStatusUpdated(t *testing.T) {
 	assert.Empty(status.LastError)
 }
 
+func TestRunOncePreservesLocalCeilingStatusAcrossLaterRepoFailure(t *testing.T) {
+	assert := assert.New(t)
+	database := openTestDB(t)
+	ceilingRecorded := make(chan struct{})
+
+	client := &mockClient{
+		listOpenPRsFn: func(ctx context.Context, _, repo string) ([]*gh.PullRequest, error) {
+			if repo == "budget-limited" {
+				return nil, fmt.Errorf(
+					"budget-limited list failure: %w", platform.ErrSyncBudgetExhausted,
+				)
+			}
+			select {
+			case <-ceilingRecorded:
+				return nil, errors.New("unrelated repository failure")
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{
+			{Owner: "owner", Name: "budget-limited", PlatformHost: "github.com"},
+			{Owner: "owner", Name: "other", PlatformHost: "github.com"},
+		},
+		time.Minute, nil, nil,
+	)
+	syncer.SetParallelism(2)
+	var closeOnce sync.Once
+	syncer.SetOnStatusChange(func(status *SyncStatus) {
+		if status.Progress == "1/2" {
+			closeOnce.Do(func() { close(ceilingRecorded) })
+		}
+	})
+
+	syncer.RunOnce(t.Context())
+
+	status := syncer.Status()
+	assert.Contains(status.LastError, "budget-limited list failure")
+	assert.NotContains(status.LastError, "unrelated repository failure")
+	assert.Equal(SyncErrorCodeLocalCeilingExhausted, status.LastErrorCode)
+	assert.Equal("github.com", status.LastErrorCeilingKey)
+}
+
 func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
 	d := openTestDB(t)
 	mc := &mockClient{

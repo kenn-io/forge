@@ -587,8 +587,8 @@ response never overwrites an App installation pool
 - Background admission gates on the routed credential's own reserve; the local
   `sync_budget_per_hour` ceiling is separate and is reported apart from provider
   quota (`internal/github/sync.go::backgroundQuotaAvailability`).
-- Local-ceiling failures identify the exact credential row and retain their typed cause
-  through aggregation; UI counters/reset are shown only while that row remains in the
+- Local-ceiling failures identify the exact credential row and retain their complete tuple
+  through item and parallel-run aggregation; UI details are shown only while that row remains in the
   failure's hourly window (`internal/github/sync.go::SyncStatus`, `frontend/src/lib/components/layout/StatusBar.svelte::localCeilingFailure`).
 - List discovery (open PR/issue lists, repo identity resolve) spends the local
   ceiling's essential reserve; optional spend (details, fast-sync, archive

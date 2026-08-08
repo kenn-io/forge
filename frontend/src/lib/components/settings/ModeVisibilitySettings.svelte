@@ -1,11 +1,13 @@
 <script lang="ts">
   import { Checkbox } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import { DEFAULT_MODE_VISIBILITY } from "../../api/types.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { ModeVisibility } from "../../api/types.js";
-  import { updateSettings } from "../../api/settings.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
 
   type ModeKey = keyof ModeVisibility;
 
@@ -31,6 +33,7 @@
   }: Props = $props();
 
   const { settings: settingsStore } = getStores();
+  const runtime = getAppRuntime();
   const embedded = isEmbedded();
 
   const modeOptions: ModeOption[] = [
@@ -75,27 +78,44 @@
     };
   }
 
-  async function save(): Promise<void> {
+  function save(): void {
     if (embedded) return;
     if (!canSave) return;
 
     saving = true;
     onSavingChange?.(true);
     const pendingModes = normalizeModes(draft);
-    try {
-      const settings = await updateSettings({ modes: pendingModes });
-      const updated = normalizeModes(settings.modes ?? pendingModes);
-      source = updated;
-      draft = updated;
-      onUpdate(updated);
-      settingsStore.setModeVisibility(updated);
-    } catch (err) {
-      draft = source;
-      showFlash(err instanceof Error ? err.message : "Failed to save visible modes.", { tone: "danger" });
-    } finally {
-      saving = false;
-      onSavingChange?.(false);
-    }
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.persist(() => ({ modes: pendingModes }));
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              draft = source;
+              showFlash(settingsErrorMessage(failure), { tone: "danger" });
+            }),
+          onSuccess: (settings) =>
+            Effect.sync(() => {
+              const updated = normalizeModes(settings.modes ?? pendingModes);
+              source = updated;
+              draft = updated;
+              onUpdate(updated);
+              settingsStore.setModeVisibility(updated);
+            }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          saving = false;
+          onSavingChange?.(false);
+        })),
+      ),
+      {
+        operation: "save visible modes",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 </script>
 

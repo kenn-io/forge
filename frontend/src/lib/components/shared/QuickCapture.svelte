@@ -1,5 +1,10 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import PlusIcon from "@lucide/svelte/icons/plus";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
 
   import Modal from "./Modal.svelte";
 
@@ -7,13 +12,16 @@
     open: boolean;
     disabled?: boolean | undefined;
     onClose: () => void;
-    onSubmit: (title: string) => void | Promise<void>;
+    onSubmit: (title: string) => KataCommand<void, unknown>;
   }
 
   let { open, disabled = false, onClose, onSubmit }: Props = $props();
 
+  const runtime = getAppRuntime();
+
   let title = $state("");
   let pending = $state(false);
+  let submitExecution: AppExecution<void, unknown> | null = null;
 
   $effect(() => {
     if (!open) {
@@ -22,25 +30,36 @@
     }
   });
 
-  async function submit(): Promise<void> {
+  function submit(): void {
     const value = title.trim();
     if (!value || pending || disabled) return;
     pending = true;
-    try {
-      await onSubmit(value);
-      title = "";
-      onClose();
-    } finally {
-      pending = false;
-    }
+    submitExecution = runtime.runCommand(
+      onSubmit(value).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            title = "";
+            onClose();
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => (pending = false))),
+      ),
+      {
+        operation: "capture Kata task",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   function handleKeydown(event: KeyboardEvent): void {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      void submit();
+      submit();
     }
   }
+
+  onDestroy(() => submitExecution?.interrupt());
 </script>
 
 <Modal {open} title="New task" {onClose} width={440}>
@@ -48,7 +67,7 @@
     class="capture"
     onsubmit={(event) => {
       event.preventDefault();
-      void submit();
+      submit();
     }}
   >
     <input

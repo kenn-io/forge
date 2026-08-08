@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import type { ComponentProps } from "svelte";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import type { KataRecurrence } from "../../api/kata/taskTypes";
 import RecurrenceDeleteDialog from "./RecurrenceDeleteDialog.svelte";
 
@@ -26,13 +28,15 @@ const sample: KataRecurrence = {
   updated_at: "2026-05-15T12:00:00.000Z",
 };
 
+function renderDeleteDialog(props: ComponentProps<typeof RecurrenceDeleteDialog>) {
+  return render(AppRuntimeHarness, { props: { component: RecurrenceDeleteDialog, ...props } });
+}
+
 describe("RecurrenceDeleteDialog", () => {
   test("renders the template title in the body and confirm/cancel buttons", () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
-    render(RecurrenceDeleteDialog, {
-      props: { open: true, recurrence: sample, onConfirm, onCancel },
-    });
+    renderDeleteDialog({ open: true, recurrence: sample, onConfirm, onCancel });
     expect(screen.getByText("Delete recurrence")).toBeTruthy();
     expect(screen.getByText(/Stop creating new occurrences of/)).toBeTruthy();
     expect(screen.getByText("Weekly review")).toBeTruthy();
@@ -43,9 +47,7 @@ describe("RecurrenceDeleteDialog", () => {
   test("Delete fires onConfirm; Cancel fires onCancel", async () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
-    render(RecurrenceDeleteDialog, {
-      props: { open: true, recurrence: sample, onConfirm, onCancel },
-    });
+    renderDeleteDialog({ open: true, recurrence: sample, onConfirm, onCancel });
     await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
@@ -56,9 +58,7 @@ describe("RecurrenceDeleteDialog", () => {
   test("authority fencing disables Delete without dismissing the dialog", async () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
-    const view = render(RecurrenceDeleteDialog, {
-      props: { open: true, recurrence: sample, onConfirm, onCancel },
-    });
+    const view = renderDeleteDialog({ open: true, recurrence: sample, onConfirm, onCancel });
     await view.rerender({ disabled: true });
 
     const deleteButton = screen.getByRole("button", { name: "Delete" }) as HTMLButtonElement;
@@ -76,9 +76,7 @@ describe("RecurrenceDeleteDialog", () => {
   });
 
   test("does not render when open=false", () => {
-    render(RecurrenceDeleteDialog, {
-      props: { open: false, recurrence: sample, onConfirm: () => {}, onCancel: () => {} },
-    });
+    renderDeleteDialog({ open: false, recurrence: sample, onConfirm: () => {}, onCancel: () => {} });
     expect(screen.queryByText("Delete recurrence")).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import WorkspaceProjectCard from "./WorkspaceProjectCard.svelte";
+import WorkspaceProjectCard from "./WorkspaceProjectCardRuntimeHarness.svelte";
 
 const win = window as any;
 
@@ -16,27 +16,29 @@ vi.mock("../../stores/flash.svelte.js", () => ({
 const projectGet = vi.fn();
 const worktreesGet = vi.fn();
 
-vi.mock("../../api/runtime.ts", () => ({
-  apiErrorMessage: (error: { detail?: string; title?: string } | undefined, fallback: string) =>
-    error?.detail ?? error?.title ?? fallback,
-  client: {
-    GET: vi.fn((path: string, options) => {
-      if (path === "/projects/{project_id}") {
-        return projectGet(options);
-      }
-      if (path === "/fleet/hosts/{host_key}/projects/{project_id}") {
-        return projectGet(options);
-      }
-      if (path === "/projects/{project_id}/worktrees") {
-        return worktreesGet(options);
-      }
-      if (path === "/fleet/hosts/{host_key}/projects/{project_id}/worktrees") {
-        return worktreesGet(options);
-      }
-      throw new Error(`unexpected GET path ${path}`);
+vi.mock("../../api/runtime.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/runtime.ts")>();
+  return {
+    ...actual,
+    createRuntimeClient: () => ({
+      GET: vi.fn((path: string, options) => {
+        if (path === "/projects/{project_id}") {
+          return projectGet(options);
+        }
+        if (path === "/fleet/hosts/{host_key}/projects/{project_id}") {
+          return projectGet(options);
+        }
+        if (path === "/projects/{project_id}/worktrees") {
+          return worktreesGet(options);
+        }
+        if (path === "/fleet/hosts/{host_key}/projects/{project_id}/worktrees") {
+          return worktreesGet(options);
+        }
+        throw new Error(`unexpected GET path ${path}`);
+      }),
     }),
-  },
-}));
+  };
+});
 
 interface ProjectFixture {
   id: string;
@@ -56,11 +58,18 @@ function setProjectResponse(project: ProjectFixture | { error: string }): void {
   if ("error" in project) {
     projectGet.mockResolvedValue({
       error: { detail: project.error },
-      data: undefined,
+      response: new Response(null, { status: 404 }),
     });
     return;
   }
-  projectGet.mockResolvedValue({ data: project, error: undefined });
+  projectGet.mockResolvedValue({
+    data: {
+      created_at: "2026-08-04T00:00:00Z",
+      updated_at: "2026-08-04T00:00:00Z",
+      ...project,
+    },
+    response: new Response(),
+  });
 }
 
 function setWorktreesResponse(
@@ -74,7 +83,7 @@ function setWorktreesResponse(
   worktreesGet.mockReset();
   worktreesGet.mockResolvedValue({
     data: { worktrees },
-    error: undefined,
+    response: new Response(),
   });
 }
 
@@ -110,6 +119,23 @@ describe("WorkspaceProjectCard", () => {
         name: /Create your first worktree/i,
       }),
     ).toBeTruthy();
+  });
+
+  it("aborts a pending project read when the card unmounts", async () => {
+    let requestSignal: AbortSignal | undefined;
+    projectGet.mockImplementation((options: { signal?: AbortSignal }) => {
+      requestSignal = options.signal;
+      return new Promise(() => {});
+    });
+    setWorktreesResponse([]);
+    const view = render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
+    await waitFor(() => {
+      expect(projectGet).toHaveBeenCalledOnce();
+    });
+
+    view.unmount();
+
+    expect(requestSignal?.aborted).toBe(true);
   });
 
   it("hides the platform chip row when platform_identity is absent", async () => {
@@ -199,9 +225,11 @@ describe("WorkspaceProjectCard", () => {
     expect(await screen.findByText("myrepo")).toBeTruthy();
     expect(projectGet).toHaveBeenCalledWith({
       params: { path: { host_key: "epyc", project_id: "prj_1" } },
+      signal: expect.any(AbortSignal),
     });
     expect(worktreesGet).toHaveBeenCalledWith({
       params: { path: { host_key: "epyc", project_id: "prj_1" } },
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -242,9 +270,11 @@ describe("WorkspaceProjectCard", () => {
         name: /Create your first worktree/i,
       }),
     );
-    expect(newWorktreeHandler).toHaveBeenCalledWith({
-      surface: "project-card",
-      projectId: "prj_1",
+    await waitFor(() => {
+      expect(newWorktreeHandler).toHaveBeenCalledWith({
+        surface: "project-card",
+        projectId: "prj_1",
+      });
     });
   });
 
@@ -280,10 +310,185 @@ describe("WorkspaceProjectCard", () => {
         name: /Create your first worktree/i,
       }),
     );
-    expect(newWorktreeHandler).toHaveBeenCalledWith({
-      surface: "project-card",
-      projectId: "prj_1",
-      hostKey: "epyc",
+    await waitFor(() => {
+      expect(newWorktreeHandler).toHaveBeenCalledWith({
+        surface: "project-card",
+        projectId: "prj_1",
+        hostKey: "epyc",
+      });
+    });
+  });
+
+  it("adopts a retained action before offering a new worktree intent", async () => {
+    let completeAction: ((result: CommandResult) => void) | undefined;
+    const pendingAction = new Promise<CommandResult>((resolve) => {
+      completeAction = resolve;
+    });
+    const newWorktreeHandler = vi.fn(() => pendingAction);
+    win.__kenn_forge_config = {
+      actions: {
+        project: [
+          {
+            id: "new-worktree",
+            label: "New Worktree",
+            handler: newWorktreeHandler,
+          },
+        ],
+      },
+    };
+    win.__kenn_forge_notify_config_changed?.();
+    setProjectResponse({
+      id: "prj_1",
+      display_name: "myrepo",
+      local_path: "/tmp/myrepo",
+    });
+    setWorktreesResponse([]);
+    const view = render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
+    await screen.findByText("myrepo");
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: /Create your first worktree/i,
+      }),
+    );
+    await waitFor(() => {
+      expect(newWorktreeHandler).toHaveBeenCalledWith({
+        surface: "project-card",
+        projectId: "prj_1",
+      });
+    });
+
+    await view.rerender({ projectId: "prj_2" });
+    await waitFor(() => {
+      expect(projectGet).toHaveBeenCalledTimes(2);
+    });
+    if (!completeAction) throw new Error("project action did not start");
+    completeAction({ ok: true });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(projectGet).toHaveBeenCalledTimes(2);
+
+    await view.rerender({ projectId: "prj_1" });
+    await waitFor(() => expect(projectGet).toHaveBeenCalledTimes(4));
+    await fireEvent.click(screen.getByRole("button", { name: /Create your first worktree/i }));
+    await waitFor(() => expect(newWorktreeHandler).toHaveBeenCalledTimes(2));
+
+    expect(projectGet).toHaveBeenCalledTimes(5);
+  });
+
+  it("keeps the current retained-action owner fenced while an earlier waiter settles", async () => {
+    let completeAction: ((result: CommandResult) => void) | undefined;
+    const pendingAction = new Promise<CommandResult>((resolve) => {
+      completeAction = resolve;
+    });
+    const newWorktreeHandler = vi.fn(() => pendingAction);
+    win.__kenn_forge_config = {
+      actions: {
+        project: [
+          {
+            id: "new-worktree",
+            label: "New Worktree",
+            handler: newWorktreeHandler,
+          },
+        ],
+      },
+    };
+    win.__kenn_forge_notify_config_changed?.();
+
+    const refreshResolvers: Array<
+      (response: { data: ProjectFixture & { created_at: string; updated_at: string }; response: Response }) => void
+    > = [];
+    let firstProjectLoads = 0;
+    projectGet.mockImplementation((options: { params: { path: { project_id: string } } }) => {
+      const projectId = options.params.path.project_id;
+      const project = {
+        id: projectId,
+        display_name: projectId === "prj_1" ? "Retained Project" : "Navigation Target",
+        local_path: `/tmp/${projectId}`,
+        created_at: "2026-08-04T00:00:00Z",
+        updated_at: "2026-08-04T00:00:00Z",
+      };
+      if (projectId === "prj_1") {
+        firstProjectLoads += 1;
+        if (firstProjectLoads >= 3) {
+          return new Promise((resolve) => {
+            refreshResolvers.push(resolve);
+          });
+        }
+      }
+      return Promise.resolve({ data: project, response: new Response() });
+    });
+    setWorktreesResponse([]);
+
+    const view = render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
+    await screen.findByText("Retained Project");
+    await fireEvent.click(screen.getByRole("button", { name: /Create your first worktree/i }));
+    await waitFor(() => expect(newWorktreeHandler).toHaveBeenCalledOnce());
+
+    await view.rerender({ projectId: "prj_2" });
+    await screen.findByText("Navigation Target");
+    await view.rerender({ projectId: "prj_1" });
+    await waitFor(() => expect(firstProjectLoads).toBe(2));
+
+    if (!completeAction) throw new Error("project action did not start");
+    completeAction({ ok: true });
+    await waitFor(() => expect(refreshResolvers).toHaveLength(2));
+    refreshResolvers[0]?.({
+      data: {
+        id: "prj_1",
+        display_name: "Retained Project",
+        local_path: "/tmp/prj_1",
+        created_at: "2026-08-04T00:00:00Z",
+        updated_at: "2026-08-04T00:00:00Z",
+      },
+      response: new Response(),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const button = screen.queryByRole("button", { name: /Create (your first|another) worktree/i });
+    expect(button === null || button.hasAttribute("disabled")).toBe(true);
+
+    for (const resolve of refreshResolvers.slice(1)) {
+      resolve({
+        data: {
+          id: "prj_1",
+          display_name: "Retained Project",
+          local_path: "/tmp/prj_1",
+          created_at: "2026-08-04T00:00:00Z",
+          updated_at: "2026-08-04T00:00:00Z",
+        },
+        response: new Response(),
+      });
+    }
+  });
+
+  it("surfaces an invalid new-worktree acknowledgement", async () => {
+    win.__kenn_forge_config = {
+      actions: {
+        project: [
+          {
+            id: "new-worktree",
+            label: "New Worktree",
+            handler: vi.fn().mockResolvedValue(undefined),
+          },
+        ],
+      },
+    };
+    win.__kenn_forge_notify_config_changed?.();
+    setProjectResponse({
+      id: "prj_1",
+      display_name: "myrepo",
+      local_path: "/tmp/myrepo",
+    });
+    setWorktreesResponse([]);
+    render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
+    await screen.findByText("myrepo");
+
+    await fireEvent.click(screen.getByRole("button", { name: /Create your first worktree/i }));
+
+    await waitFor(() => {
+      expect(mocks.showFlash).toHaveBeenCalledWith("The host returned an invalid worktree acknowledgement.", {
+        tone: "danger",
+      });
     });
   });
 
@@ -319,8 +524,10 @@ describe("WorkspaceProjectCard", () => {
         name: /Create your first worktree/i,
       }),
     );
-    expect(mocks.showFlash).toHaveBeenCalledWith("user cancelled the sheet", {
-      tone: "danger",
+    await waitFor(() => {
+      expect(mocks.showFlash).toHaveBeenCalledWith("user cancelled the sheet", {
+        tone: "danger",
+      });
     });
     expect(screen.queryByText("user cancelled the sheet")).toBeNull();
   });

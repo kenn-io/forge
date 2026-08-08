@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import type { Repo } from "../api/types.js";
 import { createSettingsStore } from "../stores/settings.svelte.js";
 import { client } from "../api/runtime.js";
-import RepoTypeahead from "./RepoTypeahead.svelte";
+import RepoTypeahead from "./RepoTypeaheadRuntimeHarness.svelte";
 
 let settingsStore: ReturnType<typeof createSettingsStore>;
 
@@ -18,13 +18,16 @@ vi.mock("../context.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../api/runtime.js", () => ({
+vi.mock("../api/runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/runtime.js")>()),
   client: {
     GET: vi.fn(() => Promise.resolve({ data: [], error: undefined })),
   },
 }));
 
-const getRepos = client.GET as unknown as Mock<() => Promise<{ data: Repo[]; error: undefined }>>;
+const getRepos = client.GET as unknown as Mock<
+  (path: string, options?: { signal?: AbortSignal }) => Promise<{ data: Repo[]; error: undefined }>
+>;
 
 describe("RepoTypeahead", () => {
   beforeEach(() => {
@@ -33,6 +36,7 @@ describe("RepoTypeahead", () => {
     localStorage.clear();
     settingsStore = createSettingsStore();
     settingsStore.setConfiguredRepos([]);
+    getRepos.mockReset();
     getRepos.mockResolvedValue({ data: [], error: undefined });
   });
 
@@ -66,6 +70,67 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(screen.getByRole("option", { name: /import-lab\/api/i })).toBeTruthy();
     });
+  });
+
+  it("aborts the repository request when the component unmounts", async () => {
+    let signal: AbortSignal | undefined;
+    getRepos.mockImplementation((_path, options) => {
+      signal = options?.signal;
+      return new Promise(() => undefined);
+    });
+    const view = render(RepoTypeahead, {
+      props: { selected: undefined, onchange: vi.fn() },
+    });
+    await waitFor(() => expect(getRepos).toHaveBeenCalled());
+
+    view.unmount();
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("replaces a repository request when configured identity changes at the same count", async () => {
+    let resolveFirst!: (value: { data: Repo[]; error: undefined }) => void;
+    const first = new Promise<{ data: Repo[]; error: undefined }>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const replacement = [
+      { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "two" },
+    ] as unknown as Repo[];
+    getRepos.mockImplementationOnce(() => first).mockResolvedValueOnce({ data: replacement, error: undefined });
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "one",
+        repo_path: "acme/one",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+    render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
+    await waitFor(() => expect(getRepos).toHaveBeenCalledTimes(1));
+
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "two",
+        repo_path: "acme/two",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+
+    await waitFor(() => expect(getRepos).toHaveBeenCalledTimes(2));
+    resolveFirst({
+      data: [{ Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "one" }] as unknown as Repo[],
+      error: undefined,
+    });
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await waitFor(() => expect(screen.getByRole("option", { name: /acme\/two/i })).toBeTruthy());
+    expect(screen.queryByRole("option", { name: /acme\/one/i })).toBeNull();
   });
 
   it("keeps fetched repos for glob-backed settings entries", async () => {

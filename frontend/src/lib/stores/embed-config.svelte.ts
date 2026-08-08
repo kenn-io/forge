@@ -1,4 +1,30 @@
+import { Effect, Schema } from "effect";
+import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { setGlobalRepo } from "../stores/filter.svelte.js";
+
+class EmbeddingCallbackError extends Schema.TaggedErrorClass<EmbeddingCallbackError>()("EmbeddingCallbackError", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+export class InvalidEmbeddingAcknowledgement extends Schema.TaggedErrorClass<InvalidEmbeddingAcknowledgement>()(
+  "InvalidEmbeddingAcknowledgement",
+  {
+    operation: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {}
+
+const CommandResultSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  message: Schema.optionalKey(Schema.String),
+});
+
+const decodeCommandResult = Effect.fn("Embedding.decodeCommandResult")(function* (operation: string, input: unknown) {
+  return yield* Schema.decodeUnknownEffect(CommandResultSchema)(input).pipe(
+    Effect.mapError((cause) => InvalidEmbeddingAcknowledgement.make({ operation, cause })),
+  );
+});
 
 // Bridge: repo filter (module-scope, not workspace-specific)
 window.__kenn_forge_set_repo_filter = (repo: { owner: string; name: string } | null) => {
@@ -148,38 +174,41 @@ export function getOnRouteChange(): ((event: ForgeNavigateEvent) => void) | unde
   return readConfig()?.onRouteChange;
 }
 
-export function invokeAction(action: ActionHook, context: ActionContext): void {
-  try {
-    const result = action.handler(context);
-    Promise.resolve(result).catch((err: unknown) => {
-      console.error("Embedding action error:", err);
-    });
-  } catch (err) {
-    console.error("Embedding action error:", err);
-  }
+export function invokeAction(runtime: AppRuntime, action: ActionHook, context: ActionContext): void {
+  runtime.runCommand(
+    Effect.tryPromise({
+      try: () => Promise.resolve(action.handler(context)),
+      catch: (cause) => EmbeddingCallbackError.make({ operation: `run embed action ${action.id}`, cause }),
+    }).pipe(
+      Effect.catchTag("EmbeddingCallbackError", (failure) =>
+        Effect.sync(() => console.error("Embedding action error:", failure.cause)),
+      ),
+    ),
+    { operation: "run embedding action", safeContext: { actionId: action.id }, onFailure: () => {} },
+  );
 }
 
-// invokeProjectAction is the ack-aware project-action runner. The firing
-// surface awaits the returned CommandResult to render in-flight, success,
-// and failure states - this is the contract that fixes "button click does
-// nothing" for project actions. Handlers that throw are normalized into
-// { ok: false, message } so callers never see an unhandled rejection.
-export async function invokeProjectAction(
+// Project actions remain an embedding callback boundary. The Effect owns the
+// acknowledgement lifetime and turns thrown/rejected handlers into the same
+// visible command result as an explicit host rejection.
+export const invokeProjectAction = Effect.fn("Embedding.invokeProjectAction")(function* (
   action: ProjectActionHook,
   context: ProjectActionContext,
-): Promise<CommandResult> {
-  try {
-    const result = await action.handler(context);
-    if (result && typeof result === "object" && "ok" in result && typeof result.ok === "boolean") {
-      return result;
-    }
-    return { ok: true };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`Embedding project action "${action.id}" failed:`, err);
-    return { ok: false, message };
-  }
-}
+) {
+  const result = yield* Effect.tryPromise({
+    try: () => Promise.resolve(action.handler(context)),
+    catch: (cause) => EmbeddingCallbackError.make({ operation: `run project action ${action.id}`, cause }),
+  }).pipe(
+    Effect.catchTag("EmbeddingCallbackError", (failure) =>
+      Effect.sync(() => {
+        const message = failure.cause instanceof Error ? failure.cause.message : String(failure.cause);
+        console.error(`Embedding project action "${action.id}" failed:`, failure.cause);
+        return { ok: false, message };
+      }),
+    ),
+  );
+  return yield* decodeCommandResult(`project action ${action.id}`, result);
+});
 
 export function getInitialRoute(): string | undefined {
   return readConfig()?.embed?.initialRoute;
@@ -207,23 +236,31 @@ export function getOnLayoutChanged(): ForgeConfig["onLayoutChanged"] | undefined
   return readConfig()?.onLayoutChanged;
 }
 
-let layoutTimer: ReturnType<typeof setTimeout> | undefined;
+let layoutExecution: AppExecution<void, never> | undefined;
 
-export function emitLayoutChanged(layout: {
-  sidebar: { width: number };
-  pinnedPanel: { width: number; visible: boolean };
-}): void {
-  clearTimeout(layoutTimer);
-  layoutTimer = setTimeout(() => {
-    const handler = getOnLayoutChanged();
-    if (handler) {
-      try {
-        handler(layout);
-      } catch (e) {
-        console.error("[kenn-forge] onLayoutChanged error:", e);
-      }
-    }
-  }, 150);
+export function emitLayoutChanged(
+  runtime: AppRuntime,
+  layout: {
+    sidebar: { width: number };
+    pinnedPanel: { width: number; visible: boolean };
+  },
+): void {
+  layoutExecution?.interrupt();
+  layoutExecution = runtime.runCommand(
+    Effect.sleep("150 millis").pipe(
+      Effect.andThen(
+        Effect.try({
+          try: () => getOnLayoutChanged()?.(layout),
+          catch: (cause) => EmbeddingCallbackError.make({ operation: "publish embed layout", cause }),
+        }),
+      ),
+      Effect.catchTag("EmbeddingCallbackError", (failure) =>
+        Effect.sync(() => console.error("[kenn-forge] onLayoutChanged error:", failure.cause)),
+      ),
+      Effect.asVoid,
+    ),
+    { operation: "publish embedding layout", safeContext: {}, onFailure: () => {} },
+  );
 }
 
 export function getWorkspaceData(): WorkspaceData | undefined {
@@ -234,23 +271,28 @@ export function getOnWorkspaceCommand(): WorkspaceCommandHandler | undefined {
   return readConfig()?.onWorkspaceCommand;
 }
 
-export async function emitWorkspaceCommand(command: string, payload: Record<string, unknown>): Promise<CommandResult> {
+export const emitWorkspaceCommand = Effect.fn("Embedding.emitWorkspaceCommand")(function* (
+  command: string,
+  payload: Record<string, unknown>,
+) {
   const handler = getOnWorkspaceCommand();
   if (!handler) {
     return { ok: true };
   }
-  try {
-    const result = await handler(command, payload);
-    if (result && typeof result === "object" && "ok" in result) {
-      return result;
-    }
-    return { ok: true };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    console.error(`[kenn-forge] workspace command "${command}" failed:`, e);
-    return { ok: false, message };
-  }
-}
+  const result = yield* Effect.tryPromise({
+    try: () => Promise.resolve(handler(command, payload)),
+    catch: (cause) => EmbeddingCallbackError.make({ operation: `run workspace command ${command}`, cause }),
+  }).pipe(
+    Effect.catchTag("EmbeddingCallbackError", (failure) =>
+      Effect.sync(() => {
+        const message = failure.cause instanceof Error ? failure.cause.message : String(failure.cause);
+        console.error(`[kenn-forge] workspace command "${command}" failed:`, failure.cause);
+        return { ok: false, message };
+      }),
+    ),
+  );
+  return yield* decodeCommandResult(`workspace command ${command}`, result);
+});
 
 export function initWorkspaceBridge(): void {
   window.__kenn_forge_update_workspace = (data: WorkspaceData) => {

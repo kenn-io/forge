@@ -113,6 +113,39 @@ describe("Roborev mutation ownership", () => {
     expect(events.slice(0, 2)).toEqual(["get:17", "post"]);
   });
 
+  it("keeps a delayed rerun preflight ordered ahead of later actions", async () => {
+    const baseline = Promise.withResolvers<{
+      data: { jobs: Array<{ id: number; retry_count: number; status: string }> };
+      error: undefined;
+    }>();
+    const posts: string[] = [];
+    const get = vi.fn().mockImplementation((_path, request) => {
+      if (request.params.query.id === 17 && posts.length === 0) return baseline.promise;
+      return Promise.resolve({
+        data: { jobs: [{ id: request.params.query.id, retry_count: 1, status: "canceled" }] },
+        error: undefined,
+      });
+    });
+    const post = vi.fn().mockImplementation((path) => {
+      posts.push(path);
+      return Promise.resolve({ data: { success: true }, error: undefined });
+    });
+    const store = createJobsStore({
+      client: { GET: get, POST: post } as never,
+      runtime,
+      owner: "rerun-preflight-order-test",
+      navigate: vi.fn(),
+    });
+
+    store.rerunJob(17);
+    store.cancelJob(17);
+    await Promise.resolve();
+    expect(posts).toEqual([]);
+
+    baseline.resolve({ data: { jobs: [{ id: 17, retry_count: 0, status: "done" }] }, error: undefined });
+    await vi.waitFor(() => expect(posts).toEqual(["/api/job/rerun", "/api/job/cancel"]));
+  });
+
   it("does not start a later rerun before an accepted cancellation settles", async () => {
     const first = Promise.withResolvers<{ data: { success: boolean }; error: undefined }>();
     const requests: string[] = [];

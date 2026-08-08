@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 import KataChecklistEditor from "./KataChecklistEditor.svelte";
 
@@ -39,11 +41,12 @@ describe("KataChecklistEditor", () => {
   });
 
   it("stays hidden until an empty checklist is revealed", async () => {
-    const { rerender } = render(KataChecklistEditor, {
+    const { rerender } = render(AppRuntimeHarness, {
       props: {
+        component: KataChecklistEditor,
         issue: makeIssue(),
         revealed: false,
-        onPatchMetadata: vi.fn(async () => true),
+        onPatchMetadata: vi.fn(() => Effect.succeed(true)),
         onReveal: vi.fn(),
       },
     });
@@ -53,7 +56,7 @@ describe("KataChecklistEditor", () => {
     await rerender({
       issue: makeIssue(),
       revealed: true,
-      onPatchMetadata: vi.fn(async () => true),
+      onPatchMetadata: vi.fn(() => Effect.succeed(true)),
       onReveal: vi.fn(),
     });
 
@@ -61,11 +64,12 @@ describe("KataChecklistEditor", () => {
   });
 
   it("full-replaces checklist metadata for add, toggle, and remove", async () => {
-    const onPatchMetadata = vi.fn(async () => true);
+    const onPatchMetadata = vi.fn(() => Effect.succeed(true));
     const onReveal = vi.fn();
 
-    const { rerender } = render(KataChecklistEditor, {
+    const { rerender } = render(AppRuntimeHarness, {
       props: {
+        component: KataChecklistEditor,
         issue: makeIssue([{ id: "item-1", text: "Send", done: false }]),
         revealed: false,
         onPatchMetadata,
@@ -121,11 +125,12 @@ describe("KataChecklistEditor", () => {
   });
 
   it("clears the add-item draft when the selected task changes", async () => {
-    const { rerender } = render(KataChecklistEditor, {
+    const { rerender } = render(AppRuntimeHarness, {
       props: {
+        component: KataChecklistEditor,
         issue: makeIssue(),
         revealed: true,
-        onPatchMetadata: vi.fn(async () => true),
+        onPatchMetadata: vi.fn(() => Effect.succeed(true)),
         onReveal: vi.fn(),
       },
     });
@@ -136,7 +141,7 @@ describe("KataChecklistEditor", () => {
     await rerender({
       issue: makeIssue([], { uid: "issue-2", short_id: "I-2", qualified_id: "INBOX-2" }),
       revealed: true,
-      onPatchMetadata: vi.fn(async () => true),
+      onPatchMetadata: vi.fn(() => Effect.succeed(true)),
       onReveal: vi.fn(),
     });
 
@@ -144,9 +149,10 @@ describe("KataChecklistEditor", () => {
   });
 
   it("preserves the add-item draft when the mutation transport fails", async () => {
-    const onPatchMetadata = vi.fn(async () => false);
-    render(KataChecklistEditor, {
+    const onPatchMetadata = vi.fn(() => Effect.succeed(false));
+    render(AppRuntimeHarness, {
       props: {
+        component: KataChecklistEditor,
         issue: makeIssue(),
         revealed: true,
         onPatchMetadata,
@@ -164,9 +170,10 @@ describe("KataChecklistEditor", () => {
   });
 
   it("keeps checklist mutations disabled while the owning snapshot is stale", async () => {
-    const onPatchMetadata = vi.fn(async () => true);
-    render(KataChecklistEditor, {
+    const onPatchMetadata = vi.fn(() => Effect.succeed(true));
+    render(AppRuntimeHarness, {
       props: {
+        component: KataChecklistEditor,
         issue: makeIssue([{ id: "item-1", text: "Send", done: false }]),
         revealed: false,
         disabled: true,

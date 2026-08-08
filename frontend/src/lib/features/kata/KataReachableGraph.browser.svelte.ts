@@ -6,7 +6,7 @@ import "../../../app.css";
 
 import { pressKey } from "../../../test/browserAppHarness.js";
 import type { KataReachableGraphEdge, KataReachableGraphResponse, KataTaskSummary } from "../../api/kata/taskTypes.js";
-import KataReachableGraph from "./KataReachableGraph.svelte";
+import KataReachableGraph from "./KataReachableGraphRuntimeHarness.svelte";
 
 const graphPreferencesStorageKey = "kenn-forge:kata:reachableGraphPreferences/v1";
 

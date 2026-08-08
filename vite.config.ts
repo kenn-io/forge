@@ -3,6 +3,8 @@ import { defineConfig } from "vite-plus";
 const rootVP = "node node_modules/vite-plus/bin/vp";
 const frontendVP = "node ../node_modules/vite-plus/bin/vp";
 const packageVP = "node ../../node_modules/vite-plus/bin/vp";
+const effectDiagnostics =
+  "(cd frontend && node node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format text --severity error)";
 
 export default defineConfig({
   run: {
@@ -13,6 +15,7 @@ export default defineConfig({
           `${rootVP} run frontend-lint`,
           `${rootVP} run kit-ui-check`,
           `${rootVP} run svelte-check`,
+          effectDiagnostics,
         ],
         cache: false,
       },
@@ -39,6 +42,7 @@ export default defineConfig({
         command: [
           `${rootVP} lint frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1`,
           `${rootVP} run svelte-check`,
+          effectDiagnostics,
         ],
         cache: false,
       },

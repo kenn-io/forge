@@ -978,19 +978,57 @@ test.describe.serial("Roborev", () => {
       await expect(reviewAction(page, "Reopen")).toBeVisible({ timeout: 10_000 });
     });
 
-    test("rerun job action on job 73", async ({ page }) => {
+    test("keeps a delayed rerun authority read ahead of a later cancellation", async ({ page }) => {
       await openDrawer(page, 73);
 
-      // Click the rerun button
+      let releasePreflight!: () => void;
+      const preflightRelease = new Promise<void>((resolve) => {
+        releasePreflight = resolve;
+      });
+      let markPreflightStarted!: () => void;
+      const preflightStarted = new Promise<void>((resolve) => {
+        markPreflightStarted = resolve;
+      });
+      let delayedPreflight = false;
+      await page.route("**/api/roborev/api/jobs?**", async (route) => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (
+          !delayedPreflight &&
+          request.method() === "GET" &&
+          url.searchParams.get("id") === "73" &&
+          url.searchParams.get("limit") === "1" &&
+          url.searchParams.get("omit_prompt") === "true"
+        ) {
+          delayedPreflight = true;
+          markPreflightStarted();
+          await preflightRelease;
+        }
+        await route.continue();
+      });
+
+      const submittedMutations: string[] = [];
+      page.on("request", (request) => {
+        if (request.method() !== "POST") return;
+        const pathname = new URL(request.url()).pathname;
+        if (pathname.endsWith("/api/roborev/api/job/rerun")) submittedMutations.push("rerun");
+        if (pathname.endsWith("/api/roborev/api/job/cancel")) submittedMutations.push("cancel");
+      });
+
       const rerunBtn = reviewAction(page, "Rerun");
       await expect(rerunBtn).toBeVisible({
         timeout: 10_000,
       });
       await rerunBtn.click();
+      await preflightStarted;
 
-      // The table should reload (job may now be queued again)
-      // Just verify the action completed without error
-      await page.waitForTimeout(500);
+      await page.keyboard.press("x");
+      await page.waitForTimeout(50);
+      expect(submittedMutations).toEqual([]);
+
+      releasePreflight();
+      await expect.poll(() => submittedMutations).toEqual(["rerun", "cancel"]);
+
       await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
     });
 

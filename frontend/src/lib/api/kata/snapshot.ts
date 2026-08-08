@@ -50,13 +50,14 @@ export interface KataTaskReferenceSearchOptions {
   daemon_id?: string | undefined;
   limit?: number | undefined;
   status?: "open" | "all" | undefined;
-  signal?: AbortSignal | undefined;
 }
+
+export type KataTaskReferenceSearchError = KataSnapshotAPIError | TransientTransportError;
 
 export type KataTaskReferenceSearch = (
   query: string,
   options?: KataTaskReferenceSearchOptions,
-) => Promise<KataTaskReferenceResponse>;
+) => Effect.Effect<KataTaskReferenceResponse, KataTaskReferenceSearchError, GeneratedApi>;
 
 function effectiveDaemonID(requested: string | undefined, options: KataClientOptions): string | undefined {
   const explicit = requested?.trim();

@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import type { Settings } from "../../api/types.js";
 
-  import { updateSettings } from "../../api/settings.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
 
   interface Props {
     workspaces: Settings["workspaces"];
@@ -10,10 +12,11 @@
   }
 
   let { workspaces, onUpdate }: Props = $props();
+  const runtime = getAppRuntime();
   const embedded = isEmbedded();
   let saving = $state(false);
 
-  async function toggleAutoAssign(): Promise<void> {
+  function toggleAutoAssign(): void {
     if (embedded || saving) return;
     const previous = workspaces;
     const pending = {
@@ -22,15 +25,29 @@
     };
     onUpdate(pending);
     saving = true;
-    try {
-      const settings = await updateSettings({ workspaces: pending });
-      onUpdate(settings.workspaces);
-    } catch (err) {
-      onUpdate(previous);
-      console.warn("Failed to save workspace settings:", err);
-    } finally {
-      saving = false;
-    }
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.persist(() => ({ workspaces: pending }));
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              onUpdate(previous);
+              console.warn("Failed to save workspace settings:", settingsErrorMessage(failure));
+            }),
+          onSuccess: (settings) => Effect.sync(() => onUpdate(settings.workspaces)),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          saving = false;
+        })),
+      ),
+      {
+        operation: "save workspace settings",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 </script>
 

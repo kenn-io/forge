@@ -1,4 +1,6 @@
+import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime } from "../app/runtime.js";
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
@@ -6,11 +8,15 @@ const mocks = vi.hoisted(() => ({
   showFlash: vi.fn(),
 }));
 
-vi.mock("../api/runtime.js", () => ({
-  client: {
-    POST: mocks.post,
-  },
-}));
+vi.mock("../api/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/runtime.js")>();
+  return {
+    ...actual,
+    client: {
+      POST: mocks.post,
+    },
+  };
+});
 
 vi.mock("../stores/router.svelte.js", () => ({
   navigate: mocks.navigate,
@@ -27,7 +33,8 @@ vi.mock("../stores/flash.svelte.js", () => ({
 
 async function clickItemRef(attributes: Record<string, string>): Promise<void> {
   const { initItemRefHandler } = await import("./itemRefHandler.js");
-  const cleanup = initItemRefHandler();
+  const runtime = makeAppRuntime();
+  const cleanup = initItemRefHandler(runtime);
   const anchor = document.createElement("a");
   anchor.className = "item-ref";
   anchor.href = attributes.href ?? "/issues/github/acme/widgets/12";
@@ -47,6 +54,7 @@ async function clickItemRef(attributes: Record<string, string>): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
   cleanup();
+  await Effect.runPromise(runtime.disposeEffect);
 }
 
 describe("itemRefHandler", () => {
@@ -78,6 +86,7 @@ describe("itemRefHandler", () => {
     });
 
     expect(mocks.post).toHaveBeenCalledWith("/repo/{provider}/{owner}/{name}/resolve/{number}", {
+      signal: expect.any(AbortSignal),
       params: {
         path: {
           provider: "github",
@@ -111,6 +120,7 @@ describe("itemRefHandler", () => {
     });
 
     expect(mocks.post).toHaveBeenCalledWith("/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}", {
+      signal: expect.any(AbortSignal),
       params: {
         path: {
           platform_host: "gitlab.example.com",
@@ -143,6 +153,7 @@ describe("itemRefHandler", () => {
     });
 
     expect(mocks.post).toHaveBeenCalledWith("/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}", {
+      signal: expect.any(AbortSignal),
       params: {
         path: {
           platform_host: "gitlab.example.com",

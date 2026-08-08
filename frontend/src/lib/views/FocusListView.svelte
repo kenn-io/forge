@@ -1,5 +1,9 @@
 <script lang="ts">
+  import { Effect, Schedule } from "effect";
+  import { onDestroy, untrack } from "svelte";
   import { ScrollBox, SearchInput, StatusDot } from "@kenn-io/kit-ui";
+  import { getAppRuntime } from "../app/runtime-context.js";
+  import type { AppExecution } from "../app/runtime.js";
   import { getStores, getNavigate, getActions } from "../context.js";
   import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
@@ -16,6 +20,7 @@
   } from "../routes.js";
 
   const { pulls, issues, sync, settings, grouping } = getStores();
+  const runtime = getAppRuntime();
   const navigate = getNavigate();
   const actions = getActions();
 
@@ -40,10 +45,12 @@
   const { listType, repo, routeFamily = "focus" }: Props = $props();
 
   let searchInput = $state("");
-  let debounceHandle: ReturnType<typeof setTimeout> | null =
-    null;
-  let refreshHandle: ReturnType<typeof setInterval> | null =
-    null;
+  let searchExecution: AppExecution<void, never> | null = null;
+
+  function loadList(): void {
+    if (listType === "mrs") pulls.loadPulls(repoParams);
+    else issues.loadIssues(repoParams);
+  }
 
   const repoLabel = $derived(repo ?? "All repositories");
 
@@ -52,50 +59,49 @@
   );
 
   $effect(() => {
-    if (listType === "mrs") {
-      pulls.loadPulls(repoParams);
-    } else {
-      issues.loadIssues(repoParams);
-    }
-
-    refreshHandle = setInterval(() => {
-      if (listType === "mrs") {
-        pulls.loadPulls(repoParams);
-      } else {
-        issues.loadIssues(repoParams);
-      }
-    }, 15_000);
-
-    if (sync.getSyncState()?.running) {
-      sync.onNextSyncComplete(() => {
-        if (listType === "mrs") {
-          pulls.loadPulls(repoParams);
-        } else {
-          issues.loadIssues(repoParams);
-        }
-      });
-    }
+    listType;
+    repoParams;
+    searchInput = untrack(() => listType === "mrs"
+      ? pulls.getSearchQuery() ?? ""
+      : issues.getIssueSearchQuery() ?? "");
+    const execution = untrack(() => runtime.runCommand(
+      Effect.sync(loadList).pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.asVoid),
+      {
+        operation: "poll focus list",
+        safeContext: { listType },
+        onFailure: () => {},
+      },
+    ));
+    const unsubscribeSync = sync.subscribeSyncComplete(loadList);
 
     return () => {
-      if (refreshHandle !== null) clearInterval(refreshHandle);
+      searchExecution?.interrupt();
+      execution.interrupt();
+      unsubscribeSync();
     };
   });
+
+  onDestroy(() => searchExecution?.interrupt());
 
   function onSearchInput(value: string): void {
     searchInput = value;
 
-    if (debounceHandle !== null) clearTimeout(debounceHandle);
-    debounceHandle = setTimeout(() => {
-      const q =
-        value.trim() === "" ? undefined : value.trim();
-      if (listType === "mrs") {
-        pulls.setSearchQuery(q);
-        pulls.loadPulls(repoParams);
-      } else {
-        issues.setIssueSearchQuery(q);
-        issues.loadIssues(repoParams);
-      }
-    }, 300);
+    searchExecution?.interrupt();
+    searchExecution = runtime.runCommand(
+      Effect.sleep("300 millis").pipe(
+        Effect.andThen(Effect.sync(() => {
+          const q = value.trim() === "" ? undefined : value.trim();
+          if (listType === "mrs") pulls.setSearchQuery(q);
+          else issues.setIssueSearchQuery(q);
+          loadList();
+        })),
+      ),
+      {
+        operation: "debounce focus list search",
+        safeContext: { listType },
+        onFailure: () => {},
+      },
+    );
   }
 
   function routeRefForPull(pr: PullRequest): PullRequestRouteRef {

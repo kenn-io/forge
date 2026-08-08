@@ -47,6 +47,7 @@ function createHarness(
 }
 
 let persistSettings: (settings: TerminalSettings) => Promise<TerminalSettings>;
+let persistedTerminal: TerminalSettings;
 const runtimes: OwnedAppRuntime[] = [];
 
 function settingsResponse(terminal: TerminalSettings): StartupSnapshot {
@@ -94,8 +95,12 @@ function settingsResponse(terminal: TerminalSettings): StartupSnapshot {
 
 beforeEach(() => {
   persistSettings = (settings) => Promise.resolve(settings);
+  persistedTerminal = { ...DEFAULT_TERMINAL_SETTINGS };
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
+    if (request.method === "GET") {
+      return Response.json(settingsResponse(persistedTerminal));
+    }
     const body = await request.clone().json();
     if (
       typeof body !== "object" ||
@@ -107,7 +112,8 @@ beforeEach(() => {
       return Response.json({ detail: "invalid terminal settings" }, { status: 400 });
     }
     const terminal = body.terminal as TerminalSettings;
-    return Response.json(settingsResponse(await persistSettings(terminal)));
+    persistedTerminal = await persistSettings(terminal);
+    return Response.json(settingsResponse(persistedTerminal));
   };
   vi.stubGlobal("fetch", fetch);
 });

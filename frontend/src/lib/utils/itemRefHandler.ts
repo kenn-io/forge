@@ -1,9 +1,10 @@
+import { Effect } from "effect";
 import { canonicalProvider, providerRepoPath, providerRouteParams } from "../api/provider-routes.js";
 import { client } from "../api/runtime.js";
+import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { navigate, buildItemRoute } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
 
-let requestId = 0;
 type ItemRefType = "pr" | "issue";
 
 function safeExternalURL(raw: string | undefined): string | null {
@@ -20,7 +21,7 @@ function safeExternalURL(raw: string | undefined): string | null {
 }
 
 function findItemRef(target: EventTarget | null): HTMLAnchorElement | null {
-  let el = target as HTMLElement | null;
+  let el = target instanceof HTMLElement ? target : null;
   while (el) {
     if (el instanceof HTMLAnchorElement && el.classList.contains("item-ref")) {
       return el;
@@ -30,7 +31,7 @@ function findItemRef(target: EventTarget | null): HTMLAnchorElement | null {
   return null;
 }
 
-async function resolveAndNavigate(
+function resolveAndNavigate(
   provider: string,
   platformHost: string | undefined,
   owner: string,
@@ -39,88 +40,95 @@ async function resolveAndNavigate(
   number: number,
   itemType: ItemRefType | undefined,
   externalUrl: string | undefined,
-  thisRequestId: number,
-): Promise<void> {
-  try {
-    const ref = { provider, platformHost, owner, name, repoPath };
-    const itemTypeHint = canonicalProvider(provider) === "gitlab" ? itemType : undefined;
-    const { data, error, response } = await client.POST(providerRepoPath(ref, "/resolve/{number}"), {
-      params: {
-        path: { ...providerRouteParams(ref), number },
-        ...(itemTypeHint && { query: { item_type: itemTypeHint } }),
-      },
-    });
+): Effect.Effect<void, unknown> {
+  return Effect.tryPromise({
+    try: (signal) => {
+      const ref = { provider, platformHost, owner, name, repoPath };
+      const itemTypeHint = canonicalProvider(provider) === "gitlab" ? itemType : undefined;
+      return client.POST(providerRepoPath(ref, "/resolve/{number}"), {
+        signal,
+        params: {
+          path: { ...providerRouteParams(ref), number },
+          ...(itemTypeHint && { query: { item_type: itemTypeHint } }),
+        },
+      });
+    },
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.andThen(({ data, error, response }) =>
+      Effect.sync(() => {
+        const ref = { provider, platformHost, owner, name, repoPath };
+        if (error) {
+          if (response.status === 404) {
+            showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
+          } else {
+            showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });
+          }
+          return;
+        }
 
-    if (thisRequestId !== requestId) return;
+        if (!data.repo_tracked) {
+          const safeExternalUrl = safeExternalURL(externalUrl);
+          if (safeExternalUrl) {
+            window.open(safeExternalUrl, "_blank", "noopener,noreferrer");
+            return;
+          }
+          showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`, { tone: "danger" });
+          return;
+        }
 
-    if (error) {
-      if (response.status === 404) {
-        showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
-      } else {
-        showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });
-      }
-      return;
-    }
-
-    if (!data.repo_tracked) {
-      const safeExternalUrl = safeExternalURL(externalUrl);
-      if (safeExternalUrl) {
-        window.open(safeExternalUrl, "_blank", "noopener,noreferrer");
-        return;
-      }
-      showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`, { tone: "danger" });
-      return;
-    }
-
-    const path = buildItemRoute({
-      itemType: data.item_type === "pr" ? "pr" : "issue",
-      provider: ref.provider,
-      platformHost: ref.platformHost,
-      owner,
-      name,
-      repoPath,
-      number,
-    });
-    navigate(path);
-  } catch {
-    if (thisRequestId !== requestId) return;
-    showFlash("Failed to resolve item reference. Check your connection.", { tone: "danger" });
-  }
-}
-
-function handleClick(e: MouseEvent): void {
-  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-
-  const anchor = findItemRef(e.target);
-  if (!anchor) return;
-
-  const provider = anchor.dataset.provider;
-  const platformHost = anchor.dataset.platformHost;
-  const owner = anchor.dataset.owner;
-  const name = anchor.dataset.name;
-  const repoPath = anchor.dataset.repoPath;
-  const numberStr = anchor.dataset.number;
-  const itemType =
-    anchor.dataset.itemType === "pr" || anchor.dataset.itemType === "issue" ? anchor.dataset.itemType : undefined;
-  const externalUrl = anchor.dataset.externalUrl;
-  if (!provider || !owner || !name || !repoPath || !numberStr) return;
-
-  e.preventDefault();
-  requestId++;
-  void resolveAndNavigate(
-    provider,
-    platformHost,
-    owner,
-    name,
-    repoPath,
-    parseInt(numberStr, 10),
-    itemType,
-    externalUrl,
-    requestId,
+        const path = buildItemRoute({
+          itemType: data.item_type === "pr" ? "pr" : "issue",
+          provider: ref.provider,
+          platformHost: ref.platformHost,
+          owner,
+          name,
+          repoPath,
+          number,
+        });
+        navigate(path);
+      }),
+    ),
   );
 }
 
-export function initItemRefHandler(): () => void {
+export function initItemRefHandler(runtime: AppRuntime): () => void {
+  let execution: AppExecution<void, unknown> | null = null;
+
+  function handleClick(e: MouseEvent): void {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+
+    const anchor = findItemRef(e.target);
+    if (!anchor) return;
+
+    const provider = anchor.dataset.provider;
+    const platformHost = anchor.dataset.platformHost;
+    const owner = anchor.dataset.owner;
+    const name = anchor.dataset.name;
+    const repoPath = anchor.dataset.repoPath;
+    const numberStr = anchor.dataset.number;
+    const itemType =
+      anchor.dataset.itemType === "pr" || anchor.dataset.itemType === "issue" ? anchor.dataset.itemType : undefined;
+    const externalUrl = anchor.dataset.externalUrl;
+    if (!provider || !owner || !name || !repoPath || !numberStr) return;
+
+    e.preventDefault();
+    execution?.interrupt();
+    execution = runtime.runCommand(
+      resolveAndNavigate(provider, platformHost, owner, name, repoPath, parseInt(numberStr, 10), itemType, externalUrl),
+      {
+        operation: "resolve item reference",
+        safeContext: { provider, platformHost: platformHost ?? "", owner, name, number: numberStr },
+        onFailure: () => {
+          showFlash("Failed to resolve item reference. Check your connection.", { tone: "danger" });
+        },
+      },
+    );
+  }
+
   document.addEventListener("click", handleClick);
-  return () => document.removeEventListener("click", handleClick);
+  return () => {
+    execution?.interrupt();
+    document.removeEventListener("click", handleClick);
+  };
 }

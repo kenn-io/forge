@@ -29,6 +29,7 @@ vi.mock("@pierre/diffs", () => ({
 }));
 
 import PierreFileContents from "./PierreFileContents.svelte";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 describe("PierreFileContents", () => {
   beforeEach(() => {
@@ -43,8 +44,9 @@ describe("PierreFileContents", () => {
       throw new Error("render failed");
     });
 
-    render(PierreFileContents, {
+    render(AppRuntimeHarness, {
       props: {
+        component: PierreFileContents,
         path: "src/main.ts",
         contents: "export const value = 1;\n",
       },

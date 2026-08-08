@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 import KataIssueActions from "./KataIssueActions.svelte";
 
@@ -35,13 +37,14 @@ describe("KataIssueActions", () => {
   });
 
   it("submits the selected close reason and completion note", async () => {
-    const onCloseIssue = vi.fn(async () => true);
+    const onCloseIssue = vi.fn(() => Effect.succeed(true));
 
-    render(KataIssueActions, {
+    render(AppRuntimeHarness, {
       props: {
+        component: KataIssueActions,
         issue: makeIssue(),
         onCloseIssue,
-        onReopenIssue: vi.fn(),
+        onReopenIssue: vi.fn(() => Effect.succeed(true)),
       },
     });
 
@@ -58,12 +61,13 @@ describe("KataIssueActions", () => {
   });
 
   it("reopens a closed task", async () => {
-    const onReopenIssue = vi.fn();
+    const onReopenIssue = vi.fn(() => Effect.succeed(true));
 
-    render(KataIssueActions, {
+    render(AppRuntimeHarness, {
       props: {
+        component: KataIssueActions,
         issue: makeIssue("closed"),
-        onCloseIssue: vi.fn(),
+        onCloseIssue: vi.fn(() => Effect.succeed(true)),
         onReopenIssue,
       },
     });

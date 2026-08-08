@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
+import type { components } from "../../src/lib/api/generated/schema";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 type RepoSummary = {
@@ -180,6 +181,50 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   await expect(page.getByRole("button", { name: /^Select repository:/ })).toContainText("All repos");
 });
 
+test("repository import reconciles a bulk add when the committed response is lost", async ({ page }) => {
+  let bulkAddCommitted = false;
+  await page.route(
+    "**/api/v1/repos/bulk",
+    async (route) => {
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      bulkAddCommitted = true;
+      await route.abort("connectionfailed");
+    },
+    { times: 1 },
+  );
+
+  try {
+    await page.goto(`${isolatedServer!.info.base_url}/settings`);
+    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+    await page.getByRole("button", { name: "Add repositories…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add repositories" });
+    await dialog.getByLabel("Repository pattern").fill("import-lab/*");
+    await dialog.getByRole("button", { name: "Preview" }).click();
+    await expect(dialog.getByText("import-lab/api")).toBeVisible();
+    await expect(dialog.getByText("import-lab/worker")).toBeVisible();
+
+    await dialog.getByRole("button", { name: "Add selected repositories" }).click();
+
+    await expect.poll(() => bulkAddCommitted).toBe(true);
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator(".repo-row", { hasText: "import-lab/api" })).toBeVisible();
+    await expect(page.locator(".repo-row", { hasText: "import-lab/worker" })).toBeVisible();
+
+    if (!api) throw new Error("settings-globs API context not initialized");
+    const response = await api.get("/api/v1/settings");
+    expect(response.ok()).toBe(true);
+    const settings: components["schemas"]["SettingsResponse"] = await response.json();
+    const imported = settings.repos
+      .filter((repo) => repo.owner === "import-lab" && !repo.is_glob)
+      .map((repo) => repo.name)
+      .sort();
+    expect(imported).toEqual(["api", "worker"]);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("settings promotes a glob match to a persisted exact repo with a local clone", async ({ page }) => {
   localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "mm-promote-clone-")));
   git(localRepo, "init");
@@ -288,6 +333,116 @@ test("settings rolls back a promoted glob match when the local clone path is inv
       return settings.repos.some((repo) => repo.owner === "roborev-dev" && repo.name === "kenn-forge" && !repo.is_glob);
     })
     .toBe(false);
+});
+
+test("settings keeps a surviving promoted repository visible when rollback fails", async ({ page }) => {
+  await page.route(
+    "**/api/v1/repo/github/roborev-dev/kenn-forge",
+    async (route) => {
+      if (route.request().method() !== "DELETE") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 502,
+        contentType: "application/problem+json",
+        body: JSON.stringify({
+          title: "Repository removal failed",
+          status: 502,
+          detail: "repository removal failed",
+          code: "upstreamError",
+          type: "about:blank",
+        }),
+      });
+    },
+    { times: 1 },
+  );
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  const globRow = page.locator(".repo-row", { hasText: "roborev-dev/*" });
+  await globRow.getByRole("button", { name: "Promote glob repository roborev-dev/*" }).click();
+  const dialog = page.getByRole("dialog", { name: "Promote wildcard repository" });
+  await expect(dialog.getByRole("radio", { name: /roborev-dev\/kenn-forge/ })).toBeChecked();
+  await dialog
+    .getByLabel("Local clone path for roborev-dev/kenn-forge", { exact: true })
+    .fill("/missing/promoted/clone");
+  await dialog.getByRole("button", { name: "Promote repository" }).click();
+
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("alert")).toContainText("path does not exist");
+  await expect(dialog.getByRole("alert")).toContainText("repository removal failed");
+  await expect(page.locator(".repo-row", { hasText: "roborev-dev/kenn-forge" })).toBeVisible();
+
+  if (!api) throw new Error("settings-globs API context not initialized");
+  const response = await api.get("/api/v1/settings");
+  expect(response.ok()).toBe(true);
+  const settings: components["schemas"]["SettingsResponse"] = await response.json();
+  expect(
+    settings.repos.some((repo) => repo.owner === "roborev-dev" && repo.name === "kenn-forge" && !repo.is_glob),
+  ).toBe(true);
+});
+
+test("fleet and activity settings stay ordered and persist through the real server", async ({ page }) => {
+  let markFleetCommitted = () => {};
+  const fleetCommitted = new Promise<void>((resolve) => {
+    markFleetCommitted = resolve;
+  });
+  let releaseFleetResponse = () => {};
+  const fleetResponseGate = new Promise<void>((resolve) => {
+    releaseFleetResponse = resolve;
+  });
+  let activityWriteCount = 0;
+
+  await page.route("**/api/v1/settings/fleet", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    markFleetCommitted();
+    await fleetResponseGate;
+    await route.fulfill({ response });
+  });
+  await page.route("**/api/v1/settings", async (route) => {
+    if (route.request().method() === "PUT") activityWriteCount += 1;
+    await route.continue();
+  });
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await page.getByRole("button", { name: /^Fleet federation / }).click();
+  await page.getByLabel("Local fleet key").fill("test-hub");
+  await page.getByRole("button", { name: "Save fleet federation" }).click();
+  await fleetCommitted;
+
+  await page.getByRole("button", { name: /^Activity / }).click();
+  const hideBots = page.getByRole("button", { name: "Toggle hide bots" });
+  const previousHideBots = await hideBots.getAttribute("aria-pressed");
+  await hideBots.click();
+  await expect(hideBots).toHaveAttribute("aria-pressed", previousHideBots === "true" ? "false" : "true");
+  expect(activityWriteCount).toBe(0);
+
+  releaseFleetResponse();
+  await expect.poll(() => activityWriteCount).toBe(1);
+
+  if (!api) throw new Error("settings-globs API context not initialized");
+  await expect
+    .poll(async () => {
+      const response = await api!.get("/api/v1/settings");
+      expect(response.ok()).toBe(true);
+      const settings = (await response.json()) as {
+        activity: { hide_bots: boolean };
+        fleet: { key?: string };
+      };
+      return `${settings.fleet.key ?? ""}:${settings.activity.hide_bots}`;
+    })
+    .toBe(`test-hub:${previousHideBots !== "true"}`);
+
+  await page.reload();
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await page.getByRole("button", { name: /^Fleet federation / }).click();
+  await expect(page.getByLabel("Local fleet key")).toHaveValue("test-hub");
 });
 
 test("repository import can hide forks and private repositories before adding", async ({ page }) => {

@@ -43,7 +43,7 @@
       const workflow = yield* DocsWorkflow;
       const preview = yield* workflow.read(
         sessionID,
-        "preview",
+        { lane: "preview", resource: JSON.stringify(["git-changes", requestedFolderID]) },
         executeDocsRequest("load Docs publish preview", (signal) =>
           requestedAPI.gitChanges(requestedFolderID, signal),
         ),

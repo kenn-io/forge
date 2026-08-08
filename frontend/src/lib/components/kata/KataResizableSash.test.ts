@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import KataResizableSashTestHarness from "./KataResizableSashTestHarness.svelte";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 function mockRect(width = 800, height = 600): void {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -37,7 +38,7 @@ describe("KataResizableSash", () => {
   it("resizes horizontal panes with normal and accelerated keyboard steps", async () => {
     mockRect();
     const onResize = vi.fn();
-    render(KataResizableSashTestHarness, { props: { onResize } });
+    render(AppRuntimeHarness, { props: { component: KataResizableSashTestHarness, onResize } });
 
     const handle = screen.getByRole("separator", { name: "Resize Kata panes" });
     expect(handle.getAttribute("aria-orientation")).toBe("vertical");
@@ -60,8 +61,8 @@ describe("KataResizableSash", () => {
   it("uses the vertical axis and clamps both resize bounds", async () => {
     mockRect();
     const onResize = vi.fn();
-    render(KataResizableSashTestHarness, {
-      props: { orientation: "vertical", primarySize: 210, onResize },
+    render(AppRuntimeHarness, {
+      props: { component: KataResizableSashTestHarness, orientation: "vertical", primarySize: 210, onResize },
     });
 
     const handle = screen.getByRole("separator", { name: "Resize Kata panes" });

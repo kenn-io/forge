@@ -1,8 +1,10 @@
+import { Effect, FiberHandle } from "effect";
+import type { AppRuntime } from "../app/runtime.js";
+import { observeResize } from "../browser/observers.js";
+
 type ContainerSize = "narrow" | "medium" | "wide";
 
 let currentSize = $state<ContainerSize>("wide");
-let observer: ResizeObserver | null = null;
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function classify(width: number): ContainerSize {
   if (width < 500) return "narrow";
@@ -10,7 +12,7 @@ function classify(width: number): ContainerSize {
   return "wide";
 }
 
-export function initContainerObserver(el: HTMLElement): () => void {
+export function initContainerObserver(runtime: AppRuntime, el: HTMLElement): () => void {
   function apply(size: ContainerSize): void {
     currentSize = size;
     el.classList.remove("container-narrow", "container-medium");
@@ -21,25 +23,23 @@ export function initContainerObserver(el: HTMLElement): () => void {
     }
   }
 
-  // Initial measurement
-  apply(classify(el.clientWidth));
-
-  observer = new ResizeObserver((entries) => {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      const entry = entries[0];
-      if (entry) {
-        apply(classify(entry.contentRect.width));
-      }
-    }, 100);
-  });
-  observer.observe(el);
-
-  return () => {
-    observer?.disconnect();
-    observer = null;
-    if (debounceTimer) clearTimeout(debounceTimer);
-  };
+  const execution = runtime.runCommand(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const runDebounce = yield* FiberHandle.makeRuntime<never>();
+        yield* Effect.sync(() => apply(classify(el.clientWidth)));
+        yield* observeResize(el, (entries) => {
+          const entry = entries[0];
+          if (!entry) return;
+          const width = entry.contentRect.width;
+          runDebounce(Effect.sleep("100 millis").pipe(Effect.andThen(Effect.sync(() => apply(classify(width))))));
+        });
+        return yield* Effect.never;
+      }),
+    ),
+    { operation: "observe app container width", safeContext: {}, onFailure: () => {} },
+  );
+  return execution.interrupt;
 }
 
 export function getContainerSize(): ContainerSize {

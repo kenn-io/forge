@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect, Exit } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
 import {
   isEmbedded,
   getThemeMode,
@@ -13,15 +15,24 @@ import {
   getProjectActions,
   getProjectAction,
   invokeProjectAction,
+  emitWorkspaceCommand,
   getToolingStatus,
   initWorkspaceBridge,
+  emitLayoutChanged,
 } from "./embed-config.svelte.js";
 import type { ActionHook, ProjectActionHook } from "./embed-config.svelte.js";
 
 const win = window as any;
+let runtime: OwnedAppRuntime;
 
-afterEach(() => {
+beforeEach(() => {
+  runtime = makeAppRuntime();
+});
+
+afterEach(async () => {
   delete win.__kenn_forge_config;
+  vi.useRealTimers();
+  await Effect.runPromise(runtime.disposeEffect);
 });
 
 describe("isEmbedded", () => {
@@ -170,7 +181,7 @@ describe("invokeAction", () => {
   it("passes correct context to handler", () => {
     const handler = vi.fn();
     const action: ActionHook = { id: "a", label: "A", handler };
-    invokeAction(action, {
+    invokeAction(runtime, action, {
       surface: "pull-detail",
       owner: "org",
       name: "repo",
@@ -193,7 +204,7 @@ describe("invokeAction", () => {
         throw new Error("boom");
       },
     };
-    invokeAction(action, {
+    invokeAction(runtime, action, {
       surface: "test",
       owner: "o",
       name: "n",
@@ -210,7 +221,7 @@ describe("invokeAction", () => {
       label: "C",
       handler: () => Promise.reject(new Error("async boom")),
     };
-    invokeAction(action, {
+    invokeAction(runtime, action, {
       surface: "test",
       owner: "o",
       name: "n",
@@ -220,6 +231,57 @@ describe("invokeAction", () => {
       expect(spy).toHaveBeenCalledWith("Embedding action error:", expect.any(Error));
     });
     spy.mockRestore();
+  });
+
+  it("does not report a rejected handler after the application runtime is disposed", async () => {
+    let reject!: (cause: unknown) => void;
+    const pending = new Promise<void>((_resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    invokeAction(
+      runtime,
+      { id: "late", label: "Late", handler: () => pending },
+      {
+        surface: "test",
+        owner: "o",
+        name: "n",
+        number: 1,
+      },
+    );
+
+    await Effect.runPromise(runtime.disposeEffect);
+    reject(new Error("late failure"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
+
+describe("layout callback", () => {
+  it("debounces to the latest layout inside the application runtime", async () => {
+    vi.useFakeTimers();
+    const handler = vi.fn();
+    win.__kenn_forge_config = { onLayoutChanged: handler };
+    win.__kenn_forge_notify_config_changed();
+    emitLayoutChanged(runtime, {
+      sidebar: { width: 240 },
+      pinnedPanel: { width: 0, visible: false },
+    });
+    emitLayoutChanged(runtime, {
+      sidebar: { width: 320 },
+      pinnedPanel: { width: 0, visible: false },
+    });
+
+    await vi.advanceTimersByTimeAsync(150);
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith({
+      sidebar: { width: 320 },
+      pinnedPanel: { width: 0, visible: false },
+    });
   });
 });
 
@@ -273,9 +335,11 @@ describe("invokeProjectAction", () => {
       label: "Clone",
       handler,
     };
-    const result = await invokeProjectAction(action, {
-      surface: "first-run-panel",
-    });
+    const result = await Effect.runPromise(
+      invokeProjectAction(action, {
+        surface: "first-run-panel",
+      }),
+    );
     expect(handler).toHaveBeenCalledWith({
       surface: "first-run-panel",
     });
@@ -288,9 +352,11 @@ describe("invokeProjectAction", () => {
       label: "Clone",
       handler: () => ({ ok: false, message: "auth failed" }),
     };
-    const result = await invokeProjectAction(action, {
-      surface: "first-run-panel",
-    });
+    const result = await Effect.runPromise(
+      invokeProjectAction(action, {
+        surface: "first-run-panel",
+      }),
+    );
     expect(result).toEqual({ ok: false, message: "auth failed" });
   });
 
@@ -303,9 +369,11 @@ describe("invokeProjectAction", () => {
         throw new Error("boom");
       },
     };
-    const result = await invokeProjectAction(action, {
-      surface: "first-run-panel",
-    });
+    const result = await Effect.runPromise(
+      invokeProjectAction(action, {
+        surface: "first-run-panel",
+      }),
+    );
     expect(result).toEqual({ ok: false, message: "boom" });
     spy.mockRestore();
   });
@@ -317,23 +385,38 @@ describe("invokeProjectAction", () => {
       label: "Clone",
       handler: () => Promise.reject(new Error("async boom")),
     };
-    const result = await invokeProjectAction(action, {
-      surface: "first-run-panel",
-    });
+    const result = await Effect.runPromise(
+      invokeProjectAction(action, {
+        surface: "first-run-panel",
+      }),
+    );
     expect(result).toEqual({ ok: false, message: "async boom" });
     spy.mockRestore();
   });
 
-  it("treats a void return as ok: true so legacy-shaped handlers do not break", async () => {
-    const action = {
-      id: "noop",
-      label: "Noop",
-      handler: () => undefined,
-    } as unknown as ProjectActionHook;
-    const result = await invokeProjectAction(action, {
-      surface: "test",
-    });
-    expect(result).toEqual({ ok: true });
+  it("rejects a malformed project action acknowledgement", async () => {
+    const action: ProjectActionHook = {
+      id: "clone",
+      label: "Clone",
+      handler: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await Effect.runPromise(Effect.exit(invokeProjectAction(action, { surface: "first-run-panel" })));
+
+    expect(Exit.isFailure(result)).toBe(true);
+  });
+
+  it("rejects a malformed workspace command acknowledgement", async () => {
+    win.__kenn_forge_config = {
+      onWorkspaceCommand: vi.fn().mockResolvedValue({ message: "missing ok" }),
+    };
+    win.__kenn_forge_notify_config_changed();
+
+    const result = await Effect.runPromise(
+      Effect.exit(emitWorkspaceCommand("project-registered", { projectId: "prj_1" })),
+    );
+
+    expect(Exit.isFailure(result)).toBe(true);
   });
 });
 

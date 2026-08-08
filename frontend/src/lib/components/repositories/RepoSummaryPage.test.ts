@@ -1,19 +1,34 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import * as flash from "../../stores/flash.svelte.js";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
 const mockNavigate = vi.fn();
 const mockSetGlobalRepo = vi.fn();
+const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
 
-vi.mock("../../api/runtime.js", () => ({
-  client: {
+vi.mock("../../api/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/runtime.js")>();
+  const client = {
     GET: (...args: unknown[]) => mockGet(...args),
     POST: (...args: unknown[]) => mockPost(...args),
+  };
+  return {
+    ...actual,
+    client,
+    createRuntimeClient: () => client,
+  };
+});
+
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => {
+    const runtime = runtimeCapture.current;
+    if (runtime === undefined) throw new Error("repository summary test runtime is not initialized");
+    return runtime;
   },
-  apiErrorMessage: (error: { detail?: string; title?: string } | undefined, fallback: string) =>
-    error?.detail ?? error?.title ?? fallback,
 }));
 
 vi.mock("../../stores/router.svelte.js", () => ({
@@ -80,6 +95,7 @@ function repoSummaryFixture({
 
 describe("RepoSummaryPage", () => {
   beforeEach(() => {
+    runtimeCapture.current = makeAppRuntime();
     mockGet.mockReset();
     mockPost.mockReset();
     mockNavigate.mockReset();
@@ -87,8 +103,10 @@ describe("RepoSummaryPage", () => {
     localStorage.clear();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
+    runtimeCapture.current = undefined;
     for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
   });
 
@@ -836,13 +854,138 @@ describe("RepoSummaryPage", () => {
     await fireEvent.submit(createButton);
     await fireEvent.submit(createButton);
 
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
     resolvePost?.({
       data: { Number: 27 },
       error: undefined,
     });
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");
+    });
+  });
+
+  it("keeps an accepted issue creation alive until a replacement page presents its success", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+      ],
+      error: undefined,
+    });
+    const request = Promise.withResolvers<{ data: { Number: number }; error: undefined }>();
+    let requestSignal: AbortSignal | undefined;
+    mockPost.mockImplementation((_path: string, options: { signal: AbortSignal }) => {
+      requestSignal = options.signal;
+      return request.promise;
+    });
+
+    const firstPage = render(RepoSummaryPage);
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Survive repository navigation" },
+    });
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+
+    firstPage.unmount();
+    expect(requestSignal?.aborted).toBe(false);
+    request.resolve({ data: { Number: 27 }, error: undefined });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    render(RepoSummaryPage);
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");
+    });
+  });
+
+  it("adopts a pending issue creation when the repository page is replaced", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+      ],
+      error: undefined,
+    });
+    const request = Promise.withResolvers<{ data: { Number: number }; error: undefined }>();
+    mockPost.mockImplementation(() => request.promise);
+
+    const firstPage = render(RepoSummaryPage);
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Keep the accepted draft" },
+    });
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+
+    firstPage.unmount();
+    render(RepoSummaryPage);
+
+    expect(await screen.findByDisplayValue("Keep the accepted draft")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Creating..." })).toHaveProperty("disabled", true);
+
+    request.resolve({ data: { Number: 27 }, error: undefined });
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");
+    });
+  });
+
+  it("retains an uncertain issue outcome until a replacement page acknowledges it", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+      ],
+      error: undefined,
+    });
+    const request = Promise.withResolvers<never>();
+    mockPost.mockImplementation(() => request.promise);
+
+    const firstPage = render(RepoSummaryPage);
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Fence an unknown outcome" },
+    });
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+
+    firstPage.unmount();
+    request.reject(new Error("issue transport unavailable"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(flash.getFlash()).toBeNull();
+
+    render(RepoSummaryPage);
+    expect(await screen.findByDisplayValue("Fence an unknown outcome")).toBeTruthy();
+    await waitFor(() => {
+      expect(flash.getFlash()).toMatchObject({
+        message: expect.stringMatching(/outcome is unknown.*check the issue list before retrying/i),
+        tone: "danger",
+      });
+      expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
+    });
+
+    await fireEvent.click(
+      screen.getByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }),
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", false);
     });
   });
 
@@ -890,7 +1033,9 @@ describe("RepoSummaryPage", () => {
     );
     expect(mockPost).toHaveBeenCalledTimes(1);
 
-    await fireEvent.click(screen.getByRole("checkbox", { name: "I checked the issue list and want to retry." }));
+    await fireEvent.click(
+      screen.getByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }),
+    );
     expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(false);
     await fireEvent.keyDown(
       screen.getByRole("textbox", {
@@ -918,9 +1063,13 @@ describe("RepoSummaryPage", () => {
     });
     mockPost
       .mockResolvedValueOnce({
-        data: undefined,
-        error: { detail: "provider response unavailable" },
-        response: { status: 502 },
+        error: {
+          code: "mutationOutcomeUnknown",
+          detail: "provider response unavailable",
+          status: 502,
+          type: "about:blank",
+        },
+        response: new Response(null, { status: 502 }),
       })
       .mockResolvedValueOnce({ data: { Number: 27 }, error: undefined });
 
@@ -951,7 +1100,100 @@ describe("RepoSummaryPage", () => {
     );
     expect(mockPost).toHaveBeenCalledTimes(1);
 
-    await fireEvent.click(screen.getByRole("checkbox", { name: "I checked the issue list and want to retry." }));
+    await fireEvent.click(
+      screen.getByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }),
+    );
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledTimes(2);
+      expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");
+    });
+  });
+
+  it("does not replay retained issue presentation on an ordinary summary refresh", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+      ],
+      error: undefined,
+    });
+    mockPost.mockImplementation((path: string) =>
+      path === "/sync"
+        ? Promise.resolve({ data: undefined, error: undefined })
+        : Promise.resolve({
+            error: {
+              code: "mutationOutcomeUnknown",
+              detail: "provider response unavailable",
+              status: 502,
+              type: "about:blank",
+            },
+            response: new Response(null, { status: 502 }),
+          }),
+    );
+
+    render(RepoSummaryPage);
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Retain without replay" },
+    });
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
+    await screen.findByRole("checkbox", { name: "I checked the provider's issue list and want to retry." });
+    const flashCount = flash.getFlashes().length;
+
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh repositories" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith("/sync", expect.anything()));
+
+    expect(screen.queryByRole("dialog", { name: "New issue in github.com/acme/widgets" })).toBeNull();
+    expect(flash.getFlashes()).toHaveLength(flashCount);
+  });
+
+  it("allows an immediate retry after a definite issue rejection", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+      ],
+      error: undefined,
+    });
+    mockPost
+      .mockResolvedValueOnce({
+        error: {
+          code: "upstreamError",
+          detail: "provider rejected the issue",
+          status: 502,
+          type: "about:blank",
+        },
+        response: new Response(null, { status: 502 }),
+      })
+      .mockResolvedValueOnce({ data: { Number: 27 }, error: undefined });
+
+    render(RepoSummaryPage);
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Retry a definite rejection" },
+    });
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
+
+    await waitFor(() => {
+      expect(flash.getFlash()).toMatchObject({ message: "provider rejected the issue", tone: "danger" });
+      expect(
+        screen.queryByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }),
+      ).toBeNull();
+      expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", false);
+    });
+
     await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledTimes(2);

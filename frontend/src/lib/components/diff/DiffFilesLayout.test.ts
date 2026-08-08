@@ -14,7 +14,7 @@ vi.mock("./DiffView.svelte", async () => ({
   default: (await import("./DiffFilesLayoutTestView.svelte")).default,
 }));
 
-import DiffFilesLayout from "./DiffFilesLayout.svelte";
+import DiffFilesLayout from "./DiffFilesLayoutRuntimeHarness.svelte";
 
 const capabilities: ProviderCapabilities = {
   read_repositories: true,

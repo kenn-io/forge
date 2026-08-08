@@ -1,9 +1,12 @@
 <script lang="ts">
   import { Button } from "@kenn-io/kit-ui";
-  import { onMount, tick } from "svelte";
+  import { Effect } from "effect";
+  import { onMount, tick, untrack } from "svelte";
+  import { getAppRuntime } from "../app/runtime-context.js";
+  import type { AppExecution } from "../app/runtime.js";
+  import { executeGeneratedApiRequest } from "../api/generated-api.js";
   import { canonicalRepoFilterValue, displayRepoFilterValue, normalizeRepoFilterSelection } from "../utils/repo-filter-values.js";
   import { getStores } from "../context.js";
-  import { client } from "../api/runtime.js";
   import type { ConfigRepo, Repo } from "../api/types.js";
   import { canonicalProvider } from "../api/provider-routes.js";
   import type { RepoTreeOption } from "./repoTree.js";
@@ -33,6 +36,7 @@
   let { selected, onchange, initialOpen = false }: Props = $props();
 
   const stores = getStores();
+  const runtime = getAppRuntime();
 
   onMount(() => {
     if (initialOpen) open = true;
@@ -72,27 +76,37 @@
   let highlightIndex = $state(0);
   let inputEl = $state<HTMLInputElement>();
   let containerEl = $state<HTMLDivElement>();
-  let repoFetchVersion = 0;
-  let latestRepoFetchKey = "";
+  let openExecution: AppExecution<void, never> | null = null;
 
   type RepoOption = RepoTreeOption & { repoPath: string };
 
   $effect(() => {
-    const configuredRepoKey = configuredRepos
-      .map((repo) => `${repo.provider}/${repo.platform_host}/${repo.repo_path || `${repo.owner}/${repo.name}`}`)
-      .join("\0");
-    const fetchKey = `${++repoFetchVersion}:${settingsLoaded}:${configuredRepoKey}`;
+    const configuredRepoCount = configuredRepos.length;
+    const loaded = settingsLoaded;
 
-    latestRepoFetchKey = fetchKey;
     reposLoading = true;
     fetchedRepos = [];
-
-    void client.GET("/repos").then(({ data, error }) => {
-      if (fetchKey !== latestRepoFetchKey) return;
-      reposLoading = false;
-      if (error) return;
-      fetchedRepos = data ?? [];
-    });
+    const execution = untrack(() => runtime.runCommand(
+      executeGeneratedApiRequest("GET /repos", (generatedClient, signal) =>
+        generatedClient.GET("/repos", { signal })
+      ).pipe(
+        Effect.matchEffect({
+          onFailure: () => Effect.sync(() => {
+            reposLoading = false;
+          }),
+          onSuccess: (repos) => Effect.sync(() => {
+            reposLoading = false;
+            fetchedRepos = repos ?? [];
+          }),
+        }),
+      ),
+      {
+        operation: "load repository typeahead options",
+        safeContext: { configuredRepoCount, settingsLoaded: loaded },
+        onFailure: () => {},
+      },
+    ));
+    return execution.interrupt;
   });
 
   const configuredRepos = $derived(
@@ -218,15 +232,26 @@
     onchange(serializeRepoFilterValue(next));
   });
 
-  async function openDropdown() {
+  function openDropdown(): void {
+    openExecution?.interrupt();
     query = "";
     open = true;
     highlightIndex = 0;
-    await tick();
-    inputEl?.focus();
+    openExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => inputEl?.focus())),
+      ),
+      {
+        operation: "focus repository typeahead",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
-  function closeDropdown() {
+  function closeDropdown(): void {
+    openExecution?.interrupt();
+    openExecution = null;
     open = false;
     query = "";
   }

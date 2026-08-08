@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
 import type { KataCurrentView } from "../../features/kata/kataWorkspaceAuthority.js";
 import KataIssueList from "./KataIssueList.svelte";
+import KataIssueListRuntimeHarness from "./KataIssueListRuntimeHarness.svelte";
 import { KATA_TASK_COLUMNS_STORAGE_KEY } from "./kataTaskColumns.js";
 
 interface IssueListRenderOptions {
@@ -17,7 +18,7 @@ interface IssueListRenderOptions {
 
 function render(_component: typeof KataIssueList, options: IssueListRenderOptions) {
   const issueCatalog = options.props.issueCatalog ?? options.props.currentView.groups.flatMap((group) => group.issues);
-  return renderComponent(KataIssueList, {
+  return renderComponent(KataIssueListRuntimeHarness, {
     props: { ...options.props, issueCatalog } as ComponentProps<typeof KataIssueList>,
   });
 }

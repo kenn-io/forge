@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-p
 
 import ConfirmDialog from "./ConfirmDialog.svelte";
 import { installOffsetParentStub, removeOffsetParentStub } from "../../../test/stubOffsetParent.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 beforeAll(installOffsetParentStub);
 afterAll(removeOffsetParentStub);
@@ -10,8 +11,9 @@ afterAll(removeOffsetParentStub);
 afterEach(() => cleanup());
 
 function renderDialog() {
-  render(ConfirmDialog, {
+  render(AppRuntimeHarness, {
     props: {
+      component: ConfirmDialog,
       open: true,
       title: "Delete workspace?",
       message: 'Delete workspace "Demo"?',

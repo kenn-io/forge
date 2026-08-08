@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import headerIconButtonSource from "./HeaderIconButton.svelte?raw";
@@ -32,12 +32,15 @@ const mockedModeVisibility = vi.hoisted(() => ({
 }));
 
 // Prevent RepoTypeahead from making real API calls in the test environment.
-vi.mock("../../api/runtime.js", () => ({
-  client: {
-    GET: () => Promise.resolve({ data: [], error: undefined }),
-  },
-  apiErrorMessage: () => "",
-}));
+vi.mock("../../api/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/runtime.js")>();
+  return {
+    ...actual,
+    client: {
+      GET: () => Promise.resolve({ data: [], error: undefined }),
+    },
+  };
+});
 
 vi.mock("../../stores/container.svelte.js", () => ({
   getContainerSize: () => mockedContainerSize.value,
@@ -65,7 +68,7 @@ vi.mock("../../context.js", async (importOriginal) => {
   };
 });
 
-import AppHeader from "./AppHeader.svelte";
+import AppHeader from "./AppHeaderRuntimeHarness.svelte";
 import { initTheme, cleanupTheme } from "../../stores/theme.svelte.js";
 import { setGlobalRepo } from "../../stores/filter.svelte.js";
 import { setSidebarCollapsed } from "../../stores/sidebar.svelte.ts";
@@ -184,6 +187,42 @@ describe("AppHeader", () => {
 
     expect(mockedSync.triggerSync).toHaveBeenCalledOnce();
     expect(mockedSync.triggerRepoSync).not.toHaveBeenCalled();
+  });
+
+  it("keeps observing header height until the component unmounts", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const observers: Array<{ disconnected: boolean; observed: Element[] }> = [];
+    globalThis.ResizeObserver = class ResizeObserverStub {
+      readonly state = { disconnected: false, observed: [] as Element[] };
+
+      constructor() {
+        observers.push(this.state);
+      }
+
+      observe(target: Element): void {
+        this.state.observed.push(target);
+      }
+      unobserve(): void {}
+      disconnect(): void {
+        this.state.disconnected = true;
+      }
+    };
+    try {
+      const view = render(AppHeader, { props: { onheightchange: vi.fn() } });
+      const headerObserver = await waitFor(() => {
+        const observer = observers.find((candidate) =>
+          candidate.observed.some((target) => target.classList.contains("top-bar-frame")),
+        );
+        expect(observer).toBeTruthy();
+        return observer!;
+      });
+      expect(headerObserver.disconnected).toBe(false);
+
+      view.unmount();
+      await waitFor(() => expect(headerObserver.disconnected).toBe(true));
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
   });
 
   it("syncs the route repository before the global selector repository", async () => {

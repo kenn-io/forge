@@ -7,6 +7,7 @@
   import type { ProblemBody } from "../../api/problems.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import { canonicalProvider, providerItemPath, providerRepoPath, providerRouteParams, resolvedPlatformHost } from "../../api/provider-routes.js";
   import type { IssueDetail, Label, ProviderCapabilities } from "../../api/types.js";
   import {
@@ -17,7 +18,7 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
-  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
+  import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
   import { copyToClipboard, formatRelativeTime, StatusDot } from "@kenn-io/kit-ui";
@@ -570,6 +571,8 @@
   onDestroy(() => {
     labelCatalogGeneration += 1;
     labelCatalogExecution?.interrupt();
+    bodyCopyExecution?.interrupt();
+    flushBodySave();
     componentDestroyed = true;
   });
   const createWorkspaceTitle =
@@ -596,7 +599,9 @@
     return untrack(() => pushModalFrame("issue-detail-confirm", []));
   });
   const workspace = $derived(
-    inlineWorkspace
+    staleIssue
+      ? null
+      : inlineWorkspace
       ? inlineWorkspace.effectiveWorkspaceRef(itemIdentity, issues.getIssueDetail()?.workspace ?? null)
       : // Without a controller there is no override store: the shared
         // resolver stands in — the confirmed created record wins over a
@@ -844,7 +849,7 @@
   // Task-list checkbox clicks update the body locally for instant
   // feedback, then debounce a PATCH so a flurry of clicks collapses
   // into a single save. Target and body are captured at schedule
-  // time so a route change before the timer fires can't redirect
+  // time so a route change before the debounce settles can't redirect
   // the save to a different issue or lose the edit.
   type PendingBodySave = {
     owner: string;
@@ -855,7 +860,7 @@
     platformHost?: string | undefined;
     repoPath: string;
   };
-  let bodySaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  let bodySaveExecution: AppExecution<void, never> | undefined;
   let pendingBodySave: PendingBodySave | null = null;
   const BODY_SAVE_DEBOUNCE_MS = 400;
 
@@ -864,17 +869,31 @@
       owner, name, number, body,
       provider, platformHost, repoPath,
     };
-    if (bodySaveTimeout !== null) clearTimeout(bodySaveTimeout);
-    bodySaveTimeout = setTimeout(() => {
-      flushBodySave();
-    }, BODY_SAVE_DEBOUNCE_MS);
+    bodySaveExecution?.interrupt();
+    bodySaveExecution = runtime.runCommand(
+      Effect.sleep(`${BODY_SAVE_DEBOUNCE_MS} millis`).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            bodySaveExecution = undefined;
+            savePendingBody();
+          }),
+        ),
+      ),
+      {
+        operation: "debounce issue task body save",
+        safeContext: { owner, name, number },
+        onFailure: () => {},
+      },
+    );
   }
 
   function flushBodySave(): void {
-    if (bodySaveTimeout !== null) {
-      clearTimeout(bodySaveTimeout);
-      bodySaveTimeout = null;
-    }
+    bodySaveExecution?.interrupt();
+    bodySaveExecution = undefined;
+    savePendingBody();
+  }
+
+  function savePendingBody(): void {
     const target = pendingBodySave;
     pendingBodySave = null;
     if (target === null) return;
@@ -1061,22 +1080,30 @@
   // must keep the button visible for the whole copied window even after
   // the pointer leaves.
   let bodyCopied = $state(false);
-  let bodyCopiedTimeout: ReturnType<typeof setTimeout> | null = null;
+  let bodyCopyExecution: AppExecution<void, never> | undefined;
   let bodyCopySeq = 0;
 
   function copyBody(text: string): void {
     const seq = bodyCopySeq;
-    void copyToClipboard(text).then((ok) => {
-      // A copy started on a previous item must not surface feedback on
-      // the one now displayed; the reset effect bumps the token.
-      if (!ok || seq !== bodyCopySeq) return;
-      bodyCopied = true;
-      if (bodyCopiedTimeout !== null) clearTimeout(bodyCopiedTimeout);
-      bodyCopiedTimeout = setTimeout(() => {
-        bodyCopied = false;
-        bodyCopiedTimeout = null;
-      }, 1500);
-    });
+    bodyCopyExecution?.interrupt();
+    bodyCopyExecution = runtime.runCommand(
+      transientClipboardFeedback({
+        text,
+        write: copyToClipboard,
+        isActive: () => !componentDestroyed && seq === bodyCopySeq,
+        onCopied: () => {
+          bodyCopied = true;
+        },
+        onExpired: () => {
+          bodyCopied = false;
+        },
+      }),
+      {
+        operation: "copy issue body",
+        safeContext: { owner, name, number },
+        onFailure: () => {},
+      },
+    );
   }
 
   $effect(() => {
@@ -1084,10 +1111,8 @@
     // (and its pending reset timer) belongs to the item it was copied from.
     void [provider, platformHost, owner, name, number];
     bodyCopySeq++;
-    if (bodyCopiedTimeout !== null) {
-      clearTimeout(bodyCopiedTimeout);
-      bodyCopiedTimeout = null;
-    }
+    bodyCopyExecution?.interrupt();
+    bodyCopyExecution = undefined;
     bodyCopied = false;
   });
 </script>
@@ -1390,11 +1415,11 @@
                 ondrop={onBodyDrop}
                 ondragend={onBodyDragEnd}
               >
-                {#await renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
-                  {@html renderMarkdownSync(issue.Body, { provider, platformHost, owner, name, repoPath })}
-                {:then html}
-                  {@html html}
-                {/await}
+                <MarkdownHtml
+                  raw={issue.Body}
+                  repo={{ provider, platformHost, owner, name, repoPath }}
+                  options={{ interactiveTasks: capabilities.state_mutation && !contentGate.unavailable }}
+                />
               </div>
             </CollapsibleDescription>
           {/key}

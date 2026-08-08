@@ -47,6 +47,7 @@ export interface MountedSession {
   hostKey: SessionHostKey;
   websocketPath: string;
   status: string;
+  cursorWheelInput?: boolean;
   disabled?: boolean;
 }
 
@@ -159,6 +160,7 @@ export function noteSessionMounted(session: MountedSession): void {
     if (
       existing.websocketPath === session.websocketPath &&
       existing.status === session.status &&
+      (existing.cursorWheelInput ?? false) === (session.cursorWheelInput ?? false) &&
       (existing.disabled ?? false) === (session.disabled ?? false)
     ) {
       return;
@@ -227,6 +229,12 @@ export function requestSessionFocus(key: SessionHostKey, opts?: { soft?: boolean
 export function clearSessionFocusRequest(): void {
   pendingFocusKey = null;
   pendingFocusSoft = false;
+}
+
+/** Read the outstanding request without consuming it so a Svelte effect can react to it safely. */
+export function pendingSessionFocus(key: SessionHostKey): "explicit" | "soft" | false {
+  if (pendingFocusKey !== key) return false;
+  return pendingFocusSoft ? "soft" : "explicit";
 }
 
 /**

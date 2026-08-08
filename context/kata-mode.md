@@ -47,6 +47,10 @@ contracts remain in [`ui-interaction-contracts.md`](./ui-interaction-contracts.m
   `mutationOutcomeUnknown`; issue creation without the revision needed for a
   requested metadata follow-up is instead a known partial outcome
   (`frontend/src/lib/api/kata/taskClient.ts::createKataTaskAPI`).
+- In recurrence patches, an omitted optional template field means "leave unchanged" while `null` means "clear".
+  Kata authority normalizes a cleared owner or priority to absence, so lost-response reconciliation must compare a
+  requested `null` with authoritative `undefined` as the same applied outcome
+  (`frontend/src/lib/features/kata/kata-mutation-evidence.ts::recurrencePatchMatches`).
 - Raw Kata events are invalidation transport, not browser rendering authority.
   The browser reloads its exact snapshot intent and accepts task, detail,
   history, graph, and workspace targets atomically

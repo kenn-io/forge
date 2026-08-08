@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { createKataLinkFilters } from "../../features/kata/kataLinkFilters.js";
-import KataLinkFilterMenu from "./KataLinkFilterMenu.svelte";
+import KataLinkFilterMenu from "./KataLinkFilterMenuRuntimeHarness.svelte";
 
 describe("KataLinkFilterMenu", () => {
   afterEach(cleanup);

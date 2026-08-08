@@ -1,17 +1,22 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import { Checkbox, IconButton } from "@kenn-io/kit-ui";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import XIcon from "@lucide/svelte/icons/x";
 
   import type { KataTaskChecklistItem, KataTaskDetail } from "../../api/kata/taskTypes.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { createULID } from "../../api/ulid.js";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
 
   interface Props {
     issue: KataTaskDetail;
     revealed: boolean;
     disabled?: boolean;
     draftResetGeneration?: number;
-    onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
+    onPatchMetadata: (uid: string, patch: Record<string, unknown>) => KataCommand<boolean>;
     onReveal: () => void;
   }
 
@@ -24,6 +29,8 @@
     onReveal,
   }: Props = $props();
 
+  const runtime = getAppRuntime();
+
   let checklistPending = $state(false);
   let checklistDraft = $state("");
   let checklistInput: HTMLInputElement | null = $state(null);
@@ -31,6 +38,8 @@
   let lastDraftResetGeneration = $state<number | null>(null);
   let pendingDraftResetUID = $state<string | null>(null);
   let pendingDraftResetGeneration = $state<number | null>(null);
+  let checklistExecution: AppExecution<void, never> | null = null;
+  let focusExecution: AppExecution<void, never> | null = null;
 
   const visible = $derived(checklistItems().length > 0 || revealed);
 
@@ -69,62 +78,86 @@
     checklistDraft = "";
     pendingDraftResetUID = null;
     pendingDraftResetGeneration = null;
-    queueMicrotask(() => checklistInput?.focus());
-  }
-
-  async function replaceChecklist(uid: string, next: KataTaskChecklistItem[]): Promise<boolean> {
-    const changed = await onPatchMetadata(uid, { checklist: next });
-    if (changed && next.length === 0) {
-      onReveal();
-    }
-    return changed;
-  }
-
-  async function guarded(work: () => Promise<boolean>): Promise<boolean> {
-    if (disabled || checklistPending) return false;
-    checklistPending = true;
-    try {
-      return await work();
-    } finally {
-      checklistPending = false;
-    }
-  }
-
-  async function toggleChecklistItem(id: string, done: boolean): Promise<void> {
-    const uid = issue.issue.uid;
-    await guarded(() =>
-      replaceChecklist(uid, checklistItems().map((item) => (item.id === id ? { ...item, done } : item))),
+    focusExecution?.interrupt();
+    focusExecution = runtime.runCommand(
+      Effect.yieldNow.pipe(Effect.andThen(Effect.sync(() => checklistInput?.focus()))),
+      {
+        operation: "focus Kata checklist input",
+        safeContext: { issueUid: issue.issue.uid },
+        onFailure: () => {},
+      },
     );
   }
 
-  async function removeChecklistItem(id: string): Promise<void> {
-    const uid = issue.issue.uid;
-    await guarded(() => replaceChecklist(uid, checklistItems().filter((item) => item.id !== id)));
+  function replaceChecklist(uid: string, next: KataTaskChecklistItem[]): KataCommand<boolean> {
+    return onPatchMetadata(uid, { checklist: next }).pipe(
+      Effect.tap((changed) =>
+        Effect.sync(() => {
+          if (changed && next.length === 0) onReveal();
+        }),
+      ),
+    );
   }
 
-  async function addChecklistItem(): Promise<void> {
+  function guarded(work: () => KataCommand<boolean>, onResult: (changed: boolean) => void = () => {}): void {
+    if (disabled || checklistPending) return;
+    checklistPending = true;
+    checklistExecution = runtime.runCommand(
+      work().pipe(
+        Effect.tap((changed) => Effect.sync(() => onResult(changed))),
+        Effect.ensuring(Effect.sync(() => (checklistPending = false))),
+        Effect.asVoid,
+      ),
+      {
+        operation: "update Kata checklist",
+        safeContext: { issueUid: issue.issue.uid },
+        onFailure: () => {},
+      },
+    );
+  }
+
+  function toggleChecklistItem(id: string, done: boolean): void {
+    const uid = issue.issue.uid;
+    guarded(
+      () => replaceChecklist(uid, checklistItems().map((item) => (item.id === id ? { ...item, done } : item))),
+    );
+  }
+
+  function removeChecklistItem(id: string): void {
+    const uid = issue.issue.uid;
+    guarded(() => replaceChecklist(uid, checklistItems().filter((item) => item.id !== id)));
+  }
+
+  function addChecklistItem(): void {
     const text = checklistDraft.trim();
     if (!text) return;
     const mutationUID = issue.issue.uid;
     const resetGeneration = draftResetGeneration;
-    const changed = await guarded(() =>
-      replaceChecklist(mutationUID, [...checklistItems(), { id: createULID(), text, done: false }]),
+    guarded(
+      () => replaceChecklist(mutationUID, [...checklistItems(), { id: createULID(), text, done: false }]),
+      (changed) => {
+        if (!changed || issue.issue.uid !== mutationUID) return;
+        if (draftResetGeneration !== resetGeneration) {
+          resetChecklistDraft();
+        } else {
+          pendingDraftResetUID = mutationUID;
+          pendingDraftResetGeneration = resetGeneration;
+        }
+      },
     );
-    if (!changed || issue.issue.uid !== mutationUID) return;
-    if (draftResetGeneration !== resetGeneration) {
-      resetChecklistDraft();
-    } else {
-      pendingDraftResetUID = mutationUID;
-      pendingDraftResetGeneration = resetGeneration;
-    }
   }
 
   function handleChecklistKeydown(event: KeyboardEvent): void {
     if (event.key === "Enter") {
       event.preventDefault();
-      void addChecklistItem();
+      addChecklistItem();
     }
   }
+
+  onDestroy(() => {
+    checklistExecution?.interrupt();
+    focusExecution?.interrupt();
+  });
 </script>
 
 {#if visible}

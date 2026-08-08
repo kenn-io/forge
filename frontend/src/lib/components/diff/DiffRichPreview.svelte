@@ -1,10 +1,11 @@
 <script lang="ts">
   import { ImagePreview } from "@kenn-io/kit-ui";
+  import type { AppRuntime } from "../../app/runtime.js";
   import type { DiffFile, FilePreview } from "../../api/types.js";
   import { getStores } from "../../context.js";
   import type { DiffViewMode } from "../../stores/diff.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
-  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
+  import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import {
     buildMarkdownRichPreview,
     type MarkdownRichPreviewBlock,
@@ -17,6 +18,7 @@
   } from "./review-thread-context.js";
 
   interface Props {
+    runtime: AppRuntime;
     file: DiffFile;
     provider: string;
     platformHost?: string | undefined;
@@ -33,6 +35,7 @@
   }
 
   const {
+    runtime,
     file,
     provider,
     platformHost,
@@ -537,6 +540,7 @@
     {#if markdownPreview}
       {#each fallbackReviewThreads as placement (placement.thread.id)}
         <DiffReviewThreadInlineComment
+          {runtime}
           thread={placement.thread}
           fileLevel={placement.fileLevel}
           canReply={canReplyToThreads}
@@ -566,6 +570,7 @@
                   </div>
                   {#each block.leftReviewThreads as placement (placement.thread.id)}
                     <DiffReviewThreadInlineComment
+                      {runtime}
                       thread={placement.thread}
                       fileLevel={placement.fileLevel}
                       canReply={canReplyToThreads}
@@ -583,6 +588,7 @@
                   </div>
                   {#each block.rightReviewThreads as placement (placement.thread.id)}
                     <DiffReviewThreadInlineComment
+                      {runtime}
                       thread={placement.thread}
                       fileLevel={placement.fileLevel}
                       canReply={canReplyToThreads}
@@ -602,6 +608,7 @@
             </div>
             {#each block.reviewThreads as placement (placement.thread.id)}
               <DiffReviewThreadInlineComment
+                {runtime}
                 thread={placement.thread}
                 fileLevel={placement.fileLevel}
                 canReply={canReplyToThreads}
@@ -617,6 +624,7 @@
   {:else}
     {#each fallbackReviewThreads as placement (placement.thread.id)}
       <DiffReviewThreadInlineComment
+        {runtime}
         thread={placement.thread}
         fileLevel={placement.fileLevel}
         canReply={canReplyToThreads}
@@ -630,11 +638,7 @@
     {:else if preview}
       {#if kind === "markdown"}
         <div class="diff-rich-preview markdown-body">
-          {#await renderMarkdown(text, { provider, platformHost, owner, name, repoPath })}
-            {@html renderMarkdownSync(text, { provider, platformHost, owner, name, repoPath })}
-          {:then html}
-            {@html html}
-          {/await}
+          <MarkdownHtml raw={text} repo={{ provider, platformHost, owner, name, repoPath }} />
         </div>
       {:else if kind === "image"}
         <ImagePreview src={dataURL} alt={file.path} />

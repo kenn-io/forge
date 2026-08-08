@@ -1,163 +1,92 @@
-/**
- * Wire types for the kenn-forge Go server's /api/docs/* endpoints.
- *
- * Keep in sync with `internal/server/docs_routes.go` and
- * `internal/docs/{folder,search}.go`.
- */
+import type { components } from "../generated/schema.js";
 
-export interface Folder {
-  id: string;
-  name: string;
-  path: string;
-  daemon?: string;
-}
+// Generated OpenAPI schemas remain the wire authority. These aliases are
+// exact when the UI consumes the wire shape directly and narrow only the
+// nullable collections or string enums that the Docs API adapter validates.
 
-export interface FolderListResponse {
+export type Folder = components["schemas"]["DocsFolderResponse"];
+
+export type FolderListResponse = Omit<components["schemas"]["ListDocsFoldersOutputBody"], "folders"> & {
   folders: Folder[];
-}
+};
 
-export interface FolderMutationResponse {
-  folder: Folder;
-}
+export type FolderMutationResponse = components["schemas"]["DocsFolderOutputBody"];
 
-export interface AddFolderInput {
+export type AddFolderInput = Omit<components["schemas"]["CreateDocsFolderInputBody"], "path"> & {
   path: string;
-  id?: string;
-  name?: string;
-  daemon?: string;
-}
+};
 
-export interface BrowseEntry {
-  name: string;
-  path: string;
-  hidden?: boolean;
-}
+export type BrowseEntry = components["schemas"]["DocsBrowseEntry"];
 
-export interface BrowseResponse {
-  // Canonicalized absolute path that was listed. Reflects tilde
-  // expansion and symlink resolution the server applied.
-  path: string;
-  // Parent directory or "" when at the filesystem root, so the
-  // picker UI can render an "up one level" affordance.
+export type BrowseResponse = Omit<components["schemas"]["DocsBrowseOutputBody"], "entries" | "parent"> & {
   parent: string;
   entries: BrowseEntry[];
-}
+};
 
-export interface TreeNode {
-  name: string;
-  rel_path: string;
-  is_dir: boolean;
-  size?: number;
+type TreeNodeWire = components["schemas"]["Node"];
+
+export type TreeNode = Omit<TreeNodeWire, "children"> & {
   children?: TreeNode[];
-}
+};
 
-export interface FileContentResponse {
-  rel_path: string;
-  content: string;
-}
+export type FileContentResponse = components["schemas"]["DocsReadFileOutputBody"];
 
-export interface SearchHit {
-  name: string;
-  rel_path: string;
-  score: number;
-}
+export type SearchHit = components["schemas"]["Hit"];
 
-export interface SearchResponse {
-  query: string;
+export type SearchResponse = Omit<components["schemas"]["DocsSearchOutputBody"], "hits"> & {
   hits: SearchHit[];
-}
+};
 
 export interface DocsAPIError extends Error {
   status: number;
   code?: string;
 }
 
-// Mirrors @pierre/trees' GitStatus union so the wire shape can be
-// passed through to the tree component without translation.
+// These refinements mirror @pierre/trees and the server's documented Docs
+// status set. The API adapter rejects an unknown generated string before it
+// reaches the component tree.
 export type GitFileStatus = "added" | "deleted" | "ignored" | "modified" | "renamed" | "untracked";
 
-export interface GitStatusEntry {
-  path: string;
+export type GitStatusEntry = Omit<components["schemas"]["GitStatusEntry"], "status"> & {
   status: GitFileStatus;
-}
+};
 
-export interface GitStatusResponse {
-  is_repo: boolean;
+export type GitStatusResponse = Omit<components["schemas"]["GitStatusResponse"], "entries"> & {
   entries: GitStatusEntry[];
-}
+};
 
-// Wire shape returned by GET /api/docs/search (cross-folder). Mirrors
-// internal/docs.CrossFolderHit + SearchAllResult on the Go side.
+export type SnippetRange = components["schemas"]["SnippetRange"];
 
-export interface SnippetRange {
-  start: number; // inclusive, Unicode code-point offset
-  end: number; // exclusive, Unicode code-point offset
-}
-
-export interface BodySnippet {
-  text: string;
+export type BodySnippet = Omit<components["schemas"]["BodySnippet"], "matches"> & {
   matches: SnippetRange[];
-}
+};
 
-export interface CrossFolderSearchHit {
-  folder: string; // folder id
-  folder_name: string;
-  name: string; // basename
-  rel_path: string;
-  score: number;
+export type CrossFolderSearchHit = Omit<components["schemas"]["CrossFolderHit"], "hit_type" | "snippet"> & {
   hit_type: "filename" | "body";
-  line?: number; // 1-based; present when a body snippet is attached
   snippet?: BodySnippet;
-}
+};
 
-export interface CrossFolderSearchResponse {
-  query: string;
+export type CrossFolderSearchResponse = Omit<components["schemas"]["DocsSearchAllOutputBody"], "hits" | "warnings"> & {
   hits: CrossFolderSearchHit[];
   warnings?: string[];
-  truncated: boolean;
-}
+};
 
-// Publish-set entry returned by GET /git/changes and POST /git/publish.
-// Mirrors internal/docs.PublishChange.
 export type GitPublishChangeStatus = "added" | "deleted" | "modified" | "renamed" | "untracked";
 
-export interface GitPublishChange {
-  path: string;
-  old_path?: string; // present for renames
+export type GitPublishChange = Omit<components["schemas"]["PublishChange"], "status"> & {
   status: GitPublishChangeStatus;
-}
+};
 
-export interface GitChangesResponse {
-  is_repo: boolean;
-  branch?: string;
-  upstream?: string;
+export type GitChangesResponse = Omit<components["schemas"]["GitChangesResponse"], "changes"> & {
   changes: GitPublishChange[];
-  ignored_non_markdown_count: number;
-  suggested_message?: string;
-}
+};
 
-export interface GitPublishResponse {
-  commit: string;
-  short_commit: string;
-  branch: string;
-  upstream?: string;
-  pushed: boolean;
+export type GitPublishResponse = Omit<components["schemas"]["PublishResponse"], "files"> & {
   files: GitPublishChange[];
-}
+};
 
-// Wire shape returned by POST /git/pull. Mirrors internal/docs.PullResponse.
-export interface GitPullResponse {
-  branch: string;
-  upstream: string;
-  up_to_date: boolean;
-  commit: string;
-  short_commit: string;
-}
+export type GitPullResponse = components["schemas"]["PullResponse"];
 
-// push_failed_after_commit carries an extra field beyond the standard
-// error envelope: the SHA of the local commit that succeeded. DocsAPIError
-// callers can inspect `commit` to render the "local commit exists, push
-// failed" recovery copy.
 export interface DocsPublishError extends DocsAPIError {
   commit?: string;
 }

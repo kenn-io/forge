@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import RecurrenceDeleteDialog from "../../components/recurrence/RecurrenceDeleteDialog.svelte";
   import RecurrenceEditorDialog from "../../components/recurrence/RecurrenceEditorDialog.svelte";
   import type {
@@ -7,17 +9,22 @@
     KataRecurrence,
     KataTaskDetail,
   } from "../../api/kata/taskTypes.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { KataCommand } from "./kata-command.js";
 
   interface Props {
     selectedIssue: KataTaskDetail | null;
     actor: string;
     disabled?: boolean | undefined;
-    onCreate: (projectID: number, input: KataCreateRecurrenceInput) => Promise<void>;
-    onPatch: (id: number, input: KataPatchRecurrenceInput, etag: string) => Promise<void>;
-    onDelete: (recurrence: KataRecurrence) => Promise<boolean>;
+    onCreate: (projectID: number, input: KataCreateRecurrenceInput) => KataCommand<void, unknown>;
+    onPatch: (id: number, input: KataPatchRecurrenceInput, etag: string) => KataCommand<void, unknown>;
+    onDelete: (recurrence: KataRecurrence) => KataCommand<boolean>;
   }
 
   let { selectedIssue, actor, disabled = false, onCreate, onPatch, onDelete }: Props = $props();
+
+  const runtime = getAppRuntime();
 
   let recurrenceDialog = $state<
     | { open: false; mode: "create"; recurrence: null; etag: "" }
@@ -29,6 +36,7 @@
     recurrence: null,
   });
   let deletingRecurrence = $state(false);
+  let deleteExecution: AppExecution<void, never> | null = null;
 
   export function openCreateRecurrence(): void {
     if (disabled) return;
@@ -79,19 +87,29 @@
     recurrenceDelete = { open: false, recurrence: null };
   }
 
-  async function confirmDeleteRecurrence(): Promise<void> {
+  function confirmDeleteRecurrence(): void {
     const recurrence = recurrenceDelete.recurrence;
     if (disabled || !recurrence || deletingRecurrence) return;
     deletingRecurrence = true;
-    try {
-      const ok = await onDelete(recurrence);
-      if (ok) {
-        recurrenceDelete = { open: false, recurrence: null };
-      }
-    } finally {
-      deletingRecurrence = false;
-    }
+    deleteExecution = runtime.runCommand(
+      onDelete(recurrence).pipe(
+        Effect.tap((ok) =>
+          Effect.sync(() => {
+            if (ok) recurrenceDelete = { open: false, recurrence: null };
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => (deletingRecurrence = false))),
+        Effect.asVoid,
+      ),
+      {
+        operation: "delete Kata recurrence",
+        safeContext: { recurrenceUid: recurrence.uid },
+        onFailure: () => {},
+      },
+    );
   }
+
+  onDestroy(() => deleteExecution?.interrupt());
 </script>
 
 {#if selectedIssue && recurrenceDialog.open}
@@ -114,7 +132,7 @@
     recurrence={recurrenceDelete.recurrence}
     {disabled}
     onConfirm={() => {
-      void confirmDeleteRecurrence();
+      confirmDeleteRecurrence();
     }}
     onCancel={closeDeleteRecurrence}
   />

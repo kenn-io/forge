@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import { closeSync, constants, openSync, readFileSync, writeSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { load as loadToml } from "js-toml";
 import {
@@ -49,7 +48,6 @@ type RuntimeAttachSpecResponse = {
 };
 
 let clipboardProbeSequence = 0;
-let tmuxClipboardWriteSequence = 0;
 const TERMINAL_OUTPUT_TIMEOUT_MS = 15_000;
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
@@ -134,14 +132,20 @@ async function launchDockedShell(api: APIRequestContext, workspaceId: string): P
   expect(response.status(), await response.text()).toBe(200);
 }
 
-async function runningRuntimeTmuxSession(api: APIRequestContext, workspaceId: string): Promise<string> {
+async function runningRuntimeTmuxSession(
+  api: APIRequestContext,
+  workspaceId: string,
+  options: { expectedCount?: number; index?: number } = {},
+): Promise<string> {
   const response = await api.get(`/api/v1/workspaces/${workspaceId}/runtime`);
   expect(response.ok()).toBe(true);
   const runtime = (await response.json()) as RuntimeSessionResponse;
   const running = runtime.sessions?.filter((session) => session.status === "running") ?? [];
-  expect(running).toHaveLength(1);
+  expect(running).toHaveLength(options.expectedCount ?? 1);
+  const session = running[options.index ?? 0];
+  expect(session).toBeDefined();
   const attachResponse = await api.get(
-    `/api/v1/workspaces/${workspaceId}/runtime/sessions/${encodeURIComponent(running[0]!.key)}/attach-spec`,
+    `/api/v1/workspaces/${workspaceId}/runtime/sessions/${encodeURIComponent(session!.key)}/attach-spec`,
   );
   expect(attachResponse.ok()).toBe(true);
   return ((await attachResponse.json()) as RuntimeAttachSpecResponse).tmux_session;
@@ -178,6 +182,7 @@ function observeTerminalOutput(page: Page): {
   inputIncludes(text: string): boolean;
   dimensionsForLatestInput(): TerminalDimensions | null;
   activeSocketCount(): number;
+  activeSocketHasDimensions(): boolean;
 } {
   let inputSequence = 0;
   const streams: Array<{
@@ -250,6 +255,8 @@ function observeTerminalOutput(page: Page): {
     count: (text: string) => streams.reduce((total, stream) => total + stream.output.split(text).length - 1, 0),
     inputIncludes: (text: string) => streams.some((stream) => stream.input.includes(text)),
     activeSocketCount: () => streams.filter((stream) => !stream.closed).length,
+    activeSocketHasDimensions: () =>
+      streams.some((stream) => !stream.closed && stream.columns !== null && stream.rows !== null),
     dimensionsForLatestInput: () => {
       let latestStream: (typeof streams)[number] | null = null;
       for (const stream of streams) {
@@ -383,28 +390,9 @@ async function emitApplicationOsc52(
   await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
 }
 
-async function scheduleTmuxClipboardWrite(page: Page, container: Locator): Promise<string> {
-  await container.click({ position: { x: 10, y: 10 } });
-  return typeScheduledTmuxClipboardWrite(page);
-}
-
-async function typeScheduledTmuxClipboardWrite(page: Page): Promise<string> {
-  const marker = "late terminal osc52 complete";
-  const value = "late terminal write";
-  tmuxClipboardWriteSequence += 1;
-  const channel = `kenn-forge-clipboard-write-${process.pid}-${tmuxClipboardWriteSequence}`;
-  await runAttachedTmuxCommand(
-    page,
-    `run-shell -b "while [ ! -f .clipboard-osc52-gate ]; do sleep 0.05; done; tmux wait-for -S '${channel}'" ; wait-for '${channel}' ; set-buffer -w '${value}' ; display-message '${marker}'`,
-  );
-  return marker;
-}
-
-async function runAttachedTmuxCommand(page: Page, command: string): Promise<void> {
-  await page.keyboard.press("Control+b");
-  await page.keyboard.press(":");
-  await page.keyboard.type(command);
-  await page.keyboard.press("Enter");
+function sendDelayedTmuxClipboardWrite(server: IsolatedE2EServer, tmuxSession: string): void {
+  const payload = Buffer.from("late terminal write", "utf8").toString("base64");
+  writeTmuxClientTTY(server, tmuxSession, new TextEncoder().encode(`\x1b]52;c;${payload}\x07`));
 }
 
 async function runClipboardGesture(page: Page, action: "read" | "write", text = ""): Promise<string> {
@@ -460,6 +448,10 @@ async function readBrowserClipboard(page: Page): Promise<string> {
   return runClipboardGesture(page, "read");
 }
 
+async function readBrowserClipboardWithoutFocus(page: Page): Promise<string> {
+  return page.evaluate(() => navigator.clipboard.readText());
+}
+
 async function interceptDeniedBrowserClipboard(page: Page): Promise<string[]> {
   await page.addInitScript(() => {
     const denied = () => Promise.reject(new DOMException("denied", "NotAllowedError"));
@@ -503,6 +495,7 @@ async function renderMarker(
   marker: string,
 ): Promise<TerminalDimensions> {
   await container.click({ position: { x: 10, y: 10 } });
+  await container.locator(".xterm-helper-textarea").focus();
   await page.keyboard.type(`clear; printf '${shellOctal(`${marker}#`)}\\n'`);
   await page.keyboard.press("Enter");
   await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
@@ -527,23 +520,33 @@ async function enableTmuxMouseAndRenderMarker(
   page: Page,
   container: Locator,
   output: ReturnType<typeof observeTerminalOutput>,
+  server: IsolatedE2EServer,
+  tmuxSession: string,
   marker: string,
 ): Promise<TerminalDimensions> {
   await container.click({ position: { x: 10, y: 10 } });
-  await runAttachedTmuxCommand(page, "set-option -g mouse off");
-  await runAttachedTmuxCommand(page, "set-option -g mouse on");
+  await expect.poll(() => output.activeSocketCount(), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBeGreaterThan(0);
+  await expect.poll(() => output.activeSocketHasDimensions(), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+  runE2ETmuxCommand(server, ["set-option", "-g", "-t", tmuxSession, "mouse", "off"]);
+  runE2ETmuxCommand(server, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
   await expect(container.locator(".xterm.enable-mouse-events")).toBeVisible();
   return renderMarker(page, container, output, marker);
 }
 
-async function copyMarkerWithTmuxKeys(
+async function copyMarkerWithTmuxBuffer(
   page: Page,
   container: Locator,
   output: ReturnType<typeof observeTerminalOutput>,
+  server: IsolatedE2EServer,
+  tmuxSession: string,
   marker: string,
 ): Promise<void> {
   await renderMarker(page, container, output, marker);
-  await runAttachedTmuxCommand(page, `set-buffer -w '${marker}'`);
+  const osc52Count = output.count("\x1b]52;");
+  runE2ETmuxCommand(server, ["set-buffer", "-w", marker]);
+  await expect
+    .poll(() => output.count("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
+    .toBeGreaterThan(osc52Count);
 }
 
 async function dragTerminalCells(page: Page, container: Locator, cellCount: number): Promise<void> {
@@ -825,13 +828,14 @@ test("tmux blocks application OSC 52 while keyboard copy reaches the clipboard",
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const tabTerminal = await openTerminalPanel(page);
+    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
     const keyboardMarker = "keyboard clipboard marker";
     if (browserName === "firefox") {
       await emitApplicationOsc52(page, tabTerminal, output);
       await page.waitForTimeout(250);
       expect(fallbackWrites).toEqual([]);
 
-      await copyMarkerWithTmuxKeys(page, tabTerminal, output, keyboardMarker);
+      await copyMarkerWithTmuxBuffer(page, tabTerminal, output, isolatedServer, tmuxSession, keyboardMarker);
       await expect.poll(() => fallbackWrites).toContain(keyboardMarker);
     } else {
       await setBrowserClipboard(page, "trusted clipboard value");
@@ -840,8 +844,8 @@ test("tmux blocks application OSC 52 while keyboard copy reaches the clipboard",
       expect(await readBrowserClipboard(page)).toBe("trusted clipboard value");
 
       await setBrowserClipboard(page, "");
-      await copyMarkerWithTmuxKeys(page, tabTerminal, output, keyboardMarker);
-      await expect.poll(() => readBrowserClipboard(page), { timeout: 15_000 }).toBe(keyboardMarker);
+      await copyMarkerWithTmuxBuffer(page, tabTerminal, output, isolatedServer, tmuxSession, keyboardMarker);
+      await expect.poll(() => readBrowserClipboardWithoutFocus(page), { timeout: 15_000 }).toBe(keyboardMarker);
     }
   } finally {
     await api?.dispose();
@@ -879,6 +883,7 @@ test("visible terminal focus loss revokes keyboard authorization after a missed 
     await chosenLeaf.getByRole("button", { name: /^Move .+ to a pane$/ }).click();
     const terminal = page.locator(".session-terminal-slot .terminal-container");
     await expect(terminal).toBeVisible();
+    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id, { expectedCount: 2, index: 0 });
 
     const bounds = await terminal.boundingBox();
     if (!bounds) throw new Error("promoted terminal has no pointer bounds");
@@ -907,15 +912,16 @@ test("visible terminal focus loss revokes keyboard authorization after a missed 
       .toBe(false);
     await page.mouse.up();
 
-    const lateWriteMarker = await typeScheduledTmuxClipboardWrite(page);
+    const osc52Count = output.count("\x1b]52;");
     const copyButton = page.getByRole("button", { name: "Copy issue #10 link" });
     await copyButton.click();
     await expect(copyButton).toHaveAttribute("title", "Copied!");
     await expect.poll(() => readBrowserClipboard(page)).toBe("https://github.com/acme/widgets/issues/10");
 
-    await writeFile(join(workspace.worktree_path, ".clipboard-osc52-gate"), "go", { mode: 0o600 });
-    await expect.poll(() => output.includes(lateWriteMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
-    await expect.poll(() => output.includes("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    sendDelayedTmuxClipboardWrite(isolatedServer, tmuxSession);
+    await expect
+      .poll(() => output.count("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
+      .toBeGreaterThan(osc52Count);
     await page.waitForTimeout(250);
     expect(await readBrowserClipboard(page)).toBe("https://github.com/acme/widgets/issues/10");
   } finally {
@@ -952,8 +958,9 @@ test("visible detail copy wins when focus leaves a pointer-captured terminal", a
     await chosenLeaf.getByRole("button", { name: /^Move .+ to a pane$/ }).click();
     const terminal = page.locator(".session-terminal-slot .terminal-container");
     await expect(terminal).toBeVisible();
+    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id, { expectedCount: 2, index: 0 });
 
-    const lateWriteMarker = await scheduleTmuxClipboardWrite(page, terminal);
+    const osc52Count = output.count("\x1b]52;");
     const bounds = await terminal.boundingBox();
     if (!bounds) throw new Error("promoted terminal has no pointer bounds");
     await page.mouse.move(bounds.x + 10, bounds.y + 10);
@@ -974,9 +981,10 @@ test("visible detail copy wins when focus leaves a pointer-captured terminal", a
     await page.keyboard.press("Enter");
     await expect(copyButton).toHaveAttribute("title", "Copied!");
 
-    await writeFile(join(workspace.worktree_path, ".clipboard-osc52-gate"), "go", { mode: 0o600 });
-    await expect.poll(() => output.includes(lateWriteMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
-    await expect.poll(() => output.includes("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    sendDelayedTmuxClipboardWrite(isolatedServer, tmuxSession);
+    await expect
+      .poll(() => output.count("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
+      .toBeGreaterThan(osc52Count);
     await page.waitForTimeout(250);
     await page.mouse.up();
     pointerIsDown = false;
@@ -1002,9 +1010,14 @@ test("PR comment copy survives 5px terminal focus jitter at default geometry", a
   try {
     isolatedServer = await startIsolatedWorkspaceE2EServer();
     api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
-    const { output, terminal } = await openPullDetailWithPromotedTerminal(page, api, isolatedServer.info.base_url);
+    const { workspace, output, terminal } = await openPullDetailWithPromotedTerminal(
+      page,
+      api,
+      isolatedServer.info.base_url,
+    );
+    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id, { expectedCount: 2, index: 0 });
 
-    await enableTmuxMouseAndRenderMarker(page, terminal, output, "focus click marker");
+    await enableTmuxMouseAndRenderMarker(page, terminal, output, isolatedServer, tmuxSession, "focus click marker");
     const copiedComment =
       "Guard the cache fallback before returning stale data.\n\nExpanded context explains stale data handling.";
     const commentCard = page.locator(".pull-detail .kit-comment-card", {
@@ -1056,8 +1069,10 @@ test("outside PR comment copy revokes a delayed terminal write before focus chan
       api,
       isolatedServer.info.base_url,
     );
+    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id, { expectedCount: 2, index: 0 });
 
-    const lateWriteMarker = await scheduleTmuxClipboardWrite(page, terminal);
+    await terminal.click({ position: { x: 10, y: 10 } });
+    const osc52Count = output.count("\x1b]52;");
     const copiedComment =
       "Guard the cache fallback before returning stale data.\n\nExpanded context explains stale data handling.";
     const commentCard = page.locator(".pull-detail .kit-comment-card", {
@@ -1079,9 +1094,10 @@ test("outside PR comment copy revokes a delayed terminal write before focus chan
     await expect(copyButton).toHaveAttribute("aria-label", "Copied");
     expect(await terminal.evaluate((element) => element.contains(document.activeElement))).toBe(true);
 
-    await writeFile(join(workspace.worktree_path, ".clipboard-osc52-gate"), "go", { mode: 0o600 });
-    await expect.poll(() => output.includes(lateWriteMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
-    await expect.poll(() => output.includes("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    sendDelayedTmuxClipboardWrite(isolatedServer, tmuxSession);
+    await expect
+      .poll(() => output.count("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
+      .toBeGreaterThan(osc52Count);
     await page.waitForTimeout(250);
     expect(await readBrowserClipboard(page)).toBe(copiedComment);
   } finally {
@@ -1123,8 +1139,10 @@ test("a parked pooled terminal cannot overwrite a newer detail clipboard copy", 
 
     const terminal = page.locator('.session-terminal-slot [data-clipboard-park-witness="live-terminal"]');
     await expect(terminal).toBeVisible();
+    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id, { expectedCount: 2, index: 0 });
 
-    const lateWriteMarker = await scheduleTmuxClipboardWrite(page, terminal);
+    await terminal.click({ position: { x: 10, y: 10 } });
+    const osc52Count = output.count("\x1b]52;");
     await expect.poll(() => output.activeSocketCount()).toBeGreaterThan(0);
     const activeSocketsBeforePark = output.activeSocketCount();
     const promotedLeaf = page.locator(".tabbed-panel-leaf").filter({ has: terminal });
@@ -1139,9 +1157,10 @@ test("a parked pooled terminal cannot overwrite a newer detail clipboard copy", 
     await expect(copyButton).toHaveAttribute("title", "Copied!");
     await expect.poll(() => readBrowserClipboard(page)).toBe("https://github.com/acme/widgets/issues/10");
 
-    await writeFile(join(workspace.worktree_path, ".clipboard-osc52-gate"), "go", { mode: 0o600 });
-    await expect.poll(() => output.includes(lateWriteMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
-    await expect.poll(() => output.includes("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    sendDelayedTmuxClipboardWrite(isolatedServer, tmuxSession);
+    await expect
+      .poll(() => output.count("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
+      .toBeGreaterThan(osc52Count);
     await page.waitForTimeout(250);
     expect(await readBrowserClipboard(page)).toBe("https://github.com/acme/widgets/issues/10");
   } finally {
@@ -1171,8 +1190,9 @@ test("tmux drag-copy reaches the clipboard in tab and inline hosts", async ({ pa
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const tabTerminal = await openTerminalPanel(page);
+    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
     const tabMarker = "tab clipboard — marker\u00a0value";
-    await enableTmuxMouseAndRenderMarker(page, tabTerminal, output, tabMarker);
+    await enableTmuxMouseAndRenderMarker(page, tabTerminal, output, isolatedServer, tmuxSession, tabMarker);
     await dragTerminalCells(page, tabTerminal, tabMarker.length);
     if (browserName === "firefox") {
       await expect.poll(() => fallbackWrites.some((write) => write.includes(tabMarker))).toBe(true);
@@ -1190,7 +1210,7 @@ test("tmux drag-copy reaches the clipboard in tab and inline hosts", async ({ pa
     await expect(inlineTerminal).toBeVisible();
     await expect(inlineTerminal.locator("canvas, .xterm-screen").first()).toBeVisible();
     const inlineMarker = "inline clipboard — marker\u00a0value";
-    await enableTmuxMouseAndRenderMarker(page, inlineTerminal, output, inlineMarker);
+    await enableTmuxMouseAndRenderMarker(page, inlineTerminal, output, isolatedServer, tmuxSession, inlineMarker);
     await dragTerminalCells(page, inlineTerminal, inlineMarker.length);
     if (browserName === "firefox") {
       await expect.poll(() => fallbackWrites.some((write) => write.includes(inlineMarker))).toBe(true);
@@ -1224,8 +1244,9 @@ test("tmux drag-copy autoscrolls beyond the terminal edge", async ({ page, brows
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
+    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
     await terminal.click({ position: { x: 10, y: 10 } });
-    await runAttachedTmuxCommand(page, "set-option -g mouse on");
+    runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
     const dimensions = await renderScrollMarkers(page, terminal, output);
     if (browserName === "chromium") {
       await setBrowserClipboard(page, "");

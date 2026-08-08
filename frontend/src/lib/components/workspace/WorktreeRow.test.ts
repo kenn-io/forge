@@ -1,7 +1,20 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { WorkspaceWorktree } from "../../api/types.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+
+const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
+
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => {
+    const runtime = runtimeCapture.current;
+    if (runtime === undefined) throw new Error("worktree row test runtime is not initialized");
+    return runtime;
+  },
+}));
+
 import WorktreeRow from "./WorktreeRow.svelte";
 
 function createWorktree(): WorkspaceWorktree {
@@ -32,8 +45,15 @@ function createWorktree(): WorkspaceWorktree {
 }
 
 describe("WorktreeRow", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    runtimeCapture.current = makeAppRuntime();
+  });
+
+  afterEach(async () => {
     cleanup();
+    if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
+    runtimeCapture.current = undefined;
+    vi.useRealTimers();
   });
 
   it.each([
@@ -83,5 +103,28 @@ describe("WorktreeRow", () => {
       projectKey: "kenn-forge",
       worktreeKey: "worktree-1",
     });
+  });
+
+  it("does not request a hover card after the row unmounts", async () => {
+    vi.useFakeTimers();
+    const onCommand = vi.fn();
+    const view = render(WorktreeRow, {
+      props: {
+        worktree: createWorktree(),
+        hostKey: "local",
+        projectKey: "kenn-forge",
+        isSelected: false,
+        hoverCardsEnabled: true,
+        onCommand,
+      },
+    });
+
+    const row = view.container.querySelector(".worktree-row");
+    expect(row).toBeTruthy();
+    await fireEvent.mouseEnter(row!);
+    view.unmount();
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(onCommand).not.toHaveBeenCalled();
   });
 });

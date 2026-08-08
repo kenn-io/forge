@@ -1,23 +1,15 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ModeVisibility } from "../../api/types.js";
 
-const { mockSetModeVisibility, mockUpdateSettings } = vi.hoisted(() => ({
+const { mockSetModeVisibility, mockPersistSettings } = vi.hoisted(() => ({
   mockSetModeVisibility: vi.fn(),
-  mockUpdateSettings: vi.fn(),
+  mockPersistSettings: vi.fn(),
 }));
 
-vi.mock("../../context.js", () => ({
-  DEFAULT_MODE_VISIBILITY: {
-    activity: true,
-    repos: true,
-    kata: false,
-    docs: false,
-    pulls: true,
-    issues: true,
-    reviews: true,
-    workspaces: true,
-  },
+vi.mock("../../context.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../context.js")>()),
   getStores: () => ({
     settings: {
       setModeVisibility: mockSetModeVisibility,
@@ -25,15 +17,23 @@ vi.mock("../../context.js", () => ({
   }),
 }));
 
-vi.mock("../../api/settings.js", () => ({
-  updateSettings: mockUpdateSettings,
-}));
+vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
+  return {
+    ...actual,
+    SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({
+      persist: (request) => mockPersistSettings(request),
+    }),
+  };
+});
 
-vi.mock("../../stores/embed-config.svelte.js", () => ({
+vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../stores/embed-config.svelte.js")>()),
   isEmbedded: () => false,
 }));
 
 import ModeVisibilitySettings from "./ModeVisibilitySettings.svelte";
+import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 
 function defaultModes(): ModeVisibility {
   return {
@@ -52,7 +52,7 @@ describe("ModeVisibilitySettings", () => {
   afterEach(() => {
     cleanup();
     mockSetModeVisibility.mockReset();
-    mockUpdateSettings.mockReset();
+    mockPersistSettings.mockReset();
   });
 
   it("persists visible mode changes", async () => {
@@ -63,14 +63,11 @@ describe("ModeVisibilitySettings", () => {
       docs: true,
       workspaces: false,
     };
-    mockUpdateSettings.mockResolvedValue({ modes: updated });
+    mockPersistSettings.mockReturnValue(Effect.succeed({ modes: updated }));
     const onUpdate = vi.fn();
 
-    render(ModeVisibilitySettings, {
-      props: {
-        modes,
-        onUpdate,
-      },
+    render(SettingsRuntimeHarness, {
+      props: { component: ModeVisibilitySettings, componentProps: { modes, onUpdate } },
     });
 
     expect((screen.getByLabelText("Kata") as HTMLInputElement).checked).toBe(false);
@@ -84,8 +81,9 @@ describe("ModeVisibilitySettings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({ modes: updated });
+      expect(mockPersistSettings).toHaveBeenCalledOnce();
     });
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ modes: updated });
     expect(mockSetModeVisibility).toHaveBeenCalledWith(updated);
     expect(onUpdate).toHaveBeenCalledWith(updated);
   });

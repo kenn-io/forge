@@ -1,25 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { assert, describe, it } from "@effect/vitest";
+import { Effect } from "effect";
+import { createRuntimeClient } from "./runtime.ts";
+import { makeGeneratedApiLayer } from "./generated-api.js";
 import type { PullRequest } from "./types.js";
-
-const runtime = vi.hoisted(() => ({
-  post: vi.fn(),
-}));
-
-vi.mock("./runtime.ts", () => ({
-  client: { POST: runtime.post },
-  apiErrorMessage: (error: { detail?: string } | undefined, fallback: string) => error?.detail ?? fallback,
-}));
 
 import { createPullRequestWorkspace } from "./onboarding.ts";
 
 describe("onboarding API", () => {
-  beforeEach(() => runtime.post.mockReset());
-
-  it("creates a workspace with the pull request's full provider identity", async () => {
-    runtime.post.mockResolvedValue({
-      data: { id: "ws-42", status: "provisioning" },
-      error: undefined,
-    });
+  it.effect("creates a workspace with the pull request's full provider identity", () => {
+    let receivedBody: unknown;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      receivedBody = await request.json();
+      return Response.json({ id: "ws-42", status: "provisioning" });
+    };
     const pull = {
       Number: 42,
       repo: {
@@ -31,18 +25,17 @@ describe("onboarding API", () => {
       },
     } as PullRequest;
 
-    await expect(createPullRequestWorkspace(pull)).resolves.toEqual({
-      id: "ws-42",
-      status: "provisioning",
-    });
-    expect(runtime.post).toHaveBeenCalledWith("/workspaces", {
-      body: {
+    return Effect.gen(function* () {
+      const workspace = yield* createPullRequestWorkspace(pull);
+
+      assert.deepStrictEqual(workspace, { id: "ws-42", status: "provisioning" });
+      assert.deepStrictEqual(receivedBody, {
         provider: "github",
         platform_host: "ghe.example.com",
         owner: "acme",
         name: "forge",
         mr_number: 42,
-      },
-    });
+      });
+    }).pipe(Effect.provide(makeGeneratedApiLayer(createRuntimeClient(fetchImpl))));
   });
 });

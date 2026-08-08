@@ -142,12 +142,12 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Date.parse(next) > Date.parse(previous);
   }
 
-  function runTriggeredSync(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>): void {
+  function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>) {
     const previous = status;
     refreshGeneration += 1;
     let baselineLastRunAt = previous?.last_run_at ?? null;
 
-    const program = Effect.gen(function* () {
+    return Effect.gen(function* () {
       if (previous === null) {
         const baseline = yield* Effect.option(syncStatusRead());
         baselineLastRunAt = Option.isSome(baseline) ? (baseline.value.last_run_at ?? null) : null;
@@ -164,27 +164,45 @@ export function createSyncStore(opts: SyncStoreOptions) {
       });
       yield* request;
       yield* Effect.suspend(refreshSyncStatusProgram);
-    });
-    runtime.runCommand(program, {
+    }).pipe(
+      Effect.tapError((failure) =>
+        Effect.sync(() => {
+          triggeredSyncLastRunAt = undefined;
+          status = {
+            running: false,
+            last_run_at: previous?.last_run_at ?? baselineLastRunAt ?? "",
+            last_error: readErrorMessage(failure, "failed to trigger sync"),
+          };
+          wasRunning = false;
+          adjustPollingSpeed(false);
+        }),
+      ),
+      Effect.asVoid,
+    );
+  }
+
+  function runTriggeredSync(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>): void {
+    runtime.runCommand(triggeredSyncProgram(request), {
       operation: "trigger provider sync",
       safeContext: {},
-      onFailure: (failure) => {
-        triggeredSyncLastRunAt = undefined;
-        status = {
-          running: false,
-          last_run_at: previous?.last_run_at ?? baselineLastRunAt ?? "",
-          last_error: readErrorMessage(failure, "failed to trigger sync"),
-        };
-        wasRunning = false;
-        adjustPollingSpeed(false);
-      },
+      onFailure: () => {},
     });
   }
 
-  function triggerSync(): void {
+  function triggerSyncEffect() {
     const priorityRepos = parsePriorityRepos(getPriorityRepos());
     const syncOptions = priorityRepos.length > 0 ? { params: { query: { priority_repo: priorityRepos } } } : {};
-    runTriggeredSync(executeGeneratedApiRequest("POST /sync", (client) => client.POST("/sync", syncOptions)));
+    return triggeredSyncProgram(
+      executeGeneratedApiRequest("POST /sync", (client) => client.POST("/sync", syncOptions)),
+    );
+  }
+
+  function triggerSync(): void {
+    runtime.runCommand(triggerSyncEffect(), {
+      operation: "trigger provider sync",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   function triggerRepoSync(repo: string): void {
@@ -252,6 +270,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     refreshSyncStatusEffect,
     reconcileSyncStatusEffect,
     setSyncStatus,
+    triggerSyncEffect,
     triggerSync,
     triggerRepoSync,
     pollingEffect,

@@ -3,7 +3,7 @@ import { Deferred, Effect, Fiber, Stream } from "effect";
 import { eventSourceStream, openEventSource } from "./event-source.js";
 import { byteStreamFromReader, type ByteReader } from "./streaming-fetch.js";
 import { observeResize } from "./observers.js";
-import { openWebSocket } from "./web-socket.js";
+import { makeWebSocketWithArrayBufferFrames, openWebSocket } from "./web-socket.js";
 import {
   EventSourceFactoryTest,
   EventSourceProbe,
@@ -46,6 +46,16 @@ class ReaderProbe implements ReadableStreamDefaultReader<Uint8Array> {
     this.releaseCount += 1;
   }
 }
+
+it.effect("configures browser sockets to preserve binary frame order", () =>
+  Effect.sync(() => {
+    const socket: { binaryType: BinaryType } = { binaryType: "blob" };
+    const result = makeWebSocketWithArrayBufferFrames(() => socket, "wss://example.invalid/events");
+
+    assert.strictEqual(result, socket);
+    assert.strictEqual(socket.binaryType, "arraybuffer");
+  }),
+);
 
 it.layer(EventSourceFactoryTest)("EventSource release after success", (it) => {
   it.effect("closes the source when the scoped owner succeeds", () =>

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import type { PREvent } from "../../api/types.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import ReviewDecisionChip from "./ReviewDecisionChip.svelte";
 
 function reviewEvent(author: string, summary = "APPROVED", createdAt = "2026-05-01T12:00:00Z"): PREvent {
@@ -25,8 +26,9 @@ describe("ReviewDecisionChip", () => {
   });
 
   it("shows approval count and expands approver names", async () => {
-    render(ReviewDecisionChip, {
+    render(AppRuntimeHarness, {
       props: {
+        component: ReviewDecisionChip,
         decision: "APPROVED",
         events: [
           reviewEvent("alice", "APPROVED", "2026-05-01T12:00:00Z"),

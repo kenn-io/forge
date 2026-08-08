@@ -72,7 +72,8 @@
   });
 
   let candidateExecution: AppExecution<void, Error> | null = null;
-  let queryDebounce: ReturnType<typeof setTimeout> | null = null;
+  let queryExecution: AppExecution<void, never> | null = null;
+  let openExecution: AppExecution<void, never> | null = null;
 
   function closePicker(): void {
     if (closeOpenEditor === closePicker) closeOpenEditor = null;
@@ -82,10 +83,10 @@
     candidatesLoading = false;
     candidateExecution?.interrupt();
     candidateExecution = null;
-    if (queryDebounce !== null) {
-      clearTimeout(queryDebounce);
-      queryDebounce = null;
-    }
+    queryExecution?.interrupt();
+    queryExecution = null;
+    openExecution?.interrupt();
+    openExecution = null;
   }
 
   function fetchCandidates(query: string): void {
@@ -116,11 +117,22 @@
   }
 
   function onPickerQuery(query: string): void {
-    if (queryDebounce !== null) clearTimeout(queryDebounce);
-    queryDebounce = setTimeout(() => {
-      queryDebounce = null;
-      fetchCandidates(query);
-    }, 200);
+    queryExecution?.interrupt();
+    queryExecution = runtime.runCommand(
+      Effect.sleep("200 millis").pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            queryExecution = null;
+            fetchCandidates(query);
+          }),
+        ),
+      ),
+      {
+        operation: "debounce user candidate search",
+        safeContext: { query },
+        onFailure: () => {},
+      },
+    );
   }
 
   function positionPicker(): void {
@@ -152,7 +164,7 @@
     closePicker();
   }
 
-  async function togglePicker(event?: MouseEvent): Promise<void> {
+  function togglePicker(event?: MouseEvent): void {
     if (open) {
       closePicker();
       return;
@@ -162,9 +174,23 @@
     closeOpenEditor = closePicker;
     open = true;
     candidatesError = null;
-    await tick();
-    positionPicker();
-    fetchCandidates("");
+    openExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            openExecution = null;
+            if (!open) return;
+            positionPicker();
+            fetchCandidates("");
+          }),
+        ),
+      ),
+      {
+        operation: "open user picker",
+        safeContext: { editorId },
+        onFailure: () => {},
+      },
+    );
   }
 
   onDestroy(() => {

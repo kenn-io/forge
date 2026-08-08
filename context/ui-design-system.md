@@ -416,6 +416,8 @@ When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpr
 
 Effect-owned frontend work shares the single main `ManagedRuntime` and reaches it through Svelte context; do not create per-feature runtimes or detach async work from its scope (`frontend/src/lib/app/runtime.ts::makeAppRuntime`, `frontend/src/lib/app/mount.ts::mountApplication`).
 
+Promise-required library callbacks may observe `AppExecution.exit`, but the command must start through `runCommand` so interoperability never becomes a second runtime or detached owner (`frontend/src/lib/app/runtime.ts::AppExecution`).
+
 When an `$effect` launches an Effect fiber, wrap `runCommand` itself in `untrack`; fibers begin synchronously, so untracking only program construction can subscribe the outer Svelte effect to the fiber's rune transitions (`frontend/src/App.svelte:542`).
 
 App-wide health polling belongs to the root runtime lifetime, not the full-shell lifetime, because embedded routes still depend on daemon availability (`frontend/src/App.svelte::roborevPollingExecution`).
@@ -435,6 +437,8 @@ Effect callback streams use explicit bounded buffers: pullable producers suspend
 Provider live updates checkpoint only after their handler succeeds and preserve that cursor across owner handoffs; transient failures stay visibly reconnecting under capped backoff, while decode failures stop visibly until an explicit reconnect (`frontend/src/lib/stores/provider-events-workflow.ts::providerEventsProgram`).
 
 Provider mutations share one app-scoped acknowledged queue: order commands by submission, key rollback versions by full item identity plus mutation family, never retry writes, and turn `stale_state` into refresh-and-review without replay (`frontend/src/lib/stores/ordered-mutations.ts::ProviderMutations`).
+
+Component lifetime owns polling and live-event subscriptions; teardown interrupts that owner. Accepted queued mutations remain application-runtime-owned, and post-teardown coordinator demand stays pending for a remounted owner (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflow`, `frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflow`).
 
 A `$state` record written by full-object reassignment (`x = { ...x, k: v }`) that is also read inside the same reactive scope — an `$effect`, or a `{@attach ...}` callback, which Svelte runs as one — is a self-referential dependency: Svelte detects it as `effect_update_depth_exceeded` and the attachment tears itself down and reattaches forever. Mutate the specific key instead (`x[k] = v`) (`frontend/src/lib/stores/workspace-host.svelte.ts::registerSlotElement`).
 

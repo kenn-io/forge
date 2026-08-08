@@ -1,0 +1,122 @@
+import { Context, Effect, Layer, Queue, Schedule, Stream } from "effect";
+import type * as Duration from "effect/Duration";
+import type { Scope } from "effect/Scope";
+
+export interface WorkspaceListWorkflowService {
+  readonly claim: (owner: string, refresh: () => void) => Effect.Effect<void, never, Scope>;
+  readonly request: () => void;
+}
+
+export class WorkspaceListWorkflow extends Context.Service<WorkspaceListWorkflow, WorkspaceListWorkflowService>()(
+  "kenn-forge/WorkspaceListWorkflow",
+) {}
+
+export const makeWorkspaceListWorkflow = Effect.sync(() => {
+  const owners = new Map<string, () => void>();
+  let pending = false;
+
+  return {
+    claim: (owner: string, refresh: () => void) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          owners.set(owner, refresh);
+          if (pending) {
+            pending = false;
+            refresh();
+          }
+        }),
+        () =>
+          Effect.sync(() => {
+            owners.delete(owner);
+          }),
+      ),
+    request: () => {
+      if (owners.size === 0) {
+        pending = true;
+        return;
+      }
+      for (const refresh of owners.values()) refresh();
+    },
+  } satisfies WorkspaceListWorkflowService;
+});
+
+export const WorkspaceListWorkflowLive = Layer.effect(WorkspaceListWorkflow)(makeWorkspaceListWorkflow);
+
+export interface WorkspaceRefreshCoordinator<R> {
+  readonly program: Effect.Effect<void, never, R | Scope>;
+  readonly request: () => void;
+}
+
+export function makeWorkspaceRefreshCoordinator<R>(
+  load: Effect.Effect<void, never, R>,
+): WorkspaceRefreshCoordinator<R> {
+  let publish: () => void = () => {
+    pending = true;
+  };
+  let pending = false;
+
+  const program = Effect.gen(function* () {
+    const requests = yield* Queue.sliding<void>(1);
+    publish = () => {
+      Queue.offerUnsafe(requests, undefined);
+    };
+    const runImmediately = pending;
+    pending = false;
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        publish = () => {
+          pending = true;
+        };
+      }).pipe(Effect.andThen(Queue.shutdown(requests))),
+    );
+    if (runImmediately) yield* load;
+    yield* Stream.fromQueue(requests).pipe(
+      Stream.debounce("25 millis"),
+      Stream.runForEach(() => load),
+    );
+  });
+
+  return {
+    program,
+    request: () => publish(),
+  };
+}
+
+export interface WorkspaceListLifecycleOptions<WorkspaceR, FleetR, EventR> {
+  readonly refreshWorkspaces: WorkspaceRefreshCoordinator<WorkspaceR>;
+  readonly refreshFleet: WorkspaceRefreshCoordinator<FleetR>;
+  readonly workspaceEvents: Stream.Stream<unknown, never, EventR>;
+}
+
+export function workspaceListLifecycle<WorkspaceR, FleetR, EventR>({
+  refreshWorkspaces,
+  refreshFleet,
+  workspaceEvents,
+}: WorkspaceListLifecycleOptions<WorkspaceR, FleetR, EventR>): Effect.Effect<
+  void,
+  never,
+  WorkspaceR | FleetR | EventR | Scope
+> {
+  const poll = (request: () => void, interval: Duration.Input) =>
+    Stream.fromSchedule(Schedule.spaced(interval)).pipe(Stream.runForEach(() => Effect.sync(request)));
+
+  return Effect.sync(() => {
+    refreshWorkspaces.request();
+    refreshFleet.request();
+  }).pipe(
+    Effect.andThen(
+      Effect.all(
+        [
+          refreshWorkspaces.program,
+          refreshFleet.program,
+          poll(refreshWorkspaces.request, "5 seconds"),
+          poll(refreshFleet.request, "15 seconds"),
+          Stream.runForEach(workspaceEvents, () =>
+            Effect.sync(refreshWorkspaces.request).pipe(Effect.andThen(Effect.yieldNow)),
+          ),
+        ],
+        { concurrency: "unbounded", discard: true },
+      ),
+    ),
+  );
+}

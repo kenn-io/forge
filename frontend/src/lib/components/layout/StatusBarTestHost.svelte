@@ -2,11 +2,13 @@
   import { setContext, untrack } from "svelte";
   import { createAppStores } from "../../app-stores.svelte.js";
   import type { AppRuntime } from "../../app/runtime.js";
+  import { setAppRuntime } from "../../app/runtime-context.js";
   import { STORES_KEY } from "../../context.js";
   import { getPage } from "../../stores/router.svelte.ts";
   import StatusBar from "./StatusBar.svelte";
 
   let { runtime }: { runtime: AppRuntime } = $props();
+  setAppRuntime(untrack(() => runtime));
 
   const stores = createAppStores({ runtime: untrack(() => runtime), getPage }).stores;
   setContext(STORES_KEY, stores);

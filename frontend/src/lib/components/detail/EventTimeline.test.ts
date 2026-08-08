@@ -1811,7 +1811,7 @@ describe("EventTimeline", () => {
   });
 
   it("collapses commit events flagged obsolete in strict date order", () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -1850,7 +1850,7 @@ describe("EventTimeline", () => {
   });
 
   it("ignores the obsolete flag outside commit events and non-boolean values", () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({

@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { Effect } from "effect";
 import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { LaunchTarget } from "../../api/types.js";
@@ -9,6 +10,7 @@ import type {
   KataTaskViewResponse,
 } from "../../api/kata/taskTypes.js";
 import { createKataLinkFilters } from "../../features/kata/kataLinkFilters.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 import KataIssueDetail from "./KataIssueDetail.svelte";
 
@@ -93,11 +95,13 @@ function makeView(): KataTaskViewResponse {
 }
 
 function renderDetail(props: Partial<KataIssueDetailProps> = {}) {
-  return render(KataIssueDetail, {
+  return render(AppRuntimeHarness, {
     props: {
+      component: KataIssueDetail,
       issue: makeIssue({ recurrence_id: 9 }),
       events: [],
       issueCatalog: makeView().groups.flatMap((group) => group.issues),
+      searchReferences: vi.fn(async () => ({ references: [] })),
       activeDaemonId: "home",
       linkFilters: createKataLinkFilters("open"),
       onLinkFiltersChange: vi.fn(),
@@ -105,22 +109,22 @@ function renderDetail(props: Partial<KataIssueDetailProps> = {}) {
       ownerOptions: [],
       selectedRecurrences: [makeRecurrence()],
       checklistRevealed: false,
-      onMoveIssue: vi.fn(async () => true),
-      onPatchMetadata: vi.fn(async () => true),
-      onAddComment: vi.fn(async () => true),
-      onEditIssue: vi.fn(async () => true),
-      onAssignOwner: vi.fn(async () => true),
-      onUnassignOwner: vi.fn(async () => true),
-      onSetPriority: vi.fn(async () => true),
-      onAddLabel: vi.fn(async () => true),
-      onRemoveLabel: vi.fn(),
+      onMoveIssue: vi.fn(() => Effect.succeed(true)),
+      onPatchMetadata: vi.fn(() => Effect.succeed(true)),
+      onAddComment: vi.fn(() => Effect.succeed(true)),
+      onEditIssue: vi.fn(() => Effect.succeed(true)),
+      onAssignOwner: vi.fn(() => Effect.succeed(true)),
+      onUnassignOwner: vi.fn(() => Effect.succeed(true)),
+      onSetPriority: vi.fn(() => Effect.succeed(true)),
+      onAddLabel: vi.fn(() => Effect.succeed(true)),
+      onRemoveLabel: vi.fn(() => Effect.succeed(true)),
       onRevealChecklist: vi.fn(),
       onCreateRecurrence: vi.fn(),
       onEditRecurrence: vi.fn(),
       onDeleteRecurrence: vi.fn(),
-      onCloseIssue: vi.fn(async () => true),
-      onReopenIssue: vi.fn(),
-      onDeleteIssue: vi.fn(async () => true),
+      onCloseIssue: vi.fn(() => Effect.succeed(true)),
+      onReopenIssue: vi.fn(() => Effect.succeed(true)),
+      onDeleteIssue: vi.fn(() => Effect.succeed(true)),
       onSelectIssue: vi.fn(),
       ...props,
     },
@@ -149,7 +153,7 @@ describe("KataIssueDetail", () => {
   });
 
   it("keeps the Kata primary workspace action create-only", async () => {
-    const onCreate = vi.fn();
+    const onCreate = vi.fn(() => Effect.void);
     renderDetail({
       workspaceAction: {
         label: "Create workspace",
@@ -166,7 +170,7 @@ describe("KataIssueDetail", () => {
   });
 
   it("passes the chosen agent through the Kata workspace action", async () => {
-    const onCreate = vi.fn();
+    const onCreate = vi.fn(() => Effect.void);
     renderDetail({
       workspaceAction: {
         label: "Create workspace",
@@ -184,7 +188,7 @@ describe("KataIssueDetail", () => {
   });
 
   it("edits title and description through the issue edit callback", async () => {
-    const onEditIssue = vi.fn(async () => true);
+    const onEditIssue = vi.fn(() => Effect.succeed(true));
     renderDetail({ onEditIssue });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
@@ -205,7 +209,7 @@ describe("KataIssueDetail", () => {
   });
 
   it("resets only the draft owned by the accepted mutation", async () => {
-    const onEditIssue = vi.fn(async () => true);
+    const onEditIssue = vi.fn(() => Effect.succeed(true));
     const view = renderDetail({ onEditIssue });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit description" }));
@@ -255,7 +259,7 @@ describe("KataIssueDetail", () => {
   });
 
   it("moves the issue from the task actions menu", async () => {
-    const onMoveIssue = vi.fn(async () => true);
+    const onMoveIssue = vi.fn(() => Effect.succeed(true));
     renderDetail({ onMoveIssue });
 
     await fireEvent.click(screen.getByRole("button", { name: "More actions" }));

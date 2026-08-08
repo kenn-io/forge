@@ -7,105 +7,236 @@
   // host's responsibility to register; we surface failure via the
   // ack-aware runner.
 
-  import { onMount } from "svelte";
-
-  import { apiErrorMessage, client } from "../../api/runtime.ts";
+  import { Effect, Option } from "effect";
+  import { onDestroy, untrack } from "svelte";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import {
     getProjectAction,
-    invokeProjectAction,
   } from "../../stores/embed-config.svelte.ts";
+  import {
+    loadProjectCardSnapshot,
+    projectCardFailureMessage,
+    type ProjectCardSnapshot,
+    type WorkspaceProject,
+    type WorkspaceProjectWorktree,
+  } from "./project-card-workflow.js";
+  import {
+    newWorktreeMutationKey,
+    ProjectMutationWorkflow,
+    projectMutationFailureMessage,
+    type NewWorktreeFailure,
+  } from "./project-mutation-workflow.js";
 
   interface Props {
     projectId: string;
     hostKey?: string | null | undefined;
   }
 
-  interface PlatformIdentity {
-    platform?: string;
-    platform_host: string;
-    owner: string;
-    name: string;
-  }
-
-  interface Project {
-    id: string;
-    display_name: string;
-    local_path: string;
-    platform_identity?: PlatformIdentity;
-    default_branch?: string;
-  }
-
-  interface Worktree {
-    id: string;
-    project_id: string;
-    branch: string;
-    path: string;
-  }
-
   let { projectId, hostKey = null }: Props = $props();
+  const runtime = getAppRuntime();
 
-  let project = $state<Project | null>(null);
-  let worktrees = $state<Worktree[]>([]);
+  let project = $state.raw<WorkspaceProject | null>(null);
+  let worktrees = $state.raw<readonly WorkspaceProjectWorktree[]>([]);
   let loadError = $state<string | null>(null);
   let loading = $state<boolean>(true);
   let inFlight = $state<boolean>(false);
+  let loadExecution: AppExecution<void, never> | undefined;
+  let componentDestroyed = false;
+  let reconciliationVersion = 0;
   const scopedHostKey = $derived(hostKey?.trim() || undefined);
 
-  async function load(): Promise<void> {
-    loading = true;
-    loadError = null;
-    try {
-      const projectResult = scopedHostKey
-        ? await client.GET("/fleet/hosts/{host_key}/projects/{project_id}", {
-            params: {
-              path: { host_key: scopedHostKey, project_id: projectId },
-            },
-          })
-        : await client.GET("/projects/{project_id}", {
-            params: { path: { project_id: projectId } },
-          });
-      const { data: projectData, error: projectError } = projectResult;
-      if (!projectData) {
-        loadError = apiErrorMessage(
-          projectError,
-          "Couldn't load this project.",
-        );
-        return;
-      }
-      project = projectData as Project;
-
-      const worktreesResult = scopedHostKey
-        ? await client.GET("/fleet/hosts/{host_key}/projects/{project_id}/worktrees", {
-            params: {
-              path: { host_key: scopedHostKey, project_id: projectId },
-            },
-          })
-        : await client.GET("/projects/{project_id}/worktrees", {
-            params: { path: { project_id: projectId } },
-          });
-      const { data: worktreesData, error: worktreesError } = worktreesResult;
-      if (!worktreesData) {
-        loadError = apiErrorMessage(
-          worktreesError,
-          "Couldn't load this project's worktrees.",
-        );
-        return;
-      }
-      worktrees = (worktreesData.worktrees ?? []) as Worktree[];
-    } catch (err) {
-      loadError = err instanceof Error ? err.message : String(err);
-    } finally {
-      loading = false;
-    }
+  function isCurrentIdentity(targetProjectId: string, targetHostKey?: string): boolean {
+    return !componentDestroyed && projectId === targetProjectId && scopedHostKey === targetHostKey;
   }
 
-  onMount(() => {
-    void load();
+  function isCurrentReconciliation(
+    version: number,
+    targetProjectId: string,
+    targetHostKey?: string,
+  ): boolean {
+    return version === reconciliationVersion && isCurrentIdentity(targetProjectId, targetHostKey);
+  }
+
+  function applySnapshot(
+    snapshot: ProjectCardSnapshot,
+    targetProjectId: string,
+    targetHostKey?: string,
+  ): void {
+    if (!isCurrentIdentity(targetProjectId, targetHostKey)) return;
+    project = snapshot.project;
+    worktrees = snapshot.worktrees;
+    loadError = null;
+    loading = false;
+  }
+
+  function launchLoad(targetProjectId: string, targetHostKey?: string): AppExecution<void, never> {
+    const version = ++reconciliationVersion;
+    loadExecution?.interrupt();
+    loading = true;
+    loadError = null;
+    const execution = runtime.runCommand(
+      loadProjectCardSnapshot(targetProjectId, targetHostKey).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) => Effect.sync(() => {
+            if (!isCurrentIdentity(targetProjectId, targetHostKey)) return;
+            loadError = projectCardFailureMessage(failure);
+            loading = false;
+          }),
+          onSuccess: (snapshot) =>
+            Effect.gen(function* () {
+              yield* Effect.sync(() => applySnapshot(snapshot, targetProjectId, targetHostKey));
+              const workflow = yield* ProjectMutationWorkflow;
+              const mutationKey = newWorktreeMutationKey(targetProjectId, targetHostKey);
+              const retained = yield* workflow.retainedNewWorktree(mutationKey);
+              if (Option.isNone(retained) || !isCurrentIdentity(targetProjectId, targetHostKey)) return;
+              yield* Effect.sync(() => {
+                inFlight = true;
+              });
+              yield* reconcileNewWorktree(retained.value, mutationKey, version, targetProjectId, targetHostKey);
+            }),
+        }),
+      ),
+      {
+        operation: "load workspace project card",
+        safeContext: {
+          projectId: targetProjectId,
+          hostKey: targetHostKey ?? "local",
+        },
+        onFailure: () => {},
+      },
+    );
+    loadExecution = execution;
+    return execution;
+  }
+
+  $effect(() => {
+    const targetProjectId = projectId;
+    const targetHostKey = scopedHostKey;
+    inFlight = false;
+    const execution = untrack(() => launchLoad(targetProjectId, targetHostKey));
+    return execution.interrupt;
   });
 
-  async function startNewWorktree(): Promise<void> {
+  onDestroy(() => {
+    componentDestroyed = true;
+    loadExecution?.interrupt();
+  });
+
+  function retryLoad(): void {
+    launchLoad(projectId, scopedHostKey);
+  }
+
+  function refreshAfterNewWorktree(
+    acknowledgement: Effect.Effect<CommandResult, NewWorktreeFailure>,
+    mutationKey: string,
+    version: number,
+    targetProjectId: string,
+    targetHostKey?: string,
+  ) {
+    return Effect.gen(function* () {
+      const workflow = yield* ProjectMutationWorkflow;
+      yield* Effect.sync(() => {
+        if (!isCurrentReconciliation(version, targetProjectId, targetHostKey)) return;
+        loading = true;
+        loadError = null;
+      });
+      const reconciled = yield* loadProjectCardSnapshot(targetProjectId, targetHostKey).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              if (!isCurrentReconciliation(version, targetProjectId, targetHostKey)) return false;
+              loadError = projectCardFailureMessage(failure);
+              loading = false;
+              return false;
+            }),
+          onSuccess: (snapshot) =>
+            Effect.sync(() => {
+              if (!isCurrentReconciliation(version, targetProjectId, targetHostKey)) return false;
+              applySnapshot(snapshot, targetProjectId, targetHostKey);
+              return true;
+            }),
+        }),
+      );
+      if (reconciled) yield* workflow.forgetNewWorktree(mutationKey, acknowledgement);
+    });
+  }
+
+  function reconcileNewWorktree(
+    acknowledgement: Effect.Effect<CommandResult, NewWorktreeFailure>,
+    mutationKey: string,
+    version: number,
+    targetProjectId: string,
+    targetHostKey?: string,
+  ) {
+    return Effect.gen(function* () {
+      const workflow = yield* ProjectMutationWorkflow;
+      yield* acknowledgement.pipe(
+        Effect.matchEffect({
+          onFailure: (failure) => {
+            if (!isCurrentIdentity(targetProjectId, targetHostKey)) return Effect.void;
+            const reportFailure = Effect.sync(() => {
+              if (!isCurrentReconciliation(version, targetProjectId, targetHostKey)) return;
+              showFlash(
+                projectMutationFailureMessage(
+                  failure,
+                  "The host returned an invalid worktree acknowledgement.",
+                ),
+                { tone: "danger" },
+              );
+            });
+            return reportFailure.pipe(
+              Effect.andThen(
+                refreshAfterNewWorktree(
+                  acknowledgement,
+                  mutationKey,
+                  version,
+                  targetProjectId,
+                  targetHostKey,
+                ),
+              ),
+            );
+          },
+          onSuccess: (result) => {
+            if (!isCurrentIdentity(targetProjectId, targetHostKey)) return Effect.void;
+            if (!result.ok) {
+              return Effect.sync(() => {
+                if (!isCurrentReconciliation(version, targetProjectId, targetHostKey)) return;
+                showFlash(result.message ?? "Couldn't start a new worktree.", {
+                  tone: "danger",
+                });
+              }).pipe(
+                Effect.andThen(
+                  refreshAfterNewWorktree(
+                    acknowledgement,
+                    mutationKey,
+                    version,
+                    targetProjectId,
+                    targetHostKey,
+                  ),
+                ),
+              );
+            }
+            return refreshAfterNewWorktree(
+              acknowledgement,
+              mutationKey,
+              version,
+              targetProjectId,
+              targetHostKey,
+            );
+          },
+        }),
+      );
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => {
+        if (isCurrentReconciliation(version, targetProjectId, targetHostKey)) inFlight = false;
+      })),
+    );
+  }
+
+  function startNewWorktree(): void {
     if (inFlight) return;
     const action = getProjectAction("new-worktree");
     if (!action) {
@@ -116,27 +247,38 @@
       );
       return;
     }
+    const targetProjectId = projectId;
+    const targetHostKey = scopedHostKey;
+    const mutationKey = newWorktreeMutationKey(targetProjectId, targetHostKey);
+    const version = ++reconciliationVersion;
     inFlight = true;
-    try {
-      const result = await invokeProjectAction(action, {
-        surface: "project-card",
-        projectId,
-        ...(scopedHostKey ? { hostKey: scopedHostKey } : {}),
-      });
-      if (!result.ok) {
-        showFlash(result.message ?? "Couldn't start a new worktree.", {
-          tone: "danger",
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* ProjectMutationWorkflow;
+        const outcome = workflow.acceptNewWorktree({
+          key: mutationKey,
+          action,
+          context: {
+            surface: "project-card",
+            projectId: targetProjectId,
+            ...(targetHostKey ? { hostKey: targetHostKey } : {}),
+          },
         });
-        return;
-      }
-      // Refresh worktree list on success so the new row shows up.
-      await load();
-    } finally {
-      inFlight = false;
-    }
+        const acknowledgement = yield* outcome;
+        yield* reconcileNewWorktree(acknowledgement, mutationKey, version, targetProjectId, targetHostKey);
+      }),
+      {
+        operation: "start project worktree",
+        safeContext: {
+          projectId: targetProjectId,
+          hostKey: targetHostKey ?? "local",
+        },
+        onFailure: () => {},
+      },
+    );
   }
 
-  function platformChip(identity: PlatformIdentity): string {
+  function platformChip(identity: NonNullable<WorkspaceProject["platform_identity"]>): string {
     return `${identity.platform_host} / ${identity.owner} / ${identity.name}`;
   }
 </script>
@@ -149,7 +291,7 @@
     <button
       type="button"
       class="project-card__retry"
-      onclick={() => void load()}
+      onclick={retryLoad}
     >
       Retry
     </button>
@@ -213,7 +355,7 @@
       class="project-card__cta"
       disabled={inFlight}
       aria-busy={inFlight}
-      onclick={() => void startNewWorktree()}
+      onclick={startNewWorktree}
     >
       {worktrees.length === 0
         ? "Create your first worktree"

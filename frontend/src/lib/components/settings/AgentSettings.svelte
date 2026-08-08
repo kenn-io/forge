@@ -4,10 +4,12 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
+  import { Effect } from "effect";
   import type { AgentSettings as AgentSettingsType, LaunchTarget } from "../../api/types.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import { slide } from "svelte/transition";
-  import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
 
   interface Props {
@@ -46,6 +48,7 @@
 
   let { agents, launchTargets = [], onUpdate }: Props = $props();
 
+  const runtime = getAppRuntime();
   const embedded = isEmbedded();
   let customID = 0;
   let saving = $state(false);
@@ -213,24 +216,40 @@
     draft.expanded = true;
   }
 
-  async function save(): Promise<void> {
+  function save(): void {
     if (!canSave) return;
+    const agentsToSave = serializedAgents;
     saving = true;
-    try {
-      const settings = await updateSettings({
-        agents: serializedAgents,
-      });
-      const nextAgents = settings.agents ?? [];
-      const nextLaunchTargets = settings.launch_targets ?? [];
-      agents = nextAgents;
-      launchTargets = nextLaunchTargets;
-      drafts = initialDrafts(nextAgents);
-      onUpdate(nextAgents, nextLaunchTargets);
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      saving = false;
-    }
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.persist(() => ({ agents: agentsToSave }));
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              showFlash(settingsErrorMessage(failure), { tone: "danger" });
+            }),
+          onSuccess: (settings) =>
+            Effect.sync(() => {
+              const nextAgents = settings.agents ?? [];
+              const nextLaunchTargets = settings.launch_targets ?? [];
+              agents = nextAgents;
+              launchTargets = nextLaunchTargets;
+              drafts = initialDrafts(nextAgents);
+              onUpdate(nextAgents, nextLaunchTargets);
+            }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          saving = false;
+        })),
+      ),
+      {
+        operation: "save workspace agents",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   function stringifyArgs(args: string[]): string {

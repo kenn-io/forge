@@ -1,12 +1,14 @@
 /// <reference types="vite/client" />
 
+declare var __kenn_forgeForceSyntaxHighlight: boolean | undefined;
+
 declare module "*.svelte?retry" {
-  const component: any;
+  const component: typeof import("./lib/features/docs/DocsFeature.svelte").default;
   export default component;
 }
 
 declare module "*.svelte?retry2" {
-  const component: any;
+  const component: typeof import("./lib/features/docs/DocsFeature.svelte").default;
   export default component;
 }
 

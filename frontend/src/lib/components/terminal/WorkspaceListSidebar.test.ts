@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
+import WorkspaceListSidebar from "./WorkspaceListSidebarTestHarness.svelte";
 import {
   getNewWorkspaceSeedRepo,
   isNewWorkspaceDialogOpen,
@@ -14,13 +14,19 @@ const mockPost = vi.fn();
 const mockDelete = vi.fn();
 const mockNavigate = vi.fn();
 
-vi.mock("../../api/runtime.js", () => ({
-  client: {
+vi.mock("../../api/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/runtime.js")>();
+  const client = {
     DELETE: (...args: unknown[]) => mockDelete(...args),
     GET: (...args: unknown[]) => mockGet(...args),
     POST: (...args: unknown[]) => mockPost(...args),
-  },
-}));
+  };
+  return {
+    ...actual,
+    client,
+    createRuntimeClient: () => client,
+  };
+});
 
 vi.mock("../../stores/router.svelte.ts", () => ({
   navigate: (path: string) => mockNavigate(path),
@@ -29,6 +35,7 @@ vi.mock("../../stores/router.svelte.ts", () => ({
 class MockEventSource {
   static instances: MockEventSource[] = [];
   addEventListener = vi.fn();
+  removeEventListener = vi.fn();
   close = vi.fn();
 
   constructor(readonly url: string) {
@@ -83,9 +90,9 @@ function workspaceFixture({
   title = `PR ${number}`,
   branch = `feature-${number}`,
   itemType = "pull_request",
-  itemKey = undefined,
+  itemKey,
   isDraft = false,
-  kata = undefined,
+  kata,
   createdAt = "2026-05-12T12:00:00Z",
   tmuxLastOutputAt = null,
   itemLastActivityAt = null,
@@ -117,8 +124,8 @@ function workspaceFixture({
     repo_name: name,
     item_type: itemType,
     item_number: number,
-    item_key: itemKey,
-    kata,
+    ...(itemKey === undefined ? {} : { item_key: itemKey }),
+    ...(kata === undefined ? {} : { kata }),
     git_head_ref: branch,
     worktree_path: `/tmp/${id}`,
     tmux_session: id,
@@ -270,12 +277,6 @@ describe("WorkspaceListSidebar", () => {
   });
 
   it("coalesces workspace completion bursts into one list refresh", async () => {
-    const frameCallbacks: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      frameCallbacks.push(callback);
-      return frameCallbacks.length;
-    });
-    vi.stubGlobal("cancelAnimationFrame", vi.fn());
     mockGet.mockResolvedValue({ data: { workspaces: [] } });
 
     render(WorkspaceListSidebar, { props: { selectedId: "" } });
@@ -284,16 +285,18 @@ describe("WorkspaceListSidebar", () => {
 
     const source = MockEventSource.instances[0];
     const listener = source?.addEventListener.mock.calls.find(([type]) => type === "workspace_status")?.[1] as
-      | (() => void)
+      | ((event: MessageEvent) => void)
       | undefined;
-    listener?.();
-    listener?.();
-    listener?.();
+    listener?.(new MessageEvent("workspace_status"));
+    listener?.(new MessageEvent("workspace_status"));
+    listener?.(new MessageEvent("workspace_status"));
+    const workspaceRequestCount = () => mockGet.mock.calls.filter(([path]) => path === "/workspaces").length;
 
-    expect(frameCallbacks).toHaveLength(1);
-    expect(mockGet).not.toHaveBeenCalled();
-    frameCallbacks[0]?.(0);
-    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(workspaceRequestCount()).toBe(0);
+    await waitFor(() => expect(workspaceRequestCount()).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    expect(workspaceRequestCount()).toBe(1);
   });
 
   it("hides the fleet status block when only the local host is present", async () => {
@@ -449,6 +452,151 @@ describe("WorkspaceListSidebar", () => {
     expect(await screen.findByText("Remote SSH workspace")).toBeTruthy();
   });
 
+  it("shows local workspaces while a reachable fleet peer is still loading", async () => {
+    const stalledPeer = deferred<never>();
+    let localLoads = 0;
+    let peerLoads = 0;
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "member",
+                diagnostics: [],
+                id: "member",
+                kind: "remote",
+                name: "member",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      if (path === "/fleet/hosts/{host_key}/workspaces") {
+        peerLoads += 1;
+        return peerLoads === 1 ? Promise.resolve({ data: { workspaces: [] } }) : stalledPeer.promise;
+      }
+      localLoads += 1;
+      return Promise.resolve({
+        data: {
+          workspaces: [
+            workspaceFixture({
+              id: "local-ws",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "local",
+              name: "service",
+              number: 1,
+              title: localLoads === 1 ? "Initial local workspace" : "Updated local workspace",
+            }),
+          ],
+        },
+      });
+    });
+
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    expect(await screen.findByText("Initial local workspace")).toBeTruthy();
+    await waitFor(() => expect(peerLoads).toBe(1));
+
+    const source = MockEventSource.instances[0];
+    const listener = source?.addEventListener.mock.calls.find(([type]) => type === "workspace_status")?.[1] as
+      | ((event: MessageEvent) => void)
+      | undefined;
+    listener?.(new MessageEvent("workspace_status"));
+
+    expect(await screen.findByText("Updated local workspace")).toBeTruthy();
+  });
+
+  it("keeps stale peer rows and marks the peer degraded after an invalid refresh", async () => {
+    let peerLoads = 0;
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "member",
+                diagnostics: [],
+                id: "member",
+                kind: "remote",
+                name: "member",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      if (path === "/fleet/hosts/{host_key}/workspaces") {
+        peerLoads += 1;
+        return Promise.resolve({
+          data:
+            peerLoads === 1
+              ? {
+                  workspaces: [
+                    workspaceFixture({
+                      id: "remote-ws",
+                      provider: "github",
+                      platformHost: "github.com",
+                      owner: "remote",
+                      name: "service",
+                      number: 12,
+                      title: "Last known remote workspace",
+                    }),
+                  ],
+                }
+              : { workspaces: [{ id: "malformed" }] },
+        });
+      }
+      return Promise.resolve({ data: { workspaces: [] } });
+    });
+
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    expect(await screen.findByText("Last known remote workspace")).toBeTruthy();
+
+    const source = MockEventSource.instances[0];
+    const listener = source?.addEventListener.mock.calls.find(([type]) => type === "workspace_status")?.[1] as
+      | ((event: MessageEvent) => void)
+      | undefined;
+    listener?.(new MessageEvent("workspace_status"));
+
+    await waitFor(() => expect(peerLoads).toBe(2));
+    expect(screen.getByText("Last known remote workspace")).toBeTruthy();
+    expect(await screen.findByText("member degraded")).toBeTruthy();
+  });
+
   it("removes remote workspaces when the fleet snapshot becomes local-only", async () => {
     vi.useFakeTimers();
     const stalledLocalRefresh = deferred<{ data: { workspaces: unknown[] } }>();
@@ -555,11 +703,10 @@ describe("WorkspaceListSidebar", () => {
     expect(await screen.findByText("Remote SSH workspace")).toBeTruthy();
 
     await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(100);
     await tick();
 
-    await waitFor(() => {
-      expect(screen.queryByText("Remote SSH workspace")).toBeNull();
-    });
+    expect(screen.queryByText("Remote SSH workspace")).toBeNull();
     expect(screen.getByText("Local workspace")).toBeTruthy();
   });
 
@@ -1584,6 +1731,7 @@ describe("WorkspaceListSidebar", () => {
 
   it("pushes an ahead workspace branch and shows a busy state while pending", async () => {
     const push = deferred<{
+      data?: unknown;
       error?: unknown;
       response: { ok: boolean; status: number };
     }>();
@@ -1619,11 +1767,12 @@ describe("WorkspaceListSidebar", () => {
 
     expect(mockPost).toHaveBeenCalledWith("/workspaces/{id}/push", {
       params: { path: { id: "ws-ahead" } },
+      signal: expect.any(AbortSignal),
     });
     expect((screen.getByRole("menuitem", { name: /Pushing\.\.\./ }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByLabelText("Pushing branch")).toBeTruthy();
 
-    push.resolve({ response: { ok: true, status: 200 } });
+    push.resolve({ data: undefined, response: { ok: true, status: 200 } });
     await waitFor(() => {
       expect(screen.queryByRole("menuitem", { name: /Pushing\.\.\./ })).toBeNull();
       expect(screen.queryByLabelText("Pushing branch")).toBeNull();
@@ -1632,6 +1781,7 @@ describe("WorkspaceListSidebar", () => {
 
   it("pulls a behind workspace branch and shows a busy state while pending", async () => {
     const pull = deferred<{
+      data?: unknown;
       error?: unknown;
       response: { ok: boolean; status: number };
     }>();
@@ -1666,10 +1816,11 @@ describe("WorkspaceListSidebar", () => {
 
     expect(mockPost).toHaveBeenCalledWith("/workspaces/{id}/pull", {
       params: { path: { id: "ws-behind" } },
+      signal: expect.any(AbortSignal),
     });
     expect((screen.getByRole("menuitem", { name: /Pulling\.\.\./ }) as HTMLButtonElement).disabled).toBe(true);
 
-    pull.resolve({ response: { ok: true, status: 200 } });
+    pull.resolve({ data: undefined, response: { ok: true, status: 200 } });
     await waitFor(() => {
       expect(screen.queryByRole("menuitem", { name: /Pulling\.\.\./ })).toBeNull();
     });
@@ -1714,6 +1865,7 @@ describe("WorkspaceListSidebar", () => {
       });
     });
     mockPost.mockResolvedValue({
+      data: undefined,
       error: undefined,
       response: { ok: true, status: 204 },
     });
@@ -1729,6 +1881,7 @@ describe("WorkspaceListSidebar", () => {
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith("/workspaces/{id}/reveal", {
         params: { path: { id: "ws-reveal" } },
+        signal: expect.any(AbortSignal),
       });
     });
   });
@@ -1778,6 +1931,7 @@ describe("WorkspaceListSidebar", () => {
       });
     });
     mockDelete.mockResolvedValue({
+      data: undefined,
       error: undefined,
       response: { ok: true, status: 204 },
     });
@@ -1799,6 +1953,7 @@ describe("WorkspaceListSidebar", () => {
     await waitFor(() => {
       expect(mockDelete).toHaveBeenCalledWith("/workspaces/{id}", {
         params: { path: { id: "ws-delete" } },
+        signal: expect.any(AbortSignal),
       });
     });
     expect(mockNavigate).toHaveBeenCalledWith("/workspaces");

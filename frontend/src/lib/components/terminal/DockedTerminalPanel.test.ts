@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
 import { sessionPaneKey } from "../../stores/session-pane-key.js";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import type { ComponentProps } from "svelte";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import DockedTerminalPanelTestHarness from "./DockedTerminalPanelTestHarness.svelte";
 import { clearActiveTerminalDrag, readRuntimeSessionDrag } from "./terminal-drag";
 
@@ -28,6 +30,10 @@ const sessions = [
   },
 ];
 
+function renderDockedTerminalPanel(props: ComponentProps<typeof DockedTerminalPanelTestHarness>) {
+  return render(AppRuntimeHarness, { props: { component: DockedTerminalPanelTestHarness, ...props } });
+}
+
 describe("DockedTerminalPanel", () => {
   afterEach(() => {
     cleanup();
@@ -37,14 +43,12 @@ describe("DockedTerminalPanel", () => {
 
   it("publishes and clears a detail-pane payload from the terminal selector", async () => {
     const paneKey = sessionPaneKey("ws-1", undefined, sessions[1]!.key);
-    render(DockedTerminalPanelTestHarness, {
-      props: {
-        sessions,
-        tree: { type: "leaf", id: "leaf-a", sessionKey: sessions[0]!.key },
-        activeSessionKey: sessions[0]!.key,
-        dragScope: "detail:prs",
-        paneKeyForSession: (sessionKey: string) => (sessionKey === sessions[1]!.key ? paneKey : null),
-      },
+    renderDockedTerminalPanel({
+      sessions,
+      tree: { type: "leaf", id: "leaf-a", sessionKey: sessions[0]!.key },
+      activeSessionKey: sessions[0]!.key,
+      dragScope: "detail:prs",
+      paneKeyForSession: (sessionKey: string) => (sessionKey === sessions[1]!.key ? paneKey : null),
     });
     const data = new Map<string, string>();
     const dataTransfer = {
@@ -65,7 +69,7 @@ describe("DockedTerminalPanel", () => {
 
   it("inverts vertical keyboard deltas and clamps terminal height", async () => {
     const onResize = vi.fn();
-    render(DockedTerminalPanelTestHarness, { props: { onResize } });
+    renderDockedTerminalPanel({ onResize });
 
     const handle = screen.getByRole("separator", { name: "Resize terminal panel" });
     expect(handle.getAttribute("aria-orientation")).toBe("horizontal");
@@ -83,26 +87,20 @@ describe("DockedTerminalPanel", () => {
 
   it("clamps keyboard resizing at the terminal height limits", async () => {
     const minResize = vi.fn();
-    const minView = render(DockedTerminalPanelTestHarness, {
-      props: { height: 160, onResize: minResize },
-    });
+    const minView = renderDockedTerminalPanel({ height: 160, onResize: minResize });
     await fireEvent.keyDown(screen.getByRole("separator", { name: "Resize terminal panel" }), { key: "ArrowDown" });
     expect(minResize).toHaveBeenLastCalledWith(160);
     minView.unmount();
 
     const maxResize = vi.fn();
-    render(DockedTerminalPanelTestHarness, {
-      props: { height: 560, onResize: maxResize },
-    });
+    renderDockedTerminalPanel({ height: 560, onResize: maxResize });
     await fireEvent.keyDown(screen.getByRole("separator", { name: "Resize terminal panel" }), { key: "ArrowUp" });
     expect(maxResize).toHaveBeenLastCalledWith(560);
   });
 
   it("disables the shared handle with the panel", async () => {
     const onResize = vi.fn();
-    render(DockedTerminalPanelTestHarness, {
-      props: { disabled: true, onResize },
-    });
+    renderDockedTerminalPanel({ disabled: true, onResize });
 
     const handle = screen.getByRole("separator", { name: "Resize terminal panel" });
     expect(handle.hasAttribute("disabled")).toBe(true);

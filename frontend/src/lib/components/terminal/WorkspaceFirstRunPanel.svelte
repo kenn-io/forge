@@ -4,10 +4,8 @@
   // actions only need to react after a project exists.
 
   import {
-    cloneProject,
     listUserRepositories,
-    registerExistingProject,
-    type ProjectResponse,
+    projectIntakeFailureMessage,
     type UserRepository,
   } from "../../api/project-intake.ts";
   import {
@@ -15,13 +13,23 @@
     type HostSummary,
   } from "../../api/fleet-snapshot.ts";
   import { SelectDropdown } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
+  import { onDestroy, untrack } from "svelte";
+  import type { AppExecution } from "../../app/runtime.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
-    emitWorkspaceCommand,
     getWorkspaceData,
   } from "../../stores/embed-config.svelte.ts";
   import { navigate } from "../../stores/router.svelte.ts";
   import { resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import {
+    ProjectMutationWorkflow,
+    projectMutationFailureMessage,
+    projectMutationKey,
+    type CloneProjectCommand,
+    type RegisterExistingProjectCommand,
+  } from "./project-mutation-workflow.js";
   import ToolingStatusBlock from "./ToolingStatusBlock.svelte";
 
   type ActionId = "add-existing" | "clone" | "connect-github";
@@ -60,6 +68,7 @@
   ];
 
   let { firstRun = true, hostKey = null }: Props = $props();
+  const runtime = getAppRuntime();
   let mode = $state<ActionId | null>(null);
   let inFlight = $state(false);
   let repositoryLoadError = $state<string | null>(null);
@@ -76,12 +85,11 @@
   let githubPath = $state("");
   let githubBranch = $state("");
   let snapshotHosts = $state.raw<HostSummary[]>([]);
+  let repositoryExecution: AppExecution<void, never> | undefined;
+  let componentDestroyed = false;
 
-  const tooling = $derived(resolveToolingStatus());
+  const tooling = $derived(resolveToolingStatus(runtime));
   const scopedHostKey = $derived(hostKey?.trim() || undefined);
-  const projectOptions = $derived(
-    scopedHostKey ? { hostKey: scopedHostKey } : undefined,
-  );
   const workspaceData = $derived(getWorkspaceData());
   const selectedHost = $derived.by(() => {
     if (snapshotHosts.length > 0) {
@@ -193,134 +201,209 @@
     mode = definition.id;
     repositoryLoadError = null;
     if (definition.id === "connect-github") {
-      void loadGitHubRepositories();
+      loadGitHubRepositories();
     }
   }
 
   $effect(() => {
-    void refreshSnapshotHosts();
-  });
-
-  async function refreshSnapshotHosts(): Promise<void> {
-    try {
-      snapshotHosts = await loadSnapshotHosts();
-    } catch {
-      snapshotHosts = [];
-    }
-  }
-
-  function backToActions(): void {
+    const targetHostKey = scopedHostKey;
+    repositoryExecution?.interrupt();
+    repositoryExecution = undefined;
+    githubLoading = false;
+    inFlight = false;
     mode = null;
     repositoryLoadError = null;
+    existingPath = "";
+    cloneURL = "";
+    clonePath = "";
+    cloneBranch = "";
+    githubRepos = [];
+    githubFilter = "";
+    selectedGithubRepo = "";
+    githubPath = "";
+    githubBranch = "";
+    const execution = untrack(() => runtime.runCommand(
+      loadSnapshotHosts().pipe(
+        Effect.matchEffect({
+          onFailure: () => Effect.sync(() => {
+            snapshotHosts = [];
+          }),
+          onSuccess: (hosts) => Effect.sync(() => {
+            snapshotHosts = hosts;
+          }),
+        }),
+      ),
+      {
+        operation: "load project intake hosts",
+        safeContext: { hostKey: targetHostKey ?? "local" },
+        onFailure: () => {},
+      },
+    ));
+    return execution.interrupt;
+  });
+
+  onDestroy(() => {
+    componentDestroyed = true;
+    repositoryExecution?.interrupt();
+  });
+
+  function backToActions(): void {
+    repositoryExecution?.interrupt();
+    repositoryExecution = undefined;
+    mode = null;
+    repositoryLoadError = null;
+    githubLoading = false;
     inFlight = false;
   }
 
-  async function loadGitHubRepositories(): Promise<void> {
+  function loadGitHubRepositories(): void {
+    repositoryExecution?.interrupt();
     githubLoading = true;
     repositoryLoadError = null;
-    try {
-      githubRepos = await listUserRepositories();
-      selectedGithubRepo = githubRepos[0]?.name_with_owner ?? "";
-    } catch (err) {
-      repositoryLoadError = err instanceof Error ? err.message : String(err);
-    } finally {
-      githubLoading = false;
-    }
+    repositoryExecution = runtime.runCommand(
+      listUserRepositories().pipe(
+        Effect.matchEffect({
+          onFailure: (failure) => Effect.sync(() => {
+            repositoryLoadError = projectIntakeFailureMessage(failure);
+            githubLoading = false;
+          }),
+          onSuccess: (repositories) => Effect.sync(() => {
+            githubRepos = repositories;
+            selectedGithubRepo = repositories[0]?.name_with_owner ?? "";
+            githubLoading = false;
+          }),
+        }),
+      ),
+      {
+        operation: "load project intake repositories",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
-  async function finishProject(project: ProjectResponse): Promise<void> {
-    const payload: Record<string, unknown> = {
-      projectId: project.id,
-    };
-    if (scopedHostKey) payload.hostKey = scopedHostKey;
+  function runProjectSubmission(
+    command:
+      | ({ readonly _tag: "RegisterExisting" } & RegisterExistingProjectCommand)
+      | ({ readonly _tag: "Clone" } & CloneProjectCommand),
+    operation: string,
+    targetHostKey: string | undefined,
+  ): void {
+    if (inFlight) return;
+    inFlight = true;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* ProjectMutationWorkflow;
+        const acknowledgement = yield* (command._tag === "RegisterExisting"
+          ? workflow.acceptRegisterExisting(command)
+          : workflow.acceptClone(command));
+        yield* acknowledgement.pipe(
+          Effect.matchEffect({
+            onFailure: (failure) => {
+              if (componentDestroyed || scopedHostKey !== targetHostKey) return Effect.void;
+              const reportFailure = Effect.sync(() => {
+                showFlash(
+                  projectMutationFailureMessage(failure, "The host returned an invalid project acknowledgement."),
+                  { tone: "danger" },
+                );
+              });
+              return failure._tag === "InvalidEmbeddingAcknowledgement"
+                ? reportFailure
+                : reportFailure.pipe(Effect.andThen(workflow.forgetProject(command.key)));
+            },
+            onSuccess: ({ project, acknowledgement: result }) => {
+              if (componentDestroyed || scopedHostKey !== targetHostKey) return Effect.void;
+              if (!result.ok) {
+                return Effect.sync(() => {
+                  showFlash(
+                    result.message ?? "Project registered, but the host did not refresh.",
+                    { tone: "danger" },
+                  );
+                });
+              }
+              return Effect.sync(() => {
+                if (targetHostKey) {
+                  navigate("/workspaces");
+                } else {
+                  navigate(`/workspaces/embed/project/${encodeURIComponent(project.id)}`);
+                }
+              }).pipe(Effect.andThen(workflow.forgetProject(command.key)));
+            },
+          }),
+        );
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => {
+          if (!componentDestroyed && scopedHostKey === targetHostKey) inFlight = false;
+        })),
+      ),
+      {
+        operation,
+        safeContext: { hostKey: targetHostKey ?? "local" },
+        onFailure: () => {},
+      },
+    );
+  }
 
-    const result = await emitWorkspaceCommand("project-registered", payload);
-    if (!result.ok) {
-      showFlash(
-        result.message ?? "Project registered, but the host did not refresh.",
-        { tone: "danger" },
-      );
+  function submitExisting(): void {
+    const targetHostKey = scopedHostKey;
+    const path = existingPath;
+    runProjectSubmission(
+      {
+        _tag: "RegisterExisting",
+        key: projectMutationKey("register", targetHostKey, [path]),
+        path,
+        ...(targetHostKey ? { hostKey: targetHostKey } : {}),
+      },
+      "register existing project",
+      targetHostKey,
+    );
+  }
+
+  function submitClone(): void {
+    const targetHostKey = scopedHostKey;
+    const url = cloneURL;
+    const path = clonePath;
+    const branch = cloneBranch;
+    runProjectSubmission(
+      {
+        _tag: "Clone",
+        key: projectMutationKey("clone", targetHostKey, [url, path, branch]),
+        url,
+        path,
+        branch,
+        ...(targetHostKey ? { hostKey: targetHostKey } : {}),
+      },
+      "clone project",
+      targetHostKey,
+    );
+  }
+
+  function submitGitHub(): void {
+    if (scopedHostKey) {
+      showFlash("GitHub repository picking is only available for the local host.", { tone: "danger" });
       return;
     }
-    if (scopedHostKey) {
-      navigate("/workspaces");
-    } else {
-      navigate(`/workspaces/embed/project/${encodeURIComponent(project.id)}`);
-    }
-  }
-
-  function registerProject(path: string): Promise<ProjectResponse> {
-    if (projectOptions) {
-      return registerExistingProject(path, projectOptions);
-    }
-    return registerExistingProject(path);
-  }
-
-  function cloneProjectForHost(
-    url: string,
-    path: string,
-    branch?: string,
-  ): Promise<ProjectResponse> {
-    if (projectOptions) {
-      return cloneProject(url, path, branch, projectOptions);
-    }
-    return cloneProject(url, path, branch);
-  }
-
-  async function submitExisting(): Promise<void> {
-    if (inFlight) return;
-    inFlight = true;
-    try {
-      await finishProject(await registerProject(existingPath));
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), {
-        tone: "danger",
-      });
-    } finally {
-      inFlight = false;
-    }
-  }
-
-  async function submitClone(): Promise<void> {
-    if (inFlight) return;
-    inFlight = true;
-    try {
-      await finishProject(
-        await cloneProjectForHost(cloneURL, clonePath, cloneBranch),
-      );
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), {
-        tone: "danger",
-      });
-    } finally {
-      inFlight = false;
-    }
-  }
-
-  async function submitGitHub(): Promise<void> {
     if (inFlight || !chosenGithubRepo) return;
-    if (!chosenGithubRepo.ssh_url) {
+    const repository = chosenGithubRepo;
+    if (!repository.ssh_url) {
       showFlash("Selected repository does not expose an SSH clone URL.", {
         tone: "danger",
       });
       return;
     }
-    inFlight = true;
-    try {
-      await finishProject(
-        await cloneProjectForHost(
-          chosenGithubRepo.ssh_url,
-          githubPath,
-          githubBranch,
-        ),
-      );
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), {
-        tone: "danger",
-      });
-    } finally {
-      inFlight = false;
-    }
+    const path = githubPath;
+    const branch = githubBranch;
+    runProjectSubmission(
+      {
+        _tag: "Clone",
+        key: projectMutationKey("clone", undefined, [repository.ssh_url, path, branch]),
+        url: repository.ssh_url,
+        path,
+        branch,
+      },
+      "clone selected repository",
+      undefined,
+    );
   }
 </script>
 
@@ -391,7 +474,7 @@
           class="first-run-form__body"
           onsubmit={(event) => {
             event.preventDefault();
-            void submitExisting();
+            submitExisting();
           }}
         >
           <label class="first-run-field">
@@ -418,7 +501,7 @@
           class="first-run-form__body"
           onsubmit={(event) => {
             event.preventDefault();
-            void submitClone();
+            submitClone();
           }}
         >
           <label class="first-run-field">
@@ -463,7 +546,7 @@
           class="first-run-form__body"
           onsubmit={(event) => {
             event.preventDefault();
-            void submitGitHub();
+            submitGitHub();
           }}
         >
           {#if githubLoading}
@@ -474,7 +557,7 @@
             </p>
             <button
               type="button"
-              onclick={() => void loadGitHubRepositories()}
+              onclick={loadGitHubRepositories}
               disabled={inFlight}
             >
               Try again

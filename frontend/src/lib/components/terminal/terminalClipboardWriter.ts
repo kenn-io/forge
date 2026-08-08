@@ -1,3 +1,6 @@
+import { Effect, FiberHandle, FiberSet } from "effect";
+import type { Scope } from "effect/Scope";
+
 import { writeTerminalClipboardThroughServer } from "./terminalClipboardFallback.js";
 
 const KEYBOARD_AUTHORIZATION_MS = 10_000;
@@ -30,7 +33,7 @@ export type TerminalClipboardWriteResult = "written" | "unauthorized" | "blocked
 interface PendingClipboardWrite {
   resolve(text: string): void;
   reject(reason: unknown): void;
-  outcome: Promise<boolean>;
+  outcome: Effect.Effect<boolean>;
   failed: boolean;
   source: "keyboard" | "pointer-confirmed" | "pointer-prepared";
 }
@@ -61,197 +64,223 @@ export function createBrowserTerminalClipboardPort(): TerminalClipboardPort {
   };
 }
 
-export function createTerminalClipboardWriter(
+export function makeTerminalClipboardWriter(
   port: TerminalClipboardPort,
   options: TerminalClipboardWriterOptions = {},
-): TerminalClipboardWriter {
-  let pending: PendingClipboardWrite | null = null;
-  let expirationTimer: ReturnType<typeof setTimeout> | null = null;
-  let pointerGestureTimer: ReturnType<typeof setTimeout> | null = null;
-  let pointerGestureActive = false;
-  let pointerAuthorizationPending = false;
-  let pointerGestureAuthorizationConsumed = false;
-  let disposed = false;
-  let revocationGeneration = 0;
+): Effect.Effect<TerminalClipboardWriter, never, Scope> {
+  return Effect.gen(function* () {
+    const runExpiration = yield* FiberHandle.makeRuntime<never>();
+    const runPointerWatchdog = yield* FiberHandle.makeRuntime<never>();
+    const runOutcomeObserver = yield* FiberHandle.makeRuntime<never>();
+    const runWrite = yield* FiberSet.makeRuntimePromise<never>();
+    let pending: PendingClipboardWrite | null = null;
+    let expirationScheduled = false;
+    let pointerWatchdogScheduled = false;
+    let pointerGestureActive = false;
+    let pointerAuthorizationPending = false;
+    let pointerGestureAuthorizationConsumed = false;
+    let disposed = false;
+    let revocationGeneration = 0;
 
-  function clearExpiration(): void {
-    if (expirationTimer === null) return;
-    clearTimeout(expirationTimer);
-    expirationTimer = null;
-  }
-
-  function clearPointerGestureTimer(): void {
-    if (pointerGestureTimer === null) return;
-    clearTimeout(pointerGestureTimer);
-    pointerGestureTimer = null;
-  }
-
-  function expirePending(): void {
-    clearExpiration();
-    const expired = pending;
-    pending = null;
-    pointerAuthorizationPending = false;
-    expired?.reject(new DOMException("Terminal clipboard authorization expired", "AbortError"));
-  }
-
-  function scheduleExpiration(delayMs: number): void {
-    clearExpiration();
-    expirationTimer = setTimeout(expirePending, delayMs);
-  }
-
-  function arm(source: PendingClipboardWrite["source"]): void {
-    if (disposed) return;
-    if (pending && !pending.failed) {
-      pending.source = source;
-      return;
+    function clearExpiration(): void {
+      if (!expirationScheduled) return;
+      expirationScheduled = false;
+      runExpiration(Effect.void);
     }
-    if (pending) expirePending();
 
-    let resolve!: (text: string) => void;
-    let reject!: (reason: unknown) => void;
-    const text = new Promise<string>((resolveText, rejectText) => {
-      resolve = resolveText;
-      reject = rejectText;
-    });
-    void text.catch(() => undefined);
-
-    let outcome: Promise<boolean>;
-    try {
-      outcome = Promise.resolve(port.beginDeferredWrite(text)).then(
-        () => true,
-        () => false,
-      );
-    } catch {
-      outcome = Promise.resolve(false);
+    function clearPointerWatchdog(): void {
+      if (!pointerWatchdogScheduled) return;
+      pointerWatchdogScheduled = false;
+      runPointerWatchdog(Effect.void);
     }
-    const armed = {
-      resolve,
-      reject,
-      outcome,
-      failed: false,
-      source,
-    };
-    pending = armed;
-    void outcome.then((written) => {
-      if (!written) armed.failed = true;
-    });
-  }
 
-  async function writeDirect(text: string): Promise<boolean> {
-    try {
-      await port.writeText(text);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async function writeLocal(text: string): Promise<boolean> {
-    try {
-      await port.writeLocalText(text);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function cancelPointerGesture(): void {
-    if (!pointerGestureActive && !pointerAuthorizationPending) return;
-    revocationGeneration += 1;
-    clearPointerGestureTimer();
-    pointerGestureActive = false;
-    pointerGestureAuthorizationConsumed = false;
-    if (pointerAuthorizationPending) expirePending();
-  }
-
-  function timeoutPointerGesture(): void {
-    cancelPointerGesture();
-    options.onPointerGestureTimeout?.();
-  }
-
-  return {
-    beginPointerGesture() {
-      if (disposed) return;
-      clearPointerGestureTimer();
-      pointerGestureActive = true;
-      pointerGestureAuthorizationConsumed = false;
+    function expirePending(): void {
       clearExpiration();
-      arm("pointer-prepared");
-      pointerAuthorizationPending = pending !== null;
-      pointerGestureTimer = setTimeout(timeoutPointerGesture, POINTER_GESTURE_WATCHDOG_MS);
-    },
-    cancelAuthorization() {
-      revocationGeneration += 1;
-      clearPointerGestureTimer();
-      pointerGestureActive = false;
-      pointerGestureAuthorizationConsumed = false;
-      expirePending();
-    },
-    cancelPointerGesture,
-    confirmPointerSelection() {
-      if (disposed || !pointerGestureActive) return;
-      if (pending?.source === "pointer-prepared") pending.source = "pointer-confirmed";
-    },
-    endPointerGesture() {
-      if (disposed || !pointerGestureActive) return;
-      clearPointerGestureTimer();
-      pointerGestureActive = false;
-      const selectionConfirmed = pointerGestureAuthorizationConsumed || pending?.source === "pointer-confirmed";
-      if (!selectionConfirmed) {
-        if (pending?.source === "pointer-prepared") expirePending();
-        pointerAuthorizationPending = false;
-        pointerGestureAuthorizationConsumed = false;
+      const expired = pending;
+      pending = null;
+      pointerAuthorizationPending = false;
+      expired?.reject(new DOMException("Terminal clipboard authorization expired", "AbortError"));
+    }
+
+    function scheduleExpiration(delayMs: number): void {
+      clearExpiration();
+      expirationScheduled = true;
+      runExpiration(
+        Effect.sleep(`${delayMs} millis`).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              expirationScheduled = false;
+              expirePending();
+            }),
+          ),
+        ),
+      );
+    }
+
+    function arm(source: PendingClipboardWrite["source"]): void {
+      if (disposed) return;
+      if (pending && !pending.failed) {
+        pending.source = source;
         return;
       }
-      if (!pointerGestureAuthorizationConsumed) {
-        arm("pointer-confirmed");
+      if (pending) expirePending();
+
+      let resolve!: (text: string) => void;
+      let reject!: (reason: unknown) => void;
+      const text = new Promise<string>((resolveText, rejectText) => {
+        resolve = resolveText;
+        reject = rejectText;
+      });
+      void text.catch(() => undefined);
+
+      let outcome: Effect.Effect<boolean>;
+      try {
+        const write = port.beginDeferredWrite(text);
+        outcome = Effect.tryPromise({ try: () => write, catch: (cause) => cause }).pipe(
+          Effect.match({ onFailure: () => false, onSuccess: () => true }),
+        );
+      } catch {
+        outcome = Effect.succeed(false);
       }
-      pointerAuthorizationPending = pending !== null;
+      const armed: PendingClipboardWrite = {
+        resolve,
+        reject,
+        outcome,
+        failed: false,
+        source,
+      };
+      pending = armed;
+      runOutcomeObserver(
+        outcome.pipe(
+          Effect.tap((written) =>
+            Effect.sync(() => {
+              if (!written) armed.failed = true;
+            }),
+          ),
+          Effect.asVoid,
+        ),
+      );
+    }
+
+    const writeDirect = (text: string): Effect.Effect<boolean> =>
+      Effect.tryPromise({ try: () => port.writeText(text), catch: (cause) => cause }).pipe(
+        Effect.match({ onFailure: () => false, onSuccess: () => true }),
+      );
+
+    const writeLocal = (text: string): Effect.Effect<boolean> =>
+      Effect.tryPromise({ try: () => port.writeLocalText(text), catch: (cause) => cause }).pipe(
+        Effect.match({ onFailure: () => false, onSuccess: () => true }),
+      );
+
+    function cancelPointerGesture(): void {
+      if (!pointerGestureActive && !pointerAuthorizationPending) return;
+      revocationGeneration += 1;
+      clearPointerWatchdog();
+      pointerGestureActive = false;
       pointerGestureAuthorizationConsumed = false;
-      if (pending) scheduleExpiration(POINTER_RELEASE_GRACE_MS);
-    },
-    authorizeKeyboardGesture() {
-      if (disposed) return;
-      arm("keyboard");
-      if (pending) {
-        pointerAuthorizationPending = pointerGestureActive;
-        scheduleExpiration(KEYBOARD_AUTHORIZATION_MS);
-      }
-    },
-    async write(text) {
-      if (disposed) return "unauthorized";
+      if (pointerAuthorizationPending) expirePending();
+    }
 
-      clearExpiration();
-      const authorized = pending;
-      if (authorized?.source === "pointer-prepared") return "unauthorized";
-      pending = null;
-      if (!authorized) return "unauthorized";
-      const writeGeneration = revocationGeneration;
-      if (pointerGestureActive && pointerAuthorizationPending) {
-        pointerGestureAuthorizationConsumed = true;
-      }
-      pointerAuthorizationPending = false;
+    function timeoutPointerGesture(): void {
+      pointerWatchdogScheduled = false;
+      cancelPointerGesture();
+      options.onPointerGestureTimeout?.();
+    }
 
-      authorized.resolve(text);
-      const deferredWritten = await authorized.outcome;
-      if (disposed || writeGeneration !== revocationGeneration) return "unauthorized";
-      if (deferredWritten) return "written";
-      const directWritten = await writeDirect(text);
-      if (disposed || writeGeneration !== revocationGeneration) return "unauthorized";
-      if (directWritten) return "written";
-      const localWritten = await writeLocal(text);
-      if (disposed || writeGeneration !== revocationGeneration) return "unauthorized";
-      return localWritten ? "written" : "blocked";
-    },
-    dispose() {
+    function dispose(): void {
       if (disposed) return;
       disposed = true;
       revocationGeneration += 1;
-      clearPointerGestureTimer();
+      clearPointerWatchdog();
       pointerGestureActive = false;
       pointerAuthorizationPending = false;
       pointerGestureAuthorizationConsumed = false;
       expirePending();
-    },
-  };
+    }
+
+    const writer: TerminalClipboardWriter = {
+      beginPointerGesture() {
+        if (disposed) return;
+        clearPointerWatchdog();
+        pointerGestureActive = true;
+        pointerGestureAuthorizationConsumed = false;
+        clearExpiration();
+        arm("pointer-prepared");
+        pointerAuthorizationPending = pending !== null;
+        pointerWatchdogScheduled = true;
+        runPointerWatchdog(
+          Effect.sleep(`${POINTER_GESTURE_WATCHDOG_MS} millis`).pipe(
+            Effect.andThen(Effect.sync(timeoutPointerGesture)),
+          ),
+        );
+      },
+      cancelAuthorization() {
+        revocationGeneration += 1;
+        clearPointerWatchdog();
+        pointerGestureActive = false;
+        pointerGestureAuthorizationConsumed = false;
+        expirePending();
+      },
+      cancelPointerGesture,
+      confirmPointerSelection() {
+        if (disposed || !pointerGestureActive) return;
+        if (pending?.source === "pointer-prepared") pending.source = "pointer-confirmed";
+      },
+      endPointerGesture() {
+        if (disposed || !pointerGestureActive) return;
+        clearPointerWatchdog();
+        pointerGestureActive = false;
+        const selectionConfirmed = pointerGestureAuthorizationConsumed || pending?.source === "pointer-confirmed";
+        if (!selectionConfirmed) {
+          if (pending?.source === "pointer-prepared") expirePending();
+          pointerAuthorizationPending = false;
+          pointerGestureAuthorizationConsumed = false;
+          return;
+        }
+        if (!pointerGestureAuthorizationConsumed) arm("pointer-confirmed");
+        pointerAuthorizationPending = pending !== null;
+        pointerGestureAuthorizationConsumed = false;
+        if (pending) scheduleExpiration(POINTER_RELEASE_GRACE_MS);
+      },
+      authorizeKeyboardGesture() {
+        if (disposed) return;
+        arm("keyboard");
+        if (pending) {
+          pointerAuthorizationPending = pointerGestureActive;
+          scheduleExpiration(KEYBOARD_AUTHORIZATION_MS);
+        }
+      },
+      write: (text) =>
+        runWrite(
+          Effect.gen(function* () {
+            if (disposed) return "unauthorized";
+
+            clearExpiration();
+            const authorized = pending;
+            if (authorized?.source === "pointer-prepared") return "unauthorized";
+            pending = null;
+            if (!authorized) return "unauthorized";
+            const writeGeneration = revocationGeneration;
+            if (pointerGestureActive && pointerAuthorizationPending) {
+              pointerGestureAuthorizationConsumed = true;
+            }
+            pointerAuthorizationPending = false;
+
+            authorized.resolve(text);
+            const deferredWritten = yield* authorized.outcome;
+            if (disposed || writeGeneration !== revocationGeneration) return "unauthorized";
+            if (deferredWritten) return "written";
+            const directWritten = yield* writeDirect(text);
+            if (disposed || writeGeneration !== revocationGeneration) return "unauthorized";
+            if (directWritten) return "written";
+            const localWritten = yield* writeLocal(text);
+            if (disposed || writeGeneration !== revocationGeneration) return "unauthorized";
+            return localWritten ? "written" : "blocked";
+          }),
+        ),
+      dispose,
+    };
+    yield* Effect.addFinalizer(() => Effect.sync(dispose));
+    return writer;
+  });
 }

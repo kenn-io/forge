@@ -18,10 +18,31 @@ let originalIntersectionObserver: unknown;
 let originalIntersectionObserverExisted = false;
 let originalResizeObserver: unknown;
 let originalResizeObserverExisted = false;
+let resizeObserverInstances: ResizeObserverStub[] = [];
 let originalReplaceSync: unknown;
 let runtime: OwnedAppRuntime;
 
+class ResizeObserverStub {
+  readonly observed: Element[] = [];
+  disconnected = false;
+
+  constructor() {
+    resizeObserverInstances.push(this);
+  }
+
+  observe(target: Element): void {
+    this.observed.push(target);
+  }
+
+  unobserve(): void {}
+
+  disconnect(): void {
+    this.disconnected = true;
+  }
+}
+
 beforeEach(() => {
+  resizeObserverInstances = [];
   runtime = makeAppRuntime();
 });
 
@@ -64,11 +85,6 @@ beforeAll(() => {
 
   originalResizeObserverExisted = "ResizeObserver" in globalThis;
   originalResizeObserver = (globalThis as GlobalWithResizeObserver).ResizeObserver;
-  class ResizeObserverStub {
-    observe(): void {}
-    unobserve(): void {}
-    disconnect(): void {}
-  }
   (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
 
   originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype.replaceSync;
@@ -99,7 +115,7 @@ afterAll(() => {
   }
 });
 
-import DiffFile from "./DiffFile.svelte";
+import DiffFile from "./DiffFileRuntimeHarness.svelte";
 import diffRichPreviewSource from "./DiffRichPreview.svelte?raw";
 import type { DiffFile as DiffFileType, FilePreview } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
@@ -306,6 +322,7 @@ function renderDiffFile(
   const owner = options.owner ?? uniqueOwner();
   const result = render(DiffFile, {
     props: {
+      runtime,
       file,
       provider: "github",
       platformHost: "github.com",
@@ -1034,6 +1051,33 @@ describe("DiffFile", () => {
       .querySelector("[data-review-thread-id='thread-1']")
       ?.closest("[slot='annotation-additions-2']");
     expect(host).toBeTruthy();
+  });
+
+  it("releases a mounted review thread when the diff surface unmounts", async () => {
+    const view = renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      reviewThreads: [makeReviewThread()],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Published review note")).toBeTruthy();
+      expect(
+        resizeObserverInstances.some((observer) =>
+          observer.observed.some((target) => target.classList.contains("inline-review-thread")),
+        ),
+      ).toBe(true);
+    });
+    const threadObservers = resizeObserverInstances.filter((observer) =>
+      observer.observed.some((target) => target.classList.contains("inline-review-thread")),
+    );
+    expect(threadObservers.every((observer) => !observer.disconnected)).toBe(true);
+
+    view.unmount();
+
+    await waitFor(() => {
+      expect(threadObservers.every((observer) => observer.disconnected)).toBe(true);
+    });
   });
 
   it("renders published review thread cards in markdown rich preview", async () => {

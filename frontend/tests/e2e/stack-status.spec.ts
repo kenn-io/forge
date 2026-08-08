@@ -381,6 +381,9 @@ async function emitPRDetailRefreshed(page: Page, number: number): Promise<void> 
       owner: "acme",
       name: "widgets",
       number,
+      head_sha: "head",
+      synced_at: "2026-05-24T17:01:00Z",
+      warnings: [],
     },
   );
 }

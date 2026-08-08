@@ -563,24 +563,26 @@ describe("app store event wiring", () => {
     expect(onNotification).not.toHaveBeenCalled();
   });
 
-  it("routes merged workspace cleanup failures through the warning callback", () => {
+  it("routes merged workspace cleanup failures through the warning callback", async () => {
     const onWarning = vi.fn();
     const onNotification = vi.fn();
-    render(Provider, { props: { client: stubClient, onWarning, onNotification } });
+    compose({ onWarning, onNotification });
 
-    captured.store?.options.onDeferredMergeCompleted?.({
-      provider: "github",
-      platform_host: "github.com",
-      repo_path: "acme/widget",
-      owner: "acme",
-      name: "widget",
-      number: 42,
-      head_sha: "2222222",
-      status: "merged",
-      merged: true,
-      completed_at: "2026-07-10T15:00:00Z",
-      workspace_cleanup_warning: "workspace has uncommitted changes",
-    });
+    await acceptEvent(
+      captured.store?.options.onDeferredMergeCompleted?.({
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+        owner: "acme",
+        name: "widget",
+        number: 42,
+        head_sha: "2222222",
+        status: "merged",
+        merged: true,
+        completed_at: "2026-07-10T15:00:00Z",
+        workspace_cleanup_warning: "workspace has uncommitted changes",
+      }),
+    );
 
     expect(onWarning).toHaveBeenCalledWith(
       "acme/widget#42 merged, but the workspace was not pruned: workspace has uncommitted changes",

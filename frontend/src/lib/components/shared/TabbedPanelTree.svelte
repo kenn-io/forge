@@ -1,6 +1,11 @@
 <script lang="ts">
   import { SplitResizeHandle, StatusDot, type SplitResizeEvent } from "@kenn-io/kit-ui";
-  import { untrack, type Snippet } from "svelte";
+  import { Effect } from "effect";
+  import { onDestroy, untrack, type Snippet } from "svelte";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { nextAnimationFrame } from "../../browser/animation-frame.js";
+  import { observeResize } from "../../browser/observers.js";
   import Self from "./TabbedPanelTree.svelte";
   import {
     assertNamespacedDragScope,
@@ -119,6 +124,12 @@
     onReadDraggedTab = undefined,
     onClearDrag = undefined,
   }: Props = $props();
+  const runtime = getAppRuntime();
+  let dragGhostExecution: AppExecution<void, never> | null = null;
+
+  onDestroy(() => {
+    dragGhostExecution?.interrupt();
+  });
 
   const MIN_RATIO = 0.12;
   const MAX_RATIO = 0.88;
@@ -447,7 +458,18 @@
     });
     document.body.appendChild(ghost);
     event.dataTransfer.setDragImage(ghost, ghostWidth / 2, 15);
-    requestAnimationFrame(() => ghost.remove());
+    dragGhostExecution?.interrupt();
+    dragGhostExecution = runtime.runCommand(
+      nextAnimationFrame.pipe(
+        Effect.ensuring(Effect.sync(() => ghost.remove())),
+        Effect.asVoid,
+      ),
+      {
+        operation: "release tab drag preview",
+        safeContext: { tabKey: tab.key },
+        onFailure: () => {},
+      },
+    );
   }
 
   function showTabPlaceholder(targetTabKey: string, placement: "before" | "after"): boolean {
@@ -474,13 +496,20 @@
 
   $effect(() => {
     if (node?.type !== "split" || !splitEl) return;
+    const splitTarget = splitEl;
     splitSize = measureSplit();
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
-      splitSize = measureSplit();
-    });
-    observer.observe(splitEl);
-    return () => observer.disconnect();
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.scoped(
+          observeResize(splitTarget, () => {
+            splitSize = measureSplit();
+          }).pipe(Effect.andThen(Effect.never)),
+        ),
+        { operation: "observe tabbed panel split", safeContext: { dragScope }, onFailure: () => {} },
+      ),
+    );
+    return execution.interrupt;
   });
 
   function startResize(): void {

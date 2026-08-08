@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { DocsAPI } from "../../api/docs/api.js";
 import type { BodySnippet } from "../../api/docs/types.js";
 import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
@@ -51,21 +52,19 @@ export interface ModePaletteSearchDeps {
   docs: Pick<DocsAPI, "searchAll">;
 }
 
-export async function searchModePalette(query: string, deps: ModePaletteSearchDeps): Promise<ModePaletteResults> {
+export function searchModePalette(query: string, deps: ModePaletteSearchDeps): Effect.Effect<ModePaletteResults> {
   const trimmed = query.trim();
   if (!trimmed) {
-    return {
+    return Effect.succeed({
       query,
       tasks: { ok: true, rows: [], truncated: false },
       docs: { ok: true, rows: [], truncated: false },
-    };
+    });
   }
 
   const limit = MODE_SEARCH_DISPLAY_LIMIT + 1;
-  const docsPromise = searchDocs(trimmed, deps.docs, limit);
   const tasks = searchTasks(trimmed, deps.kata);
-  const docs = await docsPromise;
-  return { query: trimmed, tasks, docs };
+  return searchDocs(trimmed, deps.docs, limit).pipe(Effect.map((docs) => ({ query: trimmed, tasks, docs })));
 }
 
 function taskRowFromIssue(issue: KataAuxiliaryIssue, daemonId: string | undefined): ModeTaskResult {
@@ -112,30 +111,38 @@ function taskSearchRank(issue: KataAuxiliaryIssue, needle: string): number | nul
   return searchable.some((value) => value?.toLocaleLowerCase().includes(needle)) ? 4 : null;
 }
 
-async function searchDocs(
+function searchDocs(
   query: string,
   docs: Pick<DocsAPI, "searchAll">,
   limit: number,
-): Promise<ModeDocsSectionResult> {
-  try {
-    const response = await docs.searchAll(query, limit);
-    const rows = response.hits.map<ModeDocResult>((hit) => ({
-      kind: "doc",
-      folder: hit.folder,
-      folder_name: hit.folder_name,
-      rel_path: hit.rel_path,
-      hit_type: hit.hit_type,
-      ...(hit.line !== undefined ? { line: hit.line } : {}),
-      ...(hit.snippet !== undefined ? { snippet: hit.snippet } : {}),
-    }));
-    const truncated = response.truncated || rows.length > MODE_SEARCH_DISPLAY_LIMIT;
-    return {
-      ok: true,
-      rows: truncated ? rows.slice(0, MODE_SEARCH_DISPLAY_LIMIT) : rows,
-      truncated,
-      ...(response.warnings !== undefined ? { warnings: response.warnings } : {}),
-    };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
+): Effect.Effect<ModeDocsSectionResult> {
+  return Effect.tryPromise({
+    try: (signal) => docs.searchAll(query, limit, signal),
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.map((response): ModeDocsSectionResult => {
+      const rows = response.hits.map<ModeDocResult>((hit) => ({
+        kind: "doc",
+        folder: hit.folder,
+        folder_name: hit.folder_name,
+        rel_path: hit.rel_path,
+        hit_type: hit.hit_type,
+        ...(hit.line !== undefined ? { line: hit.line } : {}),
+        ...(hit.snippet !== undefined ? { snippet: hit.snippet } : {}),
+      }));
+      const truncated = response.truncated || rows.length > MODE_SEARCH_DISPLAY_LIMIT;
+      return {
+        ok: true,
+        rows: truncated ? rows.slice(0, MODE_SEARCH_DISPLAY_LIMIT) : rows,
+        truncated,
+        ...(response.warnings !== undefined ? { warnings: response.warnings } : {}),
+      };
+    }),
+    Effect.catch((error) =>
+      Effect.succeed<ModeDocsSectionResult>({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    ),
+  );
 }

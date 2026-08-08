@@ -7,8 +7,11 @@
   } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
+  import { Effect } from "effect";
   import { tick } from "svelte";
   import type { LaunchTarget } from "../../api/types.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
 
   interface Props {
     label: string;
@@ -20,7 +23,7 @@
     descriptionId?: string;
     surface?: "soft" | "solid";
     primaryType?: "button" | "submit";
-    onCreate: (targetKey?: string) => void | Promise<void>;
+    onCreate: (targetKey?: string) => void;
   }
 
   let {
@@ -35,12 +38,14 @@
     primaryType = "button",
     onCreate,
   }: Props = $props();
+  const runtime = getAppRuntime();
 
   let open = $state(false);
   let root = $state<HTMLDivElement>();
   let trigger = $state<HTMLButtonElement>();
   let menu = $state<HTMLUListElement>();
   let menuStyle = $state("");
+  let openExecution: AppExecution<void, never> | null = null;
   const agentTargets = $derived(
     launchTargets.filter((target) => target.kind === "agent" && target.available),
   );
@@ -63,16 +68,29 @@
     });
   }
 
-  async function openMenu(): Promise<void> {
+  function openMenu(): void {
     if (blocked || agentTargets.length === 0) return;
     trigger ??= root?.querySelector<HTMLButtonElement>(".create-options-button") ?? undefined;
+    openExecution?.interrupt();
     open = true;
-    await tick();
-    position();
-    enabledItems()[0]?.focus();
+    openExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => {
+          position();
+          enabledItems()[0]?.focus();
+        })),
+      ),
+      {
+        operation: "open workspace launch menu",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   function closeMenu(): void {
+    openExecution?.interrupt();
+    openExecution = null;
     open = false;
   }
 
@@ -100,7 +118,7 @@
 
   function selectTarget(targetKey: string): void {
     closeMenu();
-    void onCreate(targetKey);
+    onCreate(targetKey);
   }
 
   function handleItemKeydown(event: KeyboardEvent): void {
@@ -167,7 +185,7 @@
     title={disabledReason || label}
     disabled={blocked}
     onclick={() => {
-      if (primaryType === "button") void onCreate(undefined);
+      if (primaryType === "button") onCreate(undefined);
     }}
   >
     <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />

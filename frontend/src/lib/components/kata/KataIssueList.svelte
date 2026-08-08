@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy, tick } from "svelte";
+  import { Effect } from "effect";
+  import { onDestroy, tick, untrack } from "svelte";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
@@ -7,6 +8,8 @@
   import ListChevronsUpDownIcon from "@lucide/svelte/icons/list-chevrons-up-down";
   import NetworkIcon from "@lucide/svelte/icons/network";
   import { relativeTime, shortDate } from "../../api/dates.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
   import { kataTaskStatusMatchesFilter } from "../../api/kata/taskFilters.js";
   import type { KataTaskSearchFilters, KataTaskSummary } from "../../api/kata/taskTypes.js";
   import type { KataCurrentView } from "../../features/kata/kataWorkspaceAuthority.js";
@@ -67,6 +70,7 @@
     onSelect,
     onOpenGraph = undefined,
   }: Props = $props();
+  const appRuntime = getAppRuntime();
 
   const SORT_STORAGE_KEY = "kenn-forge:kata:issue-sort/v1";
   const restoredColumnVisibility = loadKataTaskColumnVisibility();
@@ -459,7 +463,7 @@
   // commit one fetch per repeated row. Focus itself moves instantly;
   // only the upstream notification waits for the cursor to settle.
   const KEYBOARD_SELECT_DEBOUNCE_MS = 50;
-  let keyboardSelectTimer: ReturnType<typeof setTimeout> | undefined;
+  let keyboardSelectExecution: AppExecution<void, never> | undefined;
   let pendingKeyboardSelectUID: string | null = null;
   // Tracked by event.code (physical key), not event.key: "G" is Shift+g,
   // so releasing Shift before g would make keydown record "G" but keyup
@@ -468,10 +472,8 @@
 
   function cancelPendingKeyboardSelect() {
     pendingKeyboardSelectUID = null;
-    if (keyboardSelectTimer !== undefined) {
-      clearTimeout(keyboardSelectTimer);
-      keyboardSelectTimer = undefined;
-    }
+    keyboardSelectExecution?.interrupt();
+    keyboardSelectExecution = undefined;
   }
 
   onDestroy(cancelPendingKeyboardSelect);
@@ -499,15 +501,26 @@
   }
 
   function restartKeyboardSelectTimer() {
-    if (keyboardSelectTimer !== undefined) clearTimeout(keyboardSelectTimer);
-    keyboardSelectTimer = setTimeout(() => {
-      keyboardSelectTimer = undefined;
-      // A navigation key is still held: stay pending. The matching keyup
-      // restarts the timer, so even a slow OS key-repeat never commits
-      // intermediate rows mid-hold.
-      if (heldNavKeys.size > 0) return;
-      commitKeyboardSelect();
-    }, KEYBOARD_SELECT_DEBOUNCE_MS);
+    keyboardSelectExecution?.interrupt();
+    keyboardSelectExecution = appRuntime.runCommand(
+      Effect.sleep(`${KEYBOARD_SELECT_DEBOUNCE_MS} millis`).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            keyboardSelectExecution = undefined;
+            // A navigation key is still held: stay pending. The matching keyup
+            // restarts the timer, so even a slow OS key-repeat never commits
+            // intermediate rows mid-hold.
+            if (heldNavKeys.size > 0) return;
+            commitKeyboardSelect();
+          }),
+        ),
+      ),
+      {
+        operation: "settle Kata keyboard selection",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   function commitKeyboardSelect() {
@@ -534,7 +547,7 @@
   // can't strand a key in the held set and block selection forever.
   function handleWindowKeyup(event: KeyboardEvent) {
     if (!heldNavKeys.delete(event.code)) return;
-    if (heldNavKeys.size === 0 && pendingKeyboardSelectUID !== null && keyboardSelectTimer === undefined) {
+    if (heldNavKeys.size === 0 && pendingKeyboardSelectUID !== null && keyboardSelectExecution === undefined) {
       restartKeyboardSelectTimer();
     }
   }
@@ -543,7 +556,7 @@
   // blur as releasing everything so the pending selection still settles.
   function handleWindowBlur() {
     heldNavKeys.clear();
-    if (pendingKeyboardSelectUID !== null && keyboardSelectTimer === undefined) {
+    if (pendingKeyboardSelectUID !== null && keyboardSelectExecution === undefined) {
       restartKeyboardSelectTimer();
     }
   }
@@ -654,18 +667,30 @@
     if (rowRect.bottom <= bodyRect.top || rowRect.top >= bodyRect.bottom) return;
     const selectedRowTop = rowRect.top;
 
-    void tick().then(() => {
-      if (
-        generation !== anchorMeasurementGeneration ||
-        tableBody !== body ||
-        selectedIssueUID !== nextSelectedIssueUID
-      ) return;
-      const refreshedSelectedRow = rowElement(body, nextSelectedIssueUID);
-      if (!refreshedSelectedRow) return;
-      body.scrollTop += refreshedSelectedRow.getBoundingClientRect().top - selectedRowTop;
-    });
+    const execution = untrack(() => appRuntime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            if (
+              generation !== anchorMeasurementGeneration ||
+              tableBody !== body ||
+              selectedIssueUID !== nextSelectedIssueUID
+            ) return;
+            const refreshedSelectedRow = rowElement(body, nextSelectedIssueUID);
+            if (!refreshedSelectedRow) return;
+            body.scrollTop += refreshedSelectedRow.getBoundingClientRect().top - selectedRowTop;
+          }),
+        ),
+      ),
+      {
+        operation: "restore Kata list scroll anchor",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    ));
 
     return () => {
+      execution.interrupt();
       if (anchorMeasurementGeneration === generation) anchorMeasurementGeneration += 1;
     };
   });
@@ -685,12 +710,12 @@
 
   $effect(() => {
     if (!revealRequest) {
-      clearTemporaryReveal();
+      untrack(clearTemporaryReveal);
       lastRevealGeneration = null;
       return;
     }
     if (revealRequest.generation === lastRevealGeneration) return;
-    clearTemporaryReveal();
+    untrack(clearTemporaryReveal);
     lastRevealGeneration = revealRequest.generation;
     const revealChain = revealChainForStatus(revealRequest.chain);
     const restoreFocusedTarget = revealRequest.restoreFocus === true ||
@@ -698,21 +723,29 @@
         document.activeElement instanceof HTMLElement &&
         document.activeElement.dataset.uid === revealRequest.uid);
     temporaryRevealChain = statusFilter === "ready" || revealChain.length > 1 ? revealChain : [];
-    void (async () => {
-      const request = revealRequest;
-      for (const issue of revealChain.slice(0, -1)) {
-        if (revealRequest?.generation !== request.generation) return;
-        if (expanded[issue.uid] !== true) {
-          expanded = { ...expanded, [issue.uid]: true };
-          revealOwnedExpansionUIDs = new Set([...revealOwnedExpansionUIDs, issue.uid]);
+    const request = revealRequest;
+    const execution = untrack(() => appRuntime.runCommand(
+      Effect.gen(function* () {
+        for (const issue of revealChain.slice(0, -1)) {
+          if (revealRequest?.generation !== request.generation) return;
+          if (expanded[issue.uid] !== true) {
+            expanded = { ...expanded, [issue.uid]: true };
+            revealOwnedExpansionUIDs = new Set([...revealOwnedExpansionUIDs, issue.uid]);
+          }
         }
-      }
-      await tick();
-      if (revealRequest?.generation !== request.generation) return;
-      const targetRow = tableBody?.querySelector<HTMLElement>(`button.row[data-uid="${request.uid}"]`);
-      if (restoreFocusedTarget) targetRow?.focus({ preventScroll: true });
-      targetRow?.scrollIntoView({ block: "nearest" });
-    })();
+        yield* Effect.promise(() => tick());
+        if (revealRequest?.generation !== request.generation) return;
+        const targetRow = tableBody?.querySelector<HTMLElement>(`button.row[data-uid="${request.uid}"]`);
+        if (restoreFocusedTarget) targetRow?.focus({ preventScroll: true });
+        targetRow?.scrollIntoView({ block: "nearest" });
+      }),
+      {
+        operation: "reveal Kata issue row",
+        safeContext: { generation: request.generation },
+        onFailure: () => {},
+      },
+    ));
+    return execution.interrupt;
   });
 
   // A pending keyboard selection dies the moment the workspace starts

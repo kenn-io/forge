@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Effect, Exit } from "effect";
+  import { onDestroy } from "svelte";
   import CalendarIcon from "@lucide/svelte/icons/calendar";
   import ClockIcon from "@lucide/svelte/icons/clock-3";
   import FlagIcon from "@lucide/svelte/icons/flag";
@@ -7,6 +9,9 @@
   import { Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { Button, Chip, SelectDropdown } from "@kenn-io/kit-ui";
   import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
   import DatePicker from "../shared/DatePicker.svelte";
 
   interface Props {
@@ -14,12 +19,12 @@
     ownerOptions: TypeaheadOption[];
     actionsDisabled?: boolean | undefined;
     draftResetGeneration?: number | undefined;
-    onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
-    onAssignOwner: (uid: string, owner: string) => boolean | Promise<boolean>;
-    onUnassignOwner: (uid: string) => boolean | Promise<boolean>;
-    onSetPriority: (uid: string, priority: number | null) => boolean | Promise<boolean>;
-    onAddLabel: (uid: string, label: string) => boolean | Promise<boolean>;
-    onRemoveLabel: (uid: string, label: string) => void | Promise<void>;
+    onPatchMetadata: (uid: string, patch: Record<string, unknown>) => KataCommand<boolean>;
+    onAssignOwner: (uid: string, owner: string) => KataCommand<boolean>;
+    onUnassignOwner: (uid: string) => KataCommand<boolean>;
+    onSetPriority: (uid: string, priority: number | null) => KataCommand<boolean>;
+    onAddLabel: (uid: string, label: string) => KataCommand<boolean>;
+    onRemoveLabel: (uid: string, label: string) => KataCommand<boolean>;
   }
 
   let {
@@ -34,6 +39,8 @@
     onAddLabel,
     onRemoveLabel,
   }: Props = $props();
+
+  const runtime = getAppRuntime();
 
   type PropertyKey = "scheduled" | "due" | "priority";
   type PropertyDraftKey = PropertyKey | "owner" | "label";
@@ -68,6 +75,7 @@
   let trackedUID = $state<string | null>(null);
   let lastDraftResetGeneration = $state<number | null>(null);
   let pendingDraftReset = $state.raw<PendingDraftReset | null>(null);
+  const propertyExecutions = new Map<PropertyDraftKey, AppExecution<boolean, never>>();
 
   $effect(() => {
     if (issue.issue.uid === trackedUID) return;
@@ -193,51 +201,80 @@
     }
   }
 
-  async function patchScheduled(value: string): Promise<void> {
+  function runPropertyCommand(
+    key: PropertyDraftKey,
+    command: KataCommand<boolean>,
+    onResult: (changed: boolean) => boolean = () => false,
+  ): AppExecution<boolean, never> {
+    propertyExecutions.get(key)?.interrupt();
+    const execution = runtime.runCommand(
+      command.pipe(Effect.flatMap((changed) => Effect.sync(() => onResult(changed)))),
+      {
+        operation: "update Kata task property",
+        safeContext: { issueUid: issue.issue.uid, property: key },
+        onFailure: () => {},
+      },
+    );
+    propertyExecutions.set(key, execution);
+    return execution;
+  }
+
+  function patchScheduled(value: string): void {
     if (actionsDisabled) return;
     const property = "scheduled";
     scheduledDraft = value;
     const mutationUID = uid();
     const generation = draftResetGeneration;
-    const ok = await onPatchMetadata(mutationUID, { scheduled_on: value === "" ? null : value });
-    if (ok) scheduleAcceptedReset(property, mutationUID, generation);
+    runPropertyCommand(
+      property,
+      onPatchMetadata(mutationUID, { scheduled_on: value === "" ? null : value }),
+      (ok) => ok && scheduleAcceptedReset(property, mutationUID, generation),
+    );
   }
 
-  async function patchDue(value: string): Promise<void> {
+  function patchDue(value: string): void {
     if (actionsDisabled) return;
     const property = "due";
     dueDraft = value;
     const mutationUID = uid();
     const generation = draftResetGeneration;
-    const ok = await onPatchMetadata(mutationUID, { deadline_on: value === "" ? null : value });
-    if (ok) scheduleAcceptedReset(property, mutationUID, generation);
+    runPropertyCommand(
+      property,
+      onPatchMetadata(mutationUID, { deadline_on: value === "" ? null : value }),
+      (ok) => ok && scheduleAcceptedReset(property, mutationUID, generation),
+    );
   }
 
-  async function updateOwner(value: string): Promise<boolean> {
+  function updateOwner(value: string): boolean | Promise<boolean> {
     if (actionsDisabled) return false;
     const owner = value.trim();
     const mutationUID = uid();
     const generation = draftResetGeneration;
     const editVersion = ownerEditVersion;
-    const ok = owner
-      ? await onAssignOwner(mutationUID, owner)
-      : await onUnassignOwner(mutationUID);
-    if (!ok) return false;
-    return scheduleAcceptedReset("owner", mutationUID, generation, editVersion);
+    const command = owner ? onAssignOwner(mutationUID, owner) : onUnassignOwner(mutationUID);
+    const execution = runPropertyCommand(
+      "owner",
+      command,
+      (ok) => ok && scheduleAcceptedReset("owner", mutationUID, generation, editVersion),
+    );
+    return observePropertyCommand(execution);
   }
 
-  async function updatePriority(value: string): Promise<void> {
+  function updatePriority(value: string): void {
     if (actionsDisabled) return;
     const property = "priority";
     const priority = value === "" ? null : Number(value);
     priorityDraft = value;
     const mutationUID = uid();
     const generation = draftResetGeneration;
-    const ok = await onSetPriority(mutationUID, priority);
-    if (ok) scheduleAcceptedReset(property, mutationUID, generation);
+    runPropertyCommand(
+      property,
+      onSetPriority(mutationUID, priority),
+      (ok) => ok && scheduleAcceptedReset(property, mutationUID, generation),
+    );
   }
 
-  async function submitLabel(): Promise<void> {
+  function submitLabel(): void {
     if (actionsDisabled) return;
     const label = labelDraft.trim();
     if (!label) {
@@ -246,8 +283,16 @@
     }
     const mutationUID = uid();
     const generation = draftResetGeneration;
-    const ok = await onAddLabel(mutationUID, label);
-    if (ok) scheduleAcceptedReset("label", mutationUID, generation);
+    runPropertyCommand(
+      "label",
+      onAddLabel(mutationUID, label),
+      (ok) => ok && scheduleAcceptedReset("label", mutationUID, generation),
+    );
+  }
+
+  async function observePropertyCommand(execution: AppExecution<boolean, never>): Promise<boolean> {
+    const exit = await execution.exit;
+    return Exit.isSuccess(exit) && exit.value;
   }
 
   function toggleLabelEditing(): void {
@@ -262,7 +307,7 @@
   function handleLabelKeydown(event: KeyboardEvent): void {
     if (event.key === "Enter") {
       event.preventDefault();
-      void submitLabel();
+      submitLabel();
     } else if (event.key === "Escape") {
       event.preventDefault();
       labelDraft = "";
@@ -288,6 +333,16 @@
     const related = event.relatedTarget as Node | null;
     if (!(event.currentTarget as HTMLElement).contains(related)) ownerEditorOpen = false;
   }
+
+  function removeLabel(label: string): void {
+    if (actionsDisabled) return;
+    runPropertyCommand("label", onRemoveLabel(uid(), label));
+  }
+
+  onDestroy(() => {
+    for (const execution of propertyExecutions.values()) execution.interrupt();
+    propertyExecutions.clear();
+  });
 </script>
 
 <section class="property-pills" aria-label="Properties">
@@ -304,9 +359,7 @@
         onEscape={() => {
           activeProperty = null;
         }}
-        onchange={(value) => {
-          void patchScheduled(value);
-        }}
+        onchange={patchScheduled}
       />
     </div>
   {:else}
@@ -331,9 +384,7 @@
         onEscape={() => {
           activeProperty = null;
         }}
-        onchange={(value) => {
-          void patchDue(value);
-        }}
+        onchange={patchDue}
       />
     </div>
   {:else}
@@ -377,9 +428,7 @@
         value={priorityDraft}
         options={priorityOptions}
         disabled={actionsDisabled}
-        onchange={(value) => {
-          void updatePriority(value);
-        }}
+        onchange={updatePriority}
       />
     </div>
   {:else}
@@ -413,9 +462,7 @@
                   ariaLabel={`Remove label ${label.label}`}
                   title={`Remove label ${label.label}`}
                   disabled={actionsDisabled}
-                  onclick={() => {
-                    if (!actionsDisabled) void onRemoveLabel(uid(), label.label);
-                  }}
+                  onclick={() => removeLabel(label.label)}
                 >
                   {label.label}
                   <XIcon size={11} strokeWidth={2.2} aria-hidden="true" />
@@ -444,9 +491,7 @@
         labelDraft = event.currentTarget.value;
       }}
       onkeydown={handleLabelKeydown}
-      onblur={() => {
-        void submitLabel();
-      }}
+      onblur={submitLabel}
     />
   {:else}
     <div class="label-actions">

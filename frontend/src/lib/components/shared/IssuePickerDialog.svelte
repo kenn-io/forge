@@ -1,6 +1,13 @@
 <script lang="ts">
   import { Button, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
-  import type { KataTaskReference, KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+  import { Effect } from "effect";
+  import type {
+    KataTaskReference,
+    KataTaskReferenceSearch,
+    KataTaskReferenceSearchError,
+  } from "../../api/kata/snapshot.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import Modal from "./Modal.svelte";
 
   interface Props {
@@ -21,6 +28,8 @@
     onPick,
   }: Props = $props();
 
+  const runtime = getAppRuntime();
+
   const SEARCH_DEBOUNCE_MS = 200;
   const MAX_RESULTS = 20;
   const REFERENCE_FETCH_LIMIT = 50;
@@ -30,8 +39,7 @@
   let selected = $state.raw<KataTaskReference | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
-  let searchGen = 0;
-  let searchTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchExecution: AppExecution<void, KataTaskReferenceSearchError> | null = null;
 
   const visible = $derived(
     excludeUIDs === undefined
@@ -49,9 +57,8 @@
 
   $effect(() => {
     if (!open) {
-      if (searchTimer) clearTimeout(searchTimer);
-      searchTimer = null;
-      searchGen++;
+      searchExecution?.interrupt();
+      searchExecution = null;
       query = "";
       results = [];
       selected = null;
@@ -62,9 +69,9 @@
 
   $effect(() => {
     if (!open) return;
-    if (searchTimer) clearTimeout(searchTimer);
+    searchExecution?.interrupt();
+    searchExecution = null;
     const q = query.trim();
-    searchGen++;
     selected = null;
     if (q === "") {
       results = [];
@@ -72,30 +79,44 @@
       error = null;
       return;
     }
-    const gen = searchGen;
-    searchTimer = setTimeout(async () => {
-      if (gen !== searchGen) return;
-      loading = true;
-      error = null;
-      try {
-        const res = await searchReferences(q, {
-          ...(daemonId ? { daemon_id: daemonId } : {}),
-          limit: REFERENCE_FETCH_LIMIT,
-        });
-        if (gen !== searchGen) return;
-        const found = res.references ?? [];
-        const filtered = excludeUIDs === undefined
-          ? found
-          : found.filter((reference) => !excludeUIDs.has(reference.uid));
-        results = filtered.slice(0, MAX_RESULTS);
-      } catch (err) {
-        if (gen !== searchGen) return;
-        error = err instanceof Error ? err.message : "Search failed.";
-        results = [];
-      } finally {
-        if (gen === searchGen) loading = false;
-      }
-    }, SEARCH_DEBOUNCE_MS);
+    loading = true;
+    error = null;
+    const execution = runtime.runCommand(
+      Effect.sleep(`${SEARCH_DEBOUNCE_MS} millis`).pipe(
+        Effect.andThen(
+          Effect.suspend(() =>
+            searchReferences(q, {
+              ...(daemonId ? { daemon_id: daemonId } : {}),
+              limit: REFERENCE_FETCH_LIMIT,
+            }),
+          ),
+        ),
+        Effect.flatMap((response) =>
+          Effect.sync(() => {
+            const found = response.references ?? [];
+            const filtered = excludeUIDs === undefined
+              ? found
+              : found.filter((reference) => !excludeUIDs.has(reference.uid));
+            results = filtered.slice(0, MAX_RESULTS);
+            loading = false;
+          }),
+        ),
+      ),
+      {
+        operation: "search Kata task references",
+        safeContext: { daemonId: daemonId ?? "" },
+        onFailure: (failure) => {
+          error = failure._tag === "KataSnapshotAPIError" ? failure.message : "Search failed.";
+          results = [];
+          loading = false;
+        },
+      },
+    );
+    searchExecution = execution;
+    return () => {
+      execution.interrupt();
+      if (searchExecution === execution) searchExecution = null;
+    };
   });
 
   function updateQuery(nextQuery: string): void {

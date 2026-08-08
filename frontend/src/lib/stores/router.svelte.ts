@@ -525,12 +525,6 @@ if (configuredInitialRoute) {
 
 let route = $state<Route>(parseRoute(configuredInitialRoute ?? currentLocationPath()));
 
-// Fire onRouteChange for the initial route after the module loads.
-// Deferred so the embedder has time to set up the callback.
-if (typeof window !== "undefined") {
-  queueMicrotask(() => fireRouteChange(route));
-}
-
 // The Activity selection, detail tab, and feed filters all live in the URL
 // query string. Remember the full Activity path so the top-bar Activity tab
 // can restore the previous view instead of resetting to a bare "/". The cache
@@ -882,6 +876,10 @@ function fireForgeNavigateEvent(r: Route): void {
 function fireRouteChange(r: Route): void {
   const cb = getOnRouteChange();
   if (cb) cb(buildRouteEvent(r));
+}
+
+export function notifyInitialRouteChange(): void {
+  fireRouteChange(route);
 }
 
 export function replaceUrl(path: string): void {

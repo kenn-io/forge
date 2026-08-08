@@ -1,13 +1,23 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import { getStores } from "../../context.js";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
   import { Button, TextInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import { canonicalProvider, providerRepoPath, providerRouteParams } from "../../api/provider-routes.js";
   import type { Repo } from "../../api/types.js";
+  import {
+    ApiProblemError,
+    InvalidExternalPayload,
+    type TransientTransportError,
+  } from "../../api/effect-errors.js";
+  import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import type { ProblemBody } from "../../api/problems.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { queueWorkspaceLaunch } from "../../stores/workspace-create-pending.svelte.js";
   import Modal from "../shared/Modal.svelte";
-  import { apiErrorMessage, client } from "../../api/runtime.js";
+  import { apiErrorMessage } from "../../api/runtime.js";
   import { navigate } from "../../stores/router.svelte.js";
   import {
     getLastUsedNewWorkspaceRepoKey,
@@ -30,6 +40,7 @@
 
   const { open, onClose, seedRepo = null, onCreated = undefined }: Props = $props();
   const { settings } = getStores();
+  const runtime = getAppRuntime();
 
   type RepoOption = {
     key: string;
@@ -49,7 +60,8 @@
   let error = $state<string | null>(null);
   let suggestedBranch = $state<string | null>(null);
   let pendingLaunchTargetKey = $state<string | null>(null);
-  let repoFetchVersion = 0;
+  let activeSession: object | null = null;
+  let repoLoadExecution: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
 
   function repoOption(repo: Repo): RepoOption {
     const provider = canonicalProvider(repo.Platform);
@@ -73,8 +85,15 @@
   // selection are dropped up front so a reopen cannot submit against the repo
   // picked last time while the new list is still in flight, or if it fails.
   $effect(() => {
-    if (!open) return;
-    const version = ++repoFetchVersion;
+    if (!open) {
+      activeSession = null;
+      repoLoadExecution?.interrupt();
+      repoLoadExecution = null;
+      return;
+    }
+    const session = {};
+    const seededRepoKey = seedKey(seedRepo);
+    activeSession = session;
     branch = "";
     error = null;
     suggestedBranch = null;
@@ -84,31 +103,41 @@
     selectedKey = "";
     reposError = null;
     reposLoading = true;
-    void client
-      .GET("/repos")
-      .then(({ data, error: requestError }) => {
-        if (version !== repoFetchVersion) return;
-        reposLoading = false;
-        if (requestError) {
-          reposError = apiErrorMessage(requestError, "Could not load repositories");
-          return;
-        }
-        repos = (data ?? []).map(repoOption);
-        // Prefer the repo the caller pointed at, then the last one work was
-        // started in, then whatever is first in the list.
-        const candidates = [seedKey(seedRepo), getLastUsedNewWorkspaceRepoKey()];
-        selectedKey =
-          candidates.find((key) => key && repos.some((repo) => repo.key === key)) ??
-          repos[0]?.key ??
-          "";
-      })
-      // A transport failure never reaches the error field above, and leaving
-      // the picker on "Loading repositories…" forever hides the reason.
-      .catch(() => {
-        if (version !== repoFetchVersion) return;
-        reposLoading = false;
-        reposError = "Could not load repositories";
-      });
+    const execution = runtime.runCommand(
+      executeGeneratedApiRequest("load repositories", (client, signal) => client.GET("/repos", { signal })).pipe(
+        Effect.flatMap((loaded) =>
+          Effect.sync(() => {
+            if (activeSession !== session) return;
+            reposLoading = false;
+            repos = (loaded ?? []).map(repoOption);
+            // Prefer the repo the caller pointed at, then the last one work was
+            // started in, then whatever is first in the list.
+            const candidates = [seededRepoKey, getLastUsedNewWorkspaceRepoKey()];
+            selectedKey =
+              candidates.find((key) => key && repos.some((repo) => repo.key === key)) ??
+              repos[0]?.key ??
+              "";
+          }),
+        ),
+      ),
+      {
+        operation: "load repositories for a new workspace",
+        safeContext: {},
+        onFailure: (failure) => {
+          if (activeSession !== session) return;
+          reposLoading = false;
+          reposError = failure instanceof ApiProblemError
+            ? apiErrorMessage(failure.problem, "Could not load repositories")
+            : "Could not load repositories";
+        },
+      },
+    );
+    repoLoadExecution = execution;
+    return () => {
+      execution.interrupt();
+      if (repoLoadExecution === execution) repoLoadExecution = null;
+      if (activeSession === session) activeSession = null;
+    };
   });
 
   const repoRows = $derived<TypeaheadOption[]>(
@@ -123,18 +152,13 @@
 
   // Branch conflicts are recognized by the stable problem code and read from
   // typed `details`, never from prose or the per-field huma error array.
-  type APIProblem = {
-    code?: string | null;
-    details?: Record<string, unknown> | null;
-  };
-
-  function suggestedBranchFrom(requestError: APIProblem | undefined): string | null {
+  function suggestedBranchFrom(requestError: ProblemBody | undefined): string | null {
     if (requestError?.code !== "branchConflict") return null;
     const value = requestError.details?.["suggestedBranch"];
     return typeof value === "string" && value ? value : null;
   }
 
-  async function submit(selectedTargetKey?: string): Promise<void> {
+  function submit(selectedTargetKey?: string): void {
     if (selectedTargetKey !== undefined) {
       pendingLaunchTargetKey = selectedTargetKey;
     }
@@ -149,59 +173,78 @@
     // Escape and backdrop clicks dismiss the dialog even mid-request, and a
     // reopen starts a new form; either way this create must stop influencing
     // the UI once its own dialog session is gone.
-    const version = repoFetchVersion;
+    const session = activeSession;
+    if (session === null || !open) return;
     error = null;
     suggestedBranch = null;
     submitting = true;
-    try {
-      const ref = {
+    const ref = {
+      provider: repo.provider,
+      platformHost: repo.platformHost,
+      owner: repo.owner,
+      name: repo.name,
+      repoPath: `${repo.owner}/${repo.name}`,
+    };
+    const program = executeGeneratedApiRequest("create workspace", (client, signal) =>
+      client.POST(providerRepoPath(ref, "/workspaces"), {
+        params: { path: providerRouteParams(ref) },
+        body: requested ? { branch: requested } : {},
+        signal,
+      }),
+    ).pipe(
+      Effect.flatMap((created) =>
+        created?.id
+          ? Effect.succeed(created.id)
+          : Effect.fail(
+              InvalidExternalPayload.make({
+                operation: "decode create workspace response",
+                cause: created,
+              }),
+            ),
+      ),
+      Effect.tap((workspaceId) =>
+        Effect.sync(() => {
+          if (launchTargetKey) queueWorkspaceLaunch(workspaceId, launchTargetKey, undefined);
+          // The workspace exists either way, so it stays the last-used repo; only
+          // the navigation is abandoned when the user moved on.
+          rememberNewWorkspaceRepoKey(repo.key);
+        }),
+      ),
+      Effect.tap((workspaceId) =>
+        Effect.sync(() => {
+          if (!open || activeSession !== session) return;
+          pendingLaunchTargetKey = null;
+          onClose();
+          if (onCreated) onCreated(workspaceId);
+          else navigate(`/terminal/${workspaceId}`);
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          // A stale create must not re-enable the form under a newer one that is
+          // still in flight; each open resets this flag for its own session.
+          if (open && activeSession === session) submitting = false;
+        }),
+      ),
+    );
+    runtime.runCommand(program, {
+      operation: "create workspace",
+      safeContext: {
         provider: repo.provider,
         platformHost: repo.platformHost,
         owner: repo.owner,
         name: repo.name,
-        repoPath: `${repo.owner}/${repo.name}`,
-      };
-      const { data, error: requestError } = await client.POST(
-        providerRepoPath(ref, "/workspaces"),
-        {
-          params: { path: providerRouteParams(ref) },
-          body: requested ? { branch: requested } : {},
-        },
-      );
-      const current = open && version === repoFetchVersion;
-      if (requestError) {
-        if (!current) return;
-        suggestedBranch = suggestedBranchFrom(requestError);
-        error = apiErrorMessage(requestError, "Could not create workspace");
-        return;
-      }
-      if (!data?.id) {
-        if (!current) return;
+      },
+      onFailure: (failure) => {
+        if (!open || activeSession !== session) return;
+        if (failure instanceof ApiProblemError) {
+          suggestedBranch = suggestedBranchFrom(failure.problem);
+          error = apiErrorMessage(failure.problem, "Could not create workspace");
+          return;
+        }
         error = "Could not create workspace";
-        return;
-      }
-      const workspaceId = data.id;
-      if (launchTargetKey) {
-        queueWorkspaceLaunch(workspaceId, launchTargetKey, undefined);
-      }
-      // The workspace exists either way, so it stays the last-used repo; only
-      // the navigation is abandoned when the user moved on.
-      rememberNewWorkspaceRepoKey(repo.key);
-      if (!current) return;
-      pendingLaunchTargetKey = null;
-      onClose();
-      if (onCreated) onCreated(workspaceId);
-      else navigate(`/terminal/${workspaceId}`);
-    } catch {
-      // A rejected request would otherwise leave the dialog silent.
-      if (open && version === repoFetchVersion) {
-        error = "Could not create workspace";
-      }
-    } finally {
-      // A stale create must not re-enable the form under a newer one that is
-      // still in flight; each open resets this flag for its own session.
-      if (open && version === repoFetchVersion) submitting = false;
-    }
+      },
+    });
   }
 
   function useSuggestedBranch(): void {
@@ -217,7 +260,7 @@
     class="new-workspace-form"
     onsubmit={(event) => {
       event.preventDefault();
-      void submit();
+      submit();
     }}
   >
     <div class="field repo-field">

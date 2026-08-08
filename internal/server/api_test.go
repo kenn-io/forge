@@ -6884,6 +6884,73 @@ func TestAPICreateIssueRejectsNilProviderPayload(t *testing.T) {
 	require.Nil(issue)
 }
 
+func TestAPICreateIssueReportsUnknownOutcomeForUnverifiedProviderFailure(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv := setupGitLabIssueMutatorServer(t, errors.New("provider response unavailable"))
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.CreateIssueOnHostWithResponse(
+		t.Context(), "gitlab.example.com", "gl", "group", "project",
+		generated.CreateIssueOnHostJSONRequestBody{Title: "Unverified issue"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.ApplicationproblemJSONDefault)
+
+	assert.Equal(generated.MutationOutcomeUnknown, resp.ApplicationproblemJSONDefault.Code)
+	require.NotNil(resp.ApplicationproblemJSONDefault.Details)
+	assert.Equal("gitlab", (*resp.ApplicationproblemJSONDefault.Details)["provider"])
+	assert.Equal("gitlab.example.com", (*resp.ApplicationproblemJSONDefault.Details)["platformHost"])
+}
+
+func TestAPICreateIssueReportsUnknownOutcomeWhenPersistenceFailsAfterProviderSuccess(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var database *db.DB
+	var persistenceSetupErr error
+	createdAt := time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC)
+	mock := &mockGH{
+		createIssueFn: func(ctx context.Context, owner, repo, title, body string) (*gh.Issue, error) {
+			_, persistenceSetupErr = database.WriteDB().ExecContext(ctx, "DROP TABLE forge_issue_labels")
+			return &gh.Issue{
+				ID:        new(int64(9876)),
+				Number:    new(27),
+				Title:     &title,
+				Body:      &body,
+				State:     new("open"),
+				HTMLURL:   new(fmt.Sprintf("https://github.com/%s/%s/issues/27", owner, repo)),
+				User:      &gh.User{Login: new("issue-bot")},
+				CreatedAt: &gh.Timestamp{Time: createdAt},
+				UpdatedAt: &gh.Timestamp{Time: createdAt},
+			}, nil
+		},
+	}
+	srv, openedDatabase := setupTestServerWithRepos(
+		t,
+		mock,
+		[]ghclient.RepoRef{{
+			Platform: "github", Owner: "acme", Name: "widgets", PlatformHost: "github.com",
+		}},
+	)
+	database = openedDatabase
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.CreateIssueWithResponse(
+		t.Context(), "gh", "acme", "widgets",
+		generated.CreateIssueJSONRequestBody{Title: "Persist this issue"},
+	)
+	require.NoError(err)
+	require.NoError(persistenceSetupErr)
+	require.Equal(http.StatusBadGateway, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.ApplicationproblemJSONDefault)
+
+	assert.Equal(generated.MutationOutcomeUnknown, resp.ApplicationproblemJSONDefault.Code)
+	require.NotNil(resp.ApplicationproblemJSONDefault.Details)
+	assert.Equal("github", (*resp.ApplicationproblemJSONDefault.Details)["provider"])
+	assert.Equal("github.com", (*resp.ApplicationproblemJSONDefault.Details)["platformHost"])
+}
+
 func TestAPIEditPRContentRejectsNilProviderPayload(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

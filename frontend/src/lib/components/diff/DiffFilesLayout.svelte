@@ -1,5 +1,9 @@
 <script lang="ts">
   import { SplitResizeHandle } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
+  import { untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { observeResize } from "../../browser/observers.js";
   import type { ProviderCapabilities, RepoOperations } from "../../api/types.js";
   import type { SplitResizeEvent } from "@kenn-io/kit-ui";
   import { operationGate } from "../detail/operation-gates.js";
@@ -42,6 +46,7 @@
   }: Props = $props();
 
   const reviewDraftGate = $derived(operationGate(operations?.review_draft));
+  const runtime = getAppRuntime();
   const replyThreadGate = $derived(operationGate(operations?.reply_review_thread));
   // When the provider supports review authoring but the operation is
   // unavailable (missing write credential, rate limit), the authoring
@@ -148,17 +153,17 @@
 
     updateFilesLayoutWidth(layout.getBoundingClientRect().width);
     if (typeof ResizeObserver === "undefined") return;
-
-    const observer = new ResizeObserver((entries) => {
-      updateFilesLayoutWidth(
-        entries[0]?.contentRect.width ?? layout.getBoundingClientRect().width,
-      );
-    });
-    observer.observe(layout);
-
-    return () => {
-      observer.disconnect();
-    };
+    const execution = untrack(() => runtime.runCommand(
+      Effect.scoped(
+        observeResize(layout, (entries) => {
+          updateFilesLayoutWidth(
+            entries[0]?.contentRect.width ?? layout.getBoundingClientRect().width,
+          );
+        }).pipe(Effect.andThen(Effect.never)),
+      ),
+      { operation: "observe diff files layout", safeContext: {}, onFailure: () => {} },
+    ));
+    return execution.interrupt;
   });
 
 </script>

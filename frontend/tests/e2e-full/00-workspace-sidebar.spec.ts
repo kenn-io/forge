@@ -142,6 +142,31 @@ test.describe("workspace sidebar full-stack", () => {
     }
   });
 
+  test("refreshes the real workspace list after a backend-created workspace appears", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      await page.goto(`${isolatedServer.info.base_url}/workspaces`);
+      await expect(page.getByText("No workspaces yet.")).toBeVisible();
+
+      await createIssueWorkspace(api, 10);
+
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row").filter({
+          hasText: "Widget rendering broken on Safari",
+        }),
+      ).toHaveCount(1, { timeout: 7_000 });
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("shows provider icons in group headers when workspaces span multiple providers", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
@@ -408,6 +433,13 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(dialog).toBeVisible();
       await expect(dialog).toContainText("Widget rendering broken on Safari");
 
+      const requestOrder: string[] = [];
+      page.on("request", (request) => {
+        const pathname = new URL(request.url()).pathname;
+        if (pathname === "/api/v1/workspaces" || pathname === `/api/v1/workspaces/${deletedWorkspace.id}`) {
+          requestOrder.push(`${request.method()} ${pathname}`);
+        }
+      });
       const deleteResponse = page.waitForResponse(
         (response) =>
           response.request().method() === "DELETE" &&
@@ -420,6 +452,11 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(rows).toHaveCount(1);
       await expect(rows).not.toContainText("Widget rendering broken on Safari");
       await expect(rows).toContainText("Add dark mode support");
+
+      const deleteRequestIndex = requestOrder.indexOf(`DELETE /api/v1/workspaces/${deletedWorkspace.id}`);
+      const listRefreshIndex = requestOrder.indexOf("GET /api/v1/workspaces", deleteRequestIndex + 1);
+      expect(deleteRequestIndex).toBeGreaterThanOrEqual(0);
+      expect(listRefreshIndex).toBeGreaterThan(deleteRequestIndex);
 
       const workspacesResponse = await api.get("/api/v1/workspaces");
       expect(workspacesResponse.ok()).toBe(true);
@@ -815,6 +852,8 @@ test.describe("workspace Kata sidebar live integration", () => {
       await pane.getByRole("textbox", { name: "Comment" }).fill(comment);
       await pane.getByRole("button", { name: "Add comment" }).click();
       await expect(pane.getByRole("button", { name: "Retry Kata snapshot" })).toBeVisible();
+      const editPriority = pane.getByRole("button", { name: "Edit priority" });
+      await expect(editPriority).toBeDisabled();
 
       await test.step("remount and reconcile the retained fence", async () => {
         await page.getByRole("button", { name: "Diff", exact: true }).click();

@@ -186,6 +186,22 @@ describe("kata mutation and recurrence HTTP client", () => {
     ).rejects.toBeInstanceOf(KataMutationOutcomeUnknownError);
   });
 
+  test.each([
+    ["comment", { comment: {} }],
+    ["issue", { issue: {} }],
+    ["label", { label: {} }],
+    ["event", { event: {} }],
+  ])("rejects a nested %s acknowledgement without a stable identifier", async (_family, body) => {
+    const { fetchImpl } = createFetchStub({
+      "/api/v1/projects/7/issues/issue-1/comments": { body },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+
+    await expect(
+      runTaskEffect(api.addComment({ project_id: 7, ref: "issue-1" }, "kenn-forge", "hello", { daemonId: "home" })),
+    ).rejects.toBeInstanceOf(KataMutationOutcomeUnknownError);
+  });
+
   test("rejects empty successful acknowledgement objects for each identified mutation family", async () => {
     const { fetchImpl } = createFetchStub({
       "/api/v1/projects": { body: {} },
@@ -528,6 +544,7 @@ describe("kata mutation and recurrence HTTP client", () => {
     const api = createKataTaskAPI({ fetchImpl });
     const options = { daemonId: "home" };
 
+    await expect(runTaskEffect(api.recurrences(7, options))).rejects.toBeInstanceOf(KataTaskAPIError);
     await expect(
       runTaskEffect(
         api.createRecurrence(

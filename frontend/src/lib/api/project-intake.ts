@@ -1,6 +1,8 @@
+import { Effect, Schema } from "effect";
 import type { components } from "./generated/schema.js";
 
-import { apiErrorMessage, client } from "./runtime.ts";
+import { InvalidExternalPayload, type ApiProblemError, type TransientTransportError } from "./effect-errors.js";
+import { executeGeneratedApiRequest, executeOpaqueGeneratedApiRequest, GeneratedApi } from "./generated-api.js";
 
 export type ProjectResponse = components["schemas"]["ProjectResponse"];
 export type UserRepository = components["schemas"]["UserRepository"];
@@ -8,70 +10,132 @@ export interface DiscoveredUserRepository extends UserRepository {
   provider: "github";
   platform_host: string;
 }
-type ProblemError = components["schemas"]["ProblemError"];
-type RepoValidation = components["schemas"]["FilesystemValidateRepoOutputBody"];
 
 export interface ProjectIntakeOptions {
-  hostKey?: string | null;
+  readonly hostKey?: string | null;
 }
+
+export class InvalidProjectIntake extends Schema.TaggedErrorClass<InvalidProjectIntake>()("InvalidProjectIntake", {
+  message: Schema.String,
+}) {}
+
+export type ProjectIntakeFailure =
+  | ApiProblemError
+  | InvalidExternalPayload
+  | InvalidProjectIntake
+  | TransientTransportError;
+
+const RepoValidation = Schema.Struct({
+  $schema: Schema.optionalKey(Schema.String),
+  is_valid: Schema.Boolean,
+  message: Schema.optionalKey(Schema.String),
+  root_path: Schema.optionalKey(Schema.String),
+});
+
+const PlatformIdentity = Schema.Struct({
+  name: Schema.String,
+  owner: Schema.String,
+  platform: Schema.String,
+  platform_host: Schema.String,
+});
+
+const Project = Schema.Struct({
+  $schema: Schema.optionalKey(Schema.String),
+  created_at: Schema.String,
+  default_branch: Schema.optionalKey(Schema.String),
+  display_name: Schema.String,
+  id: Schema.String,
+  local_path: Schema.String,
+  platform_identity: Schema.optionalKey(PlatformIdentity),
+  updated_at: Schema.String,
+});
+
+const decodeRepoValidation = Effect.fn("ProjectIntake.decodeRepoValidation")(function* (input: unknown) {
+  return yield* Schema.decodeUnknownEffect(RepoValidation)(input).pipe(
+    Effect.mapError((cause) => InvalidExternalPayload.make({ operation: "decode fleet repository validation", cause })),
+  );
+});
+
+export const decodeProjectResponse = Effect.fn("ProjectIntake.decodeProject")(function* (input: unknown) {
+  const project: ProjectResponse = yield* Schema.decodeUnknownEffect(Project)(input).pipe(
+    Effect.mapError((cause) => InvalidExternalPayload.make({ operation: "decode fleet project", cause })),
+  );
+  return project;
+});
 
 function normalizedHostKey(options?: ProjectIntakeOptions): string | undefined {
   const hostKey = options?.hostKey?.trim();
   return hostKey ? hostKey : undefined;
 }
 
-export async function registerExistingProject(path: string, options?: ProjectIntakeOptions): Promise<ProjectResponse> {
+export function projectIntakeFailureMessage(failure: ProjectIntakeFailure): string {
+  switch (failure._tag) {
+    case "ApiProblemError":
+      return failure.problem.detail ?? failure.problem.title ?? "The project request failed.";
+    case "InvalidExternalPayload":
+      return "The project service returned an invalid response.";
+    case "InvalidProjectIntake":
+      return failure.message;
+    case "TransientTransportError":
+      return "Couldn't reach the project service.";
+  }
+}
+
+export const registerExistingProject = Effect.fn("ProjectIntake.registerExisting")(function* (
+  path: string,
+  options?: ProjectIntakeOptions,
+) {
   const trimmed = path.trim();
   if (!trimmed) {
-    throw new Error("Repository path is required.");
+    return yield* Effect.fail(InvalidProjectIntake.make({ message: "Repository path is required." }));
   }
 
   const hostKey = normalizedHostKey(options);
-  const validationResult = hostKey
-    ? await client.GET("/fleet/hosts/{host_key}/filesystem/validate-repo", {
-        params: { path: { host_key: hostKey }, query: { path: trimmed } },
-      })
-    : await client.GET("/filesystem/validate-repo", {
-        params: { query: { path: trimmed } },
-      });
-  const validation = validationResult.data as RepoValidation | undefined;
-  if (!validation) {
-    throw new Error(
-      apiErrorMessage(validationResult.error as ProblemError | undefined, "Couldn't validate repository path."),
-    );
-  }
+  const validation = hostKey
+    ? yield* executeOpaqueGeneratedApiRequest("validate fleet repository path", (client, signal) =>
+        client.GET("/fleet/hosts/{host_key}/filesystem/validate-repo", {
+          params: { path: { host_key: hostKey }, query: { path: trimmed } },
+          signal,
+        }),
+      ).pipe(Effect.flatMap(decodeRepoValidation))
+    : yield* executeGeneratedApiRequest("validate repository path", (client, signal) =>
+        client.GET("/filesystem/validate-repo", {
+          params: { query: { path: trimmed } },
+          signal,
+        }),
+      );
   if (!validation.is_valid) {
-    throw new Error(validation.message ?? "Not a git repository.");
+    return yield* Effect.fail(InvalidProjectIntake.make({ message: validation.message ?? "Not a git repository." }));
   }
 
   const body = { local_path: validation.root_path ?? trimmed };
-  const result = hostKey
-    ? await client.POST("/fleet/hosts/{host_key}/projects", {
-        params: { path: { host_key: hostKey } },
-        body,
-      })
-    : await client.POST("/projects", { body });
-  const data = result.data as ProjectResponse | undefined;
-  if (!data) {
-    throw new Error(apiErrorMessage(result.error as ProblemError | undefined, "Couldn't register repository."));
-  }
-  return data;
-}
+  return hostKey
+    ? yield* executeOpaqueGeneratedApiRequest("register fleet project", (client, signal) =>
+        client.POST("/fleet/hosts/{host_key}/projects", {
+          params: { path: { host_key: hostKey } },
+          body,
+          signal,
+        }),
+      ).pipe(Effect.flatMap(decodeProjectResponse))
+    : yield* executeGeneratedApiRequest("register project", (client, signal) =>
+        client.POST("/projects", { body, signal }),
+      );
+});
 
-export async function cloneProject(
+export const cloneProject = Effect.fn("ProjectIntake.clone")(function* (
   url: string,
   path: string,
   branch?: string,
   options?: ProjectIntakeOptions,
-): Promise<ProjectResponse> {
+) {
   const trimmedURL = url.trim();
   const trimmedPath = path.trim();
   const trimmedBranch = branch?.trim();
   if (!trimmedURL) {
-    throw new Error("Repository URL is required.");
+    return yield* Effect.fail(InvalidProjectIntake.make({ message: "Repository URL is required." }));
   }
   if (!trimmedPath) {
-    throw new Error("Destination path is required.");
+    return yield* Effect.fail(InvalidProjectIntake.make({ message: "Destination path is required." }));
   }
 
   const hostKey = normalizedHostKey(options);
@@ -80,50 +144,56 @@ export async function cloneProject(
     path: trimmedPath,
     ...(trimmedBranch ? { branch: trimmedBranch } : {}),
   };
-  const result = hostKey
-    ? await client.POST("/fleet/hosts/{host_key}/projects/clone", {
-        params: { path: { host_key: hostKey } },
-        body,
-      })
-    : await client.POST("/projects/clone", { body });
-  const data = result.data as ProjectResponse | undefined;
-  if (!data) {
-    throw new Error(apiErrorMessage(result.error as ProblemError | undefined, "Couldn't clone repository."));
-  }
-  return data;
-}
+  return hostKey
+    ? yield* executeOpaqueGeneratedApiRequest("clone fleet project", (client, signal) =>
+        client.POST("/fleet/hosts/{host_key}/projects/clone", {
+          params: { path: { host_key: hostKey } },
+          body,
+          signal,
+        }),
+      ).pipe(Effect.flatMap(decodeProjectResponse))
+    : yield* executeGeneratedApiRequest("clone project", (client, signal) =>
+        client.POST("/projects/clone", { body, signal }),
+      );
+});
 
 export interface UserRepositoryDiscoveryOptions {
-  provider: "github";
-  platformHost: string;
+  readonly provider: "github";
+  readonly platformHost: string;
 }
 
-export function listUserRepositories(options: UserRepositoryDiscoveryOptions): Promise<DiscoveredUserRepository[]>;
-export function listUserRepositories(): Promise<UserRepository[]>;
-export async function listUserRepositories(
+type UserRepositoryListEffect<A> = Effect.Effect<A, ApiProblemError | TransientTransportError, GeneratedApi>;
+
+export function listUserRepositories(
+  options: UserRepositoryDiscoveryOptions,
+): UserRepositoryListEffect<DiscoveredUserRepository[]>;
+export function listUserRepositories(): UserRepositoryListEffect<UserRepository[]>;
+export function listUserRepositories(
   options?: UserRepositoryDiscoveryOptions,
-): Promise<Array<UserRepository | DiscoveredUserRepository>> {
-  const { data, error } = await client.GET("/platform/user-repositories", {
-    params: {
-      query: {
-        ...(options
-          ? {
-              provider: options.provider,
-              platform_host: options.platformHost,
-            }
-          : {}),
-        limit: 1000,
-      },
-    },
-  });
-  if (!data) {
-    throw new Error(apiErrorMessage(error, "Couldn't load GitHub repositories."));
-  }
-  const repositories = data.repositories ?? [];
-  if (!options) return repositories;
-  return repositories.map((repository) => ({
-    ...repository,
-    provider: options.provider,
-    platform_host: options.platformHost,
-  }));
+): UserRepositoryListEffect<UserRepository[] | DiscoveredUserRepository[]> {
+  return Effect.gen(function* () {
+    const data = yield* executeGeneratedApiRequest("list user repositories", (client, signal) =>
+      client.GET("/platform/user-repositories", {
+        params: {
+          query: {
+            ...(options
+              ? {
+                  provider: options.provider,
+                  platform_host: options.platformHost,
+                }
+              : {}),
+            limit: 1000,
+          },
+        },
+        signal,
+      }),
+    );
+    const repositories = data.repositories ?? [];
+    if (!options) return repositories;
+    return repositories.map((repository) => ({
+      ...repository,
+      provider: options.provider,
+      platform_host: options.platformHost,
+    }));
+  }).pipe(Effect.withSpan("ProjectIntake.listUserRepositories"));
 }

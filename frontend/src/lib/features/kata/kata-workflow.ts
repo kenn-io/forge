@@ -50,7 +50,7 @@ export interface KataMutationIdentity {
   readonly target: string;
 }
 
-export type KataMutationResolution = "applied" | "absent" | "ambiguous";
+export type KataMutationResolution = "applied" | "partial" | "absent" | "ambiguous";
 
 export type KataMutationFenceState =
   | { readonly kind: "unknown"; readonly identity: KataMutationIdentity; readonly message: string }
@@ -62,7 +62,7 @@ export type KataMutationFenceState =
       readonly resolution: Exclude<KataMutationResolution, "ambiguous">;
     };
 
-export interface KataMutationUncertainty {
+export interface KataSnapshotMutationUncertainty {
   readonly identity: KataMutationIdentity;
   readonly baseline: KataWorkspaceSnapshotProjection;
   readonly readFresh: Effect.Effect<
@@ -70,8 +70,15 @@ export interface KataMutationUncertainty {
     KataSnapshotAPIError | TransientTransportError,
     GeneratedApi
   >;
-  readonly isApplied?: ((snapshot: KataWorkspaceSnapshotProjection) => boolean) | undefined;
+  readonly isApplied: (snapshot: KataWorkspaceSnapshotProjection) => boolean;
 }
+
+export interface KataCustomMutationUncertainty {
+  readonly identity: KataMutationIdentity;
+  readonly reconcile: Effect.Effect<KataMutationResolution, unknown, GeneratedApi>;
+}
+
+export type KataMutationUncertainty = KataSnapshotMutationUncertainty | KataCustomMutationUncertainty;
 
 export interface KataEventConnectionOptions {
   readonly owner: string;
@@ -97,6 +104,14 @@ export class KataMutationBlocked extends Schema.TaggedErrorClass<KataMutationBlo
   operation: Schema.String,
 }) {}
 
+export class KataMutationIdentityMismatch extends Schema.TaggedErrorClass<KataMutationIdentityMismatch>()(
+  "KataMutationIdentityMismatch",
+  {
+    daemonId: Schema.String,
+    evidenceDaemonId: Schema.String,
+  },
+) {}
+
 export class KataMutationReconciliationError extends Schema.TaggedErrorClass<KataMutationReconciliationError>()(
   "KataMutationReconciliationError",
   {
@@ -119,22 +134,26 @@ export interface KataWorkflowService {
   readonly connectEvents: (options: KataEventConnectionOptions) => Effect.Effect<void, never, GeneratedApi>;
   readonly updateEventSource: (owner: string, daemonId: string | undefined, checkpoint: number) => Effect.Effect<void>;
   readonly disconnectEvents: (owner: string) => Effect.Effect<void>;
-  readonly claimMutation: (
-    key: string,
+  readonly claimMutations: (
+    daemonId: string,
     owner: string,
     onState: (state: KataMutationFenceState) => Effect.Effect<void>,
-  ) => Effect.Effect<void>;
-  readonly releaseMutation: (owner: string) => Effect.Effect<void>;
+  ) => Effect.Effect<void, never, Scope>;
   readonly acknowledgeMutation: (key: string) => Effect.Effect<void>;
   readonly reconcileMutation: (
     key: string,
   ) => Effect.Effect<KataMutationResolution, KataMutationReconciliationError, GeneratedApi>;
   readonly mutateAndRevalidate: <A, MutationError, RevalidationError, R>(
+    daemonId: string,
     mutation: Effect.Effect<A, MutationError>,
     revalidation: Effect.Effect<boolean, RevalidationError, R>,
     onAcknowledged?: ((acknowledgement: A) => Effect.Effect<void>) | undefined,
     uncertainty?: KataMutationUncertainty | undefined,
-  ) => Effect.Effect<KataMutationResult<A>, MutationError | KataMutationBlocked | CommandQueueClosed, R>;
+  ) => Effect.Effect<
+    KataMutationResult<A>,
+    MutationError | KataMutationBlocked | KataMutationIdentityMismatch | CommandQueueClosed,
+    R
+  >;
 }
 
 export class KataWorkflow extends Context.Service<KataWorkflow, KataWorkflowService>()("kenn-forge/KataWorkflow") {}
@@ -176,6 +195,20 @@ function snapshotEvidence(snapshot: KataWorkspaceSnapshotProjection): string {
   });
 }
 
+function reconcileSnapshotMutation(
+  uncertainty: KataSnapshotMutationUncertainty,
+): Effect.Effect<KataMutationResolution, KataSnapshotAPIError | TransientTransportError, GeneratedApi> {
+  return Effect.gen(function* () {
+    const fresh = normalizeKataWorkspaceSnapshot(yield* uncertainty.readFresh);
+    const isFresh =
+      fresh.daemon_id === uncertainty.identity.daemonId &&
+      fresh.invalidation_epoch > uncertainty.baseline.invalidation_epoch;
+    if (!isFresh) return "ambiguous";
+    if (uncertainty.isApplied(fresh)) return "applied";
+    return snapshotEvidence(fresh) === snapshotEvidence(uncertainty.baseline) ? "absent" : "ambiguous";
+  });
+}
+
 interface KataMutationFence {
   readonly uncertainty: KataMutationUncertainty;
   readonly cause: KataMutationOutcomeUnknownError | KataMutationPartiallyAppliedError;
@@ -183,7 +216,7 @@ interface KataMutationFence {
 }
 
 interface KataMutationSurface {
-  readonly key: string;
+  readonly daemonId: string;
   readonly owner: string;
   readonly onState: (state: KataMutationFenceState) => Effect.Effect<void>;
 }
@@ -199,47 +232,53 @@ export const makeKataWorkflow: Effect.Effect<KataWorkflowService, never, Scope> 
   const commands = yield* makeOrderedCommandQueue("Kata mutations", (command: Effect.Effect<void>) => command, 64);
 
   const publishMutationState = Effect.fn("KataWorkflow.publishMutationState")(function* (
-    key: string,
     state: KataMutationFenceState,
   ) {
-    const observers = Array.from((yield* Ref.get(mutationSurfaces)).values()).filter((surface) => surface.key === key);
+    const observers = Array.from((yield* Ref.get(mutationSurfaces)).values()).filter(
+      (surface) => surface.daemonId === state.identity.daemonId,
+    );
     yield* Effect.forEach(observers, (surface) => surface.onState(state), { discard: true });
   });
 
   const setMutationFence = Effect.fn("KataWorkflow.setMutationFence")(function* (fence: KataMutationFence) {
     yield* Ref.update(mutationFences, (fences) => new Map(fences).set(fence.uncertainty.identity.key, fence));
-    yield* publishMutationState(fence.uncertainty.identity.key, fence.state);
+    yield* publishMutationState(fence.state);
   });
 
-  const claimMutation = Effect.fn("KataWorkflow.claimMutation")(function* (
-    key: string,
+  const claimMutations = Effect.fn("KataWorkflow.claimMutations")(function* (
+    daemonId: string,
     owner: string,
     onState: (state: KataMutationFenceState) => Effect.Effect<void>,
   ) {
-    yield* Ref.update(mutationSurfaces, (surfaces) => new Map(surfaces).set(owner, { key, owner, onState }));
-    const fence = (yield* Ref.get(mutationFences)).get(key);
+    const surface: KataMutationSurface = { daemonId, owner, onState };
+    yield* Effect.acquireRelease(
+      Ref.update(mutationSurfaces, (surfaces) => new Map(surfaces).set(owner, surface)),
+      () =>
+        Ref.update(mutationSurfaces, (surfaces) => {
+          if (surfaces.get(owner) !== surface) return surfaces;
+          const next = new Map(surfaces);
+          next.delete(owner);
+          return next;
+        }),
+    );
+    const fence = Array.from((yield* Ref.get(mutationFences)).values()).findLast(
+      (candidate) => candidate.uncertainty.identity.daemonId === daemonId,
+    );
     if (fence !== undefined) yield* onState(fence.state);
   });
 
-  const releaseMutation = (owner: string): Effect.Effect<void> =>
-    Ref.update(mutationSurfaces, (surfaces) => {
-      const next = new Map(surfaces);
-      next.delete(owner);
-      return next;
-    });
-
   const acknowledgeMutation = Effect.fn("KataWorkflow.acknowledgeMutation")(function* (key: string) {
     const fence = (yield* Ref.get(mutationFences)).get(key);
-    if (fence === undefined) return;
+    if (fence === undefined || fence.state.kind !== "partial") return;
     yield* Ref.update(mutationFences, (fences) => {
       const next = new Map(fences);
       next.delete(key);
       return next;
     });
-    yield* publishMutationState(key, {
+    yield* publishMutationState({
       kind: "resolved",
       identity: fence.uncertainty.identity,
-      resolution: "applied",
+      resolution: "partial",
     });
   });
 
@@ -250,16 +289,18 @@ export const makeKataWorkflow: Effect.Effect<KataWorkflowService, never, Scope> 
       return resolution;
     }
     if (fence.state.kind === "partial") {
-      yield* publishMutationState(key, fence.state);
+      yield* publishMutationState(fence.state);
       return "ambiguous";
     }
     const reconciling = { kind: "reconciling", identity: fence.uncertainty.identity } satisfies KataMutationFenceState;
     yield* setMutationFence({ ...fence, state: reconciling });
-    const freshExit = yield* Effect.exit(fence.uncertainty.readFresh);
-    if (Exit.isFailure(freshExit)) {
-      const failure = Cause.findErrorOption(freshExit.cause);
-      const cause = Option.isSome(failure) ? failure.value : freshExit.cause;
-      const message = Option.isSome(failure) ? errorMessage(failure.value) : Cause.pretty(freshExit.cause);
+    const resolutionExit = yield* Effect.exit(
+      "reconcile" in fence.uncertainty ? fence.uncertainty.reconcile : reconcileSnapshotMutation(fence.uncertainty),
+    );
+    if (Exit.isFailure(resolutionExit)) {
+      const failure = Cause.findErrorOption(resolutionExit.cause);
+      const cause = Option.isSome(failure) ? failure.value : resolutionExit.cause;
+      const message = Option.isSome(failure) ? errorMessage(failure.value) : Cause.pretty(resolutionExit.cause);
       yield* setMutationFence({
         ...fence,
         state: { kind: "unknown", identity: fence.uncertainty.identity, message },
@@ -273,17 +314,7 @@ export const makeKataWorkflow: Effect.Effect<KataWorkflowService, never, Scope> 
         }),
       );
     }
-    const fresh = normalizeKataWorkspaceSnapshot(freshExit.value);
-    const isFresh =
-      fresh.daemon_id === fence.uncertainty.identity.daemonId &&
-      fresh.invalidation_epoch > fence.uncertainty.baseline.invalidation_epoch;
-    const resolution: KataMutationResolution = !isFresh
-      ? "ambiguous"
-      : fence.uncertainty.isApplied?.(fresh)
-        ? "applied"
-        : snapshotEvidence(fresh) === snapshotEvidence(fence.uncertainty.baseline)
-          ? "absent"
-          : "ambiguous";
+    const resolution = resolutionExit.value;
     if (resolution === "ambiguous") {
       yield* setMutationFence({
         ...fence,
@@ -300,7 +331,7 @@ export const makeKataWorkflow: Effect.Effect<KataWorkflowService, never, Scope> 
       next.delete(key);
       return next;
     });
-    yield* publishMutationState(key, { kind: "resolved", identity: fence.uncertainty.identity, resolution });
+    yield* publishMutationState({ kind: "resolved", identity: fence.uncertainty.identity, resolution });
     return resolution;
   });
 
@@ -363,22 +394,47 @@ export const makeKataWorkflow: Effect.Effect<KataWorkflowService, never, Scope> 
     RevalidationError,
     R,
   >(
+    daemonId: string,
     mutation: Effect.Effect<A, MutationError>,
     revalidation: Effect.Effect<boolean, RevalidationError, R>,
     onAcknowledged?: ((acknowledgement: A) => Effect.Effect<void>) | undefined,
     uncertainty?: KataMutationUncertainty | undefined,
   ) {
     const revalidationContext = yield* Effect.context<R>();
-    const acknowledgement = yield* Deferred.make<Exit.Exit<A, MutationError | KataMutationBlocked>>();
+    const acknowledgement =
+      yield* Deferred.make<Exit.Exit<A, MutationError | KataMutationBlocked | KataMutationIdentityMismatch>>();
     const replacement = yield* Deferred.make<KataSnapshotReplacementResult>();
     const command = Effect.gen(function* () {
-      if (uncertainty !== undefined && (yield* Ref.get(mutationFences)).has(uncertainty.identity.key)) {
+      const evidenceDaemonId =
+        uncertainty === undefined
+          ? undefined
+          : uncertainty.identity.daemonId !== daemonId
+            ? uncertainty.identity.daemonId
+            : "baseline" in uncertainty && uncertainty.baseline.daemon_id !== daemonId
+              ? uncertainty.baseline.daemon_id
+              : undefined;
+      if (evidenceDaemonId !== undefined) {
+        yield* Deferred.succeed(
+          acknowledgement,
+          Exit.fail(
+            KataMutationIdentityMismatch.make({
+              daemonId,
+              evidenceDaemonId,
+            }),
+          ),
+        );
+        return;
+      }
+      const existingFence = Array.from((yield* Ref.get(mutationFences)).values()).find(
+        (fence) => fence.uncertainty.identity.daemonId === daemonId,
+      );
+      if (existingFence !== undefined) {
         yield* Deferred.succeed(
           acknowledgement,
           Exit.fail(
             KataMutationBlocked.make({
-              key: uncertainty.identity.key,
-              operation: uncertainty.identity.operation,
+              key: existingFence.uncertainty.identity.key,
+              operation: existingFence.uncertainty.identity.operation,
             }),
           ),
         );
@@ -448,8 +504,7 @@ export const makeKataWorkflow: Effect.Effect<KataWorkflowService, never, Scope> 
           }),
         ),
       ),
-    claimMutation,
-    releaseMutation,
+    claimMutations,
     acknowledgeMutation,
     reconcileMutation,
     mutateAndRevalidate,

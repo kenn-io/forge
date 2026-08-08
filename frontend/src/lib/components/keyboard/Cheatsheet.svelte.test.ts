@@ -10,6 +10,7 @@ import {
 import { registerScopedActions, resetRegistry } from "../../stores/keyboard/registry.svelte.js";
 import type { Action } from "../../stores/keyboard/types.js";
 import { resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 const noop = (): void => {};
 const trueWhen = (): boolean => true;
@@ -32,6 +33,10 @@ function sectionByHeader(dialog: Element, header: string): Element | undefined {
   );
 }
 
+function renderCheatsheet() {
+  return render(AppRuntimeHarness, { props: { component: Cheatsheet } });
+}
+
 describe("Cheatsheet", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -46,7 +51,7 @@ describe("Cheatsheet", () => {
   });
 
   it("renders only when isCheatsheetOpen is true", async () => {
-    const { rerender } = render(Cheatsheet, { props: {} });
+    const { rerender } = renderCheatsheet();
     expect(screen.queryByRole("dialog")).toBeNull();
     openCheatsheet();
     await rerender({});
@@ -66,7 +71,7 @@ describe("Cheatsheet", () => {
         key: "g",
       }),
     ]);
-    const { rerender } = render(Cheatsheet, { props: {} });
+    const { rerender } = renderCheatsheet();
     openCheatsheet();
     await rerender({});
     const dialog = screen.getByRole("dialog", {
@@ -79,7 +84,7 @@ describe("Cheatsheet", () => {
 
   it("renders the Commands section for actions without a binding", async () => {
     registerScopedActions("test", [action("test.cmd", "Test command", "global", null)]);
-    const { rerender } = render(Cheatsheet, { props: {} });
+    const { rerender } = renderCheatsheet();
     openCheatsheet();
     await rerender({});
     const dialog = screen.getByRole("dialog", {
@@ -95,7 +100,7 @@ describe("Cheatsheet", () => {
       action("test.alpha", "Alpha command", "global", { key: "a" }),
       action("test.beta", "Beta command", "global", { key: "b" }),
     ]);
-    const { rerender } = render(Cheatsheet, { props: {} });
+    const { rerender } = renderCheatsheet();
     openCheatsheet();
     await rerender({});
     const dialog = screen.getByRole("dialog", {
@@ -120,7 +125,7 @@ describe("Cheatsheet", () => {
   });
 
   it("clicking the shared overlay closes the cheatsheet", async () => {
-    const { rerender, container } = render(Cheatsheet, { props: {} });
+    const { rerender, container } = renderCheatsheet();
     openCheatsheet();
     await rerender({});
     expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).not.toBeNull();
@@ -137,7 +142,7 @@ describe("Cheatsheet", () => {
         key: "g",
       }),
     ]);
-    const { rerender } = render(Cheatsheet, { props: {} });
+    const { rerender } = renderCheatsheet();
     openCheatsheet();
     await rerender({});
     const dialog = screen.getByRole("dialog", {

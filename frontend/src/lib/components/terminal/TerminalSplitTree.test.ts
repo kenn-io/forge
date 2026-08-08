@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
 import { sessionPaneKey } from "../../stores/session-pane-key.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { ComponentProps } from "svelte";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import TerminalSplitTree from "./TerminalSplitTree.svelte";
 import type { PaneNode } from "./terminal-layout";
 import { clearActiveTerminalDrag, readRuntimeSessionDrag } from "./terminal-drag";
@@ -59,6 +61,10 @@ function split(direction: "horizontal" | "vertical" = "horizontal"): PaneNode {
   };
 }
 
+function renderTerminalSplitTree(props: ComponentProps<typeof TerminalSplitTree>) {
+  return render(AppRuntimeHarness, { props: { component: TerminalSplitTree, ...props } });
+}
+
 function mockRect(width = 1000, height = 600): void {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
     width,
@@ -95,14 +101,12 @@ describe("TerminalSplitTree", () => {
   });
 
   it("keeps every leaf of a split on screen, not only the focused one", async () => {
-    render(TerminalSplitTree, {
-      props: {
-        workspaceId: "ws-1",
-        node: split(),
-        sessions,
-        displayLabels: {},
-        activeSessionKey: sessions[0]!.key,
-      },
+    renderTerminalSplitTree({
+      workspaceId: "ws-1",
+      node: split(),
+      sessions,
+      displayLabels: {},
+      activeSessionKey: sessions[0]!.key,
     });
 
     // Both leaves of a split are painted side by side, so both terminals have
@@ -115,15 +119,13 @@ describe("TerminalSplitTree", () => {
   });
 
   it("hides every leaf while the host is parked", async () => {
-    render(TerminalSplitTree, {
-      props: {
-        workspaceId: "ws-1",
-        node: split(),
-        sessions,
-        displayLabels: {},
-        activeSessionKey: sessions[0]!.key,
-        hostVisible: false,
-      },
+    renderTerminalSplitTree({
+      workspaceId: "ws-1",
+      node: split(),
+      sessions,
+      displayLabels: {},
+      activeSessionKey: sessions[0]!.key,
+      hostVisible: false,
     });
 
     for (const session of sessions.slice(0, 2)) {
@@ -134,16 +136,14 @@ describe("TerminalSplitTree", () => {
 
   it("publishes and clears a detail-pane payload from a terminal leaf drag", async () => {
     const paneKey = sessionPaneKey("ws-1", undefined, sessions[0]!.key);
-    render(TerminalSplitTree, {
-      props: {
-        workspaceId: "ws-1",
-        node: leaf("leaf-a", sessions[0]!.key),
-        sessions: sessions.slice(0, 2),
-        displayLabels: {},
-        activeSessionKey: sessions[0]!.key,
-        dragScope: "detail:prs",
-        paneKeyForSession: (sessionKey: string) => (sessionKey === sessions[0]!.key ? paneKey : null),
-      },
+    renderTerminalSplitTree({
+      workspaceId: "ws-1",
+      node: leaf("leaf-a", sessions[0]!.key),
+      sessions: sessions.slice(0, 2),
+      displayLabels: {},
+      activeSessionKey: sessions[0]!.key,
+      dragScope: "detail:prs",
+      paneKeyForSession: (sessionKey: string) => (sessionKey === sessions[0]!.key ? paneKey : null),
     });
     const data = new Map<string, string>();
     const dataTransfer = {
@@ -165,15 +165,13 @@ describe("TerminalSplitTree", () => {
   it("resizes a horizontal split with truthful pixel ARIA values", async () => {
     mockRect();
     const onRatioChange = vi.fn();
-    render(TerminalSplitTree, {
-      props: {
-        workspaceId: "ws-1",
-        node: split(),
-        sessions,
-        displayLabels: {},
-        activeSessionKey: sessions[0]!.key,
-        onRatioChange,
-      },
+    renderTerminalSplitTree({
+      workspaceId: "ws-1",
+      node: split(),
+      sessions,
+      displayLabels: {},
+      activeSessionKey: sessions[0]!.key,
+      onRatioChange,
     });
 
     const handle = screen.getByRole("separator", { name: "Resize split" });
@@ -195,15 +193,13 @@ describe("TerminalSplitTree", () => {
     const onRatioChange = vi.fn();
     const node = split("vertical");
     if (node.type === "split") node.ratio = 0.87;
-    render(TerminalSplitTree, {
-      props: {
-        workspaceId: "ws-1",
-        node,
-        sessions,
-        displayLabels: {},
-        activeSessionKey: sessions[0]!.key,
-        onRatioChange,
-      },
+    renderTerminalSplitTree({
+      workspaceId: "ws-1",
+      node,
+      sessions,
+      displayLabels: {},
+      activeSessionKey: sessions[0]!.key,
+      onRatioChange,
     });
 
     const handle = screen.getByRole("separator", { name: "Resize split" });
@@ -231,15 +227,13 @@ describe("TerminalSplitTree", () => {
         second: leaf("leaf-c", sessions[2]!.key),
       },
     };
-    render(TerminalSplitTree, {
-      props: {
-        workspaceId: "ws-1",
-        node,
-        sessions,
-        displayLabels: {},
-        activeSessionKey: sessions[0]!.key,
-        onRatioChange,
-      },
+    renderTerminalSplitTree({
+      workspaceId: "ws-1",
+      node,
+      sessions,
+      displayLabels: {},
+      activeSessionKey: sessions[0]!.key,
+      onRatioChange,
     });
 
     const handles = screen.getAllByRole("separator", { name: "Resize split" });

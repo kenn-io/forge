@@ -62,7 +62,7 @@ func TestRepositoryFeatureError(t *testing.T) {
 		{
 			name: "gone enabled issues", feature: platform.RepositoryFeatureIssues,
 			operationErr:      &gitlab.ErrorResponse{StatusCode: http.StatusGone, Message: "feature failed"},
-			issuesAccessLevel: "public", wantTarget: platform.ErrInvalidRepoRef,
+			issuesAccessLevel: "public", wantTarget: platform.ErrProviderContract,
 			wantOriginal: true, wantMetadataCalls: 1,
 		},
 		{
@@ -89,7 +89,7 @@ func TestRepositoryFeatureError(t *testing.T) {
 		{
 			name: "server failure", feature: platform.RepositoryFeatureIssues,
 			operationErr: &gitlab.ErrorResponse{StatusCode: http.StatusInternalServerError, Message: "feature failed"},
-			wantTarget:   platform.ErrInvalidRepoRef, wantOriginal: true,
+			wantTarget:   platform.ErrProviderContract, wantOriginal: true,
 		},
 		{
 			name: "context canceled", feature: platform.RepositoryFeatureIssues,

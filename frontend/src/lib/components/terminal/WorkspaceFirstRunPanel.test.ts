@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import WorkspaceFirstRunPanel from "./WorkspaceFirstRunPanel.svelte";
+import WorkspaceFirstRunPanel from "./WorkspaceFirstRunPanelRuntimeHarness.svelte";
 
 const mocks = vi.hoisted(() => ({
   cloneProject: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("../../api/fleet-snapshot.ts", () => ({
 vi.mock("../../api/project-intake.ts", () => ({
   cloneProject: mocks.cloneProject,
   listUserRepositories: mocks.listUserRepositories,
+  projectIntakeFailureMessage: (failure: unknown) => (failure instanceof Error ? failure.message : String(failure)),
   registerExistingProject: mocks.registerExistingProject,
 }));
 
@@ -75,7 +77,7 @@ describe("WorkspaceFirstRunPanel", () => {
     mocks.cloneProject.mockReset();
     mocks.listUserRepositories.mockReset();
     mocks.loadSnapshotHosts.mockReset();
-    mocks.loadSnapshotHosts.mockResolvedValue([]);
+    mocks.loadSnapshotHosts.mockReturnValue(Effect.succeed([]));
     mocks.navigate.mockReset();
     mocks.registerExistingProject.mockReset();
     mocks.showFlash.mockReset();
@@ -103,6 +105,30 @@ describe("WorkspaceFirstRunPanel", () => {
     ).toBeTruthy();
   });
 
+  it("interrupts the pending host snapshot load when the panel unmounts", async () => {
+    let interrupted = false;
+    mocks.loadSnapshotHosts.mockReturnValue(
+      Effect.never.pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            interrupted = true;
+          }),
+        ),
+      ),
+    );
+    setupConfig({ ghAuthed: true });
+    const view = render(WorkspaceFirstRunPanel);
+    await waitFor(() => {
+      expect(mocks.loadSnapshotHosts).toHaveBeenCalledOnce();
+    });
+
+    view.unmount();
+
+    await waitFor(() => {
+      expect(interrupted).toBe(true);
+    });
+  });
+
   it("disables the GitHub action with a recovery hint when gh is not authenticated", () => {
     setupConfig({ ghAuthed: false, ghAvailable: true });
     render(WorkspaceFirstRunPanel);
@@ -122,7 +148,7 @@ describe("WorkspaceFirstRunPanel", () => {
   });
 
   it("registers an existing repository and notifies the host", async () => {
-    mocks.registerExistingProject.mockResolvedValue(project("prj_existing"));
+    mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_existing")));
     const command = setupConfig({ ghAuthed: true });
     render(WorkspaceFirstRunPanel);
 
@@ -137,7 +163,7 @@ describe("WorkspaceFirstRunPanel", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
 
     await waitFor(() => {
-      expect(mocks.registerExistingProject).toHaveBeenCalledWith("/tmp/repo");
+      expect(mocks.registerExistingProject).toHaveBeenCalledWith("/tmp/repo", undefined);
     });
     expect(command).toHaveBeenCalledWith("project-registered", {
       projectId: "prj_existing",
@@ -146,33 +172,35 @@ describe("WorkspaceFirstRunPanel", () => {
   });
 
   it("adds a project on a scoped host", async () => {
-    mocks.registerExistingProject.mockResolvedValue(project("prj_remote"));
-    mocks.loadSnapshotHosts.mockResolvedValue([
-      {
-        configKey: "local",
-        diagnostics: [],
-        id: "local",
-        kind: "self",
-        name: "Local",
-        operationAvailability: {},
-        platform: "github",
-        preferredTransport: "local",
-        reachable: true,
-        tmuxSessions: [],
-      },
-      {
-        configKey: "epyc",
-        diagnostics: [],
-        id: "epyc",
-        kind: "remote",
-        name: "EPYC",
-        operationAvailability: {},
-        platform: "github",
-        preferredTransport: "ssh",
-        reachable: true,
-        tmuxSessions: [],
-      },
-    ]);
+    mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_remote")));
+    mocks.loadSnapshotHosts.mockReturnValue(
+      Effect.succeed([
+        {
+          configKey: "local",
+          diagnostics: [],
+          id: "local",
+          kind: "self",
+          name: "Local",
+          operationAvailability: {},
+          platform: "github",
+          preferredTransport: "local",
+          reachable: true,
+          tmuxSessions: [],
+        },
+        {
+          configKey: "epyc",
+          diagnostics: [],
+          id: "epyc",
+          kind: "remote",
+          name: "EPYC",
+          operationAvailability: {},
+          platform: "github",
+          preferredTransport: "ssh",
+          reachable: true,
+          tmuxSessions: [],
+        },
+      ]),
+    );
     const command = setupConfig({ ghAuthed: true });
     render(WorkspaceFirstRunPanel, {
       props: { firstRun: false, hostKey: "epyc" },
@@ -201,6 +229,41 @@ describe("WorkspaceFirstRunPanel", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("/workspaces");
   });
 
+  it("finishes an accepted registration under its original host identity", async () => {
+    let completeRegistration: ((value: ReturnType<typeof project>) => void) | undefined;
+    const pendingRegistration = new Promise<ReturnType<typeof project>>((resolve) => {
+      completeRegistration = resolve;
+    });
+    mocks.registerExistingProject.mockReturnValue(Effect.promise(() => pendingRegistration));
+    const command = setupConfig({ ghAuthed: true });
+    const view = render(WorkspaceFirstRunPanel, {
+      props: { firstRun: false },
+    });
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: /Add an existing local repository/i,
+      }),
+    );
+    await fireEvent.input(screen.getByLabelText("Repository path"), {
+      target: { value: "/tmp/repo" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+    await waitFor(() => {
+      expect(mocks.registerExistingProject).toHaveBeenCalledOnce();
+    });
+
+    await view.rerender({ firstRun: false, hostKey: "epyc" });
+    if (!completeRegistration) throw new Error("project registration did not start");
+    completeRegistration(project("prj_old_host"));
+
+    await waitFor(() => {
+      expect(command).toHaveBeenCalledWith("project-registered", {
+        projectId: "prj_old_host",
+      });
+    });
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
   it("disables GitHub repository picking on scoped hosts", () => {
     setupConfig({ ghAuthed: true });
     render(WorkspaceFirstRunPanel, {
@@ -217,8 +280,31 @@ describe("WorkspaceFirstRunPanel", () => {
     expect(mocks.listUserRepositories).not.toHaveBeenCalled();
   });
 
+  it("clears the local GitHub picker when the panel moves to a scoped host", async () => {
+    mocks.listUserRepositories.mockReturnValue(
+      Effect.succeed([
+        {
+          name_with_owner: "octo/one",
+          ssh_url: "git@github.com:octo/one.git",
+          default_branch: "main",
+        },
+      ]),
+    );
+    setupConfig({ ghAuthed: true });
+    const view = render(WorkspaceFirstRunPanel, { props: { firstRun: false } });
+    await fireEvent.click(screen.getByRole("button", { name: /Connect a GitHub repository/i }));
+    await screen.findByRole("combobox", { name: /GitHub repository/ });
+
+    await view.rerender({ firstRun: false, hostKey: "epyc" });
+
+    expect(screen.queryByRole("combobox", { name: /GitHub repository/ })).toBeNull();
+    expect((screen.getByRole("button", { name: /Connect a GitHub repository/i }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
   it("falls back to injected workspace host metadata", async () => {
-    mocks.loadSnapshotHosts.mockRejectedValue(new Error("snapshot down"));
+    mocks.loadSnapshotHosts.mockReturnValue(Effect.fail(new Error("snapshot down")));
     setupConfig({ ghAuthed: true });
     win.__kenn_forge_config.workspace = {
       selectedHostKey: "local",
@@ -255,7 +341,7 @@ describe("WorkspaceFirstRunPanel", () => {
   });
 
   it("clones a Git URL and notifies the host", async () => {
-    mocks.cloneProject.mockResolvedValue(project("prj_clone"));
+    mocks.cloneProject.mockReturnValue(Effect.succeed(project("prj_clone")));
     const command = setupConfig({ ghAuthed: true });
     render(WorkspaceFirstRunPanel);
 
@@ -272,7 +358,7 @@ describe("WorkspaceFirstRunPanel", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Clone repository" }));
 
     await waitFor(() => {
-      expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/repo.git", "/tmp/repo", "main");
+      expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/repo.git", "/tmp/repo", "main", undefined);
     });
     expect(command).toHaveBeenCalledWith("project-registered", {
       projectId: "prj_clone",
@@ -280,19 +366,21 @@ describe("WorkspaceFirstRunPanel", () => {
   });
 
   it("loads GitHub repositories and clones the selected repository", async () => {
-    mocks.listUserRepositories.mockResolvedValue([
-      {
-        name_with_owner: "octo/one",
-        ssh_url: "git@github.com:octo/one.git",
-        default_branch: "main",
-      },
-      {
-        name_with_owner: "octo/two",
-        ssh_url: "git@github.com:octo/two.git",
-        default_branch: "trunk",
-      },
-    ]);
-    mocks.cloneProject.mockResolvedValue(project("prj_gh"));
+    mocks.listUserRepositories.mockReturnValue(
+      Effect.succeed([
+        {
+          name_with_owner: "octo/one",
+          ssh_url: "git@github.com:octo/one.git",
+          default_branch: "main",
+        },
+        {
+          name_with_owner: "octo/two",
+          ssh_url: "git@github.com:octo/two.git",
+          default_branch: "trunk",
+        },
+      ]),
+    );
+    mocks.cloneProject.mockReturnValue(Effect.succeed(project("prj_gh")));
     setupConfig({ ghAuthed: true });
     render(WorkspaceFirstRunPanel);
 
@@ -309,24 +397,26 @@ describe("WorkspaceFirstRunPanel", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Clone repository" }));
 
     await waitFor(() => {
-      expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/two.git", "/tmp/two", "");
+      expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/two.git", "/tmp/two", "", undefined);
     });
   });
 
   it("clones the repository shown after a filter hides the default selection", async () => {
-    mocks.listUserRepositories.mockResolvedValue([
-      {
-        name_with_owner: "octo/one",
-        ssh_url: "git@github.com:octo/one.git",
-        default_branch: "main",
-      },
-      {
-        name_with_owner: "octo/two",
-        ssh_url: "git@github.com:octo/two.git",
-        default_branch: "trunk",
-      },
-    ]);
-    mocks.cloneProject.mockResolvedValue(project("prj_filtered"));
+    mocks.listUserRepositories.mockReturnValue(
+      Effect.succeed([
+        {
+          name_with_owner: "octo/one",
+          ssh_url: "git@github.com:octo/one.git",
+          default_branch: "main",
+        },
+        {
+          name_with_owner: "octo/two",
+          ssh_url: "git@github.com:octo/two.git",
+          default_branch: "trunk",
+        },
+      ]),
+    );
+    mocks.cloneProject.mockReturnValue(Effect.succeed(project("prj_filtered")));
     setupConfig({ ghAuthed: true });
     render(WorkspaceFirstRunPanel);
 
@@ -347,12 +437,12 @@ describe("WorkspaceFirstRunPanel", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Clone repository" }));
 
     await waitFor(() => {
-      expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/two.git", "/tmp/two", "");
+      expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/two.git", "/tmp/two", "", undefined);
     });
   });
 
   it("surfaces host callback failures after registration", async () => {
-    mocks.registerExistingProject.mockResolvedValue(project("prj_existing"));
+    mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_existing")));
     setupConfig({
       ghAuthed: true,
       onWorkspaceCommand: vi.fn().mockResolvedValue({
@@ -379,6 +469,48 @@ describe("WorkspaceFirstRunPanel", () => {
     });
     expect(screen.queryByText("refresh failed")).toBeNull();
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("surfaces an invalid host acknowledgement after registration", async () => {
+    mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_existing")));
+    setupConfig({
+      ghAuthed: true,
+      onWorkspaceCommand: vi.fn().mockResolvedValue(undefined),
+    });
+    render(WorkspaceFirstRunPanel);
+    await fireEvent.click(screen.getByRole("button", { name: /Add an existing local repository/i }));
+    await fireEvent.input(screen.getByLabelText("Repository path"), {
+      target: { value: "/tmp/repo" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+
+    await waitFor(() => {
+      expect(mocks.showFlash).toHaveBeenCalledWith("The host returned an invalid project acknowledgement.", {
+        tone: "danger",
+      });
+    });
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("retries only host acknowledgement after project registration commits", async () => {
+    mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_existing")));
+    const command = setupConfig({
+      ghAuthed: true,
+      onWorkspaceCommand: vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce({ ok: true }),
+    });
+    render(WorkspaceFirstRunPanel);
+    await fireEvent.click(screen.getByRole("button", { name: /Add an existing local repository/i }));
+    await fireEvent.input(screen.getByLabelText("Repository path"), {
+      target: { value: "/tmp/repo" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+    await waitFor(() => expect(mocks.showFlash).toHaveBeenCalledOnce());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith("/workspaces/embed/project/prj_existing"));
+    expect(mocks.registerExistingProject).toHaveBeenCalledOnce();
+    expect(command).toHaveBeenCalledTimes(2);
   });
 
   it("renders the tooling status block beneath the actions", () => {

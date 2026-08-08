@@ -1,7 +1,10 @@
+import { Effect } from "effect";
 import { getStack } from "./modal-stack.svelte.js";
 import { showFlash } from "../flash.svelte.js";
 import { getAllActions } from "./registry.svelte.js";
 import { isTerminalKeyboardTarget, shouldIgnoreGlobalShortcutTarget } from "../../utils/keyboardShortcuts.js";
+import type { AppRuntime, AppServices } from "../../app/runtime.js";
+import type { KeyboardHandlerResult } from "./keyspec.js";
 import type { Action, Context, KeySpec } from "./types.js";
 
 const RESERVED_WHILE_MODAL_OPEN: KeySpec[] = [
@@ -19,7 +22,7 @@ const SCOPE_SPECIFICITY: Record<Action["scope"], number> = {
   global: 10,
 };
 
-export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Context): void {
+export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Context, runtime: AppRuntime): void {
   // A focused terminal owns every key except the explicit shifted palette
   // chord, and it otherwise outranks the modal stack too: a frame that did not
   // trap focus cannot be holding the keyboard the user is typing into. Not even
@@ -36,7 +39,7 @@ export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Con
         if (!matches(a.binding, event)) continue;
         if (a.when && !a.when(modalCtx)) continue;
         event.preventDefault();
-        runHandler(a, modalCtx);
+        runHandler(a, modalCtx, runtime);
         return;
       }
     }
@@ -60,7 +63,7 @@ export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Con
   });
 
   event.preventDefault();
-  runHandler(matchingActions[0]!, ctx);
+  runHandler(matchingActions[0]!, ctx, runtime);
 }
 
 function isTerminalPaletteShortcut(event: KeyboardEvent): boolean {
@@ -69,39 +72,30 @@ function isTerminalPaletteShortcut(event: KeyboardEvent): boolean {
 
 interface RunnableAction {
   id: string;
-  handler: (ctx: Context) => void | Promise<void>;
+  handler: (ctx: Context) => KeyboardHandlerResult;
 }
 
 const inFlight = new Set<string>();
 
-export type CommandHandlerResult = void | Promise<void>;
-
-export function handleCommandResult(
-  result: CommandHandlerResult,
-  onRejected: (err: unknown) => void,
-  onSettled?: () => void,
-): boolean {
-  if (result === undefined) return false;
-  result.catch(onRejected).finally(onSettled);
-  return true;
-}
-
-function runHandler(action: RunnableAction, ctx: Context): void {
+function runHandler(action: RunnableAction, ctx: Context, runtime: AppRuntime): void {
   if (inFlight.has(action.id)) return;
-  try {
-    const result = action.handler(ctx);
-    if (
-      handleCommandResult(
-        result,
-        (err) => surfaceError(action.id, err),
-        () => inFlight.delete(action.id),
-      )
-    ) {
-      inFlight.add(action.id);
-    }
-  } catch (err) {
-    surfaceError(action.id, err);
-  }
+  inFlight.add(action.id);
+  runtime.runCommand(
+    Effect.try({
+      try: () => action.handler(ctx),
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.flatMap(
+        (result): Effect.Effect<void, unknown, AppServices> => (result === undefined ? Effect.void : result),
+      ),
+      Effect.ensuring(Effect.sync(() => inFlight.delete(action.id))),
+    ),
+    {
+      operation: "run keyboard action",
+      safeContext: { actionId: action.id },
+      onFailure: (error) => surfaceError(action.id, error),
+    },
+  );
 }
 
 function surfaceError(actionId: string, err: unknown): void {

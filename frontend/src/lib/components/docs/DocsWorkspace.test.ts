@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { makeAppRuntime } from "../../app/runtime";
 import DocsWorkspace from "./DocsWorkspaceTestHarness.svelte";
 import { createMockDocsBackend } from "./docsTestBackend";
 import { defaultDocsRoute, type DocsRoute } from "../../api/docs/route";
@@ -126,6 +128,37 @@ describe("DocsWorkspace", () => {
     await rerender({ route: { mode: "docs", folder: "a", doc: "b::c.md" }, onRouteChange: vi.fn(), api });
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Second Doc" })).toBeTruthy());
+  });
+
+  test("switching documents aborts the obsolete file request", async () => {
+    const backend = createMockDocsBackend();
+    let obsoleteSignal: AbortSignal | undefined;
+    const readFile = vi.fn((folderID: string, relPath: string, signal?: AbortSignal) => {
+      if (folderID === "notes") {
+        obsoleteSignal = signal;
+        return new Promise<string>(() => {});
+      }
+      return backend.readFile(folderID, relPath);
+    });
+    const api = { ...backend, readFile };
+    const onRouteChange = vi.fn();
+    const { rerender } = render(DocsWorkspace, {
+      props: {
+        route: { mode: "docs", folder: "notes", doc: "README.md" },
+        onRouteChange,
+        api,
+      },
+    });
+    await waitFor(() => expect(readFile).toHaveBeenCalledWith("notes", "README.md", expect.any(AbortSignal)));
+
+    await rerender({
+      route: { mode: "docs", folder: "engineering", doc: "index.md" },
+      onRouteChange,
+      api,
+    });
+
+    await waitFor(() => expect(obsoleteSignal?.aborted).toBe(true));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Engineering Wiki" })).toBeTruthy());
   });
 
   test("warns when the active folder daemon binding is stale", async () => {
@@ -290,20 +323,131 @@ describe("DocsWorkspace", () => {
     expect(screen.getByRole("heading", { name: /Welcome to Notes/ })).toBeTruthy();
   });
 
+  test("finishes saving when the write response is lost but the document read confirms the content", async () => {
+    const backend = createMockDocsBackend();
+    const writeFile = vi.fn(async (folderID: string, path: string, content: string, signal?: AbortSignal) => {
+      await backend.writeFile(folderID, path, content, signal);
+      throw new Error("response lost after commit");
+    });
+    const api = { ...backend, writeFile };
+    render(DocsWorkspace, {
+      props: {
+        route: { mode: "docs", folder: "notes", doc: "README.md" },
+        onRouteChange: vi.fn(),
+        api,
+      },
+    });
+    await screen.findByRole("heading", { name: /Welcome to Notes/ });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Save", exact: true }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy());
+  });
+
   test("Add folder action opens the AddFolderDialog", async () => {
     renderWorkspace();
     await fireEvent.click(await screen.findByRole("button", { name: /Add folder/ }));
     await waitFor(() => screen.getByRole("dialog", { name: "Add folder" }));
   });
 
+  test("treats a created file as committed when its response is lost but the tree confirms it", async () => {
+    const backend = createMockDocsBackend();
+    const createFile = vi.fn(async (folderID: string, path: string, content?: string, signal?: AbortSignal) => {
+      await backend.createFile(folderID, path, content, signal);
+      throw new Error("response lost after commit");
+    });
+    const tree = vi.fn(backend.tree);
+    const api = { ...backend, createFile, tree };
+    const onRouteChange = vi.fn();
+    render(DocsWorkspace, {
+      props: { route: { mode: "docs", folder: "notes", doc: null }, onRouteChange, api },
+    });
+    await screen.findByRole("button", { name: "New file" });
+    const initialTreeCalls = tree.mock.calls.length;
+
+    await fireEvent.click(screen.getByRole("button", { name: "New file" }));
+    const dialog = await screen.findByRole("dialog", { name: "New file" });
+    await fireEvent.input(within(dialog).getByRole("textbox", { name: "Filename" }), {
+      target: { value: "Recovered" },
+    });
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(onRouteChange).toHaveBeenCalledWith({ mode: "docs", folder: "notes", doc: "Recovered.md" }),
+    );
+    expect(tree.mock.calls.length).toBeGreaterThan(initialTreeCalls);
+  });
+
+  test("refreshes a replacement workspace without calling the departed mutation presenter", async () => {
+    const backend = createMockDocsBackend();
+    const createStarted = Promise.withResolvers<void>();
+    const releaseCreate = Promise.withResolvers<void>();
+    const createFile = vi.fn(async (folderID: string, path: string, content?: string, signal?: AbortSignal) => {
+      createStarted.resolve();
+      await releaseCreate.promise;
+      return backend.createFile(folderID, path, content, signal);
+    });
+    const tree = vi.fn(backend.tree);
+    const api = { ...backend, createFile, tree };
+    const runtime = makeAppRuntime();
+    const departedRouteChange = vi.fn();
+    try {
+      const departed = render(DocsWorkspace, {
+        props: {
+          route: { mode: "docs", folder: "notes", doc: null },
+          onRouteChange: departedRouteChange,
+          api,
+          runtime,
+        },
+      });
+      await screen.findByRole("button", { name: "New file" });
+      departedRouteChange.mockClear();
+      await fireEvent.click(screen.getByRole("button", { name: "New file" }));
+      const dialog = await screen.findByRole("dialog", { name: "New file" });
+      await fireEvent.input(within(dialog).getByRole("textbox", { name: "Filename" }), {
+        target: { value: "Replacement" },
+      });
+      await fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+      await createStarted.promise;
+
+      departed.unmount();
+      render(DocsWorkspace, {
+        props: {
+          route: { mode: "docs", folder: "notes", doc: null },
+          onRouteChange: vi.fn(),
+          api,
+          runtime,
+        },
+      });
+      await screen.findByRole("button", { name: "New file" });
+      const replacementTreeCalls = tree.mock.calls.length;
+
+      releaseCreate.resolve();
+
+      await waitFor(() => expect(tree.mock.calls.length).toBeGreaterThan(replacementTreeCalls));
+      expect(departedRouteChange).not.toHaveBeenCalled();
+    } finally {
+      releaseCreate.resolve();
+      await Effect.runPromise(runtime.disposeEffect);
+    }
+  });
+
   test("renaming the active folder updates the selector", async () => {
-    renderWorkspace({ folder: "notes" });
+    const backend = createMockDocsBackend();
+    const renameFolder = vi.fn((id: string, name: string, signal?: AbortSignal) =>
+      backend.renameFolder(id, name, signal),
+    );
+    const api = { ...backend, renameFolder };
+    const route: DocsRoute = { mode: "docs", folder: "notes", doc: null };
+    render(DocsWorkspace, { props: { route, onRouteChange: vi.fn(), api } });
     await fireEvent.click(await screen.findByRole("button", { name: "Rename Notes" }));
     const dialog = await waitFor(() => screen.getByRole("dialog", { name: "Rename folder" }));
     const input = within(dialog).getByRole("textbox") as HTMLInputElement;
     await fireEvent.input(input, { target: { value: "Personal Notes" } });
     await fireEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rename folder" })).toBeNull());
+    expect(renameFolder).toHaveBeenCalledWith("notes", "Personal Notes", expect.any(AbortSignal));
     expect(screen.getByRole("combobox", { name: "Switch folder: Personal Notes" })).toBeTruthy();
   });
 
@@ -409,7 +553,7 @@ describe("DocsWorkspace", () => {
     const readCalls = readFile.mock.calls.length;
     await fireEvent.click(button);
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Pulled to abcdef1"));
-    expect(gitPull).toHaveBeenCalledWith("x");
+    expect(gitPull).toHaveBeenCalledWith("x", expect.any(AbortSignal));
     expect(tree.mock.calls.length).toBeGreaterThan(treeCalls);
     expect(gitStatus.mock.calls.length).toBeGreaterThan(statusCalls);
     expect(readFile.mock.calls.length).toBeGreaterThan(readCalls);
@@ -463,6 +607,31 @@ describe("DocsWorkspace", () => {
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("diverged"));
   });
 
+  test("retries an idempotent pull when its response is lost", async () => {
+    const backend = createMockDocsBackend();
+    let attempts = 0;
+    const gitPull = vi.fn(async (folderID: string, signal?: AbortSignal) => {
+      const result = await backend.gitPull(folderID, signal);
+      attempts += 1;
+      if (attempts === 1) throw new Error("response lost after pull");
+      return result;
+    });
+    const api = { ...backend, gitPull };
+    render(DocsWorkspace, {
+      props: {
+        route: { mode: "docs", folder: "notes", doc: "README.md" },
+        onRouteChange: vi.fn(),
+        api,
+      },
+    });
+    await screen.findByRole("heading", { name: /Welcome to Notes/ });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Pull from git" }));
+
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Already up to date."));
+    expect(gitPull).toHaveBeenCalledTimes(2);
+  });
+
   test("edit is disabled while a pull is in flight so a draft can't capture pre-pull content", async () => {
     const backend = createMockDocsBackend();
     let resolvePull!: (v: {
@@ -495,6 +664,7 @@ describe("DocsWorkspace", () => {
     // later save would overwrite the pulled content, so Edit must stay
     // unavailable until the pull settles.
     expect(editButton.hasAttribute("disabled")).toBe(true);
+    await waitFor(() => expect(gitPull).toHaveBeenCalledWith("notes", expect.any(AbortSignal)));
     resolvePull({
       branch: "main",
       upstream: "origin/main",
@@ -506,7 +676,7 @@ describe("DocsWorkspace", () => {
     expect(editButton.hasAttribute("disabled")).toBe(false);
   });
 
-  test("switching folders while the pull's refreshes are pending abandons the stale reloads", async () => {
+  test("switching folders does not cancel an accepted pull's reconciliation", async () => {
     const backend = createMockDocsBackend();
     let releaseTree!: () => void;
     const treeGate = new Promise<void>((resolve) => {
@@ -537,16 +707,14 @@ describe("DocsWorkspace", () => {
     // The pull resolved and its tree refresh is now parked on the gate.
     await waitFor(() => expect(tree.mock.calls.length).toBeGreaterThan(mountTreeCalls));
     await rerender({ route: { mode: "docs", folder: "engineering", doc: null }, onRouteChange, api });
-    await waitFor(() => expect(gitStatus).toHaveBeenCalledWith("engineering"));
+    await waitFor(() => expect(gitStatus).toHaveBeenCalledWith("engineering", expect.any(AbortSignal)));
     const notesStatusCalls = gitStatus.mock.calls.filter((c) => c[0] === "notes").length;
     const notesReads = readFile.mock.calls.filter((c) => c[0] === "notes").length;
     releaseTree();
-    // Let the parked pull refresh chain settle before asserting it went
-    // no further than the folder guard.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(gitStatus.mock.calls.filter((c) => c[0] === "notes").length).toBe(notesStatusCalls);
-    expect(readFile.mock.calls.filter((c) => c[0] === "notes").length).toBe(notesReads);
+    await waitFor(() =>
+      expect(gitStatus.mock.calls.filter((c) => c[0] === "notes").length).toBeGreaterThan(notesStatusCalls),
+    );
+    expect(readFile.mock.calls.filter((c) => c[0] === "notes").length).toBeGreaterThan(notesReads);
     // The old folder's pull outcome must not be announced over the new view.
     expect(screen.queryByRole("status")?.textContent ?? "").not.toContain("Already up to date.");
   });

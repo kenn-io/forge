@@ -1,14 +1,16 @@
 <script lang="ts">
-  import { Cause, Effect, Exit, Option } from "effect";
+  import { Effect } from "effect";
   import { onDestroy, untrack } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import type { AppServices } from "../../app/runtime.js";
+  import type { AppExecution } from "../../app/runtime.js";
   import { showFlash } from "../../stores/flash.svelte.js";
 
   import {
     createKataTaskAPI,
     KataMutationOutcomeUnknownError,
     KataMutationPartiallyAppliedError,
+    KataTaskRevisionConflictError,
   } from "../../api/kata/taskClient.js";
   import {
     fetchKataWorkspaceSnapshot,
@@ -16,7 +18,6 @@
     type KataSnapshotIntent,
     type KataTaskReferenceSearch,
   } from "../../api/kata/snapshot.js";
-  import type { KataWorkspaceSnapshotProjection } from "../../api/kata/snapshotProjection.js";
   import type {
     KataCreateRecurrenceInput,
     KataPatchRecurrenceInput,
@@ -30,16 +31,40 @@
     KataTaskMutationTarget,
     KataTaskSummary,
   } from "../../api/kata/taskTypes.js";
+  import {
+    normalizeKataEventEnvelope,
+    normalizeKataProject,
+    normalizeKataTaskDetail,
+    normalizeKataTaskSummary,
+  } from "../../api/kata/taskNormalizers.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import KataIssueDetail from "../../components/kata/KataIssueDetail.svelte";
   import type { TypeaheadOption } from "@kenn-io/kit-ui";
   import KataRecurrenceDialogs from "../../features/kata/KataRecurrenceDialogs.svelte";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
   import { createKataLinkFilters, type KataLinkFilters } from "../../features/kata/kataLinkFilters.js";
+  import { KataRecurrenceConflictError } from "../../features/kata/recurrence-conflict.js";
   import {
     KataMutationError,
     KataWorkflow,
+    type KataCustomMutationUncertainty,
     type KataMutationFenceState,
   } from "../../features/kata/kata-workflow.js";
+  import {
+    commentMutationEvidence,
+    editMutationEvidence,
+    kataMutationIdentity,
+    labelMutationEvidence,
+    metadataMutationEvidence,
+    moveMutationEvidence,
+    ownerMutationEvidence,
+    priorityMutationEvidence,
+    reconcileRecurrenceMutation,
+    recurrenceCreateMatches,
+    recurrencePatchMatches,
+    statusMutationEvidence,
+    type KataMutationEvidence,
+  } from "../../features/kata/kata-mutation-evidence.js";
   import { createKataWorkspaceAuthorityOwner } from "../../features/kata/kataWorkspaceAuthorityController.svelte.js";
   import { createKataAuthorityStore } from "../../stores/kata-authority.svelte.js";
 
@@ -67,14 +92,11 @@
   let recurrenceConflictRecoveryPending = $state(false);
   let mutationOutcomeUnknown = $state(false);
   let mutationPartialOutcome = $state(false);
-  let mutationRefreshGeneration = 0;
   let mutationTransportPending = false;
   let mutationRecurrenceRefreshRequired = false;
   let checklistRevealed = $state(false);
   let linkFilters = $state<KataLinkFilters>(createKataLinkFilters("all"));
-  let pendingMoveIssueUIDs = $state.raw<ReadonlySet<string>>(new Set());
-  let loadRequestID = 0;
-  let issueContextGeneration = 0;
+  let pendingMoveIssueUIDs = $state.raw<ReadonlySet<string>>(new SvelteSet());
   let lastPropIssueUID = "";
   let selectedIssueUID = $state("");
   let selectedRecurrences = $state.raw<KataRecurrence[]>([]);
@@ -85,11 +107,21 @@
     closeAll: () => void;
     reconcileRecurrences: (recurrences: readonly KataRecurrence[]) => void;
   } | null>(null);
+  let retryExecution: AppExecution<void, never> | null = null;
+  let selectionExecution: AppExecution<void, never> | null = null;
   const acceptedSnapshot = $derived(authorityStore.snapshot);
-  const activeMutationFenceKey = $derived(JSON.stringify([kata.daemon_id, kata.issue_uid]));
+  let activeMutationFenceKey = $state<string | null>(null);
+
+  function selectedDetailFromSnapshot(
+    source: NonNullable<NonNullable<typeof acceptedSnapshot>["selected_detail"]>,
+  ): KataTaskDetail {
+    const detail = normalizeKataTaskDetail(source);
+    return source.etag === undefined ? detail : { ...detail, etag: source.etag };
+  }
 
   function observeMutationFence(state: KataMutationFenceState): Effect.Effect<void> {
     return Effect.sync(() => {
+      activeMutationFenceKey = state.kind === "resolved" ? null : state.identity.key;
       if (state.kind === "unknown") {
         mutationRefreshPending = true;
         mutationAcknowledged = false;
@@ -120,51 +152,41 @@
       mutationOutcomeUnknown = false;
       mutationPartialOutcome = false;
       mutationRefreshError = null;
-      mutationRefreshGeneration += 1;
     });
   }
 
   $effect(() => {
-    const key = activeMutationFenceKey;
+    const daemonId = kata.daemon_id;
     const execution = appRuntime.runCommand(
-      Effect.gen(function* () {
-        const workflow = yield* KataWorkflow;
-        yield* workflow.claimMutation(key, mutationSurfaceOwner, observeMutationFence);
-      }),
+      Effect.scoped(
+        Effect.gen(function* () {
+          const workflow = yield* KataWorkflow;
+          yield* workflow.claimMutations(daemonId, mutationSurfaceOwner, observeMutationFence);
+          yield* Effect.addFinalizer(() => workflow.interruptAuthority(authorityOwner));
+          return yield* Effect.never;
+        }),
+      ),
       {
         operation: "claim embedded Kata mutation recovery",
         safeContext: { owner: mutationSurfaceOwner },
         onFailure: () => {},
       },
     );
-    return () => {
-      execution.interrupt();
-      appRuntime.runCommand(
-        Effect.gen(function* () {
-          const workflow = yield* KataWorkflow;
-          yield* workflow.releaseMutation(mutationSurfaceOwner);
-        }),
-        {
-          operation: "release embedded Kata mutation recovery",
-          safeContext: { owner: mutationSurfaceOwner },
-          onFailure: () => {},
-        },
-      );
-    };
+    return execution.interrupt;
   });
   const selectedIssue = $derived(
     acceptedSnapshot?.selected_detail
-      ? structuredClone(acceptedSnapshot.selected_detail) as KataTaskDetail
+      ? selectedDetailFromSnapshot(acceptedSnapshot.selected_detail)
       : null,
   );
   const selectedEvents = $derived(
-    acceptedSnapshot ? structuredClone(acceptedSnapshot.selected_history) as KataTaskEvent[] : [],
+    acceptedSnapshot ? acceptedSnapshot.selected_history.map(normalizeKataEventEnvelope) : [],
   );
   const projects = $derived(
-    acceptedSnapshot ? structuredClone(acceptedSnapshot.projects) as KataProjectSummary[] : [],
+    acceptedSnapshot ? acceptedSnapshot.projects.map(normalizeKataProject) : [],
   );
   const issueCatalog = $derived(
-    acceptedSnapshot ? structuredClone(acceptedSnapshot.issues) as KataTaskSummary[] : [],
+    acceptedSnapshot ? acceptedSnapshot.issues.map((issue) => normalizeKataTaskSummary(issue)) : [],
   );
   const mutationActionsBlocked = $derived(
     disabled || mutationRefreshPending || authorityStore.state.phase !== "accepted",
@@ -184,54 +206,28 @@
     };
   }
 
-  async function observeAppCommand<A, E>(
-    program: Effect.Effect<A, E, AppServices>,
-    operation: string,
-    signal?: AbortSignal,
-  ): Promise<A> {
-    const execution = appRuntime.runCommand(program, {
-      operation,
-      safeContext: { daemonId: kata.daemon_id },
-      onFailure: () => {},
-    });
-    const interrupt = () => execution.interrupt();
-    signal?.addEventListener("abort", interrupt, { once: true });
-    if (signal?.aborted) interrupt();
-    try {
-      const exit = await Effect.runPromise(execution.await);
-      if (Exit.isSuccess(exit)) return exit.value;
-      const failure = Cause.findErrorOption(exit.cause);
-      if (Option.isSome(failure)) throw failure.value;
-      throw new Error(Cause.pretty(exit.cause));
-    } finally {
-      signal?.removeEventListener("abort", interrupt);
-    }
-  }
-
   const runtimeTaskReferenceSearch: KataTaskReferenceSearch = (query, options = {}) => {
-    const { signal, ...requestOptions } = options;
-    return observeAppCommand(
-      searchKataTaskReferences(query, requestOptions),
-      "search embedded Kata task references",
-      signal,
-    );
+    return searchKataTaskReferences(query, {
+      ...options,
+      daemon_id: options.daemon_id ?? kata.daemon_id,
+    });
   };
 
-  async function loadSelectedRecurrences(detail: KataTaskDetail, daemonID: string, requestID: number): Promise<boolean> {
-    try {
-      const response = await observeAppCommand(
-        api.recurrences(detail.issue.project_id, { daemonId: daemonID }),
-        "load embedded Kata recurrences",
-      );
-      if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return false;
-      selectedRecurrences = response.recurrences;
-      recurrenceDialogs?.reconcileRecurrences(response.recurrences);
-      return true;
-    } catch {
-      if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return false;
-      selectedRecurrences = [];
-      return false;
-    }
+  function loadSelectedRecurrences(detail: KataTaskDetail, daemonID: string): KataCommand<boolean> {
+    return api.recurrences(detail.issue.project_id, { daemonId: daemonID }).pipe(
+      Effect.match({
+        onFailure: () => {
+          if (selectedIssue?.issue.uid === detail.issue.uid) selectedRecurrences = [];
+          return false;
+        },
+        onSuccess: (response) => {
+          if (selectedIssue?.issue.uid !== detail.issue.uid) return false;
+          selectedRecurrences = response.recurrences;
+          recurrenceDialogs?.reconcileRecurrences(response.recurrences);
+          return true;
+        },
+      }),
+    );
   }
 
   function clearMutationRefresh(): void {
@@ -243,12 +239,9 @@
     mutationPartialOutcome = false;
     mutationRecurrenceRefreshRequired = false;
     recurrenceConflictRecoveryPending = false;
-    mutationRefreshGeneration += 1;
   }
 
   function beginRecurrenceConflictRecovery(): void {
-    recurrenceDialogs?.closeAll();
-    mutationRefreshGeneration += 1;
     mutationRefreshPending = true;
     mutationAcknowledged = false;
     mutationRecurrenceRefreshRequired = true;
@@ -257,68 +250,35 @@
     mutationOutcomeUnknown = false;
   }
 
-  async function loadSelectedSnapshot(uid: string, requestID = ++loadRequestID): Promise<boolean> {
-    loading = selectedIssue?.issue.uid !== uid;
-    loadError = null;
-    try {
+  function loadSelectedSnapshot(uid: string): KataCommand<boolean, unknown> {
+    return Effect.gen(function* () {
+      loading = selectedIssue?.issue.uid !== uid;
+      loadError = null;
       const intent = selectedSnapshotIntent(uid);
-      const program = Effect.gen(function* () {
-        const workflow = yield* KataWorkflow;
-        return yield* workflow.latestSnapshot(
-          authorityOwner,
-          authorityStore,
-          intent,
-          fetchKataWorkspaceSnapshot(intent),
-        );
-      });
-      const execution = appRuntime.runCommand(program, {
-        operation: "load embedded Kata task snapshot",
-        safeContext: { daemonId: kata.daemon_id },
-        onFailure: () => {},
-      });
-      const exit = await Effect.runPromise(execution.await);
-      if (Exit.isFailure(exit)) {
-        const failure = Cause.findErrorOption(exit.cause);
-        if (Option.isSome(failure)) throw failure.value;
-        throw new Error(Cause.pretty(exit.cause));
-      }
-      const accepted = exit.value;
-      if (requestID !== loadRequestID) return false;
+      const workflow = yield* KataWorkflow;
+      const accepted = yield* workflow.latestSnapshot(
+        authorityOwner,
+        authorityStore,
+        intent,
+        fetchKataWorkspaceSnapshot(intent),
+      );
       const snapshot = authorityStore.snapshot;
       const detail = snapshot?.selected_detail;
       if (!accepted || snapshot?.selected_issue_uid !== uid || !detail) {
-        throw new Error(`Kata snapshot did not include selected task ${uid}`);
+        return yield* Effect.fail(new Error(`Kata snapshot did not include selected task ${uid}`));
       }
       selectedRecurrences = [];
-      const selectedDetail = structuredClone(detail) as KataTaskDetail;
+      const selectedDetail = selectedDetailFromSnapshot(detail);
       const awaitRecurrences =
         mutationRefreshPending && !mutationTransportPending && mutationRecurrenceRefreshRequired;
-      if (awaitRecurrences) {
-        const refreshed = await loadSelectedRecurrences(selectedDetail, snapshot.daemon_id, requestID);
-        if (!refreshed) throw new Error("Could not refresh Kata recurrences.");
-      } else {
-        void loadSelectedRecurrences(selectedDetail, snapshot.daemon_id, requestID);
+      const recurrencesRefreshed = yield* loadSelectedRecurrences(selectedDetail, snapshot.daemon_id);
+      if (awaitRecurrences && !recurrencesRefreshed) {
+        return yield* Effect.fail(new Error("Could not refresh Kata recurrences."));
       }
       if (!mutationTransportPending && !mutationOutcomeUnknown && !mutationPartialOutcome) clearMutationRefresh();
       return true;
-    } finally {
-      if (requestID === loadRequestID) loading = false;
-    }
+    }).pipe(Effect.ensuring(Effect.sync(() => (loading = false))));
   }
-
-  onDestroy(() => {
-    appRuntime.runCommand(
-      Effect.gen(function* () {
-        const workflow = yield* KataWorkflow;
-        yield* workflow.interruptAuthority(authorityOwner);
-      }),
-      {
-        operation: "stop embedded Kata snapshot authority",
-        safeContext: {},
-        onFailure: () => {},
-      },
-    );
-  });
 
   $effect(() => {
     const issueUID = kata.issue_uid;
@@ -327,22 +287,27 @@
     }
     lastPropIssueUID = issueUID;
     selectedIssueUID = issueUID;
-    issueContextGeneration += 1;
-    const requestID = ++loadRequestID;
     loading = true;
     loadError = null;
     checklistRevealed = false;
     linkFilters = createKataLinkFilters("all");
-    void untrack(() => loadSelectedSnapshot(issueUID, requestID))
-      .catch((err) => {
-        if (requestID !== loadRequestID) return;
-        loadError = err instanceof Error ? err.message : "Could not load Kata task.";
-      })
-      .finally(() => {
-        if (requestID === loadRequestID) {
-          loading = false;
-        }
-      });
+    const execution = untrack(() =>
+      appRuntime.runCommand(
+        loadSelectedSnapshot(issueUID).pipe(
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              loadError = error instanceof Error ? error.message : "Could not load Kata task.";
+            }),
+          ),
+        ),
+        {
+          operation: "load embedded Kata task snapshot",
+          safeContext: { daemonId: kata.daemon_id },
+          onFailure: () => {},
+        },
+      ),
+    );
+    return execution.interrupt;
   });
 
   function ownerOptions(): TypeaheadOption[] {
@@ -375,249 +340,268 @@
     return { daemonId: acceptedDaemonIDForMutation() };
   }
 
-  function hasHTTPStatus(error: unknown, status: number): boolean {
-    return typeof error === "object" && error !== null && "status" in error && error.status === status;
+  function mutationError(cause: unknown): Error {
+    return cause instanceof Error ? cause : new Error(String(cause));
   }
 
-  async function mutateSelected<T>(
-    task: KataTaskEffect<T>,
-    options: {
-      refreshRecurrences?: boolean;
-      isApplied?: (snapshot: KataWorkspaceSnapshotProjection) => boolean;
-    } = {},
-  ): Promise<void> {
-    const uid = selectedIssue?.issue.uid;
-    if (!uid) throw new Error("No Kata task is selected.");
-    const baseline = acceptedSnapshot;
-    if (!baseline) throw new Error("No accepted Kata snapshot is available.");
-    let replacementUID = uid;
-    let refreshGeneration = ++mutationRefreshGeneration;
-    mutationTransportPending = true;
-    mutationRecurrenceRefreshRequired = options.refreshRecurrences === true;
-    mutationRefreshPending = true;
+  function applyMutationFailure(error: unknown): void {
+    mutationTransportPending = false;
+    mutationRecurrenceRefreshRequired = false;
+    if (error instanceof KataMutationOutcomeUnknownError) {
+      mutationRefreshPending = true;
+      mutationAcknowledged = false;
+      mutationRefreshError = error.message;
+      mutationOutcomeUnknown = true;
+      mutationPartialOutcome = false;
+      return;
+    }
+    if (error instanceof KataMutationPartiallyAppliedError) {
+      mutationRefreshPending = true;
+      mutationAcknowledged = false;
+      mutationRefreshError = error.message;
+      mutationOutcomeUnknown = false;
+      mutationPartialOutcome = true;
+      return;
+    }
+    mutationRefreshPending = false;
     mutationAcknowledged = false;
     mutationRefreshError = null;
     mutationOutcomeUnknown = false;
-    try {
-      const program = Effect.gen(function* () {
-        const workflow = yield* KataWorkflow;
-        return yield* workflow.mutateAndRevalidate(
-          task.pipe(
-            Effect.mapError(
-              (cause) =>
-                new KataMutationError({ message: cause instanceof Error ? cause.message : String(cause), cause }),
+    mutationPartialOutcome = false;
+  }
+
+  function mutateSelected<T>(
+    task: () => KataTaskEffect<T>,
+    options:
+      | { readonly evidence: KataMutationEvidence; readonly refreshRecurrences?: boolean }
+      | { readonly uncertainty: KataCustomMutationUncertainty; readonly refreshRecurrences?: boolean },
+  ): KataCommand<void, unknown> {
+    return Effect.gen(function* () {
+      const context = yield* Effect.try({
+        try: () => {
+          const uid = selectedIssue?.issue.uid;
+          if (!uid) throw new Error("No Kata task is selected.");
+          const baseline = acceptedSnapshot;
+          if (!baseline) throw new Error("No accepted Kata snapshot is available.");
+          return { uid, baseline };
+        },
+        catch: mutationError,
+      });
+      const uncertainty = "uncertainty" in options
+        ? options.uncertainty
+        : {
+            identity: options.evidence.identity(context.baseline.daemon_id),
+            baseline: context.baseline,
+            readFresh: fetchKataWorkspaceSnapshot(
+              {
+                daemon_id: context.baseline.daemon_id,
+                scope: "global",
+                authority: "all",
+                ...(options.evidence.selectedIssueUID === undefined
+                  ? {}
+                  : { selected_issue_uid: options.evidence.selectedIssueUID }),
+              },
+              { fresh: true },
             ),
-          ),
-          Effect.tryPromise({
-            try: () => loadSelectedSnapshot(replacementUID),
-            catch: (cause) => new KataMutationError({ message: cause instanceof Error ? cause.message : String(cause), cause }),
-          }),
-          () => Effect.sync(() => {
+            isApplied: options.evidence.isApplied,
+          };
+      const mutation = yield* Effect.try({ try: task, catch: mutationError });
+      let replacementUID = context.uid;
+      mutationTransportPending = true;
+      mutationRecurrenceRefreshRequired = options.refreshRecurrences === true;
+      mutationRefreshPending = true;
+      mutationAcknowledged = false;
+      mutationRefreshError = null;
+      mutationOutcomeUnknown = false;
+
+      const workflow = yield* KataWorkflow;
+      const result = yield* workflow.mutateAndRevalidate(
+        context.baseline.daemon_id,
+        mutation.pipe(
+          Effect.mapError((cause) => new KataMutationError({ message: mutationError(cause).message, cause })),
+        ),
+        Effect.suspend(() => loadSelectedSnapshot(replacementUID)).pipe(
+          Effect.mapError((cause) => new KataMutationError({ message: mutationError(cause).message, cause })),
+        ),
+        () =>
+          Effect.sync(() => {
             mutationTransportPending = false;
             replacementUID = selectedIssueUID;
-            refreshGeneration = ++mutationRefreshGeneration;
             mutationRefreshPending = true;
             mutationAcknowledged = true;
             mutationRefreshError = null;
             mutationOutcomeUnknown = false;
             mutationPartialOutcome = false;
           }),
-          {
-            identity: {
-              key: JSON.stringify([baseline.daemon_id, uid]),
-              daemonId: baseline.daemon_id,
-              operation: "change Kata task",
-              target: uid,
-            },
-            baseline,
-            readFresh: fetchKataWorkspaceSnapshot(selectedSnapshotIntent(uid), { fresh: true }),
-            ...(options.isApplied === undefined ? {} : { isApplied: options.isApplied }),
-          },
-        );
-      });
-      const execution = appRuntime.runCommand(program, {
-        operation: "run Kata workspace mutation",
-        safeContext: { daemonId: acceptedDaemonIDForMutation() },
-        onFailure: () => {},
-      });
-      const exit = await Effect.runPromise(execution.await);
-      if (Exit.isFailure(exit)) {
-        const failure = Cause.findErrorOption(exit.cause);
-        if (Option.isNone(failure)) throw new Error(Cause.pretty(exit.cause));
-        if (failure.value instanceof KataMutationError && failure.value.cause instanceof Error) {
-          throw failure.value.cause;
-        }
-        throw failure.value;
-      }
-      appRuntime.runCommand(
-        exit.value.replacement.pipe(
-          Effect.tap((replacement) => Effect.sync(() => {
-            if (refreshGeneration !== mutationRefreshGeneration || replacement.replacementAccepted) return;
-            mutationRefreshPending = true;
-            mutationRefreshError = replacement.replacementError ?? "Kata snapshot replacement was not accepted.";
-            showFlash("Change saved, but Kata could not refresh. Retry the snapshot before making more changes.", {
-              tone: "warning",
-            });
-          })),
-        ),
-        {
-          operation: "revalidate Kata workspace snapshot after mutation",
-          safeContext: { daemonId: acceptedDaemonIDForMutation() },
-          onFailure: () => {},
-        },
+        uncertainty,
       );
-    } catch (mutationError) {
-      mutationTransportPending = false;
-      mutationRecurrenceRefreshRequired = false;
-      mutationRefreshGeneration += 1;
-      if (mutationError instanceof KataMutationOutcomeUnknownError) {
+      const replacement = yield* result.replacement;
+      if (!replacement.replacementAccepted) {
         mutationRefreshPending = true;
-        mutationAcknowledged = false;
-        mutationRefreshError = mutationError.message;
-        mutationOutcomeUnknown = true;
-        mutationPartialOutcome = false;
-        throw mutationError;
+        mutationRefreshError = replacement.replacementError ?? "Kata snapshot replacement was not accepted.";
+        showFlash("Change saved, but Kata could not refresh. Retry the snapshot before making more changes.", {
+          tone: "warning",
+        });
       }
-      if (mutationError instanceof KataMutationPartiallyAppliedError) {
-        mutationRefreshPending = true;
-        mutationAcknowledged = false;
-        mutationRefreshError = mutationError.message;
-        mutationOutcomeUnknown = false;
-        mutationPartialOutcome = true;
-        throw mutationError;
-      }
-      mutationRefreshPending = false;
-      mutationAcknowledged = false;
-      mutationRefreshError = null;
-      mutationOutcomeUnknown = false;
-      mutationPartialOutcome = false;
-      throw mutationError;
-    }
+    }).pipe(
+      Effect.mapError((error) =>
+        error instanceof KataMutationError && error.cause instanceof Error ? error.cause : error,
+      ),
+      Effect.tapError((error) => Effect.sync(() => applyMutationFailure(error))),
+    );
   }
 
-  async function runTask(
-    task: () => Promise<void | boolean>,
+  function runTask(
+    task: () => KataCommand<void | boolean, unknown>,
     shouldSurfaceFailure: () => boolean = () => true,
-  ): Promise<boolean> {
-    if (mutationActionsBlocked) return false;
-    try {
-      return (await task()) ?? true;
-    } catch (err) {
-      if (shouldSurfaceFailure()) {
-        showFlash(err instanceof Error ? err.message : "Kata request failed.", { tone: "danger" });
-      }
-      return false;
-    }
+  ): KataCommand<boolean> {
+    return Effect.gen(function* () {
+      if (mutationActionsBlocked) return false;
+      return (yield* task()) ?? true;
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          if (shouldSurfaceFailure()) {
+            showFlash(error instanceof Error ? error.message : "Kata request failed.", { tone: "danger" });
+          }
+          return false;
+        }),
+      ),
+    );
   }
 
-  async function runTaskOrThrow(task: () => Promise<void>): Promise<void> {
-    if (mutationActionsBlocked) return;
-    await task();
+  function runTaskOrThrow(task: () => KataCommand<void, unknown>): KataCommand<void, unknown> {
+    return Effect.gen(function* () {
+      if (mutationActionsBlocked) return;
+      yield* task();
+    });
   }
 
-  async function runLoadTask(task: () => Promise<void | boolean>): Promise<boolean> {
-    loadError = null;
-    try {
-      return (await task()) ?? true;
-    } catch (err) {
-      loadError = err instanceof Error ? err.message : "Could not load Kata task.";
-      return false;
-    }
+  function runLoadTask(task: () => KataCommand<void | boolean, unknown>): KataCommand<boolean> {
+    return Effect.gen(function* () {
+      loadError = null;
+      return (yield* task()) ?? true;
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          loadError = error instanceof Error ? error.message : "Could not load Kata task.";
+          return false;
+        }),
+      ),
+    );
   }
 
-  async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
-    const selected = selectedIssue?.issue;
-    if (!selected || pendingMoveIssueUIDs.has(selected.uid)) return false;
-    const sourceIssueUID = selected.uid;
-    const generation = issueContextGeneration;
-    pendingMoveIssueUIDs = new Set(pendingMoveIssueUIDs).add(sourceIssueUID);
-    const releasePendingMove = () => {
-      const nextPendingMoves = new Set(pendingMoveIssueUIDs);
-      nextPendingMoves.delete(sourceIssueUID);
-      pendingMoveIssueUIDs = nextPendingMoves;
-    };
-    try {
-      await mutateSelected(
-        api.moveIssue(
+  function moveSelectedIssue(toProjectUID: string): KataCommand<boolean> {
+    return Effect.gen(function* () {
+      const selected = selectedIssue?.issue;
+      if (!selected || pendingMoveIssueUIDs.has(selected.uid)) return false;
+      const sourceIssueUID = selected.uid;
+      pendingMoveIssueUIDs = new SvelteSet(pendingMoveIssueUIDs).add(sourceIssueUID);
+      const releasePendingMove = Effect.sync(() => {
+        const nextPendingMoves = new SvelteSet(pendingMoveIssueUIDs);
+        nextPendingMoves.delete(sourceIssueUID);
+        pendingMoveIssueUIDs = nextPendingMoves;
+      });
+      return yield* mutateSelected(
+        () => api.moveIssue(
           selectedMutationTarget(sourceIssueUID),
           actor,
           toProjectUID,
           selectedMutationETag(sourceIssueUID),
           acceptedMutationOptions(),
         ),
+        { evidence: moveMutationEvidence(sourceIssueUID, toProjectUID) },
+      ).pipe(
+        Effect.as(true),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            if (selectedIssue?.issue.uid === sourceIssueUID) {
+              showFlash(error instanceof Error ? error.message : "Kata request failed.", { tone: "danger" });
+            }
+            return false;
+          }),
+        ),
+        Effect.ensuring(releasePendingMove),
       );
-      return true;
-    } catch (error) {
-      releasePendingMove();
-      if (generation === issueContextGeneration) {
-        showFlash(error instanceof Error ? error.message : "Kata request failed.", { tone: "danger" });
-      }
-      return false;
-    } finally {
-      releasePendingMove();
-    }
+    });
   }
 
-  function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {
+  function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): KataCommand<boolean> {
     return runTask(() => mutateSelected(
-      api.patchIssueMetadata(
+      () => api.patchIssueMetadata(
         selectedMutationTarget(uid),
         actor,
         patch,
         selectedMutationETag(uid),
         acceptedMutationOptions(),
       ),
+      { evidence: metadataMutationEvidence(uid, patch) },
     ));
   }
 
-  function addSelectedComment(uid: string, body: string): Promise<boolean> {
+  function addSelectedComment(uid: string, body: string): KataCommand<boolean> {
     const priorMatches = selectedIssue?.comments.filter(
       (comment) => comment.author === actor && comment.body === body,
     ).length ?? 0;
     return runTask(() =>
-      mutateSelected(api.addComment(selectedMutationTarget(uid), actor, body, acceptedMutationOptions()), {
-        isApplied: (snapshot) =>
-          snapshot.selected_detail?.issue.uid === uid &&
-          snapshot.selected_detail.comments.filter(
-            (comment) => comment.author === actor && comment.body === body,
-          ).length > priorMatches,
-      }),
+      mutateSelected(
+        () => api.addComment(selectedMutationTarget(uid), actor, body, acceptedMutationOptions()),
+        { evidence: commentMutationEvidence(uid, actor, body, priorMatches) },
+      ),
     );
   }
 
-  function editSelectedIssue(uid: string, patch: KataTaskEditPatch): Promise<boolean> {
+  function editSelectedIssue(uid: string, patch: KataTaskEditPatch): KataCommand<boolean> {
     return runTask(() =>
-      mutateSelected(api.editIssue(selectedMutationTarget(uid), actor, patch, acceptedMutationOptions())),
+      mutateSelected(
+        () => api.editIssue(selectedMutationTarget(uid), actor, patch, acceptedMutationOptions()),
+        { evidence: editMutationEvidence(uid, patch) },
+      ),
     );
   }
 
-  function assignSelectedOwner(uid: string, owner: string): Promise<boolean> {
+  function assignSelectedOwner(uid: string, owner: string): KataCommand<boolean> {
     return runTask(() =>
-      mutateSelected(api.assignOwner(selectedMutationTarget(uid), actor, owner, acceptedMutationOptions())),
+      mutateSelected(
+        () => api.assignOwner(selectedMutationTarget(uid), actor, owner, acceptedMutationOptions()),
+        { evidence: ownerMutationEvidence(uid, owner) },
+      ),
     );
   }
 
-  function unassignSelectedOwner(uid: string): Promise<boolean> {
+  function unassignSelectedOwner(uid: string): KataCommand<boolean> {
     return runTask(() =>
-      mutateSelected(api.unassignOwner(selectedMutationTarget(uid), actor, acceptedMutationOptions())),
+      mutateSelected(
+        () => api.unassignOwner(selectedMutationTarget(uid), actor, acceptedMutationOptions()),
+        { evidence: ownerMutationEvidence(uid, undefined) },
+      ),
     );
   }
 
-  function setSelectedPriority(uid: string, priority: number | null): Promise<boolean> {
+  function setSelectedPriority(uid: string, priority: number | null): KataCommand<boolean> {
     return runTask(() =>
-      mutateSelected(api.setPriority(selectedMutationTarget(uid), actor, priority, acceptedMutationOptions())),
+      mutateSelected(
+        () => api.setPriority(selectedMutationTarget(uid), actor, priority, acceptedMutationOptions()),
+        { evidence: priorityMutationEvidence(uid, priority) },
+      ),
     );
   }
 
-  function addSelectedLabel(uid: string, label: string): Promise<boolean> {
+  function addSelectedLabel(uid: string, label: string): KataCommand<boolean> {
     return runTask(() =>
-      mutateSelected(api.addLabel(selectedMutationTarget(uid), actor, label, acceptedMutationOptions())),
+      mutateSelected(
+        () => api.addLabel(selectedMutationTarget(uid), actor, label, acceptedMutationOptions()),
+        { evidence: labelMutationEvidence(uid, label, true) },
+      ),
     );
   }
 
-  async function removeSelectedLabel(uid: string, label: string): Promise<void> {
-    await runTask(() =>
-      mutateSelected(api.removeLabel(selectedMutationTarget(uid), actor, label, acceptedMutationOptions())),
+  function removeSelectedLabel(uid: string, label: string): KataCommand<boolean> {
+    return runTask(() =>
+      mutateSelected(
+        () => api.removeLabel(selectedMutationTarget(uid), actor, label, acceptedMutationOptions()),
+        { evidence: labelMutationEvidence(uid, label, false) },
+      ),
     );
   }
 
@@ -625,118 +609,240 @@
     checklistRevealed = true;
   }
 
-  async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
-    return runTask(async () => {
-      try {
-        await mutateSelected(
-          api.deleteRecurrence(
+  function recurrenceUncertainty(
+    daemonId: string,
+    projectID: number,
+    family: string,
+    operation: string,
+    target: string,
+    baseline: readonly KataRecurrence[],
+    isApplied: (recurrences: readonly KataRecurrence[]) => boolean,
+  ): KataCustomMutationUncertainty {
+    return {
+      identity: kataMutationIdentity(daemonId, family, operation, target),
+      reconcile: reconcileRecurrenceMutation(
+        baseline,
+        Effect.suspend(() => api.recurrences(projectID, { daemonId })),
+        isApplied,
+      ),
+    };
+  }
+
+  function deleteRecurrence(recurrence: KataRecurrence): KataCommand<boolean> {
+    return runTask(() =>
+      Effect.gen(function* () {
+        const daemonId = yield* Effect.try({ try: acceptedDaemonIDForMutation, catch: mutationError });
+        const baseline = selectedRecurrences;
+        yield* mutateSelected(
+          () => api.deleteRecurrence(
             recurrence.project_id,
             recurrence.uid,
             actor,
-            acceptedMutationOptions(),
+            { daemonId },
             `"rev-${recurrence.revision}"`,
           ),
-          { refreshRecurrences: true },
+          {
+            refreshRecurrences: true,
+            uncertainty: recurrenceUncertainty(
+              daemonId,
+              recurrence.project_id,
+              "recurrence-delete",
+              "delete Kata recurrence",
+              recurrence.uid,
+              baseline,
+              (recurrences) => recurrences.every((candidate) => candidate.uid !== recurrence.uid),
+            ),
+          },
         );
-      } catch (error) {
-        // A revision conflict means another client changed this recurrence;
-        // reload the list so the open dialog uses the current revision. If
-        // reconciliation fails, fence that stale dialog until a retry loads
-        // fresh recurrence data.
-        if (hasHTTPStatus(error, 412) && selectedIssue) {
-          const refreshed = await loadSelectedRecurrences(selectedIssue, acceptedDaemonIDForMutation(), loadRequestID);
-          if (!refreshed) beginRecurrenceConflictRecovery();
-        }
-        throw error;
-      }
-    });
-  }
-
-  async function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<void> {
-    await runTaskOrThrow(() => mutateSelected(
-      api.createRecurrence(projectID, input, acceptedMutationOptions()),
-      { refreshRecurrences: true },
-    ));
-  }
-
-  async function patchRecurrence(id: number, input: KataPatchRecurrenceInput, etag: string): Promise<void> {
-    const recurrence = selectedRecurrences.find((item) => item.id === id);
-    if (!recurrence) throw new Error(`recurrence not loaded: id=${id}`);
-    await runTaskOrThrow(() =>
-      mutateSelected(
-        api.patchRecurrence(recurrence.project_id, recurrence.uid, input, etag, acceptedMutationOptions()),
-        { refreshRecurrences: true },
+      }).pipe(
+        Effect.catch((error) => {
+          if (!(error instanceof KataTaskRevisionConflictError)) return Effect.fail(error);
+          const detail = selectedIssue;
+          const daemonId = acceptedSnapshot?.daemon_id;
+          if (detail === null || daemonId === undefined || daemonId === "") return Effect.fail(error);
+          return loadSelectedRecurrences(detail, daemonId).pipe(
+            Effect.tap((refreshed) => Effect.sync(() => {
+              if (!refreshed) beginRecurrenceConflictRecovery();
+            })),
+            Effect.andThen(Effect.fail(error)),
+          );
+        }),
       ),
+    );
+  }
+
+  function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): KataCommand<void, unknown> {
+    return runTaskOrThrow(() =>
+      Effect.gen(function* () {
+        const daemonId = yield* Effect.try({ try: acceptedDaemonIDForMutation, catch: mutationError });
+        const baseline = selectedRecurrences;
+        const baselineUIDs = new SvelteSet(baseline.map((recurrence) => recurrence.uid));
+        yield* mutateSelected(
+          () => api.createRecurrence(projectID, input, { daemonId }),
+          {
+            refreshRecurrences: true,
+            uncertainty: recurrenceUncertainty(
+              daemonId,
+              projectID,
+              "recurrence-create",
+              "create Kata recurrence",
+              `${projectID}:${input.rrule}:${input.dtstart}:${input.timezone}:${input.template.title}`,
+              baseline,
+              (recurrences) =>
+                recurrences.filter(
+                  (recurrence) => !baselineUIDs.has(recurrence.uid) && recurrenceCreateMatches(recurrence, input),
+                ).length === 1,
+            ),
+          },
+        );
+      }),
+    );
+  }
+
+  function patchRecurrence(id: number, input: KataPatchRecurrenceInput, etag: string): KataCommand<void, unknown> {
+    return runTaskOrThrow(() =>
+      Effect.gen(function* () {
+        const recurrence = selectedRecurrences.find((item) => item.id === id);
+        if (recurrence === undefined) {
+          return yield* Effect.fail(new Error(`recurrence not loaded: id=${id}`));
+        }
+        const daemonId = yield* Effect.try({ try: acceptedDaemonIDForMutation, catch: mutationError });
+        const baseline = selectedRecurrences;
+        yield* mutateSelected(
+          () => api.patchRecurrence(recurrence.project_id, recurrence.uid, input, etag, { daemonId }),
+          {
+            refreshRecurrences: true,
+            uncertainty: recurrenceUncertainty(
+              daemonId,
+              recurrence.project_id,
+              "recurrence-patch",
+              "edit Kata recurrence",
+              recurrence.uid,
+              baseline,
+              (recurrences) => {
+                const fresh = recurrences.find((candidate) => candidate.uid === recurrence.uid);
+                return fresh !== undefined && fresh.revision > recurrence.revision && recurrencePatchMatches(fresh, input);
+              },
+            ),
+          },
+        ).pipe(
+          Effect.catch((error) => {
+            if (!(error instanceof KataTaskRevisionConflictError)) return Effect.fail(error);
+            return api.showRecurrence(recurrence.project_id, recurrence.uid, { daemonId }).pipe(
+              Effect.matchEffect({
+                onFailure: () =>
+                  Effect.sync(beginRecurrenceConflictRecovery).pipe(Effect.andThen(Effect.fail(error))),
+                onSuccess: (response) =>
+                  Effect.sync(() => {
+                    const fresh = response.recurrence;
+                    const found = selectedRecurrences.some((candidate) => candidate.uid === fresh.uid);
+                    selectedRecurrences = found
+                      ? selectedRecurrences.map((candidate) => candidate.uid === fresh.uid ? fresh : candidate)
+                      : [...selectedRecurrences, fresh];
+                    const currentEtag = response.etag ?? `"rev-${fresh.revision}"`;
+                    return new KataRecurrenceConflictError(error.message, fresh, currentEtag);
+                  }).pipe(Effect.flatMap((conflict) => Effect.fail(conflict))),
+              }),
+            );
+          }),
+        );
+      }),
     );
   }
 
   function closeSelectedIssue(
     reason: "done" | "wontfix" | "duplicate" | "superseded",
     message: string,
-  ): Promise<boolean> {
-    const selected = selectedIssue;
-    if (!selected) return Promise.resolve(false);
-    return runTask(() => mutateSelected(
-      api.closeIssue(
-        selectedMutationTarget(selected.issue.uid),
-        actor,
-        { reason, message },
-        acceptedMutationOptions(),
-      ),
-    ));
+  ): KataCommand<boolean> {
+    return Effect.suspend(() => {
+      const selected = selectedIssue;
+      if (selected === null) return Effect.succeed(false);
+      return runTask(() => mutateSelected(
+        () => api.closeIssue(
+          selectedMutationTarget(selected.issue.uid),
+          actor,
+          { reason, message },
+          acceptedMutationOptions(),
+        ),
+        { evidence: statusMutationEvidence(selected.issue.uid, "closed", reason) },
+      ));
+    });
   }
 
-  async function reopenSelectedIssue(): Promise<void> {
-    const selected = selectedIssue;
-    if (!selected) return;
-    await runTask(() =>
-      mutateSelected(api.reopenIssue(selectedMutationTarget(selected.issue.uid), actor, acceptedMutationOptions())),
-    );
+  function reopenSelectedIssue(): KataCommand<boolean> {
+    return Effect.suspend(() => {
+      const selected = selectedIssue;
+      if (selected === null) return Effect.succeed(false);
+      return runTask(() =>
+        mutateSelected(
+          () => api.reopenIssue(selectedMutationTarget(selected.issue.uid), actor, acceptedMutationOptions()),
+          { evidence: statusMutationEvidence(selected.issue.uid, "open") },
+        ),
+      );
+    });
   }
 
-  function deleteSelectedIssue(): Promise<boolean> {
+  function deleteSelectedIssue(): KataCommand<boolean> {
     return closeSelectedIssue("wontfix", "Deleted from workspace sidebar.");
   }
 
-  async function selectIssue(uid: string): Promise<void> {
-    recurrenceDialogs?.closeAll();
-    issueContextGeneration += 1;
-    selectedIssueUID = uid;
-    await runLoadTask(() => loadSelectedSnapshot(uid));
+  function selectIssue(uid: string): KataCommand<boolean> {
+    return Effect.sync(() => {
+      recurrenceDialogs?.closeAll();
+      selectedIssueUID = uid;
+    }).pipe(Effect.andThen(runLoadTask(() => loadSelectedSnapshot(uid))));
   }
 
-  async function retryMutationSnapshot(): Promise<void> {
+  function openSelectedIssue(uid: string): void {
+    selectionExecution?.interrupt();
+    selectionExecution = appRuntime.runCommand(selectIssue(uid).pipe(Effect.asVoid), {
+      operation: "open linked embedded Kata task",
+      safeContext: { issueUid: uid },
+      onFailure: () => {},
+    });
+  }
+
+  function retryMutationSnapshotCommand(): KataCommand<void> {
+    return Effect.gen(function* () {
+      const uncertainMutationKey = activeMutationFenceKey;
+      const partialMutationKey = mutationPartialOutcome ? uncertainMutationKey : null;
+      if (mutationOutcomeUnknown && uncertainMutationKey !== null) {
+        const workflow = yield* KataWorkflow;
+        const resolution = yield* workflow.reconcileMutation(uncertainMutationKey);
+        if (resolution === "ambiguous") return;
+      }
+      const accepted = yield* loadSelectedSnapshot(selectedIssueUID);
+      if (!accepted) return yield* Effect.fail(new Error("Kata snapshot replacement was not accepted."));
+      if (partialMutationKey !== null) {
+        const workflow = yield* KataWorkflow;
+        yield* workflow.acknowledgeMutation(partialMutationKey);
+      }
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          mutationRefreshError = error instanceof Error ? error.message : "Could not refresh Kata task.";
+        }),
+      ),
+      Effect.ensuring(Effect.sync(() => (mutationRefreshRetrying = false))),
+    );
+  }
+
+  function retryMutationSnapshot(): void {
     if (mutationRefreshRetrying || !mutationRefreshPending) return;
     mutationRefreshRetrying = true;
     mutationRefreshError = null;
-    try {
-      const uncertainMutationKey = activeMutationFenceKey;
-      if (mutationPartialOutcome && uncertainMutationKey !== null) {
-        await observeAppCommand(
-          Effect.gen(function* () {
-            const workflow = yield* KataWorkflow;
-            yield* workflow.acknowledgeMutation(uncertainMutationKey);
-          }),
-          "acknowledge partial embedded Kata mutation",
-        );
-      } else if (mutationOutcomeUnknown && uncertainMutationKey !== null) {
-        const resolution = await observeAppCommand(
-          Effect.gen(function* () {
-            const workflow = yield* KataWorkflow;
-            return yield* workflow.reconcileMutation(uncertainMutationKey);
-          }),
-          "reconcile uncertain embedded Kata mutation",
-        );
-        if (resolution === "ambiguous") return;
-      }
-      const accepted = await loadSelectedSnapshot(selectedIssueUID);
-      if (!accepted) throw new Error("Kata snapshot replacement was not accepted.");
-    } catch (retryError) {
-      mutationRefreshError = retryError instanceof Error ? retryError.message : "Could not refresh Kata task.";
-    } finally {
-      mutationRefreshRetrying = false;
-    }
+    retryExecution?.interrupt();
+    retryExecution = appRuntime.runCommand(retryMutationSnapshotCommand(), {
+      operation: "retry embedded Kata mutation snapshot",
+      safeContext: { daemonId: kata.daemon_id },
+      onFailure: () => {},
+    });
   }
+
+  onDestroy(() => {
+    retryExecution?.interrupt();
+    selectionExecution?.interrupt();
+  });
 </script>
 
 <div class="kata-workspace-sidebar" inert={disabled}>
@@ -759,7 +865,7 @@
             ? `The recurrence changed, but its current revision could not be loaded: ${mutationRefreshError}`
             : `Change saved, but Kata snapshot refresh failed: ${mutationRefreshError}`}
       </span>
-      <button type="button" disabled={mutationRefreshRetrying} onclick={() => void retryMutationSnapshot()}>
+      <button type="button" disabled={mutationRefreshRetrying} onclick={retryMutationSnapshot}>
         {mutationRefreshRetrying
           ? "Retrying…"
           : mutationPartialOutcome
@@ -811,9 +917,7 @@
       onCloseIssue={closeSelectedIssue}
       onReopenIssue={reopenSelectedIssue}
       onDeleteIssue={deleteSelectedIssue}
-      onSelectIssue={(target) => {
-        void selectIssue(target.uid);
-      }}
+      onSelectIssue={(target) => openSelectedIssue(target.uid)}
       />
     {:else}
       <div class="state">Task not found</div>

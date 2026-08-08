@@ -1,13 +1,8 @@
 import { cleanup, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import RepoImportModal from "./RepoImportModal.svelte";
+import RepoImportModalRuntimeHarness from "./RepoImportModalRuntimeHarness.svelte";
 import { getStackDepth, getTopFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
-
-vi.mock("../../api/settings.js", () => ({
-  previewRepos: vi.fn(),
-  bulkAddRepos: vi.fn(),
-}));
 
 describe("RepoImportModal modal frame integration", () => {
   beforeEach(() => {
@@ -21,7 +16,7 @@ describe("RepoImportModal modal frame integration", () => {
 
   it("pushes a frame on mount and pops on unmount", () => {
     expect(getStackDepth()).toBe(0);
-    const { unmount } = render(RepoImportModal, {
+    const { unmount } = render(RepoImportModalRuntimeHarness, {
       props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
     });
     expect(getStackDepth()).toBe(1);

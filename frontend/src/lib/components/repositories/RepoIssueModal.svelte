@@ -105,7 +105,7 @@
         {#if outcomeUnknown}
           <Checkbox
             class="issue-modal__acknowledgement"
-            label="I checked the issue list and want to retry."
+            label="I checked the provider's issue list and want to retry."
             onchange={(checked) => {
               if (checked) onacknowledgeoutcome();
             }}

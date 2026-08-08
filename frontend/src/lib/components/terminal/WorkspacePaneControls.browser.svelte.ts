@@ -11,6 +11,7 @@ import { page } from "vite-plus/test/browser";
 import "@kenn-io/kit-ui/theme.css";
 
 import WorkspacePaneControls from "./WorkspacePaneControls.svelte";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import { registerWorkspaceControls, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.ts";
 
 const controls = createRawSnippet(() => ({
@@ -34,7 +35,10 @@ function mountInTabStrip(): { host: HTMLElement; strip: HTMLElement; app: Record
   strip.style.cssText = "position: relative; display: flex; min-height: 30px; height: 30px; overflow-x: auto;";
   host.append(strip);
   document.body.append(host);
-  const app = mount(WorkspacePaneControls, { target: strip });
+  const app = mount(AppRuntimeHarness, {
+    target: strip,
+    props: { component: WorkspacePaneControls },
+  });
   return { host, strip, app };
 }
 
@@ -62,7 +66,10 @@ function mountInPaneLeaf(): { host: HTMLElement; actions: HTMLElement; app: Reco
   body.append(canvas);
   host.append(strip, body);
   document.body.append(host);
-  const app = mount(WorkspacePaneControls, { target: actions });
+  const app = mount(AppRuntimeHarness, {
+    target: actions,
+    props: { component: WorkspacePaneControls },
+  });
   return { host, actions, app };
 }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Effect } from "effect";
   import { untrack } from "svelte";
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
@@ -24,6 +25,10 @@
     startRuntimeSessionDrag,
   } from "./terminal-drag";
   import { sessionHostKey } from "../../stores/session-host.svelte.ts";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { observeResize } from "../../browser/observers.js";
+
+  const runtime = getAppRuntime();
 
   interface BorderTrim {
     top?: boolean;
@@ -215,13 +220,20 @@
 
   $effect(() => {
     if (node.type !== "split" || !splitEl) return;
+    const splitTarget = splitEl;
     splitSize = measureSplit();
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
-      splitSize = measureSplit();
-    });
-    observer.observe(splitEl);
-    return () => observer.disconnect();
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.scoped(
+          observeResize(splitTarget, () => {
+            splitSize = measureSplit();
+          }).pipe(Effect.andThen(Effect.never)),
+        ),
+        { operation: "observe terminal split", safeContext: { workspaceId }, onFailure: () => {} },
+      ),
+    );
+    return execution.interrupt;
   });
 
   function startResize(): void {

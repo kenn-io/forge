@@ -92,6 +92,7 @@ async function openTerminalPanel(page: Page): Promise<Locator> {
 }
 
 function observeTerminal(page: Page): {
+  commandPromptOccurrences(): number;
   received(text: string): boolean;
   sent(text: string): boolean;
 } {
@@ -111,6 +112,8 @@ function observeTerminal(page: Page): {
     });
   });
   return {
+    commandPromptOccurrences: () =>
+      streams.reduce((total, stream) => total + Array.from(stream.received.matchAll(/\x1b\[\d+;\d+H:/g)).length, 0),
     received: (text) => streams.some((stream) => stream.received.includes(text)),
     sent: (text) => streams.some((stream) => stream.sent.includes(text)),
   };
@@ -152,9 +155,15 @@ async function typeMarker(page: Page, marker: string): Promise<void> {
   await page.keyboard.press("Enter");
 }
 
-async function runTmuxCommand(page: Page, command: string): Promise<void> {
+async function runTmuxCommand(
+  page: Page,
+  terminal: ReturnType<typeof observeTerminal>,
+  command: string,
+): Promise<void> {
+  const priorPrompts = terminal.commandPromptOccurrences();
   await page.keyboard.press("Control+b");
   await page.keyboard.press(":");
+  await expect.poll(() => terminal.commandPromptOccurrences()).toBeGreaterThan(priorPrompts);
   await page.keyboard.type(command);
   await page.keyboard.press("Enter");
 }
@@ -276,7 +285,7 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
 
     // Keyboard-only tmux clipboard after the move, through the same OSC 52
     // fallback boundary the clipboard spec proves.
-    await runTmuxCommand(page, `set-buffer -w '${clipboardMarker}'`);
+    await runTmuxCommand(page, terminal, `set-buffer -w '${clipboardMarker}'`);
     await expect
       .poll(() => fallbackWrites.some((write) => write.includes(clipboardMarker)), {
         timeout: 15_000,

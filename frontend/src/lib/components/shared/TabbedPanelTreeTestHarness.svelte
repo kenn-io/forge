@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy, untrack } from "svelte";
+  import { makeAppRuntime } from "../../app/runtime.js";
+  import { setAppRuntime } from "../../app/runtime-context.js";
   import TabbedPanelTree from "./TabbedPanelTree.svelte";
   import type {
     TabbedPanelDescriptor,
@@ -27,6 +31,12 @@
     withLeafActions?: boolean;
     onLeafAction?: ((leafID: string) => void) | undefined;
   }
+
+  const runtime = makeAppRuntime();
+  setAppRuntime(untrack(() => runtime));
+  onDestroy(() => {
+    Effect.runFork(runtime.disposeEffect);
+  });
 
   const {
     node,

@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { KataTaskReference, KataTaskReferenceResponse, KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type {
   KataTaskDetail,
   KataTaskEvent,
@@ -9,6 +11,16 @@ import type {
   KataTaskViewResponse,
 } from "../../api/kata/taskTypes.js";
 import { createKataLinkFilters } from "../../features/kata/kataLinkFilters.js";
+
+const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
+
+vi.mock("../../app/runtime-context.js", () => ({
+  getAppRuntime: () => {
+    const runtime = runtimeCapture.current;
+    if (runtime === undefined) throw new Error("Kata issue discussion test runtime is not initialized");
+    return runtime;
+  },
+}));
 
 import KataIssueDiscussion from "./KataIssueDiscussion.svelte";
 
@@ -116,7 +128,7 @@ function referenceResponse(references: KataTaskReference[]): KataTaskReferenceRe
 }
 
 function makeSearch(references: KataTaskReference[] = []): KataTaskReferenceSearch {
-  return vi.fn(async () => referenceResponse(references));
+  return vi.fn(() => Effect.succeed(referenceResponse(references)));
 }
 
 function searchTask(overrides: Partial<KataTaskReference> = {}): KataTaskReference {
@@ -154,8 +166,14 @@ function taskLink(id: number, peer: KataTaskSummary, type: KataTaskLink["type"])
 }
 
 describe("KataIssueDiscussion", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    runtimeCapture.current = makeAppRuntime();
+  });
+
+  afterEach(async () => {
     cleanup();
+    if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
+    runtimeCapture.current = undefined;
     vi.useRealTimers();
   });
 
@@ -170,8 +188,8 @@ describe("KataIssueDiscussion", () => {
         activeDaemonId: "home",
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -194,8 +212,8 @@ describe("KataIssueDiscussion", () => {
         activeDaemonId: "home",
         linkFilters: createKataLinkFilters("open"),
         onLinkFiltersChange: vi.fn(),
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -208,8 +226,8 @@ describe("KataIssueDiscussion", () => {
   });
 
   it("submits comments and related links for the selected issue", async () => {
-    const onAddComment = vi.fn(async () => true);
-    const onEditIssue = vi.fn(async () => true);
+    const onAddComment = vi.fn(() => Effect.succeed(true));
+    const onEditIssue = vi.fn(() => Effect.succeed(true));
 
     render(KataIssueDiscussion, {
       props: {
@@ -255,8 +273,8 @@ describe("KataIssueDiscussion", () => {
         activeDaemonId: "home",
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue,
       },
     });
@@ -289,8 +307,8 @@ describe("KataIssueDiscussion", () => {
         activeDaemonId: "home",
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
-        onAddComment: vi.fn(async () => false),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(false)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -314,8 +332,8 @@ describe("KataIssueDiscussion", () => {
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
         draftResetGeneration: 0,
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -348,8 +366,8 @@ describe("KataIssueDiscussion", () => {
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
         draftResetGeneration: 0,
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -382,8 +400,8 @@ describe("KataIssueDiscussion", () => {
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
         draftResetGeneration: 0,
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -412,8 +430,8 @@ describe("KataIssueDiscussion", () => {
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
         draftResetGeneration: 0,
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -440,8 +458,8 @@ describe("KataIssueDiscussion", () => {
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
         draftResetGeneration: 0,
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -470,8 +488,8 @@ describe("KataIssueDiscussion", () => {
         activeDaemonId: "home",
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -524,8 +542,8 @@ describe("KataIssueDiscussion", () => {
         activeDaemonId: "home",
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -555,8 +573,8 @@ describe("KataIssueDiscussion", () => {
         activeDaemonId: "home",
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -593,8 +611,8 @@ describe("KataIssueDiscussion", () => {
         activeDaemonId: "home",
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -629,8 +647,8 @@ describe("KataIssueDiscussion", () => {
         activeDaemonId: "home",
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue: vi.fn(),
       },
     });
@@ -667,8 +685,8 @@ describe("KataIssueDiscussion", () => {
         activeDaemonId: "home",
         linkFilters: createKataLinkFilters("all"),
         onLinkFiltersChange: vi.fn(),
-        onAddComment: vi.fn(async () => true),
-        onEditIssue: vi.fn(async () => true),
+        onAddComment: vi.fn(() => Effect.succeed(true)),
+        onEditIssue: vi.fn(() => Effect.succeed(true)),
         onSelectIssue,
       },
     });

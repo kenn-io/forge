@@ -8,7 +8,7 @@ import { ACTIONS_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../cont
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
-import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
+import { dismissFlash, getFlashes, showFlash } from "../../stores/flash.svelte.js";
 import {
   discardWorkspaceLaunch,
   markWorkspaceIdDeleted,
@@ -19,10 +19,11 @@ import {
 import type { GeneratedClient } from "../../api/generated-api.js";
 import type { ProblemBody } from "../../api/problems.js";
 import type { ProviderRouteRef } from "../../api/provider-routes.js";
-import type { ProviderActionCallbacks } from "../../stores/detail.svelte.js";
+import type { MergePullCallbacks, ProviderActionCallbacks } from "../../stores/detail.svelte.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/inlineWorkspaceTestController.svelte.js";
+import * as workspaceHost from "../../stores/workspace-host.svelte.js";
 
 const launchTargets = [
   {
@@ -47,6 +48,10 @@ afterEach(async () => {
   if (detailRuntime === null) return;
   await Effect.runPromise(detailRuntime.disposeEffect);
   detailRuntime = null;
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 const markdownMockState = vi.hoisted(() => ({
@@ -235,7 +240,27 @@ function renderPullDetail(
         callbacks.onProblem?.(error);
         callbacks.onFailure?.(error.detail ?? error.title ?? "provider action failed");
       } else {
+        const warning = result.data?.workspace_cleanup_warning;
+        if (warning) {
+          showFlash(`Pull request merged, but the workspace was not pruned: ${warning}`, { tone: "warning" });
+        }
         callbacks.onSuccess?.();
+      }
+      callbacks.onSettled?.();
+    });
+  };
+  const runMergeAction = (path: string, body: unknown, callbacks: MergePullCallbacks): void => {
+    void apiClient.POST(path, { body }).then((result) => {
+      const error = "error" in result ? (result.error as ProblemBody | undefined) : undefined;
+      if (error !== undefined) {
+        callbacks.onProblem?.(error);
+        callbacks.onFailure?.(error.detail ?? error.title ?? "provider action failed");
+      } else {
+        const warning = result.data?.workspace_cleanup_warning;
+        if (warning) {
+          showFlash(`Pull request merged, but the workspace was not pruned: ${warning}`, { tone: "warning" });
+        }
+        callbacks.onSuccess?.(warning === undefined ? {} : { cleanupWarning: warning });
       }
       callbacks.onSettled?.();
     });
@@ -290,10 +315,12 @@ function renderPullDetail(
       runProviderAction("/approve-workflows", undefined, callbacks),
     ),
     mergePull: vi.fn(
-      (_ref: ProviderRouteRef, _number: number, body: unknown, deferred: boolean, callbacks: ProviderActionCallbacks) =>
-        runProviderAction(deferred ? "/merge/deferred" : "/merge", body, callbacks),
+      (_ref: ProviderRouteRef, _number: number, body: unknown, deferred: boolean, callbacks: MergePullCallbacks) =>
+        runMergeAction(deferred ? "/merge/deferred" : "/merge", body, callbacks),
     ),
     editComment: vi.fn(),
+    savePRBodyInBackground: vi.fn(),
+    setLocalPRBody: vi.fn(),
     applyReviewSuggestions: vi.fn(
       (
         _owner: string,
@@ -640,6 +667,62 @@ describe("PullDetail approvals", () => {
       repoPath: "acme/widget",
       workflowApprovalSync: true,
     });
+  });
+
+  it("stops pending CI refreshes when the detail unmounts", async () => {
+    vi.useFakeTimers();
+    const detail = pullDetail();
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      {
+        name: "build",
+        status: "in_progress",
+        conclusion: "",
+        url: "https://example.com/build",
+        app: "GitHub Actions",
+      },
+    ]);
+    const view = renderPullDetail(detail);
+    await fireEvent.click(screen.getByRole("button", { name: /CI:\s*1\s*pending\s*check/i }));
+    expect(view.detailStore.refreshPendingCI).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(view.detailStore.refreshPendingCI).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels pending conversation scroll restoration when the detail unmounts", async () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const cancelFrame = vi.fn();
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      }),
+    );
+    vi.stubGlobal("cancelAnimationFrame", cancelFrame);
+    const view = renderPullDetail(pullDetail());
+    await waitFor(() => expect(callbacks.length).toBeGreaterThan(0));
+    const viewport = view.container.querySelector<HTMLDivElement>(".kit-scrollbox__viewport");
+    expect(viewport).not.toBeNull();
+    let scrollWrites = 0;
+    Object.defineProperty(viewport, "scrollTop", {
+      configurable: true,
+      get: () => 42,
+      set: () => {
+        scrollWrites += 1;
+      },
+    });
+
+    view.unmount();
+    for (const callback of callbacks) callback(performance.now());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(cancelFrame).toHaveBeenCalled();
+    expect(scrollWrites).toBe(0);
   });
 
   it("uses one shared expanded slot for CI and stack status", async () => {
@@ -1376,6 +1459,7 @@ describe("PullDetail approvals", () => {
   });
 
   it("warns after a successful merge when workspace cleanup fails", async () => {
+    const notifyWorkspaceDeleted = vi.spyOn(workspaceHost, "notifyWorkspaceDeleted");
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
     detail.workspace = { id: "ws-1", status: "ready" };
@@ -1410,6 +1494,7 @@ describe("PullDetail approvals", () => {
     );
 
     await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+    expect(screen.getByRole<HTMLInputElement>("checkbox", { name: "Delete workspace after merge" }).checked).toBe(true);
     await fireEvent.click(
       within(screen.getByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
         name: "Squash and merge",
@@ -1425,6 +1510,64 @@ describe("PullDetail approvals", () => {
       );
       expect(detailStore.loadDetail).toHaveBeenCalled();
     });
+    expect(apiClient.POST.mock.calls.at(-1)?.[1]).toMatchObject({ body: { delete_workspace_id: "ws-1" } });
+    expect(notifyWorkspaceDeleted).not.toHaveBeenCalled();
+    notifyWorkspaceDeleted.mockRestore();
+  });
+
+  it("publishes confirmed merge cleanup with the full pull identity", async () => {
+    const notifyWorkspaceDeleted = vi.spyOn(workspaceHost, "notifyWorkspaceDeleted");
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.workspace = { id: "ws-1", status: "ready" };
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          AllowSquashMerge: true,
+          AllowMergeCommit: false,
+          AllowRebaseMerge: false,
+          ViewerCanMerge: true,
+        },
+      })),
+      POST: vi.fn(async () => ({
+        data: {
+          merged: true,
+          sha: "merge-sha",
+          message: "merged",
+        },
+        error: undefined,
+      })),
+    };
+    renderPullDetail(
+      detail,
+      {
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: false,
+        ViewerCanMerge: true,
+      },
+      apiClient,
+    );
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
+        name: "Squash and merge",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(notifyWorkspaceDeleted).toHaveBeenCalledWith("ws-1", undefined, {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: 1,
+        itemType: "pull",
+      });
+    });
+    notifyWorkspaceDeleted.mockRestore();
   });
 
   it("opens the merge modal in deferred mode when aggregate CI is pending without check rows", async () => {
@@ -2342,5 +2485,56 @@ describe("PullDetail body copy feedback", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(document.querySelector(".body-copy--copied")).toBeNull();
+  });
+
+  it("drops branch-copy feedback that resolves after navigating to another pull", async () => {
+    const detail = pullDetail();
+    const { rerender } = renderPullDetail(detail);
+
+    await fireEvent.click(screen.getByRole("button", { name: "main" }));
+    expect(clipboardMockState.resolvers).toHaveLength(1);
+    detail.merge_request.Number += 1;
+    await rerender({ number: detail.merge_request.Number });
+
+    clipboardMockState.resolvers[0]!(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.getByRole("button", { name: "main" }).getAttribute("title")).toBe("Click to copy");
+  });
+});
+
+describe("PullDetail task body saves", () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("flushes a pending task checkbox save when the detail unmounts", async () => {
+    const detail = pullDetail();
+    detail.merge_request.Body = "- [ ] ship the change";
+    const view = renderPullDetail(detail);
+    let checkbox: HTMLInputElement | null = null;
+    await waitFor(() => {
+      checkbox = view.container.querySelector<HTMLInputElement>(".markdown-body input[type='checkbox']");
+      expect(checkbox?.dataset.taskIndex).toBe("0");
+    });
+    vi.useFakeTimers();
+
+    await fireEvent.click(checkbox as HTMLInputElement);
+    expect(view.detailStore.savePRBodyInBackground).not.toHaveBeenCalled();
+    view.unmount();
+
+    expect(view.detailStore.savePRBodyInBackground).toHaveBeenCalledWith(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      },
+      1,
+      "- [x] ship the change",
+    );
   });
 });

@@ -17,7 +17,7 @@ vi.mock("../components/detail/IssueDetail.svelte", async () => ({
   default: (await import("./IssueListViewTestIssueDetail.svelte")).default,
 }));
 
-import IssueListView from "./IssueListView.svelte";
+import IssueListView from "./IssueListViewRuntimeHarness.svelte";
 
 const selectedIssue: IssueRouteRef = {
   provider: "github",

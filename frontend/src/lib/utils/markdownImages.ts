@@ -1,9 +1,7 @@
+import { Effect } from "effect";
+import { makeMicrotaskScheduler } from "../browser/microtask.js";
+import { observeMutation } from "../browser/observers.js";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
-
-export interface MarkdownImageExpansionController {
-  renderNow: () => void;
-  disconnect: () => void;
-}
 
 const IMAGE_SELECTOR = ".markdown-body img, .doc-markdown img";
 const EXPANDER_CLASS = "markdown-image-expander";
@@ -206,36 +204,21 @@ function openMarkdownImageLightbox(sourceImage: HTMLImageElement): void {
   }
 }
 
-export function initMarkdownImageExpansion(root: HTMLElement | Document = document): MarkdownImageExpansionController {
-  let disconnected = false;
-  let scheduled = false;
-
-  const render = () => {
-    if (disconnected || scheduled) return;
-    scheduled = true;
-    queueMicrotask(() => {
-      scheduled = false;
-      if (!disconnected) expandMarkdownImages(root);
-    });
-  };
-
-  const observer =
-    typeof MutationObserver === "undefined"
-      ? null
-      : new MutationObserver(() => {
-          render();
-        });
-  observer?.observe(root instanceof Document ? root.documentElement : root, {
-    childList: true,
-    subtree: true,
-  });
-  render();
-
-  return {
-    renderNow: render,
-    disconnect() {
-      disconnected = true;
-      observer?.disconnect();
+export const observeMarkdownImageExpansion = Effect.fn("MarkdownImages.observe")(function* (
+  root: HTMLElement | Document = document,
+) {
+  const scheduler = yield* makeMicrotaskScheduler(
+    Effect.sync(() => {
+      expandMarkdownImages(root);
+    }),
+  );
+  yield* observeMutation(
+    root instanceof Document ? root.documentElement : root,
+    () => {
+      scheduler.schedule();
     },
-  };
-}
+    { childList: true, subtree: true },
+  );
+  scheduler.schedule();
+  return yield* Effect.never;
+});

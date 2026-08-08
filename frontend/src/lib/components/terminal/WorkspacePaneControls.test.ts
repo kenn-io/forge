@@ -3,6 +3,7 @@ import { createRawSnippet, flushSync } from "svelte";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import WorkspacePaneControls from "./WorkspacePaneControls.svelte";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import {
   registerWorkspaceControls,
   resetWorkspaceHostForTest,
@@ -26,6 +27,10 @@ function trigger(): HTMLElement | null {
   return screen.queryByRole("button", { name: "Workspace controls" });
 }
 
+function renderControls(props: { showStripActions?: boolean } = {}): void {
+  render(AppRuntimeHarness, { props: { component: WorkspacePaneControls, ...props } });
+}
+
 describe("WorkspacePaneControls", () => {
   beforeEach(() => {
     resetWorkspaceHostForTest();
@@ -37,7 +42,7 @@ describe("WorkspacePaneControls", () => {
   });
 
   it("renders nothing while no workspace view is hosted", () => {
-    render(WorkspacePaneControls);
+    renderControls();
 
     // Every leaf of a detail surface renders this, including the ones showing a
     // conversation with no workspace anywhere: a button that opened an empty
@@ -47,7 +52,7 @@ describe("WorkspacePaneControls", () => {
 
   it("opens the hosted view's controls in one popover", async () => {
     hostControls();
-    render(WorkspacePaneControls);
+    renderControls();
 
     const button = trigger();
     expect(button).not.toBeNull();
@@ -69,17 +74,17 @@ describe("WorkspacePaneControls", () => {
     }));
     registerWorkspaceControls({ snippet, stripActions, workspaceKey: "ws-1" });
 
-    render(WorkspacePaneControls, { props: { showStripActions: false } });
+    renderControls({ showStripActions: false });
     expect(screen.queryByRole("button", { name: "Delete workspace main" })).toBeNull();
     cleanup();
 
-    render(WorkspacePaneControls);
+    renderControls();
     expect(screen.getByRole("button", { name: "Delete workspace main" })).toBeTruthy();
   });
 
   it("closes on Escape and on a click outside", async () => {
     hostControls();
-    render(WorkspacePaneControls);
+    renderControls();
 
     await fireEvent.click(trigger()!);
     await fireEvent.keyDown(window, { key: "Escape" });
@@ -92,7 +97,7 @@ describe("WorkspacePaneControls", () => {
 
   it("closes when the pane starts hosting a different workspace", async () => {
     hostControls("ws-1");
-    render(WorkspacePaneControls);
+    renderControls();
     await fireEvent.click(trigger()!);
 
     // The surface keeps rendering while the user selects another item, so one
@@ -106,7 +111,7 @@ describe("WorkspacePaneControls", () => {
 
   it("stays open while a hosted control is mid-save", async () => {
     hostControls();
-    render(WorkspacePaneControls);
+    renderControls();
     await fireEvent.click(trigger()!);
     flushSync(() => setWorkspaceControlsBusy("ws-1", true));
 
@@ -124,7 +129,7 @@ describe("WorkspacePaneControls", () => {
 
   it("is dismissable while another workspace's save is still in flight", async () => {
     hostControls("ws-1");
-    render(WorkspacePaneControls);
+    renderControls();
     await fireEvent.click(trigger()!);
     // A preset apply started on ws-1 clears its pending flag only while ws-1 is
     // still the hosted workspace, so a switch mid-save leaves that write reported
@@ -141,7 +146,7 @@ describe("WorkspacePaneControls", () => {
 
   it("closes when the hosted view goes away under it", async () => {
     hostControls();
-    render(WorkspacePaneControls);
+    renderControls();
     await fireEvent.click(trigger()!);
 
     // The claim is released, the pane closed, the workspace deleted: the view

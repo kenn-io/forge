@@ -1,7 +1,10 @@
 <script lang="ts">
   import { EmptyState, SearchInput, Spinner, Toggle } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import { onMount, onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
+  import type { AppExecution } from "../app/runtime.js";
+  import { getAppRuntime } from "../app/runtime-context.js";
   import {
     buildActivityFilterTypes,
     DEFAULT_ACTIVITY_ITEM_TYPES,
@@ -44,6 +47,7 @@
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
 
   const { activity, settings, sync, grouping } = getStores();
+  const runtime = getAppRuntime();
   const navigate = getNavigate();
   const { isEmbedded } = getSidebar();
 
@@ -83,7 +87,7 @@
   }: Props = $props();
 
   let searchInput = $state("");
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let debounceExecution: AppExecution<void, never> | null = null;
 
   const EVENT_TYPES = DEFAULT_EVENT_TYPES;
   type EventType = (typeof EVENT_TYPES)[number];
@@ -132,7 +136,7 @@
   onDestroy(() => {
     activity.stopActivityPolling();
     unsubSync?.();
-    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceExecution?.interrupt();
   });
 
   function applyFilters(): void {
@@ -193,12 +197,24 @@
 
   function handleSearchInput(val: string): void {
     searchInput = val;
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      activity.setActivitySearch(val || undefined);
-      activity.syncToURL();
-      activity.loadActivity();
-    }, 300);
+    debounceExecution?.interrupt();
+    debounceExecution = runtime.runCommand(
+      Effect.sleep("300 millis").pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            debounceExecution = null;
+            activity.setActivitySearch(val || undefined);
+            activity.syncToURL();
+            activity.loadActivity();
+          }),
+        ),
+      ),
+      {
+        operation: "debounce activity search",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   function eventLabel(item: ActivityItem): string {

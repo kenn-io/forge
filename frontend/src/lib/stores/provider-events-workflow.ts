@@ -88,6 +88,7 @@ export class DeferredMergeCompletedEvent extends Schema.Class<DeferredMergeCompl
   sha: Schema.optionalKey(Schema.String),
   message: Schema.optionalKey(Schema.String),
   error: Schema.optionalKey(Schema.String),
+  workspace_cleanup_warning: Schema.optionalKey(Schema.String),
   completed_at: Schema.String,
 }) {}
 

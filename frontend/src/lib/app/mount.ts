@@ -1,7 +1,10 @@
+import { initMarkdownMermaidRendering } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { Cause, Effect, Exit, Fiber } from "effect";
 import type { Cause as CauseType } from "effect/Cause";
 import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
+import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
+import { observeMarkdownImageExpansion } from "../utils/markdownImages.js";
 import type { OwnedAppRuntime } from "./runtime.js";
 
 function renderApplicationFailure(target: HTMLElement): void {
@@ -23,12 +26,36 @@ export const appProgram = (target: HTMLElement, runtime: OwnedAppRuntime) =>
     (application) => Effect.promise(() => unmount(application)),
   ).pipe(Effect.andThen(Effect.never));
 
+const observeMarkdownMermaidRendering = (target: HTMLElement) =>
+  Effect.acquireRelease(
+    Effect.sync(() =>
+      initMarkdownMermaidRendering(target, {
+        onLightboxOpen: () => pushModalFrame("mermaid-lightbox", []),
+      }),
+    ),
+    (controller) => Effect.sync(() => controller.disconnect()),
+  ).pipe(Effect.andThen(Effect.never));
+
 export function mountApplication(
   target: HTMLElement,
   runtime: OwnedAppRuntime,
   reportFailure: (cause: CauseType<never>) => void = () => undefined,
 ) {
-  const root = Effect.scoped(appProgram(target, runtime)).pipe(Effect.ensuring(runtime.disposeEffect));
+  const imageExpansion = runtime.runCommand(Effect.scoped(observeMarkdownImageExpansion(target)), {
+    operation: "observe markdown images",
+    safeContext: {},
+    onFailure: () => {},
+  });
+  const mermaidRendering = runtime.runCommand(Effect.scoped(observeMarkdownMermaidRendering(target)), {
+    operation: "observe markdown diagrams",
+    safeContext: {},
+    onFailure: () => {},
+  });
+  const root = Effect.scoped(appProgram(target, runtime)).pipe(
+    Effect.ensuring(Effect.sync(imageExpansion.interrupt)),
+    Effect.ensuring(Effect.sync(mermaidRendering.interrupt)),
+    Effect.ensuring(runtime.disposeEffect),
+  );
   const rootFiber = Effect.runFork(root);
   rootFiber.addObserver((exit) => {
     if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) {

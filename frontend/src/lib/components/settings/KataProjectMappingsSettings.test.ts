@@ -1,18 +1,24 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { defaultProviderCapabilities } from "../repositories/repoSummary.js";
 import KataProjectMappingsSettings from "./KataProjectMappingsSettingsRuntimeHarness.svelte";
 
-const { mockUpdateSettings, mockFetchKataDaemons, mockGetKataProjectMappings } = vi.hoisted(() => ({
-  mockUpdateSettings: vi.fn(),
+const { mockPersistSettings, mockFetchKataDaemons, mockGetKataProjectMappings } = vi.hoisted(() => ({
+  mockPersistSettings: vi.fn(),
   mockFetchKataDaemons: vi.fn(),
   mockGetKataProjectMappings: vi.fn(),
 }));
 
-vi.mock("../../api/settings.js", () => ({
-  updateSettings: mockUpdateSettings,
-}));
+vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
+  return {
+    ...actual,
+    SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({
+      persist: (request) => Effect.promise(() => mockPersistSettings(request())),
+    }),
+  };
+});
 
 vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../stores/embed-config.svelte.js")>()),
@@ -37,7 +43,7 @@ describe("KataProjectMappingsSettings", () => {
 
   afterEach(() => {
     cleanup();
-    mockUpdateSettings.mockReset();
+    mockPersistSettings.mockReset();
     mockFetchKataDaemons.mockReset();
     mockGetKataProjectMappings.mockReset();
   });
@@ -126,7 +132,7 @@ describe("KataProjectMappingsSettings", () => {
         repo_path: "kenn-io/middleman",
       },
     ];
-    mockUpdateSettings.mockResolvedValue({ kata_projects: savedMappings });
+    mockPersistSettings.mockResolvedValue({ kata_projects: savedMappings });
     mockGetKataProjectMappings.mockReturnValue(
       Effect.succeed({
         daemon_id: "work",
@@ -189,9 +195,113 @@ describe("KataProjectMappingsSettings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save Kata mappings" }));
 
     await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({ kata_projects: savedMappings });
+      expect(mockPersistSettings).toHaveBeenCalledWith({ kata_projects: savedMappings });
       expect(onUpdate).toHaveBeenCalledWith(savedMappings);
     });
+  });
+
+  it("keeps a newer daemon selection when the post-save diagnostics refresh settles late", async () => {
+    const configuredMapping = {
+      project_uid: "project-old",
+      provider: "github",
+      platform_host: "github.com",
+      repo_path: "acme/old",
+    };
+    const workDiagnostics = { daemon_id: "work", projects: [], targets: [] };
+    const personalDiagnostics = { daemon_id: "personal", projects: [], targets: [] };
+    let completePostSaveRefresh: ((value: typeof workDiagnostics) => void) | undefined;
+    const postSaveRefresh = new Promise<typeof workDiagnostics>((resolve) => {
+      completePostSaveRefresh = resolve;
+    });
+    mockFetchKataDaemons.mockReturnValue(
+      Effect.succeed([
+        { id: "work", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
+        { id: "personal", url: "http://127.0.0.1:8888", default: false, auth: "none", health: "connected" },
+      ]),
+    );
+    mockGetKataProjectMappings
+      .mockReturnValueOnce(Effect.succeed(workDiagnostics))
+      .mockReturnValueOnce(Effect.promise(() => postSaveRefresh))
+      .mockReturnValueOnce(Effect.succeed(personalDiagnostics));
+    mockPersistSettings.mockResolvedValue({ kata_projects: [] });
+    render(KataProjectMappingsSettings, {
+      props: { mappings: [configuredMapping], onUpdate: vi.fn() },
+    });
+
+    await screen.findByRole("combobox", { name: "Kata mapping daemon: work" });
+    await fireEvent.click(screen.getByRole("button", { name: "Remove Kata project mapping project-old" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save Kata mappings" }));
+    await waitFor(() => expect(mockGetKataProjectMappings).toHaveBeenCalledTimes(2));
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Kata mapping daemon: work" }));
+    await fireEvent.click(screen.getByRole("option", { name: "personal" }));
+    await screen.findByRole("combobox", { name: "Kata mapping daemon: personal" });
+    if (!completePostSaveRefresh) throw new Error("post-save diagnostics refresh did not start");
+    completePostSaveRefresh(workDiagnostics);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByRole("combobox", { name: "Kata mapping daemon: personal" })).toBeTruthy();
+  });
+
+  it("does not publish a pending settings save after the panel unmounts", async () => {
+    const savedMappings = [
+      {
+        daemon_id: "work",
+        project_uid: "project-kata",
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "kenn-io/middleman",
+      },
+    ];
+    let completeSave: ((settings: { kata_projects: typeof savedMappings }) => void) | undefined;
+    const pendingSave = new Promise<{ kata_projects: typeof savedMappings }>((resolve) => {
+      completeSave = resolve;
+    });
+    mockPersistSettings.mockReturnValue(pendingSave);
+    mockGetKataProjectMappings.mockReturnValue(
+      Effect.succeed({
+        daemon_id: "work",
+        projects: [],
+        targets: [
+          {
+            display_name: "Kenn Forge",
+            repo: {
+              provider: "github",
+              platform_host: "github.com",
+              owner: "kenn-io",
+              name: "middleman",
+              repo_path: "kenn-io/middleman",
+              capabilities: defaultProviderCapabilities,
+            },
+          },
+        ],
+      }),
+    );
+    const onUpdate = vi.fn();
+    const view = render(KataProjectMappingsSettings, {
+      props: { mappings: [], onUpdate },
+    });
+    await fireEvent.click(await screen.findByRole("button", { name: "Add mapping" }));
+    await fireEvent.input(screen.getByLabelText("Kata project mapping 1 daemon ID"), {
+      target: { value: "work" },
+    });
+    await fireEvent.input(screen.getByLabelText("Kata project mapping 1 UID"), {
+      target: { value: "project-kata" },
+    });
+    const pickerName = "Kata project project-kata repository target";
+    await fireEvent.click(screen.getByRole("button", { name: pickerName }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Kenn Forge · kenn-io/middleman" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save Kata mappings" }));
+    await waitFor(() => {
+      expect(mockPersistSettings).toHaveBeenCalledWith({ kata_projects: savedMappings });
+    });
+
+    view.unmount();
+    if (!completeSave) throw new Error("settings save did not start");
+    completeSave({ kata_projects: savedMappings });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onUpdate).not.toHaveBeenCalled();
   });
 
   it("requires an explicit repository choice when inference has no selectable target", async () => {

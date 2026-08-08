@@ -1,10 +1,18 @@
 <script lang="ts">
   import { Button, SelectDropdown, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import { TextInput } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import type { Settings } from "../../api/types.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import {
+    SettingsWorkflow,
+    settingsErrorMessage,
+    type RepoPreviewRow,
+  } from "../../stores/settings-workflow.js";
   import Modal from "../shared/Modal.svelte";
-  import { bulkAddRepos, previewRepos, type RepoPreviewRow } from "../../api/settings.js";
   import RepoPreviewTable from "./RepoPreviewTable.svelte";
   import { defaultRepoImportProvider, repoImportProvider, repoImportProviders } from "./repoImportProviders.js";
   import {
@@ -26,6 +34,7 @@
   }
 
   let { open, onClose, onImported }: Props = $props();
+  const runtime = getAppRuntime();
 
   const providerOptions: SelectDropdownOption[] = repoImportProviders.map((option) => ({
     value: option.id,
@@ -46,7 +55,7 @@
   let loading = $state(false);
   let submitting = $state(false);
   let error = $state<string | null>(null);
-  let requestToken = 0;
+  let previewExecution: AppExecution<void, never> | null = null;
 
   const sortedRows = $derived(sortRows(rows, sort));
   const visibilityFilters = $derived({ hideForks, hidePrivate });
@@ -60,6 +69,8 @@
     if (!open) resetAll();
   });
 
+  onDestroy(() => previewExecution?.interrupt());
+
   function resetPreviewState(): void {
     rows = [];
     selected = new Set();
@@ -71,35 +82,45 @@
     anchorKey = null;
   }
 
+  function cancelPreview(): void {
+    previewExecution?.interrupt();
+    previewExecution = null;
+    loading = false;
+  }
+
   function resetAll(): void {
+    cancelPreview();
     patternInput = "";
     provider = defaultRepoImportProvider.id;
     hostInput = defaultRepoImportProvider.defaultHost;
     resetPreviewState();
     error = null;
-    loading = false;
     submitting = false;
-    requestToken += 1;
   }
 
   function handlePatternInput(value: string): void {
+    cancelPreview();
     patternInput = value;
-    requestToken += 1;
     resetPreviewState();
     error = null;
-    loading = false;
   }
 
   function handleProviderChange(value: string): void {
+    cancelPreview();
     provider = value;
     hostInput = repoImportProvider(value).defaultHost;
-    requestToken += 1;
     resetPreviewState();
     error = null;
-    loading = false;
   }
 
-  async function handlePreview(): Promise<void> {
+  function handleHostInput(value: string): void {
+    cancelPreview();
+    hostInput = value;
+    resetPreviewState();
+    error = null;
+  }
+
+  function handlePreview(): void {
     if (loading) return;
     let parsed: { owner: string; pattern: string };
     try {
@@ -109,46 +130,75 @@
       error = err instanceof Error ? err.message : String(err);
       return;
     }
-    const token = ++requestToken;
     loading = true;
     error = null;
     resetPreviewState();
-    try {
-      const resp = await previewRepos(parsed.owner, parsed.pattern, {
-        provider,
-        host: hostInput.trim(),
-      });
-      if (token !== requestToken) return;
-      rows = resp.repos;
-      selected = new Set(resp.repos.filter((row) => !row.already_configured).map(rowKey));
-    } catch (err) {
-      if (token !== requestToken) return;
-      resetPreviewState();
-      error = err instanceof Error ? err.message : String(err);
-    } finally {
-      if (token === requestToken) loading = false;
-    }
+    const options = { provider, host: hostInput.trim() };
+    let execution: AppExecution<void, never> | undefined;
+    const program = Effect.gen(function* () {
+      const workflow = yield* SettingsWorkflow;
+      return yield* workflow.previewRepos(parsed.owner, parsed.pattern, options);
+    }).pipe(
+      Effect.matchEffect({
+        onFailure: (failure) => Effect.sync(() => {
+          if (execution === undefined || previewExecution !== execution) return;
+          resetPreviewState();
+          error = settingsErrorMessage(failure);
+        }),
+        onSuccess: (response) => Effect.sync(() => {
+          if (execution === undefined || previewExecution !== execution) return;
+          rows = response.repos;
+          selected = new Set(response.repos.filter((row) => !row.already_configured).map(rowKey));
+        }),
+      }),
+      Effect.ensuring(Effect.sync(() => {
+        if (execution === undefined || previewExecution !== execution) return;
+        previewExecution = null;
+        loading = false;
+      })),
+    );
+    execution = runtime.runCommand(program, {
+      operation: "preview repositories",
+      safeContext: { provider: options.provider, host: options.host },
+      onFailure: () => {},
+    });
+    previewExecution = execution;
   }
 
-  async function handleSubmit(): Promise<void> {
+  function handleSubmit(): void {
     if (submitRows.length === 0) return;
     submitting = true;
     error = null;
-    try {
-      const settings = await bulkAddRepos(submitRows.map((row) => ({
-        provider: row.provider,
-        host: row.platform_host,
-        owner: row.owner,
-        name: row.name,
-        repo_path: row.repo_path,
-      })));
-      onImported(settings);
-      onClose();
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
-    } finally {
-      submitting = false;
-    }
+    const repos = submitRows.map((row) => ({
+      provider: row.provider,
+      host: row.platform_host,
+      owner: row.owner,
+      name: row.name,
+      repo_path: row.repo_path,
+    }));
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.bulkAddRepos(repos);
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => showFlash(settingsErrorMessage(failure), { tone: "danger" })),
+          onSuccess: (settings) => Effect.sync(() => {
+            onImported(settings);
+            onClose();
+          }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          submitting = false;
+        })),
+      ),
+      {
+        operation: "add selected repositories",
+        safeContext: { count: repos.length },
+        onFailure: () => {},
+      },
+    );
   }
 
   function toggleSort(field: SortState["field"]): void {
@@ -203,7 +253,7 @@
             block
             value={hostInput}
             placeholder={providerMeta.defaultHost}
-            oninput={(value) => { hostInput = value; }}
+            oninput={handleHostInput}
           />
         </label>
         <label>
@@ -214,13 +264,13 @@
             value={patternInput}
             placeholder={providerMeta.ownerPatternPlaceholder}
             oninput={handlePatternInput}
-            onkeydown={(event) => { if (event.key === "Enter" && !loading) void handlePreview(); }}
+            onkeydown={(event) => { if (event.key === "Enter" && !loading) handlePreview(); }}
           />
         </label>
         <Button
           tone="info"
           surface="solid"
-          onclick={() => void handlePreview()}
+          onclick={handlePreview}
           disabled={loading || !patternInput.trim()}
         >
           {loading ? "Previewing…" : "Preview"}
@@ -261,7 +311,7 @@
       <Button
         tone="info"
         surface="solid"
-        onclick={() => void handleSubmit()}
+        onclick={handleSubmit}
         disabled={submitting || selectedCount === 0}
       >
         {submitting ? "Adding…" : "Add selected repositories"}

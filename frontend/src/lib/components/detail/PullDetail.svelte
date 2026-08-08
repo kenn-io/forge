@@ -3,13 +3,15 @@
 </script>
 
 <script lang="ts">
-  import { Effect } from "effect";
+  import { Effect, Schedule } from "effect";
   import { onDestroy, tick, untrack, type ComponentProps } from "svelte";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { retryIdempotentRead } from "../../api/retry-policy.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { nextAnimationFrame } from "../../browser/animation-frame.js";
+  import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import type {
     KanbanStatus,
     Label,
@@ -26,7 +28,7 @@
     getStores, getActions,
     getUIConfig, getNavigate,
   } from "../../context.js";
-  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
+  import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import { buildPullRequestFilesRoute } from "../../routes.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import type { ApplySuggestionRequest } from "../../utils/markdown-suggestions.js";
@@ -116,6 +118,7 @@
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
   } from "../../stores/workspace-create-pending.svelte.js";
+  import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
 
   type ChipTrailing = ComponentProps<typeof Chip>["trailing"];
 
@@ -228,7 +231,7 @@
   let activeTab = $state<"conversation" | "files">("conversation");
   let expandedPanel = $state<"ci" | "stack" | "merge" | null>(null);
   let pullDetailScroller: HTMLDivElement | undefined = $state();
-  let pullDetailScrollRestoreRaf = 0;
+  let pullDetailScrollRestoreExecution: AppExecution<void, never> | undefined;
   let keepStackExpandedOnRouteChange = false;
   let timelineFilter = $state<PRTimelineFilterState>(
     loadPRTimelineFilter(),
@@ -416,15 +419,25 @@
     pullDetailScrollPositions[pullDetailScrollKey()] = pullDetailScroller.scrollTop;
   }
 
-  async function restorePullDetailScroll(): Promise<void> {
+  function restorePullDetailScroll(): void {
     const restoreKey = pullDetailScrollKey();
-    await tick();
-    cancelAnimationFrame(pullDetailScrollRestoreRaf);
-    pullDetailScrollRestoreRaf = requestAnimationFrame(() => {
-      pullDetailScrollRestoreRaf = 0;
-      if (!pullDetailScroller) return;
-      pullDetailScroller.scrollTop = pullDetailScrollPositions[restoreKey] ?? 0;
-    });
+    pullDetailScrollRestoreExecution?.interrupt();
+    pullDetailScrollRestoreExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(nextAnimationFrame),
+        Effect.andThen(
+          Effect.sync(() => {
+            if (!pullDetailScroller) return;
+            pullDetailScroller.scrollTop = pullDetailScrollPositions[restoreKey] ?? 0;
+          }),
+        ),
+      ),
+      {
+        operation: "restore pull request detail scroll",
+        safeContext: { owner, name, number },
+        onFailure: () => {},
+      },
+    );
   }
 
   function handlePullDetailScroll(): void {
@@ -501,17 +514,24 @@
 
   $effect(() => {
     if (!shouldAutoRefreshCI) return;
-    const refresh = () => {
-      detailStore.refreshPendingCI(owner, name, number, {
-        provider,
-        platformHost,
-        repoPath,
-        workflowApprovalSync,
-      });
-    };
-    refresh();
-    const interval = setInterval(refresh, 15_000);
-    return () => clearInterval(interval);
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.sync(() => {
+          detailStore.refreshPendingCI(owner, name, number, {
+            provider,
+            platformHost,
+            repoPath,
+            workflowApprovalSync,
+          });
+        }).pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.asVoid),
+        {
+          operation: "refresh pending pull request checks",
+          safeContext: { owner, name, number },
+          onFailure: () => {},
+        },
+      ),
+    );
+    return execution.interrupt;
   });
 
   $effect(() => {
@@ -561,13 +581,16 @@
     void activeTab;
     void detailStore.getDetail()?.detail_fetched_at;
     if (activeTab !== "conversation") return;
-    void restorePullDetailScroll();
+    restorePullDetailScroll();
   });
 
   onDestroy(() => {
-    cancelAnimationFrame(pullDetailScrollRestoreRaf);
+    pullDetailScrollRestoreExecution?.interrupt();
     labelCatalogGeneration += 1;
     labelCatalogExecution?.interrupt();
+    branchCopyExecution?.interrupt();
+    bodyCopyExecution?.interrupt();
+    flushBodySave();
     componentDestroyed = true;
   });
 
@@ -623,21 +646,30 @@
 
 
   let copiedBranch = $state<string | null>(null);
-  let branchCopyTimeout: ReturnType<typeof setTimeout> | null
-    = null;
+  let branchCopyExecution: AppExecution<void, never> | undefined;
+  let branchCopySeq = 0;
 
   function copyBranch(text: string): void {
-    void copyToClipboard(text).then((ok) => {
-      if (!ok) return;
-      copiedBranch = text;
-      if (branchCopyTimeout !== null) {
-        clearTimeout(branchCopyTimeout);
-      }
-      branchCopyTimeout = setTimeout(() => {
-        copiedBranch = null;
-        branchCopyTimeout = null;
-      }, 1500);
-    });
+    const seq = branchCopySeq;
+    branchCopyExecution?.interrupt();
+    branchCopyExecution = runtime.runCommand(
+      transientClipboardFeedback({
+        text,
+        write: copyToClipboard,
+        isActive: () => !componentDestroyed && seq === branchCopySeq,
+        onCopied: () => {
+          copiedBranch = text;
+        },
+        onExpired: () => {
+          copiedBranch = null;
+        },
+      }),
+      {
+        operation: "copy pull request branch",
+        safeContext: { owner, name, number },
+        onFailure: () => {},
+      },
+    );
   }
 
   let stateSubmitting = $state(false);
@@ -1110,7 +1142,9 @@
   let labelCatalogGeneration = 0;
 
   const workspace = $derived(
-    inlineWorkspace
+    stalePR
+      ? null
+      : inlineWorkspace
       ? inlineWorkspace.effectiveWorkspaceRef(itemIdentity, detailStore.getDetail()?.workspace ?? null)
       : // Without a controller there is no override store: the shared
         // resolver stands in — the confirmed created record wins over a
@@ -1552,7 +1586,7 @@
   // feedback, then debounce a PATCH so a flurry of clicks collapses
   // into a single save. Avoids GitHub-style per-click blocking saves.
   // The target (owner/name/number) AND the body to save are captured
-  // when scheduling so a route change before the timer fires can't
+  // when scheduling so a route change before the debounce settles can't
   // redirect the save or lose the edit.
   type PendingBodySave = {
     owner: string;
@@ -1563,7 +1597,7 @@
     platformHost?: string | undefined;
     repoPath: string;
   };
-  let bodySaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  let bodySaveExecution: AppExecution<void, never> | undefined;
   let pendingBodySave: PendingBodySave | null = null;
   const BODY_SAVE_DEBOUNCE_MS = 400;
 
@@ -1572,17 +1606,31 @@
       owner, name, number, body,
       provider, platformHost, repoPath,
     };
-    if (bodySaveTimeout !== null) clearTimeout(bodySaveTimeout);
-    bodySaveTimeout = setTimeout(() => {
-      flushBodySave();
-    }, BODY_SAVE_DEBOUNCE_MS);
+    bodySaveExecution?.interrupt();
+    bodySaveExecution = runtime.runCommand(
+      Effect.sleep(`${BODY_SAVE_DEBOUNCE_MS} millis`).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            bodySaveExecution = undefined;
+            savePendingBody();
+          }),
+        ),
+      ),
+      {
+        operation: "debounce pull request task body save",
+        safeContext: { owner, name, number },
+        onFailure: () => {},
+      },
+    );
   }
 
   function flushBodySave(): void {
-    if (bodySaveTimeout !== null) {
-      clearTimeout(bodySaveTimeout);
-      bodySaveTimeout = null;
-    }
+    bodySaveExecution?.interrupt();
+    bodySaveExecution = undefined;
+    savePendingBody();
+  }
+
+  function savePendingBody(): void {
     const target = pendingBodySave;
     pendingBodySave = null;
     if (target === null) return;
@@ -1788,33 +1836,43 @@
   // must keep the button visible for the whole copied window even after
   // the pointer leaves.
   let bodyCopied = $state(false);
-  let bodyCopiedTimeout: ReturnType<typeof setTimeout> | null = null;
+  let bodyCopyExecution: AppExecution<void, never> | undefined;
   let bodyCopySeq = 0;
 
   function copyBody(text: string): void {
     const seq = bodyCopySeq;
-    void copyToClipboard(text).then((ok) => {
-      // A copy started on a previous item must not surface feedback on
-      // the one now displayed; the reset effect bumps the token.
-      if (!ok || seq !== bodyCopySeq) return;
-      bodyCopied = true;
-      if (bodyCopiedTimeout !== null) clearTimeout(bodyCopiedTimeout);
-      bodyCopiedTimeout = setTimeout(() => {
-        bodyCopied = false;
-        bodyCopiedTimeout = null;
-      }, 1500);
-    });
+    bodyCopyExecution?.interrupt();
+    bodyCopyExecution = runtime.runCommand(
+      transientClipboardFeedback({
+        text,
+        write: copyToClipboard,
+        isActive: () => !componentDestroyed && seq === bodyCopySeq,
+        onCopied: () => {
+          bodyCopied = true;
+        },
+        onExpired: () => {
+          bodyCopied = false;
+        },
+      }),
+      {
+        operation: "copy pull request body",
+        safeContext: { owner, name, number },
+        onFailure: () => {},
+      },
+    );
   }
 
   $effect(() => {
     // The component is reused across item navigation; the copied feedback
     // (and its pending reset timer) belongs to the item it was copied from.
     void [provider, platformHost, owner, name, number];
+    branchCopySeq++;
+    branchCopyExecution?.interrupt();
+    branchCopyExecution = undefined;
+    copiedBranch = null;
     bodyCopySeq++;
-    if (bodyCopiedTimeout !== null) {
-      clearTimeout(bodyCopiedTimeout);
-      bodyCopiedTimeout = null;
-    }
+    bodyCopyExecution?.interrupt();
+    bodyCopyExecution = undefined;
     bodyCopied = false;
   });
 </script>
@@ -2735,6 +2793,7 @@
           routeGeneration={mutationRouteGeneration}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           alreadyQueued={deferredMergePending}
+          workspaceId={d.workspace?.id}
           midStackWarning={midStackBlocker
             ? `This is stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}. Branch #${midStackBlocker.number} below it has not been merged.`
             : undefined}
@@ -2750,7 +2809,10 @@
               repoPath,
             });
           }}
-          onmerged={() => {
+          onmerged={(_cleanupWarning, deletedWorkspaceId) => {
+            if (deletedWorkspaceId) {
+              notifyWorkspaceDeleted(deletedWorkspaceId, undefined, itemIdentity);
+            }
             showMergeModal = false;
             detailStore.loadDetail(owner, name, number, {
               provider,
@@ -2827,11 +2889,11 @@
                 ondrop={onBodyDrop}
                 ondragend={onBodyDragEnd}
               >
-                {#await renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
-                  {@html renderMarkdownSync(pr.Body, { provider, platformHost, owner, name, repoPath })}
-                {:then html}
-                  {@html html}
-                {/await}
+                <MarkdownHtml
+                  raw={pr.Body}
+                  repo={{ provider, platformHost, owner, name, repoPath }}
+                  options={{ interactiveTasks: capabilities.state_mutation && !contentGate.unavailable }}
+                />
               </div>
             </CollapsibleDescription>
           {/key}

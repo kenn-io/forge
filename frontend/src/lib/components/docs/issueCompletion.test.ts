@@ -1,9 +1,22 @@
 import { CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
-import { describe, expect, test, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { afterAll, describe, expect, test, vi } from "vite-plus/test";
 
-import type { KataTaskReference, KataTaskReferenceResponse, KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+import {
+  KataSnapshotAPIError,
+  type KataTaskReference,
+  type KataTaskReferenceResponse,
+  type KataTaskReferenceSearch,
+} from "../../api/kata/snapshot.js";
+import { makeAppRuntime } from "../../app/runtime.js";
 import { buildIssueCompletionSource } from "./issueCompletion";
+
+const runtime = makeAppRuntime();
+
+afterAll(async () => {
+  await Effect.runPromise(runtime.disposeEffect);
+});
 
 function reference(overrides: Partial<KataTaskReference> = {}): KataTaskReference {
   return {
@@ -38,12 +51,15 @@ function makeSource(
   references: KataTaskReference[],
   options: { daemon?: () => string | undefined; debounceMs?: number } = {},
 ) {
-  const searchReferences: KataTaskReferenceSearch = vi.fn(async () => response(references));
-  const source = buildIssueCompletionSource({
-    searchReferences,
-    daemonId: options.daemon,
-    debounceMs: options.debounceMs ?? 0,
-  });
+  const searchReferences: KataTaskReferenceSearch = vi.fn(() => Effect.succeed(response(references)));
+  const source = buildIssueCompletionSource(
+    {
+      searchReferences,
+      daemonId: options.daemon,
+      debounceMs: options.debounceMs ?? 0,
+    },
+    runtime,
+  );
   return { source, searchReferences };
 }
 
@@ -98,7 +114,9 @@ describe("buildIssueCompletionSource", () => {
     const result = await complete(source, "done in household/#");
 
     expect(result?.options.map((option) => option.label)).toEqual(["household/#rent"]);
-    expect(searchReferences).toHaveBeenCalledWith("household#", { limit: 50 });
+    expect(searchReferences).toHaveBeenCalledWith("household#", {
+      limit: 50,
+    });
   });
 
   test("scopes qualified completion by canonical identity instead of project display name", async () => {
@@ -112,7 +130,9 @@ describe("buildIssueCompletionSource", () => {
     const result = await complete(source, "done in household-identity/#r");
 
     expect(result?.options.map((option) => option.label)).toEqual(["household-identity/#rent"]);
-    expect(searchReferences).toHaveBeenCalledWith("household-identity#r", { limit: 50 });
+    expect(searchReferences).toHaveBeenCalledWith("household-identity#r", {
+      limit: 50,
+    });
   });
 
   test("returns no completion for a formerly closed task omitted by the open reference service", async () => {
@@ -141,17 +161,46 @@ describe("buildIssueCompletionSource", () => {
     daemon = "beta";
     await pending;
 
-    expect(searchReferences).toHaveBeenCalledWith("ne", { daemon_id: "alpha", limit: 50 });
+    expect(searchReferences).toHaveBeenCalledWith("ne", {
+      daemon_id: "alpha",
+      limit: 50,
+    });
   });
 
   test("keeps the completion surface available when reference search fails", async () => {
-    const searchReferences: KataTaskReferenceSearch = vi.fn(async () => {
-      throw new Error("offline");
-    });
-    const source = buildIssueCompletionSource({ searchReferences });
+    const searchReferences: KataTaskReferenceSearch = vi.fn(() =>
+      Effect.fail(KataSnapshotAPIError.make({ status: 503, message: "offline" })),
+    );
+    const source = buildIssueCompletionSource({ searchReferences }, runtime);
 
     const result = await complete(source, "#rent");
 
     expect(result?.options).toEqual([]);
+  });
+
+  test("interrupts reference search when CodeMirror aborts the completion", async () => {
+    let searchInterrupted = false;
+    let abortCompletion: (() => void) | undefined;
+    const searchReferences: KataTaskReferenceSearch = vi.fn(() =>
+      Effect.never.pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            searchInterrupted = true;
+          }),
+        ),
+      ),
+    );
+    const source = buildIssueCompletionSource({ searchReferences }, runtime);
+    const context = makeContext("#rent");
+    vi.spyOn(context, "addEventListener").mockImplementation((_type, listener) => {
+      abortCompletion = listener;
+    });
+
+    const pending = source(context);
+    await vi.waitFor(() => expect(searchReferences).toHaveBeenCalled());
+    abortCompletion?.();
+
+    await expect(pending).resolves.toBeNull();
+    expect(searchInterrupted).toBe(true);
   });
 });

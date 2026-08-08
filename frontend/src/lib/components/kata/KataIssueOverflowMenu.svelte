@@ -1,8 +1,12 @@
 <script lang="ts">
   import { IconButton, SearchInput } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import MoreHorizontalIcon from "@lucide/svelte/icons/more-horizontal";
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import type { KataProjectSummary, KataTaskDetail } from "../../api/kata/taskTypes.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
   import Modal from "../shared/Modal.svelte";
 
   interface Props {
@@ -11,10 +15,10 @@
     hasChecklist: boolean;
     hasRecurrence: boolean;
     movePending?: boolean | undefined;
-    onMoveIssue: (toProjectUID: string) => boolean | Promise<boolean>;
+    onMoveIssue: (toProjectUID: string) => KataCommand<boolean>;
     onAddChecklist: () => void;
     onCreateRecurrence: () => void;
-    onDeleteIssue: () => boolean | Promise<boolean>;
+    onDeleteIssue: () => KataCommand<boolean>;
   }
 
   let {
@@ -29,6 +33,8 @@
     onDeleteIssue,
   }: Props = $props();
 
+  const runtime = getAppRuntime();
+
   let menuOpen = $state(false);
   let menuView = $state<"actions" | "move">("actions");
   let menuRoot: HTMLDivElement | null = $state(null);
@@ -42,6 +48,9 @@
   let deleteOpen = $state(false);
   let deletePending = $state(false);
   let trackedUID = $state<string | null>(null);
+  let moveExecution: AppExecution<void, never> | null = null;
+  let deleteExecution: AppExecution<void, never> | null = null;
+  let focusExecution: AppExecution<void, never> | null = null;
 
   const activeMove = $derived(pendingMoves.get(issue.issue.uid) ?? null);
   const activeMoveOperation = $derived(activeMove?.operation ?? null);
@@ -141,7 +150,13 @@
     menuOpen = false;
     menuView = "actions";
     moveQuery = "";
-    if (restoreFocus) queueMicrotask(() => triggerButton()?.focus());
+    if (restoreFocus) {
+      focusExecution?.interrupt();
+      focusExecution = runtime.runCommand(
+        Effect.yieldNow.pipe(Effect.andThen(Effect.sync(() => triggerButton()?.focus()))),
+        { operation: "focus Kata task actions", safeContext: {}, onFailure: () => {} },
+      );
+    }
   }
 
   function revealChecklist(): void {
@@ -154,11 +169,14 @@
     onCreateRecurrence();
   }
 
-  async function openMovePicker(): Promise<void> {
+  function openMovePicker(): void {
     menuView = "move";
     moveQuery = "";
-    await tick();
-    moveSearchInput?.focus();
+    focusExecution?.interrupt();
+    focusExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(Effect.andThen(Effect.sync(() => moveSearchInput?.focus()))),
+      { operation: "focus Kata move picker", safeContext: { issueUid: issue.issue.uid }, onFailure: () => {} },
+    );
   }
 
   function handleMoveKeydown(event: KeyboardEvent): void {
@@ -167,29 +185,40 @@
     closeMenu(false, true);
   }
 
-  async function moveIssue(project: KataProjectSummary): Promise<void> {
+  function moveIssue(project: KataProjectSummary): void {
     const sourceIssueUID = issue.issue.uid;
     if (pendingMoves.has(sourceIssueUID)) return;
     const sourceInteraction = interactionGeneration;
     const operation = ++moveOperationGeneration;
     pendingMoves = new Map(pendingMoves).set(sourceIssueUID, { operation, project });
-    try {
-      const moved = await onMoveIssue(project.uid);
-      if (
-        pendingMoves.get(sourceIssueUID)?.operation !== operation ||
-        interactionGeneration !== sourceInteraction ||
-        issue.issue.uid !== sourceIssueUID
-      ) {
-        return;
-      }
-      if (moved !== false) closeMenu(true);
-    } finally {
-      if (pendingMoves.get(sourceIssueUID)?.operation === operation) {
-        const nextPendingMoves = new Map(pendingMoves);
-        nextPendingMoves.delete(sourceIssueUID);
-        pendingMoves = nextPendingMoves;
-      }
-    }
+    moveExecution = runtime.runCommand(
+      onMoveIssue(project.uid).pipe(
+        Effect.tap((moved) =>
+          Effect.sync(() => {
+            if (
+              pendingMoves.get(sourceIssueUID)?.operation !== operation ||
+              interactionGeneration !== sourceInteraction ||
+              issue.issue.uid !== sourceIssueUID
+            ) return;
+            if (moved) closeMenu(true);
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (pendingMoves.get(sourceIssueUID)?.operation !== operation) return;
+            const nextPendingMoves = new Map(pendingMoves);
+            nextPendingMoves.delete(sourceIssueUID);
+            pendingMoves = nextPendingMoves;
+          }),
+        ),
+        Effect.asVoid,
+      ),
+      {
+        operation: "move Kata task",
+        safeContext: { issueUid: sourceIssueUID, projectUid: project.uid },
+        onFailure: () => {},
+      },
+    );
   }
 
   function openDeleteDialog(): void {
@@ -202,16 +231,28 @@
     deleteOpen = false;
   }
 
-  async function deleteIssue(): Promise<void> {
+  function deleteIssue(): void {
     if (deletePending) return;
     deletePending = true;
-    try {
-      const ok = await onDeleteIssue();
-      if (ok) deleteOpen = false;
-    } finally {
-      deletePending = false;
-    }
+    deleteExecution = runtime.runCommand(
+      onDeleteIssue().pipe(
+        Effect.tap((ok) => Effect.sync(() => { if (ok) deleteOpen = false; })),
+        Effect.ensuring(Effect.sync(() => (deletePending = false))),
+        Effect.asVoid,
+      ),
+      {
+        operation: "delete Kata task",
+        safeContext: { issueUid: issue.issue.uid },
+        onFailure: () => {},
+      },
+    );
   }
+
+  onDestroy(() => {
+    moveExecution?.interrupt();
+    deleteExecution?.interrupt();
+    focusExecution?.interrupt();
+  });
 </script>
 
 {#if hasAnyAction}
@@ -233,7 +274,7 @@
       <ul class="overflow-menu kit-popover-card" role="menu" aria-label="Task actions">
         {#if eligibleProjects.length > 0}
           <li>
-            <button type="button" class="overflow-item" role="menuitem" onclick={() => void openMovePicker()}>
+            <button type="button" class="overflow-item" role="menuitem" onclick={openMovePicker}>
               Move to another project
             </button>
           </li>
@@ -284,7 +325,7 @@
               type="button"
               disabled={movePending || activeMoveOperation !== null}
               aria-busy={movingProjectUID === project.uid}
-              onclick={() => void moveIssue(project)}
+              onclick={() => moveIssue(project)}
             >
               <span class="move-project-name">{project.name}</span>
               {#if destinationContext(project)}
@@ -315,7 +356,7 @@
     <button type="button" class="ghost-button" onclick={closeDeleteDialog} disabled={deletePending}>
       Cancel
     </button>
-    <button type="button" class="danger-button" onclick={() => { void deleteIssue(); }} disabled={deletePending}>
+    <button type="button" class="danger-button" onclick={deleteIssue} disabled={deletePending}>
       {deletePending ? "Deleting..." : "Delete"}
     </button>
   {/snippet}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Modal } from "@kenn-io/kit-ui";
+  import { Button, Checkbox, Modal } from "@kenn-io/kit-ui";
   import { onMount, untrack } from "svelte";
 
   import {
@@ -14,6 +14,11 @@
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
+  import {
+    beginWorkspaceDeletion,
+    endWorkspaceDeletion,
+    markWorkspaceIdDeleted,
+  } from "../../stores/workspace-create-pending.svelte.js";
 
   const { detail } = getStores();
 
@@ -46,10 +51,12 @@
      * queue) and the modal offers an immediate merge instead.
      */
     alreadyQueued?: boolean;
+    /** Exact workspace to delete after a successful merge. */
+    workspaceId?: string | undefined;
     /** Warning shown when the configured override permits a mid-stack merge. */
     midStackWarning?: string | undefined;
     onclose: () => void;
-    onmerged: () => void;
+    onmerged: (cleanupWarning?: string, deletedWorkspaceId?: string) => void;
     /** Called when a deferred merge was accepted and now waits on CI. */
     onqueued: () => void;
     onstateconflict?: ((
@@ -68,7 +75,7 @@
     allowSquash, allowMerge, allowRebase,
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
-    alreadyQueued = false, midStackWarning,
+    alreadyQueued = false, workspaceId, midStackWarning,
     onclose, onmerged, onqueued, onstateconflict,
   }: Props = $props();
 
@@ -126,6 +133,7 @@
   let selectedMethod = $state<Method>(methods[0]?.value ?? "squash");
   let commitTitle = $state(initialCommitTitle());
   let commitMessage = $state(initialCommitMessage());
+  let deleteWorkspaceAfterMerge = $state(true);
 
   let activeMergeSubmission = $state<"deferred" | "immediate" | null>(null);
   let error = $state<string | null>(null);
@@ -136,6 +144,7 @@
       commit_title: commitTitle,
       commit_message: commitMessage,
       method: selectedMethod,
+      ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
     };
   }
@@ -167,15 +176,29 @@
     activeMergeSubmission = deferred ? "deferred" : "immediate";
     error = null;
     let problemHandled = false;
-    detail.mergePull({ provider, platformHost, owner, name, repoPath }, number, mergeParams(), deferred, {
+    const params = mergeParams();
+    const cleanupWorkspaceId = deferred ? undefined : params.delete_workspace_id;
+    if (cleanupWorkspaceId) beginWorkspaceDeletion(cleanupWorkspaceId, undefined);
+    detail.mergePull({ provider, platformHost, owner, name, repoPath }, number, params, deferred, {
       onProblem: (problem) => {
         problemHandled = handleMergeProblem(problem);
       },
       onFailure: (message) => {
         if (!problemHandled) showFlash(message, { tone: "danger" });
       },
-      onSuccess: deferred ? onqueued : onmerged,
+      onSuccess: (outcome) => {
+        if (deferred) {
+          onqueued();
+          return;
+        }
+        const deletedWorkspaceId = cleanupWorkspaceId && outcome.cleanupWarning === undefined
+          ? cleanupWorkspaceId
+          : undefined;
+        if (deletedWorkspaceId) markWorkspaceIdDeleted(deletedWorkspaceId);
+        onmerged(outcome.cleanupWarning, deletedWorkspaceId);
+      },
       onSettled: () => {
+        if (cleanupWorkspaceId) endWorkspaceDeletion(cleanupWorkspaceId, undefined);
         activeMergeSubmission = null;
       },
     });
@@ -269,6 +292,16 @@
           rows={8}
         ></textarea>
       </div>
+
+      {#if workspaceId}
+        <Checkbox
+          checked={deleteWorkspaceAfterMerge}
+          label="Delete workspace after merge"
+          onchange={(checked) => {
+            deleteWorkspaceAfterMerge = checked;
+          }}
+        />
+      {/if}
 
       {#if error}
         <p class="merge-error">{error}</p>

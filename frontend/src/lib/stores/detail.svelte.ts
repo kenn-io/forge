@@ -93,6 +93,14 @@ export interface ProviderActionCallbacks extends MutationCallbacks {
   readonly onProblem?: (problem: ProblemBody) => void;
 }
 
+export interface MergePullOutcome {
+  readonly cleanupWarning?: string;
+}
+
+export type MergePullCallbacks = Omit<ProviderActionCallbacks, "onSuccess"> & {
+  readonly onSuccess?: (outcome: MergePullOutcome) => void;
+};
+
 export interface DetailRefreshCallbacks extends MutationCallbacks {}
 
 export interface DetailSyncCallbacks {
@@ -752,8 +760,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
     number: number,
     input: MergeParams,
     deferred: boolean,
-    callbacks: ProviderActionCallbacks = {},
+    callbacks: MergePullCallbacks = {},
   ): void {
+    let workspaceCleanupWarning: string | undefined;
     const commit = (ref: DetailRequestRef) =>
       deferred
         ? executeGeneratedApiRequest("POST deferred pull request merge", (client, signal) =>
@@ -769,8 +778,25 @@ export function createDetailStore(opts: DetailStoreOptions) {
               body: input,
               signal,
             }),
-          ).pipe(Effect.asVoid);
-    runPullAction(ref, number, deferred ? "schedule pull request merge" : "merge pull request", commit, callbacks);
+          ).pipe(
+            Effect.tap((result) =>
+              Effect.sync(() => {
+                workspaceCleanupWarning = result.workspace_cleanup_warning;
+              }),
+            ),
+            Effect.asVoid,
+          );
+    runPullAction(ref, number, deferred ? "schedule pull request merge" : "merge pull request", commit, {
+      ...callbacks,
+      onSuccess: () => {
+        if (workspaceCleanupWarning) {
+          showFlash(`Pull request merged, but the workspace was not pruned: ${workspaceCleanupWarning}`, {
+            tone: "warning",
+          });
+        }
+        callbacks.onSuccess?.(workspaceCleanupWarning === undefined ? {} : { cleanupWarning: workspaceCleanupWarning });
+      },
+    });
   }
 
   // A refreshed payload whose content matches the displayed detail must

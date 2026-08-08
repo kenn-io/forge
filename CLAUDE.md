@@ -48,6 +48,7 @@ only routes to them.
 | User documentation, screenshots, or the Zensical site | `context/docs-authoring.md` |
 | Pushing, opening a pull request, or changing PR metadata, comments, or review threads | `context/pull-request-workflow.md` |
 | Frontend visual design or component conventions | `context/ui-design-system.md` |
+| Frontend Effect workflows, services, layers, errors, or async ownership | `context/frontend-effect.md` |
 | Frontend interaction, route state, persistence, or input semantics | `context/ui-interaction-contracts.md` |
 | Phone routes, narrow layouts, or touch UX | `context/mobile-ux.md` |
 | Workflow or terminal panel interaction models | `context/vscode-workflow-panel-interaction-spec.md` |

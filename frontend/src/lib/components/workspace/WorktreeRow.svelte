@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import type {
     WorkspaceActivity,
     WorkspaceWorktree,
@@ -10,6 +12,8 @@
     type ChipTone,
     type StatusDotStatus,
   } from "@kenn-io/kit-ui";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
 
   interface Props {
     worktree: WorkspaceWorktree;
@@ -31,6 +35,8 @@
     hoverCardsEnabled = false,
     onCommand,
   }: Props = $props();
+
+  const runtime = getAppRuntime();
 
   let showMenu = $state(false);
   let menuX = $state(0);
@@ -84,38 +90,47 @@
     showMenu = false;
   }
 
-  let hoverTimer: ReturnType<typeof setTimeout> | null =
-    null;
+  let hoverExecution: AppExecution<void, never> | null = null;
 
   function startHoverTimer(event: MouseEvent): void {
     if (!hoverCardsEnabled) return;
     cancelHoverTimer();
-    const target =
-      event.currentTarget as HTMLElement | null;
-    if (!target) return;
-    hoverTimer = setTimeout(() => {
-      const rect = target.getBoundingClientRect();
-      onCommand("requestHoverCard", {
-        hostKey,
-        projectKey,
-        worktreeKey: worktree.key,
-        anchorRect: {
-          x: rect.x,
-          y: rect.y,
-          width: rect.width,
-          height: rect.height,
-        },
-      });
-      hoverTimer = null;
-    }, 500);
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) return;
+    hoverExecution = runtime.runCommand(
+      Effect.sleep("500 millis").pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            hoverExecution = null;
+            const rect = target.getBoundingClientRect();
+            onCommand("requestHoverCard", {
+              hostKey,
+              projectKey,
+              worktreeKey: worktree.key,
+              anchorRect: {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+              },
+            });
+          }),
+        ),
+      ),
+      {
+        operation: "open workspace hover card",
+        safeContext: { hostKey, projectKey, worktreeKey: worktree.key },
+        onFailure: () => {},
+      },
+    );
   }
 
   function cancelHoverTimer(): void {
-    if (hoverTimer != null) {
-      clearTimeout(hoverTimer);
-      hoverTimer = null;
-    }
+    hoverExecution?.interrupt();
+    hoverExecution = null;
   }
+
+  onDestroy(cancelHoverTimer);
 
   function menuAction(
     command: string,

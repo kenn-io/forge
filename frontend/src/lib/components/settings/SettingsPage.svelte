@@ -1,10 +1,12 @@
 <script lang="ts">
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
+  import { Effect } from "effect";
   import { onMount } from "svelte";
   import { SearchInput, SettingsLayout, SettingsSection, type SettingsCategory } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import type { Settings } from "../../api/types.js";
-  import { getSettings } from "../../api/settings.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { StartupWorkflow, startupErrorMessage } from "../../app/startup-workflow.js";
   import { navigate } from "../../stores/router.svelte.js";
   import RepoSettings from "./RepoSettings.svelte";
   import ActivitySettings from "./ActivitySettings.svelte";
@@ -26,8 +28,9 @@
   // copy. The old scroll-spy page let the nav and section orders drift
   // apart; here they cannot.
   let searchQuery = $state("");
+  const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
-  let settings = $state<Settings | null>(null);
+  let settings = $state.raw<Settings | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let active = $state(SETTINGS_PANELS[0]!.id);
@@ -53,26 +56,41 @@
   });
 
   onMount(() => {
-    void loadSettings();
-  });
-
-  async function loadSettings(): Promise<void> {
     const terminalHydration = beginTerminalSettingsHydration(settingsStore);
     loading = true;
     error = null;
-    try {
-      settings = await getSettings();
-      settingsStore.setConfiguredRepos(settings.repos);
-      settingsStore.setModeVisibility(settings.modes);
-      hydrateTerminalSettings(terminalHydration, settings.terminal);
-      settingsStore.setPullRequestSettings(settings.pull_requests);
-      settingsStore.setLaunchTargets(settings.launch_targets ?? []);
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-    } finally {
-      loading = false;
-    }
-  }
+    const execution = runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* StartupWorkflow;
+        yield* workflow.invalidate;
+        return yield* workflow.start;
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              error = startupErrorMessage(failure);
+              loading = false;
+            }),
+          onSuccess: (loaded) =>
+            Effect.sync(() => {
+              settings = loaded;
+              settingsStore.setConfiguredRepos(loaded.repos);
+              settingsStore.setModeVisibility(loaded.modes);
+              hydrateTerminalSettings(terminalHydration, loaded.terminal);
+              settingsStore.setPullRequestSettings(loaded.pull_requests);
+              settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
+              loading = false;
+            }),
+        }),
+      ),
+      {
+        operation: "load settings page",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
+    return execution.interrupt;
+  });
 
   function backToApp(): void {
     // Always route to an in-app destination rather than window.history.back():

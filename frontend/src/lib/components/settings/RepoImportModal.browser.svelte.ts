@@ -4,7 +4,7 @@ import { render } from "vitest-browser-svelte";
 
 import "../../../app.css";
 import { pressKey } from "../../../test/browserAppHarness.js";
-import RepoImportModal from "./RepoImportModal.svelte";
+import RepoImportModalRuntimeHarness from "./RepoImportModalRuntimeHarness.svelte";
 
 function requireElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -28,7 +28,7 @@ function controlByLabel<T extends HTMLElement>(labelText: string, selector: stri
 // (tabindex="-1") is pinned in SelectDropdown's own test.
 describe("RepoImportModal focus trap (browser)", () => {
   it("focuses the pattern input on open and wraps Tab at the trap boundaries", async () => {
-    render(RepoImportModal, {
+    render(RepoImportModalRuntimeHarness, {
       props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
     });
 

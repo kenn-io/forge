@@ -1,7 +1,9 @@
 <script lang="ts">
   import { Button, Card } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
-  import { tick } from "svelte";
+  import { Effect } from "effect";
+  import { tick, untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
   import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
   import type { ProviderRouteRef } from "../../api/provider-routes.js";
@@ -9,6 +11,7 @@
   import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
 
   const { detail } = getStores();
+  const runtime = getAppRuntime();
 
   interface Props {
     owner: string;
@@ -93,10 +96,17 @@
 
   $effect(() => {
     if (!expanded) return;
-
-    void tick().then(() => {
-      commentInput?.focus();
-    });
+    const execution = untrack(() => runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => commentInput?.focus())),
+      ),
+      {
+        operation: "focus pull request review comment",
+        safeContext: { provider, platformHost: platformHost ?? "", owner, name, number },
+        onFailure: () => {},
+      },
+    ));
+    return execution.interrupt;
   });
 
   function buildInput(callbacks: {

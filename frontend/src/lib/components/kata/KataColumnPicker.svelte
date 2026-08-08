@@ -1,7 +1,10 @@
 <script lang="ts">
   import Columns3Icon from "@lucide/svelte/icons/columns-3";
   import { Checkbox, autoReposition, dismissable, floatingPopoverStyle } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import { tick } from "svelte";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import {
     KATA_OPTIONAL_TASK_COLUMNS,
     type KataTaskColumnVisibility,
@@ -14,10 +17,12 @@
   }
 
   let { visibility, onchange, onShowAll }: Props = $props();
+  const runtime = getAppRuntime();
   let open = $state(false);
   let trigger = $state<HTMLButtonElement>();
   let panel = $state<HTMLDivElement>();
   let panelStyle = $state("");
+  let placementExecution: AppExecution<void, never> | null = null;
 
   const allVisible = $derived(KATA_OPTIONAL_TASK_COLUMNS.every((column) => visibility[column.id]));
 
@@ -31,6 +36,8 @@
   });
 
   function close(): void {
+    placementExecution?.interrupt();
+    placementExecution = null;
     open = false;
   }
 
@@ -46,13 +53,25 @@
     });
   }
 
-  async function toggle(): Promise<void> {
-    open = !open;
-    if (!open) return;
-    await tick();
-    position();
-    await tick();
-    position();
+  function toggle(): void {
+    if (open) {
+      close();
+      return;
+    }
+    open = true;
+    placementExecution = runtime.runCommand(
+      Effect.gen(function* () {
+        yield* Effect.promise(() => tick());
+        position();
+        yield* Effect.promise(() => tick());
+        position();
+      }),
+      {
+        operation: "position Kata column picker",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 </script>
 
@@ -63,7 +82,7 @@
     aria-label="Columns"
     title="Choose columns shown when space allows"
     aria-expanded={open}
-    onclick={() => void toggle()}
+    onclick={toggle}
   >
     <Columns3Icon size={13} strokeWidth={2} aria-hidden="true" />
     <span class="action-label">Columns</span>

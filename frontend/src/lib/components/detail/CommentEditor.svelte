@@ -79,8 +79,23 @@
   let editor = $state<Editor | null>(null);
   let syncingFromProps = false;
   let suggestionExecution: AppExecution<SuggestionItem[], never> | null = null;
+  const deferredEditorCommands = new Set<AppExecution<void, never>>();
   let pointerFocusPending = false;
   let isComposingInput = false;
+
+  function runEditorMicrotask(operation: string, callback: () => void): void {
+    const execution = runtime.runMicrotask(
+      () => {
+        try {
+          callback();
+        } finally {
+          deferredEditorCommands.delete(execution);
+        }
+      },
+      { operation, safeContext: { provider, owner, name } },
+    );
+    deferredEditorCommands.add(execution);
+  }
 
   function escapeHTML(text: string): string {
     return text
@@ -178,7 +193,7 @@
     suggestionExecution = execution;
     // Tiptap's suggestion callback requires a Promise. The request itself
     // runs in the app runtime; this boundary only observes that owned fiber.
-    const exit = await Effect.runPromise(execution.await);
+    const exit = await execution.exit;
     return Exit.isSuccess(exit) ? exit.value : [];
   }
 
@@ -375,7 +390,7 @@
 
   function handleCompositionEnd(): void {
     isComposingInput = false;
-    queueMicrotask(() => {
+    runEditorMicrotask("resume comment suggestions after composition", () => {
       if (!editor || !editor.isFocused) return;
       editor.view.dispatch(editor.state.tr);
     });
@@ -478,7 +493,7 @@
             return false;
           },
           focus: () => {
-            queueMicrotask(() => {
+            runEditorMicrotask("settle comment editor focus", () => {
               if (!editor || !editor.isFocused) return;
               if (!pointerFocusPending) {
                 editor.commands.focus("end", { scrollIntoView: false });
@@ -506,7 +521,7 @@
     editor = current;
 
     if (autofocus) {
-      queueMicrotask(() => {
+      runEditorMicrotask("autofocus comment editor", () => {
         current.commands.focus("end", { scrollIntoView: false });
       });
     }
@@ -516,6 +531,8 @@
 
     return () => {
       suggestionExecution?.interrupt();
+      for (const execution of deferredEditorCommands) execution.interrupt();
+      deferredEditorCommands.clear();
       current.view.dom.removeEventListener("compositionstart", handleCompositionStart);
       current.view.dom.removeEventListener("compositionend", handleCompositionEnd);
       current.destroy();

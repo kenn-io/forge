@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import DocMarkdownView from "./DocMarkdownView.svelte";
 import { buildFolderIndex } from "../../api/docs/folderLinks";
 import type { DocsMarkdownOptions } from "../../api/docs/markdown";
@@ -46,13 +48,15 @@ function indexedOptions(): DocsMarkdownOptions {
   };
 }
 
+function renderMarkdownView(props: ComponentProps<typeof DocMarkdownView>) {
+  return render(AppRuntimeHarness, { props: { component: DocMarkdownView, ...props } });
+}
+
 describe("DocMarkdownView", () => {
   test("renders paragraphs", () => {
-    render(DocMarkdownView, {
-      props: {
-        source: "First paragraph.\n\nSecond paragraph.",
-        options: options(),
-      },
+    renderMarkdownView({
+      source: "First paragraph.\n\nSecond paragraph.",
+      options: options(),
     });
 
     expect(screen.getByText("First paragraph.").tagName).toBe("P");
@@ -60,12 +64,10 @@ describe("DocMarkdownView", () => {
   });
 
   test("renders safe links with noreferrer and neutralizes unsafe protocols", () => {
-    const { container } = render(DocMarkdownView, {
-      props: {
-        source:
-          "[Docs](https://example.com/docs) [Email](mailto:ops@example.com) [Bad](javascript:alert(1)) [FTP](ftp://example.com/file)",
-        options: options(),
-      },
+    const { container } = renderMarkdownView({
+      source:
+        "[Docs](https://example.com/docs) [Email](mailto:ops@example.com) [Bad](javascript:alert(1)) [FTP](ftp://example.com/file)",
+      options: options(),
     });
 
     const docsLink = screen.getByRole("link", { name: "Docs" });
@@ -80,11 +82,9 @@ describe("DocMarkdownView", () => {
   });
 
   test("renders inline code", () => {
-    const { container } = render(DocMarkdownView, {
-      props: {
-        source: "Run `kenn-forge sync` before opening.",
-        options: options(),
-      },
+    const { container } = renderMarkdownView({
+      source: "Run `kenn-forge sync` before opening.",
+      options: options(),
     });
 
     const code = container.querySelector("code");
@@ -92,11 +92,9 @@ describe("DocMarkdownView", () => {
   });
 
   test("renders lists", () => {
-    render(DocMarkdownView, {
-      props: {
-        source: "- First\n- Second",
-        options: options(),
-      },
+    renderMarkdownView({
+      source: "- First\n- Second",
+      options: options(),
     });
 
     expect(screen.getByRole("list")).toBeTruthy();
@@ -105,11 +103,9 @@ describe("DocMarkdownView", () => {
   });
 
   test("strips dangerous raw HTML", () => {
-    const { container } = render(DocMarkdownView, {
-      props: {
-        source: 'Before <img src=x onerror="alert(1)"><script>alert(1)</script> after',
-        options: options(),
-      },
+    const { container } = renderMarkdownView({
+      source: 'Before <img src=x onerror="alert(1)"><script>alert(1)</script> after',
+      options: options(),
     });
 
     expect(container.querySelector("img")).toBeNull();
@@ -121,13 +117,11 @@ describe("DocMarkdownView", () => {
   test("short-id links dispatch short-id handler before generic issue links", async () => {
     const onSelectIssue = vi.fn();
     const onSelectKataShortId = vi.fn();
-    render(DocMarkdownView, {
-      props: {
-        source: "See #budget",
-        options: options(),
-        onSelectIssue,
-        onSelectKataShortId,
-      },
+    renderMarkdownView({
+      source: "See #budget",
+      options: options(),
+      onSelectIssue,
+      onSelectKataShortId,
     });
 
     await fireEvent.click(screen.getByRole("link", { name: "#budget" }));
@@ -137,11 +131,9 @@ describe("DocMarkdownView", () => {
   });
 
   test("ambiguous note picker keeps a visible close button", async () => {
-    render(DocMarkdownView, {
-      props: {
-        source: "See [[alpha]].",
-        options: indexedOptions(),
-      },
+    renderMarkdownView({
+      source: "See [[alpha]].",
+      options: indexedOptions(),
     });
 
     await fireEvent.click(screen.getByRole("link", { name: "alpha" }));

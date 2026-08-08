@@ -1,6 +1,12 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { untrack } from "svelte";
   import Modal from "../shared/Modal.svelte";
   import { renderDocsMarkdown, type DocsMarkdownOptions } from "../../api/docs/markdown";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { observeIntersections } from "../../browser/observers.js";
+
+  const runtime = getAppRuntime();
 
   export interface HeadingEntry {
     id: string;
@@ -41,7 +47,6 @@
   }: Props = $props();
 
   let container: HTMLDivElement | null = $state(null);
-  let observer: IntersectionObserver | null = null;
   let activeId: string | null = $state(null);
   let ambiguous: { candidates: string[]; anchor?: string } | null = $state(null);
 
@@ -57,23 +62,43 @@
     if (!container) return;
     activeId = headings[0]?.id ?? null;
     onState?.({ headings, activeId });
-    attachObserver(container);
+    if (typeof IntersectionObserver === "undefined") return;
+    const headingElements = container.querySelectorAll<HTMLHeadingElement>("h1,h2,h3,h4,h5,h6");
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.scoped(
+          observeIntersections(
+            headingElements,
+            (entries) => {
+              for (const entry of entries) {
+                if (!entry.isIntersecting || !(entry.target instanceof HTMLElement)) continue;
+                activeId = entry.target.id;
+                onState?.({ headings, activeId });
+                return;
+              }
+            },
+            { rootMargin: "0px 0px -75% 0px", threshold: 0 },
+          ).pipe(Effect.andThen(Effect.never)),
+        ),
+        { operation: "observe document headings", safeContext: {}, onFailure: () => {} },
+      ),
+    );
+    return execution.interrupt;
   });
 
   $effect(() => {
     const id = scrollToAnchor;
     if (!container || !id) return;
-    queueMicrotask(() => {
-      scrollHeadingIntoView(id);
-      onAnchorConsumed?.();
-    });
-  });
-
-  $effect(() => {
-    return () => {
-      observer?.disconnect();
-      observer = null;
-    };
+    const execution = untrack(() =>
+      runtime.runMicrotask(
+        () => {
+          scrollHeadingIntoView(id);
+          onAnchorConsumed?.();
+        },
+        { operation: "scroll document heading into view", safeContext: { heading: id } },
+      ),
+    );
+    return execution.interrupt;
   });
 
   function extractHeadings(rawHtml: string): HeadingEntry[] {
@@ -96,29 +121,6 @@
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
       .replace(/&amp;/g, "&");
-  }
-
-  function attachObserver(root: HTMLElement) {
-    observer?.disconnect();
-    if (typeof IntersectionObserver === "undefined") return;
-    // Trigger when a heading crosses the top quarter of the viewport so
-    // the outline highlight tracks the section the reader is currently in
-    // rather than the one being scrolled past.
-    observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            activeId = (entry.target as HTMLElement).id;
-            onState?.({ headings, activeId });
-            return;
-          }
-        }
-      },
-      { rootMargin: "0px 0px -75% 0px", threshold: 0 },
-    );
-    for (const el of root.querySelectorAll<HTMLHeadingElement>("h1,h2,h3,h4,h5,h6")) {
-      observer.observe(el);
-    }
   }
 
   function scrollHeadingIntoView(id: string) {

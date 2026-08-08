@@ -203,10 +203,14 @@ test.describe("comment editor autocomplete", () => {
       expect((await patchResponse).status()).toBe(200);
       await expect(detail.locator(".event-body", { hasText: editedBody }).last()).toBeVisible();
 
-      const persistedAfterEdit = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
-      expect(persistedAfterEdit.ok()).toBe(true);
-      const editedDetail: { events?: Array<{ Body?: string }> } = await persistedAfterEdit.json();
-      expect(editedDetail.events?.some((event) => event.Body === editedBody)).toBe(true);
+      await expect
+        .poll(async () => {
+          const persisted = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
+          expect(persisted.ok()).toBe(true);
+          const editedDetail: { events?: Array<{ Body?: string }> } = await persisted.json();
+          return editedDetail.events?.some((event) => event.Body === editedBody) ?? false;
+        })
+        .toBe(true);
 
       const editedBodyNode = detail.locator(".event-body", { hasText: editedBody }).last();
       const editedCard = editedBodyNode.locator("xpath=ancestor::*[.//button[@aria-label='Delete comment']][1]");

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { resetModalStack, getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
 
 import WorkspaceLauncherOverlay from "./WorkspaceLauncherOverlay.svelte";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 const workspace = {
   id: "ws-1",
@@ -20,8 +21,9 @@ const launchTargets = [
 ];
 
 function renderOverlay(props: Record<string, unknown> = {}) {
-  return render(WorkspaceLauncherOverlay, {
+  return render(AppRuntimeHarness, {
     props: {
+      component: WorkspaceLauncherOverlay,
       open: true,
       workspace,
       launchTargets,

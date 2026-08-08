@@ -68,12 +68,20 @@ interface KataCreateProtocolResponse extends KataTaskMutationResponse {
 function normalizeMutationResponse(raw: unknown): KataTaskMutationResponse {
   const source = isObject(raw) && isObject(raw.body) ? raw.body : raw;
   if (!isObject(source)) throw new Error("mutation response was not an object");
+  const comment = isObject(source.comment) ? source.comment : undefined;
+  const issue = isObject(source.issue) ? source.issue : undefined;
+  const label = isObject(source.label) ? source.label : undefined;
+  const event = isObject(source.event) ? source.event : undefined;
   const hasAcknowledgement =
     typeof source.changed === "boolean" ||
-    isObject(source.issue) ||
-    isObject(source.comment) ||
-    isObject(source.label) ||
-    isObject(source.event) ||
+    (issue !== undefined && typeof issue.uid === "string" && issue.uid !== "") ||
+    (comment !== undefined &&
+      ((typeof comment.id === "number" && Number.isFinite(comment.id)) ||
+        (typeof comment.id === "string" && comment.id !== ""))) ||
+    (label !== undefined && typeof label.label === "string" && label.label !== "") ||
+    (event !== undefined &&
+      ((typeof event.event_id === "number" && Number.isFinite(event.event_id)) ||
+        (typeof event.event_uid === "string" && event.event_uid !== ""))) ||
     (typeof source.new_short_id === "string" && source.new_short_id !== "");
   if (!hasAcknowledgement) throw new Error("mutation response did not include an acknowledgement");
   return { changed: typeof source.changed === "boolean" ? source.changed : true };

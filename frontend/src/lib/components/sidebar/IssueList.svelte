@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { Effect, Schedule } from "effect";
+  import { onDestroy, untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
   import { getStores, getNavigate, getSidebar } from "../../context.js";
   import IssueItem from "./IssueItem.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
@@ -18,6 +22,7 @@
   } from "../../routes.js";
 
   const { issues, sync, grouping, collapsedRepos, settings } = getStores();
+  const runtime = getAppRuntime();
   const navigate = getNavigate();
   const { isEmbedded, isSidebarToggleEnabled, toggleSidebar } = getSidebar();
 
@@ -37,8 +42,7 @@
   const COMPACT_FILTER_MAX_WIDTH = 401;
 
   let searchInput = $state(issues.getIssueSearchQuery() ?? "");
-  let debounceHandle: ReturnType<typeof setTimeout> | null = null;
-  let refreshHandle: ReturnType<typeof setInterval> | null = null;
+  let searchExecution: AppExecution<void, never> | null = null;
   const repoLabelFormatter = $derived(
     createRepoLabelFormatter(
       issues.getIssues().map((issue) => ({
@@ -53,29 +57,33 @@
   );
 
   $effect(() => {
-    issues.loadIssues();
-
-    refreshHandle = setInterval(() => {
-      issues.loadIssues();
-    }, 15_000);
-
-    if (sync.getSyncState()?.running) {
-      sync.onNextSyncComplete(issues.loadIssues);
-    }
+    const execution = untrack(() => runtime.runCommand(
+      Effect.sync(issues.loadIssues).pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.asVoid),
+      { operation: "poll issue sidebar", safeContext: {}, onFailure: () => {} },
+    ));
+    const unsubscribeSync = sync.subscribeSyncComplete(issues.loadIssues);
 
     return () => {
-      if (refreshHandle !== null) clearInterval(refreshHandle);
+      execution.interrupt();
+      unsubscribeSync();
     };
   });
+
+  onDestroy(() => searchExecution?.interrupt());
 
   function onSearchInput(value: string): void {
     searchInput = value;
 
-    if (debounceHandle !== null) clearTimeout(debounceHandle);
-    debounceHandle = setTimeout(() => {
-      issues.setIssueSearchQuery(value.trim() === "" ? undefined : value.trim());
-      issues.loadIssues();
-    }, 300);
+    searchExecution?.interrupt();
+    searchExecution = runtime.runCommand(
+      Effect.sleep("300 millis").pipe(
+        Effect.andThen(Effect.sync(() => {
+          issues.setIssueSearchQuery(value.trim() === "" ? undefined : value.trim());
+          issues.loadIssues();
+        })),
+      ),
+      { operation: "debounce issue sidebar search", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   function issueStateLabel(state: string): string {

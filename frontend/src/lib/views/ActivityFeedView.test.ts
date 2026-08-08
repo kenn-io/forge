@@ -21,7 +21,7 @@ vi.mock("../components/CommitDiffPanel.svelte", async () => ({
   default: (await import("./ActivityFeedViewTestCommitDiffPanel.svelte")).default,
 }));
 
-import ActivityFeedView from "./ActivityFeedView.svelte";
+import ActivityFeedView from "./ActivityFeedViewRuntimeHarness.svelte";
 
 const repo = {
   provider: "github",

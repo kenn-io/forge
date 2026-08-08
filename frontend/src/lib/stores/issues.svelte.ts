@@ -309,9 +309,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const generation = ++hideBotsMutationGeneration;
     const program = Effect.gen(function* () {
       const workflow = yield* SettingsWorkflow;
-      const settings = yield* workflow.enqueue({
-        request: Effect.succeed({ issues: { hide_bots: value } }),
-      });
+      const settings = yield* workflow.persist(() => ({ issues: { hide_bots: value } }));
       yield* Effect.sync(() => {
         confirmedHideBots = settings.issues.hide_bots;
         if (generation === hideBotsMutationGeneration) hideBots = confirmedHideBots;

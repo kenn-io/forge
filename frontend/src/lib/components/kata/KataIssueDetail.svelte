@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
   import type { LaunchTarget } from "../../api/types.js";
   import type { TypeaheadOption } from "@kenn-io/kit-ui";
   import NetworkIcon from "@lucide/svelte/icons/network";
   import PencilIcon from "@lucide/svelte/icons/pencil";
-  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
+  import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import { localDateTimeLabel, timeAgo } from "../../utils/time.js";
 
   import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
@@ -18,6 +20,9 @@
   } from "../../api/kata/taskTypes.js";
   import type { KataIssueNavigationTarget } from "../../api/kata/navigation.js";
   import type { KataLinkFilters } from "../../features/kata/kataLinkFilters.js";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import RecurrencePanel from "../recurrence/RecurrencePanel.svelte";
   import KataChecklistEditor from "./KataChecklistEditor.svelte";
   import KataIssueActions from "./KataIssueActions.svelte";
@@ -29,9 +34,9 @@
     label: string;
     busy?: boolean;
     disabled?: boolean;
-    onClick?: () => void | Promise<void>;
+    onClick?: () => void;
     launchTargets?: LaunchTarget[];
-    onCreate?: (targetKey?: string) => void | Promise<void>;
+    onCreate?: (targetKey?: string) => KataCommand<void>;
   }
 
   interface Props {
@@ -50,15 +55,15 @@
     authorityBlocked?: boolean | undefined;
     draftResetGeneration?: number | undefined;
     movePending?: boolean | undefined;
-    onMoveIssue: (toProjectUID: string) => boolean | Promise<boolean>;
-    onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
-    onAddComment: (uid: string, body: string) => boolean | Promise<boolean>;
-    onEditIssue: (uid: string, patch: KataTaskEditPatch) => boolean | Promise<boolean>;
-    onAssignOwner: (uid: string, owner: string) => boolean | Promise<boolean>;
-    onUnassignOwner: (uid: string) => boolean | Promise<boolean>;
-    onSetPriority: (uid: string, priority: number | null) => boolean | Promise<boolean>;
-    onAddLabel: (uid: string, label: string) => boolean | Promise<boolean>;
-    onRemoveLabel: (uid: string, label: string) => void | Promise<void>;
+    onMoveIssue: (toProjectUID: string) => KataCommand<boolean>;
+    onPatchMetadata: (uid: string, patch: Record<string, unknown>) => KataCommand<boolean>;
+    onAddComment: (uid: string, body: string) => KataCommand<boolean>;
+    onEditIssue: (uid: string, patch: KataTaskEditPatch) => KataCommand<boolean>;
+    onAssignOwner: (uid: string, owner: string) => KataCommand<boolean>;
+    onUnassignOwner: (uid: string) => KataCommand<boolean>;
+    onSetPriority: (uid: string, priority: number | null) => KataCommand<boolean>;
+    onAddLabel: (uid: string, label: string) => KataCommand<boolean>;
+    onRemoveLabel: (uid: string, label: string) => KataCommand<boolean>;
     onRevealChecklist: () => void;
     onCreateRecurrence: () => void;
     onEditRecurrence: (recurrence: KataRecurrence) => void;
@@ -66,10 +71,10 @@
     onCloseIssue: (
       reason: "done" | "wontfix" | "duplicate" | "superseded",
       message: string,
-    ) => boolean | Promise<boolean>;
-    onReopenIssue: () => void | Promise<void>;
-    onDeleteIssue: () => boolean | Promise<boolean>;
-    onSelectIssue: (target: KataIssueNavigationTarget) => void | Promise<void>;
+    ) => KataCommand<boolean>;
+    onReopenIssue: () => KataCommand<boolean>;
+    onDeleteIssue: () => KataCommand<boolean>;
+    onSelectIssue: (target: KataIssueNavigationTarget) => void;
     onOpenGraph?: ((issue: KataTaskDetail["issue"]) => void) | undefined;
     workspaceAction?: WorkspaceAction | undefined;
   }
@@ -111,6 +116,8 @@
     workspaceAction = undefined,
   }: Props = $props();
 
+  const runtime = getAppRuntime();
+
   let editingTitle = $state(false);
   let editingBody = $state(false);
   let savingTitle = $state(false);
@@ -126,6 +133,10 @@
   let pendingTitleResetGeneration = $state<number | null>(null);
   let pendingBodyResetUID = $state<string | null>(null);
   let pendingBodyResetGeneration = $state<number | null>(null);
+  let titleExecution: AppExecution<void, never> | null = null;
+  let bodyExecution: AppExecution<void, never> | null = null;
+  let workspaceExecution: AppExecution<void, never> | null = null;
+  let focusExecution: AppExecution<void, never> | null = null;
 
   const canCreateRecurrence = $derived(issue.issue.recurrence_id === undefined);
   const detailInert = $derived(authorityBlocked ?? actionsDisabled);
@@ -203,13 +214,21 @@
     cancelingTitle = false;
     titleDraft = issue.issue.title;
     editingTitle = true;
-    queueMicrotask(() => {
-      titleInput?.focus();
-      titleInput?.select();
-    });
+    focusExecution?.interrupt();
+    focusExecution = runtime.runCommand(
+      Effect.yieldNow.pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            titleInput?.focus();
+            titleInput?.select();
+          }),
+        ),
+      ),
+      { operation: "focus Kata task title", safeContext: { issueUid: issue.issue.uid }, onFailure: () => {} },
+    );
   }
 
-  async function commitTitle(): Promise<void> {
+  function commitTitle(): void {
     if (actionsDisabled || savingTitle) return;
     if (cancelingTitle) {
       cancelingTitle = false;
@@ -224,25 +243,30 @@
     const mutationUID = issue.issue.uid;
     const resetGeneration = draftResetGeneration;
     savingTitle = true;
-    try {
-      if (await onEditIssue(mutationUID, { title: next })) {
-        if (issue.issue.uid !== mutationUID) return;
-        if (draftResetGeneration !== resetGeneration) {
-          resetTitleDraft();
-        } else {
-          pendingTitleResetUID = mutationUID;
-          pendingTitleResetGeneration = resetGeneration;
-        }
-      }
-    } finally {
-      savingTitle = false;
-    }
+    titleExecution?.interrupt();
+    titleExecution = runtime.runCommand(
+      onEditIssue(mutationUID, { title: next }).pipe(
+        Effect.tap((changed) =>
+          Effect.sync(() => {
+            if (!changed || issue.issue.uid !== mutationUID) return;
+            if (draftResetGeneration !== resetGeneration) resetTitleDraft();
+            else {
+              pendingTitleResetUID = mutationUID;
+              pendingTitleResetGeneration = resetGeneration;
+            }
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => (savingTitle = false))),
+        Effect.asVoid,
+      ),
+      { operation: "edit Kata task title", safeContext: { issueUid: mutationUID }, onFailure: () => {} },
+    );
   }
 
   function handleTitleKeydown(event: KeyboardEvent): void {
     if (event.key === "Enter") {
       event.preventDefault();
-      void commitTitle();
+      commitTitle();
     } else if (event.key === "Escape") {
       event.preventDefault();
       cancelingTitle = true;
@@ -254,10 +278,14 @@
     if (actionsDisabled) return;
     bodyDraft = issue.issue.body;
     editingBody = true;
-    queueMicrotask(() => bodyTextarea?.focus());
+    focusExecution?.interrupt();
+    focusExecution = runtime.runCommand(
+      Effect.yieldNow.pipe(Effect.andThen(Effect.sync(() => bodyTextarea?.focus()))),
+      { operation: "focus Kata task body", safeContext: { issueUid: issue.issue.uid }, onFailure: () => {} },
+    );
   }
 
-  async function commitBody(): Promise<void> {
+  function commitBody(): void {
     if (actionsDisabled || savingBody) return;
     const next = bodyDraft;
     if (next === issue.issue.body) {
@@ -267,19 +295,24 @@
     const mutationUID = issue.issue.uid;
     const resetGeneration = draftResetGeneration;
     savingBody = true;
-    try {
-      if (await onEditIssue(mutationUID, { body: next })) {
-        if (issue.issue.uid !== mutationUID) return;
-        if (draftResetGeneration !== resetGeneration) {
-          resetBodyDraft();
-        } else {
-          pendingBodyResetUID = mutationUID;
-          pendingBodyResetGeneration = resetGeneration;
-        }
-      }
-    } finally {
-      savingBody = false;
-    }
+    bodyExecution?.interrupt();
+    bodyExecution = runtime.runCommand(
+      onEditIssue(mutationUID, { body: next }).pipe(
+        Effect.tap((changed) =>
+          Effect.sync(() => {
+            if (!changed || issue.issue.uid !== mutationUID) return;
+            if (draftResetGeneration !== resetGeneration) resetBodyDraft();
+            else {
+              pendingBodyResetUID = mutationUID;
+              pendingBodyResetGeneration = resetGeneration;
+            }
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => (savingBody = false))),
+        Effect.asVoid,
+      ),
+      { operation: "edit Kata task body", safeContext: { issueUid: mutationUID }, onFailure: () => {} },
+    );
   }
 
   function handleBodyKeydown(event: KeyboardEvent): void {
@@ -288,9 +321,27 @@
       editingBody = false;
     } else if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
-      void commitBody();
+      commitBody();
     }
   }
+
+  function createWorkspace(targetKey?: string): void {
+    const create = workspaceAction?.onCreate;
+    if (!create) return;
+    workspaceExecution?.interrupt();
+    workspaceExecution = runtime.runCommand(create(targetKey), {
+      operation: "create Kata task workspace",
+      safeContext: { issueUid: issue.issue.uid },
+      onFailure: () => {},
+    });
+  }
+
+  onDestroy(() => {
+    titleExecution?.interrupt();
+    bodyExecution?.interrupt();
+    workspaceExecution?.interrupt();
+    focusExecution?.interrupt();
+  });
 </script>
 
 <section class="kata-detail" aria-label="Task detail" aria-busy={actionsDisabled || detailInert} inert={detailInert}>
@@ -312,7 +363,7 @@
           disabled={savingTitle}
           onkeydown={handleTitleKeydown}
           onblur={() => {
-            void commitTitle();
+            commitTitle();
           }}
         />
       {:else}
@@ -335,7 +386,7 @@
           launchTargets={workspaceAction.launchTargets}
           busy={workspaceAction.busy ?? false}
           disabled={workspaceAction.disabled ?? false}
-          onCreate={workspaceAction.onCreate}
+          onCreate={createWorkspace}
         />
       {:else if workspaceAction?.onClick}
         <button
@@ -343,7 +394,7 @@
           class="workspace-action"
           disabled={workspaceAction.disabled || workspaceAction.busy}
           onclick={() => {
-            void workspaceAction.onClick?.();
+            workspaceAction.onClick?.();
           }}
         >
           {workspaceAction.busy ? "Working..." : workspaceAction.label}
@@ -399,18 +450,14 @@
         <span>Cmd/Ctrl+Enter saves</span>
         <div>
           <button type="button" class="ghost-button" disabled={savingBody} onclick={() => { editingBody = false; }}>Cancel</button>
-          <button type="button" class="accent-button" disabled={savingBody} onclick={() => { void commitBody(); }}>
+          <button type="button" class="accent-button" disabled={savingBody} onclick={commitBody}>
             {savingBody ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
     {:else if issue.issue.body}
       <div class="body-display markdown-body">
-        {#await renderMarkdown(issue.issue.body)}
-          {@html renderMarkdownSync(issue.issue.body)}
-        {:then html}
-          {@html html}
-        {/await}
+        <MarkdownHtml raw={issue.issue.body} />
       </div>
     {:else}
       <p class="detail-body-empty">No description.</p>
@@ -466,7 +513,7 @@
       {draftResetGeneration}
       onAddComment={onAddComment}
       onEditIssue={onEditIssue}
-      onSelectIssue={onSelectIssue}
+      {onSelectIssue}
     />
   {/key}
 </section>

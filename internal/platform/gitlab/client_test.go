@@ -999,8 +999,16 @@ func TestMapGitLabError(t *testing.T) {
 
 	var platformErr *platform.Error
 	require.ErrorAs(t, err, &platformErr)
-	assert.Equal(t, platform.ErrCodeInvalidRepoRef, platformErr.Code)
+	assert.Equal(t, platform.ErrCodeProviderContract, platformErr.Code)
 	assert.Equal(t, "get_repository", platformErr.Capability)
+}
+
+func TestMapGitLabServerErrorDoesNotProveMutationRejection(t *testing.T) {
+	err := mapGitLabError("create_issue", gitlabStatusError("gitlab.example.com", http.StatusBadGateway))
+
+	var platformErr *platform.Error
+	require.ErrorAs(t, err, &platformErr)
+	assert.Equal(t, platform.ErrCodeProviderContract, platformErr.Code)
 }
 
 func TestProjectPathRejectsEscapedSlashVariants(t *testing.T) {

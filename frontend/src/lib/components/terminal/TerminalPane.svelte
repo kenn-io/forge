@@ -7,6 +7,7 @@
     reconnectOnExit?: boolean | undefined;
     active?: boolean | undefined;
     autoFocus?: boolean | undefined;
+    cursorWheelInput?: boolean;
     disabled?: boolean;
     onExit?: ((code: number) => void) | undefined;
     // When the session is already exited at mount time, skip the
@@ -21,6 +22,7 @@
     reconnectOnExit = undefined,
     active = undefined,
     autoFocus = undefined,
+    cursorWheelInput = false,
     disabled = false,
     onExit = undefined,
     initialStatus = undefined,
@@ -40,6 +42,7 @@
   {reconnectOnExit}
   {active}
   {autoFocus}
+  {cursorWheelInput}
   {disabled}
   {onExit}
   {initialStatus}

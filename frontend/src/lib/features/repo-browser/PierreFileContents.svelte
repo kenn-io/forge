@@ -1,7 +1,12 @@
 <script lang="ts">
   import { File as PierreFile } from "@pierre/diffs";
   import type { FileContents, FileOptions, ThemeTypes } from "@pierre/diffs";
-  import { onMount } from "svelte";
+  import { Effect } from "effect";
+  import { onMount, untrack } from "svelte";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { observeMutation } from "../../browser/observers.js";
+
+  const runtime = getAppRuntime();
 
   interface Props {
     path: string;
@@ -52,21 +57,29 @@
   }));
 
   onMount(() => {
-    let themeObserver: MutationObserver | undefined;
-    if (typeof MutationObserver !== "undefined") {
-      themeObserver = new MutationObserver(() => {
-        themeType = appThemeType();
-      });
-      themeObserver.observe(document.documentElement, {
-        attributeFilter: ["class"],
-      });
-    }
-
     return () => {
-      themeObserver?.disconnect();
       pierreFile?.cleanUp();
       pierreFile = undefined;
     };
+  });
+
+  $effect(() => {
+    if (typeof MutationObserver === "undefined") return;
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.scoped(
+          observeMutation(
+            document.documentElement,
+            () => {
+              themeType = appThemeType();
+            },
+            { attributeFilter: ["class"] },
+          ).pipe(Effect.andThen(Effect.never)),
+        ),
+        { operation: "observe source preview theme", safeContext: { path }, onFailure: () => {} },
+      ),
+    );
+    return execution.interrupt;
   });
 
   $effect(() => {

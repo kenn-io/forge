@@ -14,8 +14,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it.layer(StartupTestLayer)("shares concurrent startup settings demand", (it) => {
-  it.effect("performs one settings request", () =>
+it.layer(StartupTestLayer)("shares startup settings demand", (it) => {
+  it.effect("performs one settings request until invalidated", () =>
     Effect.gen(function* () {
       const settings = {
         activity: {
@@ -79,14 +79,96 @@ it.layer(StartupTestLayer)("shares concurrent startup settings demand", (it) => 
 
       const startup = yield* StartupWorkflow;
       const snapshots = yield* Effect.all([startup.start, startup.start], { concurrency: "unbounded" });
+      const laterSnapshot = yield* startup.start;
 
       assert.deepStrictEqual(snapshots, [settings, settings]);
+      assert.deepStrictEqual(laterSnapshot, settings);
       assert.deepStrictEqual(observedPaths, ["/healthz", "/api/v1/settings"]);
     }),
   );
 });
 
-it.layer(StartupTestLayer)("startup recovery", (it) => {
+it.layer(StartupTestLayer)("startup invalidation", (it) => {
+  it.effect("does not publish a settings snapshot invalidated while its request is in flight", () =>
+    Effect.gen(function* () {
+      const first = {
+        activity: {
+          view_mode: "threaded",
+          time_range: "7d",
+          hide_closed: false,
+          hide_bots: false,
+          collapse_threads: false,
+          default_branch_retention_days: 90,
+          default_branch_max_commits: 5000,
+        },
+        agents: [],
+        fleet: {
+          enabled: false,
+          sessions: {},
+          peers: [],
+          ssh_peers: [],
+          restart_required: false,
+        },
+        issues: { hide_bots: true },
+        kata_projects: [],
+        launch_targets: [],
+        modes: {
+          activity: true,
+          repos: true,
+          kata: false,
+          docs: false,
+          pulls: true,
+          issues: true,
+          reviews: true,
+          workspaces: true,
+        },
+        notifications: { enabled: true },
+        pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+        repos: [],
+        terminal: {
+          font_family: "",
+          font_size: 12,
+          scrollback: 1000,
+          line_height: 1,
+          letter_spacing: 0,
+          cursor_blink: true,
+          font_ligatures: false,
+          hide_tmux_status: false,
+        },
+        workspaces: { auto_assign_on_create: false },
+      } satisfies SettingsResponse;
+      const second = { ...first, activity: { ...first.activity, hide_bots: true } };
+      let releaseFirst = () => {};
+      const firstGate = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      let settingsRequests = 0;
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (new URL(request.url).pathname.endsWith("/healthz")) {
+          return Promise.resolve(Response.json({ ok: true }));
+        }
+        settingsRequests += 1;
+        return settingsRequests === 1
+          ? firstGate.then(() => Response.json(first))
+          : Promise.resolve(Response.json(second));
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const startup = yield* StartupWorkflow;
+      const pending = yield* Effect.forkChild(startup.start);
+      yield* Effect.yieldNow;
+      yield* startup.invalidate;
+      releaseFirst();
+      const result = yield* Fiber.join(pending);
+
+      assert.isTrue(result.activity.hide_bots);
+      assert.strictEqual(settingsRequests, 2);
+    }),
+  );
+});
+
+it.layer(StartupTestLayer)("startup retry after failure", (it) => {
   it.effect("requests settings again after a failed startup lookup", () =>
     Effect.gen(function* () {
       let settingsRequests = 0;
@@ -160,17 +242,32 @@ it.layer(StartupTestLayer)("startup recovery", (it) => {
       assert.strictEqual(settingsRequests, 2);
     }),
   );
+});
 
-  it.effect("times out while backend readiness never succeeds", () =>
+it.layer(StartupTestLayer)("startup timeout", (it) => {
+  it.effect("keeps waiting for backend readiness beyond the settings request timeout", () =>
     Effect.gen(function* () {
-      vi.stubGlobal("fetch", (() => Promise.resolve(Response.json({}, { status: 503 }))) satisfies typeof fetch);
+      let ready = false;
+      const settingsResponse = { delayed: true };
+      vi.stubGlobal("fetch", ((input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(input);
+        const pathname = new URL(request.url).pathname;
+        if (pathname.endsWith("/healthz")) {
+          return Promise.resolve(Response.json({}, { status: ready ? 200 : 503 }));
+        }
+        return Promise.resolve(Response.json(settingsResponse));
+      }) satisfies typeof fetch);
 
       const startup = yield* StartupWorkflow;
-      const fiber = yield* Effect.forkChild(Effect.exit(startup.start));
+      const fiber = yield* Effect.forkChild(startup.start);
+      yield* Effect.yieldNow;
       yield* TestClock.adjust("8 seconds");
-      const exit = yield* Fiber.join(fiber);
+      assert.isUndefined(fiber.pollUnsafe());
 
-      assert.isTrue(Exit.isFailure(exit));
+      ready = true;
+      yield* TestClock.adjust("1500 millis");
+      yield* Effect.yieldNow;
+      assert.deepStrictEqual(yield* Fiber.join(fiber), settingsResponse);
     }),
   );
 });

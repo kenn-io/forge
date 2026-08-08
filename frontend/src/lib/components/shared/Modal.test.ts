@@ -4,14 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { createRawSnippet } from "svelte";
 
 import Modal from "./Modal.svelte";
+import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 
 const body = createRawSnippet(() => ({
   render: () => `<p>dialog body</p>`,
 }));
 
 function renderModal(props: Partial<Record<string, unknown>> = {}) {
-  return render(Modal, {
+  return render(AppRuntimeHarness, {
     props: {
+      component: Modal,
       open: true,
       title: "Example dialog",
       onClose: vi.fn(),

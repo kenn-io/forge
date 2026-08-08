@@ -1,7 +1,10 @@
 <script lang="ts">
   import { autoReposition, Checkbox, dismissable, floatingPopoverStyle } from "@kenn-io/kit-ui";
   import FunnelIcon from "@lucide/svelte/icons/funnel";
+  import { Effect } from "effect";
   import { tick } from "svelte";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
   import {
     KATA_LINK_RELATIONS,
     type KataLinkFilters,
@@ -14,10 +17,12 @@
   }
 
   let { filters, onChange }: Props = $props();
+  const runtime = getAppRuntime();
   let open = $state(false);
   let trigger = $state<HTMLButtonElement>();
   let panel = $state<HTMLDivElement>();
   let panelStyle = $state("");
+  let placementExecution: AppExecution<void, never> | null = null;
 
   const relationLabels: Record<KataLinkRelation, string> = {
     parent: "Parent",
@@ -53,16 +58,30 @@
   }
 
   function close(): void {
+    placementExecution?.interrupt();
+    placementExecution = null;
     open = false;
   }
 
-  async function toggle(): Promise<void> {
-    open = !open;
-    if (!open) return;
-    await tick();
-    position();
-    await tick();
-    position();
+  function toggle(): void {
+    if (open) {
+      close();
+      return;
+    }
+    open = true;
+    placementExecution = runtime.runCommand(
+      Effect.gen(function* () {
+        yield* Effect.promise(() => tick());
+        position();
+        yield* Effect.promise(() => tick());
+        position();
+      }),
+      {
+        operation: "position Kata link filters",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   function changeStatus(status: "open" | "closed", checked: boolean): void {

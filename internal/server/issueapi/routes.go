@@ -74,19 +74,19 @@ func (s *Handler) createIssue(ctx context.Context, input *createIssueInput) (*cr
 	}
 	providerIssue, err := mutator.CreateIssue(ctx, httpapi.PlatformRepoRef(*repo), title, input.Body.Body)
 	if err != nil {
-		return nil, httpapi.ProviderCallProblem(err, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo))
+		return nil, httpapi.ProviderMutationProblem(err, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo))
 	}
 	issue := platform.DBIssue(repo.ID, providerIssue)
 	issueID, err := s.db.UpsertIssue(ctx, issue)
 	if err != nil {
-		return nil, httpapi.Internal("save issue failed")
+		return nil, createIssuePersistenceProblem(*repo)
 	}
 	if err := s.db.ReplaceIssueLabels(ctx, repo.ID, issueID, issue.Labels); err != nil {
-		return nil, httpapi.Internal("save issue labels failed")
+		return nil, createIssuePersistenceProblem(*repo)
 	}
 	saved, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, issue.Number)
 	if err != nil || saved == nil {
-		return nil, httpapi.Internal("re-read issue failed")
+		return nil, createIssuePersistenceProblem(*repo)
 	}
 	saved.ID = issueID
 	response := IssueResponse{
@@ -98,6 +98,14 @@ func (s *Handler) createIssue(ctx context.Context, input *createIssueInput) (*cr
 		response.DetailFetchedAt = formatUTCRFC3339(*saved.DetailFetchedAt)
 	}
 	return &createIssueOutput{Status: http.StatusCreated, Body: response}, nil
+}
+
+func createIssuePersistenceProblem(repo db.Repo) error {
+	return httpapi.MutationOutcomeUnknown(
+		"The provider created the issue, but kenn-forge could not confirm its local state.",
+		string(httpapi.ProviderKind(repo)),
+		httpapi.ProviderHost(repo),
+	)
 }
 
 func (s *Handler) getIssue(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {

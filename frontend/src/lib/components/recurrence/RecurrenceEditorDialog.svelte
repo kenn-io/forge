@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import Modal from "../shared/Modal.svelte";
   import RecurrenceEditor from "./RecurrenceEditor.svelte";
   import type {
@@ -6,6 +8,9 @@
     KataPatchRecurrenceInput,
     KataRecurrence,
   } from "../../api/kata/taskTypes";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { KataCommand } from "../../features/kata/kata-command.js";
 
   type Mode =
     | { kind: "create"; projectID: number }
@@ -17,25 +22,33 @@
     actor: string;
     disabled?: boolean | undefined;
     onClose: () => void;
-    onCreate: (projectID: number, input: KataCreateRecurrenceInput) => Promise<void>;
-    onPatch: (id: number, input: KataPatchRecurrenceInput, etag: string) => Promise<void>;
+    onCreate: (projectID: number, input: KataCreateRecurrenceInput) => KataCommand<void, unknown>;
+    onPatch: (id: number, input: KataPatchRecurrenceInput, etag: string) => KataCommand<void, unknown>;
   }
 
   let { open, mode, actor, disabled = false, onClose, onCreate, onPatch }: Props = $props();
 
-  let busy = $state(false);
-  let editorRef: { trySave: () => Promise<void>; canSave: () => boolean } | null = $state(null);
+  const runtime = getAppRuntime();
 
-  async function handleSave() {
+  let busy = $state(false);
+  let editorRef: { trySave: () => KataCommand<void>; canSave: () => boolean } | null = $state(null);
+  let saveExecution: AppExecution<void, never> | null = null;
+
+  function handleSave(): void {
     if (disabled || !editorRef) return;
     if (!editorRef.canSave()) return;
     busy = true;
-    try {
-      await editorRef.trySave();
-    } finally {
-      busy = false;
-    }
+    saveExecution = runtime.runCommand(
+      editorRef.trySave().pipe(Effect.ensuring(Effect.sync(() => (busy = false)))),
+      {
+        operation: "save Kata recurrence",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
+
+  onDestroy(() => saveExecution?.interrupt());
 </script>
 
 <Modal

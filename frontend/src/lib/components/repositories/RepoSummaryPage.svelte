@@ -1,23 +1,20 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Effect, Schedule, Stream } from "effect";
   import { FilterDropdown } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
-  import {
-    providerCollectionPath,
-    providerRouteParams,
-  } from "../../api/provider-routes.js";
-  import type { RepoSummary } from "../../api/types.js";
+  import type { ProviderRouteRef } from "../../api/provider-routes.js";
   import { buildIssueRoute, buildRepoBrowserRoute } from "../../routes.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { executeGeneratedApiRequest } from "../../api/generated-api.js";
 
   import {
     RefreshIcon,
     SearchIcon,
   } from "../../icons.js";
-  import {
-    apiErrorMessage,
-    client,
-  } from "../../api/runtime.js";
+  import { apiErrorMessage } from "../../api/runtime.js";
   import { setGlobalRepo } from "../../stores/filter.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
@@ -39,9 +36,23 @@
     loadRepoSummaryFilters,
     saveRepoSummaryFilters,
   } from "./repoSummaryFilters.js";
+  import {
+    makeRepoSummaryPresenterID,
+    repoSummaryIssueKey,
+    RepoSummaryWorkflow,
+    type RepoSummaryIssueState,
+    type RepoSummaryReadError,
+  } from "./repo-summary-workflow.js";
 
   const stores = getStores();
+  const appRuntime = getAppRuntime();
   const initialFilters = loadRepoSummaryFilters();
+  let loadExecution: AppExecution<void, never> | null = null;
+  let refreshExecution: AppExecution<void, never> | null = null;
+  let roborevExecution: AppExecution<void, never> | null = null;
+  const issuePresenterID = makeRepoSummaryPresenterID();
+  const retainedIssueStates: Record<string, RepoSummaryIssueState> = {};
+  let issuePresenterNeedsSummaryReplay = true;
 
   let summaries = $state<RepoSummaryCardData[]>([]);
   let roborevConfiguredRepos = $state.raw<Set<string>>(new Set());
@@ -176,52 +187,194 @@
     return new Date(value).getTime();
   }
 
-  async function loadSummaries(): Promise<void> {
+  function repoSummaryFailureMessage(failure: RepoSummaryReadError, fallback: string): string {
+    return failure._tag === "ApiProblemError"
+      ? apiErrorMessage(failure.problem, fallback)
+      : failure.cause instanceof Error
+        ? failure.cause.message
+        : fallback;
+  }
+
+  function readSummariesProgram() {
+    return Effect.gen(function* () {
+      const workflow = yield* RepoSummaryWorkflow;
+      return normalizeSummaries(yield* workflow.read);
+    });
+  }
+
+  function repoIssueRef(summary: RepoSummaryCardData): ProviderRouteRef {
+    return {
+      provider: summary.repo.provider,
+      platformHost: summary.repo.platform_host,
+      owner: summary.repo.owner,
+      name: summary.repo.name,
+      repoPath: summary.repo.repo_path,
+    };
+  }
+
+  function issueStateKey(summary: RepoSummaryCardData): string {
+    return repoSummaryIssueKey(repoIssueRef(summary));
+  }
+
+  function issueSummaryFor(key: string): RepoSummaryCardData | undefined {
+    return summaries.find((summary) => issueStateKey(summary) === key);
+  }
+
+  function presentIssueState(state: RepoSummaryIssueState): boolean {
+    const { key } = state.request;
+    retainedIssueStates[key] = state;
+    issueTitleByRepo[key] = state.request.title;
+    issueBodyByRepo[key] = state.request.body ?? "";
+
+    if (state.kind === "succeeded") {
+      delete retainedIssueStates[key];
+      issueTitleByRepo[key] = "";
+      issueBodyByRepo[key] = "";
+      issueSubmittingByRepo[key] = false;
+      issueOutcomeUnknownByRepo[key] = false;
+      issueErrorByRepo[key] = null;
+      composerSummary = null;
+      setGlobalRepo(
+        providerRepoStateKey({
+          provider: state.request.ref.provider,
+          platform_host: state.request.ref.platformHost ?? "",
+          repo_path: state.request.ref.repoPath,
+        }),
+      );
+      navigate(buildIssueRoute({ ...state.request.ref, number: state.issue.Number }));
+      return true;
+    }
+
+    const summary = issueSummaryFor(key);
+    if (summary === undefined) return false;
+    composerSummary = summary;
+
+    if (state.kind === "pending") {
+      issueSubmittingByRepo[key] = true;
+      issueOutcomeUnknownByRepo[key] = false;
+      issueErrorByRepo[key] = null;
+      return false;
+    }
+
+    issueSubmittingByRepo[key] = false;
+    const message = repoSummaryFailureMessage(state.error, "failed to create issue");
+    if (state.kind === "uncertain") {
+      const warning = `${message} The request outcome is unknown; check the issue list before retrying.`;
+      issueOutcomeUnknownByRepo[key] = true;
+      issueErrorByRepo[key] = warning;
+      showFlash(warning, { tone: "danger" });
+      return false;
+    }
+
+    delete retainedIssueStates[key];
+    issueOutcomeUnknownByRepo[key] = false;
+    issueErrorByRepo[key] = null;
+    showFlash(message, { tone: "danger" });
+    return true;
+  }
+
+  function claimIssuePresenterProgram() {
+    return Effect.gen(function* () {
+      const workflow = yield* RepoSummaryWorkflow;
+      yield* workflow.claimIssuePresenter(
+        issuePresenterID,
+        (state) => Effect.sync(() => presentIssueState(state)),
+      );
+    });
+  }
+
+  function replayIssuePresenterAfterFirstSummaryLoadProgram() {
+    return Effect.gen(function* () {
+      const shouldReplay = yield* Effect.sync(() => {
+        if (!issuePresenterNeedsSummaryReplay) return false;
+        issuePresenterNeedsSummaryReplay = false;
+        return true;
+      });
+      if (!shouldReplay) return;
+      yield* claimIssuePresenterProgram();
+    });
+  }
+
+  function loadSummaries(): void {
     const showSpinner = summaries.length === 0;
     if (showSpinner) loading = true;
     loadError = null;
-
-    try {
-      const { data, error } = await client.GET("/repos/summary");
-      if (error) {
-        loadError = apiErrorMessage(
-          error,
-          "failed to load repositories",
-        );
-        return;
-      }
-
-      summaries = normalizeSummaries(data as RepoSummary[] | null);
-    } catch (err) {
-      loadError = err instanceof Error ? err.message : "failed to load repositories";
-    } finally {
-      loading = false;
-    }
+    loadExecution = appRuntime.runCommand(
+      readSummariesProgram().pipe(
+        Effect.tap((loaded) =>
+          Effect.sync(() => {
+            summaries = loaded;
+            loading = false;
+          }),
+        ),
+        Effect.andThen(replayIssuePresenterAfterFirstSummaryLoadProgram()),
+        Effect.catch((failure) =>
+          Effect.sync(() => {
+            loadError = repoSummaryFailureMessage(failure, "failed to load repositories");
+            loading = false;
+          }),
+        ),
+        Effect.asVoid,
+      ),
+      {
+        operation: "repositories.summary.read",
+        safeContext: { surface: "repositories" },
+        onFailure: () => undefined,
+      },
+    );
   }
 
-  async function loadRoborevConfiguredRepositories(): Promise<void> {
-    try {
-      const { data, error } = await client.GET("/roborev/configured-repositories");
-      if (error || !data) return;
-      roborevConfiguredRepos = new Set(
-        (data.repositories ?? []).map(providerRepoStateKey),
-      );
-    } catch {
-      // Roborev is optional; repository summaries remain authoritative.
-    }
+  function loadRoborevConfiguredRepositories(): void {
+    roborevExecution?.interrupt();
+    roborevExecution = appRuntime.runCommand(
+      executeGeneratedApiRequest("load Roborev configured repositories", (generatedClient, signal) =>
+        generatedClient.GET("/roborev/configured-repositories", { signal }),
+      ).pipe(
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            roborevConfiguredRepos = new Set(
+              (data.repositories ?? []).map(providerRepoStateKey),
+            );
+          }),
+        ),
+        // Roborev is optional; repository summaries remain authoritative.
+        Effect.catch(() => Effect.void),
+        Effect.asVoid,
+      ),
+      {
+        operation: "repositories.roborev-config.read",
+        safeContext: { surface: "repositories" },
+        onFailure: () => undefined,
+      },
+    );
   }
 
-  async function refreshSummaries(): Promise<void> {
-    try {
-      const { error } = await client.POST("/sync");
-      if (error) {
-        showFlash(apiErrorMessage(error, "failed to refresh repositories"), { tone: "danger" });
-        return;
-      }
-      await loadSummaries();
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : "failed to refresh repositories", { tone: "danger" });
-    }
+  function refreshSummaries(): void {
+    refreshExecution = appRuntime.runCommand(
+      executeGeneratedApiRequest("refresh repository summaries", (generatedClient, signal) =>
+        generatedClient.POST("/sync", { signal }),
+      ).pipe(
+        Effect.andThen(readSummariesProgram()),
+        Effect.tap((loaded) =>
+          Effect.sync(() => {
+            summaries = loaded;
+            loadError = null;
+            loading = false;
+          }),
+        ),
+        Effect.catch((failure) =>
+          Effect.sync(() => {
+            showFlash(repoSummaryFailureMessage(failure, "failed to refresh repositories"), { tone: "danger" });
+          }),
+        ),
+        Effect.asVoid,
+      ),
+      {
+        operation: "repositories.summary.refresh",
+        safeContext: { surface: "repositories" },
+        onFailure: () => undefined,
+      },
+    );
   }
 
   function setFilter(filter: RepoFilter): void {
@@ -272,7 +425,7 @@
 
   function openComposer(summary: RepoSummaryCardData): void {
     if (!summary.repo.capabilities.issue_mutation) return;
-    const key = repoStateKey(summary);
+    const key = issueStateKey(summary);
     composerSummary = summary;
     if (!issueOutcomeUnknownByRepo[key]) issueErrorByRepo[key] = null;
     if (issueTitleByRepo[key] === undefined) {
@@ -284,7 +437,7 @@
   }
 
   function closeComposer(key: string): void {
-    if (composerSummary && repoStateKey(composerSummary) === key) {
+    if (composerSummary && issueStateKey(composerSummary) === key) {
       composerSummary = null;
     }
     if (!issueOutcomeUnknownByRepo[key]) issueErrorByRepo[key] = null;
@@ -301,11 +454,11 @@
     issueBodyByRepo[key] = body;
   }
 
-  async function submitIssue(
+  function submitIssue(
     summary: RepoSummaryCardData,
-  ): Promise<void> {
+  ): void {
     if (!summary.repo.capabilities.issue_mutation) return;
-    const key = repoStateKey(summary);
+    const key = issueStateKey(summary);
     if (issueSubmittingByRepo[key]) return;
     if (issueOutcomeUnknownByRepo[key]) return;
 
@@ -318,91 +471,86 @@
     issueSubmittingByRepo[key] = true;
     issueErrorByRepo[key] = null;
 
-    const ref = {
-      provider: summary.repo.provider,
-      platformHost: summary.repo.platform_host,
-      owner: summary.repo.owner,
-      name: summary.repo.name,
-      repoPath: summary.repo.repo_path,
-    };
-    try {
-      const { data, error, response } = await client.POST(
-        providerCollectionPath("issues", ref),
-        {
-          params: {
-            path: providerRouteParams(ref),
-          },
-          body: {
-            title,
-            body: issueBodyByRepo[key] ?? "",
-          },
+    appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* RepoSummaryWorkflow;
+        yield* workflow.createIssue({
+          ref: repoIssueRef(summary),
+          title,
+          body: issueBodyByRepo[key] ?? "",
+        });
+      }),
+      {
+        operation: "repositories.issue.create",
+        safeContext: { surface: "repositories" },
+        onFailure: () => {
+          issueSubmittingByRepo[key] = false;
+          showFlash("The issue request stopped before it was accepted.", { tone: "danger" });
         },
-      );
-      if (error || !data) {
-        const message = apiErrorMessage(error, "failed to create issue");
-        if (response?.status >= 500) {
-          const warning = `${message} The request outcome is unknown; check the issue list before retrying.`;
-          issueOutcomeUnknownByRepo[key] = true;
-          issueErrorByRepo[key] = warning;
-          showFlash(warning, { tone: "danger" });
-        } else {
-          issueOutcomeUnknownByRepo[key] = false;
-          showFlash(message, { tone: "danger" });
-        }
-        return;
-      }
-
-      issueTitleByRepo[key] = "";
-      issueBodyByRepo[key] = "";
-      issueOutcomeUnknownByRepo[key] = false;
-      composerSummary = null;
-      setGlobalRepo(repoStateKey(summary));
-      navigate(
-        buildIssueRoute({
-          provider: summary.repo.provider,
-          platformHost: summary.repo.platform_host,
-          owner: summary.repo.owner,
-          name: summary.repo.name,
-          repoPath: summary.repo.repo_path,
-          number: data.Number,
-        }),
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "failed to create issue";
-      const warning = `${message} The request outcome is unknown; check the issue list before retrying.`;
-      issueOutcomeUnknownByRepo[key] = true;
-      issueErrorByRepo[key] = warning;
-      showFlash(warning, {
-        tone: "danger",
-      });
-    } finally {
-      issueSubmittingByRepo[key] = false;
-    }
+      },
+    );
   }
 
   function submitActiveIssue(): void {
     if (!composerSummary) return;
-    void submitIssue(composerSummary);
+    submitIssue(composerSummary);
   }
 
   function acknowledgeUnknownIssueOutcome(key: string): void {
-    issueOutcomeUnknownByRepo[key] = false;
-    issueErrorByRepo[key] = null;
+    const state = retainedIssueStates[key];
+    if (state?.kind !== "uncertain") return;
+    appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* RepoSummaryWorkflow;
+        yield* workflow.acknowledgeUncertainIssue(key, state.request.submissionID, issuePresenterID);
+        yield* Effect.sync(() => {
+          delete retainedIssueStates[key];
+          issueOutcomeUnknownByRepo[key] = false;
+          issueErrorByRepo[key] = null;
+        });
+      }),
+      {
+        operation: "repositories.issue.acknowledge-uncertain",
+        safeContext: { surface: "repositories" },
+        onFailure: () => undefined,
+      },
+    );
   }
 
   onMount(() => {
-    void loadSummaries();
-    void loadRoborevConfiguredRepositories();
-    const unsubscribe =
-      stores.sync.subscribeSyncComplete(() => {
-        void loadSummaries();
-      });
-    const refreshHandle = setInterval(() => {
-      void loadSummaries();
-    }, 30_000);
+    loadSummaries();
+    loadRoborevConfiguredRepositories();
+    const lifecycle = appRuntime.runCommand(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const workflow = yield* RepoSummaryWorkflow;
+          yield* Effect.acquireRelease(
+            workflow.claimIssuePresenter(
+              issuePresenterID,
+              (state) => Effect.sync(() => presentIssueState(state)),
+            ),
+            () => workflow.releaseIssuePresenter(issuePresenterID),
+          );
+          yield* Effect.acquireRelease(
+            Effect.sync(() => stores.sync.subscribeSyncComplete(loadSummaries)),
+            (unsubscribe) => Effect.sync(unsubscribe),
+          );
+          yield* Stream.fromSchedule(Schedule.spaced("30 seconds")).pipe(
+            Stream.runForEach(() => Effect.sync(loadSummaries)),
+          );
+        }),
+      ),
+      {
+        operation: "repositories.summary.lifecycle",
+        safeContext: { surface: "repositories" },
+        onFailure: () => undefined,
+      },
+    );
     return () => {
-      unsubscribe();
-      clearInterval(refreshHandle);
+      lifecycle.interrupt();
+      loadExecution?.interrupt();
+      refreshExecution?.interrupt();
+      roborevExecution?.interrupt();
     };
   });
 </script>
@@ -436,7 +584,7 @@
       message={loadError}
       tone="error"
       actionLabel="Retry"
-      onaction={() => void loadSummaries()}
+      onaction={loadSummaries}
     />
   {:else if summaries.length === 0}
     <RepoPageState
@@ -521,7 +669,7 @@
           class="repo-page__refresh"
           title="Refresh repositories"
           aria-label="Refresh repositories"
-          onclick={() => void refreshSummaries()}
+          onclick={refreshSummaries}
         >
           <RefreshIcon size={16} aria-hidden="true" />
         </button>
@@ -565,7 +713,7 @@
   {/if}
 
   {#if composerSummary}
-    {@const key = repoStateKey(composerSummary)}
+    {@const key = issueStateKey(composerSummary)}
     <RepoIssueModal
       summary={composerSummary}
       title={issueTitleByRepo[key] ?? ""}

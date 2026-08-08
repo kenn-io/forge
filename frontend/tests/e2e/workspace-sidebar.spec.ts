@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 
+import type { components } from "../../src/lib/api/generated/schema.js";
 import { mockApi } from "./support/mockApi";
+
+type ProblemBody = components["schemas"]["ProblemError"];
+
+function problem(code: ProblemBody["code"], status: number, detail?: string): ProblemBody {
+  return { type: "about:blank", code, status, ...(detail === undefined ? {} : { detail }) };
+}
 
 function clearWorkspaceSidebarTabStorage(): void {
   for (const key of Object.keys(localStorage)) {
@@ -31,8 +38,11 @@ const testWorkspace = {
   tmux_session: "kenn-forge-ws-123",
   tmux_pane_title: null,
   tmux_working: false,
+  tmux_activity_source: "unknown",
+  tmux_last_output_at: null,
   status: "ready",
   created_at: "2026-04-10T12:00:00Z",
+  enrichment_status: "fresh",
   mr_title: "Add auth middleware",
   mr_state: "open",
   mr_is_draft: false,
@@ -49,8 +59,12 @@ const testIssueWorkspace = {
   git_head_ref: "kenn-forge/issue-7",
   worktree_path: "/tmp/worktrees/ws-issue-7",
   tmux_session: "kenn-forge-ws-issue-7",
+  tmux_working: false,
+  tmux_activity_source: "unknown",
+  tmux_last_output_at: null,
   status: "ready",
   created_at: "2026-04-10T12:00:00Z",
+  enrichment_status: "fresh",
   mr_title: "Theme toggle does not stick",
   mr_state: "open",
 };
@@ -975,7 +989,7 @@ test.describe("terminal state icons", () => {
       workspaceDetailResponses: [
         {
           status: 500,
-          body: { error: "Internal error" },
+          body: problem("internalError", 500),
         },
         {
           status: 200,
@@ -1081,9 +1095,7 @@ test.describe("terminal state icons", () => {
       workspaceDeleteResponses: [
         {
           status: 409,
-          body: {
-            detail: "Worktree has uncommitted changes.",
-          },
+          body: problem("worktreeDirty", 409, "Worktree has uncommitted changes."),
         },
         { status: 204 },
       ],
@@ -1126,9 +1138,7 @@ test.describe("terminal state icons", () => {
           await route.fulfill({
             status: 409,
             contentType: "application/json",
-            body: JSON.stringify({
-              detail: "Worktree has uncommitted changes.",
-            }),
+            body: JSON.stringify(problem("worktreeDirty", 409, "Worktree has uncommitted changes.")),
           });
           return;
         }
@@ -1173,9 +1183,7 @@ test.describe("terminal state icons", () => {
       workspaceDeleteResponses: [
         {
           status: 409,
-          body: {
-            detail: "Worktree has uncommitted changes.",
-          },
+          body: problem("worktreeDirty", 409, "Worktree has uncommitted changes."),
         },
       ],
     });
@@ -1205,9 +1213,7 @@ test.describe("terminal state icons", () => {
       workspaceDeleteResponses: [
         {
           status: 409,
-          body: {
-            detail: "Worktree has uncommitted changes.",
-          },
+          body: problem("worktreeDirty", 409, "Worktree has uncommitted changes."),
         },
       ],
     });
@@ -1264,9 +1270,7 @@ test.describe("terminal state icons", () => {
       workspaceDeleteResponses: [
         {
           status: 409,
-          body: {
-            detail: "Worktree has uncommitted changes.",
-          },
+          body: problem("worktreeDirty", 409, "Worktree has uncommitted changes."),
         },
       ],
     });
@@ -1316,9 +1320,7 @@ test.describe("terminal state icons", () => {
         await route.fulfill({
           status: 409,
           contentType: "application/json",
-          body: JSON.stringify({
-            detail: "Worktree has uncommitted changes.",
-          }),
+          body: JSON.stringify(problem("worktreeDirty", 409, "Worktree has uncommitted changes.")),
         });
       },
     );
@@ -1366,9 +1368,7 @@ test.describe("terminal state icons", () => {
         await route.fulfill({
           status: 409,
           contentType: "application/json",
-          body: JSON.stringify({
-            detail: "Worktree has uncommitted changes.",
-          }),
+          body: JSON.stringify(problem("worktreeDirty", 409, "Worktree has uncommitted changes.")),
         });
       },
     );

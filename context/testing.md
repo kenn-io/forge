@@ -121,6 +121,9 @@ owner:
 - Real-tmux websocket tests retry asynchronous resize probes on a bounded timer, never per repaint; repaint-coupled
   input creates a feedback loop that can overflow subscriber buffers
   (`internal/server/api_test.go::TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E`).
+- Retiring or shutting down e2e state must stop its private tmux server before slower
+  asynchronous cleanup; interrupted runners otherwise leave test-owned daemons behind
+  (`cmd/e2e-server/main.go::run`).
 - Clipboard-race tests must emit OSC 52 through the attached tmux client, not print
   an application OSC 52 sequence that tmux blocks, and must assert the socket observed
   OSC 52 before trusting clipboard ordering (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts::typeScheduledTmuxClipboardWrite`).

@@ -1,13 +1,13 @@
 import { assert, it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Fiber, Ref } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import { makeGeneratedApiLayer } from "../../api/generated-api.js";
-import { KataMutationOutcomeUnknownError } from "../../api/kata/taskClient.js";
+import { KataMutationOutcomeUnknownError, KataMutationPartiallyAppliedError } from "../../api/kata/taskClient.js";
 import type { KataWorkspaceSnapshotResponse } from "../../api/kata/snapshot.js";
 import { normalizeKataWorkspaceSnapshot } from "../../api/kata/snapshotProjection.js";
 import { createRuntimeClient } from "../../api/runtime.js";
 import { createKataAuthorityStore } from "../../stores/kata-authority.svelte.js";
-import { KataMutationError, makeKataWorkflow } from "./kata-workflow.js";
+import { KataMutationError, KataMutationIdentityMismatch, makeKataWorkflow } from "./kata-workflow.js";
 
 function snapshot(generation: number): KataWorkspaceSnapshotResponse {
   return {
@@ -102,8 +102,11 @@ it.effect("publishes mutation acknowledgement before revalidation finishes", () 
       const returned = yield* Deferred.make<void>();
       const fiber = yield* Effect.forkChild(
         workflow
-          .mutateAndRevalidate(Effect.succeed("saved"), Deferred.await(releaseRevalidation).pipe(Effect.as(true)), () =>
-            Deferred.succeed(acknowledgementPublished, undefined),
+          .mutateAndRevalidate(
+            "home",
+            Effect.succeed("saved"),
+            Deferred.await(releaseRevalidation).pipe(Effect.as(true)),
+            () => Deferred.succeed(acknowledgementPublished, undefined),
           )
           .pipe(Effect.tap(() => Deferred.succeed(returned, undefined))),
       );
@@ -127,6 +130,7 @@ it.effect("keeps mutation revalidation ahead of later mutations", () =>
 
       const first = yield* Effect.forkChild(
         workflow.mutateAndRevalidate(
+          "home",
           Deferred.succeed(firstMutationStarted, undefined).pipe(
             Effect.andThen(Ref.update(observed, (events) => [...events, "first mutation"])),
             Effect.andThen(Deferred.await(releaseFirstMutation)),
@@ -139,6 +143,7 @@ it.effect("keeps mutation revalidation ahead of later mutations", () =>
 
       const second = yield* Effect.forkChild(
         workflow.mutateAndRevalidate(
+          "home",
           Ref.update(observed, (events) => [...events, "second mutation"]).pipe(Effect.as("second acknowledgement")),
           Ref.update(observed, (events) => [...events, "second revalidation"]).pipe(Effect.as(true)),
         ),
@@ -173,6 +178,7 @@ it.effect("keeps an accepted Kata mutation running when its submitter is interru
       const revalidationFinished = yield* Deferred.make<void>();
       const submitter = yield* workflow
         .mutateAndRevalidate(
+          "home",
           Deferred.succeed(mutationStarted, undefined).pipe(
             Effect.andThen(Deferred.await(releaseMutation)),
             Effect.as("saved"),
@@ -206,9 +212,11 @@ it.effect("retains an uncertain mutation fence before allowing another write to 
         },
         baseline,
         readFresh: Effect.succeed(snapshot(2)),
+        isApplied: () => false,
       };
       const first = yield* workflow
         .mutateAndRevalidate(
+          "home",
           Ref.update(attempts, (count) => count + 1).pipe(
             Effect.andThen(
               Effect.fail(
@@ -230,6 +238,7 @@ it.effect("retains an uncertain mutation fence before allowing another write to 
         .pipe(Effect.exit);
       const second = yield* workflow
         .mutateAndRevalidate(
+          "home",
           Ref.update(attempts, (count) => count + 1).pipe(Effect.as("replacement")),
           Effect.succeed(true),
           undefined,
@@ -241,6 +250,260 @@ it.effect("retains an uncertain mutation fence before allowing another write to 
       assert.isTrue(second._tag === "Failure");
       if (second._tag === "Failure") assert.include(String(second.cause), "KataMutationBlocked");
       assert.strictEqual(yield* Ref.get(attempts), 1);
+    }),
+  ),
+);
+
+it.effect("blocks every mutation for a daemon even when the next write has no recovery evidence", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const workflow = yield* makeKataWorkflow;
+      const attempts = yield* Ref.make(0);
+      const uncertainty = {
+        identity: {
+          key: "home:issue:issue-1",
+          daemonId: "home",
+          operation: "add Kata comment",
+          target: "issue-1",
+        },
+        baseline: normalizeKataWorkspaceSnapshot(snapshot(1)),
+        readFresh: Effect.succeed(snapshot(2)),
+        isApplied: () => false,
+      };
+      yield* workflow
+        .mutateAndRevalidate(
+          "home",
+          Effect.fail(
+            new KataMutationError({
+              message: "Kata could not confirm whether the mutation was applied.",
+              cause: KataMutationOutcomeUnknownError.make({
+                operation: "add Kata comment",
+                message: "Kata could not confirm whether the mutation was applied.",
+                cause: new Error("response lost"),
+              }),
+            }),
+          ),
+          Effect.succeed(true),
+          undefined,
+          uncertainty,
+        )
+        .pipe(Effect.exit);
+
+      const blocked = yield* workflow
+        .mutateAndRevalidate(
+          "home",
+          Ref.update(attempts, (count) => count + 1).pipe(Effect.as("saved")),
+          Effect.succeed(true),
+          undefined,
+        )
+        .pipe(Effect.exit);
+
+      assert.isTrue(Exit.isFailure(blocked));
+      if (Exit.isFailure(blocked)) {
+        assert.include(String(blocked.cause), "KataMutationBlocked");
+      }
+      assert.strictEqual(yield* Ref.get(attempts), 0);
+    }),
+  ),
+);
+
+it.effect("rejects recovery evidence for a different daemon before running the mutation", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const workflow = yield* makeKataWorkflow;
+      const attempts = yield* Ref.make(0);
+      const result = yield* workflow
+        .mutateAndRevalidate(
+          "home",
+          Ref.update(attempts, (count) => count + 1).pipe(Effect.as("saved")),
+          Effect.succeed(true),
+          undefined,
+          {
+            identity: {
+              key: "other:issue:issue-1",
+              daemonId: "other",
+              operation: "add Kata comment",
+              target: "issue-1",
+            },
+            baseline: normalizeKataWorkspaceSnapshot(snapshot(1)),
+            readFresh: Effect.succeed(snapshot(2)),
+            isApplied: () => false,
+          },
+        )
+        .pipe(Effect.exit);
+
+      assert.isTrue(Exit.isFailure(result));
+      if (Exit.isFailure(result)) {
+        const failure = result.cause.pipe(Cause.findErrorOption);
+        assert.isTrue(failure._tag === "Some" && failure.value instanceof KataMutationIdentityMismatch);
+      }
+      assert.strictEqual(yield* Ref.get(attempts), 0);
+    }),
+  ),
+);
+
+it.effect("rejects snapshot recovery whose baseline belongs to a different daemon", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const workflow = yield* makeKataWorkflow;
+      const attempts = yield* Ref.make(0);
+      const baseline = {
+        ...normalizeKataWorkspaceSnapshot(snapshot(1)),
+        daemon_id: "other",
+      };
+      const result = yield* workflow
+        .mutateAndRevalidate(
+          "home",
+          Ref.update(attempts, (count) => count + 1).pipe(Effect.as("saved")),
+          Effect.succeed(true),
+          undefined,
+          {
+            identity: {
+              key: "home:issue:issue-1",
+              daemonId: "home",
+              operation: "add Kata comment",
+              target: "issue-1",
+            },
+            baseline,
+            readFresh: Effect.succeed(snapshot(2)),
+            isApplied: () => false,
+          },
+        )
+        .pipe(Effect.exit);
+
+      assert.isTrue(Exit.isFailure(result));
+      if (Exit.isFailure(result)) {
+        const failure = result.cause.pipe(Cause.findErrorOption);
+        assert.isTrue(failure._tag === "Some" && failure.value instanceof KataMutationIdentityMismatch);
+      }
+      assert.strictEqual(yield* Ref.get(attempts), 0);
+    }),
+  ),
+);
+
+it.effect("keeps a replacement mutation claim when the previous scoped owner exits", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const workflow = yield* makeKataWorkflow;
+      const firstNotifications = yield* Ref.make(0);
+      const replacementNotifications = yield* Ref.make(0);
+      const first = yield* Effect.forkChild(
+        Effect.scoped(
+          workflow
+            .claimMutations("home", "surface", () => Ref.update(firstNotifications, (count) => count + 1))
+            .pipe(Effect.andThen(Effect.never)),
+        ),
+      );
+      yield* Effect.yieldNow;
+      const replacement = yield* Effect.forkChild(
+        Effect.scoped(
+          workflow
+            .claimMutations("home", "surface", () => Ref.update(replacementNotifications, (count) => count + 1))
+            .pipe(Effect.andThen(Effect.never)),
+        ),
+      );
+      yield* Effect.yieldNow;
+      yield* Fiber.interrupt(first);
+
+      const uncertainty = {
+        identity: {
+          key: "home:issue:issue-1",
+          daemonId: "home",
+          operation: "add Kata comment",
+          target: "issue-1",
+        },
+        baseline: normalizeKataWorkspaceSnapshot(snapshot(1)),
+        readFresh: Effect.succeed(snapshot(2)),
+        isApplied: () => false,
+      };
+      yield* workflow
+        .mutateAndRevalidate(
+          "home",
+          Effect.fail(
+            new KataMutationError({
+              message: "Kata could not confirm whether the mutation was applied.",
+              cause: KataMutationOutcomeUnknownError.make({
+                operation: "add Kata comment",
+                message: "Kata could not confirm whether the mutation was applied.",
+                cause: new Error("response lost"),
+              }),
+            }),
+          ),
+          Effect.succeed(true),
+          undefined,
+          uncertainty,
+        )
+        .pipe(Effect.exit);
+
+      assert.strictEqual(yield* Ref.get(firstNotifications), 0);
+      assert.strictEqual(yield* Ref.get(replacementNotifications), 1);
+      yield* Fiber.interrupt(replacement);
+      yield* workflow.reconcileMutation(uncertainty.identity.key).pipe(Effect.exit);
+      assert.strictEqual(yield* Ref.get(replacementNotifications), 1);
+    }),
+  ),
+);
+
+it.effect("blocks every mutation for a daemon while one outcome remains uncertain", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const workflow = yield* makeKataWorkflow;
+      const attempts = yield* Ref.make<ReadonlyArray<string>>([]);
+      const baseline = normalizeKataWorkspaceSnapshot(snapshot(1));
+      const commentUncertainty = {
+        identity: {
+          key: '["home","issue-comment","issue-1"]',
+          daemonId: "home",
+          operation: "add Kata comment",
+          target: "issue-1",
+        },
+        baseline,
+        readFresh: Effect.succeed(snapshot(2)),
+        isApplied: () => false,
+      };
+      const ownerUncertainty = {
+        identity: {
+          key: '["home","issue-owner","issue-1"]',
+          daemonId: "home",
+          operation: "assign Kata task",
+          target: "issue-1",
+        },
+        baseline,
+        readFresh: Effect.succeed(snapshot(2)),
+        isApplied: () => true,
+      };
+
+      yield* workflow
+        .mutateAndRevalidate(
+          "home",
+          Ref.update(attempts, (seen) => [...seen, "comment"]).pipe(
+            Effect.andThen(
+              Effect.fail(
+                KataMutationOutcomeUnknownError.make({
+                  operation: "add Kata comment",
+                  message: "Kata could not confirm whether the comment was applied.",
+                  cause: new Error("response lost"),
+                }),
+              ),
+            ),
+          ),
+          Effect.succeed(true),
+          undefined,
+          commentUncertainty,
+        )
+        .pipe(Effect.exit);
+      const ownerResult = yield* workflow
+        .mutateAndRevalidate(
+          "home",
+          Ref.update(attempts, (seen) => [...seen, "owner"]).pipe(Effect.as("saved")),
+          Effect.succeed(true),
+          undefined,
+          ownerUncertainty,
+        )
+        .pipe(Effect.exit);
+
+      assert.isTrue(ownerResult._tag === "Failure");
+      assert.deepStrictEqual(yield* Ref.get(attempts), ["comment"]);
     }),
   ),
 );
@@ -264,6 +527,7 @@ it.effect("delivers a retained fence to a remounted surface and resolves it from
       };
       yield* workflow
         .mutateAndRevalidate(
+          "home",
           Effect.fail(
             KataMutationOutcomeUnknownError.make({
               operation: "add Kata comment",
@@ -277,13 +541,98 @@ it.effect("delivers a retained fence to a remounted surface and resolves it from
         )
         .pipe(Effect.exit);
 
-      yield* workflow.claimMutation(uncertainty.identity.key, "replacement-surface", (state) =>
+      yield* workflow.claimMutations(uncertainty.identity.daemonId, "replacement-surface", (state) =>
         Ref.update(states, (seen) => [...seen, `${state.kind}:${state.kind === "resolved" ? state.resolution : ""}`]),
       );
       const resolution = yield* workflow.reconcileMutation(uncertainty.identity.key);
 
       assert.strictEqual(resolution, "applied");
       assert.deepStrictEqual(yield* Ref.get(states), ["unknown:", "reconciling:", "resolved:applied"]);
+    }),
+  ),
+);
+
+it.effect("reconciles recurrence fences from their custom recurrence authority", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const workflow = yield* makeKataWorkflow;
+      const reconciliationReads = yield* Ref.make(0);
+      const uncertainty = {
+        identity: {
+          key: '["home","recurrence-delete","recurrence-1"]',
+          daemonId: "home",
+          operation: "delete Kata recurrence",
+          target: "recurrence-1",
+        },
+        reconcile: Ref.update(reconciliationReads, (count) => count + 1).pipe(
+          Effect.andThen(Effect.succeed("applied")),
+        ),
+      };
+      yield* workflow
+        .mutateAndRevalidate(
+          "home",
+          Effect.fail(
+            KataMutationOutcomeUnknownError.make({
+              operation: "delete Kata recurrence",
+              message: "Kata could not confirm whether the recurrence was deleted.",
+              cause: new Error("response lost"),
+            }),
+          ),
+          Effect.succeed(true),
+          undefined,
+          uncertainty,
+        )
+        .pipe(Effect.exit);
+
+      const resolution = yield* workflow.reconcileMutation(uncertainty.identity.key);
+
+      assert.strictEqual(resolution, "applied");
+      assert.strictEqual(yield* Ref.get(reconciliationReads), 1);
+    }),
+  ),
+);
+
+it.effect("acknowledges a known partial outcome without reporting the whole mutation as applied", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const workflow = yield* makeKataWorkflow;
+      const states = yield* Ref.make<ReadonlyArray<string>>([]);
+      const baseline = normalizeKataWorkspaceSnapshot(snapshot(1));
+      const uncertainty = {
+        identity: {
+          key: "home:create:issue-1",
+          daemonId: "home",
+          operation: "create Kata issue with metadata",
+          target: "issue-1",
+        },
+        baseline,
+        readFresh: Effect.succeed(snapshot(2)),
+        isApplied: () => false,
+      };
+      yield* workflow
+        .mutateAndRevalidate(
+          "home",
+          Effect.fail(
+            KataMutationPartiallyAppliedError.make({
+              operation: "create Kata issue with metadata",
+              message: "The issue was created, but metadata was not applied.",
+              issueUID: "issue-1",
+              incompleteStep: "metadata",
+              cause: new Error("missing ETag"),
+            }),
+          ),
+          Effect.succeed(true),
+          undefined,
+          uncertainty,
+        )
+        .pipe(Effect.exit);
+      yield* workflow.claimMutations(uncertainty.identity.daemonId, "surface", (state) =>
+        Ref.update(states, (seen) => [...seen, `${state.kind}:${state.kind === "resolved" ? state.resolution : ""}`]),
+      );
+
+      yield* workflow.acknowledgeMutation(uncertainty.identity.key);
+
+      assert.deepStrictEqual(yield* Ref.get(states), ["partial:", "resolved:partial"]);
     }),
   ),
 );

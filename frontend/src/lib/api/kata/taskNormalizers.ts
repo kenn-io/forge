@@ -386,10 +386,16 @@ export function normalizeKataRecurrence(raw: unknown): KataRecurrence {
 
 export function normalizeKataRecurrences(raw: unknown): KataRecurrencesResponse {
   const body = bodyOf(raw);
-  const source = isObject(body) ? body : {};
+  if (!isObject(body) || !Array.isArray(body.recurrences)) {
+    throw new Error("Kata recurrence list response is missing recurrences.");
+  }
+  const recurrences = body.recurrences.map(normalizeKataRecurrence);
+  if (recurrences.some((recurrence) => recurrence.uid === "")) {
+    throw new Error("Kata recurrence list contains a recurrence without an identifier.");
+  }
   return {
-    recurrences: arrayValue(source.recurrences).map(normalizeKataRecurrence),
-    fetched_at: stringValue(source.fetched_at),
+    recurrences,
+    fetched_at: stringValue(body.fetched_at),
   };
 }
 

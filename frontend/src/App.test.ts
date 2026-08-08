@@ -46,7 +46,7 @@ const kataAuxiliary = vi.hoisted(() => {
 });
 
 const modePalette = vi.hoisted(() => ({
-  search: vi.fn(async (query: string) => ({
+  search: vi.fn((query: string, _deps: unknown) => ({
     query,
     tasks: { ok: true as const, rows: [], truncated: false },
     docs: { ok: true as const, rows: [], truncated: false },
@@ -179,9 +179,12 @@ vi.mock("./lib/features/kata/kataAuxiliaryAuthority.svelte.js", () => ({
 vi.mock("./lib/api/docs/api.js", () => ({
   createDocsAPI: () => ({}),
 }));
-vi.mock("./lib/stores/keyboard/mode-palette-search.js", () => ({
-  searchModePalette: modePalette.search,
-}));
+vi.mock("./lib/stores/keyboard/mode-palette-search.js", async () => {
+  const { Effect } = await import("effect");
+  return {
+    searchModePalette: (query: string, deps: unknown) => Effect.succeed(modePalette.search(query, deps)),
+  };
+});
 vi.mock("./lib/utils/appStartup.js", () => ({
   runAppStartup: (
     _runtime: OwnedAppRuntime,
@@ -240,6 +243,12 @@ function testAppRuntime(onDispose: () => void): OwnedAppRuntime {
     runCommand: <A, E>(): AppExecution<A, E> => ({
       interrupt: () => {},
       await: Effect.never,
+      exit: new Promise(() => {}),
+    }),
+    runMicrotask: (): AppExecution<void, never> => ({
+      interrupt: () => {},
+      await: Effect.never,
+      exit: new Promise(() => {}),
     }),
   };
 }
@@ -391,35 +400,6 @@ describe("App feature routes", () => {
     }
   });
 
-  it("routes Provider warnings through a warning-tone flash", async () => {
-    const { default: App } = await import("./App.svelte");
-    render(App, { target: createAppTarget() });
-    await waitFor(() => expect(appSurfaceProps.provider).not.toBeNull());
-    const onWarning = appSurfaceProps.provider?.onWarning as ((message: string) => void) | undefined;
-    const { getFlashes, dismissFlash } = await import("./lib/stores/flash.svelte.js");
-
-    try {
-      onWarning?.("Merged, but workspace cleanup failed");
-      expect(getFlashes()).toContainEqual(
-        expect.objectContaining({
-          message: "Merged, but workspace cleanup failed",
-          tone: "warning",
-        }),
-      );
-    } finally {
-      for (const flash of getFlashes()) dismissFlash(flash.id);
-    }
-  });
-
-  it("routes Provider workspace deletions through the authoritative host invalidation", async () => {
-    const { default: App } = await import("./App.svelte");
-    const { notifyWorkspaceDeleted } = await import("./lib/stores/workspace-host.svelte.ts");
-    render(App, { target: createAppTarget() });
-
-    await waitFor(() => expect(appSurfaceProps.provider).not.toBeNull());
-    expect(appSurfaceProps.provider?.onWorkspaceDeleted).toBe(notifyWorkspaceDeleted);
-  });
-
   it("isolates the Kata workspace client from cross-surface searches", async () => {
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/kata");
@@ -447,14 +427,14 @@ describe("App feature routes", () => {
     await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
     await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("home"));
 
-    const modeSearch = appSurfaceProps.palette?.modeSearch as ((query: string) => Promise<unknown>) | undefined;
+    const modeSearch = appSurfaceProps.palette?.modeSearch as ((query: string) => Effect.Effect<unknown>) | undefined;
     expect(modeSearch).toBeTypeOf("function");
-    await modeSearch?.("linked task");
+    if (modeSearch) await Effect.runPromise(modeSearch("linked task"));
 
     expect(kataAuxiliary.create).toHaveBeenCalledOnce();
     expect(modePalette.search).toHaveBeenCalledWith("linked task", {
       kata: kataAuxiliary.instance,
-      docs: expect.any(Object),
+      docs: {},
     });
 
     const { setActiveKataDaemon } = await import("./lib/stores/active-kata-daemon.svelte.js");

@@ -2,7 +2,7 @@ import type { Route, DetailTab, getPage } from "../router.svelte.js";
 import type { PullSelection } from "../pulls.svelte.js";
 import type { IssueSelection } from "../issues.svelte.js";
 import type { RoutedItemRef } from "../../routes.js";
-import type { KeySpec } from "./keyspec.js";
+import type { KeyboardHandlerResult, KeySpec } from "./keyspec.js";
 import type { StoreInstances } from "../../types.js";
 
 export type { KeySpec, StoreInstances };
@@ -34,7 +34,7 @@ export interface Action {
   priority: number;
   when: (ctx: Context) => boolean;
   visible?: (ctx: Context) => boolean;
-  handler: (ctx: Context) => void | Promise<void>;
+  handler: (ctx: Context) => KeyboardHandlerResult;
   preview?: (ctx: Context) => PreviewBlock;
 }
 

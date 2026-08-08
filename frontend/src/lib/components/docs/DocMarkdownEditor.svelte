@@ -159,7 +159,7 @@
     if (!view) return;
     const value = view.state.doc.toString();
     // Don't optimistically mark the buffer clean here — the save is
-    // async and may fail. The parent unmounts/re-initializes the
+    // loaded separately and may fail. The parent unmounts/re-initializes the
     // editor on success, which is what flips `lastInitial`; on
     // failure the dirty indicator must keep showing.
     onSave?.(value);

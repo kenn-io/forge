@@ -35,7 +35,7 @@ export interface CreateKataWorkspaceAuthorityControllerOptions {
   onSnapshotAccepted?: (
     snapshot: KataWorkspaceSnapshotProjection,
     context: KataWorkspaceSnapshotAcceptanceContext,
-  ) => void;
+  ) => Effect.Effect<void, never, GeneratedApi>;
   resetIssueExpansion?: (() => void) | undefined;
   onStreamOpen?: (() => void) | undefined;
   onStreamError?: ((message: string) => void) | undefined;
@@ -56,7 +56,10 @@ export class KataWorkspaceAuthorityController {
   private readonly owner: string;
   private readonly loadSnapshot: KataSnapshotLoader;
   private readonly onSnapshotAccepted:
-    | ((snapshot: KataWorkspaceSnapshotProjection, context: KataWorkspaceSnapshotAcceptanceContext) => void)
+    | ((
+        snapshot: KataWorkspaceSnapshotProjection,
+        context: KataWorkspaceSnapshotAcceptanceContext,
+      ) => Effect.Effect<void, never, GeneratedApi>)
     | undefined;
   private readonly resetIssueExpansion: (() => void) | undefined;
   private desiredRequest: KataWorkspaceAuthorityRequest | null = null;
@@ -187,11 +190,14 @@ export class KataWorkspaceAuthorityController {
     );
   }
 
-  private publishAcceptedSnapshot(context: KataWorkspaceSnapshotAcceptanceContext): Effect.Effect<void> {
-    return Effect.sync(() => {
-      if (!this.active) return;
+  private publishAcceptedSnapshot(
+    context: KataWorkspaceSnapshotAcceptanceContext,
+  ): Effect.Effect<void, never, GeneratedApi> {
+    return Effect.suspend(() => {
+      if (!this.active) return Effect.void;
       const snapshot = this.authorityStore.snapshot;
-      if (snapshot) this.onSnapshotAccepted?.(snapshot, context);
+      if (!snapshot || !this.onSnapshotAccepted) return Effect.void;
+      return this.onSnapshotAccepted(snapshot, context);
     });
   }
 

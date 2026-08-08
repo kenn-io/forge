@@ -1,36 +1,32 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { components } from "../../src/lib/api/generated/schema.js";
+import type { WorkspaceDetail } from "../../src/lib/components/terminal/workspace-detail.js";
 
 async function waitForPRList(page: Page): Promise<void> {
   await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
-type WorkspaceFixture = {
-  id: string;
-  platform_host: string;
-  repo_owner: string;
-  repo_name: string;
-  mr_number: number;
-  mr_head_ref: string;
-  worktree_path: string;
-  tmux_session: string;
-  status: string;
-  error_message?: string | null;
-  created_at: string;
-  mr_title?: string | null;
-  mr_state?: string | null;
-  mr_is_draft?: boolean | null;
-};
+type WorkspaceFixture = WorkspaceDetail;
 
 const baseWorkspace: WorkspaceFixture = {
   id: "ws-lucide",
   platform_host: "github.com",
   repo_owner: "acme",
   repo_name: "widgets",
-  mr_number: 42,
-  mr_head_ref: "feature/auth",
+  repo: {
+    provider: "github",
+    platform_host: "github.com",
+    owner: "acme",
+    name: "widgets",
+    repo_path: "acme/widgets",
+  },
+  item_number: 42,
+  item_type: "pull_request",
+  git_head_ref: "feature/auth",
   worktree_path: "/tmp/worktrees/ws-lucide",
   tmux_session: "kenn-forge-ws-lucide",
   status: "ready",
+  enrichment_status: "fresh",
   created_at: "2026-04-10T12:00:00Z",
   mr_title: "Add auth middleware",
   mr_state: "open",
@@ -205,7 +201,11 @@ test.describe("lucide migration", () => {
       detailResponses: [
         {
           status: 500,
-          body: { error: "Internal error" },
+          body: {
+            type: "about:blank",
+            code: "internalError",
+            status: 500,
+          } satisfies components["schemas"]["ProblemError"],
         },
         {
           status: 200,

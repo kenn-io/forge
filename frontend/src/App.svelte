@@ -657,6 +657,8 @@
   }
 
   function getNormalizedGlobalRepo(repo: string | undefined = getGlobalRepo()): string | undefined {
+    if (getUIConfig().hideRepoSelector) return repo;
+
     const configuredRepos = stores?.settings.getConfiguredRepos?.() ?? [];
     if (!stores?.settings.isSettingsLoaded() || !interactiveRepoCatalogLoaded) return repo;
 

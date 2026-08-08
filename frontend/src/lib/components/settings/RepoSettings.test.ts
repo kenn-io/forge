@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import type { ConfigRepo } from "@kenn-forge/ui/api/types";
 import * as flash from "@kenn-forge/ui/stores/flash";
 
 const mockRefreshSyncStatus = vi.fn();
@@ -42,6 +43,45 @@ const mockUpdateRepoWorktreeBasePath = vi.mocked(updateRepoWorktreeBasePath);
 const mockPreviewRepos = vi.mocked(previewRepos);
 const mockBulkAddRepos = vi.mocked(bulkAddRepos);
 const mockRemoveRepo = vi.mocked(removeRepo);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function settingsResponse(repos: ConfigRepo[]) {
+  return {
+    repos,
+    kata_projects: [],
+    pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+    workspaces: { auto_assign_on_create: false },
+    issues: { hide_bots: false },
+    activity: {
+      view_mode: "threaded" as const,
+      time_range: "7d" as const,
+      hide_closed: false,
+      hide_bots: false,
+      collapse_threads: false,
+      default_branch_retention_days: 90,
+      default_branch_max_commits: 5000,
+    },
+    terminal: {
+      font_family: "",
+      font_size: 14,
+      scrollback: 1000,
+      line_height: 1,
+      letter_spacing: 0,
+      cursor_blink: true,
+      font_ligatures: false,
+      hide_tmux_status: false,
+    },
+    agents: [],
+    fleet: defaultFleetSettings(),
+  };
+}
 
 function defaultFleetSettings() {
   return {
@@ -470,6 +510,49 @@ describe("RepoSettings", () => {
     expect(onUpdate).not.toHaveBeenCalled();
     await fireEvent.click(gear);
     expect(screen.getByRole("menuitem", { name: "Show in UI" })).toBeTruthy();
+  });
+
+  it("serializes visibility changes across repository rows", async () => {
+    const firstSave = deferred<ReturnType<typeof settingsResponse>>();
+    const secondSave = deferred<ReturnType<typeof settingsResponse>>();
+    mockUpdateRepoVisibility.mockReturnValueOnce(firstSave.promise).mockReturnValueOnce(secondSave.promise);
+    const onUpdate = vi.fn();
+    const repos = [
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "archive",
+        repo_path: "acme/archive",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "legacy",
+        repo_path: "acme/legacy",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ];
+
+    render(RepoSettings, { props: { repos, onUpdate } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Configure acme/archive" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Hide from UI" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Configure acme/legacy" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Hide from UI" }));
+
+    expect(mockUpdateRepoVisibility).toHaveBeenCalledTimes(1);
+
+    firstSave.resolve(settingsResponse([{ ...repos[0]!, hide_from_ui: true }, repos[1]!]));
+    await waitFor(() => expect(mockUpdateRepoVisibility).toHaveBeenCalledTimes(2));
+
+    const bothHidden = repos.map((repo) => ({ ...repo, hide_from_ui: true }));
+    secondSave.resolve(settingsResponse(bothHidden));
+    await waitFor(() => expect(onUpdate).toHaveBeenLastCalledWith(bothHidden));
   });
 
   it("keeps the gear available while disabling a pending visibility action", async () => {

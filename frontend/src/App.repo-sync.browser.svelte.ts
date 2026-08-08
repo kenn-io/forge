@@ -244,6 +244,8 @@ describe("deep-link repo dropdown + sidebar sync", () => {
     mounted = null;
     setGlobalRepo(undefined);
     localStorage.clear();
+    delete window.__kenn_forge_config;
+    window.__kenn_forge_notify_config_changed?.();
     await resetKeyboardModuleState();
   });
 
@@ -375,5 +377,47 @@ describe("deep-link repo dropdown + sidebar sync", () => {
 
     await vi.waitFor(() => expect(getGlobalRepo()).toBeUndefined(), WAIT);
     await vi.waitFor(() => expect(typeaheadValue()).toBe("All repos"), WAIT);
+  });
+
+  it("preserves a host-pinned repository outside the interactive catalog", async () => {
+    window.__kenn_forge_config = {
+      ui: {
+        hideRepoSelector: true,
+        repo: {
+          provider: "github",
+          host: "github.com",
+          owner: "acme",
+          name: "archive",
+        },
+      },
+    };
+    window.__kenn_forge_notify_config_changed?.();
+
+    mounted = await mountBrowserApp("/pulls", {
+      overrides: [
+        settingsOverride([
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "archive",
+            repo_path: "acme/archive",
+            is_glob: false,
+            matched_repo_count: 1,
+            hide_from_ui: true,
+          },
+        ]),
+        repoCatalogOverride(),
+        listOverride(),
+        detailOverride(),
+      ],
+    });
+
+    await vi.waitFor(
+      () => expect(mounted?.api.requests.some((req) => req.url.pathname === "/api/v1/repos")).toBe(true),
+      WAIT,
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+    expect(getGlobalRepo()).toBe("github|github.com/acme/archive");
   });
 });

@@ -40,6 +40,7 @@
   let worktreeBaseDrafts = $state<Record<string, string>>({});
   let savingWorktreeBaseByKey = $state<Record<string, boolean>>({});
   let savingVisibilityByKey = $state<Record<string, boolean>>({});
+  let visibilityMutationTail: Promise<void> = Promise.resolve();
   let cloneEditorOpen = $state<Record<string, boolean>>({});
   let promoteRepo = $state<ConfigRepo | null>(null);
 
@@ -155,7 +156,7 @@
     if (embedded) return;
     const key = repoKey(repo);
     savingVisibilityByKey = { ...savingVisibilityByKey, [key]: true };
-    try {
+    const mutation = visibilityMutationTail.then(async () => {
       const settings = await updateRepoVisibility(
         repo.owner,
         repo.name,
@@ -167,6 +168,10 @@
       );
       onUpdate(settings.repos);
       void sync.refreshSyncStatus();
+    });
+    visibilityMutationTail = mutation.catch(() => {});
+    try {
+      await mutation;
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {

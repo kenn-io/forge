@@ -188,6 +188,14 @@ func TestRunHTTPServesTokenizedStreamableEndpoint(t *testing.T) {
 	assert.Equal(http.StatusUnauthorized, resp.StatusCode)
 	require.NoError(resp.Body.Close())
 
+	deleteReq, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, endpoint, nil)
+	require.NoError(err)
+	deleteReq.Header.Set("Authorization", "Bearer sekrit")
+	deleteResp, err := http.DefaultClient.Do(deleteReq)
+	require.NoError(err)
+	assert.Equal(http.StatusMethodNotAllowed, deleteResp.StatusCode)
+	require.NoError(deleteResp.Body.Close())
+
 	client := mcp.NewClient(&mcp.Implementation{Name: "kenn-forge-test-client", Version: "test"}, nil)
 	session, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{
 		Endpoint:             endpoint,

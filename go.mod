@@ -22,7 +22,7 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.18.7
-	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/oapi-codegen/runtime v1.4.2
 	github.com/posthog/posthog-go v1.16.1
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06

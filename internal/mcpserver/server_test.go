@@ -75,6 +75,29 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 	assert.Contains(content.Text, "stale")
 }
 
+func TestServerUses20260728ProtocolCapabilities(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	s, err := New(Options{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), Version: "test"})
+	require.NoError(err)
+	t.Cleanup(func() {
+		require.NoError(s.Close())
+	})
+
+	initialized := connectMCPTestSession(t, s).InitializeResult()
+	require.NotNil(initialized)
+	assert.Equal("2026-07-28", initialized.ProtocolVersion)
+	//nolint:staticcheck // Verify the 2026-07-28 server does not advertise deprecated logging.
+	assert.Nil(initialized.Capabilities.Logging)
+	require.NotNil(initialized.Capabilities.Tools)
+	assert.False(initialized.Capabilities.Tools.ListChanged)
+	require.NotNil(initialized.Capabilities.Prompts)
+	assert.False(initialized.Capabilities.Prompts.ListChanged)
+	require.NotNil(initialized.Capabilities.Resources)
+	assert.False(initialized.Capabilities.Resources.ListChanged)
+	assert.False(initialized.Capabilities.Resources.Subscribe)
+}
+
 func TestKennForgeMCPDocsCoverClientSetupAndSafety(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

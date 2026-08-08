@@ -55,7 +55,7 @@ func (s *Server) RunHTTP(ctx context.Context) error {
 		return s.mcp
 	}, &mcp.StreamableHTTPOptions{Stateless: true})
 	httpSrv := &http.Server{
-		Handler:           s.httpGuard(statelessMCPHandler(mcpHandler), token, actualPort),
+		Handler:           s.httpGuard(mcpHandler, token, actualPort),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -79,16 +79,6 @@ func (s *Server) RunHTTP(ctx context.Context) error {
 		return nil
 	}
 	return err
-}
-
-func statelessMCPHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 func (s *Server) httpGuard(next http.Handler, token string, port int) http.Handler {

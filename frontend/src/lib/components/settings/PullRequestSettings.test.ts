@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mockSetPullRequestSettings = vi.fn();
 
-vi.mock("@kenn-forge/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@kenn-forge/ui")>()),
+vi.mock("../../context.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../context.js")>()),
   getStores: () => ({
     settings: { setPullRequestSettings: mockSetPullRequestSettings },
   }),

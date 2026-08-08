@@ -1,5 +1,5 @@
-import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@kenn-forge/ui/api/types";
-import { saveTerminalSettings, type TerminalSettingsStore } from "@kenn-forge/ui/stores/terminal-settings-persistence";
+import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "../../api/types.js";
+import { saveTerminalSettings, type TerminalSettingsStore } from "../../stores/terminal-settings-persistence.js";
 
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 32;

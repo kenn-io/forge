@@ -4,9 +4,9 @@ import { cleanup, render } from "vitest-browser-svelte";
 import "./app.css";
 
 import { setThemeMode } from "@kenn-io/kit-ui";
-import { STORES_KEY } from "../../packages/ui/src/context.js";
-import type { LaunchTarget } from "../../packages/ui/src/api/types.js";
+import type { LaunchTarget } from "./lib/api/types.js";
 import NewWorkspaceDialog from "./lib/components/terminal/NewWorkspaceDialog.svelte";
+import { STORES_KEY } from "./lib/context.js";
 import { createMockApiFetch, jsonResponse } from "./test/mockApiFetch.js";
 
 const launchTargets: LaunchTarget[] = [

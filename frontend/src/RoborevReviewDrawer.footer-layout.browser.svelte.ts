@@ -18,8 +18,8 @@ import { cleanup, render } from "vitest-browser-svelte";
 
 // Layout assertions are only meaningful under the production reset and tokens.
 import "./app.css";
-import { STORES_KEY } from "../../packages/ui/src/context.js";
-import ReviewDrawer from "../../packages/ui/src/components/roborev/ReviewDrawer.svelte";
+import { STORES_KEY } from "./lib/context.js";
+import ReviewDrawer from "./lib/components/roborev/ReviewDrawer.svelte";
 
 // A realistic worst case: the blob that originally overflowed the footer.
 const job = {

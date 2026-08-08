@@ -2,7 +2,6 @@ import { defineConfig } from "vite-plus";
 
 const rootVP = "node node_modules/vite-plus/bin/vp";
 const frontendVP = "node ../node_modules/vite-plus/bin/vp";
-const uiVP = "node ../../node_modules/vite-plus/bin/vp";
 const packageVP = "node ../../node_modules/vite-plus/bin/vp";
 
 export default defineConfig({
@@ -18,15 +17,15 @@ export default defineConfig({
         cache: false,
       },
       "kit-ui-check": {
-        command: `(cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src ../packages/ui/src)`,
+        command: `(cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src)`,
         cache: false,
       },
       "frontend-fmt": {
-        command: `${rootVP} fmt --check frontend packages/ui packages/github-app-ui --no-error-on-unmatched-pattern --threads=1`,
+        command: `${rootVP} fmt --check frontend packages/github-app-ui --no-error-on-unmatched-pattern --threads=1`,
         cache: false,
       },
       "frontend-lint": {
-        command: `${rootVP} lint frontend packages/ui packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1`,
+        command: `${rootVP} lint frontend packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!frontend/src/lib/api/generated/**' '!frontend/src/lib/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1`,
         cache: false,
       },
       "frontend-package-check": {
@@ -49,34 +48,17 @@ export default defineConfig({
       "svelte-check": {
         command: [
           `(cd frontend && ${frontendVP} exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)`,
-          `(cd packages/ui && ${uiVP} exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)`,
           `(cd packages/github-app-ui && ${packageVP} exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)`,
         ],
         input: [
           { auto: true },
           "!node_modules/.vite-temp/**",
           "!frontend/node_modules/.vite-temp/**",
-          "!packages/ui/node_modules/.vite-temp/**",
           "!packages/github-app-ui/node_modules/.vite-temp/**",
           "!node_modules/.vite/task-cache/**",
           "!frontend/node_modules/.vite/task-cache/**",
-          "!packages/ui/node_modules/.vite/task-cache/**",
           "!packages/github-app-ui/node_modules/.vite/task-cache/**",
         ],
-      },
-      "ui-package-check": {
-        command: [
-          `${rootVP} fmt --check packages/ui --no-error-on-unmatched-pattern --threads=1`,
-          `${rootVP} run ui-package-typecheck`,
-        ],
-        cache: false,
-      },
-      "ui-package-typecheck": {
-        command: [
-          `${rootVP} lint packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1`,
-          `${rootVP} run svelte-check`,
-        ],
-        cache: false,
       },
       "github-app-ui-package-check": {
         command: [
@@ -103,8 +85,8 @@ export default defineConfig({
       "packages/github-app-ui/dist/**",
       "frontend/test-results/**",
       "packages/github-app-ui/test-results/**",
-      "packages/ui/src/api/generated/**",
-      "packages/ui/src/api/roborev/generated/**",
+      "frontend/src/lib/api/generated/**",
+      "frontend/src/lib/api/roborev/generated/**",
     ],
     printWidth: 120,
     sortImports: false,
@@ -117,10 +99,8 @@ export default defineConfig({
       "frontend/src/**/*.bench.test.ts",
       "packages/github-app-ui/dist/**",
       "packages/github-app-ui/test-results/**",
-      "packages/ui/src/api/generated/**",
-      "packages/ui/src/api/roborev/generated/**",
-      "packages/ui/src/**/*.test.ts",
-      "packages/ui/src/**/*.bench.test.ts",
+      "frontend/src/lib/api/generated/**",
+      "frontend/src/lib/api/roborev/generated/**",
     ],
     rules: {
       // Oxlint does not yet model Svelte template writes reliably. Watch the

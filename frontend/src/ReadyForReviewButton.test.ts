@@ -5,7 +5,7 @@ const mockPost = vi.fn();
 const mockLoadDetail = vi.fn();
 const mockLoadPulls = vi.fn();
 
-vi.mock("../../packages/ui/src/context.js", () => ({
+vi.mock("./lib/context.js", () => ({
   getClient: () => ({
     POST: mockPost,
   }),
@@ -19,7 +19,7 @@ vi.mock("../../packages/ui/src/context.js", () => ({
   }),
 }));
 
-import ReadyForReviewButton from "../../packages/ui/src/components/detail/ReadyForReviewButton.svelte";
+import ReadyForReviewButton from "./lib/components/detail/ReadyForReviewButton.svelte";
 
 describe("ReadyForReviewButton", () => {
   beforeEach(() => {

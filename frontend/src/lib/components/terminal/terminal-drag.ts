@@ -1,4 +1,4 @@
-import { onTabbedPanelDragEnd } from "@kenn-forge/ui";
+import { onTabbedPanelDragEnd } from "../shared/tabbed-panel-drag.js";
 import type { WorkflowTabKey } from "./terminal-layout";
 
 export const WORKFLOW_TAB_DRAG_MIME = "application/x-kenn-forge-workflow-tab";

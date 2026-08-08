@@ -1,4 +1,4 @@
-import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@kenn-forge/ui/api/types";
+import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "../../api/types.js";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   MAX_TERMINAL_FONT_SIZE,

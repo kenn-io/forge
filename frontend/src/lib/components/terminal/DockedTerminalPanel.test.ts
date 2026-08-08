@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag, sessionPaneKey } from "@kenn-forge/ui";
+import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
+import { sessionPaneKey } from "../../stores/session-pane-key.js";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import DockedTerminalPanelTestHarness from "./DockedTerminalPanelTestHarness.svelte";
 import { clearActiveTerminalDrag, readRuntimeSessionDrag } from "./terminal-drag";

@@ -86,6 +86,7 @@
       old_path: context.path,
       status: "modified",
       is_binary: false,
+      is_generated: false,
       is_whitespace_only: false,
       additions: context.lines.filter((line) => line.type === "add").length,
       deletions: context.lines.filter((line) => line.type === "delete").length,

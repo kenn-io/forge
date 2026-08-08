@@ -6,8 +6,8 @@ state_dir="tmp/air"
 input_hash_file="$state_dir/openapi-inputs.sha256"
 frontend_spec="frontend/openapi/openapi.yaml"
 backend_spec="internal/apiclient/spec/openapi.json"
-frontend_schema="packages/ui/src/api/generated/schema.ts"
-frontend_client="packages/ui/src/api/generated/client.ts"
+frontend_schema="frontend/src/lib/api/generated/schema.ts"
+frontend_client="frontend/src/lib/api/generated/client.ts"
 
 mkdir -p "$state_dir"
 

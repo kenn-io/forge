@@ -1,6 +1,6 @@
 frontend/openapi/openapi.json linguist-generated=true
 frontend/openapi/openapi.yaml linguist-generated=true
-packages/ui/src/api/generated/* linguist-generated=true
+frontend/src/lib/api/generated/* linguist-generated=true
 packages/ui/src/api/roborev/generated/* linguist-generated=true
 internal/apiclient/spec/openapi.json linguist-generated=true
 internal/apiclient/generated/* linguist-generated=true

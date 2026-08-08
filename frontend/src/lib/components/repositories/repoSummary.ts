@@ -5,8 +5,8 @@ import type {
   RepoSummaryCommitPointResponse,
   RepoSummaryIssue,
   RepoSummaryReleaseResponse,
-} from "@kenn-forge/ui/api/types";
-import { canonicalProvider } from "@kenn-forge/ui/api/provider-routes";
+} from "../../api/types.js";
+import { canonicalProvider } from "../../api/provider-routes.js";
 
 export type RepoSummaryCard = Omit<RepoSummary, "active_authors" | "recent_issues" | "commit_timeline" | "releases"> & {
   active_authors: RepoSummaryAuthor[];

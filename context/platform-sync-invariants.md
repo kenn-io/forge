@@ -211,7 +211,7 @@ registry helpers return typed errors for missing providers or capabilities.
   disabled) until reloaded. PR diff responses always carry `diff_head_sha` —
   the endpoint fails instead of serving a PR diff without a synced snapshot
   head — so clients only need to handle the mismatch case
-  (`packages/ui/src/components/detail/ReviewSuggestionBlock.svelte`, `packages/ui/src/components/detail/EventTimeline.svelte`).
+  (`frontend/src/lib/components/detail/ReviewSuggestionBlock.svelte`, `frontend/src/lib/components/detail/EventTimeline.svelte`).
 - Remaining edge cases (duplicate thread ids, overlapping ranges, missing
   reviewed heads, renamed/deleted/binary files, unsupported encodings,
   whitespace-padded paths) fail the entire batch with stable reasons.

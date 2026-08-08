@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { WorkspaceCreateSplitButton } from "@kenn-forge/ui";
-  import type { LaunchTarget } from "@kenn-forge/ui/api/types";
+  import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
+  import type { LaunchTarget } from "../../api/types.js";
   import type { TypeaheadOption } from "@kenn-io/kit-ui";
   import NetworkIcon from "@lucide/svelte/icons/network";
   import PencilIcon from "@lucide/svelte/icons/pencil";
-  import { renderMarkdown, renderMarkdownSync } from "@kenn-forge/ui/utils/markdown";
-  import { localDateTimeLabel, timeAgo } from "@kenn-forge/ui/utils/time";
+  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
+  import { localDateTimeLabel, timeAgo } from "../../utils/time.js";
 
   import {
     searchKataTaskReferences,

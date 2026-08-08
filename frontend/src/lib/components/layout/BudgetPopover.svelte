@@ -4,7 +4,7 @@
     LocalSyncCeilingStatus,
     RateLimitHostStatus,
     RateLimitResourceStatus,
-  } from "@kenn-forge/ui/api/types";
+  } from "../../api/types.js";
   import { budgetColor, formatCompact, syncBudgetColor } from "./budget-utils";
 
   interface Props {

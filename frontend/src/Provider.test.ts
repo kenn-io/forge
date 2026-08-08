@@ -1,9 +1,9 @@
 import { cleanup, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { EventsStoreOptions } from "@kenn-forge/ui/stores/events";
-import type { Settings, SyncStatus } from "@kenn-forge/ui/api/types";
-import type { ForgeClient } from "@kenn-forge/ui";
+import type { EventsStoreOptions } from "./lib/stores/events.svelte.js";
+import type { Settings, SyncStatus } from "./lib/api/types.js";
+import type { ForgeClient } from "./lib/types.js";
 
 type LaunchTargets = NonNullable<Settings["launch_targets"]>;
 
@@ -27,7 +27,7 @@ const captured: {
   settings: null,
 };
 
-vi.mock("@kenn-forge/ui/stores/events", () => ({
+vi.mock("./lib/stores/events.svelte.js", () => ({
   createEventsStore: (opts: EventsStoreOptions) => {
     const store: CapturedEventsStore = {
       options: opts,
@@ -47,7 +47,7 @@ const setSyncStatus = vi.fn();
 const refreshDetailOnly = vi.fn(async () => undefined);
 let currentDetail: unknown = null;
 
-vi.mock("@kenn-forge/ui/stores/pulls", () => ({
+vi.mock("./lib/stores/pulls.svelte.js", () => ({
   createPullsStore: () => ({
     loadPulls,
     optimisticKanbanUpdate: vi.fn(),
@@ -57,7 +57,7 @@ vi.mock("@kenn-forge/ui/stores/pulls", () => ({
   }),
 }));
 
-vi.mock("@kenn-forge/ui/stores/issues", () => ({
+vi.mock("./lib/stores/issues.svelte.js", () => ({
   createIssuesStore: () => ({
     loadIssues,
     hydrateDefaults: vi.fn(),
@@ -66,7 +66,7 @@ vi.mock("@kenn-forge/ui/stores/issues", () => ({
   }),
 }));
 
-vi.mock("@kenn-forge/ui/stores/activity", () => ({
+vi.mock("./lib/stores/activity.svelte.js", () => ({
   createActivityStore: () => ({
     loadActivity,
     hydrateDefaults: vi.fn(),
@@ -75,7 +75,7 @@ vi.mock("@kenn-forge/ui/stores/activity", () => ({
   }),
 }));
 
-vi.mock("@kenn-forge/ui/stores/sync", () => ({
+vi.mock("./lib/stores/sync.svelte.js", () => ({
   createSyncStore: () => ({
     getSyncState: () => null,
     onNextSyncComplete: vi.fn(),
@@ -88,7 +88,7 @@ vi.mock("@kenn-forge/ui/stores/sync", () => ({
   }),
 }));
 
-vi.mock("@kenn-forge/ui/stores/detail", () => ({
+vi.mock("./lib/stores/detail.svelte.js", () => ({
   createDetailStore: () => ({
     loadDetail: vi.fn(),
     refreshDetailOnly,
@@ -97,21 +97,21 @@ vi.mock("@kenn-forge/ui/stores/detail", () => ({
   }),
 }));
 
-vi.mock("@kenn-forge/ui/stores/diff", () => ({
+vi.mock("./lib/stores/diff.svelte.js", () => ({
   createDiffStore: () => ({
     loadDiff: vi.fn(),
     getDiff: () => null,
   }),
 }));
 
-vi.mock("@kenn-forge/ui/stores/grouping", () => ({
+vi.mock("./lib/stores/grouping.svelte.js", () => ({
   createGroupingStore: () => ({
     getGroupByRepo: () => false,
     setGroupByRepo: vi.fn(),
   }),
 }));
 
-vi.mock("@kenn-forge/ui/stores/settings", () => ({
+vi.mock("./lib/stores/settings.svelte.js", () => ({
   createSettingsStore: () => {
     let launchTargets: LaunchTargets = [];
     const store = {
@@ -159,7 +159,7 @@ vi.mock("@kenn-forge/ui/stores/settings", () => ({
   },
 }));
 
-import Provider from "../../packages/ui/src/Provider.svelte";
+import Provider from "./lib/Provider.svelte";
 
 const getSettings = vi.fn();
 const stubClient = {

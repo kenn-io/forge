@@ -1,18 +1,18 @@
 <script lang="ts">
   import { onDestroy, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import {
-    Provider,
-    PRListView,
-    IssueListView,
-    ActivityFeedView,
-    MobileActivityView,
-    ReviewsView,
-    FocusListView,
-    normalizeRepoFilterSelection,
-  } from "@kenn-forge/ui";
-  import type { StoreInstances } from "@kenn-forge/ui";
-  import type { ActivityItem, ModeVisibility } from "@kenn-forge/ui/api/types";
+  import type { AppRuntime } from "./lib/app/runtime.js";
+  import { setAppRuntime } from "./lib/app/runtime-context.js";
+  import Provider from "./lib/Provider.svelte";
+  import PRListView from "./lib/views/PRListView.svelte";
+  import IssueListView from "./lib/views/IssueListView.svelte";
+  import ActivityFeedView from "./lib/views/ActivityFeedView.svelte";
+  import MobileActivityView from "./lib/views/MobileActivityView.svelte";
+  import ReviewsView from "./lib/views/ReviewsView.svelte";
+  import FocusListView from "./lib/views/FocusListView.svelte";
+  import { normalizeRepoFilterSelection } from "./lib/utils/repo-filter-values.js";
+  import type { StoreInstances } from "./lib/types.js";
+  import type { ActivityItem, ModeVisibility } from "./lib/api/types.js";
   import {
     buildFocusPullRequestFilesRoute,
     buildFocusPullRequestRoute,
@@ -21,7 +21,7 @@
     type PullRequestRouteRef,
     type RepoBrowserRouteRef,
     type RoutedItemRef,
-  } from "@kenn-forge/ui/routes";
+  } from "./lib/routes.js";
   import { client } from "./lib/api/runtime.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
@@ -53,7 +53,7 @@
   import { createKataAuxiliaryAuthority } from "./lib/features/kata/kataAuxiliaryAuthority.svelte.js";
   import { FlashBanner, Spinner } from "@kenn-io/kit-ui";
   import { MonitorIcon } from "./lib/icons.ts";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
@@ -141,7 +141,7 @@
   import { buildContext } from "./lib/stores/keyboard/context.svelte.js";
   import { searchModePalette } from "./lib/stores/keyboard/mode-palette-search.js";
   import { registerPRDetailActions } from "./lib/stores/keyboard/pr-detail-actions.js";
-  import type { PRDetailActionInput } from "../../packages/ui/src/components/detail/keyboard-actions.js";
+  import type { PRDetailActionInput } from "./lib/components/detail/keyboard-actions.js";
   import type { Context } from "./lib/stores/keyboard/types.js";
 
   type DocsRouteState = {
@@ -149,6 +149,9 @@
     folder: string | null;
     doc: string | null;
   };
+
+  let { runtime }: { runtime: AppRuntime } = $props();
+  setAppRuntime(untrack(() => runtime));
 
   type DocsFeatureComponent = typeof import("./lib/features/docs/DocsFeature.svelte").default;
 
@@ -867,7 +870,7 @@
 
   // PR-detail palette commands (pr.approve, pr.ready, pr.approveWorkflows).
   // Lives here in the app shell because the keyboard registry can't be
-  // imported from inside @kenn-forge/ui. The buildPRDetailInput closure
+  // imported from the detail workflow. The buildPRDetailInput closure
   // assembles the action input from the active PR detail, the loaded
   // capabilities, and the app stores; it returns null when nothing is
   // ready, in which case every action's `when` returns false. pr.merge
@@ -1368,7 +1371,7 @@
 
 <!-- Handed to every detail view: the controls themselves come from the hosted
      workspace's live view, and this component is the popover that holds them in a
-     pane's tab strip. Declared here because packages/ui cannot import it. -->
+     pane's tab strip. Declared here because the root owns the workspace slot. -->
 {#snippet workspacePaneControls(showStripActions: boolean)}
   <WorkspacePaneControls {showStripActions} />
 {/snippet}

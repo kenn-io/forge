@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ComponentProps } from "svelte";
   import Modal from "../shared/Modal.svelte";
-  import type { LaunchTarget, RuntimeSession } from "@kenn-forge/ui/api/types";
+  import type { LaunchTarget, RuntimeSession } from "../../api/types.js";
   import WorkspaceHome from "./WorkspaceHome.svelte";
 
   /**

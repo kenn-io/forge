@@ -4,8 +4,8 @@
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import { Button, Card, Checkbox, IconButton, TextInput } from "@kenn-io/kit-ui";
-  import { SelectDropdown } from "@kenn-forge/ui";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import { SelectDropdown } from "@kenn-io/kit-ui";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import Modal from "../shared/Modal.svelte";
   import type { DocsAPI } from "../../api/docs/api";
   import type { BrowseEntry, DocsAPIError, Folder } from "../../api/docs/types";

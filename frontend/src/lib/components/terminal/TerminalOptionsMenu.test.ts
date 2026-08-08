@@ -67,8 +67,8 @@ const {
   };
 });
 
-vi.mock("@kenn-forge/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
+vi.mock("../../context.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../context.js")>();
   return {
     ...actual,
     DEFAULT_MODE_VISIBILITY: {

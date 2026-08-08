@@ -216,7 +216,7 @@ GET /api/v1/pulls/github/wesm/kenn-forge/244/file-preview?path=README.md
 
 Do not add new `/repos/{owner}/{name}/pulls/{number}/...` compatibility routes
 for diff, files, commits, file preview, or future repo-scoped provider work.
-The generated clients and `packages/ui/src/api/provider-routes.ts` should be the
+The generated clients and `frontend/src/lib/api/provider-routes.ts` should be the
 single frontend path builder for these routes.
 
 When adding or renaming provider-aware Huma routes, treat `OperationID` as a

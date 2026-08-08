@@ -1,4 +1,4 @@
-import type { components } from "@kenn-forge/ui/api/schema";
+import type { components } from "./generated/schema.js";
 
 import { apiErrorMessage, client } from "./runtime.ts";
 

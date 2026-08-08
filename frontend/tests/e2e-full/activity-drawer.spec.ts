@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@kenn-forge/ui/api/types";
+import type { DiffFile, DiffLine, DiffResult, FilesResult } from "../../src/lib/api/types.js";
 
 type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
 type DiffFixture = Omit<DiffResult, "files"> & {
@@ -75,6 +75,7 @@ const tinyDiff: DiffResult = withServerDiffData({
       old_path: "src/handler.go",
       status: "modified",
       is_binary: false,
+      is_generated: false,
       is_whitespace_only: false,
       additions: 2,
       deletions: 1,
@@ -112,6 +113,7 @@ const multiFileDiff: DiffResult = withServerDiffData({
     old_path: `src/file_${i}.go`,
     status: "modified" as const,
     is_binary: false,
+    is_generated: false,
     is_whitespace_only: false,
     additions: 10,
     deletions: 5,
@@ -144,6 +146,7 @@ const multiFileDiff: DiffResult = withServerDiffData({
 function filesFromDiff(fixture: DiffResult): FilesResult {
   return {
     stale: fixture.stale,
+    whitespace_only_count: fixture.whitespace_only_count,
     files: fixture.files.map((f) => ({
       ...f,
       additions: 0,

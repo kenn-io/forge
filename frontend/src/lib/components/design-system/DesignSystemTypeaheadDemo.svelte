@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { getStores } from "@kenn-forge/ui";
-  import type { ConfigRepo } from "@kenn-forge/ui/api/types";
+  import { getStores } from "../../context.js";
+  import type { ConfigRepo } from "../../api/types.js";
   import RepoTypeahead from "../RepoTypeahead.svelte";
 
   const stores = getStores();

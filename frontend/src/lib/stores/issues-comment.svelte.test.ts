@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createIssuesStore } from "@kenn-forge/ui/stores/issues";
-import type { ForgeClient } from "@kenn-forge/ui";
+import { createIssuesStore } from "./issues.svelte.js";
+import type { ForgeClient } from "../types.js";
 
 const issueRef = {
   provider: "github",

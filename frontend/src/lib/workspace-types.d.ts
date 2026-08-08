@@ -1,12 +1,12 @@
 /**
- * Global workspace type declarations for the @kenn-forge/ui package.
+ * Global workspace type declarations for the frontend.
  *
  * These mirror the types in frontend/src/vite-env.d.ts so that
- * Svelte components in packages/ui can reference them without
+ * Svelte components can reference them without
  * explicit imports.
  */
 
-// import.meta.env shape — packages/ui does not depend on vite directly,
+// import.meta.env shape for source modules that do not import Vite directly,
 // so the bundled `vite/client` types aren't resolvable from this tsconfig.
 // Declare the subset we actually read at runtime. `DEV` is the only field
 // utils/ci-buckets-warn.ts inspects today; broaden as needed.

@@ -1,8 +1,8 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { DEFAULT_TERMINAL_SETTINGS } from "@kenn-forge/ui";
+import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
 
-import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
+import { STORES_KEY } from "../../context.js";
 import {
   consumeSessionFocus,
   noteSessionMounted,

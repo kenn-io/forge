@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import type { RoutedItemRef } from "@kenn-forge/ui/routes";
+import type { RoutedItemRef } from "../../routes.js";
 
 import { MAX_ITEMS, RECENTS_KEY, pruneRecents, pruneStale, readRecents, writeRecent } from "./recents.svelte.js";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createDetailStore } from "@kenn-forge/ui/stores/detail";
-import type { ForgeClient } from "@kenn-forge/ui";
+import { createDetailStore } from "./detail.svelte.js";
+import type { ForgeClient } from "../types.js";
 
 const pullRef = {
   provider: "github",

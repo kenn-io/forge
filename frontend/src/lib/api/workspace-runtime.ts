@@ -1,5 +1,5 @@
-import type { LaunchTarget, RuntimeSession, WorkspaceRuntime } from "@kenn-forge/ui/api/types";
-import { configuredAPIBaseURL } from "@kenn-forge/ui/api/runtime-base";
+import type { LaunchTarget, RuntimeSession, WorkspaceRuntime } from "./types.js";
+import { configuredAPIBaseURL } from "./runtime-base.js";
 
 import { createRuntimeClient } from "./runtime.js";
 

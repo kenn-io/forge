@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { DEFAULT_TERMINAL_SETTINGS } from "@kenn-forge/ui/api/types";
+import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { replaceUrl } from "../../stores/router.svelte.js";
@@ -13,7 +13,7 @@ vi.mock("../../api/settings.js", () => ({
   getSettings: mocks.getSettings,
 }));
 
-vi.mock("@kenn-forge/ui/stores/flash", () => ({
+vi.mock("../../stores/flash.svelte.js", () => ({
   showFlash: mocks.showFlash,
 }));
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Checkbox } from "@kenn-io/kit-ui";
-  import { SelectDropdown } from "@kenn-forge/ui";
+  import { SelectDropdown } from "@kenn-io/kit-ui";
   import type {
     KataCreateRecurrenceInput,
     KataPatchRecurrenceInput,

@@ -105,7 +105,7 @@ test("flags raw font shorthand sizes", async () => {
   const root = await makeRoot();
   await write(
     root,
-    "packages/ui/src/Button.svelte",
+    "frontend/src/lib/Button.svelte",
     ["<style>", ".button { font: 600 12px/1.2 var(--font-sans); }", "</style>", ""].join("\n"),
   );
 

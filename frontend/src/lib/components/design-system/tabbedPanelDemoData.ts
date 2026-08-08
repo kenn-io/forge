@@ -2,19 +2,15 @@
 //
 // Two callers render this exact data and must not drift apart:
 //   - DesignSystemTabbedPanelDemo.svelte ships it on /design-system through the
-//     @kenn-forge/ui barrel,
+//     real frontend component tree,
 //   - DesignSystemPanelHarness.svelte mounts the real TabbedPanelTree from its
 //     source files so the browser-tier panel test stays deterministic on a cold
-//     optimizer (the barrel re-exports tiptap/pierre/lucide and reloads mid-run).
+//     optimizer.
 //
 // The type imports below come from the source layout module rather than the
-// barrel for the same reason: with verbatimModuleSyntax they erase at runtime,
-// so this module contributes only plain data to the harness's graph, never the
-// heavy barrel.
-import type {
-  TabbedPanelDescriptor,
-  TabbedPanelNode,
-} from "../../../../../packages/ui/src/components/shared/tabbed-panel-layout.ts";
+// component for the same reason: with verbatimModuleSyntax they erase at
+// runtime, so this module contributes only plain data to the harness's graph.
+import type { TabbedPanelDescriptor, TabbedPanelNode } from "../shared/tabbed-panel-layout.ts";
 
 export interface TabbedPanelDemoCopy {
   eyebrow: string;

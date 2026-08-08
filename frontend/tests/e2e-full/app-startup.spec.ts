@@ -108,4 +108,18 @@ test.describe("app startup", () => {
 
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
+
+  test("keeps the mounted application across a persisted page hide", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator(".app-top-bar")).toBeVisible();
+
+    await page.evaluate(async () => {
+      window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+    });
+
+    await expect(page.locator(".app-top-bar")).toBeVisible();
+  });
 });

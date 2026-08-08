@@ -5,27 +5,24 @@ import { toggleTheme } from "../theme.svelte.js";
 import { toggleCheatsheet } from "./cheatsheet-state.svelte.js";
 import { openNewWorkspaceDialog } from "../new-workspace.svelte.js";
 import { togglePalette } from "./palette-state.svelte.js";
-import {
-  openLabelPickerFor,
-  type OpenLabelPickerDetail,
-} from "../../../../../packages/ui/src/components/detail/labelPickerCommand.js";
+import { openLabelPickerFor, type OpenLabelPickerDetail } from "../../components/detail/labelPickerCommand.js";
 import {
   buildPullRequestFilesRoute,
   buildPullRequestRoute,
   buildRepoBrowserRoute,
   type RepositoryRouteRef,
-} from "@kenn-forge/ui/routes";
+} from "../../routes.js";
 import {
   getPaneLayoutStore,
   promoteSessionBesideWorkspace,
   type PaneLayoutStore,
   type PaneRenderReport,
   type PaneSurfaceKey,
-} from "@kenn-forge/ui/stores/paneLayout";
-import { isSessionPaneKey } from "@kenn-forge/ui";
+} from "../paneLayout.svelte.js";
+import { isSessionPaneKey } from "../session-pane-key.js";
 import { activeHostedSession, hostedWorkspaceLauncher } from "../workspace-host.svelte.js";
-import type { ConfigRepo } from "@kenn-forge/ui/api/types";
-import type { StoreInstances } from "@kenn-forge/ui";
+import type { ConfigRepo } from "../../api/types.js";
+import type { StoreInstances } from "../../types.js";
 import type { Action, Context, PreviewBlock } from "./types.js";
 import { parseActivitySelection } from "../../utils/activitySelection.js";
 

@@ -2,22 +2,16 @@
   import { SearchInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
-  import {
-    buildRepoBrowserRoute,
-    createRepoBrowserStore,
-    diffFileCategoryOptions,
-    PierreFileTree,
-    SplitResizeHandle,
-    type DiffFileCategoryFilter,
-    type FileTreeEntry,
-    type ForgeClient,
-    type RepoBrowserRouteRef,
-    type RepoBrowserViewMode,
-    type SourceBrowserFileEntry,
-    type SplitResizeEvent,
-  } from "@kenn-forge/ui";
-  import type { RepoBrowserCommit, RepoBrowserRef } from "@kenn-forge/ui/api/types";
-  import { providerDefaultHost } from "@kenn-forge/ui/api/provider-routes";
+  import { buildRepoBrowserRoute, type RepoBrowserRouteRef, type RepoBrowserViewMode } from "../../routes.js";
+  import { createRepoBrowserStore } from "../../stores/repo-browser.svelte.js";
+  import { diffFileCategoryOptions, type DiffFileCategoryFilter } from "../../utils/diff-categories.js";
+  import PierreFileTree from "../../components/diff/PierreFileTree.svelte";
+  import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
+  import type { FileTreeEntry } from "../../components/diff/file-tree-entry.js";
+  import type { ForgeClient } from "../../types.js";
+  import type { SourceBrowserFileEntry } from "../../utils/source-browser-files.js";
+  import type { RepoBrowserCommit, RepoBrowserRef } from "../../api/types.js";
+  import { providerDefaultHost } from "../../api/provider-routes.js";
   import DocMarkdownView from "../../components/docs/DocMarkdownView.svelte";
   import { RefreshIcon, ExternalLinkIcon, SpinnerIcon } from "../../icons";
   import {

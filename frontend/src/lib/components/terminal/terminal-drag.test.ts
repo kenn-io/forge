@@ -1,4 +1,4 @@
-import { clearActiveTabbedPanelDrag } from "@kenn-forge/ui";
+import { clearActiveTabbedPanelDrag } from "../shared/tabbed-panel-drag.js";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   RUNTIME_SESSION_DRAG_MIME,

@@ -1,8 +1,8 @@
 <script lang="ts">
   import SettingsIcon from "@lucide/svelte/icons/settings";
-  import { getStores } from "@kenn-forge/ui";
-  import { getStackDepth } from "@kenn-forge/ui/stores/keyboard/modal-stack";
-  import type { TerminalSettings as TerminalSettingsType } from "@kenn-forge/ui/api/types";
+  import { getStores } from "../../context.js";
+  import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
+  import type { TerminalSettings as TerminalSettingsType } from "../../api/types.js";
   import TerminalSettings from "../settings/TerminalSettings.svelte";
 
   interface Props {

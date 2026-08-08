@@ -1,8 +1,8 @@
 import { render } from "vitest-browser-svelte";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { DEFAULT_TERMINAL_SETTINGS } from "@kenn-forge/ui";
+import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
 
-import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
+import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
 import type { WorkspaceRuntimeState } from "../../api/workspace-runtime.ts";
 import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";

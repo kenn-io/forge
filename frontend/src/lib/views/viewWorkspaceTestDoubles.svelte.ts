@@ -88,7 +88,7 @@ export function createClaimTestController(
 }
 
 /**
- * Stand-in for the frontend's session-terminal slot, which packages/ui cannot
+ * Stand-in for the frontend's session-terminal slot, which this isolated view cannot
  * import. Records the pane key and the visibility the view passed through, which
  * is the whole contract: a pane that renders but reports itself hidden leaves a
  * live terminal off screen.

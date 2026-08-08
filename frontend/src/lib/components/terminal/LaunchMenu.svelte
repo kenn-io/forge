@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LaunchTarget } from "@kenn-forge/ui/api/types";
+  import type { LaunchTarget } from "../../api/types.js";
   import PlayIcon from "@lucide/svelte/icons/play";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import TerminalIcon from "@lucide/svelte/icons/terminal";

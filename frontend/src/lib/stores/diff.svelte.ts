@@ -1,4 +1,4 @@
-import type { DiffResult, FilePreview, FilesResult, CommitInfo } from "../api/types.js";
+import type { CommitInfo, DiffFile, DiffHunk, DiffLine, DiffResult, FilePreview, FilesResult } from "../api/types.js";
 import { createAPIClient } from "../api/generated/client.js";
 import { configuredAPIBaseURL } from "../api/runtime-base.js";
 import {
@@ -58,18 +58,53 @@ function isSnapshotChanged(error: unknown): boolean {
 type DiffResponse = components["schemas"]["DiffResponse"];
 type FilesResponse = components["schemas"]["FilesResponse"];
 
+function normalizeDiffLine(line: components["schemas"]["Line"]): DiffLine {
+  switch (line.type) {
+    case "context":
+    case "add":
+    case "delete":
+      return { ...line, type: line.type };
+    default:
+      throw new Error(`Unsupported diff line type: ${line.type}`);
+  }
+}
+
+function normalizeDiffHunk(hunk: components["schemas"]["Hunk"]): DiffHunk {
+  return {
+    ...hunk,
+    lines: (hunk.lines ?? []).map(normalizeDiffLine),
+  };
+}
+
+function normalizeDiffFile(file: components["schemas"]["DiffFile"]): DiffFile {
+  switch (file.status) {
+    case "added":
+    case "modified":
+    case "deleted":
+    case "renamed":
+    case "copied":
+      return {
+        ...file,
+        status: file.status,
+        hunks: (file.hunks ?? []).map(normalizeDiffHunk),
+      };
+    default:
+      throw new Error(`Unsupported diff file status: ${file.status}`);
+  }
+}
+
 function normalizeDiffResult(data: DiffResponse): DiffResult {
   return {
     ...data,
-    files: data.files ?? [],
-  } as DiffResult;
+    files: (data.files ?? []).map(normalizeDiffFile),
+  };
 }
 
 function normalizeFilesResult(data: FilesResponse): FilesResult {
   return {
     ...data,
-    files: data.files ?? [],
-  } as FilesResult;
+    files: (data.files ?? []).map(normalizeDiffFile),
+  };
 }
 
 function withVisibleFiles<T extends DiffResult | FilesResult>(result: T, files: T["files"]): T {

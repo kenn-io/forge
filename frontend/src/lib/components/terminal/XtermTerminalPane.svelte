@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getStores } from "@kenn-forge/ui";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import { getStores } from "../../context.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import { Terminal } from "@xterm/xterm";
   import type { ILinkHandler } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";

@@ -1,7 +1,7 @@
 <script lang="ts">
   import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
-  import { FilterDropdown } from "@kenn-forge/ui";
+  import { FilterDropdown } from "@kenn-io/kit-ui";
   import {
     Background,
     BackgroundVariant,

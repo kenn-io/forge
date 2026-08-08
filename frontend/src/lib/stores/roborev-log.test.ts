@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { createLogStore } from "@kenn-forge/ui";
+import { createLogStore } from "./roborev/log.svelte.js";
 
 const encoder = new TextEncoder();
 

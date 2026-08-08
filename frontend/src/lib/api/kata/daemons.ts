@@ -1,5 +1,5 @@
-import { configuredAPIBaseURL, configuredAPIPath } from "@kenn-forge/ui/api/runtime-base";
-import type { components } from "@kenn-forge/ui/api/schema";
+import { configuredAPIBaseURL, configuredAPIPath } from "../runtime-base.js";
+import type { components } from "../generated/schema.js";
 
 import { createRuntimeClient } from "../runtime.js";
 

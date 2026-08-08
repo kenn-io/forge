@@ -111,8 +111,8 @@ export function parseCIChecks(json: string): ParsedCIChecks {
       conclusion: coerceString(raw.conclusion),
       url: coerceString(raw.url),
       app: coerceString(raw.app),
+      ...(typeof raw.required === "boolean" ? { required: raw.required } : {}),
     };
-    if (typeof raw.required === "boolean") check.required = raw.required;
     const duration = coerceDuration(raw.duration_seconds);
     if (duration !== undefined) check.duration_seconds = duration;
     checks.push(check);

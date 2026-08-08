@@ -55,15 +55,8 @@ export type ItemLabelsResponse = components["schemas"]["ItemLabelsResponse"];
 export type KanbanStatus = PullRequest["KanbanStatus"];
 export type MergeRequestState = PullRequest["State"];
 
-export interface CICheck {
-  name: string;
-  status: string;
-  conclusion: string;
-  url: string;
-  app: string;
-  required?: boolean;
-  duration_seconds?: number;
-}
+export type CICheckWire = components["schemas"]["CICheck"];
+export type CICheck = CICheckWire & { readonly required?: boolean };
 
 export type ActivitySettings = components["schemas"]["Activity"];
 export type IssueSettings = components["schemas"]["Issues"];
@@ -111,54 +104,34 @@ export type FleetSettingsUpdate = components["schemas"]["UpdateFleetSettingsInpu
 export type FleetPeer = components["schemas"]["FleetPeer"];
 export type FleetSSHPeer = components["schemas"]["FleetSSHPeer"];
 
-export interface DiffResult {
-  stale: boolean;
-  whitespace_only_count: number;
-  files: DiffFile[];
-  /** Synced PR diff snapshot head; compare with platform_head_sha to detect stale cached context. */
-  diff_head_sha?: string;
-  snapshot_version?: string;
-}
-
-export interface FilesResult {
-  stale: boolean;
-  whitespace_only_count?: number;
-  files: DiffFile[];
-  snapshot_version?: string;
-}
-
 export type FilePreview = components["schemas"]["FilePreviewResponse"];
 export type DiffFileSide = "old" | "new";
+export type DiffResponseWire = components["schemas"]["DiffResponse"];
+export type FilesResponseWire = components["schemas"]["FilesResponse"];
+export type DiffFileWire = components["schemas"]["DiffFile"];
+export type DiffHunkWire = components["schemas"]["Hunk"];
+export type DiffLineWire = components["schemas"]["Line"];
 
-export interface DiffFile {
-  path: string;
-  old_path: string;
-  status: "added" | "modified" | "deleted" | "renamed" | "copied";
-  is_binary: boolean;
-  is_generated?: boolean;
-  is_whitespace_only: boolean;
-  additions: number;
-  deletions: number;
-  patch: string;
-  hunks: DiffHunk[];
-}
-
-export interface DiffHunk {
-  old_start: number;
-  old_count: number;
-  new_start: number;
-  new_count: number;
-  section?: string;
-  lines: DiffLine[];
-}
-
-export interface DiffLine {
+export type DiffLine = Omit<DiffLineWire, "type"> & {
   type: "context" | "add" | "delete";
-  content: string;
-  old_num?: number;
-  new_num?: number;
-  no_newline?: boolean;
-}
+};
+
+export type DiffHunk = Omit<DiffHunkWire, "lines"> & {
+  lines: DiffLine[];
+};
+
+export type DiffFile = Omit<DiffFileWire, "status" | "hunks"> & {
+  status: "added" | "modified" | "deleted" | "renamed" | "copied";
+  hunks: DiffHunk[];
+};
+
+export type DiffResult = Omit<DiffResponseWire, "files"> & {
+  files: DiffFile[];
+};
+
+export type FilesResult = Omit<FilesResponseWire, "files"> & {
+  files: DiffFile[];
+};
 
 export interface CommitInfo {
   sha: string;

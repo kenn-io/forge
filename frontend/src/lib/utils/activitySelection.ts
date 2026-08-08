@@ -1,9 +1,4 @@
-import {
-  buildIssueRoute,
-  buildPullRequestFilesRoute,
-  buildPullRequestRoute,
-  type RoutedItemRef,
-} from "@kenn-forge/ui/routes";
+import { buildIssueRoute, buildPullRequestFilesRoute, buildPullRequestRoute, type RoutedItemRef } from "../routes.js";
 
 export type ActivitySelectionItemType = "pr" | "issue";
 export type ActivityDetailTab = "conversation" | "files";

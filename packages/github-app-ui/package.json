@@ -11,7 +11,11 @@
     "test:e2e": "node ../../node_modules/vite-plus/bin/vp build --logLevel warn && node node_modules/.bin/playwright test",
     "typecheck": "cd ../.. && node node_modules/vite-plus/bin/vp run github-app-ui-package-typecheck"
   },
+  "dependencies": {
+    "effect": "4.0.0-beta.102"
+  },
   "devDependencies": {
+    "@effect/vitest": "4.0.0-beta.102",
     "@playwright/test": "1.61.1",
     "@sveltejs/vite-plugin-svelte": "7.1.2",
     "@tsconfig/svelte": "5.0.8",

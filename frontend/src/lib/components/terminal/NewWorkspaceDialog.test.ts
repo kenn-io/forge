@@ -2,9 +2,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import {
   discardWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
-} from "@kenn-forge/ui/stores/workspace-create-pending";
+} from "../../stores/workspace-create-pending.svelte.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
+import { STORES_KEY } from "../../context.js";
 
 import NewWorkspaceDialog from "./NewWorkspaceDialog.svelte";
 

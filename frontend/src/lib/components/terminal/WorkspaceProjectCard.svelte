@@ -10,7 +10,7 @@
   import { onMount } from "svelte";
 
   import { apiErrorMessage, client } from "../../api/runtime.ts";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import {
     getProjectAction,

@@ -1,16 +1,17 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
 
-  import type { ModalFrameAction } from "@kenn-forge/ui/stores/keyboard/keyspec";
-  import { getStores, ItemStateChip } from "@kenn-forge/ui";
+  import type { ModalFrameAction } from "../../stores/keyboard/keyspec.js";
+  import { getStores } from "../../context.js";
+  import ItemStateChip from "../shared/ItemStateChip.svelte";
   import { formatRelativeTime, TextInput } from "@kenn-io/kit-ui";
   import Modal from "../shared/Modal.svelte";
-  import type { Issue, PullRequest } from "@kenn-forge/ui/api/types";
+  import type { Issue, PullRequest } from "../../api/types.js";
   import {
     buildIssueRoute,
     buildPullRequestRoute,
     type RoutedItemRef,
-  } from "@kenn-forge/ui/routes";
+  } from "../../routes.js";
   import { docsHref } from "../../api/docs/route.js";
   import {
     closePalette,

@@ -1,11 +1,11 @@
 import { page } from "vite-plus/test/browser";
 import { flushSync, mount, unmount } from "svelte";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { DEFAULT_TERMINAL_SETTINGS } from "@kenn-forge/ui";
-import { createDiffStore } from "@kenn-forge/ui/stores/diff";
-import { getStackDepth } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
+import { createDiffStore } from "../../stores/diff.svelte.js";
+import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
 
-import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
+import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
 import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
 

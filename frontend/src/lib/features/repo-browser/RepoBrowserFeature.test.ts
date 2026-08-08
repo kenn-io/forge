@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { createQuerySerializer, type QuerySerializerOptions } from "openapi-fetch";
 import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ForgeClient } from "@kenn-forge/ui";
+import type { ForgeClient } from "../../types.js";
 
 vi.mock("./PierreFileContents.svelte", async () => ({
   default: (await import("./RepoBrowserFeatureTestPierreFileContents.svelte")).default,

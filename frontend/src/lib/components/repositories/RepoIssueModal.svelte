@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Checkbox, TextInput } from "@kenn-io/kit-ui";
-  import { Button, Chip, CommentEditor } from "@kenn-forge/ui";
+  import { Button, Chip } from "@kenn-io/kit-ui";
+  import CommentEditor from "../detail/CommentEditor.svelte";
   import Modal from "../shared/Modal.svelte";
   import {
     repoKey,

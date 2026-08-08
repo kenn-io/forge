@@ -1,10 +1,10 @@
 <script lang="ts">
-  import DetailPaneLayout from "../../../../../packages/ui/src/components/shared/DetailPaneLayout.svelte";
+  import DetailPaneLayout from "../shared/DetailPaneLayout.svelte";
   import type {
     PaneLayoutStore,
     PaneTabSpec,
-  } from "../../../../../packages/ui/src/stores/paneLayout.svelte.js";
-  import type { InlineWorkspaceController } from "@kenn-forge/ui";
+  } from "../../stores/paneLayout.svelte.js";
+  import type { InlineWorkspaceController } from "../../workspace-inline.js";
 
   interface Props {
     layout: PaneLayoutStore;

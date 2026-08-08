@@ -96,7 +96,6 @@ async function newestFrontendSourceMtime(rootDir: string): Promise<number | null
     path.join(rootDir, "frontend", "index.html"),
     path.join(rootDir, "frontend", "package.json"),
     path.join(rootDir, "frontend", "vite.config.ts"),
-    path.join(rootDir, "packages", "ui", "src"),
   ];
   let newest: number | null = null;
   for (const candidate of candidates) {

@@ -12,7 +12,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { pushModalFrame, resetModalStack } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+import { pushModalFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
@@ -28,7 +28,7 @@ vi.mock("../../api/runtime.js", () => ({
   apiErrorMessage: (_err: unknown, fallback: string) => fallback,
 }));
 
-vi.mock("@kenn-forge/ui/stores/flash", () => ({
+vi.mock("../../stores/flash.svelte.js", () => ({
   showFlash: mocks.showFlash,
 }));
 
@@ -78,8 +78,8 @@ vi.mock("@xterm/addon-webgl", () => ({
   }),
 }));
 
-vi.mock("@kenn-forge/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
+vi.mock("../../context.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../context.js")>();
   return {
     ...actual,
     getStores: () => ({

@@ -101,7 +101,7 @@ const (
 // payload that has not loaded yet — and must treat it as "no
 // operation-level verdict": the control falls back to its capability
 // gating (the pre-operations behavior) rather than disabling. The
-// frontend helper packages/ui/.../operation-gates.ts implements this
+// frontend helper frontend/src/lib/components/detail/operation-gates.ts implements this
 // side of the contract.
 // operationDescriptor lists the capabilities an operation needs and
 // the API bucket or buckets it consumes. requiredCapabilities is checked in

@@ -1,15 +1,11 @@
 <script lang="ts">
   import { Button } from "@kenn-io/kit-ui";
   import { onMount, tick } from "svelte";
-  import {
-    canonicalRepoFilterValue,
-    displayRepoFilterValue,
-    getStores,
-    normalizeRepoFilterSelection,
-  } from "@kenn-forge/ui";
+  import { canonicalRepoFilterValue, displayRepoFilterValue, normalizeRepoFilterSelection } from "../utils/repo-filter-values.js";
+  import { getStores } from "../context.js";
   import { client } from "../api/runtime.js";
-  import type { ConfigRepo, Repo } from "@kenn-forge/ui/api/types";
-  import { canonicalProvider } from "@kenn-forge/ui/api/provider-routes";
+  import type { ConfigRepo, Repo } from "../api/types.js";
+  import { canonicalProvider } from "../api/provider-routes.js";
   import type { RepoTreeOption } from "./repoTree.js";
   import RepoTreeNode from "./RepoTreeNode.svelte";
   import TreeCheckbox from "./TreeCheckbox.svelte";

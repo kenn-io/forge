@@ -17,21 +17,16 @@
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import { apiErrorMessage, client } from "../../api/runtime.js";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
-  import type { components } from "@kenn-forge/ui/api/schema";
-  import {
-    DiffStats,
-    FilterDropdown,
-    GroupedSidebarSection,
-    ScrollBox,
-    SidebarToggle,
-    type WorkspaceItemIdentity,
-  } from "@kenn-forge/ui";
+  import { showFlash } from "../../stores/flash.svelte.js";
+  import type { components } from "../../api/generated/schema.js";
+  import { DiffStats, FilterDropdown, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
+  import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
+  import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
   import {
     createRepoLabelFormatter,
     repoIdentityKey,
     type RepoLabelIdentity,
-  } from "@kenn-forge/ui/utils/repo-label";
+  } from "../../utils/repo-label.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import {

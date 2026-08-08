@@ -1,10 +1,10 @@
 import { page } from "vite-plus/test/browser";
 import { flushSync, mount, unmount } from "svelte";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test";
-import { DEFAULT_TERMINAL_SETTINGS } from "@kenn-forge/ui";
-import { createDiffStore } from "@kenn-forge/ui/stores/diff";
+import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
+import { createDiffStore } from "../../stores/diff.svelte.js";
 
-import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
+import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
 import AttachmentHost from "../../../test/AttachmentHost.svelte";
 import { navigate } from "../../stores/router.svelte.ts";
@@ -15,7 +15,7 @@ import {
 } from "../../stores/workspace-host.svelte.ts";
 import WorkspaceHost from "./WorkspaceHost.svelte";
 import InlineWorkspacePaneHarness from "./InlineWorkspacePaneHarness.svelte";
-import { createPaneLayoutStore } from "../../../../../packages/ui/src/stores/paneLayout.svelte.js";
+import { createPaneLayoutStore } from "../../stores/paneLayout.svelte.js";
 
 const WAIT = 10_000;
 

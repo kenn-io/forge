@@ -1,8 +1,8 @@
 <script lang="ts">
   import { Button, EmptyState, SearchInput, Spinner, TextInput } from "@kenn-io/kit-ui";
   import { tick, untrack } from "svelte";
-  import type { ConfigRepo, Settings } from "@kenn-forge/ui/api/types";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import type { ConfigRepo, Settings } from "../../api/types.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import Modal from "../shared/Modal.svelte";
   import {
     bulkAddRepos,

@@ -23,26 +23,24 @@ const { mockGetTerminalSettings, mockSetTerminalSettings, mockTerminalStore, moc
   };
 });
 
-vi.mock("@kenn-forge/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
+vi.mock("../../context.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../context.js")>();
   return {
     ...actual,
-    DEFAULT_TERMINAL_SETTINGS: {
-      font_family: "",
-      font_size: 14,
-      scrollback: 1000,
-      line_height: 1,
-      letter_spacing: 0,
-      cursor_blink: true,
-      font_ligatures: false,
-      hide_tmux_status: false,
-    },
     getStores: () => ({
       settings: {
         getTerminalSettings: mockGetTerminalSettings,
         setTerminalSettings: mockSetTerminalSettings,
       },
     }),
+  };
+});
+
+vi.mock("../../api/types.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/types.js")>();
+  return {
+    ...actual,
+    DEFAULT_TERMINAL_SETTINGS: mockTerminalStore.defaultTerminal,
   };
 });
 

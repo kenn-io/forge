@@ -3,14 +3,14 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import { Button } from "@kenn-forge/ui";
+  import { Button } from "@kenn-io/kit-ui";
   import type {
     FleetPeer,
     FleetSSHPeer,
     FleetSettings as FleetSettingsType,
     FleetSettingsUpdate,
-  } from "@kenn-forge/ui/api/types";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  } from "../../api/types.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import { updateFleetSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
 

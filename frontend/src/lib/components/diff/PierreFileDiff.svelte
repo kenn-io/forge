@@ -83,6 +83,7 @@
     old_path: "",
     status: "modified",
     is_binary: false,
+    is_generated: false,
     is_whitespace_only: false,
     additions: 0,
     deletions: 0,

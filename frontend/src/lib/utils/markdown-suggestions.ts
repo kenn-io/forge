@@ -224,6 +224,7 @@ export function buildSuggestionDiffFile(
     old_path: thread.old_path || context.path || thread.path,
     status: "modified",
     is_binary: false,
+    is_generated: false,
     is_whitespace_only: false,
     additions,
     deletions,

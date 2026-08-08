@@ -1,15 +1,15 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { API_CLIENT_KEY, STORES_KEY } from "../../../../packages/ui/src/context.js";
-import CommentBox from "../../../../packages/ui/src/components/detail/CommentBox.svelte";
-import IssueCommentBox from "../../../../packages/ui/src/components/detail/IssueCommentBox.svelte";
+import { API_CLIENT_KEY, STORES_KEY } from "../context.js";
+import CommentBox from "./detail/CommentBox.svelte";
+import IssueCommentBox from "./detail/IssueCommentBox.svelte";
 import {
   finishCommentSubmit,
   getCommentDraft,
   isCommentSubmitPending,
   setCommentDraft,
-} from "../../../../packages/ui/src/components/detail/comment-drafts.svelte.js";
+} from "./detail/comment-drafts.svelte.js";
 import CommentBoxContextHarness from "./CommentBoxContextHarness.svelte";
 
 interface AutocompleteResponse {

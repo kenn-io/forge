@@ -96,7 +96,7 @@ install: build-release
 		cp $(GHAPP_BINARY) "$$INSTALL_DIR/$(GHAPP_BINARY)"; \
 	fi
 
-# Install Bun workspace dependencies for frontend and packages/ui
+# Install Bun workspace dependencies for the frontend packages
 frontend-deps:
 	bun install
 
@@ -162,9 +162,9 @@ frontend-check: frontend-deps
 # deps; running bun install again here would mutate node_modules while other
 # priority-10 Node hooks read it.
 frontend-check-no-deps: check-vite-plus-bin
-	$(VITE_PLUS_BIN) fmt --check frontend packages/ui packages/github-app-ui --no-error-on-unmatched-pattern --threads=1
-	$(VITE_PLUS_BIN) lint frontend packages/ui packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
-	cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src ../packages/ui/src
+	$(VITE_PLUS_BIN) fmt --check frontend packages/github-app-ui --no-error-on-unmatched-pattern --threads=1
+	$(VITE_PLUS_BIN) lint frontend packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!frontend/src/lib/api/generated/**' '!frontend/src/lib/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
+	cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src
 	$(VITE_PLUS_BIN) run svelte-check
 
 # Build and verify the public documentation, including generated screenshots.
@@ -221,10 +221,11 @@ guardrail-check: check-vite-plus-bin
 
 # Regenerate the checked-in OpenAPI document and generated clients
 api-generate: frontend-deps
+	mkdir -p frontend/src/lib/api/generated
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
 	mkdir -p internal/apiclient/spec
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -version 3.0 -format json; if [ -f internal/apiclient/spec/openapi.json ] && cmp -s "$$tmp" internal/apiclient/spec/openapi.json; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/spec/openapi.json; fi; trap - EXIT
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node frontend/node_modules/openapi-typescript/bin/cli.js frontend/openapi/openapi.yaml --enum-values -o "$$tmp"; if [ -f packages/ui/src/api/generated/schema.ts ] && cmp -s "$$tmp" packages/ui/src/api/generated/schema.ts; then rm "$$tmp"; else mv "$$tmp" packages/ui/src/api/generated/schema.ts; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node frontend/node_modules/openapi-typescript/bin/cli.js frontend/openapi/openapi.yaml --enum-values -o "$$tmp"; if [ -f frontend/src/lib/api/generated/schema.ts ] && cmp -s "$$tmp" frontend/src/lib/api/generated/schema.ts; then rm "$$tmp"; else mv "$$tmp" frontend/src/lib/api/generated/schema.ts; fi; trap - EXIT
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; printf '%s\n' \
 		'/**' \
 		' * This file was auto-generated from frontend/openapi/openapi.yaml.' \
@@ -237,12 +238,12 @@ api-generate: frontend-deps
 		'export function createAPIClient(baseUrl: string, options: Pick<ClientOptions, "fetch" | "querySerializer"> = {}) {' \
 		'  return createClient<paths>({ baseUrl, ...options });' \
 		'}' \
-		> "$$tmp"; if [ -f packages/ui/src/api/generated/client.ts ] && cmp -s "$$tmp" packages/ui/src/api/generated/client.ts; then rm "$$tmp"; else mv "$$tmp" packages/ui/src/api/generated/client.ts; fi; trap - EXIT
+		> "$$tmp"; if [ -f frontend/src/lib/api/generated/client.ts ] && cmp -s "$$tmp" frontend/src/lib/api/generated/client.ts; then rm "$$tmp"; else mv "$$tmp" frontend/src/lib/api/generated/client.ts; fi; trap - EXIT
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; (cd internal/apiclient/generated && go tool oapi-codegen --config config.yaml -o "$$tmp" ../spec/openapi.json); if [ -f internal/apiclient/generated/client.gen.go ] && cmp -s "$$tmp" internal/apiclient/generated/client.gen.go; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/generated/client.gen.go; fi; trap - EXIT
 
 # Regenerate roborev TypeScript client types from checked-in OpenAPI spec
 roborev-api-generate: frontend-deps
-	node frontend/node_modules/openapi-typescript/bin/cli.js packages/ui/src/api/roborev/openapi.json -o packages/ui/src/api/roborev/generated/schema.ts
+	node frontend/node_modules/openapi-typescript/bin/cli.js frontend/src/lib/api/roborev/openapi.json -o frontend/src/lib/api/roborev/generated/schema.ts
 	@echo "Roborev API types generated"
 
 # Ensure air is installed for backend live reload
@@ -434,12 +435,12 @@ help:
 	@echo "  dev-ephemeral-stop - Stop the default ephemeral dev stack, or use STATUS=/path/to/dev-ephemeral.json"
 	@echo "  dev-clone-db   - Clone current DB into tmp/dev-db-clone and run backend on DEV_CLONE_PORT (default 8092)"
 	@echo "  frontend-dev-clone-db - Run Vite against cloned DB backend (default port $(DEV_CLONE_FRONTEND_PORT))"
-	@echo "  frontend-deps  - Install Bun workspace dependencies for frontend and packages/ui"
+	@echo "  frontend-deps  - Install Bun workspace dependencies for the frontend packages"
 	@echo "  vite-plus-install - Install global Vite+ launcher with Bun when vp is missing"
 	@echo "  frontend       - Build frontend SPA with Vite+"
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors KENN_FORGE_CONFIG)"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite+ dev server (honors KENN_FORGE_CONFIG)"
-	@echo "  frontend-check - Run Vite+ format, lint, type, and Svelte checks for frontend and packages/ui"
+	@echo "  frontend-check - Run Vite+ format, lint, type, and Svelte checks for frontend packages"
 	@echo "  docs-build     - Build and verify the public documentation site"
 	@echo "  docs-vercel-build - Reproduce the direct Vercel documentation build"
 	@echo "  docs-branding-check - Enforce lowercase kenn-forge documentation branding"

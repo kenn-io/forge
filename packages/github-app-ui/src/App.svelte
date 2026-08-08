@@ -1,12 +1,16 @@
 <script lang="ts">
-  interface Flow {
-    action: string;
-    manifest: string;
-    name: string;
-    host: string;
+  import {
+    makeSetupController,
+    type SetupController,
+    type SetupFlowError,
+    type SetupFlowView,
+  } from "./setup-program.js";
+
+  interface Props {
+    onController: (controller: SetupController, active: boolean) => void;
   }
 
-  const AUTO_CONTINUE_MS = 2500;
+  let { onController }: Props = $props();
 
   // The flow has exactly two browser-visible moments: confirming the
   // manifest hand-off to GitHub, and the post-creation callback. The
@@ -16,69 +20,39 @@
     ? "done"
     : "create";
 
-  let flow = $state.raw<Flow | null>(null);
-  let loadError = $state<string | null>(null);
+  let flow = $state.raw<SetupFlowView | null>(null);
+  let failure = $state.raw<SetupFlowError | null>(null);
   let submitted = $state(false);
-  let secondsLeft = $state(Math.ceil(AUTO_CONTINUE_MS / 1000));
+  let secondsLeft = $state(3);
 
-  let permissions = $derived.by(() => {
-    if (!flow) return [];
-    try {
-      const manifest = JSON.parse(flow.manifest) as {
-        default_permissions?: Record<string, string>;
-      };
-      return Object.entries(manifest.default_permissions ?? {}).sort(([a], [b]) => a.localeCompare(b));
-    } catch {
-      return [];
-    }
+  const controller = makeSetupController({
+    onFlow: (loaded) => {
+      failure = null;
+      flow = loaded;
+    },
+    onSecondsLeft: (seconds) => {
+      secondsLeft = seconds;
+    },
+    onFailure: (nextFailure: SetupFlowError) => {
+      submitted = false;
+      failure = nextFailure;
+    },
+    onSubmit: () => {
+      failure = null;
+      submitted = true;
+    },
   });
 
-  function continueToGitHub(current: Flow) {
-    if (submitted) return;
-    submitted = true;
-    // GitHub's manifest flow expects a form POST with the manifest in
-    // a `manifest` field; GitHub then shows its own confirmation page
-    // and redirects back to the CLI's loopback callback.
-    const form = document.createElement("form");
-    form.method = "post";
-    form.action = current.action;
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = "manifest";
-    input.value = current.manifest;
-    form.appendChild(input);
-    document.body.appendChild(form);
-    form.submit();
+  function continueToGitHub(): void {
+    failure = null;
+    controller.continue();
   }
 
-  async function loadFlow() {
-    try {
-      const resp = await fetch("./flow.json");
-      if (!resp.ok) {
-        throw new Error(`flow.json returned ${resp.status}`);
-      }
-      const loaded = (await resp.json()) as Flow;
-      flow = loaded;
-      // Hands-off path: continue automatically so the terminal flow
-      // needs no extra click here. The countdown keeps it visible and
-      // the button covers blocked pop-up-style edge cases.
-      const startedAt = Date.now();
-      const tick = setInterval(() => {
-        const remaining = AUTO_CONTINUE_MS - (Date.now() - startedAt);
-        secondsLeft = Math.max(1, Math.ceil(remaining / 1000));
-        if (remaining <= 0) {
-          clearInterval(tick);
-          continueToGitHub(loaded);
-        }
-      }, 250);
-    } catch (err) {
-      loadError = err instanceof Error ? err.message : String(err);
-    }
+  function registerController(): void {
+    onController(controller, step === "create");
   }
 
-  if (step === "create") {
-    void loadFlow();
-  }
+  registerController();
 </script>
 
 {#snippet wordmark()}
@@ -115,23 +89,6 @@
         You can close this tab, but keep the terminal open until it reports the install step finished — if it
         prints an error instead, setup is not complete.
       </p>
-    {:else if loadError !== null}
-      <div class="status">
-        <span class="badge err" aria-hidden="true">
-          <svg viewBox="0 0 16 16" width="22" height="22">
-            <path
-              fill="currentColor"
-              d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"
-            />
-          </svg>
-        </span>
-        <h1>This setup link is no longer active</h1>
-      </div>
-      <p>
-        The <code>kenn-forge-github-app create</code> command that opened this page is not running anymore. Re-run it
-        in your terminal to start a fresh setup.
-      </p>
-      <p class="detail">{loadError}</p>
     {:else if flow}
       <h1>Create the GitHub App for kenn-forge</h1>
       <p>
@@ -149,10 +106,10 @@
         <dd>Disabled — kenn-forge polls</dd>
       </dl>
 
-      {#if permissions.length > 0}
+      {#if flow.permissions.length > 0}
         <h2>Repository permissions</h2>
         <ul class="permissions">
-          {#each permissions as [scope, level] (scope)}
+          {#each flow.permissions as [scope, level] (scope)}
             <li>
               <code>{scope.replaceAll("_", " ")}</code>
               <span class={["level", level === "write" && "write"]}>{level}</span>
@@ -161,8 +118,12 @@
         </ul>
       {/if}
 
+      {#if failure?._tag === "SetupFormSubmitError"}
+        <p class="detail setup-error">{failure.reason}. Try again.</p>
+      {/if}
+
       <div class="actions">
-        <button onclick={() => continueToGitHub(flow!)} disabled={submitted}>
+        <button onclick={continueToGitHub} disabled={submitted}>
           {submitted ? "Opening GitHub…" : "Continue to GitHub"}
         </button>
         {#if !submitted}
@@ -170,6 +131,34 @@
         {/if}
       </div>
       <p class="detail">GitHub shows its own confirmation page before anything is created.</p>
+    {:else if failure !== null}
+      <div class="status">
+        <span class="badge err" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="22" height="22">
+            <path
+              fill="currentColor"
+              d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"
+            />
+          </svg>
+        </span>
+        <h1>
+          {failure._tag === "SetupInvalidPayload"
+            ? "This setup page could not read the app manifest"
+            : "This setup link is no longer active"}
+        </h1>
+      </div>
+      {#if failure._tag === "SetupInvalidPayload"}
+        <p>
+          The setup data did not match the GitHub App manifest format. Re-run
+          <code>kenn-forge-github-app create</code> in your terminal to start a fresh setup.
+        </p>
+      {:else}
+        <p>
+          The <code>kenn-forge-github-app create</code> command that opened this page is not running anymore. Re-run
+          it in your terminal to start a fresh setup.
+        </p>
+      {/if}
+      <p class="detail">{failure.reason}</p>
     {:else}
       <h1>Preparing the app manifest…</h1>
     {/if}
@@ -236,6 +225,10 @@
   .detail {
     font-size: 12px;
     color: var(--text-muted);
+  }
+
+  .setup-error {
+    color: var(--accent-red);
   }
 
   code {

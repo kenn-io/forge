@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@kenn-forge/ui/api/types";
+import type { DiffFile, DiffLine, DiffResult, FilesResult } from "../../src/lib/api/types.js";
 
 type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
 type DiffFixture = Omit<DiffResult, "files"> & {
@@ -67,6 +67,7 @@ const longLineDiff: DiffResult = withServerDiffData({
       old_path: ".github/workflows/ci.yml",
       status: "modified",
       is_binary: false,
+      is_generated: false,
       is_whitespace_only: false,
       additions: 8,
       deletions: 4,
@@ -185,6 +186,7 @@ const longLineDiff: DiffResult = withServerDiffData({
 function filesFromDiff(fixture: DiffResult): FilesResult {
   return {
     stale: fixture.stale,
+    whitespace_only_count: fixture.whitespace_only_count,
     files: fixture.files.map((f) => ({
       ...f,
       additions: 0,

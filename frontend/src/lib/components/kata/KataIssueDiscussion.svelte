@@ -1,8 +1,9 @@
 <script lang="ts">
   import { MentionTextarea, type MentionOption } from "@kenn-io/kit-ui";
-  import { Button, ItemStateChip } from "@kenn-forge/ui";
-  import { renderMarkdown, renderMarkdownSync } from "@kenn-forge/ui/utils/markdown";
-  import { localDateTimeLabel, timeAgo } from "@kenn-forge/ui/utils/time";
+  import { Button } from "@kenn-io/kit-ui";
+  import ItemStateChip from "../shared/ItemStateChip.svelte";
+  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
+  import { localDateTimeLabel, timeAgo } from "../../utils/time.js";
 
   import type { KataIssueNavigationTarget } from "../../api/kata/navigation.js";
   import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";

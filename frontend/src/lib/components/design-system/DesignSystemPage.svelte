@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Chip } from "@kenn-forge/ui";
+  import { Chip } from "@kenn-io/kit-ui";
   import type { ChipSize, ChipTone } from "@kenn-io/kit-ui";
   import DesignSystemTabbedPanelDemo from "./DesignSystemTabbedPanelDemo.svelte";
   import DesignSystemTypeaheadDemo from "./DesignSystemTypeaheadDemo.svelte";

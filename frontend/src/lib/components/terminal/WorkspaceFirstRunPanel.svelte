@@ -14,8 +14,8 @@
     loadSnapshotHosts,
     type HostSummary,
   } from "../../api/fleet-snapshot.ts";
-  import { SelectDropdown } from "@kenn-forge/ui";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import { SelectDropdown } from "@kenn-io/kit-ui";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import {
     emitWorkspaceCommand,
     getWorkspaceData,

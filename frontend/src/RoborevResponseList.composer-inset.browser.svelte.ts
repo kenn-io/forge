@@ -15,8 +15,8 @@ import { cleanup, render } from "vitest-browser-svelte";
 // without app.css the field is content-box and the reserved padding resolves
 // against different spacing variables than the app actually ships.
 import "./app.css";
-import { STORES_KEY } from "../../packages/ui/src/context.js";
-import ResponseList from "../../packages/ui/src/components/roborev/ResponseList.svelte";
+import { STORES_KEY } from "./lib/context.js";
+import ResponseList from "./lib/components/roborev/ResponseList.svelte";
 
 function mountComposer(): { wrapper: HTMLElement; unmount: () => void } {
   const wrapper = document.createElement("div");

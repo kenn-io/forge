@@ -4,9 +4,9 @@
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import { Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { onMount, untrack } from "svelte";
-  import { Button, Chip, SelectDropdown } from "@kenn-forge/ui";
-  import type { KataProjectRepoMapping } from "@kenn-forge/ui/api/types";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import { Button, Chip, SelectDropdown } from "@kenn-io/kit-ui";
+  import type { KataProjectRepoMapping } from "../../api/types.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import { updateSettings } from "../../api/settings.js";
   import { fetchKataDaemons, type KataDaemonInfo } from "../../api/kata/daemons.js";
   import {

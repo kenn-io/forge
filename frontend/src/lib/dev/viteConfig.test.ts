@@ -1,4 +1,3 @@
-import path from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import config, {
   resolveBrowserTestWorkers,
@@ -29,28 +28,10 @@ describe("vite config", () => {
     });
   });
 
-  it("aliases @kenn-forge/ui to the workspace source tree", () => {
-    const aliases = Array.isArray(config.resolve?.alias) ? config.resolve.alias : [];
-
-    const uiRootAlias = aliases.find(
-      (alias) => alias.find instanceof RegExp && alias.find.source === "^@kenn-forge\\/ui$",
-    );
-    const uiSubpathAlias = aliases.find(
-      (alias) => alias.find instanceof RegExp && alias.find.source === "^@kenn-forge\\/ui\\/api\\/client$",
-    );
-    const repoLabelAlias = aliases.find(
-      (alias) => alias.find instanceof RegExp && alias.find.source === "^@kenn-forge\\/ui\\/utils\\/repo-label$",
-    );
-
-    expect(uiRootAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/index.ts"));
-    expect(uiSubpathAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/api/generated/client.ts"));
-    expect(repoLabelAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/utils/repo-label.ts"));
-  });
-
-  it("prebundles browser-test dependencies reached through @kenn-forge/ui", () => {
+  it("prebundles frontend browser-test dependencies", () => {
     const includes = config.optimizeDeps?.include ?? [];
 
-    expect(includes).toContain("@kenn-forge/ui > shiki");
+    expect(includes).toContain("shiki");
     expect(includes).toContain("@lucide/svelte/icons/list-chevrons-down-up");
     expect(includes).toContain("@lucide/svelte/icons/list-chevrons-up-down");
   });

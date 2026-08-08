@@ -25,7 +25,7 @@
   import type {
     LaunchTarget,
     RuntimeSession,
-  } from "@kenn-forge/ui/api/types";
+  } from "../../api/types.js";
   import {
     getWorkspaceRuntime,
     launchWorkspaceSession,
@@ -101,22 +101,14 @@
     readRuntimeSessionDrag,
   } from "./terminal-drag";
   import { shouldRetryFleetDiffWatch } from "./fleet-diff-watch.js";
-  import { Button, CollapsibleSidebar,
-    clearActiveTabbedPanelDrag,
-    getPaneLayoutStore,
-    getStores,
-    parseSessionPaneKey,
-    promoteSessionBesideWorkspace,
-    readTabbedPanelTabDrag,
-    sessionPaneKey,
-    sessionPaneKeyMatchesWorkspace,
-    SplitResizeHandle,
-    WorkspaceRightSidebar,
-    type InlineDockMode,
-    type PaneSurfaceKey,
-    type SplitResizeEvent,
-    type WorkspaceItemIdentity, } from "@kenn-forge/ui";
-  import { getStackDepth } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+  import { Button, CollapsibleSidebar, SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
+  import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
+  import { getPaneLayoutStore, promoteSessionBesideWorkspace, type PaneSurfaceKey } from "../../stores/paneLayout.svelte.js";
+  import { getStores } from "../../context.js";
+  import { parseSessionPaneKey, sessionPaneKey, sessionPaneKeyMatchesWorkspace } from "../../stores/session-pane-key.js";
+  import WorkspaceRightSidebar from "../workspace/WorkspaceRightSidebar.svelte";
+  import type { InlineDockMode, WorkspaceItemIdentity } from "../../workspace-inline.js";
+  import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
   import ChevronsDownIcon from "@lucide/svelte/icons/chevrons-down";
   import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
   import PanelBottomCloseIcon from "@lucide/svelte/icons/panel-bottom-close";
@@ -128,7 +120,7 @@
   import { apiErrorMessage, client } from "../../api/runtime.js";
   import { updateSettings } from "../../api/settings.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import {
     acceptWorkspaceLaunch,
     claimWorkspaceLaunch,
@@ -140,7 +132,7 @@
     isWorkspaceIdDeleted,
     pendingWorkspaceLaunch,
     type WorkspaceLaunchClaim,
-  } from "@kenn-forge/ui/stores/workspace-create-pending";
+  } from "../../stores/workspace-create-pending.svelte.js";
   import { createTerminalZoomController } from "./terminalZoom";
 
   interface Workspace {

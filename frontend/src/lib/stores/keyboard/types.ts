@@ -1,9 +1,9 @@
 import type { Route, DetailTab, getPage } from "../router.svelte.js";
-import type { PullSelection } from "@kenn-forge/ui/stores/pulls";
-import type { IssueSelection } from "@kenn-forge/ui/stores/issues";
-import type { RoutedItemRef } from "@kenn-forge/ui/routes";
-import type { KeySpec } from "@kenn-forge/ui/stores/keyboard/keyspec";
-import type { StoreInstances } from "@kenn-forge/ui";
+import type { PullSelection } from "../pulls.svelte.js";
+import type { IssueSelection } from "../issues.svelte.js";
+import type { RoutedItemRef } from "../../routes.js";
+import type { KeySpec } from "./keyspec.js";
+import type { StoreInstances } from "../../types.js";
 
 export type { KeySpec, StoreInstances };
 

@@ -8,14 +8,14 @@ import ts from "typescript";
 const API_MARKER = "/api/v1";
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".svelte", ".ts", ".tsx"]);
 
-const DEFAULT_SCAN_PATHS = ["frontend/src", "packages/ui/src"];
+const DEFAULT_SCAN_PATHS = ["frontend/src"];
 
 const API_URL_MESSAGE =
   "Manual Kenn Forge API URL in production frontend code. Use the generated client through the frontend runtime (or injected typed UI client) for REST requests; use the configured API base helper for browser resource URLs. Only explicit scoped transport helpers are exempt.";
 
 const GENERATED_CLIENT_RUNTIME_FILES = new Set([
   "frontend/src/lib/api/runtime.ts",
-  "packages/ui/src/api/runtime-base.ts",
+  "frontend/src/lib/api/runtime-base.ts",
 ]);
 
 // This helper builds a Kenn Forge proxy URL whose nested /api/v1 belongs to

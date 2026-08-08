@@ -50,7 +50,7 @@ describe("diff summary categorization", () => {
 
   it("prefers tests over code when test paths use code extensions", () => {
     expect(categorizeDiffFile("internal/server/api_test.go")).toBe("tests");
-    expect(categorizeDiffFile("packages/ui/src/Button.test.ts")).toBe("tests");
+    expect(categorizeDiffFile("../../Button.test.ts")).toBe("tests");
     expect(categorizeDiffFile("tests/e2e/pull-pane.spec.ts")).toBe("tests");
   });
 

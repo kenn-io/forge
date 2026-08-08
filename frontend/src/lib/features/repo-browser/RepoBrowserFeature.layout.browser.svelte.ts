@@ -3,7 +3,7 @@ import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
 import "../../../app.css";
-import type { ForgeClient } from "@kenn-forge/ui";
+import type { ForgeClient } from "../../types.js";
 import RepoBrowserFeature from "./RepoBrowserFeature.svelte";
 
 const route = {

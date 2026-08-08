@@ -1,12 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import * as flash from "@kenn-forge/ui/stores/flash";
+import * as flash from "./lib/stores/flash.svelte.js";
 
 const mockPost = vi.fn();
 const mockRefreshDetailOnly = vi.fn();
 const mockLoadPulls = vi.fn();
 
-vi.mock("../../packages/ui/src/context.js", () => ({
+vi.mock("./lib/context.js", () => ({
   getClient: () => ({
     POST: mockPost,
   }),
@@ -20,7 +20,7 @@ vi.mock("../../packages/ui/src/context.js", () => ({
   }),
 }));
 
-import ApproveWorkflowsButton from "../../packages/ui/src/components/detail/ApproveWorkflowsButton.svelte";
+import ApproveWorkflowsButton from "./lib/components/detail/ApproveWorkflowsButton.svelte";
 
 describe("ApproveWorkflowsButton", () => {
   beforeEach(() => {

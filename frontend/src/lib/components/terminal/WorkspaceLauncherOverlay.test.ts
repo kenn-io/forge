@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { resetModalStack, getStackDepth } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+import { resetModalStack, getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
 
 import WorkspaceLauncherOverlay from "./WorkspaceLauncherOverlay.svelte";
 

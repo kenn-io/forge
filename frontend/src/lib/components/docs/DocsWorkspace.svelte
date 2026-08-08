@@ -8,7 +8,7 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import Upload from "@lucide/svelte/icons/upload";
-  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import type { DocsRoute } from "../../api/docs/route.js";
   import { createDocsAPI, type DocsAPI } from "../../api/docs/api";
   import {
@@ -37,7 +37,7 @@
   import { buildMentionCompletionSource, collectMentionNames } from "./mentionCompletion";
   import { buildWikilinkCompletionSource } from "./wikilinkCompletion";
   import type { IssueSummary } from "./docsIssueTypes";
-  import { SelectDropdown, type SelectDropdownOption } from "@kenn-forge/ui";
+  import { SelectDropdown, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import { IconButton } from "@kenn-io/kit-ui";
 
   interface Props {

@@ -37,7 +37,7 @@ test("flags API prefixes assembled through constants", async () => {
   const root = await makeRoot();
   await write(
     root,
-    "packages/ui/src/api/provider-routes.ts",
+    "frontend/src/lib/api/provider-routes.ts",
     [
       'const API_PREFIX = "/api" + "/v1";',
       "const MARKDOWN_IMAGE_URL = `${API_PREFIX}/repo/github/acme/widgets/markdown-image`;",
@@ -76,7 +76,7 @@ test("ignores tests, generated code, and OpenAPI schema files", async () => {
     "frontend/tests/e2e/settings.spec.ts",
     'await page.route("**/api/v1/settings", route => route.fulfill());\n',
   );
-  await write(root, "packages/ui/src/api/generated/client.ts", 'export const base = "/api/v1";\n');
+  await write(root, "frontend/src/lib/api/generated/client.ts", 'export const base = "/api/v1";\n');
   await write(root, "frontend/openapi/openapi.yaml", "servers:\n  - url: /api/v1\n");
 
   const findings = await lintApiUrls({ root });
@@ -88,7 +88,7 @@ test("allows generated client base path helpers", async () => {
   const root = await makeRoot();
   await write(
     root,
-    "packages/ui/src/api/runtime-base.ts",
+    "frontend/src/lib/api/runtime-base.ts",
     ["function apiBaseURL(basePath) {", '  return `${basePath.replace(/\\/$/, "")}/api/v1`;', "}", ""].join("\n"),
   );
 

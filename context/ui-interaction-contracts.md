@@ -197,6 +197,9 @@ Persisted controls must state their scope clearly.
   interactive catalog load. Resolved config rows must use that catalog's current identity;
   add only zero-match exact rows as fallbacks so hidden renamed repos stay absent
   (`frontend/src/App.svelte::getNormalizedGlobalRepo`).
+- A failed repository-catalog request is not an authoritative empty load: retain
+  the prior options and selection until a later request succeeds
+  (`frontend/src/lib/components/RepoTypeahead.svelte`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
 - Concurrent controls for one server-backed settings object must share a

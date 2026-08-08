@@ -173,6 +173,23 @@ test("repository visibility gear persists exact and glob choices across interact
   await expectRepoInInteractiveSurfaces(page, "roborev-dev/kenn-forge", true);
 });
 
+test("new exact repository is immediately available to interactive surfaces", async ({ page }) => {
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+
+  await page.getByText("Advanced: add provider-scoped repo or tracking glob directly").click();
+  await page.getByPlaceholder("provider/owner/name").fill("github/import-lab/api");
+  const addResponsePromise = page.waitForResponse(
+    (response) => response.url().endsWith("/api/v1/repos") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  const addResponse = await addResponsePromise;
+  expect(addResponse.status(), await addResponse.text()).toBe(201);
+
+  await expect(page.locator(".repo-row", { hasText: "import-lab/api" })).toBeVisible();
+  await expectRepoInInteractiveSurfaces(page, "import-lab/api", true);
+});
+
 test("settings imports a selected subset from a repository glob", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });

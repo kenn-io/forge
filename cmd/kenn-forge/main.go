@@ -994,10 +994,15 @@ func fallbackGlobFromDB(
 		)
 		if matched {
 			repo := ghclient.RepoRef{
-				Platform:     rawPlatform,
-				Owner:        r.Owner,
-				Name:         r.Name,
-				PlatformHost: dbHost,
+				Platform:           rawPlatform,
+				Owner:              r.Owner,
+				Name:               r.Name,
+				PlatformHost:       dbHost,
+				RepoPath:           r.RepoPath,
+				PlatformExternalID: r.PlatformRepoID,
+				WebURL:             r.WebURL,
+				CloneURL:           r.CloneURL,
+				DefaultBranch:      r.DefaultBranch,
 			}
 			matches = append(matches, repo)
 		}

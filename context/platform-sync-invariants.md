@@ -22,6 +22,9 @@ combining repository-owned history
   preserve human-readable route history across renames and replacements.
 - Rows without a verified provider ID remain inactive legacy records. Never
   infer their identity from a matching route.
+- Settings/import mutations must persist resolved catalog identities before
+  publishing matched state or returning success; identityless tracked fallbacks
+  never count as resolved (`internal/server/settings_handlers.go::addConfiguredRepo`).
 - Timestamp provider observations before the identity lookup starts; a delayed
   response must not supersede a newer route observation
   (`internal/github/sync.go::Syncer.syncRepoIdentity`).

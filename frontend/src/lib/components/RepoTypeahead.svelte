@@ -72,6 +72,7 @@
 
   let fetchedRepos = $state<Repo[]>([]);
   let reposLoading = $state(false);
+  let repoCatalogLoadedSuccessfully = $state(false);
   let query = $state("");
   let open = $state(false);
   let highlightIndex = $state(0);
@@ -90,13 +91,17 @@
 
     latestRepoFetchKey = fetchKey;
     reposLoading = true;
-    fetchedRepos = [];
+    repoCatalogLoadedSuccessfully = false;
 
     void client.GET("/repos").then(({ data, error }) => {
       if (fetchKey !== latestRepoFetchKey) return;
       reposLoading = false;
-      if (error) return;
+      if (error || data === undefined) return;
       fetchedRepos = data ?? [];
+      repoCatalogLoadedSuccessfully = true;
+    }).catch(() => {
+      if (fetchKey !== latestRepoFetchKey) return;
+      reposLoading = false;
     });
   });
 
@@ -203,7 +208,7 @@
   }
 
   $effect(() => {
-    if (selectedValues.length === 0 || reposLoading) return;
+    if (selectedValues.length === 0 || reposLoading || !repoCatalogLoadedSuccessfully) return;
     const normalized = normalizeRepoFilterSelection(
       selected,
       options.map((option) => ({

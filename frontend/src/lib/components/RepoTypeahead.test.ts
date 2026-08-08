@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
 
 import { interactiveConfigRepos } from "@kenn-forge/ui";
@@ -25,7 +26,12 @@ vi.mock("../api/runtime.js", () => ({
   },
 }));
 
-const getRepos = client.GET as unknown as Mock<() => Promise<{ data: Repo[]; error: undefined }>>;
+type RepoCatalogResult = {
+  data: Repo[] | undefined;
+  error: { title: string } | undefined;
+};
+
+const getRepos = client.GET as unknown as Mock<() => Promise<RepoCatalogResult>>;
 
 describe("RepoTypeahead", () => {
   beforeEach(() => {
@@ -75,6 +81,41 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(screen.getByRole("option", { name: /import-lab\/api/i })).toBeTruthy();
     });
+  });
+
+  it("preserves the selected repository when catalog loading fails", async () => {
+    const onchange = vi.fn();
+    let resolveCatalog!: (result: RepoCatalogResult) => void;
+    getRepos.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCatalog = resolve;
+      }),
+    );
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "api",
+        repo_path: "import-lab/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+
+    render(RepoTypeahead, {
+      props: {
+        selected: "github|github.com/import-lab/api",
+        onchange,
+      },
+    });
+    await waitFor(() => expect(getRepos).toHaveBeenCalled());
+
+    resolveCatalog({ data: undefined, error: { title: "catalog unavailable" } });
+    await tick();
+    await tick();
+
+    expect(onchange).not.toHaveBeenCalled();
   });
 
   it("omits hidden configured repos and clears an active hidden selection", async () => {

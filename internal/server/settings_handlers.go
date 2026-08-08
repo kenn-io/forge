@@ -133,6 +133,9 @@ func matchedRepoCount(
 ) int {
 	count := 0
 	for _, repo := range tracked {
+		if strings.TrimSpace(repo.PlatformExternalID) == "" {
+			continue
+		}
 		if repoMatchesConfig(repo, raw) {
 			count++
 		}
@@ -810,6 +813,11 @@ func (s *Server) addConfiguredRepo(
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
+	}
+	if err := s.persistResolvedRepos(ctx, expanded); err != nil {
+		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
+		s.cfgMu.Unlock()
+		return nil, httpapi.Internal(err.Error())
 	}
 	s.mergeTrackedRepos(expanded)
 	s.applyWorkspaceConfigLocked()

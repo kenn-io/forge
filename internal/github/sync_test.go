@@ -15535,6 +15535,42 @@ func TestSyncerBudgetRefusedPRListSkipsETagEviction(t *testing.T) {
 	assert.True(mc.prsCached, "cached PR list validator must stay warm")
 }
 
+func TestSyncerBudgetCauseSurvivesLaterIssueListFailure(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+	repoID, err := database.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"),
+	)
+	require.NoError(err)
+	normalized, err := NormalizePR(repoID, buildOpenPR(1, now))
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, normalized)
+	require.NoError(err)
+
+	client := &partialFailureMock{}
+	client.openPRs = []*gh.PullRequest{}
+	client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+		return nil, fmt.Errorf("get closed merge request: %w", platform.ErrSyncBudgetExhausted)
+	}
+	client.listOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
+		return nil, errors.New("issue list unavailable")
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		repos, time.Minute, nil, nil,
+	)
+	syncer.RunOnce(ctx)
+
+	assert.Equal(SyncErrorCodeLocalCeilingExhausted, syncer.Status().LastErrorCode,
+		"a later non-budget failure must not mask the earlier local-ceiling cause")
+}
+
 // TestSyncerBudgetRefusedIssueListSkipsETagEviction verifies the same
 // no-eviction rule for the open-issue list: a budget refusal fails the
 // cycle but leaves the issue list validators warm for the next cycle.

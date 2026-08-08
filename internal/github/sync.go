@@ -7651,7 +7651,12 @@ func (s *Syncer) indexSyncRepo(
 					"err", issueListErr,
 				)
 				failedScope |= failIssues
-				partialCause = issueListErr
+				budgetCause := retainSyncBudgetCause(partialCause, issueListErr)
+				if errors.Is(budgetCause, platform.ErrSyncBudgetExhausted) {
+					partialCause = budgetCause
+				} else {
+					partialCause = issueListErr
+				}
 			}
 		} else {
 			graphQLIssuesDone := false

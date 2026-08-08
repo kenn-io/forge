@@ -282,6 +282,7 @@ describe("budget display", () => {
   });
 
   it("identifies a local ceiling failure while provider quota remains healthy", async () => {
+    const failedAt = new Date(Date.now() - 5 * 60_000).toISOString();
     const failedResetAt = new Date(Date.now() + 30 * 60_000).toISOString();
     const unrelatedResetAt = new Date(Date.now() + 5 * 60_000).toISOString();
     await mountStatusBar([
@@ -312,7 +313,7 @@ describe("budget display", () => {
       ),
       syncStatus({
         running: false,
-        last_run_at: "2026-08-07T20:00:00Z",
+        last_run_at: failedAt,
         last_error: "list open PRs: local sync emergency ceiling exhausted",
         last_error_code: "localSyncCeilingExhausted",
         last_error_ceiling_key: "github:github.com:user:7",
@@ -329,6 +330,41 @@ describe("budget display", () => {
 
     const restFill = document.querySelector<HTMLElement>(".budget-fill");
     expect(restFill?.style.background).toBe("var(--budget-green)");
+  });
+
+  it("does not pair a prior-window failure with a recovered live ceiling", async () => {
+    const failedAt = new Date(Date.now() - 65 * 60_000).toISOString();
+    const liveResetAt = new Date(Date.now() + 55 * 60_000).toISOString();
+    await mountStatusBar([
+      rateLimits(
+        { "github.com": knownHost },
+        {
+          "github:github.com:user:7": {
+            provider: "github",
+            platform_host: "github.com",
+            rate_principal: "user:7",
+            principal_label: "GitHub user maintainer",
+            limit: 500,
+            spent: 0,
+            remaining: 500,
+            reset_at: liveResetAt,
+          },
+        },
+      ),
+      syncStatus({
+        running: false,
+        last_run_at: failedAt,
+        last_error: "list open PRs: local sync emergency ceiling exhausted",
+        last_error_code: "localSyncCeilingExhausted",
+        last_error_ceiling_key: "github:github.com:user:7",
+      }),
+    ]);
+
+    const failure = document.querySelector<HTMLElement>(".status-item--local-ceiling");
+    expect(failure).not.toBeNull();
+    expect(failure?.textContent).toBe("local sync ceiling reached");
+    expect(failure?.textContent).not.toContain("0 / 500");
+    expect(failure?.title).not.toContain("resets in");
   });
 
   it("popover dismisses on Escape and restores focus to the trigger", async () => {

@@ -164,13 +164,23 @@
 	|| Object.keys(rateLimits.local_ceilings).length > 0,
   );
 
+  let hasLocalCeilingFailure = $derived(
+    sync.getSyncState()?.last_error_code === "localSyncCeilingExhausted",
+  );
   let localCeilingFailure = $derived.by(() => {
     const status = sync.getSyncState();
-    if (status?.last_error_code !== "localSyncCeilingExhausted") return null;
+    if (!status || !hasLocalCeilingFailure) return null;
     const ceiling = status.last_error_ceiling_key
       ? rateLimits.local_ceilings[status.last_error_ceiling_key]
       : undefined;
     if (!ceiling) return null;
+    const failedAt = new Date(status.last_run_at ?? "").getTime();
+    const resetAt = new Date(ceiling.reset_at).getTime();
+    const resetBelongsToFailureWindow = Number.isFinite(failedAt)
+      && Number.isFinite(resetAt)
+      && resetAt > failedAt
+      && resetAt <= failedAt + 60 * 60_000;
+    if (!resetBelongsToFailureWindow) return null;
     return {
       spent: ceiling.spent,
       limit: ceiling.limit,
@@ -220,7 +230,7 @@
       </span>
       <span class="status-sep">&middot;</span>
     {/if}
-    {#if localCeilingFailure !== null}
+    {#if hasLocalCeilingFailure}
       <span
         class="status-item status-item--error status-item--local-ceiling"
         title={localCeilingFailureTitle()}

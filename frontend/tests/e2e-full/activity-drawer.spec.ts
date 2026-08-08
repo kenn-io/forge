@@ -713,6 +713,11 @@ test.describe("activity split view", () => {
     expect(maxCount(syncPosts)).toBe(0);
     expect(maxCount(asyncSyncPosts)).toBeLessThanOrEqual(1);
     expect(maxCount(asyncSyncPosts)).toBeGreaterThan(0);
+
+    // Detail requests can still be in flight when the assertions finish.
+    // Detach the interceptors before Playwright closes the page so Firefox
+    // does not report route.fetch rejections after the test has ended.
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("Activity issue selection renders detail when a duplicate load stalls", async ({ page }) => {

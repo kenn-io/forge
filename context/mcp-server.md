@@ -27,4 +27,5 @@
   omission preserves configured self-assignment (`internal/server/workspaceapi/routes_handlers.go::Handler.createWorkspace`).
 - MCP can create/reuse PR, issue, or ad-hoc workspaces and launch one new agent
   runtime with one initial message. Ambiguous mutations are never retried or
-  cleaned up; only a lost message response permits receipt-only recovery (`internal/mcpserver/tools_agent_spawn.go::Server.spawnWorkspaceWithAgent`).
+  cleaned up; lost message responses permit only bounded cancellation-independent
+  receipt reads, and unresolved `pending` or `uncertain` evidence remains ambiguous (`internal/mcpserver/tools_agent_spawn.go::Server.recoverInitialMessageReceipt`).

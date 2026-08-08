@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -193,6 +194,96 @@ func TestSpawnWorkspaceWithAgentTimeoutReturnsPartialStateWithoutCleanup(t *test
 	assert.Equal(0, deletes)
 }
 
+func TestSpawnWorkspaceWithAgentReportsObservedWorkspaceErrorStatus(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/settings", func(w http.ResponseWriter, _ *http.Request) {
+		writeAgentTargetSettings(w, true)
+	})
+	mux.HandleFunc("/api/v1/host/github.com/pulls/github/acme/widget/42", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSONResponse(w, `{"merge_request":{"Number":42},"workspace":null}`)
+	})
+	mux.HandleFunc("/api/v1/workspaces", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSONResponse(w, `{"id":"ws-error","status":"creating","created":true}`)
+	})
+	mux.HandleFunc("/api/v1/workspaces/ws-error", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSONResponse(w, `{"id":"ws-error","status":"error","error_message":"clone failed"}`)
+	})
+	s := newMCPTestServer(t, mux)
+
+	_, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("start"))
+	var daemonErr *daemonError
+	require.ErrorAs(err, &daemonErr)
+	assert.Equal("agent_handoff_failed", daemonErr.Kind)
+	assert.Equal("error", daemonErr.Details["workspace_status"])
+	assert.Contains(daemonErr.Message, "clone failed")
+}
+
+func TestSpawnWorkspaceWithAgentTargetDiscoveryTimeoutUsesHandoffEnvelope(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/settings", func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	})
+	s := newMCPTestServer(t, mux)
+
+	input := prSpawnInput("start")
+	input.Timeout = "20ms"
+	_, err := s.spawnWorkspaceWithAgent(t.Context(), input)
+	var daemonErr *daemonError
+	require.ErrorAs(err, &daemonErr)
+	assert.Equal(t, "agent_handoff_timeout", daemonErr.Kind)
+}
+
+func TestSpawnWorkspaceWithAgentMutationTimeoutPreservesAmbiguity(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		failRuntime bool
+		failedStage string
+	}{
+		{name: "workspace creation", failedStage: "workspace_created"},
+		{name: "runtime launch", failRuntime: true, failedStage: "runtime_launched"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/settings", func(w http.ResponseWriter, _ *http.Request) {
+				writeAgentTargetSettings(w, true)
+			})
+			mux.HandleFunc("/api/v1/host/github.com/pulls/github/acme/widget/42", func(w http.ResponseWriter, _ *http.Request) {
+				writeJSONResponse(w, `{"merge_request":{"Number":42},"workspace":null}`)
+			})
+			mux.HandleFunc("/api/v1/workspaces", func(w http.ResponseWriter, _ *http.Request) {
+				if !tc.failRuntime {
+					time.Sleep(100 * time.Millisecond)
+					return
+				}
+				writeJSONResponse(w, `{"id":"ws-timeout","status":"ready","created":true}`)
+			})
+			if tc.failRuntime {
+				mux.HandleFunc("/api/v1/workspaces/ws-timeout", func(w http.ResponseWriter, _ *http.Request) {
+					writeJSONResponse(w, `{"id":"ws-timeout","status":"ready"}`)
+				})
+				mux.HandleFunc("/api/v1/workspaces/ws-timeout/runtime/sessions", func(_ http.ResponseWriter, _ *http.Request) {
+					time.Sleep(100 * time.Millisecond)
+				})
+			}
+			s := newMCPTestServer(t, mux)
+
+			input := prSpawnInput("start")
+			input.Timeout = "30ms"
+			_, err := s.spawnWorkspaceWithAgent(t.Context(), input)
+			var daemonErr *daemonError
+			require.ErrorAs(err, &daemonErr)
+			assert.Equal("agent_handoff_timeout", daemonErr.Kind)
+			assert.True(daemonErr.Ambiguous)
+			assert.Equal(tc.failedStage, daemonErr.Details["failed_stage"])
+		})
+	}
+}
+
 func TestSpawnWorkspaceWithAgentRejectsInvalidInputBeforeWorkspaceMutation(t *testing.T) {
 	require := require.New(t)
 	workspaceMutations := 0
@@ -346,6 +437,81 @@ func TestSpawnWorkspaceWithAgentRecoversOnlyReceiptAfterAmbiguousMessageResponse
 	assert.True(out.MessageDelivered)
 	assert.Equal(1, messagePosts)
 	assert.Equal(1, receiptReads)
+}
+
+func TestSpawnWorkspaceWithAgentReceiptRecoverySurvivesOuterTimeout(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	messagePosts := 0
+	receiptReads := 0
+	mux := successfulPRHandoffMuxWithoutMessage(t, "ws-recovery", "runtime-recovery", "coding-recovery")
+	mux.HandleFunc("/api/v1/workspaces/ws-recovery/runtime/sessions/runtime-recovery/initial-message", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			messagePosts++
+			time.Sleep(100 * time.Millisecond)
+		case http.MethodGet:
+			receiptReads++
+			writeJSONResponse(w, `{"agent":"codex","session_id":"coding-recovery","state":"delivered","message_bytes":5,"delivered_at":"2026-08-07T15:00:02Z"}`)
+		}
+	})
+	s := newMCPTestServer(t, mux)
+
+	input := prSpawnInput("start")
+	input.Timeout = "30ms"
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), input)
+	require.NoError(err)
+	assert.True(out.MessageDelivered)
+	assert.Equal(1, messagePosts)
+	assert.Equal(1, receiptReads)
+}
+
+func TestSpawnWorkspaceWithAgentReceiptRecoveryClassifiesStates(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		receiptStates []string
+		wantDelivered bool
+		wantState     string
+	}{
+		{name: "pending then delivered", receiptStates: []string{"pending", "delivered"}, wantDelivered: true},
+		{name: "uncertain", receiptStates: []string{"uncertain"}, wantState: "uncertain"},
+		{name: "unresolved pending", receiptStates: []string{"pending"}, wantState: "pending"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			messagePosts := 0
+			receiptReads := 0
+			mux := successfulPRHandoffMuxWithoutMessage(t, "ws-recovery", "runtime-recovery", "coding-recovery")
+			mux.HandleFunc("/api/v1/workspaces/ws-recovery/runtime/sessions/runtime-recovery/initial-message", func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodPost:
+					messagePosts++
+					writeJSONResponse(w, `{"agent":"codex","session_id":"coding-recovery","state":"delivered","message_bytes":5} {}`)
+				case http.MethodGet:
+					state := tc.receiptStates[min(receiptReads, len(tc.receiptStates)-1)]
+					receiptReads++
+					writeJSONResponse(w, `{"agent":"codex","session_id":"coding-recovery","state":"`+state+`","message_bytes":5}`)
+				}
+			})
+			s := newMCPTestServer(t, mux)
+
+			input := prSpawnInput("start")
+			input.Timeout = "40ms"
+			out, err := s.spawnWorkspaceWithAgent(t.Context(), input)
+			assert.Equal(1, messagePosts)
+			assert.Positive(receiptReads)
+			if tc.wantDelivered {
+				require.NoError(err)
+				assert.True(out.MessageDelivered)
+				return
+			}
+			var daemonErr *daemonError
+			require.ErrorAs(err, &daemonErr)
+			assert.True(daemonErr.Ambiguous)
+			assert.Equal(tc.wantState, daemonErr.Details["initial_message_state"])
+		})
+	}
 }
 
 func TestSpawnWorkspaceWithAgentDoesNotRetryAmbiguousWorkspaceOrRuntimeMutation(t *testing.T) {

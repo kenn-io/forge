@@ -20,13 +20,14 @@ type Options struct {
 }
 
 type Server struct {
-	opts     Options
-	daemon   *daemonClient
-	mcp      *mcp.Server
-	diffMu   sync.Mutex
-	diffs    *diffFileStore
-	httpMu   sync.RWMutex
-	httpAddr string
+	opts                     Options
+	daemon                   *daemonClient
+	mcp                      *mcp.Server
+	agentHandoffPollInterval time.Duration
+	diffMu                   sync.Mutex
+	diffs                    *diffFileStore
+	httpMu                   sync.RWMutex
+	httpAddr                 string
 }
 
 func New(opts Options) (*Server, error) {
@@ -37,8 +38,9 @@ func New(opts Options) (*Server, error) {
 		opts.DaemonTimeout = 10 * time.Second
 	}
 	s := &Server{
-		opts:   opts,
-		daemon: newDaemonClient(opts.ConfigPath, opts.DaemonTimeout),
+		opts:                     opts,
+		daemon:                   newDaemonClient(opts.ConfigPath, opts.DaemonTimeout),
+		agentHandoffPollInterval: defaultAgentHandoffPollInterval,
 	}
 	s.mcp = mcp.NewServer(
 		&mcp.Implementation{Name: "kenn-forge", Version: opts.Version},

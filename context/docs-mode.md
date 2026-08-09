@@ -28,6 +28,9 @@ filesystem operations, search, and git pull/publish behavior.
   retry. Pull refreshes tree, git state, and the captured open document
   (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflow`,
   `frontend/src/lib/components/docs/DocsWorkspace.svelte`).
+- A confirmed pull remains successful when a follow-up tree, git-status, or document read fails. Capture those reads
+  independently, apply successful snapshots, and report refresh degradation without relabeling the pull as failed
+  (`frontend/src/lib/components/docs/DocsWorkspace.svelte::pullFromGit`).
 
 ## Filesystem And HTTP Boundary
 

@@ -62,6 +62,9 @@ Workspace deletion is intentionally conservative.
 - Only after a clean preflight may runtime sessions and shells be stopped.
 - Only after runtime shutdown succeeds should destructive worktree and DB
   teardown continue.
+- A confirmed delete publishes workspace absence from the application workflow before presenter-specific navigation
+  or failure UI; releasing the initiating presenter must not suppress tombstones, hosted-session cleanup, or route invalidation
+  (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::executeMutation`).
 
 This ordering prevents a rejected delete from silently killing the user's live
 workspace sessions.

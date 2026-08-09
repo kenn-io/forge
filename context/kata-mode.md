@@ -12,6 +12,9 @@ contracts remain in [`ui-interaction-contracts.md`](./ui-interaction-contracts.m
 - kenn-forge persists only its own workspace links and browser preferences; Kata
   task, snapshot, and cursor authority remains external or process-local
   (`internal/server/kata_snapshot_cache.go::newKataSnapshotCacheWithConfig`).
+- Kata task workspace creation is application-owned and may complete after its issue detail unmounts. Preserve any
+  requested launch intent, but navigate only while the initiating Kata surface is current
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::createWorkspaceForSelectedIssue`).
 
 ## Daemon Discovery
 

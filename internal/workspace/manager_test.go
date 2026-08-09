@@ -2741,6 +2741,39 @@ func TestCleanupPreservesExistingWorktreeWhenConfiguredBaseChanges(t *testing.T)
 	assert.True(wrongExists, "cleanup must not delete branch from current settings repo")
 }
 
+func TestCleanupDeletesLiveRegisteredWorktreeWithoutOwnershipMarker(t *testing.T) {
+	require := require.New(t)
+
+	const branch = "kenn-forge/pr-42"
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	worktreePath := filepath.Join(t.TempDir(), "workspace")
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", worktreePath, "-b", branch, "HEAD",
+	)
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+	ws := &Workspace{
+		ID:              "ws-unmarked-live-registration",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: branch,
+		WorktreePath:    worktreePath,
+	}
+
+	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
+	require.NoDirExists(worktreePath)
+	branchExists, err := localBranchExists(t.Context(), localRepo, branch)
+	require.NoError(err)
+	require.False(branchExists)
+}
+
 func TestCleanupDoesNotTrustReplacementCloneAtWorkspacePath(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2825,75 +2858,6 @@ func TestCleanupDoesNotTrustStaleLocalBaseRegistrationForReplacementClone(t *tes
 	assert.True(branchExists)
 	_, err = os.Stat(worktreePath)
 	require.NoError(err)
-}
-
-func TestCleanupDeleteLockedRevalidatesOwnershipAfterPlanRace(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	const branch = "kenn-forge/pr-42"
-	localRepo, _ := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
-		t, "feature/thing",
-	)
-	worktreePath := filepath.Join(t.TempDir(), "workspace")
-	runWorkspaceTestGit(
-		t, localRepo,
-		"worktree", "add", worktreePath, "-b", branch, "HEAD",
-	)
-
-	mgr := NewManager(openTestDB(t), t.TempDir())
-	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
-	ws := &Workspace{
-		ID:              "ws-delete-lock-race",
-		Platform:        "github",
-		PlatformHost:    "github.com",
-		RepoOwner:       "acme",
-		RepoName:        "widget",
-		ItemType:        db.WorkspaceItemTypePullRequest,
-		ItemNumber:      42,
-		GitHeadRef:      "feature/thing",
-		WorkspaceBranch: branch,
-		WorktreePath:    worktreePath,
-	}
-	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), localRepo, ws))
-	gitDir, owned, err := mgr.workspaceCleanupGitDir(t.Context(), ws)
-	require.NoError(err)
-	require.True(owned)
-	require.NotEmpty(gitDir)
-
-	require.NoError(os.RemoveAll(worktreePath))
-	runWorkspaceTestGit(t, localRepo, "worktree", "prune")
-	runWorkspaceTestGit(
-		t, localRepo,
-		"worktree", "add", worktreePath,
-		"-b", "foreign/race-replacement", "HEAD",
-	)
-	require.NoError(os.WriteFile(
-		filepath.Join(worktreePath, "foreign.txt"), []byte("keep me\n"), 0o644,
-	))
-	foreignHead := strings.TrimSpace(string(
-		runWorkspaceTestGit(t, worktreePath, "rev-parse", "HEAD"),
-	))
-
-	err = mgr.cleanupWorkspaceArtifactsForDeleteLocked(
-		t.Context(), gitDir, ws,
-	)
-
-	require.ErrorIs(err, ErrWorkspaceOwnershipUnproven)
-	require.FileExists(filepath.Join(worktreePath, ".git"))
-	contents, err := os.ReadFile(filepath.Join(worktreePath, "foreign.txt"))
-	require.NoError(err)
-	assert.Equal("keep me\n", string(contents))
-	assert.Equal(
-		foreignHead,
-		strings.TrimSpace(string(
-			runWorkspaceTestGit(t, worktreePath, "rev-parse", "HEAD"),
-		)),
-	)
-	assert.Contains(
-		string(runWorkspaceTestGit(t, localRepo, "worktree", "list", "--porcelain")),
-		worktreePath,
-	)
 }
 
 func TestCleanupIgnoresInvalidConfiguredBaseWhenWorktreeAbsent(t *testing.T) {

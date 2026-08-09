@@ -62,6 +62,10 @@ Workspace deletion is intentionally conservative.
 - Only after a clean preflight may runtime sessions and shells be stopped.
 - Only after runtime shutdown succeeds should destructive worktree and DB
   teardown continue.
+- A live worktree registration at the persisted path in the resolved repository
+  authorizes cleanup without an ownership marker; a same-repository replacement
+  is the workspace, but a symlink to another worktree is not.
+  (`internal/workspace/manager.go::gitDirOwnsCleanupWorktree`)
 - A confirmed delete publishes workspace absence from the application workflow before presenter-specific navigation
   or failure UI; releasing the initiating presenter must not suppress tombstones, hosted-session cleanup, or route invalidation
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::executeMutation`).

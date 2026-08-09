@@ -19,8 +19,8 @@ is not required for workspace deletion or retry cleanup.
 
 Cleanup will still preserve a checkout that belongs to another repository, a
 standalone replacement clone, or a path no longer registered by the resolved
-repository. The cleanup operation will recheck registration under the
-repository lock before removing the worktree and managed branches.
+repository. A same-repository live registration at the exact persisted path is
+treated as the workspace even if it appeared after cleanup planning.
 
 Ownership markers remain part of worktree creation and rollback, where they
 distinguish the generation kenn-forge just created from a replacement that may
@@ -32,5 +32,5 @@ have appeared during a failed setup.
   repair.
 - A manually created linked worktree at the exact persisted workspace path in
   the expected repository is treated as the workspace and can be deleted.
-- Replacement repositories and ownership changes during cleanup remain
-  protected by repository identity and the locked registration recheck.
+- Replacement repositories remain protected by repository identity; a
+  same-repository replacement at the persisted path is deleted.

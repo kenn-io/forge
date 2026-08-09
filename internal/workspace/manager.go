@@ -3375,6 +3375,13 @@ func worktreeRegistrationMetadataDir(
 func gitDirHasStaleWorktreeRegistration(
 	ctx context.Context, gitDir, worktreePath string,
 ) (bool, error) {
+	info, err := os.Lstat(worktreePath)
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return false, nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("stat workspace path: %w", err)
+	}
 	tracked, err := gitDirTracksWorktreePath(ctx, gitDir, worktreePath)
 	if err != nil || !tracked {
 		return false, err
@@ -3396,18 +3403,7 @@ func gitDirHasLiveWorktree(
 	if err != nil {
 		return false, fmt.Errorf("stat workspace path: %w", err)
 	}
-	isDirectory := info.IsDir()
-	if info.Mode()&os.ModeSymlink != 0 {
-		targetInfo, targetErr := os.Stat(worktreePath)
-		if errors.Is(targetErr, os.ErrNotExist) {
-			return false, nil
-		}
-		if targetErr != nil {
-			return false, fmt.Errorf("stat workspace symlink target: %w", targetErr)
-		}
-		isDirectory = targetInfo.IsDir()
-	}
-	if !isDirectory {
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return false, nil
 	}
 	isRoot, err := worktreePathIsRoot(ctx, worktreePath)
@@ -3486,13 +3482,7 @@ func gitDirOwnsCleanupWorktree(
 	if err != nil || owned {
 		return owned, err
 	}
-	live, err := gitDirHasLiveWorktree(ctx, gitDir, worktreePath)
-	if err != nil || !live {
-		return false, err
-	}
-	return false, fmt.Errorf(
-		"%w: %s", ErrWorkspaceOwnershipUnproven, worktreePath,
-	)
+	return gitDirHasLiveWorktree(ctx, gitDir, worktreePath)
 }
 
 func gitDirOwnsLinkedWorktree(

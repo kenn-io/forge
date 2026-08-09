@@ -358,7 +358,7 @@ func TestWorkspaceForceDeletePreservesForeignLinkedWorktreeAfterManagedPruneE2E(
 	)
 }
 
-func TestWorkspaceForceDeleteRejectsSameRepoReplacementAfterManagedPruneE2E(
+func TestWorkspaceForceDeleteRemovesSameRepoReplacementAfterManagedPruneE2E(
 	t *testing.T,
 ) {
 	t.Parallel()
@@ -394,23 +394,14 @@ func TestWorkspaceForceDeleteRejectsSameRepoReplacementAfterManagedPruneE2E(
 	)
 	require.NoError(err)
 	require.Equal(
-		http.StatusConflict, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
 	)
 
 	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
 	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal(ws.Id, stored.ID)
-	require.FileExists(filepath.Join(worktreePath, ".git"))
-	contents, err := os.ReadFile(filepath.Join(worktreePath, "base.txt"))
-	require.NoError(err)
-	assert.Equal("foreign dirty data\n", string(contents))
-	assert.Equal(foreignHead, testGitSHA(t, worktreePath, "HEAD"))
-	assert.Contains(
-		workspaceGitOutput(t, worktreePath, "status", "--porcelain"),
-		"M base.txt",
-	)
-	assert.Contains(
+	assert.Nil(stored)
+	require.NoDirExists(worktreePath)
+	assert.NotContains(
 		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
 		worktreePath,
 	)
@@ -420,7 +411,7 @@ func TestWorkspaceForceDeleteRejectsSameRepoReplacementAfterManagedPruneE2E(
 	)
 }
 
-func TestWorkspaceForceDeleteRejectsPreMarkerWorkspaceAfterUpgradeE2E(
+func TestWorkspaceForceDeleteRemovesPreMarkerWorkspaceAfterUpgradeE2E(
 	t *testing.T,
 ) {
 	t.Parallel()
@@ -450,26 +441,18 @@ func TestWorkspaceForceDeleteRejectsPreMarkerWorkspaceAfterUpgradeE2E(
 	)
 	require.NoError(err)
 	require.Equal(
-		http.StatusConflict, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
 	)
 
 	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
 	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal(ws.Id, stored.ID)
-	require.FileExists(filepath.Join(worktreePath, ".git"))
-	assert.Equal(
-		"kenn-forge/pr-1",
-		workspaceGitOutput(t, worktreePath, "branch", "--show-current"),
-	)
-	assert.Contains(
+	assert.Nil(stored)
+	require.NoDirExists(worktreePath)
+	assert.NotContains(
 		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
 		worktreePath,
 	)
-	assert.Equal(
-		testGitSHA(t, worktreePath, "HEAD"),
-		testGitSHA(t, fixture.bare, "refs/heads/kenn-forge/pr-1"),
-	)
+	requireGitRefMissing(t, fixture.bare, "refs/heads/kenn-forge/pr-1")
 }
 
 func TestWorkspaceForceDeleteRetainsLockedWorktreeE2E(t *testing.T) {
@@ -528,7 +511,7 @@ func TestWorkspaceForceDeleteRetainsLockedWorktreeE2E(t *testing.T) {
 	assert.Nil(stored)
 }
 
-func TestWorkspaceForceDeleteRejectsSymlinkToSameRepoWorktreeE2E(
+func TestWorkspaceForceDeleteForgetsSymlinkToSameRepoWorktreeE2E(
 	t *testing.T,
 ) {
 	t.Parallel()
@@ -561,13 +544,12 @@ func TestWorkspaceForceDeleteRejectsSymlinkToSameRepoWorktreeE2E(
 	)
 	require.NoError(err)
 	require.Equal(
-		http.StatusConflict, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
 	)
 
 	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
 	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal(ws.Id, stored.ID)
+	assert.Nil(stored)
 	pathInfo, err := os.Lstat(worktreePath)
 	require.NoError(err)
 	assert.NotZero(pathInfo.Mode() & os.ModeSymlink)
@@ -644,7 +626,7 @@ func TestWorkspaceCreateRejectsSymlinkedReusableWorktreeE2E(t *testing.T) {
 	assert.ErrorIs(err, os.ErrNotExist)
 }
 
-func TestWorkspaceRetryRejectsPreMarkerWorkspaceAfterUpgradeE2E(
+func TestWorkspaceRetryAcceptsPreMarkerWorkspaceAfterUpgradeE2E(
 	t *testing.T,
 ) {
 	t.Parallel()
@@ -656,6 +638,7 @@ func TestWorkspaceRetryRejectsPreMarkerWorkspaceAfterUpgradeE2E(
 	ctx := t.Context()
 
 	ws := createReadyWorkspace(t, ctx, fixture.client)
+	branch := workspaceGitOutput(t, ws.WorktreePath, "branch", "--show-current")
 	metadataDir := workspaceGitOutput(
 		t, ws.WorktreePath,
 		"rev-parse", "--path-format=absolute", "--git-dir",
@@ -669,20 +652,23 @@ func TestWorkspaceRetryRejectsPreMarkerWorkspaceAfterUpgradeE2E(
 	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
 	require.NoError(err)
 	require.Equal(
-		http.StatusConflict, retryResp.StatusCode(), string(retryResp.Body),
+		http.StatusAccepted, retryResp.StatusCode(), string(retryResp.Body),
 	)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
-	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal("error", stored.Status)
-	require.NotNil(stored.ErrorMessage)
-	assert.NotEmpty(*stored.ErrorMessage)
-	require.FileExists(filepath.Join(ws.WorktreePath, ".git"))
-	assert.Contains(
-		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
-		ws.WorktreePath,
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, ws.Id)
+	assert.Equal(branch, workspaceGitOutput(
+		t, ready.WorktreePath, "branch", "--show-current",
+	))
+	require.FileExists(filepath.Join(ready.WorktreePath, ".git"))
+	newMetadataDir := workspaceGitOutput(
+		t, ready.WorktreePath,
+		"rev-parse", "--path-format=absolute", "--git-dir",
 	)
+	marker, err := os.ReadFile(filepath.Join(
+		newMetadataDir, "kenn-forge-workspace-id",
+	))
+	require.NoError(err)
+	assert.Equal(ws.Id+"\n", string(marker))
 }
 
 func TestWorkspaceRetryCleansStalePreMarkerRegistrationE2E(t *testing.T) {

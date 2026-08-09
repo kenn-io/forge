@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import type { components } from "../../src/lib/api/generated/schema";
 import { mockApi } from "./support/mockApi";
 
 // Wire-level coverage for the head-pinning contract
@@ -11,6 +12,11 @@ import { mockApi } from "./support/mockApi";
 // and reviewed_head_sha; the PR #77 cases below cover divergent heads.
 const REVIEWED_SHA = "42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42";
 const SYNCED_SHA = "0123456789abcdef0123456789abcdef01234567";
+const MERGE_SUCCESS = {
+  merged: true,
+  message: "merged",
+  sha: REVIEWED_SHA,
+} satisfies components["schemas"]["MergePRBody"];
 
 const MERGE_PATH = "**/api/v1/pulls/github/acme/widgets/42/merge";
 const APPROVE_PATH = "**/api/v1/pulls/github/acme/widgets/42/approve";
@@ -181,7 +187,11 @@ test.describe("head-pinned merge and approve", () => {
     let mergeBody: Record<string, unknown> | null = null;
     await page.route(MERGE_PATH, async (route: Route) => {
       mergeBody = JSON.parse(route.request().postData() ?? "{}");
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MERGE_SUCCESS),
+      });
     });
 
     await gotoPull42(page);
@@ -220,7 +230,11 @@ test.describe("head-pinned merge and approve", () => {
     await mockPull77Detail(page, platformHead, reviewedHead);
     await page.route("**/api/v1/pulls/github/acme/widgets/77/merge", async (route: Route) => {
       mergeBody = JSON.parse(route.request().postData() ?? "{}");
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MERGE_SUCCESS),
+      });
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/77/approve", async (route: Route) => {
       approveBody = JSON.parse(route.request().postData() ?? "{}");

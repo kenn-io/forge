@@ -45,6 +45,16 @@ type splitLogHandler struct {
 	handlers []slog.Handler
 }
 
+type serveReadyListener struct {
+	net.Listener
+	notifyReady func()
+}
+
+func (l serveReadyListener) Accept() (net.Conn, error) {
+	l.notifyReady()
+	return l.Listener.Accept()
+}
+
 func (h splitLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	for _, handler := range h.handlers {
 		if handler.Enabled(ctx, level) {
@@ -366,20 +376,6 @@ func run(opts serve.Options) error {
 	if err := lockHandle.WriteMetadata(runtimeIdentity.LockMetadata); err != nil {
 		slog.Warn("write runtime metadata", "err", err)
 	}
-	if err := waitForRuntimeGate(ctx, runtimePublishGatePath, "publish"); err != nil {
-		_ = ln.Close()
-		return err
-	}
-	runtimePath, err := daemonruntime.Publish(runtimeIdentity.Record)
-	if err != nil {
-		_ = ln.Close()
-		return fmt.Errorf("write daemon runtime record: %w", err)
-	}
-	defer func() {
-		if err := os.Remove(runtimePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			slog.Warn("remove daemon runtime record", "err", err)
-		}
-	}()
 	proof, err := daemon.NewProof([]byte(authToken))
 	if err != nil {
 		_ = ln.Close()
@@ -390,13 +386,13 @@ func run(opts serve.Options) error {
 		_ = ln.Close()
 		return fmt.Errorf("initialize daemon ping: %w", err)
 	}
-	if err := waitForRuntimeGate(ctx, runtimeServeGatePath, "serve"); err != nil {
-		_ = ln.Close()
-		return err
+	daemonAccess := server.DaemonAccessOptions{
+		Token: authToken, RequireAPIAuth: cfg.API.RequireAuth,
+		ProofHandler: daemonProofHandler,
 	}
 
 	startupHandler := server.NewStartupHandler(
-		assets, cfg, server.ServerOptions{}, ln,
+		assets, cfg, server.ServerOptions{DaemonAccess: daemonAccess}, ln,
 	)
 	switcher := server.NewSwitchHandler(startupHandler)
 	httpSrv := &http.Server{
@@ -406,14 +402,17 @@ func run(opts serve.Options) error {
 		// responses are long-lived by design.
 		IdleTimeout: 60 * time.Second,
 	}
+	serveReady := make(chan struct{})
+	readyListener := serveReadyListener{
+		Listener:    ln,
+		notifyReady: sync.OnceFunc(func() { close(serveReady) }),
+	}
 	errCh := make(chan error, 1)
 	go func() {
-		if serveErr := httpSrv.Serve(ln); !errors.Is(serveErr, http.ErrServerClosed) {
+		if serveErr := httpSrv.Serve(readyListener); !errors.Is(serveErr, http.ErrServerClosed) {
 			errCh <- serveErr
 		}
 	}()
-
-	slog.Info(fmt.Sprintf("starting server at http://%s", ln.Addr().String()))
 
 	var database *db.DB
 	var srv *server.Server
@@ -469,6 +468,31 @@ func run(opts serve.Options) error {
 			slog.Warn(shutdownErr.message, "err", shutdownErr.err)
 		}
 	}()
+
+	select {
+	case <-serveReady:
+	case <-ctx.Done():
+		return fmt.Errorf("wait for HTTP server readiness: %w", ctx.Err())
+	case serveErr := <-errCh:
+		return fmt.Errorf("start HTTP server: %w", serveErr)
+	}
+	if err := waitForRuntimeGate(ctx, runtimePublishGatePath, "publish"); err != nil {
+		return err
+	}
+	runtimePath, err := daemonruntime.Publish(runtimeIdentity.Record)
+	if err != nil {
+		return fmt.Errorf("write daemon runtime record: %w", err)
+	}
+	defer func() {
+		if err := os.Remove(runtimePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("remove daemon runtime record", "err", err)
+		}
+	}()
+	if err := waitForRuntimeGate(ctx, runtimeServeGatePath, "serve"); err != nil {
+		return err
+	}
+
+	slog.Info(fmt.Sprintf("starting server at http://%s", ln.Addr().String()))
 
 	if ctx.Err() != nil {
 		slog.Info("shutting down")
@@ -583,10 +607,7 @@ func run(opts serve.Options) error {
 	srv = server.NewWithConfig(
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
-			DaemonAccess: server.DaemonAccessOptions{
-				Token: authToken, RequireAPIAuth: cfg.API.RequireAuth,
-				ProofHandler: daemonProofHandler,
-			},
+			DaemonAccess:        daemonAccess,
 			WorktreeDir:         filepath.Join(cfg.DataDir, "worktrees"),
 			PtyOwnerManagerPath: os.Getenv("KENN_FORGE_PTY_MANAGER"),
 			Telemetry:           telemetryReporter,
@@ -692,6 +713,7 @@ func waitForRuntimeGate(ctx context.Context, gatePath, phase string) error {
 	if err := os.WriteFile(gatePath+".ready", []byte("ready\n"), 0o600); err != nil {
 		return fmt.Errorf("%s runtime gate readiness: %w", phase, err)
 	}
+	defer func() { _ = os.Remove(gatePath + ".ready") }()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {

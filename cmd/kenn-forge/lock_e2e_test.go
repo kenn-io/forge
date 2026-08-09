@@ -321,7 +321,11 @@ func TestDaemonStartSerializesConfigMoveBeforeRuntimePublicationE2E(t *testing.T
 	require.NoError(err, stderr)
 }
 
-func TestDaemonStartPreservesUnauthenticatedLiveRuntimeE2E(t *testing.T) {
+// TestDaemonStartReusesForegroundDuringStartupE2E protects concurrent
+// foreground and background startup. If the foreground publishes before its
+// identity proof endpoint is ready, daemon start rejects the authoritative
+// lock holder instead of reusing it.
+func TestDaemonStartReusesForegroundDuringStartupE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	gatePath := filepath.Join(t.TempDir(), "runtime-serve-gate")
@@ -361,20 +365,14 @@ func TestDaemonStartPreservesUnauthenticatedLiveRuntimeE2E(t *testing.T) {
 	assert.True(daemon.ProcessAlive(liveRecord.PID))
 
 	_, stderr, err := fixture.run("start")
-	require.Error(err)
-	assert.Contains(stderr, "no authoritative match")
+	require.NoError(err, stderr)
 	records, err = fixture.store.List()
 	require.NoError(err)
 	require.Len(records, 1)
 	assert.Equal(liveRecord.PID, records[0].PID)
 
 	require.NoError(os.Remove(gatePath))
-	require.Eventually(func() bool {
-		_, _, found, findErr := daemonruntime.FindVerified(
-			t.Context(), fixture.store, dataDir,
-		)
-		return findErr == nil && found
-	}, 10*time.Second, 20*time.Millisecond)
+	waitForNoFile(t, gatePath+".ready", 10*time.Second)
 	_, stderr, err = fixture.run("stop")
 	require.NoError(err, stderr)
 	select {

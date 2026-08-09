@@ -83,6 +83,9 @@ and the root event stream.
   config home, even when `config.toml` changes `data_dir`; the record is a
   discovery surface and does not replace the authoritative data-directory
   lock/status (`internal/daemonruntime/runtime.go::Publish`).
+- Publish a runtime record only after the startup handler is installed and the
+  HTTP server enters its listener accept loop; lifecycle discovery still proves
+  the published loopback identity exactly before reuse (`cmd/kenn-forge/main.go::serveReadyListener.Accept`).
 - Status uses authenticated config identity before TOML, including for moved runtimes;
   invalid config cannot strand an attributable daemon, while proof-unavailable state
   may report only the configured `data_dir` lock

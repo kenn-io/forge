@@ -41,16 +41,17 @@ func (h *SwitchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type startupHandler struct {
-	hostOpts     HostCheckOptions
-	allowedHosts map[string]struct{}
-	basePath     string
-	spa          http.Handler
+	hostOpts       HostCheckOptions
+	allowedHosts   map[string]struct{}
+	daemonRequests daemonRequestPolicy
+	basePath       string
+	spa            http.Handler
 }
 
 // NewStartupHandler returns a minimal handler for the window between listener
-// bind and full backend readiness. It serves the real SPA shell and frontend
-// assets immediately, while API and websocket routes report service unavailable
-// until the full server is swapped in.
+// bind and full backend readiness. It serves daemon identity proof, the real
+// SPA shell, and frontend assets immediately, while other API and websocket
+// routes report service unavailable until the full server is swapped in.
 func NewStartupHandler(
 	frontend fs.FS,
 	cfg *config.Config,
@@ -81,8 +82,13 @@ func NewStartupHandler(
 	return &startupHandler{
 		hostOpts:     hostOpts,
 		allowedHosts: allowedHostsForListener(ln),
-		basePath:     basePath,
-		spa:          spa,
+		daemonRequests: daemonRequestPolicy{
+			token:          options.DaemonAccess.Token,
+			requireAPIAuth: options.DaemonAccess.RequireAPIAuth,
+			proof:          options.DaemonAccess.ProofHandler,
+		},
+		basePath: basePath,
+		spa:      spa,
 	}
 }
 
@@ -96,6 +102,10 @@ func writeStartupUnavailable(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	admission := h.daemonRequests.admit(w, r, h.hostOpts, false)
+	if admission.handled {
+		return
+	}
 	if !checkHost(w, r, h.hostOpts) {
 		return
 	}

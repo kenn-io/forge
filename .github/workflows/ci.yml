@@ -656,6 +656,8 @@ jobs:
         run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
       - name: Run E2E tests
+        env:
+          KENN_FORGE_E2E_INSECURE_ORIGIN: "1"
         run: cd frontend && ../node_modules/.bin/vp exec -- playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }}
 
       # The GitHub App setup page suite runs Desktop Chrome only, so it

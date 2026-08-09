@@ -170,6 +170,8 @@ test.describe("workspace sidebar full-stack", () => {
   });
 
   test("loads a real workspace from an insecure HTTP origin", async ({ page }) => {
+    test.skip(process.env.KENN_FORGE_E2E_INSECURE_ORIGIN !== "1", "Runs only in the isolated Playwright CI container");
+
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     let proxyServer: Server | null = null;

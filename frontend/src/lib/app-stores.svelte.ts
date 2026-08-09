@@ -226,7 +226,9 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     onSyncStatus: (status) => Effect.sync(() => syncStore.setSyncStatus(status)),
     onConfigChanged: handleConfigChanged,
     onWorkspaceCreated: (event) =>
-      KataWorkspaceCreationWorkflow.pipe(Effect.flatMap((workflow) => workflow.workspaceCreated(event.id))),
+      KataWorkspaceCreationWorkflow.pipe(
+        Effect.flatMap((workflow) => workflow.workspaceCreated(event.id, event.created)),
+      ),
     onWorkspaceStatus: (event) => {
       const workspaceID = event.id;
       return workspaceID === undefined

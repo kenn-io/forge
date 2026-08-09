@@ -479,10 +479,10 @@ func (s *Handler) RunWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 
 // PublishWorkspaceCreated announces the durable identity before asynchronous
 // setup can publish its first status transition.
-func (s *Handler) PublishWorkspaceCreated(workspaceID string) {
+func (s *Handler) PublishWorkspaceCreated(workspaceID string, created bool) {
 	s.hub.Broadcast(Event{
 		Type: "workspace_created",
-		Data: map[string]string{"id": workspaceID},
+		Data: map[string]any{"id": workspaceID, "created": created},
 	})
 }
 

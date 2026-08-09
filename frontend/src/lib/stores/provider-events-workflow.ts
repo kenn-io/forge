@@ -49,6 +49,7 @@ export class WorkspacePRAssociatedEvent extends Schema.Class<WorkspacePRAssociat
 
 export class WorkspaceCreatedEvent extends Schema.Class<WorkspaceCreatedEvent>("WorkspaceCreatedEvent")({
   id: Schema.String,
+  created: Schema.Boolean,
 }) {}
 
 export class WorkspaceStatusEvent extends Schema.Class<WorkspaceStatusEvent>("WorkspaceStatusEvent")({

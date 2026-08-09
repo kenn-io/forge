@@ -16,6 +16,9 @@ contracts remain in [`ui-interaction-contracts.md`](./ui-interaction-contracts.m
   own completion. The application workflow records `workspace_created`, launches only after `workspace_status` reports
   ready, and navigates only while the initiating Kata surface is current
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::createWorkspaceForSelectedIssue`).
+- Kata workspace creation uses bounded retry because task-scoped identity makes POST idempotent, then reconciles the
+  authoritative workspace list before clearing an uncertain result. Pending creation and deferred launch intent last only
+  for the browser runtime (`frontend/src/lib/features/kata/kata-workspace-creation-workflow.ts::runCreate`).
 
 ## Daemon Discovery
 

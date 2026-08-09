@@ -669,6 +669,55 @@ test.describe("workspace sidebar full-stack", () => {
     }
   });
 
+  test("completed workspace deletion remains observable after its terminal presenter is gone", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    let releaseDelete = (): void => {};
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const deletingWorkspace = await createIssueWorkspace(api, 10);
+      const remainingWorkspace = await createIssueWorkspace(api, 13);
+      const deleteStarted = Promise.withResolvers<void>();
+      const deleteMayContinue = Promise.withResolvers<void>();
+      releaseDelete = () => deleteMayContinue.resolve();
+
+      await page.route(`**/api/v1/workspaces/${deletingWorkspace.id}`, async (route) => {
+        if (route.request().method() !== "DELETE") {
+          await route.continue();
+          return;
+        }
+        deleteStarted.resolve();
+        await deleteMayContinue.promise;
+        await route.continue();
+      });
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${deletingWorkspace.id}`);
+      await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(2);
+      await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+      await page
+        .getByRole("dialog", { name: "Delete workspace?" })
+        .getByRole("button", { name: "Delete workspace" })
+        .click();
+      await deleteStarted.promise;
+
+      await page.locator(".workspace-list-sidebar .ws-row:not(.selected)").click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${remainingWorkspace.id}$`));
+
+      releaseDelete();
+      await expect.poll(async () => (await api!.get(`/api/v1/workspaces/${deletingWorkspace.id}`)).status()).toBe(404);
+      await expect(page).toHaveURL(new RegExp(`/terminal/${remainingWorkspace.id}$`));
+      const rows = page.locator(".workspace-list-sidebar .ws-row");
+      await expect(rows).toHaveCount(1);
+      await expect(rows).not.toContainText("Widget rendering broken on Safari");
+    } finally {
+      releaseDelete();
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("uncertain workspace delete feedback survives a real route round-trip", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;

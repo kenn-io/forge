@@ -257,7 +257,7 @@ func (h *Handler) kataWorkspaceCreateOutput(
 	}
 	resp := h.workspaceAPI.Response(ctx, summary)
 	resp.Created = created
-	h.workspaceAPI.PublishWorkspaceCreated(workspaceID)
+	h.workspaceAPI.PublishWorkspaceCreated(workspaceID, created)
 	return &workspaceapi.CreateWorkspaceOutput{
 		Status: httpStatusAccepted,
 		Body:   resp,

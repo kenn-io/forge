@@ -36,6 +36,9 @@ service is the supported tool here.
   must survive route changes or component teardown. Components project state,
   capture user intent, and start synchronous commands; they do not own durable
   retry, ordering, uncertainty, or deadline state.
+- Application ownership lasts for the browser runtime unless explicitly persisted.
+  Reload may discard presentation and deferred launch intent, but persisted server
+  authority must remain discoverable afterward.
 - Use scoped acquisition and finalizers for listeners, streams, readers,
   abort controllers, timers, presenters, and workflow owners. Teardown must be
   explicit at the same lifetime boundary that acquired the resource.

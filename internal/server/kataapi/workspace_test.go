@@ -1119,7 +1119,7 @@ repo_path = "acme/widget"
 	select {
 	case event := <-events:
 		assert.Equal("workspace_created", event.Type)
-		assert.Equal(map[string]string{"id": created.ID}, event.Data)
+		assert.Equal(map[string]any{"id": created.ID, "created": true}, event.Data)
 	case <-time.After(time.Second):
 		require.FailNow("timed out waiting for workspace creation event")
 	}
@@ -1222,6 +1222,7 @@ func TestCreateKataWorkspaceReusesExistingScopedTaskWorkspace(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
+	events := make(chan workspaceapi.Event, 8)
 	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
@@ -1237,7 +1238,10 @@ project_uid = "project-kata"
 provider = "github"
 platform_host = "github.com"
 repo_path = "acme/widget"
-`, &mockGH{})
+`, &mockGH{}, func(event workspaceapi.Event) uint64 {
+		events <- event
+		return 1
+	})
 	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
@@ -1260,6 +1264,21 @@ repo_path = "acme/widget"
 	var reused workspaceapi.WorkspaceResponse
 	require.NoError(json.NewDecoder(second.Body).Decode(&reused))
 	assert.False(reused.Created, "a reused existing workspace must not be marked as newly created")
+	for {
+		select {
+		case event := <-events:
+			data, ok := event.Data.(map[string]any)
+			if event.Type != "workspace_created" || !ok || data["created"] != false {
+				continue
+			}
+			assert.Equal(reused.ID, data["id"])
+			goto reuseEventObserved
+		case <-time.After(time.Second):
+			require.FailNow("timed out waiting for reused workspace event")
+		}
+	}
+
+reuseEventObserved:
 
 	assert.Equal(created.ID, reused.ID)
 	assert.Equal(created.ItemKey, reused.ItemKey)

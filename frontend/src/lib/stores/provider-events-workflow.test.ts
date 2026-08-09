@@ -133,12 +133,15 @@ it.layer(ProviderEventsTest)("workspace lifecycle events", (it) => {
       const source = yield* probe.awaitSource;
       emitOpen(source);
 
-      emitFrame(source, "workspace_created", { id: "ws-1" }, "1");
+      emitFrame(source, "workspace_created", { id: "ws-1", created: false }, "1");
       emitFrame(source, "workspace_status", { id: "ws-1", status: "ready" }, "2");
 
       const created = yield* Queue.take(events);
       assert.strictEqual(created.type, "workspace_created");
-      if (created.type === "workspace_created") assert.strictEqual(created.payload.id, "ws-1");
+      if (created.type === "workspace_created") {
+        assert.strictEqual(created.payload.id, "ws-1");
+        assert.isFalse(created.payload.created);
+      }
       const status = yield* Queue.take(events);
       assert.strictEqual(status.type, "workspace_status");
       if (status.type === "workspace_status") {

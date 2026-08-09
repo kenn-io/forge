@@ -320,6 +320,75 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("deferred merge completion clears the workspace identity after confirmed cleanup", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const server = isolatedServer;
+      const apiContext = api;
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" && response.url() === `${server.info.base_url}/api/v1/workspaces`,
+      );
+      await page.getByRole("button", { name: "Create Workspace", exact: true }).filter({ visible: true }).click();
+      const createdWorkspace = (await (await createResponsePromise).json()) as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(apiContext, createdWorkspace.id);
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toBeVisible();
+      await launcher.getByRole("button", { name: "Close" }).click();
+
+      const pendingCI = await apiContext.post("/__e2e/pr-ci-state/pending");
+      expect(pendingCI.ok(), await pendingCI.text()).toBe(true);
+      await page.reload();
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      const reloadedLauncher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(reloadedLauncher).toBeVisible();
+      await reloadedLauncher.getByRole("button", { name: "Close" }).click();
+      await expect(reloadedLauncher).toBeHidden();
+      await page.locator(".btn--merge").first().click();
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
+      await expect(modal.getByRole("checkbox", { name: "Delete workspace after merge" })).toBeChecked();
+      const deferredRequest = page.waitForRequest(
+        (request) =>
+          request.method() === "POST" &&
+          new URL(request.url()).pathname === "/api/v1/pulls/github/acme/widgets/1/merge/deferred",
+      );
+      const deferredResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === "/api/v1/pulls/github/acme/widgets/1/merge/deferred",
+      );
+      await modal.getByRole("button", { name: "Merge after CI is complete" }).click();
+      expect((await deferredRequest).postDataJSON()).toMatchObject({ delete_workspace_id: createdWorkspace.id });
+      expect((await deferredResponse).status()).toBe(202);
+
+      const successfulCI = await apiContext.post("/__e2e/pr-ci-state/success");
+      expect(successfulCI.ok(), await successfulCI.text()).toBe(true);
+      await expect
+        .poll(async () => (await apiContext.get(`/api/v1/workspaces/${createdWorkspace.id}`)).status(), {
+          // The production deferred-merge worker polls once per minute. If
+          // its first refresh wins the race with the fixture's CI update,
+          // the next authoritative completion is intentionally one tick away.
+          timeout: 90_000,
+        })
+        .toBe(404);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toHaveCount(0);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("a merge cleanup warning keeps the linked workspace and reports partial success", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

@@ -8,8 +8,10 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import type { components } from "../../src/lib/api/generated/schema.js";
 import { startIsolatedE2EServerWithOptions } from "./support/e2eServer";
 import { createDocsFixture } from "./support/docsFixture";
+import { openSettingsPanel } from "./support/settingsPanel";
 
 type WorkspaceStatusResponse = components["schemas"]["WorkspaceResponse"];
+type WorkspaceRuntimeResponse = components["schemas"]["WorkspaceRuntimeResponse"];
 
 // freshProcess everywhere in this file: kata tests point the server
 // at per-test daemon catalogs via process.env.KATA_HOME, which only
@@ -1611,6 +1613,142 @@ test("kata workspace creation navigates from the lifecycle event before the POST
   } finally {
     if (!responseReleased) releaseResponse();
     await page.unrouteAll({ behavior: "ignoreErrors" });
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata workspace creation recovers when the first POST never reaches the server", async ({ page }) => {
+  const workspaceProject: ProjectRow = {
+    id: 7,
+    uid: "project-widgets",
+    name: "widgets",
+    metadata: {},
+    open_count: 1,
+  };
+  const workspaceIssue = issueSummary({
+    id: 73,
+    uid: "issue-workspace-retry",
+    project_id: workspaceProject.id,
+    project_uid: workspaceProject.uid,
+    project_name: workspaceProject.name,
+    short_id: "WID-3",
+    qualified_id: "widgets#WID-3",
+    title: "Retry an unaccepted create",
+    body: "A failed transport before acceptance must leave a recoverable action.",
+    labels: [],
+    metadata: {},
+  });
+  const backend = await startKataBackend({ projects: [workspaceProject], issues: [workspaceIssue] });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+  let createAttempts = 0;
+
+  try {
+    await page.route("**/api/v1/kata/workspaces", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      createAttempts += 1;
+      if (createAttempts === 1) {
+        await route.abort("connectionfailed");
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto(`${server.info.base_url}/kata?issue=${encodeURIComponent(workspaceIssue.uid)}`);
+    await page.getByRole("button", { name: "Create workspace", exact: true }).click();
+
+    await expect(page).toHaveURL(/\/terminal\/[^/]+$/, { timeout: 30_000 });
+    expect(createAttempts).toBe(2);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata create-and-launch starts the selected agent exactly once after setup is ready", async ({ page }) => {
+  const workspaceProject: ProjectRow = {
+    id: 7,
+    uid: "project-widgets",
+    name: "widgets",
+    metadata: {},
+    open_count: 1,
+  };
+  const workspaceIssue = issueSummary({
+    id: 72,
+    uid: "issue-workspace-launch",
+    project_id: workspaceProject.id,
+    project_uid: workspaceProject.uid,
+    project_name: workspaceProject.name,
+    short_id: "WID-2",
+    qualified_id: "widgets#WID-2",
+    title: "Launch after setup",
+    body: "The selected agent starts only after the workspace becomes ready.",
+    labels: [],
+    metadata: {},
+  });
+  const backend = await startKataBackend({ projects: [workspaceProject], issues: [workspaceIssue] });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+  const agentKey = "kata-e2e-agent";
+  const agentLabel = "Kata E2E Agent";
+  let launchRequests = 0;
+
+  try {
+    await page.goto(`${server.info.base_url}/settings`);
+    await openSettingsPanel(page, "Workspace agents");
+    await page.getByRole("button", { name: "Add custom agent" }).click();
+    await page.getByLabel("Custom agent key").fill(agentKey);
+    await page.getByLabel("Custom agent label").fill(agentLabel);
+    await page.getByLabel(`${agentLabel} binary`).fill("sh");
+    const settingsSaved = page.waitForResponse(
+      (response) => response.request().method() === "PUT" && response.url().endsWith("/api/v1/settings"),
+    );
+    await page.getByRole("button", { name: "Save workspace agents" }).click();
+    expect((await settingsSaved).status()).toBe(200);
+
+    page.on("request", (request) => {
+      if (request.method() === "POST" && /\/api\/v1\/workspaces\/[^/]+\/runtime\/sessions$/.test(request.url())) {
+        launchRequests += 1;
+      }
+    });
+    await page.goto(`${server.info.base_url}/kata?issue=${encodeURIComponent(workspaceIssue.uid)}`);
+    const createResponse = page.waitForResponse(
+      (response) => response.request().method() === "POST" && response.url().endsWith("/api/v1/kata/workspaces"),
+    );
+    await page.getByRole("button", { name: "Create workspace options" }).click();
+    await page.getByRole("menuitem", { name: agentLabel }).click();
+    const createdResponse = await createResponse;
+    expect(createdResponse.status(), await createdResponse.text()).toBe(202);
+    const created = (await createdResponse.json()) as WorkspaceStatusResponse;
+
+    await expect(page).toHaveURL(new RegExp(`/terminal/${created.id}$`));
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${server.info.base_url}/api/v1/workspaces/${created.id}/runtime`);
+        expect(response.ok(), await response.text()).toBe(true);
+        const runtime = (await response.json()) as WorkspaceRuntimeResponse;
+        return (runtime.sessions ?? []).filter((session) => session.target_key === agentKey).length;
+      })
+      .toBe(1);
+    expect(launchRequests).toBe(1);
+
+    await page.reload();
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${server.info.base_url}/api/v1/workspaces/${created.id}/runtime`);
+        const runtime = (await response.json()) as WorkspaceRuntimeResponse;
+        return (runtime.sessions ?? []).filter((session) => session.target_key === agentKey).length;
+      })
+      .toBe(1);
+    expect(launchRequests).toBe(1);
+  } finally {
     await server.stop();
     kataHome.restore();
     await backend.close();

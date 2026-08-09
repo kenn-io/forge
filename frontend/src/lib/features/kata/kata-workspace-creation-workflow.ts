@@ -4,6 +4,7 @@ import { ApiProblemError, InvalidExternalPayload, TransientTransportError } from
 import { executeGeneratedApiRequest, GeneratedApi } from "../../api/generated-api.js";
 import type { components } from "../../api/generated/schema.js";
 import { createKataWorkspaceForTask, type KataWorkspaceTaskIdentity } from "../../api/kata/workspaces.js";
+import { isTransientFailure, transientRetrySchedule } from "../../api/retry-policy.js";
 import {
   beginWorkspaceCreate,
   endWorkspaceCreate,
@@ -36,7 +37,10 @@ export interface KataWorkspaceCreationRequest {
 
 export interface KataWorkspaceCreationWorkflowService {
   readonly submit: (request: KataWorkspaceCreationRequest) => Effect.Effect<void>;
-  readonly workspaceCreated: (workspaceID: string) => Effect.Effect<void, KataWorkspaceCreationFailure>;
+  readonly workspaceCreated: (
+    workspaceID: string,
+    created: boolean,
+  ) => Effect.Effect<void, KataWorkspaceCreationFailure>;
   readonly workspaceStatus: (workspaceID: string) => Effect.Effect<void, KataWorkspaceCreationFailure>;
   readonly reconcile: Effect.Effect<void, KataWorkspaceCreationFailure>;
 }
@@ -78,10 +82,9 @@ export function makeKataWorkspaceCreationWorkflow(
     const workers = yield* FiberMap.make<string>();
     const mutationLock = yield* Semaphore.make(1);
 
-    const removeRejectedRequest = Effect.fn("KataWorkspaceCreation.removeRejected")(function* (
+    const removePendingRequest = Effect.fn("KataWorkspaceCreation.removePending")(function* (
       key: string,
       request: KataWorkspaceCreationRequest,
-      failure: ApiProblemError,
     ) {
       const removed = yield* Ref.modify(
         pending,
@@ -92,17 +95,133 @@ export function makeKataWorkspaceCreationWorkflow(
           return [true, next];
         },
       );
-      if (!removed) return;
-      endWorkspaceCreate(request.itemIdentity);
+      if (removed) endWorkspaceCreate(request.itemIdentity);
+      return removed;
+    });
+
+    const removeRejectedRequest = Effect.fn("KataWorkspaceCreation.removeRejected")(function* (
+      key: string,
+      request: KataWorkspaceCreationRequest,
+      failure: ApiProblemError,
+    ) {
+      if (!(yield* removePendingRequest(key, request))) return;
       yield* options.notify(failureMessage(failure), "danger");
+    });
+
+    const removeAwaiting = (workspaceID: string): Effect.Effect<void> =>
+      Ref.update(awaitingReady, (current) => {
+        if (!current.has(workspaceID)) return current;
+        const next = new Map(current);
+        next.delete(workspaceID);
+        return next;
+      });
+
+    const publishAccepted = Effect.fn("KataWorkspaceCreation.publishAccepted")(function* (
+      request: KataWorkspaceCreationRequest,
+      workspace: KataWorkspaceRecord,
+      firstConfirmation: boolean,
+      created?: boolean | undefined,
+    ) {
+      recordWorkspaceCreated(request.itemIdentity, { id: workspace.id, status: workspace.status });
+      if (workspace.status === "ready") {
+        if (request.launchTargetKey) queueWorkspaceLaunch(workspace.id, request.launchTargetKey, undefined);
+        yield* removeAwaiting(workspace.id);
+      } else if (workspace.status === "error") {
+        yield* removeAwaiting(workspace.id);
+        yield* options.notify(workspace.error_message ?? "Workspace setup failed.", "danger");
+      } else if (request.launchTargetKey) {
+        yield* Ref.update(awaitingReady, (current) => new Map(current).set(workspace.id, request));
+      }
+      if (!firstConfirmation) return;
+      if (request.presentation.isCurrent()) {
+        yield* request.presentation.navigate(workspace.id);
+      } else {
+        let message = "Workspace is ready.";
+        if (created === true) message = "Workspace created.";
+        if (created === false) message = "Workspace already exists.";
+        yield* options.notify(message, "default");
+      }
+    });
+
+    const settleLoaded = Effect.fn("KataWorkspaceCreation.settleLoaded")(function* (
+      workspace: KataWorkspaceRecord,
+      created?: boolean | undefined,
+    ) {
+      yield* mutationLock.withPermit(
+        Effect.gen(function* () {
+          const currentPending = yield* Ref.get(pending);
+          const matched = Array.from(currentPending.entries()).find(([, request]) =>
+            workspaceMatchesPurpose(workspace, request.purpose),
+          );
+          if (matched !== undefined) {
+            const [key, request] = matched;
+            yield* Ref.update(pending, (current) => {
+              if (current.get(key) !== request) return current;
+              const next = new Map(current);
+              next.delete(key);
+              return next;
+            });
+            endWorkspaceCreate(request.itemIdentity);
+            yield* publishAccepted(request, workspace, true, created);
+            return;
+          }
+          const awaiting = (yield* Ref.get(awaitingReady)).get(workspace.id);
+          if (awaiting !== undefined) yield* publishAccepted(awaiting, workspace, false);
+        }),
+      );
+    });
+
+    const settleWorkspace = Effect.fn("KataWorkspaceCreation.settleWorkspace")(function* (workspaceID: string) {
+      const workspace = yield* port.load(workspaceID);
+      yield* settleLoaded(workspace);
+    });
+
+    const settleCreatedWorkspace = Effect.fn("KataWorkspaceCreation.settleCreatedWorkspace")(function* (
+      workspaceID: string,
+      created: boolean,
+    ) {
+      if ((yield* Ref.get(pending)).size === 0) return;
+      const workspace = yield* port.load(workspaceID);
+      yield* settleLoaded(workspace, created);
+    });
+
+    const settleWorkspaceStatus = Effect.fn("KataWorkspaceCreation.settleWorkspaceStatus")(function* (
+      workspaceID: string,
+    ) {
+      if ((yield* Ref.get(pending)).size === 0 && !(yield* Ref.get(awaitingReady)).has(workspaceID)) return;
+      yield* settleWorkspace(workspaceID);
+    });
+
+    const endUnconfirmedRequest = Effect.fn("KataWorkspaceCreation.endUnconfirmed")(function* (
+      key: string,
+      request: KataWorkspaceCreationRequest,
+    ) {
+      if (!(yield* removePendingRequest(key, request))) return;
+      yield* options.notify("Workspace creation could not be confirmed. Try again.", "danger");
+    });
+
+    const reconcileUncertainCreate = Effect.fn("KataWorkspaceCreation.reconcileUncertain")(function* (
+      key: string,
+      request: KataWorkspaceCreationRequest,
+    ) {
+      const matched = yield* port.list().pipe(
+        Effect.map((workspaces) => workspaces.find((workspace) => workspaceMatchesPurpose(workspace, request.purpose))),
+        Effect.catch(() => Effect.succeed(undefined)),
+      );
+      if (matched !== undefined) {
+        yield* settleLoaded(matched);
+        return;
+      }
+      yield* endUnconfirmedRequest(key, request);
     });
 
     const runCreate = (key: string, request: KataWorkspaceCreationRequest) =>
       port.create(request.purpose).pipe(
+        Effect.retry({ schedule: transientRetrySchedule, while: isTransientFailure }),
         Effect.catchTag("ApiProblemError", (failure) => removeRejectedRequest(key, request, failure)),
         Effect.catchTags({
-          InvalidExternalPayload: () => Effect.void,
-          TransientTransportError: () => Effect.void,
+          InvalidExternalPayload: () => reconcileUncertainCreate(key, request),
+          TransientTransportError: () => reconcileUncertainCreate(key, request),
         }),
       );
 
@@ -120,87 +239,12 @@ export function makeKataWorkspaceCreationWorkflow(
       yield* FiberMap.run(workers, key, runCreate(key, request));
     });
 
-    const removeAwaiting = (workspaceID: string): Effect.Effect<void> =>
-      Ref.update(awaitingReady, (current) => {
-        if (!current.has(workspaceID)) return current;
-        const next = new Map(current);
-        next.delete(workspaceID);
-        return next;
-      });
-
-    const publishAccepted = Effect.fn("KataWorkspaceCreation.publishAccepted")(function* (
-      request: KataWorkspaceCreationRequest,
-      workspace: KataWorkspaceRecord,
-      firstConfirmation: boolean,
-    ) {
-      recordWorkspaceCreated(request.itemIdentity, { id: workspace.id, status: workspace.status });
-      if (workspace.status === "ready") {
-        if (request.launchTargetKey) queueWorkspaceLaunch(workspace.id, request.launchTargetKey, undefined);
-        yield* removeAwaiting(workspace.id);
-      } else if (workspace.status === "error") {
-        yield* removeAwaiting(workspace.id);
-        yield* options.notify(workspace.error_message ?? "Workspace setup failed.", "danger");
-      } else if (request.launchTargetKey) {
-        yield* Ref.update(awaitingReady, (current) => new Map(current).set(workspace.id, request));
-      }
-      if (!firstConfirmation) return;
-      if (request.presentation.isCurrent()) {
-        yield* request.presentation.navigate(workspace.id);
-      } else {
-        yield* options.notify("Workspace created.", "default");
-      }
-    });
-
-    const settleLoaded = Effect.fn("KataWorkspaceCreation.settleLoaded")(function* (workspace: KataWorkspaceRecord) {
-      yield* mutationLock.withPermit(
-        Effect.gen(function* () {
-          const currentPending = yield* Ref.get(pending);
-          const matched = Array.from(currentPending.entries()).find(([, request]) =>
-            workspaceMatchesPurpose(workspace, request.purpose),
-          );
-          if (matched !== undefined) {
-            const [key, request] = matched;
-            yield* Ref.update(pending, (current) => {
-              if (current.get(key) !== request) return current;
-              const next = new Map(current);
-              next.delete(key);
-              return next;
-            });
-            endWorkspaceCreate(request.itemIdentity);
-            yield* publishAccepted(request, workspace, true);
-            return;
-          }
-          const awaiting = (yield* Ref.get(awaitingReady)).get(workspace.id);
-          if (awaiting !== undefined) yield* publishAccepted(awaiting, workspace, false);
-        }),
-      );
-    });
-
-    const settleWorkspace = Effect.fn("KataWorkspaceCreation.settleWorkspace")(function* (workspaceID: string) {
-      const workspace = yield* port.load(workspaceID);
-      yield* settleLoaded(workspace);
-    });
-
-    const settleCreatedWorkspace = Effect.fn("KataWorkspaceCreation.settleCreatedWorkspace")(function* (
-      workspaceID: string,
-    ) {
-      if ((yield* Ref.get(pending)).size === 0) return;
-      yield* settleWorkspace(workspaceID);
-    });
-
-    const settleWorkspaceStatus = Effect.fn("KataWorkspaceCreation.settleWorkspaceStatus")(function* (
-      workspaceID: string,
-    ) {
-      if ((yield* Ref.get(pending)).size === 0 && !(yield* Ref.get(awaitingReady)).has(workspaceID)) return;
-      yield* settleWorkspace(workspaceID);
-    });
-
     const reconcile = Effect.gen(function* () {
       const currentPending = yield* Ref.get(pending);
       const currentAwaiting = yield* Ref.get(awaitingReady);
       if (currentPending.size === 0 && currentAwaiting.size === 0) return;
       const workspaces = yield* port.list();
-      yield* Effect.forEach(workspaces, settleLoaded, { discard: true });
+      yield* Effect.forEach(workspaces, (workspace) => settleLoaded(workspace), { discard: true });
     });
 
     return {

@@ -1,10 +1,13 @@
 import { assert, describe, it } from "@effect/vitest";
 import { Deferred, Effect, Ref } from "effect";
+import { TestClock } from "effect/testing";
 import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
 import {
   discardWorkspaceLaunch,
+  isWorkspaceCreatePending,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
+import { TransientTransportError } from "../../api/effect-errors.js";
 import type { KataWorkspaceResponse } from "../../api/kata/workspaces.js";
 import {
   makeKataWorkspaceCreationWorkflow,
@@ -144,7 +147,7 @@ describe("KataWorkspaceCreationWorkflow", () => {
           },
         });
 
-        yield* workflow.workspaceCreated("ws-1");
+        yield* workflow.workspaceCreated("ws-1", true);
         assert.deepStrictEqual(yield* Ref.get(navigated), ["ws-1"]);
         assert.isNull(discardWorkspaceLaunch("ws-1", undefined));
 
@@ -181,8 +184,37 @@ describe("KataWorkspaceCreationWorkflow", () => {
         yield* workflow.reconcile;
 
         assert.strictEqual(yield* Ref.get(navigated), 0);
-        assert.deepStrictEqual(yield* Ref.get(notices), ["Workspace created."]);
+        assert.deepStrictEqual(yield* Ref.get(notices), ["Workspace is ready."]);
         assert.strictEqual(discardWorkspaceLaunch("ws-1", undefined), "codex");
+      }),
+    ),
+  );
+
+  it.effect("reports an event-confirmed reused workspace without calling it newly created", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        resetWorkspaceCreatePendingForTest();
+        yield* Effect.addFinalizer(() => Effect.sync(resetWorkspaceCreatePendingForTest));
+        const notices = yield* Ref.make<readonly string[]>([]);
+        const port: KataWorkspaceCreationPort = {
+          create: () => Effect.void,
+          load: () => Effect.succeed(workspace("ready")),
+          list: () => Effect.succeed([]),
+        };
+        const workflow = yield* makeKataWorkspaceCreationWorkflow(port, {
+          notify: (message) => Ref.update(notices, (current) => [...current, message]),
+        });
+        yield* workflow.submit({
+          ...request,
+          presentation: {
+            isCurrent: () => false,
+            navigate: () => Effect.void,
+          },
+        });
+
+        yield* workflow.workspaceCreated("ws-1", false);
+
+        assert.deepStrictEqual(yield* Ref.get(notices), ["Workspace already exists."]);
       }),
     ),
   );
@@ -201,6 +233,44 @@ describe("KataWorkspaceCreationWorkflow", () => {
         yield* workflow.workspaceStatus("unrelated");
 
         assert.strictEqual(yield* Ref.get(loads), 0);
+      }),
+    ),
+  );
+
+  it.effect("ends an unconfirmed create after bounded transport recovery so the task can be retried", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        resetWorkspaceCreatePendingForTest();
+        yield* Effect.addFinalizer(() => Effect.sync(resetWorkspaceCreatePendingForTest));
+        const attempts = yield* Ref.make(0);
+        const notices = yield* Ref.make<readonly string[]>([]);
+        const port: KataWorkspaceCreationPort = {
+          create: () =>
+            Ref.updateAndGet(attempts, (count) => count + 1).pipe(
+              Effect.andThen(
+                Effect.fail(
+                  TransientTransportError.make({
+                    operation: "create Kata workspace",
+                    cause: new Error("connection refused"),
+                  }),
+                ),
+              ),
+            ),
+          load: () => Effect.succeed(workspace("creating")),
+          list: () => Effect.succeed([]),
+        };
+        const workflow = yield* makeKataWorkspaceCreationWorkflow(port, {
+          notify: (message) => Ref.update(notices, (current) => [...current, message]),
+        });
+
+        yield* workflow.submit(request);
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("5 seconds");
+        yield* Effect.yieldNow;
+
+        assert.deepStrictEqual(yield* Ref.get(notices), ["Workspace creation could not be confirmed. Try again."]);
+        assert.strictEqual(yield* Ref.get(attempts), 3);
+        assert.isFalse(isWorkspaceCreatePending(itemIdentity));
       }),
     ),
   );

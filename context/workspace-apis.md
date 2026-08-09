@@ -123,8 +123,10 @@ embedder protocol for arbitrary host state.
   page and terminal picker.
 - `GET /workspaces/{id}`: load one persisted workspace for terminal view.
 - Workspace creation is event-confirmed rather than response-owned. After accepting a purpose payload, the backend emits
-  `workspace_created` with the persisted ID; clients load that ID through the generated workspace API to recover canonical
-  identity. Later `workspace_status` events report ready or error, and reconnect reconciliation must recover missed events.
+  `workspace_created` with the persisted ID and a `created` boolean that distinguishes a new workspace from task-scoped
+  reuse; clients load that ID through the generated workspace API to recover canonical identity.
+- The created event precedes asynchronous setup status and duplicate delivery is idempotent. When replay is stale, list
+  reconciliation recovers persisted identity and status without replaying launch or navigation presentation.
 - List/detail reads return persisted plus last-known-good enrichment without
   foreground git or tmux probes; stale components reconcile through bounded
   background workers (`internal/server/workspaceapi/workspace_enrichment.go::toCachedWorkspaceResponse`).

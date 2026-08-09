@@ -34,6 +34,7 @@ type ServerOptions struct {
 	HostCheckAllowLoopbackAnyPort      bool
 	WorktreeDir                        string
 	DisableWorkspaceBackgroundMonitors bool
+	Broadcast                          func(workspaceapi.Event) uint64
 }
 
 type Server struct {
@@ -130,6 +131,7 @@ func newKataTestServer(
 	}
 	workspaceHandler := workspaceapi.New(workspaceapi.Deps{
 		DB: database, Resolver: resolver, Workspaces: workspaces,
+		Broadcast: options.Broadcast,
 	})
 	handler := New(Deps{
 		DB:               database,

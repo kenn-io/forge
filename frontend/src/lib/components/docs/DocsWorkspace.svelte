@@ -1439,18 +1439,21 @@
               Effect.map((result): PullConfirmation => ({ kind: "response", result })),
             ),
           );
-          const treeSnapshot = yield* readTree(folderID, requestedAPI, docsMutationOwner);
-          const gitStatusSnapshot = yield* readGitStatus(folderID, requestedAPI, docsMutationOwner);
-          const documentSnapshot =
-            docPath === null ? null : yield* readDoc(folderID, docPath, requestedAPI, docsMutationOwner);
+          const [treeSnapshot, gitStatusSnapshot, documentSnapshot] = yield* Effect.all(
+            [
+              reconcileTree(folderID, requestedAPI),
+              reconcileGitStatus(folderID, requestedAPI),
+              docPath === null
+                ? Effect.succeed(null)
+                : reconcileDocument(folderID, docPath, requestedAPI),
+            ],
+            { concurrency: "unbounded" },
+          );
           return {
             confirmation,
-            tree: { value: treeSnapshot, error: null },
-            gitStatus: { value: gitStatusSnapshot, error: null },
-            document:
-              docPath === null
-                ? null
-                : { path: docPath, value: documentSnapshot, error: null },
+            tree: treeSnapshot,
+            gitStatus: gitStatusSnapshot,
+            document: documentSnapshot,
           } satisfies PullReconciliation;
         }),
       ),
@@ -1471,11 +1474,20 @@
             applyDocumentReconciliation(folderID, reconciliation.document);
           }
           if (route.folder !== folderID) return;
+          const degradedRefreshes = [
+            reconciliation.tree?.error === null ? null : "tree",
+            reconciliation.gitStatus?.error === null ? null : "Git status",
+            reconciliation.document === null || reconciliation.document.error === null ? null : "open document",
+          ].filter((label): label is string => label !== null);
+          const refreshNotice =
+            degradedRefreshes.length === 0
+              ? ""
+              : ` Some views could not be refreshed: ${degradedRefreshes.join(", ")}.`;
           gitNotice = {
             kind: "success",
             text: reconciliation.confirmation.result.up_to_date
-              ? "Already up to date."
-              : `Pulled to ${reconciliation.confirmation.result.short_commit}.`,
+              ? `Already up to date.${refreshNotice}`
+              : `Pulled to ${reconciliation.confirmation.result.short_commit}.${refreshNotice}`,
           };
         },
         onDone: () => {

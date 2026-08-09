@@ -5,8 +5,11 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { components } from "../../src/lib/api/generated/schema.js";
 import { startIsolatedE2EServerWithOptions } from "./support/e2eServer";
 import { createDocsFixture } from "./support/docsFixture";
+
+type WorkspaceStatusResponse = components["schemas"]["WorkspaceResponse"];
 
 // freshProcess everywhere in this file: kata tests point the server
 // at per-test daemon catalogs via process.env.KATA_HOME, which only
@@ -1541,6 +1544,78 @@ async function closeServer(server: Server): Promise<void> {
     server.closeIdleConnections();
   });
 }
+
+test("kata workspace creation navigates from the lifecycle event before the POST response returns", async ({
+  page,
+}) => {
+  const workspaceProject: ProjectRow = {
+    id: 7,
+    uid: "project-widgets",
+    name: "widgets",
+    metadata: {},
+    open_count: 1,
+  };
+  const workspaceIssue = issueSummary({
+    id: 71,
+    uid: "issue-workspace-event",
+    project_id: workspaceProject.id,
+    project_uid: workspaceProject.uid,
+    project_name: workspaceProject.name,
+    short_id: "WID-1",
+    qualified_id: "widgets#WID-1",
+    title: "Create asynchronously",
+    body: "The accepted purpose must outlive its detail presenter.",
+    labels: [],
+    metadata: {},
+  });
+  const backend = await startKataBackend({ projects: [workspaceProject], issues: [workspaceIssue] });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+  let releaseResponse = (): void => {};
+  let responseReleased = false;
+  const responseMayReturn = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  let markCreated!: (workspaceID: string) => void;
+  const created = new Promise<string>((resolve) => {
+    markCreated = resolve;
+  });
+
+  try {
+    await page.route("**/api/v1/kata/workspaces", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      const payload = (await response.json()) as WorkspaceStatusResponse;
+      markCreated(payload.id);
+      await responseMayReturn;
+      await route.fulfill({ response });
+    });
+
+    await page.goto(`${server.info.base_url}/kata?issue=${encodeURIComponent(workspaceIssue.uid)}`);
+    await page.getByRole("button", { name: "Create workspace", exact: true }).click();
+    const workspaceID = await created;
+
+    await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceID}$`));
+    releaseResponse();
+    responseReleased = true;
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${server.info.base_url}/api/v1/workspaces/${workspaceID}`);
+        const workspace = (await response.json()) as WorkspaceStatusResponse;
+        return workspace.status;
+      })
+      .toMatch(/^(ready|error)$/);
+  } finally {
+    if (!responseReleased) releaseResponse();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
 
 test("kata workspace reads tasks through Kenn Forge snapshots", async ({ page }) => {
   const backend = await startKataBackend();

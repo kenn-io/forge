@@ -523,6 +523,7 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	require.Equal("merge-sha", completed.SHA)
 	require.Equal("2026-06-15T12:00:00Z", completed.CompletedAt)
 	require.Equal("workspace has uncommitted changes: notes.txt", completed.Warning)
+	require.Empty(completed.DeletedWorkspaceID)
 	require.Equal("ws-1", deletedID)
 
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)

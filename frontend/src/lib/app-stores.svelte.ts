@@ -33,6 +33,8 @@ import { beginTerminalSettingsHydration } from "./stores/terminal-settings-persi
 import { applySettingsHydration } from "./stores/settings-hydration.js";
 import { createEventsStore } from "./stores/events.svelte.js";
 import type { RoutedItemRef } from "./routes.js";
+import { KataWorkspaceCreationWorkflow } from "./features/kata/kata-workspace-creation-workflow.js";
+import { notifyWorkspaceDeleted } from "./stores/workspace-host.svelte.js";
 
 export interface AppStoreOptions {
   runtime: AppRuntime;
@@ -223,6 +225,14 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     onDataChanged: refreshVisibleData,
     onSyncStatus: (status) => Effect.sync(() => syncStore.setSyncStatus(status)),
     onConfigChanged: handleConfigChanged,
+    onWorkspaceCreated: (event) =>
+      KataWorkspaceCreationWorkflow.pipe(Effect.flatMap((workflow) => workflow.workspaceCreated(event.id))),
+    onWorkspaceStatus: (event) => {
+      const workspaceID = event.id;
+      return workspaceID === undefined
+        ? Effect.void
+        : KataWorkspaceCreationWorkflow.pipe(Effect.flatMap((workflow) => workflow.workspaceStatus(workspaceID)));
+    },
     ...(errorCb !== undefined && { onTerminalFailure: errorCb, onRecoverableFailure: errorCb }),
     onPRDetailRefreshed: (ref) => {
       const detail = detailStore.getDetail();
@@ -262,6 +272,10 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     },
     onDeferredMergeCompleted: (event) =>
       Effect.gen(function* () {
+        const deletedWorkspaceID = event.deleted_workspace_id;
+        if (deletedWorkspaceID) {
+          yield* Effect.sync(() => notifyWorkspaceDeleted(deletedWorkspaceID));
+        }
         const refreshes: Array<Effect.Effect<void, ProviderEventsError, AppServices>> = [
           pullsStore.reconcilePullsEffect(),
           activityStore.reconcileActivityEffect(),
@@ -314,6 +328,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
             activityStore.reconcileActivityEffect(),
             refreshSelectedActivityDetail(),
             syncStore.reconcileSyncStatusEffect,
+            KataWorkspaceCreationWorkflow.pipe(Effect.flatMap((workflow) => workflow.reconcile)),
           ],
           { concurrency: "unbounded", discard: true },
         );

@@ -598,6 +598,41 @@ describe("WorkspaceRuntimeWorkflow", () => {
     ),
   );
 
+  it.effect("publishes a confirmed delete after its initiating presenter has gone", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const deleted = yield* Deferred.make<Response>();
+        const published = yield* Deferred.make<{
+          readonly target: { readonly workspaceId: string; readonly hostKey?: string };
+          readonly identity?: WorkspaceItemIdentity;
+        }>();
+        const port: WorkspaceRuntimePort = {
+          read: () => Effect.succeed(emptyRuntime),
+          launch: unusedPortMethod,
+          rename: unusedPortMethod,
+          stop: unusedPortMethod,
+          refresh: unusedPortMethod,
+          retry: unusedPortMethod,
+          delete: () => Deferred.await(deleted).pipe(Effect.map((response) => ({ response }))),
+        };
+        const workflow = yield* makeWorkspaceRuntimeWorkflow(port, {
+          publishDeleted: (target, identity) => Deferred.succeed(published, { target, identity }),
+        });
+        const target = { workspaceId: "ws-1" };
+        yield* workflow.claimPresenter(target, "first", () => Effect.succeed(false));
+        yield* workflow.delete(target, { force: false, identity: workspaceIdentity, presenterID: "first" });
+        yield* workflow.releasePresenter(target, "first");
+
+        yield* Deferred.succeed(deleted, new Response(null, { status: 204 }));
+
+        assert.deepStrictEqual(yield* Deferred.await(published), {
+          target,
+          identity: workspaceIdentity,
+        });
+      }),
+    ),
+  );
+
   it.effect("delivers a completed stop only to the replacement presenter", () =>
     Effect.scoped(
       Effect.gen(function* () {

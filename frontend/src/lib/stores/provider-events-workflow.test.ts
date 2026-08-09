@@ -119,6 +119,37 @@ it.layer(ProviderEventsTest)("provider event checkpoint resume", (it) => {
   );
 });
 
+it.layer(ProviderEventsTest)("workspace lifecycle events", (it) => {
+  it.effect("decodes workspace creation and status events", () =>
+    Effect.gen(function* () {
+      const probe = yield* ProviderEventsProbe;
+      const events = yield* Queue.unbounded<ProviderEvent>();
+      const fiber = yield* Effect.forkChild(
+        providerEventsProgram({
+          url: "/api/v1/events",
+          onEvent: (event) => Queue.offer(events, event),
+        }),
+      );
+      const source = yield* probe.awaitSource;
+      emitOpen(source);
+
+      emitFrame(source, "workspace_created", { id: "ws-1" }, "1");
+      emitFrame(source, "workspace_status", { id: "ws-1", status: "ready" }, "2");
+
+      const created = yield* Queue.take(events);
+      assert.strictEqual(created.type, "workspace_created");
+      if (created.type === "workspace_created") assert.strictEqual(created.payload.id, "ws-1");
+      const status = yield* Queue.take(events);
+      assert.strictEqual(status.type, "workspace_status");
+      if (status.type === "workspace_status") {
+        assert.strictEqual(status.payload.id, "ws-1");
+        assert.strictEqual(status.payload.status, "ready");
+      }
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+});
+
 it.layer(ProviderEventsTest)("provider event acknowledgement", (it) => {
   it.effect("advances the checkpoint only after event handling succeeds", () =>
     Effect.gen(function* () {

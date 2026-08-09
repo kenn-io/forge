@@ -180,7 +180,7 @@ describe("KataWorkspace snapshot authority", () => {
     expect(screen.queryByRole("heading", { name: "Mutation response title" })).toBeNull();
   });
 
-  it("queues an explicitly selected agent for a reused Kata workspace", async () => {
+  it("waits for lifecycle confirmation after submitting an agent-backed Kata workspace", async () => {
     acceptHomeDaemon();
     const selected = initialIssues[0]!;
     const { api } = createWorkspaceAPI(initialIssues, {
@@ -212,13 +212,12 @@ describe("KataWorkspace snapshot authority", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Create workspace options" }));
     await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
 
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-1"));
-    expect(discardWorkspaceLaunch("workspace-1", undefined)).toBe("codex");
+    await waitFor(() => expect(mockCreateKataWorkspaceForTask).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(discardWorkspaceLaunch("workspace-1", undefined)).toBeNull();
   });
 
-  it("does not queue a launch for the standard create action", async () => {
-    // The default create action navigates to the returned workspace without
-    // publishing an explicit launch target.
+  it("does not navigate from the create response before lifecycle confirmation", async () => {
     acceptHomeDaemon();
     const selected = initialIssues[0]!;
     const { api } = createWorkspaceAPI(initialIssues, {
@@ -249,8 +248,50 @@ describe("KataWorkspace snapshot authority", () => {
 
     await fireEvent.click(await screen.findByRole("button", { name: "Create workspace" }));
 
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-existing"));
+    await waitFor(() => expect(mockCreateKataWorkspaceForTask).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).not.toHaveBeenCalled();
     expect(discardWorkspaceLaunch("workspace-existing", undefined)).toBeNull();
+  });
+
+  it("keeps an accepted workspace creation alive after the selected detail unmounts", async () => {
+    acceptHomeDaemon();
+    const selected = initialIssues[0]!;
+    const { api } = createWorkspaceAPI(initialIssues, {
+      snapshot: (_request, snapshot) => ({
+        ...snapshot,
+        enrichment: {
+          ...snapshot.enrichment,
+          selected_detail: snapshot.enrichment.selected_issue_uid
+            ? {
+                detail: detail(selected.uid, initialIssues),
+                workspace_target: {
+                  available: true,
+                  item_type: "kata_task",
+                  item_key: selected.uid,
+                },
+              }
+            : undefined,
+        },
+      }),
+    });
+    const accepted = deferred<{
+      id: string;
+      status: string;
+      item_type: "kata_task";
+    }>();
+    let completed = false;
+    mockCreateKataWorkspaceForTask.mockReturnValue(
+      Effect.promise(() => accepted.promise).pipe(Effect.tap(() => Effect.sync(() => (completed = true)))),
+    );
+    const view = render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+    await fireEvent.click(await screen.findByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockCreateKataWorkspaceForTask).toHaveBeenCalledTimes(1));
+
+    await view.rerender({ api, selectedIssueUID: undefined });
+    await waitFor(() => expect(screen.queryByRole("heading", { name: selected.title })).toBeNull());
+    accepted.resolve({ id: "workspace-1", status: "creating", item_type: "kata_task" });
+
+    await waitFor(() => expect(completed).toBe(true));
   });
 
   it("renders canonical catalog identity when selected detail protocol omits summary-only fields", async () => {

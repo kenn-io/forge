@@ -26,15 +26,20 @@ func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 }
 
 func setupWorkspaceTestServerWithConfigContent(
-	t *testing.T, cfgContent string, mock *mockGH,
+	t *testing.T, cfgContent string, mock *mockGH, broadcasts ...func(workspaceapi.Event) uint64,
 ) (*Server, *db.DB, string) {
 	t.Helper()
+	var broadcast func(workspaceapi.Event) uint64
+	if len(broadcasts) > 0 {
+		broadcast = broadcasts[0]
+	}
 	return setupTestServerWithConfigContentAndOptions(
 		t, cfgContent, mock,
 		ServerOptions{
 			HostCheckAllowLoopbackAnyPort:      true,
 			WorktreeDir:                        t.TempDir(),
 			DisableWorkspaceBackgroundMonitors: true,
+			Broadcast:                          broadcast,
 		},
 	)
 }
@@ -1075,6 +1080,7 @@ func TestCreateKataWorkspaceDoesNotRequireProviderIssue(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
+	events := make(chan workspaceapi.Event, 4)
 	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
@@ -1090,7 +1096,10 @@ project_uid = "project-kata"
 provider = "github"
 platform_host = "github.com"
 repo_path = "acme/widget"
-`, &mockGH{})
+`, &mockGH{}, func(event workspaceapi.Event) uint64 {
+		events <- event
+		return 1
+	})
 	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
@@ -1107,6 +1116,13 @@ repo_path = "acme/widget"
 
 	var created workspaceapi.WorkspaceResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&created))
+	select {
+	case event := <-events:
+		assert.Equal("workspace_created", event.Type)
+		assert.Equal(map[string]string{"id": created.ID}, event.Data)
+	case <-time.After(time.Second):
+		require.FailNow("timed out waiting for workspace creation event")
+	}
 	assert.Equal(db.WorkspaceItemTypeKataTask, created.ItemType)
 	assert.Equal(db.KataWorkspaceItemKey(db.WorkspaceKataMetadata{
 		DaemonID:   "desktop",

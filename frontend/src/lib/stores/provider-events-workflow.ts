@@ -47,6 +47,15 @@ export class WorkspacePRAssociatedEvent extends Schema.Class<WorkspacePRAssociat
   associated_at: Schema.String,
 }) {}
 
+export class WorkspaceCreatedEvent extends Schema.Class<WorkspaceCreatedEvent>("WorkspaceCreatedEvent")({
+  id: Schema.String,
+}) {}
+
+export class WorkspaceStatusEvent extends Schema.Class<WorkspaceStatusEvent>("WorkspaceStatusEvent")({
+  id: Schema.optionalKey(Schema.String),
+  status: Schema.optionalKey(Schema.String),
+}) {}
+
 export class WorkspacePRRefreshQueuedEvent extends Schema.Class<WorkspacePRRefreshQueuedEvent>(
   "WorkspacePRRefreshQueuedEvent",
 )({
@@ -89,6 +98,7 @@ export class DeferredMergeCompletedEvent extends Schema.Class<DeferredMergeCompl
   message: Schema.optionalKey(Schema.String),
   error: Schema.optionalKey(Schema.String),
   workspace_cleanup_warning: Schema.optionalKey(Schema.String),
+  deleted_workspace_id: Schema.optionalKey(Schema.String),
   completed_at: Schema.String,
 }) {}
 
@@ -105,6 +115,8 @@ export type ProviderEvent =
   | { readonly type: "sync_status"; readonly payload: SyncStatusEvent }
   | { readonly type: "config.changed"; readonly payload: ConfigChangedEvent }
   | { readonly type: "reconnect.stale" }
+  | { readonly type: "workspace_created"; readonly payload: WorkspaceCreatedEvent }
+  | { readonly type: "workspace_status"; readonly payload: WorkspaceStatusEvent }
   | { readonly type: "workspace_pushed_head_changed"; readonly payload: WorkspacePushedHeadChangedEvent }
   | { readonly type: "workspace_pr_associated"; readonly payload: WorkspacePRAssociatedEvent }
   | { readonly type: "workspace_pr_refresh_queued"; readonly payload: WorkspacePRRefreshQueuedEvent }
@@ -206,6 +218,8 @@ const providerEventTypes: ReadonlyArray<ProviderEventType> = [
   "sync_status",
   "config.changed",
   "reconnect.stale",
+  "workspace_created",
+  "workspace_status",
   "workspace_pushed_head_changed",
   "workspace_pr_associated",
   "workspace_pr_refresh_queued",
@@ -282,6 +296,20 @@ const decodeProviderEvent = Effect.fn("ProviderEvents.decodeFrame")(function* (f
         Effect.mapError((cause) => invalidFrame(frame, cause)),
       );
       return { type: "reconnect.stale" } satisfies ProviderEvent;
+    case "workspace_created":
+      return {
+        type: "workspace_created",
+        payload: yield* Schema.decodeUnknownEffect(WorkspaceCreatedEvent)(payload).pipe(
+          Effect.mapError((cause) => invalidFrame(frame, cause)),
+        ),
+      } satisfies ProviderEvent;
+    case "workspace_status":
+      return {
+        type: "workspace_status",
+        payload: yield* Schema.decodeUnknownEffect(WorkspaceStatusEvent)(payload).pipe(
+          Effect.mapError((cause) => invalidFrame(frame, cause)),
+        ),
+      } satisfies ProviderEvent;
     case "workspace_pushed_head_changed":
       return {
         type: "workspace_pushed_head_changed",

@@ -135,7 +135,6 @@
   let pendingBodyResetGeneration = $state<number | null>(null);
   let titleExecution: AppExecution<void, never> | null = null;
   let bodyExecution: AppExecution<void, never> | null = null;
-  let workspaceExecution: AppExecution<void, never> | null = null;
   let focusExecution: AppExecution<void, never> | null = null;
 
   const canCreateRecurrence = $derived(issue.issue.recurrence_id === undefined);
@@ -328,8 +327,7 @@
   function createWorkspace(targetKey?: string): void {
     const create = workspaceAction?.onCreate;
     if (!create) return;
-    workspaceExecution?.interrupt();
-    workspaceExecution = runtime.runCommand(create(targetKey), {
+    runtime.runCommand(create(targetKey), {
       operation: "create Kata task workspace",
       safeContext: { issueUid: issue.issue.uid },
       onFailure: () => {},
@@ -339,7 +337,6 @@
   onDestroy(() => {
     titleExecution?.interrupt();
     bodyExecution?.interrupt();
-    workspaceExecution?.interrupt();
     focusExecution?.interrupt();
   });
 </script>

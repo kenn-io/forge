@@ -8,7 +8,11 @@
   import type { AppExecution, AppServices } from "../../app/runtime.js";
   import { IconButton, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { queueWorkspaceLaunch } from "../../stores/workspace-create-pending.svelte.js";
+  import {
+    createdWorkspaceRef,
+    isWorkspaceCreatePending,
+  } from "../../stores/workspace-create-pending.svelte.js";
+  import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
   import LayoutPanelLeftIcon from "@lucide/svelte/icons/layout-panel-left";
   import LayoutPanelTopIcon from "@lucide/svelte/icons/layout-panel-top";
   import PlusIcon from "@lucide/svelte/icons/plus";
@@ -28,7 +32,7 @@
   } from "../../api/kata/snapshot.js";
   import type { KataIssueNavigationTarget } from "../../api/kata/navigation.js";
   import type { KataWorkspaceSnapshotProjection } from "../../api/kata/snapshotProjection.js";
-  import { createKataWorkspaceForTask, kataWorkspaceIdentityFromIssue } from "../../api/kata/workspaces.js";
+  import { kataWorkspaceIdentityFromIssue } from "../../api/kata/workspaces.js";
   import type {
     KataCreateRecurrenceInput,
     KataPatchRecurrenceInput,
@@ -72,6 +76,7 @@
     type KataCustomMutationUncertainty,
     type KataMutationFenceState,
   } from "./kata-workflow.js";
+  import { KataWorkspaceCreationWorkflow } from "./kata-workspace-creation-workflow.js";
   import {
     commentMutationEvidence,
     editMutationEvidence,
@@ -211,7 +216,7 @@
   let mutationRefreshRequest: KataWorkspaceAuthorityRequest | null = null;
   let mutationRefreshGeneration = 0;
   let authorityRetrying = $state(false);
-  let workspaceActionBusy = $state(false);
+  let workspaceSurfaceMounted = true;
   let workspaceOwnershipPending = $state(true);
   let listMode = $state<ListMode>("tasks");
   let graphSourceIssue = $state.raw<KataTaskSummary | null>(null);
@@ -365,6 +370,7 @@
     },
   });
   onDestroy(() => {
+    workspaceSurfaceMounted = false;
     navigationExecution?.interrupt();
     appRuntime.runCommand(authorityController.dispose(), {
       operation: "dispose Kata workspace authority",
@@ -405,8 +411,7 @@
     workspaceOwnershipPending ||
       switchingDaemon ||
       pendingMutationCount > 0 ||
-      mutationRefreshPending ||
-      workspaceActionBusy,
+      mutationRefreshPending,
   );
   const mutationActionsBlocked = $derived(
     workspaceActionsBlocked || authorityStore.state.phase !== "accepted",
@@ -559,6 +564,27 @@
   // the workspace action renders atomically with the detail pane.
   const workspaceTarget = $derived(
     acceptedSelectedIssue?.workspace_target?.available ? acceptedSelectedIssue.workspace_target : null,
+  );
+  const workspaceItemIdentity = $derived.by<WorkspaceItemIdentity | null>(() => {
+    const selected = acceptedSelectedIssue?.issue;
+    const daemonID = acceptedSnapshot?.daemon_id;
+    if (!selected || !daemonID) return null;
+    return {
+      provider: "kata",
+      platformHost: daemonID,
+      owner: selected.project_uid,
+      name: selected.uid,
+      repoPath: selected.project_uid,
+      number: 0,
+      itemType: "kata_task",
+    };
+  });
+  const workspaceActionBusy = $derived(
+    workspaceItemIdentity !== null && isWorkspaceCreatePending(workspaceItemIdentity),
+  );
+  const effectiveWorkspaceRef = $derived(
+    workspaceTarget?.existing_workspace ??
+      (workspaceItemIdentity === null ? null : createdWorkspaceRef(workspaceItemIdentity)),
   );
   // A daemon switch is transactional. Catalog data loaded while the target
   // is still provisional must not repaint either daemon's project controls.
@@ -1971,30 +1997,30 @@
   ): Effect.Effect<void, never, AppServices> {
     return Effect.suspend(() => {
       const selected = acceptedSelectedIssue?.issue;
-      if (mutationActionsBlocked || !selected || workspaceActionBusy) return Effect.void;
-      workspaceActionBusy = true;
+      const itemIdentity = workspaceItemIdentity;
+      if (mutationActionsBlocked || !selected || itemIdentity === null || workspaceActionBusy) return Effect.void;
       const daemonID = acceptedSnapshot?.daemon_id ?? "";
-      return createKataWorkspaceForTask(
-          kataWorkspaceIdentityFromIssue(selected, daemonID, projectNameForIssue(selected)),
-        ).pipe(
-          Effect.tap((created) =>
-            Effect.sync(() => {
-              if (launchTargetKey) queueWorkspaceLaunch(created.id, launchTargetKey, undefined);
-              openWorkspace(created.id);
-            }),
-          ),
-          Effect.catch((failure) =>
-            Effect.sync(() => showFlash(kataRequestErrorMessage(failure), { tone: "danger" })),
-          ),
-          Effect.ensuring(Effect.sync(() => (workspaceActionBusy = false))),
-        );
+      const issueUID = selected.uid;
+      return KataWorkspaceCreationWorkflow.pipe(
+        Effect.flatMap((workflow) =>
+          workflow.submit({
+            purpose: kataWorkspaceIdentityFromIssue(selected, daemonID, projectNameForIssue(selected)),
+            itemIdentity,
+            ...(launchTargetKey ? { launchTargetKey } : {}),
+            presentation: {
+              isCurrent: () => workspaceSurfaceMounted && acceptedSelectedIssue?.issue.uid === issueUID,
+              navigate: (workspaceID) => Effect.sync(() => openWorkspace(workspaceID)),
+            },
+          }),
+        ),
+      );
     });
   }
 
   function selectedWorkspaceAction() {
     if (!workspaceTarget?.available) return undefined;
-    if (workspaceTarget.existing_workspace) {
-      const id = workspaceTarget.existing_workspace.id;
+    if (effectiveWorkspaceRef) {
+      const id = effectiveWorkspaceRef.id;
       return {
         label: "Open workspace",
         onClick: () => openWorkspace(id),

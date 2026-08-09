@@ -30,6 +30,12 @@ const captured: {
   settings: null,
 };
 
+const { notifyWorkspaceDeleted } = vi.hoisted(() => ({
+  notifyWorkspaceDeleted: vi.fn(),
+}));
+
+vi.mock("./lib/stores/workspace-host.svelte.js", () => ({ notifyWorkspaceDeleted }));
+
 async function acceptEvent(result: Effect.Effect<void, unknown, AppServices> | void): Promise<void> {
   if (result === undefined) return;
   const execution = runtime.runCommand(result, {
@@ -212,6 +218,7 @@ beforeEach(() => {
   setSyncStatus.mockClear();
   refreshDetailOnly.mockClear();
   refreshDetailOnlyEffect.mockClear();
+  notifyWorkspaceDeleted.mockClear();
   currentDetail = null;
 });
 
@@ -588,5 +595,27 @@ describe("app store event wiring", () => {
       "acme/widget#42 merged, but the workspace was not pruned: workspace has uncommitted changes",
     );
     expect(onNotification).not.toHaveBeenCalled();
+  });
+
+  it("publishes the workspace ID carried by deferred merge completion", async () => {
+    compose();
+
+    await acceptEvent(
+      captured.store?.options.onDeferredMergeCompleted?.({
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+        owner: "acme",
+        name: "widget",
+        number: 42,
+        head_sha: "2222222",
+        status: "merged",
+        merged: true,
+        completed_at: "2026-07-10T15:00:00Z",
+        deleted_workspace_id: "ws-1",
+      }),
+    );
+
+    expect(notifyWorkspaceDeleted).toHaveBeenCalledWith("ws-1");
   });
 });

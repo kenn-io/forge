@@ -8,6 +8,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestDeferredMergeDeletedWorkspaceIDRequiresConfirmedCleanup(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal("ws-1", deferredMergeDeletedWorkspaceID(true, "ws-1", ""))
+	assert.Empty(deferredMergeDeletedWorkspaceID(true, "ws-1", "workspace has changes"))
+	assert.Empty(deferredMergeDeletedWorkspaceID(false, "ws-1", ""))
+	assert.Empty(deferredMergeDeletedWorkspaceID(true, "", ""))
+}
+
 func TestCleanupMergedWorkspaceCallsExistingDeletionHandler(t *testing.T) {
 	var deletedID string
 	handler := New(Deps{

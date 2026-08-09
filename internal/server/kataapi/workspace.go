@@ -237,8 +237,12 @@ func (h *Handler) createKataWorkspace(
 		return nil, httpapi.Internal("create Kata workspace: " + err.Error())
 	}
 
+	output, err := h.kataWorkspaceCreateOutput(ctx, ws.ID, true)
+	if err != nil {
+		return nil, err
+	}
 	h.workspaceAPI.RunWorkspaceSetupWithBasePath(ws, target.BasePath)
-	return h.kataWorkspaceCreateOutput(ctx, ws.ID, true)
+	return output, nil
 }
 
 func (h *Handler) kataWorkspaceCreateOutput(
@@ -253,6 +257,7 @@ func (h *Handler) kataWorkspaceCreateOutput(
 	}
 	resp := h.workspaceAPI.Response(ctx, summary)
 	resp.Created = created
+	h.workspaceAPI.PublishWorkspaceCreated(workspaceID)
 	return &workspaceapi.CreateWorkspaceOutput{
 		Status: httpStatusAccepted,
 		Body:   resp,

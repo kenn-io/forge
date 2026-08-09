@@ -559,6 +559,46 @@ describe("DocsWorkspace", () => {
     expect(readFile.mock.calls.length).toBeGreaterThan(readCalls);
   });
 
+  test("keeps a confirmed pull successful when the tree refresh fails", async () => {
+    const backend = createMockDocsBackend({
+      folders: [
+        {
+          meta: { id: "x", name: "X", path: "/x" },
+          files: { "README.md": "# x" },
+          git: { "README.md": "modified" },
+        },
+      ],
+    });
+    let failTreeRefresh = false;
+    const tree = vi.fn(async (folderID: string, signal?: AbortSignal) => {
+      if (failTreeRefresh) throw new Error("tree refresh unavailable");
+      return backend.tree(folderID, signal);
+    });
+    const gitPull = vi.fn(async () => ({
+      branch: "main",
+      upstream: "origin/main",
+      up_to_date: false,
+      commit: "abcdef1234567890abcdef1234567890abcdef12",
+      short_commit: "abcdef1",
+    }));
+    const api = { ...backend, tree, gitPull };
+    render(DocsWorkspace, {
+      props: {
+        route: { mode: "docs", folder: "x", doc: "README.md" },
+        onRouteChange: vi.fn(),
+        api,
+      },
+    });
+    await screen.findByRole("heading", { name: "x" });
+    failTreeRefresh = true;
+
+    await fireEvent.click(screen.getByRole("button", { name: "Pull from git" }));
+
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Pulled to abcdef1"));
+    expect(screen.getByRole("status").textContent).toContain("tree");
+    expect(screen.getByRole("status").textContent).not.toContain("Pull failed");
+  });
+
   test("pull reports an up-to-date repo", async () => {
     const backend = createMockDocsBackend({
       folders: [
@@ -702,14 +742,14 @@ describe("DocsWorkspace", () => {
     const { rerender } = render(DocsWorkspace, { props: { route, onRouteChange, api } });
     await waitFor(() => expect(screen.getByRole("heading", { name: /Welcome to Notes/ })).toBeTruthy());
     const mountTreeCalls = tree.mock.calls.length;
+    const notesStatusCalls = gitStatus.mock.calls.filter((c) => c[0] === "notes").length;
+    const notesReads = readFile.mock.calls.filter((c) => c[0] === "notes").length;
     deferNotesTree = true;
     await fireEvent.click(screen.getByRole("button", { name: "Pull from git" }));
     // The pull resolved and its tree refresh is now parked on the gate.
     await waitFor(() => expect(tree.mock.calls.length).toBeGreaterThan(mountTreeCalls));
     await rerender({ route: { mode: "docs", folder: "engineering", doc: null }, onRouteChange, api });
     await waitFor(() => expect(gitStatus).toHaveBeenCalledWith("engineering", expect.any(AbortSignal)));
-    const notesStatusCalls = gitStatus.mock.calls.filter((c) => c[0] === "notes").length;
-    const notesReads = readFile.mock.calls.filter((c) => c[0] === "notes").length;
     releaseTree();
     await waitFor(() =>
       expect(gitStatus.mock.calls.filter((c) => c[0] === "notes").length).toBeGreaterThan(notesStatusCalls),

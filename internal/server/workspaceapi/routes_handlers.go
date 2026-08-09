@@ -477,6 +477,15 @@ func (s *Handler) RunWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 	s.runWorkspaceSetupWithBasePath(ws, basePath)
 }
 
+// PublishWorkspaceCreated announces the durable identity before asynchronous
+// setup can publish its first status transition.
+func (s *Handler) PublishWorkspaceCreated(workspaceID string) {
+	s.hub.Broadcast(Event{
+		Type: "workspace_created",
+		Data: map[string]string{"id": workspaceID},
+	})
+}
+
 // createIssueWorkspace creates or reuses an issue-backed kenn-forge workspace.
 //
 // This API exists so an issue can have its own durable local execution context

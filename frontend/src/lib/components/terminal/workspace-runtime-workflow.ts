@@ -22,6 +22,7 @@ import { isProblem, type ProblemBody } from "../../api/problems.js";
 import { type WorkspaceRuntimeState } from "../../api/workspace-runtime.js";
 import type { LaunchTarget, RuntimeSession, WorkspaceRuntime } from "../../api/types.js";
 import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
+import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
 import {
   completeAcceptedWorkspaceLaunch,
   pendingWorkspaceLaunch,
@@ -85,6 +86,13 @@ export interface WorkspaceRuntimeDeleteOptions {
   readonly force: boolean;
   readonly identity?: WorkspaceItemIdentity | undefined;
   readonly presenterID: string;
+}
+
+export interface WorkspaceRuntimeWorkflowOptions {
+  readonly publishDeleted: (
+    target: WorkspaceRuntimeTarget,
+    identity: WorkspaceItemIdentity | undefined,
+  ) => Effect.Effect<void>;
 }
 
 export interface WorkspaceRuntimeReadOptions {
@@ -458,6 +466,10 @@ function uncertainMutationState(
 
 export function makeWorkspaceRuntimeWorkflow(
   port: WorkspaceRuntimePort,
+  options: WorkspaceRuntimeWorkflowOptions = {
+    publishDeleted: (target, identity) =>
+      Effect.sync(() => notifyWorkspaceDeleted(target.workspaceId, target.hostKey, identity)),
+  },
 ): Effect.Effect<WorkspaceRuntimeWorkflowService, never, Scope> {
   return Effect.gen(function* () {
     const scope = yield* Effect.scope;
@@ -586,6 +598,15 @@ export function makeWorkspaceRuntimeWorkflow(
     const storeAndPresentMutation = Effect.fn("WorkspaceRuntimeWorkflow.storeAndPresentMutation")(function* (
       state: WorkspaceRuntimeMutationState,
     ) {
+      if (state.operation === "Delete" && state.kind === "succeeded") {
+        const { response } = state.result;
+        const responseFailed = state.request.options.force
+          ? !response.ok && response.status !== 204
+          : response.status === 409 || (!response.ok && response.status !== 204);
+        if (!responseFailed) {
+          yield* options.publishDeleted(state.request.target, state.request.options.identity);
+        }
+      }
       yield* mutationLock.withPermit(
         Ref.update(mutationStates, (current) => new Map(current).set(state.request.key, state)),
       );
@@ -1581,5 +1602,5 @@ export class WorkspaceRuntimeWorkflow extends Context.Service<
 >()("kenn-forge/WorkspaceRuntimeWorkflow") {}
 
 export const WorkspaceRuntimeWorkflowLive = Layer.effect(WorkspaceRuntimeWorkflow)(
-  WorkspaceRuntimePortLive.pipe(Effect.flatMap(makeWorkspaceRuntimeWorkflow)),
+  WorkspaceRuntimePortLive.pipe(Effect.flatMap((port) => makeWorkspaceRuntimeWorkflow(port))),
 );

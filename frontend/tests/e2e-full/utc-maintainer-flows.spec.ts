@@ -128,18 +128,27 @@ test.describe("UTC maintainer flows", () => {
 
   test("closing and reopening an issue keeps API timestamps canonical UTC", async ({ page, browserName }) => {
     const issue = closeReopenIssueTarget(browserName);
+    const statePath = `/api/v1/issues/github/${issue.owner}/${issue.repo}/${issue.number}/github-state`;
 
     await page.goto(`/issues/github/${issue.owner}/${issue.repo}/${issue.number}`);
     await expect(page.locator(".btn--close")).toBeVisible();
 
+    const closeResponsePromise = page.waitForResponse(
+      (response) => response.request().method() === "POST" && new URL(response.url()).pathname === statePath,
+    );
     await page.locator(".btn--close").click();
+    expect((await closeResponsePromise).ok()).toBe(true);
     await expect(page.locator(".btn--reopen")).toBeVisible();
 
     const closed = await fetchIssueDetail(page, issue);
     expect(closed.issue.State).toBe("closed");
     expectUTCString(closed.issue.ClosedAt);
 
+    const reopenResponsePromise = page.waitForResponse(
+      (response) => response.request().method() === "POST" && new URL(response.url()).pathname === statePath,
+    );
     await page.locator(".btn--reopen").click();
+    expect((await reopenResponsePromise).ok()).toBe(true);
     await expect(page.locator(".btn--close")).toBeVisible();
 
     const reopened = await fetchIssueDetail(page, issue);

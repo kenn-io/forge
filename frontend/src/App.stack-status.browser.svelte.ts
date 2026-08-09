@@ -253,7 +253,7 @@ describe("stack status panel", () => {
     await expect.element(page.getByTestId("stack-chip")).toBeVisible();
 
     const label = document.querySelector<HTMLElement>(".stack-chip-label");
-    const failureCount = document.querySelector<HTMLElement>(".stack-chip-failure > span");
+    const failureCount = document.querySelector<HTMLElement>(".stack-chip-failure-count");
     const stackFailureIcon = document.querySelector<SVGElement>(".stack-chip-failure > svg");
     const ciFailureIcon = document.querySelector<SVGElement>("[data-testid='ci-token-failed'] > svg");
     expect(label).not.toBeNull();
@@ -262,7 +262,12 @@ describe("stack status panel", () => {
     expect(ciFailureIcon).not.toBeNull();
 
     expect(Math.abs(textRect(label!).bottom - textRect(failureCount!).bottom)).toBeLessThanOrEqual(0.5);
-    expect(stackFailureIcon!.getBoundingClientRect().height).toBe(ciFailureIcon!.getBoundingClientRect().height);
+    const stackIconRect = stackFailureIcon!.getBoundingClientRect();
+    const ciIconRect = ciFailureIcon!.getBoundingClientRect();
+    expect(stackIconRect.height).toBe(ciIconRect.height);
+    expect(
+      Math.abs(stackIconRect.top + stackIconRect.height / 2 - (ciIconRect.top + ciIconRect.height / 2)),
+    ).toBeLessThanOrEqual(0.5);
   });
 
   it("preserves the focus route when navigating to a stack member", async () => {

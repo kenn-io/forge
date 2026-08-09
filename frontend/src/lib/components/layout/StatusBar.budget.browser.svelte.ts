@@ -234,6 +234,11 @@ describe("budget display", () => {
     expect(popover.textContent).toContain("provider quota above is authoritative");
     expect(popover.querySelector(".budget-spent")?.textContent).toBe("42");
 
+    const ceilingNote = popover.querySelector<HTMLElement>(".budget-row--ceiling .row-note");
+    expect(ceilingNote).not.toBeNull();
+    const noteLineHeight = Number.parseFloat(getComputedStyle(ceilingNote!).lineHeight);
+    expect(ceilingNote!.getBoundingClientRect().height).toBeGreaterThan(noteLineHeight * 1.5);
+
     const ceilingLabel = popover.querySelector<HTMLElement>(".budget-row--ceiling .row-label");
     const ceilingValue = popover.querySelector<HTMLElement>(".budget-row--ceiling .row-value");
     expect(ceilingLabel).not.toBeNull();

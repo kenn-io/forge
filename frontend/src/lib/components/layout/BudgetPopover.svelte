@@ -284,6 +284,7 @@
     color: var(--text-muted);
     font-size: 0.9em;
     line-height: 1.2;
+    white-space: normal;
   }
   .row-unknown {
     color: var(--text-muted);

@@ -1676,33 +1676,33 @@ func (s *Handler) mergePRWithBody(
 		)
 	}
 
-	// Record the transition through the same close-detection flow the
-	// periodic sync uses rather than an eager local state write. The sync
-	// fetches the provider's own merged snapshot — state, provider
-	// timestamps, and the merging actor — and commits it through the
-	// parent-snapshot choke point, which finalizes commit liveness inside
-	// the same transaction. An eager write would suppress that transition
-	// and advance updated_at past the provider's, leaving later resyncs
-	// rejected as stale. If this sync fails, the row stays open until the
-	// next periodic round repairs it through the same path; the response
-	// below still reports the provider's merge result.
-	if syncErr := s.syncer.SyncClosedMROnProvider(
-		ctx, repo.ID, number,
-	); syncErr != nil {
-		slog.Warn("sync after merge",
-			"owner", repo.Owner, "repo", repo.Name,
-			"number", number, "err", syncErr)
-	}
-	s.markClosedLinkedNotificationsDone(ctx)
-
-	// The merge landed, so any deferred merge still queued for this pull
-	// request is superseded: its worker stands down silently instead of
-	// later reporting a failure for a pull request that is already merged.
-	// (A deferred worker completing through this same path supersedes its
-	// own handle, which is a no-op by the time it broadcasts completion.)
-	s.supersedeDeferredMerge(deferredMergeKey(*repo, number))
 	workspaceCleanupWarning := ""
 	if result.Merged {
+		// Record the transition through the same close-detection flow the
+		// periodic sync uses rather than an eager local state write. The sync
+		// fetches the provider's own merged snapshot — state, provider
+		// timestamps, and the merging actor — and commits it through the
+		// parent-snapshot choke point, which finalizes commit liveness inside
+		// the same transaction. An eager write would suppress that transition
+		// and advance updated_at past the provider's, leaving later resyncs
+		// rejected as stale. If this sync fails, the row stays open until the
+		// next periodic round repairs it through the same path; the response
+		// below still reports the provider's merge result.
+		if syncErr := s.syncer.SyncClosedMROnProvider(
+			ctx, repo.ID, number,
+		); syncErr != nil {
+			slog.Warn("sync after merge",
+				"owner", repo.Owner, "repo", repo.Name,
+				"number", number, "err", syncErr)
+		}
+		s.markClosedLinkedNotificationsDone(ctx)
+
+		// The merge landed, so any deferred merge still queued for this pull
+		// request is superseded: its worker stands down silently instead of
+		// later reporting a failure for a pull request that is already merged.
+		// (A deferred worker completing through this same path supersedes its
+		// own handle, which is a no-op by the time it broadcasts completion.)
+		s.supersedeDeferredMerge(deferredMergeKey(*repo, number))
 		workspaceCleanupWarning = s.cleanupMergedWorkspace(ctx, body.DeleteWorkspaceID)
 	}
 

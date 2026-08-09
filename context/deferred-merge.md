@@ -12,7 +12,8 @@ supersession, completion events, or pending-state presentation.
   queued merge.
 - A successful immediate merge supersedes the queued worker silently (per-key
   handle): pending clears with the merge response and the worker emits no event.
-  A failed immediate merge leaves the queued merge untouched.
+  An immediate provider response with `merged: false` leaves the queued merge and
+  all merge-completion side effects untouched.
 - The worker also stands down silently whenever it observes the target already
   merged (`errDeferredMergeTargetMerged`); the supersede handle alone cannot
   cover this because the worker syncs provider state independently and can see

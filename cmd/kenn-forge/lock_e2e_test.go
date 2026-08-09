@@ -383,6 +383,37 @@ func TestDaemonStartReusesForegroundDuringStartupE2E(t *testing.T) {
 	}
 }
 
+// TestDaemonStartPreservesUnauthenticatedLiveRuntimeE2E protects the
+// fail-closed lifecycle boundary. If an unprovable record is treated as stale
+// while its data-directory lock is held, daemon start can replace an ambiguous
+// live owner instead of requiring authoritative identity proof.
+func TestDaemonStartPreservesUnauthenticatedLiveRuntimeE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newDaemonLifecycleFixture(t, buildForge(t))
+	dataDir := fixture.dataDir("data")
+	fixture.writeConfig(dataDir)
+
+	lockHandle, err := runtimelock.Acquire(dataDir)
+	require.NoError(err)
+	t.Cleanup(func() {
+		assert.NoError(lockHandle.Release())
+	})
+	liveRecord := fixture.writeUnauthenticatedRuntime(dataDir)
+
+	_, stderr, err := fixture.run("start")
+	require.Error(err)
+	assert.Contains(stderr, "no authoritative match")
+	records, err := fixture.store.List()
+	require.NoError(err)
+	require.Len(records, 1)
+	assert.Equal(liveRecord.PID, records[0].PID)
+	assert.Equal(liveRecord.Address, records[0].Address)
+	status, err := runtimelock.Read(dataDir)
+	require.NoError(err)
+	assert.True(status.Running)
+}
+
 // TestForegroundAndBackgroundStartShareAuthToken protects a fresh data
 // directory started through both lifecycle paths at once. If token creation
 // has multiple winners, discovery cannot authenticate the runtime that won the

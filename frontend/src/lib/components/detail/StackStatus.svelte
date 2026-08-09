@@ -363,7 +363,7 @@
     display: inline-flex;
     align-items: center;
     vertical-align: middle;
-    gap: 2px;
+    gap: var(--space-1);
     color: var(--accent-red);
     font-variant-numeric: tabular-nums;
     font-weight: 700;

@@ -610,8 +610,7 @@ export function makeWorkspaceRuntimeWorkflow(
       yield* mutationLock.withPermit(
         Ref.update(mutationStates, (current) => new Map(current).set(state.request.key, state)),
       );
-      yield* presentStoredMutation(state);
-      if (state.operation === "Launch" && state.request.placement._tag === "Workflow") {
+      if (state.operation === "Launch" && state.kind !== "uncertain" && state.request.placement._tag === "Workflow") {
         const onSettled = state.request.placement.onSettled;
         if (onSettled !== undefined) {
           yield* Effect.sync(() =>
@@ -621,6 +620,7 @@ export function makeWorkspaceRuntimeWorkflow(
           );
         }
       }
+      yield* presentStoredMutation(state);
     });
 
     const clearFence = (fence: WorkspaceRuntimeMutationFence): Effect.Effect<void> =>

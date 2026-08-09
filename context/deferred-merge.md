@@ -14,6 +14,9 @@ supersession, completion events, or pending-state presentation.
   handle): pending clears with the merge response and the worker emits no event.
   An immediate provider response with `merged: false` leaves the queued merge and
   all merge-completion side effects untouched.
+- A deferred worker response with `merged: false` is a terminal failure: clear pending and publish the provider message,
+  but never publish merged status or run merge-completion side effects
+  (`internal/server/pullapi/deferred_merge.go::Handler.completeDeferredMerge`).
 - The worker also stands down silently whenever it observes the target already
   merged (`errDeferredMergeTargetMerged`); the supersede handle alone cannot
   cover this because the worker syncs provider state independently and can see

@@ -404,6 +404,14 @@ func (s *Handler) completeDeferredMerge(
 		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return
 	}
+	if !result.Merged {
+		message := strings.TrimSpace(result.Message)
+		if message == "" {
+			message = "provider did not merge the pull request"
+		}
+		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), message, handle)
+		return
+	}
 	// Clear pending before announcing completion: clients refresh detail the
 	// moment they see deferred_merge_completed, and that refresh must not
 	// read a stale deferred_merge_pending=true.

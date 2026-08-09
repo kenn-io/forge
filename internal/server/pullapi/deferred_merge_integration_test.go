@@ -719,7 +719,7 @@ func TestImmediateMergeSupersedesQueuedDeferredMerge(t *testing.T) {
 	}
 }
 
-func TestImmediateUnmergedResponsePreservesQueuedDeferredMerge(t *testing.T) {
+func TestImmediateUnmergedResponsePreservesQueueUntilDeferredProviderRejects(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
@@ -765,10 +765,16 @@ func TestImmediateUnmergedResponsePreservesQueuedDeferredMerge(t *testing.T) {
 			},
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 2),
-		mergeResults: []platform.MergeResult{{
-			Merged:  false,
-			Message: "provider did not merge the pull request",
-		}},
+		mergeResults: []platform.MergeResult{
+			{
+				Merged:  false,
+				Message: "immediate provider response did not merge the pull request",
+			},
+			{
+				Merged:  false,
+				Message: "deferred provider response did not merge the pull request",
+			},
+		},
 		ciStarted: ciStarted,
 		ciRelease: ciRelease,
 	}
@@ -836,8 +842,17 @@ func TestImmediateUnmergedResponsePreservesQueuedDeferredMerge(t *testing.T) {
 			require.FailNow("timed out waiting for deferred merge completion")
 		}
 	}
-	require.Equal("merged", completed.Status)
-	require.True(completed.Merged)
+	require.Equal("failed", completed.Status)
+	require.False(completed.Merged)
+	require.Equal("deferred provider response did not merge the pull request", completed.Error)
+
+	detailResp, err = client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.False(detailResp.JSON200.DeferredMergePending)
 }
 
 func TestDeferMergeEndpointRejectsInvalidMergeMethodBeforeQueueing(t *testing.T) {

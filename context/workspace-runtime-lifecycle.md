@@ -154,6 +154,9 @@ stale tabs.
 
 - Runtime lists returned by `/workspaces/{id}/runtime` are the authoritative
   backend view of live launched sessions.
+- Application workflow launch settlement precedes presenter delivery. Accept confirmed sessions immediately, reject only
+  definite failures, and leave uncertain launches unsettled until reconciliation decides them
+  (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::storeAndPresentMutation`).
 - Workspace terminals use xterm.js exclusively; there is no renderer setting
   or alternate renderer path (`frontend/src/lib/components/terminal/TerminalPane.svelte`).
 - Treat terminal processes as native-terminal-equivalent, but accept bounded, write-only OSC 52 writes only after one

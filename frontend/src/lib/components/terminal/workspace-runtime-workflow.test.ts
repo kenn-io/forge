@@ -304,6 +304,99 @@ describe("WorkspaceRuntimeWorkflow", () => {
     ),
   );
 
+  it.effect("settles a successful workflow launch before its presenter finishes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const launched = yield* Deferred.make<RuntimeSession>();
+        const deliveryStarted = yield* Deferred.make<void>();
+        let settled = false;
+        const port: WorkspaceRuntimePort = {
+          read: () => Effect.succeed(emptyRuntime),
+          launch: () => Deferred.await(launched),
+          rename: unusedPortMethod,
+          stop: unusedPortMethod,
+          refresh: unusedPortMethod,
+          retry: unusedPortMethod,
+          delete: unusedPortMethod,
+        };
+        const workflow = yield* makeWorkspaceRuntimeWorkflow(port);
+        const target = { workspaceId: "ws-1" };
+        yield* workflow.claimPresenter(target, "stalled", (state) =>
+          state.kind === "succeeded"
+            ? Deferred.succeed(deliveryStarted, undefined).pipe(Effect.andThen(Effect.never))
+            : Effect.succeed(false),
+        );
+        yield* workflow.launch(target, "helper", "workflow", {
+          _tag: "Workflow",
+          onSettled: () => {
+            settled = true;
+          },
+        });
+
+        yield* Deferred.succeed(launched, {
+          key: "ws-1:helper",
+          workspace_id: "ws-1",
+          target_key: "helper",
+          label: "Helper",
+          kind: "agent",
+          status: "running",
+          created_at: "2026-08-05T00:00:00Z",
+          display_region: "workflow",
+        });
+        yield* Deferred.await(deliveryStarted);
+
+        assert.isTrue(settled);
+      }),
+    ),
+  );
+
+  it.effect("keeps an uncertain workflow launch unsettled until reconciliation decides it", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const reads = yield* Ref.make(0);
+        const uncertainPresented = yield* Deferred.make<void>();
+        const settlements: string[] = [];
+        const port: WorkspaceRuntimePort = {
+          read: () =>
+            Ref.updateAndGet(reads, (count) => count + 1).pipe(
+              Effect.flatMap((count) =>
+                count === 1
+                  ? Effect.succeed(emptyRuntime)
+                  : Effect.fail(TransientTransportError.make({ operation: "read runtime", cause: "offline" })),
+              ),
+            ),
+          launch: () =>
+            Effect.fail(
+              TransientTransportError.make({ operation: "launch workspace session", cause: "lost response" }),
+            ),
+          rename: unusedPortMethod,
+          stop: unusedPortMethod,
+          refresh: unusedPortMethod,
+          retry: unusedPortMethod,
+          delete: unusedPortMethod,
+        };
+        const workflow = yield* makeWorkspaceRuntimeWorkflow(port);
+        const target = { workspaceId: "ws-1" };
+        yield* workflow.claimPresenter(target, "presenter", (state) =>
+          state.kind === "uncertain"
+            ? Deferred.succeed(uncertainPresented, undefined).pipe(Effect.as(true))
+            : Effect.succeed(false),
+        );
+        yield* workflow.launch(target, "helper", "workflow", {
+          _tag: "Workflow",
+          onSettled: (outcome) => {
+            settlements.push(outcome._tag);
+          },
+        });
+
+        yield* Deferred.await(uncertainPresented);
+        yield* Effect.yieldNow;
+
+        assert.deepStrictEqual(settlements, []);
+      }),
+    ),
+  );
+
   it.effect("interrupts a stale observer before a replacement presenter publishes success", () =>
     Effect.scoped(
       Effect.gen(function* () {

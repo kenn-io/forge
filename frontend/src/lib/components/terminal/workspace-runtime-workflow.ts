@@ -29,6 +29,8 @@ import {
 import type { WorkflowPreset } from "./workflow-presets.js";
 import { decodeWorkspaceDetail, type WorkspaceDetail } from "./workspace-detail.js";
 
+const acceptedLaunchReconciliationWindowMillis = 15_000;
+
 export interface WorkspaceRuntimeTarget {
   readonly workspaceId: string;
   readonly hostKey?: string | undefined;
@@ -1113,7 +1115,10 @@ export function makeWorkspaceRuntimeWorkflow(
           current.acceptedAt === request.acceptedAt
         );
       };
-      const remaining = Math.max(0, request.acceptedAt + 15_000 - (yield* Clock.currentTimeMillis));
+      const remaining = Math.max(
+        0,
+        request.acceptedAt + acceptedLaunchReconciliationWindowMillis - (yield* Clock.currentTimeMillis),
+      );
       const observed = yield* Effect.gen(function* () {
         while (stillAwaitingSession()) {
           const result = yield* read(owner, request.target.workspaceId, request.target.hostKey, { force: true }).pipe(

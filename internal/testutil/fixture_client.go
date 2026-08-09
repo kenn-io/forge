@@ -51,6 +51,7 @@ type FixtureClient struct {
 	mu                        sync.RWMutex
 	nextID                    int64
 	mergePullRequestError     error
+	mergePullRequestResult    *gh.PullRequestMergeResult
 	reviewSuggestionResult    *platform.AppliedReviewSuggestions
 	reviewSuggestionBaseSHA   string
 }
@@ -96,6 +97,12 @@ func (c *FixtureClient) SetMergePullRequestError(err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.mergePullRequestError = err
+}
+
+func (c *FixtureClient) SetMergePullRequestResult(result *gh.PullRequestMergeResult) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.mergePullRequestResult = result
 }
 
 func (c *FixtureClient) SetReviewSuggestionResult(
@@ -1031,6 +1038,10 @@ func (c *FixtureClient) MergePullRequest(
 	defer c.mu.Unlock()
 	if c.mergePullRequestError != nil {
 		return nil, c.mergePullRequestError
+	}
+	if c.mergePullRequestResult != nil {
+		result := *c.mergePullRequestResult
+		return &result, nil
 	}
 
 	// Mutate the PR in BOTH the OpenPRs and PRs maps — like EditPullRequest —

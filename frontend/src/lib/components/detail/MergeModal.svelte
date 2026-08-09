@@ -187,8 +187,7 @@
         if (!problemHandled) showFlash(message, { tone: "danger" });
       },
       onSuccess: (outcome) => {
-        if (!outcome.merged) return;
-        if (deferred) {
+        if (outcome._tag === "Queued") {
           onqueued();
           return;
         }

@@ -668,6 +668,71 @@ test.describe("workspace sidebar full-stack", () => {
       await isolatedServer?.stop();
     }
   });
+
+  test("uncertain workspace delete feedback survives a real route round-trip", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const deletingWorkspace = await createIssueWorkspace(api, 10);
+      const otherWorkspace = await createIssueWorkspace(api, 13);
+
+      let releaseDelete!: () => void;
+      const deleteMayFail = new Promise<void>((resolve) => {
+        releaseDelete = resolve;
+      });
+      let markDeleteStarted!: () => void;
+      const deleteStarted = new Promise<void>((resolve) => {
+        markDeleteStarted = resolve;
+      });
+      let markAuthorityReadStarted!: () => void;
+      const authorityReadStarted = new Promise<void>((resolve) => {
+        markAuthorityReadStarted = resolve;
+      });
+      let authorityUnavailable = false;
+      await page.route(`**/api/v1/workspaces/${deletingWorkspace.id}`, async (route) => {
+        if (route.request().method() === "DELETE") {
+          markDeleteStarted();
+          await deleteMayFail;
+          await route.abort("connectionfailed");
+          return;
+        }
+        if (route.request().method() === "GET" && authorityUnavailable) {
+          markAuthorityReadStarted();
+          await route.abort("connectionfailed");
+          return;
+        }
+        await route.continue();
+      });
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${deletingWorkspace.id}`);
+      await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+      await page
+        .getByRole("dialog", { name: "Delete workspace?" })
+        .getByRole("button", { name: "Delete workspace" })
+        .click();
+      await deleteStarted;
+
+      await page.locator(".workspace-list-sidebar .ws-row:not(.selected)").click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${otherWorkspace.id}$`));
+      authorityUnavailable = true;
+      releaseDelete();
+      await authorityReadStarted;
+      const uncertainty = "Could not confirm whether the delete completed";
+      await expect(page.getByText(uncertainty, { exact: false })).toHaveCount(0);
+
+      authorityUnavailable = false;
+      await page.locator(".workspace-list-sidebar .ws-row:not(.selected)").click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${deletingWorkspace.id}$`));
+      await expect(page.getByText(uncertainty, { exact: false })).toBeVisible();
+      expect((await api.get(`/api/v1/workspaces/${deletingWorkspace.id}`)).status()).toBe(200);
+      await expect(page.locator(".header-bar").getByRole("button", { name: "Delete" })).toBeEnabled();
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
 });
 
 test.describe("workspace Kata sidebar live integration", () => {

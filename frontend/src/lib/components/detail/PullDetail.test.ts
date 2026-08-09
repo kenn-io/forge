@@ -260,7 +260,13 @@ function renderPullDetail(
         if (warning) {
           showFlash(`Pull request merged, but the workspace was not pruned: ${warning}`, { tone: "warning" });
         }
-        callbacks.onSuccess?.(warning === undefined ? { merged: true } : { merged: true, cleanupWarning: warning });
+        callbacks.onSuccess?.(
+          path.endsWith("/merge/deferred")
+            ? { _tag: "Queued" }
+            : warning === undefined
+              ? { _tag: "Merged" }
+              : { _tag: "Merged", cleanupWarning: warning },
+        );
       }
       callbacks.onSettled?.();
     });

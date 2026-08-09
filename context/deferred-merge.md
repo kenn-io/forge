@@ -27,3 +27,6 @@ supersession, completion events, or pending-state presentation.
 - Deferred merge requests retain the selected workspace ID; only a successful
   provider merge reaches non-force deletion
   (`internal/server/pullapi/deferred_merge.go::completeDeferredMerge`).
+- Frontend callbacks distinguish queue acknowledgement from provider merge
+  completion. A queued outcome closes the modal and refreshes pending state; it
+  never publishes workspace deletion (`frontend/src/lib/stores/detail.svelte.ts::MergePullOutcome`).

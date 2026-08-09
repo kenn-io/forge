@@ -93,10 +93,9 @@ export interface ProviderActionCallbacks extends MutationCallbacks {
   readonly onProblem?: (problem: ProblemBody) => void;
 }
 
-export interface MergePullOutcome {
-  readonly merged: boolean;
-  readonly cleanupWarning?: string;
-}
+export type MergePullOutcome =
+  | { readonly _tag: "Queued" }
+  | { readonly _tag: "Merged"; readonly cleanupWarning?: string };
 
 export type MergePullCallbacks = Omit<ProviderActionCallbacks, "onSuccess"> & {
   readonly onSuccess?: (outcome: MergePullOutcome) => void;
@@ -811,9 +810,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
           });
         }
         callbacks.onSuccess?.(
-          workspaceCleanupWarning === undefined
-            ? { merged: true }
-            : { merged: true, cleanupWarning: workspaceCleanupWarning },
+          deferred
+            ? { _tag: "Queued" }
+            : workspaceCleanupWarning === undefined
+              ? { _tag: "Merged" }
+              : { _tag: "Merged", cleanupWarning: workspaceCleanupWarning },
         );
       },
     });

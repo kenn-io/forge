@@ -373,6 +373,61 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("a provider response that did not merge keeps the linked workspace available", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const server = isolatedServer;
+      const apiContext = api;
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" && response.url() === `${server.info.base_url}/api/v1/workspaces`,
+      );
+      await page.getByRole("button", { name: "Create Workspace", exact: true }).filter({ visible: true }).click();
+      const createdWorkspace: WorkspaceStatusResponse = await (await createResponsePromise).json();
+      await waitForWorkspaceReady(apiContext, createdWorkspace.id);
+
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toBeVisible();
+      await launcher.getByRole("button", { name: "Close" }).click();
+
+      const configure = await page.request.post(`${server.info.base_url}/__e2e/merge/not-merged`);
+      expect(configure.status()).toBe(204);
+
+      await page.locator(".btn--merge").first().click();
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
+      const mergeResponsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
+      });
+      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+
+      const mergeResponse = await mergeResponsePromise;
+      expect(mergeResponse.status()).toBe(200);
+      expect(await mergeResponse.json()).toMatchObject({
+        merged: false,
+        message: "provider did not merge the pull request",
+      });
+      await expect(modal).toBeVisible();
+      await expect(modal).toContainText("provider did not merge the pull request");
+      expect((await apiContext.get(`/api/v1/workspaces/${createdWorkspace.id}`)).status()).toBe(200);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("activity feed hosts a created workspace in its workspace pane", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

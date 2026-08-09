@@ -199,6 +199,7 @@ describe("provider action mutations", () => {
     await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
     const workflowsSettled = Promise.withResolvers<void>();
     const mergeSettled = Promise.withResolvers<void>();
+    const mergeSucceeded = vi.fn();
 
     store.approvePullWorkflows(routeRef, 1, { onSettled: workflowsSettled.resolve });
     store.mergePull(
@@ -211,7 +212,7 @@ describe("provider action mutations", () => {
         method: "squash",
       },
       true,
-      { onSettled: mergeSettled.resolve },
+      { onSuccess: mergeSucceeded, onSettled: mergeSettled.resolve },
     );
     await Promise.all([workflowsSettled.promise, mergeSettled.promise]);
 
@@ -219,6 +220,7 @@ describe("provider action mutations", () => {
       expect.stringContaining("/approve-workflows"),
       expect.stringContaining("/merge/deferred"),
     ]);
+    expect(mergeSucceeded).toHaveBeenCalledWith({ _tag: "Queued" });
   });
 
   it("delivers the typed merge problem for inline conflict presentation", async () => {
@@ -277,7 +279,7 @@ describe("provider action mutations", () => {
     await settled.promise;
 
     expect(onSuccess).toHaveBeenCalledWith({
-      merged: true,
+      _tag: "Merged",
       cleanupWarning: "workspace has uncommitted changes",
     });
   });

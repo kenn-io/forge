@@ -1941,6 +1941,18 @@ func buildAppState(
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/not-merged" {
+			merged := false
+			sha := ""
+			message := "provider did not merge the pull request"
+			fc.SetMergePullRequestResult(&gh.PullRequestMergeResult{
+				Merged:  &merged,
+				SHA:     &sha,
+				Message: &message,
+			})
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-workflow-approval/required" {
 			repo, err := database.GetRepoByIdentity(

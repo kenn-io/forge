@@ -6,7 +6,6 @@ import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import RepoTreePicker from "./RepoTreePicker.svelte";
 
 type JobsStoreStub = {
-  getOwner: () => string;
   getFilterRepo: () => string | undefined;
   getFilterBranch: () => string | undefined;
   setFilter: Mock<(key: string, value: string | undefined) => void>;
@@ -43,7 +42,6 @@ describe("RepoTreePicker", () => {
     state.branch = undefined;
     state.runtime = makeAppRuntime();
     state.jobs = {
-      getOwner: () => "repo-tree-picker-test",
       getFilterRepo: () => state.repo,
       getFilterBranch: () => state.branch,
       setFilter: vi.fn((key: string, value: string | undefined) => {

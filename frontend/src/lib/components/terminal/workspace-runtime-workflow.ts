@@ -1,6 +1,8 @@
 import {
   Cause,
+  Clock,
   Context,
+  Duration,
   Effect,
   Exit,
   Fiber,
@@ -20,6 +22,10 @@ import { isProblem, type ProblemBody } from "../../api/problems.js";
 import { type WorkspaceRuntimeState } from "../../api/workspace-runtime.js";
 import type { LaunchTarget, RuntimeSession, WorkspaceRuntime } from "../../api/types.js";
 import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
+import {
+  completeAcceptedWorkspaceLaunch,
+  pendingWorkspaceLaunch,
+} from "../../stores/workspace-create-pending.svelte.js";
 import type { WorkflowPreset } from "./workflow-presets.js";
 import { decodeWorkspaceDetail, type WorkspaceDetail } from "./workspace-detail.js";
 
@@ -81,6 +87,13 @@ export interface WorkspaceRuntimeDeleteOptions {
 
 export interface WorkspaceRuntimeReadOptions {
   readonly force?: boolean | undefined;
+}
+
+export interface AcceptedWorkspaceLaunchReconciliation {
+  readonly target: WorkspaceRuntimeTarget;
+  readonly sessionKey: string;
+  readonly acceptedAt: number;
+  readonly onExpired: Effect.Effect<void>;
 }
 
 export type WorkspaceRuntimeLaunchPlacement =
@@ -294,6 +307,7 @@ interface WorkspaceRuntimeMutationPresenter {
   readonly sessionID: string;
   readonly observe: WorkspaceRuntimeMutationObserver;
   readonly releaseWhenAcknowledged: boolean;
+  readonly presentationIsCurrent?: (() => boolean) | undefined;
 }
 
 type WorkspaceRuntimeSucceededState = Extract<WorkspaceRuntimeMutationState, { readonly kind: "succeeded" }>;
@@ -316,6 +330,7 @@ interface WorkspaceRuntimePresetProgress {
 
 export interface WorkspaceRuntimePresenterOptions {
   readonly releaseWhenAcknowledged?: boolean | undefined;
+  readonly presentationIsCurrent?: (() => boolean) | undefined;
 }
 
 export interface WorkspaceRuntimeWorkflowService {
@@ -337,6 +352,7 @@ export interface WorkspaceRuntimeWorkflowService {
   readonly refresh: (target: WorkspaceRuntimeTarget) => Effect.Effect<void>;
   readonly retrySetup: (target: WorkspaceRuntimeTarget) => Effect.Effect<void>;
   readonly delete: (target: WorkspaceRuntimeTarget, options: WorkspaceRuntimeDeleteOptions) => Effect.Effect<void>;
+  readonly reconcileAcceptedLaunch: (request: AcceptedWorkspaceLaunchReconciliation) => Effect.Effect<void>;
   readonly claimPresenter: (
     target: WorkspaceRuntimeTarget,
     sessionID: string,
@@ -464,7 +480,12 @@ export function makeWorkspaceRuntimeWorkflow(
         const initiatingPresenter = presenters.find(
           (candidate) => candidate.sessionID === state.request.options.presenterID,
         );
-        return state.kind === "uncertain" ? (initiatingPresenter ?? presenters.at(-1)) : initiatingPresenter;
+        if (state.kind !== "uncertain") return initiatingPresenter;
+        const currentPresenters = presenters.filter((candidate) => candidate.presentationIsCurrent?.() !== false);
+        const currentInitiatingPresenter = currentPresenters.find(
+          (candidate) => candidate.sessionID === state.request.options.presenterID,
+        );
+        return currentInitiatingPresenter ?? currentPresenters.at(-1);
       }
       const presenterID =
         state.kind === "failed" || state.kind === "uncertain"
@@ -1080,6 +1101,38 @@ export function makeWorkspaceRuntimeWorkflow(
       yield* FiberMap.remove(reads, owner);
     });
 
+    const reconcileAcceptedLaunch = Effect.fn("WorkspaceRuntimeWorkflow.reconcileAcceptedLaunch")(function* (
+      request: AcceptedWorkspaceLaunchReconciliation,
+    ) {
+      const owner = makeWorkspaceRuntimeOwner("accepted-launch");
+      const stillAwaitingSession = () => {
+        const current = pendingWorkspaceLaunch(request.target.workspaceId, request.target.hostKey);
+        return (
+          current?.phase === "awaiting_session" &&
+          current.sessionKey === request.sessionKey &&
+          current.acceptedAt === request.acceptedAt
+        );
+      };
+      const remaining = Math.max(0, request.acceptedAt + 15_000 - (yield* Clock.currentTimeMillis));
+      const observed = yield* Effect.gen(function* () {
+        while (stillAwaitingSession()) {
+          const result = yield* read(owner, request.target.workspaceId, request.target.hostKey, { force: true }).pipe(
+            Effect.catch(() => Effect.succeed(Option.none())),
+          );
+          if (Option.isSome(result) && result.value.sessions.some((session) => session.key === request.sessionKey)) {
+            completeAcceptedWorkspaceLaunch(request.target.workspaceId, request.target.hostKey, request.sessionKey);
+            return true;
+          }
+          yield* Effect.sleep("500 millis");
+        }
+        return false;
+      }).pipe(Effect.timeoutOption(Duration.millis(remaining)), Effect.ensuring(release(owner)));
+      if (Option.isSome(observed) && observed.value) return;
+      if (completeAcceptedWorkspaceLaunch(request.target.workspaceId, request.target.hostKey, request.sessionKey)) {
+        yield* request.onExpired;
+      }
+    });
+
     const claimPresenter = Effect.fn("WorkspaceRuntimeWorkflow.claimPresenter")(function* (
       target: WorkspaceRuntimeTarget,
       sessionID: string,
@@ -1096,6 +1149,7 @@ export function makeWorkspaceRuntimeWorkflow(
                 sessionID,
                 observe,
                 releaseWhenAcknowledged: options.releaseWhenAcknowledged === true,
+                presentationIsCurrent: options.presentationIsCurrent,
               },
             ]),
           );
@@ -1137,6 +1191,7 @@ export function makeWorkspaceRuntimeWorkflow(
       refresh: (target) => submitMutation({ _tag: "Refresh", target }),
       retrySetup: (target) => submitMutation({ _tag: "RetrySetup", target }),
       delete: (target, options) => submitMutation({ _tag: "Delete", target, options }),
+      reconcileAcceptedLaunch,
       claimPresenter,
       releasePresenter,
       release,

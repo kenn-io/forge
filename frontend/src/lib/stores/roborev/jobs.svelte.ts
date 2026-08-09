@@ -851,9 +851,6 @@ export function createJobsStore(opts: JobsStoreOptions) {
   function getJobs(): ReviewJob[] {
     return jobs;
   }
-  function getOwner(): string {
-    return opts.owner;
-  }
   function isLoading(): boolean {
     return loading;
   }
@@ -911,7 +908,6 @@ export function createJobsStore(opts: JobsStoreOptions) {
 
   return {
     getJobs,
-    getOwner,
     getVisibleJobs,
     isLoading,
     getHasMore,

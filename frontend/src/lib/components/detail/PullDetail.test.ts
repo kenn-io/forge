@@ -260,7 +260,7 @@ function renderPullDetail(
         if (warning) {
           showFlash(`Pull request merged, but the workspace was not pruned: ${warning}`, { tone: "warning" });
         }
-        callbacks.onSuccess?.(warning === undefined ? {} : { cleanupWarning: warning });
+        callbacks.onSuccess?.(warning === undefined ? { merged: true } : { merged: true, cleanupWarning: warning });
       }
       callbacks.onSettled?.();
     });

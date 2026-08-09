@@ -98,6 +98,10 @@
   );
   // svelte-ignore state_referenced_locally — the sidebar stores are scoped to this mounted workspace
   const roborevOwner = makeRoborevOwner(`workspace-sidebar:${workspaceID}`);
+  // Repository resolution is an independent catalog consumer. Reusing the
+  // sidebar store owner would let a picker or resolver cancel unrelated work.
+  // svelte-ignore state_referenced_locally — the resolver owner is scoped to this mounted sidebar
+  const repoResolutionOwner = makeRoborevOwner(`workspace-repository:${workspaceID}`);
   const sidebarJobs = createJobsStore({
     client: roborevClient,
     runtime: appRuntime,
@@ -150,7 +154,7 @@
     return Effect.gen(function* () {
       const workflow = yield* RoborevWorkflow;
       return yield* workflow.catalog(
-        roborevOwner,
+        repoResolutionOwner,
         executeRoborevRequest("resolve workspace Roborev repository", (signal) =>
           roborevClient.GET("/api/repos", { signal }),
         ).pipe(
@@ -217,7 +221,7 @@
   function retryResolve(): void {
     appRuntime.runCommand(resolveAndLoadEffect(), {
       operation: "resolve workspace Roborev repository",
-      safeContext: { owner: roborevOwner },
+      safeContext: { owner: repoResolutionOwner },
       onFailure: () => {},
     });
   }
@@ -228,7 +232,7 @@
     if (key === lastResolvedKey && !negativeMatch) return;
     const execution = appRuntime.runCommand(resolveAndLoadEffect(), {
       operation: "resolve workspace Roborev repository",
-      safeContext: { owner: roborevOwner },
+      safeContext: { owner: repoResolutionOwner },
       onFailure: () => {},
     });
     return execution.interrupt;
@@ -321,6 +325,7 @@
       Effect.gen(function* () {
         const workflow = yield* RoborevWorkflow;
         yield* workflow.stop(roborevOwner);
+        yield* workflow.stopCatalog(repoResolutionOwner);
       }),
       {
         operation: "stop workspace Roborev stores",

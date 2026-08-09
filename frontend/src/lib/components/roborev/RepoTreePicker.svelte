@@ -7,6 +7,7 @@
   import { getStores, getRoborevClient } from "../../context.js";
   import type { components } from "../../api/roborev/generated/schema.js";
   import {
+    makeRoborevOwner,
     RoborevResponseError,
     RoborevWorkflow,
   } from "../../stores/roborev/roborev-workflow.js";
@@ -17,7 +18,7 @@
   const stores = getStores();
   const client = getRoborevClient();
   const runtime = getAppRuntime();
-  const owner = stores.roborevJobs?.getOwner() ?? "roborev-repo-picker";
+  const owner = makeRoborevOwner("repository-picker");
 
   let open = $state(false);
   let search = $state("");

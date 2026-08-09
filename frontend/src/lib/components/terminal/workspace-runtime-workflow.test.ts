@@ -1,10 +1,18 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Option, Ref } from "effect";
+import { Clock, Deferred, Effect, Fiber, Option, Ref } from "effect";
+import { TestClock } from "effect/testing";
 import { TransientTransportError } from "../../api/effect-errors.js";
 import { GeneratedApiLive } from "../../api/generated-api.js";
 import type { WorkspaceRuntimeState } from "../../api/workspace-runtime.js";
 import type { RuntimeSession } from "../../api/types.js";
 import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
+import {
+  acceptWorkspaceLaunch,
+  claimWorkspaceLaunch,
+  pendingWorkspaceLaunch,
+  queueWorkspaceLaunch,
+  resetWorkspaceCreatePendingForTest,
+} from "../../stores/workspace-create-pending.svelte.js";
 import { defaultTerminalLayout } from "./terminal-layout.js";
 import type { WorkspaceDetail } from "./workspace-detail.js";
 import type { WorkflowPreset } from "./workflow-presets.js";
@@ -58,6 +66,54 @@ function unusedPortMethod(): Effect.Effect<never> {
 }
 
 describe("WorkspaceRuntimeWorkflow", () => {
+  it.effect("bounds accepted-launch reconciliation when the runtime read never settles", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        resetWorkspaceCreatePendingForTest();
+        yield* Effect.addFinalizer(() => Effect.sync(resetWorkspaceCreatePendingForTest));
+        queueWorkspaceLaunch("ws-1", "helper", undefined);
+        const claim = claimWorkspaceLaunch("ws-1", undefined);
+        assert.isNotNull(claim);
+        const acceptedAt = yield* Clock.currentTimeMillis;
+        assert.isTrue(acceptWorkspaceLaunch(claim, "ws-1:helper", acceptedAt));
+
+        const readStarted = yield* Deferred.make<void>();
+        const readInterrupted = yield* Deferred.make<void>();
+        const expired = yield* Ref.make(0);
+        const port: WorkspaceRuntimePort = {
+          read: () =>
+            Deferred.succeed(readStarted, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() => Deferred.succeed(readInterrupted, undefined)),
+            ),
+          launch: unusedPortMethod,
+          rename: unusedPortMethod,
+          stop: unusedPortMethod,
+          refresh: unusedPortMethod,
+          retry: unusedPortMethod,
+          delete: unusedPortMethod,
+        };
+        const workflow = yield* makeWorkspaceRuntimeWorkflow(port);
+        const reconciliation = yield* Effect.forkChild(
+          workflow.reconcileAcceptedLaunch({
+            target: { workspaceId: "ws-1" },
+            sessionKey: "ws-1:helper",
+            acceptedAt,
+            onExpired: Ref.update(expired, (count) => count + 1),
+          }),
+        );
+        yield* Deferred.await(readStarted);
+
+        yield* TestClock.adjust("15 seconds");
+        yield* Fiber.join(reconciliation);
+
+        assert.isNull(pendingWorkspaceLaunch("ws-1", undefined));
+        assert.strictEqual(yield* Ref.get(expired), 1);
+        assert.isTrue(Option.isSome(yield* Deferred.poll(readInterrupted)));
+      }),
+    ),
+  );
+
   it.effect("aborts the generated runtime request when its read owner is interrupted", () =>
     Effect.scoped(
       Effect.gen(function* () {

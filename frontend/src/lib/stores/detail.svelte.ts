@@ -1,7 +1,6 @@
 import { Effect, Result } from "effect";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
-import { TransientTransportError } from "../api/effect-errors.js";
-import type { ApiProblemError } from "../api/effect-errors.js";
+import { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
 import type {
@@ -19,6 +18,7 @@ import type {
 import type { ApplySuggestionRequest } from "../utils/markdown-suggestions.js";
 import {
   isProblem,
+  ProblemCodes,
   problemConflictContext,
   problemConflictReason,
   problemRetryAfter,
@@ -94,6 +94,7 @@ export interface ProviderActionCallbacks extends MutationCallbacks {
 }
 
 export interface MergePullOutcome {
+  readonly merged: boolean;
   readonly cleanupWarning?: string;
 }
 
@@ -779,11 +780,26 @@ export function createDetailStore(opts: DetailStoreOptions) {
               signal,
             }),
           ).pipe(
-            Effect.tap((result) =>
-              Effect.sync(() => {
+            Effect.flatMap((result) => {
+              if (!result.merged) {
+                return Effect.fail(
+                  new ApiProblemError({
+                    operation: "POST pull request merge",
+                    problem: {
+                      code: ProblemCodes.conflict,
+                      detail: result.message || "The pull request could not be merged.",
+                      details: { reason: "conflict" },
+                      status: 409,
+                      title: "Merge did not complete",
+                      type: "about:blank",
+                    },
+                  }),
+                );
+              }
+              return Effect.sync(() => {
                 workspaceCleanupWarning = result.workspace_cleanup_warning;
-              }),
-            ),
+              });
+            }),
             Effect.asVoid,
           );
     runPullAction(ref, number, deferred ? "schedule pull request merge" : "merge pull request", commit, {
@@ -794,7 +810,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
             tone: "warning",
           });
         }
-        callbacks.onSuccess?.(workspaceCleanupWarning === undefined ? {} : { cleanupWarning: workspaceCleanupWarning });
+        callbacks.onSuccess?.(
+          workspaceCleanupWarning === undefined
+            ? { merged: true }
+            : { merged: true, cleanupWarning: workspaceCleanupWarning },
+        );
       },
     });
   }

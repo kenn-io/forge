@@ -101,7 +101,7 @@ Interactive surfaces must agree on which item is selected.
   runtime reads as observations rather than terminal failures, and releases its read owner on exact-session
   evidence or timeout. Sibling views suppress their empty fallback and may discard only unclaimed intents
   (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`,
-  `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::reconcileAcceptedWorkspaceLaunch`).
+  `frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::reconcileAcceptedLaunch`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and
@@ -128,7 +128,7 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
 - Immediate and deferred merge cleanup is optional partial success, represented by the generated
   `delete_workspace_id` request field and `workspace_cleanup_warning` result. A warning keeps the workspace live and
-  is presented as a warning, while only a warning-free immediate acknowledgement publishes the deleted workspace ID
+  is presented as a warning, while only `merged: true` with no warning publishes the deleted workspace ID
   (`frontend/src/lib/components/detail/MergeModal.svelte`, `frontend/src/lib/stores/detail.svelte.ts::mergePull`).
 - Catalog-backed routes must normalize missing selections even when the catalog
   is empty: select the first available item or `null`, and clear dependent route
@@ -675,6 +675,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   replays the write. A confirmed POST stays acknowledged when its follow-up refresh fails; report
   refresh degradation separately. Cancel only the exact owner lease on teardown
   (`frontend/src/lib/stores/roborev/roborev-workflow.ts::RoborevWorkflowService`).
+- Catalog reads use consumer-local owners: picker teardown or route replacement may cancel only that
+  consumer, never review-run state or sibling repository resolution
+  (`frontend/src/lib/components/roborev/RepoTreePicker.svelte::owner`).
 - Docs publish commands snapshot folder and message and remain application-owned after replacement;
   same-folder surfaces adopt pending or unacknowledged failure state, while completed success is never
   replayed into a later session (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflowService`).

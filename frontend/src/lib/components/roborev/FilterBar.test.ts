@@ -6,7 +6,6 @@ import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import FilterBarTestHarness from "./FilterBarTestHarness.svelte";
 
 type JobsStoreStub = {
-  getOwner: () => string;
   getFilterSearch: () => string | undefined;
   getFilterStatus: () => string | undefined;
   getFilterHideClosed: () => boolean;
@@ -38,7 +37,6 @@ describe("FilterBar", () => {
     runtime = makeAppRuntime();
     state.showAutoDesign = false;
     state.jobs = {
-      getOwner: () => "filter-bar-test",
       getFilterSearch: () => undefined,
       getFilterStatus: () => undefined,
       getFilterHideClosed: () => false,

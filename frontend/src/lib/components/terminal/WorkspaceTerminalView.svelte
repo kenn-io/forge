@@ -302,7 +302,10 @@
         presenterID,
         (state) =>
           presentRuntimeMutation(state, presenterID, failurePresentationIsCurrent).pipe(Effect.provide(context)),
-        { releaseWhenAcknowledged: true },
+        {
+          releaseWhenAcknowledged: true,
+          presentationIsCurrent: failurePresentationIsCurrent,
+        },
       );
       yield* workflow.delete(target, {
         force,
@@ -2427,7 +2430,7 @@
                   if (acceptWorkspaceLaunch(launchClaim, settlement.sessionKey, acceptedAt)) {
                     const label = launchTargets.find((target) => target.key === launchClaim.targetKey)?.label
                       ?? launchClaim.targetKey;
-                    reconcileAcceptedWorkspaceLaunch(
+                    startAcceptedWorkspaceLaunchReconciliation(
                       launchClaim.workspaceId,
                       launchClaim.workspaceHostKey,
                       settlement.sessionKey,
@@ -2452,54 +2455,23 @@
     );
   }
 
-  function reconcileAcceptedWorkspaceLaunch(
+  function startAcceptedWorkspaceLaunchReconciliation(
     acceptedWorkspaceId: string,
     acceptedWorkspaceHostKey: string | undefined,
     acceptedSessionKey: string,
     acceptedAt: number,
     label: string,
   ): void {
-    const owner = makeWorkspaceRuntimeOwner("accepted-launch");
-    const stillAwaitingSession = () => {
-      const current = pendingWorkspaceLaunch(acceptedWorkspaceId, acceptedWorkspaceHostKey);
-      return (
-        current?.phase === "awaiting_session" &&
-        current.sessionKey === acceptedSessionKey &&
-        current.acceptedAt === acceptedAt
-      );
-    };
     const program = Effect.gen(function* () {
       const workflow = yield* WorkspaceRuntimeWorkflow;
-      yield* Effect.gen(function* () {
-        while (stillAwaitingSession()) {
-          const remaining = 15_000 - (Date.now() - acceptedAt);
-          if (remaining <= 0) break;
-          const result = yield* workflow
-            .read(owner, acceptedWorkspaceId, acceptedWorkspaceHostKey, { force: true })
-            .pipe(Effect.catch(() => Effect.succeed(Option.none())));
-          if (
-            Option.isSome(result) &&
-            result.value.sessions.some((session) => session.key === acceptedSessionKey)
-          ) {
-            completeAcceptedWorkspaceLaunch(
-              acceptedWorkspaceId,
-              acceptedWorkspaceHostKey,
-              acceptedSessionKey,
-            );
-            return;
-          }
-          yield* Effect.sleep(Duration.millis(Math.min(500, remaining)));
-        }
-        if (
-          completeAcceptedWorkspaceLaunch(
-            acceptedWorkspaceId,
-            acceptedWorkspaceHostKey,
-            acceptedSessionKey,
-          )
-        ) {
+      yield* workflow.reconcileAcceptedLaunch({
+        target: runtimeTarget(acceptedWorkspaceId, acceptedWorkspaceHostKey),
+        sessionKey: acceptedSessionKey,
+        acceptedAt,
+        onExpired: Effect.sync(() => {
           showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
-        }
-      }).pipe(Effect.ensuring(workflow.release(owner)));
+        }),
+      });
     });
     appRuntime.runCommand(program, {
       operation: "reconcile accepted workspace launch",

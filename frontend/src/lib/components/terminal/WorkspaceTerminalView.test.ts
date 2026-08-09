@@ -2487,6 +2487,68 @@ describe("WorkspaceTerminalView", () => {
     });
   });
 
+  it("surfaces uncertain delete feedback after switching away and returning to the workspace", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    const deleteRequest = Promise.withResolvers<Response>();
+    const otherWorkspaceResponse = {
+      ...workspaceResponse,
+      id: "ws-2",
+      item_number: 8,
+      worktree_path: "/tmp/worktree-2",
+    };
+    let readsFail = false;
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      const { pathname } = new URL(url, "http://localhost");
+      if (method === "DELETE" && pathname.endsWith("/workspaces/ws-1")) {
+        return deleteRequest.promise;
+      }
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return readsFail
+          ? Promise.reject(new TypeError("workspace read unavailable"))
+          : Promise.resolve(Response.json(workspaceResponse));
+      }
+      if (pathname.endsWith("/workspaces/ws-2")) {
+        return Promise.resolve(Response.json(otherWorkspaceResponse));
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse, otherWorkspaceResponse] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState({}, "", "/terminal/ws-1");
+
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("button", { name: "Delete" });
+    await clickDeleteAndConfirm();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => input instanceof Request && input.method === "DELETE")).toBe(true);
+    });
+
+    window.history.pushState({}, "", "/terminal/ws-2");
+    await view.rerender({ workspaceId: "ws-2" });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => fetchPath(input).endsWith("/workspaces/ws-2"))).toBe(true);
+    });
+    readsFail = true;
+    deleteRequest.reject(new TypeError("delete response unavailable"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.showFlash).not.toHaveBeenCalled();
+
+    readsFail = false;
+    window.history.pushState({}, "", "/terminal/ws-1");
+    await view.rerender({ workspaceId: "ws-1" });
+
+    await waitFor(() => {
+      expect(mocks.showFlash).toHaveBeenCalledWith(
+        "Could not confirm whether the delete completed. Retry will check workspace state before sending anything.",
+        { tone: "danger" },
+      );
+    });
+  });
+
   it("reports a successful delete even after switching to another workspace", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const deleteRequest = deferred<Response>();

@@ -76,7 +76,7 @@ describe("MergeModal acknowledged merge commands", () => {
     resetWorkspaceCreatePendingForTest();
     mockMergePull.mockImplementation((...args: unknown[]) => {
       const callbacks = args.at(-1) as { onSuccess?: (outcome: object) => void; onSettled?: () => void };
-      callbacks.onSuccess?.({});
+      callbacks.onSuccess?.({ merged: true });
       callbacks.onSettled?.();
     });
   });
@@ -142,7 +142,7 @@ describe("MergeModal acknowledged merge commands", () => {
         onSuccess?: (outcome: { cleanupWarning?: string }) => void;
         onSettled?: () => void;
       };
-      succeed = () => callbacks.onSuccess?.({});
+      succeed = () => callbacks.onSuccess?.({ merged: true });
       settle = () => callbacks.onSettled?.();
     });
     renderModal({ workspaceId: "ws-1", onmerged });
@@ -166,7 +166,7 @@ describe("MergeModal acknowledged merge commands", () => {
         onSuccess?: (outcome: { cleanupWarning?: string }) => void;
         onSettled?: () => void;
       };
-      callbacks.onSuccess?.({ cleanupWarning: "workspace has uncommitted changes" });
+      callbacks.onSuccess?.({ merged: true, cleanupWarning: "workspace has uncommitted changes" });
       callbacks.onSettled?.();
     });
     renderModal({ workspaceId: "ws-1", onmerged });
@@ -175,6 +175,24 @@ describe("MergeModal acknowledged merge commands", () => {
 
     expect(isWorkspaceIdDeleted("ws-1")).toBe(false);
     expect(onmerged).toHaveBeenCalledWith("workspace has uncommitted changes", undefined);
+  });
+
+  it("does not publish workspace deletion when the provider did not merge", async () => {
+    const onmerged = vi.fn();
+    mockMergePull.mockImplementation((...args: unknown[]) => {
+      const callbacks = args.at(-1) as {
+        onSuccess?: (outcome: { merged: boolean; cleanupWarning?: string }) => void;
+        onSettled?: () => void;
+      };
+      callbacks.onSuccess?.({ merged: false });
+      callbacks.onSettled?.();
+    });
+    renderModal({ workspaceId: "ws-1", onmerged });
+
+    await confirmMerge();
+
+    expect(isWorkspaceIdDeleted("ws-1")).toBe(false);
+    expect(onmerged).not.toHaveBeenCalled();
   });
 
   it("omits the head pin when the rendered head is unknown", async () => {
@@ -312,7 +330,7 @@ describe("MergeModal acknowledged merge commands", () => {
     mockMergePull.mockImplementation((...args: unknown[]) => {
       const callbacks = args.at(-1) as { onSuccess?: (outcome: object) => void; onSettled?: () => void };
       settle = () => {
-        callbacks.onSuccess?.({});
+        callbacks.onSuccess?.({ merged: true });
         callbacks.onSettled?.();
       };
     });

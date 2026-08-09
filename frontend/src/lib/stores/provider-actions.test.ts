@@ -276,6 +276,44 @@ describe("provider action mutations", () => {
     );
     await settled.promise;
 
-    expect(onSuccess).toHaveBeenCalledWith({ cleanupWarning: "workspace has uncommitted changes" });
+    expect(onSuccess).toHaveBeenCalledWith({
+      merged: true,
+      cleanupWarning: "workspace has uncommitted changes",
+    });
+  });
+
+  it("reports a provider response that did not merge as a failed merge", async () => {
+    const store = createDetailStore({
+      client: {
+        GET: vi.fn(async () => ({ data: detail() })),
+        POST: vi.fn().mockResolvedValue({
+          data: {
+            merged: false,
+            sha: "",
+            message: "The pull request could not be merged",
+          },
+          response: new Response(null, { status: 200 }),
+        }),
+        PUT: vi.fn(),
+        DELETE: vi.fn(),
+      } as unknown as GeneratedClient,
+    });
+    store.loadDetail("octo", "repo", 1, { ...routeRef, sync: false });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    const onSuccess = vi.fn();
+    const onFailure = vi.fn();
+    const settled = Promise.withResolvers<void>();
+
+    store.mergePull(
+      routeRef,
+      1,
+      { commit_message: "", commit_title: "Merge pull request", method: "merge", delete_workspace_id: "ws-1" },
+      false,
+      { onSuccess, onFailure, onSettled: settled.resolve },
+    );
+    await settled.promise;
+
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onFailure).toHaveBeenCalledWith("The pull request could not be merged");
   });
 });

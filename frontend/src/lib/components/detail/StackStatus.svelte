@@ -281,7 +281,7 @@
         <span class="stack-chip-label">Stacked: {data.position}/{data.size}</span>
         {#if downstackBlockerCount > 0}
           <span class="stack-chip-failure" aria-hidden="true">
-            <XIcon size={12} strokeWidth={2.8} />
+            <XIcon size={14} strokeWidth={2.8} />
             <span>{downstackBlockerCount}</span>
           </span>
         {/if}
@@ -362,8 +362,8 @@
 
   .stack-chip-failure {
     display: inline-flex;
-    align-items: center;
-    vertical-align: middle;
+    align-items: baseline;
+    vertical-align: baseline;
     gap: 1px;
     color: var(--accent-red);
     font-variant-numeric: tabular-nums;

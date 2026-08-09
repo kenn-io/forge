@@ -133,7 +133,17 @@ function toolsPullDetail(number: number, downstackFailure = false) {
       CommentCount: 0,
       ReviewDecision: member.review_decision,
       CIStatus: member.ci_status,
-      CIChecksJSON: "[]",
+      CIChecksJSON: downstackFailure
+        ? JSON.stringify([
+            {
+              name: "test",
+              status: "completed",
+              conclusion: "failure",
+              url: "",
+              app: "",
+            },
+          ])
+        : "[]",
       CreatedAt: "2026-03-29T14:00:00Z",
       UpdatedAt: "2026-03-30T14:00:00Z",
       LastActivityAt: "2026-03-30T14:00:00Z",
@@ -187,6 +197,12 @@ function stackSummaryText(): string {
   return document.querySelector(".stack-panel .stack-summary")?.textContent?.trim() ?? "";
 }
 
+function textRect(element: HTMLElement): DOMRect {
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  return range.getBoundingClientRect();
+}
+
 describe("stack status panel", () => {
   vi.setConfig({ testTimeout: 30_000 });
 
@@ -229,7 +245,7 @@ describe("stack status panel", () => {
     expect(window.location.pathname).toBe("/pulls/github/acme/tools/11");
   });
 
-  it("aligns the downstack failure count with the stack label", async () => {
+  it("matches the stack warning token to CI and keeps its count on the label baseline", async () => {
     mounted = await mountBrowserApp("/pulls/github/acme/tools/11", {
       overrides: [toolsStackRoutes(true)],
     });
@@ -237,10 +253,16 @@ describe("stack status panel", () => {
     await expect.element(page.getByTestId("stack-chip")).toBeVisible();
 
     const label = document.querySelector<HTMLElement>(".stack-chip-label");
-    const failure = document.querySelector<HTMLElement>(".stack-chip-failure");
+    const failureCount = document.querySelector<HTMLElement>(".stack-chip-failure > span");
+    const stackFailureIcon = document.querySelector<SVGElement>(".stack-chip-failure > svg");
+    const ciFailureIcon = document.querySelector<SVGElement>("[data-testid='ci-token-failed'] > svg");
     expect(label).not.toBeNull();
-    expect(failure).not.toBeNull();
-    expect(Math.abs(label!.getBoundingClientRect().bottom - failure!.getBoundingClientRect().bottom)).toBeLessThan(1);
+    expect(failureCount).not.toBeNull();
+    expect(stackFailureIcon).not.toBeNull();
+    expect(ciFailureIcon).not.toBeNull();
+
+    expect(Math.abs(textRect(label!).bottom - textRect(failureCount!).bottom)).toBeLessThanOrEqual(0.5);
+    expect(stackFailureIcon!.getBoundingClientRect().height).toBe(ciFailureIcon!.getBoundingClientRect().height);
   });
 
   it("preserves the focus route when navigating to a stack member", async () => {

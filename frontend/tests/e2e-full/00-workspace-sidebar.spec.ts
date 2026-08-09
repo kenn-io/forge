@@ -3,6 +3,8 @@
 // that start near the end of the run stretch the suite tail.
 
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
+import { createServer, request as httpRequest, type Server } from "node:http";
+import { networkInterfaces } from "node:os";
 import {
   startIsolatedWorkspaceE2EServer,
   startIsolatedWorkspaceE2EServerWithOptions,
@@ -162,6 +164,85 @@ test.describe("workspace sidebar full-stack", () => {
         }),
       ).toHaveCount(1, { timeout: 7_000 });
     } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("loads a real workspace from an insecure HTTP origin", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    let proxyServer: Server | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+      await createIssueWorkspace(api, 10);
+
+      const upstreamOrigin = new URL(isolatedServer.info.base_url);
+      const proxyHost = Object.values(networkInterfaces())
+        .flat()
+        .find((address) => address?.family === "IPv4" && !address.internal)?.address;
+      if (!proxyHost) {
+        throw new Error("no non-loopback IPv4 address is available for the insecure-origin proxy");
+      }
+
+      proxyServer = createServer((request, response) => {
+        const upstreamRequest = httpRequest(
+          new URL(request.url ?? "/", upstreamOrigin),
+          {
+            method: request.method,
+            headers: {
+              ...request.headers,
+              host: upstreamOrigin.host,
+            },
+          },
+          (upstreamResponse) => {
+            response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+            upstreamResponse.pipe(response);
+          },
+        );
+        upstreamRequest.on("error", (error) => {
+          if (!response.headersSent) {
+            response.writeHead(502);
+          }
+          response.end(error.message);
+        });
+        request.pipe(upstreamRequest);
+      });
+      await new Promise<void>((resolve, reject) => {
+        proxyServer?.once("error", reject);
+        proxyServer?.listen(0, proxyHost, resolve);
+      });
+      const proxyAddress = proxyServer.address();
+      if (!proxyAddress || typeof proxyAddress === "string") {
+        throw new Error("insecure-origin proxy did not publish a TCP address");
+      }
+
+      const insecureOrigin = `http://${proxyHost}:${proxyAddress.port}`;
+      await page.goto(`${insecureOrigin}/workspaces`);
+
+      expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+      expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe("undefined");
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row").filter({
+          hasText: "Widget rendering broken on Safari",
+        }),
+      ).toHaveCount(1);
+    } finally {
+      if (proxyServer) {
+        proxyServer.closeAllConnections();
+        await new Promise<void>((resolve, reject) => {
+          proxyServer?.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+      }
       await api?.dispose();
       await isolatedServer?.stop();
     }

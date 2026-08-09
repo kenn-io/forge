@@ -15,7 +15,7 @@ const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
 const apiUrl = resolveDevApiUrl();
 const devServerPort = resolveViteServerPort();
 const devServerAllowedHosts = resolveViteAllowedHosts();
-const devServerHmr = resolveViteHmr(devServerPort);
+const devServerHmr = resolveViteHmr();
 const workspaceRoot = searchForWorkspaceRoot(process.cwd());
 
 function devApiUrlPlugin(url: string): Plugin {
@@ -72,15 +72,16 @@ export function resolveViteAllowedHosts(env: Record<string, string | undefined> 
   return hosts.length > 0 ? hosts : undefined;
 }
 
-export function resolveViteHmr(port = resolveViteServerPort(), env: Record<string, string | undefined> = process.env) {
-  const protocol = env.KENN_FORGE_VITE_HMR_PROTOCOL === "wss" ? "wss" : "ws";
-  const host = env.KENN_FORGE_VITE_HMR_HOST?.trim() || "127.0.0.1";
-  const clientPort = parsePort(env.KENN_FORGE_VITE_HMR_CLIENT_PORT) ?? port;
+export function resolveViteHmr(env: Record<string, string | undefined> = process.env) {
+  const configuredProtocol = env.KENN_FORGE_VITE_HMR_PROTOCOL;
+  const protocol = configuredProtocol === "ws" || configuredProtocol === "wss" ? configuredProtocol : undefined;
+  const host = env.KENN_FORGE_VITE_HMR_HOST?.trim() || undefined;
+  const clientPort = parsePort(env.KENN_FORGE_VITE_HMR_CLIENT_PORT) ?? undefined;
 
   return {
-    protocol,
-    host,
-    clientPort,
+    ...(protocol ? { protocol } : {}),
+    ...(host ? { host } : {}),
+    ...(clientPort ? { clientPort } : {}),
     path: "/__vite_hmr",
   };
 }

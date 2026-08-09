@@ -36,14 +36,11 @@ describe("vite config", () => {
     expect(includes).toContain("@lucide/svelte/icons/list-chevrons-up-down");
   });
 
-  it("pins the dev server host to IPv4 loopback", () => {
+  it("pins the dev server listener to loopback while HMR follows the page origin", () => {
     expect(config.server?.host).toBe("127.0.0.1");
     expect(config.server?.port).toBe(5174);
     expect(config.server?.strictPort).toBe(true);
     expect(config.server?.hmr).toEqual({
-      protocol: "ws",
-      host: "127.0.0.1",
-      clientPort: 5174,
       path: "/__vite_hmr",
     });
   });
@@ -89,7 +86,7 @@ describe("vite config", () => {
     expect(webSocketDebugEnabled({ KENN_FORGE_WS_DEBUG: "yes" })).toBe(true);
   });
 
-  it("uses the Vite CLI port for dev server HMR settings", () => {
+  it("uses the Vite CLI port for the dev server listener", () => {
     expect(resolveViteServerPort(["vite", "--port", "4173"])).toBe(4173);
     expect(resolveViteServerPort(["vite", "--port=4180"])).toBe(4180);
     expect(resolveViteServerPort(["vite"])).toBe(5174);
@@ -106,7 +103,7 @@ describe("vite config", () => {
 
   it("can advertise HMR through the tailnet HTTPS endpoint", () => {
     expect(
-      resolveViteHmr(5174, {
+      resolveViteHmr({
         KENN_FORGE_VITE_HMR_HOST: "mariuss-macbook-pro.emperor-gopher.ts.net",
         KENN_FORGE_VITE_HMR_PROTOCOL: "wss",
         KENN_FORGE_VITE_HMR_CLIENT_PORT: "443",

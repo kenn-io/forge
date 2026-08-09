@@ -3619,6 +3619,23 @@ describe("WorkspaceTerminalView", () => {
       expect(screen.queryByRole("tab", { name: "Home" })).toBeNull();
     });
 
+    it("retracts the automatic launcher when an explicit agent choice arrives", async () => {
+      const launchRequest = deferred<typeof runningSession>();
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+      });
+
+      await screen.findByRole("dialog", { name: "Launch a session" });
+      queueWorkspaceLaunch("ws-1", "helper", undefined);
+
+      await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull());
+    });
+
     it("leaves a broken workspace's error on screen instead of covering it with the launcher", async () => {
       // A worktree whose setup failed, or whose tmux server dropped its session,
       // reports zero sessions for the same reason it reports an error. Auto-opening

@@ -924,6 +924,7 @@
     const openState = launcherState;
     const autoOpened = launcherAutoOpenedFor.includes(workspaceKey);
     const deletionPending = deletingSelectedWorkspace || forceDeleting;
+    const explicitLaunchIsPending = pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null;
     const createOrLaunchIsPending = createOrLaunchPending();
     untrack(() => {
       if (tabs.length > 0 && activeMissing) selectWorkspaceTab(tabs[0]!.key);
@@ -939,7 +940,17 @@
       }
       // Deletion tears down the runtime before the inline host disappears. That
       // sessionless gap is not an empty workspace asking what to launch next.
-      if (deletionPending || createOrLaunchIsPending) return;
+      if (createOrLaunchIsPending) {
+        // The explicit target can arrive just after the empty-runtime pass opened
+        // the fallback. Retract only that automatic overlay immediately; waiting
+        // for the launched session to appear leaves the redundant picker flashing
+        // over the terminal startup the user already requested.
+        if (explicitLaunchIsPending && openState?.workspaceKey === workspaceKey && openState.auto) {
+          withdrawAutoLauncher();
+        }
+        return;
+      }
+      if (deletionPending) return;
       // Once per workspace: reopening a launcher the user dismissed would trap them
       // in it, while a different session-less workspace still gets one.
       if (openState?.workspaceKey === workspaceKey || autoOpened) return;

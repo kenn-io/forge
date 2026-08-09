@@ -101,7 +101,8 @@ Interactive surfaces must agree on which item is selected.
   runtime reads as observations rather than terminal failures, and releases its read owner on exact-session
   evidence or timeout. The window ends 15 seconds after launch acknowledgement; expiry clears only the launch
   intent and reports that the session was not observed. A session that appears later remains authoritative and
-  is discovered by subsequent runtime reads rather than stopped or relaunched. Sibling views suppress their empty fallback and may discard only unclaimed intents
+  is discovered by subsequent runtime reads rather than stopped or relaunched. Sibling views suppress or retract
+  their automatically opened empty fallback while the launch intent is pending and may discard only unclaimed intents
   (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`,
   `frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::reconcileAcceptedLaunch`).
 - Inline surface claims come only from live selection effects (the list

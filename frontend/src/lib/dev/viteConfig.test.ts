@@ -96,21 +96,21 @@ describe("vite config", () => {
     expect(resolveViteAllowedHosts({})).toBeUndefined();
     expect(
       resolveViteAllowedHosts({
-        KENN_FORGE_VITE_ALLOWED_HOSTS: "mariuss-macbook-pro.emperor-gopher.ts.net, another.ts.net",
+        KENN_FORGE_VITE_ALLOWED_HOSTS: "forge.example.test, another.example.test",
       }),
-    ).toEqual(["mariuss-macbook-pro.emperor-gopher.ts.net", "another.ts.net"]);
+    ).toEqual(["forge.example.test", "another.example.test"]);
   });
 
   it("can advertise HMR through the tailnet HTTPS endpoint", () => {
     expect(
       resolveViteHmr({
-        KENN_FORGE_VITE_HMR_HOST: "mariuss-macbook-pro.emperor-gopher.ts.net",
+        KENN_FORGE_VITE_HMR_HOST: "forge.example.test",
         KENN_FORGE_VITE_HMR_PROTOCOL: "wss",
         KENN_FORGE_VITE_HMR_CLIENT_PORT: "443",
       }),
     ).toEqual({
       protocol: "wss",
-      host: "mariuss-macbook-pro.emperor-gopher.ts.net",
+      host: "forge.example.test",
       clientPort: 443,
       path: "/__vite_hmr",
     });

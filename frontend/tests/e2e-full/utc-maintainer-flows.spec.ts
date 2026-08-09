@@ -93,14 +93,26 @@ test.describe("UTC maintainer flows", () => {
     await page.goto(`/pulls/github/${pull.owner}/${pull.repo}/${pull.number}`);
     await expect(page.locator(".btn--close")).toBeVisible();
 
+    const closeResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().endsWith(`/api/v1/pulls/github/${pull.owner}/${pull.repo}/${pull.number}/github-state`),
+    );
     await page.locator(".btn--close").click();
+    expect((await closeResponse).status()).toBe(200);
     await expect(page.locator(".btn--reopen")).toBeVisible();
 
     const closed = await fetchPullDetail(page, pull);
     expect(closed.merge_request.State).toBe("closed");
     expectUTCString(closed.merge_request.ClosedAt);
 
+    const reopenResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().endsWith(`/api/v1/pulls/github/${pull.owner}/${pull.repo}/${pull.number}/github-state`),
+    );
     await page.locator(".btn--reopen").click();
+    expect((await reopenResponse).status()).toBe(200);
     await expect(page.locator(".btn--close")).toBeVisible();
 
     const reopened = await fetchPullDetail(page, pull);

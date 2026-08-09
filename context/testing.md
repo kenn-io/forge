@@ -201,6 +201,7 @@ sources. The Playwright runner must prepare those assets and build one run-owned
 cleanup targets the server instead of a `go run` wrapper. An explicit binary remains
 externally owned
 and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2EServerBinary`).
+
 - Full-stack Playwright workers must publish child ownership in the shared tmux root;
   the root removes it only after every published child exits (`frontend/tests/e2e-full/support/e2eServer.ts::waitForSharedServerOwners`).
 - Once e2e-server tmux shutdown starts, no new session may be admitted; cleanup waits
@@ -232,9 +233,9 @@ polling for state that the app already owns in JavaScript. Browser/e2e tests
 should call `reset()` before assertions, and the graph component clears the
 bridge on unmount so assertions do not read stale graph sessions.
 
-Playwright waits must observe the rendered state consumed by the next assertion,
-not only the request completion or control value that triggered it; route refinement
-can leave new controls paired with old or loading content (`frontend/tests/e2e-full/kata.spec.ts:1625`, `frontend/tests/e2e-full/repo-browser.spec.ts:480`).
+Playwright waits must observe the state consumed by the next assertion. Direct API reads after an optimistic
+mutation wait for its response; rendered assertions wait for rendered state, since route refinement can pair new
+controls with old content (`frontend/tests/e2e-full/utc-maintainer-flows.spec.ts:90`, `frontend/tests/e2e-full/repo-browser.spec.ts:480`).
 
 Playwright suites with `route.fetch()` proxies must unregister routes with
 `page.unrouteAll({ behavior: "ignoreErrors" })` before page teardown; background refetches can otherwise fail outside the completed test (`frontend/tests/e2e-full/diff-view.spec.ts::mockReviewThreadsOnPreviewMarkdown`).

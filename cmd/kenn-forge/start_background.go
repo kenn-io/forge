@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/daemonruntime"
+	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/daemon"
 )
 
@@ -18,11 +20,15 @@ const (
 	expectedDataDirEnv     = "KENN_FORGE_EXPECTED_DATA_DIR"
 )
 
+var backgroundReadinessGatePath string
+
 func ensureBackground(
 	ctx context.Context,
 	configPath string,
 	cfg *config.Config,
 ) (daemon.RuntimeRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, backgroundStartTimeout)
+	defer cancel()
 	if err := validateBackgroundConfig(cfg); err != nil {
 		return daemon.RuntimeRecord{}, err
 	}
@@ -45,7 +51,52 @@ func ensureBackground(
 		return daemon.RuntimeRecord{}, err
 	}
 	record, _, err := manager.Ensure(ctx, backgroundStartTimeout)
-	return record, err
+	if err != nil {
+		return daemon.RuntimeRecord{}, err
+	}
+	if err := waitForBackgroundReadiness(ctx, record, cfg.DataDir); err != nil {
+		return daemon.RuntimeRecord{}, err
+	}
+	return record, nil
+}
+
+func waitForBackgroundReadiness(
+	ctx context.Context,
+	record daemon.RuntimeRecord,
+	dataDir string,
+) error {
+	readinessGatePath := backgroundReadinessGatePath
+	for {
+		ready, err := daemonruntime.IsVerifiedReady(ctx, record, dataDir)
+		if err != nil {
+			return fmt.Errorf("verify daemon readiness: %w", err)
+		}
+		if ready {
+			return nil
+		}
+		status, err := runtimelock.Read(dataDir)
+		if err != nil {
+			return fmt.Errorf("inspect daemon readiness: %w", err)
+		}
+		if !status.Running {
+			return errors.New("daemon exited before becoming ready")
+		}
+		if readinessGatePath != "" {
+			if err := waitForRuntimeGate(
+				ctx, readinessGatePath, "background readiness",
+			); err != nil {
+				return err
+			}
+			readinessGatePath = ""
+		}
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func validateBackgroundConfig(cfg *config.Config) error {

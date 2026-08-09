@@ -328,9 +328,15 @@ func TestDaemonStartSerializesConfigMoveBeforeRuntimePublicationE2E(t *testing.T
 func TestDaemonStartReusesForegroundDuringStartupE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	gatePath := filepath.Join(t.TempDir(), "runtime-serve-gate")
-	require.NoError(os.WriteFile(gatePath, []byte("hold\n"), 0o600))
-	bin := buildForgeWithLDFlags(t, "-X main.runtimeServeGatePath="+gatePath)
+	gateDir := t.TempDir()
+	serveGatePath := filepath.Join(gateDir, "runtime-serve-gate")
+	readinessGatePath := filepath.Join(gateDir, "background-readiness-gate")
+	require.NoError(os.WriteFile(serveGatePath, []byte("hold\n"), 0o600))
+	require.NoError(os.WriteFile(readinessGatePath, []byte("hold\n"), 0o600))
+	bin := buildForgeWithLDFlags(t, fmt.Sprintf(
+		"-X main.runtimeServeGatePath=%s -X main.backgroundReadinessGatePath=%s",
+		serveGatePath, readinessGatePath,
+	))
 	fixture := newDaemonLifecycleFixture(t, bin)
 	dataDir := fixture.dataDir("data")
 	fixture.writeConfig(dataDir)
@@ -347,7 +353,8 @@ func TestDaemonStartReusesForegroundDuringStartupE2E(t *testing.T) {
 		close(foregroundDone)
 	}()
 	t.Cleanup(func() {
-		_ = os.Remove(gatePath)
+		_ = os.Remove(serveGatePath)
+		_ = os.Remove(readinessGatePath)
 		if foreground.Process != nil {
 			_ = foreground.Process.Kill()
 		}
@@ -357,29 +364,94 @@ func TestDaemonStartReusesForegroundDuringStartupE2E(t *testing.T) {
 		}
 	})
 
-	waitForFile(t, gatePath+".ready", 10*time.Second)
+	waitForFile(t, serveGatePath+".ready", 10*time.Second)
 	records, err := fixture.store.List()
 	require.NoError(err)
 	require.Len(records, 1)
 	liveRecord := records[0]
 	assert.True(daemon.ProcessAlive(liveRecord.PID))
 
-	_, stderr, err := fixture.run("start")
-	require.NoError(err, stderr)
+	type commandResult struct {
+		stderr string
+		err    error
+	}
+	startDone := make(chan commandResult, 1)
+	go func() {
+		_, stderr, startErr := fixture.run("start")
+		startDone <- commandResult{stderr: stderr, err: startErr}
+	}()
+	waitForFile(t, readinessGatePath+".ready", 10*time.Second)
+	select {
+	case result := <-startDone:
+		require.FailNow("daemon start returned before full readiness", result.stderr)
+	default:
+	}
+
+	require.NoError(os.Remove(serveGatePath))
+	waitForNoFile(t, serveGatePath+".ready", 10*time.Second)
+	require.NoError(os.Remove(readinessGatePath))
+	result := <-startDone
+	require.NoError(result.err, result.stderr)
 	records, err = fixture.store.List()
 	require.NoError(err)
 	require.Len(records, 1)
 	assert.Equal(liveRecord.PID, records[0].PID)
 
-	require.NoError(os.Remove(gatePath))
-	waitForNoFile(t, gatePath+".ready", 10*time.Second)
-	_, stderr, err = fixture.run("stop")
+	_, stderr, err := fixture.run("stop")
 	require.NoError(err, stderr)
 	select {
 	case <-foregroundDone:
 		require.NoError(foregroundErr, foregroundStderr.String())
 	case <-time.After(5 * time.Second):
 		require.Fail("foreground daemon did not stop")
+	}
+}
+
+// TestDaemonStartReportsFailureAfterAuthenticatedPublicationE2E protects
+// background startup readiness. If authenticated publication alone counts as
+// success, daemon start can report a running daemon before a later startup
+// error terminates it.
+func TestDaemonStartReportsFailureAfterAuthenticatedPublicationE2E(t *testing.T) {
+	require := require.New(t)
+	gateDir := t.TempDir()
+	serveGatePath := filepath.Join(gateDir, "runtime-serve-gate")
+	readinessGatePath := filepath.Join(gateDir, "background-readiness-gate")
+	require.NoError(os.WriteFile(serveGatePath, []byte("hold\n"), 0o600))
+	require.NoError(os.WriteFile(readinessGatePath, []byte("hold\n"), 0o600))
+	bin := buildForgeWithLDFlags(t, fmt.Sprintf(
+		"-X main.runtimeServeGatePath=%s -X main.backgroundReadinessGatePath=%s",
+		serveGatePath, readinessGatePath,
+	))
+	fixture := newDaemonLifecycleFixture(t, bin)
+	dataDir := fixture.dataDir("data")
+	fixture.writeConfig(dataDir)
+	require.NoError(os.Mkdir(filepath.Join(dataDir, "forge.db"), 0o700))
+	t.Cleanup(func() {
+		_ = os.Remove(serveGatePath)
+		_ = os.Remove(readinessGatePath)
+	})
+
+	type commandResult struct {
+		stderr string
+		err    error
+	}
+	startDone := make(chan commandResult, 1)
+	go func() {
+		_, stderr, startErr := fixture.run("start")
+		startDone <- commandResult{stderr: stderr, err: startErr}
+	}()
+	waitForFile(t, serveGatePath+".ready", 10*time.Second)
+	waitForFile(t, readinessGatePath+".ready", 10*time.Second)
+
+	require.NoError(os.Remove(serveGatePath))
+	waitForNoFile(t, serveGatePath+".ready", 10*time.Second)
+	require.NoError(os.Remove(readinessGatePath))
+	select {
+	case result := <-startDone:
+		require.Error(result.err)
+		require.Contains(result.stderr, "daemon exited before becoming ready")
+	case <-time.After(10 * time.Second):
+		require.Fail("daemon start did not report the startup failure")
 	}
 }
 

@@ -86,6 +86,9 @@ and the root event stream.
 - Publish a runtime record only after the startup handler is installed and the
   HTTP server enters its listener accept loop; lifecycle discovery still proves
   the published loopback identity exactly before reuse (`cmd/kenn-forge/main.go::serveReadyListener.Accept`).
+- Early identity proof establishes the startup owner, not application readiness;
+  background lifecycle success requires `/healthz` and then re-proves the exact
+  runtime record (`cmd/kenn-forge/start_background.go::waitForBackgroundReadiness`).
 - Status uses authenticated config identity before TOML, including for moved runtimes;
   invalid config cannot strand an attributable daemon, while proof-unavailable state
   may report only the configured `data_dir` lock

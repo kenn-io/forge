@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"go.kenn.io/forge/internal/config"
@@ -100,6 +101,47 @@ func FindVerifiedRecord(
 		return daemon.PingInfo{}, false, fmt.Errorf("initialize daemon proof: %w", err)
 	}
 	return (discovery{dataDir: dataDir}).probe(ctx, proof, record)
+}
+
+// IsVerifiedReady reports whether record serves the ready health endpoint and
+// still proves the same token-bound runtime identity afterward.
+func IsVerifiedReady(
+	ctx context.Context,
+	record daemon.RuntimeRecord,
+	dataDir string,
+) (bool, error) {
+	if !Compatible(record, dataDir) {
+		return false, nil
+	}
+	ep := record.Endpoint()
+	client := ep.HTTPClient(daemon.HTTPClientOptions{
+		Timeout:           probeTimeout,
+		DisableKeepAlives: true,
+	})
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, ep.BaseURL()+"/healthz", nil,
+	)
+	if err != nil {
+		return false, fmt.Errorf("build daemon readiness request: %w", err)
+	}
+	response, err := client.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		return false, nil
+	}
+	if err := response.Body.Close(); err != nil {
+		return false, fmt.Errorf("close daemon readiness response: %w", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		return false, nil
+	}
+	_, found, err := FindVerifiedRecord(ctx, record, dataDir)
+	return found, err
 }
 
 func (d discovery) findVerified(

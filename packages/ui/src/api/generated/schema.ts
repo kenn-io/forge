@@ -5055,7 +5055,6 @@ export interface components {
             /** Format: int64 */
             line: number;
             line_type: string;
-            metadata_json?: string;
             /** Format: int64 */
             new_line?: number;
             /** Format: int64 */

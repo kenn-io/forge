@@ -484,7 +484,7 @@ describe("EventTimeline", () => {
   });
 
   it("defaults provider-hidden comments to a collapsed reason notice", async () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -512,7 +512,7 @@ describe("EventTimeline", () => {
   });
 
   it("defaults provider-hidden review replies to a collapsed reason notice", async () => {
-    render(EventTimeline, {
+    renderTimeline({
       props: {
         events: [
           makeEvent({
@@ -546,7 +546,7 @@ describe("EventTimeline", () => {
   });
 
   it("does not preview provider-hidden comment text in compact rows", async () => {
-    const { container } = render(EventTimeline, {
+    const { container } = renderTimeline({
       props: {
         activityViewMode: "compact",
         events: [

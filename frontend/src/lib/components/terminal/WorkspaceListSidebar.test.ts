@@ -225,6 +225,16 @@ describe("WorkspaceListSidebar", () => {
     vi.useRealTimers();
   });
 
+  it("loads without secure-context crypto APIs", async () => {
+    vi.stubGlobal("crypto", {});
+    mockGet.mockResolvedValue({ data: { workspaces: [] } });
+
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/workspaces", expect.anything()));
+    expect(screen.getByText("Workspaces")).toBeTruthy();
+  });
+
   it("shows fleet hosts when peers are present", async () => {
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {

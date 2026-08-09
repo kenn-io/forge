@@ -167,7 +167,7 @@
     ),
   );
   let requestApplicationWorkspaceRefresh = refreshWorkspaces.request;
-  const workspaceRefreshOwner = crypto.randomUUID();
+  const workspaceRefreshOwner = $props.id();
 
   type WorkspaceGroup = {
     key: string;

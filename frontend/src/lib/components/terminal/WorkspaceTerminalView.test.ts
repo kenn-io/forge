@@ -557,6 +557,7 @@ function persistedTwoSessionWorkflowLayout(firstKey: string, secondKey: string) 
  */
 function noteWorkspacePaneRendered(surface: "prs" | "issues" | "activity"): void {
   getPaneLayoutStore(surface).notePaneRender({
+    activeInputTabKey: "workspace",
     editableTabs: ["conversation", "workspace"],
     onScreenTabs: ["conversation", "workspace"],
     flattened: false,
@@ -929,7 +930,7 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    await screen.findByRole("tab", { name: /Helper/ });
+    await screen.findByRole("region", { name: "Workflow panes" });
     await waitFor(() => expect(sockets).toHaveLength(1));
 
     sockets[0]!.onmessage?.(
@@ -3203,6 +3204,7 @@ describe("WorkspaceTerminalView", () => {
     // here leaves nothing on screen naming it - the inner strip is the one bar
     // that pane has.
     getPaneLayoutStore("prs").notePaneRender({
+      activeInputTabKey: "workspace",
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation", "workspace"],
       flattened: false,
@@ -3267,7 +3269,7 @@ describe("WorkspaceTerminalView", () => {
     expect(activePaneKey()).toBe("session:ws-1:helper");
   });
 
-  it("does not paint a nested workflow owner while its outer detail pane is inactive", async () => {
+  it("uses the renderer-validated outer owner for nested workflow chrome", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
     localStorage.setItem(
       "kenn-forge-workspace-terminal-layout:ws-1",
@@ -3276,6 +3278,13 @@ describe("WorkspaceTerminalView", () => {
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
     const surfaceLayout = getPaneLayoutStore("prs");
     surfaceLayout.noteFocused("conversation");
+    surfaceLayout.notePaneRender({
+      activeInputTabKey: "conversation",
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation", "workspace"],
+      flattened: false,
+      soloChromeTabs: [],
+    });
 
     render(WorkspaceTerminalView, {
       props: {
@@ -3288,8 +3297,53 @@ describe("WorkspaceTerminalView", () => {
     const activeWorkflowLeaves = () => document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active");
     expect(activeWorkflowLeaves()).toHaveLength(0);
 
-    surfaceLayout.noteFocused("workspace");
+    // The renderer can select workspace as a fallback while persisted focus still
+    // names a hidden or zoom-covered pane. Nested ownership follows this report,
+    // not the stale focus history.
+    surfaceLayout.notePaneRender({
+      activeInputTabKey: "workspace",
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["workspace"],
+      flattened: false,
+      soloChromeTabs: ["workspace"],
+    });
     await waitFor(() => expect(activeWorkflowLeaves()).toHaveLength(1));
+  });
+
+  it("gates the workspace sidebar shortcut on the renderer-validated owner", async () => {
+    claimForPrs();
+    const surfaceLayout = getPaneLayoutStore("prs");
+    surfaceLayout.notePaneRender({
+      activeInputTabKey: "conversation",
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation", "workspace"],
+      flattened: false,
+      soloChromeTabs: [],
+    });
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+    await screen.findByRole("region", { name: "Workflow panes" });
+
+    await fireEvent.keyDown(window, { key: "]", ctrlKey: true });
+    expect(document.querySelector(".right-sidebar")).toBeNull();
+
+    surfaceLayout.notePaneRender({
+      activeInputTabKey: "workspace",
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation", "workspace"],
+      flattened: false,
+      soloChromeTabs: ["workspace"],
+    });
+    await waitFor(() =>
+      expect(document.querySelector(".workspace-stage .tabbed-panel-leaf.input-active")).not.toBeNull(),
+    );
+    await fireEvent.keyDown(window, { key: "]", ctrlKey: true });
+    expect(document.querySelector(".right-sidebar")).not.toBeNull();
   });
 
   it("keeps the workspace header for a sole standalone session", async () => {
@@ -4081,6 +4135,7 @@ describe("WorkspaceTerminalView", () => {
     // chrome suppressed, so the pane has nowhere to hang a controls button and no
     // tab of its own to name the session.
     getPaneLayoutStore("prs").notePaneRender({
+      activeInputTabKey: "workspace",
       flattened: true,
       editableTabs: [],
       onScreenTabs: ["workspace"],
@@ -4288,6 +4343,20 @@ describe("WorkspaceTerminalView", () => {
       expect(controller.dockRow()).not.toBeNull();
 
       const externalDock = await screen.findByRole("region", { name: "Terminal panel" });
+      const layout = getPaneLayoutStore("prs");
+      expect(layout.externalInputActive()).toBe(false);
+      await fireEvent.pointerDown(externalDock);
+      expect(layout.externalInputActive()).toBe(true);
+      expect(externalDock.classList.contains("input-active")).toBe(true);
+
+      layout.noteFocused(paneKey);
+      await waitFor(() => expect(layout.externalInputActive()).toBe(false));
+      expect(externalDock.classList.contains("input-active")).toBe(false);
+
+      await fireEvent.wheel(externalDock);
+      expect(layout.externalInputActive()).toBe(true);
+      expect(externalDock.classList.contains("input-active")).toBe(true);
+
       render(WorkspacePaneControls, { props: { showStripActions: false } });
       expect(screen.getAllByRole("button", { name: /^Delete workspace / })).toHaveLength(1);
       expect(screen.getAllByRole("button", { name: "Workspace controls" })).toHaveLength(2);
@@ -4304,7 +4373,6 @@ describe("WorkspaceTerminalView", () => {
 
       await fireEvent.click(within(externalDock).getByRole("button", { name: "Move Shell to a pane" }));
       const shellPaneKey = sessionPaneKey("ws-1", undefined, "ws-1_shell_a");
-      const layout = getPaneLayoutStore("prs");
       await waitFor(() => expect(layout.hasTab(shellPaneKey)).toBe(true));
 
       layout.demoteTab(shellPaneKey);

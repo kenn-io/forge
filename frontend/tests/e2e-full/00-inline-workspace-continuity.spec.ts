@@ -217,6 +217,21 @@ async function createIssueWorkspace(api: APIRequestContext, issueNumber: number)
   return waitForWorkspaceReady(api, workspace.id);
 }
 
+async function createPullWorkspace(api: APIRequestContext, pullNumber: number): Promise<WorkspaceStatusResponse> {
+  const response = await api.post("/api/v1/workspaces", {
+    data: {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      mr_number: pullNumber,
+    },
+  });
+  expect(response.status()).toBe(202);
+  const workspace = (await response.json()) as WorkspaceStatusResponse;
+  return waitForWorkspaceReady(api, workspace.id);
+}
+
 async function runningRuntimeTmuxSession(api: APIRequestContext, workspaceId: string): Promise<string> {
   const response = await api.get(`/api/v1/workspaces/${workspaceId}/runtime`);
   expect(response.ok()).toBe(true);
@@ -1097,9 +1112,9 @@ test.describe("inline workspace pane continuity", () => {
     try {
       isolatedServer = await startIsolatedWorkspaceE2EServer();
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
-      const workspace = await createIssueWorkspace(api, 10);
+      const workspace = await createPullWorkspace(api, 1);
 
-      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await page.goto(`${isolatedServer.info.base_url}/pulls/github/acme/widgets/1/files`);
       await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
       await dismissWorkspaceLauncher(page);
       await openTerminalPanel(page);
@@ -1136,6 +1151,31 @@ test.describe("inline workspace pane continuity", () => {
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
       const surfaceDock = page.locator(".detail-host > .terminal-panel");
       await expect(surfaceDock).toBeVisible();
+
+      const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
+      await expect(diffArea).toBeVisible();
+      await page.locator(".diff-content").evaluate((content) => {
+        const spacer = document.createElement("div");
+        spacer.style.height = "2000px";
+        spacer.dataset.testScrollSpacer = "true";
+        content.append(spacer);
+      });
+      await diffArea.evaluate((area) => {
+        area.scrollTop = 0;
+      });
+      await diffArea.click({ position: { x: 24, y: 80 } });
+      await page.keyboard.press("PageDown");
+      await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(0);
+
+      await surfaceDock.hover();
+      await page.mouse.wheel(0, 120);
+      await expect(surfaceDock).toHaveClass(/input-active/);
+      const beforeExternalPageDown = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+      await page.keyboard.press("PageDown");
+      await expect
+        .poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop)))
+        .toBe(beforeExternalPageDown);
+
       await typeMarkerCommand(page, promotedTerminal, workspace.worktree_path, "row-only-promoted");
       await surfaceDock.getByRole("button", { name: "Open terminal panel", exact: true }).click();
       const dockedTerminal = surfaceDock.locator(".terminal-container");

@@ -615,7 +615,13 @@ describe("session pane commands", () => {
 
   /** Stand in for a mounted, unflattened DetailPaneLayout on the PRs surface. */
   function noteRendered(layout: PaneLayoutStore, tabs: readonly string[]): void {
-    layout.notePaneRender({ flattened: false, editableTabs: [...tabs], onScreenTabs: [...tabs], soloChromeTabs: [] });
+    layout.notePaneRender({
+      activeInputTabKey: tabs[0] ?? null,
+      flattened: false,
+      editableTabs: [...tabs],
+      onScreenTabs: [...tabs],
+      soloChromeTabs: [],
+    });
   }
 
   it("promotes the shown session beside the workspace pane", () => {
@@ -642,6 +648,7 @@ describe("session pane commands", () => {
     // the render report can say the terminal is not visible.
     noteRendered(layout, ["conversation", "workspace"]);
     layout.notePaneRender({
+      activeInputTabKey: "conversation",
       flattened: false,
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation"],

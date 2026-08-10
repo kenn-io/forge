@@ -295,6 +295,9 @@ Keyboard handlers must have one clear owner for each key press.
 - Nested pane trees paint ownership only while their containing pane is active, and only
   the deepest active owner paints; workspace Workflow, Details, and bottom Terminal regions are siblings
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::renderedWorkspaceInputRegion`).
+- A surface-hosted dock outside the pane tree can become the canonical owner; any pane activation revokes
+  that claim. Workspace window shortcuts run only while the validated workspace container owns the surface
+  (`frontend/src/lib/stores/paneLayout.svelte.ts::PaneRenderReport`).
 - Focus Terminal reveals, it never maximizes: a closed workspace pane reopens
   alongside the detail and a visible one keeps its arrangement. Maximizing over
   the detail is only ever an explicit user action. Reopening also has to clear a

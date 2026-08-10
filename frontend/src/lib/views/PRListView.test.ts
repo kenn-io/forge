@@ -230,7 +230,7 @@ describe("PRListView detail panes", () => {
     await tick();
 
     expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
-    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
 
     cleanup();
     resetPaneLayoutStoresForTest();
@@ -258,10 +258,12 @@ describe("PRListView detail panes", () => {
     await fireEvent.pointerDown(screen.getByTestId("diff-files"));
     expect(activePaneKey()).toBe("files");
     expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
 
     await fireEvent.wheel(screen.getByTestId("pull-detail"));
     expect(activePaneKey()).toBe("conversation");
     expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
   });
 
   it("pushes history when the other route pane is covered by a zoom", async () => {

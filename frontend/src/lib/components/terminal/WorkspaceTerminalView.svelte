@@ -678,7 +678,7 @@
   type WorkspaceInputRegion = "workflow" | "details" | "terminal";
   let workspaceInputRegion = $state<WorkspaceInputRegion>("workflow");
   const workspaceContainerInputActive = $derived(
-    surfaceLayout === null || surfaceLayout.lastFocusedTabKey() === "workspace",
+    surfaceLayout === null || surfaceLayout.paneRender()?.activeInputTabKey === "workspace",
   );
   const renderedWorkspaceInputRegion = $derived.by<WorkspaceInputRegion>(() => {
     if (workspaceInputRegion === "details" && (hideRightSidebar || !sidebarOpen)) return "workflow";
@@ -1209,6 +1209,13 @@
       terminalLayout.dock === "bottom" &&
       terminalSessions.length > 0,
   );
+  const externalDockVisible = $derived(workspacePaneEmpty || workspacePaneRowOnly);
+
+  $effect(() => {
+    const layout = surfaceLayout;
+    if (layout === null || externalDockVisible) return;
+    untrack(() => layout.setExternalInputActive(false));
+  });
   const externalControlsVisible = $derived(
     workspacePaneEmpty ||
       workspacePaneRowOnly ||
@@ -1478,7 +1485,7 @@
   // is parked in a hidden host (it would swallow Cmd/Ctrl+] on unrelated
   // pages) or while the right sidebar isn't rendered at all.
   $effect(() => {
-    if (!hostVisible || hideRightSidebar) return;
+    if (!hostVisible || hideRightSidebar || !workspaceContainerInputActive) return;
     function onKeydown(e: KeyboardEvent): void {
       if (
         e.key === "]" &&
@@ -4522,8 +4529,13 @@
                 loading={terminalLaunching}
                 disabled={actionsBlocked}
                 hostVisible={dockHostVisible}
-                inputActive={workspaceContainerInputActive && renderedWorkspaceInputRegion === "terminal"}
-                onInputActivate={() => activateWorkspaceInputRegion("terminal")}
+                inputActive={external
+                  ? (surfaceLayout?.externalInputActive() ?? false)
+                  : workspaceContainerInputActive && renderedWorkspaceInputRegion === "terminal"}
+                onInputActivate={() => {
+                  activateWorkspaceInputRegion("terminal");
+                  if (external) surfaceLayout?.setExternalInputActive(true);
+                }}
                 onToggle={() => void toggleTerminalPanel()}
                 onNewTerminal={() => void launchTerminalSession()}
                 onSplit={(direction) => void splitTerminal(direction)}

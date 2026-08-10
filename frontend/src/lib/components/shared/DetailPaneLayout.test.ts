@@ -395,10 +395,12 @@ describe("detail pane layout", () => {
 
     fireEvent.focusIn(screen.getByTestId("pane-workspace"));
     expect(activePaneKey()).toBe("workspace");
+    expect(layout.paneRender()?.activeInputTabKey).toBe("workspace");
 
     layout.setHidden("workspace", true);
     flushSync();
     expect(activePaneKey()).toBe("conversation");
+    expect(layout.paneRender()?.activeInputTabKey).toBe("conversation");
 
     layout.setHidden("workspace", false);
     flushSync();
@@ -411,6 +413,24 @@ describe("detail pane layout", () => {
     layout.toggleZoom("leaf-detail");
     flushSync();
     expect(activePaneKey()).toBe("conversation");
+    expect(layout.paneRender()?.activeInputTabKey).toBe("conversation");
+  });
+
+  it("relinquishes pane keyboard ownership to an external surface", () => {
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout, routeTabKey: "conversation" });
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+
+    layout.setExternalInputActive(true);
+    flushSync();
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+
+    fireEvent.pointerDown(screen.getByTestId("pane-workspace"));
+    expect(layout.externalInputActive()).toBe(false);
+    expect(activePaneKey()).toBe("workspace");
+    expect(layout.paneRender()?.activeInputTabKey).toBe("workspace");
   });
 
   it("keeps a zoom on a non-route leaf when the tab list re-derives", async () => {

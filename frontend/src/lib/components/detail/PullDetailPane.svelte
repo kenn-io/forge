@@ -127,7 +127,6 @@
       initialScrollTop={filesScrollPositions[scrollKey] ?? 0}
       onScrollTopChange={rememberFilesScroll}
       {keyboardActive}
-      pageKeyboardActive={true}
     />
   {/key}
 {/if}

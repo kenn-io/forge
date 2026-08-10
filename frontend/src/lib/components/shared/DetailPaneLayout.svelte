@@ -141,6 +141,7 @@
       .filter((key): key is string => key !== null && key !== undefined),
   );
   const activeInputTabKey = $derived.by(() => {
+    if (layout.externalInputActive()) return "";
     const focused = layout.lastFocusedTabKey();
     if (focused !== null && onScreenTabs.includes(focused)) return focused;
     if (routeTabKey !== undefined && onScreenTabs.includes(routeTabKey)) return routeTabKey;
@@ -156,7 +157,15 @@
     // Null until the host has been measured. Width decides whether structural
     // edits are allowed at all, and an unmeasured host defaulting to "not
     // flattened" exposes those commands for a frame on a narrow layout.
-    const report = measured ? { editableTabs, onScreenTabs, flattened, soloChromeTabs } : null;
+    const report = measured
+      ? {
+          activeInputTabKey: activeInputTabKey || null,
+          editableTabs,
+          onScreenTabs,
+          flattened,
+          soloChromeTabs,
+        }
+      : null;
     // Untracked because the store compares against the previous report before
     // writing: reading it here would make this effect both a reader and a writer
     // of the same state and it would re-run itself forever.

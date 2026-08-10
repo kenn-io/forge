@@ -558,7 +558,16 @@
        the tick, with nothing left to render. -->
 {:else if node.type === "leaf"}
   {@const soloChrome = node.tabs.length === 1 && soloChromeTabKeys.includes(node.tabs[0]!)}
-  <section class={["tabbed-panel-leaf", { "solo-chrome": soloChrome }]} aria-label={leafLabel}>
+  <section
+    class={[
+      "tabbed-panel-leaf",
+      {
+        "solo-chrome": soloChrome,
+        "input-active": node.activeTabKey === activeTabKey,
+      },
+    ]}
+    aria-label={leafLabel}
+  >
     {#if !soloChrome}
     <div
       class={["tabbed-panel-tabs", { "drag-sorting": draggedTabKey !== null }]}
@@ -665,7 +674,10 @@
             },
           ]}
           data-pane-key={tabKey}
+          role="presentation"
           onfocusin={onFocusPane ? () => onFocusPane(tabKey) : undefined}
+          onpointerdown={onFocusPane ? () => onFocusPane(tabKey) : undefined}
+          onwheel={onFocusPane ? () => onFocusPane(tabKey) : undefined}
         >
           {@render renderTab(tabKey, paneVisible(tabKey))}
         </div>
@@ -886,6 +898,16 @@
     border: var(--chrome-border-width) solid var(--border-default);
     border-top: 0;
     background: var(--bg-surface);
+  }
+
+  .tabbed-panel-leaf.input-active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    border: var(--chrome-border-width) solid
+      color-mix(in srgb, var(--accent-blue) 48%, var(--border-default));
+    pointer-events: none;
   }
 
   /*

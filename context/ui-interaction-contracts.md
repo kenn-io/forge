@@ -289,6 +289,9 @@ Keyboard handlers must have one clear owner for each key press.
   command listeners: a command that opens detail UI must un-maximize first so it
   cannot build an invisible overlay
   (`frontend/src/lib/components/detail/PullDetail.svelte::onOpenLabelPickerCommand`).
+- Simultaneous panes activate on focus, pointer, or wheel input; only the active pane
+  consumes window-level keys, and wheel stays event-local. Mark it with a subtle inset border
+  without replacing control focus styling (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
 - Focus Terminal reveals, it never maximizes: a closed workspace pane reopens
   alongside the detail and a visible one keeps its arrangement. Maximizing over
   the detail is only ever an explicit user action. Reopening also has to clear a

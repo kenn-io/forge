@@ -82,6 +82,36 @@ describe("TabbedPanelTree", () => {
     expect(screen.getByLabelText("Feed updating").classList.contains("kit-status-dot--working")).toBe(true);
   });
 
+  it("shows one active input pane and reports pointer and wheel activation", async () => {
+    const onFocusPane = vi.fn();
+    const view = render(TabbedPanelTreeTestHarness, {
+      props: {
+        node: splitNode(),
+        activeTabKey: "detail",
+        onFocusPane,
+      },
+    });
+
+    const activeLeaves = () => Array.from(document.querySelectorAll<HTMLElement>(".tabbed-panel-leaf.input-active"));
+    expect(activeLeaves()).toHaveLength(1);
+    expect(activeLeaves()[0]?.contains(screen.getByTestId("panel-detail"))).toBe(true);
+
+    await fireEvent.pointerDown(screen.getByTestId("panel-files"));
+    await fireEvent.wheel(screen.getByTestId("panel-detail"));
+
+    expect(onFocusPane).toHaveBeenNthCalledWith(1, "files");
+    expect(onFocusPane).toHaveBeenNthCalledWith(2, "detail");
+
+    await view.rerender({
+      node: splitNode(),
+      activeTabKey: "files",
+      onFocusPane,
+    });
+
+    expect(activeLeaves()).toHaveLength(1);
+    expect(activeLeaves()[0]?.contains(screen.getByTestId("panel-files"))).toBe(true);
+  });
+
   it("shows a moving insertion slot while sorting tabs", async () => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       callback(0);

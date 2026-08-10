@@ -1745,6 +1745,40 @@ test.describe("workspace launch home", () => {
     expect(Math.abs(metrics.delta.bottom)).toBeLessThanOrEqual(0.5);
   });
 
+  test("moves active ownership between standalone workflow panes", async ({ page }) => {
+    await setupTerminalMocks(page, {
+      runtime: workflowDragRuntime(),
+    });
+    await page.addInitScript((layout) => {
+      localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-123", JSON.stringify(layout));
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-123", "session:ws-123:codex");
+    }, workflowDragLayout());
+
+    await page.goto("/terminal/ws-123");
+    const codexPane = page.locator('[data-pane-key="session:ws-123:codex"]');
+    const reviewerPane = page.locator('[data-pane-key="session:ws-123:reviewer"]');
+    const codexLeaf = codexPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+    const reviewerLeaf = reviewerPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+
+    await expect(page.locator(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveCount(1);
+    await expect(codexLeaf).toHaveClass(/input-active/);
+    const activeBorder = await codexLeaf.evaluate((leaf) => {
+      const style = getComputedStyle(leaf, "::after");
+      return { color: style.borderTopColor, width: style.borderTopWidth };
+    });
+    expect(activeBorder.color).not.toBe("rgba(0, 0, 0, 0)");
+    expect(activeBorder.width).toBe("1px");
+
+    await reviewerPane.click({ position: { x: 24, y: 80 } });
+    await expect(reviewerLeaf).toHaveClass(/input-active/);
+    await expect(codexLeaf).not.toHaveClass(/input-active/);
+
+    await codexPane.hover();
+    await page.mouse.wheel(0, 120);
+    await expect(codexLeaf).toHaveClass(/input-active/);
+    await expect(reviewerLeaf).not.toHaveClass(/input-active/);
+  });
+
   test("shows one Workspaces option in the compact page menu on terminal routes", async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 720 });
     await setupTerminalMocks(page, {

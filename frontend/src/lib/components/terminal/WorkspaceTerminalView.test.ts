@@ -3239,6 +3239,34 @@ describe("WorkspaceTerminalView", () => {
     expect(await screen.findAllByRole("tablist", { name: "Workflow group tabs" })).not.toHaveLength(0);
   });
 
+  it("moves active input ownership between standalone workflow panes", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("tab", { name: /Reviewer/ });
+    const helperPane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:helper"]')!;
+    const reviewerPane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]')!;
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+    expect(activePaneKey()).toBe("session:ws-1:helper");
+
+    await fireEvent.pointerDown(reviewerPane);
+    expect(activePaneKey()).toBe("session:ws-1:reviewer");
+
+    await fireEvent.wheel(helperPane);
+    expect(activePaneKey()).toBe("session:ws-1:helper");
+  });
+
   it("keeps the workspace header for a sole standalone session", async () => {
     render(WorkspaceTerminalView, {
       props: {

@@ -6,10 +6,10 @@ Accepted
 
 ## Context
 
-Pull request conversation and files panes can be visible simultaneously. The
-files pane currently installs a window-level Page Up/Page Down handler, so it
-can scroll after the user has moved to the conversation pane. Focus events alone
-do not solve ownership because blank pane surfaces are not focusable.
+Pull request, Issue, Activity, and Workspaces workflow panes can be visible
+simultaneously. A pull request files pane can install a window-level Page
+Up/Page Down handler and scroll after the user has moved elsewhere. Focus events
+alone do not solve ownership because blank pane surfaces are not focusable.
 
 Without a visible active state, users also cannot predict which pane will
 receive a global keyboard action.
@@ -27,6 +27,9 @@ glow, or motion, and does not replace focus-visible styling on controls.
 
 Dedicated files routes retain global diff paging. Workspace diff panels retain
 their focus-local paging.
+
+The contract applies to every shared detail-pane tree and to the standalone
+Workspaces workflow tree.
 
 ## Consequences
 

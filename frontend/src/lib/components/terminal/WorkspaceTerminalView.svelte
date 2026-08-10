@@ -1868,6 +1868,16 @@
     rememberActiveTab(key);
   }
 
+  function handleWorkflowTabActivation(key: WorkflowTabKey): void {
+    if (key === "terminal") {
+      terminalLayout = { ...terminalLayout, open: true };
+    }
+    if (key === activeTabKey) return;
+    const sessionKey = sessionKeyFromWorkflowTab(key);
+    if (sessionKey) mountSessionTerminal(sessionKey);
+    selectWorkspaceTab(key);
+  }
+
   function restoreWorkspaceTabSelection(key: WorkflowTabKey): void {
     activeTabKey = key;
     rememberActiveTab(key);
@@ -4150,14 +4160,8 @@
                       tabs={workflowTabDescriptors}
                       {activeTabKey}
                       disabled={actionsBlocked}
-                      onSelectTab={(tabKey) => {
-                        if (tabKey === "terminal") {
-                          terminalLayout = { ...terminalLayout, open: true };
-                        }
-                        const sessionKey = sessionKeyFromWorkflowTab(tabKey);
-                        if (sessionKey) mountSessionTerminal(sessionKey);
-                        selectWorkspaceTab(tabKey);
-                      }}
+                      onSelectTab={handleWorkflowTabActivation}
+                      onFocusPane={handleWorkflowTabActivation}
                       onMoveTabBefore={moveWorkflowTabBeforeTarget}
                       onAppendTabToLeaf={appendWorkflowTabToGroup}
                       onSplitTab={splitWorkflowTabIntoGroup}

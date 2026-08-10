@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { createRawSnippet, tick, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { SIDEBAR_KEY, STORES_KEY } from "../context.js";
@@ -160,6 +160,24 @@ describe("IssueListView inline workspace", () => {
     // Focus is the host's only report of which pane the user is working in, and an
     // expand or a Focus Terminal has to act on that one rather than the container.
     expect(controller.notePaneFocused).toHaveBeenCalledWith(paneKey);
+  });
+
+  it("moves active input ownership between issue and workspace panes", async () => {
+    const { controller } = createClaimTestController("issues");
+    renderIssueListView({
+      inlineWorkspace: controller,
+      detail: issueDetailFixture({ id: "ws-1", status: "ready" }),
+    });
+
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+    expect(activePaneKey()).toBe("conversation");
+
+    await fireEvent.pointerDown(document.querySelector(".detail-pane-workspace-slot")!);
+    expect(activePaneKey()).toBe("workspace");
+
+    await fireEvent.wheel(screen.getByTestId("issue-detail"));
+    expect(activePaneKey()).toBe("conversation");
   });
 
   it("offers the workspace controls in the leaf holding a promoted session", () => {

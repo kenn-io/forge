@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { runPaletteCommand } from "./support/paletteCommands";
 import { openSettingsPanel } from "./support/settingsPanel";
 
 // The activity-selection-restore flows, the legacy /mail fallthrough, and the
@@ -50,6 +51,18 @@ test.describe("view navigation", () => {
     await expect.poll(() => new URL(page.url()).pathname).toBe("/kata");
     await expect(page.getByRole("heading", { name: "Kata" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Select repository:/ })).not.toBeAttached();
+  });
+
+  test("keeps the pull request list command palette-only", async ({ page }) => {
+    await page.goto("/issues");
+    await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
+
+    await page.keyboard.press("1");
+    await expect.poll(() => new URL(page.url()).pathname).toBe("/issues");
+
+    await runPaletteCommand(page, "Pull requests (list)");
+    await expect.poll(() => new URL(page.url()).pathname).toBe("/pulls");
+    await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
   });
 
   test("Docs route loads its mode shell directly", async ({ page }) => {

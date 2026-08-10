@@ -915,6 +915,16 @@
     pointer-events: none;
   }
 
+  /* Nested workspace surfaces are the actual keyboard owner. Keep the outer
+     detail leaf structural so only the deepest active pane is highlighted. */
+  .tabbed-panel-leaf.input-active:has(
+      .tabbed-panel-leaf.input-active,
+      :global(.terminal-panel.input-active),
+      :global(.right-sidebar.input-active)
+    )::after {
+    content: none;
+  }
+
   /*
    * Over the pane, not beside it: a strip-less leaf gives its whole height to the
    * pane, so these have nowhere to sit in flow. The z-index is the same fight the
@@ -1043,6 +1053,10 @@
     height: var(--chrome-active-accent-width);
     background: var(--accent-blue);
     pointer-events: none;
+  }
+
+  .tabbed-panel-leaf.input-active > .tabbed-panel-tabs > .tabbed-panel-tab.active::before {
+    content: none;
   }
 
   .tabbed-panel-tab.dragging {

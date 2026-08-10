@@ -277,6 +277,34 @@ test("routes page keys and wheel input to the active pane", async ({ page }) => 
   await expect(conversationLeaf).not.toHaveClass(/input-active/);
   await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(0);
 
+  const filesPaneChrome = await filesLeaf.evaluate((leaf) => {
+    const outline = getComputedStyle(leaf, "::after");
+    const toolbar = leaf.querySelector<HTMLElement>(".diff-toolbar");
+    const activeTab = leaf.querySelector<HTMLElement>(".tabbed-panel-tab.active");
+    if (!toolbar || !activeTab) throw new Error("Files pane chrome is missing");
+    const tabAccent = getComputedStyle(activeTab, "::before");
+    return {
+      outlineColors: [
+        outline.borderTopColor,
+        outline.borderRightColor,
+        outline.borderBottomColor,
+        outline.borderLeftColor,
+      ],
+      outlineWidths: [
+        outline.borderTopWidth,
+        outline.borderRightWidth,
+        outline.borderBottomWidth,
+        outline.borderLeftWidth,
+      ],
+      tabAccentContent: tabAccent.content,
+      toolbarZIndex: getComputedStyle(toolbar).zIndex,
+    };
+  });
+  expect(new Set(filesPaneChrome.outlineColors).size).toBe(1);
+  expect(filesPaneChrome.outlineWidths).toEqual(["1px", "1px", "1px", "1px"]);
+  expect(filesPaneChrome.tabAccentContent).toBe("none");
+  expect(filesPaneChrome.toolbarZIndex).toBe("auto");
+
   const afterWheel = await diffArea.evaluate((area) => Math.round(area.scrollTop));
   await page.keyboard.press("PageDown");
   await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(afterWheel);

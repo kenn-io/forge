@@ -209,7 +209,7 @@ test.describe("issue detail pane input ownership", () => {
     await server?.stop();
   });
 
-  test("moves the active border between a seeded issue and its workspace pane", async ({ page }) => {
+  test("keeps one active border across issue, workspace, and terminal panes", async ({ page }) => {
     if (!server) throw new Error("issue workspace e2e server was not started");
     const baseURL = server.info.base_url;
     const created = await page.request.post(`${baseURL}/api/v1/issues/github/acme/widgets/10/workspace`, {
@@ -222,6 +222,10 @@ test.describe("issue detail pane input ownership", () => {
       data: { target_key: "plain_shell", display_region: "workflow" },
     });
     expect(launched.status(), await launched.text()).toBe(200);
+    const docked = await page.request.post(`${baseURL}/api/v1/workspaces/${workspace.id}/runtime/sessions`, {
+      data: { target_key: "plain_shell", display_region: "terminal" },
+    });
+    expect(docked.status(), await docked.text()).toBe(200);
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${baseURL}/issues/github/acme/widgets/10`);
@@ -230,12 +234,31 @@ test.describe("issue detail pane input ownership", () => {
     const workspacePane = page.locator('[data-pane-key="workspace"]');
     const conversationLeaf = conversationPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
     const workspaceLeaf = workspacePane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+    await conversationPane.click({ position: { x: 24, y: 80 } });
     await expect(conversationLeaf).toHaveClass(/input-active/);
     await expect(workspaceLeaf).not.toHaveClass(/input-active/);
 
     await workspacePane.click({ position: { x: 24, y: 80 } });
     await expect(workspaceLeaf).toHaveClass(/input-active/);
     await expect(conversationLeaf).not.toHaveClass(/input-active/);
+
+    await workspaceLeaf.getByRole("button", { name: "Open terminal panel" }).click();
+    const terminalPanel = workspaceLeaf.locator(".terminal-panel.bottom.open");
+    await expect(terminalPanel).toBeVisible();
+    await terminalPanel.click({ position: { x: 24, y: 80 } });
+    await expect(terminalPanel).toHaveClass(/input-active/);
+    const ownershipChrome = await workspaceLeaf.evaluate((leaf) => {
+      const terminal = leaf.querySelector<HTMLElement>(".terminal-panel.input-active");
+      if (!terminal) throw new Error("Active terminal panel is missing");
+      const outer = getComputedStyle(leaf, "::after");
+      const inner = getComputedStyle(terminal, "::after");
+      return {
+        innerWidths: [inner.borderTopWidth, inner.borderRightWidth, inner.borderBottomWidth, inner.borderLeftWidth],
+        outerContent: outer.content,
+      };
+    });
+    expect(ownershipChrome.innerWidths).toEqual(["1px", "1px", "1px", "1px"]);
+    expect(ownershipChrome.outerContent).toBe("none");
 
     await conversationPane.hover();
     await page.mouse.wheel(0, 120);

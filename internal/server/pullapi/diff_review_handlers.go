@@ -806,6 +806,9 @@ func (s *Handler) ingestDiffReviewThreads(
 	repo db.Repo,
 	mr db.MergeRequest,
 ) error {
+	if !s.syncer.SyncEnabled() {
+		return nil
+	}
 	reader, err := s.syncer.MergeRequestReviewThreadReader(
 		repoProviderKind(repo), repoProviderHost(repo),
 	)

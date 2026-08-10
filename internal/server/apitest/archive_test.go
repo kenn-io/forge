@@ -42,7 +42,7 @@ func TestAPIArchiveRoutesRemainRegisteredWithoutController(t *testing.T) {
 func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database, provider, wakeCount, ref := setupArchiveTestServer(t, nil)
+	srv, database, provider, wakeCount, ref, _ := setupArchiveTestServer(t, nil)
 	client := setupTestClient(t, srv)
 	repositories := []generated.ArchiveRepositoryRef{archiveGeneratedRef(ref)}
 
@@ -192,10 +192,36 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 		"idempotent start preserves an active provider budget wait")
 }
 
+func TestAPIArchiveStartRejectsDisabledSyncWithoutMutation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _, wakeCount, ref, syncer := setupArchiveTestServer(t, nil)
+	syncer.DisableSync()
+	client := setupTestClient(t, srv)
+	repositories := []generated.ArchiveRepositoryRef{archiveGeneratedRef(ref)}
+
+	response, err := client.HTTP.StartArchivesWithResponse(t.Context(), generated.ArchiveMutationBody{
+		Repositories: &repositories,
+	})
+	require.NoError(err)
+	assert.Equal(http.StatusServiceUnavailable, response.StatusCode())
+	require.NotNil(response.ApplicationproblemJSONDefault)
+	assert.Equal(generated.ServiceUnavailable, response.ApplicationproblemJSONDefault.Code)
+
+	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repo.ID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Equal(db.ArchiveCollectionModeDiscovery, states[0].CollectionMode)
+	assert.Zero(wakeCount.Load())
+}
+
 func TestAPIArchiveValidationAndLimitProblemDetails(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database, _, _, ref := setupArchiveTestServer(t, nil)
+	srv, database, _, _, ref, _ := setupArchiveTestServer(t, nil)
 	client := setupTestClient(t, srv)
 	repositories := []generated.ArchiveRepositoryRef{archiveGeneratedRef(ref)}
 
@@ -249,7 +275,7 @@ func TestAPIArchiveValidationAndLimitProblemDetails(t *testing.T) {
 	require.NotNil(missingReport.ApplicationproblemJSONDefault)
 	assert.Equal(generated.BadRequest, missingReport.ApplicationproblemJSONDefault.Code)
 
-	limitSrv, _, _, _, _ := setupArchiveTestServer(t, archiveLimitController{})
+	limitSrv, _, _, _, _, _ := setupArchiveTestServer(t, archiveLimitController{})
 	limitClient := setupTestClient(t, limitSrv)
 	tooLarge, err := limitClient.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportParams{
 		Start: "2026-07-01T00:00:00Z", End: "2026-07-02T00:00:00Z",
@@ -274,7 +300,7 @@ func TestAPIArchiveValidationAndLimitProblemDetails(t *testing.T) {
 func TestAPIArchiveRoutesObeyHostAuthAndCSRFGuards(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, _, _, _ := setupArchiveTestServer(t, nil)
+	srv, _, _, _, _, _ := setupArchiveTestServer(t, nil)
 
 	crossSite := httptest.NewRequest(
 		http.MethodPost, "/api/v1/archive/start", strings.NewReader(`{"all":true}`),
@@ -373,7 +399,7 @@ func (archiveStatusController) Status(context.Context, []platform.RepoRef) ([]ar
 func setupArchiveTestServer(
 	t *testing.T,
 	controller archive.Controller,
-) (*server.Server, *db.DB, *archiveAPITestProvider, *atomic.Int32, platform.RepoRef) {
+) (*server.Server, *db.DB, *archiveAPITestProvider, *atomic.Int32, platform.RepoRef, *ghclient.Syncer) {
 	t.Helper()
 	database := dbtest.Open(t)
 	ref := platform.RepoRef{
@@ -404,7 +430,7 @@ func setupArchiveTestServer(
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
-	return srv, database, provider, wakeCount, ref
+	return srv, database, provider, wakeCount, ref, syncer
 }
 
 func archiveGeneratedRef(ref platform.RepoRef) generated.ArchiveRepositoryRef {

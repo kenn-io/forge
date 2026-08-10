@@ -256,6 +256,9 @@ func (s *Server) startArchives(
 	ctx context.Context,
 	input *archiveMutationInput,
 ) (*archiveStatusesOutput, error) {
+	if err := s.requireSync(); err != nil {
+		return nil, err
+	}
 	if s.archive == nil {
 		return nil, httpapi.ServiceUnavailable("archive service not configured")
 	}

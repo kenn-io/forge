@@ -782,6 +782,7 @@ type apiTestGitLabProvider struct {
 	reviewThreads                    []platform.MergeRequestReviewThread
 	reviewThreadsErr                 error
 	reviewThreadsFn                  func(context.Context, platform.RepoRef, int) ([]platform.MergeRequestReviewThread, error)
+	reviewThreadReads                atomic.Int32
 	publishedReviews                 []platform.PublishDiffReviewDraftInput
 	publishReviewErr                 error
 	appliedSuggestions               []platform.ApplyReviewSuggestionsInput
@@ -891,6 +892,7 @@ func (p *apiTestGitLabProvider) ListMergeRequestReviewThreads(
 	repo platform.RepoRef,
 	number int,
 ) ([]platform.MergeRequestReviewThread, error) {
+	p.reviewThreadReads.Add(1)
 	if p.reviewThreadsFn != nil {
 		return p.reviewThreadsFn(ctx, repo, number)
 	}
@@ -17482,6 +17484,78 @@ func setupActualGitLabReviewServer(
 func writeRawJSONForTest(w http.ResponseWriter, body string) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, body)
+}
+
+func TestAPIPublishReviewDraftSkipsThreadRefreshWhenSyncDisabled(t *testing.T) {
+	tests := []struct {
+		name           string
+		publishErr     error
+		expectedStatus string
+	}{
+		{name: "published", expectedStatus: "published"},
+		{
+			name:           "partially published",
+			publishErr:     &platform.DiffReviewPublishPartialError{Err: errors.New("approval failed")},
+			expectedStatus: "partially_published",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			caps := platform.Capabilities{
+				ReadRepositories:       true,
+				ReadMergeRequests:      true,
+				ReadIssues:             true,
+				ReadComments:           true,
+				ReadReviewThreads:      true,
+				ReviewDraftMutation:    true,
+				SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
+			}
+			srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+			srv.syncer.DisableSync()
+			provider.publishReviewErr = tt.publishErr
+			provider.reviewThreads = []platform.MergeRequestReviewThread{{
+				ProviderThreadID: "new-thread", ProviderCommentID: "new-comment",
+				Body: "new provider thread",
+			}}
+
+			repo, err := database.GetRepoByIdentity(t.Context(), db.RepoIdentity{
+				Platform: "gitlab", PlatformHost: "gitlab.example.com", RepoPath: "group/project",
+			})
+			require.NoError(err)
+			require.NotNil(repo)
+			mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 7)
+			require.NoError(err)
+			require.NotNil(mr)
+			require.NoError(database.UpdateDiffSHAs(t.Context(), repo.ID, 7, "current-head", "base", "merge"))
+			draft, err := database.GetOrCreateMRReviewDraft(t.Context(), mr.ID)
+			require.NoError(err)
+			line := 42
+			_, err = database.CreateMRReviewDraftComment(t.Context(), draft.ID, db.MRReviewDraftCommentInput{
+				Body: "publish this comment",
+				Range: db.ReviewLineRange{
+					Path: "internal/server/api_test.go", Side: "right", Line: line,
+					NewLine: &line, LineType: "add", DiffHeadSHA: "current-head",
+				},
+			})
+			require.NoError(err)
+
+			publishRR := doJSON(t, srv, http.MethodPost,
+				"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft/publish",
+				map[string]string{"action": "comment"},
+			)
+			require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
+			var status pullapi.ActionStatusBody
+			require.NoError(json.NewDecoder(publishRR.Body).Decode(&status))
+			assert.Equal(tt.expectedStatus, status.Status)
+			assert.Len(provider.publishedReviews, 1)
+			assert.Zero(provider.reviewThreadReads.Load())
+			threads, err := database.ListMRReviewThreads(t.Context(), mr.ID)
+			require.NoError(err)
+			assert.Empty(threads)
+		})
+	}
 }
 
 func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {

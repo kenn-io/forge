@@ -343,6 +343,41 @@ func TestCreateWorktreeFromMergeRequestRouteUnknownNumber(t *testing.T) {
 	assert.True(os.IsNotExist(statErr))
 }
 
+func TestCreateWorktreeFromMergeRequestRouteReportsDisabledSync(t *testing.T) {
+	require := Require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	syncer.DisableSync()
+	t.Cleanup(syncer.Stop)
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+	})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	repo := initLifecycleRouteRepo(t)
+	_, err := database.UpsertRepo(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	projectID := registerIdentifiedProject(t, ts, repo)
+	destination := filepath.Join(t.TempDir(), "wt")
+	response := httpDo(t, ts, http.MethodPost,
+		"/api/v1/projects/"+projectID+"/worktrees/from-merge-request",
+		mustMarshal(t, map[string]any{
+			"number": 99,
+			"branch": "pr-99",
+			"path":   destination,
+		}),
+	)
+	defer response.Body.Close()
+
+	assert.Equal(http.StatusServiceUnavailable, response.StatusCode)
+	assert.Equal("serviceUnavailable", decodeProblemCode(t, response))
+	assert.NoDirExists(destination)
+}
+
 // TestCreateWorktreeFromMergeRequestRouteNoIdentity: a local-only project
 // cannot resolve merge requests.
 func TestCreateWorktreeFromMergeRequestRouteNoIdentity(t *testing.T) {

@@ -246,7 +246,7 @@
         onFocusPane={handlePaneFocus}
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
       >
-        {#snippet renderPane(tabKey, visible)}
+        {#snippet renderPane(tabKey, visible, inputActive)}
           {#if tabKey === "workspace" && inlineWorkspace && visible}
             <!-- Portal target for the single live terminal subtree, which the
                  frontend host reparents in here. Mounted only while visible: a slot
@@ -265,7 +265,7 @@
             <PullDetailPane
               {tabKey}
               {visible}
-              keyboardActive={tabKey === detailTab}
+              keyboardActive={inputActive}
               pr={selectedPR}
               detail={selectedDetail}
               autoSync={autoSyncDetail}

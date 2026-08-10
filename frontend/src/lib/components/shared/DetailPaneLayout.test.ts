@@ -387,6 +387,32 @@ describe("detail pane layout", () => {
     expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
   });
 
+  it("marks the first on-screen pane active when the remembered pane is not rendered", async () => {
+    const layout = store(splitTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, { layout, routeTabKey: "conversation" });
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    expect(activePaneKey()).toBe("workspace");
+
+    layout.setHidden("workspace", true);
+    flushSync();
+    expect(activePaneKey()).toBe("conversation");
+
+    layout.setHidden("workspace", false);
+    flushSync();
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    await rerender({ layout, routeTabKey: "conversation", workspaceAvailable: false });
+    expect(activePaneKey()).toBe("conversation");
+
+    await rerender({ layout, routeTabKey: "conversation", workspaceAvailable: true });
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    layout.toggleZoom("leaf-detail");
+    flushSync();
+    expect(activePaneKey()).toBe("conversation");
+  });
+
   it("keeps a zoom on a non-route leaf when the tab list re-derives", async () => {
     // Route authority is a transition, not an invariant. The deep-link effect
     // also tracks `tabs`, whose identity changes on unrelated store state — the
@@ -438,6 +464,27 @@ describe("detail pane layout", () => {
     fireEvent.focusIn(screen.getByTestId("pane-workspace"));
 
     expect(onFocusPane).toHaveBeenCalledWith("workspace");
+  });
+
+  it("reports focus after an external route transition changes the owner", async () => {
+    const layout = store(splitTree());
+    const onFocusPane = vi.fn();
+    const { rerender } = render(DetailPaneLayoutTestHarness, {
+      layout,
+      routeTabKey: "conversation",
+      onFocusPane,
+    });
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    expect(onFocusPane).toHaveBeenLastCalledWith("workspace");
+
+    await rerender({ layout, routeTabKey: "files", onFocusPane });
+    expect(layout.lastFocusedTabKey()).toBe("files");
+    onFocusPane.mockClear();
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    expect(onFocusPane).toHaveBeenCalledWith("workspace");
+    expect(layout.lastFocusedTabKey()).toBe("workspace");
   });
 
   it("records the focused pane for a surface that wants no notification", () => {

@@ -39,6 +39,8 @@
     node: TabbedPanelNode | undefined;
     tabs: TabbedPanelDescriptor[];
     activeTabKey: string;
+    /** Whether this tree owns input within a larger, nested pane surface. */
+    inputActive?: boolean;
     renderTab: Snippet<[string, boolean]>;
     tabIcon?: Snippet<[TabbedPanelDescriptor]> | undefined;
     tabActions?: Snippet<[TabbedPanelDescriptor]> | undefined;
@@ -100,6 +102,7 @@
     node,
     tabs,
     activeTabKey,
+    inputActive = true,
     renderTab,
     tabIcon = undefined,
     tabActions = undefined,
@@ -563,7 +566,7 @@
       "tabbed-panel-leaf",
       {
         "solo-chrome": soloChrome,
-        "input-active": node.activeTabKey === activeTabKey,
+        "input-active": inputActive && node.activeTabKey === activeTabKey,
       },
     ]}
     aria-label={leafLabel}
@@ -724,6 +727,7 @@
         node={node.first}
         {tabs}
         {activeTabKey}
+        {inputActive}
         {renderTab}
         {tabIcon}
         {tabActions}
@@ -776,6 +780,7 @@
         node={node.second}
         {tabs}
         {activeTabKey}
+        {inputActive}
         {renderTab}
         {tabIcon}
         {tabActions}

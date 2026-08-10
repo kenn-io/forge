@@ -68,7 +68,7 @@
   {onFocusPane}
   paneLeafExtras={withLeafExtras ? leafExtras : undefined}
 >
-  {#snippet renderPane(tabKey, visible)}
+  {#snippet renderPane(tabKey, visible, _inputActive)}
     <section data-testid={`pane-${tabKey}`} data-visible={String(visible)}>
       Pane {tabKey}
     </section>

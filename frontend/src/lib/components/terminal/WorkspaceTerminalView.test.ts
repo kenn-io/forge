@@ -3267,6 +3267,31 @@ describe("WorkspaceTerminalView", () => {
     expect(activePaneKey()).toBe("session:ws-1:helper");
   });
 
+  it("does not paint a nested workflow owner while its outer detail pane is inactive", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+    const surfaceLayout = getPaneLayoutStore("prs");
+    surfaceLayout.noteFocused("conversation");
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    await screen.findByRole("tab", { name: /Reviewer/ });
+    const activeWorkflowLeaves = () => document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active");
+    expect(activeWorkflowLeaves()).toHaveLength(0);
+
+    surfaceLayout.noteFocused("workspace");
+    await waitFor(() => expect(activeWorkflowLeaves()).toHaveLength(1));
+  });
+
   it("keeps the workspace header for a sole standalone session", async () => {
     render(WorkspaceTerminalView, {
       props: {

@@ -46,6 +46,7 @@
     node: WorkflowNode;
     tabs: WorkflowTabDescriptor[];
     activeTabKey: WorkflowTabKey;
+    inputActive?: boolean;
     renderTab: Snippet<[WorkflowTabKey, boolean]>;
     disabled?: boolean;
     onSelectTab?: ((tabKey: WorkflowTabKey) => void) | undefined;
@@ -75,6 +76,7 @@
     node,
     tabs,
     activeTabKey,
+    inputActive = true,
     renderTab: renderWorkflowTab,
     disabled = false,
     onSelectTab,
@@ -150,6 +152,7 @@
   {node}
   {tabs}
   {activeTabKey}
+  {inputActive}
   {disabled}
   tablistLabel="Workflow group tabs"
   leafLabel="Workflow group"

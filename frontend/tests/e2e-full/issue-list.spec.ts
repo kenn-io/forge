@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import { startIsolatedE2EServer, startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 import type { components } from "../../src/lib/api/generated/schema.js";
 
 // Seeded issues (6 total):
@@ -38,6 +38,29 @@ async function selectIssueGrouping(page: Page, label: string): Promise<void> {
 
 const longRepoName = "widgets-with-an-extremely-long-repository-name";
 const longRepoPath = `acme/${longRepoName}`;
+
+type WorkspaceStatusResponse = {
+  id: string;
+  status: string;
+  error_message?: string | null;
+};
+
+async function waitForWorkspaceReady(page: Page, baseURL: string, workspaceId: string): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`${baseURL}/api/v1/workspaces/${workspaceId}`);
+        expect(response.ok()).toBe(true);
+        const workspace = (await response.json()) as WorkspaceStatusResponse;
+        if (workspace.status === "error") {
+          throw new Error(workspace.error_message ?? `workspace ${workspaceId} failed to become ready`);
+        }
+        return workspace.status;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe("ready");
+}
 
 async function mockLongIssueRepoSlug(page: Page): Promise<void> {
   await page.route(
@@ -172,6 +195,52 @@ test.describe("issue list mutations", () => {
 
     await page.reload();
     await expect(page.locator(".issue-detail .issue-state-chip")).toHaveText("Open");
+  });
+});
+
+test.describe("issue detail pane input ownership", () => {
+  let server: IsolatedE2EServer | undefined;
+
+  test.beforeAll(async () => {
+    server = await startIsolatedWorkspaceE2EServer();
+  });
+
+  test.afterAll(async () => {
+    await server?.stop();
+  });
+
+  test("moves the active border between a seeded issue and its workspace pane", async ({ page }) => {
+    if (!server) throw new Error("issue workspace e2e server was not started");
+    const baseURL = server.info.base_url;
+    const created = await page.request.post(`${baseURL}/api/v1/issues/github/acme/widgets/10/workspace`, {
+      data: {},
+    });
+    expect(created.status()).toBe(202);
+    const workspace = (await created.json()) as WorkspaceStatusResponse;
+    await waitForWorkspaceReady(page, baseURL, workspace.id);
+    const launched = await page.request.post(`${baseURL}/api/v1/workspaces/${workspace.id}/runtime/sessions`, {
+      data: { target_key: "plain_shell", display_region: "workflow" },
+    });
+    expect(launched.status(), await launched.text()).toBe(200);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${baseURL}/issues/github/acme/widgets/10`);
+
+    const conversationPane = page.locator('[data-pane-key="conversation"]');
+    const workspacePane = page.locator('[data-pane-key="workspace"]');
+    const conversationLeaf = conversationPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+    const workspaceLeaf = workspacePane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+    await expect(conversationLeaf).toHaveClass(/input-active/);
+    await expect(workspaceLeaf).not.toHaveClass(/input-active/);
+
+    await workspacePane.click({ position: { x: 24, y: 80 } });
+    await expect(workspaceLeaf).toHaveClass(/input-active/);
+    await expect(conversationLeaf).not.toHaveClass(/input-active/);
+
+    await conversationPane.hover();
+    await page.mouse.wheel(0, 120);
+    await expect(conversationLeaf).toHaveClass(/input-active/);
+    await expect(workspaceLeaf).not.toHaveClass(/input-active/);
   });
 });
 

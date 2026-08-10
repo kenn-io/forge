@@ -21,7 +21,7 @@
   interface Props {
     layout: PaneLayoutStore;
     tabs: PaneTabSpec[];
-    renderPane: Snippet<[string, boolean]>;
+    renderPane: Snippet<[string, boolean, boolean]>;
     paneIcon?: Snippet<[TabbedPanelDescriptor]> | undefined;
     tablistLabel?: string;
     leafLabel?: string;
@@ -140,6 +140,12 @@
       .map((leaf) => leaf.activeTabKey)
       .filter((key): key is string => key !== null && key !== undefined),
   );
+  const activeInputTabKey = $derived.by(() => {
+    const focused = layout.lastFocusedTabKey();
+    if (focused !== null && onScreenTabs.includes(focused)) return focused;
+    if (routeTabKey !== undefined && onScreenTabs.includes(routeTabKey)) return routeTabKey;
+    return onScreenTabs[0] ?? "";
+  });
 
   // Publish the renderer-only facts the command layer needs: that a layout is
   // mounted here at all, which panes it offers, which are on screen, and whether
@@ -271,6 +277,7 @@
     }
     if (appliedRouteTabKey === key) return;
     appliedRouteTabKey = key;
+    lastReportedFocus = key;
     untrack(() => {
       layout.activateTab(key);
       layout.noteFocused(key);
@@ -313,7 +320,7 @@
         dragScope={layout.dragScope}
         node={activeTree}
         tabs={descriptors}
-        activeTabKey={layout.lastFocusedTabKey() ?? routeTabKey ?? onScreenTabs[0] ?? ""}
+        activeTabKey={activeInputTabKey}
         {tablistLabel}
         {leafLabel}
         resizeLabel="Resize detail panes"
@@ -346,7 +353,7 @@
         soloChromeTabKeys={flattened ? [] : SOLO_CHROME_TAB_KEYS}
       >
         {#snippet renderTab(tabKey, visible)}
-          {@render renderPane(tabKey, visible)}
+          {@render renderPane(tabKey, visible, tabKey === activeInputTabKey)}
         {/snippet}
       </TabbedPanelTree>
     </div>

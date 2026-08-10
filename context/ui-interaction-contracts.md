@@ -292,6 +292,9 @@ Keyboard handlers must have one clear owner for each key press.
 - Simultaneous panes activate on focus, pointer, or wheel input; only the active pane
   consumes window-level keys, and wheel stays event-local. Mark it with a subtle inset border
   without replacing control focus styling (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
+- Nested pane trees paint ownership only while their containing pane is active; workspace
+  Workflow, Details, and bottom Terminal regions are sibling owners
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::renderedWorkspaceInputRegion`).
 - Focus Terminal reveals, it never maximizes: a closed workspace pane reopens
   alongside the detail and a visible one keeps its arrangement. Maximizing over
   the detail is only ever an explicit user action. Reopening also has to clear a

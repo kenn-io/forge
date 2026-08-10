@@ -49,6 +49,8 @@
     // workflow-tab placement while another tab is selected. Forwarded to
     // TerminalSplitTree, which makes it every leaf's visibility.
     hostVisible?: boolean;
+    inputActive?: boolean;
+    onInputActivate?: (() => void) | undefined;
     /** Shared detail-surface scope when terminal sessions may become top-level panes. */
     dragScope?: string | undefined;
     /** Maps a runtime session to its top-level detail-pane key. */
@@ -92,6 +94,8 @@
     loading = false,
     disabled = false,
     hostVisible = true,
+    inputActive = false,
+    onInputActivate = undefined,
     dragScope = undefined,
     paneKeyForSession = undefined,
     headerActions = undefined,
@@ -189,9 +193,12 @@
 </script>
 
 <section
-  class={["terminal-panel", dock, { open }]}
+  class={["terminal-panel", dock, { open, "input-active": inputActive }]}
   style={dock === "bottom" && open ? `height: ${height}px` : undefined}
   aria-label="Terminal panel"
+  onfocusin={() => onInputActivate?.()}
+  onpointerdown={() => onInputActivate?.()}
+  onwheel={() => onInputActivate?.()}
   ondragover={handleDragOver}
   ondrop={handleDrop}
 >
@@ -362,11 +369,22 @@
 
 <style>
   .terminal-panel {
+    position: relative;
     flex-shrink: 0;
     min-height: 30px;
     border-top: var(--chrome-border-width) solid var(--border-default);
     background: var(--bg-surface);
     color: var(--text-primary);
+  }
+
+  .terminal-panel.input-active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    border: var(--chrome-border-width) solid
+      color-mix(in srgb, var(--accent-blue) 48%, var(--border-default));
+    pointer-events: none;
   }
 
   .terminal-panel.top {

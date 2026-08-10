@@ -1764,10 +1764,13 @@ test.describe("workspace launch home", () => {
     await expect(codexLeaf).toHaveClass(/input-active/);
     const activeBorder = await codexLeaf.evaluate((leaf) => {
       const style = getComputedStyle(leaf, "::after");
-      return { color: style.borderTopColor, width: style.borderTopWidth };
+      return {
+        colors: [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor],
+        widths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
+      };
     });
-    expect(activeBorder.color).not.toBe("rgba(0, 0, 0, 0)");
-    expect(activeBorder.width).toBe("1px");
+    expect(activeBorder.colors.every((color) => color !== "rgba(0, 0, 0, 0)")).toBe(true);
+    expect(activeBorder.widths).toEqual(["1px", "1px", "1px", "1px"]);
 
     await reviewerPane.click({ position: { x: 24, y: 80 } });
     await expect(reviewerLeaf).toHaveClass(/input-active/);
@@ -1777,6 +1780,17 @@ test.describe("workspace launch home", () => {
     await page.mouse.wheel(0, 120);
     await expect(codexLeaf).toHaveClass(/input-active/);
     await expect(reviewerLeaf).not.toHaveClass(/input-active/);
+
+    await page.locator(".panel-toggle-btn", { hasText: "Diff" }).click();
+    const rightSidebar = page.locator(".right-sidebar");
+    await expect(rightSidebar).toBeVisible();
+    await rightSidebar.click({ position: { x: 24, y: 100 } });
+    await expect(rightSidebar).toHaveClass(/input-active/);
+    await expect(page.locator(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveCount(0);
+
+    await codexPane.click({ position: { x: 24, y: 80 } });
+    await expect(codexLeaf).toHaveClass(/input-active/);
+    await expect(rightSidebar).not.toHaveClass(/input-active/);
   });
 
   test("shows one Workspaces option in the compact page menu on terminal routes", async ({ page }) => {

@@ -544,7 +544,7 @@
         onFocusPane={handlePaneFocus}
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
       >
-        {#snippet renderPane(tabKey, visible)}
+        {#snippet renderPane(tabKey, visible, inputActive)}
           {#if tabKey === "commit" && commitDrawer && visible}
             {#key commitDrawer.commitSha}
               <CommitDiffPanel
@@ -573,7 +573,7 @@
             <PullDetailPane
               {tabKey}
               {visible}
-              keyboardActive={tabKey === effectiveDetailTab}
+              keyboardActive={inputActive}
               pr={drawerPRSelection}
               detail={selectedPullDetail}
               autoSync="background"

@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
-import { createRawSnippet, type Snippet } from "svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { createRawSnippet, tick, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
@@ -151,6 +151,27 @@ describe("ActivityFeedView detail panes", () => {
     expect(screen.queryByRole("tab", { name: "Files changed" })).toBeNull();
     expect(screen.getByTestId("issue-detail")).toBeTruthy();
     expect(screen.queryByTestId("pull-detail-pane")).toBeNull();
+  });
+
+  it("moves diff keyboard ownership with the live activity pane", async () => {
+    renderActivity({ drawerItem: prDrawer(), pullDetail: pullDetailFixture(12) });
+    const layout = getPaneLayoutStore("activity");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+    await tick();
+
+    const bodies = screen.getAllByTestId("pull-detail-pane");
+    const conversation = bodies.find((body) => body.dataset.tabKey === "conversation")!;
+    const files = bodies.find((body) => body.dataset.tabKey === "files")!;
+    expect(conversation.dataset.keyboardActive).toBe("true");
+    expect(files.dataset.keyboardActive).toBe("false");
+
+    await fireEvent.pointerDown(files);
+    expect(conversation.dataset.keyboardActive).toBe("false");
+    expect(files.dataset.keyboardActive).toBe("true");
+
+    await fireEvent.wheel(conversation);
+    expect(conversation.dataset.keyboardActive).toBe("true");
+    expect(files.dataset.keyboardActive).toBe("false");
   });
 
   it("offers the commit pane for a branch commit selection", async () => {

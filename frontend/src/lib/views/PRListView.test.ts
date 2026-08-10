@@ -253,12 +253,15 @@ describe("PRListView detail panes", () => {
     const activePaneKey = () =>
       document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
     expect(activePaneKey()).toBe("conversation");
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
 
     await fireEvent.pointerDown(screen.getByTestId("diff-files"));
     expect(activePaneKey()).toBe("files");
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
 
     await fireEvent.wheel(screen.getByTestId("pull-detail"));
     expect(activePaneKey()).toBe("conversation");
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
   });
 
   it("pushes history when the other route pane is covered by a zoom", async () => {

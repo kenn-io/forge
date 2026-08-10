@@ -36,7 +36,7 @@
 
 <div class="harness-root">
   <DetailPaneLayout {layout} {tabs}>
-    {#snippet renderPane(tabKey, visible)}
+    {#snippet renderPane(tabKey, visible, _inputActive)}
       {#if tabKey === "workspace" && visible && controller}
         <div class="harness-workspace-slot" {@attach controller.slotAttachment}></div>
       {:else if tabKey === "workspace" && visible}

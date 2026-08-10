@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { DiffFile, DiffLine, DiffResult, FilesResult } from "../../src/lib/api/types.js";
+import { splitFocusedPane } from "../e2e/support/paneCommands.js";
 
 type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
 type DiffFixture = Omit<DiffResult, "files"> & {
@@ -1271,6 +1272,39 @@ test.describe("activity split view", () => {
     await conversationTab.click();
     await expect(conversationTab).toHaveAttribute("aria-selected", "true");
     await expect(filesTab).toHaveAttribute("aria-selected", "false");
+  });
+
+  test("activity detail paging follows the live pane owner", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await mockDiffForAllPRs(page, multiFileDiff);
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const detail = await openActivityPRSplit(page);
+    await splitFocusedPane(page, "right");
+    const conversationPane = detail.locator('[data-pane-key="conversation"]');
+    const filesPane = detail.locator('[data-pane-key="files"]');
+    const conversationLeaf = conversationPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+    const filesLeaf = filesPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+    const diffArea = detail.locator(".diff-area .kit-scrollbox__viewport");
+    await expect(diffArea).toBeVisible();
+    await expect.poll(async () => diffArea.evaluate((area) => area.scrollHeight > area.clientHeight)).toBe(true);
+
+    await filesPane.click({ position: { x: 24, y: 80 } });
+    await expect(filesLeaf).toHaveClass(/input-active/);
+    await expect(conversationLeaf).not.toHaveClass(/input-active/);
+    await diffArea.evaluate((area) => {
+      area.scrollTop = 0;
+    });
+    await page.keyboard.press("PageDown");
+    await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(0);
+
+    await conversationPane.click({ position: { x: 24, y: 80 } });
+    await expect(conversationLeaf).toHaveClass(/input-active/);
+    await expect(filesLeaf).not.toHaveClass(/input-active/);
+    const beforeInactivePageDown = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+    await page.keyboard.press("PageDown");
+    await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBe(beforeInactivePageDown);
   });
 
   test("activity split view highlights matching activity rows", async ({ page }) => {

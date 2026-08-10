@@ -143,7 +143,7 @@
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
         onFocusPane={handlePaneFocus}
       >
-        {#snippet renderPane(tabKey, visible)}
+        {#snippet renderPane(tabKey, visible, _inputActive)}
           {#if tabKey === "conversation"}
             <IssueDetail
               owner={selectedIssue.owner}

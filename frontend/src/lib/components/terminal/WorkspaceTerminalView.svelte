@@ -675,6 +675,22 @@
   // The surface this view is embedded in, whose stored pane tree is the sole
   // record of which sessions have been promoted out of this container.
   const surfaceLayout = $derived(paneSurface ? getPaneLayoutStore(paneSurface) : null);
+  type WorkspaceInputRegion = "workflow" | "details" | "terminal";
+  let workspaceInputRegion = $state<WorkspaceInputRegion>("workflow");
+  const workspaceContainerInputActive = $derived(
+    surfaceLayout === null || surfaceLayout.lastFocusedTabKey() === "workspace",
+  );
+  const renderedWorkspaceInputRegion = $derived.by<WorkspaceInputRegion>(() => {
+    if (workspaceInputRegion === "details" && (hideRightSidebar || !sidebarOpen)) return "workflow";
+    if (workspaceInputRegion === "terminal" && (!terminalLayout.open || terminalLayout.dock !== "bottom")) {
+      return "workflow";
+    }
+    return workspaceInputRegion;
+  });
+
+  function activateWorkspaceInputRegion(region: WorkspaceInputRegion): void {
+    workspaceInputRegion = region;
+  }
 
   function sessionPaneKeyFor(session: RuntimeSession): string {
     return sessionPaneKey(workspaceId, workspaceHostKey, session.key);
@@ -1336,9 +1352,11 @@
     if (actionsBlocked) return;
     if (sidebarOpen && sidebarTab === tab) {
       sidebarOpen = false;
+      activateWorkspaceInputRegion("workflow");
     } else {
       setSidebarTab(tab);
       sidebarOpen = true;
+      activateWorkspaceInputRegion("details");
     }
   }
 
@@ -1383,6 +1401,7 @@
 
   function toggleRightSidebar(): void {
     sidebarOpen = !sidebarOpen;
+    activateWorkspaceInputRegion(sidebarOpen ? "details" : "workflow");
   }
 
   function handleWorkspaceListResize(width: number): void {
@@ -4135,6 +4154,9 @@
                 class="workspace-stage"
                 role="region"
                 aria-label="Workflow panes"
+                onfocusin={() => activateWorkspaceInputRegion("workflow")}
+                onpointerdown={() => activateWorkspaceInputRegion("workflow")}
+                onwheel={() => activateWorkspaceInputRegion("workflow")}
                 ondragover={handleWorkflowDragOver}
                 ondrop={handleWorkflowDrop}
               >
@@ -4159,6 +4181,7 @@
                       node={renderedWorkflowTree}
                       tabs={workflowTabDescriptors}
                       {activeTabKey}
+                      inputActive={workspaceContainerInputActive && renderedWorkspaceInputRegion === "workflow"}
                       disabled={actionsBlocked}
                       onSelectTab={handleWorkflowTabActivation}
                       onFocusPane={handleWorkflowTabActivation}
@@ -4275,8 +4298,18 @@
               onResize={handleSidebarResize}
             />
             <div
-              class="right-sidebar"
+              class={[
+                "right-sidebar",
+                {
+                  "input-active": workspaceContainerInputActive && renderedWorkspaceInputRegion === "details",
+                },
+              ]}
               style="width: {renderedRightSidebarWidth}px"
+              role="region"
+              aria-label="Workspace details pane"
+              onfocusin={() => activateWorkspaceInputRegion("details")}
+              onpointerdown={() => activateWorkspaceInputRegion("details")}
+              onwheel={() => activateWorkspaceInputRegion("details")}
             >
               {#if workspaceDetailsReady && workspace}
                 {#snippet kataTaskPanel()}
@@ -4489,6 +4522,8 @@
                 loading={terminalLaunching}
                 disabled={actionsBlocked}
                 hostVisible={dockHostVisible}
+                inputActive={workspaceContainerInputActive && renderedWorkspaceInputRegion === "terminal"}
+                onInputActivate={() => activateWorkspaceInputRegion("terminal")}
                 onToggle={() => void toggleTerminalPanel()}
                 onNewTerminal={() => void launchTerminalSession()}
                 onSplit={(direction) => void splitTerminal(direction)}
@@ -5101,6 +5136,16 @@
     z-index: 2;
     flex-shrink: 0;
     overflow: hidden;
+  }
+
+  .right-sidebar.input-active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 90;
+    border: var(--chrome-border-width) solid
+      color-mix(in srgb, var(--accent-blue) 48%, var(--border-default));
+    pointer-events: none;
   }
 
   .right-sidebar:has(:global(.kit-modal-overlay)) {

@@ -113,7 +113,7 @@
     beginWorkspaceCreate,
     endWorkspaceCreate,
     isWorkspaceCreatePending,
-    queueWorkspaceLaunch,
+    promoteWorkspaceCreateLaunch,
     reconcileWorkspaceCreated,
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
@@ -1527,7 +1527,7 @@
     };
 
     wsCreating = true;
-    beginWorkspaceCreate(requestIdentity);
+    beginWorkspaceCreate(requestIdentity, launchTargetKey);
     const program = executeGeneratedApiRequest("POST pull request workspace", (client, signal) =>
       client.POST("/workspaces", { body: requestBody, signal }),
     ).pipe(
@@ -1541,10 +1541,8 @@
               id: data.id,
               status: data.status ?? "provisioning",
             };
+            promoteWorkspaceCreateLaunch(requestIdentity, createdRef.id, undefined);
             recordWorkspaceCreated(requestIdentity, createdRef);
-            if (launchTargetKey) {
-              queueWorkspaceLaunch(createdRef.id, launchTargetKey, undefined);
-            }
             inlineWorkspace?.recordCreated(requestIdentity, createdRef);
           }
           if (responseIsStale() || !data?.id) return;

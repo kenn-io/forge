@@ -1,17 +1,32 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   acceptWorkspaceLaunch,
+  beginWorkspaceCreate,
   beginWorkspaceDeletion,
   claimWorkspaceLaunch,
   completeAcceptedWorkspaceLaunch,
   discardWorkspaceLaunch,
+  endWorkspaceCreate,
   endWorkspaceDeletion,
   failWorkspaceLaunch,
+  isWorkspaceCreatePending,
   isWorkspaceDeletionPending,
+  pendingWorkspaceCreateLaunch,
   pendingWorkspaceLaunch,
+  promoteWorkspaceCreateLaunch,
   queueWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
 } from "./workspace-create-pending.svelte.js";
+import type { WorkspaceItemIdentity } from "../workspace-inline.js";
+
+const pullIdentity: WorkspaceItemIdentity = {
+  provider: "github",
+  owner: "acme",
+  name: "widgets",
+  repoPath: "acme/widgets",
+  number: 1,
+  itemType: "pull",
+};
 
 describe("workspace deletion pending", () => {
   beforeEach(() => {
@@ -35,6 +50,28 @@ describe("workspace deletion pending", () => {
 describe("workspace-create-pending launch intent", () => {
   beforeEach(() => {
     resetWorkspaceCreatePendingForTest();
+  });
+
+  it("promotes an item-scoped target to its workspace without ending creation", () => {
+    beginWorkspaceCreate(pullIdentity, " codex ");
+
+    expect(pendingWorkspaceCreateLaunch(pullIdentity)).toBe("codex");
+
+    promoteWorkspaceCreateLaunch(pullIdentity, "ws-1", undefined);
+
+    expect(pendingWorkspaceLaunch("ws-1", undefined)).toMatchObject({ phase: "queued", targetKey: "codex" });
+    expect(pendingWorkspaceCreateLaunch(pullIdentity)).toBeNull();
+    expect(isWorkspaceCreatePending(pullIdentity)).toBe(true);
+  });
+
+  it("clears an item-scoped target when creation ends without a workspace", () => {
+    beginWorkspaceCreate(pullIdentity, "codex");
+
+    endWorkspaceCreate(pullIdentity);
+
+    expect(isWorkspaceCreatePending(pullIdentity)).toBe(false);
+    expect(pendingWorkspaceCreateLaunch(pullIdentity)).toBeNull();
+    expect(pendingWorkspaceLaunch("ws-1", undefined)).toBeNull();
   });
 
   it("queues and discards an unclaimed target key exactly once per workspace", () => {

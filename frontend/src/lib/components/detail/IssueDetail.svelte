@@ -53,7 +53,7 @@
     beginWorkspaceCreate,
     endWorkspaceCreate,
     isWorkspaceCreatePending,
-    queueWorkspaceLaunch,
+    promoteWorkspaceCreateLaunch,
     reconcileWorkspaceCreated,
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
@@ -760,7 +760,7 @@
     };
 
     workspaceCreating = true;
-    beginWorkspaceCreate(requestIdentity);
+    beginWorkspaceCreate(requestIdentity, launchTargetKey);
     if (branchConflict) {
       branchConflict.error = null;
     }
@@ -785,10 +785,8 @@
               id: data.id,
               status: data.status ?? "provisioning",
             };
+            promoteWorkspaceCreateLaunch(requestIdentity, createdRef.id, undefined);
             recordWorkspaceCreated(requestIdentity, createdRef);
-            if (launchTargetKey) {
-              queueWorkspaceLaunch(createdRef.id, launchTargetKey, undefined);
-            }
             inlineWorkspace?.recordCreated(requestIdentity, createdRef);
           }
           if (responseIsStale()) return;

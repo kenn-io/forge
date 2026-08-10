@@ -5,6 +5,7 @@ import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
 import {
   discardWorkspaceLaunch,
   isWorkspaceCreatePending,
+  pendingWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
 import { TransientTransportError } from "../../api/effect-errors.js";
@@ -126,7 +127,7 @@ describe("KataWorkspaceCreationWorkflow", () => {
     ),
   );
 
-  it.effect("retains launch intent until workspace status is ready", () =>
+  it.effect("promotes launch intent before a creating workspace is published", () =>
     Effect.scoped(
       Effect.gen(function* () {
         resetWorkspaceCreatePendingForTest();
@@ -149,7 +150,12 @@ describe("KataWorkspaceCreationWorkflow", () => {
 
         yield* workflow.workspaceCreated("ws-1", true);
         assert.deepStrictEqual(yield* Ref.get(navigated), ["ws-1"]);
-        assert.isNull(discardWorkspaceLaunch("ws-1", undefined));
+        assert.deepStrictEqual(pendingWorkspaceLaunch("ws-1", undefined), {
+          workspaceId: "ws-1",
+          workspaceHostKey: undefined,
+          targetKey: "codex",
+          phase: "queued",
+        });
 
         yield* Ref.set(status, "ready");
         yield* workflow.workspaceStatus("ws-1");

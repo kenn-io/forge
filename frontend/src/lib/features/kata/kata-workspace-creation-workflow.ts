@@ -7,8 +7,9 @@ import { createKataWorkspaceForTask, type KataWorkspaceTaskIdentity } from "../.
 import { isTransientFailure, transientRetrySchedule } from "../../api/retry-policy.js";
 import {
   beginWorkspaceCreate,
+  discardWorkspaceLaunch,
   endWorkspaceCreate,
-  queueWorkspaceLaunch,
+  promoteWorkspaceCreateLaunch,
   recordWorkspaceCreated,
 } from "../../stores/workspace-create-pending.svelte.js";
 import { showFlash } from "../../stores/flash.svelte.js";
@@ -122,11 +123,14 @@ export function makeKataWorkspaceCreationWorkflow(
       firstConfirmation: boolean,
       created?: boolean | undefined,
     ) {
+      if (workspace.status !== "error") {
+        promoteWorkspaceCreateLaunch(request.itemIdentity, workspace.id, undefined);
+      }
       recordWorkspaceCreated(request.itemIdentity, { id: workspace.id, status: workspace.status });
       if (workspace.status === "ready") {
-        if (request.launchTargetKey) queueWorkspaceLaunch(workspace.id, request.launchTargetKey, undefined);
         yield* removeAwaiting(workspace.id);
       } else if (workspace.status === "error") {
+        discardWorkspaceLaunch(workspace.id, undefined);
         yield* removeAwaiting(workspace.id);
         yield* options.notify(workspace.error_message ?? "Workspace setup failed.", "danger");
       } else if (request.launchTargetKey) {
@@ -161,8 +165,8 @@ export function makeKataWorkspaceCreationWorkflow(
               next.delete(key);
               return next;
             });
-            endWorkspaceCreate(request.itemIdentity);
             yield* publishAccepted(request, workspace, true, created);
+            endWorkspaceCreate(request.itemIdentity);
             return;
           }
           const awaiting = (yield* Ref.get(awaitingReady)).get(workspace.id);
@@ -235,7 +239,7 @@ export function makeKataWorkspaceCreationWorkflow(
         },
       );
       if (!admitted) return;
-      beginWorkspaceCreate(request.itemIdentity);
+      beginWorkspaceCreate(request.itemIdentity, request.launchTargetKey);
       yield* FiberMap.run(workers, key, runCreate(key, request));
     });
 

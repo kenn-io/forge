@@ -10,7 +10,12 @@ import { identityEquals, type WorkspaceItemIdentity, type WorkspaceRefLite } fro
 // replacement detail instance WITHOUT an inline controller (focus/mobile
 // views, DetailDrawer) still learns the workspace exists even when the
 // response landed after unmount or a selection change.
-let pending = $state<WorkspaceItemIdentity[]>([]);
+type PendingWorkspaceCreate = {
+  identity: WorkspaceItemIdentity;
+  launchTargetKey: string | null;
+};
+
+let pending = $state<PendingWorkspaceCreate[]>([]);
 
 type CreatedEntry = { identity: WorkspaceItemIdentity; ref: WorkspaceRefLite; tick: number };
 let created = $state<CreatedEntry[]>([]);
@@ -223,9 +228,10 @@ export function completeAcceptedWorkspaceLaunch(
   return true;
 }
 
-export function beginWorkspaceCreate(identity: WorkspaceItemIdentity): void {
+export function beginWorkspaceCreate(identity: WorkspaceItemIdentity, launchTargetKey?: string): void {
   if (isWorkspaceCreatePending(identity)) return;
-  pending = [...pending, identity];
+  const normalizedTargetKey = launchTargetKey?.trim() ?? "";
+  pending = [...pending, { identity, launchTargetKey: normalizedTargetKey === "" ? null : normalizedTargetKey }];
 }
 
 // Mutations below no-op without a state write when nothing matches:
@@ -233,11 +239,31 @@ export function beginWorkspaceCreate(identity: WorkspaceItemIdentity): void {
 // reads and writes the same state every run (effect_update_depth_exceeded).
 export function endWorkspaceCreate(identity: WorkspaceItemIdentity): void {
   if (!isWorkspaceCreatePending(identity)) return;
-  pending = pending.filter((entry) => !identityEquals(entry, identity));
+  pending = pending.filter((entry) => !identityEquals(entry.identity, identity));
 }
 
 export function isWorkspaceCreatePending(identity: WorkspaceItemIdentity): boolean {
-  return pending.some((entry) => identityEquals(entry, identity));
+  return pending.some((entry) => identityEquals(entry.identity, identity));
+}
+
+export function pendingWorkspaceCreateLaunch(identity: WorkspaceItemIdentity): string | null {
+  return pending.find((entry) => identityEquals(entry.identity, identity))?.launchTargetKey ?? null;
+}
+
+export function promoteWorkspaceCreateLaunch(
+  identity: WorkspaceItemIdentity,
+  workspaceId: string,
+  workspaceHostKey: string | undefined,
+): void {
+  const targetKey = pendingWorkspaceCreateLaunch(identity);
+  if (!workspaceId || targetKey === null) return;
+
+  // Publish the workspace-scoped intent first. Svelte batches both assignments,
+  // so reactive consumers can never observe a flush where neither form exists.
+  queueWorkspaceLaunch(workspaceId, targetKey, workspaceHostKey);
+  pending = pending.map((entry) =>
+    identityEquals(entry.identity, identity) ? { ...entry, launchTargetKey: null } : entry,
+  );
 }
 
 // Confirmed creation, published for every detail instance regardless of the

@@ -193,7 +193,7 @@ test.describe("threaded activity columns", () => {
       localStorage.setItem("kenn-forge:groupingMode", "flat");
       localStorage.removeItem("kenn-forge:hideOrgName");
     });
-    await page.reload();
+    await page.reload({ waitUntil: "domcontentloaded" });
 
     const repoLabel = page.locator(".item-row .repo-chip__label").first();
     await expect(repoLabel).toHaveText("acme/widgets");
@@ -206,7 +206,7 @@ test.describe("threaded activity columns", () => {
     await expect(repoLabel).toHaveText("widgets");
 
     // Reload to verify the toggle persists via localStorage.
-    await page.reload();
+    await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator(".item-row .repo-chip__label").first()).toHaveText("widgets");
   });
 });

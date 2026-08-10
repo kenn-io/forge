@@ -10,7 +10,15 @@ from typing import Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CGROUP_ROOT = Path("/sys/fs/cgroup")
-TEST_COMMAND = ("../node_modules/.bin/vp", "test", "run", "--project", "unit")
+TEST_COMMAND = (
+    "../node_modules/.bin/vp",
+    "test",
+    "run",
+    "--project",
+    "unit-node",
+    "--project",
+    "unit-jsdom",
+)
 VERSION_COMMANDS = (
     ("node", "--version"),
     ("bun", "--version"),

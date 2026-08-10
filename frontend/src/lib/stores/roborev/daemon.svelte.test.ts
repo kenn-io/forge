@@ -1,10 +1,11 @@
-import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
+import { Effect, Fiber, Layer } from "effect";
+import { TestClock } from "effect/testing";
 import type { RoborevClient } from "../../api/roborev/client.js";
-import type { GeneratedClient } from "../../api/generated-api.js";
+import { makeGeneratedApiLayer, type GeneratedClient } from "../../api/generated-api.js";
 import type { OwnedAppRuntime } from "../../app/runtime.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-
+import { RoborevDaemonWorkflowLive } from "./daemon-workflow.js";
 import { createDaemonStore } from "./daemon.svelte.js";
 
 let runtime: OwnedAppRuntime | undefined;
@@ -220,58 +221,60 @@ describe("createDaemonStore", () => {
     currentPolling.interrupt();
   });
 
-  it("polls quickly while unavailable and returns to the healthy cadence after recovery", async () => {
-    const forgeGet = vi
-      .fn()
-      .mockResolvedValueOnce({
+  it.effect("polls quickly while unavailable and returns to the healthy cadence after recovery", () =>
+    Effect.gen(function* () {
+      const forgeGet = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            available: false,
+            endpoint: "http://roborev:7373",
+            version: "",
+          },
+        })
+        .mockResolvedValue({
+          data: {
+            available: true,
+            endpoint: "http://roborev:7373",
+            version: "test",
+          },
+        });
+      const roborevGet = vi.fn().mockResolvedValue({
         data: {
-          available: false,
-          endpoint: "http://roborev:7373",
-          version: "",
-        },
-      })
-      .mockResolvedValue({
-        data: {
-          available: true,
-          endpoint: "http://roborev:7373",
+          active_workers: 0,
+          applied_jobs: 0,
+          canceled_jobs: 0,
+          completed_jobs: 0,
+          failed_jobs: 0,
+          max_workers: 1,
+          queue_paused: false,
+          queued_jobs: 0,
+          rebased_jobs: 0,
+          running_jobs: 0,
+          skipped_jobs: 0,
           version: "test",
         },
       });
-    const roborevGet = vi.fn().mockResolvedValue({
-      data: {
-        active_workers: 0,
-        applied_jobs: 0,
-        canceled_jobs: 0,
-        completed_jobs: 0,
-        failed_jobs: 0,
-        max_workers: 1,
-        queue_paused: false,
-        queued_jobs: 0,
-        rebased_jobs: 0,
-        running_jobs: 0,
-        skipped_jobs: 0,
-        version: "test",
-      },
-    });
-    const store = daemonStore(
-      { GET: forgeGet } as unknown as GeneratedClient,
-      { GET: roborevGet } as unknown as RoborevClient,
-    );
+      const forgeClient = { GET: forgeGet } as unknown as GeneratedClient;
+      const store = daemonStore(forgeClient, { GET: roborevGet } as unknown as RoborevClient);
+      const daemonLayer = Layer.provideMerge(RoborevDaemonWorkflowLive, makeGeneratedApiLayer(forgeClient));
+      const polling = yield* Effect.forkChild(store.pollingEffect.pipe(Effect.provide(daemonLayer)));
 
-    const polling = startPolling(store);
-    try {
-      await vi.waitFor(() => expect(forgeGet).toHaveBeenCalledTimes(1));
-      await vi.waitFor(() => expect(forgeGet).toHaveBeenCalledTimes(2), { timeout: 2_000 });
-      await vi.waitFor(() => {
-        expect(store.isAvailable()).toBe(true);
-        expect(store.getWasEverAvailable()).toBe(true);
-        expect(roborevGet).toHaveBeenCalledTimes(1);
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 1_250));
+      yield* Effect.yieldNow;
+      expect(forgeGet).toHaveBeenCalledTimes(1);
+      yield* TestClock.adjust("999 millis");
+      expect(forgeGet).toHaveBeenCalledTimes(1);
+      yield* TestClock.adjust("1 millis");
       expect(forgeGet).toHaveBeenCalledTimes(2);
-    } finally {
-      polling.interrupt();
-    }
-  });
+      expect(store.isAvailable()).toBe(true);
+      expect(store.getWasEverAvailable()).toBe(true);
+      expect(roborevGet).toHaveBeenCalledTimes(1);
+
+      yield* TestClock.adjust("29999 millis");
+      expect(forgeGet).toHaveBeenCalledTimes(2);
+      yield* TestClock.adjust("1 millis");
+      expect(forgeGet).toHaveBeenCalledTimes(3);
+      yield* Fiber.interrupt(polling);
+    }),
+  );
 });

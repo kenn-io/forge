@@ -6,6 +6,7 @@ import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/te
 import type { InlineConfig } from "vite-plus/test/node";
 import { resolveDevApiUrl } from "./src/lib/dev/apiProxyTarget.ts";
 import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin.ts";
+import { nodeUnitTestFiles } from "./vitest.node-files.ts";
 
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
@@ -140,23 +141,35 @@ function terminalWebSocketProxy(url: string): ProxyOptions {
   return proxy;
 }
 
-// The "unit" project preserves the prior flat test config: jsdom plus the
-// localStorage/elementFromPoint shims in setup.ts. The browser glob exclude
-// keeps *.browser.svelte.ts files off this project so they never double-run.
+// Pure logic suites avoid jsdom startup while browser-coupled unit suites keep
+// jsdom plus the localStorage/elementFromPoint shims in setup.ts. The exact
+// Node list was verified A/B; anything new defaults to jsdom until promoted.
 const unitTestMaxWorkers = resolveUnitTestWorkers();
-const unitTestProject = {
+const commonUnitTest = {
+  pool: "threads",
+  execArgv: ["--no-experimental-webstorage"],
+  ...(unitTestMaxWorkers ? { maxWorkers: unitTestMaxWorkers } : {}),
+  setupFiles: ["./src/test/setup.ts"],
+};
+const commonUnitExclude = ["tests/e2e/**", "tests/e2e-full/**", "node_modules/**", "src/**/*.browser.svelte.ts"];
+const nodeUnitTestProject = {
   extends: true,
   test: {
-    name: "unit",
-    // Match the workflow-selected runner profile. Node's global Web Storage
-    // must stay disabled in workers so jsdom owns localStorage.
-    pool: "threads",
-    execArgv: ["--no-experimental-webstorage"],
-    ...(unitTestMaxWorkers ? { maxWorkers: unitTestMaxWorkers } : {}),
+    ...commonUnitTest,
+    name: "unit-node",
+    environment: "node",
+    include: [...nodeUnitTestFiles],
+    exclude: commonUnitExclude,
+  },
+} satisfies TestProjectInlineConfiguration;
+const jsdomUnitTestProject = {
+  extends: true,
+  test: {
+    ...commonUnitTest,
+    name: "unit-jsdom",
     environment: "jsdom",
-    setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)", "../packages/github-app-ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
-    exclude: ["tests/e2e/**", "tests/e2e-full/**", "node_modules/**", "src/**/*.browser.svelte.ts"],
+    exclude: [...commonUnitExclude, ...nodeUnitTestFiles],
   },
 } satisfies TestProjectInlineConfiguration;
 
@@ -454,7 +467,7 @@ const config = {
       }
       return undefined;
     },
-    projects: [defineProject(unitTestProject), browserTestProject],
+    projects: [defineProject(nodeUnitTestProject), defineProject(jsdomUnitTestProject), browserTestProject],
   },
   build: {
     outDir: "dist",

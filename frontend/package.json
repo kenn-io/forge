@@ -12,7 +12,7 @@
     "lint": "node ../node_modules/vite-plus/bin/vp lint . --no-error-on-unmatched-pattern",
     "lint:fix": "node ../node_modules/vite-plus/bin/vp lint . --fix --no-error-on-unmatched-pattern",
     "typecheck": "cd .. && node node_modules/vite-plus/bin/vp run frontend-package-typecheck",
-    "test": "node ../node_modules/vite-plus/bin/vp test run --project unit",
+    "test": "node ../node_modules/vite-plus/bin/vp test run --project unit-node --project unit-jsdom",
     "test:browser": "node ../node_modules/vite-plus/bin/vp test run --project browser",
     "test:e2e": "node ./scripts/run-e2e-to-file.ts",
     "test:e2e:mock": "node ../node_modules/vite-plus/bin/vp exec -- playwright test --config=playwright.config.ts",

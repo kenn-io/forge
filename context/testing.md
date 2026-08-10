@@ -107,8 +107,14 @@ owner:
   never which side a chosen width lands on
   (`frontend/src/RoborevReviewDrawer.footer-layout.browser.svelte.ts`).
 - Browser specs live beside their components under `frontend/src`; the browser
-  project includes `src/**/*.browser.svelte.ts`, while the unit project also
-  includes GitHub App setup tests (`frontend/vite.config.ts::unitTestProject`).
+  project includes `src/**/*.browser.svelte.ts`, while the jsdom unit project
+  also includes GitHub App setup tests (`frontend/vite.config.ts::jsdomUnitTestProject`).
+- Frontend unit tests default to jsdom; promote a suite to the exact Node inventory only after
+  A/B runs prove identical test identities and outcomes, so indirect browser dependencies fail safe
+  (`frontend/vitest.node-files.ts::nodeUnitTestFiles`).
+- Effect schedule tests must advance `TestClock` from the `it.effect` runtime; a fiber started through
+  a separate `ManagedRuntime` retains the live clock and reintroduces wall-time waits
+  (`frontend/src/lib/stores/roborev/daemon.svelte.test.ts:224`).
 - Use Playwright mock e2e when the regression is specifically about a
   multi-step browser workflow, viewport behavior, screenshots/video, drag,
   scroll/sticky/overflow geometry, canvas/xterm rendering, or browser navigation.
@@ -208,6 +214,7 @@ and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.t
   for an admitted creation before killing the private server (`cmd/e2e-server/main.go::tmuxCreationGate`).
 - Keep explicit PTY-owner test mode unwrapped so its missing tmux command remains
   unavailable to backend selection (`cmd/e2e-server/main.go::buildAppState`).
+
 Playwright regressions that require a non-loopback listener must be opt-in only
 in the isolated CI container; local runs must skip before binding because the
 full-stack fixture exposes mutation and runtime endpoints (`frontend/tests/e2e-full/00-workspace-sidebar.spec.ts:172`).

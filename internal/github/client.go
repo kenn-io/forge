@@ -1217,6 +1217,7 @@ mutation($pullRequestId: ID!) {
   convertPullRequestToDraft(input: {pullRequestId: $pullRequestId}) {
     pullRequest {
       id
+      updatedAt
     }
   }
 }`
@@ -3256,7 +3257,8 @@ func (c *liveClient) ConvertPullRequestToDraft(
 		Data   struct {
 			ConvertPullRequestToDraft *struct {
 				PullRequest *struct {
-					ID string `json:"id"`
+					ID        string    `json:"id"`
+					UpdatedAt time.Time `json:"updatedAt"`
 				} `json:"pullRequest"`
 			} `json:"convertPullRequestToDraft"`
 		} `json:"data"`
@@ -3366,12 +3368,15 @@ func (c *liveClient) ConvertPullRequestToDraft(
 
 	draft := true
 	state := "open"
-	nodeID := mutationResult.Data.ConvertPullRequestToDraft.PullRequest.ID
+	mutationPR := mutationResult.Data.ConvertPullRequestToDraft.PullRequest
+	nodeID := mutationPR.ID
+	updatedAt := gh.Timestamp{Time: mutationPR.UpdatedAt}
 	return &gh.PullRequest{
-		NodeID: &nodeID,
-		Number: &number,
-		State:  &state,
-		Draft:  &draft,
+		NodeID:    &nodeID,
+		Number:    &number,
+		State:     &state,
+		Draft:     &draft,
+		UpdatedAt: &updatedAt,
 	}, nil
 }
 

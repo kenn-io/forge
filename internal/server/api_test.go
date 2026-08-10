@@ -1442,6 +1442,7 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 
+	providerUpdatedAt := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	var gotCommentID int64
 	var gotBody string
 	mock := &mockGH{
@@ -1455,7 +1456,7 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 			gotBody = body
 			id := int64(222)
 			login := "fixture-bot"
-			now := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+			now := gh.Timestamp{Time: providerUpdatedAt.Add(-time.Second)}
 			return &gh.PullRequestComment{
 				ID:        &id,
 				Body:      &body,
@@ -1463,9 +1464,15 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 				CreatedAt: &now,
 			}, nil
 		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			return providerStatePR(number, "open", providerUpdatedAt, nil, nil, "head-sha"), nil
+		},
 	}
 	srv, database := setupTestServerWithMock(t, mock)
-	mrID := seedPR(t, database, "acme", "widget", 7)
+	seededAt := providerUpdatedAt.Add(-2 * time.Minute)
+	mrID := seedPR(t, database, "acme", "widget", 7,
+		withSeedPRTimes(seededAt, seededAt, seededAt),
+	)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	newLine := 11
@@ -1526,6 +1533,11 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 	assert.Equal("review_comment:222", events[0].DedupeKey)
 	require.NotNil(events[0].ThreadID)
 	assert.Equal("PRRT_1", *events[0].ThreadID)
+	storedMR, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 7)
+	require.NoError(err)
+	require.NotNil(storedMR)
+	assert.Equal(providerUpdatedAt, storedMR.UpdatedAt)
+	assert.Equal(providerUpdatedAt, storedMR.LastActivityAt)
 }
 
 func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
@@ -2074,12 +2086,12 @@ func TestAPIListPullsOrdersByLastActivityDescending(t *testing.T) {
 	assert.Equal(int64(1), (*resp.JSON200)[2].Number)
 }
 
-func TestAPIListPullsPreservesNewerActivityAfterIndexSync(t *testing.T) {
+func TestAPIListPullsUsesProviderActivityAfterIndexSync(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	base := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
-	preservedActivity := base.Add(2 * time.Hour)
+	staleDerivedActivity := base.Add(2 * time.Hour)
 	otherActivity := base.Add(time.Hour)
 
 	str := func(v string) *string { return &v }
@@ -2120,7 +2132,7 @@ func TestAPIListPullsPreservesNewerActivityAfterIndexSync(t *testing.T) {
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1,
 		withSeedPRTitle("Preserve activity"),
-		withSeedPRTimes(base, base, preservedActivity),
+		withSeedPRTimes(base, base, staleDerivedActivity),
 	)
 	seedPR(t, database, "acme", "widget", 2,
 		withSeedPRTitle("Other activity"),
@@ -2135,12 +2147,13 @@ func TestAPIListPullsPreservesNewerActivityAfterIndexSync(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 2)
-	assert.Equal(int64(1), (*resp.JSON200)[0].Number)
-	assert.Equal(preservedActivity, (*resp.JSON200)[0].LastActivityAt.UTC())
-	assert.Equal(int64(2), (*resp.JSON200)[1].Number)
+	assert.Equal(int64(2), (*resp.JSON200)[0].Number)
+	assert.Equal(otherActivity, (*resp.JSON200)[0].LastActivityAt.UTC())
+	assert.Equal(int64(1), (*resp.JSON200)[1].Number)
+	assert.Equal(base, (*resp.JSON200)[1].LastActivityAt.UTC())
 }
 
-func TestAPISyncPRUsesForcePushTimelineForPullListActivity(t *testing.T) {
+func TestAPISyncPRUsesProviderActivityAfterForcePush(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -2161,7 +2174,7 @@ func TestAPISyncPRUsesForcePushTimelineForPullListActivity(t *testing.T) {
 				HTMLURL:   str("https://github.com/acme/widget/pull/1"),
 				User:      &gh.User{Login: str("octocat")},
 				CreatedAt: &gh.Timestamp{Time: base.Add(-time.Hour)},
-				UpdatedAt: &gh.Timestamp{Time: base},
+				UpdatedAt: &gh.Timestamp{Time: forcePushAt},
 				Head:      &gh.PullRequestBranch{Ref: str("feature"), SHA: &headSHA},
 				Base:      &gh.PullRequestBranch{Ref: str("main")},
 			}, nil
@@ -2269,6 +2282,7 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 5, 27, 16, 1, 31, 0, time.UTC)
 	reviewUpdatedAt := now.Add(time.Minute)
+	providerUpdatedAt := now.Add(2 * time.Minute)
 	prNumber := 42
 	line := 1
 	headSHA := "head-sha"
@@ -2294,7 +2308,7 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 				State:     &state,
 				User:      &gh.User{Login: &author},
 				CreatedAt: &gh.Timestamp{Time: now},
-				UpdatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: providerUpdatedAt},
 				Head: &gh.PullRequestBranch{
 					Ref: &headRef,
 					SHA: &headSHA,
@@ -2340,7 +2354,7 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Events)
-	assert.Equal(reviewUpdatedAt, resp.JSON200.MergeRequest.LastActivityAt)
+	assert.Equal(providerUpdatedAt, resp.JSON200.MergeRequest.LastActivityAt)
 	require.Len(*resp.JSON200.Events, 1)
 	event := (*resp.JSON200.Events)[0]
 	assert.Equal("review_comment", event.EventType)
@@ -9818,11 +9832,13 @@ func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
 			id := int64(101)
 			state := "open"
 			draft := true
+			updatedAt := gh.Timestamp{Time: staleUpdatedAt.Add(time.Minute)}
 			return &gh.PullRequest{
-				ID:     &id,
-				Number: &number,
-				State:  &state,
-				Draft:  &draft,
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Draft:     &draft,
+				UpdatedAt: &updatedAt,
 			}, nil
 		},
 	}
@@ -12063,6 +12079,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	commentID := int64(9001)
 	commentAuthor := "reviewer"
 	commentCreatedAt := now.Add(2 * time.Minute)
+	providerUpdatedAt := now.Add(3 * time.Minute)
 	commentBody := "body to remove"
 
 	mock := &mockGH{
@@ -12077,7 +12094,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 				Title:     &prTitle,
 				HTMLURL:   &prURL,
 				State:     &prState,
-				UpdatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: providerUpdatedAt},
 				CreatedAt: &gh.Timestamp{Time: now},
 				Head: &gh.PullRequestBranch{
 					Ref: &headRef,
@@ -12099,7 +12116,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 				Title:     &prTitle,
 				HTMLURL:   &prURL,
 				State:     &prState,
-				UpdatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: providerUpdatedAt},
 				CreatedAt: &gh.Timestamp{Time: now},
 				Head: &gh.PullRequestBranch{
 					Ref: &headRef,
@@ -12154,7 +12171,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	require.Equal(http.StatusOK, firstResp.StatusCode())
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
-	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.Equal(providerUpdatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
 	require.Len(*firstResp.JSON200.Events, 1)
 	assert.Equal("body to remove", (*firstResp.JSON200.Events)[0].Body)
@@ -12170,7 +12187,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	require.Equal(http.StatusOK, secondResp.StatusCode())
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
-	require.Equal(now.UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.Equal(providerUpdatedAt.UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
 	require.Empty(*secondResp.JSON200.Events)
 }
@@ -12711,7 +12728,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	commentAuthor := "reviewer"
 	commentCreatedAt := now.Add(2 * time.Minute)
 	commentBody := "comment removed on full refresh"
-	currentUpdatedAt := now
+	currentUpdatedAt := now.Add(3 * time.Minute)
 	currentComments := []*gh.IssueComment{{
 		ID:        &commentID,
 		Body:      &commentBody,
@@ -12775,12 +12792,12 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	require.Equal(http.StatusOK, firstResp.StatusCode())
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
-	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.Equal(currentUpdatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
 	require.Len(*firstResp.JSON200.Events, 1)
 	assert.Equal("comment removed on full refresh", (*firstResp.JSON200.Events)[0].Body)
 
-	currentUpdatedAt = now.Add(time.Minute)
+	currentUpdatedAt = now.Add(4 * time.Minute)
 	currentComments = []*gh.IssueComment{}
 
 	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
@@ -13532,8 +13549,9 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	ctx := t.Context()
 
 	now := time.Date(2026, 4, 13, 11, 30, 0, 0, time.UTC)
-	firstUpdatedAt := now.Format(time.RFC3339)
-	secondUpdatedAt := now.Add(time.Minute).Format(time.RFC3339)
+	createdAt := now.Format(time.RFC3339)
+	firstUpdatedAt := now.Add(3 * time.Minute).Format(time.RFC3339)
+	secondUpdatedAt := now.Add(4 * time.Minute).Format(time.RFC3339)
 	commentCreatedAt := now.Add(2 * time.Minute).Format(time.RFC3339)
 	currentUpdatedAt := firstUpdatedAt
 	currentCommentsJSON := `{"nodes":[{"databaseId":9222,"author":{"login":"commenter"},"body":"bulk PR comment removed","createdAt":"` + commentCreatedAt + `","updatedAt":"` + commentCreatedAt + `"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
@@ -13552,7 +13570,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 				"body":"GraphQL bulk PR",
 				"url":"https://github.com/acme/widget/pull/173",
 				"author":{"login":"heidi"},
-				"createdAt":"` + firstUpdatedAt + `",
+				"createdAt":"` + createdAt + `",
 				"updatedAt":"` + currentUpdatedAt + `",
 				"mergedAt":null,
 				"closedAt":null,
@@ -13628,7 +13646,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Equal(http.StatusOK, firstResp.StatusCode())
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
-	require.Equal(now.Add(2*time.Minute).UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.Equal(now.Add(3*time.Minute).UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
 	require.Len(*firstResp.JSON200.Events, 1)
 	assert.Equal("bulk PR comment removed", (*firstResp.JSON200.Events)[0].Body)
@@ -13645,7 +13663,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Equal(http.StatusOK, secondResp.StatusCode())
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
-	require.Equal(now.Add(time.Minute).UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.Equal(now.Add(4*time.Minute).UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
 	require.Empty(*secondResp.JSON200.Events)
 }
@@ -13656,8 +13674,9 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	ctx := t.Context()
 
 	now := time.Date(2026, 8, 5, 11, 30, 0, 0, time.UTC)
-	firstUpdatedAt := now.Format(time.RFC3339)
-	secondUpdatedAt := now.Add(time.Minute).Format(time.RFC3339)
+	createdAt := now.Format(time.RFC3339)
+	firstUpdatedAt := now.Add(5 * time.Minute).Format(time.RFC3339)
+	secondUpdatedAt := now.Add(6 * time.Minute).Format(time.RFC3339)
 	currentUpdatedAt := firstUpdatedAt
 	firstVisibility := `"isMinimized":true,"minimizedReason":"OFF_TOPIC"`
 	reviewCreatedAt := now.Add(3 * time.Minute)
@@ -13737,7 +13756,7 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 				"body":"GraphQL moderation state",
 				"url":"https://github.com/acme/widget/pull/177",
 				"author":{"login":"heidi"},
-				"createdAt":"` + firstUpdatedAt + `",
+				"createdAt":"` + createdAt + `",
 				"updatedAt":"` + currentUpdatedAt + `",
 				"mergedAt":null,
 				"closedAt":null,
@@ -13821,7 +13840,9 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	require.NotNil(firstResp.JSON200)
 	require.NotNil(firstResp.JSON200.Events)
 	require.Len(*firstResp.JSON200.Events, 3)
-	assert.Equal(reviewUpdatedAt, firstResp.JSON200.MergeRequest.LastActivityAt)
+	firstProviderUpdatedAt, err := time.Parse(time.RFC3339, firstUpdatedAt)
+	require.NoError(err)
+	assert.Equal(firstProviderUpdatedAt, firstResp.JSON200.MergeRequest.LastActivityAt)
 	firstMetadata := make(map[int64]string, len(*firstResp.JSON200.Events))
 	inlineFound := false
 	for _, event := range *firstResp.JSON200.Events {
@@ -13845,7 +13866,7 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(storedMR)
 	require.NotNil(storedMR.DetailFetchedAt)
-	assert.Equal(reviewUpdatedAt, storedMR.LastActivityAt)
+	assert.Equal(firstProviderUpdatedAt, storedMR.LastActivityAt)
 	storedThreads, err := database.ListMRReviewThreads(ctx, storedMR.ID)
 	require.NoError(err)
 	require.Len(storedThreads, 1)
@@ -13864,7 +13885,9 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	require.NotNil(secondResp.JSON200)
 	require.NotNil(secondResp.JSON200.Events)
 	require.Len(*secondResp.JSON200.Events, 3)
-	assert.Equal(reviewUpdatedAt, secondResp.JSON200.MergeRequest.LastActivityAt)
+	secondProviderUpdatedAt, err := time.Parse(time.RFC3339, secondUpdatedAt)
+	require.NoError(err)
+	assert.Equal(secondProviderUpdatedAt, secondResp.JSON200.MergeRequest.LastActivityAt)
 	secondMetadata := make(map[int64]string, len(*secondResp.JSON200.Events))
 	for _, event := range *secondResp.JSON200.Events {
 		if event.EventType == "review_comment" {
@@ -13881,7 +13904,7 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(storedMR)
 	assert.Nil(storedMR.DetailFetchedAt)
-	assert.Equal(reviewUpdatedAt, storedMR.LastActivityAt)
+	assert.Equal(secondProviderUpdatedAt, storedMR.LastActivityAt)
 }
 
 // TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteReviews
@@ -17069,6 +17092,7 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 	assert := assert.New(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
+	providerUpdatedAt := now.Add(time.Minute)
 	var createAttempts atomic.Int32
 	var publishAttempts atomic.Int32
 	var deleteAttempts atomic.Int32
@@ -17137,6 +17161,10 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 					}]
 				}
 			]`)
+		case "/api/v4/projects/4242/merge_requests/7":
+			assert.Equal(http.MethodGet, r.Method)
+			writeRawJSON(w, `{"id":7001,"iid":7,"updated_at":"`+
+				providerUpdatedAt.Format(time.RFC3339)+`"}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -17247,6 +17275,13 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 	require.NoError(err)
 	require.Len(threads, 1)
 	assert.Equal("discussion-55", threads[0].ProviderThreadID)
+	assert.Equal(now, threads[0].CreatedAt)
+	assert.Equal(now, threads[0].UpdatedAt)
+	freshMR, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(freshMR)
+	assert.Equal(providerUpdatedAt, freshMR.UpdatedAt)
+	assert.Equal(providerUpdatedAt, freshMR.LastActivityAt)
 }
 
 func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
@@ -17254,6 +17289,7 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
+	providerUpdatedAt := now.Add(time.Minute)
 	var order []string
 	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -17309,6 +17345,12 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 					}]
 				}
 			]`)
+		case "/api/v4/projects/4242/merge_requests/7":
+			assert.Equal(http.MethodGet, r.Method)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"id": 7001, "iid": 7,
+				"updated_at": providerUpdatedAt.Format(time.RFC3339),
+			})
 		default:
 			http.NotFound(w, r)
 		}
@@ -17352,6 +17394,13 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 	require.NoError(err)
 	require.Len(threads, 1)
 	assert.Equal("discussion-55", threads[0].ProviderThreadID)
+	assert.Equal(now, threads[0].CreatedAt)
+	assert.Equal(now, threads[0].UpdatedAt)
+	freshMR, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(freshMR)
+	assert.Equal(providerUpdatedAt, freshMR.UpdatedAt)
+	assert.Equal(providerUpdatedAt, freshMR.LastActivityAt)
 }
 
 func setupActualGitLabReviewServer(
@@ -17485,6 +17534,9 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 		DedupeKey:          "review_comment:stale-thread",
 	}}))
 	now := time.Now().UTC().Truncate(time.Second)
+	providerUpdatedAt := now.Add(2 * time.Minute)
+	provider.mergeRequests[0].UpdatedAt = providerUpdatedAt
+	provider.mergeRequests[0].LastActivityAt = providerUpdatedAt
 	line := 42
 	replyLine := 43
 	hiddenRootMetadata := `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`
@@ -17580,6 +17632,11 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	assert.JSONEq(hiddenRootMetadata, events[1].MetadataJSON)
 	require.NotNil(events[1].ThreadID)
 	assert.Equal("thread-7", *events[1].ThreadID)
+	freshMR, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(freshMR)
+	assert.Equal(providerUpdatedAt, freshMR.UpdatedAt)
+	assert.Equal(providerUpdatedAt, freshMR.LastActivityAt)
 }
 
 func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
@@ -17846,6 +17903,8 @@ func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
 
 	line := 12
 	now := time.Now().UTC().Truncate(time.Second)
+	providerUpdatedAt := now.Add(time.Minute)
+	staleDerivedActivity := now.Add(2 * time.Minute)
 	require.NoError(database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
 		ProviderThreadID:  "stale-thread",
 		ProviderCommentID: "stale-comment",
@@ -17871,6 +17930,13 @@ func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
 		CreatedAt:          now,
 		DedupeKey:          "review_comment:stale-thread",
 	}}))
+	_, err = database.WriteDB().ExecContext(ctx,
+		`UPDATE forge_merge_requests SET last_activity_at = ? WHERE id = ?`,
+		staleDerivedActivity, mr.ID,
+	)
+	require.NoError(err)
+	provider.mergeRequests[0].UpdatedAt = providerUpdatedAt
+	provider.mergeRequests[0].LastActivityAt = providerUpdatedAt
 	provider.reviewThreads = nil
 
 	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
@@ -17884,6 +17950,7 @@ func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
 	require.Empty(detail.Events)
+	assert.Equal(t, providerUpdatedAt, detail.MergeRequest.LastActivityAt)
 }
 
 func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
@@ -31197,11 +31264,9 @@ func TestAPIEditPRPreservesDerivedFields(t *testing.T) {
 	// Seed non-default derived fields so we can detect clobbering.
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	now := time.Now().UTC().Truncate(time.Second)
 	require.NoError(database.UpdateMRDerivedFields(ctx, repo.ID, 1, db.MRDerivedFields{
 		ReviewDecision: "APPROVED",
 		CommentCount:   7,
-		LastActivityAt: now,
 	}))
 	require.NoError(database.UpdateMRCIStatus(ctx, repo.ID, 1, "success", "[]"))
 

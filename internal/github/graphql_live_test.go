@@ -50,6 +50,16 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 		"combined live query should return conversation comments")
 	require.NotEmpty(t, detailQuery.Repository.PullRequest.ReviewThreads.Nodes,
 		"combined live query should return review threads")
+	require.NotEmpty(t, detailQuery.Repository.PullRequest.ReviewThreads.Nodes[0].Comments.Nodes,
+		"combined live query should return review-thread comments")
+	require.False(t,
+		detailQuery.Repository.PullRequest.ReviewThreads.Nodes[0].Comments.Nodes[0].CreatedAt.IsZero(),
+		"combined live query should return review-comment creation time",
+	)
+	require.False(t,
+		detailQuery.Repository.PullRequest.ReviewThreads.Nodes[0].Comments.Nodes[0].UpdatedAt.IsZero(),
+		"combined live query should return review-comment update time",
+	)
 
 	var issueQuery gqlIssueQuery
 	err = client.Query(ctx, &issueQuery, vars)

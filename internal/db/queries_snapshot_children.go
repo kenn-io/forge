@@ -18,6 +18,7 @@ type IssueChildSnapshot struct {
 type MergeRequestChildSnapshot struct {
 	MergeRequestID         int64
 	ExpectedRevision       int64
+	ProviderUpdatedAt      *time.Time
 	Comments               []MREvent
 	CommentsComplete       bool
 	Reviews                []MREvent
@@ -100,13 +101,29 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 		if err != nil || !current {
 			return err
 		}
-		var lastActivityAt *time.Time
-		if snapshot.DerivedFields != nil {
-			lastActivityAt = &snapshot.DerivedFields.LastActivityAt
+		if snapshot.ProviderUpdatedAt != nil {
+			result, err := tx.ExecContext(ctx, `
+				UPDATE forge_merge_requests
+				SET updated_at = ?, last_activity_at = ?,
+				    snapshot_revision = snapshot_revision + 1
+				WHERE id = ? AND snapshot_revision = ?`,
+				snapshot.ProviderUpdatedAt, snapshot.ProviderUpdatedAt,
+				snapshot.MergeRequestID, snapshot.ExpectedRevision,
+			)
+			if err != nil {
+				return fmt.Errorf("update provider merge-request activity: %w", err)
+			}
+			rows, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("read provider merge-request activity result: %w", err)
+			}
+			if rows == 0 {
+				return nil
+			}
 		}
 		if snapshot.CommentsComplete {
 			if err := replaceMRCommentEventsTx(
-				ctx, tx, snapshot.MergeRequestID, snapshot.Comments, lastActivityAt,
+				ctx, tx, snapshot.MergeRequestID, snapshot.Comments,
 			); err != nil {
 				return err
 			}
@@ -146,9 +163,9 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 		if snapshot.DerivedFields != nil {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE forge_merge_requests
-				SET review_decision = ?, last_activity_at = ?
+				SET review_decision = ?
 				WHERE id = ?`, snapshot.DerivedFields.ReviewDecision,
-				snapshot.DerivedFields.LastActivityAt, snapshot.MergeRequestID,
+				snapshot.MergeRequestID,
 			); err != nil {
 				return fmt.Errorf("update mr review activity: %w", err)
 			}

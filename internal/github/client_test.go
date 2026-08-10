@@ -1878,6 +1878,7 @@ func TestMarkPullRequestReadyForReviewUsesGraphQLMutation(t *testing.T) {
 
 func TestConvertPullRequestToDraftUsesGraphQLMutation(t *testing.T) {
 	require := require.New(t)
+	updatedAt := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	var calls int
 	var methods []string
 	var contentTypes []string
@@ -1900,7 +1901,7 @@ func TestConvertPullRequestToDraftUsesGraphQLMutation(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"convertPullRequestToDraft":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"convertPullRequestToDraft":{"pullRequest":{"id":"PR_kwDOAAABc84","updatedAt":"` + updatedAt.Format(time.RFC3339) + `"}}}}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -1919,12 +1920,14 @@ func TestConvertPullRequestToDraftUsesGraphQLMutation(t *testing.T) {
 	require.NotNil(pr)
 	require.Equal(141, pr.GetNumber())
 	require.True(pr.GetDraft())
+	require.Equal(updatedAt, pr.GetUpdatedAt().UTC())
 	require.Equal(2, calls)
 	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
 	require.Equal([]string{"application/json", "application/json"}, contentTypes)
 	require.NoError(readBodyErr)
 	require.Len(requestBodies, 2)
 	require.Contains(requestBodies[1], "convertPullRequestToDraft")
+	require.Contains(requestBodies[1], "updatedAt")
 	require.NotContains(requestBodies[1], "reviewDecision")
 	require.NotContains(requestBodies[1], "databaseId")
 }

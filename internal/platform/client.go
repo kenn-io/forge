@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"time"
 )
 
 type Provider interface {
@@ -160,7 +161,7 @@ type ReadyForReviewMutator interface {
 }
 
 type DraftMutator interface {
-	ConvertMergeRequestToDraft(ctx context.Context, ref RepoRef, number int) error
+	ConvertMergeRequestToDraft(ctx context.Context, ref RepoRef, number int) (time.Time, error)
 }
 
 type IssueMutator interface {

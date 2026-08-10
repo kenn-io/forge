@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -817,6 +818,10 @@ func (s *Handler) ingestDiffReviewThreads(
 	if err != nil {
 		return huma.Error502BadGateway("read review threads from provider failed")
 	}
+	providerUpdatedAt, err := s.providerMergeRequestUpdatedAt(ctx, repo, mr.Number)
+	if err != nil {
+		return huma.Error502BadGateway("read pull request activity from provider failed")
+	}
 	dbThreads := make([]db.MRReviewThread, 0, len(threads))
 	events := make([]db.MREvent, 0, len(threads))
 	seenProviderThreadIDs := make(map[string]struct{}, len(threads))
@@ -849,7 +854,7 @@ func (s *Handler) ingestDiffReviewThreads(
 		if eventExternalID != "" {
 			createdAt := thread.CreatedAt
 			if createdAt.IsZero() {
-				createdAt = s.now().UTC()
+				return huma.Error502BadGateway("provider review thread is missing creation time")
 			}
 			dedupeKey := "review_comment:" + eventExternalID
 			threadID := providerThreadID
@@ -869,6 +874,7 @@ func (s *Handler) ingestDiffReviewThreads(
 	applied, err := s.db.CommitMergeRequestChildSnapshot(ctx, db.MergeRequestChildSnapshot{
 		MergeRequestID:         mr.ID,
 		ExpectedRevision:       mr.SnapshotRevision,
+		ProviderUpdatedAt:      &providerUpdatedAt,
 		InlineComments:         events,
 		ReviewThreads:          dbThreads,
 		InlineCommentsComplete: true,
@@ -880,6 +886,32 @@ func (s *Handler) ingestDiffReviewThreads(
 		return huma.Error409Conflict("pull request changed during review thread refresh")
 	}
 	return nil
+}
+
+func (s *Handler) providerMergeRequestUpdatedAt(
+	ctx context.Context,
+	repo db.Repo,
+	number int,
+) (time.Time, error) {
+	reader, err := s.syncer.Registry().MergeRequestReader(
+		repoProviderKind(repo), repoProviderHost(repo),
+	)
+	if err != nil {
+		return time.Time{}, err
+	}
+	current, err := reader.GetMergeRequest(ctx, platformRepoRefFromDB(repo), number)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if current.Number != number {
+		return time.Time{}, fmt.Errorf(
+			"provider returned merge request %d while refreshing %d", current.Number, number,
+		)
+	}
+	if current.UpdatedAt.IsZero() {
+		return time.Time{}, errors.New("provider returned merge request without updated time")
+	}
+	return current.UpdatedAt.UTC(), nil
 }
 
 func (s *Handler) diffReviewDraftResponse(

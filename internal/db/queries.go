@@ -1653,7 +1653,7 @@ func upsertMergeRequestSnapshot(
 		    detail_fetched_at    = COALESCE(forge_merge_requests.detail_fetched_at, excluded.detail_fetched_at),
 		    ci_had_pending       = forge_merge_requests.ci_had_pending,
 		    updated_at           = excluded.updated_at,
-		    last_activity_at     = MAX(forge_merge_requests.last_activity_at, excluded.last_activity_at),
+		    last_activity_at     = excluded.last_activity_at,
 		    merged_at            = excluded.merged_at,
 		    closed_at            = excluded.closed_at,
 		    mergeable_state      = excluded.mergeable_state,
@@ -2297,10 +2297,9 @@ func (d *DB) ReplaceMRCommentEvents(
 	ctx context.Context,
 	mrID int64,
 	events []MREvent,
-	lastActivityAt *time.Time,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return replaceMRCommentEventsTx(ctx, tx, mrID, events, lastActivityAt)
+		return replaceMRCommentEventsTx(ctx, tx, mrID, events)
 	})
 }
 
@@ -2309,7 +2308,6 @@ func replaceMRCommentEventsTx(
 	tx *sql.Tx,
 	mrID int64,
 	events []MREvent,
-	lastActivityAt *time.Time,
 ) error {
 	query := `DELETE FROM forge_mr_events
 			WHERE merge_request_id = ? AND event_type = 'issue_comment'`
@@ -2331,36 +2329,11 @@ func replaceMRCommentEventsTx(
 			SET comment_count = (
 				SELECT COUNT(*) FROM forge_mr_events
 				WHERE merge_request_id = ? AND event_type = 'issue_comment'
-			), last_activity_at = COALESCE(?, last_activity_at)
-			WHERE id = ?`, mrID, lastActivityAt, mrID); err != nil {
+			)
+			WHERE id = ?`, mrID, mrID); err != nil {
 		return fmt.Errorf("update mr derived fields: %w", err)
 	}
 	return nil
-}
-
-// GetMRLatestNonCommentEventTime returns the most recent created_at across
-// non-comment events (reviews, commits, force pushes) for a merge request.
-// Returns zero time when no such events exist. The comment-only refresh
-// paths use this to avoid regressing last_activity_at to a comment-derived
-// value when reviews or commits with a newer timestamp are already stored.
-func (d *DB) GetMRLatestNonCommentEventTime(ctx context.Context, mrID int64) (time.Time, error) {
-	var createdAt sql.NullString
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT MAX(created_at) FROM forge_mr_events
-		WHERE merge_request_id = ? AND event_type != 'issue_comment'`,
-		mrID,
-	).Scan(&createdAt)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("query latest non-comment mr event: %w", err)
-	}
-	if !createdAt.Valid {
-		return time.Time{}, nil
-	}
-	t, err := parseDBTime(createdAt.String)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("parse latest non-comment mr event time %q: %w", createdAt.String, err)
-	}
-	return t, nil
 }
 
 // ListMREvents returns all events for a merge request ordered by created_at DESC.
@@ -2592,11 +2565,12 @@ func (d *DB) CountOpenMergeRequestsForRepo(ctx context.Context, repoID int64) (i
 	return count, nil
 }
 
-// MRDerivedFields holds computed fields that are refreshed after fetching timeline events.
+// MRDerivedFields holds child-derived summary fields. Parent activity is
+// intentionally absent: only an authoritative provider parent observation may
+// update merge-request activity timestamps.
 type MRDerivedFields struct {
 	ReviewDecision string
 	CommentCount   int
-	LastActivityAt time.Time
 }
 
 // IssueDerivedFields holds computed fields that are refreshed after fetching issue events.
@@ -2606,8 +2580,7 @@ type IssueDerivedFields struct {
 }
 
 // UpdateMRTitleBody updates only the title, body, updated_at, and
-// last_activity_at fields. last_activity_at is set to
-// MAX(existing, updatedAt) to preserve correct list ordering.
+// last_activity_at fields from an accepted provider response.
 // Derived fields (CommentCount, CIStatus, etc.) are untouched.
 func (d *DB) UpdateMRTitleBody(
 	ctx context.Context,
@@ -2618,7 +2591,7 @@ func (d *DB) UpdateMRTitleBody(
 	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET title = ?, body = ?, updated_at = ?,
-		    last_activity_at = MAX(last_activity_at, ?)
+		    last_activity_at = ?
 		WHERE id = ? AND updated_at <= ?`,
 		title, body, updatedAt, updatedAt, id, updatedAt,
 	)
@@ -2659,9 +2632,9 @@ func (d *DB) UpdateMRDerivedFields(
 ) error {
 	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
-		SET review_decision = ?, comment_count = ?, last_activity_at = ?
+		SET review_decision = ?, comment_count = ?
 		WHERE repo_id = ? AND number = ?`,
-		fields.ReviewDecision, fields.CommentCount, fields.LastActivityAt,
+		fields.ReviewDecision, fields.CommentCount,
 		repoID, number,
 	)
 	if err != nil {
@@ -2670,18 +2643,17 @@ func (d *DB) UpdateMRDerivedFields(
 	return nil
 }
 
-// UpdateMRReviewActivity updates non-count fields after a complete comment
+// UpdateMRReviewActivity updates the review decision after a complete comment
 // replacement has already derived comment_count from persisted rows.
 func (d *DB) UpdateMRReviewActivity(
 	ctx context.Context,
 	mrID int64,
 	reviewDecision string,
-	lastActivityAt time.Time,
 ) error {
 	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
-		SET review_decision = ?, last_activity_at = ?
-		WHERE id = ?`, reviewDecision, lastActivityAt, mrID)
+		SET review_decision = ?
+		WHERE id = ?`, reviewDecision, mrID)
 	if err != nil {
 		return fmt.Errorf("update mr review activity: %w", err)
 	}
@@ -2923,7 +2895,16 @@ func (d *DB) UpdateMRState(
 
 // UpdateMRDraftState records a provider-confirmed draft flag without
 // treating the mutation response as a full merge-request snapshot.
-func (d *DB) UpdateMRDraftState(ctx context.Context, repoID int64, number int, isDraft bool) error {
+func (d *DB) UpdateMRDraftState(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	isDraft bool,
+	providerUpdatedAt time.Time,
+) error {
+	if providerUpdatedAt.IsZero() {
+		return errors.New("update mr draft state: provider updated time is required")
+	}
 	tx, err := d.rw.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin update mr draft state: %w", err)
@@ -2931,35 +2912,31 @@ func (d *DB) UpdateMRDraftState(ctx context.Context, repoID int64, number int, i
 	defer func() { _ = tx.Rollback() }()
 
 	var updatedAt time.Time
-	var lastActivityAt time.Time
 	if err := tx.QueryRowContext(ctx, `
-		SELECT updated_at, last_activity_at
+		SELECT updated_at
 		FROM forge_merge_requests
 		WHERE repo_id = ? AND number = ?`,
 		repoID, number,
-	).Scan(&updatedAt, &lastActivityAt); err != nil {
+	).Scan(&updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("update mr draft state: %w", sql.ErrNoRows)
 		}
 		return fmt.Errorf("load mr draft state timestamps: %w", err)
 	}
 
-	mutationAt := time.Now().UTC()
-	if !mutationAt.After(updatedAt) {
-		mutationAt = updatedAt.Add(time.Nanosecond)
-	}
-	activityAt := mutationAt
-	if lastActivityAt.After(activityAt) {
-		activityAt = lastActivityAt
+	providerUpdatedAt = providerUpdatedAt.UTC()
+	if providerUpdatedAt.Before(updatedAt) {
+		return nil
 	}
 
 	if _, err := tx.ExecContext(ctx, `
 			UPDATE forge_merge_requests
 			SET is_draft = ?,
 			    updated_at = ?,
-			    last_activity_at = ?
+			    last_activity_at = ?,
+			    snapshot_revision = snapshot_revision + 1
 			WHERE repo_id = ? AND number = ?`,
-		isDraft, mutationAt, activityAt, repoID, number,
+		isDraft, providerUpdatedAt, providerUpdatedAt, repoID, number,
 	); err != nil {
 		return fmt.Errorf("update mr draft state: %w", err)
 	}

@@ -73,3 +73,72 @@ func TestSnapshotBoundUpdatesRejectAdvancedRevision(t *testing.T) {
 	require.NoError(err)
 	assert.False(applied)
 }
+
+func TestMergeRequestChildSnapshotCommitsProviderActivityAndEventAtomically(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	repoID := insertTestRepo(t, database, "acme", "provider-activity")
+	mrID, revision, accepted, err := database.UpsertMergeRequestSnapshotWithLabels(ctx, &MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1, Title: "provider activity",
+		State: MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now,
+		LastActivityAt: now.Add(time.Hour),
+	})
+	require.NoError(err)
+	require.True(accepted)
+
+	providerUpdatedAt := now.Add(time.Minute)
+	applied, err := database.CommitMergeRequestChildSnapshot(ctx, MergeRequestChildSnapshot{
+		MergeRequestID:    mrID,
+		ExpectedRevision:  revision,
+		ProviderUpdatedAt: &providerUpdatedAt,
+		OtherEvents: []MREvent{{
+			MergeRequestID: mrID,
+			EventType:      "review_comment",
+			Body:           "provider reply",
+			CreatedAt:      now.Add(30 * time.Second),
+			DedupeKey:      "review_comment:1",
+		}},
+	})
+	require.NoError(err)
+	require.True(applied)
+
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(providerUpdatedAt, stored.UpdatedAt)
+	assert.Equal(providerUpdatedAt, stored.LastActivityAt)
+	assert.Greater(stored.SnapshotRevision, revision)
+	events, err := database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("provider reply", events[0].Body)
+
+	newerProviderUpdatedAt := providerUpdatedAt.Add(time.Minute)
+	applied, err = database.CommitMergeRequestChildSnapshot(ctx, MergeRequestChildSnapshot{
+		MergeRequestID:    mrID,
+		ExpectedRevision:  revision,
+		ProviderUpdatedAt: &newerProviderUpdatedAt,
+		OtherEvents: []MREvent{{
+			MergeRequestID: mrID,
+			EventType:      "review_comment",
+			Body:           "stale reply",
+			CreatedAt:      now.Add(90 * time.Second),
+			DedupeKey:      "review_comment:2",
+		}},
+	})
+	require.NoError(err)
+	assert.False(applied)
+
+	stored, err = database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(providerUpdatedAt, stored.UpdatedAt)
+	assert.Equal(providerUpdatedAt, stored.LastActivityAt)
+	events, err = database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("provider reply", events[0].Body)
+}

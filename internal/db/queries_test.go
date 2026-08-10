@@ -1611,7 +1611,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert.Nil(missing)
 }
 
-func TestUpsertMergeRequestPreservesNewerLastActivity(t *testing.T) {
+func TestUpsertMergeRequestUsesAuthoritativeProviderActivity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1619,7 +1619,8 @@ func TestUpsertMergeRequestPreservesNewerLastActivity(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	base := baseTime()
-	newerActivity := base.Add(2 * time.Hour)
+	staleDerivedActivity := base.Add(2 * time.Hour)
+	providerActivity := base.Add(time.Hour)
 	pr := &MergeRequest{
 		RepoID:         repoID,
 		PlatformID:     42,
@@ -1633,14 +1634,15 @@ func TestUpsertMergeRequestPreservesNewerLastActivity(t *testing.T) {
 		BaseBranch:     "main",
 		CreatedAt:      base,
 		UpdatedAt:      base,
-		LastActivityAt: newerActivity,
+		LastActivityAt: staleDerivedActivity,
 	}
 
 	_, err := d.UpsertMergeRequest(ctx, pr)
 	require.NoError(err)
 
 	pr.Title = "fix: something synced"
-	pr.LastActivityAt = base
+	pr.UpdatedAt = providerActivity
+	pr.LastActivityAt = providerActivity
 	_, err = d.UpsertMergeRequest(ctx, pr)
 	require.NoError(err)
 
@@ -1648,7 +1650,7 @@ func TestUpsertMergeRequestPreservesNewerLastActivity(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("fix: something synced", got.Title)
-	assert.True(got.LastActivityAt.Equal(newerActivity))
+	assert.Equal(providerActivity, got.LastActivityAt)
 }
 
 // TestUpsertMergeRequestCloneURLUnknownPreservesStoredValue proves an
@@ -2490,11 +2492,11 @@ func TestReplaceCommentEventsRollsBackWhenDerivedUpdateFails(t *testing.T) {
 		repoID := insertTestRepo(t, database, "o", "r")
 		mrID := insertTestMR(t, database, repoID, 1, "pr", baseTime())
 		require.NoError(database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "old"}}))
-		require.NoError(database.UpdateMRDerivedFields(t.Context(), repoID, 1, MRDerivedFields{CommentCount: 1, LastActivityAt: baseTime()}))
+		require.NoError(database.UpdateMRDerivedFields(t.Context(), repoID, 1, MRDerivedFields{CommentCount: 1}))
 		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_mr_comment_count BEFORE UPDATE OF comment_count ON forge_merge_requests BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
 		require.NoError(err)
 
-		err = database.ReplaceMRCommentEvents(t.Context(), mrID, []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, nil)
+		err = database.ReplaceMRCommentEvents(t.Context(), mrID, []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}})
 		require.Error(err)
 		events, err := database.ListMREvents(t.Context(), mrID)
 		require.NoError(err)
@@ -2536,16 +2538,15 @@ func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
 		database := openTestDB(t)
 		repoID := insertTestRepo(t, database, "o", "r")
 		mrID := insertTestMR(t, database, repoID, 1, "pr", baseTime())
-		lastActivityAt := baseTime().Add(time.Hour)
-		require.NoError(database.UpdateMRDerivedFields(t.Context(), repoID, 1, MRDerivedFields{ReviewDecision: "approved", LastActivityAt: lastActivityAt}))
+		lastActivityAt := baseTime()
+		require.NoError(database.UpdateMRDerivedFields(t.Context(), repoID, 1, MRDerivedFields{ReviewDecision: "approved"}))
 		events := []MREvent{
 			{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "same", Body: "old"},
 			{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "same", Body: "new"},
 		}
 
-		require.NoError(database.ReplaceMRCommentEvents(t.Context(), mrID, events, nil))
-		newActivityAt := lastActivityAt.Add(time.Hour)
-		require.NoError(database.UpdateMRReviewActivity(t.Context(), mrID, "changes_requested", newActivityAt))
+		require.NoError(database.ReplaceMRCommentEvents(t.Context(), mrID, events))
+		require.NoError(database.UpdateMRReviewActivity(t.Context(), mrID, "changes_requested"))
 		stored, err := database.ListMREvents(t.Context(), mrID)
 		require.NoError(err)
 		require.Len(stored, 1)
@@ -2555,7 +2556,7 @@ func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
 		require.NotNil(mr)
 		require.Equal(1, mr.CommentCount)
 		require.Equal("changes_requested", mr.ReviewDecision)
-		require.Equal(newActivityAt, mr.LastActivityAt)
+		require.Equal(lastActivityAt, mr.LastActivityAt)
 	})
 
 	t.Run("issue", func(t *testing.T) {
@@ -2988,7 +2989,7 @@ func TestUpdatePRState(t *testing.T) {
 	assert.True(pr.MergedAt.Equal(mergedAt))
 }
 
-func TestUpdateMRDraftStateAdvancesTimestampToRejectStaleSync(t *testing.T) {
+func TestUpdateMRDraftStateUsesProviderTimestampToRejectStaleSync(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -2998,7 +2999,8 @@ func TestUpdateMRDraftStateAdvancesTimestampToRejectStaleSync(t *testing.T) {
 	base := time.Now().UTC().Add(time.Hour)
 	insertTestMR(t, d, repoID, 1, "current pr", base)
 
-	require.NoError(d.UpdateMRDraftState(ctx, repoID, 1, true))
+	providerUpdatedAt := base.Add(time.Minute)
+	require.NoError(d.UpdateMRDraftState(ctx, repoID, 1, true, providerUpdatedAt))
 
 	staleSync := testMR(repoID, 1, withMRTitle("stale sync"), withMRActivity(base))
 	staleSync.IsDraft = false
@@ -3010,8 +3012,8 @@ func TestUpdateMRDraftStateAdvancesTimestampToRejectStaleSync(t *testing.T) {
 	require.NotNil(pr)
 	assert.True(pr.IsDraft)
 	assert.Equal("current pr", pr.Title)
-	assert.True(pr.UpdatedAt.After(base))
-	assert.False(pr.LastActivityAt.Before(base))
+	assert.Equal(providerUpdatedAt, pr.UpdatedAt)
+	assert.Equal(providerUpdatedAt, pr.LastActivityAt)
 }
 
 func TestUpdateMRDraftStateReturnsErrorWhenMissing(t *testing.T) {
@@ -3020,7 +3022,7 @@ func TestUpdateMRDraftStateReturnsErrorWhenMissing(t *testing.T) {
 	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
-	err := d.UpdateMRDraftState(ctx, repoID, 404, true)
+	err := d.UpdateMRDraftState(ctx, repoID, 404, true, time.Now().UTC())
 	require.Error(err)
 }
 
@@ -5004,7 +5006,7 @@ func TestUpdateMRTitleBody(t *testing.T) {
 	assert.Equal("APPROVED", got.ReviewDecision)
 }
 
-func TestUpdateMRTitleBodyPreservesNewerActivity(t *testing.T) {
+func TestUpdateMRTitleBodyReplacesSyntheticActivityWithProviderTime(t *testing.T) {
 	assert := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -5038,8 +5040,9 @@ func TestUpdateMRTitleBodyPreservesNewerActivity(t *testing.T) {
 	assert.NotNil(got)
 	// UpdatedAt gets the 30-min value.
 	assert.True(got.UpdatedAt.Equal(updatedAt), "UpdatedAt should be updatedAt")
-	// LastActivityAt keeps the newer 1-hour value.
-	assert.True(got.LastActivityAt.Equal(futureActivity), "LastActivityAt should keep newer value")
+	// The provider parent timestamp is authoritative even when an older local
+	// child-derived value had inflated activity beyond it.
+	assert.True(got.LastActivityAt.Equal(updatedAt), "LastActivityAt should use provider updatedAt")
 }
 
 func TestUpdateMRTitleBodyIgnoresStaleUpdate(t *testing.T) {

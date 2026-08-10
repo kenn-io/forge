@@ -1699,7 +1699,7 @@ func buildAppState(
 			for _, comment := range comments {
 				events = append(events, ghclient.NormalizeCommentEvent(mr.ID, comment))
 			}
-			if err := database.ReplaceMRCommentEvents(r.Context(), mr.ID, events, nil); err != nil {
+			if err := database.ReplaceMRCommentEvents(r.Context(), mr.ID, events); err != nil {
 				http.Error(w, "reconcile fixture pull request comments", http.StatusInternalServerError)
 				return
 			}

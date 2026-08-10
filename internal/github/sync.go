@@ -2938,15 +2938,18 @@ func (p *gitHubClientProvider) ConvertMergeRequestToDraft(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
-) error {
+) (time.Time, error) {
 	pr, err := p.client.ConvertPullRequestToDraft(ctx, ref.Owner, ref.Name, number)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	if pr == nil {
-		return fmt.Errorf("provider returned no pull request")
+		return time.Time{}, fmt.Errorf("provider returned no pull request")
 	}
-	return nil
+	if pr.UpdatedAt == nil || pr.UpdatedAt.IsZero() {
+		return time.Time{}, fmt.Errorf("provider returned pull request without updated time")
+	}
+	return pr.UpdatedAt.UTC(), nil
 }
 
 func (p *gitHubClientProvider) CreateIssue(
@@ -9266,38 +9269,6 @@ func (s *Syncer) syncOpenMRFromBulk(
 		fields := db.MRDerivedFields{
 			ReviewDecision: normalized.ReviewDecision,
 			CommentCount:   len(bulk.Comments),
-			LastActivityAt: computeLastActivity(bulk.PR, bulk.Comments, nil, nil, nil),
-		}
-		// ReviewDecision is already resolved on normalized (and carried into
-		// fields above) independent of nested-connection completeness.
-		if bulkAllComplete {
-			fields.LastActivityAt = computeLastActivity(
-				bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits, bulk.TimelineEvents,
-			)
-		} else if nonCommentLatest, nErr := s.db.GetMRLatestNonCommentEventTime(ctx, mrID); nErr != nil {
-			slog.Warn("latest non-comment event lookup failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number, "err", nErr,
-			)
-		} else if nonCommentLatest.After(fields.LastActivityAt) {
-			fields.LastActivityAt = nonCommentLatest
-		}
-		if !bulk.ReviewThreadsComplete && existing != nil {
-			storedThreads, threadErr := s.db.ListMRReviewThreads(ctx, mrID)
-			if threadErr != nil {
-				slog.Warn("stored review-thread activity lookup failed",
-					"repo", repo.Owner+"/"+repo.Name,
-					"number", number, "err", threadErr,
-				)
-			} else if len(storedThreads) > 0 &&
-				existing.LastActivityAt.After(fields.LastActivityAt) {
-				fields.LastActivityAt = existing.LastActivityAt
-			}
-		}
-		if bulk.ReviewThreadsComplete {
-			fields.LastActivityAt = latestReviewThreadActivity(
-				fields.LastActivityAt, bulk.ReviewThreads,
-			)
 		}
 		derived = &fields
 	}
@@ -10060,23 +10031,10 @@ func (s *Syncer) syncProviderMRReviewThreads(
 		return calls, err
 	}
 
-	current, err := s.db.GetMergeRequest(
-		ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, number,
-	)
-	if err != nil {
-		return calls, err
-	}
-	if current == nil || current.ID != mrID || current.SnapshotRevision != expectedRevision {
-		return calls, errParentSnapshotAdvanced
-	}
-	derived := &db.MRDerivedFields{
-		ReviewDecision: current.ReviewDecision,
-		LastActivityAt: latestReviewThreadActivity(current.LastActivityAt, threads),
-	}
 	events, dbThreads := platform.DBReviewThreads(threads)
 	applied, err := s.commitMergeRequestDatasets(
 		ctx, repo, mrID, number, expectedRevision,
-		nil, false, nil, events, dbThreads, true, nil, derived, "",
+		nil, false, nil, events, dbThreads, true, nil, nil, "",
 	)
 	if err != nil {
 		return calls, err
@@ -10437,7 +10395,6 @@ func (s *Syncer) refreshTimeline(
 		return fmt.Errorf("list commits for MR #%d: %w", number, err)
 	}
 
-	timelineEventsFetched := true
 	timelineEvents, err := client.ListPullRequestTimelineEvents(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
 		if disabledErr := repositoryFeatureDisabledError(
@@ -10450,7 +10407,6 @@ func (s *Syncer) refreshTimeline(
 			"number", number,
 			"err", err,
 		)
-		timelineEventsFetched = false
 		timelineEvents = nil
 	}
 
@@ -10494,21 +10450,9 @@ func (s *Syncer) refreshTimeline(
 	}
 
 	reviewDecision := DeriveReviewDecision(reviews)
-	lastActivityAt := computeLastActivity(ghPR, comments, reviews, commits, timelineEvents)
-	if !timelineEventsFetched {
-		nonCommentLatest, err := s.db.GetMRLatestNonCommentEventTime(ctx, mrID)
-		if err != nil {
-			return fmt.Errorf("load stored non-comment activity for MR #%d: %w", number, err)
-		}
-		if nonCommentLatest.After(lastActivityAt) {
-			lastActivityAt = nonCommentLatest
-		}
-	}
-
 	derived := db.MRDerivedFields{
 		ReviewDecision: reviewDecision,
 		CommentCount:   len(comments),
-		LastActivityAt: lastActivityAt,
 	}
 	applied, err := s.commitMergeRequestDatasets(
 		ctx, repo, mrID, number, expectedRevision,
@@ -10797,88 +10741,6 @@ func ciHasPending(ciChecksJSON string) bool {
 		}
 	}
 	return false
-}
-
-// computeLastActivity returns the most recent timestamp across the PR and its events.
-func computeLastActivity(
-	ghPR *gh.PullRequest,
-	comments []*gh.IssueComment,
-	reviews []*gh.PullRequestReview,
-	commits []*gh.RepositoryCommit,
-	timelineEvents []PullRequestTimelineEvent,
-) time.Time {
-	latest := time.Time{}
-	if ghPR.UpdatedAt != nil {
-		latest = ghPR.UpdatedAt.Time
-	}
-
-	for _, c := range comments {
-		if c.UpdatedAt != nil && c.UpdatedAt.After(latest) {
-			latest = c.UpdatedAt.Time
-		}
-	}
-	for _, r := range reviews {
-		if r.SubmittedAt != nil && r.SubmittedAt.After(latest) {
-			latest = r.SubmittedAt.Time
-		}
-	}
-	for _, c := range commits {
-		if c.GetCommit() != nil && c.GetCommit().Author != nil &&
-			c.GetCommit().Author.Date != nil &&
-			c.GetCommit().Author.Date.After(latest) {
-			latest = c.GetCommit().Author.Date.Time
-		}
-	}
-	for _, event := range timelineEvents {
-		if event.CreatedAt.After(latest) {
-			latest = event.CreatedAt
-		}
-	}
-	return latest
-}
-
-func latestReviewThreadActivity(
-	latest time.Time,
-	threads []platform.MergeRequestReviewThread,
-) time.Time {
-	for i := range threads {
-		thread := &threads[i]
-		if thread.UpdatedAt.After(latest) {
-			latest = thread.UpdatedAt
-		}
-		if thread.CreatedAt.After(latest) {
-			latest = thread.CreatedAt
-		}
-	}
-	return latest
-}
-
-// computePRCommentRefreshLastActivity derives last_activity_at for a
-// comment-only refresh. nonCommentLatest should be the most recent
-// timestamp among stored review/commit/force-push events so a refresh
-// that only sees comments can't regress activity captured by those
-// events when GitHub's PR.UpdatedAt is stale.
-func computePRCommentRefreshLastActivity(
-	pr *db.MergeRequest,
-	comments []*gh.IssueComment,
-	nonCommentLatest time.Time,
-) time.Time {
-	latest := pr.UpdatedAt
-	if latest.IsZero() || pr.CreatedAt.After(latest) {
-		latest = pr.CreatedAt
-	}
-	if nonCommentLatest.After(latest) {
-		latest = nonCommentLatest
-	}
-	for _, c := range comments {
-		switch {
-		case c.UpdatedAt != nil && c.UpdatedAt.After(latest):
-			latest = c.UpdatedAt.Time
-		case c.CreatedAt != nil && c.CreatedAt.After(latest):
-			latest = c.CreatedAt.Time
-		}
-	}
-	return latest
 }
 
 func computeIssueCommentLastActivity(
@@ -11696,17 +11558,8 @@ func (s *Syncer) persistPRComments(
 	pr *db.MergeRequest,
 	comments []*gh.IssueComment,
 ) error {
-	nonCommentLatest, err := s.db.GetMRLatestNonCommentEventTime(ctx, pr.ID)
-	if err != nil {
-		return fmt.Errorf("latest non-comment event for PR #%d: %w", pr.Number, err)
-	}
-	derived := db.MRDerivedFields{
-		ReviewDecision: pr.ReviewDecision,
-		CommentCount:   len(comments),
-		LastActivityAt: computePRCommentRefreshLastActivity(pr, comments, nonCommentLatest),
-	}
 	applied, err := s.replacePRCommentEvents(
-		ctx, repo, pr.Number, pr.ID, pr.SnapshotRevision, comments, &derived, nil,
+		ctx, repo, pr.Number, pr.ID, pr.SnapshotRevision, comments, nil, nil,
 	)
 	if err != nil {
 		return fmt.Errorf("replace PR comment events: %w", err)

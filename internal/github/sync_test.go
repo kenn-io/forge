@@ -5230,12 +5230,13 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 	assert.Contains(commit.MetadataJSON, `"commit_order":1`)
 }
 
-func TestRefreshTimelineUsesForcePushForLastActivity(t *testing.T) {
+func TestRefreshTimelineDoesNotRewriteProviderPullRequestActivity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	providerActivity := now.Add(-2 * time.Hour)
 	forcePushAt := now.Add(30 * time.Minute)
 	commitSHA := "abc123def456"
 	commitMsg := "fix: tighten validation"
@@ -5254,8 +5255,8 @@ func TestRefreshTimelineUsesForcePushForLastActivity(t *testing.T) {
 		HeadBranch:     "feature",
 		BaseBranch:     "main",
 		CreatedAt:      now.Add(-3 * time.Hour),
-		UpdatedAt:      now.Add(-2 * time.Hour),
-		LastActivityAt: now.Add(-2 * time.Hour),
+		UpdatedAt:      providerActivity,
+		LastActivityAt: providerActivity,
 	})
 	require.NoError(err)
 
@@ -5281,15 +5282,15 @@ func TestRefreshTimelineUsesForcePushForLastActivity(t *testing.T) {
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
 	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now.Add(-2*time.Hour)), ""))
+		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now), ""))
 
 	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(err)
 	require.NotNil(pr)
-	assert.Equal(forcePushAt, pr.LastActivityAt)
+	assert.Equal(providerActivity, pr.LastActivityAt)
 }
 
-func TestRefreshTimelineFetchFailurePreservesStoredForcePushActivity(t *testing.T) {
+func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5342,7 +5343,7 @@ func TestRefreshTimelineFetchFailurePreservesStoredForcePushActivity(t *testing.
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
 	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now.Add(-2*time.Hour)), ""))
+		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now), ""))
 
 	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(err)
@@ -16217,8 +16218,8 @@ func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	require.NoError(err)
 
 	now := time.Date(2024, 6, 2, 12, 0, 0, 0, time.UTC)
-	firstUpdatedAt := now
-	secondUpdatedAt := now.Add(time.Minute)
+	firstUpdatedAt := now.Add(3 * time.Minute)
+	secondUpdatedAt := now.Add(4 * time.Minute)
 	commentID := int64(7101)
 	commentAuthor := "reviewer"
 	commentBody := "full refresh comment"
@@ -16258,7 +16259,7 @@ func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(mr)
 	require.Equal(1, mr.CommentCount)
-	assert.Equal(commentTime.UTC(), mr.LastActivityAt.UTC())
+	assert.Equal(firstUpdatedAt.UTC(), mr.LastActivityAt.UTC())
 
 	events, err := d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
@@ -17234,8 +17235,8 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	require.NoError(err)
 
 	now := time.Date(2024, 6, 3, 12, 0, 0, 0, time.UTC)
-	firstUpdatedAt := now
-	secondUpdatedAt := now.Add(time.Minute)
+	firstUpdatedAt := now.Add(3 * time.Minute)
+	secondUpdatedAt := now.Add(4 * time.Minute)
 	commentID := int64(9101)
 	commentAuthor := "reviewer"
 	commentBody := "bulk PR comment"
@@ -17272,7 +17273,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	require.NoError(err)
 	require.NotNil(mr)
 	require.Equal(1, mr.CommentCount)
-	assert.Equal(commentTime.UTC(), mr.LastActivityAt.UTC())
+	assert.Equal(firstUpdatedAt.UTC(), mr.LastActivityAt.UTC())
 
 	events, err := d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
@@ -17542,8 +17543,8 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 	require.NoError(err)
 
 	now := time.Date(2024, 6, 3, 13, 0, 0, 0, time.UTC)
-	firstUpdatedAt := now
-	secondUpdatedAt := now.Add(time.Minute)
+	firstUpdatedAt := now.Add(3 * time.Minute)
+	secondUpdatedAt := now.Add(4 * time.Minute)
 	commentID := int64(9301)
 	commentAuthor := "reviewer"
 	commentBody := "partial bulk PR comment"
@@ -17576,7 +17577,7 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(1, mr.CommentCount)
-	assert.Equal(commentTime.UTC(), mr.LastActivityAt.UTC())
+	assert.Equal(firstUpdatedAt.UTC(), mr.LastActivityAt.UTC())
 
 	events, err := d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
@@ -17614,6 +17615,7 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 
 	now := time.Date(2024, 6, 3, 14, 0, 0, 0, time.UTC)
 	timelineAt := now.Add(3 * time.Minute)
+	providerUpdatedAt := timelineAt.Add(2 * time.Minute)
 	commitSHA := "abc123def456"
 	commitMsg := "fix: preserve timeline commit order"
 	syncer := NewSyncer(
@@ -17624,7 +17626,7 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
 	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
-		PR: buildOpenPR(1, now),
+		PR: buildOpenPR(1, providerUpdatedAt),
 		Commits: []*gh.RepositoryCommit{{
 			SHA: &commitSHA,
 			Commit: &gh.Commit{
@@ -17662,7 +17664,7 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(mr)
 	require.NotNil(mr.DetailFetchedAt)
-	assert.Equal(timelineAt.Add(time.Minute).UTC(), mr.LastActivityAt.UTC())
+	assert.Equal(providerUpdatedAt.UTC(), mr.LastActivityAt.UTC())
 
 	events, err := d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
@@ -18907,37 +18909,6 @@ func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
 
 	// GraphQL path skipped REST ListIssueComments.
 	assert.Equal(int32(0), mock.listIssueCommentsCalled.Load())
-}
-
-// TestComputePRCommentRefreshLastActivity_PreservesNonCommentEvents
-// guards the comment-only refresh path against regressing a PR whose
-// latest activity came from a review, commit, or force push — data
-// the comment list can't see. The non-comment timestamp is supplied
-// by the caller from the DB's stored events.
-func TestComputePRCommentRefreshLastActivity_PreservesNonCommentEvents(t *testing.T) {
-	assert := assert.New(t)
-
-	created := time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC)
-	updated := created.Add(1 * time.Hour)
-	commentAt := created.Add(2 * time.Hour)
-	reviewAt := created.Add(3 * time.Hour)
-
-	pr := &db.MergeRequest{CreatedAt: created, UpdatedAt: updated}
-	comments := []*gh.IssueComment{{
-		CreatedAt: &gh.Timestamp{Time: commentAt},
-		UpdatedAt: &gh.Timestamp{Time: commentAt},
-	}}
-
-	assert.Equal(reviewAt, computePRCommentRefreshLastActivity(pr, comments, reviewAt),
-		"stored non-comment event activity must win over comment timestamp")
-
-	newerComment := reviewAt.Add(30 * time.Minute)
-	comments[0].UpdatedAt = &gh.Timestamp{Time: newerComment}
-	assert.Equal(newerComment, computePRCommentRefreshLastActivity(pr, comments, reviewAt),
-		"a strictly newer comment should advance activity past stored events")
-
-	assert.Equal(updated, computePRCommentRefreshLastActivity(pr, nil, time.Time{}),
-		"no comments and no stored events should fall back to PR UpdatedAt")
 }
 
 func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {

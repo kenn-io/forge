@@ -70,9 +70,9 @@ For pull requests, that means:
 
 - Detail freshness must cover comments, reviews, review threads, commits, and
   stored PR system timeline events together.
-- `last_activity_at` must include provider creation and update times for inline
-  review replies; never replace missing provider timestamps with the local clock.
-  (`internal/github/sync.go::latestReviewThreadActivity`)
+- `last_activity_at` is the provider merge request's authoritative `updated_at`;
+  child timestamps never redefine it or receive a local-clock fallback.
+  (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
 - Background sync cooldowns are allowed, but user-initiated refreshes must still
   be able to promote a stronger sync intent over an in-flight background fetch.
 - The hot set is the last 10 unique open PR details viewed and persists across
@@ -139,10 +139,9 @@ PR timeline storage is intentionally selective.
 - Optional timeline fetch failures may degrade that event family, but should not
   drop the entire PR detail refresh when the rest of the detail payload is still
   usable.
-- When an optional timeline fetch fails after earlier timeline data was stored,
-  derived `last_activity_at` must still preserve the latest stored non-comment
-  event time. A transient failure must not make an already-observed force push,
-  review, commit, or other PR system event stop driving dashboard freshness.
+- Optional child-dataset failures do not rewrite `last_activity_at`; only an
+  accepted provider parent observation may change it.
+  (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
 
 ## SHA-Sensitive Rules
 

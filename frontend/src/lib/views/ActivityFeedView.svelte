@@ -573,6 +573,7 @@
             <PullDetailPane
               {tabKey}
               {visible}
+              keyboardActive={tabKey === effectiveDetailTab}
               pr={drawerPRSelection}
               detail={selectedPullDetail}
               autoSync="background"

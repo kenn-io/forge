@@ -223,6 +223,44 @@ describe("PRListView detail panes", () => {
     expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: true });
   });
 
+  it("keeps global diff paging with the active route pane", async () => {
+    renderPRListView({ detailTab: "conversation" });
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+    await tick();
+
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
+
+    cleanup();
+    resetPaneLayoutStoresForTest();
+
+    renderPRListView({ detailTab: "files" });
+    const filesLayout = getPaneLayoutStore("prs");
+    filesLayout.splitTab("files", filesLayout.leafIDForTab("files")!, "horizontal", "after");
+    await tick();
+
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
+  });
+
+  it("moves visible input ownership before route navigation settles", async () => {
+    renderPRListView({ detailTab: "conversation" });
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+    await tick();
+
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+    expect(activePaneKey()).toBe("conversation");
+
+    await fireEvent.pointerDown(screen.getByTestId("diff-files"));
+    expect(activePaneKey()).toBe("files");
+
+    await fireEvent.wheel(screen.getByTestId("pull-detail"));
+    expect(activePaneKey()).toBe("conversation");
+  });
+
   it("pushes history when the other route pane is covered by a zoom", async () => {
     // Split apart, then maximize the files leaf: the stored tree still says two
     // leaves, but only one pane is on screen, so moving to it is a navigation

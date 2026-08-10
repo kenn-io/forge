@@ -231,6 +231,57 @@ test("splits the PR detail panes apart and remembers the dragged ratio", async (
   await expect.poll(async () => firstPaneWidth(page)).toBeLessThan(before - 150);
 });
 
+test("routes page keys and wheel input to the active pane", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto("/pulls/github/acme/widgets/42");
+  await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
+
+  await splitFocusedPane(page, "right");
+  await expect(page.locator(".files-layout")).toBeVisible();
+
+  const conversationPane = page.locator('[data-pane-key="conversation"]');
+  const filesPane = page.locator('[data-pane-key="files"]');
+  const conversationLeaf = conversationPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+  const filesLeaf = filesPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+  const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
+
+  await page.locator(".diff-content").evaluate((content) => {
+    const spacer = document.createElement("div");
+    spacer.style.height = "2000px";
+    spacer.dataset.testScrollSpacer = "true";
+    content.append(spacer);
+  });
+  await expect.poll(async () => diffArea.evaluate((area) => area.scrollHeight > area.clientHeight)).toBe(true);
+
+  await conversationPane.click({ position: { x: 24, y: 80 } });
+  await expect(page.locator(".tabbed-panel-leaf.input-active")).toHaveCount(1);
+  await expect(conversationLeaf).toHaveClass(/input-active/);
+  await expect(filesLeaf).not.toHaveClass(/input-active/);
+  const activeBorder = await conversationLeaf.evaluate((leaf) => {
+    const style = getComputedStyle(leaf, "::after");
+    return { color: style.borderTopColor, width: style.borderTopWidth };
+  });
+  expect(activeBorder.color).not.toBe("rgba(0, 0, 0, 0)");
+  expect(activeBorder.width).toBe("1px");
+
+  await diffArea.evaluate((area) => {
+    area.scrollTop = 0;
+  });
+  await page.keyboard.press("PageDown");
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBe(0);
+
+  await diffArea.hover();
+  await page.mouse.wheel(0, 360);
+  await expect(page.locator(".tabbed-panel-leaf.input-active")).toHaveCount(1);
+  await expect(filesLeaf).toHaveClass(/input-active/);
+  await expect(conversationLeaf).not.toHaveClass(/input-active/);
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(0);
+
+  const afterWheel = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+  await page.keyboard.press("PageDown");
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(afterWheel);
+});
+
 async function detailPaneHostWidth(page: Page): Promise<number> {
   return Math.round(await page.locator(".detail-pane-layout").evaluate((el) => el.getBoundingClientRect().width));
 }

@@ -265,6 +265,7 @@
             <PullDetailPane
               {tabKey}
               {visible}
+              keyboardActive={tabKey === detailTab}
               pr={selectedPR}
               detail={selectedDetail}
               autoSync={autoSyncDetail}

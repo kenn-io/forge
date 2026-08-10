@@ -313,7 +313,7 @@
         dragScope={layout.dragScope}
         node={activeTree}
         tabs={descriptors}
-        activeTabKey={routeTabKey ?? layout.lastFocusedTabKey() ?? ""}
+        activeTabKey={layout.lastFocusedTabKey() ?? routeTabKey ?? ""}
         {tablistLabel}
         {leafLabel}
         resizeLabel="Resize detail panes"

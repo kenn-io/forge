@@ -24,6 +24,8 @@
     tabKey: string;
     /** Whether this pane is on screen; the diff mounts only when it is. */
     visible: boolean;
+    /** Whether this pane owns window-level keyboard commands. */
+    keyboardActive: boolean;
     pr: PullRequestRouteRef;
     /** The loaded detail, already confirmed to belong to `pr`, or null. */
     detail: PullDetailResponse | null;
@@ -37,6 +39,7 @@
   const {
     tabKey,
     visible,
+    keyboardActive,
     pr,
     detail,
     autoSync = "background",
@@ -123,6 +126,8 @@
       reviewThreads={reviewThreadsFromEvents(detail?.events)}
       initialScrollTop={filesScrollPositions[scrollKey] ?? 0}
       onScrollTopChange={rememberFilesScroll}
+      {keyboardActive}
+      pageKeyboardActive={true}
     />
   {/key}
 {/if}

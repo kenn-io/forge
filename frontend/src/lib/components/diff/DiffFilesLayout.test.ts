@@ -78,7 +78,10 @@ function operations(overrides: Partial<RepoOperations>): RepoOperations {
   };
 }
 
-function renderLayout(repoOperations: RepoOperations): void {
+function renderLayout(
+  repoOperations: RepoOperations,
+  keyboard?: { keyboardActive: boolean; pageKeyboardActive: boolean },
+): void {
   render(DiffFilesLayout, {
     props: {
       provider: "gitlab",
@@ -90,6 +93,7 @@ function renderLayout(repoOperations: RepoOperations): void {
       diffHeadSHA: "head",
       capabilities,
       operations: repoOperations,
+      ...keyboard,
     },
   });
 }
@@ -115,5 +119,21 @@ describe("DiffFilesLayout operation gates", () => {
     expect(screen.getByTestId("review-unavailable-reason").textContent).toBe(
       "No user credential for writes on gitlab.com",
     );
+  });
+
+  it("defaults to global paging but allows callers to keep page keys local", () => {
+    renderLayout(operations({}));
+
+    expect(screen.getByTestId("keyboard-active").textContent).toBe("true");
+    expect(screen.getByTestId("page-keyboard-active").textContent).toBe("true");
+
+    cleanup();
+    renderLayout(operations({}), {
+      keyboardActive: false,
+      pageKeyboardActive: true,
+    });
+
+    expect(screen.getByTestId("keyboard-active").textContent).toBe("false");
+    expect(screen.getByTestId("page-keyboard-active").textContent).toBe("true");
   });
 });

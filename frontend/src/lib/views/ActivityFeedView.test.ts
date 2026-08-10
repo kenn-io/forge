@@ -136,6 +136,10 @@ describe("ActivityFeedView detail panes", () => {
     expect(bodies.find((el) => el.getAttribute("data-visible") === "true")?.getAttribute("data-tab-key")).toBe(
       "conversation",
     );
+    expect(bodies.find((el) => el.getAttribute("data-tab-key") === "conversation")?.dataset.keyboardActive).toBe(
+      "true",
+    );
+    expect(bodies.find((el) => el.getAttribute("data-tab-key") === "files")?.dataset.keyboardActive).toBe("false");
   });
 
   it("offers no diff pane for an issue selection", () => {

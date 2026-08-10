@@ -368,6 +368,9 @@ Disable Git auto-GC and auto-maintenance in synthetic repositories under
 Real-Git test packages use `gitsafe.RunIsolatedMain` in `TestMain`: one empty config per binary.
 Use `Runner` where code strips Git variables, and `MutableRunner` only for global config
 mutations (`internal/testutil/gitsafe/gitsafe.go::RunIsolatedMain`).
+Script tests that launch Git from repository hooks must strip Git's repository-local
+environment first; a nested `git init` can otherwise rewrite shared worktree config
+(`scripts/context-sync.test.mjs::isolatedGitEnv`).
 
 Real tmux and PTY tests can still run in parallel when each test owns its
 session names, temp dirs, sockets, and cleanup. If the bottleneck is external

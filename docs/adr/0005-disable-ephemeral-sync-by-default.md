@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-`make dev-ephemeral` starts a second Kenn Forge server from a copied database and
+`make dev-ephemeral` starts a second kenn-forge server from a copied database and
 generated config. That server currently starts the same provider sync work as the
 normal server, so parallel development can spend the maintainer's limited provider
 API quota without an explicit decision to do so.

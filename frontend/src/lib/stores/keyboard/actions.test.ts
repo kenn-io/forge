@@ -115,7 +115,6 @@ describe("defaultActions", () => {
         "go.prev",
         "tab.toggle",
         "escape.list",
-        "nav.pulls.list",
         "sidebar.toggle",
         "palette.open",
         "repo.browser.open",
@@ -289,14 +288,6 @@ describe("defaultActions", () => {
         }),
       ),
     ).toBe(true);
-  });
-
-  it("does not enable pull request number navigation on Kata", () => {
-    const list = defaultActions.find((a) => a.id === "nav.pulls.list");
-
-    expect(list).toBeDefined();
-    expect(list!.when(ctx("kata"))).toBe(false);
-    expect(list!.when(ctx("pulls"))).toBe(true);
   });
 
   it("opens the repo browser from a selected pull request", () => {

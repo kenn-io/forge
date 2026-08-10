@@ -329,24 +329,6 @@ function repoBrowserPreview(ctx: Context): PreviewBlock {
   };
 }
 
-// Mirrors App.svelte's pre-migration page exclusions for `1`/`2`/`f`/etc.:
-// settings, design-system, repos, reviews, workspaces, activity all returned
-// early before the global shortcut switch ran.
-const onNumberNavPages = (ctx: Context): boolean => {
-  switch (ctx.page) {
-    case "settings":
-    case "design-system":
-    case "repos":
-    case "kata":
-    case "reviews":
-    case "workspaces":
-    case "activity":
-      return false;
-    default:
-      return true;
-  }
-};
-
 // Mirror App.svelte's navigateToSelectedPR helper (replaceUrl when a PR is
 // already selected in the URL, navigate otherwise).
 function navigateToSelectedPR(): void {
@@ -546,15 +528,6 @@ export const defaultActions: Action[] = [
         navigate("/pulls");
       }
     },
-  },
-  {
-    id: "nav.pulls.list",
-    label: "Pull requests (list)",
-    scope: "global",
-    binding: { key: "1" },
-    priority: 0,
-    when: onNumberNavPages,
-    handler: () => navigate("/pulls"),
   },
   {
     id: "sidebar.toggle",

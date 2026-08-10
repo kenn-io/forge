@@ -44,19 +44,12 @@ test.describe("view navigation", () => {
     await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 5_000 });
   });
 
-  test("Kata shell does not expose repo selector or respond to PR number shortcuts", async ({ page }) => {
+  test("Kata shell does not expose the repository selector", async ({ page }) => {
     await page.goto("/kata");
 
     await expect.poll(() => new URL(page.url()).pathname).toBe("/kata");
     await expect(page.getByRole("heading", { name: "Kata" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Select repository:/ })).not.toBeAttached();
-
-    await page.locator("main.app-main").click();
-    await page.keyboard.press("1");
-    await expect.poll(() => new URL(page.url()).pathname).toBe("/kata");
-
-    await page.keyboard.press("2");
-    await expect.poll(() => new URL(page.url()).pathname).toBe("/kata");
   });
 
   test("Docs route loads its mode shell directly", async ({ page }) => {

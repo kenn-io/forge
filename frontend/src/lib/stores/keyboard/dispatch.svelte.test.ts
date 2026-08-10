@@ -93,6 +93,15 @@ describe("dispatchKeydown — global registry", () => {
     expect(e.preventDefault).toHaveBeenCalled();
     expect(isSidebarCollapsed()).toBe(false);
   });
+
+  it("leaves the bare 1 key unhandled", () => {
+    registerScopedActions("defaults", defaultActions);
+    const e = event({ key: "1" });
+
+    dispatchKeydown(e, () => ctx);
+
+    expect(e.preventDefault).not.toHaveBeenCalled();
+  });
 });
 
 describe("dispatchKeydown — modal stack", () => {

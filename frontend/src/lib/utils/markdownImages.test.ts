@@ -130,7 +130,7 @@ describe("expandMarkdownImages", () => {
       expect(getTopFrame()?.frameId).toBe("markdown-image-lightbox");
       expect(getStackDepth()).toBe(1);
 
-      closeButton?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "1" }));
+      closeButton?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "j" }));
       expect(windowShortcut).not.toHaveBeenCalled();
 
       const escape = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" });

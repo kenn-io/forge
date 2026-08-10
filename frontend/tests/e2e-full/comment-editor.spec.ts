@@ -91,7 +91,7 @@ test.describe("comment editor autocomplete", () => {
     await editor.evaluate((node) => {
       node.dispatchEvent(
         new KeyboardEvent("keydown", {
-          key: "1",
+          key: "f",
           bubbles: true,
           cancelable: true,
         }),

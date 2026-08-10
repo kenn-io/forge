@@ -126,8 +126,6 @@ for (const m of MODAL_OPENERS) {
     // selection count would change.
     await page.keyboard.press("j");
     await page.keyboard.press("k");
-    await page.keyboard.press("1");
-    await page.keyboard.press("2");
 
     const afterSelected = await page.locator(".pr-list-row.selected").count();
     expect(afterSelected).toBe(beforeSelected);

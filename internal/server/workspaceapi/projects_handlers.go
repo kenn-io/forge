@@ -725,7 +725,7 @@ func (s *Handler) createProjectWorktreeFromMergeRequest(
 			repo.Owner, repo.Name, input.Body.Number,
 		)
 		if errors.Is(syncErr, ghclient.ErrSyncDisabled) {
-			return nil, httpapi.ServiceUnavailable(syncErr.Error())
+			return nil, httpapi.ServiceUnavailable(ghclient.ErrSyncDisabled.Error())
 		}
 		if syncErr == nil || errors.As(syncErr, &diffErr) {
 			mr, err = s.db.GetMergeRequestByRepoIDAndNumber(

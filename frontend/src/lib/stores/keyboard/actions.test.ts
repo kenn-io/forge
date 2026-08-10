@@ -115,6 +115,7 @@ describe("defaultActions", () => {
         "go.prev",
         "tab.toggle",
         "escape.list",
+        "nav.pulls.list",
         "sidebar.toggle",
         "palette.open",
         "repo.browser.open",
@@ -129,6 +130,16 @@ describe("defaultActions", () => {
       ]),
     );
     expect(ids).not.toContain("nav.pulls.board");
+  });
+
+  it("keeps the Pull requests list command palette-only", () => {
+    window.history.replaceState(null, "", "/issues");
+    const action = command("nav.pulls.list");
+
+    expect(action.binding).toBeNull();
+    action.handler(ctx("issues"));
+
+    expect(locationPath()).toBe("/pulls");
   });
 
   it("palette.open binds the terminal-safe shifted K chord and the existing palette chords", () => {

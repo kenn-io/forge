@@ -268,6 +268,9 @@ Keyboard handlers must have one clear owner for each key press.
 - Modal frames outrank page-level shortcuts. When a modal, drawer, popover, or
   command surface is active, route and list navigation should run only through
   actions explicitly registered for that active surface.
+- Registry actions also back the command palette: remove only an accelerator by
+  setting `binding: null`; deleting the action removes the palette command too
+  (`frontend/src/lib/components/keyboard/Palette.svelte::visibleActions`).
 - If two surfaces can expose the same binding, document the precedence in the
   action registration rather than relying on registration order.
 - Shortcut labels and cheatsheet entries must match the actual key event

@@ -329,6 +329,24 @@ function repoBrowserPreview(ctx: Context): PreviewBlock {
   };
 }
 
+// Keep the Pull requests list command scoped to the pages where the former
+// number shortcut was available. The command remains palette-accessible but
+// no longer reserves a bare digit key.
+const onNumberNavPages = (ctx: Context): boolean => {
+  switch (ctx.page) {
+    case "settings":
+    case "design-system":
+    case "repos":
+    case "kata":
+    case "reviews":
+    case "workspaces":
+    case "activity":
+      return false;
+    default:
+      return true;
+  }
+};
+
 // Mirror App.svelte's navigateToSelectedPR helper (replaceUrl when a PR is
 // already selected in the URL, navigate otherwise).
 function navigateToSelectedPR(): void {
@@ -528,6 +546,15 @@ export const defaultActions: Action[] = [
         navigate("/pulls");
       }
     },
+  },
+  {
+    id: "nav.pulls.list",
+    label: "Pull requests (list)",
+    scope: "global",
+    binding: null,
+    priority: 0,
+    when: onNumberNavPages,
+    handler: () => navigate("/pulls"),
   },
   {
     id: "sidebar.toggle",

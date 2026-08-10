@@ -699,8 +699,8 @@ func (s *Server) triggerSync(
 	ctx context.Context,
 	input *triggerSyncInput,
 ) (*acceptedOutput, error) {
-	if s.syncer == nil {
-		return nil, httpapi.ServiceUnavailable("syncer not configured")
+	if err := s.requireSync(); err != nil {
+		return nil, err
 	}
 	if len(input.OnlyRepos) > 0 {
 		repos, err := s.onlyReposFromFilter(input.OnlyRepos)
@@ -722,6 +722,16 @@ func (s *Server) triggerSync(
 		})
 	}
 	return &acceptedOutput{Status: http.StatusAccepted}, nil
+}
+
+func (s *Server) requireSync() error {
+	if s.syncer == nil {
+		return httpapi.ServiceUnavailable("syncer not configured")
+	}
+	if !s.syncer.SyncEnabled() {
+		return httpapi.ServiceUnavailable(ghclient.ErrSyncDisabled.Error())
+	}
+	return nil
 }
 
 func (s *Server) onlyReposFromFilter(filters []string) ([]ghclient.RepoRef, error) {
@@ -1004,6 +1014,9 @@ func ratePrincipalLabel(providerName, principal string) string {
 }
 
 func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRCIOutput, error) {
+	if err := s.requireSync(); err != nil {
+		return nil, err
+	}
 	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -1059,6 +1072,9 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 }
 
 func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {
+	if err := s.requireSync(); err != nil {
+		return nil, err
+	}
 	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -1116,6 +1132,9 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 }
 
 func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*acceptedOutput, error) {
+	if err := s.requireSync(); err != nil {
+		return nil, err
+	}
 	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -1147,6 +1166,9 @@ func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*ac
 }
 
 func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*syncIssueOutput, error) {
+	if err := s.requireSync(); err != nil {
+		return nil, err
+	}
 	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -1184,6 +1206,9 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 }
 
 func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInput) (*acceptedOutput, error) {
+	if err := s.requireSync(); err != nil {
+		return nil, err
+	}
 	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -1452,6 +1477,9 @@ func (s *Server) resolveItem(
 				RepoTracked: true,
 			},
 		}, nil
+	}
+	if err := s.requireSync(); err != nil {
+		return nil, err
 	}
 
 	if providerKind == platform.KindGitLab && itemTypeHint != "" {

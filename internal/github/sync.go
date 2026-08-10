@@ -786,6 +786,8 @@ func (p *listFetchProgressLogger) log(message string) {
 	slog.Info(message, attrs...)
 }
 
+var ErrSyncDisabled = errors.New("provider sync is disabled")
+
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
 	clients                  *platform.Registry
@@ -827,6 +829,7 @@ type Syncer struct {
 	branchActivityRetention  time.Duration
 	branchActivityMaxCommits int
 	preferGitHubNativeStacks atomic.Bool
+	syncDisabled             atomic.Bool
 	parallelism              atomic.Int32
 	runMu                    sync.Mutex
 	running                  atomic.Bool
@@ -921,6 +924,25 @@ type Syncer struct {
 	afterHeadRepoSnapshotRead               func()
 	afterNotificationRepoIdentityReconciled func()
 	beforeCloneRouteValidation              func()
+}
+
+// DisableSync permanently prevents this Syncer from starting provider refresh
+// work. Provider capability and mutation access remain available.
+func (s *Syncer) DisableSync() {
+	if s != nil {
+		s.syncDisabled.Store(true)
+	}
+}
+
+func (s *Syncer) SyncEnabled() bool {
+	return s != nil && !s.syncDisabled.Load()
+}
+
+func (s *Syncer) syncDisabledError() error {
+	if !s.SyncEnabled() {
+		return ErrSyncDisabled
+	}
+	return nil
 }
 
 type archiveProviderRequest struct {
@@ -3671,12 +3693,18 @@ func (s *Syncer) TriggerRunWithPriority(
 	ctx context.Context,
 	priorityRepos []RepoRef,
 ) {
+	if !s.SyncEnabled() {
+		return
+	}
 	s.triggerRun(ctx, slices.Clone(priorityRepos), nil)
 }
 
 // TriggerRunForRepos kicks off a non-blocking ad-hoc sync restricted to the
 // matching configured repositories.
 func (s *Syncer) TriggerRunForRepos(ctx context.Context, repos []RepoRef) {
+	if !s.SyncEnabled() {
+		return
+	}
 	s.triggerRun(ctx, nil, slices.Clone(repos))
 }
 
@@ -4377,7 +4405,7 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 	for _, repo := range repos {
 		refs = append(refs, platformRepoRef(repo))
 	}
-	if s.archiveLifecycle != nil {
+	if s.SyncEnabled() && s.archiveLifecycle != nil {
 		seeded, err := s.archiveLifecycle.EnsureConfigured(ctx, refs)
 		if err != nil {
 			return fmt.Errorf("seed archive discovery: %w", err)
@@ -4404,6 +4432,9 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 // The caller's ctx and the syncer's internal lifetime ctx (canceled
 // by Stop) are both honored: either one unblocks any in-flight work.
 func (s *Syncer) Start(ctx context.Context) {
+	if !s.SyncEnabled() {
+		return
+	}
 	s.lifecycleMu.Lock()
 	if s.stopped {
 		s.lifecycleMu.Unlock()
@@ -4767,6 +4798,9 @@ func (s *Syncer) graphQLReadAllowed(
 // Embedders normally call Start to run this lane on its configured cadence;
 // this method is available when an immediate pass is required.
 func (s *Syncer) SyncWatchedMRs(ctx context.Context) {
+	if !s.SyncEnabled() {
+		return
+	}
 	s.syncWatchedMRs(ctx)
 }
 
@@ -5230,6 +5264,9 @@ type rateLimitSnapshotter interface {
 // recorded as a kenn-forge request because GitHub does not charge it against the
 // primary REST budget.
 func (s *Syncer) RefreshRateLimitSnapshots(ctx context.Context) {
+	if !s.SyncEnabled() {
+		return
+	}
 	s.refreshRateLimitSnapshots(ctx)
 }
 
@@ -5706,6 +5743,9 @@ func (s *Syncer) publishMonotonicProgress(
 // per-host GitHub rate limit and abuse-detection thresholds happy
 // while still capturing most of the wall-clock win on network I/O.
 func (s *Syncer) RunOnce(ctx context.Context) {
+	if !s.SyncEnabled() {
+		return
+	}
 	s.runOnce(ctx, false, nil, nil)
 }
 
@@ -7006,6 +7046,9 @@ func (s *Syncer) syncRepoLabelCatalog(ctx context.Context, repo RepoRef, repoID 
 }
 
 func (s *Syncer) RefreshRepoLabelCatalog(ctx context.Context, repo db.Repo) error {
+	if err := s.syncDisabledError(); err != nil {
+		return err
+	}
 	ref := RepoRef{
 		Platform:           platform.Kind(repo.Platform),
 		PlatformHost:       repoProviderHostFromDB(repo),
@@ -8006,6 +8049,9 @@ func (s *Syncer) BackfillMergedActorEventOnProvider(
 	repoID int64,
 	number int,
 ) (bool, error) {
+	if err := s.syncDisabledError(); err != nil {
+		return false, err
+	}
 	stored, err := s.db.GetRepoByID(ctx, repoID)
 	if err != nil {
 		return false, fmt.Errorf("get repo %d for merged-actor backfill: %w", repoID, err)
@@ -10483,6 +10529,9 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 	number int,
 	headSHA string,
 ) ([]string, error) {
+	if err := s.syncDisabledError(); err != nil {
+		return nil, err
+	}
 	if headSHA == "" {
 		return nil, nil
 	}
@@ -12070,6 +12119,9 @@ func (s *Syncer) SyncRepoOnProvider(
 	kind platform.Kind,
 	host, owner, name string,
 ) error {
+	if err := s.syncDisabledError(); err != nil {
+		return err
+	}
 	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
@@ -12090,6 +12142,9 @@ func (s *Syncer) SyncRepoOnProvider(
 // Unlike the periodic sync, this always does a full fetch (details, timeline, CI).
 // Returns an error if the repo is not in the configured repo list.
 func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) error {
+	if err := s.syncDisabledError(); err != nil {
+		return err
+	}
 	return s.syncMRWithHost(ctx, owner, name, number, "")
 }
 
@@ -12111,6 +12166,9 @@ func (s *Syncer) SyncClosedMROnProvider(
 	repoID int64,
 	number int,
 ) error {
+	if err := s.syncDisabledError(); err != nil {
+		return err
+	}
 	stored, err := s.db.GetRepoByID(ctx, repoID)
 	if err != nil {
 		return fmt.Errorf("get repo %d for closed-MR resync: %w", repoID, err)
@@ -12173,6 +12231,9 @@ func (s *Syncer) SyncMROnProvider(
 	host, owner, name string,
 	number int,
 ) error {
+	if err := s.syncDisabledError(); err != nil {
+		return err
+	}
 	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
@@ -12794,6 +12855,9 @@ func (s *Syncer) syncProviderMRDiff(
 // SyncIssue fetches fresh data for a single issue from GitHub and updates the DB.
 // Returns an error if the repo is not in the configured repo list.
 func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) error {
+	if err := s.syncDisabledError(); err != nil {
+		return err
+	}
 	return s.syncIssueWithHost(ctx, owner, name, number, "")
 }
 
@@ -12803,6 +12867,9 @@ func (s *Syncer) SyncIssueOnHost(
 	host, owner, name string,
 	number int,
 ) error {
+	if err := s.syncDisabledError(); err != nil {
+		return err
+	}
 	return s.syncIssueWithHost(ctx, owner, name, number, host)
 }
 
@@ -12814,6 +12881,9 @@ func (s *Syncer) SyncIssueOnProvider(
 	host, owner, name string,
 	number int,
 ) error {
+	if err := s.syncDisabledError(); err != nil {
+		return err
+	}
 	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
@@ -12927,6 +12997,9 @@ func (s *Syncer) SyncArchiveItem(
 	itemType db.ArchiveItemType,
 	number int,
 ) (bool, error) {
+	if err := s.syncDisabledError(); err != nil {
+		return false, err
+	}
 	repo, ok := s.trackedRepoByIdentity(ref.Platform, ref.Owner, ref.Name, ref.Host)
 	if !ok {
 		return false, fmt.Errorf(
@@ -12961,6 +13034,9 @@ func (s *Syncer) SyncArchiveItem(
 func (s *Syncer) SyncItemByNumber(
 	ctx context.Context, owner, name string, number int,
 ) (string, error) {
+	if err := s.syncDisabledError(); err != nil {
+		return "", err
+	}
 	repo, ok, err := s.trackedRepo(owner, name)
 	if err != nil {
 		return "", err

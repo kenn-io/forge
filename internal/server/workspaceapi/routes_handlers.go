@@ -1003,6 +1003,9 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 	if err == nil {
 		return nil
 	}
+	if errors.Is(err, ghclient.ErrSyncDisabled) {
+		return httpapi.ServiceUnavailable(err.Error())
+	}
 	// An issue-only partial failure is already recorded in repo sync
 	// health, and the workspace flow depends on merge-request data, so the
 	// refresh proceeds to association inspection and the targeted
@@ -1032,6 +1035,9 @@ func (s *Handler) refreshWorkspaceIssue(
 	if err == nil {
 		return nil
 	}
+	if errors.Is(err, ghclient.ErrSyncDisabled) {
+		return httpapi.ServiceUnavailable(err.Error())
+	}
 	if strings.Contains(err.Error(), "is not tracked") {
 		return httpapi.Forbidden(err.Error(), nil)
 	}
@@ -1049,6 +1055,9 @@ func (s *Handler) refreshWorkspacePullRequest(
 	var diffErr *ghclient.DiffSyncError
 	err := s.syncer.SyncMROnProvider(ctx, kind, host, owner, name, number)
 	if err != nil && !errors.As(err, &diffErr) {
+		if errors.Is(err, ghclient.ErrSyncDisabled) {
+			return httpapi.ServiceUnavailable(err.Error())
+		}
 		if strings.Contains(err.Error(), "is not tracked") {
 			return httpapi.Forbidden(err.Error(), nil)
 		}

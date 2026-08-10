@@ -98,8 +98,8 @@ func (s *Server) syncNotifications(ctx context.Context, _ *struct{}) (*acceptedO
 	if !s.notificationsEnabled() {
 		return nil, huma.Error403Forbidden("notifications are disabled")
 	}
-	if s.syncer == nil {
-		return nil, huma.Error503ServiceUnavailable("syncer is not configured")
+	if err := s.requireSync(); err != nil {
+		return nil, err
 	}
 	if ok := s.runBackground(func(bgCtx context.Context) {
 		_ = s.syncer.RunNotificationSync(bgCtx)

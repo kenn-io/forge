@@ -8,6 +8,9 @@ and the root event stream.
 - Bare `kenn-forge` is help-only, `serve` is foreground, and background
   lifecycle management is under `daemon start|status|stop|restart`
   (`cmd/kenn-forge/cli.go::newRootCommand`).
+- Ephemeral development disables every provider refresh path by default while
+  normal `serve` remains sync-enabled; only `dev-ephemeral -sync` opts the
+  isolated stack back in (`tools/devephemeral/main.go::buildCommandSpecs`).
 - `daemon start` is idempotent: reuse requires verified identity for the same
   resolved `data_dir`; incompatible versions require `daemon restart`
   (`internal/daemonruntime/lifecycle.go::NewManager`).

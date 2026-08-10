@@ -565,6 +565,9 @@ func run(opts serve.Options) error {
 		startup.registry, database, cloneMgr, repos,
 		cfg.SyncDuration(), startup.rateTrackers, startup.budgets,
 	)
+	if opts.DisableSync {
+		syncer.DisableSync()
+	}
 	syncer.SetBranchActivityLimits(
 		cfg.BranchActivityRetention(),
 		cfg.Activity.DefaultBranchMaxCommits,
@@ -668,7 +671,7 @@ func run(opts serve.Options) error {
 		),
 	)
 	syncer.Start(ctx)
-	if cfg.NotificationsEnabled() {
+	if !opts.DisableSync && cfg.NotificationsEnabled() {
 		notificationLoops = startNotificationLoops(ctx, syncer, cfg)
 	}
 

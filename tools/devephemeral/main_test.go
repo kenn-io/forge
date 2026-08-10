@@ -282,7 +282,7 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 		backendURL:   "http://127.0.0.1:39301",
 		frontendPort: 39302,
 		logDir:       "/tmp/kenn-forge-dev/logs",
-	}, []string{"--host", "127.0.0.1"})
+	}, false, []string{"--host", "127.0.0.1"})
 
 	assert.Equal("./scripts/dev-stack-backend.sh", specs.backend.name)
 	assert.Contains(specs.backend.env, "KENN_FORGE_CONFIG=/tmp/kenn-forge-dev/config.toml")
@@ -308,6 +308,23 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert.Contains(specs.backend.env, "OPENAI_API_KEY=secret-openai")
 }
 
+func TestBuildCommandSpecsControlsProviderSync(t *testing.T) {
+	assert := assert.New(t)
+	t.Setenv("BACKEND_ARGS", "")
+	run := ephemeralRun{
+		configPath:   "/tmp/kenn-forge-dev/config.toml",
+		backendURL:   "http://127.0.0.1:39301",
+		frontendPort: 39302,
+		logDir:       "/tmp/kenn-forge-dev/logs",
+	}
+
+	disabled := buildCommandSpecs(run, false, nil)
+	assert.Contains(disabled.backend.env, "BACKEND_ARGS=--disable-sync")
+
+	enabled := buildCommandSpecs(run, true, nil)
+	assert.NotContains(enabled.backend.env, "BACKEND_ARGS=--disable-sync")
+}
+
 func TestBuildCommandSpecsPreservesExplicitTelemetrySetting(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("TELEMETRY_ENABLED", "1")
@@ -317,7 +334,7 @@ func TestBuildCommandSpecsPreservesExplicitTelemetrySetting(t *testing.T) {
 		backendURL:   "http://127.0.0.1:39301",
 		frontendPort: 39302,
 		logDir:       "/tmp/kenn-forge-dev/logs",
-	}, nil)
+	}, false, nil)
 
 	assert.Contains(specs.backend.env, "TELEMETRY_ENABLED=1")
 }

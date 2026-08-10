@@ -1190,6 +1190,31 @@ func TestRunCLIServeSubcommandUsesServerRunner(t *testing.T) {
 	assert.Empty(stdout.String())
 }
 
+func TestRunCLIServePassesDisableSync(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	original := runServer
+	t.Cleanup(func() { runServer = original })
+	var got serve.Options
+	runServer = func(opts serve.Options) error {
+		got = opts
+		return nil
+	}
+
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	var stdout bytes.Buffer
+	err := runCLI([]string{
+		"serve",
+		"--config", cfgPath,
+		"--disable-sync",
+	}, &stdout)
+
+	require.NoError(err)
+	assert.Equal(cfgPath, got.ConfigPath)
+	assert.True(got.DisableSync)
+	assert.Empty(stdout.String())
+}
+
 func TestRunCLIServePassesProfilerAddress(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

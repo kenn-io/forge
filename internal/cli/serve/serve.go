@@ -11,6 +11,7 @@ import (
 type Options struct {
 	ConfigPath   string
 	ProfilerAddr string
+	DisableSync  bool
 }
 
 type Runner func(opts Options) error
@@ -27,6 +28,7 @@ func NewCommand(run Runner) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.ConfigPath, "config", config.DefaultConfigPath(), "path to config file")
+	cmd.Flags().BoolVar(&opts.DisableSync, "disable-sync", false, "disable all provider sync activity")
 	cmd.Flags().StringVar(
 		&opts.ProfilerAddr,
 		"pprof-addr",

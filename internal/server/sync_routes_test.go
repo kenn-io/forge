@@ -4,12 +4,31 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
+
+func TestSyncRoutesRejectDisabledSyncer(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	syncer := github.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	syncer.DisableSync()
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
+	require.Equal(http.StatusServiceUnavailable, syncRR.Code, syncRR.Body.String())
+
+	var problem httpapi.ProblemError
+	require.NoError(json.NewDecoder(syncRR.Body).Decode(&problem))
+	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
+	assert.Equal(github.ErrSyncDisabled.Error(), problem.Detail)
+}
 
 func TestSyncRoutesWithoutSyncer(t *testing.T) {
 	assert := assert.New(t)

@@ -17,6 +17,13 @@ Use `make dev-ephemeral` when the user wants a local kenn-forge dev stack withou
    make dev-ephemeral
    ```
 
+   Provider sync is disabled by default. Opt into normal sync behavior only
+   when the development workflow needs fresh provider state:
+
+   ```sh
+   make dev-ephemeral ARGS="-sync"
+   ```
+
 2. The default work directory is `tmp/dev-ephemeral`. Re-running the command while that stack is live prints the existing status instead of starting a duplicate stack.
 
 3. For a separate concurrent run directory or explicit ports, pass `ARGS`:
@@ -35,6 +42,7 @@ Use `make dev-ephemeral` when the user wants a local kenn-forge dev stack withou
 ## Behavior Contract
 
 - The launcher starts both backend and frontend.
+- The backend disables all provider sync by default; `-sync` explicitly enables it.
 - It writes a generated config at `<work-dir>/config.toml`.
 - It copies the configured source SQLite DB by default into `<work-dir>/data/forge.db`.
 - It passes `KENN_FORGE_CONFIG=<work-dir>/config.toml` to both processes.

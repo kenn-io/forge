@@ -209,6 +209,7 @@ func (p *deferredMergeTestProvider) MergeMergeRequest(
 type deferredMergeTestOptions struct {
 	deferredMergeMaxWait time.Duration
 	deleteWorkspace      func(context.Context, string) error
+	disableSync          bool
 }
 
 type deferredMergeTestRecordedEvent struct {
@@ -350,6 +351,9 @@ func newDeferredMergeRouteServer(
 	if len(options) > 0 {
 		opts = options[0]
 	}
+	if opts.disableSync {
+		syncer.DisableSync()
+	}
 	srv, client := newDeferredMergeHTTPFixture(
 		t,
 		database,
@@ -359,6 +363,50 @@ func newDeferredMergeRouteServer(
 		opts,
 	)
 	return srv, database, repoID, client
+}
+
+func TestDeferMergeEndpointRejectsDisabledSyncBeforeQueueing(t *testing.T) {
+	require := require.New(t)
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	provider := &deferredMergeTestProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
+		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
+	}
+	_, _, _, client := newDeferredMergeRouteServer(
+		t,
+		provider,
+		ref,
+		now,
+		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+		deferredMergeTestOptions{disableSync: true},
+	)
+
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		t.Context(),
+		ref.Host,
+		string(ref.Platform),
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.DeferMergePullOnHostJSONRequestBody{Method: "merge"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusServiceUnavailable, resp.StatusCode(), string(resp.Body))
+	select {
+	case <-provider.mergeCh:
+		require.Fail("disabled sync queued a deferred merge")
+	default:
+	}
 }
 
 func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {

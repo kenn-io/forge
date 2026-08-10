@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 const maxNotificationBulkIDs = 200
@@ -149,6 +150,9 @@ func (s *Server) markNotificationsRead(ctx context.Context, input *notificationB
 	if !s.notificationsEnabled() {
 		return nil, huma.Error403Forbidden("notifications are disabled")
 	}
+	if s.syncer != nil && !s.syncer.SyncEnabled() {
+		return nil, httpapi.ServiceUnavailable(ghclient.ErrSyncDisabled.Error())
+	}
 	ids, err := validatedNotificationIDs(input.Body.IDs)
 	if err != nil {
 		return nil, err
@@ -176,6 +180,11 @@ func (s *Server) markNotificationsDone(ctx context.Context, input *notificationB
 	markRead := true
 	if input.Body.MarkRead != nil {
 		markRead = *input.Body.MarkRead
+	}
+	if markRead {
+		if s.syncer != nil && !s.syncer.SyncEnabled() {
+			return nil, httpapi.ServiceUnavailable(ghclient.ErrSyncDisabled.Error())
+		}
 	}
 	scopedIDs, err := s.scopedNotificationIDs(ctx, ids)
 	if err != nil {

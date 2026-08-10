@@ -515,6 +515,43 @@ func TestNotificationsAPIExposesReadPropagationStatus(t *testing.T) {
 	assert.Equal(syncedAt.UTC().Format(time.RFC3339), read.Items[0].GitHubReadSyncedAt)
 }
 
+func TestNotificationsAPIRejectsQueuedReadPropagationWhenSyncDisabled(t *testing.T) {
+	for _, path := range []string{
+		"/api/v1/notifications/read",
+		"/api/v1/notifications/done",
+	} {
+		t.Run(path, func(t *testing.T) {
+			require := require.New(t)
+			database := openTestDB(t)
+			id := seedServerNotification(t, database)
+			syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+			syncer.DisableSync()
+			s := New(database, syncer, nil, "/", notificationsEnabledConfig(), ServerOptions{})
+			t.Cleanup(func() { gracefulShutdown(t, s) })
+			ts := httptest.NewServer(s)
+			defer ts.Close()
+
+			body, err := json.Marshal(map[string]any{"ids": []int64{id}})
+			require.NoError(err)
+			resp, err := http.Post(
+				ts.URL+path,
+				"application/json",
+				bytes.NewReader(body),
+			)
+			require.NoError(err)
+			defer resp.Body.Close()
+			require.Equal(http.StatusServiceUnavailable, resp.StatusCode)
+
+			unread, err := database.ListNotifications(
+				t.Context(), db.ListNotificationsOpts{State: "unread"},
+			)
+			require.NoError(err)
+			require.Len(unread, 1)
+			require.Nil(unread[0].SourceAckQueuedAt)
+		})
+	}
+}
+
 func TestNotificationsAPIRejectsNilConfigAccess(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)

@@ -927,7 +927,8 @@ type Syncer struct {
 }
 
 // DisableSync permanently prevents this Syncer from starting provider refresh
-// work. Provider capability and mutation access remain available.
+// work. Call it before Start; it does not cancel work that is already running.
+// Provider capability and mutation access remain available.
 func (s *Syncer) DisableSync() {
 	if s != nil {
 		s.syncDisabled.Store(true)

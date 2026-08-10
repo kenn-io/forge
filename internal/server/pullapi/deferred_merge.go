@@ -105,6 +105,14 @@ func (s *Handler) enqueueDeferredMerge(
 	if maxWait <= 0 {
 		maxWait = defaultDeferredMergeMaxWait
 	}
+	if s.syncer == nil {
+		return deferMergePRBody{}, httpapi.ServiceUnavailable("syncer not configured")
+	}
+	if !s.syncer.SyncEnabled() {
+		return deferMergePRBody{}, httpapi.ServiceUnavailable(
+			ghclient.ErrSyncDisabled.Error(),
+		)
+	}
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
 		provider, platformHost, owner, name,

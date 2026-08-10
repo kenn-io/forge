@@ -54,6 +54,10 @@ requires stopping and restarting its stack.
 ### Negative
 
 - Sync controls can surface a service-unavailable response in the default stack.
+- Notification acknowledgements and deferred merges return service unavailable
+  because both require background provider refresh work to complete reliably.
+- Successful direct provider mutations can leave copied cached state stale until
+  the ephemeral stack is restarted from newly copied data or sync is enabled.
 - The central policy must guard new sync entry points as they are introduced.
 - Provider initialization and intentional non-sync operations can still use
   credentials; this is not a general offline mode.

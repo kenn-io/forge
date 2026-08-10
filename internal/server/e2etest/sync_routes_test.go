@@ -3,6 +3,7 @@ package e2etest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient"
@@ -66,6 +68,88 @@ func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
 	assert.Equal(generated.ServiceUnavailable, trigger.ApplicationproblemJSONDefault.Code)
 	require.NotNil(trigger.ApplicationproblemJSONDefault.Detail)
 	assert.Equal("syncer not configured", *trigger.ApplicationproblemJSONDefault.Detail)
+}
+
+func TestDisabledSyncRejectsRefreshRoutesBeforeProviderAccessE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var providerReads atomic.Int32
+	client := &mockGH{
+		getRepositoryFn: func(
+			context.Context, string, string,
+		) (*gh.Repository, error) {
+			providerReads.Add(1)
+			return nil, errors.New("unexpected provider repository read")
+		},
+		getPullRequestFn: func(
+			context.Context, string, string, int,
+		) (*gh.PullRequest, error) {
+			providerReads.Add(1)
+			return nil, errors.New("unexpected provider pull request read")
+		},
+		listOpenPullRequestsFn: func(
+			context.Context, string, string,
+		) ([]*gh.PullRequest, error) {
+			providerReads.Add(1)
+			return nil, errors.New("unexpected provider pull request list")
+		},
+	}
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": client},
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "widget",
+		}},
+		time.Millisecond,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.DisableSync()
+	syncer.Start(t.Context())
+
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+	})
+	forge := httptest.NewServer(srv)
+	defer forge.Close()
+	api, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
+	require.NoError(err)
+
+	trigger, err := api.HTTP.TriggerSyncWithResponse(
+		t.Context(),
+		nil,
+		func(_ context.Context, req *http.Request) error {
+			req.Header.Set("Content-Type", "application/json")
+			return nil
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusServiceUnavailable, trigger.StatusCode(), string(trigger.Body))
+	require.NotNil(trigger.ApplicationproblemJSONDefault)
+	assert.Equal(
+		ghclient.ErrSyncDisabled.Error(),
+		*trigger.ApplicationproblemJSONDefault.Detail,
+	)
+
+	pull, err := api.HTTP.SyncPullWithResponse(
+		t.Context(), "github", "acme", "widget", 7,
+		func(_ context.Context, req *http.Request) error {
+			req.Header.Set("Content-Type", "application/json")
+			return nil
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusServiceUnavailable, pull.StatusCode(), string(pull.Body))
+	require.NotNil(pull.ApplicationproblemJSONDefault)
+	assert.Equal(
+		ghclient.ErrSyncDisabled.Error(),
+		*pull.ApplicationproblemJSONDefault.Detail,
+	)
+	assert.Zero(providerReads.Load())
 }
 
 func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {

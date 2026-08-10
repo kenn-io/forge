@@ -670,6 +670,12 @@ func (s *Server) resolveReposForReload(
 			))
 			continue
 		}
+		if !s.syncer.SyncEnabled() {
+			for _, repo := range ghclient.FallbackConfiguredRepoRefs(previous, raw) {
+				set.Add(repo, false)
+			}
+			continue
+		}
 		_, expanded, err := ghclient.ResolveConfiguredRepoWithRegistry(
 			ctx, s.syncer.Registry(), raw,
 		)

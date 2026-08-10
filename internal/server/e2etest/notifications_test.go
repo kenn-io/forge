@@ -289,8 +289,9 @@ name = "widget"
 		return item.PlatformThreadId == "replacement-thread" && item.RepoOwner == "acme" && item.RepoName == "widget"
 	}, 3*time.Second, 10*time.Millisecond)
 
+	since := firstActivityAt.Add(-time.Minute).Format(time.RFC3339)
 	activityResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{
-		Types: &[]string{"notification"},
+		Types: &[]string{"notification"}, Since: &since,
 	})
 	require.NoError(err)
 	require.NotNil(activityResp.JSON200)

@@ -4,12 +4,16 @@ import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
 
 import {
   consumeSessionFocus,
+  isSessionMounted,
+  noteSessionConnection,
   noteSessionMounted,
-  noteSessionUnmounted,
+  noteSessionDiscarded,
+  noteSessionReleased,
   registerSessionSlot,
   requestSessionFocus,
   resetSessionHostForTest,
   sessionHostKey,
+  setRetainedSessionLimit,
   setSessionSlotVisible,
 } from "../../stores/session-host.svelte.ts";
 import SessionTerminalPool from "./SessionTerminalPoolRuntimeHarness.svelte";
@@ -496,11 +500,28 @@ describe("SessionTerminalPool", () => {
     await waitForReparent();
     expect(wrapperFor(agent)).not.toBeNull();
 
-    noteSessionUnmounted(agent);
+    noteSessionDiscarded(agent);
     flushSync();
 
     // Svelte cannot remove a node this component reparented out of its own
     // fragment, so the pool has to; otherwise a dead terminal stays on screen.
+    expect(wrapperFor(agent)).toBeNull();
+    expect(slotA.childElementCount).toBe(0);
+  });
+
+  it("removes a released terminal when the retention limit evicts it", async () => {
+    mountSession(agent);
+    noteSessionConnection(agent, true);
+    mountPool();
+    showIn(agent, slotA);
+    await waitForReparent();
+    expect(wrapperFor(agent)).not.toBeNull();
+
+    noteSessionReleased(agent);
+    setRetainedSessionLimit(0);
+    flushSync();
+
+    expect(isSessionMounted(agent)).toBe(false);
     expect(wrapperFor(agent)).toBeNull();
     expect(slotA.childElementCount).toBe(0);
   });

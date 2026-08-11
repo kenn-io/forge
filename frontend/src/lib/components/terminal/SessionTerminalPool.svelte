@@ -1,14 +1,20 @@
 <script lang="ts">
+  import { getStores } from "../../context.js";
   import {
     getSessionSlotElement,
+    isSessionClaimed,
     isSessionSlotVisible,
     mountedSessions,
+    noteSessionConnection,
     noteSessionExited,
     registerSessionParking,
+    setRetainedSessionLimit,
     type MountedSession,
     type SessionHostKey,
   } from "../../stores/session-host.svelte.ts";
   import PooledSessionTerminal from "./PooledSessionTerminal.svelte";
+
+  const { settings: settingsStore } = getStores();
 
   // Every workspace's live session terminals, rendered once here and reparented
   // into whichever slot shows them. This has to sit OUTSIDE the reparented
@@ -21,6 +27,10 @@
   $effect(() => {
     registerSessionParking(parkingNode);
     return () => registerSessionParking(null);
+  });
+
+  $effect(() => {
+    setRetainedSessionLimit(settingsStore.getTerminalSettings().retained_sessions ?? 10);
   });
 
   function slotFor(hostKey: SessionHostKey): HTMLElement | null {
@@ -36,6 +46,10 @@
   function handleExit(session: MountedSession, code: number): void {
     noteSessionExited(session.hostKey, code);
   }
+
+  function handleConnectionChange(session: MountedSession, connected: boolean): void {
+    noteSessionConnection(session.hostKey, connected);
+  }
 </script>
 
 <div class="session-pool-parking" bind:this={parkingNode} aria-hidden="true"></div>
@@ -46,7 +60,9 @@
     parking={parkingNode}
     slotEl={slotFor(session.hostKey)}
     active={activeFor(session.hostKey)}
+    retained={!isSessionClaimed(session.hostKey)}
     onExit={(code) => handleExit(session, code)}
+    onConnectionChange={(connected) => handleConnectionChange(session, connected)}
   />
 {/each}
 

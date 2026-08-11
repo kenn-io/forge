@@ -174,7 +174,7 @@ func TestNotificationSyncReconcilesReusedRouteE2E(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 	number := 7
-	firstActivityAt := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
+	firstActivityAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	var activityAt atomic.Int64
 	activityAt.Store(firstActivityAt.UnixNano())
 	var listCalls atomic.Int32

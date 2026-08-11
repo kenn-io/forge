@@ -260,6 +260,9 @@ WebSocket dimensions; resize frames can lag an inline pane's rendered size
 When a real-tmux browser test moves one session between terminal hosts, close
 the old WebSocket before mounting the next host and reassert mouse mode; concurrent
 clients change tmux sizing and mode delivery (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts:524`).
+Reconnect tests must close and observe the WebSocket before enabling Playwright offline mode;
+offline emulation can stall the close event and turn the assertion into a browser-network race
+(`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts:2231`).
 Terminal-emulator protocol negotiation tests must use the PTY-owner e2e option;
 tmux consumes application mode sequences and changes the boundary under test
 (`frontend/tests/e2e-full/00-terminal-kitty-keyboard.spec.ts::kittyCursorProbeCommand`).

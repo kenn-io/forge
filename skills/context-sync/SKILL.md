@@ -145,8 +145,10 @@ unselected docs or code paths.
 ### Step 4: Check Design Decisions
 
 Compare the selected code and current conversation with `docs/adr/` and the selected
-topic docs. Identify durable decisions or maintainer-owned domain knowledge that are not
-captured, and state whether each belongs in an ADR, a topic doc, or `CLAUDE.md`.
+topic docs. Distill feature specs and implementation plans into current contracts in a
+topic doc or `CLAUDE.md`; never preserve those transient artifacts by converting them
+into ADRs. Reserve an ADR for independently required dated rationale that still binds
+the architecture.
 
 Only `--all` may search broader recent conversation history and recent commits. Focused
 audits use the current conversation and selected change range only.

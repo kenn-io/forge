@@ -6,10 +6,12 @@
     websocketPath?: string | undefined;
     reconnectOnExit?: boolean | undefined;
     active?: boolean | undefined;
+    renderingEnabled?: boolean | undefined;
     autoFocus?: boolean | undefined;
     cursorWheelInput?: boolean;
     disabled?: boolean;
     onExit?: ((code: number) => void) | undefined;
+    onConnectionChange?: ((connected: boolean) => void) | undefined;
     // When the session is already exited at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404
     // for non-running sessions, which would loop scheduleReconnect.
@@ -21,10 +23,12 @@
     websocketPath = undefined,
     reconnectOnExit = undefined,
     active = undefined,
+    renderingEnabled = undefined,
     autoFocus = undefined,
     cursorWheelInput = false,
     disabled = false,
     onExit = undefined,
+    onConnectionChange = undefined,
     initialStatus = undefined,
   }: TerminalPaneProps = $props();
 
@@ -41,9 +45,11 @@
   {websocketPath}
   {reconnectOnExit}
   {active}
+  {renderingEnabled}
   {autoFocus}
   {cursorWheelInput}
   {disabled}
   {onExit}
+  {onConnectionChange}
   {initialStatus}
 />

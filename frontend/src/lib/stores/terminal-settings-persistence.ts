@@ -48,10 +48,25 @@ const TERMINAL_SETTINGS_KEYS = [
   "cursor_blink",
   "font_ligatures",
   "hide_tmux_status",
+  "retained_sessions",
 ] satisfies ReadonlyArray<keyof TerminalSettings>;
 
 function changedKeys(settings: Partial<Record<keyof TerminalSettings, unknown>>): Array<keyof TerminalSettings> {
   return TERMINAL_SETTINGS_KEYS.filter((key) => key in settings);
+}
+
+function isDeferredSetting(key: keyof TerminalSettings): boolean {
+  return key === "retained_sessions";
+}
+
+function immediateSettings(settings: Partial<TerminalSettings>): Partial<TerminalSettings> {
+  const immediate: Partial<TerminalSettings> = {};
+  for (const key of changedKeys(settings)) {
+    if (!isDeferredSetting(key)) {
+      Object.assign(immediate, { [key]: settings[key] });
+    }
+  }
+  return immediate;
 }
 
 function previewOwnsField(queue: SaveQueue, preview: TerminalSettingsPreview, key: keyof TerminalSettings): boolean {
@@ -71,6 +86,25 @@ function reconcileSettings(
   for (const key of changedKeys(expected)) {
     if (ownsField(key) && Object.is(current[key], expected[key])) {
       Object.assign(updates, { [key]: replacement[key] });
+    }
+  }
+  if (changedKeys(updates).length > 0) {
+    store.setTerminalSettings({ ...current, ...updates });
+  }
+}
+
+function reconcileSavedSettings(
+  store: TerminalSettingsStore,
+  expected: Partial<TerminalSettings>,
+  saved: TerminalSettings,
+  ownsField: (key: keyof TerminalSettings) => boolean,
+): void {
+  const current = store.getTerminalSettings();
+  const updates: Partial<TerminalSettings> = {};
+
+  for (const key of changedKeys(expected)) {
+    if (ownsField(key) && (isDeferredSetting(key) || Object.is(current[key], expected[key]))) {
+      Object.assign(updates, { [key]: saved[key] });
     }
   }
   if (changedKeys(updates).length > 0) {
@@ -177,7 +211,7 @@ export function previewTerminalSettings(
       Object.assign(authoritativeBaseline, { [key]: current[key] });
     }
   }
-  const changes = terminalSettingsChanges(authoritativeBaseline, next);
+  const changes = immediateSettings(terminalSettingsChanges(authoritativeBaseline, next));
   queue.previewGeneration += 1;
   const previewGeneration = queue.previewGeneration;
   const previousPreview = previews.get(store);
@@ -303,10 +337,13 @@ export const saveTerminalSettings = Effect.fn("TerminalSettings.save")(function*
       delete activeQueue.fieldPreviewGenerations[key];
     }
     activeQueue.pending += 1;
-    store.setTerminalSettings({
-      ...store.getTerminalSettings(),
-      ...changes,
-    });
+    const optimisticChanges = immediateSettings(changes);
+    if (changedKeys(optimisticChanges).length > 0) {
+      store.setTerminalSettings({
+        ...store.getTerminalSettings(),
+        ...optimisticChanges,
+      });
+    }
     return { activeQueue, mutationGeneration };
   });
   const save = workflow
@@ -325,14 +362,14 @@ export const saveTerminalSettings = Effect.fn("TerminalSettings.save")(function*
           }
           state.activeQueue.confirmed = confirmed;
           confirmPreviewChanges(store, changes);
-          reconcileSettings(
+          reconcileSavedSettings(
             store,
             changes,
             saved,
             (key) => state.activeQueue.fieldOptimisticGenerations[key] === state.mutationGeneration,
           );
         } else {
-          reconcileSettings(
+          reconcileSavedSettings(
             store,
             changes,
             state.activeQueue.confirmed,

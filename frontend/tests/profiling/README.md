@@ -2,7 +2,7 @@
 
 Developer tooling for diagnosing workspace switching latency. One
 command drives a real seeded backend (git worktrees + tmux), performs
-warm and cold workspace switches against workspaces running an
+retained-hit, forced-miss, and cold workspace switches against workspaces running an
 ordinary shell and an alternate-screen application (`less`), and
 captures stable timings plus browser- and Go-side traces for
 before/after comparison.
@@ -24,7 +24,7 @@ as the real-workspace e2e specs). Knobs, all optional:
 
 | Env var                         | Effect                                                                            |
 | ------------------------------- | --------------------------------------------------------------------------------- |
-| `KENN_FORGE_PROFILE_ITERATIONS` | Warm-switch iterations per scenario (default 3)                                   |
+| `KENN_FORGE_PROFILE_ITERATIONS` | Warm-switch iterations per hit/miss scenario (minimum and default 10)             |
 | `KENN_FORGE_PROFILE_OUT_DIR`    | Artifact directory (default `test-results/workspace-switch-profile/<timestamp>/`) |
 | `KENN_FORGE_PROFILE_GO_TRACE=0` | Skip the Go execution trace capture                                               |
 
@@ -32,7 +32,7 @@ as the real-workspace e2e specs). Knobs, all optional:
 
 The frontend emits User Timing entries via
 `src/lib/instrumentation/workspaceSwitchTiming.ts`. The instrumentation
-is always on: it records at most nine `performance.measure` calls per
+is always on: it records at most ten `performance.measure` calls per
 workspace switch and nothing else, so there is no production telemetry
 and no measurable steady-state cost. Repeated work inside one switch
 (runtime polling, reconnects, extra panes) does not re-record a phase,
@@ -45,15 +45,16 @@ Every measure is named `workspace-switch:<phase>` and its duration is
 the time from route selection (the terminal view reacting to the new
 workspace route) to that phase:
 
-| Phase                              | Meaning                                      |
-| ---------------------------------- | -------------------------------------------- |
-| `workspace-request-start` / `-end` | Workspace metadata API request               |
-| `runtime-request-start` / `-end`   | Runtime state (sessions) API request         |
-| `fonts-ready`                      | The pane's font-readiness wait resolved      |
-| `terminal-constructed`             | Terminal constructed and attached to the DOM |
-| `socket-open`                      | Terminal WebSocket reported open             |
-| `first-bytes`                      | First binary frame (start of tmux replay)    |
-| `first-paint`                      | Frame showing that payload has painted       |
+| Phase                              | Meaning                                             |
+| ---------------------------------- | --------------------------------------------------- |
+| `workspace-request-start` / `-end` | Workspace metadata API request                      |
+| `runtime-request-start` / `-end`   | Runtime state (sessions) API request                |
+| `fonts-ready`                      | The pane's font-readiness wait resolved             |
+| `terminal-constructed`             | Terminal constructed and attached to the DOM        |
+| `socket-open`                      | Terminal WebSocket reported open                    |
+| `first-bytes`                      | First binary frame (start of tmux replay)           |
+| `first-paint`                      | Frame showing that payload has painted              |
+| `retained-first-paint`             | Second frame after a retained wrapper is reattached |
 
 `first-paint` is recorded on the second animation frame after the
 first payload finished parsing, i.e. after the frame that renders it
@@ -62,6 +63,11 @@ switch — the first pane to reach a phase wins, and each measure's
 `detail.paneId` says which pane that was — except that `first-paint`
 is always recorded by the same pane as `first-bytes`, so
 `firstBytesToFirstPaint` describes one real terminal.
+
+On a retained hit there is deliberately no terminal construction, socket open,
+or replay. The pool records `retained-first-paint` after reparenting and
+recreating the renderer; the profiler uses it as that scenario's route-to-paint
+endpoint while preserving every existing phase name for miss comparisons.
 
 The xterm terminal emits these names. Derived values in the output answer the usual
 questions directly: time before terminal creation

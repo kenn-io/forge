@@ -587,23 +587,25 @@ type Issues struct {
 }
 
 const (
-	DefaultTerminalFontSize      = 12
-	DefaultTerminalScrollback    = 1000
-	DefaultTerminalLineHeight    = 1.0
-	DefaultTerminalLetterSpacing = 0
-	DefaultTerminalCursorBlink   = true
-	DefaultTerminalFontLigatures = false
+	DefaultTerminalFontSize         = 12
+	DefaultTerminalScrollback       = 1000
+	DefaultTerminalLineHeight       = 1.0
+	DefaultTerminalLetterSpacing    = 0
+	DefaultTerminalCursorBlink      = true
+	DefaultTerminalFontLigatures    = false
+	DefaultTerminalRetainedSessions = 10
 )
 
 type Terminal struct {
-	FontFamily     string  `toml:"font_family,omitempty" json:"font_family"`
-	FontSize       int     `toml:"font_size,omitempty" json:"font_size"`
-	Scrollback     int     `toml:"scrollback,omitempty" json:"scrollback"`
-	LineHeight     float64 `toml:"line_height,omitempty" json:"line_height"`
-	LetterSpacing  int     `toml:"letter_spacing,omitempty" json:"letter_spacing"`
-	CursorBlink    *bool   `toml:"cursor_blink,omitempty" json:"cursor_blink" nullable:"false"`
-	FontLigatures  bool    `toml:"font_ligatures,omitempty" json:"font_ligatures"`
-	HideTmuxStatus bool    `toml:"hide_tmux_status,omitempty" json:"hide_tmux_status"`
+	FontFamily       string  `toml:"font_family,omitempty" json:"font_family"`
+	FontSize         int     `toml:"font_size,omitempty" json:"font_size"`
+	Scrollback       int     `toml:"scrollback,omitempty" json:"scrollback"`
+	LineHeight       float64 `toml:"line_height,omitempty" json:"line_height"`
+	LetterSpacing    int     `toml:"letter_spacing,omitempty" json:"letter_spacing"`
+	CursorBlink      *bool   `toml:"cursor_blink,omitempty" json:"cursor_blink" nullable:"false"`
+	FontLigatures    bool    `toml:"font_ligatures,omitempty" json:"font_ligatures"`
+	HideTmuxStatus   bool    `toml:"hide_tmux_status,omitempty" json:"hide_tmux_status"`
+	RetainedSessions *int    `toml:"retained_sessions,omitempty" json:"retained_sessions" nullable:"false"`
 }
 
 type Agent struct {
@@ -1503,6 +1505,16 @@ func (c *Config) validate() error {
 	if c.Terminal.CursorBlink == nil {
 		cursorBlink := DefaultTerminalCursorBlink
 		c.Terminal.CursorBlink = &cursorBlink
+	}
+	if c.Terminal.RetainedSessions == nil {
+		retainedSessions := DefaultTerminalRetainedSessions
+		c.Terminal.RetainedSessions = &retainedSessions
+	}
+	if *c.Terminal.RetainedSessions < 0 || *c.Terminal.RetainedSessions > 20 {
+		return fmt.Errorf(
+			"config: invalid terminal.retained_sessions %d: must be between 0 and 20",
+			*c.Terminal.RetainedSessions,
+		)
 	}
 	if err := c.validateAgents(); err != nil {
 		return err

@@ -1202,12 +1202,21 @@ test("tmux drag-copy reaches the clipboard in tab and inline hosts", async ({ pa
       await setBrowserClipboard(page, "");
     }
 
+    await tabTerminal.evaluate((element) => {
+      element.setAttribute("data-clipboard-host-witness", "terminal");
+    });
+    const activeSocketsBeforeClose = output.activeSocketCount();
+    expect(activeSocketsBeforeClose).toBeGreaterThan(0);
     await page.locator(".terminal-panel.open").getByRole("button", { name: "Close terminal panel" }).first().click();
     await expect(tabTerminal).not.toBeVisible();
-    await expect.poll(() => output.activeSocketCount()).toBe(0);
+    await expect(page.locator('.session-pool-parking [data-clipboard-host-witness="terminal"]')).toHaveCount(1);
+    await expect.poll(() => output.activeSocketCount()).toBe(activeSocketsBeforeClose);
     await selectIssueByTitle(page, "Widget rendering broken on Safari");
-    const inlineTerminal = page.locator(".sole-embedded-session .terminal-container");
+    const inlineTerminal = page.locator(
+      '.sole-embedded-session .terminal-container[data-clipboard-host-witness="terminal"]',
+    );
     await expect(inlineTerminal).toBeVisible();
+    await expect.poll(() => output.activeSocketCount()).toBe(activeSocketsBeforeClose);
     await expect(inlineTerminal.locator("canvas, .xterm-screen").first()).toBeVisible();
     const inlineMarker = "inline clipboard — marker\u00a0value";
     await enableTmuxMouseAndRenderMarker(page, inlineTerminal, output, isolatedServer, tmuxSession, inlineMarker);

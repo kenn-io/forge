@@ -80,6 +80,9 @@
   let hideTmuxStatusDraft = $state(
     DEFAULT_TERMINAL_SETTINGS.hide_tmux_status,
   );
+  let retainedSessionsDraft = $state<number | null>(
+    DEFAULT_TERMINAL_SETTINGS.retained_sessions,
+  );
   let fontDialogOpen = $state(false);
   let localFonts = $state<FontData[] | null>(null);
   let fontLoadError = $state<string | null>(null);
@@ -154,6 +157,8 @@
       cursor_blink: cursorBlinkDraft,
       font_ligatures: fontLigaturesDraft,
       hide_tmux_status: hideTmuxStatusDraft,
+      retained_sessions:
+        retainedSessionsDraft ?? DEFAULT_TERMINAL_SETTINGS.retained_sessions,
     };
   }
 
@@ -170,7 +175,8 @@
       pendingTerminal.letter_spacing !== currentTerminal.letter_spacing ||
       pendingTerminal.cursor_blink !== currentTerminal.cursor_blink ||
       pendingTerminal.font_ligatures !== currentTerminal.font_ligatures ||
-      pendingTerminal.hide_tmux_status !== currentTerminal.hide_tmux_status
+      pendingTerminal.hide_tmux_status !== currentTerminal.hide_tmux_status ||
+      pendingTerminal.retained_sessions !== currentTerminal.retained_sessions
   );
   const isDefaultDraft = $derived(
     pendingTerminal.font_family === DEFAULT_TERMINAL_SETTINGS.font_family &&
@@ -184,7 +190,9 @@
       pendingTerminal.font_ligatures ===
         DEFAULT_TERMINAL_SETTINGS.font_ligatures &&
       pendingTerminal.hide_tmux_status ===
-        DEFAULT_TERMINAL_SETTINGS.hide_tmux_status
+        DEFAULT_TERMINAL_SETTINGS.hide_tmux_status &&
+      pendingTerminal.retained_sessions ===
+        DEFAULT_TERMINAL_SETTINGS.retained_sessions
   );
   const canSave = $derived(!saving && isDirty);
   const localMonospaceFonts = $derived.by(() => {
@@ -212,6 +220,7 @@
     cursorBlinkDraft = value.cursor_blink;
     fontLigaturesDraft = value.font_ligatures;
     hideTmuxStatusDraft = value.hide_tmux_status;
+    retainedSessionsDraft = value.retained_sessions;
   }
 
   $effect(() => {
@@ -412,6 +421,24 @@
       />
     </label>
 
+    <label class="control-field" for="terminal-retained-sessions">
+      <span class="setting-label">Retained terminal sessions</span>
+      <input
+        id="terminal-retained-sessions"
+        class="number-input"
+        type="number"
+        min="0"
+        max="20"
+        step="1"
+        bind:value={retainedSessionsDraft}
+        disabled={saving}
+      />
+      <span class="field-help">
+        Keep recently viewed terminal sessions ready for faster workspace
+        switching. Higher values use more memory. Use 0 to disable retention.
+      </span>
+    </label>
+
   </div>
 
   <Checkbox
@@ -546,6 +573,12 @@
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
     font-weight: 600;
+  }
+
+  .field-help {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
   }
 
   .font-row {

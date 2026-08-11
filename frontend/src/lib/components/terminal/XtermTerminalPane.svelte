@@ -52,10 +52,12 @@
     websocketPath?: string | undefined;
     reconnectOnExit?: boolean | undefined;
     active?: boolean | undefined;
+    renderingEnabled?: boolean | undefined;
     autoFocus?: boolean | undefined;
     cursorWheelInput?: boolean;
     disabled?: boolean;
     onExit?: ((code: number) => void) | undefined;
+    onConnectionChange?: ((connected: boolean) => void) | undefined;
     // When the session is not attachable at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404
     // for non-running sessions, which would loop scheduleReconnect.
@@ -67,10 +69,12 @@
     websocketPath,
     reconnectOnExit = true,
     active = true,
+    renderingEnabled = true,
     autoFocus = true,
     cursorWheelInput = false,
     disabled = false,
     onExit,
+    onConnectionChange,
     initialStatus,
   }: TerminalPaneProps = $props();
   const runtime = getAppRuntime();
@@ -86,6 +90,7 @@
   let fitAddon: FitAddon | null = null;
   let ligaturesAddon: LigaturesAddon | null = null;
   let webglAddon: WebglAddon | null = null;
+  let rendererParked = false;
   let terminalSession: TerminalSessionController | null = null;
   let connectionGeneration = 0;
   let unregisterTextureAtlasParticipant: (() => void) | null = null;
@@ -529,6 +534,7 @@
     if (!terminal) return;
     webglAddon?.dispose();
     webglAddon = null;
+    if (rendererParked) return;
     if (isFirefox()) {
       scheduleTerminalResize();
       return;
@@ -546,6 +552,20 @@
     } catch {
       // WebGL unavailable; canvas renderer used as fallback.
     }
+  }
+
+  function syncRendererState(): void {
+    if (!terminal) return;
+    const shouldPark = !renderingEnabled;
+    if (rendererParked === shouldPark) return;
+    rendererParked = shouldPark;
+    if (shouldPark) {
+      webglAddon?.dispose();
+      webglAddon = null;
+      return;
+    }
+    recreateWebglAddon();
+    scheduleTerminalRefresh();
   }
 
   function syncLigaturesAddon(): void {
@@ -721,6 +741,7 @@
       },
       onOpen: () => {
         connectionGeneration += 1;
+        onConnectionChange?.(true);
         switchTimer.record("socket-open");
         sendResizeActive(resizeAuthorityRegionSize() !== null);
         const size = resizeAuthorityRegionSize();
@@ -730,6 +751,7 @@
       },
       onMessage: handleTerminalMessage,
       onDisconnected: () => {
+        onConnectionChange?.(false);
         cancelPendingTerminalSequence();
         clipboardWriter?.cancelAuthorization();
         mouseDragAutoscroll?.reset();
@@ -795,6 +817,8 @@
     fitAddon?.fit();
     if (active) scheduleTerminalRefresh();
   });
+
+  $effect(syncRendererState);
 
   $effect(() => {
     if (!terminal) return;
@@ -918,6 +942,7 @@
         ligaturesAddon = new LigaturesAddon();
         term.loadAddon(ligaturesAddon);
       }
+      rendererParked = !renderingEnabled;
       recreateWebglAddon();
 
       appliedTerminalFontFamily = terminalFontFamily;

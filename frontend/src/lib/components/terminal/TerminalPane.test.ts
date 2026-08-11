@@ -16,6 +16,7 @@ const {
   mouseDragObserveTerminalData,
   mouseDragReset,
   resizeObserverCallbacks,
+  webglAddons,
   webLinksAddonCtor,
   xtermFitAddons,
   xtermInstances,
@@ -37,6 +38,7 @@ const {
   mouseDragObserveTerminalData: vi.fn(),
   mouseDragReset: vi.fn(),
   resizeObserverCallbacks: [] as ResizeObserverCallback[],
+  webglAddons: [] as Array<{ dispose: ReturnType<typeof vi.fn>; onContextLoss: ReturnType<typeof vi.fn> }>,
   webLinksAddonCtor: vi.fn(),
   xtermFitAddons: [] as Array<{ fit: ReturnType<typeof vi.fn>; proposeDimensions: ReturnType<typeof vi.fn> }>,
   xtermInstances: [] as Array<{
@@ -261,10 +263,12 @@ vi.mock("@xterm/addon-web-links", () => ({
 vi.mock("@xterm/addon-webgl", () => ({
   WebglAddon: vi.fn().mockImplementation(function (options) {
     mockWebglCtor(options);
-    return {
+    const addon = {
       dispose: vi.fn(),
       onContextLoss: vi.fn(),
     };
+    webglAddons.push(addon);
+    return addon;
   }),
 }));
 
@@ -306,6 +310,7 @@ describe("TerminalPane", () => {
     mouseDragObserveTerminalData.mockReset();
     mouseDragReset.mockReset();
     resizeObserverCallbacks.length = 0;
+    webglAddons.length = 0;
     webLinksAddonCtor.mockReset();
     xtermFitAddons.length = 0;
     xtermInstances.length = 0;
@@ -533,6 +538,43 @@ describe("TerminalPane", () => {
       }),
     );
     expect(mockWebglCtor).toHaveBeenCalledWith({ customGlyphs: true });
+  });
+
+  it("releases WebGL while retained and recreates it when claimed", async () => {
+    const { rerender, unmount } = render(TerminalPane, {
+      props: { workspaceId: "ws-123", renderingEnabled: true },
+    });
+    await waitFor(() => expect(webglAddons).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    const terminal = xtermInstances[0]!;
+    const initialWebgl = webglAddons[0]!;
+    const closeSocket = vi.spyOn(mockSockets[0]!, "close");
+
+    await rerender({ workspaceId: "ws-123", renderingEnabled: false });
+
+    expect(initialWebgl.dispose).toHaveBeenCalledTimes(1);
+    expect(terminal.dispose).not.toHaveBeenCalled();
+
+    await rerender({ workspaceId: "ws-123", renderingEnabled: true });
+    await waitFor(() => expect(webglAddons).toHaveLength(2));
+    expect(xtermInstances).toHaveLength(1);
+
+    const replacementWebgl = webglAddons[1]!;
+    unmount();
+
+    expect(replacementWebgl.dispose).toHaveBeenCalledTimes(1);
+    expect(terminal.dispose).toHaveBeenCalledTimes(1);
+    expect(closeSocket).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports socket connection changes", async () => {
+    const onConnectionChange = vi.fn();
+    render(TerminalPane, { props: { workspaceId: "ws-123", onConnectionChange } });
+    await waitFor(() => expect(onConnectionChange).toHaveBeenCalledWith(true));
+
+    mockSockets[0]!.onclose();
+
+    await waitFor(() => expect(onConnectionChange).toHaveBeenCalledWith(false));
   });
 
   it("uses configured terminal metrics for xterm.js", async () => {

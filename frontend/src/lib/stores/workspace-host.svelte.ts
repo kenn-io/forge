@@ -21,7 +21,13 @@ import {
 } from "./workspace-create-pending.svelte.js";
 import { getStackDepth } from "./keyboard/modal-stack.svelte.js";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "./paneLayout.svelte.js";
-import { clearSessionFocusRequest, getSessionSlotElement, requestSessionFocus } from "./session-host.svelte.ts";
+import {
+  clearSessionFocusRequest,
+  discardSessionsWithPrefix,
+  getSessionSlotElement,
+  requestSessionFocus,
+  sessionHostPrefix,
+} from "./session-host.svelte.ts";
 import { forgetWorkspaceRoute, getRoute, navigate, replaceUrl } from "./router.svelte.ts";
 
 export type HostedWorkspaceKey = { workspaceId: string; hostKey: string | undefined };
@@ -439,6 +445,7 @@ export function rememberTerminalRouteKey(key: HostedWorkspaceKey): void {
 }
 
 export function notifyWorkspaceDeleted(workspaceId: string, hostKey?: string, identity?: WorkspaceItemIdentity): void {
+  discardSessionsWithPrefix(sessionHostPrefix(workspaceId, hostKey));
   // Inline claims only ever hold local workspaces (hostKey undefined);
   // fleet deletions can't match one.
   if (hostKey === undefined) {

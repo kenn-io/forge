@@ -1,7 +1,16 @@
 import { describe, expect, it, beforeEach, vi } from "vite-plus/test";
 import { getPaneLayoutStore, promoteSessionBesideWorkspace } from "./paneLayout.svelte.js";
 import { pushModalFrame } from "./keyboard/modal-stack.svelte.js";
-import { consumeSessionFocus, registerSessionSlot, resetSessionHostForTest } from "./session-host.svelte.ts";
+import {
+  consumeSessionFocus,
+  mountedSessions,
+  noteSessionConnection,
+  noteSessionMounted,
+  noteSessionReleased,
+  registerSessionSlot,
+  resetSessionHostForTest,
+  sessionHostKey,
+} from "./session-host.svelte.ts";
 import {
   createdWorkspaceRef,
   markWorkspaceIdDeleted,
@@ -505,6 +514,20 @@ describe("workspace host store", () => {
     expect(desiredSlot()).toBe("prs"); // same id on a fleet host is a different workspace
     expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(refA); // no tombstone
     expect(getLastWorkspaceRoute()).toBe("/workspaces"); // fleet route forgotten
+  });
+
+  it("purges pooled sessions only for the deleted workspace and host", () => {
+    const localKey = sessionHostKey("ws-a", undefined, "agent", "local-generation");
+    const fleetKey = sessionHostKey("ws-a", "build-host", "agent", "fleet-generation");
+    for (const hostKey of [localKey, fleetKey]) {
+      noteSessionMounted({ hostKey, websocketPath: `/terminal/${hostKey}`, status: "running" });
+      noteSessionConnection(hostKey, true);
+    }
+    noteSessionReleased(localKey);
+
+    notifyWorkspaceDeleted("ws-a");
+
+    expect(mountedSessions().map((session) => session.hostKey)).toEqual([fleetKey]);
   });
 
   it("dock collapse means claimed-but-hidden", () => {

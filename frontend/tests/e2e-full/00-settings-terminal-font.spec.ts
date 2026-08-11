@@ -77,6 +77,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
   const scrollback = page.getByLabel("Scrollback");
   const lineHeight = page.getByLabel("Line height");
   const letterSpacing = page.getByLabel("Letter spacing");
+  const retainedSessions = page.getByLabel("Retained terminal sessions");
   const cursorBlink = page.getByLabel("Cursor blink");
   const saveButton = page.getByRole("button", {
     name: "Save",
@@ -87,12 +88,14 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
   await expect(scrollback).toHaveValue("1000");
   await expect(lineHeight).toHaveValue("1");
   await expect(letterSpacing).toHaveValue("0");
+  await expect(retainedSessions).toHaveValue("10");
   await expect(cursorBlink).toBeChecked();
 
   await fontSize.fill("18");
   await scrollback.fill("5000");
   await lineHeight.fill("1.15");
   await letterSpacing.fill("1");
+  await retainedSessions.fill("7");
   await cursorBlink.uncheck();
   await input.click();
   await input.pressSequentially('"Iosevka Term", monospace');
@@ -118,6 +121,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
           scrollback: number;
           line_height: number;
           letter_spacing: number;
+          retained_sessions: number;
           cursor_blink: boolean;
           font_ligatures: boolean;
           hide_tmux_status: boolean;
@@ -131,6 +135,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
       scrollback: 5000,
       line_height: 1.15,
       letter_spacing: 1,
+      retained_sessions: 7,
       cursor_blink: false,
       font_ligatures: false,
       hide_tmux_status: false,
@@ -143,6 +148,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
   await expect(page.getByLabel("Scrollback")).toHaveValue("5000");
   await expect(page.getByLabel("Line height")).toHaveValue("1.15");
   await expect(page.getByLabel("Letter spacing")).toHaveValue("1");
+  await expect(page.getByLabel("Retained terminal sessions")).toHaveValue("7");
   await expect(page.getByLabel("Cursor blink")).not.toBeChecked();
 });
 
@@ -213,6 +219,7 @@ test.describe("terminal options popover", () => {
         scrollback: 4200,
         line_height: 1.2,
         letter_spacing: 1,
+        retained_sessions: 10,
         cursor_blink: false,
         font_ligatures: true,
         hide_tmux_status: true,

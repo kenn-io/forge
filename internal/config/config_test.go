@@ -2455,6 +2455,7 @@ line_height = 1.2
 letter_spacing = 1
 cursor_blink = false
 font_ligatures = true
+retained_sessions = 0
 `)
 	cfg, err := Load(path)
 	require.NoError(err)
@@ -2466,6 +2467,8 @@ font_ligatures = true
 	require.NotNil(cfg.Terminal.CursorBlink)
 	assert.False(*cfg.Terminal.CursorBlink)
 	assert.True(cfg.Terminal.FontLigatures)
+	require.NotNil(cfg.Terminal.RetainedSessions)
+	assert.Equal(0, *cfg.Terminal.RetainedSessions)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(cfg.Save(savePath))
@@ -2480,6 +2483,8 @@ font_ligatures = true
 	require.NotNil(cfg2.Terminal.CursorBlink)
 	assert.False(*cfg2.Terminal.CursorBlink)
 	assert.True(cfg2.Terminal.FontLigatures)
+	require.NotNil(cfg2.Terminal.RetainedSessions)
+	assert.Equal(0, *cfg2.Terminal.RetainedSessions)
 }
 
 func TestTerminalSettingsDefaults(t *testing.T) {
@@ -2500,6 +2505,25 @@ name = "b"
 	require.NotNil(cfg.Terminal.CursorBlink)
 	assert.True(*cfg.Terminal.CursorBlink)
 	assert.False(cfg.Terminal.FontLigatures)
+	require.NotNil(cfg.Terminal.RetainedSessions)
+	assert.Equal(DefaultTerminalRetainedSessions, *cfg.Terminal.RetainedSessions)
+}
+
+func TestTerminalRetainedSessionsValidation(t *testing.T) {
+	for _, retainedSessions := range []int{-1, 21} {
+		t.Run(fmt.Sprintf("value_%d", retainedSessions), func(t *testing.T) {
+			_, err := Load(writeConfig(t, fmt.Sprintf(`
+[[repos]]
+owner = "a"
+name = "b"
+
+[terminal]
+retained_sessions = %d
+`, retainedSessions)))
+
+			require.ErrorContains(t, err, "terminal.retained_sessions")
+		})
+	}
 }
 
 func TestIssueWorkspaceBranchStyleDefaultsToSlug(t *testing.T) {

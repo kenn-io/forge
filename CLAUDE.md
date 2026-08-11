@@ -92,6 +92,9 @@ only routes to them.
 ## Git Workflow
 
 - **Commit every turn** — always commit your work at the end of each turn, no exceptions
+- Superpowers design specs and implementation plans are temporary working artifacts; never commit
+  or retain them. Before committing, distill current contracts into the matching `context/` topic
+  docs and delete the artifacts. Do not convert a transient spec into an ADR to preserve it.
 - **Capture context before committing** — before every agent-created Git commit, invoke
   the repository-local `context-sync` skill with `--commit`. Apply clear scoped context
   changes before invoking the normal external commit skill. Block only when an unclear

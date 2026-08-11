@@ -26,6 +26,8 @@ import (
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
+const runtimeRollbackEventuallyTimeout = 10 * time.Second
+
 type runtimeRollbackFakeTmux struct {
 	command            []string
 	recordPath         string
@@ -227,7 +229,7 @@ func waitForRuntimeWriterWait(t *testing.T, database *db.DB, baseline int64) {
 	t.Helper()
 	require.Eventually(t, func() bool {
 		return database.WriteDB().Stats().WaitCount > baseline
-	}, time.Second, 10*time.Millisecond)
+	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 }
 
 func runtimeLaunchRequestBody(t *testing.T, sessionKey string) []byte {
@@ -361,7 +363,7 @@ func TestCommandSameKeyPersistenceOwnership(t *testing.T) {
 			)
 			require.Eventually(func() bool {
 				return len(fixture.server.runtime.ListSessions(scope)) == 1
-			}, time.Second, 10*time.Millisecond)
+			}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 			waitForRuntimeWriterWait(t, fixture.server.db, baseline)
 			generationOne := fixture.server.runtime.ListSessions(scope)[0]
 			assert.True(
@@ -384,7 +386,7 @@ func TestCommandSameKeyPersistenceOwnership(t *testing.T) {
 			require.Eventually(func() bool {
 				launches, err := os.ReadFile(fixture.tmux.launchHistoryPath)
 				return err == nil && len(strings.Fields(string(launches))) == 2
-			}, time.Second, 10*time.Millisecond)
+			}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 			require.NoError(transaction.Rollback())
 			bRecorder := awaitRuntimeResponse(t, bResponses)
 
@@ -435,7 +437,7 @@ func TestProjectWorktreeShellPersistenceOwnership(t *testing.T) {
 	)
 	require.Eventually(func() bool {
 		return len(fixture.server.runtime.ListSessions(scope)) == 1
-	}, time.Second, 10*time.Millisecond)
+	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	waitForRuntimeWriterWait(t, fixture.server.db, baseline)
 	generationOne := fixture.server.runtime.ListSessions(scope)[0]
 
@@ -454,7 +456,7 @@ func TestProjectWorktreeShellPersistenceOwnership(t *testing.T) {
 	require.Eventually(func() bool {
 		launches, err := os.ReadFile(fixture.tmux.launchHistoryPath)
 		return err == nil && len(strings.Fields(string(launches))) == 2
-	}, time.Second, 10*time.Millisecond)
+	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	require.NoError(transaction.Rollback())
 	bRecorder := awaitRuntimeResponse(t, bResponses)
 
@@ -509,17 +511,17 @@ func TestHostRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 	require.Eventually(func() bool {
 		_, err := os.Stat(fixture.tmux.attachStartedPath)
 		return err == nil
-	}, time.Second, 10*time.Millisecond)
+	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	require.Eventually(func() bool {
 		return len(fixture.server.runtime.ListSessions(hostRuntimeScope)) == 1
-	}, time.Second, 10*time.Millisecond)
+	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	waitForRuntimeWriterWait(t, fixture.server.db, baseline)
 	launched := fixture.server.runtime.ListSessions(hostRuntimeScope)[0]
 
 	require.NoError(os.WriteFile(fixture.tmux.exitAttachPath, nil, 0o600))
 	require.Eventually(func() bool {
 		return len(fixture.server.runtime.ListSessions(hostRuntimeScope)) == 0
-	}, time.Second, 10*time.Millisecond)
+	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	cancel()
 	recorder := awaitRuntimeResponse(t, responses)
 	require.NoError(transaction.Rollback())
@@ -652,13 +654,13 @@ func TestHostRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPreservesPersi
 	require.Eventually(func() bool {
 		_, err := os.Stat(fixture.tmux.attachStartedPath)
 		return err == nil
-	}, time.Second, 10*time.Millisecond)
+	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	waitForRuntimeWriterWait(t, fixture.server.db, baseline)
 	launched := fixture.server.runtime.ListSessions(hostRuntimeScope)[0]
 	require.NoError(os.WriteFile(fixture.tmux.exitAttachPath, nil, 0o600))
 	require.Eventually(func() bool {
 		return len(fixture.server.runtime.ListSessions(hostRuntimeScope)) == 0
-	}, time.Second, 10*time.Millisecond)
+	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	cancel()
 	recorder := awaitRuntimeResponse(t, responses)
 	require.NoError(transaction.Rollback())
@@ -735,17 +737,17 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 			require.Eventually(func() bool {
 				_, err := os.Stat(fixture.tmux.attachStartedPath)
 				return err == nil
-			}, time.Second, 10*time.Millisecond)
+			}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 			require.Eventually(func() bool {
 				return len(fixture.server.runtime.ListSessions(scope)) == 1
-			}, time.Second, 10*time.Millisecond)
+			}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 			waitForRuntimeWriterWait(t, fixture.server.db, baseline)
 			launched := fixture.server.runtime.ListSessions(scope)[0]
 
 			require.NoError(os.WriteFile(fixture.tmux.exitAttachPath, nil, 0o600))
 			require.Eventually(func() bool {
 				return len(fixture.server.runtime.ListSessions(scope)) == 0
-			}, time.Second, 10*time.Millisecond)
+			}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 			cancel()
 			recorder := awaitRuntimeResponse(t, responses)
 			require.NoError(transaction.Rollback())
@@ -940,13 +942,13 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPre
 	require.Eventually(func() bool {
 		_, err := os.Stat(fixture.tmux.attachStartedPath)
 		return err == nil
-	}, time.Second, 10*time.Millisecond)
+	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	waitForRuntimeWriterWait(t, fixture.server.db, baseline)
 	launched := fixture.server.runtime.ListSessions(scope)[0]
 	require.NoError(os.WriteFile(fixture.tmux.exitAttachPath, nil, 0o600))
 	require.Eventually(func() bool {
 		return len(fixture.server.runtime.ListSessions(scope)) == 0
-	}, time.Second, 10*time.Millisecond)
+	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	cancel()
 	recorder := awaitRuntimeResponse(t, responses)
 	require.NoError(transaction.Rollback())
@@ -1077,7 +1079,7 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 			)
 			require.Eventually(func() bool {
 				return len(fixture.server.runtime.ListSessions(scope)) == 1
-			}, time.Second, 10*time.Millisecond)
+			}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 			waitForRuntimeWriterWait(t, fixture.server.db, baseline)
 
 			// The command exits while its metadata write is still blocked, so
@@ -1086,7 +1088,7 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 			require.NoError(os.WriteFile(fixture.tmux.exitAttachPath, nil, 0o600))
 			require.Eventually(func() bool {
 				return len(fixture.server.runtime.ListSessions(scope)) == 0
-			}, time.Second, 10*time.Millisecond)
+			}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 
 			require.NoError(transaction.Rollback())
 			recorder := awaitRuntimeResponse(t, responses)

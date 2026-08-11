@@ -12,6 +12,7 @@ import (
 
 func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	skipUnlessLiveGitHubTests(t)
+	require := require.New(t)
 	token := requireLiveGitHubToken(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -31,7 +32,7 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 		"cursor":   (*githubv4.String)(nil),
 	}
 	err := client.Query(ctx, &prQuery, vars)
-	require.NoError(t, err, "bulk PR GraphQL query should validate against GitHub")
+	require.NoError(err, "bulk PR GraphQL query should validate against GitHub")
 
 	type prDetailQuery struct {
 		Repository struct {
@@ -44,26 +45,26 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 		"name":   githubv4.String("forge"),
 		"number": githubv4.Int(830),
 	})
-	require.NoError(t, err, "combined PR detail GraphQL query should validate against GitHub")
-	require.NotNil(t, detailQuery.Repository.PullRequest, "live PR fixture should exist")
-	require.NotEmpty(t, detailQuery.Repository.PullRequest.Comments.Nodes,
+	require.NoError(err, "combined PR detail GraphQL query should validate against GitHub")
+	require.NotNil(detailQuery.Repository.PullRequest, "live PR fixture should exist")
+	require.NotEmpty(detailQuery.Repository.PullRequest.Comments.Nodes,
 		"combined live query should return conversation comments")
-	require.NotEmpty(t, detailQuery.Repository.PullRequest.ReviewThreads.Nodes,
+	require.NotEmpty(detailQuery.Repository.PullRequest.ReviewThreads.Nodes,
 		"combined live query should return review threads")
-	require.NotEmpty(t, detailQuery.Repository.PullRequest.ReviewThreads.Nodes[0].Comments.Nodes,
+	require.NotEmpty(detailQuery.Repository.PullRequest.ReviewThreads.Nodes[0].Comments.Nodes,
 		"combined live query should return review-thread comments")
-	require.False(t,
+	require.False(
 		detailQuery.Repository.PullRequest.ReviewThreads.Nodes[0].Comments.Nodes[0].CreatedAt.IsZero(),
 		"combined live query should return review-comment creation time",
 	)
-	require.False(t,
+	require.False(
 		detailQuery.Repository.PullRequest.ReviewThreads.Nodes[0].Comments.Nodes[0].UpdatedAt.IsZero(),
 		"combined live query should return review-comment update time",
 	)
 
 	var issueQuery gqlIssueQuery
 	err = client.Query(ctx, &issueQuery, vars)
-	require.NoError(t, err, "bulk issue GraphQL query should validate against GitHub")
+	require.NoError(err, "bulk issue GraphQL query should validate against GitHub")
 
 	reviewClient := &liveClient{
 		httpClient:      httpClient,
@@ -73,12 +74,12 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	threads, _, _, err := reviewClient.ListInventoryReviewThreadsPage(
 		ctx, "github.com", "kenn-io", "forge", 830, "",
 	)
-	require.NoError(t, err, "review-thread GraphQL query should validate against GitHub")
-	require.NotEmpty(t, threads, "live review fixture should contain a review thread")
-	require.NotEmpty(t, threads[0].Comments, "live review fixture should contain a review comment")
-	require.False(t, threads[0].Comments[0].CreatedAt.IsZero(),
+	require.NoError(err, "review-thread GraphQL query should validate against GitHub")
+	require.NotEmpty(threads, "live review fixture should contain a review thread")
+	require.NotEmpty(threads[0].Comments, "live review fixture should contain a review comment")
+	require.False(threads[0].Comments[0].CreatedAt.IsZero(),
 		"review-thread GraphQL query should return comment creation time")
-	require.False(t, threads[0].Comments[0].UpdatedAt.IsZero(),
+	require.False(threads[0].Comments[0].UpdatedAt.IsZero(),
 		"review-thread GraphQL query should return comment update time")
 
 	comments, _, _, err := reviewClient.listReviewThreadCommentsPage(
@@ -88,11 +89,11 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 			Phase: "comments", Thread: archiveReviewThreadCursor(threads[0]),
 		},
 	)
-	require.NoError(t, err, "review-thread comment GraphQL query should validate against GitHub")
-	require.NotEmpty(t, comments, "live review fixture should return its review thread")
-	require.NotEmpty(t, comments[0].Comments, "live review fixture should contain a review comment")
-	require.False(t, comments[0].Comments[0].CreatedAt.IsZero(),
+	require.NoError(err, "review-thread comment GraphQL query should validate against GitHub")
+	require.NotEmpty(comments, "live review fixture should return its review thread")
+	require.NotEmpty(comments[0].Comments, "live review fixture should contain a review comment")
+	require.False(comments[0].Comments[0].CreatedAt.IsZero(),
 		"paginated review-comment query should return creation time")
-	require.False(t, comments[0].Comments[0].UpdatedAt.IsZero(),
+	require.False(comments[0].Comments[0].UpdatedAt.IsZero(),
 		"paginated review-comment query should return update time")
 }

@@ -202,6 +202,13 @@ stale tabs.
   unintended navigation when the user is targeting a nested control.
 - Persisted "last active tab" state must be scoped per workspace.
 
+## Released Terminal Retention
+
+- A live view's desired set claims its sessions even when a tab is hidden; only unclaimed sessions enter the bounded, release-ordered LRU, and a zero limit disables retention (`frontend/src/lib/stores/session-host.svelte.ts::noteSessionReleased`).
+- While a workspace switch awaits destination runtime reconciliation, cache trimming must protect that destination prefix; otherwise releasing the previous workspace can evict the pending cache hit at capacity (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::releaseOwnedSessions`).
+- Retention keeps the parsed xterm subtree and connected socket but relinquishes interaction, resize, and WebGL resources; reclaim reparents the same subtree without reconnect or replay (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`, `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::syncRendererState`).
+- Released sessions are browser presentation cache, never runtime authority: disconnect, exit, deletion, or stale generation causes app-level final discard rather than background reconnect (`frontend/src/lib/stores/session-host.svelte.ts::noteSessionExited`, `frontend/src/lib/stores/session-host.svelte.ts::discardSessionsWithPrefix`).
+
 ## Shell Command Override
 
 When tmux is unavailable, the plain shell session is launched through ptyowner

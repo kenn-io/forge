@@ -17305,11 +17305,13 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 }
 
 func TestSyncOpenMRFromBulkLeavesDetailStaleWhenReviewThreadsAreIncomplete(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
-	require.NoError(t, err)
+	require.NoError(err)
 
 	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
 	line := 12
@@ -17336,12 +17338,12 @@ func TestSyncOpenMRFromBulkLeavesDetailStaleWhenReviewThreadsAreIncomplete(t *te
 		TimelineComplete: true,
 		CIComplete:       true,
 	}, false)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	mr, err := database.GetMergeRequest(ctx, "github", "github.com", repo.Owner, repo.Name, 1)
-	require.NoError(t, err)
-	require.NotNil(t, mr)
-	require.NotNil(t, mr.DetailFetchedAt)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NotNil(mr.DetailFetchedAt)
 
 	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
 		PR:                    buildOpenPR(1, now),
@@ -17352,17 +17354,17 @@ func TestSyncOpenMRFromBulkLeavesDetailStaleWhenReviewThreadsAreIncomplete(t *te
 		TimelineComplete:      true,
 		CIComplete:            true,
 	}, false)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	mr, err = database.GetMergeRequest(ctx, "github", "github.com", repo.Owner, repo.Name, 1)
-	require.NoError(t, err)
-	require.NotNil(t, mr)
-	assert.Nil(t, mr.DetailFetchedAt)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Nil(mr.DetailFetchedAt)
 	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
-	require.NoError(t, err)
-	require.Len(t, threads, 1)
-	assert.Equal(t, "thread-1", threads[0].ProviderThreadID)
-	assert.Zero(t, client.listIssueCommentsCalled.Load())
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Equal("thread-1", threads[0].ProviderThreadID)
+	assert.Zero(client.listIssueCommentsCalled.Load())
 }
 
 // TestSyncOpenMRFromBulkPersistsWorkflowApproval verifies the GraphQL

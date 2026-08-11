@@ -3,10 +3,10 @@
 //
 // The harness drives a real e2e backend (git worktrees + tmux) and
 // measures the workspace-switch:* User Timing marks emitted by
-// src/lib/instrumentation/workspaceSwitchTiming.ts across four
-// scenarios: warm and cold switches into a workspace running an
-// ordinary shell, and into one running an alternate-screen
-// application. Artifacts (timings.json, summary.txt, a Chromium
+// src/lib/instrumentation/workspaceSwitchTiming.ts across retained-hit,
+// forced-miss, and cold switches into workspaces running an ordinary
+// shell or an alternate-screen application. Artifacts (timings.json,
+// summary.txt, a Chromium
 // trace, and a Go execution trace) land in
 // test-results/workspace-switch-profile/<timestamp>/.
 
@@ -45,7 +45,7 @@ type SwitchMeasurement = {
 
 const frontendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-const iterations = Math.max(1, Number(process.env.KENN_FORGE_PROFILE_ITERATIONS ?? "3") || 3);
+const iterations = Math.max(10, Number(process.env.KENN_FORGE_PROFILE_ITERATIONS ?? "10") || 10);
 
 const outputDir =
   process.env.KENN_FORGE_PROFILE_OUT_DIR ??
@@ -55,11 +55,15 @@ const outputDir =
 // workspace with a running terminal session. A missing phase means
 // the wiring regressed, which would silently invalidate before/after
 // comparisons made with this harness.
-const requiredPhases = [
+const requiredRequestPhases = [
   "workspace-request-start",
   "workspace-request-end",
   "runtime-request-start",
   "runtime-request-end",
+];
+
+const requiredMissPhases = [
+  ...requiredRequestPhases,
   "fonts-ready",
   "terminal-constructed",
   "socket-open",
@@ -167,7 +171,7 @@ async function collectSwitchEntries(page: Page, workspaceId: string, sinceTime: 
         .getEntriesByType("measure")
         .some(
           (m) =>
-            m.name === "workspace-switch:first-paint" &&
+            (m.name === "workspace-switch:first-paint" || m.name === "workspace-switch:retained-first-paint") &&
             m.startTime > since &&
             (m as PerformanceMeasure).detail?.workspaceId === id,
         ),
@@ -200,7 +204,7 @@ function phaseDuration(entries: SwitchEntry[], phase: string): number | null {
 function deriveMetrics(entries: SwitchEntry[]): Record<string, number | null> {
   const d = (phase: string) => phaseDuration(entries, phase);
   const firstBytes = d("first-bytes");
-  const firstPaint = d("first-paint");
+  const firstPaint = d("retained-first-paint") ?? d("first-paint");
   return {
     routeToWorkspaceRequestStart: d("workspace-request-start"),
     routeToWorkspaceRequestEnd: d("workspace-request-end"),
@@ -213,6 +217,50 @@ function deriveMetrics(entries: SwitchEntry[]): Record<string, number | null> {
     routeToFirstPaint: firstPaint,
     firstBytesToFirstPaint: firstBytes !== null && firstPaint !== null ? firstPaint - firstBytes : null,
   };
+}
+
+async function setRetainedSessions(api: APIRequestContext, limit: number): Promise<void> {
+  const currentResponse = await api.get("/api/v1/settings");
+  expect(currentResponse.ok()).toBe(true);
+  const current = (await currentResponse.json()) as { terminal: Record<string, unknown> };
+  const updateResponse = await api.put("/api/v1/settings", {
+    data: {
+      terminal: {
+        ...current.terminal,
+        retained_sessions: limit,
+      },
+    },
+  });
+  expect(updateResponse.ok()).toBe(true);
+}
+
+async function primeWarmSwitches(
+  page: Page,
+  baseURL: string,
+  shellWorkspaceId: string,
+  altScreenWorkspaceId: string,
+): Promise<void> {
+  await page.goto(`${baseURL}/terminal/${altScreenWorkspaceId}`);
+  await collectSwitchEntries(page, altScreenWorkspaceId, -1);
+  let sinceTime = await page.evaluate(() => performance.now());
+  await spaSwitch(page, shellWorkspaceId);
+  await collectSwitchEntries(page, shellWorkspaceId, sinceTime);
+  sinceTime = await page.evaluate(() => performance.now());
+  await spaSwitch(page, altScreenWorkspaceId);
+  await collectSwitchEntries(page, altScreenWorkspaceId, sinceTime);
+}
+
+function percentile(values: number[], fraction: number): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * fraction)));
+  return sorted[index]!;
+}
+
+function firstPaintDurations(measurements: SwitchMeasurement[], scenario: string): number[] {
+  return measurements
+    .filter((measurement) => measurement.scenario === scenario)
+    .map((measurement) => measurement.derived.routeToFirstPaint)
+    .filter((duration): duration is number => duration !== null);
 }
 
 async function measureSwitch(
@@ -352,6 +400,7 @@ test.describe("workspace switch profiling", () => {
       );
 
       await openWorkspaceAndLaunchTerminal(page, baseURL, shellWorkspace.id);
+      await runShellCommandInTerminal(page, "yes 0123456789abcdef0123456789abcdef | head -c 65536");
       await openWorkspaceAndLaunchTerminal(page, baseURL, altScreenWorkspace.id);
       await runShellCommandInTerminal(page, `less ${pagerFile}`);
       await assertAlternateScreenActive(isolatedServer.info.config_path);
@@ -406,11 +455,24 @@ test.describe("workspace switch profiling", () => {
       });
 
       const measurements: SwitchMeasurement[] = [];
-      // The page currently shows the alt-screen workspace, so each
-      // iteration alternates shell -> alt-screen.
+      // First measure retained cache hits. Reload after changing the setting so
+      // startup hydration applies the new limit before either session is
+      // primed; external settings writes do not mutate the current SPA store.
+      await setRetainedSessions(api, 10);
+      await primeWarmSwitches(page, baseURL, shellWorkspace.id, altScreenWorkspace.id);
       for (let iteration = 0; iteration < iterations; iteration += 1) {
-        measurements.push(await measureWarmSwitch(page, shellWorkspace.id, "warm-ordinary-shell", iteration));
-        measurements.push(await measureWarmSwitch(page, altScreenWorkspace.id, "warm-alt-screen", iteration));
+        measurements.push(await measureWarmSwitch(page, shellWorkspace.id, "hit-ordinary-shell", iteration));
+        measurements.push(await measureWarmSwitch(page, altScreenWorkspace.id, "hit-alt-screen", iteration));
+      }
+
+      // Then force the old reconnect/replay path with retention disabled. The
+      // tmux sessions and their capped ordinary-buffer history remain live, so
+      // the only intended difference is browser-side terminal retention.
+      await setRetainedSessions(api, 0);
+      await primeWarmSwitches(page, baseURL, shellWorkspace.id, altScreenWorkspace.id);
+      for (let iteration = 0; iteration < iterations; iteration += 1) {
+        measurements.push(await measureWarmSwitch(page, shellWorkspace.id, "miss-ordinary-shell", iteration));
+        measurements.push(await measureWarmSwitch(page, altScreenWorkspace.id, "miss-alt-screen", iteration));
       }
 
       measurements.push(await measureColdLoad(page, baseURL, shellWorkspace.id, "cold-ordinary-shell"));
@@ -451,9 +513,22 @@ test.describe("workspace switch profiling", () => {
 
       for (const measurement of measurements) {
         const phases = measurement.entries.map((entry) => entry.name.replace("workspace-switch:", ""));
+        const requiredPhases = measurement.scenario.startsWith("hit-")
+          ? [...requiredRequestPhases, "retained-first-paint"]
+          : requiredMissPhases;
         for (const phase of requiredPhases) {
           expect(phases, `${measurement.scenario} #${measurement.iteration} must record ${phase}`).toContain(phase);
         }
+      }
+
+      for (const kind of ["ordinary-shell", "alt-screen"]) {
+        const hits = firstPaintDurations(measurements, `hit-${kind}`);
+        const misses = firstPaintDurations(measurements, `miss-${kind}`);
+        expect(hits).toHaveLength(iterations);
+        expect(misses).toHaveLength(iterations);
+        expect(percentile(hits, 0.75), `${kind} retained-hit p75 must beat forced-miss p25`).toBeLessThan(
+          percentile(misses, 0.25),
+        );
       }
     } finally {
       await api?.dispose();

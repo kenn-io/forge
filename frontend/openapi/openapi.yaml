@@ -7430,6 +7430,9 @@ components:
         line_height:
           format: double
           type: number
+        retained_sessions:
+          format: int64
+          type: integer
         scrollback:
           format: int64
           type: integer
@@ -7442,6 +7445,7 @@ components:
         - cursor_blink
         - font_ligatures
         - hide_tmux_status
+        - retained_sessions
       type: object
     TerminalClipboardInputBody:
       additionalProperties: false

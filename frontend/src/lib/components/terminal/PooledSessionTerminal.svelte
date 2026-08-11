@@ -5,6 +5,7 @@
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import TerminalPane from "./TerminalPane.svelte";
   import { focusIsSacred } from "./terminal-focus.ts";
+  import { createWorkspaceSwitchPaneTimer } from "../../instrumentation/workspaceSwitchTiming.js";
   import {
     consumeSessionFocus,
     pendingSessionFocus,
@@ -16,10 +17,12 @@
     parking: HTMLElement | null;
     slotEl: HTMLElement | null;
     active: boolean;
+    retained: boolean;
     onExit: (code: number) => void;
+    onConnectionChange: (connected: boolean) => void;
   }
 
-  let { session, parking, slotEl, active, onExit }: Props = $props();
+  let { session, parking, slotEl, active, retained, onExit, onConnectionChange }: Props = $props();
   const appRuntime = getAppRuntime();
 
   let wrapper = $state<HTMLElement | null>(null);
@@ -28,6 +31,10 @@
   // has laid it out. Activating a terminal earlier makes the fit addon measure
   // the parking node and resize the real tmux pane to one row.
   let attached = $state(false);
+  // Set when this component has actually entered the released cache. A normal
+  // pane transfer also reparents the wrapper, but must not be reported as a
+  // retained-session hit by workspace-switch profiling.
+  let wasRetained = false;
 
   // The wrapper owns the keyboard when the last focus event landed inside it.
   // Focus events are the only reliable signal: a real pane move tears down the
@@ -62,6 +69,7 @@
     attached = false;
     park.appendChild(node);
     if (!destination || destination === park) {
+      if (retained) wasRetained = true;
       // Parked with nowhere to go: the pane closed — unless this park is the
       // transient first half of a cross-flush transfer whose destination
       // registers a moment later (a promotion can do this). Settle on the
@@ -85,6 +93,9 @@
       );
       return execution.interrupt;
     }
+    const retainedPaintTimer = wasRetained && !retained
+      ? createWorkspaceSwitchPaneTimer()
+      : null;
     const execution = untrack(() =>
       appRuntime.runCommand(
         Effect.promise(() => tick()).pipe(
@@ -93,6 +104,18 @@
           Effect.andThen(Effect.sync(() => {
             attached = true;
           })),
+          Effect.andThen(
+            retainedPaintTimer
+              ? nextAnimationFrame.pipe(
+                  Effect.andThen(
+                    Effect.sync(() => {
+                      retainedPaintTimer.record("retained-first-paint", { cacheHit: true });
+                      wasRetained = false;
+                    }),
+                  ),
+                )
+              : Effect.void,
+          ),
         ),
         {
           operation: "attach pooled terminal session",
@@ -185,10 +208,12 @@
     reconnectOnExit={false}
     disabled={session.disabled ?? false}
     active={active && attached}
+    renderingEnabled={!retained}
     autoFocus={false}
     cursorWheelInput={session.cursorWheelInput ?? false}
     initialStatus={session.status}
     onExit={(code) => onExit(code)}
+    onConnectionChange={(connected) => onConnectionChange(connected)}
   />
 </div>
 

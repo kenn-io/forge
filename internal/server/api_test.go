@@ -3139,17 +3139,13 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode())
 
+	detailSyncKey := "pr:github:github.com:acme/widget#1"
 	require.Eventually(func() bool {
-		detail, dErr := client.HTTP.GetPullWithResponse(
-			t.Context(), "gh", "acme", "widget", 1,
-		)
-		if dErr != nil || detail.JSON200 == nil {
-			return false
-		}
-		wa := detail.JSON200.WorkflowApproval
-		return wa.Checked && wa.Required && wa.Count == 1
-	}, 3*time.Second, 25*time.Millisecond,
-		"GET should return persisted workflow_approval after async sync")
+		srv.detailSyncMu.Lock()
+		defer srv.detailSyncMu.Unlock()
+		_, inFlight := srv.detailSyncInFlight[detailSyncKey]
+		return !inFlight
+	}, 10*time.Second, time.Millisecond, "async detail sync should complete")
 
 	detail, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,

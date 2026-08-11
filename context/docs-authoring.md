@@ -12,9 +12,9 @@ screenshots, or the Zensical site.
 - Promote rationale to an ADR only when it explains a constraint that still
   binds current code and is not derivable from it; reports retain reproducible
   outcomes.
-- Do not retain completed plans or design specs, superseded proposals, review
-  notes, prototype comparisons, or rollout narratives after extracting current
-  contracts.
+- Superpowers plans and design specs are temporary working artifacts, not repository
+  documentation. Before committing, distill current contracts into the matching
+  `context/` topic docs, delete the artifacts, and do not convert them into ADRs.
 - Verify candidate documentation against implementation and tests before
   promoting it into living documentation.
 

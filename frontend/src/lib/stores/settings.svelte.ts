@@ -109,6 +109,10 @@ export function createSettingsStore() {
     return terminalSettings.font_ligatures;
   }
 
+  function getTerminalRetainedSessions(): number {
+    return terminalSettings.retained_sessions;
+  }
+
   function hasConfiguredRepos(): boolean {
     return repos.length > 0;
   }
@@ -137,6 +141,7 @@ export function createSettingsStore() {
     getTerminalLetterSpacing,
     getTerminalCursorBlink,
     getTerminalFontLigatures,
+    getTerminalRetainedSessions,
     hasConfiguredRepos,
     isSettingsLoaded,
   };

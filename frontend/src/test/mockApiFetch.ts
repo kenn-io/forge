@@ -312,6 +312,7 @@ export const mockSettings = {
     cursor_blink: true,
     font_ligatures: false,
     hide_tmux_status: false,
+    retained_sessions: 10,
   },
   agents: [],
   notifications: {

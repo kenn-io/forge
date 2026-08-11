@@ -55,6 +55,10 @@ let parkingEl: HTMLElement | null = null;
 const slotEls = $state<Record<SessionHostKey, HTMLElement | null>>({});
 const slotVisible = $state<Record<SessionHostKey, boolean>>({});
 let mounted = $state<readonly MountedSession[]>([]);
+const claimed = $state<Record<SessionHostKey, boolean>>({});
+const connected = new Map<SessionHostKey, boolean>();
+let releasedKeys: SessionHostKey[] = [];
+let retainedSessionLimit = 10;
 
 export function registerSessionSlot(key: SessionHostKey, el: HTMLElement | null): void {
   // A targeted property write, not `slotEls = { ...slotEls, [key]: el }`. This
@@ -154,7 +158,23 @@ export function isSessionMounted(key: SessionHostKey): boolean {
   return mounted.some((session) => session.hostKey === key);
 }
 
+export function isSessionClaimed(key: SessionHostKey): boolean {
+  return claimed[key] === true;
+}
+
+function removeReleasedKey(key: SessionHostKey): void {
+  releasedKeys = releasedKeys.filter((candidate) => candidate !== key);
+}
+
+function clearSessionFocusForKey(key: SessionHostKey): void {
+  if (pendingFocusKey !== key) return;
+  pendingFocusKey = null;
+  pendingFocusSoft = false;
+}
+
 export function noteSessionMounted(session: MountedSession): void {
+  claimed[session.hostKey] = true;
+  removeReleasedKey(session.hostKey);
   const existing = mounted.find((candidate) => candidate.hostKey === session.hostKey);
   if (existing) {
     if (
@@ -172,18 +192,68 @@ export function noteSessionMounted(session: MountedSession): void {
   mounted = [...mounted, session];
 }
 
-export function noteSessionUnmounted(key: SessionHostKey): void {
+export function noteSessionDiscarded(key: SessionHostKey): void {
   if (!isSessionMounted(key)) return;
-  // A focus request this session never got to consume dies with it. Left armed, it
-  // waits for a subtree under the same key to mount - a revisit, or the pane being
-  // reopened for its own reasons - and steals focus for a Focus Terminal the user
-  // pressed long before, somewhere else.
-  if (pendingFocusKey === key) {
-    pendingFocusKey = null;
-    pendingFocusSoft = false;
-  }
+  // A focus request this session never got to consume dies with it. Left armed,
+  // it waits for a subtree under the same key to mount and steals focus later.
+  clearSessionFocusForKey(key);
+  delete claimed[key];
+  connected.delete(key);
+  removeReleasedKey(key);
   mounted = mounted.filter((session) => session.hostKey !== key);
   registerSessionSlot(key, null);
+}
+
+function trimReleasedSessions(protectedPrefix?: string): void {
+  while (releasedKeys.length > retainedSessionLimit) {
+    const oldest = releasedKeys.find((key) => protectedPrefix === undefined || !key.startsWith(protectedPrefix));
+    if (oldest === undefined) return;
+    noteSessionDiscarded(oldest);
+  }
+}
+
+/**
+ * Release a claimed session into the bounded cache.
+ *
+ * During a workspace switch, the destination runtime snapshot arrives after
+ * the previous workspace is released. Protecting that destination's prefix
+ * lets cache trimming evict another released session instead of destroying the
+ * terminal that the pending snapshot is about to reclaim.
+ */
+export function noteSessionReleased(key: SessionHostKey, protectedPrefix?: string): void {
+  if (!isSessionMounted(key)) return;
+  claimed[key] = false;
+  clearSessionFocusForKey(key);
+  removeReleasedKey(key);
+  // A released component can stop its reconnect loop only by leaving the keyed
+  // pool. Check current state as well as future disconnect notifications.
+  if (connected.get(key) !== true) {
+    noteSessionDiscarded(key);
+    return;
+  }
+  releasedKeys = [...releasedKeys, key];
+  trimReleasedSessions(protectedPrefix);
+}
+
+export function noteSessionConnection(key: SessionHostKey, isConnected: boolean): void {
+  if (!isSessionMounted(key)) {
+    connected.delete(key);
+    return;
+  }
+  connected.set(key, isConnected);
+  if (!isConnected && !isSessionClaimed(key)) noteSessionDiscarded(key);
+}
+
+export function setRetainedSessionLimit(limit: number): void {
+  retainedSessionLimit = Math.max(0, Math.min(20, Math.trunc(limit)));
+  trimReleasedSessions();
+}
+
+export function discardSessionsWithPrefix(prefix: string): void {
+  const sessions = mounted.slice();
+  for (const session of sessions) {
+    if (session.hostKey.startsWith(prefix)) noteSessionDiscarded(session.hostKey);
+  }
 }
 
 const exitListeners = new Set<(key: SessionHostKey, code: number) => void>();
@@ -201,7 +271,12 @@ export function onSessionExited(cb: (key: SessionHostKey, code: number) => void)
 }
 
 export function noteSessionExited(key: SessionHostKey, code: number): void {
-  for (const listener of [...exitListeners]) listener(key, code);
+  // Final disposal is app-level authority: a released session can exit while
+  // no workspace view exists to hear the event. Remove it before notifying any
+  // current view so listeners never observe a dead cache entry.
+  noteSessionDiscarded(key);
+  const listeners = Array.from(exitListeners);
+  for (const listener of listeners) listener(key, code);
 }
 
 // A Focus Terminal aimed at a promoted session whose terminal is not on screen
@@ -253,6 +328,10 @@ export function resetSessionHostForTest(): void {
   parkingEl = null;
   for (const key of Object.keys(slotEls)) delete slotEls[key];
   for (const key of Object.keys(slotVisible)) delete slotVisible[key];
+  for (const key of Object.keys(claimed)) delete claimed[key];
+  connected.clear();
+  releasedKeys = [];
+  retainedSessionLimit = 10;
   mounted = [];
   pendingFocusKey = null;
   pendingFocusSoft = false;

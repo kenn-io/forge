@@ -11,9 +11,9 @@
   // In the app that pool is mounted by WorkspaceHost, so a test that mounts the
   // view alone would have slots and no terminals.
   type ViewProps = ComponentProps<typeof WorkspaceTerminalView>;
-  type Props = ViewProps & { runtime?: AppRuntime };
+  type Props = ViewProps & { runtime?: AppRuntime; showView?: boolean };
 
-  let { runtime, ...props }: Props = $props();
+  let { runtime, showView = true, ...props }: Props = $props();
   const initialRuntime = untrack(() => runtime);
   if (initialRuntime) {
     setAppRuntime(initialRuntime);
@@ -26,5 +26,7 @@
 </script>
 
 <SessionTerminalPool />
-<WorkspaceTerminalView {...props} />
+{#if showView}
+  <WorkspaceTerminalView {...props} />
+{/if}
 {@render externalDock?.()}

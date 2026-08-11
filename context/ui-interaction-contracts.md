@@ -213,6 +213,10 @@ Persisted controls must state their scope clearly.
   mutation generation; value equality alone is ABA-prone, while stale full-object
   saves can erase unrelated preferences
   (`frontend/src/lib/stores/terminal-settings-persistence.ts::saveTerminalSettings`).
+- Server-backed settings with irreversible local effects must publish only after
+  persistence succeeds, not during preview or optimistic save; lowering terminal
+  retention destroys cache entries that rollback cannot reconstruct
+  (`frontend/src/lib/stores/terminal-settings-persistence.ts::isDeferredSetting`).
 - A settings form that snapshots its baseline must either merge sibling mutations
   or keep the form and those controls mutually gated while either save settles
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::terminalZoomSaving`).
@@ -354,14 +358,15 @@ Keyboard handlers must have one clear owner for each key press.
 - Session terminals are one live subtree PER SESSION KEY, owned by the app-level
   pool: every container — workflow tabs, the terminal dock, a promoted detail
   pane — renders a `SessionTerminalSlot` and none renders a `TerminalPane` of its
-  own, or one tmux session gets two sockets. A container mounts a session into
-  the pool only while it actually renders it, since a parked terminal keeps its
-  websocket (`frontend/src/lib/stores/session-host.svelte.ts`).
+  own, or one tmux session gets two sockets. A live view's desired set claims its
+  sessions even behind hidden tabs; only sessions released by every view enter
+  the bounded retention cache (`frontend/src/lib/stores/session-host.svelte.ts::isSessionClaimed`).
 - xterm WebGL texture atlases are shared across matching live panes; every explicit
   atlas clear must refresh sibling renderers, or cached glyph coordinates display
   repurposed characters (`frontend/src/lib/components/terminal/sharedTerminalTextureAtlas.ts::clearSharedTerminalTextureAtlas`).
 - A pooled terminal constructs immediately, even in parking, so every mounted
-  session keeps its websocket; it opts out of renderer autofocus. After
+  session keeps its websocket; retained sessions disable WebGL until reclaimed,
+  and the pool opts out of renderer autofocus. After
   attachment the pool honors queued focus requests — explicit ones always, soft
   navigation-driven ones (a detail surface switched items) only when current
   focus is not sacred — and restores focus-event-tracked keyboard ownership: a

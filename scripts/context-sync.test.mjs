@@ -69,14 +69,12 @@ test("context sync rejects reintroduced Superpowers documents", async (t) => {
   await mkdir(specs, { recursive: true });
   await writeFile(path.join(specs, "completed-design.md"), "# Completed design\n");
 
-  await assert.rejects(
-    execFile(scriptPath, ["--check"], { cwd: root, env: isolatedGitEnv() }),
-    (error) => {
-      assert.match(error.stderr, /docs\/superpowers must remain absent/);
-      assert.match(error.stderr, /structural check failed/);
-      return true;
-    },
-  );
+  await assert.rejects(execFile(scriptPath, ["--check"], { cwd: root, env: isolatedGitEnv() }), (error) => {
+    assert.match(error.stderr, /docs\/superpowers must remain absent/);
+    assert.match(error.stderr, /do not convert them into ADRs/);
+    assert.match(error.stderr, /structural check failed/);
+    return true;
+  });
 });
 
 test("context sync fixtures ignore inherited hook repository bindings", async (t) => {

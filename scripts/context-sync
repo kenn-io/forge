@@ -36,7 +36,7 @@ require_file "skills/context-sync/SKILL.md"
 
 if [ -d "$root/docs/superpowers" ] &&
   find "$root/docs/superpowers" -type f -print -quit | grep -q .; then
-  printf 'context-sync: docs/superpowers must remain absent; extract durable contracts into context or Zensical docs\n' >&2
+  printf 'context-sync: docs/superpowers must remain absent; distill durable contracts into context topic docs, remove the transient artifacts, and do not convert them into ADRs\n' >&2
   status=1
 fi
 

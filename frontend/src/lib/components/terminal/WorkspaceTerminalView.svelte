@@ -33,9 +33,10 @@
   } from "../../api/workspace-runtime.js";
   import {
     mountedSessions,
+    noteSessionDiscarded,
     noteSessionMounted,
+    noteSessionReleased,
     isSessionSlotVisible,
-    noteSessionUnmounted,
     onSessionExited,
     requestSessionFocus,
     sessionHostKey,
@@ -1500,17 +1501,15 @@
     );
   }
 
-  // Prefixes this view has ever mounted terminals under, so moving to another
-  // workspace can take the previous one's down. Nothing else would: the pool
-  // outlives this view, and every parked terminal holds a live websocket, so
-  // browsing ten workspaces would otherwise leave ten attachments open.
+  // Prefixes this view has claimed terminals under. Moving to another workspace
+  // releases the previous claims into the app-level bounded retention cache.
   const ownedSessionPrefixes = new Set<string>();
 
   function releaseOwnedSessions(except?: string): void {
     for (const prefix of ownedSessionPrefixes) {
       if (prefix === except) continue;
       for (const session of mountedSessions()) {
-        if (session.hostKey.startsWith(prefix)) noteSessionUnmounted(session.hostKey);
+        if (session.hostKey.startsWith(prefix)) noteSessionReleased(session.hostKey, except);
       }
       ownedSessionPrefixes.delete(prefix);
     }
@@ -1530,7 +1529,7 @@
   //
   // Reconciled from state rather than pushed from each mount/unmount call site:
   // a session changes region without either side calling anything, and a missed
-  // noteSessionUnmounted would leave a socket attached to nothing.
+  // a missed release would leave a claimed socket attached to nothing.
   $effect(() => {
     const prefix = sessionHostPrefix(workspaceId, workspaceHostKey);
     const desired = new Map<SessionHostKey, MountedSession>();
@@ -1558,6 +1557,13 @@
         disabled: actionsBlocked,
       });
     }
+    // An empty list is authoritative only after this workspace's runtime
+    // snapshot is live. During a route switch `runtimeSessions` is deliberately
+    // empty while the fetch is pending; treating that transient state as a
+    // tombstone would discard the retained terminal just before it is reused.
+    const liveGenerationKeys = runtimeLive
+      ? new Set(runtimeSessions.map(sessionHostKeyFor))
+      : null;
     untrack(() => {
       releaseOwnedSessions(prefix);
       if (desired.size > 0) ownedSessionPrefixes.add(prefix);
@@ -1567,13 +1573,17 @@
       for (const session of mountedSessions()) {
         if (!session.hostKey.startsWith(prefix)) continue;
         if (desired.has(session.hostKey)) continue;
-        noteSessionUnmounted(session.hostKey);
+        if (liveGenerationKeys === null || liveGenerationKeys.has(session.hostKey)) {
+          noteSessionReleased(session.hostKey, liveGenerationKeys === null ? prefix : undefined);
+        } else {
+          noteSessionDiscarded(session.hostKey);
+        }
       }
     });
   });
 
-  // The pool is app-level, so a destroyed view leaves its terminals running
-  // forever unless it hands them back.
+  // A destroyed view releases its claims; the app-level pool applies the
+  // configured retention limit and owns final disposal.
   $effect(() => () => untrack(() => releaseOwnedSessions()));
 
   // Pooled terminals report an exit by key; only this view can map that back to

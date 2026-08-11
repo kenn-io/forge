@@ -6,10 +6,10 @@
 // hosted WorkspaceHost/WorkspaceTerminalView instance reparents between the
 // Workspaces tab slot and a per-surface WorkspaceDockPanel slot without
 // tearing down the terminal underneath it. A `data-continuity` tag applied
-// via evaluate is the proof a reparent preserves the exact DOM node — a
-// destroy+recreate (the reconnecting switch a differing remembered key
-// takes) cannot carry the tag forward. After every reparent a command is
-// typed into the terminal that creates a marker file in the workspace's
+// via evaluate is the proof a reparent or released-session reclaim preserves
+// the exact DOM node. Tests that require destroy+recreate disable retention
+// and verify the tag is absent after reconnect. After every reparent a command
+// is typed into the terminal that creates a marker file in the workspace's
 // worktree, and the test asserts the file appears on disk: keystrokes must
 // travel the WebSocket to the real tmux shell and execute. This is durable
 // evidence the session is live — unlike a screenshot-hash diff, which
@@ -31,6 +31,7 @@ import {
 } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 import { runPaletteCommand } from "./support/paletteCommands";
+import { openSettingsPanel } from "./support/settingsPanel";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -515,6 +516,47 @@ async function expectPersistedTerminalFontSize(api: APIRequestContext, fontSize:
       return settings.terminal.font_size;
     })
     .toBe(fontSize);
+}
+
+async function setRetainedSessions(api: APIRequestContext, limit: number): Promise<void> {
+  const currentResponse = await api.get("/api/v1/settings");
+  expect(currentResponse.ok()).toBe(true);
+  const current = (await currentResponse.json()) as { terminal: Record<string, unknown> };
+  const updateResponse = await api.put("/api/v1/settings", {
+    data: {
+      terminal: {
+        ...current.terminal,
+        retained_sessions: limit,
+      },
+    },
+  });
+  expect(updateResponse.ok(), await updateResponse.text()).toBe(true);
+}
+
+async function trackSessionWebSockets(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const log: Array<{ id: number; url: string; closed: boolean }> = [];
+    (window as unknown as { __wsLog: typeof log }).__wsLog = log;
+    const Native = window.WebSocket;
+    class TrackedWebSocket extends Native {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        const entry = { id: log.length + 1, url: String(url), closed: false };
+        log.push(entry);
+        this.addEventListener("close", () => {
+          entry.closed = true;
+        });
+      }
+    }
+    window.WebSocket = TrackedWebSocket as unknown as typeof WebSocket;
+  });
+}
+
+function sessionWebSockets(page: Page, workspaceId: string) {
+  return page.evaluate((needle) => {
+    const log = (window as unknown as { __wsLog?: Array<{ id: number; url: string; closed: boolean }> }).__wsLog ?? [];
+    return log.filter((entry) => entry.url.includes(needle));
+  }, `/workspaces/${workspaceId}/runtime/sessions/`);
 }
 
 test.describe("inline workspace pane continuity", () => {
@@ -1611,7 +1653,7 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
-  test("a different remembered key takes the reconnecting switch path", async ({ page }) => {
+  test("a different remembered key parks the released terminal while switching", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -1642,20 +1684,26 @@ test.describe("inline workspace pane continuity", () => {
       });
       await expect(page.locator('[data-continuity="witness-a"]')).toBeVisible();
 
-      // Flip to the Workspaces tab: route memory points at B, not A, so WTV
-      // must take its normal reconnecting switch instead of a reparent.
+      // Flip to the Workspaces tab: route memory points at B, not A. The
+      // released A terminal remains parked for reuse while B owns the visible
+      // workspace slot.
       await selectTopBarTab(page, "Workspaces");
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceB.id}$`));
 
-      await expect(page.locator('[data-continuity="witness-a"]')).toHaveCount(0);
+      const parkedA = page.locator('.session-pool-parking [data-continuity="witness-a"]');
+      await expect(parkedA).toHaveCount(1);
+      await expect(parkedA).not.toBeVisible();
       await expect(page.locator(".workspace-list-sidebar .ws-row.selected")).toContainText(DARK_MODE_ISSUE_TITLE);
+      const workspaceBContainer = await openTerminalPanel(page);
+      await expect(workspaceBContainer).toBeVisible();
+      await expect(workspaceBContainer).not.toHaveAttribute("data-continuity", "witness-a");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
     }
   });
 
-  test("tmux wheel scrolling survives local workspace renderer replacement", async ({ page }) => {
+  test("tmux wheel scrolling survives retained workspace terminal reuse", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -1705,7 +1753,7 @@ test.describe("inline workspace pane continuity", () => {
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceA.id}$`));
       const returnedA = page.locator(".terminal-panel.open .terminal-container").first();
       await expect(returnedA).toBeVisible();
-      await expect(page.locator('[data-continuity="mouse-before-standalone-switch"]')).toHaveCount(0);
+      await expect(returnedA).toHaveAttribute("data-continuity", "mouse-before-standalone-switch");
       await expectWheelScroll(page, returnedA, isolatedServer, runtimeTmuxSessionA);
       exitTmuxCopyMode(isolatedServer, runtimeTmuxSessionA);
       const standalonePaste = "standalone-bracketed-paste";
@@ -1723,7 +1771,7 @@ test.describe("inline workspace pane continuity", () => {
 
       const inlineA = page.locator(".detail-pane-workspace-slot .terminal-container").first();
       await expect(inlineA).toBeVisible();
-      await expect(page.locator('[data-continuity="mouse-before-inline-switch"]')).toHaveCount(0);
+      await expect(inlineA).toHaveAttribute("data-continuity", "mouse-before-inline-switch");
       await expectWheelScroll(page, inlineA, isolatedServer, runtimeTmuxSessionA);
       exitTmuxCopyMode(isolatedServer, runtimeTmuxSessionA);
       const inlinePaste = "inline-bracketed-paste";
@@ -1888,6 +1936,10 @@ test.describe("inline workspace pane continuity", () => {
         const output = observeTerminalOutput(page);
         isolatedServer = await startIsolatedWorkspaceE2EServer();
         api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+        // This regression intentionally crosses a renderer/socket boundary;
+        // disable the released-session cache so workspace switching still
+        // exercises replay instead of reclaiming the same terminal.
+        await setRetainedSessions(api, 0);
         const workspaceA = await createIssueWorkspace(api, 10);
         const workspaceB = await createIssueWorkspace(api, 11);
 
@@ -2177,7 +2229,6 @@ test.describe("inline workspace pane continuity", () => {
       await expect.poll(async () => (await runtimeSockets()).length).toBe(1);
       const runtimeSocketURL = (await runtimeSockets())[0]!.url;
 
-      await page.context().setOffline(true);
       await page.evaluate((workspaceId) => {
         (
           window as unknown as {
@@ -2186,6 +2237,7 @@ test.describe("inline workspace pane continuity", () => {
         ).__closeRuntimeSockets?.(workspaceId);
       }, workspace.id);
       await expect.poll(async () => (await runtimeSockets())[0]?.closed).toBe(true);
+      await page.context().setOffline(true);
 
       runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "off"]);
       writeFileSync(disableSignal, "disable\n", "utf8");
@@ -2351,7 +2403,6 @@ test.describe("inline workspace pane continuity", () => {
       });
       const cursorReportsBefore = output.cursorReports().length;
 
-      await page.context().setOffline(true);
       await page.evaluate((workspaceId) => {
         (
           window as unknown as {
@@ -2360,6 +2411,7 @@ test.describe("inline workspace pane continuity", () => {
         ).__closeSplitReplaySockets?.(workspaceId);
       }, workspace.id);
       await expect.poll(async () => (await runtimeSockets())[0]?.closed).toBe(true);
+      await page.context().setOffline(true);
 
       await page.context().setOffline(false);
       await expect
@@ -2384,16 +2436,87 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
-  test("switching workspaces closes the previous workspace's live attachment", async ({ page }) => {
-    // The pool outlives the view, and a parked terminal keeps its websocket, so
-    // nothing hands one back on its own: browsing workspaces would leave a live
-    // tmux attachment per workspace visited. The view's release is the only
-    // thing that closes this one.
-    //
-    // Registry-level unit coverage cannot see a real socket, and an earlier
-    // attempt at this test navigated with page.goto — which closes every socket
-    // on its own and passed with the release removed. This switch is
-    // client-side, so the socket's fate is the behavior under test.
+  test("switching A to B to A reuses A's terminal and live attachment", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      await setRetainedSessions(api, 1);
+      const workspaceA = await createIssueWorkspace(api, 10);
+      const workspaceB = await createIssueWorkspace(api, 11);
+      await trackSessionWebSockets(page);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspaceA.id}`);
+      const containerA = await openTerminalPanel(page);
+      await typeMarkerCommand(page, containerA, workspaceA.worktree_path, "retained-marker-a-before");
+      await containerA.evaluate((element) => element.setAttribute("data-retained-terminal-witness", "a"));
+      const originalSocket = (await sessionWebSockets(page, workspaceA.id))[0];
+      expect(originalSocket).toBeDefined();
+      expect(originalSocket!.closed).toBe(false);
+
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: DARK_MODE_ISSUE_TITLE }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceB.id}$`));
+      expect(await sessionWebSockets(page, workspaceA.id)).toEqual([originalSocket]);
+
+      const containerB = await openTerminalPanel(page);
+      await typeMarkerCommand(page, containerB, workspaceB.worktree_path, "retained-marker-b");
+
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: SAFARI_ISSUE_TITLE }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceA.id}$`));
+      const returnedA = page.locator('[data-retained-terminal-witness="a"]');
+      await expect(returnedA).toBeVisible();
+      await typeMarkerCommand(page, returnedA, workspaceA.worktree_path, "retained-marker-a-after");
+      expect(await sessionWebSockets(page, workspaceA.id)).toEqual([originalSocket]);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("switching workspaces closes the previous attachment when retention is disabled", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      await setRetainedSessions(api, 0);
+      const workspaceA = await createIssueWorkspace(api, 10);
+      const workspaceB = await createIssueWorkspace(api, 11);
+      await trackSessionWebSockets(page);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspaceA.id}`);
+      const containerA = await openTerminalPanel(page);
+      await typeMarkerCommand(page, containerA, workspaceA.worktree_path, "disabled-retention-marker-a");
+      expect(await sessionWebSockets(page, workspaceA.id)).toHaveLength(1);
+
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: DARK_MODE_ISSUE_TITLE }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceB.id}$`));
+      await expect
+        .poll(async () => (await sessionWebSockets(page, workspaceA.id)).every((entry) => entry.closed), {
+          timeout: 15_000,
+        })
+        .toBe(true);
+
+      const containerB = await openTerminalPanel(page);
+      await typeMarkerCommand(page, containerB, workspaceB.worktree_path, "disabled-retention-marker-b");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("failed retention save preserves a released terminal until a successful retry", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -2406,49 +2529,67 @@ test.describe("inline workspace pane continuity", () => {
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
       const workspaceA = await createIssueWorkspace(api, 10);
       const workspaceB = await createIssueWorkspace(api, 11);
-
-      // Record every session websocket the app opens and whether it has closed.
-      // The real connection is untouched; only its lifecycle is observed.
-      await page.addInitScript(() => {
-        const log: Array<{ url: string; closed: boolean }> = [];
-        (window as unknown as { __wsLog: typeof log }).__wsLog = log;
-        const Native = window.WebSocket;
-        class TrackedWebSocket extends Native {
-          constructor(url: string | URL, protocols?: string | string[]) {
-            super(url, protocols);
-            const entry = { url: String(url), closed: false };
-            log.push(entry);
-            this.addEventListener("close", () => {
-              entry.closed = true;
-            });
-          }
-        }
-        window.WebSocket = TrackedWebSocket as unknown as typeof WebSocket;
-      });
-
-      const sessionSockets = (workspaceId: string) =>
-        page.evaluate((needle) => {
-          const log = (window as unknown as { __wsLog?: Array<{ url: string; closed: boolean }> }).__wsLog ?? [];
-          return log.filter((entry) => entry.url.includes(needle));
-        }, `/workspaces/${workspaceId}/runtime/sessions/`);
+      await trackSessionWebSockets(page);
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspaceA.id}`);
-      const containerA = await openTerminalPanel(page);
-      // Attached, not merely constructed: only a live socket can create this.
-      await typeMarkerCommand(page, containerA, workspaceA.worktree_path, "release-marker-a");
-      expect(await sessionSockets(workspaceA.id)).toHaveLength(1);
+      const terminal = await openTerminalPanel(page);
+      await typeMarkerCommand(page, terminal, workspaceA.worktree_path, "failed-retention-save-before");
+      await terminal.evaluate((element) => element.setAttribute("data-retention-save-witness", "a"));
+      const originalSocket = (await sessionWebSockets(page, workspaceA.id))[0];
+      expect(originalSocket).toBeDefined();
 
-      // Client-side switch through the workspace list, so nothing but the view's
-      // own release can close A's socket.
       await page.locator(".workspace-list-sidebar .ws-row", { hasText: DARK_MODE_ISSUE_TITLE }).click();
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceB.id}$`));
-      await expect
-        .poll(async () => (await sessionSockets(workspaceA.id)).every((entry) => entry.closed), { timeout: 15_000 })
-        .toBe(true);
+      await openTerminalPanel(page);
 
-      // And the workspace switched to is fully live, not collateral damage.
-      const containerB = await openTerminalPanel(page);
-      await typeMarkerCommand(page, containerB, workspaceB.worktree_path, "release-marker-b");
+      await page.getByRole("button", { name: "Settings" }).click();
+      await expect(page).toHaveURL(/\/settings$/);
+      await openSettingsPanel(page, "Terminal");
+      const witness = page.locator('[data-retention-save-witness="a"]');
+      await expect(witness).toHaveCount(1);
+
+      let failNextSave = true;
+      await page.route("**/api/v1/settings", async (route) => {
+        if (route.request().method() !== "PUT") {
+          await route.fallback();
+          return;
+        }
+        if (failNextSave) {
+          failNextSave = false;
+          await route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ title: "Settings unavailable" }),
+          });
+          return;
+        }
+        await route.continue();
+      });
+
+      const retainedSessions = page.getByLabel("Retained terminal sessions");
+      const save = page.getByRole("button", { name: "Save", exact: true });
+      await retainedSessions.fill("0");
+      const failedSave = page.waitForResponse(
+        (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
+      );
+      await save.click();
+      expect((await failedSave).status()).toBe(503);
+      await expect(retainedSessions).toHaveValue("10");
+      await expect(witness).toHaveCount(1);
+      expect(await sessionWebSockets(page, workspaceA.id)).toEqual([originalSocket]);
+
+      await retainedSessions.fill("0");
+      const successfulSave = page.waitForResponse(
+        (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
+      );
+      await save.click();
+      expect((await successfulSave).status()).toBe(200);
+      await expect(witness).toHaveCount(0);
+      await expect
+        .poll(async () => (await sessionWebSockets(page, workspaceA.id)).every((entry) => entry.closed), {
+          timeout: 15_000,
+        })
+        .toBe(true);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

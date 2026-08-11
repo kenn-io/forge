@@ -524,13 +524,14 @@ func TestHandleUpdateSettings(t *testing.T) {
 	issues := config.Issues{HideBots: true}
 	workspaces := config.Workspaces{AutoAssignOnCreate: true}
 	terminal := config.Terminal{
-		FontFamily:     "\"Fira Code\", monospace",
-		FontSize:       16,
-		Scrollback:     5000,
-		LineHeight:     1.15,
-		CursorBlink:    new(true),
-		FontLigatures:  true,
-		HideTmuxStatus: true,
+		FontFamily:       "\"Fira Code\", monospace",
+		FontSize:         16,
+		Scrollback:       5000,
+		LineHeight:       1.15,
+		CursorBlink:      new(true),
+		FontLigatures:    true,
+		HideTmuxStatus:   true,
+		RetainedSessions: new(4),
 	}
 	body := updateSettingsRequest{
 		Activity:   &activity,
@@ -556,6 +557,8 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.InDelta(1.15, cfg2.Terminal.LineHeight, 0.001)
 	assert.True(cfg2.Terminal.FontLigatures)
 	assert.True(cfg2.Terminal.HideTmuxStatus)
+	require.NotNil(t, cfg2.Terminal.RetainedSessions)
+	assert.Equal(4, *cfg2.Terminal.RetainedSessions)
 }
 
 func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing.T) {
@@ -634,11 +637,12 @@ docs = false
 `, &mockGH{})
 
 	terminal := config.Terminal{
-		FontFamily:    "\"Iosevka Term\", monospace",
-		FontSize:      15,
-		Scrollback:    2000,
-		LetterSpacing: 1,
-		CursorBlink:   new(true),
+		FontFamily:       "\"Iosevka Term\", monospace",
+		FontSize:         15,
+		Scrollback:       2000,
+		LetterSpacing:    1,
+		CursorBlink:      new(true),
+		RetainedSessions: new(config.DefaultTerminalRetainedSessions),
 	}
 	body := updateSettingsRequest{
 		Terminal: &terminal,

@@ -1,21 +1,39 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   consumeSessionFocus,
+  discardSessionsWithPrefix,
   getSessionSlotElement,
+  isSessionClaimed,
   isSessionMounted,
   isSessionSlotVisible,
   mountedSessions,
+  noteSessionConnection,
+  noteSessionDiscarded,
+  noteSessionExited,
   noteSessionMounted,
-  noteSessionUnmounted,
+  noteSessionReleased,
+  onSessionExited,
   registerSessionSlot,
   requestSessionFocus,
   releaseSessionSlot,
   resetSessionHostForTest,
   sessionHostKey,
+  sessionHostPrefix,
+  setRetainedSessionLimit,
   setSessionSlotVisible,
 } from "./session-host.svelte.ts";
 
 const agentOnA = sessionHostKey("ws-1", undefined, "agent", "2026-01-01T00:00:00Z");
+
+function mountedSession(workspaceId: string, sessionKey: string) {
+  const hostKey = sessionHostKey(workspaceId, undefined, sessionKey, "2026-01-01T00:00:00Z");
+  return { hostKey, websocketPath: `/ws/${sessionKey}`, status: "running" };
+}
+
+function mountConnected(session: ReturnType<typeof mountedSession>): void {
+  noteSessionMounted(session);
+  noteSessionConnection(session.hostKey, true);
+}
 
 describe("session host registry", () => {
   beforeEach(() => resetSessionHostForTest());
@@ -40,7 +58,7 @@ describe("session host registry", () => {
     noteSessionMounted({ hostKey: agentOnA, websocketPath: "/ws/agent", status: "running" });
     requestSessionFocus(agentOnA);
 
-    noteSessionUnmounted(agentOnA);
+    noteSessionDiscarded(agentOnA);
 
     // Nothing consumed it, so it would sit armed until something mounted under this
     // key again - a revisit, or the pane reopening for its own reasons - and take the
@@ -151,7 +169,7 @@ describe("session host registry", () => {
     expect(mountedSessions()[0]?.status).toBe("running");
     expect(isSessionMounted(agentOnA)).toBe(true);
 
-    noteSessionUnmounted(agentOnA);
+    noteSessionDiscarded(agentOnA);
     expect(mountedSessions()).toHaveLength(0);
     expect(isSessionMounted(agentOnA)).toBe(false);
   });
@@ -159,9 +177,151 @@ describe("session host registry", () => {
   it("drops the slot of an unmounted session", () => {
     noteSessionMounted({ hostKey: agentOnA, websocketPath: "/ws/agent", status: "running" });
     registerSessionSlot(agentOnA, document.createElement("div"));
-    noteSessionUnmounted(agentOnA);
+    noteSessionDiscarded(agentOnA);
     // The terminal is gone, so a stale slot would have the pool reparenting a
     // subtree that no longer exists.
     expect(getSessionSlotElement(agentOnA)).toBeNull();
+  });
+
+  it("evicts released sessions in release order", () => {
+    const first = mountedSession("ws-1", "first");
+    const second = mountedSession("ws-2", "second");
+    const third = mountedSession("ws-3", "third");
+    setRetainedSessionLimit(2);
+
+    for (const session of [first, second, third]) {
+      mountConnected(session);
+      noteSessionReleased(session.hostKey);
+    }
+
+    expect(mountedSessions().map(({ hostKey }) => hostKey)).toEqual([second.hostKey, third.hostKey]);
+    expect(isSessionClaimed(second.hostKey)).toBe(false);
+    expect(isSessionClaimed(third.hostKey)).toBe(false);
+  });
+
+  it("protects a pending destination from eviction while releasing the previous workspace", () => {
+    const destination = mountedSession("ws-1", "agent");
+    const previous = mountedSession("ws-2", "agent");
+    setRetainedSessionLimit(1);
+    mountConnected(destination);
+    noteSessionReleased(destination.hostKey);
+    mountConnected(previous);
+
+    noteSessionReleased(previous.hostKey, sessionHostPrefix("ws-1", undefined));
+
+    expect(mountedSessions().map(({ hostKey }) => hostKey)).toEqual([destination.hostKey]);
+    expect(isSessionClaimed(destination.hostKey)).toBe(false);
+  });
+
+  it("moves a reclaimed session to the newest release position", () => {
+    const first = mountedSession("ws-1", "first");
+    const second = mountedSession("ws-2", "second");
+    const third = mountedSession("ws-3", "third");
+    setRetainedSessionLimit(2);
+    mountConnected(first);
+    noteSessionReleased(first.hostKey);
+    mountConnected(second);
+    noteSessionReleased(second.hostKey);
+
+    noteSessionMounted(first);
+    noteSessionReleased(first.hostKey);
+    mountConnected(third);
+    noteSessionReleased(third.hostKey);
+
+    expect(mountedSessions().map(({ hostKey }) => hostKey)).toEqual([first.hostKey, third.hostKey]);
+  });
+
+  it("does not count claimed sessions toward the released limit", () => {
+    const claimed = mountedSession("ws-1", "claimed");
+    const released = mountedSession("ws-2", "released");
+    setRetainedSessionLimit(1);
+    mountConnected(claimed);
+    mountConnected(released);
+
+    noteSessionReleased(released.hostKey);
+
+    expect(mountedSessions().map(({ hostKey }) => hostKey)).toEqual([claimed.hostKey, released.hostKey]);
+    expect(isSessionClaimed(claimed.hostKey)).toBe(true);
+  });
+
+  it("applies a lower limit immediately and zero disables retention", () => {
+    const first = mountedSession("ws-1", "first");
+    const second = mountedSession("ws-2", "second");
+    mountConnected(first);
+    noteSessionReleased(first.hostKey);
+    mountConnected(second);
+    noteSessionReleased(second.hostKey);
+
+    setRetainedSessionLimit(1);
+    expect(mountedSessions().map(({ hostKey }) => hostKey)).toEqual([second.hostKey]);
+    setRetainedSessionLimit(0);
+    expect(mountedSessions()).toEqual([]);
+  });
+
+  it("discards immediately when released while disconnected", () => {
+    const session = mountedSession("ws-1", "agent");
+    noteSessionMounted(session);
+
+    noteSessionReleased(session.hostKey);
+
+    expect(isSessionMounted(session.hostKey)).toBe(false);
+  });
+
+  it("discards a released session on disconnect but keeps a claimed one", () => {
+    const claimed = mountedSession("ws-1", "claimed");
+    const released = mountedSession("ws-2", "released");
+    mountConnected(claimed);
+    mountConnected(released);
+    noteSessionReleased(released.hostKey);
+
+    noteSessionConnection(claimed.hostKey, false);
+    noteSessionConnection(released.hostKey, false);
+
+    expect(isSessionMounted(claimed.hostKey)).toBe(true);
+    expect(isSessionMounted(released.hostKey)).toBe(false);
+  });
+
+  it("discards a session before routing its exit", () => {
+    const session = mountedSession("ws-1", "agent");
+    mountConnected(session);
+    let mountedWhenRouted = true;
+    const stopListening = onSessionExited((hostKey) => {
+      if (hostKey === session.hostKey) mountedWhenRouted = isSessionMounted(hostKey);
+    });
+
+    noteSessionExited(session.hostKey, 0);
+    stopListening();
+
+    expect(mountedWhenRouted).toBe(false);
+    expect(isSessionMounted(session.hostKey)).toBe(false);
+  });
+
+  it("purges every generation for one workspace and host prefix", () => {
+    const local = mountedSession("ws-1", "agent");
+    const localSecondGeneration = {
+      ...local,
+      hostKey: sessionHostKey("ws-1", undefined, "agent", "2026-02-02T00:00:00Z"),
+    };
+    const fleet = {
+      ...local,
+      hostKey: sessionHostKey("ws-1", "build", "agent", "2026-01-01T00:00:00Z"),
+    };
+    for (const session of [local, localSecondGeneration, fleet]) mountConnected(session);
+    noteSessionReleased(localSecondGeneration.hostKey);
+
+    discardSessionsWithPrefix(sessionHostPrefix("ws-1", undefined));
+
+    expect(mountedSessions().map(({ hostKey }) => hostKey)).toEqual([fleet.hostKey]);
+  });
+
+  it("clears deferred focus on final discard", () => {
+    const session = mountedSession("ws-1", "agent");
+    noteSessionMounted(session);
+    requestSessionFocus(session.hostKey);
+
+    noteSessionDiscarded(session.hostKey);
+    noteSessionMounted(session);
+
+    expect(consumeSessionFocus(session.hostKey)).toBe(false);
   });
 });

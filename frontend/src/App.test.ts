@@ -94,6 +94,7 @@ vi.mock("./lib/context.js", async (importOriginal) => ({
   getStores: () => ({
     settings: {
       getLaunchTargets: () => [],
+      getTerminalSettings: () => ({ retained_sessions: 10 }),
     },
   }),
 }));

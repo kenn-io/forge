@@ -134,6 +134,8 @@ vi.mock("../../context.js", async (importOriginal) => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
+          hide_tmux_status: false,
+          retained_sessions: 10,
         }),
         setTerminalSettings: mocks.mockSetTerminalSettings,
         getModeVisibility: () => ({
@@ -248,7 +250,12 @@ vi.mock("../detail/PullDetail.svelte", async () => ({
 // renders portal slots and no terminal would ever appear.
 import WorkspaceTerminalView from "./WorkspaceTerminalViewTestHarness.svelte";
 import WorkspacePaneControls from "./WorkspacePaneControls.svelte";
-import { mountedSessions, resetSessionHostForTest, sessionHostPrefix } from "../../stores/session-host.svelte.ts";
+import {
+  isSessionClaimed,
+  mountedSessions,
+  resetSessionHostForTest,
+  sessionHostPrefix,
+} from "../../stores/session-host.svelte.ts";
 import {
   activeHostedSession,
   getInlineWorkspaceController,
@@ -1629,35 +1636,57 @@ describe("WorkspaceTerminalView", () => {
     expect(document.querySelector(".terminal-panel.open")).toBeNull();
   });
 
-  it("hands back the previous workspace's pooled terminals when the selection moves on", async () => {
-    // The pool outlives this view, so nothing else would take them down. Every
-    // parked terminal holds a live websocket; browsing ten workspaces must not
-    // leave ten attachments open.
+  it("releases the previous workspace's pooled terminals for bounded retention", async () => {
     const { rerender } = render(WorkspaceTerminalView, {
       props: { workspaceId: "ws-1" },
     });
 
     await screen.findByRole("tab", { name: /Helper/ });
     await waitFor(() => expect(mountedSessions()).toHaveLength(1));
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    sockets[0]!.onopen();
+    await waitFor(() => expect(sockets[0]!.send).toHaveBeenCalled());
     const firstPrefix = sessionHostPrefix("ws-1", undefined);
     expect(mountedSessions()[0]?.hostKey.startsWith(firstPrefix)).toBe(true);
+    const firstHostKey = mountedSessions()[0]!.hostKey;
+    const firstWrapper = document.querySelector(`[data-session-host="${firstHostKey}"]`);
+    const firstSocket = sockets[0];
 
     await rerender({ workspaceId: "ws-2" });
 
     await waitFor(() => {
-      expect(mountedSessions().some((session) => session.hostKey.startsWith(firstPrefix))).toBe(false);
+      const retained = mountedSessions().find((session) => session.hostKey.startsWith(firstPrefix));
+      expect(retained).toBeDefined();
+      expect(isSessionClaimed(retained!.hostKey)).toBe(false);
+      expect(document.querySelector(`[data-session-host="${firstHostKey}"]`)).toBe(firstWrapper);
+      expect(sockets.filter((socket) => socket.url.includes("/workspaces/ws-1/"))).toEqual([firstSocket]);
+    });
+
+    await rerender({ workspaceId: "ws-1" });
+
+    await waitFor(() => {
+      expect(isSessionClaimed(firstHostKey)).toBe(true);
+      expect(sockets.filter((socket) => socket.url.includes("/workspaces/ws-1/"))).toEqual([firstSocket]);
+      expect(document.querySelector(`[data-session-host="${firstHostKey}"]`)).toBe(firstWrapper);
     });
   });
 
-  it("hands back its pooled terminals when the view itself goes away", async () => {
-    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+  it("releases its pooled terminals when the view itself goes away", async () => {
+    const { rerender } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
 
     await screen.findByRole("tab", { name: /Helper/ });
     await waitFor(() => expect(mountedSessions()).toHaveLength(1));
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    sockets[0]!.onopen();
+    await waitFor(() => expect(sockets[0]!.send).toHaveBeenCalled());
+    const hostKey = mountedSessions()[0]!.hostKey;
 
-    cleanup();
+    await rerender({ workspaceId: "ws-1", showView: false });
 
-    expect(mountedSessions()).toHaveLength(0);
+    await waitFor(() => {
+      expect(mountedSessions()).toHaveLength(1);
+      expect(isSessionClaimed(hostKey)).toBe(false);
+    });
   });
 
   it("shows a relaunched agent with the same key and a new generation", async () => {
@@ -2150,7 +2179,7 @@ describe("WorkspaceTerminalView", () => {
     expect(socket.close).not.toHaveBeenCalled();
   });
 
-  it("hands a docked terminal back when the terminal panel closes", async () => {
+  it("releases a connected docked terminal when the terminal panel closes", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
 
@@ -2166,12 +2195,15 @@ describe("WorkspaceTerminalView", () => {
       }),
     );
     await waitFor(() => expect(sockets).toHaveLength(1));
+    sockets[0]!.onopen();
+    await waitFor(() => expect(sockets[0]!.send).toHaveBeenCalled());
+    const hostKey = mountedSessions()[0]!.hostKey;
 
     await fireEvent.click(screen.getAllByRole("button", { name: "Close terminal panel" })[0]!);
 
-    // A closed panel renders nothing, and a pooled terminal nothing renders
-    // would otherwise sit parked with its socket open forever.
-    await waitFor(() => expect(sockets[0]!.close).toHaveBeenCalled());
+    await waitFor(() => expect(isSessionClaimed(hostKey)).toBe(false));
+    expect(mountedSessions().some((session) => session.hostKey === hostKey)).toBe(true);
+    expect(sockets[0]!.close).not.toHaveBeenCalled();
   });
 
   it("shows a workspace sidebar collapse button", async () => {

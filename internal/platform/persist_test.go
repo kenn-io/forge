@@ -42,6 +42,8 @@ func TestDBMergeRequestCarriesProviderMergeableState(t *testing.T) {
 }
 
 func TestDBReviewThreadsCarriesCommentMetadataToReplies(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	events, threads := DBReviewThreads([]MergeRequestReviewThread{
 		{
 			ProviderThreadID:  "thread-1",
@@ -55,10 +57,10 @@ func TestDBReviewThreadsCarriesCommentMetadataToReplies(t *testing.T) {
 		},
 	})
 
-	require.Len(t, threads, 1)
-	require.Len(t, events, 2)
-	assert.JSONEq(t, threads[0].MetadataJSON, events[0].MetadataJSON)
-	assert.JSONEq(t, `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, events[1].MetadataJSON)
+	require.Len(threads, 1)
+	require.Len(events, 2)
+	assert.JSONEq(threads[0].MetadataJSON, events[0].MetadataJSON)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, events[1].MetadataJSON)
 }
 
 func TestPreserveProviderHiddenMetadata(t *testing.T) {

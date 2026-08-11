@@ -189,6 +189,17 @@ describe("workspace switch timing", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  test("a retained terminal's first paint ends the interaction trace", async () => {
+    vi.useFakeTimers();
+    beginWorkspaceSwitch("ws-1", undefined);
+
+    expect(createWorkspaceSwitchPaneTimer().record("retained-first-paint", { cacheHit: true })).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(currentInteractionTraceId()).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   test("the recording-window fallback ends an unfinished interaction trace", () => {
     vi.useFakeTimers();
     beginWorkspaceSwitch("ws-1", undefined);

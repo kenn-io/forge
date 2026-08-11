@@ -58,17 +58,19 @@ kenn-forge's durable agent context lives in two places:
   etc.). Deep enough to hold real rationale; narrow enough to load only when relevant.
 
 The README, Makefile, and source tree own discoverable inventories, key-file lists, and
-development commands. Do not copy them into the always-loaded hub. Transient design and
-implementation notes stay outside the long-lived repository documentation; durable,
-dated decisions live under `docs/adr/`.
+development commands. Do not copy them into the always-loaded hub. Superpowers design
+specs and implementation plans are temporary working artifacts: distill current
+contracts into the matching topic docs and delete the artifacts before committing.
+Never convert a transient spec into an ADR merely to retain it. Independently required,
+dated rationale that still constrains the code may live under `docs/adr/`.
 
 ### The Sorting Test
 
 When a new fact arrives, ask: does it describe the *whole project's* shape or workflow
-(→ root `CLAUDE.md`), one *concern in depth* (→ the matching `context/*.md`), a *dated
-decision* whose rationale still constrains the code (→ `docs/adr/`), or transient work
-(→ the task workspace, issue, or pull request)? Put durable facts in exactly one home
-and route them to it.
+(→ root `CLAUDE.md`), one *concern in depth* (→ the matching `context/*.md`), independently
+required dated rationale (→ `docs/adr/`), or transient design/planning work (→ the task
+workspace, issue, or pull request)? Put durable facts in exactly one home and route them
+to it; a completed feature spec becomes current contracts in topic docs, not an ADR.
 
 ## Anchored Claims
 
@@ -158,7 +160,7 @@ Silencing a failing guard without recording the decision is forbidden.
 | Kata daemon integration | `context/kata-mode.md`, `context/workspace-apis.md` | External authority and workspace contracts |
 | Docs mode integration | `context/docs-mode.md` | Local filesystem and git-publish boundary |
 | Repository source browsing | `context/repository-source-browser.md` | Read-only clone and ref coherence |
-| A decision chosen over an alternative | `docs/adr/NNNN-title.md` | Dated, durable rationale |
+| Independently required dated rationale | `docs/adr/NNNN-title.md` | Historical rationale that still constrains current architecture |
 
 Every new topic doc MUST get a routing reference from root `CLAUDE.md` (or from another
 reachable doc). Unreachable context is invisible to agents.
@@ -179,7 +181,7 @@ and route them by task trigger.
 
 ## When to Update Context
 
-- A maintainer explains a design decision → capture it promptly (ADR or topic doc).
+- A maintainer explains a design decision → capture the current contract in its topic doc; use an ADR only when the dated rationale is independently required.
 - A new provider, mode, or cross-cutting invariant lands → add/extend the topic doc and
   route to it from `CLAUDE.md`.
 - An agent makes a mistake context would have prevented → add the gotcha.

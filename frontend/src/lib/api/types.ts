@@ -78,6 +78,7 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   cursor_blink: true,
   font_ligatures: false,
   hide_tmux_status: false,
+  retained_sessions: 10,
 };
 
 export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {

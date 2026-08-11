@@ -151,6 +151,8 @@ func TestConvertGQLCommentsRecordsObservedVisibleComments(t *testing.T) {
 }
 
 func TestConvertGQLPRIncludesReviewThreads(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	reason := githubv4.ReportedContentClassifiersAbuse
 	line := 12
 	input := gqlPR{}
@@ -177,13 +179,13 @@ func TestConvertGQLPRIncludesReviewThreads(t *testing.T) {
 
 	bulk := convertGQLPR(&input)
 
-	require.True(t, bulk.ReviewThreadsComplete)
-	require.Len(t, bulk.ReviewThreads, 1)
+	require.True(bulk.ReviewThreadsComplete)
+	require.Len(bulk.ReviewThreads, 1)
 	thread := bulk.ReviewThreads[0]
-	assert.Equal(t, "PRRT_1", thread.ProviderThreadID)
-	assert.Equal(t, "3714845345", thread.ProviderCommentID)
-	assert.Equal(t, "hidden inline comment", thread.Body)
-	assert.JSONEq(t, `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, thread.MetadataJSON)
+	assert.Equal("PRRT_1", thread.ProviderThreadID)
+	assert.Equal("3714845345", thread.ProviderCommentID)
+	assert.Equal("hidden inline comment", thread.Body)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, thread.MetadataJSON)
 }
 
 func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {

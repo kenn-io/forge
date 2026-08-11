@@ -7661,6 +7661,8 @@ export interface components {
             /** Format: double */
             line_height: number;
             /** Format: int64 */
+            retained_sessions: number;
+            /** Format: int64 */
             scrollback: number;
         };
         TerminalClipboardInputBody: {

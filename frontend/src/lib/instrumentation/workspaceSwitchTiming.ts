@@ -28,6 +28,7 @@ export const WORKSPACE_SWITCH_PHASES = [
   "socket-open",
   "first-bytes",
   "first-paint",
+  "retained-first-paint",
 ] as const;
 
 export type WorkspaceSwitchPhase = (typeof WORKSPACE_SWITCH_PHASES)[number];
@@ -129,7 +130,7 @@ function recordPhase(sw: WorkspaceSwitch, phase: WorkspaceSwitchPhase, detail?: 
     traceId: sw.traceId,
     ...detail,
   });
-  if (phase === "first-paint") endSwitchTrace(sw);
+  if (phase === "first-paint" || phase === "retained-first-paint") endSwitchTrace(sw);
   return true;
 }
 

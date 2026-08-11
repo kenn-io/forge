@@ -10,6 +10,15 @@ import {
   restoreTerminalSettingsPreview,
   saveTerminalSettings as saveTerminalSettingsEffect,
 } from "../../stores/terminal-settings-persistence.js";
+import {
+  isSessionMounted,
+  noteSessionConnection,
+  noteSessionMounted,
+  noteSessionReleased,
+  resetSessionHostForTest,
+  sessionHostKey,
+  setRetainedSessionLimit,
+} from "../../stores/session-host.svelte.ts";
 
 let runtime: OwnedAppRuntime;
 let persistSettings: (settings: TerminalSettings) => Promise<TerminalSettings>;
@@ -82,6 +91,7 @@ function saveTerminalSettings(options: {
 
 beforeEach(() => {
   runtime = makeAppRuntime();
+  resetSessionHostForTest();
   persistSettings = (settings) => Promise.resolve(settings);
   persistedTerminal = { ...DEFAULT_TERMINAL_SETTINGS };
   const fetch: typeof globalThis.fetch = async (input, init) => {
@@ -131,7 +141,128 @@ function createStore() {
   };
 }
 
+function createRetentionAwareStore() {
+  const store = createStore();
+  return {
+    getTerminalSettings: store.getTerminalSettings,
+    setTerminalSettings: (settings: TerminalSettings) => {
+      store.setTerminalSettings(settings);
+      setRetainedSessionLimit(settings.retained_sessions);
+    },
+  };
+}
+
+function releaseConnectedSession(): string {
+  const hostKey = sessionHostKey("ws-retained", undefined, "agent", "2026-08-10T00:00:00Z");
+  noteSessionMounted({ hostKey, websocketPath: "/ws/agent", status: "running" });
+  noteSessionConnection(hostKey, true);
+  noteSessionReleased(hostKey);
+  return hostKey;
+}
+
 describe("terminal settings persistence", () => {
+  it("does not evict released sessions when a lower retention preview is cancelled", () => {
+    const store = createRetentionAwareStore();
+    const baseline = store.getTerminalSettings();
+    const hostKey = releaseConnectedSession();
+
+    previewTerminalSettings(store, baseline, {
+      ...baseline,
+      font_size: 20,
+      retained_sessions: 0,
+    });
+
+    expect(store.getTerminalSettings().font_size).toBe(20);
+    expect(store.getTerminalSettings().retained_sessions).toBe(10);
+    expect(isSessionMounted(hostKey)).toBe(true);
+
+    restoreTerminalSettingsPreview(store);
+
+    expect(store.getTerminalSettings()).toEqual(baseline);
+    expect(isSessionMounted(hostKey)).toBe(true);
+  });
+
+  it("does not evict released sessions when saving a lower retention limit fails", async () => {
+    const failedSave = deferred<TerminalSettings>();
+    const store = createRetentionAwareStore();
+    const baseline = store.getTerminalSettings();
+    const hostKey = releaseConnectedSession();
+    const persist = vi.fn(() => failedSave.promise);
+
+    const save = saveTerminalSettings({
+      baseline,
+      changes: { retained_sessions: 0 },
+      persist,
+      store,
+    });
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1));
+
+    expect(store.getTerminalSettings().retained_sessions).toBe(10);
+    expect(isSessionMounted(hostKey)).toBe(true);
+
+    failedSave.reject(new Error("settings unavailable"));
+    await expect(save).rejects.toMatchObject({ _tag: "TransientTransportError" });
+
+    expect(store.getTerminalSettings().retained_sessions).toBe(10);
+    expect(isSessionMounted(hostKey)).toBe(true);
+  });
+
+  it("persists zero as an explicit retained-session limit", async () => {
+    const store = createStore();
+    const persist = vi.fn(async (settings: TerminalSettings) => settings);
+    const baseline = store.getTerminalSettings();
+
+    await saveTerminalSettings({
+      baseline,
+      changes: { retained_sessions: 0 },
+      persist,
+      store,
+    });
+
+    expect(persist).toHaveBeenCalledWith({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      retained_sessions: 0,
+    });
+    expect(store.getTerminalSettings().retained_sessions).toBe(0);
+  });
+
+  it("publishes an earlier confirmed retention limit when a newer save fails", async () => {
+    const firstSave = deferred<TerminalSettings>();
+    const secondSave = deferred<TerminalSettings>();
+    const store = createRetentionAwareStore();
+    const persist = vi
+      .fn<(settings: TerminalSettings) => Promise<TerminalSettings>>()
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementationOnce(() => secondSave.promise);
+
+    const firstRetention = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { retained_sessions: 8 },
+      persist,
+      store,
+    });
+    const secondRetention = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { retained_sessions: 6 },
+      persist,
+      store,
+    });
+
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1));
+    firstSave.resolve({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      retained_sessions: 8,
+    });
+    await firstRetention;
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(2));
+
+    expect(store.getTerminalSettings().retained_sessions).toBe(10);
+    secondSave.reject(new Error("settings unavailable"));
+    await expect(secondRetention).rejects.toMatchObject({ _tag: "TransientTransportError" });
+
+    expect(store.getTerminalSettings().retained_sessions).toBe(8);
+  });
+
   it("serializes options and zoom saves without dropping either change", async () => {
     const firstSave = deferred<TerminalSettings>();
     const store = createStore();

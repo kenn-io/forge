@@ -1211,7 +1211,6 @@ func NewSyncerWithRegistry(
 	}
 	s.parallelism.Store(defaultParallelism)
 	s.status.Store(&SyncStatus{})
-
 	// Wire budget reset to rate tracker window resets.
 	for h, rt := range rateTrackers {
 		if b, ok := budgets[h]; ok && rt != nil {
@@ -3694,18 +3693,12 @@ func (s *Syncer) TriggerRunWithPriority(
 	ctx context.Context,
 	priorityRepos []RepoRef,
 ) {
-	if !s.SyncEnabled() {
-		return
-	}
 	s.triggerRun(ctx, slices.Clone(priorityRepos), nil)
 }
 
 // TriggerRunForRepos kicks off a non-blocking ad-hoc sync restricted to the
 // matching configured repositories.
 func (s *Syncer) TriggerRunForRepos(ctx context.Context, repos []RepoRef) {
-	if !s.SyncEnabled() {
-		return
-	}
 	s.triggerRun(ctx, nil, slices.Clone(repos))
 }
 
@@ -3999,12 +3992,13 @@ func (s *Syncer) optionalGitHubClientFor(repo RepoRef) (Client, bool) {
 	return client, true
 }
 
-// clientFor returns the legacy GitHub Client for the given repo's host.
-// Repos with an empty host default to "github.com".
-func (s *Syncer) clientFor(repo RepoRef) (Client, error) {
+func clientForRegistry(registry *platform.Registry, repo RepoRef) (Client, error) {
 	host := repoHost(repo)
-	provider, err := s.clients.Provider(repoPlatform(repo), host)
+	provider, err := registry.Provider(repoPlatform(repo), host)
 	if err != nil {
+		if errors.Is(err, ErrSyncDisabled) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("no client configured for host %s", host)
 	}
 	legacy, ok := provider.(interface{ GitHubClient() Client })
@@ -4014,28 +4008,33 @@ func (s *Syncer) clientFor(repo RepoRef) (Client, error) {
 	return legacy.GitHubClient(), nil
 }
 
+// clientFor returns the legacy GitHub client through the sync provider gate.
+func (s *Syncer) clientFor(repo RepoRef) (Client, error) {
+	return clientForRegistry(s.SyncRegistry(), repo)
+}
+
 func (s *Syncer) mergeRequestReaderFor(repo RepoRef) (platform.MergeRequestReader, error) {
-	return s.clients.MergeRequestReader(repoPlatform(repo), repoHost(repo))
+	return s.SyncRegistry().MergeRequestReader(repoPlatform(repo), repoHost(repo))
 }
 
 func (s *Syncer) issueReaderFor(repo RepoRef) (platform.IssueReader, error) {
-	return s.clients.IssueReader(repoPlatform(repo), repoHost(repo))
+	return s.SyncRegistry().IssueReader(repoPlatform(repo), repoHost(repo))
 }
 
 func (s *Syncer) labelReaderFor(repo RepoRef) (platform.LabelReader, error) {
-	return s.clients.LabelReader(repoPlatform(repo), repoHost(repo))
+	return s.SyncRegistry().LabelReader(repoPlatform(repo), repoHost(repo))
 }
 
 func (s *Syncer) releaseReaderFor(repo RepoRef) (platform.ReleaseReader, error) {
-	return s.clients.ReleaseReader(repoPlatform(repo), repoHost(repo))
+	return s.SyncRegistry().ReleaseReader(repoPlatform(repo), repoHost(repo))
 }
 
 func (s *Syncer) tagReaderFor(repo RepoRef) (platform.TagReader, error) {
-	return s.clients.TagReader(repoPlatform(repo), repoHost(repo))
+	return s.SyncRegistry().TagReader(repoPlatform(repo), repoHost(repo))
 }
 
 func (s *Syncer) ciReaderFor(repo RepoRef) (platform.CIReader, error) {
-	return s.clients.CIReader(repoPlatform(repo), repoHost(repo))
+	return s.SyncRegistry().CIReader(repoPlatform(repo), repoHost(repo))
 }
 
 // ClientForRepo returns the Client for a tracked repo by
@@ -4061,6 +4060,12 @@ func (s *Syncer) ClientForRepo(
 func (s *Syncer) ClientForHost(
 	host string,
 ) (Client, error) {
+	return clientForRegistry(s.clients, RepoRef{PlatformHost: host})
+}
+
+// SyncClientForHost returns a legacy GitHub client through the provider sync
+// gate. Foreground provider operations use ClientForHost instead.
+func (s *Syncer) SyncClientForHost(host string) (Client, error) {
 	return s.clientFor(RepoRef{PlatformHost: host})
 }
 
@@ -4088,21 +4093,17 @@ func (s *Syncer) RepositoryReader(
 	return s.clients.RepositoryReader(kind, canonicalRepoHost(host))
 }
 
-func (s *Syncer) MergeRequestReader(
-	kind platform.Kind,
-	host string,
-) (platform.MergeRequestReader, error) {
-	if err := s.syncDisabledError(); err != nil {
-		return nil, err
-	}
-	return s.clients.MergeRequestReader(kind, canonicalRepoHost(host))
-}
-
 // Registry returns the boot-time platform registry. Callers must not
-// mutate the returned registry; it is shared by every sync codepath and
-// rebuilt only on daemon restart.
+// mutate the returned registry; it is rebuilt only on daemon restart.
 func (s *Syncer) Registry() *platform.Registry {
 	return s.clients
+}
+
+// SyncRegistry returns the provider registry view used by refresh work. It
+// rejects provider access when sync is disabled while the raw Registry remains
+// available to intentional foreground provider operations.
+func (s *Syncer) SyncRegistry() *platform.Registry {
+	return s.clients.WithProviderGate(s.syncDisabledError)
 }
 
 func (s *Syncer) LabelReader(
@@ -4221,10 +4222,7 @@ func (s *Syncer) MergeRequestReviewThreadReader(
 	kind platform.Kind,
 	host string,
 ) (platform.MergeRequestReviewThreadReader, error) {
-	if err := s.syncDisabledError(); err != nil {
-		return nil, err
-	}
-	return s.clients.MergeRequestReviewThreadReader(kind, canonicalRepoHost(host))
+	return s.SyncRegistry().MergeRequestReviewThreadReader(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) MergeRequestContentMutator(
@@ -4812,9 +4810,6 @@ func (s *Syncer) graphQLReadAllowed(
 // Embedders normally call Start to run this lane on its configured cadence;
 // this method is available when an immediate pass is required.
 func (s *Syncer) SyncWatchedMRs(ctx context.Context) {
-	if !s.SyncEnabled() {
-		return
-	}
 	s.syncWatchedMRs(ctx)
 }
 
@@ -5278,15 +5273,12 @@ type rateLimitSnapshotter interface {
 // recorded as a kenn-forge request because GitHub does not charge it against the
 // primary REST budget.
 func (s *Syncer) RefreshRateLimitSnapshots(ctx context.Context) {
-	if !s.SyncEnabled() {
-		return
-	}
 	s.refreshRateLimitSnapshots(ctx)
 }
 
 func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struct{} {
 	refreshed := make(map[string]struct{})
-	if s == nil || s.clients == nil {
+	if !s.SyncEnabled() || s.clients == nil {
 		return refreshed
 	}
 	type snapshotCandidate struct {
@@ -5757,9 +5749,6 @@ func (s *Syncer) publishMonotonicProgress(
 // per-host GitHub rate limit and abuse-detection thresholds happy
 // while still capturing most of the wall-clock win on network I/O.
 func (s *Syncer) RunOnce(ctx context.Context) {
-	if !s.SyncEnabled() {
-		return
-	}
 	s.runOnce(ctx, false, nil, nil)
 }
 
@@ -5769,6 +5758,9 @@ func (s *Syncer) runOnce(
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 ) {
+	if !s.SyncEnabled() {
+		return
+	}
 	s.runMu.Lock()
 	if s.running.Load() {
 		if !bypassNextSyncAfter && onlyRepos == nil && s.exclusiveRun {
@@ -6151,7 +6143,7 @@ func (s *Syncer) syncRepoIdentity(
 ) (db.RepoIdentity, *platform.Repository, time.Time, error) {
 	observedAt := time.Now().UTC()
 	identity := platform.DBRepoIdentity(platformRepoRef(repo))
-	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
+	reader, err := s.SyncRegistry().RepositoryReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
 		if identity.PlatformRepoID != "" && errors.Is(err, platform.ErrUnsupportedCapability) {
 			return identity, nil, observedAt, nil
@@ -6853,7 +6845,7 @@ func (s *Syncer) refreshRepoSettings(
 		)
 	}
 
-	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
+	reader, err := s.SyncRegistry().RepositoryReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
 		if errors.Is(err, platform.ErrUnsupportedCapability) || errors.Is(err, platform.ErrProviderNotConfigured) {
 			return nil
@@ -7060,9 +7052,6 @@ func (s *Syncer) syncRepoLabelCatalog(ctx context.Context, repo RepoRef, repoID 
 }
 
 func (s *Syncer) RefreshRepoLabelCatalog(ctx context.Context, repo db.Repo) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
-	}
 	ref := RepoRef{
 		Platform:           platform.Kind(repo.Platform),
 		PlatformHost:       repoProviderHostFromDB(repo),
@@ -8063,9 +8052,6 @@ func (s *Syncer) BackfillMergedActorEventOnProvider(
 	repoID int64,
 	number int,
 ) (bool, error) {
-	if err := s.syncDisabledError(); err != nil {
-		return false, err
-	}
 	stored, err := s.db.GetRepoByID(ctx, repoID)
 	if err != nil {
 		return false, fmt.Errorf("get repo %d for merged-actor backfill: %w", repoID, err)
@@ -8190,7 +8176,7 @@ func (s *Syncer) verifyMergedActorBackfillIdentity(
 	if expectedProviderID == "" {
 		return errors.New("merged-actor backfill requires a stable provider ID")
 	}
-	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
+	reader, err := s.SyncRegistry().RepositoryReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
 		return fmt.Errorf("resolve repository reader for merged-actor identity check: %w", err)
 	}
@@ -10073,7 +10059,7 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	if !caps.ReadReviewThreads {
 		return 0, nil
 	}
-	reader, err := s.clients.MergeRequestReviewThreadReader(repoPlatform(repo), repoHost(repo))
+	reader, err := s.SyncRegistry().MergeRequestReviewThreadReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
 		return 0, err
 	}
@@ -10411,7 +10397,7 @@ func (s *Syncer) classifyProviderItemLookupError(
 	if !errors.Is(err, platform.ErrNotFound) {
 		return err
 	}
-	repositoryReader, readerErr := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
+	repositoryReader, readerErr := s.SyncRegistry().RepositoryReader(repoPlatform(repo), repoHost(repo))
 	if readerErr != nil {
 		return err
 	}
@@ -10543,9 +10529,6 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 	number int,
 	headSHA string,
 ) ([]string, error) {
-	if err := s.syncDisabledError(); err != nil {
-		return nil, err
-	}
 	if headSHA == "" {
 		return nil, nil
 	}
@@ -12133,9 +12116,6 @@ func (s *Syncer) SyncRepoOnProvider(
 	kind platform.Kind,
 	host, owner, name string,
 ) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
-	}
 	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
@@ -12156,9 +12136,6 @@ func (s *Syncer) SyncRepoOnProvider(
 // Unlike the periodic sync, this always does a full fetch (details, timeline, CI).
 // Returns an error if the repo is not in the configured repo list.
 func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
-	}
 	return s.syncMRWithHost(ctx, owner, name, number, "")
 }
 
@@ -12180,9 +12157,6 @@ func (s *Syncer) SyncClosedMROnProvider(
 	repoID int64,
 	number int,
 ) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
-	}
 	stored, err := s.db.GetRepoByID(ctx, repoID)
 	if err != nil {
 		return fmt.Errorf("get repo %d for closed-MR resync: %w", repoID, err)
@@ -12245,9 +12219,6 @@ func (s *Syncer) SyncMROnProvider(
 	host, owner, name string,
 	number int,
 ) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
-	}
 	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
@@ -12869,9 +12840,6 @@ func (s *Syncer) syncProviderMRDiff(
 // SyncIssue fetches fresh data for a single issue from GitHub and updates the DB.
 // Returns an error if the repo is not in the configured repo list.
 func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
-	}
 	return s.syncIssueWithHost(ctx, owner, name, number, "")
 }
 
@@ -12881,9 +12849,6 @@ func (s *Syncer) SyncIssueOnHost(
 	host, owner, name string,
 	number int,
 ) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
-	}
 	return s.syncIssueWithHost(ctx, owner, name, number, host)
 }
 
@@ -12895,9 +12860,6 @@ func (s *Syncer) SyncIssueOnProvider(
 	host, owner, name string,
 	number int,
 ) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
-	}
 	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
@@ -13011,9 +12973,6 @@ func (s *Syncer) SyncArchiveItem(
 	itemType db.ArchiveItemType,
 	number int,
 ) (bool, error) {
-	if err := s.syncDisabledError(); err != nil {
-		return false, err
-	}
 	repo, ok := s.trackedRepoByIdentity(ref.Platform, ref.Owner, ref.Name, ref.Host)
 	if !ok {
 		return false, fmt.Errorf(
@@ -13048,9 +13007,6 @@ func (s *Syncer) SyncArchiveItem(
 func (s *Syncer) SyncItemByNumber(
 	ctx context.Context, owner, name string, number int,
 ) (string, error) {
-	if err := s.syncDisabledError(); err != nil {
-		return "", err
-	}
 	repo, ok, err := s.trackedRepo(owner, name)
 	if err != nil {
 		return "", err

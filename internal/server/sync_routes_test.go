@@ -23,6 +23,8 @@ func TestSyncRoutesRejectDisabledSyncer(t *testing.T) {
 
 	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
 	require.Equal(http.StatusServiceUnavailable, syncRR.Code, syncRR.Body.String())
+	archiveRR := doJSON(t, srv, http.MethodPost, "/api/v1/archive/start", map[string]bool{"all": true})
+	require.Equal(http.StatusServiceUnavailable, archiveRR.Code, archiveRR.Body.String())
 
 	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(syncRR.Body).Decode(&problem))

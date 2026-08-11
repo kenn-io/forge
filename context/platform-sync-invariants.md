@@ -148,9 +148,10 @@ timeline/comment-like events through provider capability interfaces in
 `internal/platform`. Providers implement only supported optional interfaces;
 registry helpers return typed errors for missing providers or capabilities.
 
-- A disabled syncer stops scheduled, direct, notification, archive, and post-mutation
-  refreshes before provider access. Direct mutations, provider bootstrap, and intentional
-  non-sync operations remain available; this is not an offline mode (`internal/github/sync.go::Syncer.DisableSync`).
+- Sync and refresh work must use the gated provider registry; direct foreground
+  operations use the raw registry (`internal/github/sync.go::Syncer.SyncRegistry`).
+- Run and quota-snapshot chokepoints also reject disabled sync because GitHub
+  credential routers bypass the provider registry (`internal/github/sync.go::Syncer.runOnce`).
 - Missing optional capabilities should degrade that feature with a typed
   platform error, not break unrelated sync work.
 - Never put foreground deadlines on a shared provider HTTP client; scope them to

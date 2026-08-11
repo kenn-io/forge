@@ -582,7 +582,7 @@ func run(opts serve.Options) error {
 	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
 	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
 	archiveService, err := archive.NewService(
-		database, startup.registry, syncer, syncer, nil, nil,
+		database, syncer.SyncRegistry(), syncer, syncer, nil, nil,
 	)
 	if err != nil {
 		return fmt.Errorf("create archive service: %w", err)

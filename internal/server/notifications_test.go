@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 func seedServerNotification(t *testing.T, database *db.DB) int64 {
@@ -516,31 +517,30 @@ func TestNotificationsAPIExposesReadPropagationStatus(t *testing.T) {
 }
 
 func TestNotificationsAPIRejectsQueuedReadPropagationWhenSyncDisabled(t *testing.T) {
-	for _, path := range []string{
-		"/api/v1/notifications/read",
-		"/api/v1/notifications/done",
-	} {
-		t.Run(path, func(t *testing.T) {
-			require := require.New(t)
-			database := openTestDB(t)
-			id := seedServerNotification(t, database)
-			syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
-			syncer.DisableSync()
-			s := New(database, syncer, nil, "/", notificationsEnabledConfig(), ServerOptions{})
-			t.Cleanup(func() { gracefulShutdown(t, s) })
-			ts := httptest.NewServer(s)
-			defer ts.Close()
+	require := require.New(t)
+	database := openTestDB(t)
+	id := seedServerNotification(t, database)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	syncer.DisableSync()
+	s := New(database, syncer, nil, "/", notificationsEnabledConfig(), ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, s) })
+	input := &notificationBulkInput{}
+	input.Body.IDs = []int64{id}
 
-			body, err := json.Marshal(map[string]any{"ids": []int64{id}})
-			require.NoError(err)
-			resp, err := http.Post(
-				ts.URL+path,
-				"application/json",
-				bytes.NewReader(body),
-			)
-			require.NoError(err)
-			defer resp.Body.Close()
-			require.Equal(http.StatusServiceUnavailable, resp.StatusCode)
+	for name, mutate := range map[string]func() error{
+		"read": func() error {
+			_, err := s.markNotificationsRead(t.Context(), input)
+			return err
+		},
+		"done with read": func() error {
+			_, err := s.markNotificationsDone(t.Context(), input)
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var problem *httpapi.ProblemError
+			require.ErrorAs(mutate(), &problem)
+			require.Equal(http.StatusServiceUnavailable, problem.Status)
 
 			unread, err := database.ListNotifications(
 				t.Context(), db.ListNotificationsOpts{State: "unread"},

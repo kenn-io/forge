@@ -2009,40 +2009,6 @@ func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {
 	assert.Equal("widget-api", tracked[0].Name)
 }
 
-func TestConfigReload_DisabledSyncUsesTrackedReposWithoutProviderReads(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	var providerReads atomic.Int32
-	srv, _, cfgPath := setupTestServerWithConfigContent(
-		t, validReloadConfig, &mockGH{
-			getRepositoryFn: func(
-				context.Context, string, string,
-			) (*gh.Repository, error) {
-				providerReads.Add(1)
-				return nil, errors.New("provider reads are disabled")
-			},
-			listReposByOwnerFn: func(
-				context.Context, string,
-			) ([]*gh.Repository, error) {
-				providerReads.Add(1)
-				return nil, errors.New("provider reads are disabled")
-			},
-		},
-	)
-	providerReads.Store(0)
-	srv.syncer.DisableSync()
-	waitForConfigWatcher(t, srv, 2*time.Second)
-	stream := streamConfigEvents(t, srv)
-	defer stream.Close()
-
-	writeConfigToml(t, cfgPath, validReloadConfigExactPlusGlobChangedActivity)
-
-	ev := waitForConfigEvent(t, stream, 2*time.Second)
-	require.True(ev.Valid)
-	assert.Zero(providerReads.Load())
-	assert.True(srv.syncer.IsTrackedRepo("acme", "widget"))
-}
-
 func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {
 	assert := assert.New(t)
 

@@ -2065,8 +2065,14 @@ func (s *Handler) setPRGitHubState(
 			// Re-fetch to sync local state and determine the real cause.
 			repoID := repo.ID
 			{
-				client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
+				client, clientErr := s.syncer.SyncClientForHost(repo.PlatformHost)
 				if clientErr != nil {
+					if errors.Is(clientErr, ghclient.ErrSyncDisabled) {
+						return nil, httpapi.ProviderCallProblemWithDetail(
+							err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
+							"GitHub API error: "+err.Error(),
+						)
+					}
 					return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 				}
 				ghPR, fetchErr := client.GetPullRequest(

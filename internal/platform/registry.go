@@ -4,6 +4,7 @@ import "fmt"
 
 type Registry struct {
 	providers map[providerKey]Provider
+	gate      func() error
 }
 
 type providerKey struct {
@@ -39,7 +40,22 @@ func (r *Registry) Register(provider Provider) error {
 	return nil
 }
 
+// WithProviderGate returns a registry view that checks gate before exposing a
+// provider. The underlying provider set is shared so capability and mutation
+// callers can keep using the original registry without the gate.
+func (r *Registry) WithProviderGate(gate func() error) *Registry {
+	if r == nil {
+		return nil
+	}
+	return &Registry{providers: r.providers, gate: gate}
+}
+
 func (r *Registry) Provider(kind Kind, host string) (Provider, error) {
+	if r.gate != nil {
+		if err := r.gate(); err != nil {
+			return nil, err
+		}
+	}
 	provider, ok := r.providers[providerKey{platform: kind, host: host}]
 	if !ok {
 		return nil, ProviderNotConfigured(kind, host)
@@ -49,6 +65,9 @@ func (r *Registry) Provider(kind Kind, host string) (Provider, error) {
 
 func (r *Registry) Providers() []Provider {
 	if r == nil || len(r.providers) == 0 {
+		return nil
+	}
+	if r.gate != nil && r.gate() != nil {
 		return nil
 	}
 	providers := make([]Provider, 0, len(r.providers))

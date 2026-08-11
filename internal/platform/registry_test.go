@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,6 +41,14 @@ func (p testRepositoryReader) ListRepositories(
 	context.Context, string, RepositoryListOptions,
 ) ([]Repository, error) {
 	return nil, nil
+}
+
+func (p testRepositoryReader) SetMergeRequestState(context.Context, RepoRef, int, string) (MergeRequest, error) {
+	return MergeRequest{}, nil
+}
+
+func (p testRepositoryReader) SetIssueState(context.Context, RepoRef, int, string) (Issue, error) {
+	return Issue{}, nil
 }
 
 func TestRegistryLooksUpProvidersByKindAndHost(t *testing.T) {
@@ -122,6 +131,27 @@ func TestRegistryFindsOptionalRepositoryReader(t *testing.T) {
 	})
 	require.NoError(err)
 	assert.Equal(t, Repository{}, repo)
+}
+
+func TestRegistryProviderGateLeavesRawRegistryAvailable(t *testing.T) {
+	require := require.New(t)
+	gateErr := errors.New("provider access disabled")
+	registry, err := NewRegistry(testRepositoryReader{
+		testProvider: testProvider{
+			kind: KindGitLab,
+			host: "gitlab.com",
+			caps: Capabilities{ReadRepositories: true},
+		},
+	})
+	require.NoError(err)
+
+	gated := registry.WithProviderGate(func() error { return gateErr })
+	assert.Empty(t, gated.Providers())
+	_, err = gated.RepositoryReader(KindGitLab, "gitlab.com")
+	require.ErrorIs(err, gateErr)
+
+	_, err = registry.StateMutator(KindGitLab, "gitlab.com")
+	require.NoError(err)
 }
 
 func TestRegistryReturnsUnsupportedCapabilityForMissingOptionalReader(t *testing.T) {

@@ -2316,9 +2316,9 @@
       }
       case "Stop":
         return Effect.gen(function* () {
-          yield* fetchRuntimeProgram({ force: true });
-          if (!isCurrentWorkspace(id, hostKey)) return false;
+          const stoppedSession = runtimeSessions.find((session) => session.key === state.request.sessionKey);
           yield* Effect.sync(() => {
+            if (stoppedSession !== undefined) markSessionClosed(stoppedSession);
             unmountSessionTerminal(state.request.sessionKey);
             const groups = closeSessionInTerminalGroups(terminalLayout.terminalGroups, state.request.sessionKey);
             terminalLayout = normalizeLayoutForSessions(
@@ -2328,6 +2328,8 @@
             if (activeTabKey === `session:${state.request.sessionKey}`) selectFallbackTab();
             clearRuntimeMutationPending(state);
           });
+          yield* fetchRuntimeProgram({ force: true });
+          if (!isCurrentWorkspace(id, hostKey)) return false;
           return true;
         });
       case "Rename":

@@ -1785,6 +1785,32 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(mocks.stopWorkspaceSession).toHaveBeenCalledWith("ws-1", "ws-1_shell_a", undefined));
   });
 
+  it("settles a stopped session before its forced runtime refresh returns", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
+    mocks.stopWorkspaceSession.mockResolvedValue(undefined);
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Open terminal panel" }));
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    await fireEvent.click(screen.getByRole("button", { name: "Close Shell" }));
+    const confirm = await screen.findByRole("dialog", { name: "Stop Shell?" });
+    const stalledRefresh = deferred<ReturnType<typeof runtimeWithTwoTerminalSessions>>();
+    mocks.getWorkspaceRuntime.mockReturnValue(stalledRefresh.promise);
+
+    await fireEvent.click(within(confirm).getByRole("button", { name: "Stop session" }));
+    await waitFor(() => expect(mocks.stopWorkspaceSession).toHaveBeenCalledWith("ws-1", "ws-1_shell_a", undefined));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Stop Shell?" })).toBeNull());
+    expect(screen.queryByRole("button", { name: "Close Shell" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Shell 2 Running" })).toBeTruthy();
+  });
+
   it("uses an in-app modal when renaming a tab", async () => {
     const prompt = vi.fn();
     vi.stubGlobal("prompt", prompt);

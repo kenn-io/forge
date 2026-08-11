@@ -158,6 +158,9 @@ stale tabs.
 
 - Runtime lists returned by `/workspaces/{id}/runtime` are the authoritative
   backend view of live launched sessions.
+- Manual stop settlement must bound every awaited stage and publish confirmed local absence before any
+  best-effort refresh; no stalled transport, authority read, or presenter may retain the pending control
+  (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::makeWorkspaceRuntimeWorkflow`).
 - Application workflow launch settlement precedes presenter delivery. Accept confirmed sessions immediately, reject only
   definite failures, and leave uncertain launches unsettled until reconciliation decides them
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::storeAndPresentMutation`).

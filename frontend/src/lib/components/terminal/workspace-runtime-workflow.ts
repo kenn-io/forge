@@ -562,7 +562,15 @@ export function makeWorkspaceRuntimeWorkflow(
                 return;
               }
 
-              const acknowledged = yield* presenter.observe(state);
+              const observation = presenter.observe(state);
+              const acknowledged = yield* state.kind === "succeeded" && state.operation === "Stop"
+                ? observation.pipe(
+                    Effect.timeoutOrElse({
+                      duration: workspaceRuntimeStopTimeout,
+                      orElse: () => Effect.succeed(true),
+                    }),
+                  )
+                : observation;
               if (!acknowledged) return;
               yield* mutationLock.withPermit(
                 Effect.gen(function* () {
@@ -697,7 +705,16 @@ export function makeWorkspaceRuntimeWorkflow(
         return session === undefined || session.status === "exited"
           ? { _tag: "Applied", state: { kind: "succeeded", operation: "Stop", request } }
           : { _tag: "NotApplied" };
-      });
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: workspaceRuntimeStopTimeout,
+          orElse: () =>
+            Effect.succeed({
+              _tag: "Unknown",
+              cause: new Error("timed out waiting for runtime authority after stopping the session"),
+            } satisfies WorkspaceRuntimeReconciliation),
+        }),
+      );
 
     const reconcileDelete = (
       request: AcceptedWorkspaceRuntimeDeleteRequest,

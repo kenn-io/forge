@@ -45,7 +45,7 @@ func (r *Registry) Register(provider Provider) error {
 // callers can keep using the original registry without the gate.
 func (r *Registry) WithProviderGate(gate func() error) *Registry {
 	if r == nil {
-		return nil
+		return &Registry{gate: gate}
 	}
 	return &Registry{providers: r.providers, gate: gate}
 }

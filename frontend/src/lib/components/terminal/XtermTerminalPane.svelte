@@ -15,10 +15,7 @@
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
   import { createWorkspaceSwitchPaneTimer } from "../../instrumentation/workspaceSwitchTiming.js";
   import { traceHeadersForRequest } from "../../instrumentation/traceContext.js";
-  import {
-    createTerminalPastePayload,
-    isMultilinePaste,
-  } from "./bracketedPaste.js";
+  import { createTerminalPastePayload } from "./bracketedPaste.js";
   import { embeddedWebSocketUrl } from "./embeddedWebSocket.js";
   import { parseOsc52ClipboardWrite } from "./osc52Clipboard.js";
   import {
@@ -307,6 +304,15 @@
   function handleTerminalKeyDown(event: KeyboardEvent): void {
     if (disposed || disabled || event.isComposing || !event.isTrusted) return;
     clipboardWriter?.authorizeKeyboardGesture();
+  }
+
+  function isBrowserPasteShortcut(event: KeyboardEvent): boolean {
+    return !event.altKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
+  }
+
+  function handleInsecureTerminalRightMouse(event: MouseEvent): void {
+    if (window.isSecureContext || event.button !== 2) return;
+    event.stopPropagation();
   }
 
   function handleTerminalWheel(event: WheelEvent): void {
@@ -655,7 +661,7 @@
       event.clipboardData?.getData("text/plain") ||
       event.clipboardData?.getData("text") ||
       "";
-    if (!isMultilinePaste(pastedText)) return;
+    if (pastedText === "") return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -924,6 +930,7 @@
         registerTerminalTextureAtlasParticipant(terminal);
 
       term.open(containerEl);
+      term.attachCustomKeyEventHandler((event) => !isBrowserPasteShortcut(event));
       term.parser.registerOscHandler(52, handleOsc52Clipboard);
       switchTimer.record("terminal-constructed");
       containerEl.addEventListener("paste", handleTerminalPaste, true);
@@ -1076,6 +1083,8 @@
   onpointerdowncapture={handleTerminalPointerDown}
   onlostpointercapture={handleTerminalLostPointerCapture}
   onkeydowncapture={handleTerminalKeyDown}
+  onmousedowncapture={handleInsecureTerminalRightMouse}
+  onmouseupcapture={handleInsecureTerminalRightMouse}
   onwheel={handleTerminalWheel}
   onfocusout={handleTerminalFocusOut}
 >

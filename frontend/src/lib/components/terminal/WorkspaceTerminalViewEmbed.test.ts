@@ -66,6 +66,7 @@ vi.mock("@xterm/xterm", () => ({
     return {
       cols: 80,
       rows: 24,
+      attachCustomKeyEventHandler: vi.fn(),
       open: vi.fn(),
       focus: vi.fn(),
       loadAddon: vi.fn(),

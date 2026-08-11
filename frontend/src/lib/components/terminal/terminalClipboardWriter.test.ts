@@ -10,6 +10,7 @@ import {
 } from "./terminalClipboardWriter";
 
 const writerScopes: Scope.CloseableScope[] = [];
+const originalExecCommand = Object.getOwnPropertyDescriptor(document, "execCommand");
 
 async function makeTestWriter(
   port: TerminalClipboardPort,
@@ -62,9 +63,33 @@ afterEach(async () => {
   await Promise.all(writerScopes.splice(0).map((scope) => Effect.runPromise(Scope.close(scope, Exit.void))));
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  if (originalExecCommand) {
+    Object.defineProperty(document, "execCommand", originalExecCommand);
+  } else {
+    Reflect.deleteProperty(document, "execCommand");
+  }
 });
 
 describe("browser terminal clipboard port", () => {
+  it("writes through a copy event when the Clipboard API is unavailable", async () => {
+    vi.stubGlobal("navigator", {});
+    const setData = vi.fn();
+    const execCommand = vi.fn((command: string) => {
+      expect(command).toBe("copy");
+      const event = new Event("copy", { bubbles: true, cancelable: true }) as ClipboardEvent;
+      Object.defineProperty(event, "clipboardData", { value: { setData } });
+      const defaultAllowed = document.dispatchEvent(event);
+      expect(defaultAllowed).toBe(false);
+      return true;
+    });
+    Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+
+    await expect(createBrowserTerminalClipboardPort().writeText("remote selection")).resolves.toBeUndefined();
+
+    expect(execCommand).toHaveBeenCalledTimes(1);
+    expect(setData).toHaveBeenCalledWith("text/plain", "remote selection");
+  });
+
   it("handles an expired deferred payload without leaking an unhandled rejection", async () => {
     const payload = deferred<string>();
     const write = vi.fn(async () => undefined);

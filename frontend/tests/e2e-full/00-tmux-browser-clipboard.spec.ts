@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { closeSync, constants, openSync, readFileSync, writeSync } from "node:fs";
-import { join } from "node:path";
+import { createServer, request as httpRequest, type Server } from "node:http";
+import { createConnection } from "node:net";
+import { networkInterfaces } from "node:os";
 import { load as loadToml } from "js-toml";
 import {
   expect,
@@ -49,6 +51,98 @@ type RuntimeAttachSpecResponse = {
 
 let clipboardProbeSequence = 0;
 const TERMINAL_OUTPUT_TIMEOUT_MS = 15_000;
+
+type InsecureOriginProxy = {
+  origin: string;
+  close(): Promise<void>;
+};
+
+async function startInsecureOriginProxy(upstreamBaseUrl: string): Promise<InsecureOriginProxy> {
+  const upstream = new URL(upstreamBaseUrl);
+  if (upstream.protocol !== "http:") {
+    throw new Error(`insecure-origin proxy requires an HTTP upstream, received ${upstream.protocol}`);
+  }
+  const proxyHost = Object.values(networkInterfaces())
+    .flat()
+    .find((address) => address?.family === "IPv4" && !address.internal)?.address;
+  if (!proxyHost) {
+    throw new Error("no non-loopback IPv4 address is available for the insecure-origin proxy");
+  }
+
+  const upgradedSockets = new Set<{ destroy(): void }>();
+  const proxyServer: Server = createServer((request, response) => {
+    const upstreamRequest = httpRequest(
+      new URL(request.url ?? "/", upstream),
+      {
+        method: request.method,
+        headers: {
+          ...request.headers,
+          host: upstream.host,
+        },
+      },
+      (upstreamResponse) => {
+        response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+        upstreamResponse.pipe(response);
+      },
+    );
+    upstreamRequest.once("error", (error) => {
+      if (!response.headersSent) response.writeHead(502);
+      response.end(error.message);
+    });
+    request.pipe(upstreamRequest);
+  });
+  proxyServer.on("upgrade", (request, clientSocket, head) => {
+    const upstreamSocket = createConnection({
+      host: upstream.hostname,
+      port: Number.parseInt(upstream.port, 10) || 80,
+    });
+    upgradedSockets.add(clientSocket);
+    upgradedSockets.add(upstreamSocket);
+    clientSocket.once("close", () => upgradedSockets.delete(clientSocket));
+    upstreamSocket.once("close", () => upgradedSockets.delete(upstreamSocket));
+    clientSocket.once("error", () => upstreamSocket.destroy());
+    upstreamSocket.once("error", () => clientSocket.destroy());
+    upstreamSocket.once("connect", () => {
+      const headers: string[] = [];
+      for (let index = 0; index < request.rawHeaders.length; index += 2) {
+        const name = request.rawHeaders[index]!;
+        const value = name.toLowerCase() === "host" ? upstream.host : request.rawHeaders[index + 1]!;
+        headers.push(`${name}: ${value}`);
+      }
+      upstreamSocket.write(
+        `${request.method ?? "GET"} ${request.url ?? "/"} HTTP/${request.httpVersion}\r\n${headers.join("\r\n")}\r\n\r\n`,
+      );
+      if (head.byteLength > 0) upstreamSocket.write(head);
+      clientSocket.pipe(upstreamSocket);
+      upstreamSocket.pipe(clientSocket);
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    proxyServer.once("error", reject);
+    proxyServer.listen(0, proxyHost, resolve);
+  });
+  const proxyAddress = proxyServer.address();
+  if (!proxyAddress || typeof proxyAddress === "string") {
+    throw new Error("insecure-origin proxy did not publish a TCP address");
+  }
+
+  return {
+    origin: `http://${proxyHost}:${proxyAddress.port}`,
+    close: async () => {
+      for (const socket of upgradedSockets) socket.destroy();
+      proxyServer.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        proxyServer.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    },
+  };
+}
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {
@@ -180,6 +274,8 @@ function observeTerminalOutput(page: Page): {
   includes(text: string): boolean;
   count(text: string): number;
   inputIncludes(text: string): boolean;
+  inputCount(text: string): number;
+  inputLength(): number;
   dimensionsForLatestInput(): TerminalDimensions | null;
   activeSocketCount(): number;
   activeSocketHasDimensions(): boolean;
@@ -254,6 +350,8 @@ function observeTerminalOutput(page: Page): {
     includes: (text: string) => streams.some((stream) => stream.output.includes(text)),
     count: (text: string) => streams.reduce((total, stream) => total + stream.output.split(text).length - 1, 0),
     inputIncludes: (text: string) => streams.some((stream) => stream.input.includes(text)),
+    inputCount: (text: string) => streams.reduce((total, stream) => total + stream.input.split(text).length - 1, 0),
+    inputLength: () => streams.reduce((total, stream) => total + stream.input.length, 0),
     activeSocketCount: () => streams.filter((stream) => !stream.closed).length,
     activeSocketHasDimensions: () =>
       streams.some((stream) => !stream.closed && stream.columns !== null && stream.rows !== null),
@@ -458,6 +556,10 @@ async function interceptDeniedBrowserClipboard(page: Page): Promise<string[]> {
     Object.defineProperties(navigator.clipboard, {
       write: { configurable: true, value: denied },
       writeText: { configurable: true, value: denied },
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: () => false,
     });
   });
   return captureTerminalClipboardFallback(page);
@@ -802,6 +904,87 @@ test("modified non-link terminal drags retain pointer capture through outside re
   } finally {
     if (pointerDown) await page.mouse.up();
     if (modifierDown && modifier) await page.keyboard.up(modifier);
+    await api?.dispose();
+    await isolatedServer?.stop();
+  }
+});
+
+test("insecure browser clipboard shortcuts and context menu work with tmux", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Insecure-origin clipboard regression targets Chromium");
+  test.skip(process.env.KENN_FORGE_E2E_INSECURE_ORIGIN !== "1", "Runs only in the isolated Playwright CI container");
+  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
+
+  let isolatedServer: IsolatedE2EServer | null = null;
+  let api: APIRequestContext | null = null;
+  let insecureProxy: InsecureOriginProxy | null = null;
+  let securePage: Page | null = null;
+  try {
+    isolatedServer = await startIsolatedWorkspaceE2EServer();
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: new URL(isolatedServer.info.base_url).origin,
+    });
+    const clipboardPage = await page.context().newPage();
+    securePage = clipboardPage;
+    await clipboardPage.goto(`${isolatedServer.info.base_url}/workspaces`);
+    api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+    const workspace = await createIssueWorkspace(api, 10);
+    const output = observeTerminalOutput(page);
+    const marker = "WINDOWS_REMOTE_PASTE_MARKER";
+    const command = `printf '${marker}\\n'`;
+    const plainTextMarker = "WINDOWS_REMOTE_PLAIN_TEXT_PASTE_MARKER";
+    const plainTextCommand = `printf '${plainTextMarker}\\n'`;
+    const copyMarker = "WINDOWS_REMOTE_COPY_MARKER";
+
+    insecureProxy = await startInsecureOriginProxy(isolatedServer.info.base_url);
+    await page.goto(`${insecureProxy.origin}/terminal/${workspace.id}`);
+    expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+    expect(await page.evaluate(() => typeof navigator.clipboard)).toBe("undefined");
+    const terminal = await openTerminalPanel(page);
+    await expect.poll(() => output.activeSocketCount(), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBeGreaterThan(0);
+    const usesMetaPasteModifier = await page.evaluate(() => /Mac/.test(navigator.platform));
+    const pasteModifier = usesMetaPasteModifier ? "Meta" : "Control";
+
+    await setBrowserClipboard(clipboardPage, command);
+    await page.bringToFront();
+    await terminal.locator(".xterm-helper-textarea").focus();
+    await page.keyboard.press(`${pasteModifier}+V`);
+    await expect.poll(() => output.inputCount(command), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(1);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+
+    await clipboardPage.bringToFront();
+    await setBrowserClipboard(clipboardPage, plainTextCommand);
+    await page.bringToFront();
+    await terminal.locator(".xterm-helper-textarea").focus();
+    if (usesMetaPasteModifier) {
+      await terminal.evaluate((container, pastedText) => {
+        const textarea = container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+        if (!textarea) throw new Error("xterm helper textarea is unavailable");
+        const clipboardData = new DataTransfer();
+        clipboardData.setData("text/plain", pastedText);
+        textarea.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }));
+      }, plainTextCommand);
+    } else {
+      await page.keyboard.press(`${pasteModifier}+Shift+V`);
+    }
+    await expect.poll(() => output.inputCount(plainTextCommand), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(1);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => output.includes(plainTextMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+
+    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
+    await copyMarkerWithTmuxBuffer(page, terminal, output, isolatedServer, tmuxSession, copyMarker);
+    await clipboardPage.bringToFront();
+    await expect.poll(() => readBrowserClipboardWithoutFocus(clipboardPage), { timeout: 15_000 }).toBe(copyMarker);
+
+    await page.bringToFront();
+    await enableTmuxMouseAndRenderMarker(page, terminal, output, isolatedServer, tmuxSession, "RIGHT_CLICK_MARKER");
+    const inputLengthBeforeRightClick = output.inputLength();
+    await terminal.click({ button: "right", position: { x: 20, y: 20 } });
+    await page.waitForTimeout(250);
+    expect(output.inputLength()).toBe(inputLengthBeforeRightClick);
+  } finally {
+    await securePage?.close();
+    await insecureProxy?.close();
     await api?.dispose();
     await isolatedServer?.stop();
   }

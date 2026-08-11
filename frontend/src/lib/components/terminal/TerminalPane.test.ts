@@ -20,6 +20,7 @@ const {
   webLinksAddonCtor,
   xtermFitAddons,
   xtermInstances,
+  xtermCustomKeyEventHandlers,
   xtermOnDataHandlers,
   xtermOscHandlers,
   xtermTerminalCtor,
@@ -55,6 +56,7 @@ const {
     rows: number;
     write: ReturnType<typeof vi.fn>;
   }>,
+  xtermCustomKeyEventHandlers: [] as Array<(event: KeyboardEvent) => boolean>,
   xtermOnDataHandlers: [] as Array<(data: string) => void>,
   xtermOscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   xtermTerminalCtor: vi.fn(),
@@ -76,6 +78,7 @@ let initialTerminalDimensions = { cols: 80, rows: 24 };
 let fitDimensions: { cols: number; rows: number } | undefined = { cols: 80, rows: 24 };
 const originalDocumentFonts = Object.getOwnPropertyDescriptor(document, "fonts");
 const originalNavigatorClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+const originalIsSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext");
 
 function deferred<T>(): {
   promise: Promise<T>;
@@ -203,6 +206,9 @@ vi.mock("@xterm/xterm", () => ({
       },
       options: { ...options },
       clearTextureAtlas: vi.fn(),
+      attachCustomKeyEventHandler: vi.fn((handler: (event: KeyboardEvent) => boolean) => {
+        xtermCustomKeyEventHandlers.push(handler);
+      }),
       dispose: vi.fn(),
       focus: vi.fn(),
       loadAddon: vi.fn(),
@@ -314,6 +320,7 @@ describe("TerminalPane", () => {
     webLinksAddonCtor.mockReset();
     xtermFitAddons.length = 0;
     xtermInstances.length = 0;
+    xtermCustomKeyEventHandlers.length = 0;
     xtermTerminalCtor.mockReset();
     xtermOpen.mockReset();
     xtermOnDataHandlers.length = 0;
@@ -360,12 +367,52 @@ describe("TerminalPane", () => {
     } else {
       Reflect.deleteProperty(navigator, "clipboard");
     }
+    if (originalIsSecureContext) {
+      Object.defineProperty(window, "isSecureContext", originalIsSecureContext);
+    } else {
+      Reflect.deleteProperty(window, "isSecureContext");
+    }
   });
 
   it("uses xterm.js", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+  });
+
+  it("leaves browser paste shortcuts to Chrome instead of sending control characters", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermCustomKeyEventHandlers).toHaveLength(1));
+    const handler = xtermCustomKeyEventHandlers[0]!;
+
+    expect(handler(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(false);
+    expect(handler(new KeyboardEvent("keydown", { key: "V", ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(handler(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }))).toBe(true);
+  });
+
+  it("keeps insecure-origin right clicks out of tmux without blocking Chrome's context menu", async () => {
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: false });
+    const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    const terminalContainer = container.querySelector<HTMLElement>(".terminal-container")!;
+    const xtermChild = document.createElement("div");
+    terminalContainer.append(xtermChild);
+    const mouseDown = vi.fn();
+    const mouseUp = vi.fn();
+    xtermChild.addEventListener("mousedown", mouseDown);
+    xtermChild.addEventListener("mouseup", mouseUp);
+
+    const downAllowed = xtermChild.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 2 }),
+    );
+    const upAllowed = xtermChild.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 2 }),
+    );
+
+    expect(mouseDown).not.toHaveBeenCalled();
+    expect(mouseUp).not.toHaveBeenCalled();
+    expect(downAllowed).toBe(true);
+    expect(upAllowed).toBe(true);
   });
 
   it("uses the same safe opener for detected URLs and OSC 8 links", async () => {
@@ -1393,7 +1440,7 @@ describe("TerminalPane", () => {
     );
   });
 
-  it("leaves single-line browser paste for xterm.js default handling", async () => {
+  it("sends single-line browser paste through the terminal session once", async () => {
     const { container } = render(TerminalPane, {
       props: { workspaceId: "ws-123" },
     });
@@ -1412,15 +1459,22 @@ describe("TerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) => (type === "text/plain" ? "single line" : "")),
+        getData: vi.fn((type: string) => (type === "text/plain" ? "single\x1b[201~ line" : "")),
       },
     });
 
     const defaultAllowed = terminalContainer!.dispatchEvent(event);
 
-    expect(defaultAllowed).toBe(true);
-    expect(laterPasteListener).toHaveBeenCalledTimes(1);
-    expect(mockSockets[0]!.sent).toHaveLength(0);
+    expect(defaultAllowed).toBe(false);
+    expect(laterPasteListener).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain("single[201~ line"),
+    );
+    expect(
+      mockSockets[0]!.sent
+        .map((_, index) => sentText(mockSockets[0]!, index))
+        .filter((text) => text === "single[201~ line"),
+    ).toHaveLength(1);
   });
 });
 

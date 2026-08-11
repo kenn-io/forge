@@ -263,6 +263,13 @@ Keyboard handlers must have one clear owner for each key press.
 - xterm must advertise the Kitty keyboard protocol so terminal applications can
   negotiate detailed key reports instead of misreading legacy cursor input
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::start`).
+- Browser paste shortcuts remain browser-owned inside xterm; Forge consumes each
+  non-empty paste event once at the terminal container
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::isBrowserPasteShortcut`).
+- Plain-HTTP remote terminals keep copy usable through a gesture-authorized copy-event fallback
+  (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::writeTextThroughCopyEvent`).
+- On insecure origins right-button mouse events stay out of tmux so the browser context menu remains usable
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleInsecureTerminalRightMouse`).
 - Modal frames outrank page-level shortcuts. When a modal, drawer, popover, or
   command surface is active, route and list navigation should run only through
   actions explicitly registered for that active surface.

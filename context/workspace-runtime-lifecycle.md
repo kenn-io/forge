@@ -166,6 +166,10 @@ stale tabs.
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::storeAndPresentMutation`).
 - Workspace terminals use xterm.js exclusively; there is no renderer setting
   or alternate renderer path (`frontend/src/lib/components/terminal/TerminalPane.svelte`).
+- Own every non-empty browser text paste at the terminal container boundary,
+  sanitize and send it once, and do not delegate single-line paste to xterm;
+  this event path must remain usable on insecure HTTP origins without the async
+  Clipboard API (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalPaste`).
 - Treat terminal processes as native-terminal-equivalent, but accept bounded, write-only OSC 52 writes only after one
   recent one-shot trusted DOM gesture; terminal data callbacks are not input provenance, and browser denial falls back
   through CSRF-protected loopback (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalKeyDown`).

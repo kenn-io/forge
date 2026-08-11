@@ -74,6 +74,7 @@ vi.mock("@xterm/xterm", () => ({
       buffer: { active: { baseY: 0, type: "normal" as const } },
       cols: 80,
       rows: 24,
+      attachCustomKeyEventHandler: vi.fn(),
       clearTextureAtlas: vi.fn(),
       dispose: mocks.mockDispose,
       focus: vi.fn(),

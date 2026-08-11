@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -247,6 +248,7 @@ type gitLabDiscussionProvider struct {
 	mergeRequestEvents map[int][]platform.MergeRequestEvent
 	issues             map[int]platform.Issue
 	issueEvents        map[int][]platform.IssueEvent
+	mergeRequestReads  atomic.Int32
 
 	// Track mutation calls for test assertions
 	replyToDiscussionCalls []replyToDiscussionCall
@@ -311,6 +313,7 @@ func (p *gitLabDiscussionProvider) GetMergeRequest(
 	_ platform.RepoRef,
 	number int,
 ) (platform.MergeRequest, error) {
+	p.mergeRequestReads.Add(1)
 	if mr, ok := p.mergeRequests[number]; ok {
 		return mr, nil
 	}
@@ -567,6 +570,10 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 		LastActivityAt: time.Now().UTC(),
 	})
 	require.NoError(err)
+	provider.mergeRequests = map[int]platform.MergeRequest{7: {
+		Number:    7,
+		UpdatedAt: time.Now().UTC(),
+	}}
 
 	// Valid 40-char hex thread ID
 	threadID := "abc123def456789012345678901234567890abcd"
@@ -660,6 +667,27 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 	collidingEvents, err := database.ListMREvents(ctx, collidingMRID)
 	require.NoError(err)
 	require.Empty(collidingEvents)
+
+	provider.mergeRequestReads.Store(0)
+	syncer.DisableSync()
+	body = `{"body":"Reply without refresh"}`
+	req = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+localThreadID+"/reply",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusCreated, rr.Code, "response: %s", rr.Body.String())
+	require.Len(provider.replyToDiscussionCalls, 3)
+	assert.Equal("Reply without refresh", provider.replyToDiscussionCalls[2].Body)
+	assert.Zero(provider.mergeRequestReads.Load())
+	gitlabEvents, err = database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(gitlabEvents, 1)
+	assert.Equal("Reply without refresh", gitlabEvents[0].Body)
 }
 
 func TestReplyToDiscussionRejectsInvalidThreadID(t *testing.T) {

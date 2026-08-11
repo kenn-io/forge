@@ -4088,6 +4088,16 @@ func (s *Syncer) RepositoryReader(
 	return s.clients.RepositoryReader(kind, canonicalRepoHost(host))
 }
 
+func (s *Syncer) MergeRequestReader(
+	kind platform.Kind,
+	host string,
+) (platform.MergeRequestReader, error) {
+	if err := s.syncDisabledError(); err != nil {
+		return nil, err
+	}
+	return s.clients.MergeRequestReader(kind, canonicalRepoHost(host))
+}
+
 // Registry returns the boot-time platform registry. Callers must not
 // mutate the returned registry; it is shared by every sync codepath and
 // rebuilt only on daemon restart.
@@ -4211,6 +4221,9 @@ func (s *Syncer) MergeRequestReviewThreadReader(
 	kind platform.Kind,
 	host string,
 ) (platform.MergeRequestReviewThreadReader, error) {
+	if err := s.syncDisabledError(); err != nil {
+		return nil, err
+	}
 	return s.clients.MergeRequestReviewThreadReader(kind, canonicalRepoHost(host))
 }
 

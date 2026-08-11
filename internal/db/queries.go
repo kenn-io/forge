@@ -2247,19 +2247,20 @@ func (d *DB) UpsertMergedActorEvent(
 	canonicalizeMREventTimestamps(&event)
 	changed := false
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		var parentState string
 		var parentMergedAt sql.NullString
 		err := tx.QueryRowContext(ctx, `
-			SELECT state, merged_at
+			SELECT merged_at
 			FROM forge_merge_requests
-			WHERE id = ?`, event.MergeRequestID).Scan(&parentState, &parentMergedAt)
+			WHERE id = ?`, event.MergeRequestID).Scan(&parentMergedAt)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("read merged-event parent state: %w", err)
+			return fmt.Errorf("read merged-event parent timestamp: %w", err)
 		}
-		if parentState != string(MergeRequestStateMerged) || !parentMergedAt.Valid {
+		// A persisted merge timestamp is durable merge evidence even when a
+		// legacy row's state was not normalized to merged.
+		if !parentMergedAt.Valid {
 			return nil
 		}
 		currentMergedAt, err := parseDBTime(parentMergedAt.String)

@@ -74,6 +74,7 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 				"updated_at":"2026-08-02T12:00:00Z",
 				"closed_at":"2026-08-02T11:59:59Z",
 				"merged_at":"2026-08-02T11:59:59Z",
+				"merged_by":{"login":"merge-admin"},
 				"merge_commit_sha":"merge-sha","changed_files":4,
 				"head":{"ref":"feature","sha":"head-sha","repo":{"id":1,"node_id":"R_widget","name":"renamed","full_name":"acme/renamed","owner":{"login":"acme"}}},
 				"base":{"ref":"main","sha":"base-sha","repo":{"id":1,"node_id":"R_widget","name":"renamed","full_name":"acme/renamed","owner":{"login":"acme"}}}
@@ -219,6 +220,8 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 	require.Len(*reportResponse.JSON200.Activity, 1)
 	merged := (*reportResponse.JSON200.Activity)[0]
 	assert.Equal(generated.ArchiveReportActivityResponseKindMergeRequestMerged, merged.Kind)
+	require.NotNil(merged.Actor)
+	assert.Equal("merge-admin", *merged.Actor)
 	require.NotNil(merged.MergeCommitSha)
 	assert.Equal("merge-sha", *merged.MergeCommitSha)
 	require.NotNil(merged.FilesChanged)

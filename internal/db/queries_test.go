@@ -513,6 +513,34 @@ func TestUpsertMergedActorEventUsesCurrentParentMergedAt(t *testing.T) {
 	require.Equal(currentMergedAt, events[0].CreatedAt)
 }
 
+func TestUpsertMergedActorEventAcceptsLegacyParentWithMergedAt(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mergedAt := baseTime()
+	mrID := insertTestMRWithOptions(t, d, testMR(repoID, 1, func(mr *MergeRequest) {
+		mr.State = MergeRequestStateOpen
+		mr.MergedAt = &mergedAt
+	}))
+
+	changed, err := d.UpsertMergedActorEvent(ctx, MREvent{
+		MergeRequestID: mrID,
+		EventType:      "merged",
+		Author:         "merge-admin",
+		Summary:        "merged this",
+		CreatedAt:      mergedAt,
+		DedupeKey:      "legacy-merged-event",
+	})
+	require.NoError(err)
+	require.True(changed)
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal("merge-admin", events[0].Author)
+	require.Equal(mergedAt, events[0].CreatedAt)
+}
+
 func TestUpsertMergedActorEventRejectsNonMergedParent(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

@@ -12450,6 +12450,13 @@ func (s *Syncer) syncMRForRepoResolved(
 			if repairErr != nil {
 				return fmt.Errorf("repair merged MR #%d metrics: %w", number, repairErr)
 			}
+			if _, actorErr := s.persistMergedTransitionEvent(
+				repairCtx, mrID, revision, ghPR, normalized.MergedAt,
+			); errors.Is(actorErr, db.ErrRepositoryRouteFenceChanged) {
+				return nil
+			} else if actorErr != nil {
+				return fmt.Errorf("repair merged MR #%d actor: %w", number, actorErr)
+			}
 		}
 		return nil
 	}

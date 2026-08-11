@@ -47,6 +47,25 @@ type StringFilterKey = "repo" | "branch" | "status" | "search" | "jobType";
 type BooleanFilterKey = "hideClosed" | "showAutoDesign";
 type FilterKey = StringFilterKey | BooleanFilterKey;
 
+const HIDE_CLOSED_STORAGE_KEY = "kenn-forge:roborev:hideClosed";
+const SHOW_AUTO_DESIGN_STORAGE_KEY = "kenn-forge:roborev:showAutoDesign";
+
+function readBooleanPreference(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeBooleanPreference(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    // Storage is best-effort; reactive state still owns this store instance.
+  }
+}
+
 export function createJobsStore(opts: JobsStoreOptions) {
   const client = opts.client;
 
@@ -66,9 +85,9 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let filterBranch = $state<string | undefined>(undefined);
   let filterStatus = $state<string | undefined>(undefined);
   let filterSearch = $state<string | undefined>(undefined);
-  let filterHideClosed = $state(false);
+  let filterHideClosed = $state(readBooleanPreference(HIDE_CLOSED_STORAGE_KEY));
   let filterJobType = $state<string | undefined>(undefined);
-  let filterShowAutoDesign = $state(false);
+  let filterShowAutoDesign = $state(readBooleanPreference(SHOW_AUTO_DESIGN_STORAGE_KEY));
 
   // Sorting (client-side)
   let sortColumn = $state<SortColumn>("id");
@@ -392,6 +411,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       case "hideClosed":
         if (typeof value !== "boolean") return;
         filterHideClosed = value;
+        writeBooleanPreference(HIDE_CLOSED_STORAGE_KEY, value);
         break;
       case "jobType":
         if (typeof value === "boolean") return;
@@ -400,6 +420,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       case "showAutoDesign":
         if (typeof value !== "boolean") return;
         filterShowAutoDesign = value;
+        writeBooleanPreference(SHOW_AUTO_DESIGN_STORAGE_KEY, value);
         break;
     }
     loadJobs();

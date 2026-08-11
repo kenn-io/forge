@@ -589,7 +589,19 @@
   }
 
   function handleDiffAreaKeydown(e: KeyboardEvent): void {
-    if (!pageKeyboardActive || keyboardActive) return;
+    if (keyboardActive) return;
+    if (!pageKeyboardActive) {
+      if (
+        !isTextEntryTarget(e.target) &&
+        (e.key === "PageDown" || e.key === "PageUp") &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey
+      ) {
+        e.preventDefault();
+      }
+      return;
+    }
     handlePageKeydown(e);
   }
 

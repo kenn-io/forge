@@ -107,4 +107,15 @@ describe("DockedTerminalPanel", () => {
     await fireEvent.keyDown(handle, { key: "ArrowUp" });
     expect(onResize).not.toHaveBeenCalled();
   });
+
+  it("claims input before a terminal child consumes wheel propagation", async () => {
+    const onInputActivate = vi.fn();
+    renderDockedTerminalPanel({ onInputActivate });
+    const child = screen.getByRole("separator", { name: "Resize terminal panel" });
+    child.addEventListener("wheel", (event) => event.stopPropagation());
+
+    await fireEvent.wheel(child);
+
+    expect(onInputActivate).toHaveBeenCalledOnce();
+  });
 });

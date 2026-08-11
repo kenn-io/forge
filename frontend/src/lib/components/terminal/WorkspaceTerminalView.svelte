@@ -1213,8 +1213,9 @@
 
   $effect(() => {
     const layout = surfaceLayout;
-    if (layout === null || externalDockVisible) return;
-    untrack(() => layout.setExternalInputActive(false));
+    if (layout === null) return;
+    if (!externalDockVisible) untrack(() => layout.setExternalInputActive(false));
+    return () => untrack(() => layout.setExternalInputActive(false));
   });
   const externalControlsVisible = $derived(
     workspacePaneEmpty ||

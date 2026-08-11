@@ -4297,6 +4297,19 @@ describe("WorkspaceTerminalView", () => {
     expect(activeHostedSession("prs")?.label).toBe("Helper");
   });
 
+  it("releases external input ownership when the hosted view leaves a surface", async () => {
+    const layout = getPaneLayoutStore("prs");
+    const { rerender } = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+    layout.setExternalInputActive(true);
+    expect(layout.externalInputActive()).toBe(true);
+
+    await rerender({ workspaceId: "ws-1", paneSurface: undefined });
+
+    expect(layout.externalInputActive()).toBe(false);
+  });
+
   describe("promoted sessions", () => {
     it("gives a parked row-only dock the sole workspace actions and live dialogs", async () => {
       localStorage.setItem(

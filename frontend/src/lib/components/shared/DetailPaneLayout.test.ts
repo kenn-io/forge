@@ -416,17 +416,21 @@ describe("detail pane layout", () => {
     expect(layout.paneRender()?.activeInputTabKey).toBe("conversation");
   });
 
-  it("relinquishes pane keyboard ownership to an external surface", () => {
+  it("lets the same pane reclaim keyboard ownership from an external surface", () => {
     const layout = store(splitTree());
     render(DetailPaneLayoutTestHarness, { layout, routeTabKey: "conversation" });
     const activePaneKey = () =>
       document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+
+    fireEvent.pointerDown(screen.getByTestId("pane-workspace"));
+    expect(activePaneKey()).toBe("workspace");
 
     layout.setExternalInputActive(true);
     flushSync();
     expect(activePaneKey()).toBeUndefined();
     expect(layout.paneRender()?.activeInputTabKey).toBeNull();
 
+    // Re-enter the pane that owned input immediately before the external dock.
     fireEvent.pointerDown(screen.getByTestId("pane-workspace"));
     expect(layout.externalInputActive()).toBe(false);
     expect(activePaneKey()).toBe("workspace");

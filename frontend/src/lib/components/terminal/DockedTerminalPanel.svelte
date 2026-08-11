@@ -198,7 +198,7 @@
   aria-label="Terminal panel"
   onfocusin={() => onInputActivate?.()}
   onpointerdown={() => onInputActivate?.()}
-  onwheel={() => onInputActivate?.()}
+  onwheelcapture={() => onInputActivate?.()}
   ondragover={handleDragOver}
   ondrop={handleDrop}
 >

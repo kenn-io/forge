@@ -251,9 +251,9 @@
   let lastReportedFocus: string | null = null;
 
   function focusPane(tabKey: string): void {
+    layout.noteFocused(tabKey);
     if (lastReportedFocus === tabKey) return;
     lastReportedFocus = tabKey;
-    layout.noteFocused(tabKey);
     onFocusPane?.(tabKey);
   }
 

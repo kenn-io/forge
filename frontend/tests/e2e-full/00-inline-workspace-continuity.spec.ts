@@ -1176,6 +1176,20 @@ test.describe("inline workspace pane continuity", () => {
         .poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop)))
         .toBe(beforeExternalPageDown);
 
+      await diffArea.evaluate((area) => {
+        area.scrollTop = 0;
+      });
+      await diffArea.click({ position: { x: 24, y: 80 } });
+      await expect(surfaceDock).not.toHaveClass(/input-active/);
+      const filesLeaf = diffArea.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+      await expect(filesLeaf).toHaveClass(/input-active/);
+      await expect
+        .poll(async () => {
+          await page.keyboard.press("PageDown");
+          return diffArea.evaluate((area) => Math.round(area.scrollTop));
+        })
+        .toBeGreaterThan(0);
+
       await typeMarkerCommand(page, promotedTerminal, workspace.worktree_path, "row-only-promoted");
       await surfaceDock.getByRole("button", { name: "Open terminal panel", exact: true }).click();
       const dockedTerminal = surfaceDock.locator(".terminal-container");

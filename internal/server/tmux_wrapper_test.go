@@ -244,7 +244,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	worktreeDir := filepath.Join(dir, "worktrees")
 
 	repos := []ghclient.RepoRef{
-		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 	}
 	mock := &mockGH{}
 	syncer := ghclient.NewSyncer(
@@ -429,6 +429,95 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	require.NotNil(listed.Workspaces[0].TmuxPaneTitle)
 	assert.Equal("⠴ t3code-b5014b03", *listed.Workspaces[0].TmuxPaneTitle)
 	assert.True(listed.Workspaces[0].TmuxWorking)
+}
+
+func TestSearchedActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("TMUX_PANE_OUTPUT", "baseline output")
+	script, _ := writeTmuxRecorder(t)
+	client, _, database, _ := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: mr.ID,
+		EventType:      "issue_comment",
+		Author:         "search-reviewer",
+		Body:           "matches only provider event fields",
+		CreatedAt:      now,
+		DedupeKey:      "searched-workspace-comment",
+	}}))
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", MrNumber: 1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	workspaceID := createResp.JSON202.Id
+	waitForWorkspaceReady(t, ctx, client, workspaceID)
+
+	require.Eventually(func() bool {
+		activity := getRawWorkspaceActivity(t, client, ctx, workspaceID)
+		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
+	}, 3*time.Second, 50*time.Millisecond, "tmux baseline was not observed")
+	t.Setenv("TMUX_PANE_OUTPUT", "changed output")
+
+	search := "search-reviewer"
+	since := now.Add(-time.Hour).Format(time.RFC3339)
+	probe, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Search: &search, Since: &since},
+	)
+	require.NoError(err)
+	require.Equalf(http.StatusOK, probe.StatusCode(), "activity response: %s", probe.Body)
+	var initial *generated.ListActivityResponse
+	require.Eventually(func() bool {
+		response, requestErr := client.HTTP.ListActivityWithResponse(
+			ctx, &generated.ListActivityParams{Search: &search, Since: &since},
+		)
+		if requestErr != nil || response.JSON200 == nil || response.JSON200.WorkspaceActivity == nil {
+			return false
+		}
+		initial = response
+		return len(*response.JSON200.WorkspaceActivity) == 1
+	}, 8*time.Second, 100*time.Millisecond, "workspace activity did not observe changed tmux output")
+	require.NotNil(initial)
+	require.NotNil(initial.JSON200)
+	require.NotNil(initial.JSON200.Items)
+	require.Len(*initial.JSON200.Items, 1)
+	require.NotNil(initial.JSON200.WorkspaceActivity)
+	require.Len(*initial.JSON200.WorkspaceActivity, 1)
+	initialWorkspace := (*initial.JSON200.WorkspaceActivity)[0]
+	assert.EqualValues(1, initialWorkspace.ItemNumber)
+	require.NotNil(initialWorkspace.Workspace)
+	assert.Equal(workspaceID, initialWorkspace.Workspace.Id)
+
+	after := (*initial.JSON200.Items)[0].Cursor
+	incremental, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Search: &search, Since: &since, After: &after},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, incremental.StatusCode())
+	require.NotNil(incremental.JSON200)
+	require.NotNil(incremental.JSON200.Items)
+	assert.Empty(*incremental.JSON200.Items)
+	require.NotNil(incremental.JSON200.WorkspaceActivity)
+	require.Len(*incremental.JSON200.WorkspaceActivity, 1)
+	incrementalWorkspace := (*incremental.JSON200.WorkspaceActivity)[0]
+	assert.EqualValues(1, incrementalWorkspace.ItemNumber)
+	require.NotNil(incrementalWorkspace.Workspace)
+	assert.Equal(workspaceID, incrementalWorkspace.Workspace.Id)
 }
 
 func getRawWorkspaceActivity(

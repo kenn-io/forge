@@ -151,8 +151,15 @@ components:
           type:
             - array
             - "null"
+        workspace_activity:
+          items:
+            $ref: "#/components/schemas/WorkspaceActivitySubjectResponse"
+          type:
+            - array
+            - "null"
       required:
         - items
+        - workspace_activity
         - capped
       type: object
     AddRepoInputBody:
@@ -2929,6 +2936,9 @@ components:
           type: string
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
+        workspace_activity_at:
+          format: date-time
+          type: string
       required:
         - repo
         - platform_host
@@ -4365,6 +4375,9 @@ components:
             - "null"
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
+        workspace_activity_at:
+          format: date-time
+          type: string
         worktree_links:
           items:
             $ref: "#/components/schemas/WorktreeLinkResponse"
@@ -7711,6 +7724,47 @@ components:
           type: string
       required:
         - status
+      type: object
+    WorkspaceActivitySubjectResponse:
+      additionalProperties: false
+      properties:
+        activity_at:
+          format: date-time
+          type: string
+        item_author:
+          type: string
+        item_number:
+          format: int64
+          type: integer
+        item_state:
+          type: string
+        item_title:
+          type: string
+        item_type:
+          type: string
+        item_url:
+          type: string
+        platform_host:
+          type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
+        repo_name:
+          type: string
+        repo_owner:
+          type: string
+        workspace:
+          $ref: "#/components/schemas/WorkspaceRef"
+      required:
+        - repo
+        - platform_host
+        - repo_owner
+        - repo_name
+        - item_type
+        - item_number
+        - item_title
+        - item_url
+        - item_state
+        - activity_at
       type: object
     WorkspaceDiffWatchResponse:
       additionalProperties: false

@@ -75,9 +75,11 @@ func TestListActivity(t *testing.T) {
 		assert.Equal("pr", items[3].ItemType)
 		assert.Equal("new_issue", items[4].ActivityType)
 		assert.Equal("new_pr", items[5].ActivityType)
+		assert.Equal(repoB, items[5].RepoID)
 		assert.Equal("github.com", items[5].PlatformHost)
 		assert.Equal("bob", items[5].RepoOwner)
 		assert.Equal("new_pr", items[6].ActivityType)
+		assert.Equal(repoA, items[6].RepoID)
 		assert.Equal("alice", items[6].RepoOwner)
 	})
 

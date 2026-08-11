@@ -128,7 +128,7 @@ func (d *DB) ListActivity(
 		}
 		notificationUnion = `
 			UNION ALL
-			SELECT 'notification', 'ntf', n.id,
+			SELECT 'notification', 'ntf', n.id, r.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       n.item_type, COALESCE(n.item_number, 0), n.subject_title,
 			       n.web_url, CASE WHEN n.unread = 1 THEN 'unread' ELSE 'read' END,
@@ -160,7 +160,7 @@ func (d *DB) ListActivity(
 	}
 
 	query := fmt.Sprintf(`
-		SELECT activity_type, source, source_id, platform, platform_host,
+		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
 		       repo_owner, repo_name,
 		       item_type, item_number, item_title,
 		       item_url, item_state, author, item_author,
@@ -172,6 +172,7 @@ func (d *DB) ListActivity(
 		FROM (
 			SELECT 'new_pr' AS activity_type,
 			       'pr' AS source, p.id AS source_id,
+			       r.id AS repo_id,
 			       r.platform, r.platform_host, r.owner AS repo_owner, r.name AS repo_name,
 			       r.repo_path_key,
 			       'pr' AS item_type, p.number AS item_number,
@@ -188,7 +189,7 @@ func (d *DB) ListActivity(
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
-			SELECT 'new_issue', 'issue', i.id,
+			SELECT 'new_issue', 'issue', i.id, r.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title,
 			       i.url, i.state,
@@ -208,6 +209,7 @@ func (d *DB) ListActivity(
 			           ELSE e.event_type
 			       END,
 			       'pre', e.id,
+			       r.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       'pr', p.number, p.title,
 			       p.url, p.state,
@@ -225,7 +227,7 @@ func (d *DB) ListActivity(
 			WHERE e.event_type IN (
 				'issue_comment', 'review', 'commit', 'force_push')
 			UNION ALL
-			SELECT 'comment', 'ise', e.id,
+			SELECT 'comment', 'ise', e.id, r.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title,
 			       i.url, i.state,
@@ -242,7 +244,7 @@ func (d *DB) ListActivity(
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE e.event_type = 'issue_comment'
 			UNION ALL
-			SELECT 'default_branch_commit', 'bc', bc.id,
+			SELECT 'default_branch_commit', 'bc', bc.id, r.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       '', 0, '',
 			       '', '',
@@ -259,7 +261,7 @@ func (d *DB) ListActivity(
 			FROM forge_branch_commits bc
 			JOIN forge_repos r ON bc.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
-			SELECT 'default_branch_force_push', 'bfp', bfp.id,
+			SELECT 'default_branch_force_push', 'bfp', bfp.id, r.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       '', 0, '',
 			       '', '',
@@ -298,6 +300,7 @@ func (d *DB) ListActivity(
 		var committedAtStr sql.NullString
 		if err := rows.Scan(
 			&it.ActivityType, &it.Source, &it.SourceID,
+			&it.RepoID,
 			&it.Platform, &it.PlatformHost, &it.RepoOwner, &it.RepoName,
 			&it.ItemType, &it.ItemNumber, &it.ItemTitle,
 			&it.ItemURL, &it.ItemState, &it.Author, &it.ItemAuthor,

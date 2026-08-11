@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { GeneratedClient } from "../api/generated-api.js";
 import type { OwnedAppRuntime } from "../app/runtime.js";
-import type { ActivityItem, ActivitySettings } from "../api/types.js";
+import type { ActivityItem, ActivitySettings, WorkspaceActivitySubject } from "../api/types.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import {
   buildActivityItemTypeFilter,
@@ -49,6 +49,22 @@ function makeStore() {
   return createActivityStore({ client: fakeClient });
 }
 
+function workspaceActivity(itemNumber: number): WorkspaceActivitySubject {
+  return {
+    activity_at: `2026-08-09T12:00:0${itemNumber}Z`,
+    item_number: itemNumber,
+    item_state: "open",
+    item_title: `PR ${itemNumber}`,
+    item_type: "pr",
+    item_url: `https://github.com/acme/widgets/pull/${itemNumber}`,
+    platform_host: "github.com",
+    repo: { host: "github.com", owner: "acme", name: "widgets" },
+    repo_name: "widgets",
+    repo_owner: "acme",
+    workspace: { id: `workspace-${itemNumber}`, status: "ready" },
+  };
+}
+
 beforeEach(() => {
   runtime = undefined;
   window.history.replaceState(null, "", "/");
@@ -57,6 +73,21 @@ beforeEach(() => {
 afterEach(async () => {
   for (const item of getFlashes()) dismissFlash(item.id);
   if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
+});
+
+describe("activity store workspace activity", () => {
+  it("retains the complete workspace snapshot returned with an activity read", async () => {
+    const snapshot = [workspaceActivity(7)];
+    const client = {
+      GET: async () => ({ data: { items: [], capped: false, workspace_activity: snapshot }, error: null }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(store.getWorkspaceActivity()).toEqual(snapshot);
+  });
 });
 
 describe("activity store collapse state", () => {

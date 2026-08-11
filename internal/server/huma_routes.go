@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 type repoNumberInput struct {
@@ -1224,7 +1226,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		RepoFilters: parseRepoFilters(input.Repo),
 		Types:       input.Types,
 		ItemTypes:   input.ItemTypes,
-		Search:      input.Search,
+		Search:      strings.ToLower(strings.TrimSpace(input.Search)),
 		// Notifications are always on; this only drops notification rows in
 		// SQL when no config is loaded (the nil-config safety guard), so the
 		// safety-cap window is filled by real activity, not stale notifications.
@@ -1262,10 +1264,38 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		opts.NotificationRepoFilters = trackedRepos
 	}
 
+	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		slog.Error("lock activity repository snapshot failed", "err", err)
+		return nil, httpapi.Internal("list activity failed")
+	}
+	defer releaseReconciliation()
+
 	items, err := s.db.ListActivity(ctx, opts)
 	if err != nil {
 		slog.Error("list activity failed", "err", err)
 		return nil, httpapi.Internal("list activity failed")
+	}
+	var workspaceEventItems []db.ActivityItem
+	hasFullWorkspaceEventItems := opts.Search != "" && opts.AfterTime != nil
+	if hasFullWorkspaceEventItems {
+		workspaceOpts := opts
+		workspaceOpts.AfterTime = nil
+		workspaceOpts.AfterSource = ""
+		workspaceOpts.AfterSourceID = 0
+		workspaceEventItems, err = s.db.ListActivity(ctx, workspaceOpts)
+		if err != nil {
+			slog.Error("list activity search subjects failed", "err", err)
+			return nil, httpapi.Internal("list activity failed")
+		}
+	}
+	if s.activityAfterItemsForTest != nil {
+		s.activityAfterItemsForTest()
+	}
+	workspaceSnapshot, err := s.workspaceAPI.WorkspaceSubjectSnapshotUnderRepositoryReconciliationRead(ctx)
+	if err != nil {
+		slog.Error("list workspace activity failed", "err", err)
+		return nil, httpapi.Internal("list workspace activity failed")
 	}
 
 	if s.cfg != nil {
@@ -1273,29 +1303,22 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		for _, repo := range s.syncer.TrackedRepos() {
 			tracked[trackedRepoKey(repo)] = struct{}{}
 		}
-		filtered := make([]db.ActivityItem, 0, len(items))
-		for _, it := range items {
-			key := trackedRepoKey(ghclient.RepoRef{
-				Platform:     platform.Kind(it.Platform),
-				PlatformHost: it.PlatformHost,
-				Owner:        it.RepoOwner,
-				Name:         it.RepoName,
-			})
-			if _, ok := tracked[key]; ok {
-				filtered = append(filtered, it)
-			}
+		items = filterActivityItemsToTrackedRepositories(items, tracked)
+		if hasFullWorkspaceEventItems {
+			workspaceEventItems = filterActivityItemsToTrackedRepositories(workspaceEventItems, tracked)
 		}
-		items = filtered
 	}
 
 	capped := len(items) > activitySafetyCap
 	if capped {
 		items = items[:activitySafetyCap]
 	}
-
-	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("load workspace refs failed")
+	if hasFullWorkspaceEventItems {
+		if len(workspaceEventItems) > activitySafetyCap {
+			workspaceEventItems = workspaceEventItems[:activitySafetyCap]
+		}
+	} else {
+		workspaceEventItems = items
 	}
 
 	out := make([]activityItemResponse, len(items))
@@ -1315,7 +1338,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ItemTitle:    it.ItemTitle,
 			ItemURL:      it.ItemURL,
 			ItemState:    it.ItemState,
-			Workspace:    workspaceRefForActivityItem(workspacesByItem, it),
+			Workspace:    workspaceRefForActivityItem(workspaceSnapshot, it),
 			Author:       it.Author,
 			ItemAuthor:   it.ItemAuthor,
 			CreatedAt:    formatUTCRFC3339(it.CreatedAt),
@@ -1343,9 +1366,139 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		out[i] = item
 	}
 
+	workspaceActivity := s.workspaceActivityResponse(input, opts, workspaceSnapshot, workspaceEventItems)
 	return &listActivityOutput{
-		Body: activityResponse{Items: out, Capped: capped},
+		Body: activityResponse{Items: out, WorkspaceActivity: workspaceActivity, Capped: capped},
 	}, nil
+}
+
+func filterActivityItemsToTrackedRepositories(
+	items []db.ActivityItem,
+	tracked map[string]struct{},
+) []db.ActivityItem {
+	filtered := make([]db.ActivityItem, 0, len(items))
+	for _, item := range items {
+		key := trackedRepoKey(ghclient.RepoRef{
+			Platform:     platform.Kind(item.Platform),
+			PlatformHost: item.PlatformHost,
+			Owner:        item.RepoOwner,
+			Name:         item.RepoName,
+		})
+		if _, ok := tracked[key]; ok {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func (s *Server) workspaceActivityResponse(
+	input *listActivityInput,
+	opts db.ListActivityOpts,
+	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+	providerItems []db.ActivityItem,
+) []workspaceActivitySubjectResponse {
+	itemTypes := make(map[string]struct{}, len(input.ItemTypes))
+	for _, itemType := range input.ItemTypes {
+		itemTypes[strings.ToLower(strings.TrimSpace(itemType))] = struct{}{}
+	}
+	tracked := make(map[string]struct{})
+	if s.cfg != nil {
+		for _, repo := range s.syncer.TrackedRepos() {
+			tracked[trackedRepoKey(repo)] = struct{}{}
+		}
+	}
+	matchedSubjects := make(map[db.WorkspaceSubjectKey]struct{})
+	if opts.Search != "" {
+		for _, item := range providerItems {
+			itemType := workspaceItemTypeFromActivity(item.ItemType)
+			if itemType == "" {
+				continue
+			}
+			matchedSubjects[db.WorkspaceSubjectKey{
+				RepoID: item.RepoID, ItemType: itemType, ItemNumber: item.ItemNumber,
+			}] = struct{}{}
+		}
+	}
+	result := make([]workspaceActivitySubjectResponse, 0, len(snapshot.Subjects))
+	for key, activity := range snapshot.Subjects {
+		if activity.ActivityAt == nil || (opts.Since != nil && activity.ActivityAt.Before(*opts.Since)) {
+			continue
+		}
+		wireType := "issue"
+		if key.ItemType == db.WorkspaceItemTypePullRequest {
+			wireType = "pr"
+		}
+		if len(itemTypes) > 0 {
+			if _, ok := itemTypes[wireType]; !ok {
+				continue
+			}
+		}
+		subject := activity.Subject
+		if s.cfg != nil {
+			trackedKey := trackedRepoKey(ghclient.RepoRef{
+				Platform: platform.Kind(subject.Platform), PlatformHost: subject.PlatformHost,
+				Owner: subject.RepoOwner, Name: subject.RepoName,
+			})
+			if _, ok := tracked[trackedKey]; !ok {
+				continue
+			}
+		}
+		if !workspaceSubjectMatchesRepoFilters(subject, opts.RepoFilters) {
+			continue
+		}
+		if opts.Search != "" {
+			haystack := strings.ToLower(strings.Join([]string{
+				subject.Title, subject.Author, subject.RepoOwner + "/" + subject.RepoName,
+				subject.RepoPath, strconv.Itoa(key.ItemNumber),
+			}, " "))
+			if _, matchedProviderEvent := matchedSubjects[key]; !matchedProviderEvent && !strings.Contains(haystack, opts.Search) {
+				continue
+			}
+		}
+		ref := activity.Workspace
+		result = append(result, workspaceActivitySubjectResponse{
+			Repo: s.repoResolver.RefFromParts(
+				subject.Platform, subject.PlatformHost, subject.RepoOwner, subject.RepoName,
+			),
+			PlatformHost: subject.PlatformHost, RepoOwner: subject.RepoOwner, RepoName: subject.RepoName,
+			ItemType: wireType, ItemNumber: key.ItemNumber, ItemTitle: subject.Title,
+			ItemURL: subject.URL, ItemState: subject.State, ItemAuthor: subject.Author,
+			Workspace: &ref, ActivityAt: formatUTCRFC3339(*activity.ActivityAt),
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ActivityAt != result[j].ActivityAt {
+			return result[i].ActivityAt > result[j].ActivityAt
+		}
+		left := result[i].Repo.RepoPath + result[i].ItemType + strconv.Itoa(result[i].ItemNumber)
+		right := result[j].Repo.RepoPath + result[j].ItemType + strconv.Itoa(result[j].ItemNumber)
+		return left < right
+	})
+	return result
+}
+
+func workspaceSubjectMatchesRepoFilters(
+	subject db.WorkspaceSubjectMetadata,
+	filters []db.RepoFilter,
+) bool {
+	if len(filters) == 0 {
+		return true
+	}
+	for _, filter := range filters {
+		if !strings.EqualFold(filter.Platform, subject.Platform) ||
+			!strings.EqualFold(filter.PlatformHost, subject.PlatformHost) {
+			continue
+		}
+		if filter.RepoPath != "" && strings.EqualFold(filter.RepoPath, subject.RepoPath) {
+			return true
+		}
+		if filter.RepoOwner != "" && filter.RepoName != "" &&
+			strings.EqualFold(filter.RepoOwner, subject.RepoOwner) &&
+			strings.EqualFold(filter.RepoName, subject.RepoName) {
+			return true
+		}
+	}
+	return false
 }
 
 func branchActivityURL(it db.ActivityItem) string {

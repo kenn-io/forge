@@ -16,6 +16,7 @@
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
   import { repoIdentityKey } from "../../utils/repo-label.js";
+  import { effectiveActivity } from "../../utils/effective-activity.js";
 
   const { pulls } = getStores();
   const hostState = getHostState();
@@ -61,7 +62,8 @@
     }
   });
 
-  const ago = $derived(formatRelativeTime(pr.LastActivityAt));
+  const activityTime = $derived(effectiveActivity(pr.LastActivityAt, pr.workspace_activity_at));
+  const ago = $derived(formatRelativeTime(activityTime.at));
   const hasWorktree = $derived(
     (pr.worktree_links?.length ?? 0) > 0,
   );
@@ -261,7 +263,11 @@
           </svg>
         {/if}
       </span>
-      <span class="time">{ago}</span>
+      <span
+        class="time"
+        title={activityTime.fromWorkspace ? "Recent workspace activity" : undefined}
+        aria-label={activityTime.fromWorkspace ? `Recent workspace activity, ${ago}` : undefined}
+      >{ago}</span>
     </span>
   </div>
 </button>

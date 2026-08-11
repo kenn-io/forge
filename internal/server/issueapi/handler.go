@@ -11,7 +11,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
-	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 const (
@@ -24,11 +24,11 @@ const (
 )
 
 type Deps struct {
-	DB         *db.DB
-	Resolver   *httpapi.RepositoryResolver
-	Syncer     *ghclient.Syncer
-	Workspaces *workspace.Manager
-	Now        func() time.Time
+	DB                *db.DB
+	Resolver          *httpapi.RepositoryResolver
+	Syncer            *ghclient.Syncer
+	Now               func() time.Time
+	WorkspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
 
 	FilterRepos                       func([]db.Repo) []db.Repo
 	RepoOperations                    func(db.Repo) httpapi.RepoOperations
@@ -36,11 +36,11 @@ type Deps struct {
 }
 
 type Handler struct {
-	db         *db.DB
-	resolver   *httpapi.RepositoryResolver
-	syncer     *ghclient.Syncer
-	workspaces *workspace.Manager
-	now        func() time.Time
+	db                *db.DB
+	resolver          *httpapi.RepositoryResolver
+	syncer            *ghclient.Syncer
+	now               func() time.Time
+	workspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
 
 	filterRepos             func([]db.Repo) []db.Repo
 	repoOperations          func(db.Repo) httpapi.RepoOperations
@@ -56,8 +56,8 @@ func New(deps Deps) *Handler {
 		db:                      deps.DB,
 		resolver:                deps.Resolver,
 		syncer:                  deps.Syncer,
-		workspaces:              deps.Workspaces,
 		now:                     now,
+		workspaceSubjects:       deps.WorkspaceSubjects,
 		filterRepos:             deps.FilterRepos,
 		repoOperations:          deps.RepoOperations,
 		markClosedNotifications: deps.MarkClosedLinkedNotificationsDone,

@@ -130,10 +130,46 @@ embedder protocol for arbitrary host state.
 - List/detail reads return persisted plus last-known-good enrichment without
   foreground git or tmux probes; stale components reconcile through bounded
   background workers (`internal/server/workspaceapi/workspace_enrichment.go::toCachedWorkspaceResponse`).
-- `enrichment_status` is aggregate across reads and refresh/push/pull responses:
-  failed reconciliation retains last-known-good components while preserving
-  failure status/error
-  (`internal/server/workspaceapi/workspace_enrichment.go::refreshWorkspaceResponse`).
+- Activity and Issue/Pull Request list and detail responses share one cached
+  subject snapshot: every resolvable subject keeps a workspace reference, while
+  tmux activity remains optional and ephemeral (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
+- Workspace enrichment is best-effort on Issue/PR detail: snapshot failures log
+  and omit optional workspace metadata rather than hiding a valid item; list and
+  Activity reads stay fail-fast because the snapshot affects ordering and identity (`internal/server/pullapi/routes.go::Handler.buildPullDetailResponse`, `internal/server/issueapi/routes.go::Handler.BuildDetail`).
+- Threaded and Mobile Activity merge that snapshot after provider-event filters,
+  so workspace recency can keep an event-less subject visible; Flat Activity
+  remains provider-event-only (`frontend/src/lib/views/MobileActivityView.svelte::groups`).
+- Activity normalizes search once and keeps workspace recency for subjects with
+  matching provider events across incremental polls; metadata search filters only
+  eventless rows (`internal/server/huma_routes.go::Server.workspaceActivityResponse`).
+- Activity event references key that snapshot by stable repo ID: issues use
+  own identity and PRs use resolved identity, so route reuse stays fail-closed
+  (`internal/server/helpers.go::workspaceRefForActivityItem`).
+- The shared subject snapshot holds the repository-reconciliation read barrier
+  across both its workspace-summary and subject-metadata reads, so a route move
+  cannot split one response across repository identities
+  (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
+- Activity holds one reconciliation barrier across provider events and the
+  under-lock workspace-subject snapshot, keeping routes and stable IDs in one epoch
+  (`internal/server/huma_routes.go::Server.listActivity`).
+- Subject metadata and Issue/PR effective-activity ordering use JSON-backed
+  SQLite relations, so retained workspaces cannot exhaust bind variables
+  (`internal/db/workspace_subjects.go::DB.ListWorkspaceSubjectMetadata`, `internal/db/queries.go::workspaceActivityCTE`).
+- Association changes only activity identity: an issue keeps its own workspace
+  affordance after its work resolves to a PR, while that PR receives the tmux
+  recency override (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
+- Aggregate enrichment is fresh only after divergence and tmux both complete;
+  partial results remain pending or stale
+  (`internal/server/workspaceapi/workspace_enrichment.go::workspaceResponseFromEnrichmentCacheEntry`).
+- Divergence and tmux freshness use only their own attempt and refresh times;
+  an unattempted component remains immediately due after unrelated component work
+  (`internal/server/workspaceapi/workspace_enrichment.go::cachedWorkspaceEnrichment`).
+- Failed enrichment retains last-known-good values and component-owned errors;
+  one component's success clears only its own error
+  (`internal/server/workspaceapi/workspace_enrichment.go::recordWorkspaceEnrichmentResult`).
+- Each workspace admits one background enrichment flight at a time; a full
+  refresh upgrade waits behind active tmux work, and only the matching unique
+  flight may release ownership (`internal/server/workspaceapi/workspace_enrichment.go::nextWorkspaceEnrichmentJob`).
 - Overlapping tmux probes wait for the active sample within the caller budget;
   fallback carries an error only when waiting or sample production fails
   (`internal/server/workspaceapi/routes_handlers.go::probeOneTmuxSession`).

@@ -1,8 +1,6 @@
 package server
 
 import (
-	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -22,47 +20,6 @@ type starredRequest struct {
 	PlatformHost string `json:"platform_host"`
 }
 
-func workspaceLookupKey(
-	provider, host, owner, name, itemType string,
-	number int,
-) string {
-	if provider == "" {
-		provider = string(platform.KindGitHub)
-	}
-	if host == "" {
-		if defaultHost, ok := platform.DefaultHost(platform.Kind(provider)); ok {
-			host = defaultHost
-		}
-	}
-	return strings.ToLower(provider) + "\x00" +
-		strings.ToLower(host) + "\x00" +
-		strings.ToLower(owner) + "\x00" +
-		strings.ToLower(name) + "\x00" +
-		itemType + "\x00" +
-		fmt.Sprint(number)
-}
-
-func (s *Server) buildWorkspaceRefLookup(
-	ctx context.Context,
-) (map[string]workspaceapi.WorkspaceRef, error) {
-	workspaces, err := s.db.ListWorkspaces(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list workspaces: %w", err)
-	}
-	lookup := make(map[string]workspaceapi.WorkspaceRef, len(workspaces))
-	for _, ws := range workspaces {
-		key := workspaceLookupKey(
-			ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-			ws.ItemType, ws.ItemNumber,
-		)
-		if _, exists := lookup[key]; exists {
-			continue
-		}
-		lookup[key] = workspaceapi.WorkspaceRef{ID: ws.ID, Status: ws.Status}
-	}
-	return lookup, nil
-}
-
 func workspaceItemTypeFromActivity(itemType string) string {
 	switch itemType {
 	case "pr":
@@ -75,17 +32,23 @@ func workspaceItemTypeFromActivity(itemType string) string {
 }
 
 func workspaceRefForActivityItem(
-	lookup map[string]workspaceapi.WorkspaceRef,
+	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 	item db.ActivityItem,
 ) *workspaceapi.WorkspaceRef {
 	workspaceItemType := workspaceItemTypeFromActivity(item.ItemType)
 	if workspaceItemType == "" {
 		return nil
 	}
-	ref, ok := lookup[workspaceLookupKey(
-		item.Platform, item.PlatformHost, item.RepoOwner, item.RepoName,
-		workspaceItemType, item.ItemNumber,
-	)]
+	key := db.WorkspaceSubjectKey{
+		RepoID: item.RepoID, ItemType: workspaceItemType, ItemNumber: item.ItemNumber,
+	}
+	var ref workspaceapi.WorkspaceRef
+	var ok bool
+	if workspaceItemType == db.WorkspaceItemTypeIssue {
+		ref, ok = snapshot.OwnReferences[key]
+	} else if subject, exists := snapshot.Subjects[key]; exists {
+		ref, ok = subject.Workspace, true
+	}
 	if !ok {
 		return nil
 	}

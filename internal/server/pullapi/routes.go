@@ -367,14 +367,34 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
 	}
 
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	var err error
+	if s.workspaceSubjects != nil {
+		snapshot, err = s.workspaceSubjects(ctx)
+		if err != nil {
+			return nil, httpapi.Internal("load workspace activity failed")
+		}
+	}
+	overrides := make([]db.ItemActivityOverride, 0, len(snapshot.Subjects))
+	for key, activity := range snapshot.Subjects {
+		if key.ItemType == db.WorkspaceItemTypePullRequest && activity.ActivityAt != nil {
+			overrides = append(overrides, db.ItemActivityOverride{
+				RepoID: key.RepoID, ItemNumber: key.ItemNumber, ActivityAt: *activity.ActivityAt,
+			})
+		}
+	}
 	opts := db.ListMergeRequestsOpts{
-		State:       input.State,
-		KanbanState: input.Kanban,
-		Starred:     input.Starred,
-		Search:      input.Q,
-		Limit:       input.Limit,
-		Offset:      input.Offset,
-		RepoFilters: parseRepoFilters(input.Repo),
+		State:             input.State,
+		KanbanState:       input.Kanban,
+		Starred:           input.Starred,
+		Search:            input.Q,
+		Limit:             input.Limit,
+		Offset:            input.Offset,
+		RepoFilters:       parseRepoFilters(input.Repo),
+		WorkspaceActivity: overrides,
 	}
 
 	mrs, err := s.db.ListMergeRequests(ctx, opts)
@@ -400,11 +420,6 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 		return nil, httpapi.Internal("load worktree links failed")
 	}
 	linksByMR := indexWorktreeLinksByMR(links, s.selfFleetKey(""))
-	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("load workspace refs failed")
-	}
-
 	out := make([]MergeRequestResponse, 0, len(mrs))
 	for _, mr := range mrs {
 		rp, ok := repoByID[mr.RepoID]
@@ -420,6 +435,12 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 			responseMR.MergeableState = "dirty"
 		}
 		responseMR = mergeRequestResponseModel(responseMR)
+		key := db.WorkspaceSubjectKey{RepoID: mr.RepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: mr.Number}
+		var workspaceRef *workspaceapi.WorkspaceRef
+		if activity, ok := snapshot.Subjects[key]; ok {
+			copy := activity.Workspace
+			workspaceRef = &copy
+		}
 		resp := MergeRequestResponse{
 			MergeRequest:  responseMR,
 			Repo:          s.repoRefFromRepo(rp),
@@ -427,8 +448,11 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 			RepoName:      rp.Name,
 			PlatformHost:  rp.PlatformHost,
 			WorktreeLinks: wl,
-			Workspace:     workspaceRefForRepoItem(workspacesByItem, rp, db.WorkspaceItemTypePullRequest, mr.Number),
+			Workspace:     workspaceRef,
 			DetailLoaded:  mr.DetailFetchedAt != nil,
+		}
+		if activity, ok := snapshot.Subjects[key]; ok && activity.ActivityAt != nil {
+			resp.WorkspaceActivityAt = formatUTCRFC3339(*activity.ActivityAt)
 		}
 		if mr.DetailFetchedAt != nil {
 			resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
@@ -544,15 +568,20 @@ func (s *Handler) buildPullDetailResponse(
 	}
 	resp.Checks = checks
 
-	if s.workspaces != nil {
-		wsRef, wsErr := s.workspaces.GetByMRForProvider(
-			ctx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
-			mr.Number,
-		)
-		if wsErr == nil && wsRef != nil {
-			resp.Workspace = &workspaceapi.WorkspaceRef{
-				ID:     wsRef.ID,
-				Status: wsRef.Status,
+	if s.workspaceSubjects != nil {
+		snapshot, snapshotErr := s.workspaceSubjects(ctx)
+		if snapshotErr != nil {
+			slog.Warn(
+				"load workspace activity for pull detail failed",
+				"merge_request_id", mr.ID, "err", snapshotErr,
+			)
+		} else {
+			key := db.WorkspaceSubjectKey{
+				RepoID: mr.RepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: mr.Number,
+			}
+			if activity, ok := snapshot.Subjects[key]; ok {
+				workspaceRef := activity.Workspace
+				resp.Workspace = &workspaceRef
 			}
 		}
 	}

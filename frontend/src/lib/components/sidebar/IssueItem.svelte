@@ -7,6 +7,7 @@
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
   import { repoIdentityKey } from "../../utils/repo-label.js";
+  import { effectiveActivity } from "../../utils/effective-activity.js";
 
   const { issues } = getStores();
 
@@ -51,7 +52,8 @@
     name: issue.repo.name,
     repoPath: issue.repo.repo_path,
   }));
-  const ago = $derived(formatRelativeTime(issue.LastActivityAt));
+  const activityTime = $derived(effectiveActivity(issue.LastActivityAt, issue.workspace_activity_at));
+  const ago = $derived(formatRelativeTime(activityTime.at));
 </script>
 
 <button class="issue-item" class:selected bind:this={el} onclick={onclick}>
@@ -93,7 +95,11 @@
       {#if issue.State !== "open"}
         <Chip size="xs" tone="merged" class="state-chip">Closed</Chip>
       {/if}
-      <span class="time">{ago}</span>
+      <span
+        class="time"
+        title={activityTime.fromWorkspace ? "Recent workspace activity" : undefined}
+        aria-label={activityTime.fromWorkspace ? `Recent workspace activity, ${ago}` : undefined}
+      >{ago}</span>
     </span>
   </div>
 </button>

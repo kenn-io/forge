@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ActivityItem } from "../api/types.js";
+import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
 import MobileActivityView from "./MobileActivityViewRuntimeHarness.svelte";
 
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
@@ -36,6 +36,7 @@ function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): 
 }
 
 const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
+const workspaceActivity = vi.hoisted(() => ({ value: [] as WorkspaceActivitySubject[] }));
 const onSelectItem = vi.hoisted(() => vi.fn());
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
@@ -69,6 +70,7 @@ vi.mock("../context.js", () => ({
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
       getActivityItems: () => items.value,
+      getWorkspaceActivity: () => workspaceActivity.value,
       getActivityError: () => null,
       getTimeRange: () => "7d",
       getEnabledItemTypes: () => enabledItemTypes.value,
@@ -107,6 +109,7 @@ vi.mock("../context.js", () => ({
 describe("MobileActivityView branch activity", () => {
   beforeEach(() => {
     items.value = [branchActivityItem("branch-commit")];
+    workspaceActivity.value = [];
     hideOrgName.value = false;
     hideClosedMerged.value = false;
     enabledItemTypes.value = new Set(["pr", "issue"]);
@@ -145,7 +148,8 @@ describe("MobileActivityView branch activity", () => {
     expect((issues as HTMLInputElement).checked).toBe(true);
 
     await fireEvent.click(prs);
-    expect(setEnabledItemTypes).toHaveBeenCalledWith(new Set(["issue"]));
+    expect(setEnabledItemTypes).toHaveBeenCalledOnce();
+    expect([...setEnabledItemTypes.mock.calls[0]![0]]).toEqual(["issue"]);
   });
 
   it("uses the shared repo path by default", () => {
@@ -256,6 +260,98 @@ describe("MobileActivityView branch activity", () => {
   });
 });
 
+function pullActivityItem(id: string, title: string, createdAt: string, number: number): ActivityItem {
+  return {
+    ...branchActivityItem(id),
+    activity_type: "comment",
+    body_preview: "Looks good",
+    branch_name: "",
+    commit_sha: "",
+    created_at: createdAt,
+    item_number: number,
+    item_state: "open",
+    item_title: title,
+    item_type: "pr",
+    item_url: `https://github.com/acme/widgets/pull/${number}`,
+    activity_url: "",
+  } as ActivityItem;
+}
+
+function workspaceSubject(
+  number: number,
+  title: string,
+  activityAt: string,
+  itemType: "pr" | "issue" = "pr",
+): WorkspaceActivitySubject {
+  return {
+    activity_at: activityAt,
+    item_author: "alice",
+    item_number: number,
+    item_state: "open",
+    item_title: title,
+    item_type: itemType,
+    item_url: `https://github.com/acme/widgets/${itemType === "pr" ? "pull" : "issues"}/${number}`,
+    platform_host: "github.com",
+    repo_owner: "acme",
+    repo_name: "widgets",
+    repo: {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    },
+    workspace: { id: `workspace-${number}`, status: "ready" },
+  } as WorkspaceActivitySubject;
+}
+
+describe("MobileActivityView workspace activity", () => {
+  beforeEach(() => {
+    items.value = [];
+    workspaceActivity.value = [];
+    hideClosedMerged.value = false;
+    enabledItemTypes.value = new Set(["pr", "issue"]);
+    onSelectItem.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("orders an existing thread by its newer workspace activity", () => {
+    items.value = [
+      pullActivityItem("active", "Workspace-active pull", "2026-04-27T12:00:00Z", 1),
+      pullActivityItem("provider", "Provider-newer pull", "2026-04-27T13:00:00Z", 2),
+    ];
+    workspaceActivity.value = [workspaceSubject(1, "Workspace-active pull", "2026-04-27T14:00:00Z")];
+
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+
+    const cards = Array.from(container.querySelectorAll(".mobile-activity-card__title"));
+    expect(cards.map((card) => card.textContent?.trim())).toEqual(["Workspace-active pull", "Provider-newer pull"]);
+  });
+
+  it("renders a workspace-only subject without inventing a timeline event", async () => {
+    workspaceActivity.value = [workspaceSubject(7, "Workspace-only pull", "2026-04-27T14:00:00Z")];
+
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+
+    expect(screen.getByText("Workspace-only pull")).toBeTruthy();
+    expect(screen.getByText("0 events")).toBeTruthy();
+    expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
+    expect(container.querySelector(".mobile-activity-events")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: /Workspace-only pull/ }));
+    expect(onSelectItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activity_type: "workspace",
+        item_number: 7,
+        item_type: "pr",
+      }),
+    );
+  });
+});
+
 function notificationItem(id: string, title: string, subjectState: string): ActivityItem {
   return {
     id,
@@ -287,6 +383,7 @@ function notificationItem(id: string, title: string, subjectState: string): Acti
 
 describe("MobileActivityView notifications", () => {
   beforeEach(() => {
+    workspaceActivity.value = [];
     hideClosedMerged.value = false;
     showNotifications.value = true;
     onSelectItem.mockClear();
@@ -342,6 +439,7 @@ describe("MobileActivityView notifications", () => {
 
 describe("MobileActivityView hide closed/merged", () => {
   beforeEach(() => {
+    workspaceActivity.value = [];
     hideClosedMerged.value = false;
     showNotifications.value = true;
     onSelectItem.mockClear();

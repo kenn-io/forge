@@ -1,9 +1,10 @@
 <script lang="ts">
   import { Effect } from "effect";
   import { onDestroy, onMount } from "svelte";
+  import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
-  import type { ActivityItem } from "../api/types.js";
+  import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
     buildActivityFilterTypes,
@@ -61,6 +62,7 @@
     events: ActivityItem[];
     eventCount: number;
     latestTime: string;
+    workspaceActivityAt?: string;
   };
 
   const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
@@ -118,8 +120,22 @@
     return result;
   });
 
+  const visibleWorkspaceActivity = $derived.by(() => {
+    let result = activity.getWorkspaceActivity().filter((subject) =>
+      isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
+    );
+
+    if (activity.getHideClosedMerged()) {
+      result = result.filter((subject) =>
+        subject.item_state !== "closed" && subject.item_state !== "merged"
+      );
+    }
+
+    return result;
+  });
+
   const groups = $derived.by(() => {
-    const map = new Map<string, ActivityItem[]>();
+    const map = new SvelteMap<string, ActivityItem[]>();
 
     for (const item of displayItems) {
       const key = isDefaultBranchActivity(item)
@@ -145,7 +161,7 @@
       else map.set(key, [item]);
     }
 
-    const result: ActivityGroup[] = [];
+    const groupsByKey = new SvelteMap<string, ActivityGroup>();
     for (const [key, events] of map) {
       events.sort(
         (a, b) =>
@@ -154,7 +170,7 @@
       );
       const representative = events[0];
       if (!representative) continue;
-      result.push({
+      groupsByKey.set(key, {
         key,
         representative,
         events,
@@ -162,6 +178,47 @@
         latestTime: representative.created_at,
       });
     }
+
+    for (const subject of visibleWorkspaceActivity) {
+      const key = activityItemKey({
+        provider: subject.repo.provider,
+        platformHost: subject.repo.platform_host,
+        owner: subject.repo.owner,
+        name: subject.repo.name,
+        repoPath: subject.repo.repo_path,
+        itemType: subject.item_type,
+        itemNumber: subject.item_number,
+      });
+      const existing = groupsByKey.get(key);
+      if (existing) {
+        if (
+          parseAPITimestamp(subject.activity_at).getTime()
+          > parseAPITimestamp(existing.latestTime).getTime()
+        ) {
+          existing.latestTime = subject.activity_at;
+        }
+        existing.workspaceActivityAt = subject.activity_at;
+        existing.representative = {
+          ...existing.representative,
+          item_title: existing.representative.item_title || subject.item_title,
+          item_url: existing.representative.item_url || subject.item_url,
+          item_state: existing.representative.item_state || subject.item_state,
+          item_author: existing.representative.item_author || subject.item_author || "",
+          ...(subject.workspace ? { workspace: subject.workspace } : {}),
+        };
+        continue;
+      }
+      groupsByKey.set(key, {
+        key,
+        representative: subjectSelectionItem(subject),
+        events: [],
+        eventCount: 0,
+        latestTime: subject.activity_at,
+        workspaceActivityAt: subject.activity_at,
+      });
+    }
+
+    const result = [...groupsByKey.values()];
 
     result.sort(
       (a, b) =>
@@ -175,7 +232,10 @@
 
   const repoLabelFormatter = $derived.by(() =>
     createRepoLabelFormatter(
-      displayItems.map(activityRepoIdentity),
+      [
+        ...displayItems.map(activityRepoIdentity),
+        ...visibleWorkspaceActivity.map(workspaceRepoIdentity),
+      ],
       { showOrgNames: !grouping.getHideOrgName() },
     ),
   );
@@ -192,7 +252,7 @@
   }
 
   function toggleItemType(itemType: ActivityItemType): void {
-    const next = new Set(activity.getEnabledItemTypes());
+    const next = new SvelteSet(activity.getEnabledItemTypes());
     if (next.has(itemType)) next.delete(itemType);
     else next.add(itemType);
     activity.setEnabledItemTypes(next);
@@ -261,6 +321,36 @@
       return;
     }
     onSelectItem?.(group.representative);
+  }
+
+  function subjectSelectionItem(subject: WorkspaceActivitySubject): ActivityItem {
+    const id = `workspace:${activityItemKey({
+      provider: subject.repo.provider,
+      platformHost: subject.repo.platform_host,
+      owner: subject.repo.owner,
+      name: subject.repo.name,
+      repoPath: subject.repo.repo_path,
+      itemType: subject.item_type,
+      itemNumber: subject.item_number,
+    })}`;
+    return {
+      id,
+      cursor: id,
+      activity_type: "workspace",
+      author: subject.item_author ?? "",
+      body_preview: "",
+      created_at: subject.activity_at,
+      item_number: subject.item_number,
+      item_state: subject.item_state,
+      item_title: subject.item_title,
+      item_type: subject.item_type,
+      item_url: subject.item_url,
+      platform_host: subject.repo.platform_host,
+      repo_owner: subject.repo.owner,
+      repo_name: subject.repo.name,
+      repo: subject.repo,
+      ...(subject.workspace ? { workspace: subject.workspace } : {}),
+    };
   }
 
   function handleEventClick(event: ActivityItem): void {
@@ -343,6 +433,16 @@
       owner: item.repo.owner,
       name: item.repo.name,
       repoPath: item.repo.repo_path,
+    };
+  }
+
+  function workspaceRepoIdentity(subject: WorkspaceActivitySubject): RepoLabelIdentity {
+    return {
+      provider: subject.repo.provider,
+      platformHost: subject.repo.platform_host,
+      owner: subject.repo.owner,
+      name: subject.repo.name,
+      repoPath: subject.repo.repo_path,
     };
   }
 
@@ -502,7 +602,11 @@
                       {/if}
                     {/if}
                   </span>
-                  <time>{relativeTime(group.latestTime)}</time>
+                  <time
+                    title={group.workspaceActivityAt === group.latestTime
+                      ? "Recent workspace activity"
+                      : undefined}
+                  >{relativeTime(group.latestTime)}</time>
                 </span>
 
                 <span class="mobile-activity-card__title">
@@ -514,41 +618,43 @@
                 </span>
               </button>
 
-              <Timeline
-                class="mobile-activity-events"
-                ariaLabel={`Recent activity for ${
-                  isDefaultBranchActivity(item) ? branchActivityTitle(item) : item.item_title
-                }`}
-              >
-                {#each latestEvents(group) as event (event.id)}
-                  <TimelineItem class="mobile-activity-event-item" tone={eventTone(event.activity_type)}>
-                    <div class="mobile-activity-event-slot">
-                      <button
-                        type="button"
-                        class="mobile-activity-event"
-                        onclick={() => handleEventClick(event)}
-                      >
-                        <span class="mobile-activity-event__body">
-                          <strong>{eventLabel(event)}</strong>
-                          <span>{eventDetail(event)}</span>
-                        </span>
-                        <time>{relativeTime(event.created_at)}</time>
-                      </button>
-                      {#if isUnreadNotification(event)}
+              {#if group.eventCount > 0}
+                <Timeline
+                  class="mobile-activity-events"
+                  ariaLabel={`Recent activity for ${
+                    isDefaultBranchActivity(item) ? branchActivityTitle(item) : item.item_title
+                  }`}
+                >
+                  {#each latestEvents(group) as event (event.id)}
+                    <TimelineItem class="mobile-activity-event-item" tone={eventTone(event.activity_type)}>
+                      <div class="mobile-activity-event-slot">
                         <button
                           type="button"
-                          class="mobile-activity-event-seen"
-                          aria-label="Mark notification seen"
-                          title="Mark seen"
-                          onclick={(domEvent) => handleMarkSeen(domEvent, event)}
+                          class="mobile-activity-event"
+                          onclick={() => handleEventClick(event)}
                         >
-                          <CheckIcon size="20" strokeWidth="2" aria-hidden="true" />
+                          <span class="mobile-activity-event__body">
+                            <strong>{eventLabel(event)}</strong>
+                            <span>{eventDetail(event)}</span>
+                          </span>
+                          <time>{relativeTime(event.created_at)}</time>
                         </button>
-                      {/if}
-                    </div>
-                  </TimelineItem>
-                {/each}
-              </Timeline>
+                        {#if isUnreadNotification(event)}
+                          <button
+                            type="button"
+                            class="mobile-activity-event-seen"
+                            aria-label="Mark notification seen"
+                            title="Mark seen"
+                            onclick={(domEvent) => handleMarkSeen(domEvent, event)}
+                          >
+                            <CheckIcon size="20" strokeWidth="2" aria-hidden="true" />
+                          </button>
+                        {/if}
+                      </div>
+                    </TimelineItem>
+                  {/each}
+                </Timeline>
+              {/if}
             </Card>
           </article>
         {/each}

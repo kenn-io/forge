@@ -9,6 +9,7 @@ import type {
   ActivityResponse,
   ActivitySettings,
   NotificationBulkResponse,
+  WorkspaceActivitySubject,
 } from "../api/types.js";
 import { ActivityWorkflow } from "./activity-workflow.js";
 import { showFlash } from "./flash.svelte.js";
@@ -129,6 +130,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   // --- state ---
 
   let items = $state<ActivityItem[]>([]);
+  let workspaceActivity = $state.raw<WorkspaceActivitySubject[]>([]);
   let loading = $state(false);
   let storeError = $state<string | null>(null);
   let capped = $state(false);
@@ -157,6 +159,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function getActivityItems(): ActivityItem[] {
     return items;
+  }
+  function getWorkspaceActivity(): WorkspaceActivitySubject[] {
+    return workspaceActivity;
   }
   function isActivityLoading(): boolean {
     return loading;
@@ -346,6 +351,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const project = (result: OwnedActivityResponse) =>
         Effect.sync(() => {
           items = projectOwnedNotificationStates(result);
+          workspaceActivity = result.response.workspace_activity ?? [];
           capped = result.response.capped;
           loading = false;
         });
@@ -380,6 +386,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const project = (result: OwnedActivityResponse) =>
         Effect.sync(() => {
           items = projectOwnedNotificationStates(result);
+          workspaceActivity = result.response.workspace_activity ?? [];
           capped = result.response.capped;
           loading = false;
         });
@@ -406,8 +413,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const workflow = yield* ActivityWorkflow;
       yield* workflow.pollRead(activityRead(params), (result) => {
         const fresh = projectOwnedNotificationStates(result);
-        if (fresh.length === 0) return Effect.void;
         return Effect.sync(() => {
+          workspaceActivity = result.response.workspace_activity ?? [];
+          if (fresh.length === 0) return;
           const freshById = new Map(fresh.map((item) => [item.id, item]));
           items = items.map((item) => {
             const updated = freshById.get(item.id);
@@ -506,10 +514,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           Effect.sync(() => {
             if (mode === "replace") {
               items = projectOwnedNotificationStates(result);
+              workspaceActivity = result.response.workspace_activity ?? [];
               capped = result.response.capped;
               loading = false;
               return;
             }
+            workspaceActivity = result.response.workspace_activity ?? [];
             const existingIds = new Set(items.map((item) => item.id));
             const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
             if (newItems.length > 0) {
@@ -653,6 +663,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   return {
     getActivityItems,
+    getWorkspaceActivity,
     isActivityLoading,
     getActivityError,
     isActivityCapped,

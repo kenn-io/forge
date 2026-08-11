@@ -1738,6 +1738,8 @@ func (s *Handler) workspaceResponseWithEnrichment(
 		response:           resp,
 		divergenceComplete: divergenceErr == nil,
 		tmuxComplete:       sessionsErr == nil && activityErr == nil,
+		divergenceErr:      divergenceErr,
+		tmuxErr:            errors.Join(sessionsErr, activityErr),
 		err:                err,
 	}
 	if err != nil {
@@ -1752,6 +1754,29 @@ func (s *Handler) workspaceResponseWithEnrichment(
 	resp.EnrichmentRefreshedAt = &refreshedAt
 	result.response = resp
 	return result
+}
+
+func (s *Handler) workspaceResponseWithTmuxEnrichment(
+	ctx context.Context,
+	summary *db.WorkspaceSummary,
+) workspaceEnrichmentProbeResult {
+	resp := toWorkspaceResponse(summary)
+	resp.Repo = s.repoRefFromParts(
+		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
+	)
+	if s.workspaces == nil || summary.Status != "ready" {
+		return workspaceEnrichmentProbeResult{response: resp, kind: workspaceEnrichmentTmux}
+	}
+	sessions, sessionsErr := s.workspaceTmuxActivitySessions(ctx, summary)
+	activity, hasActivity, activityErr := s.probeWorkspaceTmuxActivity(ctx, summary, sessions)
+	if hasActivity {
+		applyTmuxActivity(&resp, activity)
+	}
+	err := errors.Join(sessionsErr, activityErr)
+	return workspaceEnrichmentProbeResult{
+		response: resp, tmuxComplete: err == nil, tmuxErr: err, err: err,
+		kind: workspaceEnrichmentTmux,
+	}
 }
 
 func (s *Handler) workspaceTmuxActivitySessions(

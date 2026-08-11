@@ -236,6 +236,8 @@ bridge on unmount so assertions do not read stale graph sessions.
 Playwright waits must observe the state consumed by the next assertion. Direct API reads after an optimistic
 mutation wait for its response; rendered assertions wait for rendered state, since route refinement can pair new
 controls with old content (`frontend/tests/e2e-full/utc-maintainer-flows.spec.ts:90`, `frontend/tests/e2e-full/repo-browser.spec.ts:480`).
+Tests that compress browser polling must patch the timer primitive used by the scheduler and await the response
+that carries the expected state (`frontend/tests/e2e-full/ci-dropdown.spec.ts:40`).
 
 Playwright suites with `route.fetch()` proxies must unregister routes with
 `page.unrouteAll({ behavior: "ignoreErrors" })` before page teardown; background refetches can otherwise fail outside the completed test (`frontend/tests/e2e-full/diff-view.spec.ts::mockReviewThreadsOnPreviewMarkdown`).

@@ -2056,6 +2056,62 @@ func TestListPullRequestsPaginationUsesStableTieBreaker(t *testing.T) {
 	assert.Equal(2, secondPage[0].Number)
 }
 
+func TestListMergeRequestsWorkspaceActivitySortsBeforePagination(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	insertTestMR(t, d, repoID, 1, "provider newest", base.Add(2*time.Hour))
+	insertTestMR(t, d, repoID, 2, "workspace newest", base)
+
+	first, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{
+		Limit: 1,
+		WorkspaceActivity: []ItemActivityOverride{{
+			RepoID: repoID, ItemNumber: 2, ActivityAt: base.Add(3 * time.Hour),
+		}},
+	})
+	require.NoError(err)
+	require.Len(first, 1)
+	assert.Equal(2, first[0].Number)
+	assert.Equal(base, first[0].LastActivityAt)
+
+	second, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{
+		Limit: 1, Offset: 1,
+		WorkspaceActivity: []ItemActivityOverride{{
+			RepoID: repoID, ItemNumber: 2, ActivityAt: base.Add(3 * time.Hour),
+		}},
+	})
+	require.NoError(err)
+	require.Len(second, 1)
+	assert.Equal(1, second[0].Number)
+}
+
+func TestListMergeRequestsWorkspaceActivitySupportsLargeSubjectSets(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	insertTestMR(t, d, repoID, 1, "provider newest", base.Add(2*time.Hour))
+	insertTestMR(t, d, repoID, 2, "workspace newest", base)
+
+	overrides := make([]ItemActivityOverride, 11_000)
+	for i := range overrides {
+		overrides[i] = ItemActivityOverride{
+			RepoID: repoID, ItemNumber: i + 1, ActivityAt: base.Add(time.Hour),
+		}
+	}
+	overrides[1].ActivityAt = base.Add(3 * time.Hour)
+
+	got, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{
+		Limit: 1, WorkspaceActivity: overrides,
+	})
+	require.NoError(err)
+	require.Len(got, 1)
+	assert.Equal(2, got[0].Number)
+}
+
 func TestListPullRequestsFilterByKanban(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3290,6 +3346,52 @@ func TestListIssuesPaginationUsesStableTieBreaker(t *testing.T) {
 	require.NoError(err)
 	require.Len(secondPage, 1)
 	assert.Equal(2, secondPage[0].Number)
+}
+
+func TestListIssuesWorkspaceActivitySortsBeforePagination(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	insertTestIssue(t, d, repoID, 1, "provider newest", base.Add(2*time.Hour))
+	insertTestIssue(t, d, repoID, 2, "workspace newest", base)
+
+	first, err := d.ListIssues(t.Context(), ListIssuesOpts{
+		Limit: 1,
+		WorkspaceActivity: []ItemActivityOverride{{
+			RepoID: repoID, ItemNumber: 2, ActivityAt: base.Add(3 * time.Hour),
+		}},
+	})
+	require.NoError(err)
+	require.Len(first, 1)
+	assert.Equal(2, first[0].Number)
+	assert.Equal(base, first[0].LastActivityAt)
+}
+
+func TestListIssuesWorkspaceActivitySupportsLargeSubjectSets(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	insertTestIssue(t, d, repoID, 1, "provider newest", base.Add(2*time.Hour))
+	insertTestIssue(t, d, repoID, 2, "workspace newest", base)
+
+	overrides := make([]ItemActivityOverride, 11_000)
+	for i := range overrides {
+		overrides[i] = ItemActivityOverride{
+			RepoID: repoID, ItemNumber: i + 1, ActivityAt: base.Add(time.Hour),
+		}
+	}
+	overrides[1].ActivityAt = base.Add(3 * time.Hour)
+
+	got, err := d.ListIssues(t.Context(), ListIssuesOpts{
+		Limit: 1, WorkspaceActivity: overrides,
+	})
+	require.NoError(err)
+	require.Len(got, 1)
+	assert.Equal(2, got[0].Number)
 }
 
 func TestReplaceIssueLabels_RejectsWrongRepoID(t *testing.T) {

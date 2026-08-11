@@ -2,6 +2,7 @@ package pullapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"testing"
@@ -11,6 +12,11 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestHandlerRegistersPullRoutes(t *testing.T) {
@@ -97,6 +103,74 @@ func TestHandlerRegistersPullRoutes(t *testing.T) {
 	} {
 		assert.NotContains(gotByID, operationID)
 	}
+}
+
+func TestListPullsTreatsAssociatedWorkspaceSubjectAsHasWorkspace(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
+	repoID, err := database.UpsertRepo(t.Context(), identity)
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 42, Number: 42, Title: "Associated work",
+		Author: "alice", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	key := db.WorkspaceSubjectKey{RepoID: repoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42}
+	handler := New(Deps{
+		DB:       database,
+		Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
+		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{
+				OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+				Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+					key: {Workspace: workspaceapi.WorkspaceRef{ID: "ws-adhoc", Status: "ready"}},
+				},
+			}, nil
+		},
+	})
+
+	result, err := handler.listPulls(t.Context(), &listPullsInput{State: "open"})
+	require.NoError(err)
+	require.Len(result.Body, 1)
+	require.NotNil(result.Body[0].Workspace)
+	assert.Equal(t, "ws-adhoc", result.Body[0].Workspace.ID)
+}
+
+func TestPullDetailTreatsWorkspaceSnapshotFailureAsBestEffort(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
+	repoID, err := database.UpsertRepo(t.Context(), identity)
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 42, Number: 42, Title: "Available pull request",
+		Author: "alice", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 42)
+	require.NoError(err)
+	require.NotNil(mr)
+	handler := New(Deps{
+		DB:       database,
+		Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
+		Syncer:   &ghclient.Syncer{},
+		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{}, errors.New("snapshot unavailable")
+		},
+	})
+
+	response, err := handler.BuildDetail(t.Context(), mr)
+	require.NoError(err)
+	require.NotNil(response.MergeRequest)
+	assert.Equal(t, 42, response.MergeRequest.Number)
+	assert.Nil(t, response.Workspace)
 }
 
 func TestHandlerStopClosesAdmissionAndShutdownWaitsForWorkers(t *testing.T) {

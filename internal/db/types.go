@@ -860,18 +860,44 @@ type WorkflowStateListRow struct {
 }
 
 type ListMergeRequestsOpts struct {
-	RepoID       int64
+	RepoID            int64
+	PlatformHost      string
+	RepoOwner         string
+	RepoName          string
+	RepoPath          string
+	RepoFilters       []RepoFilter
+	State             string
+	KanbanState       string
+	Starred           bool
+	Search            string
+	Limit             int
+	Offset            int
+	WorkspaceActivity []ItemActivityOverride
+}
+
+type ItemActivityOverride struct {
+	RepoID     int64
+	ItemNumber int
+	ActivityAt time.Time
+}
+
+type WorkspaceSubjectKey struct {
+	RepoID     int64  `json:"repo_id"`
+	ItemType   string `json:"item_type"`
+	ItemNumber int    `json:"item_number"`
+}
+
+type WorkspaceSubjectMetadata struct {
+	Key          WorkspaceSubjectKey
+	Platform     string
 	PlatformHost string
 	RepoOwner    string
 	RepoName     string
 	RepoPath     string
-	RepoFilters  []RepoFilter
+	Title        string
 	State        string
-	KanbanState  string
-	Starred      bool
-	Search       string
-	Limit        int
-	Offset       int
+	URL          string
+	Author       string
 }
 
 type RepoFilter struct {
@@ -934,17 +960,18 @@ type CommentAutocompleteReference struct {
 }
 
 type ListIssuesOpts struct {
-	PlatformHost string
-	RepoOwner    string
-	RepoName     string
-	RepoPath     string
-	RepoFilters  []RepoFilter
-	State        string
-	Starred      bool
-	Search       string
-	Assignee     string
-	Limit        int
-	Offset       int
+	PlatformHost      string
+	RepoOwner         string
+	RepoName          string
+	RepoPath          string
+	RepoFilters       []RepoFilter
+	State             string
+	Starred           bool
+	Search            string
+	Assignee          string
+	Limit             int
+	Offset            int
+	WorkspaceActivity []ItemActivityOverride
 }
 
 type StarredItem struct {
@@ -1067,6 +1094,7 @@ type ActivityItem struct {
 	ActivityType string // new_pr, new_issue, comment, review, commit, default_branch_*
 	Source       string // pr, issue, pre, ise, bc, bfp
 	SourceID     int64  // PK from the source table
+	RepoID       int64
 	Platform     string
 	PlatformHost string
 	RepoOwner    string
@@ -1251,6 +1279,7 @@ type Workspace struct {
 // WorkspaceSummary extends Workspace with joined source-item metadata.
 type WorkspaceSummary struct {
 	Workspace
+	RepoID           int64
 	SourceTitle      *string
 	SourceState      *string
 	SourceURL        *string

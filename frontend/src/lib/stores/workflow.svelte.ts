@@ -1,4 +1,5 @@
 import type { KanbanStatus, PullRequest } from "../api/types.js";
+import { effectiveActivity } from "../utils/effective-activity.js";
 
 export type WorkflowGroup = KanbanStatus | "closed";
 
@@ -42,8 +43,8 @@ export function classifyPR(pr: PullRequest): WorkflowGroup {
  * Group PRs by workflow status.
  *
  * Returns groups in display order, omitting empty groups.
- * Items within each group are sorted by LastActivityAt
- * descending.
+ * Items within each group are sorted by effective provider/workspace
+ * activity descending.
  */
 export function groupByWorkflow(prs: PullRequest[]): WorkflowGroupEntry[] {
   const buckets = new Map<WorkflowGroup, PullRequest[]>();
@@ -60,7 +61,11 @@ export function groupByWorkflow(prs: PullRequest[]): WorkflowGroupEntry[] {
   for (const group of workflowGroupOrder) {
     const items = buckets.get(group)!;
     if (items.length === 0) continue;
-    items.sort((a, b) => new Date(b.LastActivityAt).getTime() - new Date(a.LastActivityAt).getTime());
+    items.sort(
+      (a, b) =>
+        Date.parse(effectiveActivity(b.LastActivityAt, b.workspace_activity_at).at) -
+        Date.parse(effectiveActivity(a.LastActivityAt, a.workspace_activity_at).at),
+    );
     result.push({
       group,
       label: workflowGroupLabels[group],

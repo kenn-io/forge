@@ -256,7 +256,7 @@ func TestWorkspaceEnrichmentSupersededResponseUsesCurrentCacheState(t *testing.T
 	require.NotNil(response.CommitsAhead)
 	assert.Equal(currentAhead, *response.CommitsAhead)
 	assert.False(response.TmuxWorking)
-	assert.Equal(workspaceEnrichmentFresh, response.EnrichmentStatus)
+	assert.Equal(workspaceEnrichmentPending, response.EnrichmentStatus)
 	assert.Nil(response.EnrichmentError)
 }
 
@@ -350,7 +350,7 @@ func TestCachedWorkspaceEnrichmentReportsStaleAndFailedState(t *testing.T) {
 	srv.workspaceEnrichmentMu.Lock()
 	entry := srv.workspaceEnrichmentCache[summary.ID]
 	entry.lastAttemptAt = now
-	entry.lastError = "tmux activity probe failed"
+	entry.tmuxError = "tmux activity probe failed"
 	srv.workspaceEnrichmentCache[summary.ID] = entry
 	srv.workspaceEnrichmentMu.Unlock()
 
@@ -358,6 +358,170 @@ func TestCachedWorkspaceEnrichmentReportsStaleAndFailedState(t *testing.T) {
 	assert.Equal("failed", failed.EnrichmentStatus)
 	require.NotNil(failed.EnrichmentError)
 	assert.Equal("tmux activity probe failed", *failed.EnrichmentError)
+}
+
+func TestCachedWorkspaceEnrichmentTracksComponentStaleness(t *testing.T) {
+	assert := assert.New(t)
+	srv := newEnrichmentTestHandler(t, "")
+	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	srv.now = func() time.Time { return now }
+	srv.workspaceEnrichmentCache["ws"] = workspaceEnrichmentCacheEntry{
+		hasDivergence:         true,
+		hasTmux:               true,
+		divergenceRefreshedAt: now.Add(-workspaceEnrichmentTTL - time.Second),
+		tmuxRefreshedAt:       now,
+		divergenceAttemptAt:   now.Add(-workspaceEnrichmentTTL - time.Second),
+		tmuxAttemptAt:         now,
+	}
+
+	_, fullDue := srv.cachedWorkspaceEnrichment("ws", workspaceEnrichmentFull)
+	_, tmuxDue := srv.cachedWorkspaceEnrichment("ws", workspaceEnrichmentTmux)
+	assert.True(fullDue)
+	assert.False(tmuxDue)
+
+	entry := srv.workspaceEnrichmentCache["ws"]
+	entry.divergenceRefreshedAt = now
+	entry.divergenceAttemptAt = now
+	entry.tmuxRefreshedAt = now.Add(-workspaceEnrichmentTTL - time.Second)
+	entry.tmuxAttemptAt = entry.tmuxRefreshedAt
+	srv.workspaceEnrichmentCache["ws"] = entry
+	_, fullDue = srv.cachedWorkspaceEnrichment("ws", workspaceEnrichmentFull)
+	_, tmuxDue = srv.cachedWorkspaceEnrichment("ws", workspaceEnrichmentTmux)
+	assert.True(fullDue)
+	assert.True(tmuxDue)
+}
+
+func TestCachedWorkspaceEnrichmentDoesNotTreatTmuxAttemptAsDivergenceAttempt(t *testing.T) {
+	assert := assert.New(t)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	srv := newEnrichmentTestHandler(t, "")
+	srv.now = func() time.Time { return now }
+	srv.workspaceEnrichmentCache["ws"] = workspaceEnrichmentCacheEntry{
+		hasTmux:         true,
+		tmuxRefreshedAt: now,
+		tmuxAttemptAt:   now,
+		lastAttemptAt:   now,
+	}
+
+	_, fullDue := srv.cachedWorkspaceEnrichment("ws", workspaceEnrichmentFull)
+	_, tmuxDue := srv.cachedWorkspaceEnrichment("ws", workspaceEnrichmentTmux)
+
+	assert.True(fullDue)
+	assert.False(tmuxDue)
+}
+
+func TestCachedWorkspaceEnrichmentKeepsFreshTmuxOnlyResultPending(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	srv := &Handler{now: func() time.Time { return now }}
+	summary := db.WorkspaceSummary{Workspace: db.Workspace{
+		ID: "ws-tmux-only", Status: "ready",
+	}}
+	entry := workspaceEnrichmentCacheEntry{
+		hasTmux: true, tmuxRefreshedAt: now, tmuxAttemptAt: now,
+	}
+
+	response := srv.workspaceResponseFromEnrichmentCacheEntry(&summary, &entry)
+
+	assert.Equal(t, workspaceEnrichmentPending, response.EnrichmentStatus)
+	assert.Nil(t, response.CommitsAhead)
+	assert.Nil(t, response.CommitsBehind)
+}
+
+func TestWorkspaceEnrichmentTmuxSuccessPreservesDivergenceFailure(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	srv := &Handler{
+		now:                            func() time.Time { return now },
+		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
+		workspaceEnrichmentGenerations: map[string]uint64{"ws-component-errors": 1},
+	}
+	summary := db.WorkspaceSummary{Workspace: db.Workspace{
+		ID: "ws-component-errors", Status: "ready",
+	}}
+
+	_, recorded, _ := srv.recordWorkspaceEnrichmentResult(
+		summary.ID,
+		1,
+		workspaceEnrichmentProbeResult{
+			divergenceErr: errors.New("git divergence probe failed"),
+			tmuxErr:       errors.New("tmux activity probe failed"),
+			err: errors.Join(
+				errors.New("git divergence probe failed"),
+				errors.New("tmux activity probe failed"),
+			),
+			kind: workspaceEnrichmentFull,
+		},
+	)
+	require.True(recorded)
+	failed := srv.workspaceResponseFromEnrichmentCacheEntry(
+		&summary, new(srv.workspaceEnrichmentCache[summary.ID]),
+	)
+	require.NotNil(failed.EnrichmentError)
+	assert.Contains(*failed.EnrichmentError, "git divergence probe failed")
+	assert.Contains(*failed.EnrichmentError, "tmux activity probe failed")
+
+	now = now.Add(time.Second)
+	_, recorded, _ = srv.recordWorkspaceEnrichmentResult(
+		summary.ID,
+		1,
+		workspaceEnrichmentProbeResult{
+			tmuxComplete: true,
+			kind:         workspaceEnrichmentTmux,
+		},
+	)
+	require.True(recorded)
+	stillFailed := srv.workspaceResponseFromEnrichmentCacheEntry(
+		&summary, new(srv.workspaceEnrichmentCache[summary.ID]),
+	)
+	require.NotNil(stillFailed.EnrichmentError)
+	assert.Contains(*stillFailed.EnrichmentError, "git divergence probe failed")
+	assert.NotContains(*stillFailed.EnrichmentError, "tmux activity probe failed")
+}
+
+func TestNextWorkspaceEnrichmentJobLeavesUpgradeQueuedDuringActiveFlight(t *testing.T) {
+	assert := assert.New(t)
+	srv := &Handler{
+		workspaceEnrichmentInFlight: map[string]uint64{"ws-upgrade": 3},
+		workspaceEnrichmentFlightKinds: map[string]workspaceEnrichmentKind{
+			"ws-upgrade": workspaceEnrichmentTmux,
+		},
+		workspaceEnrichmentGenerations: map[string]uint64{"ws-upgrade": 3},
+		workspaceEnrichmentPending: map[string]workspaceEnrichmentJob{
+			"ws-upgrade": {
+				summary:    db.WorkspaceSummary{Workspace: db.Workspace{ID: "ws-upgrade", Status: "ready"}},
+				generation: 3,
+				kind:       workspaceEnrichmentFull,
+			},
+		},
+		workspaceEnrichmentWorkers: 2,
+	}
+
+	_, prune, ok := srv.nextWorkspaceEnrichmentJob()
+
+	assert.False(ok)
+	assert.False(prune)
+	assert.Contains(srv.workspaceEnrichmentPending, "ws-upgrade")
+	assert.Equal(uint64(3), srv.workspaceEnrichmentInFlight["ws-upgrade"])
+	assert.Equal(workspaceEnrichmentTmux, srv.workspaceEnrichmentFlightKinds["ws-upgrade"])
+}
+
+func TestFinishWorkspaceEnrichmentRequiresMatchingFlightID(t *testing.T) {
+	assert := assert.New(t)
+	srv := &Handler{
+		workspaceEnrichmentInFlight:    map[string]uint64{"ws-flight": 4},
+		workspaceEnrichmentFlightKinds: map[string]workspaceEnrichmentKind{"ws-flight": workspaceEnrichmentFull},
+		workspaceEnrichmentFlightIDs:   map[string]uint64{"ws-flight": 12},
+	}
+
+	srv.finishWorkspaceEnrichment("ws-flight", 4, 11)
+	assert.Contains(srv.workspaceEnrichmentInFlight, "ws-flight")
+	assert.Equal(uint64(12), srv.workspaceEnrichmentFlightIDs["ws-flight"])
+
+	srv.finishWorkspaceEnrichment("ws-flight", 4, 12)
+	assert.NotContains(srv.workspaceEnrichmentInFlight, "ws-flight")
+	assert.NotContains(srv.workspaceEnrichmentFlightKinds, "ws-flight")
+	assert.NotContains(srv.workspaceEnrichmentFlightIDs, "ws-flight")
 }
 
 func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
@@ -427,7 +591,7 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 	assert.Equal(now, got.divergenceRefreshedAt)
 	assert.Equal(lastGood.tmuxRefreshedAt, got.tmuxRefreshedAt)
 	assert.Equal(now, got.lastAttemptAt)
-	assert.Contains(got.lastError, "tmux display-message:")
+	assert.Contains(got.tmuxError, "tmux display-message:")
 
 	missingSummary := db.WorkspaceSummary{Workspace: db.Workspace{
 		ID:           "ws-partial-refresh",
@@ -519,8 +683,14 @@ func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 	}))
 
 	// A new failure notifies once; the same repeated failure stays silent.
-	assert.True(record(workspaceEnrichmentProbeResult{err: errors.New("boom")}))
-	assert.False(record(workspaceEnrichmentProbeResult{err: errors.New("boom")}))
+	assert.True(record(workspaceEnrichmentProbeResult{
+		divergenceErr: errors.New("boom"),
+		kind:          workspaceEnrichmentFull,
+	}))
+	assert.False(record(workspaceEnrichmentProbeResult{
+		divergenceErr: errors.New("boom"),
+		kind:          workspaceEnrichmentFull,
+	}))
 
 	// Recovery notifies.
 	assert.True(record(workspaceEnrichmentProbeResult{
@@ -528,6 +698,55 @@ func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 		divergenceComplete: true,
 		tmuxComplete:       true,
 	}))
+
+	// Tmux-only failures and recovery notify just like divergence failures;
+	// only routine activity-field movement stays silent.
+	assert.True(record(workspaceEnrichmentProbeResult{
+		tmuxErr: errors.New("tmux boom"),
+		kind:    workspaceEnrichmentTmux,
+	}))
+	assert.False(record(workspaceEnrichmentProbeResult{
+		tmuxErr: errors.New("tmux boom"),
+		kind:    workspaceEnrichmentTmux,
+	}))
+	assert.True(record(workspaceEnrichmentProbeResult{
+		tmuxComplete: true,
+		kind:         workspaceEnrichmentTmux,
+	}))
+}
+
+func TestTmuxOnlyEnrichmentBroadcastsFirstCompletion(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv := newEnrichmentTestHandler(t, "")
+	srv.workspaceEnrichmentDisabled = false
+	var events []Event
+	srv.hub.broadcast = func(event Event) uint64 {
+		events = append(events, event)
+		return uint64(len(events))
+	}
+	require.NoError(srv.db.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-tmux-broadcast", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: "adhoc:tmux-broadcast", WorktreePath: t.TempDir(), Status: "ready",
+	}))
+	summary, err := srv.db.GetWorkspaceSummary(t.Context(), "ws-tmux-broadcast")
+	require.NoError(err)
+	require.NotNil(summary)
+	srv.workspaceEnrichmentGenerations[summary.ID] = 0
+	job := workspaceEnrichmentJob{
+		summary:    *summary,
+		generation: srv.workspaceEnrichmentGeneration("ws-tmux-broadcast"),
+		kind:       workspaceEnrichmentTmux,
+	}
+
+	srv.runWorkspaceEnrichmentJob(t.Context(), job)
+
+	require.Len(events, 1)
+	assert.Equal(Event{
+		Type: "workspace_status",
+		Data: map[string]string{"id": "ws-tmux-broadcast"},
+	}, events[0])
 }
 
 func TestWorkspaceEnrichmentUsesBoundedWorkersPastBackgroundCapacity(t *testing.T) {

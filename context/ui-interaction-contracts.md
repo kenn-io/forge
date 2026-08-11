@@ -12,6 +12,12 @@ semantics.
 - Prevent narrow regressions that usually show up only after review or in e2e
   flows.
 
+## Browser Runtime Constraints
+
+- Do not require secure-context-only browser APIs: remote daemon access may use
+  plain HTTP, so local identity tokens must use runtime-independent identity
+  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte:workspaceRefreshOwner`).
+
 ## Identity And Route State
 
 Interactive surfaces must agree on which item is selected.

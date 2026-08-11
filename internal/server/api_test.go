@@ -22800,6 +22800,97 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	assert.Equal("comment", commentItem.ActivityType)
 }
 
+func TestAPIActivityFencesRepositoryReconciliationAcrossEventAndWorkspaceReads(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repo.ID, PlatformID: 701, Number: 701,
+		URL: "https://github.com/acme/widget/pull/701", Title: "Fenced activity",
+		Author: "alice", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-activity-fence", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
+		ItemNumber: 701, WorktreePath: t.TempDir(), Status: "ready",
+	}))
+
+	afterItems := make(chan struct{})
+	continueRequest := make(chan struct{})
+	srv.activityAfterItemsForTest = func() {
+		close(afterItems)
+		<-continueRequest
+	}
+	responseDone := make(chan *generated.ListActivityResponse, 1)
+	errorDone := make(chan error, 1)
+	go func() {
+		response, requestErr := client.HTTP.ListActivityWithResponse(
+			context.Background(), &generated.ListActivityParams{},
+		)
+		responseDone <- response
+		errorDone <- requestErr
+	}()
+	<-afterItems
+
+	writeAttempted := make(chan struct{})
+	restoreHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
+		close(writeAttempted)
+	})
+	t.Cleanup(restoreHook)
+	renameDone := make(chan error, 1)
+	go func() {
+		renamed := db.GitHubRepoIdentity("github.com", "acme", "gadget")
+		renamed.PlatformRepoID = repo.PlatformRepoID
+		_, _, renameErr := database.ReconcileRepositoryObservation(
+			context.Background(), renamed, now.Add(time.Minute),
+		)
+		renameDone <- renameErr
+	}()
+	<-writeAttempted
+
+	var renameErr error
+	renameCompletedEarly := false
+	select {
+	case renameErr = <-renameDone:
+		renameCompletedEarly = true
+		assert.Fail("repository reconciliation completed during activity snapshot")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(continueRequest)
+	response := <-responseDone
+	require.NoError(<-errorDone)
+	if !renameCompletedEarly {
+		renameErr = <-renameDone
+	}
+	require.NoError(renameErr)
+	require.NotNil(response)
+	require.Equal(http.StatusOK, response.StatusCode())
+	require.NotNil(response.JSON200)
+	require.NotNil(response.JSON200.Items)
+
+	var item *generated.ActivityItemResponse
+	for i := range *response.JSON200.Items {
+		candidate := &(*response.JSON200.Items)[i]
+		if candidate.ItemNumber == 701 {
+			item = candidate
+			break
+		}
+	}
+	require.NotNil(item)
+	assert.Equal("widget", item.RepoName)
+	require.NotNil(item.Workspace)
+	assert.Equal("ws-activity-fence", item.Workspace.Id)
+}
+
 func TestAPIActivityCommentCarriesPRAuthor(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -23380,6 +23471,64 @@ func TestAPIListActivity(t *testing.T) {
 	require.Len(*filtered.JSON200.Items, 1)
 	assert.Equal("comment", (*filtered.JSON200.Items)[0].ActivityType)
 	assert.Equal("reviewer", (*filtered.JSON200.Items)[0].Author)
+
+	whitespace := " \t "
+	unfiltered, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since, Search: &whitespace},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, unfiltered.StatusCode())
+	require.NotNil(unfiltered.JSON200)
+	require.NotNil(unfiltered.JSON200.Items)
+	assert.Len(*unfiltered.JSON200.Items, len(*resp.JSON200.Items))
+}
+
+func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	since := now.Add(-time.Hour)
+	repoID := int64(7)
+	matchedKey := db.WorkspaceSubjectKey{
+		RepoID: repoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 41,
+	}
+	eventlessKey := db.WorkspaceSubjectKey{
+		RepoID: repoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+	}
+	subject := func(key db.WorkspaceSubjectKey, title string) workspaceapi.SubjectActivity {
+		return workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+				Title: title, Author: "alice", State: "open",
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: "ws-" + strconv.Itoa(key.ItemNumber), Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+			matchedKey:   subject(matchedKey, "Unrelated title"),
+			eventlessKey: subject(eventlessKey, "Another unrelated title"),
+		},
+	}
+	srv := &Server{repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{})}
+
+	got := srv.workspaceActivityResponse(
+		&listActivityInput{},
+		db.ListActivityOpts{Search: "reviewer", Since: &since},
+		snapshot,
+		[]db.ActivityItem{{
+			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
+			Author: "reviewer", BodyPreview: "matches the search",
+		}},
+	)
+
+	require.Len(got, 1)
+	assert.Equal(matchedKey.ItemNumber, got[0].ItemNumber)
+	require.NotNil(got[0].Workspace)
+	assert.Equal("ws-41", got[0].Workspace.ID)
 }
 
 func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {

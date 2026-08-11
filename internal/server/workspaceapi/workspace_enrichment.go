@@ -3,6 +3,7 @@ package workspaceapi
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -32,19 +33,34 @@ type workspaceEnrichmentCacheEntry struct {
 	divergenceRefreshedAt time.Time
 	tmuxRefreshedAt       time.Time
 	lastAttemptAt         time.Time
-	lastError             string
+	divergenceError       string
+	tmuxError             string
+	divergenceAttemptAt   time.Time
+	tmuxAttemptAt         time.Time
 }
+
+type workspaceEnrichmentKind uint8
+
+const (
+	workspaceEnrichmentFull workspaceEnrichmentKind = iota
+	workspaceEnrichmentTmux
+)
 
 type workspaceEnrichmentJob struct {
 	summary    db.WorkspaceSummary
 	generation uint64
+	kind       workspaceEnrichmentKind
+	flightID   uint64
 }
 
 type workspaceEnrichmentProbeResult struct {
 	response           workspaceResponse
 	divergenceComplete bool
 	tmuxComplete       bool
+	divergenceErr      error
+	tmuxErr            error
 	err                error
+	kind               workspaceEnrichmentKind
 }
 
 func (s *Handler) toCachedWorkspaceResponse(
@@ -62,7 +78,7 @@ func (s *Handler) toCachedWorkspaceResponse(
 		return
 	}
 
-	entry, refreshDue := s.cachedWorkspaceEnrichment(summary.ID)
+	entry, refreshDue := s.cachedWorkspaceEnrichment(summary.ID, workspaceEnrichmentFull)
 	resp = s.workspaceResponseFromEnrichmentCacheEntry(summary, entry)
 	if refreshDue {
 		s.scheduleWorkspaceEnrichment(*summary)
@@ -86,19 +102,30 @@ func (s *Handler) workspaceResponseFromEnrichmentCacheEntry(
 	applyWorkspaceEnrichmentCacheEntry(&resp, *entry)
 	hasResponse := entry.hasDivergence || entry.hasTmux
 	switch {
-	case entry.lastError != "":
+	case entry.errorMessage() != "":
 		resp.EnrichmentStatus = workspaceEnrichmentFailed
-		errMessage := entry.lastError
+		errMessage := entry.errorMessage()
 		resp.EnrichmentError = &errMessage
 	case hasResponse:
 		refreshedAt, _ := entry.oldestRefreshedAt()
-		if s.now().Sub(refreshedAt) < workspaceEnrichmentTTL {
-			resp.EnrichmentStatus = workspaceEnrichmentFresh
-		} else {
+		if s.now().Sub(refreshedAt) >= workspaceEnrichmentTTL {
 			resp.EnrichmentStatus = workspaceEnrichmentStale
+		} else if entry.hasDivergence && entry.hasTmux {
+			resp.EnrichmentStatus = workspaceEnrichmentFresh
 		}
 	}
 	return resp
+}
+
+func (entry workspaceEnrichmentCacheEntry) errorMessage() string {
+	messages := make([]string, 0, 2)
+	if entry.divergenceError != "" {
+		messages = append(messages, entry.divergenceError)
+	}
+	if entry.tmuxError != "" {
+		messages = append(messages, entry.tmuxError)
+	}
+	return strings.Join(messages, "\n")
 }
 
 func (entry workspaceEnrichmentCacheEntry) oldestRefreshedAt() (time.Time, bool) {
@@ -141,6 +168,7 @@ func applyWorkspaceEnrichmentCacheEntry(
 
 func (s *Handler) cachedWorkspaceEnrichment(
 	workspaceID string,
+	kind workspaceEnrichmentKind,
 ) (*workspaceEnrichmentCacheEntry, bool) {
 	s.workspaceEnrichmentMu.Lock()
 	defer s.workspaceEnrichmentMu.Unlock()
@@ -150,15 +178,20 @@ func (s *Handler) cachedWorkspaceEnrichment(
 		return nil, true
 	}
 	copy := entry
-	latestAttempt := entry.lastAttemptAt
-	if entry.divergenceRefreshedAt.After(latestAttempt) {
-		latestAttempt = entry.divergenceRefreshedAt
+	componentDue := func(attemptedAt, refreshedAt time.Time) bool {
+		latest := attemptedAt
+		if refreshedAt.After(latest) {
+			latest = refreshedAt
+		}
+		return latest.IsZero() || s.now().Sub(latest) >= workspaceEnrichmentTTL
 	}
-	if entry.tmuxRefreshedAt.After(latestAttempt) {
-		latestAttempt = entry.tmuxRefreshedAt
+	tmuxDue := componentDue(entry.tmuxAttemptAt, entry.tmuxRefreshedAt)
+	if kind == workspaceEnrichmentTmux {
+		return &copy, tmuxDue
 	}
-	return &copy, latestAttempt.IsZero() ||
-		s.now().Sub(latestAttempt) >= workspaceEnrichmentTTL
+	return &copy, tmuxDue || componentDue(
+		entry.divergenceAttemptAt, entry.divergenceRefreshedAt,
+	)
 }
 
 func (s *Handler) refreshWorkspaceResponse(
@@ -195,6 +228,17 @@ func (s *Handler) workspaceResponseAfterEnrichmentAttempt(
 }
 
 func (s *Handler) scheduleWorkspaceEnrichment(summary db.WorkspaceSummary) {
+	s.scheduleWorkspaceEnrichmentKind(summary, workspaceEnrichmentFull)
+}
+
+func (s *Handler) scheduleWorkspaceTmuxEnrichment(summary db.WorkspaceSummary) {
+	s.scheduleWorkspaceEnrichmentKind(summary, workspaceEnrichmentTmux)
+}
+
+func (s *Handler) scheduleWorkspaceEnrichmentKind(
+	summary db.WorkspaceSummary,
+	kind workspaceEnrichmentKind,
+) {
 	s.workspaceEnrichmentMu.Lock()
 	defer s.workspaceEnrichmentMu.Unlock()
 	if s.workspaceEnrichmentGenerations == nil {
@@ -206,11 +250,17 @@ func (s *Handler) scheduleWorkspaceEnrichment(summary db.WorkspaceSummary) {
 	generation := s.workspaceEnrichmentGenerations[summary.ID]
 	if inFlight, ok := s.workspaceEnrichmentInFlight[summary.ID]; ok &&
 		inFlight == generation {
-		return
+		if s.workspaceEnrichmentFlightKinds[summary.ID] == workspaceEnrichmentFull ||
+			kind == workspaceEnrichmentTmux {
+			return
+		}
 	}
 	if pending, ok := s.workspaceEnrichmentPending[summary.ID]; ok &&
 		pending.generation == generation {
 		pending.summary = summary
+		if kind == workspaceEnrichmentFull {
+			pending.kind = workspaceEnrichmentFull
+		}
 		s.workspaceEnrichmentPending[summary.ID] = pending
 		return
 	}
@@ -220,6 +270,7 @@ func (s *Handler) scheduleWorkspaceEnrichment(summary db.WorkspaceSummary) {
 	s.workspaceEnrichmentPending[summary.ID] = workspaceEnrichmentJob{
 		summary:    summary,
 		generation: generation,
+		kind:       kind,
 	}
 	s.startWorkspaceEnrichmentWorkersLocked()
 }
@@ -275,11 +326,25 @@ func (s *Handler) nextWorkspaceEnrichmentJob() (
 		return workspaceEnrichmentJob{}, true, true
 	}
 	for workspaceID, job := range s.workspaceEnrichmentPending {
-		delete(s.workspaceEnrichmentPending, workspaceID)
 		if s.workspaceEnrichmentGenerations[workspaceID] != job.generation {
+			delete(s.workspaceEnrichmentPending, workspaceID)
 			continue
 		}
+		if _, active := s.workspaceEnrichmentInFlight[workspaceID]; active {
+			continue
+		}
+		delete(s.workspaceEnrichmentPending, workspaceID)
+		s.workspaceEnrichmentNextFlight++
+		job.flightID = s.workspaceEnrichmentNextFlight
 		s.workspaceEnrichmentInFlight[workspaceID] = job.generation
+		if s.workspaceEnrichmentFlightKinds == nil {
+			s.workspaceEnrichmentFlightKinds = make(map[string]workspaceEnrichmentKind)
+		}
+		s.workspaceEnrichmentFlightKinds[workspaceID] = job.kind
+		if s.workspaceEnrichmentFlightIDs == nil {
+			s.workspaceEnrichmentFlightIDs = make(map[string]uint64)
+		}
+		s.workspaceEnrichmentFlightIDs[workspaceID] = job.flightID
 		return job, false, true
 	}
 	s.workspaceEnrichmentWorkers--
@@ -290,12 +355,18 @@ func (s *Handler) runWorkspaceEnrichmentJob(
 	ctx context.Context,
 	job workspaceEnrichmentJob,
 ) {
-	defer s.finishWorkspaceEnrichment(job.summary.ID, job.generation)
+	defer s.finishWorkspaceEnrichment(job.summary.ID, job.generation, job.flightID)
 	probeCtx, cancel := context.WithTimeout(
 		ctx, workspaceEnrichmentRefreshTimeout,
 	)
 	defer cancel()
-	result := s.workspaceResponseWithEnrichment(probeCtx, &job.summary)
+	var result workspaceEnrichmentProbeResult
+	if job.kind == workspaceEnrichmentTmux {
+		result = s.workspaceResponseWithTmuxEnrichment(probeCtx, &job.summary)
+	} else {
+		result = s.workspaceResponseWithEnrichment(probeCtx, &job.summary)
+	}
+	result.kind = job.kind
 	if _, recorded, changed := s.recordWorkspaceEnrichmentResult(
 		job.summary.ID, job.generation, result,
 	); recorded && changed {
@@ -354,15 +425,25 @@ func (s *Handler) recordWorkspaceEnrichmentResult(
 		entry.hasDivergence = true
 		entry.divergenceRefreshedAt = now
 	}
+	if result.kind == workspaceEnrichmentFull {
+		entry.divergenceAttemptAt = now
+		if result.divergenceErr != nil {
+			entry.divergenceError = result.divergenceErr.Error()
+		} else if result.divergenceComplete {
+			entry.divergenceError = ""
+		}
+	}
 	if result.tmuxComplete {
 		applyCachedWorkspaceTmux(&entry.response, result.response)
 		entry.hasTmux = true
 		entry.tmuxRefreshedAt = now
 	}
+	entry.tmuxAttemptAt = now
 	entry.lastAttemptAt = now
-	entry.lastError = ""
-	if result.err != nil {
-		entry.lastError = result.err.Error()
+	if result.tmuxErr != nil {
+		entry.tmuxError = result.tmuxErr.Error()
+	} else if result.tmuxComplete {
+		entry.tmuxError = ""
 	}
 	s.workspaceEnrichmentCache[workspaceID] = entry
 	return entry, true, workspaceEnrichmentBroadcastWorthy(prior, entry)
@@ -380,7 +461,8 @@ func workspaceEnrichmentBroadcastWorthy(prior, next workspaceEnrichmentCacheEntr
 	if prior.hasDivergence != next.hasDivergence || prior.hasTmux != next.hasTmux {
 		return true
 	}
-	if prior.lastError != next.lastError {
+	if prior.divergenceError != next.divergenceError ||
+		prior.tmuxError != next.tmuxError {
 		return true
 	}
 	return next.hasDivergence &&
@@ -398,10 +480,14 @@ func intPointerEqual(a, b *int) bool {
 func (s *Handler) finishWorkspaceEnrichment(
 	workspaceID string,
 	generation uint64,
+	flightID uint64,
 ) {
 	s.workspaceEnrichmentMu.Lock()
-	if s.workspaceEnrichmentInFlight[workspaceID] == generation {
+	if s.workspaceEnrichmentInFlight[workspaceID] == generation &&
+		s.workspaceEnrichmentFlightIDs[workspaceID] == flightID {
 		delete(s.workspaceEnrichmentInFlight, workspaceID)
+		delete(s.workspaceEnrichmentFlightKinds, workspaceID)
+		delete(s.workspaceEnrichmentFlightIDs, workspaceID)
 	}
 	s.workspaceEnrichmentMu.Unlock()
 }

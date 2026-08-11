@@ -9,6 +9,7 @@ function pr(
   lastActivityAt: string,
   worktreeLinks: PullRequest["worktree_links"] = [],
   state: PullRequest["State"] = "open",
+  workspaceActivityAt?: string,
 ): PullRequest {
   return {
     ID: id,
@@ -16,6 +17,7 @@ function pr(
     State: state,
     KanbanStatus: kanbanStatus,
     LastActivityAt: lastActivityAt,
+    workspace_activity_at: workspaceActivityAt,
     worktree_links: worktreeLinks,
   } as PullRequest;
 }
@@ -66,5 +68,14 @@ describe("PR status grouping", () => {
       ["closed", "Closed"],
     ]);
     expect(groups.at(-1)?.items.map((item) => item.ID)).toEqual([3, 2]);
+  });
+
+  it("sorts a status group by effective provider and workspace activity", () => {
+    const groups = groupByWorkflow([
+      pr(1, "reviewing", "2026-01-03T00:00:00Z"),
+      pr(2, "reviewing", "2026-01-01T00:00:00Z", [], "open", "2026-01-04T00:00:00Z"),
+    ]);
+
+    expect(groups[0]?.items.map((item) => item.ID)).toEqual([2, 1]);
   });
 });

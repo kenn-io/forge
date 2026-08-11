@@ -211,8 +211,11 @@ type Server struct {
 	issueAPI               *issueapi.Handler
 	pullLifecycle          pullLifecycle
 	workspaceAPI           *workspaceapi.Handler
-	markdownImages         *markdownImageCache
-	roborevRepositories    *roborevRepositoryProbe
+	// activityAfterItemsForTest pauses Activity between its two identity reads
+	// so tests can prove the request-wide repository reconciliation fence.
+	activityAfterItemsForTest func()
+	markdownImages            *markdownImageCache
+	roborevRepositories       *roborevRepositoryProbe
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -996,7 +999,6 @@ func newServer(
 		Resolver:             repoResolver,
 		Syncer:               syncer,
 		Clones:               clones,
-		Workspaces:           s.workspaces,
 		Config:               pullConfigSnapshot(cfg),
 		Now:                  func() time.Time { return s.now() },
 		DeferredMergeMaxWait: deferredMergeMaxWait,
@@ -1004,7 +1006,8 @@ func newServer(
 			_, err := s.workspaceAPI.DeleteWorkspace(ctx, &workspaceapi.DeleteWorkspaceInput{ID: id})
 			return err
 		},
-		FleetSelfKey: s.fleetAPI.SelfKey,
+		WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
+		FleetSelfKey:      s.fleetAPI.SelfKey,
 		FilterRepos: func(repos []db.Repo) []db.Repo {
 			if s.cfg == nil {
 				return repos
@@ -1020,11 +1023,11 @@ func newServer(
 		MarkClosedLinkedNotificationsDone: s.markClosedLinkedNotificationsDone,
 	})
 	s.issueAPI = issueapi.New(issueapi.Deps{
-		DB:         database,
-		Resolver:   repoResolver,
-		Syncer:     syncer,
-		Workspaces: s.workspaces,
-		Now:        func() time.Time { return s.now() },
+		DB:                database,
+		Resolver:          repoResolver,
+		Syncer:            syncer,
+		Now:               func() time.Time { return s.now() },
+		WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
 		FilterRepos: func(repos []db.Repo) []db.Repo {
 			if s.cfg == nil {
 				return repos

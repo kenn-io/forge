@@ -2,7 +2,7 @@
   import { EmptyState, SearchInput, Spinner, Toggle } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onMount, onDestroy } from "svelte";
-  import type { ActivityItem } from "../api/types.js";
+  import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import {
@@ -282,6 +282,16 @@
     }
     if (activity.getHideDefaultBranchActivity()) {
       result = result.filter((it) => !isDefaultBranchActivity(it));
+    }
+    return result;
+  });
+
+  const visibleWorkspaceActivity = $derived.by(() => {
+    let result: WorkspaceActivitySubject[] = activity.getWorkspaceActivity().filter((subject) =>
+      isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
+    );
+    if (activity.getHideClosedMerged()) {
+      result = result.filter((subject) => subject.item_state !== "closed" && subject.item_state !== "merged");
     }
     return result;
   });
@@ -655,7 +665,7 @@
     </div>
     </ScrollBox>
   {:else if activity.getViewMode() === "threaded"}
-    {#if displayItems.length === 0 && activity.isActivityLoading()}
+    {#if displayItems.length === 0 && visibleWorkspaceActivity.length === 0 && activity.isActivityLoading()}
       <ScrollBox label="Activity feed">
       <div class="table-container">
         <div class="loading-placeholder">
@@ -667,6 +677,7 @@
     {:else}
       <ActivityThreaded
         items={displayItems}
+        workspaceActivity={visibleWorkspaceActivity}
         {onSelectItem}
         {onSelectBranchCommit}
         {compact}

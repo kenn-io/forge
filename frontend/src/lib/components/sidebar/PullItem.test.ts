@@ -60,6 +60,19 @@ describe("PullItem CI cluster", () => {
     vi.restoreAllMocks();
   });
 
+  it("labels a newer workspace timestamp as the row's effective activity", () => {
+    renderItem(
+      mkPR({
+        LastActivityAt: "2026-05-01T12:00:00Z",
+        workspace_activity_at: "2026-05-02T12:00:00Z",
+      }),
+    );
+
+    const time = document.querySelector('.time[title="Recent workspace activity"]');
+    expect(time).not.toBeNull();
+    expect(time?.getAttribute("aria-label")).toContain("Recent workspace activity");
+  });
+
   it("renders compact tokens for a mixed-state PR", () => {
     const checks = [
       {

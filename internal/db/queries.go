@@ -118,6 +118,65 @@ func appendLimitOffset(query string, args *[]any, limit, offset int) string {
 	return query
 }
 
+func workspaceActivityCTE(
+	alias string,
+	overrides []ItemActivityOverride,
+) (prefix, join, order string, args []any, err error) {
+	type key struct {
+		repoID int64
+		number int
+	}
+	deduped := make([]ItemActivityOverride, 0, len(overrides))
+	indexes := make(map[key]int, len(overrides))
+	for _, override := range overrides {
+		if override.RepoID == 0 || override.ItemNumber <= 0 || override.ActivityAt.IsZero() {
+			continue
+		}
+		k := key{repoID: override.RepoID, number: override.ItemNumber}
+		if i, ok := indexes[k]; ok {
+			if override.ActivityAt.After(deduped[i].ActivityAt) {
+				deduped[i] = override
+			}
+			continue
+		}
+		indexes[k] = len(deduped)
+		deduped = append(deduped, override)
+	}
+	if len(deduped) == 0 {
+		return "", "", alias + ".last_activity_at", nil, nil
+	}
+	type workspaceActivityJSONRow struct {
+		RepoID     int64  `json:"repo_id"`
+		ItemNumber int    `json:"item_number"`
+		ActivityAt string `json:"activity_at"`
+	}
+	rows := make([]workspaceActivityJSONRow, 0, len(deduped))
+	for _, override := range deduped {
+		rows = append(rows, workspaceActivityJSONRow{
+			RepoID: override.RepoID, ItemNumber: override.ItemNumber,
+			// modernc's default time.Time binding uses Time.String. Matching it
+			// keeps effective-activity comparisons identical to the former
+			// one-bind-per-field VALUES relation.
+			ActivityAt: override.ActivityAt.UTC().String(),
+		})
+	}
+	payload, err := json.Marshal(rows)
+	if err != nil {
+		return "", "", "", nil, fmt.Errorf("encode workspace activity overrides: %w", err)
+	}
+	prefix = `WITH workspace_activity(repo_id, item_number, activity_at) AS (
+		SELECT CAST(json_extract(value, '$.repo_id') AS INTEGER),
+		       CAST(json_extract(value, '$.item_number') AS INTEGER),
+		       json_extract(value, '$.activity_at')
+		FROM json_each(?)
+	)`
+	join = "LEFT JOIN workspace_activity wa ON wa.repo_id = " + alias +
+		".repo_id AND wa.item_number = " + alias + ".number"
+	order = "CASE WHEN wa.activity_at > " + alias + ".last_activity_at " +
+		"THEN wa.activity_at ELSE " + alias + ".last_activity_at END"
+	return prefix, join, order, []any{string(payload)}, nil
+}
+
 func sqlPlaceholders(count int) string {
 	parts := make([]string, count)
 	for i := range parts {
@@ -1951,7 +2010,12 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		where = "WHERE " + strings.Join(conds, " AND ")
 	}
 
-	query := fmt.Sprintf(`
+	activityCTE, activityJoin, activityOrder, activityArgs, err := workspaceActivityCTE("p", opts.WorkspaceActivity)
+	if err != nil {
+		return nil, fmt.Errorf("list merge requests: %w", err)
+	}
+	args = append(activityArgs, args...)
+	query := fmt.Sprintf(`%s
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
 		       p.body, p.head_branch, p.base_branch,
@@ -1974,7 +2038,8 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
-		ORDER BY p.last_activity_at DESC, p.id DESC`, where)
+		%s
+		ORDER BY %s DESC, p.id DESC`, activityCTE, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := d.ro.QueryContext(ctx, query, args...)
@@ -3199,7 +3264,12 @@ func (d *DB) ListIssues(
 		where = "WHERE " + strings.Join(conds, " AND ")
 	}
 
-	query := fmt.Sprintf(`
+	activityCTE, activityJoin, activityOrder, activityArgs, err := workspaceActivityCTE("i", opts.WorkspaceActivity)
+	if err != nil {
+		return nil, fmt.Errorf("list issues: %w", err)
+	}
+	args = append(activityArgs, args...)
+	query := fmt.Sprintf(`%s
 		SELECT i.id, i.snapshot_revision, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
@@ -3213,7 +3283,8 @@ func (d *DB) ListIssues(
 		LEFT JOIN forge_item_workflow_state w
 		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		%s
-		ORDER BY i.last_activity_at DESC, i.id DESC`, where)
+		%s
+		ORDER BY %s DESC, i.id DESC`, activityCTE, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := d.ro.QueryContext(ctx, query, args...)
@@ -5217,6 +5288,7 @@ const workspaceSummaryColumns = `
 	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
 	w.error_message, w.created_at, w.kata_metadata,
+	r.id,
 	CASE
 	    WHEN w.item_type = 'issue' THEN i.title
 	    ELSE m.title
@@ -5246,7 +5318,6 @@ const workspaceSummaryJoins = `
 	   AND rr.platform_host = w.platform_host
 	   AND rr.owner_key = w.repo_owner_key
 	   AND rr.name_key = w.repo_name_key
-	   AND rr.is_current = 1
 	   AND NOT EXISTS (
 	       SELECT 1
 	       FROM forge_repo_routes historical
@@ -5273,12 +5344,14 @@ func scanWorkspaceSummary(
 	var s WorkspaceSummary
 	var kataMetadataJSON string
 	var itemLastActivityAt sql.NullString
+	var repoID sql.NullInt64
 	err := scanner.Scan(
 		&s.ID, &s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
 		&s.ItemType, &s.ItemNumber, &s.ItemKey, &s.AssociatedPRNumber,
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,
 		&s.ErrorMessage, &s.CreatedAt, &kataMetadataJSON,
+		&repoID,
 		&s.SourceTitle, &s.SourceState, &s.SourceURL,
 		&s.MRIsDraft, &s.MRCIStatus,
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
@@ -5288,6 +5361,9 @@ func scanWorkspaceSummary(
 	)
 	if err != nil {
 		return nil, err
+	}
+	if repoID.Valid {
+		s.RepoID = repoID.Int64
 	}
 	s.CreatedAt = s.CreatedAt.UTC()
 	s.MRTitle = s.SourceTitle

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { ActivityItem } from "../api/types.js";
+import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
 import ActivityThreaded from "./ActivityThreaded.svelte";
 
 function activityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
@@ -50,6 +50,24 @@ function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): 
   });
 }
 
+function workspaceSubject(overrides: Partial<WorkspaceActivitySubject> = {}): WorkspaceActivitySubject {
+  return {
+    activity_at: "2026-04-27T14:00:00Z",
+    item_author: "workspace-author",
+    item_number: 7,
+    item_state: "open",
+    item_title: "Keep the agent's work visible",
+    item_type: "pr",
+    item_url: "https://github.com/acme/widgets/pull/7",
+    platform_host: "github.com",
+    repo: activityItem("repo-source").repo!,
+    repo_name: "widgets",
+    repo_owner: "acme",
+    workspace: { id: "ws-pr-7", status: "ready" },
+    ...overrides,
+  };
+}
+
 const expanded = vi.hoisted(() => ({ value: true }));
 const groupByRepo = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
@@ -87,6 +105,52 @@ describe("ActivityThreaded collapse", () => {
       props: { items: [activityItem("c1")], onSelectItem: undefined },
     });
     expect(container.querySelectorAll(".event-row").length).toBeGreaterThan(0);
+  });
+
+  it("renders a workspace-active subject with no provider events as an unexpandable group", async () => {
+    const onSelectItem = vi.fn();
+    const { container, getByLabelText } = render(ActivityThreaded, {
+      props: {
+        items: [],
+        workspaceActivity: [workspaceSubject()],
+        onSelectItem,
+      },
+    });
+
+    const row = container.querySelector(".item-row");
+    expect(row?.textContent).toContain("Keep the agent's work visible");
+    expect(row?.textContent).toContain("workspace-author");
+    expect(container.querySelector(".thread-caret")).toBeNull();
+    expect(container.querySelector(".event-row")).toBeNull();
+    expect(getByLabelText("Workspace attached (ready)")).toBeTruthy();
+
+    await fireEvent.click(row!);
+    expect(onSelectItem).toHaveBeenCalledWith(expect.objectContaining({ item_number: 7, item_type: "pr" }));
+  });
+
+  it("sorts existing threads by workspace activity without adding an event", () => {
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [
+          activityItem("provider-newer", {
+            item_number: 2,
+            item_title: "Provider-only thread",
+            created_at: "2026-04-27T13:00:00Z",
+          }),
+          activityItem("workspace-older-event", {
+            item_number: 7,
+            item_title: "Workspace-active thread",
+            created_at: "2026-04-27T12:00:00Z",
+          }),
+        ],
+        workspaceActivity: [workspaceSubject()],
+        onSelectItem: undefined,
+      },
+    });
+
+    const rows = Array.from(container.querySelectorAll(".item-row:not(.branch-activity-row)"));
+    expect(rows[0]?.textContent).toContain("Workspace-active thread");
+    expect(container.querySelectorAll(".event-row")).toHaveLength(2);
   });
 
   it("hides events but keeps the item row when collapsed", () => {

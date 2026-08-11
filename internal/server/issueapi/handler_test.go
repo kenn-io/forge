@@ -1,12 +1,20 @@
 package issueapi
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestHandlerRegistersOnlyIssueRoutes(t *testing.T) {
@@ -72,4 +80,39 @@ func TestHandlerRegistersOnlyIssueRoutes(t *testing.T) {
 	} {
 		assert.NotContains(gotByID, operationID)
 	}
+}
+
+func TestIssueDetailTreatsWorkspaceSnapshotFailureAsBestEffort(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
+	repoID, err := database.UpsertRepo(t.Context(), identity)
+	require.NoError(err)
+	_, err = database.UpsertIssue(t.Context(), &db.Issue{
+		RepoID: repoID, PlatformID: 43, Number: 43, Title: "Available issue",
+		Author: "bob", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	repo, err := database.GetRepoByID(t.Context(), repoID)
+	require.NoError(err)
+	require.NotNil(repo)
+	issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 43)
+	require.NoError(err)
+	require.NotNil(issue)
+	handler := New(Deps{
+		DB:       database,
+		Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
+		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{}, errors.New("snapshot unavailable")
+		},
+	})
+
+	response, err := handler.BuildDetail(t.Context(), repo, issue)
+	require.NoError(err)
+	require.NotNil(response.Issue)
+	assert.Equal(t, 43, response.Issue.Number)
+	assert.Nil(t, response.Workspace)
 }

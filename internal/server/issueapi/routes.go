@@ -2,6 +2,7 @@ package issueapi
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -18,10 +19,30 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 	if hasInvalidRepoFilter(input.Repo) {
 		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
 	}
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	var err error
+	if s.workspaceSubjects != nil {
+		snapshot, err = s.workspaceSubjects(ctx)
+		if err != nil {
+			return nil, httpapi.Internal("load workspace activity failed")
+		}
+	}
+	overrides := make([]db.ItemActivityOverride, 0, len(snapshot.Subjects))
+	for key, activity := range snapshot.Subjects {
+		if key.ItemType == db.WorkspaceItemTypeIssue && activity.ActivityAt != nil {
+			overrides = append(overrides, db.ItemActivityOverride{
+				RepoID: key.RepoID, ItemNumber: key.ItemNumber, ActivityAt: *activity.ActivityAt,
+			})
+		}
+	}
 	issues, err := s.db.ListIssues(ctx, db.ListIssuesOpts{
 		State: input.State, Search: input.Q, Starred: input.Starred,
 		Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
-		RepoFilters: parseRepoFilters(input.Repo),
+		RepoFilters:       parseRepoFilters(input.Repo),
+		WorkspaceActivity: overrides,
 	})
 	if err != nil {
 		return nil, httpapi.Internal("list issues failed")
@@ -30,21 +51,26 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 	if err != nil {
 		return nil, httpapi.Internal("repo lookup failed")
 	}
-	workspaces, err := s.buildWorkspaceRefLookup(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("load workspace refs failed")
-	}
 	out := make([]IssueResponse, 0, len(issues))
 	for _, issue := range issues {
 		repo, ok := repos[issue.RepoID]
 		if !ok {
 			continue
 		}
+		key := db.WorkspaceSubjectKey{RepoID: issue.RepoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: issue.Number}
+		var workspaceRef *workspaceapi.WorkspaceRef
+		if ref, ok := snapshot.OwnReferences[key]; ok {
+			copy := ref
+			workspaceRef = &copy
+		}
 		response := IssueResponse{
 			Issue: issueResponseModel(issue), Repo: s.resolver.Ref(repo),
 			PlatformHost: repo.PlatformHost, RepoOwner: repo.Owner, RepoName: repo.Name,
-			Workspace:    workspaceRefForIssue(workspaces, repo, issue.Number),
+			Workspace:    workspaceRef,
 			DetailLoaded: issue.DetailFetchedAt != nil,
+		}
+		if activity, ok := snapshot.Subjects[key]; ok && activity.ActivityAt != nil {
+			response.WorkspaceActivityAt = formatUTCRFC3339(*activity.ActivityAt)
 		}
 		if issue.DetailFetchedAt != nil {
 			response.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
@@ -151,12 +177,20 @@ func (s *Handler) BuildDetail(ctx context.Context, repo *db.Repo, issue *db.Issu
 	if issue.DetailFetchedAt != nil {
 		response.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
 	}
-	if s.workspaces != nil {
-		workspace, workspaceErr := s.workspaces.GetByIssueForProvider(
-			ctx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name, issue.Number,
-		)
-		if workspaceErr == nil && workspace != nil {
-			response.Workspace = &workspaceapi.WorkspaceRef{ID: workspace.ID, Status: workspace.Status}
+	if s.workspaceSubjects != nil {
+		snapshot, snapshotErr := s.workspaceSubjects(ctx)
+		if snapshotErr != nil {
+			slog.Warn(
+				"load workspace activity for issue detail failed",
+				"issue_id", issue.ID, "err", snapshotErr,
+			)
+		} else {
+			key := db.WorkspaceSubjectKey{
+				RepoID: repo.ID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: issue.Number,
+			}
+			if workspaceRef, ok := snapshot.OwnReferences[key]; ok {
+				response.Workspace = &workspaceRef
+			}
 		}
 	}
 	return response, nil

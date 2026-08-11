@@ -16,13 +16,14 @@ type WorkflowStateMetaResponse struct {
 
 type IssueResponse struct {
 	db.Issue
-	Repo            httpapi.RepoRefResponse    `json:"repo"`
-	PlatformHost    string                     `json:"platform_host"`
-	RepoOwner       string                     `json:"repo_owner"`
-	RepoName        string                     `json:"repo_name"`
-	Workspace       *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
-	DetailLoaded    bool                       `json:"detail_loaded"`
-	DetailFetchedAt string                     `json:"detail_fetched_at,omitempty"`
+	Repo                httpapi.RepoRefResponse    `json:"repo"`
+	PlatformHost        string                     `json:"platform_host"`
+	RepoOwner           string                     `json:"repo_owner"`
+	RepoName            string                     `json:"repo_name"`
+	Workspace           *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	WorkspaceActivityAt string                     `json:"workspace_activity_at,omitempty" format:"date-time"`
+	DetailLoaded        bool                       `json:"detail_loaded"`
+	DetailFetchedAt     string                     `json:"detail_fetched_at,omitempty"`
 }
 
 type IssueDetailResponse struct {

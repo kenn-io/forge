@@ -1,7 +1,7 @@
 <script lang="ts">
   import { EmptyState } from "@kenn-io/kit-ui";
   import { ScrollBox } from "@kenn-io/kit-ui";
-  import type { ActivityItem } from "../api/types.js";
+  import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
     collapseActivityRuns,
@@ -37,6 +37,7 @@
 
   interface Props {
     items: ActivityItem[];
+    workspaceActivity?: WorkspaceActivitySubject[];
     onSelectItem: ((item: ActivityItem) => void) | undefined;
     onSelectBranchCommit?: ((item: ActivityItem) => void) | undefined;
     compact?: boolean;
@@ -65,6 +66,7 @@
 
   let {
     items,
+    workspaceActivity = [],
     onSelectItem,
     onSelectBranchCommit,
     compact = false,
@@ -88,6 +90,8 @@
     latestTime: string;
     itemAuthor: string;
     workspace: ActivityItem["workspace"];
+    repo: ActivityItem["repo"];
+    workspaceActivityAt?: string;
     events: ActivityItem[];
     displayEvents: ReturnType<
       typeof collapseActivityRuns
@@ -124,7 +128,10 @@
 
   const repoLabelFormatter = $derived.by(() =>
     createRepoLabelFormatter(
-      items.map(activityRepoIdentity),
+      [
+        ...items.map(activityRepoIdentity),
+        ...workspaceActivity.map(workspaceRepoIdentity),
+      ],
       { showOrgNames: !grouping.getHideOrgName() },
     ),
   );
@@ -161,9 +168,9 @@
     }
 
     // Phase 2: build threaded entries from item groups and branch rows.
-    const threadedEntries: ThreadedEntry[] = [];
+    const itemGroups = new Map<string, ItemGroup>();
 
-    for (const [, events] of itemMap) {
+    for (const [itemKey, events] of itemMap) {
       events.sort((a, b) =>
         parseAPITimestamp(b.created_at).getTime() - parseAPITimestamp(a.created_at).getTime());
 
@@ -172,9 +179,7 @@
         throw new Error("activity group missing provider repo identity");
       }
       const branch = first.branch_name || "default branch";
-      threadedEntries.push({
-        kind: "item",
-        group: {
+      itemGroups.set(itemKey, {
           kind: "item",
           itemType: first.item_type,
           itemNumber: first.item_number,
@@ -190,13 +195,64 @@
           latestTime: first.created_at,
           itemAuthor: itemAuthor(first),
           workspace: first.workspace,
+          repo: first.repo,
           events,
           displayEvents: collapseActivityRuns(events, {
             rollUpCommits: activity.getRollUpCommits(),
           }),
-        },
       });
     }
+
+    for (const subject of workspaceActivity) {
+      const itemKey = activityItemKey({
+        provider: subject.repo.provider,
+        platformHost: subject.repo.platform_host,
+        owner: subject.repo.owner,
+        name: subject.repo.name,
+        repoPath: subject.repo.repo_path,
+        itemType: subject.item_type,
+        itemNumber: subject.item_number,
+      });
+      const existing = itemGroups.get(itemKey);
+      if (existing) {
+        if (parseAPITimestamp(subject.activity_at).getTime() > parseAPITimestamp(existing.latestTime).getTime()) {
+          existing.latestTime = subject.activity_at;
+        }
+        existing.itemTitle ||= subject.item_title;
+        existing.itemUrl ||= subject.item_url;
+        existing.itemState ||= subject.item_state;
+        existing.itemAuthor ||= subject.item_author ?? "";
+        existing.workspace ??= subject.workspace;
+        existing.workspaceActivityAt = subject.activity_at;
+        continue;
+      }
+      itemGroups.set(itemKey, {
+        kind: "item",
+        itemType: subject.item_type,
+        itemNumber: subject.item_number,
+        itemTitle: subject.item_title,
+        itemUrl: subject.item_url,
+        itemState: subject.item_state,
+        branchName: "",
+        provider: subject.repo.provider,
+        repoOwner: subject.repo.owner,
+        repoName: subject.repo.name,
+        repoPath: subject.repo.repo_path,
+        platformHost: subject.repo.platform_host,
+        latestTime: subject.activity_at,
+        itemAuthor: subject.item_author ?? "",
+        workspace: subject.workspace,
+        repo: subject.repo,
+        workspaceActivityAt: subject.activity_at,
+        events: [],
+        displayEvents: [],
+      });
+    }
+
+    const threadedEntries: ThreadedEntry[] = [...itemGroups.values()].map((group) => ({
+      kind: "item",
+      group,
+    }));
 
     for (const item of branchItems) {
       threadedEntries.push(branchEntryFromRow(item));
@@ -416,7 +472,31 @@
       // item_number 0) follows its provider URL instead of opening an
       // invalid #0 detail drawer, matching the expanded event rows.
       handleEventClick(group.events[0]!);
+      return;
     }
+    onSelectItem?.(subjectSelectionItem(group));
+  }
+
+  function subjectSelectionItem(group: ItemGroup): ActivityItem {
+    const id = `workspace:${itemKeyOf(group)}`;
+    return {
+      id,
+      cursor: id,
+      activity_type: "workspace",
+      author: group.itemAuthor,
+      body_preview: "",
+      created_at: group.latestTime,
+      item_number: group.itemNumber,
+      item_state: group.itemState,
+      item_title: group.itemTitle,
+      item_type: group.itemType,
+      item_url: group.itemUrl,
+      platform_host: group.platformHost,
+      repo_owner: group.repoOwner,
+      repo_name: group.repoName,
+      repo: group.repo,
+      ...(group.workspace ? { workspace: group.workspace } : {}),
+    };
   }
 
   function handleBranchRowClick(row: ActivityRow): void {
@@ -499,6 +579,16 @@
       owner: item.repo?.owner ?? item.repo_owner,
       name: item.repo?.name ?? item.repo_name,
       repoPath: item.repo?.repo_path,
+    };
+  }
+
+  function workspaceRepoIdentity(subject: WorkspaceActivitySubject): RepoLabelIdentity {
+    return {
+      provider: subject.repo.provider,
+      platformHost: subject.repo.platform_host,
+      owner: subject.repo.owner,
+      name: subject.repo.name,
+      repoPath: subject.repo.repo_path,
     };
   }
 
@@ -663,24 +753,28 @@
           class:selected={isSelectedItemGroup(itemGroup)}
           onclick={() => handleItemClick(itemGroup)}
         >
-          <button
-            class="thread-caret cell cell--caret"
-            type="button"
-            aria-label={activity.isThreadItemExpanded(key)
-              ? "Collapse item activity"
-              : "Expand item activity"}
-            aria-expanded={activity.isThreadItemExpanded(key)}
-            onclick={(e) => {
-              e.stopPropagation();
-              activity.toggleThreadItem(key);
-            }}
-          >
-            {#if activity.isThreadItemExpanded(key)}
-              <ChevronDownIcon size="14" strokeWidth="2" aria-hidden="true" />
-            {:else}
-              <ChevronRightIcon size="14" strokeWidth="2" aria-hidden="true" />
-            {/if}
-          </button>
+          {#if itemGroup.events.length > 0}
+            <button
+              class="thread-caret cell cell--caret"
+              type="button"
+              aria-label={activity.isThreadItemExpanded(key)
+                ? "Collapse item activity"
+                : "Expand item activity"}
+              aria-expanded={activity.isThreadItemExpanded(key)}
+              onclick={(e) => {
+                e.stopPropagation();
+                activity.toggleThreadItem(key);
+              }}
+            >
+              {#if activity.isThreadItemExpanded(key)}
+                <ChevronDownIcon size="14" strokeWidth="2" aria-hidden="true" />
+              {:else}
+                <ChevronRightIcon size="14" strokeWidth="2" aria-hidden="true" />
+              {/if}
+            </button>
+          {:else}
+            <span class="thread-caret-spacer cell cell--caret" aria-hidden="true"></span>
+          {/if}
           <span class="cell cell--type">
             <ItemKindChip
               kind={itemGroup.itemType === "pr" ? "pr" : "issue"}
@@ -711,7 +805,10 @@
             {/if}
             <span class="item-title">{itemGroup.itemTitle}</span>
           </span>
-          <span class="cell cell--time">{relativeTime(itemGroup.latestTime)}</span>
+          <span
+            class="cell cell--time"
+            title={itemGroup.workspaceActivityAt === itemGroup.latestTime ? "Recent workspace activity" : undefined}
+          >{relativeTime(itemGroup.latestTime)}</span>
           <span class="cell cell--link">
             {#if itemGroup.itemUrl}
               <button
@@ -727,7 +824,7 @@
           </span>
         </div>
 
-        {#if activity.isThreadItemExpanded(key)}
+        {#if itemGroup.events.length > 0 && activity.isThreadItemExpanded(key)}
           {#each itemGroup.displayEvents as row (row.id)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->

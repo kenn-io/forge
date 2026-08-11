@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ActivityItem } from "../api/types.js";
+import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
 
 const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
@@ -18,6 +18,7 @@ import ActivityFeed from "./ActivityFeed.svelte";
 
 beforeEach(() => {
   runtimeCapture.current = makeAppRuntime();
+  workspaceActivity.value = [];
 });
 
 afterEach(async () => {
@@ -71,7 +72,26 @@ function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): 
   });
 }
 
+function workspaceSubject(overrides: Partial<WorkspaceActivitySubject> = {}): WorkspaceActivitySubject {
+  return {
+    activity_at: "2026-08-09T12:00:00Z",
+    item_author: "alice",
+    item_number: 7,
+    item_state: "open",
+    item_title: "Workspace-only work",
+    item_type: "pr",
+    item_url: "https://github.com/acme/widgets/pull/7",
+    platform_host: "github.com",
+    repo: activityItem("repo-source").repo!,
+    repo_name: "widgets",
+    repo_owner: "acme",
+    workspace: { id: "ws-7", status: "ready" },
+    ...overrides,
+  };
+}
+
 const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
+const workspaceActivity = vi.hoisted(() => ({ value: [] as WorkspaceActivitySubject[] }));
 const viewMode = vi.hoisted(() => ({
   value: "flat" as "flat" | "threaded",
 }));
@@ -109,6 +129,7 @@ vi.mock("../context.js", () => ({
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
       getEnabledItemTypes: () => enabledItemTypes.value,
       getActivityItems: () => items.value,
+      getWorkspaceActivity: () => workspaceActivity.value,
       getActivityError: () => null,
       getViewMode: () => viewMode.value,
       getTimeRange: () => "7d",
@@ -205,6 +226,29 @@ describe("ActivityFeed compact mode", () => {
     expect(container.querySelector(".activity-table")).toBeNull();
     expect(container.querySelectorAll(".activity-compact-row")).toHaveLength(2);
     expect(screen.getByText("Add widget caching layer")).toBeTruthy();
+  });
+
+  it("shows workspace-only subjects only in threaded mode", () => {
+    items.value = [];
+    workspaceActivity.value = [workspaceSubject()];
+
+    const flat = render(ActivityFeed, { props: { compact: true } });
+    expect(flat.container.textContent).not.toContain("Workspace-only work");
+    cleanup();
+
+    viewMode.value = "threaded";
+    const threaded = render(ActivityFeed, { props: { compact: true } });
+    expect(threaded.container.textContent).toContain("Workspace-only work");
+  });
+
+  it("applies item-scope and closed filters to workspace summaries", () => {
+    viewMode.value = "threaded";
+    items.value = [];
+    workspaceActivity.value = [workspaceSubject({ item_state: "closed" })];
+    hideClosedMerged.value = true;
+
+    const { container } = render(ActivityFeed, { props: { compact: true } });
+    expect(container.textContent).not.toContain("Workspace-only work");
   });
 
   it("independently toggles PR and issue visibility", async () => {

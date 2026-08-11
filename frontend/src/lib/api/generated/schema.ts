@@ -4399,6 +4399,7 @@ export interface components {
             readonly $schema?: string;
             capped: boolean;
             items: components["schemas"]["ActivityItemResponse"][] | null;
+            workspace_activity: components["schemas"]["WorkspaceActivitySubjectResponse"][] | null;
         };
         AddRepoInputBody: {
             /**
@@ -5697,6 +5698,8 @@ export interface components {
             repo_name: string;
             repo_owner: string;
             workspace?: components["schemas"]["WorkspaceRef"];
+            /** Format: date-time */
+            workspace_activity_at?: string;
         };
         Issues: {
             hide_bots: boolean;
@@ -6298,6 +6301,8 @@ export interface components {
             repo_owner: string;
             requested_reviewers?: string[] | null;
             workspace?: components["schemas"]["WorkspaceRef"];
+            /** Format: date-time */
+            workspace_activity_at?: string;
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
         MergeRequestSummary: {
@@ -7785,6 +7790,22 @@ export interface components {
             updated_at?: string;
             updated_reason?: string;
             updated_source?: string;
+        };
+        WorkspaceActivitySubjectResponse: {
+            /** Format: date-time */
+            activity_at: string;
+            item_author?: string;
+            /** Format: int64 */
+            item_number: number;
+            item_state: string;
+            item_title: string;
+            item_type: string;
+            item_url: string;
+            platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
+            repo_name: string;
+            repo_owner: string;
+            workspace?: components["schemas"]["WorkspaceRef"];
         };
         WorkspaceDiffWatchResponse: {
             /**

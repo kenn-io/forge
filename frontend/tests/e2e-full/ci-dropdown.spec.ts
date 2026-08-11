@@ -42,8 +42,11 @@ test.describe("CI dropdown", () => {
     try {
       await page.addInitScript(() => {
         const realSetInterval = window.setInterval;
+        const realSetTimeout = window.setTimeout;
         window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
           realSetInterval(handler, timeout === 15_000 ? 100 : timeout, ...args)) as typeof window.setInterval;
+        window.setTimeout = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+          realSetTimeout(handler, timeout === 15_000 ? 100 : timeout, ...args)) as typeof window.setTimeout;
       });
 
       const seedResponse = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/pending`);
@@ -79,11 +82,26 @@ test.describe("CI dropdown", () => {
       await expect(detail.locator(".ci-row .spin").first()).toBeVisible();
       await expect(detail.locator(".ci-row .spin svg").first()).toHaveAttribute("width", "14");
 
+      const successfulRefresh = page.waitForResponse(async (response) => {
+        const url = new URL(response.url());
+        if (
+          response.request().method() !== "POST" ||
+          url.pathname !== "/api/v1/pulls/github/acme/widgets/1/ci-refresh" ||
+          !response.ok()
+        ) {
+          return false;
+        }
+        const body = (await response.json()) as {
+          merge_request?: { CIStatus?: string };
+        };
+        return body.merge_request?.CIStatus === "success";
+      });
       const successResponse = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/success`);
       expect(successResponse.ok()).toBe(true);
       await expect(successResponse.json()).resolves.toEqual({
         status: "success",
       });
+      await successfulRefresh;
 
       await expect(page.locator(".pull-detail").getByRole("button", { name: /CI: \d+ passed checks?/i })).toBeVisible();
 

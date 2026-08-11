@@ -8,7 +8,6 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/platform"
-	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 type repoNumberPathRef struct {
@@ -25,63 +24,6 @@ func buildRepoLookup(repos []db.Repo) map[int64]db.Repo {
 		lookup[repo.ID] = repo
 	}
 	return lookup
-}
-
-func workspaceLookupKey(
-	provider, host, owner, name, itemType string,
-	number int,
-) string {
-	if provider == "" {
-		provider = string(platform.KindGitHub)
-	}
-	if host == "" {
-		if defaultHost, ok := platform.DefaultHost(platform.Kind(provider)); ok {
-			host = defaultHost
-		}
-	}
-	return strings.ToLower(provider) + "\x00" +
-		strings.ToLower(host) + "\x00" +
-		strings.ToLower(owner) + "\x00" +
-		strings.ToLower(name) + "\x00" +
-		itemType + "\x00" +
-		fmt.Sprint(number)
-}
-
-func (s *Handler) buildWorkspaceRefLookup(
-	ctx context.Context,
-) (map[string]workspaceapi.WorkspaceRef, error) {
-	workspaces, err := s.db.ListWorkspaces(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list workspaces: %w", err)
-	}
-	lookup := make(map[string]workspaceapi.WorkspaceRef, len(workspaces))
-	for _, ws := range workspaces {
-		key := workspaceLookupKey(
-			ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-			ws.ItemType, ws.ItemNumber,
-		)
-		if _, exists := lookup[key]; exists {
-			continue
-		}
-		lookup[key] = workspaceapi.WorkspaceRef{ID: ws.ID, Status: ws.Status}
-	}
-	return lookup, nil
-}
-
-func workspaceRefForRepoItem(
-	lookup map[string]workspaceapi.WorkspaceRef,
-	repo db.Repo,
-	itemType string,
-	number int,
-) *workspaceapi.WorkspaceRef {
-	ref, ok := lookup[workspaceLookupKey(
-		repo.Platform, repoProviderHost(repo), repo.Owner, repo.Name,
-		itemType, number,
-	)]
-	if !ok {
-		return nil
-	}
-	return &ref
 }
 
 func (s *Handler) lookupRepoMap(ctx context.Context) (map[int64]db.Repo, error) {

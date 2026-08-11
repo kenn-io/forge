@@ -129,6 +129,9 @@ type Handler struct {
 	workspaceEnrichmentMu          sync.Mutex
 	workspaceEnrichmentCache       map[string]workspaceEnrichmentCacheEntry
 	workspaceEnrichmentInFlight    map[string]uint64
+	workspaceEnrichmentFlightKinds map[string]workspaceEnrichmentKind
+	workspaceEnrichmentFlightIDs   map[string]uint64
+	workspaceEnrichmentNextFlight  uint64
 	workspaceEnrichmentGenerations map[string]uint64
 	workspaceEnrichmentPending     map[string]workspaceEnrichmentJob
 	workspaceEnrichmentWorkers     int
@@ -141,13 +144,16 @@ type Handler struct {
 	workspaceTmuxPrunedAt          time.Time
 	workspaceTmuxPrunePending      bool
 	workspaceTmuxPruneInFlight     bool
-	lifecycleMu                    sync.Mutex
-	lifecycleCtx                   context.Context
-	lifecycleCancel                context.CancelFunc
-	lifecycleWG                    sync.WaitGroup
-	lifecycleStarted               bool
-	lifecycleStopping              bool
-	lifecycleDone                  chan struct{}
+	// workspaceSubjectAfterSummariesForTest pauses a snapshot between its two
+	// repository-identity reads so tests can prove the reconciliation fence.
+	workspaceSubjectAfterSummariesForTest func()
+	lifecycleMu                           sync.Mutex
+	lifecycleCtx                          context.Context
+	lifecycleCancel                       context.CancelFunc
+	lifecycleWG                           sync.WaitGroup
+	lifecycleStarted                      bool
+	lifecycleStopping                     bool
+	lifecycleDone                         chan struct{}
 }
 
 // New creates the workspace and project handler.
@@ -179,6 +185,8 @@ func New(deps Deps) *Handler {
 		hub:                            &eventHubAdapter{broadcast: deps.Broadcast, subscribe: deps.Subscribe, generation: deps.Generation},
 		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
 		workspaceEnrichmentInFlight:    make(map[string]uint64),
+		workspaceEnrichmentFlightKinds: make(map[string]workspaceEnrichmentKind),
+		workspaceEnrichmentFlightIDs:   make(map[string]uint64),
 		workspaceEnrichmentGenerations: make(map[string]uint64),
 		workspaceEnrichmentPending:     make(map[string]workspaceEnrichmentJob),
 		workspaceEnrichmentSlots:       make(chan struct{}, tmuxProbeMaxConcurrency),

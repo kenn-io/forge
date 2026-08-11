@@ -1,6 +1,7 @@
 package e2etest
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -26,15 +27,27 @@ type archiveMergeMetricsClock struct{ now time.Time }
 func (c archiveMergeMetricsClock) Now() time.Time { return c.now }
 
 type archiveMergeMetricsCase struct {
-	name            string
-	state           db.MergeRequestState
-	storeMergedTime bool
+	name                 string
+	state                db.MergeRequestState
+	storeMergedTime      bool
+	storeMergeMetrics    bool
+	providerFilesChanged bool
 }
 
 func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T) {
 	tests := []archiveMergeMetricsCase{
-		{name: "merged timestamp only", state: db.MergeRequestStateOpen, storeMergedTime: true},
-		{name: "merged state only", state: db.MergeRequestStateMerged},
+		{
+			name: "merged timestamp only", state: db.MergeRequestStateOpen,
+			storeMergedTime: true, providerFilesChanged: true,
+		},
+		{
+			name: "merged state only", state: db.MergeRequestStateMerged,
+			providerFilesChanged: true,
+		},
+		{
+			name: "complete metrics missing actor", state: db.MergeRequestStateMerged,
+			storeMergedTime: true, storeMergeMetrics: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -54,6 +67,10 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 	canonicalUpdatedAt := now.Add(-time.Hour)
 	localUpdatedAt := canonicalUpdatedAt.Add(835 * time.Millisecond)
 	mergedAt := canonicalUpdatedAt.Add(-time.Second)
+	changedFilesField := ""
+	if tt.providerFilesChanged {
+		changedFilesField = `,"changed_files":4`
+	}
 	var renamed atomic.Bool
 
 	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +83,7 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 			}
 			_, _ = w.Write([]byte(`{"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget","owner":{"login":"acme"}}`))
 		case "/api/v3/repos/acme/renamed/pulls/7":
-			_, _ = w.Write([]byte(`{
+			_, _ = fmt.Fprintf(w, `{
 				"id":7,"node_id":"PR_7","number":7,
 				"html_url":"https://github.com/acme/renamed/pull/7",
 				"title":"canonical title","state":"closed",
@@ -75,10 +92,10 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 				"closed_at":"2026-08-02T11:59:59Z",
 				"merged_at":"2026-08-02T11:59:59Z",
 				"merged_by":{"login":"merge-admin"},
-				"merge_commit_sha":"merge-sha","changed_files":4,
+				"merge_commit_sha":"merge-sha"%s,
 				"head":{"ref":"feature","sha":"head-sha","repo":{"id":1,"node_id":"R_widget","name":"renamed","full_name":"acme/renamed","owner":{"login":"acme"}}},
 				"base":{"ref":"main","sha":"base-sha","repo":{"id":1,"node_id":"R_widget","name":"renamed","full_name":"acme/renamed","owner":{"login":"acme"}}}
-			}`))
+			}`, changedFilesField)
 		default:
 			http.NotFound(w, r)
 		}
@@ -141,12 +158,19 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 	if tt.storeMergedTime {
 		storedMergedAt = &mergedAt
 	}
+	var storedFilesChanged *int
+	storedMergeCommitSHA := ""
+	if tt.storeMergeMetrics {
+		storedFilesChanged = new(4)
+		storedMergeCommitSHA = "merge-sha"
+	}
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repo.ID, PlatformID: 7, PlatformExternalID: "PR_7", Number: 7,
 		URL: "https://github.com/acme/widget/pull/7", Title: "newer local title",
 		State: tt.state, PlatformHeadSHA: "head-sha",
 		CreatedAt: canonicalUpdatedAt.Add(-2 * time.Hour), UpdatedAt: localUpdatedAt,
 		LastActivityAt: localUpdatedAt, MergedAt: storedMergedAt, ClosedAt: &mergedAt,
+		FilesChanged: storedFilesChanged, MergeCommitSHA: storedMergeCommitSHA,
 	})
 	require.NoError(err)
 	require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{

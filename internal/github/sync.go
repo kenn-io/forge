@@ -12431,7 +12431,7 @@ func (s *Syncer) syncMRForRepoResolved(
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
 	if !accepted {
-		if ghPR != nil && pullRequestWasMerged(ghPR) && normalized.FilesChanged != nil {
+		if ghPR != nil && pullRequestWasMerged(ghPR) {
 			repairCtx := s.db.WithRepositoryRouteFence(
 				ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 			)
@@ -12444,24 +12444,26 @@ func (s *Syncer) syncMRForRepoResolved(
 				return fmt.Errorf("lock merged MR #%d repair: %w", number, lockErr)
 			}
 			defer releaseRepair()
-			_, repairErr := s.db.FillMissingMergedMRMetrics(
-				repairCtx,
-				db.MergeRequestMergeMetrics{
-					RepoID: repoID, Number: number,
-					HeadSHA:        normalized.PlatformHeadSHA,
-					MergeCommitSHA: normalized.MergeCommitSHA,
-					FilesChanged:   *normalized.FilesChanged,
-					MergedAt:       normalized.MergedAt,
-				},
-			)
-			if errors.Is(repairErr, db.ErrRepositoryRouteFenceChanged) {
-				return nil
-			}
-			if repairErr != nil {
-				return fmt.Errorf("repair merged MR #%d metrics: %w", number, repairErr)
-			}
-			if s.afterMergedMRMetricsRepair != nil {
-				s.afterMergedMRMetricsRepair()
+			if normalized.FilesChanged != nil {
+				_, repairErr := s.db.FillMissingMergedMRMetrics(
+					repairCtx,
+					db.MergeRequestMergeMetrics{
+						RepoID: repoID, Number: number,
+						HeadSHA:        normalized.PlatformHeadSHA,
+						MergeCommitSHA: normalized.MergeCommitSHA,
+						FilesChanged:   *normalized.FilesChanged,
+						MergedAt:       normalized.MergedAt,
+					},
+				)
+				if errors.Is(repairErr, db.ErrRepositoryRouteFenceChanged) {
+					return nil
+				}
+				if repairErr != nil {
+					return fmt.Errorf("repair merged MR #%d metrics: %w", number, repairErr)
+				}
+				if s.afterMergedMRMetricsRepair != nil {
+					s.afterMergedMRMetricsRepair()
+				}
 			}
 			if _, actorErr := s.persistMergedTransitionEvent(
 				repairCtx, mrID, revision, ghPR, normalized.MergedAt,

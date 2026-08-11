@@ -32,7 +32,7 @@ func (d *DB) FillMissingMergedMRMetrics(
 			END,
 			files_changed = COALESCE(files_changed, ?)
 		WHERE repo_id = ? AND number = ?
-		  AND state = 'merged' AND merged_at IS NOT NULL
+		  AND (state = 'merged' OR merged_at IS NOT NULL)
 		  AND platform_head_sha = ? AND platform_head_sha <> ''
 		  AND (merge_commit_sha = '' OR files_changed IS NULL)`,
 		metrics.MergeCommitSHA, metrics.FilesChanged,

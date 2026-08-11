@@ -46,6 +46,52 @@ func TestFillMissingMergedMRMetricsFillsOnlyMissingFields(t *testing.T) {
 	assert.Equal(before.SnapshotRevision, after.SnapshotRevision)
 }
 
+func TestFillMissingMergedMRMetricsAcceptsEitherMergedIndicator(t *testing.T) {
+	tests := []struct {
+		name         string
+		state        MergeRequestState
+		mergedAtOnly bool
+	}{
+		{name: "merged state only", state: MergeRequestStateMerged},
+		{name: "merged timestamp only", state: MergeRequestStateOpen, mergedAtOnly: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			repoID := insertTestRepo(t, database, "acme", "widget")
+			mergedAt := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+			var storedMergedAt *time.Time
+			if tt.mergedAtOnly {
+				storedMergedAt = &mergedAt
+			}
+			_, err := database.UpsertMergeRequest(ctx, &MergeRequest{
+				RepoID: repoID, PlatformID: 7, Number: 7, State: tt.state,
+				PlatformHeadSHA: "head-sha", MergedAt: storedMergedAt,
+				CreatedAt: mergedAt.Add(-time.Hour), UpdatedAt: mergedAt,
+				LastActivityAt: mergedAt,
+			})
+			require.NoError(err)
+
+			changed, err := database.FillMissingMergedMRMetrics(ctx, MergeRequestMergeMetrics{
+				RepoID: repoID, Number: 7, HeadSHA: "head-sha",
+				MergeCommitSHA: "merge-sha", FilesChanged: 4,
+			})
+			require.NoError(err)
+			require.True(changed)
+
+			after, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			require.NotNil(after)
+			require.Equal("merge-sha", after.MergeCommitSHA)
+			require.NotNil(after.FilesChanged)
+			require.Equal(4, *after.FilesChanged)
+		})
+	}
+}
+
 func TestFillMissingMergedMRMetricsPreservesExistingFields(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

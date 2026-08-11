@@ -281,7 +281,7 @@ test("routes page keys by focus while wheel input remains focus-neutral", async 
   await page.keyboard.press("PageDown");
   await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBe(afterWheel);
 
-  await filesLeaf.getByRole("tab").focus();
+  await filesLeaf.getByRole("tab", { name: "Files changed" }).focus();
   await expect(filesLeaf).toHaveClass(/input-active/);
   await expect(conversationLeaf).not.toHaveClass(/input-active/);
 

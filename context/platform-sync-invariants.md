@@ -151,6 +151,10 @@ registry helpers return typed errors for missing providers or capabilities.
 - The syncer stores the gated registry internally by default; only explicit
   foreground operations unwrap `Syncer.DirectRegistry`, while refreshes use
   `Syncer.Registry` (`internal/github/sync.go::NewSyncerWithRegistry`).
+- Review-thread reads recheck the gate when the interface method runs, so a
+  previously obtained reader cannot bypass disabled sync (`internal/platform/registry.go::mergeRequestReviewThreadReaderGate`).
+- Disabled GitHub startup derives host-scoped accounting identity locally;
+  credential-route construction must not probe the provider (`cmd/kenn-forge/provider_startup.go::githubIdentityResolverForSyncPolicy`).
 - Disabled provider work follows this operation contract:
 
   | Operation | Disabled contract |

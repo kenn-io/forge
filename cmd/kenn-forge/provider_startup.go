@@ -48,6 +48,30 @@ type githubIdentityRuntime struct {
 	graphql  *github.RateTracker
 }
 
+type offlineGitHubIdentityResolver struct{}
+
+func (offlineGitHubIdentityResolver) ResolvePAT(
+	ctx context.Context,
+	host string,
+	source tokenauth.Source,
+) (github.GitHubIdentity, string, error) {
+	if source == nil {
+		return github.GitHubIdentity{}, "", tokenauth.ErrMissingToken
+	}
+	token, err := source.Token(tokenauth.WithMutationAuth(ctx))
+	if err != nil {
+		return github.GitHubIdentity{}, "", err
+	}
+	return github.GitHubIdentity{Key: github.HostIdentity(host)}, token, nil
+}
+
+func githubIdentityResolverForSyncPolicy(disableSync bool) github.IdentityResolver {
+	if disableSync {
+		return offlineGitHubIdentityResolver{}
+	}
+	return github.HTTPIdentityResolver{}
+}
+
 type mutationTokenSource struct {
 	tokenauth.Source
 }

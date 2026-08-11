@@ -537,7 +537,7 @@ func run(opts serve.Options) error {
 
 	startup, err := buildProviderStartup(
 		ctx, database, cfg, tokenSources, providerSources,
-		defaultProviderFactories(), ghclient.HTTPIdentityResolver{},
+		defaultProviderFactories(), githubIdentityResolverForSyncPolicy(opts.DisableSync),
 	)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {

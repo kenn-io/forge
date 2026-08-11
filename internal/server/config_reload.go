@@ -14,6 +14,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/docsapi"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -685,13 +686,44 @@ func (s *Server) resolveReposForReload(
 				"name", raw.Name,
 				"err", err,
 			)
-			expanded = ghclient.FallbackConfiguredRepoRefs(previous, raw)
+			expanded = s.cachedReposForReload(ctx, previous, raw)
 		}
 		for _, repo := range expanded {
 			set.Add(repo, err == nil)
 		}
 	}
 	return set.Refs(), skipped
+}
+
+func (s *Server) cachedReposForReload(
+	ctx context.Context,
+	previous []ghclient.RepoRef,
+	raw config.Repo,
+) []ghclient.RepoRef {
+	candidates := slices.Clone(previous)
+	if s.db == nil {
+		return ghclient.FallbackConfiguredRepoRefs(candidates, raw)
+	}
+	repos, err := s.db.ListRepos(ctx)
+	if err != nil {
+		slog.Warn("list cached repos for config reload", "err", err)
+		return ghclient.FallbackConfiguredRepoRefs(candidates, raw)
+	}
+	for _, repo := range repos {
+		candidates = append(candidates, ghclient.RepoRef{
+			Platform:           httpapi.ProviderKind(repo),
+			RepoID:             repo.ID,
+			Owner:              repo.Owner,
+			Name:               repo.Name,
+			PlatformHost:       httpapi.ProviderHost(repo),
+			RepoPath:           repo.RepoPath,
+			PlatformExternalID: repo.PlatformRepoID,
+			WebURL:             repo.WebURL,
+			CloneURL:           repo.CloneURL,
+			DefaultBranch:      repo.DefaultBranch,
+		})
+	}
+	return ghclient.FallbackConfiguredRepoRefs(candidates, raw)
 }
 
 // sanitizeConfigError trims internal path prefixes from the error so the

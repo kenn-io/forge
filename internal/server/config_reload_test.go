@@ -422,10 +422,16 @@ func TestConfigReloadWithDisabledSyncKeepsTrackedReposWithoutProviderReads(t *te
 	require := require.New(t)
 	var providerReads atomic.Int32
 	mock := &mockGH{}
-	srv, _, cfgPath := setupTestServerWithConfigContent(
+	srv, database, cfgPath := setupTestServerWithConfigContent(
 		t, validReloadConfig, mock,
 	)
 	require.NotEmpty(srv.syncer.TrackedRepos())
+	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-acme-widget-api",
+		Owner:          "acme", Name: "widget-api", RepoPath: "acme/widget-api",
+	})
+	require.NoError(err)
 	mock.getRepositoryFn = func(context.Context, string, string) (*gh.Repository, error) {
 		providerReads.Add(1)
 		return nil, errors.New("unexpected provider read")
@@ -436,7 +442,7 @@ func TestConfigReloadWithDisabledSyncKeepsTrackedReposWithoutProviderReads(t *te
 	stream := streamConfigEvents(t, srv)
 	defer stream.Close()
 
-	writeConfigToml(t, cfgPath, validReloadConfigChangedActivity)
+	writeConfigToml(t, cfgPath, validReloadConfigGlobRepo)
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	require.True(ev.Valid)
@@ -444,7 +450,7 @@ func TestConfigReloadWithDisabledSyncKeepsTrackedReposWithoutProviderReads(t *te
 	tracked := srv.syncer.TrackedRepos()
 	require.Len(tracked, 1)
 	assert.Equal("acme", tracked[0].Owner)
-	assert.Equal("widget", tracked[0].Name)
+	assert.Equal("widget-api", tracked[0].Name)
 	assert.Zero(providerReads.Load())
 }
 

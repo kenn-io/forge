@@ -48,24 +48,6 @@ type updateSettingsRequest struct {
 	KataProjects *[]config.KataProjectRepoMapping `json:"kata_projects,omitempty"`
 }
 
-func (s *Server) configuredClients(
-	repos []config.Repo,
-) map[string]ghclient.Client {
-	clients := make(map[string]ghclient.Client)
-	for _, repo := range repos {
-		host := repo.PlatformHostOrDefault()
-		if _, ok := clients[host]; ok {
-			continue
-		}
-		client, err := s.syncer.DirectClientForHost(host)
-		if err != nil {
-			continue
-		}
-		clients[host] = client
-	}
-	return clients
-}
-
 // buildLocalSettingsResponse builds the settings response from
 // in-memory state (syncer tracked repos) without calling GitHub.
 func (s *Server) buildLocalSettingsResponse() settingsResponse {
@@ -794,12 +776,9 @@ func (s *Server) addConfiguredRepo(
 					" is already configured", nil)
 		}
 	}
-	allRepos := append(slices.Clone(s.cfg.Repos), newRepo)
 	s.cfgMu.Unlock()
 
-	_, expanded, err := ghclient.ResolveConfiguredRepo(
-		ctx, s.configuredClients(allRepos), newRepo,
-	)
+	_, expanded, err := s.syncer.DirectResolveConfiguredRepo(ctx, newRepo)
 	if err != nil {
 		return nil, classifyResolveProblem(err)
 	}
@@ -877,9 +856,7 @@ func (s *Server) refreshConfiguredRepo(
 			"refresh is only supported for glob patterns", nil)
 	}
 
-	_, expanded, err := ghclient.ResolveConfiguredRepo(
-		ctx, s.configuredClients(repos), *target,
-	)
+	_, expanded, err := s.syncer.ResolveConfiguredRepo(ctx, *target)
 	if err != nil {
 		return nil, classifyResolveProblem(err)
 	}

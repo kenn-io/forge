@@ -2067,10 +2067,7 @@ func (s *Handler) setPRGitHubState(
 			{
 				client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
 				if clientErr != nil {
-					return nil, httpapi.ProviderCallProblemWithDetail(
-						clientErr, string(repoProviderKind(*repo)), repoProviderHost(*repo),
-						"GitHub API error: "+err.Error(),
-					)
+					return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 				}
 				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,

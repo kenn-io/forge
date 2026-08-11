@@ -4266,6 +4266,13 @@ func (s *Syncer) ResolveConfiguredRepo(
 	ctx context.Context,
 	repo config.Repo,
 ) (ConfiguredRepoStatus, []RepoRef, error) {
+	return ResolveConfiguredRepoWithRegistry(ctx, s.Registry(), repo)
+}
+
+func (s *Syncer) DirectResolveConfiguredRepo(
+	ctx context.Context,
+	repo config.Repo,
+) (ConfiguredRepoStatus, []RepoRef, error) {
 	return ResolveConfiguredRepoWithRegistry(ctx, s.DirectRegistry(), repo)
 }
 

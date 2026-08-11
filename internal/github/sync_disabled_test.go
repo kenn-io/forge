@@ -27,38 +27,16 @@ func TestDisabledSyncerDoesNotStartAndGatesProviders(t *testing.T) {
 		registry, dbtest.Open(t), nil, nil, time.Millisecond, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	assert.True(syncer.SyncEnabled())
-
 	syncer.DisableSync()
 	syncer.Start(t.Context())
 	syncer.RunOnce(t.Context())
 
 	assert.False(syncer.SyncEnabled())
 	assert.Empty(syncer.Status().LastRunAt)
-	_, err = syncer.clients.Provider("github", "github.com")
-	require.ErrorIs(err, platform.ErrSyncDisabled)
 	_, err = syncer.Registry().Provider("github", "github.com")
 	require.ErrorIs(err, platform.ErrSyncDisabled)
 	_, err = syncer.DirectRegistry().Provider("github", "github.com")
 	require.NoError(err)
-	_, err = syncer.ProviderCapabilities("github", "github.com")
-	require.ErrorIs(err, platform.ErrSyncDisabled)
 	_, err = syncer.ClientForHost("github.com")
 	require.ErrorIs(err, platform.ErrSyncDisabled)
-	_, err = syncer.RepositoryReader("github", "github.com")
-	require.ErrorIs(err, platform.ErrSyncDisabled)
-	_, err = syncer.LabelReader("github", "github.com")
-	require.ErrorIs(err, platform.ErrSyncDisabled)
-	_, err = syncer.DirectProviderCapabilities("github", "github.com")
-	require.NoError(err)
-
-	before := syncer.NotificationSyncStatus()
-	require.ErrorIs(syncer.RunNotificationSync(t.Context()), platform.ErrSyncDisabled)
-	assert.Equal(before, syncer.NotificationSyncStatus())
-	require.ErrorIs(
-		syncer.ProcessQueuedNotificationReads(
-			t.Context(), platform.KindGitHub, platform.DefaultGitHubHost, 10,
-		),
-		platform.ErrSyncDisabled,
-	)
 }

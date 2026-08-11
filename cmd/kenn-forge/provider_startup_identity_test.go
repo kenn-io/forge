@@ -1366,6 +1366,32 @@ func TestManagedGitFailsClosedForUnroutedGitHubRepository(t *testing.T) {
 		"managed Git must not contact the remote without a credential route")
 }
 
+func TestDisabledSyncIdentityResolutionDoesNotContactGitHub(t *testing.T) {
+	require := require.New(t)
+	var providerCalls atomic.Int32
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		providerCalls.Add(1)
+		_, _ = io.WriteString(w, `{"id":7,"login":"tester"}`)
+	}))
+	t.Cleanup(api.Close)
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = api.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+	host := strings.TrimPrefix(api.URL, "https://")
+	source := mainTestTokenSource(
+		t, string(platform.KindGitHub), host, "DISABLED_SYNC_IDENTITY_TOKEN", "test-token",
+	)
+
+	identity, token, err := githubIdentityResolverForSyncPolicy(true).ResolvePAT(
+		t.Context(), host, source,
+	)
+
+	require.NoError(err)
+	require.Equal(github.HostIdentity(host), identity.Key)
+	require.Equal("test-token", token)
+	require.Zero(providerCalls.Load())
+}
+
 // An App-only selected installation plus a name pattern is a complete
 // configuration: the App's exact routes serve its repositories and owner
 // discovery expands the pattern. Startup must not demand an owner PAT the

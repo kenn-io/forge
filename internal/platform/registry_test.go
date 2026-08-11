@@ -125,31 +125,55 @@ func TestRegistryFindsOptionalRepositoryReader(t *testing.T) {
 	assert.Equal(t, Repository{}, repo)
 }
 
-func TestRegistryProviderGateLeavesRawRegistryAvailable(t *testing.T) {
+type testReviewThreadReader struct {
+	testProvider
+	list func(context.Context, RepoRef, int) ([]MergeRequestReviewThread, error)
+}
+
+func (p testReviewThreadReader) ListMergeRequestReviewThreads(
+	ctx context.Context, ref RepoRef, number int,
+) ([]MergeRequestReviewThread, error) {
+	return p.list(ctx, ref, number)
+}
+
+func TestRegistryProviderGateBlocksProviderAccessAndCapturedReviewReads(t *testing.T) {
 	require := require.New(t)
 	gateErr := errors.New("provider access disabled")
-	registry, err := NewRegistry(testRepositoryReader{
+	disabled := false
+	called := false
+	registry, err := NewRegistry(testReviewThreadReader{
 		testProvider: testProvider{
-			kind: KindGitLab,
-			host: "gitlab.com",
-			caps: Capabilities{ReadRepositories: true},
+			kind: KindGitHub,
+			host: DefaultGitHubHost,
+			caps: Capabilities{ReadReviewThreads: true},
+		},
+		list: func(context.Context, RepoRef, int) ([]MergeRequestReviewThread, error) {
+			called = true
+			return nil, nil
 		},
 	})
 	require.NoError(err)
 
-	gated := registry.WithProviderGate(func() error { return gateErr })
-	providers, err := gated.Providers()
-	require.ErrorIs(err, gateErr)
-	assert.Empty(t, providers)
-	empty, err := NewRegistry()
+	gated := registry.WithProviderGate(func() error {
+		if disabled {
+			return gateErr
+		}
+		return nil
+	})
+	reader, err := gated.MergeRequestReviewThreadReader(KindGitHub, DefaultGitHubHost)
 	require.NoError(err)
-	providers, err = empty.WithProviderGate(func() error { return gateErr }).Providers()
-	require.ErrorIs(err, gateErr)
-	assert.Empty(t, providers)
-	_, err = gated.RepositoryReader(KindGitLab, "gitlab.com")
-	require.ErrorIs(err, gateErr)
+	disabled = true
 
-	_, err = registry.Provider(KindGitLab, "gitlab.com")
+	_, err = gated.Provider(KindGitHub, DefaultGitHubHost)
+	require.ErrorIs(err, gateErr)
+	_, err = gated.Providers()
+	require.ErrorIs(err, gateErr)
+	_, err = reader.ListMergeRequestReviewThreads(
+		t.Context(), RepoRef{Platform: KindGitHub, Host: DefaultGitHubHost}, 7,
+	)
+	require.ErrorIs(err, gateErr)
+	assert.False(t, called)
+	_, err = registry.Provider(KindGitHub, DefaultGitHubHost)
 	require.NoError(err)
 }
 

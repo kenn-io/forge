@@ -1,6 +1,9 @@
 package platform
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 type Registry struct {
 	providers map[providerKey]Provider
@@ -502,7 +505,26 @@ func (r *Registry) MergeRequestReviewThreadReader(
 	if !ok {
 		return nil, UnsupportedCapability(kind, host, "read_review_threads")
 	}
+	if r.gate != nil {
+		return mergeRequestReviewThreadReaderGate{reader: reader, gate: r.gate}, nil
+	}
 	return reader, nil
+}
+
+type mergeRequestReviewThreadReaderGate struct {
+	reader MergeRequestReviewThreadReader
+	gate   func() error
+}
+
+func (g mergeRequestReviewThreadReaderGate) ListMergeRequestReviewThreads(
+	ctx context.Context,
+	ref RepoRef,
+	number int,
+) ([]MergeRequestReviewThread, error) {
+	if err := g.gate(); err != nil {
+		return nil, err
+	}
+	return g.reader.ListMergeRequestReviewThreads(ctx, ref, number)
 }
 
 func (r *Registry) MergeRequestContentMutator(

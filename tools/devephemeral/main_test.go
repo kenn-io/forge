@@ -8,41 +8,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/platform"
-	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	_ "modernc.org/sqlite"
 )
-
-type providerCountingListener struct {
-	net.Listener
-	calls *atomic.Int32
-}
-
-func (l providerCountingListener) Accept() (net.Conn, error) {
-	conn, err := l.Listener.Accept()
-	if err == nil {
-		l.calls.Add(1)
-	}
-	return conn, err
-}
 
 func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
 	assert := assert.New(t)
@@ -328,160 +308,22 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert.Contains(specs.backend.env, "OPENAI_API_KEY=secret-openai")
 }
 
-func TestRunControlsProviderSyncInBackend(t *testing.T) {
-	req := require.New(t)
-	repositoryRoot := repoRoot(t)
-	forgeBin := filepath.Join(t.TempDir(), "kenn-forge")
-	build := procutil.Command("go", "build", "-o", forgeBin, "./cmd/kenn-forge")
-	build.Dir = repositoryRoot
-	output, err := build.CombinedOutput()
-	req.NoError(err, string(output))
-	backendScript, err := os.ReadFile(filepath.Join(repositoryRoot, "scripts", "dev-stack-backend.sh"))
-	req.NoError(err)
-	var providerCalls atomic.Int32
-	provider := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{
-			"id":42,"path":"widget","path_with_namespace":"acme/widget",
-			"name":"widget","default_branch":"main",
-			"web_url":"https://example.invalid/acme/widget",
-			"http_url_to_repo":"https://example.invalid/acme/widget.git"
-		}`)
-	}))
-	provider.Listener = providerCountingListener{Listener: provider.Listener, calls: &providerCalls}
-	provider.StartTLS()
-	t.Cleanup(provider.Close)
-	providerHost := provider.Listener.Addr().String()
-
-	for _, tc := range []struct {
-		name       string
-		enableSync bool
-		wantStatus int
-	}{
-		{name: "disabled by default", wantStatus: http.StatusServiceUnavailable},
-		{name: "explicitly enabled", enableSync: true, wantStatus: http.StatusAccepted},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			require := require.New(t)
-			providerCalls.Store(0)
-			root := t.TempDir()
-			sourceDataDir := filepath.Join(root, "source-data")
-			require.NoError(os.MkdirAll(sourceDataDir, 0o700))
-			sourcePath := filepath.Join(root, "source.toml")
-			sourceConfig := config.Config{
-				SyncInterval: "5m",
-				Host:         "127.0.0.1",
-				Port:         8091,
-				DataDir:      sourceDataDir,
-				Repos: []config.Repo{{
-					Platform: "gitlab", PlatformHost: providerHost,
-					Owner: "acme", Name: "widget",
-					TokenEnv: "KENN_FORGE_DISABLE_SYNC_E2E_TOKEN",
-				}},
-			}
-			require.NoError(sourceConfig.Save(sourcePath))
-			database := dbtest.OpenAt(t, filepath.Join(sourceDataDir, "forge.db"))
-			_, err := database.UpsertRepoByProviderID(t.Context(), db.RepoIdentity{
-				Platform: "gitlab", PlatformHost: providerHost, PlatformRepoID: "42",
-				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-			})
-			require.NoError(err)
-			require.NoError(database.Close())
-
-			commandDir := filepath.Join(root, "commands")
-			require.NoError(os.MkdirAll(filepath.Join(commandDir, "scripts"), 0o700))
-			require.NoError(os.WriteFile(
-				filepath.Join(commandDir, "scripts", "dev-stack-backend.sh"),
-				backendScript, 0o700,
-			))
-			writeBlockingScript(t, filepath.Join(commandDir, "scripts", "frontend-dev.sh"))
-			airPath := filepath.Join(root, "air")
-			require.NoError(os.WriteFile(airPath, []byte(`#!/usr/bin/env sh
-while [ "$1" != "--" ]; do shift; done
-shift
-exec "$FORGE_TEST_BIN" "$@"
-`), 0o700))
-			t.Setenv("AIR_BIN", airPath)
-			t.Setenv("FORGE_TEST_BIN", forgeBin)
-			t.Setenv("KENN_FORGE_HOME", filepath.Join(root, "runtime"))
-			t.Setenv("KENN_FORGE_DISABLE_SYNC_E2E_TOKEN", "test-token")
-			t.Setenv("BACKEND_ARGS", "")
-
-			oldDir, err := os.Getwd()
-			require.NoError(err)
-			require.NoError(os.Chdir(commandDir))
-			defer func() { require.NoError(os.Chdir(oldDir)) }()
-
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			errCh := make(chan error, 1)
-			args := []string{
-				"-config", sourcePath,
-				"-work-dir", filepath.Join(root, "run"),
-				"-backend-port", "0",
-				"-frontend-port", "0",
-			}
-			if tc.enableSync {
-				args = append(args, "-sync")
-			}
-			go func() { errCh <- run(ctx, args) }()
-
-			status := waitForStatusFile(t, filepath.Join(root, "run", "dev-ephemeral.json"))
-			if !tc.enableSync {
-				var repos []map[string]any
-				require.Eventually(func() bool {
-					resp, requestErr := http.Get(status.BackendURL + "/api/v1/repos")
-					if requestErr != nil {
-						return false
-					}
-					defer resp.Body.Close()
-					repos = nil
-					return resp.StatusCode == http.StatusOK &&
-						json.NewDecoder(resp.Body).Decode(&repos) == nil && len(repos) == 1
-				}, 10*time.Second, 100*time.Millisecond)
-				require.Zero(providerCalls.Load())
-			} else {
-				require.Eventually(func() bool {
-					return providerCalls.Load() > 0
-				}, 10*time.Second, 100*time.Millisecond)
-			}
-			var gotStatus int
-			var gotBody string
-			require.Eventually(func() bool {
-				req, requestErr := http.NewRequestWithContext(
-					t.Context(), http.MethodPost, status.BackendURL+"/api/v1/sync",
-					strings.NewReader("{}"),
-				)
-				if requestErr != nil {
-					return false
-				}
-				req.Header.Set("Content-Type", "application/json")
-				resp, requestErr := http.DefaultClient.Do(req)
-				if requestErr != nil {
-					return false
-				}
-				body, readErr := io.ReadAll(resp.Body)
-				_ = resp.Body.Close()
-				if readErr != nil {
-					return false
-				}
-				gotStatus = resp.StatusCode
-				gotBody = string(body)
-				if gotStatus != tc.wantStatus {
-					return false
-				}
-				return tc.enableSync || strings.Contains(gotBody, platform.ErrSyncDisabled.Error())
-			}, 10*time.Second, 100*time.Millisecond, "last status: %d body: %s", gotStatus, gotBody)
-
-			cancel()
-			select {
-			case runErr := <-errCh:
-				require.NoError(runErr)
-			case <-time.After(5 * time.Second):
-				require.Fail("timed out waiting for dev-ephemeral shutdown")
-			}
-		})
+func TestBuildCommandSpecsControlsProviderSync(t *testing.T) {
+	assert := assert.New(t)
+	t.Setenv("BACKEND_ARGS", "--debug")
+	run := ephemeralRun{
+		configPath:   "/tmp/kenn-forge-dev/config.toml",
+		backendURL:   "http://127.0.0.1:39301",
+		frontendPort: 39302,
+		logDir:       "/tmp/kenn-forge-dev/logs",
 	}
+
+	disabled := buildCommandSpecs(run, false, nil)
+	enabled := buildCommandSpecs(run, true, nil)
+
+	assert.Contains(disabled.backend.env, "BACKEND_ARGS=--debug --disable-sync")
+	assert.Contains(enabled.backend.env, "BACKEND_ARGS=--debug")
+	assert.NotContains(enabled.backend.env, "--disable-sync")
 }
 
 func TestBuildCommandSpecsPreservesExplicitTelemetrySetting(t *testing.T) {

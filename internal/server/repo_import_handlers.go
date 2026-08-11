@@ -491,7 +491,7 @@ func validateBulkExactRepos(
 		}
 		seenInput[key] = struct{}{}
 
-		_, refs, err := syncer.ResolveConfiguredRepo(ctx, candidate)
+		_, refs, err := syncer.DirectResolveConfiguredRepo(ctx, candidate)
 		if err != nil {
 			return nil, err
 		}

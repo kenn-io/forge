@@ -295,6 +295,9 @@ Keyboard handlers must have one clear owner for each key press.
   moves focus or changes the active pane. Mark actual focus with a subtle inset
   border without replacing control focus styling
   (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
+  A dedicated Files route keeps global diff shortcuts only while no pane or
+  external dock has live focus; this fallback never paints active-pane styling
+  (`frontend/src/lib/views/PRListView.svelte::diffKeyboardActive`).
 - Nested pane trees paint focus only while DOM focus is inside both the nested
   pane and its containing pane, and only the deepest focused pane paints;
   workspace Workflow, Details, and bottom Terminal regions are siblings

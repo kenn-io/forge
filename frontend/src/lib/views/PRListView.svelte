@@ -131,6 +131,13 @@
     selectDetailTab(tabKey);
   }
 
+  function diffKeyboardActive(tabKey: string, inputActive: boolean): boolean {
+    if (inputActive) return true;
+    if (tabKey !== "files" || detailTab !== "files") return false;
+    const render = paneLayout.paneRender();
+    return render !== null && render.activeInputTabKey === null && !paneLayout.externalInputActive();
+  }
+
   function handleStackMemberNavigate(ref: PullRequestRouteRef): boolean | void {
     if (onStackMemberNavigate) return onStackMemberNavigate(ref);
     if (routeFamily !== "focus") return undefined;
@@ -265,7 +272,7 @@
             <PullDetailPane
               {tabKey}
               {visible}
-              keyboardActive={inputActive}
+              keyboardActive={diffKeyboardActive(tabKey, inputActive)}
               pr={selectedPR}
               detail={selectedDetail}
               autoSync={autoSyncDetail}

@@ -223,7 +223,7 @@ describe("PRListView detail panes", () => {
     expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: true });
   });
 
-  it("enables diff paging only after focus enters the routed files pane", async () => {
+  it("keeps dedicated files shortcuts until live focus chooses another pane", async () => {
     renderPRListView({ detailTab: "conversation" });
     const layout = getPaneLayoutStore("prs");
     layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
@@ -240,6 +240,10 @@ describe("PRListView detail panes", () => {
     filesLayout.splitTab("files", filesLayout.leafIDForTab("files")!, "horizontal", "after");
     await tick();
 
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
+
+    await fireEvent.focusIn(screen.getByTestId("pull-detail"));
     expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
     expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
 

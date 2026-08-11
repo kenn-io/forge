@@ -382,9 +382,9 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 				(ai.item_type = 'merge_request' AND EXISTS (
 					SELECT 1 FROM forge_merge_requests mr
 					WHERE mr.repo_id = ai.repo_id AND mr.number = ai.item_number
-					  AND mr.merged_at IS NOT NULL
+					  AND (mr.state = 'merged' OR mr.merged_at IS NOT NULL)
 					  AND (
-						mr.files_changed IS NULL OR mr.merge_commit_sha = ''
+						mr.merged_at IS NULL OR mr.files_changed IS NULL OR mr.merge_commit_sha = ''
 						OR NOT EXISTS (
 							SELECT 1 FROM forge_mr_events e
 							WHERE e.merge_request_id = mr.id

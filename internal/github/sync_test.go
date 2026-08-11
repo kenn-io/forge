@@ -13250,6 +13250,7 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 		storedFiles       *int
 		providerMergeSHA  string
 		providerFiles     *int
+		missingMergedAt   bool
 		missingFieldLabel string
 	}{
 		{
@@ -13259,6 +13260,11 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 		{
 			name: "files changed", storedMergeSHA: "merge-sha",
 			providerMergeSHA: "merge-sha", missingFieldLabel: "files_changed",
+		},
+		{
+			name: "merged timestamp", storedMergeSHA: "merge-sha", storedFiles: new(4),
+			providerMergeSHA: "merge-sha", providerFiles: new(4), missingMergedAt: true,
+			missingFieldLabel: "merged_at",
 		},
 	}
 
@@ -13278,19 +13284,25 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 			providerUpdatedAt := time.Date(2026, 7, 28, 0, 41, 21, 0, time.UTC)
 			localUpdatedAt := providerUpdatedAt.Add(835 * time.Millisecond)
 			mergedAt := providerUpdatedAt.Add(-time.Second)
+			var storedMergedAt *time.Time
+			if !tt.missingMergedAt {
+				storedMergedAt = &mergedAt
+			}
 			_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 				RepoID: repoID, PlatformID: 7000, Number: 7,
 				State: db.MergeRequestStateMerged, PlatformHeadSHA: "head-sha",
 				MergeCommitSHA: tt.storedMergeSHA, FilesChanged: tt.storedFiles,
 				CreatedAt: providerUpdatedAt.Add(-time.Hour), UpdatedAt: localUpdatedAt,
-				LastActivityAt: localUpdatedAt, MergedAt: &mergedAt, ClosedAt: &mergedAt,
+				LastActivityAt: localUpdatedAt, MergedAt: storedMergedAt, ClosedAt: &mergedAt,
 			})
 			require.NoError(err)
 
 			canonical := buildOpenPR(7, providerUpdatedAt)
 			canonical.State = new("closed")
 			canonical.Merged = new(true)
-			canonical.MergedAt = makeTimestamp(mergedAt)
+			if !tt.missingMergedAt {
+				canonical.MergedAt = makeTimestamp(mergedAt)
+			}
 			canonical.ClosedAt = makeTimestamp(mergedAt)
 			canonical.MergeCommitSHA = &tt.providerMergeSHA
 			canonical.ChangedFiles = tt.providerFiles

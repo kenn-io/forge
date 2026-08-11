@@ -25,7 +25,28 @@ type archiveMergeMetricsClock struct{ now time.Time }
 
 func (c archiveMergeMetricsClock) Now() time.Time { return c.now }
 
+type archiveMergeMetricsCase struct {
+	name            string
+	state           db.MergeRequestState
+	storeMergedTime bool
+}
+
 func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T) {
+	tests := []archiveMergeMetricsCase{
+		{name: "merged timestamp only", state: db.MergeRequestStateOpen, storeMergedTime: true},
+		{name: "merged state only", state: db.MergeRequestStateMerged},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(t, tt)
+		})
+	}
+}
+
+func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
+	t *testing.T,
+	tt archiveMergeMetricsCase,
+) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -115,12 +136,16 @@ func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T
 	repo, err := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repo)
+	var storedMergedAt *time.Time
+	if tt.storeMergedTime {
+		storedMergedAt = &mergedAt
+	}
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repo.ID, PlatformID: 7, PlatformExternalID: "PR_7", Number: 7,
 		URL: "https://github.com/acme/widget/pull/7", Title: "newer local title",
-		State: db.MergeRequestStateOpen, PlatformHeadSHA: "head-sha",
+		State: tt.state, PlatformHeadSHA: "head-sha",
 		CreatedAt: canonicalUpdatedAt.Add(-2 * time.Hour), UpdatedAt: localUpdatedAt,
-		LastActivityAt: localUpdatedAt, MergedAt: &mergedAt, ClosedAt: &mergedAt,
+		LastActivityAt: localUpdatedAt, MergedAt: storedMergedAt, ClosedAt: &mergedAt,
 	})
 	require.NoError(err)
 	require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{
@@ -179,6 +204,8 @@ func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T
 	assert.Equal("merge-sha", storedMR.MergeCommitSHA)
 	require.NotNil(storedMR.FilesChanged)
 	assert.Equal(4, *storedMR.FilesChanged)
+	require.NotNil(storedMR.MergedAt)
+	assert.Equal(mergedAt, *storedMR.MergedAt)
 	assert.Equal("newer local title", storedMR.Title)
 
 	verbose := true

@@ -12441,6 +12441,7 @@ func (s *Syncer) syncMRForRepoResolved(
 					HeadSHA:        normalized.PlatformHeadSHA,
 					MergeCommitSHA: normalized.MergeCommitSHA,
 					FilesChanged:   *normalized.FilesChanged,
+					MergedAt:       normalized.MergedAt,
 				},
 			)
 			if errors.Is(repairErr, db.ErrRepositoryRouteFenceChanged) {
@@ -13024,7 +13025,10 @@ func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	if mr.State != db.MergeRequestStateMerged && mr.MergedAt == nil {
 		return nil
 	}
-	missing := make([]string, 0, 2)
+	missing := make([]string, 0, 3)
+	if mr.MergedAt == nil {
+		missing = append(missing, "merged_at")
+	}
 	if mr.MergeCommitSHA == "" {
 		missing = append(missing, "merge_commit_sha")
 	}

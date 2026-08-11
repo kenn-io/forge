@@ -77,7 +77,7 @@ func TestFillMissingMergedMRMetricsAcceptsEitherMergedIndicator(t *testing.T) {
 
 			changed, err := database.FillMissingMergedMRMetrics(ctx, MergeRequestMergeMetrics{
 				RepoID: repoID, Number: 7, HeadSHA: "head-sha",
-				MergeCommitSHA: "merge-sha", FilesChanged: 4,
+				MergeCommitSHA: "merge-sha", FilesChanged: 4, MergedAt: &mergedAt,
 			})
 			require.NoError(err)
 			require.True(changed)
@@ -88,6 +88,8 @@ func TestFillMissingMergedMRMetricsAcceptsEitherMergedIndicator(t *testing.T) {
 			require.Equal("merge-sha", after.MergeCommitSHA)
 			require.NotNil(after.FilesChanged)
 			require.Equal(4, *after.FilesChanged)
+			require.NotNil(after.MergedAt)
+			require.Equal(mergedAt, *after.MergedAt)
 		})
 	}
 }

@@ -68,7 +68,11 @@ combining repository-owned history
   preference on every configuration-change path — startup, TOML hot reload,
   and the DELETE handler (detached from request cancellation): globs can keep
   the repository tracked but expose no visibility controls
-  (`internal/server/settings_handlers.go::reconcileOrphanedRepoVisibility`). Filtering is
+  (`internal/server/settings_handlers.go::reconcileOrphanedRepoVisibility`).
+  Visibility mutations serialize with that sweep on a shared lock and
+  revalidate exact-entry membership inside it, so a mutation racing an
+  exact-entry removal cannot recreate an orphaned preference
+  (`internal/server/settings_handlers.go::updateConfiguredRepoUIVisibilityState`). Filtering is
   server-owned and scoped to interactive repository catalogs; item feeds, direct
   routes, and the settings surface stay unfiltered
   (`internal/server/helpers.go::filterHiddenRepos`).

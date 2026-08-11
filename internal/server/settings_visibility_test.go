@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -533,6 +535,172 @@ name = "gadget"
 	}
 	assert.Equal([]string{"R_gadget"}, hiddenIDs,
 		"startup clears glob-only hidden state but keeps exact-owned state")
+}
+
+func TestHandleUpdateRepoUIVisibilityWithoutSyncer(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// A server without a syncer still owns visibility mutations; persisting
+	// the change and then failing to build the settings response would leave
+	// the client without the saved state.
+	database := dbtest.Open(t)
+	seedVerifiedRepo(t, database, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	srv := NewWithConfig(
+		database, nil, nil, nil, cfg, cfgPath,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
+	)
+
+	rr := doJSON(t, srv, http.MethodPut,
+		"/api/v1/repo/github/acme/widget/ui-visibility",
+		map[string]bool{"hidden": true},
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	repos := settingsReposFromBody(t, rr.Body.Bytes())
+	require.Len(repos, 1)
+	assert.True(repos[0].HiddenFromUI,
+		"the response reports the saved state without tracked refs")
+
+	hidden, err := database.HiddenRepos(t.Context())
+	require.NoError(err)
+	require.Len(hidden, 1)
+	assert.Equal("R_widget", hidden[0].PlatformRepoID)
+}
+
+func TestHandleUpdateRepoUIVisibilityReportsRouteOnlyTrackedRef(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, _ := setupTestServerWithConfig(t)
+
+	seedVerifiedRepo(t, database, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	// The tracked snapshot has not resolved a stable provider id yet; the
+	// route is the only address. Hidden correlation must still report the
+	// saved state instead of skipping identity-less refs.
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "github.com",
+		ConfiguredRepoPath: "acme/widget",
+	}})
+
+	rr := doJSON(t, srv, http.MethodPut,
+		"/api/v1/repo/github/acme/widget/ui-visibility",
+		map[string]bool{"hidden": true},
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	repos := settingsReposFromBody(t, rr.Body.Bytes())
+	require.Len(repos, 1)
+	assert.True(repos[0].HiddenFromUI,
+		"route-only tracked refs resolve through the catalog row")
+
+	hidden, err := database.HiddenRepos(t.Context())
+	require.NoError(err)
+	require.Len(hidden, 1)
+	assert.Equal("R_widget", hidden[0].PlatformRepoID)
+}
+
+func TestRepoUIVisibilityMutationSerializesWithOrphanSweep(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repos]]
+owner = "acme"
+name = "wid*"
+`, &mockGH{})
+
+	seedVerifiedRepo(t, database, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "github.com",
+		PlatformExternalID: "R_widget",
+		ConfiguredRepoPath: "acme/widget",
+	}})
+
+	// Hold the visibility lock the way a concurrent delete or hot-reload
+	// sweep would, and remove the exact entry while the PUT is blocked. The
+	// PUT must revalidate membership inside the critical section: writing
+	// against the pre-delete membership check would orphan the preference
+	// behind the glob.
+	srv.repoVisibilityMu.Lock()
+	result := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		var buf bytes.Buffer
+		buf.WriteString(`{"hidden":true}`)
+		req := httptest.NewRequest(http.MethodPut,
+			"/api/v1/repo/github/acme/widget/ui-visibility", &buf)
+		req.Host = "127.0.0.1:8091"
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		result <- rr
+	}()
+	select {
+	case <-result:
+		srv.repoVisibilityMu.Unlock()
+		require.FailNow("the visibility mutation ignored the sweep lock")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	srv.cfgMu.Lock()
+	kept := srv.cfg.Repos[:0:0]
+	for _, raw := range srv.cfg.Repos {
+		if !raw.HasNameGlob() {
+			continue
+		}
+		kept = append(kept, raw)
+	}
+	srv.cfg.Repos = kept
+	srv.cfgMu.Unlock()
+	srv.repoVisibilityMu.Unlock()
+
+	rr := <-result
+	require.Equal(http.StatusNotFound, rr.Code, rr.Body.String())
+	hidden, err := database.HiddenRepos(t.Context())
+	require.NoError(err)
+	assert.Empty(hidden,
+		"a PUT losing the race to a delete must not orphan the preference")
 }
 
 func TestStartupVisibilitySweepToleratesNilSyncer(t *testing.T) {

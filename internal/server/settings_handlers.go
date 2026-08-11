@@ -97,15 +97,22 @@ func (s *Server) buildLocalSettingsResponse(
 		launchTargets = []localruntime.LaunchTarget{}
 	}
 
-	hiddenKeys, err := s.hiddenTrackedRepoKeys(ctx)
+	hiddenSet, err := s.hiddenRepoCorrelationSet(ctx)
 	if err != nil {
 		return settingsResponse{}, err
 	}
-	tracked := s.syncer.TrackedRepos()
+	var tracked []ghclient.RepoRef
+	if s.syncer != nil {
+		tracked = s.syncer.TrackedRepos()
+	}
 	configured := make(
 		[]ghclient.ConfiguredRepoStatus, len(repos),
 	)
 	for i, raw := range repos {
+		hiddenFromUI, err := s.configEntryHidden(ctx, raw, tracked, hiddenSet)
+		if err != nil {
+			return settingsResponse{}, err
+		}
 		configured[i] = ghclient.ConfiguredRepoStatus{
 			Provider:         raw.PlatformOrDefault(),
 			PlatformHost:     raw.PlatformHostOrDefault(),
@@ -116,7 +123,7 @@ func (s *Server) buildLocalSettingsResponse(
 			WorktreeBasePath: raw.WorktreeBasePath,
 			IsGlob:           raw.HasNameGlob(),
 			MatchedRepoCount: matchedRepoCount(raw, tracked),
-			HiddenFromUI:     configEntryHidden(raw, tracked, hiddenKeys),
+			HiddenFromUI:     hiddenFromUI,
 		}
 	}
 	return settingsResponse{
@@ -137,23 +144,36 @@ func (s *Server) buildLocalSettingsResponse(
 	}, nil
 }
 
-// hiddenTrackedRepoKeys returns the stable identity keys of catalog
+// hiddenRepoCorrelation carries the two addresses of every catalog row with a
+// hidden-from-UI preference: stable provider identity keys for correlating
+// tracked refs, and catalog row ids for entries whose tracked stable identity
+// is unavailable.
+type hiddenRepoCorrelation struct {
+	keys map[string]struct{}
+	ids  map[int64]struct{}
+}
+
+// hiddenRepoCorrelationSet returns the identity keys and catalog row ids of
 // repositories with a hidden-from-UI preference, for correlating configured
 // entries with their tracked repositories. Routes are mutable and reusable, so
 // correlation must never key on them: a displaced row keeps its old display
 // route, and a replacement repository at that route is a different repository.
-func (s *Server) hiddenTrackedRepoKeys(
+func (s *Server) hiddenRepoCorrelationSet(
 	ctx context.Context,
-) (map[string]struct{}, error) {
+) (hiddenRepoCorrelation, error) {
 	if s.db == nil {
-		return nil, nil
+		return hiddenRepoCorrelation{}, nil
 	}
 	hidden, err := s.db.HiddenRepos(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list hidden repos: %w", err)
+		return hiddenRepoCorrelation{}, fmt.Errorf("list hidden repos: %w", err)
 	}
-	keys := make(map[string]struct{}, len(hidden))
+	set := hiddenRepoCorrelation{
+		keys: make(map[string]struct{}, len(hidden)),
+		ids:  make(map[int64]struct{}, len(hidden)),
+	}
 	for _, repo := range hidden {
+		set.ids[repo.ID] = struct{}{}
 		key := trackedRepoIdentityKey(ghclient.RepoRef{
 			Platform:           httpapi.ProviderKind(repo),
 			PlatformHost:       httpapi.ProviderHost(repo),
@@ -162,21 +182,25 @@ func (s *Server) hiddenTrackedRepoKeys(
 		if key == "" {
 			continue
 		}
-		keys[key] = struct{}{}
+		set.keys[key] = struct{}{}
 	}
-	return keys, nil
+	return set, nil
 }
 
-// configEntryHidden reports whether the exact configured entry's tracked
-// repository carries a hidden-from-UI preference. Glob entries have no
-// visibility of their own: the preference belongs to exact repositories.
-func configEntryHidden(
+// configEntryHidden reports whether the exact configured entry's repository
+// carries a hidden-from-UI preference. Glob entries have no visibility of
+// their own: the preference belongs to exact repositories. Tracked refs with
+// a stable provider identity answer directly; without one (a route-only ref
+// or a server without a syncer), the entry resolves to its catalog row the
+// same way the mutation path does.
+func (s *Server) configEntryHidden(
+	ctx context.Context,
 	raw config.Repo,
 	tracked []ghclient.RepoRef,
-	hiddenKeys map[string]struct{},
-) bool {
-	if raw.HasNameGlob() || len(hiddenKeys) == 0 {
-		return false
+	hidden hiddenRepoCorrelation,
+) (bool, error) {
+	if raw.HasNameGlob() || len(hidden.ids) == 0 {
+		return false, nil
 	}
 	for _, repo := range tracked {
 		if !repoMatchesConfig(repo, raw) {
@@ -186,11 +210,23 @@ func configEntryHidden(
 		if key == "" {
 			continue
 		}
-		if _, ok := hiddenKeys[key]; ok {
-			return true
-		}
+		_, ok := hidden.keys[key]
+		return ok, nil
 	}
-	return false
+	repo, err := s.lookupRepoForVisibilityRelease(
+		ctx, s.visibilityLookupIdentity(raw),
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"resolve configured repo %s for hidden state: %w",
+			configRepoPath(raw), err,
+		)
+	}
+	if repo == nil {
+		return false, nil
+	}
+	_, ok := hidden.ids[repo.ID]
+	return ok, nil
 }
 
 // trackedPathForConfig returns the provider-verified current route of the
@@ -1156,6 +1192,14 @@ func (s *Server) updateConfiguredRepoUIVisibilityState(
 		Name:         ref.Name,
 	}
 
+	// Membership is validated and the preference written under the same
+	// visibility lock the orphan sweep takes: a concurrent exact-entry
+	// removal either completes first (the check below then rejects the
+	// mutation) or waits for the write and sweeps it, so the preference can
+	// never outlive its exact entry unreachable behind a glob.
+	s.repoVisibilityMu.Lock()
+	defer s.repoVisibilityMu.Unlock()
+
 	s.cfgMu.Lock()
 	var target *config.Repo
 	for i := range s.cfg.Repos {
@@ -1355,6 +1399,8 @@ func (s *Server) reconcileOrphanedRepoVisibility(ctx context.Context) error {
 	if s.db == nil {
 		return nil
 	}
+	s.repoVisibilityMu.Lock()
+	defer s.repoVisibilityMu.Unlock()
 	hidden, err := s.db.HiddenRepos(ctx)
 	if err != nil {
 		return err

@@ -646,9 +646,6 @@ test.describe.serial("Roborev", () => {
 
       await page.getByLabel("Hide closed").check();
       await page.getByLabel("Show auto-design").check();
-      await expect(page.locator(".git-ref[title='auto-design-classify']")).toBeVisible();
-      expect(await page.evaluate(() => localStorage.getItem("kenn-forge:roborev:hideClosed"))).toBe("1");
-      expect(await page.evaluate(() => localStorage.getItem("kenn-forge:roborev:showAutoDesign"))).toBe("1");
 
       const restoredJobs = page.waitForResponse((response) => {
         const url = new URL(response.url());

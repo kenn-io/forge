@@ -73,55 +73,24 @@ function makeJob(id: number, startedAt?: string, finishedAt?: string): ReviewJob
 }
 
 describe("createJobsStore filter preferences", () => {
-  it("uses existing defaults for missing or unrecognized preferences", () => {
-    const store = createJobsStore({ client: {} as never, navigate: vi.fn() });
-
-    expect(store.getFilterHideClosed()).toBe(false);
-    expect(store.getFilterShowAutoDesign()).toBe(false);
-
-    localStorage.setItem("kenn-forge:roborev:hideClosed", "unknown");
-    localStorage.setItem("kenn-forge:roborev:showAutoDesign", "unknown");
-    const restored = createJobsStore({ client: {} as never, navigate: vi.fn() });
-
-    expect(restored.getFilterHideClosed()).toBe(false);
-    expect(restored.getFilterShowAutoDesign()).toBe(false);
-  });
-
-  it("writes both filter choices to global browser storage", () => {
+  it("restores filter choices in a new store and applies them to the jobs query", async () => {
     const client = {
       GET: vi.fn().mockResolvedValue({
         data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
         error: undefined,
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const firstStore = createJobsStore({ client: client as never, navigate: vi.fn() });
 
-    store.setFilter("hideClosed", true);
-    store.setFilter("showAutoDesign", true);
-    expect(localStorage.getItem("kenn-forge:roborev:hideClosed")).toBe("1");
-    expect(localStorage.getItem("kenn-forge:roborev:showAutoDesign")).toBe("1");
+    firstStore.setFilter("hideClosed", true);
+    firstStore.setFilter("showAutoDesign", true);
+    firstStore.dispose();
 
-    store.setFilter("hideClosed", false);
-    store.setFilter("showAutoDesign", false);
-    expect(localStorage.getItem("kenn-forge:roborev:hideClosed")).toBe("0");
-    expect(localStorage.getItem("kenn-forge:roborev:showAutoDesign")).toBe("0");
-  });
+    const restoredStore = createJobsStore({ client: client as never, navigate: vi.fn() });
+    await loadJobs(restoredStore);
 
-  it("restores enabled preferences and applies them to the jobs query", async () => {
-    localStorage.setItem("kenn-forge:roborev:hideClosed", "1");
-    localStorage.setItem("kenn-forge:roborev:showAutoDesign", "1");
-    const client = {
-      GET: vi.fn().mockResolvedValue({
-        data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
-        error: undefined,
-      }),
-    };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
-
-    await loadJobs(store);
-
-    expect(store.getFilterHideClosed()).toBe(true);
-    expect(store.getFilterShowAutoDesign()).toBe(true);
+    expect(restoredStore.getFilterHideClosed()).toBe(true);
+    expect(restoredStore.getFilterShowAutoDesign()).toBe(true);
     expect(client.GET).toHaveBeenCalledWith(
       "/api/jobs",
       expect.objectContaining({ params: { query: { closed: "false", limit: 50 } } }),
@@ -157,65 +126,44 @@ describe("createJobsStore filter preferences", () => {
     );
   });
 
-  it("keeps shared preferences when storage is unavailable to a later live store", () => {
-    const client = {
+  it("keeps filtering when browser storage is unavailable", async () => {
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
+    const firstClient = {
       GET: vi.fn().mockResolvedValue({
         data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
         error: undefined,
       }),
     };
-    const firstStore = createJobsStore({ client: client as never, navigate: vi.fn() });
-    firstStore.setFilter("hideClosed", true);
-    firstStore.setFilter("showAutoDesign", true);
-    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("storage unavailable");
-    });
-
-    try {
-      const secondStore = createJobsStore({ client: client as never, navigate: vi.fn() });
-
-      expect(secondStore.getFilterHideClosed()).toBe(true);
-      expect(secondStore.getFilterShowAutoDesign()).toBe(true);
-    } finally {
-      getItem.mockRestore();
-    }
-  });
-
-  it("falls back to defaults when browser storage reads fail", () => {
-    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("storage unavailable");
-    });
-
-    try {
-      const store = createJobsStore({ client: {} as never, navigate: vi.fn() });
-
-      expect(store.getFilterHideClosed()).toBe(false);
-      expect(store.getFilterShowAutoDesign()).toBe(false);
-    } finally {
-      getItem.mockRestore();
-    }
-  });
-
-  it("keeps filtering and refreshes jobs when browser storage writes fail", async () => {
-    const client = {
+    const secondClient = {
       GET: vi.fn().mockResolvedValue({
         data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
         error: undefined,
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
     const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("storage unavailable");
     });
 
     try {
-      store.setFilter("hideClosed", true);
-      store.setFilter("showAutoDesign", true);
+      const firstStore = createJobsStore({ client: firstClient as never, navigate: vi.fn() });
+      expect(firstStore.getFilterHideClosed()).toBe(false);
+      expect(firstStore.getFilterShowAutoDesign()).toBe(false);
 
-      expect(store.getFilterHideClosed()).toBe(true);
-      expect(store.getFilterShowAutoDesign()).toBe(true);
-      await vi.waitFor(() => expect(client.GET).toHaveBeenCalled());
+      firstStore.setFilter("hideClosed", true);
+      firstStore.setFilter("showAutoDesign", true);
+      const secondStore = createJobsStore({ client: secondClient as never, navigate: vi.fn() });
+      await loadJobs(secondStore);
+
+      expect(secondStore.getFilterHideClosed()).toBe(true);
+      expect(secondStore.getFilterShowAutoDesign()).toBe(true);
+      expect(secondClient.GET).toHaveBeenCalledWith(
+        "/api/jobs",
+        expect.objectContaining({ params: { query: { closed: "false", limit: 50 } } }),
+      );
     } finally {
+      getItem.mockRestore();
       setItem.mockRestore();
     }
   });

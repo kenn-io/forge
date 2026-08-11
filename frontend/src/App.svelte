@@ -659,6 +659,7 @@
   }
 
   onDestroy(() => {
+    stores?.roborevJobs?.dispose();
     stopFullAppShell();
     roborevPollingExecution?.interrupt();
   });

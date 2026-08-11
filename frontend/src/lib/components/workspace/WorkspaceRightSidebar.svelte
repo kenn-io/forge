@@ -320,6 +320,7 @@
   });
 
   onDestroy(() => {
+    sidebarJobs.dispose();
     appRuntime.runCommand(
       Effect.gen(function* () {
         const workflow = yield* RoborevWorkflow;

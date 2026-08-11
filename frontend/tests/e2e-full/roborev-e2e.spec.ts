@@ -640,6 +640,34 @@ test.describe.serial("Roborev", () => {
       await expect(autoDesignClassifyRow.locator(".col-type")).toHaveText("classify");
     });
 
+    test("review visibility filters survive a reload", async ({ page }) => {
+      await waitForReviewsReady(page);
+      await waitForJobRows(page, 10);
+
+      await page.getByLabel("Hide closed").check();
+      await page.getByLabel("Show auto-design").check();
+      await expect(page.locator(".git-ref[title='auto-design-classify']")).toBeVisible();
+      expect(await page.evaluate(() => localStorage.getItem("kenn-forge:roborev:hideClosed"))).toBe("1");
+      expect(await page.evaluate(() => localStorage.getItem("kenn-forge:roborev:showAutoDesign"))).toBe("1");
+
+      const restoredJobs = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.ok() &&
+          url.pathname.endsWith("/api/roborev/api/jobs") &&
+          url.searchParams.get("limit") === "50" &&
+          url.searchParams.get("closed") === "false" &&
+          url.searchParams.get("hide_classify_jobs") === null
+        );
+      });
+      await page.reload();
+      await restoredJobs;
+
+      await expect(page.getByLabel("Hide closed")).toBeChecked();
+      await expect(page.getByLabel("Show auto-design")).toBeChecked();
+      await expect(page.locator(".git-ref[title='auto-design-classify']")).toBeVisible();
+    });
+
     test("status counts follow the default auto-design visibility", async ({ page }) => {
       await page.route("**/api/roborev/api/stream/events", (route) => route.abort());
       await waitForReviewsReady(page);

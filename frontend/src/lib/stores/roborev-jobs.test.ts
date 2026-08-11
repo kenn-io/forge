@@ -13,6 +13,7 @@ type ReviewJob = components["schemas"]["ReviewJob"];
 
 const originalFetch = globalThis.fetch;
 const runtimes = new Set<OwnedAppRuntime>();
+const stores = new Set<JobsStore>();
 const storeRuntimes = new WeakMap<JobsStore, OwnedAppRuntime>();
 let ownerSequence = 0;
 
@@ -25,6 +26,7 @@ function createJobsStore(options: Omit<JobsStoreOptions, "runtime" | "owner">) {
   runtimes.add(runtime);
   ownerSequence += 1;
   const store = createRuntimeJobsStore({ ...options, runtime, owner: `jobs-test:${ownerSequence}` });
+  stores.add(store);
   storeRuntimes.set(store, runtime);
   return store;
 }
@@ -46,6 +48,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  for (const store of stores) store.dispose();
+  stores.clear();
   await Promise.all(Array.from(runtimes, (runtime) => Effect.runPromise(runtime.disposeEffect)));
   runtimes.clear();
   localStorage.clear();
@@ -122,6 +126,59 @@ describe("createJobsStore filter preferences", () => {
       "/api/jobs",
       expect.objectContaining({ params: { query: { closed: "false", limit: 50 } } }),
     );
+  });
+
+  it("synchronizes filter changes across live jobs stores", async () => {
+    const firstClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+    const secondClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+    const firstStore = createJobsStore({ client: firstClient as never, navigate: vi.fn() });
+    const secondStore = createJobsStore({ client: secondClient as never, navigate: vi.fn() });
+
+    firstStore.setFilter("hideClosed", true);
+    firstStore.setFilter("showAutoDesign", true);
+
+    expect(secondStore.getFilterHideClosed()).toBe(true);
+    expect(secondStore.getFilterShowAutoDesign()).toBe(true);
+    await vi.waitFor(() =>
+      expect(secondClient.GET).toHaveBeenCalledWith(
+        "/api/jobs",
+        expect.objectContaining({ params: { query: { closed: "false", limit: 50 } } }),
+      ),
+    );
+  });
+
+  it("keeps shared preferences when storage is unavailable to a later live store", () => {
+    const client = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+    const firstStore = createJobsStore({ client: client as never, navigate: vi.fn() });
+    firstStore.setFilter("hideClosed", true);
+    firstStore.setFilter("showAutoDesign", true);
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
+
+    try {
+      const secondStore = createJobsStore({ client: client as never, navigate: vi.fn() });
+
+      expect(secondStore.getFilterHideClosed()).toBe(true);
+      expect(secondStore.getFilterShowAutoDesign()).toBe(true);
+    } finally {
+      getItem.mockRestore();
+    }
   });
 
   it("falls back to defaults when browser storage reads fail", () => {

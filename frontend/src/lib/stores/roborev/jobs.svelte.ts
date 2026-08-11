@@ -49,6 +49,11 @@ type FilterKey = StringFilterKey | BooleanFilterKey;
 
 const HIDE_CLOSED_STORAGE_KEY = "kenn-forge:roborev:hideClosed";
 const SHOW_AUTO_DESIGN_STORAGE_KEY = "kenn-forge:roborev:showAutoDesign";
+const booleanFilterPreferences = $state<Record<BooleanFilterKey, boolean>>({
+  hideClosed: false,
+  showAutoDesign: false,
+});
+const booleanFilterSubscribers = new Map<symbol, () => void>();
 
 function readBooleanPreference(key: string): boolean {
   try {
@@ -66,8 +71,38 @@ function writeBooleanPreference(key: string, value: boolean): void {
   }
 }
 
+function notifyBooleanFilterSubscribers(origin?: symbol): void {
+  for (const [owner, refresh] of booleanFilterSubscribers) {
+    if (owner !== origin) refresh();
+  }
+}
+
+function hydrateBooleanFilterPreferences(): void {
+  const hideClosed = readBooleanPreference(HIDE_CLOSED_STORAGE_KEY);
+  const showAutoDesign = readBooleanPreference(SHOW_AUTO_DESIGN_STORAGE_KEY);
+  if (
+    hideClosed === booleanFilterPreferences.hideClosed &&
+    showAutoDesign === booleanFilterPreferences.showAutoDesign
+  ) {
+    return;
+  }
+  booleanFilterPreferences.hideClosed = hideClosed;
+  booleanFilterPreferences.showAutoDesign = showAutoDesign;
+  notifyBooleanFilterSubscribers();
+}
+
+function setBooleanFilterPreference(key: BooleanFilterKey, value: boolean, origin: symbol): void {
+  booleanFilterPreferences[key] = value;
+  writeBooleanPreference(key === "hideClosed" ? HIDE_CLOSED_STORAGE_KEY : SHOW_AUTO_DESIGN_STORAGE_KEY, value);
+  notifyBooleanFilterSubscribers(origin);
+}
+
 export function createJobsStore(opts: JobsStoreOptions) {
   const client = opts.client;
+  const filterOwner = Symbol(opts.owner);
+  let disposed = false;
+
+  if (booleanFilterSubscribers.size === 0) hydrateBooleanFilterPreferences();
 
   // State
   let jobs = $state<ReviewJob[]>([]);
@@ -85,9 +120,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let filterBranch = $state<string | undefined>(undefined);
   let filterStatus = $state<string | undefined>(undefined);
   let filterSearch = $state<string | undefined>(undefined);
-  let filterHideClosed = $state(readBooleanPreference(HIDE_CLOSED_STORAGE_KEY));
   let filterJobType = $state<string | undefined>(undefined);
-  let filterShowAutoDesign = $state(readBooleanPreference(SHOW_AUTO_DESIGN_STORAGE_KEY));
 
   // Sorting (client-side)
   let sortColumn = $state<SortColumn>("id");
@@ -112,9 +145,9 @@ export function createJobsStore(opts: JobsStoreOptions) {
     if (filterBranch) q.branch = filterBranch;
     if (filterStatus) q.status = filterStatus;
     if (filterSearch) q.git_ref = filterSearch;
-    if (filterHideClosed) q.closed = "false";
+    if (booleanFilterPreferences.hideClosed) q.closed = "false";
     if (filterJobType) q.job_type = filterJobType;
-    if (!filterShowAutoDesign) q.hide_classify_jobs = "true";
+    if (!booleanFilterPreferences.showAutoDesign) q.hide_classify_jobs = "true";
     return q;
   }
 
@@ -410,8 +443,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
         break;
       case "hideClosed":
         if (typeof value !== "boolean") return;
-        filterHideClosed = value;
-        writeBooleanPreference(HIDE_CLOSED_STORAGE_KEY, value);
+        setBooleanFilterPreference(key, value, filterOwner);
         break;
       case "jobType":
         if (typeof value === "boolean") return;
@@ -419,8 +451,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
         break;
       case "showAutoDesign":
         if (typeof value !== "boolean") return;
-        filterShowAutoDesign = value;
-        writeBooleanPreference(SHOW_AUTO_DESIGN_STORAGE_KEY, value);
+        setBooleanFilterPreference(key, value, filterOwner);
         break;
     }
     loadJobs();
@@ -909,13 +940,13 @@ export function createJobsStore(opts: JobsStoreOptions) {
     return filterSearch;
   }
   function getFilterHideClosed(): boolean {
-    return filterHideClosed;
+    return booleanFilterPreferences.hideClosed;
   }
   function getFilterJobType(): string | undefined {
     return filterJobType;
   }
   function getFilterShowAutoDesign(): boolean {
-    return filterShowAutoDesign;
+    return booleanFilterPreferences.showAutoDesign;
   }
   function getSortColumn(): SortColumn {
     return sortColumn;
@@ -926,6 +957,16 @@ export function createJobsStore(opts: JobsStoreOptions) {
   function isEventStreamConnected(): boolean {
     return eventStreamConnected;
   }
+
+  function dispose(): void {
+    if (disposed) return;
+    disposed = true;
+    booleanFilterSubscribers.delete(filterOwner);
+  }
+
+  booleanFilterSubscribers.set(filterOwner, () => {
+    if (!disposed) loadJobs();
+  });
 
   return {
     getJobs,
@@ -948,6 +989,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     getSortColumn,
     getSortDirection,
     isEventStreamConnected,
+    dispose,
     togglePanel,
     ensurePanelMembers,
     setPanelMemberInterest,

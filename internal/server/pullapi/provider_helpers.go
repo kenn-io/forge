@@ -114,10 +114,10 @@ func (s *Handler) mergeRequestAuthoredByViewer(
 	repo db.Repo,
 	mr db.MergeRequest,
 ) bool {
-	if s.syncer == nil || s.syncer.Registry() == nil {
+	if s.syncer == nil || s.syncer.DirectRegistry() == nil {
 		return false
 	}
-	resolver, err := s.syncer.Registry().MergeRequestViewerResolver(
+	resolver, err := s.syncer.DirectRegistry().MergeRequestViewerResolver(
 		repoProviderKind(repo), repoProviderHost(repo),
 	)
 	if err != nil {

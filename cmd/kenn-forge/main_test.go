@@ -473,6 +473,44 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	}, repos)
 }
 
+func TestResolveStartupReposUsesCatalogWhenSyncIsDisabled(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	ctx := t.Context()
+
+	identity := db.RepoIdentity{
+		Platform:       string(platform.KindGitLab),
+		PlatformHost:   "gitlab.example.test",
+		PlatformRepoID: "project-42",
+		Owner:          "acme",
+		Name:           "widget",
+	}
+	_, err := database.UpsertRepoByProviderID(ctx, identity)
+	require.NoError(err)
+
+	providerCalls := 0
+	registry := mustProviderRegistry(t, nil, mainTestRepositoryReader{
+		kind:  platform.KindGitLab,
+		host:  "gitlab.example.test",
+		calls: &providerCalls,
+	})
+	cfg := &config.Config{Repos: []config.Repo{{
+		Platform: "gitlab", PlatformHost: "gitlab.example.test",
+		Owner: "acme", Name: "*",
+	}}}
+
+	repos := resolveStartupRepos(
+		ctx, cfg, providerRegistryForSyncPolicy(registry, true), database, nil,
+	)
+
+	assert.Zero(providerCalls)
+	assert.Equal([]ghclient.RepoRef{{
+		Platform: platform.KindGitLab, PlatformHost: "gitlab.example.test",
+		Owner: "acme", Name: "widget",
+	}}, repos)
+}
+
 func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &config.Config{
@@ -829,8 +867,9 @@ func mustProviderRegistry(
 }
 
 type mainTestRepositoryReader struct {
-	kind platform.Kind
-	host string
+	kind  platform.Kind
+	host  string
+	calls *int
 }
 
 func (r mainTestRepositoryReader) Platform() platform.Kind {
@@ -849,6 +888,9 @@ func (r mainTestRepositoryReader) GetRepository(
 	_ context.Context,
 	ref platform.RepoRef,
 ) (platform.Repository, error) {
+	if r.calls != nil {
+		*r.calls++
+	}
 	return platform.Repository{Ref: ref}, nil
 }
 
@@ -857,6 +899,9 @@ func (r mainTestRepositoryReader) ListRepositories(
 	owner string,
 	_ platform.RepositoryListOptions,
 ) ([]platform.Repository, error) {
+	if r.calls != nil {
+		*r.calls++
+	}
 	return []platform.Repository{{
 		Ref: platform.RepoRef{
 			Platform: r.kind,

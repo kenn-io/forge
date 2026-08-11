@@ -1097,7 +1097,7 @@ func (s *Handler) replyToDiscussion(ctx context.Context, input *replyToDiscussio
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 
-	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
+	provider, err := s.syncer.DirectRegistry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.Internal("provider lookup failed")
 	}
@@ -1222,7 +1222,7 @@ func (s *Handler) resolveDiscussion(ctx context.Context, input *resolveDiscussio
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 
-	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
+	provider, err := s.syncer.DirectRegistry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.Internal("provider lookup failed")
 	}

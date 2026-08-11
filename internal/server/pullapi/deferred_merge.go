@@ -471,7 +471,7 @@ func (s *Handler) ensureDeferredMergeTargetUnchanged(ctx context.Context, repo d
 	if err := deferredMergeRequireOpenDB(mr); err != nil {
 		return err
 	}
-	reader, err := s.syncer.SyncRegistry().MergeRequestReader(repoProviderKind(repo), repoProviderHost(repo))
+	reader, err := s.syncer.Registry().MergeRequestReader(repoProviderKind(repo), repoProviderHost(repo))
 	if err != nil {
 		return err
 	}

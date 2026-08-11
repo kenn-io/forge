@@ -30,7 +30,7 @@ func (s *Handler) autoAssignWorkspaceItem(
 		return nil
 	}
 
-	registry := s.syncer.SyncRegistry()
+	registry := s.syncer.DirectRegistry()
 	userResolver, err := registry.AuthenticatedUserResolver(kind, host)
 	if err != nil {
 		return fmt.Errorf("resolve authenticated user capability: %w", err)

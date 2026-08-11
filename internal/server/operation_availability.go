@@ -289,10 +289,10 @@ func (s *Server) mergeRequestAuthoredByViewer(
 	repo db.Repo,
 	mr db.MergeRequest,
 ) bool {
-	if s == nil || s.syncer == nil || s.syncer.Registry() == nil {
+	if s == nil || s.syncer == nil || s.syncer.DirectRegistry() == nil {
 		return false
 	}
-	resolver, err := s.syncer.Registry().MergeRequestViewerResolver(
+	resolver, err := s.syncer.DirectRegistry().MergeRequestViewerResolver(
 		httpapi.ProviderKind(repo), httpapi.ProviderHost(repo),
 	)
 	if err != nil {
@@ -322,8 +322,8 @@ func (s *Server) operationRateLimit(
 }
 
 func (s *Server) operationRateLimitBuckets(repo db.Repo, op operationDescriptor) ([]apiBucket, bool) {
-	if s != nil && s.syncer != nil && s.syncer.Registry() != nil {
-		provider, err := s.syncer.Registry().Provider(httpapi.ProviderKind(repo), httpapi.ProviderHost(repo))
+	if s != nil && s.syncer != nil && s.syncer.DirectRegistry() != nil {
+		provider, err := s.syncer.DirectRegistry().Provider(httpapi.ProviderKind(repo), httpapi.ProviderHost(repo))
 		if err == nil {
 			if reporter, ok := provider.(platform.OperationRateLimitReporter); ok {
 				if buckets, ok := reporter.OperationRateLimitBuckets(platform.OperationName(op.name)); ok {

@@ -148,8 +148,9 @@ timeline/comment-like events through provider capability interfaces in
 `internal/platform`. Providers implement only supported optional interfaces;
 registry helpers return typed errors for missing providers or capabilities.
 
-- Sync and refresh work must use the gated provider registry; direct foreground
-  operations use the raw registry (`internal/github/sync.go::Syncer.SyncRegistry`).
+- The syncer stores the gated registry internally by default; only explicit
+  foreground operations unwrap `Syncer.DirectRegistry`, while refreshes use
+  `Syncer.Registry` (`internal/github/sync.go::NewSyncerWithRegistry`).
 - Run and quota-snapshot chokepoints also reject disabled sync because GitHub
   credential routers bypass the provider registry (`internal/github/sync.go::Syncer.runOnce`).
 - Missing optional capabilities should degrade that feature with a typed

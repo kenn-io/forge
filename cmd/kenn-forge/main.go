@@ -548,7 +548,8 @@ func run(opts serve.Options) error {
 	}
 
 	repos := resolveStartupRepos(
-		ctx, cfg, startup.registry, database, startup.githubRouters,
+		ctx, cfg, providerRegistryForSyncPolicy(startup.registry, opts.DisableSync),
+		database, startup.githubRouters,
 	)
 	slog.Debug("startup repos resolved", "count", len(repos))
 
@@ -582,7 +583,7 @@ func run(opts serve.Options) error {
 	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
 	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
 	archiveService, err := archive.NewService(
-		database, syncer.SyncRegistry(), syncer, syncer, nil, nil,
+		database, syncer.DirectRegistry(), syncer, syncer, nil, nil,
 	)
 	if err != nil {
 		return fmt.Errorf("create archive service: %w", err)
@@ -857,6 +858,16 @@ func profilerSrvDone(srv *profiler.Server) <-chan error {
 		return nil
 	}
 	return srv.Done()
+}
+
+func providerRegistryForSyncPolicy(
+	registry *platform.Registry,
+	disableSync bool,
+) *platform.Registry {
+	if !disableSync {
+		return registry
+	}
+	return registry.WithProviderGate(func() error { return ghclient.ErrSyncDisabled })
 }
 
 func resolveStartupRepos(

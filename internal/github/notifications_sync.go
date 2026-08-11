@@ -246,7 +246,7 @@ type notificationHostClient struct {
 }
 
 func (s *Syncer) notificationClients() []notificationHostClient {
-	providers := s.SyncRegistry().Providers()
+	providers := s.clients.Providers()
 	clients := make([]notificationHostClient, 0, len(providers))
 	for _, provider := range providers {
 		caps := provider.Capabilities()
@@ -269,7 +269,7 @@ func (s *Syncer) notificationClients() []notificationHostClient {
 }
 
 func (s *Syncer) notificationClientForHost(kind platform.Kind, host string) (notificationClient, bool) {
-	provider, err := s.SyncRegistry().Provider(kind, normalizedPlatformHost(host))
+	provider, err := s.clients.Provider(kind, normalizedPlatformHost(host))
 	if err != nil {
 		return nil, false
 	}

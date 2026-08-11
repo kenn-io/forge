@@ -103,6 +103,7 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	require.NoError(err)
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Hour, nil, nil)
 	t.Cleanup(syncer.Stop)
+	syncer.DisableSync()
 	handler := New(Deps{
 		DB:     database,
 		Syncer: syncer,

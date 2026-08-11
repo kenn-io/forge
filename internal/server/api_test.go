@@ -30315,6 +30315,46 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	assert.Equal(headSHA, pr.PlatformHeadSHA)
 }
 
+func TestWorkspaceManualRefreshRejectsDisabledSyncBeforeProviderCalls(t *testing.T) {
+	t.Parallel()
+	acquireRootWorkspaceGitSlot(t)
+
+	assert := assert.New(t)
+	require := require.New(t)
+	var providerCalls atomic.Int32
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			providerCalls.Add(1)
+			return nil, nil
+		},
+		listOpenIssuesFn: func(context.Context, string, string) ([]*gh.Issue, error) {
+			providerCalls.Add(1)
+			return nil, nil
+		},
+	}
+	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
+		t, nil, mock, "github.com",
+		ServerOptions{
+			PtyOwnerInProcess:                  true,
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	workspace := createReadyWorkspace(t, t.Context(), fixture.client)
+	fixture.server.syncer.DisableSync()
+	providerCalls.Store(0)
+
+	refreshRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/workspaces/"+workspace.Id+"/refresh",
+		nil,
+	)
+
+	require.Equal(http.StatusServiceUnavailable, refreshRR.Code, refreshRR.Body.String())
+	assert.Zero(providerCalls.Load())
+}
+
 // TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure drives
 // POST /workspaces/{id}/refresh through the full router with real SQLite
 // while the repo's index sync has an issue-scope partial failure (a seeded

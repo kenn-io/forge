@@ -19,8 +19,8 @@ make dev-ephemeral ARGS="-sync"
 ```
 
 The transient `serve --disable-sync` option selects this policy; it does not alter
-TOML. Sync and refresh code receives a gated view of the provider registry. The raw
-registry remains available to intentional foreground operations and mutations.
+TOML. The syncer uses a gated provider registry internally by default. The raw
+registry is exposed only to intentional foreground operations and mutations.
 Admission endpoints reject asynchronous work that cannot complete while sync is
 disabled, including archive starts, notification read propagation, and deferred
 merges.

@@ -198,7 +198,7 @@ test.describe("issue list mutations", () => {
   });
 });
 
-test.describe("issue detail pane input ownership", () => {
+test.describe("issue detail pane focus", () => {
   let server: IsolatedE2EServer | undefined;
 
   test.beforeAll(async () => {
@@ -209,7 +209,7 @@ test.describe("issue detail pane input ownership", () => {
     await server?.stop();
   });
 
-  test("keeps one active border across issue, workspace, and terminal panes", async ({ page }) => {
+  test("keeps one focused border across issue, workspace, and terminal panes", async ({ page }) => {
     if (!server) throw new Error("issue workspace e2e server was not started");
     const baseURL = server.info.base_url;
     const created = await page.request.post(`${baseURL}/api/v1/issues/github/acme/widgets/10/workspace`, {
@@ -234,20 +234,21 @@ test.describe("issue detail pane input ownership", () => {
     const workspacePane = page.locator('[data-pane-key="workspace"]');
     const conversationLeaf = conversationPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
     const workspaceLeaf = workspacePane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
-    await conversationPane.click({ position: { x: 24, y: 80 } });
+    await conversationLeaf.getByRole("tab").focus();
     await expect(conversationLeaf).toHaveClass(/input-active/);
     await expect(workspaceLeaf).not.toHaveClass(/input-active/);
 
-    await workspacePane.click({ position: { x: 24, y: 80 } });
+    const terminalToggle = workspaceLeaf.getByRole("button", { name: "Open terminal panel" });
+    await terminalToggle.focus();
     await expect(workspaceLeaf).toHaveClass(/input-active/);
     await expect(conversationLeaf).not.toHaveClass(/input-active/);
 
-    await workspaceLeaf.getByRole("button", { name: "Open terminal panel" }).click();
+    await terminalToggle.click();
     const terminalPanel = workspaceLeaf.locator(".terminal-panel.bottom.open");
     await expect(terminalPanel).toBeVisible();
-    await terminalPanel.click({ position: { x: 24, y: 80 } });
+    await terminalPanel.locator(".panel-title").focus();
     await expect(terminalPanel).toHaveClass(/input-active/);
-    const ownershipChrome = await workspaceLeaf.evaluate((leaf) => {
+    const focusChrome = await workspaceLeaf.evaluate((leaf) => {
       const terminal = leaf.querySelector<HTMLElement>(".terminal-panel.input-active");
       if (!terminal) throw new Error("Active terminal panel is missing");
       const outer = getComputedStyle(leaf, "::after");
@@ -257,13 +258,13 @@ test.describe("issue detail pane input ownership", () => {
         outerContent: outer.content,
       };
     });
-    expect(ownershipChrome.innerWidths).toEqual(["1px", "1px", "1px", "1px"]);
-    expect(ownershipChrome.outerContent).toBe("none");
+    expect(focusChrome.innerWidths).toEqual(["1px", "1px", "1px", "1px"]);
+    expect(focusChrome.outerContent).toBe("none");
 
     await conversationPane.hover();
     await page.mouse.wheel(0, 120);
-    await expect(conversationLeaf).toHaveClass(/input-active/);
-    await expect(workspaceLeaf).not.toHaveClass(/input-active/);
+    await expect(terminalPanel).toHaveClass(/input-active/);
+    await expect(conversationLeaf).not.toHaveClass(/input-active/);
   });
 });
 

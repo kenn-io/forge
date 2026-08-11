@@ -51,6 +51,7 @@
     hostVisible?: boolean;
     inputActive?: boolean;
     onInputActivate?: (() => void) | undefined;
+    onInputDeactivate?: (() => void) | undefined;
     /** Shared detail-surface scope when terminal sessions may become top-level panes. */
     dragScope?: string | undefined;
     /** Maps a runtime session to its top-level detail-pane key. */
@@ -96,6 +97,7 @@
     hostVisible = true,
     inputActive = false,
     onInputActivate = undefined,
+    onInputDeactivate = undefined,
     dragScope = undefined,
     paneKeyForSession = undefined,
     headerActions = undefined,
@@ -190,6 +192,12 @@
   function resizePanel(event: SplitResizeEvent): void {
     onResize?.(clampTerminalHeight(resizeStartHeight - event.delta));
   }
+
+  function handleFocusOut(event: FocusEvent & { currentTarget: HTMLElement }): void {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    onInputDeactivate?.();
+  }
 </script>
 
 <section
@@ -197,8 +205,7 @@
   style={dock === "bottom" && open ? `height: ${height}px` : undefined}
   aria-label="Terminal panel"
   onfocusin={() => onInputActivate?.()}
-  onpointerdown={() => onInputActivate?.()}
-  onwheelcapture={() => onInputActivate?.()}
+  onfocusout={handleFocusOut}
   ondragover={handleDragOver}
   ondrop={handleDrop}
 >

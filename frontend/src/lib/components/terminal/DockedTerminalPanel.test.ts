@@ -108,14 +108,25 @@ describe("DockedTerminalPanel", () => {
     expect(onResize).not.toHaveBeenCalled();
   });
 
-  it("claims input before a terminal child consumes wheel propagation", async () => {
+  it("reports input activation only when DOM focus enters the panel", async () => {
     const onInputActivate = vi.fn();
-    renderDockedTerminalPanel({ onInputActivate });
+    const onInputDeactivate = vi.fn();
+    renderDockedTerminalPanel({ onInputActivate, onInputDeactivate });
+    const panel = screen.getByRole("region", { name: "Terminal panel" });
     const child = screen.getByRole("separator", { name: "Resize terminal panel" });
     child.addEventListener("wheel", (event) => event.stopPropagation());
 
-    await fireEvent.wheel(child);
+    await fireEvent.wheel(panel);
+    await fireEvent.pointerDown(panel);
+
+    expect(onInputActivate).not.toHaveBeenCalled();
+
+    await fireEvent.focusIn(child);
 
     expect(onInputActivate).toHaveBeenCalledOnce();
+
+    await fireEvent.focusOut(child, { relatedTarget: document.body });
+
+    expect(onInputDeactivate).toHaveBeenCalledOnce();
   });
 });

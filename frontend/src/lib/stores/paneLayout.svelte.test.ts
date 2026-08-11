@@ -160,15 +160,14 @@ describe("pane layout store", () => {
     expect(s.lastFocusedTabKey()).toBe("workspace");
   });
 
-  it("clears an external input owner when a pane claims focus", () => {
+  it("does not treat remembered focus as a live focus change", () => {
     const s = store();
     s.setExternalInputActive(true);
     expect(s.externalInputActive()).toBe(true);
 
     s.noteFocused("files");
-    expect(s.externalInputActive()).toBe(false);
+    expect(s.externalInputActive()).toBe(true);
 
-    s.setExternalInputActive(true);
     s.reset();
     expect(s.externalInputActive()).toBe(false);
   });

@@ -387,11 +387,14 @@ describe("detail pane layout", () => {
     expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("marks the first on-screen pane active when the remembered pane is not rendered", async () => {
+  it("does not invent a focused pane when the focused pane stops rendering", async () => {
     const layout = store(splitTree());
     const { rerender } = render(DetailPaneLayoutTestHarness, { layout, routeTabKey: "conversation" });
     const activePaneKey = () =>
       document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
 
     fireEvent.focusIn(screen.getByTestId("pane-workspace"));
     expect(activePaneKey()).toBe("workspace");
@@ -399,42 +402,70 @@ describe("detail pane layout", () => {
 
     layout.setHidden("workspace", true);
     flushSync();
-    expect(activePaneKey()).toBe("conversation");
-    expect(layout.paneRender()?.activeInputTabKey).toBe("conversation");
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
 
     layout.setHidden("workspace", false);
     flushSync();
     fireEvent.focusIn(screen.getByTestId("pane-workspace"));
     await rerender({ layout, routeTabKey: "conversation", workspaceAvailable: false });
-    expect(activePaneKey()).toBe("conversation");
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
 
     await rerender({ layout, routeTabKey: "conversation", workspaceAvailable: true });
     fireEvent.focusIn(screen.getByTestId("pane-workspace"));
     layout.toggleZoom("leaf-detail");
     flushSync();
-    expect(activePaneKey()).toBe("conversation");
-    expect(layout.paneRender()?.activeInputTabKey).toBe("conversation");
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
   });
 
-  it("lets the same pane reclaim keyboard ownership from an external surface", () => {
+  it("moves keyboard ownership only when DOM focus moves", () => {
     const layout = store(splitTree());
     render(DetailPaneLayoutTestHarness, { layout, routeTabKey: "conversation" });
     const activePaneKey = () =>
       document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
 
-    fireEvent.pointerDown(screen.getByTestId("pane-workspace"));
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
     expect(activePaneKey()).toBe("workspace");
+    expect(screen.getByTestId("pane-workspace").getAttribute("data-input-active")).toBe("true");
+
+    fireEvent.pointerDown(screen.getByTestId("pane-conversation"));
+    fireEvent.wheel(screen.getByTestId("pane-conversation"));
+    expect(activePaneKey()).toBe("workspace");
+    expect(screen.getByTestId("pane-conversation").getAttribute("data-input-active")).toBe("false");
 
     layout.setExternalInputActive(true);
     flushSync();
     expect(activePaneKey()).toBeUndefined();
     expect(layout.paneRender()?.activeInputTabKey).toBeNull();
 
-    // Re-enter the pane that owned input immediately before the external dock.
-    fireEvent.pointerDown(screen.getByTestId("pane-workspace"));
+    layout.noteFocused("conversation");
+    expect(layout.externalInputActive()).toBe(true);
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
     expect(layout.externalInputActive()).toBe(false);
     expect(activePaneKey()).toBe("workspace");
     expect(layout.paneRender()?.activeInputTabKey).toBe("workspace");
+
+    fireEvent.focusOut(screen.getByTestId("pane-workspace"), { relatedTarget: document.body });
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+  });
+
+  it("keeps the focused leaf active when its selected tab changes", () => {
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout, routeTabKey: "conversation" });
+    const filesTab = screen.getByRole("tab", { name: "Files" });
+    const detailLeaf = filesTab.closest(".tabbed-panel-leaf");
+
+    fireEvent.focusIn(filesTab);
+    expect(detailLeaf?.classList.contains("input-active")).toBe(true);
+
+    fireEvent.click(filesTab);
+    expect(filesTab.getAttribute("aria-selected")).toBe("true");
+    expect(detailLeaf?.classList.contains("input-active")).toBe(true);
+    expect(layout.paneRender()?.activeInputTabKey).toBe("files");
   });
 
   it("keeps a zoom on a non-route leaf when the tab list re-derives", async () => {

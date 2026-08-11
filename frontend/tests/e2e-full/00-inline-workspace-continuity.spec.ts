@@ -1169,19 +1169,25 @@ test.describe("inline workspace pane continuity", () => {
 
       await surfaceDock.hover();
       await page.mouse.wheel(0, 120);
-      await expect(surfaceDock).toHaveClass(/input-active/);
-      const beforeExternalPageDown = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+      await expect(surfaceDock).not.toHaveClass(/input-active/);
+      const filesLeaf = diffArea.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+      await expect(filesLeaf).toHaveClass(/input-active/);
+      const beforeFocusedPageDown = await diffArea.evaluate((area) => Math.round(area.scrollTop));
       await page.keyboard.press("PageDown");
       await expect
         .poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop)))
-        .toBe(beforeExternalPageDown);
+        .toBeGreaterThan(beforeFocusedPageDown);
 
+      await surfaceDock.getByRole("button", { name: "Open terminal panel", exact: true }).focus();
+      await expect(surfaceDock).toHaveClass(/input-active/);
       await diffArea.evaluate((area) => {
         area.scrollTop = 0;
       });
+      await page.keyboard.press("PageDown");
+      await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBe(0);
+
       await diffArea.click({ position: { x: 24, y: 80 } });
       await expect(surfaceDock).not.toHaveClass(/input-active/);
-      const filesLeaf = diffArea.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
       await expect(filesLeaf).toHaveClass(/input-active/);
       await expect
         .poll(async () => {

@@ -289,14 +289,20 @@ Keyboard handlers must have one clear owner for each key press.
   command listeners: a command that opens detail UI must un-maximize first so it
   cannot build an invisible overlay
   (`frontend/src/lib/components/detail/PullDetail.svelte::onOpenLabelPickerCommand`).
-- Simultaneous panes activate on focus, pointer, or wheel input; only the active pane
-  consumes window-level keys, and wheel stays event-local. Mark it with a subtle inset border
-  without replacing control focus styling (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
-- Nested pane trees paint ownership only while their containing pane is active, and only
-  the deepest active owner paints; workspace Workflow, Details, and bottom Terminal regions are siblings
+- A simultaneous pane is active exactly while DOM focus is inside it. Only that
+  focused pane consumes pane-scoped window keys. Pointer interaction changes the
+  active pane only when normal browser behavior moves focus; wheel input never
+  moves focus or changes the active pane. Mark actual focus with a subtle inset
+  border without replacing control focus styling
+  (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
+- Nested pane trees paint focus only while DOM focus is inside both the nested
+  pane and its containing pane, and only the deepest focused pane paints;
+  workspace Workflow, Details, and bottom Terminal regions are siblings
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::renderedWorkspaceInputRegion`).
-- A surface-hosted dock outside the pane tree can become the canonical owner; any pane activation revokes
-  that claim. Workspace window shortcuts run only while the validated workspace container owns the surface
+- A focused surface-hosted dock outside the pane tree becomes the live focused
+  surface until focus leaves it. Persisted last-focused state is restoration and
+  command memory only; it never represents current focus. Workspace window
+  shortcuts run only while the validated workspace container has DOM focus
   (`frontend/src/lib/stores/paneLayout.svelte.ts::PaneRenderReport`).
 - Focus Terminal reveals, it never maximizes: a closed workspace pane reopens
   alongside the detail and a visible one keeps its arrangement. Maximizing over

@@ -676,20 +676,35 @@
   // record of which sessions have been promoted out of this container.
   const surfaceLayout = $derived(paneSurface ? getPaneLayoutStore(paneSurface) : null);
   type WorkspaceInputRegion = "workflow" | "details" | "terminal";
-  let workspaceInputRegion = $state<WorkspaceInputRegion>("workflow");
+  let workspaceInputRegion = $state<WorkspaceInputRegion | null>(null);
   const workspaceContainerInputActive = $derived(
     surfaceLayout === null || surfaceLayout.paneRender()?.activeInputTabKey === "workspace",
   );
-  const renderedWorkspaceInputRegion = $derived.by<WorkspaceInputRegion>(() => {
-    if (workspaceInputRegion === "details" && (hideRightSidebar || !sidebarOpen)) return "workflow";
-    if (workspaceInputRegion === "terminal" && (!terminalLayout.open || terminalLayout.dock !== "bottom")) {
-      return "workflow";
+  const renderedWorkspaceInputRegion = $derived.by<WorkspaceInputRegion | null>(() => {
+    if (workspaceInputRegion === "details" && (hideRightSidebar || !sidebarOpen)) return null;
+    if (workspaceInputRegion === "terminal" && terminalLayout.dock !== "bottom") {
+      return null;
     }
     return workspaceInputRegion;
   });
 
+  $effect(() => {
+    if (workspaceInputRegion !== null && renderedWorkspaceInputRegion === null) {
+      workspaceInputRegion = null;
+    }
+  });
+
   function activateWorkspaceInputRegion(region: WorkspaceInputRegion): void {
     workspaceInputRegion = region;
+  }
+
+  function deactivateWorkspaceInputRegion(
+    region: WorkspaceInputRegion,
+    event: FocusEvent & { currentTarget: HTMLElement },
+  ): void {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    if (workspaceInputRegion === region) workspaceInputRegion = null;
   }
 
   function sessionPaneKeyFor(session: RuntimeSession): string {
@@ -1360,11 +1375,9 @@
     if (actionsBlocked) return;
     if (sidebarOpen && sidebarTab === tab) {
       sidebarOpen = false;
-      activateWorkspaceInputRegion("workflow");
     } else {
       setSidebarTab(tab);
       sidebarOpen = true;
-      activateWorkspaceInputRegion("details");
     }
   }
 
@@ -1409,7 +1422,6 @@
 
   function toggleRightSidebar(): void {
     sidebarOpen = !sidebarOpen;
-    activateWorkspaceInputRegion(sidebarOpen ? "details" : "workflow");
   }
 
   function handleWorkspaceListResize(width: number): void {
@@ -4163,8 +4175,7 @@
                 role="region"
                 aria-label="Workflow panes"
                 onfocusin={() => activateWorkspaceInputRegion("workflow")}
-                onpointerdown={() => activateWorkspaceInputRegion("workflow")}
-                onwheel={() => activateWorkspaceInputRegion("workflow")}
+                onfocusout={(event) => deactivateWorkspaceInputRegion("workflow", event)}
                 ondragover={handleWorkflowDragOver}
                 ondrop={handleWorkflowDrop}
               >
@@ -4316,8 +4327,7 @@
               role="region"
               aria-label="Workspace details pane"
               onfocusin={() => activateWorkspaceInputRegion("details")}
-              onpointerdown={() => activateWorkspaceInputRegion("details")}
-              onwheel={() => activateWorkspaceInputRegion("details")}
+              onfocusout={(event) => deactivateWorkspaceInputRegion("details", event)}
             >
               {#if workspaceDetailsReady && workspace}
                 {#snippet kataTaskPanel()}
@@ -4536,6 +4546,10 @@
                 onInputActivate={() => {
                   activateWorkspaceInputRegion("terminal");
                   if (external) surfaceLayout?.setExternalInputActive(true);
+                }}
+                onInputDeactivate={() => {
+                  if (workspaceInputRegion === "terminal") workspaceInputRegion = null;
+                  if (external) surfaceLayout?.setExternalInputActive(false);
                 }}
                 onToggle={() => void toggleTerminalPanel()}
                 onNewTerminal={() => void launchTerminalSession()}

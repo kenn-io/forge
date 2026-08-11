@@ -3241,7 +3241,7 @@ describe("WorkspaceTerminalView", () => {
     expect(await screen.findAllByRole("tablist", { name: "Workflow group tabs" })).not.toHaveLength(0);
   });
 
-  it("moves active input ownership between standalone workflow panes", async () => {
+  it("moves active input ownership only when standalone workflow focus moves", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
     localStorage.setItem(
       "kenn-forge-workspace-terminal-layout:ws-1",
@@ -3260,13 +3260,42 @@ describe("WorkspaceTerminalView", () => {
     const reviewerPane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]')!;
     const activePaneKey = () =>
       document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
-    expect(activePaneKey()).toBe("session:ws-1:helper");
+    expect(activePaneKey()).toBeUndefined();
 
     await fireEvent.pointerDown(reviewerPane);
+    await fireEvent.wheel(reviewerPane);
+    expect(activePaneKey()).toBeUndefined();
+
+    await fireEvent.focusIn(reviewerPane);
     expect(activePaneKey()).toBe("session:ws-1:reviewer");
 
     await fireEvent.wheel(helperPane);
+    await fireEvent.pointerDown(helperPane);
+    expect(activePaneKey()).toBe("session:ws-1:reviewer");
+
+    await fireEvent.focusIn(helperPane);
     expect(activePaneKey()).toBe("session:ws-1:helper");
+
+    await fireEvent.focusOut(helperPane, { relatedTarget: document.body });
+    expect(activePaneKey()).toBeUndefined();
+  });
+
+  it("keeps a focused bottom dock active while its header opens the panel", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    const toggle = await screen.findByRole("button", { name: "Open terminal panel" });
+    const panel = toggle.closest(".terminal-panel");
+    expect(panel).not.toBeNull();
+
+    await fireEvent.focusIn(toggle);
+    expect(panel?.classList.contains("input-active")).toBe(true);
+
+    await fireEvent.click(toggle);
+    expect(panel?.classList.contains("open")).toBe(true);
+    expect(panel?.classList.contains("input-active")).toBe(true);
   });
 
   it("uses the renderer-validated outer owner for nested workflow chrome", async () => {
@@ -4358,17 +4387,21 @@ describe("WorkspaceTerminalView", () => {
       const externalDock = await screen.findByRole("region", { name: "Terminal panel" });
       const layout = getPaneLayoutStore("prs");
       expect(layout.externalInputActive()).toBe(false);
+      await fireEvent.wheel(externalDock);
       await fireEvent.pointerDown(externalDock);
+      expect(layout.externalInputActive()).toBe(false);
+      expect(externalDock.classList.contains("input-active")).toBe(false);
+
+      await fireEvent.focusIn(externalDock);
       expect(layout.externalInputActive()).toBe(true);
       expect(externalDock.classList.contains("input-active")).toBe(true);
 
       layout.noteFocused(paneKey);
-      await waitFor(() => expect(layout.externalInputActive()).toBe(false));
-      expect(externalDock.classList.contains("input-active")).toBe(false);
-
-      await fireEvent.wheel(externalDock);
       expect(layout.externalInputActive()).toBe(true);
-      expect(externalDock.classList.contains("input-active")).toBe(true);
+
+      await fireEvent.focusOut(externalDock, { relatedTarget: document.body });
+      expect(layout.externalInputActive()).toBe(false);
+      expect(externalDock.classList.contains("input-active")).toBe(false);
 
       render(WorkspacePaneControls, { props: { showStripActions: false } });
       expect(screen.getAllByRole("button", { name: /^Delete workspace / })).toHaveLength(1);

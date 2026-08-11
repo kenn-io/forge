@@ -1274,7 +1274,7 @@ test.describe("activity split view", () => {
     await expect(filesTab).toHaveAttribute("aria-selected", "false");
   });
 
-  test("activity detail paging follows the live pane owner", async ({ page }) => {
+  test("activity detail paging follows DOM focus", async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 1000 });
     await mockDiffForAllPRs(page, multiFileDiff);
     await page.goto("/");
@@ -1290,7 +1290,7 @@ test.describe("activity split view", () => {
     await expect(diffArea).toBeVisible();
     await expect.poll(async () => diffArea.evaluate((area) => area.scrollHeight > area.clientHeight)).toBe(true);
 
-    await filesPane.click({ position: { x: 24, y: 80 } });
+    await filesLeaf.getByRole("tab").focus();
     await expect(filesLeaf).toHaveClass(/input-active/);
     await expect(conversationLeaf).not.toHaveClass(/input-active/);
     await diffArea.evaluate((area) => {
@@ -1299,7 +1299,7 @@ test.describe("activity split view", () => {
     await page.keyboard.press("PageDown");
     await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(0);
 
-    await conversationPane.click({ position: { x: 24, y: 80 } });
+    await conversationLeaf.getByRole("tab").focus();
     await expect(conversationLeaf).toHaveClass(/input-active/);
     await expect(filesLeaf).not.toHaveClass(/input-active/);
     const beforeInactivePageDown = await diffArea.evaluate((area) => Math.round(area.scrollTop));

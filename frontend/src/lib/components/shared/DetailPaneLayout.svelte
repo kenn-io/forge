@@ -84,6 +84,7 @@
 
   let host = $state<HTMLElement | null>(null);
   let hostWidth = $state(0);
+  let focusedInputLeafID = $state<string | null>(null);
 
   const availableTabs = $derived(tabs.filter((tab) => tab.available).map((tab) => tab.key));
   const hideableTabKeys = $derived(tabs.filter((tab) => tab.hideable === true).map((tab) => tab.key));
@@ -142,10 +143,18 @@
   );
   const activeInputTabKey = $derived.by(() => {
     if (layout.externalInputActive()) return "";
-    const focused = layout.lastFocusedTabKey();
-    if (focused !== null && onScreenTabs.includes(focused)) return focused;
-    if (routeTabKey !== undefined && onScreenTabs.includes(routeTabKey)) return routeTabKey;
-    return onScreenTabs[0] ?? "";
+    if (focusedInputLeafID === null) return "";
+    return renderedLeaves.find((leaf) => leaf.id === focusedInputLeafID)?.activeTabKey ?? "";
+  });
+
+  // A focused pane can disappear without dispatching focusout (for example when
+  // it is hidden, becomes unavailable, or is covered by another leaf's zoom).
+  // Forget that live focus immediately so revealing it later cannot resurrect a
+  // border for focus that no longer exists.
+  $effect(() => {
+    if (focusedInputLeafID !== null && !renderedLeaves.some((leaf) => leaf.id === focusedInputLeafID)) {
+      focusedInputLeafID = null;
+    }
   });
 
   // Publish the renderer-only facts the command layer needs: that a layout is
@@ -251,10 +260,24 @@
   let lastReportedFocus: string | null = null;
 
   function focusPane(tabKey: string): void {
+    focusedInputLeafID = layout.leafIDForTab(tabKey);
+    layout.setExternalInputActive(false);
     layout.noteFocused(tabKey);
     if (lastReportedFocus === tabKey) return;
     lastReportedFocus = tabKey;
     onFocusPane?.(tabKey);
+  }
+
+  function handleLayoutFocusIn(event: FocusEvent & { currentTarget: HTMLElement }): void {
+    const target = event.target;
+    if (target instanceof Element && target.closest(".tabbed-panel-leaf") !== null) return;
+    focusedInputLeafID = null;
+  }
+
+  function handleLayoutFocusOut(event: FocusEvent & { currentTarget: HTMLElement }): void {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    focusedInputLeafID = null;
   }
 
   // A zoom must not survive the disappearance of what was zoomed. The store
@@ -322,7 +345,13 @@
      stored pane tree is the only record that the session moved. Every ordinary
      mutation refuses such a source, so the branch has to be here. -->
 <!-- tabindex so the layout can hold focus itself after a pane closes under it. -->
-<div class="detail-pane-layout" bind:this={host} tabindex="-1">
+<div
+  class="detail-pane-layout"
+  bind:this={host}
+  tabindex="-1"
+  onfocusin={handleLayoutFocusIn}
+  onfocusout={handleLayoutFocusOut}
+>
   {#if activeTree}
     <div class="detail-pane-tree">
       <TabbedPanelTree

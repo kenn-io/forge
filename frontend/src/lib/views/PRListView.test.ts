@@ -223,7 +223,7 @@ describe("PRListView detail panes", () => {
     expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: true });
   });
 
-  it("keeps global diff paging with the active route pane", async () => {
+  it("enables diff paging only after focus enters the routed files pane", async () => {
     renderPRListView({ detailTab: "conversation" });
     const layout = getPaneLayoutStore("prs");
     layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
@@ -240,11 +240,15 @@ describe("PRListView detail panes", () => {
     filesLayout.splitTab("files", filesLayout.leafIDForTab("files")!, "horizontal", "after");
     await tick();
 
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
+
+    await fireEvent.focusIn(screen.getByTestId("diff-files"));
     expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
     expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
   });
 
-  it("moves visible input ownership before route navigation settles", async () => {
+  it("moves visible keyboard routing only when focus moves", async () => {
     renderPRListView({ detailTab: "conversation" });
     const layout = getPaneLayoutStore("prs");
     layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
@@ -252,15 +256,21 @@ describe("PRListView detail panes", () => {
 
     const activePaneKey = () =>
       document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
-    expect(activePaneKey()).toBe("conversation");
+    expect(activePaneKey()).toBeUndefined();
     expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
 
     await fireEvent.pointerDown(screen.getByTestId("diff-files"));
+    await fireEvent.wheel(screen.getByTestId("pull-detail"));
+    expect(activePaneKey()).toBeUndefined();
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
+
+    await fireEvent.focusIn(screen.getByTestId("diff-files"));
     expect(activePaneKey()).toBe("files");
     expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
     expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
 
-    await fireEvent.wheel(screen.getByTestId("pull-detail"));
+    await fireEvent.focusIn(screen.getByTestId("pull-detail"));
     expect(activePaneKey()).toBe("conversation");
     expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
     expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");

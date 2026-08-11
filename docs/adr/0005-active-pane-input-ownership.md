@@ -1,4 +1,4 @@
-# ADR 0005: Active Pane Owns Input
+# ADR 0005: Active Pane Follows DOM Focus
 
 ## Status
 
@@ -8,18 +8,23 @@ Accepted
 
 Pull request, Issue, Activity, and Workspaces workflow panes can be visible
 simultaneously. A pull request files pane can install a window-level Page
-Up/Page Down handler and scroll after the user has moved elsewhere. Focus events
-alone do not solve ownership because blank pane surfaces are not focusable.
+Up/Page Down handler and scroll after DOM focus has moved elsewhere.
 
 Without a visible active state, users also cannot predict which pane will
 receive a global keyboard action.
 
 ## Decision
 
-Focus, pointer, or wheel interaction makes a pane active. Only the active pane
-may consume window-level keyboard paging, while wheel scrolling remains local
-to its event target. A locally targeted Page Up/Page Down event may be handled
-immediately while active state settles.
+The active pane is the pane containing actual DOM focus. Only that pane may
+consume pane-scoped window-level keyboard paging. Pointer interaction changes
+the active pane only when the browser moves focus as a normal consequence of
+that interaction. Wheel scrolling remains local to its event target and never
+changes focus or the active pane.
+
+Programmatic `focus()` is still focus. In particular, deliberate terminal focus
+restoration when switching items with a workspace updates the active pane
+because it moves DOM focus. Persisted last-focused state remains useful for
+restoration and command targeting, but never stands in for current focus.
 
 The active pane is shown with a one-pixel inset border mixed from the existing
 blue accent and normal pane border. The indicator introduces no layout shift,
@@ -33,8 +38,8 @@ Workspaces workflow tree.
 
 ## Consequences
 
-- Page Up/Page Down follows the pane the user last interacted with.
+- Page Up/Page Down follows the pane containing DOM focus.
 - Wheel input never scrolls a different pane.
-- Pane ownership is visible without competing with review and status colors.
-- Pointer and wheel input participate in the same ownership model as keyboard
+- Pane focus is visible without competing with review and status colors.
+- Pointer and wheel input do not create a second ownership model beside browser
   focus.

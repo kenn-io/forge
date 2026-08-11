@@ -231,7 +231,7 @@ test("splits the PR detail panes apart and remembers the dragged ratio", async (
   await expect.poll(async () => firstPaneWidth(page)).toBeLessThan(before - 150);
 });
 
-test("routes page keys and wheel input to the active pane", async ({ page }) => {
+test("routes page keys by focus while wheel input remains focus-neutral", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/pulls/github/acme/widgets/42");
   await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
@@ -253,7 +253,7 @@ test("routes page keys and wheel input to the active pane", async ({ page }) => 
   });
   await expect.poll(async () => diffArea.evaluate((area) => area.scrollHeight > area.clientHeight)).toBe(true);
 
-  await conversationPane.click({ position: { x: 24, y: 80 } });
+  await conversationLeaf.getByRole("tab").focus();
   await expect(page.locator(".tabbed-panel-leaf.input-active")).toHaveCount(1);
   await expect(conversationLeaf).toHaveClass(/input-active/);
   await expect(filesLeaf).not.toHaveClass(/input-active/);
@@ -273,9 +273,17 @@ test("routes page keys and wheel input to the active pane", async ({ page }) => 
   await diffArea.hover();
   await page.mouse.wheel(0, 360);
   await expect(page.locator(".tabbed-panel-leaf.input-active")).toHaveCount(1);
+  await expect(conversationLeaf).toHaveClass(/input-active/);
+  await expect(filesLeaf).not.toHaveClass(/input-active/);
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(0);
+
+  const afterWheel = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+  await page.keyboard.press("PageDown");
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBe(afterWheel);
+
+  await filesLeaf.getByRole("tab").focus();
   await expect(filesLeaf).toHaveClass(/input-active/);
   await expect(conversationLeaf).not.toHaveClass(/input-active/);
-  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(0);
 
   const filesPaneChrome = await filesLeaf.evaluate((leaf) => {
     const outline = getComputedStyle(leaf, "::after");
@@ -305,9 +313,9 @@ test("routes page keys and wheel input to the active pane", async ({ page }) => 
   expect(filesPaneChrome.tabAccentContent).toBe("none");
   expect(filesPaneChrome.toolbarZIndex).toBe("auto");
 
-  const afterWheel = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+  const afterFocus = await diffArea.evaluate((area) => Math.round(area.scrollTop));
   await page.keyboard.press("PageDown");
-  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(afterWheel);
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(afterFocus);
 });
 
 async function detailPaneHostWidth(page: Page): Promise<number> {

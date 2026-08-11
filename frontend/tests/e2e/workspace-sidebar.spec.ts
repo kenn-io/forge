@@ -1745,7 +1745,7 @@ test.describe("workspace launch home", () => {
     expect(Math.abs(metrics.delta.bottom)).toBeLessThanOrEqual(0.5);
   });
 
-  test("moves active ownership between standalone workflow panes", async ({ page }) => {
+  test("moves active focus between standalone workflow panes", async ({ page }) => {
     await setupTerminalMocks(page, {
       runtime: workflowDragRuntime(),
     });
@@ -1760,7 +1760,8 @@ test.describe("workspace launch home", () => {
     const codexLeaf = codexPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
     const reviewerLeaf = reviewerPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
 
-    await expect(page.locator(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveCount(1);
+    await expect(page.locator(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveCount(0);
+    await codexLeaf.getByRole("tab", { name: /^Codex/ }).focus();
     await expect(codexLeaf).toHaveClass(/input-active/);
     const activeBorder = await codexLeaf.evaluate((leaf) => {
       const style = getComputedStyle(leaf, "::after");
@@ -1772,23 +1773,23 @@ test.describe("workspace launch home", () => {
     expect(activeBorder.colors.every((color) => color !== "rgba(0, 0, 0, 0)")).toBe(true);
     expect(activeBorder.widths).toEqual(["1px", "1px", "1px", "1px"]);
 
-    await reviewerPane.click({ position: { x: 24, y: 80 } });
+    await reviewerLeaf.getByRole("tab", { name: /^Reviewer/ }).focus();
     await expect(reviewerLeaf).toHaveClass(/input-active/);
     await expect(codexLeaf).not.toHaveClass(/input-active/);
 
     await codexPane.hover();
     await page.mouse.wheel(0, 120);
-    await expect(codexLeaf).toHaveClass(/input-active/);
-    await expect(reviewerLeaf).not.toHaveClass(/input-active/);
+    await expect(reviewerLeaf).toHaveClass(/input-active/);
+    await expect(codexLeaf).not.toHaveClass(/input-active/);
 
     await page.locator(".panel-toggle-btn", { hasText: "Diff" }).click();
     const rightSidebar = page.locator(".right-sidebar");
     await expect(rightSidebar).toBeVisible();
-    await rightSidebar.click({ position: { x: 24, y: 100 } });
+    await rightSidebar.locator(".kit-scrollbox__viewport").focus();
     await expect(rightSidebar).toHaveClass(/input-active/);
     await expect(page.locator(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveCount(0);
 
-    await codexPane.click({ position: { x: 24, y: 80 } });
+    await codexLeaf.getByRole("tab", { name: /^Codex/ }).focus();
     await expect(codexLeaf).toHaveClass(/input-active/);
     await expect(rightSidebar).not.toHaveClass(/input-active/);
   });

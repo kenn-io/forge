@@ -68,8 +68,12 @@
   {onFocusPane}
   paneLeafExtras={withLeafExtras ? leafExtras : undefined}
 >
-  {#snippet renderPane(tabKey, visible, _inputActive)}
-    <section data-testid={`pane-${tabKey}`} data-visible={String(visible)}>
+  {#snippet renderPane(tabKey, visible, inputActive)}
+    <section
+      data-testid={`pane-${tabKey}`}
+      data-visible={String(visible)}
+      data-input-active={String(inputActive)}
+    >
       Pane {tabKey}
     </section>
   {/snippet}

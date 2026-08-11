@@ -570,6 +570,7 @@
       },
     ]}
     aria-label={leafLabel}
+    onfocusin={onFocusPane ? () => onFocusPane(node.activeTabKey) : undefined}
   >
     {#if !soloChrome}
     <div
@@ -678,9 +679,6 @@
           ]}
           data-pane-key={tabKey}
           role="presentation"
-          onfocusin={onFocusPane ? () => onFocusPane(tabKey) : undefined}
-          onpointerdown={onFocusPane ? () => onFocusPane(tabKey) : undefined}
-          onwheel={onFocusPane ? () => onFocusPane(tabKey) : undefined}
         >
           {@render renderTab(tabKey, paneVisible(tabKey))}
         </div>

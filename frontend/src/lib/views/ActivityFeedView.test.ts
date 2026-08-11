@@ -137,7 +137,7 @@ describe("ActivityFeedView detail panes", () => {
       "conversation",
     );
     expect(bodies.find((el) => el.getAttribute("data-tab-key") === "conversation")?.dataset.keyboardActive).toBe(
-      "true",
+      "false",
     );
     expect(bodies.find((el) => el.getAttribute("data-tab-key") === "files")?.dataset.keyboardActive).toBe("false");
   });
@@ -153,7 +153,7 @@ describe("ActivityFeedView detail panes", () => {
     expect(screen.queryByTestId("pull-detail-pane")).toBeNull();
   });
 
-  it("moves diff keyboard ownership with the live activity pane", async () => {
+  it("moves diff keyboard routing only with live activity focus", async () => {
     renderActivity({ drawerItem: prDrawer(), pullDetail: pullDetailFixture(12) });
     const layout = getPaneLayoutStore("activity");
     layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
@@ -162,14 +162,19 @@ describe("ActivityFeedView detail panes", () => {
     const bodies = screen.getAllByTestId("pull-detail-pane");
     const conversation = bodies.find((body) => body.dataset.tabKey === "conversation")!;
     const files = bodies.find((body) => body.dataset.tabKey === "files")!;
-    expect(conversation.dataset.keyboardActive).toBe("true");
+    expect(conversation.dataset.keyboardActive).toBe("false");
     expect(files.dataset.keyboardActive).toBe("false");
 
     await fireEvent.pointerDown(files);
+    await fireEvent.wheel(conversation);
+    expect(conversation.dataset.keyboardActive).toBe("false");
+    expect(files.dataset.keyboardActive).toBe("false");
+
+    await fireEvent.focusIn(files);
     expect(conversation.dataset.keyboardActive).toBe("false");
     expect(files.dataset.keyboardActive).toBe("true");
 
-    await fireEvent.wheel(conversation);
+    await fireEvent.focusIn(conversation);
     expect(conversation.dataset.keyboardActive).toBe("true");
     expect(files.dataset.keyboardActive).toBe("false");
   });

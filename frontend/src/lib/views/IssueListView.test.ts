@@ -162,7 +162,7 @@ describe("IssueListView inline workspace", () => {
     expect(controller.notePaneFocused).toHaveBeenCalledWith(paneKey);
   });
 
-  it("moves active input ownership between issue and workspace panes", async () => {
+  it("moves the active border only when focus moves between issue and workspace", async () => {
     const { controller } = createClaimTestController("issues");
     renderIssueListView({
       inlineWorkspace: controller,
@@ -171,12 +171,16 @@ describe("IssueListView inline workspace", () => {
 
     const activePaneKey = () =>
       document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
-    expect(activePaneKey()).toBe("conversation");
+    expect(activePaneKey()).toBeUndefined();
 
     await fireEvent.pointerDown(document.querySelector(".detail-pane-workspace-slot")!);
+    await fireEvent.wheel(screen.getByTestId("issue-detail"));
+    expect(activePaneKey()).toBeUndefined();
+
+    await fireEvent.focusIn(document.querySelector(".detail-pane-workspace-slot")!);
     expect(activePaneKey()).toBe("workspace");
 
-    await fireEvent.wheel(screen.getByTestId("issue-detail"));
+    await fireEvent.focusIn(screen.getByTestId("issue-detail"));
     expect(activePaneKey()).toBe("conversation");
   });
 

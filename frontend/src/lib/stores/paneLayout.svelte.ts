@@ -38,7 +38,7 @@ export const PANE_LAYOUT_STORAGE_PREFIX = "kenn-forge-pane-layout-v1:";
 
 /** The state only the renderer knows, published for consumers outside the tree. */
 export interface PaneRenderReport {
-  /** The renderer-validated input owner, or null while an external dock owns the surface. */
+  /** The rendered tab containing DOM focus, or null while focus is elsewhere. */
   activeInputTabKey: string | null;
   /**
    * Tabs a structural edit may target: present in the rendered tree and not
@@ -115,9 +115,9 @@ export interface PaneLayoutStore {
   paneRender(): PaneRenderReport | null;
   /** Called by the rendering host; null on teardown. */
   notePaneRender(report: PaneRenderReport | null): void;
-  /** True while a surface-owned control outside the pane tree owns keyboard input. */
+  /** True while DOM focus is inside a surface dock outside the pane tree. */
   externalInputActive(): boolean;
-  /** Claim or release input for a surface-owned control outside the pane tree. */
+  /** Report DOM focus entering or leaving a surface dock outside the pane tree. */
   setExternalInputActive(active: boolean): void;
   /**
    * Whether splitting this tab out would change anything — it shares its leaf.
@@ -275,7 +275,6 @@ export function createPaneLayoutStore(
       // last-focused and every rule keyed off it would read a stale value. Still
       // validated: an arbitrary string must not be persisted as the winner.
       if (!knownTabs.includes(tabKey) && !(keepIfStored?.(tabKey) ?? false)) return;
-      externalInputActive = false;
       if (state.lastFocusedTabKey === tabKey) return;
       commit({ ...state, lastFocusedTabKey: tabKey });
     },

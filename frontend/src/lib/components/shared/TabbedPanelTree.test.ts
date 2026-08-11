@@ -82,7 +82,7 @@ describe("TabbedPanelTree", () => {
     expect(screen.getByLabelText("Feed updating").classList.contains("kit-status-dot--working")).toBe(true);
   });
 
-  it("shows one active input pane and reports pointer and wheel activation", async () => {
+  it("reports focus while pointer and wheel leave the active pane unchanged", async () => {
     const onFocusPane = vi.fn();
     const view = render(TabbedPanelTreeTestHarness, {
       props: {
@@ -98,7 +98,10 @@ describe("TabbedPanelTree", () => {
 
     await fireEvent.pointerDown(screen.getByTestId("panel-files"));
     await fireEvent.wheel(screen.getByTestId("panel-detail"));
+    expect(onFocusPane).not.toHaveBeenCalled();
 
+    await fireEvent.focusIn(screen.getByTestId("panel-files"));
+    await fireEvent.focusIn(screen.getByTestId("panel-detail"));
     expect(onFocusPane).toHaveBeenNthCalledWith(1, "files");
     expect(onFocusPane).toHaveBeenNthCalledWith(2, "detail");
 

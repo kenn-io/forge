@@ -13,6 +13,7 @@
     dragScope?: string;
     paneKeyForSession?: (sessionKey: string) => string | null;
     onInputActivate?: () => void;
+    onInputDeactivate?: () => void;
   }
 
   let {
@@ -25,6 +26,7 @@
     dragScope = undefined,
     paneKeyForSession = undefined,
     onInputActivate = undefined,
+    onInputDeactivate = undefined,
   }: Props = $props();
 </script>
 
@@ -42,4 +44,5 @@
   {dragScope}
   {paneKeyForSession}
   {onInputActivate}
+  {onInputDeactivate}
 />

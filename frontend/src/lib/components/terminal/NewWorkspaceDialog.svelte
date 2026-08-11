@@ -146,6 +146,20 @@
     return `${canonicalProvider(seed.provider)}/${seed.platformHost}/${seed.owner}/${seed.name}`;
   }
 
+  // An explicit seed is a promise about which repository the workspace
+  // targets. When it cannot be resolved (for example a repository hidden
+  // from the UI), require a choice instead of silently diverting to another
+  // repository. Without a seed, prefer the last repo work was started in,
+  // then the first.
+  function defaultRepoSelection(): string {
+    const seededRepoKey = seedKey(seedRepo);
+    if (seededRepoKey) {
+      return repos.some((repo) => repo.key === seededRepoKey) ? seededRepoKey : "";
+    }
+    const lastUsed = getLastUsedNewWorkspaceRepoKey();
+    return (lastUsed && repos.some((repo) => repo.key === lastUsed) ? lastUsed : repos[0]?.key) ?? "";
+  }
+
   // Each open starts a fresh request and fresh form state; a stale response
   // from a previous open must not repopulate the list. The previous list and
   // selection are dropped up front so a reopen cannot submit against the repo
@@ -160,7 +174,6 @@
       return;
     }
     const session = {};
-    const seededRepoKey = seedKey(seedRepo);
     const requestedSource = initialSource;
     activeSession = session;
     source = requestedSource;
@@ -195,18 +208,7 @@
             if (activeSession !== session) return;
             reposLoading = false;
             repos = (loaded ?? []).map(repoOption);
-            // An explicit seed is a promise about which repository the
-            // workspace targets. When it cannot be resolved (for example a
-            // repository hidden from the UI), require a choice instead of
-            // silently diverting to another repository. Without a seed,
-            // prefer the last repo work was started in, then the first.
-            if (seededRepoKey) {
-              selectedKey = repos.some((repo) => repo.key === seededRepoKey) ? seededRepoKey : "";
-            } else {
-              const lastUsed = getLastUsedNewWorkspaceRepoKey();
-              selectedKey =
-                (lastUsed && repos.some((repo) => repo.key === lastUsed) ? lastUsed : repos[0]?.key) ?? "";
-            }
+            selectedKey = defaultRepoSelection();
           }),
         ),
       ),
@@ -263,8 +265,7 @@
           if (activeSession !== session) return;
           reposLoading = false;
           repos = (loaded ?? []).map(repoOption);
-          const candidates = [seedKey(seedRepo), getLastUsedNewWorkspaceRepoKey()];
-          selectedKey = candidates.find((key) => key && repos.some((repo) => repo.key === key)) ?? repos[0]?.key ?? "";
+          selectedKey = defaultRepoSelection();
         })),
         Effect.asVoid,
       ),

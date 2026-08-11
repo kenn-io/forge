@@ -671,6 +671,10 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   `tracked_repo_path`, because selections created from catalog rows use the
   current route, which diverges after a provider-side rename
   (`frontend/src/lib/utils/repo-filter-values.ts::normalizeInteractiveRepoFilterSelection`).
+  A host-pinned scope (`ui.hideRepoSelector`) is exempt: with no picker to
+  rescope, dropping it would unscope every request, so pinned selections pass
+  through normalization untouched
+  (`frontend/src/lib/utils/repo-filter-values.ts::normalizeGlobalRepoSelection`).
 - Roborev has no event replay cursor: reconnect after authoritative job-list reconciliation; a lost
   mutation response retains and fences its original target until authoritative observation, never
   replays the write. A confirmed POST stays acknowledged when its follow-up refresh fails; report

@@ -535,6 +535,73 @@ name = "gadget"
 		"startup clears glob-only hidden state but keeps exact-owned state")
 }
 
+func TestStartupVisibilitySweepToleratesNilSyncer(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Servers can be constructed without a syncer. The startup sweep must
+	// then resolve exact entries by their configured route instead of
+	// panicking on tracked-repo lookup.
+	database := dbtest.Open(t)
+	widget, _, err := database.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "R_widget",
+			Owner:          "acme",
+			Name:           "widget",
+		}, time.Now().UTC(),
+	)
+	require.NoError(err)
+	require.NotNil(widget)
+	gadget, _, err := database.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "R_gadget",
+			Owner:          "acme",
+			Name:           "gadget",
+		}, time.Now().UTC(),
+	)
+	require.NoError(err)
+	require.NotNil(gadget)
+	require.NoError(database.SetRepoHiddenFromUI(
+		t.Context(), widget.Repository.ID, true,
+	))
+	require.NoError(database.SetRepoHiddenFromUI(
+		t.Context(), gadget.Repository.ID, true,
+	))
+
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	srv := NewWithConfig(
+		database, nil, nil, nil, cfg, cfgPath,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
+	)
+	require.NotNil(srv)
+
+	hidden, err := database.HiddenRepos(t.Context())
+	require.NoError(err)
+	hiddenIDs := make([]string, 0, len(hidden))
+	for _, repo := range hidden {
+		hiddenIDs = append(hiddenIDs, repo.PlatformRepoID)
+	}
+	assert.Equal([]string{"R_widget"}, hiddenIDs,
+		"the configured route keeps its preference; the unconfigured repo is swept")
+}
+
 func TestHandleUpdateRepoUIVisibilityRejectsGlobEntries(t *testing.T) {
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(t, `

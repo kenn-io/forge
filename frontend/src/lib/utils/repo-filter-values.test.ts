@@ -4,6 +4,7 @@ import {
   canonicalRepoFilterValue,
   displayRepoFilterValue,
   interactiveRepoFilterIdentities,
+  normalizeGlobalRepoSelection,
   normalizeInteractiveRepoFilterSelection,
   normalizeRepoFilterSelection,
   normalizeRepoFilterValue,
@@ -129,6 +130,28 @@ describe("repo filter values", () => {
       normalizeInteractiveRepoFilterSelection("github|github.com/acme-renamed/archive-renamed", repos),
     ).toBeUndefined();
     expect(normalizeInteractiveRepoFilterSelection("github|github.com/acme/archive", repos)).toBeUndefined();
+  });
+
+  it("preserves a host-pinned scope even when the pinned repository is hidden", () => {
+    // With ui.hideRepoSelector there is no picker to rescope with; dropping
+    // the pinned selection would silently unscope every request.
+    const repos = [
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "archive",
+        repo_path: "acme/archive",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: true,
+      },
+    ];
+
+    expect(normalizeGlobalRepoSelection("github|github.com/acme/archive", repos, true)).toBe(
+      "github|github.com/acme/archive",
+    );
+    expect(normalizeGlobalRepoSelection("github|github.com/acme/archive", repos, false)).toBeUndefined();
   });
 
   it("keeps glob-resolved selections that have no configured entry", () => {

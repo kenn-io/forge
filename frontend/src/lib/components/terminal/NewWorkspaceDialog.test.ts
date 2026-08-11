@@ -267,6 +267,35 @@ describe("NewWorkspaceDialog", () => {
     expect(repoPicker().textContent).not.toContain("acme/gadget");
   });
 
+  it("keeps requiring a choice for an unavailable seed after switching sources", async () => {
+    // The seed promise holds across source switches: leaving for Kata and
+    // returning to the repository source must not divert to the last-used
+    // or first repository when the seed is still unavailable.
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/gadget");
+    await renderDialog({
+      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "concealed" },
+    });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: "Kata issue" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Repository" }));
+    await waitFor(() => expect(mockGet.mock.calls.filter((c) => c[0] === "/repos")).toHaveLength(2));
+
+    // Once the reload settles, a wrong automatic selection would surface in
+    // the picker trigger and enable submission. The trigger renders as a
+    // button while closed and a combobox while open, so accept either.
+    await waitFor(() => {
+      const trigger =
+        screen.queryByRole("button", { name: "Filter repositories" }) ??
+        screen.getByRole("combobox", { name: "Filter repositories" });
+      expect(trigger.textContent).not.toContain("Loading repositories");
+      expect(trigger.textContent).not.toContain("acme/gadget");
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
   it("routes non-default hosts through the host-scoped path", async () => {
     mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", "git.example.test", "forgejo")] });
     await renderDialog();

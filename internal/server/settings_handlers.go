@@ -1246,10 +1246,15 @@ func (s *Server) resolveVisibilityRepoLocked(
 
 // visibilityLookupIdentity names the catalog repository an exact configured
 // entry currently resolves to. A tracked ref carries the provider-verified
-// stable id and the current route after renames; without one, the configured
-// route itself is the only address.
+// stable id and the current route after renames; without one (including on
+// servers constructed without a syncer), the configured route itself is the
+// only address.
 func (s *Server) visibilityLookupIdentity(raw config.Repo) db.RepoIdentity {
-	for _, repo := range s.syncer.TrackedRepos() {
+	var tracked []ghclient.RepoRef
+	if s.syncer != nil {
+		tracked = s.syncer.TrackedRepos()
+	}
+	for _, repo := range tracked {
 		if !repoMatchesConfig(repo, raw) {
 			continue
 		}

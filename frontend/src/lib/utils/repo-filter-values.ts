@@ -181,3 +181,18 @@ export function normalizeInteractiveRepoFilterSelection(
   const remaining = parseRepoFilterSelection(selected).filter((value) => !hidden.has(canonicalSelectionValue(value)));
   return normalizeRepoFilterSelection(serializeRepoFilterSelection(remaining), interactiveRepoFilterIdentities(repos));
 }
+
+// normalizeGlobalRepoSelection applies interactive normalization only when
+// the selection is user-editable. A host-pinned scope (ui.hideRepoSelector)
+// offers no picker to rescope with, so dropping it — for example because the
+// pinned repository is hidden from interactive catalogs — would silently
+// unscope every pull, issue, and activity request. Pinned scopes pass
+// through untouched.
+export function normalizeGlobalRepoSelection(
+  selected: string | undefined,
+  repos: readonly ConfigRepo[],
+  pinnedScope: boolean,
+): string | undefined {
+  if (pinnedScope) return selected;
+  return normalizeInteractiveRepoFilterSelection(selected, repos);
+}

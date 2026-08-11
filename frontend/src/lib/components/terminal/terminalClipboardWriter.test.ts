@@ -38,14 +38,17 @@ function deferred<T>(): {
 function createPort(): {
   port: TerminalClipboardPort;
   deferredWrites: Array<Promise<string>>;
+  writeCopyEventText: ReturnType<typeof vi.fn>;
   writeLocalText: ReturnType<typeof vi.fn>;
   writeText: ReturnType<typeof vi.fn>;
 } {
   const deferredWrites: Array<Promise<string>> = [];
+  const writeCopyEventText = vi.fn(() => false);
   const writeLocalText = vi.fn(async () => undefined);
   const writeText = vi.fn(async () => undefined);
   return {
     deferredWrites,
+    writeCopyEventText,
     writeLocalText,
     writeText,
     port: {
@@ -53,6 +56,7 @@ function createPort(): {
         deferredWrites.push(text);
         return text.then(() => undefined);
       },
+      writeCopyEventText,
       writeLocalText,
       writeText,
     },
@@ -83,8 +87,10 @@ describe("browser terminal clipboard port", () => {
       return true;
     });
     Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+    const writer = await makeTestWriter(createBrowserTerminalClipboardPort());
 
-    await expect(createBrowserTerminalClipboardPort().writeText("remote selection")).resolves.toBeUndefined();
+    writer.authorizeKeyboardGesture();
+    await expect(writer.write("remote selection")).resolves.toBe("written");
 
     expect(execCommand).toHaveBeenCalledTimes(1);
     expect(setData).toHaveBeenCalledWith("text/plain", "remote selection");
@@ -231,6 +237,7 @@ describe("terminal clipboard writer", () => {
         deferredWrites.push(text);
         return deferredWrites.length === 1 ? firstWrite.promise : text.then(() => undefined);
       },
+      writeCopyEventText: vi.fn(() => false),
       writeLocalText: vi.fn(async () => undefined),
       writeText: vi.fn(async () => undefined),
     });
@@ -311,6 +318,7 @@ describe("terminal clipboard writer", () => {
         void text.catch(() => undefined);
         return pending.promise;
       },
+      writeCopyEventText: vi.fn(() => false),
       writeLocalText: vi.fn(async () => undefined),
       writeText,
     };
@@ -334,6 +342,7 @@ describe("terminal clipboard writer", () => {
         deferredWrites.push(text);
         return deferredWrite.promise;
       },
+      writeCopyEventText: vi.fn(() => false),
       writeLocalText,
       writeText,
     });
@@ -357,6 +366,7 @@ describe("terminal clipboard writer", () => {
       beginDeferredWrite() {
         throw new DOMException("unsupported", "NotSupportedError");
       },
+      writeCopyEventText: vi.fn(() => false),
       writeLocalText,
       writeText,
     });
@@ -371,12 +381,44 @@ describe("terminal clipboard writer", () => {
     expect(writeLocalText).not.toHaveBeenCalled();
   });
 
+  it("does not invoke the copy-event fallback after focus loss during a Clipboard API write", async () => {
+    const directWrite = deferred<void>();
+    const writeText = vi.fn(() => directWrite.promise);
+    vi.stubGlobal("navigator", {
+      clipboard: {
+        write: vi.fn(async () => {
+          throw new DOMException("denied", "NotAllowedError");
+        }),
+        writeText,
+      },
+    });
+    vi.stubGlobal(
+      "ClipboardItem",
+      class {
+        constructor(_items: Record<string, Promise<Blob>>) {}
+      },
+    );
+    const execCommand = vi.fn(() => false);
+    Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+    const writer = await makeTestWriter(createBrowserTerminalClipboardPort());
+
+    writer.authorizeKeyboardGesture();
+    const copied = writer.write("stale terminal write");
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith("stale terminal write"));
+    writer.cancelAuthorization();
+    directWrite.reject(new DOMException("denied", "NotAllowedError"));
+
+    await expect(copied).resolves.toBe("unauthorized");
+    expect(execCommand).not.toHaveBeenCalled();
+  });
+
   it("falls back to writeText when deferred clipboard setup is unavailable", async () => {
     const writeText = vi.fn(async () => undefined);
     const writer = await makeTestWriter({
       beginDeferredWrite() {
         throw new DOMException("unsupported", "NotSupportedError");
       },
+      writeCopyEventText: vi.fn(() => false),
       writeLocalText: vi.fn(async () => undefined),
       writeText,
     });
@@ -394,6 +436,7 @@ describe("terminal clipboard writer", () => {
       beginDeferredWrite() {
         throw new DOMException("unsupported", "NotSupportedError");
       },
+      writeCopyEventText: vi.fn(() => false),
       writeLocalText,
       writeText: vi.fn(async () => {
         throw new DOMException("denied", "NotAllowedError");
@@ -413,6 +456,7 @@ describe("terminal clipboard writer", () => {
         void text.catch(() => undefined);
         return deferredWrite.promise;
       },
+      writeCopyEventText: vi.fn(() => false),
       writeLocalText: vi.fn(async () => {
         throw new Error("local clipboard unavailable");
       }),

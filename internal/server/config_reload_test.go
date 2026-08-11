@@ -417,6 +417,37 @@ func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
 	assert.Equal("30d", gotActivity.TimeRange)
 }
 
+func TestConfigReloadWithDisabledSyncKeepsTrackedReposWithoutProviderReads(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var providerReads atomic.Int32
+	mock := &mockGH{}
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, mock,
+	)
+	require.NotEmpty(srv.syncer.TrackedRepos())
+	mock.getRepositoryFn = func(context.Context, string, string) (*gh.Repository, error) {
+		providerReads.Add(1)
+		return nil, errors.New("unexpected provider read")
+	}
+	srv.syncer.DisableSync()
+	providerReads.Store(0)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfigChangedActivity)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+	assert.False(ev.RestartRequired)
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.Equal("acme", tracked[0].Owner)
+	assert.Equal("widget", tracked[0].Name)
+	assert.Zero(providerReads.Load())
+}
+
 func TestConfigReloadPublishesPullConfigOnlyAfterSuccessfulReload(t *testing.T) {
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(

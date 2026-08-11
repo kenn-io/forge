@@ -663,7 +663,7 @@ func (s *Server) resolveReposForReload(
 	for _, raw := range repos {
 		host := raw.PlatformHostOrDefault()
 		kind := platform.Kind(raw.PlatformOrDefault())
-		if _, err := s.syncer.RepositoryReader(kind, host); err != nil {
+		if _, err := s.syncer.DirectRepositoryReader(kind, host); err != nil {
 			skipped = append(skipped, fmt.Sprintf(
 				"%s/%s@%s/%s",
 				string(kind), host, raw.Owner, raw.Name,

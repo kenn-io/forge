@@ -57,7 +57,7 @@ func (s *Server) configuredClients(
 		if _, ok := clients[host]; ok {
 			continue
 		}
-		client, err := s.syncer.ClientForHost(host)
+		client, err := s.syncer.DirectClientForHost(host)
 		if err != nil {
 			continue
 		}

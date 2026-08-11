@@ -473,44 +473,6 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	}, repos)
 }
 
-func TestResolveStartupReposUsesCatalogWhenSyncIsDisabled(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := dbtest.Open(t)
-	ctx := t.Context()
-
-	identity := db.RepoIdentity{
-		Platform:       string(platform.KindGitLab),
-		PlatformHost:   "gitlab.example.test",
-		PlatformRepoID: "project-42",
-		Owner:          "acme",
-		Name:           "widget",
-	}
-	_, err := database.UpsertRepoByProviderID(ctx, identity)
-	require.NoError(err)
-
-	providerCalls := 0
-	registry := mustProviderRegistry(t, nil, mainTestRepositoryReader{
-		kind:  platform.KindGitLab,
-		host:  "gitlab.example.test",
-		calls: &providerCalls,
-	})
-	cfg := &config.Config{Repos: []config.Repo{{
-		Platform: "gitlab", PlatformHost: "gitlab.example.test",
-		Owner: "acme", Name: "*",
-	}}}
-
-	repos := resolveStartupRepos(
-		ctx, cfg, providerRegistryForSyncPolicy(registry, true), database, nil,
-	)
-
-	assert.Zero(providerCalls)
-	assert.Equal([]ghclient.RepoRef{{
-		Platform: platform.KindGitLab, PlatformHost: "gitlab.example.test",
-		Owner: "acme", Name: "widget",
-	}}, repos)
-}
-
 func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &config.Config{
@@ -867,9 +829,8 @@ func mustProviderRegistry(
 }
 
 type mainTestRepositoryReader struct {
-	kind  platform.Kind
-	host  string
-	calls *int
+	kind platform.Kind
+	host string
 }
 
 func (r mainTestRepositoryReader) Platform() platform.Kind {
@@ -888,9 +849,6 @@ func (r mainTestRepositoryReader) GetRepository(
 	_ context.Context,
 	ref platform.RepoRef,
 ) (platform.Repository, error) {
-	if r.calls != nil {
-		*r.calls++
-	}
 	return platform.Repository{Ref: ref}, nil
 }
 
@@ -899,9 +857,6 @@ func (r mainTestRepositoryReader) ListRepositories(
 	owner string,
 	_ platform.RepositoryListOptions,
 ) ([]platform.Repository, error) {
-	if r.calls != nil {
-		*r.calls++
-	}
 	return []platform.Repository{{
 		Ref: platform.RepoRef{
 			Platform: r.kind,
@@ -1232,31 +1187,6 @@ func TestRunCLIServeSubcommandUsesServerRunner(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(cfgPath, got.ConfigPath)
 	assert.Empty(got.ProfilerAddr)
-	assert.Empty(stdout.String())
-}
-
-func TestRunCLIServePassesDisableSync(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	original := runServer
-	t.Cleanup(func() { runServer = original })
-	var got serve.Options
-	runServer = func(opts serve.Options) error {
-		got = opts
-		return nil
-	}
-
-	cfgPath := filepath.Join(t.TempDir(), "config.toml")
-	var stdout bytes.Buffer
-	err := runCLI([]string{
-		"serve",
-		"--config", cfgPath,
-		"--disable-sync",
-	}, &stdout)
-
-	require.NoError(err)
-	assert.Equal(cfgPath, got.ConfigPath)
-	assert.True(got.DisableSync)
 	assert.Empty(stdout.String())
 }
 

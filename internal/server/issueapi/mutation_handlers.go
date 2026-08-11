@@ -340,15 +340,12 @@ func (s *Handler) setIssueGitHubState(ctx context.Context, input *githubStateInp
 		var githubError *gh.ErrorResponse
 		if errors.As(err, &githubError) && githubError != nil && githubError.Response != nil &&
 			githubError.Response.StatusCode == http.StatusUnprocessableEntity {
-			client, clientErr := s.syncer.SyncClientForHost(repo.PlatformHost)
+			client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
 			if clientErr != nil {
-				if errors.Is(clientErr, ghclient.ErrSyncDisabled) {
-					return nil, httpapi.ProviderCallProblemWithDetail(
-						err, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
-						"GitHub API error: "+err.Error(),
-					)
-				}
-				return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
+				return nil, httpapi.ProviderCallProblemWithDetail(
+					clientErr, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
+					"GitHub API error: "+err.Error(),
+				)
 			}
 			githubIssue, fetchErr := client.GetIssue(ctx, input.Owner, input.Name, input.Number)
 			if fetchErr == nil {

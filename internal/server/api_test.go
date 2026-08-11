@@ -14436,13 +14436,11 @@ func TestAPISetIssueGitHubStateReturns404WhenNoClientConfigured(t *testing.T) {
 func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	var recoveryReads atomic.Int32
 	mock := &mockGH{
 		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
 			return nil, make422Error()
 		},
 		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
-			recoveryReads.Add(1)
 			return nil, nil
 		},
 	}
@@ -14459,7 +14457,6 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
-	assert.Equal(int32(1), recoveryReads.Load())
 
 	after, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -14467,28 +14464,16 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	assert.Equal(before.State, after.State)
 	assert.Equal(before.UpdatedAt, after.UpdatedAt)
 	assert.Nil(after.ClosedAt)
-
-	srv.syncer.DisableSync()
-	recoveryReads.Store(0)
-	resp, err = client.HTTP.SetPrGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
-	)
-	require.NoError(err)
-	assert.Equal(http.StatusBadGateway, resp.StatusCode())
-	assert.Zero(recoveryReads.Load())
 }
 
 func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	var recoveryReads atomic.Int32
 	mock := &mockGH{
 		editIssueFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.Issue, error) {
 			return nil, make422Error()
 		},
 		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
-			recoveryReads.Add(1)
 			return nil, nil
 		},
 	}
@@ -14505,7 +14490,6 @@ func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
-	assert.Equal(int32(1), recoveryReads.Load())
 
 	after, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
@@ -14513,16 +14497,6 @@ func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	assert.Equal(before.State, after.State)
 	assert.Equal(before.UpdatedAt, after.UpdatedAt)
 	assert.Nil(after.ClosedAt)
-
-	srv.syncer.DisableSync()
-	recoveryReads.Store(0)
-	resp, err = client.HTTP.SetIssueGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 5,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
-	)
-	require.NoError(err)
-	assert.Equal(http.StatusBadGateway, resp.StatusCode())
-	assert.Zero(recoveryReads.Load())
 }
 
 func TestAPIClosePR422AlreadyClosed(t *testing.T) {

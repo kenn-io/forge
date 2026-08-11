@@ -151,6 +151,14 @@ registry helpers return typed errors for missing providers or capabilities.
 - The syncer stores the gated registry internally by default; only explicit
   foreground operations unwrap `Syncer.DirectRegistry`, while refreshes use
   `Syncer.Registry` (`internal/github/sync.go::NewSyncerWithRegistry`).
+- Disabled provider work follows this operation contract:
+
+  | Operation | Disabled contract |
+  | --- | --- |
+  | Scheduled, manual, item, workspace, and post-mutation refresh | Reject before provider access; HTTP admission returns 503 before side effects (`internal/server/huma_routes.go::Server.requireSync`). |
+  | Startup or reload repository expansion | Use the gated registry and recover configured identities from SQLite (`cmd/kenn-forge/main.go::providerRegistryForSyncPolicy`). |
+  | Archive start/hydration, notification sync/ack, and deferred merge | Reject before queue or success-timestamp mutation; cached archive status/report/pause remain local (`internal/github/notifications_sync.go::Syncer.RunNotificationSync`). |
+  | Direct mutations and their required preconditions, workspace auto-assignment, repository import/preview, and Markdown images | Explicit `DirectRegistry` access may call the provider; no follow-up refresh bypasses the gate (`internal/github/sync.go::Syncer.DirectRegistry`). |
 - Run and quota-snapshot chokepoints also reject disabled sync because GitHub
   credential routers bypass the provider registry (`internal/github/sync.go::Syncer.runOnce`).
 - Missing optional capabilities should degrade that feature with a typed

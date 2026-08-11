@@ -41,8 +41,7 @@ func (r *Registry) Register(provider Provider) error {
 }
 
 // WithProviderGate returns a registry view that checks gate before exposing a
-// provider. The underlying provider set is shared so capability and mutation
-// callers can keep using the original registry without the gate.
+// provider. The original registry remains unchanged.
 func (r *Registry) WithProviderGate(gate func() error) *Registry {
 	if r == nil {
 		return &Registry{gate: gate}
@@ -63,18 +62,23 @@ func (r *Registry) Provider(kind Kind, host string) (Provider, error) {
 	return provider, nil
 }
 
-func (r *Registry) Providers() []Provider {
-	if r == nil || len(r.providers) == 0 {
-		return nil
+func (r *Registry) Providers() ([]Provider, error) {
+	if r == nil {
+		return nil, nil
 	}
-	if r.gate != nil && r.gate() != nil {
-		return nil
+	if r.gate != nil {
+		if err := r.gate(); err != nil {
+			return nil, err
+		}
+	}
+	if len(r.providers) == 0 {
+		return nil, nil
 	}
 	providers := make([]Provider, 0, len(r.providers))
 	for _, provider := range r.providers {
 		providers = append(providers, provider)
 	}
-	return providers
+	return providers, nil
 }
 
 func (r *Registry) Capabilities(kind Kind, host string) (Capabilities, error) {

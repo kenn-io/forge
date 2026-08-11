@@ -475,7 +475,7 @@ func (s *Server) reloadCredentialNeedsClientRebuild(
 		return false
 	}
 	for _, pc := range cfg.Platforms {
-		if _, err := s.syncer.RepositoryReader(
+		if _, err := s.syncer.DirectRepositoryReader(
 			platform.Kind(pc.Type), pc.Host,
 		); err == nil {
 			continue

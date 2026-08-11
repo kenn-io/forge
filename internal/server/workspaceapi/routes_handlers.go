@@ -884,7 +884,7 @@ func (s *Handler) refreshWorkspace(
 		return nil, httpapi.ServiceUnavailable("syncer not configured")
 	}
 	if !s.syncer.SyncEnabled() {
-		return nil, httpapi.ServiceUnavailable(ghclient.ErrSyncDisabled.Error())
+		return nil, httpapi.ServiceUnavailable(platform.ErrSyncDisabled.Error())
 	}
 
 	summary, err := s.workspaces.GetSummary(ctx, input.ID)

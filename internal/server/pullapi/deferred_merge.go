@@ -110,7 +110,7 @@ func (s *Handler) enqueueDeferredMerge(
 	}
 	if !s.syncer.SyncEnabled() {
 		return deferMergePRBody{}, httpapi.ServiceUnavailable(
-			ghclient.ErrSyncDisabled.Error(),
+			platform.ErrSyncDisabled.Error(),
 		)
 	}
 	repo, err := s.requireRepoRouteCapability(

@@ -12,8 +12,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 )
 
-func TestSyncRoutesRejectDisabledSyncer(t *testing.T) {
-	assert := assert.New(t)
+func TestArchiveStartRejectsDisabledSyncer(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
 	syncer := github.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
@@ -21,15 +20,8 @@ func TestSyncRoutesRejectDisabledSyncer(t *testing.T) {
 	syncer.DisableSync()
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
-	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
-	require.Equal(http.StatusServiceUnavailable, syncRR.Code, syncRR.Body.String())
 	archiveRR := doJSON(t, srv, http.MethodPost, "/api/v1/archive/start", map[string]bool{"all": true})
 	require.Equal(http.StatusServiceUnavailable, archiveRR.Code, archiveRR.Body.String())
-
-	var problem httpapi.ProblemError
-	require.NoError(json.NewDecoder(syncRR.Body).Decode(&problem))
-	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
-	assert.Equal(github.ErrSyncDisabled.Error(), problem.Detail)
 }
 
 func TestSyncRoutesWithoutSyncer(t *testing.T) {

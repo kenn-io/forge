@@ -328,6 +328,12 @@ func TestMapPlatformError(t *testing.T) {
 		{name: "ContextCanceled", input: context.Canceled, wantNil: true},
 		{name: "ContextDeadlineExceeded", input: context.DeadlineExceeded, wantNil: true},
 		{
+			name:       "SyncDisabled",
+			input:      platform.ErrSyncDisabled,
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   CodeServiceUnavailable,
+		},
+		{
 			name: "UnsupportedCapability",
 			input: &platform.Error{
 				Code:         platform.ErrCodeUnsupportedCapability,

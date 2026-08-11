@@ -22,7 +22,7 @@ func (s *Handler) autoAssignWorkspaceItem(
 
 	kind := httpapi.ProviderKind(repo)
 	host := httpapi.ProviderHost(repo)
-	caps, err := s.syncer.ProviderCapabilities(kind, host)
+	caps, err := s.syncer.DirectProviderCapabilities(kind, host)
 	if err != nil {
 		return fmt.Errorf("load provider capabilities: %w", err)
 	}

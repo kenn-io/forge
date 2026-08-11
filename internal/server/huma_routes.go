@@ -729,7 +729,7 @@ func (s *Server) requireSync() error {
 		return httpapi.ServiceUnavailable("syncer not configured")
 	}
 	if !s.syncer.SyncEnabled() {
-		return httpapi.ServiceUnavailable(ghclient.ErrSyncDisabled.Error())
+		return httpapi.ServiceUnavailable(platform.ErrSyncDisabled.Error())
 	}
 	return nil
 }
@@ -1014,9 +1014,6 @@ func ratePrincipalLabel(providerName, principal string) string {
 }
 
 func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRCIOutput, error) {
-	if err := s.requireSync(); err != nil {
-		return nil, err
-	}
 	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -1072,9 +1069,6 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 }
 
 func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {
-	if err := s.requireSync(); err != nil {
-		return nil, err
-	}
 	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -1166,9 +1160,6 @@ func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*ac
 }
 
 func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*syncIssueOutput, error) {
-	if err := s.requireSync(); err != nil {
-		return nil, err
-	}
 	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)

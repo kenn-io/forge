@@ -43,14 +43,6 @@ func (p testRepositoryReader) ListRepositories(
 	return nil, nil
 }
 
-func (p testRepositoryReader) SetMergeRequestState(context.Context, RepoRef, int, string) (MergeRequest, error) {
-	return MergeRequest{}, nil
-}
-
-func (p testRepositoryReader) SetIssueState(context.Context, RepoRef, int, string) (Issue, error) {
-	return Issue{}, nil
-}
-
 func TestRegistryLooksUpProvidersByKindAndHost(t *testing.T) {
 	provider := testProvider{
 		kind: KindGitLab,
@@ -146,11 +138,18 @@ func TestRegistryProviderGateLeavesRawRegistryAvailable(t *testing.T) {
 	require.NoError(err)
 
 	gated := registry.WithProviderGate(func() error { return gateErr })
-	assert.Empty(t, gated.Providers())
+	providers, err := gated.Providers()
+	require.ErrorIs(err, gateErr)
+	assert.Empty(t, providers)
+	empty, err := NewRegistry()
+	require.NoError(err)
+	providers, err = empty.WithProviderGate(func() error { return gateErr }).Providers()
+	require.ErrorIs(err, gateErr)
+	assert.Empty(t, providers)
 	_, err = gated.RepositoryReader(KindGitLab, "gitlab.com")
 	require.ErrorIs(err, gateErr)
 
-	_, err = registry.StateMutator(KindGitLab, "gitlab.com")
+	_, err = registry.Provider(KindGitLab, "gitlab.com")
 	require.NoError(err)
 }
 

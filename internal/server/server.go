@@ -741,7 +741,7 @@ func newServer(
 			if syncer == nil {
 				return platform.Capabilities{}, errors.New("provider registry unavailable")
 			}
-			return syncer.ProviderCapabilities(kind, host)
+			return syncer.DirectProviderCapabilities(kind, host)
 		},
 	})
 

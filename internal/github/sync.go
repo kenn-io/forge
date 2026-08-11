@@ -786,11 +786,10 @@ func (p *listFetchProgressLogger) log(message string) {
 	slog.Info(message, attrs...)
 }
 
-var ErrSyncDisabled = errors.New("provider sync is disabled")
-
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
 	clients                  *platform.Registry
+	directClients            *platform.Registry
 	db                       *db.DB
 	archiveRunner            archiveRunner
 	archiveLifecycle         archiveRepositoryLifecycle
@@ -941,7 +940,7 @@ func (s *Syncer) SyncEnabled() bool {
 
 func (s *Syncer) syncDisabledError() error {
 	if !s.SyncEnabled() {
-		return ErrSyncDisabled
+		return platform.ErrSyncDisabled
 	}
 	return nil
 }
@@ -1209,7 +1208,8 @@ func NewSyncerWithRegistry(
 		),
 	}
 	// Sync code uses the gated registry by default. Foreground provider
-	// operations must opt into DirectRegistry(), which returns an ungated view.
+	// operations must opt into the original registry through DirectRegistry().
+	s.directClients = registry
 	s.clients = registry.WithProviderGate(s.syncDisabledError)
 	s.parallelism.Store(defaultParallelism)
 	s.status.Store(&SyncStatus{})
@@ -3998,7 +3998,7 @@ func clientForRegistry(registry *platform.Registry, repo RepoRef) (Client, error
 	host := repoHost(repo)
 	provider, err := registry.Provider(repoPlatform(repo), host)
 	if err != nil {
-		if errors.Is(err, ErrSyncDisabled) {
+		if errors.Is(err, platform.ErrSyncDisabled) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("no client configured for host %s", host)
@@ -4057,21 +4057,37 @@ func (s *Syncer) ClientForRepo(
 	)
 }
 
-// ClientForHost returns the Client for a specific host,
-// or an error if no client is configured for that host.
+// ClientForHost returns a legacy GitHub client through the sync provider gate.
 func (s *Syncer) ClientForHost(
 	host string,
 ) (Client, error) {
-	return clientForRegistry(s.DirectRegistry(), RepoRef{PlatformHost: host})
-}
-
-// SyncClientForHost returns a legacy GitHub client through the provider sync
-// gate. Foreground provider operations use ClientForHost instead.
-func (s *Syncer) SyncClientForHost(host string) (Client, error) {
 	return s.clientFor(RepoRef{PlatformHost: host})
 }
 
+// DirectClientForHost returns an ungated legacy GitHub client for an explicit
+// foreground provider operation.
+func (s *Syncer) DirectClientForHost(host string) (Client, error) {
+	return clientForRegistry(s.DirectRegistry(), RepoRef{PlatformHost: host})
+}
+
 func (s *Syncer) ProviderCapabilities(
+	kind platform.Kind,
+	host string,
+) (platform.Capabilities, error) {
+	if kind == "" {
+		kind = platform.KindGitHub
+	}
+	if strings.TrimSpace(host) == "" {
+		defaultHost, ok := platform.DefaultHost(kind)
+		if !ok {
+			return platform.Capabilities{}, platform.ProviderNotConfigured(kind, "")
+		}
+		host = defaultHost
+	}
+	return s.Registry().Capabilities(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) DirectProviderCapabilities(
 	kind platform.Kind,
 	host string,
 ) (platform.Capabilities, error) {
@@ -4092,6 +4108,13 @@ func (s *Syncer) RepositoryReader(
 	kind platform.Kind,
 	host string,
 ) (platform.RepositoryReader, error) {
+	return s.Registry().RepositoryReader(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) DirectRepositoryReader(
+	kind platform.Kind,
+	host string,
+) (platform.RepositoryReader, error) {
 	return s.DirectRegistry().RepositoryReader(kind, canonicalRepoHost(host))
 }
 
@@ -4103,14 +4126,14 @@ func (s *Syncer) Registry() *platform.Registry {
 // DirectRegistry returns the ungated boot-time provider registry for explicit
 // foreground provider operations. Callers must not mutate the returned view.
 func (s *Syncer) DirectRegistry() *platform.Registry {
-	return s.clients.WithProviderGate(nil)
+	return s.directClients
 }
 
 func (s *Syncer) LabelReader(
 	kind platform.Kind,
 	host string,
 ) (platform.LabelReader, error) {
-	return s.DirectRegistry().LabelReader(kind, canonicalRepoHost(host))
+	return s.Registry().LabelReader(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) CommentMutator(

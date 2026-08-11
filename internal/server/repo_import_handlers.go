@@ -443,7 +443,7 @@ func (s *Server) previewRepos(
 	// badRequest like the sync and runtime paths, not a 502.
 	var rows []repoPreviewRow
 	if provider == platform.KindGitHub {
-		client, err := s.syncer.ClientForHost(host)
+		client, err := s.syncer.DirectClientForHost(host)
 		if err != nil {
 			return nil, httpapi.ProviderCallProblem(err, "github", host)
 		}
@@ -454,7 +454,7 @@ func (s *Server) previewRepos(
 			return nil, httpapi.ProviderCallProblem(err, "github", host)
 		}
 	} else {
-		reader, err := s.syncer.RepositoryReader(provider, host)
+		reader, err := s.syncer.DirectRepositoryReader(provider, host)
 		if err != nil {
 			return nil, httpapi.ProviderCallProblem(err, string(provider), host)
 		}

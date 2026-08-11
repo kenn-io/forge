@@ -537,6 +537,9 @@ func ProviderCallProblemWithDetail(
 		}
 		return BadRequest(CodeBadRequest, detail, nil)
 	}
+	if errors.Is(err, platform.ErrSyncDisabled) {
+		return ServiceUnavailable(err.Error())
+	}
 	var pe *platform.Error
 	if errors.As(err, &pe) {
 		if mapped := MapPlatformError(err); mapped != nil {
@@ -563,6 +566,9 @@ func MapPlatformError(err error) huma.StatusError {
 	}
 	if errors.Is(err, tokenauth.ErrMissingToken) {
 		return BadRequest(CodeBadRequest, err.Error(), nil)
+	}
+	if errors.Is(err, platform.ErrSyncDisabled) {
+		return ServiceUnavailable(err.Error())
 	}
 	var pe *platform.Error
 	if !errors.As(err, &pe) {

@@ -867,7 +867,7 @@ func providerRegistryForSyncPolicy(
 	if !disableSync {
 		return registry
 	}
-	return registry.WithProviderGate(func() error { return ghclient.ErrSyncDisabled })
+	return registry.WithProviderGate(func() error { return platform.ErrSyncDisabled })
 }
 
 func resolveStartupRepos(

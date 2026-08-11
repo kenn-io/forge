@@ -188,7 +188,11 @@ describe("ActivityFeedView detail panes", () => {
 
     expect(screen.getByRole("tab", { name: "Commit" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "Conversation" })).toBeNull();
-    expect(screen.getByTestId("commit-diff-panel")).toBeTruthy();
+    const commitPanel = screen.getByTestId("commit-diff-panel");
+    expect(commitPanel.dataset.inputActive).toBe("false");
+
+    await fireEvent.focusIn(commitPanel);
+    expect(commitPanel.dataset.inputActive).toBe("true");
   });
 
   it("renders a promoted session's pane in the activity drawer", () => {

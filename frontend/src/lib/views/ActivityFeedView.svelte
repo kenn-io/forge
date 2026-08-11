@@ -554,6 +554,7 @@
                 name={commitDrawer.name}
                 repoPath={commitDrawer.repoPath}
                 commitSha={commitDrawer.commitSha}
+                {inputActive}
               />
             {/key}
           {:else if tabKey === "workspace" && inlineWorkspace && visible}

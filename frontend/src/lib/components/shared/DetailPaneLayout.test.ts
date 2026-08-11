@@ -169,6 +169,18 @@ describe("detail pane layout", () => {
     expect(layout.paneRender()?.onScreenTabs).toHaveLength(1);
   });
 
+  it("assigns narrow-layout input ownership to the rendered synthetic leaf", () => {
+    mockWidth(600);
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const conversation = screen.getByTestId("pane-conversation");
+
+    fireEvent.focusIn(conversation);
+
+    expect(conversation.getAttribute("data-input-active")).toBe("true");
+    expect(layout.paneRender()?.activeInputTabKey).toBe("conversation");
+  });
+
   it("publishes no report until the host has been measured", () => {
     // Width decides whether structural edits are allowed at all; defaulting an
     // unmeasured host to "not flattened" offers those commands for a frame on a
@@ -466,6 +478,23 @@ describe("detail pane layout", () => {
     expect(filesTab.getAttribute("aria-selected")).toBe("true");
     expect(detailLeaf?.classList.contains("input-active")).toBe(true);
     expect(layout.paneRender()?.activeInputTabKey).toBe("files");
+  });
+
+  it("reclaims focus when same-leaf tab replacement unmounts the focused body", async () => {
+    const layout = store(mergedTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const conversationFocusTarget = screen.getByTestId("pane-focus-target-conversation");
+
+    conversationFocusTarget.focus();
+    fireEvent.focusIn(conversationFocusTarget);
+    expect(layout.paneRender()?.activeInputTabKey).toBe("conversation");
+
+    flushSync(() => layout.activateTab("files"));
+
+    await vi.waitFor(() => {
+      expect(document.activeElement?.classList.contains("detail-pane-layout")).toBe(true);
+      expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+    });
   });
 
   it("keeps a zoom on a non-route leaf when the tab list re-derives", async () => {

@@ -102,8 +102,8 @@ describe("TabbedPanelTree", () => {
 
     await fireEvent.focusIn(screen.getByTestId("panel-files"));
     await fireEvent.focusIn(screen.getByTestId("panel-detail"));
-    expect(onFocusPane).toHaveBeenNthCalledWith(1, "files");
-    expect(onFocusPane).toHaveBeenNthCalledWith(2, "detail");
+    expect(onFocusPane).toHaveBeenNthCalledWith(1, "files", "leaf-2");
+    expect(onFocusPane).toHaveBeenNthCalledWith(2, "detail", "leaf-1");
 
     await view.rerender({
       node: splitNode(),

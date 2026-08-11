@@ -298,6 +298,14 @@ Keyboard handlers must have one clear owner for each key press.
   A dedicated Files route keeps global diff shortcuts only while no pane or
   external dock has live focus; this fallback never paints active-pane styling
   (`frontend/src/lib/views/PRListView.svelte::diffKeyboardActive`).
+- Focus callbacks carry the exact rendered leaf ID; never infer it from the
+  persisted tree because narrow layouts render one synthetic leaf
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::focusPane`).
+- If a same-leaf tab change removes focused content without `focusout`, reclaim
+  the layout only when focus fell to `document.body`
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::reclaimFocus`).
+- Activity commit diffs use live pane `inputActive` for global shortcuts, not
+  pane visibility (`frontend/src/lib/components/CommitDiffPanel.svelte::Props`).
 - Nested pane trees paint focus only while DOM focus is inside both the nested
   pane and its containing pane, and only the deepest focused pane paints;
   workspace Workflow, Details, and bottom Terminal regions are siblings

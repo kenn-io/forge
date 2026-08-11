@@ -75,6 +75,9 @@
       data-input-active={String(inputActive)}
     >
       Pane {tabKey}
+      {#if visible}
+        <button type="button" data-testid={`pane-focus-target-${tabKey}`}>Focus {tabKey}</button>
+      {/if}
     </section>
   {/snippet}
 </DetailPaneLayout>

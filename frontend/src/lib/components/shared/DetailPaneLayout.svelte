@@ -225,6 +225,19 @@
     );
   }
 
+  // A tab change can remove the focused pane body without a focusout event.
+  // Check after the DOM update through reclaimFocus(): a clicked tab or any
+  // other deliberate destination keeps focus, while a stranded <body> focus
+  // moves to the layout host and clears pane keyboard ownership.
+  let lastFocusedLeafSelection: { leafID: string; tabKey: string } | null = null;
+  $effect(() => {
+    const leafID = focusedInputLeafID;
+    const tabKey = leafID === null ? null : renderedLeaves.find((leaf) => leaf.id === leafID)?.activeTabKey ?? null;
+    const previous = lastFocusedLeafSelection;
+    lastFocusedLeafSelection = leafID !== null && tabKey !== null ? { leafID, tabKey } : null;
+    if (previous?.leafID === leafID && tabKey !== null && previous.tabKey !== tabKey) reclaimFocus();
+  });
+
   /**
    * Closing a pane unmounts its body. Focus that lived inside it — the terminal,
    * a diff comment box, the close button — would fall to `<body>`, stranding
@@ -259,8 +272,8 @@
   // since a surface that rewrites the URL on focus must not do so on every click.
   let lastReportedFocus: string | null = null;
 
-  function focusPane(tabKey: string): void {
-    focusedInputLeafID = layout.leafIDForTab(tabKey);
+  function focusPane(tabKey: string, leafID: string): void {
+    focusedInputLeafID = leafID;
     layout.setExternalInputActive(false);
     layout.noteFocused(tabKey);
     if (lastReportedFocus === tabKey) return;

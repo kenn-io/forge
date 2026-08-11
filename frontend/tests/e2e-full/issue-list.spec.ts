@@ -234,7 +234,9 @@ test.describe("issue detail pane focus", () => {
     const workspacePane = page.locator('[data-pane-key="workspace"]');
     const conversationLeaf = conversationPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
     const workspaceLeaf = workspacePane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
-    await conversationLeaf.getByRole("tab").focus();
+    const conversationTab = conversationLeaf.getByRole("tab", { name: "Conversation" });
+    await conversationTab.focus();
+    await expect(conversationTab).toBeFocused();
     await expect(conversationLeaf).toHaveClass(/input-active/);
     await expect(workspaceLeaf).not.toHaveClass(/input-active/);
 

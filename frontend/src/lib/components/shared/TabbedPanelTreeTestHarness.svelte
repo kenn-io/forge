@@ -25,7 +25,7 @@
         ) => void)
       | undefined;
     onRatioChange?: ((splitID: string, ratio: number) => void) | undefined;
-    onFocusPane?: ((tabKey: string) => void) | undefined;
+    onFocusPane?: ((tabKey: string, leafID: string) => void) | undefined;
     disabled?: boolean;
     zoomedLeafID?: string | null;
     /** Render the per-leaf action cluster; off by default so existing cases are unaffected. */

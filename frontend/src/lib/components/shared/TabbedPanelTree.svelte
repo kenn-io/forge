@@ -79,7 +79,7 @@
      * this to follow the user between two simultaneously visible panes, where
      * there is no tab to click.
      */
-    onFocusPane?: ((tabKey: string) => void) | undefined;
+    onFocusPane?: ((tabKey: string, leafID: string) => void) | undefined;
     onMoveTabBefore?: ((sourceTabKey: string, targetTabKey: string) => void) | undefined;
     onAppendTabToLeaf?: ((sourceTabKey: string, leafID: string) => void) | undefined;
     onSplitTab?:
@@ -570,7 +570,7 @@
       },
     ]}
     aria-label={leafLabel}
-    onfocusin={onFocusPane ? () => onFocusPane(node.activeTabKey) : undefined}
+    onfocusin={onFocusPane ? () => onFocusPane(node.activeTabKey, node.id) : undefined}
   >
     {#if !soloChrome}
     <div

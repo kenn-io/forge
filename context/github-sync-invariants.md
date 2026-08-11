@@ -451,10 +451,14 @@ fallback repository listing.
 - GitHub archive code owns historical identity inventory only; hydration must invoke ordinary item sync instead of adding archive-specific lookup, normalization, or persistence. (`internal/github/pages.go::ListIssuesPage`, `internal/github/sync.go::SyncArchiveItem`)
 - Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
 - A merged GitHub archive lookup requires both merge commit SHA and files
-  changed. If an eager merge timestamp rejects older canonical detail, fill
-  only missing metrics when the head SHA matches; never weaken parent snapshot
-  ordering. (`internal/github/sync.go::requireGitHubArchiveMergedMRMetrics`,
+  changed. Treat either `merged` or `merged_at` as merged evidence. If an eager
+  merge timestamp rejects older canonical detail, fill only missing metrics
+  when the head SHA matches; never weaken parent snapshot ordering.
+  (`internal/github/sync.go::requireGitHubArchiveMergedMRMetrics`,
   `internal/db/queries_merge_lifecycle.go::FillMissingMergedMRMetrics`)
+- Post-hydration completeness queries the repository ID resolved by that sync;
+  never re-resolve the caller's mutable route after reconciliation.
+  (`internal/github/sync.go::SyncArchiveItem`)
 - Archive issue hydration treats timeline failures as hard errors; ordinary issue refresh remains best-effort for that optional dataset. (`internal/github/sync.go::refreshIssueTimeline`)
 - GitHub archive admission with a known registry pacing window paces off
   provider quota alone: availability is the minimum across required resources

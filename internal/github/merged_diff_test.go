@@ -657,6 +657,7 @@ func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	baseRef := "main"
 	state := "closed"
 	merged := true
+	changedFiles := 1
 	now := time.Now().UTC()
 	mergedPR := &gh.PullRequest{
 		ID:             &ghID,
@@ -666,6 +667,7 @@ func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 		State:          &state,
 		Merged:         &merged,
 		MergeCommitSHA: &mergeCommit,
+		ChangedFiles:   &changedFiles,
 		UpdatedAt:      makeTimestamp(now),
 		CreatedAt:      makeTimestamp(now),
 		MergedAt:       makeTimestamp(now),

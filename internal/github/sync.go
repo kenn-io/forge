@@ -12258,6 +12258,22 @@ func (s *Syncer) syncMRForRepo(
 	useConditionalPRDetail bool,
 	providerAttempted *bool,
 ) error {
+	return s.syncMRForRepoResolved(
+		ctx, repo, number, useConditionalPRDetail, providerAttempted, nil,
+	)
+}
+
+func (s *Syncer) syncMRForRepoResolved(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+	useConditionalPRDetail bool,
+	providerAttempted *bool,
+	resolvedRepoID *int64,
+) error {
+	if resolvedRepoID != nil {
+		*resolvedRepoID = 0
+	}
 	if !IsArchiveSyncBudgetContext(ctx) {
 		bucket, err := s.bucketKeyForRepo(repo, false)
 		if err != nil {
@@ -12283,6 +12299,9 @@ func (s *Syncer) syncMRForRepo(
 	}
 	if !found {
 		return nil
+	}
+	if resolvedRepoID != nil {
+		*resolvedRepoID = repoID
 	}
 	repo = resolvedRef
 	if repo.Archived && !IsArchiveSyncBudgetContext(ctx) {
@@ -12411,7 +12430,7 @@ func (s *Syncer) syncMRForRepo(
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
 	if !accepted {
-		if ghPR != nil && ghPR.GetMerged() && normalized.FilesChanged != nil {
+		if ghPR != nil && pullRequestWasMerged(ghPR) && normalized.FilesChanged != nil {
 			repairCtx := s.db.WithRepositoryRouteFence(
 				ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 			)
@@ -12964,12 +12983,15 @@ func (s *Syncer) SyncArchiveItem(
 		return providerAttempted, err
 	case db.ArchiveItemTypeMergeRequest:
 		providerAttempted := false
-		err := s.syncMRForRepo(ctx, repo, number, false, &providerAttempted)
+		var resolvedRepoID int64
+		err := s.syncMRForRepoResolved(
+			ctx, repo, number, false, &providerAttempted, &resolvedRepoID,
+		)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
 			err = nil
 		}
 		if err == nil && repoPlatform(repo) == platform.KindGitHub {
-			err = s.requireGitHubArchiveMergedMRMetrics(ctx, repo, number)
+			err = s.requireGitHubArchiveMergedMRMetrics(ctx, resolvedRepoID, number)
 		}
 		return providerAttempted, err
 	default:
@@ -12979,19 +13001,20 @@ func (s *Syncer) SyncArchiveItem(
 
 func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	ctx context.Context,
-	repo RepoRef,
+	repoID int64,
 	number int,
 ) error {
-	storedRepo, err := s.db.GetRepoByIdentity(
-		ctx, platform.DBRepoIdentity(platformRepoRef(repo)),
-	)
+	if repoID == 0 {
+		return fmt.Errorf("verify GitHub archive MR #%d: repository was not resolved", number)
+	}
+	storedRepo, err := s.db.GetRepoByID(ctx, repoID)
 	if err != nil {
 		return fmt.Errorf("verify GitHub archive MR #%d repository: %w", number, err)
 	}
 	if storedRepo == nil {
 		return fmt.Errorf("verify GitHub archive MR #%d: repository is not stored", number)
 	}
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, storedRepo.ID, number)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 	if err != nil {
 		return fmt.Errorf("verify GitHub archive MR #%d metrics: %w", number, err)
 	}
@@ -13011,7 +13034,7 @@ func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	if len(missing) > 0 {
 		return fmt.Errorf(
 			"verify GitHub archive MR %s/%s#%d metrics: missing %s",
-			repo.Owner, repo.Name, number, strings.Join(missing, ", "),
+			storedRepo.Owner, storedRepo.Name, number, strings.Join(missing, ", "),
 		)
 	}
 	return nil

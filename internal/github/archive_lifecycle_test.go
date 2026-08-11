@@ -331,6 +331,78 @@ func TestArchiveHydrationPRShapedIssueBecomesTerminalInSQLite(t *testing.T) {
 		"terminal archive lookup must not hydrate the PR-shaped issue again")
 }
 
+func TestArchiveHydrationKeepsIncompleteMergedGitHubPRFailed(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+	mergedAt := now.Add(-time.Hour)
+	item := buildOpenPR(7, mergedAt)
+	item.State = new("closed")
+	item.Merged = new(true)
+	item.MergedAt = makeTimestamp(mergedAt)
+	item.ClosedAt = makeTimestamp(mergedAt)
+	item.MergeCommitSHA = new("merge-sha")
+	item.ChangedFiles = nil
+	client := &archivePageMockClient{
+		mockClient: &mockClient{singlePR: item},
+		listInventoryIssuesPageFn: func(
+			context.Context, string, string, string, string, string,
+		) ([]*gh.Issue, string, bool, error) {
+			return nil, "", true, nil
+		},
+		listInventoryPullRequestsPageFn: func(
+			context.Context, string, string, string, int,
+		) ([]*gh.PullRequest, bool, error) {
+			return []*gh.PullRequest{item}, false, nil
+		},
+	}
+	tracker := NewPlatformRateTracker(database, "github", "github.com", "host", "rest")
+	tracker.UpdateFromRate(Rate{
+		Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute),
+	})
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: ref.Owner, Name: ref.Name,
+		}},
+		time.Hour, map[string]*RateTracker{"github.com": tracker}, testBudget(5000),
+	)
+	syncer.now = func() time.Time { return now }
+	service, err := archive.NewService(
+		database, syncer.clients, syncer, syncer, nil,
+		archiveLifecycleClock{now: func() time.Time { return now }},
+	)
+	require.NoError(err)
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+
+	for range 2 {
+		require.NoError(service.RunEligible(t.Context()))
+	}
+	require.ErrorContains(service.RunEligible(t.Context()), "files_changed")
+
+	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+	progress, err := database.GetDatasetProgress(
+		t.Context(), repo.ID, db.ArchiveItemTypeMergeRequest, 7,
+		db.ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressFailed, progress.Status)
+	assert.Equal(1, progress.AttemptCount)
+	assert.Nil(progress.CompletedAt)
+	require.NotNil(progress.LastErrorDetail)
+	assert.Contains(*progress.LastErrorDetail, "files_changed")
+}
+
 func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

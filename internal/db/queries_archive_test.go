@@ -696,6 +696,12 @@ func TestRequeueArchiveLifecycleDetailsOnlyReopensIncompleteGitHubRows(t *testin
 		t, database, repoID, ArchiveItemTypeMergeRequest, 7,
 		ArchiveDatasetLookup, ArchiveDatasetProgressComplete,
 	)
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE forge_archive_dataset_progress
+		SET scan_generation = ?
+		WHERE repo_id = ? AND item_type = 'merge_request'
+		  AND item_number = 7 AND dataset = 'lookup'`, int64(1<<32), repoID)
+	require.NoError(err)
 	issueID := insertArchiveReportIssue(
 		t, database, repoID, 8, "issue-8", "Closed issue", "author", mergedAt.Add(-time.Hour),
 	)

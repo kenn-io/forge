@@ -256,7 +256,11 @@ registry helpers return typed errors for missing providers or capabilities.
   lifecycle details are missing, independent of historical inventory coverage;
   a close actor is current only when the latest authored close event matches
   `closed_at`. (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`)
-- Successful canonical hydration durably marks lifecycle details checked even when a provider omits them, preventing repeated backfill reads. (`internal/db/queries_dataset_progress.go::CommitArchiveItemSync`)
+- Successful canonical hydration durably marks lifecycle details checked only
+  after provider-specific completeness gates pass; providers that define absent
+  fields as unavailable may still be checked once.
+  (`internal/archive/hydrate.go::hydrateItem`,
+  `internal/db/queries_dataset_progress.go::CommitArchiveItemSync`)
 - Authentication and repository-blocked errors defer every archive work class, including already-pending hydration, until an explicit retry clears the repository error. (`internal/archive/scheduler.go::archiveRepoDeferred`)
 - Archive admission is provider-host scoped. Normal index, notification, and active-detail work outrank archive requests; live work registers first, cancels the active archive request context, and waits for that request lease to release before provider I/O. Archive leases are released before SQLite commits. (`internal/github/sync.go::beginProviderWork`, `internal/github/sync.go::tryBeginArchiveProviderRequest`, `internal/github/sync.go::Admit`, `internal/archive/scheduler.go::admit`)
 - Split-auth live work holds every read/write credential identity it may spend, including identities selected after route reconciliation. Register work inside shared execution functions so no entry point bypasses admission. (`internal/github/notifications_sync.go::notificationProviderWork`)

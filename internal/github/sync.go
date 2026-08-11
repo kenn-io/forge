@@ -12411,6 +12411,26 @@ func (s *Syncer) syncMRForRepo(
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
 	if !accepted {
+		if ghPR != nil && ghPR.GetMerged() && normalized.FilesChanged != nil {
+			repairCtx := s.db.WithRepositoryRouteFence(
+				ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+			)
+			_, repairErr := s.db.FillMissingMergedMRMetrics(
+				repairCtx,
+				db.MergeRequestMergeMetrics{
+					RepoID: repoID, Number: number,
+					HeadSHA:        normalized.PlatformHeadSHA,
+					MergeCommitSHA: normalized.MergeCommitSHA,
+					FilesChanged:   *normalized.FilesChanged,
+				},
+			)
+			if errors.Is(repairErr, db.ErrRepositoryRouteFenceChanged) {
+				return nil
+			}
+			if repairErr != nil {
+				return fmt.Errorf("repair merged MR #%d metrics: %w", number, repairErr)
+			}
+		}
 		return nil
 	}
 	ctx = s.db.WithRepositoryRouteFence(
@@ -12946,12 +12966,55 @@ func (s *Syncer) SyncArchiveItem(
 		providerAttempted := false
 		err := s.syncMRForRepo(ctx, repo, number, false, &providerAttempted)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
-			return providerAttempted, nil
+			err = nil
+		}
+		if err == nil && repoPlatform(repo) == platform.KindGitHub {
+			err = s.requireGitHubArchiveMergedMRMetrics(ctx, repo, number)
 		}
 		return providerAttempted, err
 	default:
 		return false, fmt.Errorf("sync archive item: invalid item type %q", itemType)
 	}
+}
+
+func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+) error {
+	storedRepo, err := s.db.GetRepoByIdentity(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)),
+	)
+	if err != nil {
+		return fmt.Errorf("verify GitHub archive MR #%d repository: %w", number, err)
+	}
+	if storedRepo == nil {
+		return fmt.Errorf("verify GitHub archive MR #%d: repository is not stored", number)
+	}
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, storedRepo.ID, number)
+	if err != nil {
+		return fmt.Errorf("verify GitHub archive MR #%d metrics: %w", number, err)
+	}
+	if mr == nil {
+		return fmt.Errorf("verify GitHub archive MR #%d metrics: pull request is not stored", number)
+	}
+	if mr.State != db.MergeRequestStateMerged && mr.MergedAt == nil {
+		return nil
+	}
+	missing := make([]string, 0, 2)
+	if mr.MergeCommitSHA == "" {
+		missing = append(missing, "merge_commit_sha")
+	}
+	if mr.FilesChanged == nil {
+		missing = append(missing, "files_changed")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf(
+			"verify GitHub archive MR %s/%s#%d metrics: missing %s",
+			repo.Owner, repo.Name, number, strings.Join(missing, ", "),
+		)
+	}
+	return nil
 }
 
 // SyncItemByNumber fetches an item by number from GitHub, determines

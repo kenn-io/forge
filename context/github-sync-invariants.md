@@ -450,6 +450,11 @@ fallback repository listing.
 - Archive REST and GraphQL failures must preserve typed authentication and reset-aware rate-limit errors so scheduling defers rather than hot-looping generic retries. (`internal/github/pages.go::archiveTransportError`)
 - GitHub archive code owns historical identity inventory only; hydration must invoke ordinary item sync instead of adding archive-specific lookup, normalization, or persistence. (`internal/github/pages.go::ListIssuesPage`, `internal/github/sync.go::SyncArchiveItem`)
 - Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
+- A merged GitHub archive lookup requires both merge commit SHA and files
+  changed. If an eager merge timestamp rejects older canonical detail, fill
+  only missing metrics when the head SHA matches; never weaken parent snapshot
+  ordering. (`internal/github/sync.go::requireGitHubArchiveMergedMRMetrics`,
+  `internal/db/queries_merge_lifecycle.go::FillMissingMergedMRMetrics`)
 - Archive issue hydration treats timeline failures as hard errors; ordinary issue refresh remains best-effort for that optional dataset. (`internal/github/sync.go::refreshIssueTimeline`)
 - GitHub archive admission with a known registry pacing window paces off
   provider quota alone: availability is the minimum across required resources

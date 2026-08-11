@@ -60,6 +60,26 @@ type repoWorktreeBaseHostInput struct {
 	Body         repoWorktreeBaseRequest
 }
 
+type repoUIVisibilityRequest struct {
+	Hidden bool `json:"hidden"`
+}
+
+type repoUIVisibilityInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Body         repoUIVisibilityRequest
+}
+
+type repoUIVisibilityHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Body         repoUIVisibilityRequest
+}
+
 type settingsOutput = httpapi.BodyOutput[settingsResponse]
 
 type setActiveWorktreeInput struct {
@@ -354,6 +374,20 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 		Summary:     "Update repository worktree base",
 		Tags:        []string{"Settings"},
 	}, s.updateConfiguredRepoWorktreeBaseOnHost)
+	huma.Register(api, huma.Operation{
+		OperationID: "update-repo-ui-visibility",
+		Method:      http.MethodPut,
+		Path:        "/repo/{provider}/{owner}/{name}/ui-visibility",
+		Summary:     "Update repository UI visibility",
+		Tags:        []string{"Settings"},
+	}, s.updateConfiguredRepoUIVisibility)
+	huma.Register(api, huma.Operation{
+		OperationID: "update-repo-ui-visibility-on-host",
+		Method:      http.MethodPut,
+		Path:        "/host/{platform_host}/repo/{provider}/{owner}/{name}/ui-visibility",
+		Summary:     "Update repository UI visibility",
+		Tags:        []string{"Settings"},
+	}, s.updateConfiguredRepoUIVisibilityOnHost)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-repo",
 		Method:        http.MethodDelete,

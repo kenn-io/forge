@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -79,6 +81,66 @@ func (s *Server) filterConfiguredRepoSummaries(
 		}
 	}
 	return filtered
+}
+
+// filterHiddenRepos removes repositories with a hidden-from-UI preference.
+// It applies only to interactive repository catalogs (selectors, pickers);
+// item feeds, direct routes, and the settings surface stay unfiltered.
+func (s *Server) filterHiddenRepos(
+	ctx context.Context, repos []db.Repo,
+) ([]db.Repo, error) {
+	hiddenIDs, err := s.hiddenRepoIDSet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(hiddenIDs) == 0 {
+		return repos, nil
+	}
+	filtered := make([]db.Repo, 0, len(repos))
+	for _, repo := range repos {
+		if _, ok := hiddenIDs[repo.ID]; ok {
+			continue
+		}
+		filtered = append(filtered, repo)
+	}
+	return filtered, nil
+}
+
+func (s *Server) filterHiddenRepoSummaries(
+	ctx context.Context, summaries []db.RepoSummary,
+) ([]db.RepoSummary, error) {
+	hiddenIDs, err := s.hiddenRepoIDSet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(hiddenIDs) == 0 {
+		return summaries, nil
+	}
+	filtered := make([]db.RepoSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		if _, ok := hiddenIDs[summary.Repo.ID]; ok {
+			continue
+		}
+		filtered = append(filtered, summary)
+	}
+	return filtered, nil
+}
+
+func (s *Server) hiddenRepoIDSet(
+	ctx context.Context,
+) (map[int64]struct{}, error) {
+	if s.db == nil {
+		return nil, nil
+	}
+	hidden, err := s.db.HiddenRepos(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list hidden repos: %w", err)
+	}
+	ids := make(map[int64]struct{}, len(hidden))
+	for _, repo := range hidden {
+		ids[repo.ID] = struct{}{}
+	}
+	return ids, nil
 }
 
 func (s *Server) trackedConfiguredRepoSet() map[string]struct{} {

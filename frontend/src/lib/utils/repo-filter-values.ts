@@ -1,4 +1,5 @@
 import { canonicalProvider } from "../api/provider-routes.js";
+import type { ConfigRepo } from "../api/types.js";
 
 export interface RepoFilterIdentity {
   provider?: string | null;
@@ -126,4 +127,57 @@ export function normalizeRepoFilterSelection(
   return serializeRepoFilterSelection(
     parseRepoFilterSelection(selected).map((value) => normalizeRepoFilterValue(value, repos)),
   );
+}
+
+// interactiveRepoFilterIdentities feeds selectors with the entries a user can
+// still pick: server-hidden repositories drop out.
+export function interactiveRepoFilterIdentities(repos: readonly ConfigRepo[]): RepoFilterIdentity[] {
+  const identities: RepoFilterIdentity[] = [];
+  for (const repo of repos) {
+    if (repo.hidden_from_ui) continue;
+    identities.push({
+      provider: repo.provider,
+      platformHost: repo.platform_host,
+      repoPath: repo.repo_path,
+      isGlob: repo.is_glob,
+    });
+  }
+  return identities;
+}
+
+function canonicalSelectionValue(value: string): string {
+  const separator = value.indexOf("|");
+  if (separator === -1) return value;
+  return `${normalizeProvider(value.slice(0, separator))}|${value.slice(separator + 1)}`;
+}
+
+// normalizeInteractiveRepoFilterSelection normalizes a stored selection
+// against the repositories a user can still pick. Selections naming a
+// server-hidden exact repository are dropped explicitly: general
+// normalization preserves unknown provider-qualified values because
+// glob-resolved repositories have no configured entry of their own, so a
+// hidden repo would otherwise keep filtering after vanishing from pickers.
+export function normalizeInteractiveRepoFilterSelection(
+  selected: string | undefined,
+  repos: readonly ConfigRepo[],
+): string | undefined {
+  const hidden = new Set<string>();
+  for (const repo of repos) {
+    if (!repo.hidden_from_ui || repo.is_glob) continue;
+    // Selections created from catalog rows use the provider-verified current
+    // route, which diverges from the configured path after a rename — clear
+    // against both.
+    for (const repoPath of [repo.repo_path, repo.tracked_repo_path]) {
+      if (!repoPath) continue;
+      const value = providerQualifiedRepoFilterValue({
+        provider: repo.provider,
+        platformHost: repo.platform_host,
+        repoPath,
+        isGlob: repo.is_glob,
+      });
+      if (value) hidden.add(value);
+    }
+  }
+  const remaining = parseRepoFilterSelection(selected).filter((value) => !hidden.has(canonicalSelectionValue(value)));
+  return normalizeRepoFilterSelection(serializeRepoFilterSelection(remaining), interactiveRepoFilterIdentities(repos));
 }

@@ -658,6 +658,19 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   Background freshness work is not a navigation transaction and must not block
   link selection or Forge-owned actions
   (`frontend/src/lib/components/kata/KataLinksPanel.svelte`).
+- An explicitly seeded target (for example the repository a workspace dialog
+  was opened for) must never silently fall back to a last-used or first option
+  when the seed cannot be resolved — leave the selection empty and require a
+  choice (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte`).
+- Repository selectors consume server-filtered catalogs; configured-entry
+  consumers gate on the server's `hidden_from_ui` flag and must not reimplement
+  visibility matching client-side. Selection normalization must drop hidden
+  selections explicitly — general normalization preserves unknown values for
+  glob-resolved repositories, so a hidden repo would otherwise keep filtering —
+  and must clear against both the configured path and the server-provided
+  `tracked_repo_path`, because selections created from catalog rows use the
+  current route, which diverges after a provider-side rename
+  (`frontend/src/lib/utils/repo-filter-values.ts::normalizeInteractiveRepoFilterSelection`).
 - Roborev has no event replay cursor: reconnect after authoritative job-list reconciliation; a lost
   mutation response retains and fences its original target until authoritative observation, never
   replays the write. A confirmed POST stays acknowledged when its follow-up refresh fails; report

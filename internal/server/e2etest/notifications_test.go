@@ -174,6 +174,8 @@ func TestNotificationSyncReconcilesReusedRouteE2E(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 	number := 7
+	// Relative to now so the seeded activity stays inside the activity
+	// endpoint's default 7d window regardless of the calendar date.
 	firstActivityAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	var activityAt atomic.Int64
 	activityAt.Store(firstActivityAt.UnixNano())

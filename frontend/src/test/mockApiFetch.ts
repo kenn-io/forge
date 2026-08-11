@@ -271,6 +271,7 @@ export const mockSettings = {
       repo_path: "acme/widgets",
       is_glob: false,
       matched_repo_count: 1,
+      hidden_from_ui: false,
     },
   ],
   activity: {

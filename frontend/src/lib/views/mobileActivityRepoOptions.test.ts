@@ -129,4 +129,29 @@ describe("buildMobileActivityRepoOptions", () => {
       },
     ]);
   });
+
+  it("omits entries the server marked hidden from the interactive UI", () => {
+    const options = buildMobileActivityRepoOptions([
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        hidden_from_ui: true,
+      },
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        name: "api",
+        repo_path: "acme/api",
+        hidden_from_ui: false,
+      },
+    ]);
+
+    expect(options).toEqual([
+      {
+        value: "github|github.com/acme/api",
+        label: "github/github.com/acme/api",
+        triggerLabel: "acme/api",
+      },
+    ]);
+  });
 });

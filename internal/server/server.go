@@ -1133,6 +1133,17 @@ func newServer(
 		otelhttp.WithFilter(otelTraceable(basePath)),
 		otelhttp.WithSpanNameFormatter(otelSpanName))
 
+	// Exact entries removed from the TOML file while the daemon was stopped
+	// must release their hidden-from-UI preferences; boot restores tracked
+	// refs from provider snapshots before the server is constructed, so
+	// exact-owned preferences resolve and survive the sweep.
+	if err := s.reconcileOrphanedRepoVisibility(s.bgCtx); err != nil {
+		slog.Warn(
+			"release orphaned hidden-from-UI preferences at startup",
+			"err", err,
+		)
+	}
+
 	return s
 }
 

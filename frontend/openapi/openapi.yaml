@@ -1074,6 +1074,8 @@ components:
     ConfiguredRepoStatus:
       additionalProperties: false
       properties:
+        hidden_from_ui:
+          type: boolean
         is_glob:
           type: boolean
         matched_repo_count:
@@ -1089,6 +1091,8 @@ components:
           type: string
         repo_path:
           type: string
+        tracked_repo_path:
+          type: string
         worktree_base_path:
           type: string
       required:
@@ -1099,6 +1103,7 @@ components:
         - repo_path
         - is_glob
         - matched_repo_count
+        - hidden_from_ui
       type: object
     CreateAdHocWorkspaceHostInputBody:
       additionalProperties: false
@@ -6301,6 +6306,21 @@ components:
         - active_authors
         - recent_issues
         - operations
+      type: object
+    RepoUIVisibilityRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepoUIVisibilityRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        hidden:
+          type: boolean
+      required:
+        - hidden
       type: object
     RepoWorktreeBaseRequest:
       additionalProperties: false
@@ -13842,6 +13862,52 @@ paths:
       summary: Resolve repository item
       tags:
         - Repositories
+  /host/{platform_host}/repo/{provider}/{owner}/{name}/ui-visibility:
+    put:
+      operationId: update-repo-ui-visibility-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoUIVisibilityRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update repository UI visibility
+      tags:
+        - Settings
   /host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces:
     post:
       operationId: create-repo-workspace-on-host
@@ -18398,6 +18464,47 @@ paths:
       summary: Resolve repository item
       tags:
         - Repositories
+  /repo/{provider}/{owner}/{name}/ui-visibility:
+    put:
+      operationId: update-repo-ui-visibility
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoUIVisibilityRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update repository UI visibility
+      tags:
+        - Settings
   /repo/{provider}/{owner}/{name}/workspaces:
     post:
       operationId: create-repo-workspace

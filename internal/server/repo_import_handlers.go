@@ -594,7 +594,13 @@ func (s *Server) applyBulkExactRepos(
 	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
 
-	return s.buildLocalSettingsResponse(), nil
+	body, err := s.buildLocalSettingsResponse(ctx)
+	if err != nil {
+		return settingsResponse{}, &bulkApplyError{
+			problem: httpapi.Internal(err.Error()),
+		}
+	}
+	return body, nil
 }
 
 func (s *Server) bulkAddRepos(

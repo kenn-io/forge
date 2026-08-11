@@ -12,7 +12,7 @@
   import MobileActivityView from "./lib/views/MobileActivityView.svelte";
   import ReviewsView from "./lib/views/ReviewsView.svelte";
   import FocusListView from "./lib/views/FocusListView.svelte";
-  import { normalizeRepoFilterSelection } from "./lib/utils/repo-filter-values.js";
+  import { normalizeInteractiveRepoFilterSelection } from "./lib/utils/repo-filter-values.js";
   import type { ActionRegistry, NavigateCallback, StoreInstances } from "./lib/types.js";
   import type { ActivityItem, ModeVisibility } from "./lib/api/types.js";
   import {
@@ -647,15 +647,7 @@
   }
 
   function getNormalizedGlobalRepo(repo: string | undefined = getGlobalRepo()): string | undefined {
-    return normalizeRepoFilterSelection(
-      repo,
-      (stores?.settings.getConfiguredRepos?.() ?? []).map((configuredRepo) => ({
-        provider: configuredRepo.provider,
-        platformHost: configuredRepo.platform_host,
-        repoPath: configuredRepo.repo_path,
-        isGlob: configuredRepo.is_glob,
-      })),
-    );
+    return normalizeInteractiveRepoFilterSelection(repo, stores?.settings.getConfiguredRepos?.() ?? []);
   }
 
   onDestroy(() => {

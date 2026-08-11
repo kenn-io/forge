@@ -72,6 +72,44 @@ describe("RepoTypeahead", () => {
     });
   });
 
+  it("omits configured repos the server marked hidden from the UI", async () => {
+    render(RepoTypeahead, {
+      props: {
+        selected: undefined,
+        onchange: vi.fn(),
+      },
+    });
+
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "archive",
+        repo_path: "acme/archive",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: true,
+      },
+    ]);
+
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /acme\/api/i })).toBeTruthy();
+    });
+    expect(screen.queryByRole("option", { name: /acme\/archive/i })).toBeNull();
+  });
+
   it("aborts the repository request when the component unmounts", async () => {
     let signal: AbortSignal | undefined;
     getRepos.mockImplementation((_path, options) => {

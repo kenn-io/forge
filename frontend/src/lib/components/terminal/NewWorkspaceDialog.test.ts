@@ -251,6 +251,22 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
   });
 
+  it("requires an explicit choice when the seeded repo is not offered", async () => {
+    // A seed that no longer resolves (for example a repository hidden from
+    // the UI) must not silently divert the workspace to another repository,
+    // even when a last-used repo is remembered.
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/gadget");
+    await renderDialog({
+      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "concealed" },
+    });
+
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect(repoPicker().textContent).not.toContain("acme/widget");
+    expect(repoPicker().textContent).not.toContain("acme/gadget");
+  });
+
   it("routes non-default hosts through the host-scoped path", async () => {
     mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", "git.example.test", "forgejo")] });
     await renderDialog();

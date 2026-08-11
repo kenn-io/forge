@@ -108,6 +108,21 @@ func (d *DB) GetRepositoryByProviderID(
 	)
 }
 
+// GetRepositoryByProviderIDUnderRepositoryReconciliationRead is
+// GetRepositoryByProviderID for callers that already hold
+// LockRepositoryReconciliationRead — acquiring the lock again deadlocks
+// behind a queued reconciliation writer.
+func (d *DB) GetRepositoryByProviderIDUnderRepositoryReconciliationRead(
+	ctx context.Context,
+	platform string,
+	platformHost string,
+	platformRepoID string,
+) (*RepositoryCatalogEntry, error) {
+	return d.getRepositoryByProviderID(
+		ctx, platform, platformHost, platformRepoID,
+	)
+}
+
 func (d *DB) getRepositoryByProviderID(
 	ctx context.Context,
 	platform string,

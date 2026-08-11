@@ -724,4 +724,41 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
       assert.deepStrictEqual(observedRequests, ["POST /api/v1/repo/github/acme/api/refresh"]);
     }),
   );
+
+  it.effect("saves repository UI visibility through the provider route", () =>
+    Effect.gen(function* () {
+      const repo = {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      };
+      const saved = makeSettings([{ ...repo, hidden_from_ui: true }]);
+      const observedRequests: string[] = [];
+      const observedBodies: unknown[] = [];
+      const fetch: typeof globalThis.fetch = async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        observedRequests.push(`${request.method} ${new URL(request.url).pathname}`);
+        observedBodies.push(JSON.parse(await request.text()));
+        return Response.json(saved);
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const workflow = yield* SettingsWorkflow;
+      const result = yield* workflow.updateRepoUIVisibility(
+        "acme",
+        "api",
+        { provider: "github", host: "github.com" },
+        true,
+      );
+
+      assert.strictEqual(result.repos[0]?.hidden_from_ui, true);
+      assert.deepStrictEqual(observedRequests, ["PUT /api/v1/repo/github/acme/api/ui-visibility"]);
+      assert.deepStrictEqual(observedBodies, [{ hidden: true }]);
+    }),
+  );
 });

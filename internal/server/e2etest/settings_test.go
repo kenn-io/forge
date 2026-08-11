@@ -764,6 +764,71 @@ func TestRepoConfigAPIE2EUpdatesWorktreeBasePath(t *testing.T) {
 	assert.Empty(cfgAfterClear.Repos[0].WorktreeBasePath)
 }
 
+func TestRepoConfigAPIE2EUpdatesUIVisibility(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServerWithConfig(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	entry, _, err := database.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repo-acme-widget",
+			Owner:          "acme",
+			Name:           "widget",
+		}, time.Now().UTC(),
+	)
+	require.NoError(err)
+	require.NotNil(entry)
+
+	summaryNames := func() []string {
+		resp, err := ts.Client().Get(ts.URL + "/api/v1/repos/summary")
+		require.NoError(err)
+		defer resp.Body.Close()
+		require.Equal(http.StatusOK, resp.StatusCode)
+		var summaries []generated.RepoSummaryResponse
+		require.NoError(json.NewDecoder(resp.Body).Decode(&summaries))
+		names := make([]string, 0, len(summaries))
+		for _, summary := range summaries {
+			names = append(names, summary.Name)
+		}
+		return names
+	}
+	require.Equal([]string{"widget"}, summaryNames())
+
+	hideResp := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/api/v1/repo/github/acme/widget/ui-visibility",
+		generated.RepoUIVisibilityRequest{Hidden: true},
+	)
+	defer hideResp.Body.Close()
+	require.Equal(http.StatusOK, hideResp.StatusCode)
+
+	var hidden generated.SettingsResponse
+	require.NoError(json.NewDecoder(hideResp.Body).Decode(&hidden))
+	require.Len(hidden.Repos, 1)
+	assert.True(hidden.Repos[0].HiddenFromUi)
+	assert.Empty(summaryNames(),
+		"hidden repo leaves the repository overview summaries")
+
+	showResp := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/api/v1/repo/github/acme/widget/ui-visibility",
+		generated.RepoUIVisibilityRequest{Hidden: false},
+	)
+	defer showResp.Body.Close()
+	require.Equal(http.StatusOK, showResp.StatusCode)
+
+	var shown generated.SettingsResponse
+	require.NoError(json.NewDecoder(showResp.Body).Decode(&shown))
+	require.Len(shown.Repos, 1)
+	assert.False(shown.Repos[0].HiddenFromUi)
+	assert.Equal([]string{"widget"}, summaryNames(),
+		"showing restores the repo in the repository overview summaries")
+}
+
 func TestRepoConfigAPIE2ERejectsUnsafeWorktreeScopedBaseConfig(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

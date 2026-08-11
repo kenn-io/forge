@@ -665,6 +665,10 @@ func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, 
 	if s.cfg != nil {
 		repos = s.filterConfiguredRepos(repos)
 	}
+	repos, err = s.filterHiddenRepos(ctx, repos)
+	if err != nil {
+		return nil, httpapi.Internal(err.Error())
+	}
 
 	out := make([]repoResponse, 0, len(repos))
 	for _, repo := range repos {
@@ -683,6 +687,10 @@ func (s *Server) listRepoSummaries(
 	}
 	if s.cfg != nil {
 		summaries = s.filterConfiguredRepoSummaries(summaries)
+	}
+	summaries, err = s.filterHiddenRepoSummaries(ctx, summaries)
+	if err != nil {
+		return nil, httpapi.Internal(err.Error())
 	}
 
 	defaultPlatformHost := s.defaultPlatformHost()

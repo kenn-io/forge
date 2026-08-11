@@ -141,6 +141,7 @@ type RepoSuffix =
   | "/labels"
   | "/markdown-image"
   | "/refresh"
+  | "/ui-visibility"
   | "/worktree-base"
   | "/workspaces"
   | "/resolve/{number}";

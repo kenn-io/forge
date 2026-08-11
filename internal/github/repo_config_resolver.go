@@ -59,14 +59,21 @@ func canonicalRepoPattern(pattern string) string {
 }
 
 type ConfiguredRepoStatus struct {
-	Provider         string `json:"provider"`
-	PlatformHost     string `json:"platform_host"`
-	Owner            string `json:"owner"`
-	Name             string `json:"name"`
-	RepoPath         string `json:"repo_path"`
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	RepoPath     string `json:"repo_path"`
+	// TrackedRepoPath is the provider-verified current route of the tracked
+	// repository backing an exact entry. After a provider-side rename it
+	// differs from the configured RepoPath, and clients need it to release
+	// state keyed to the current route (for example filter selections of a
+	// repository being hidden). Empty for globs and untracked entries.
+	TrackedRepoPath  string `json:"tracked_repo_path,omitempty"`
 	WorktreeBasePath string `json:"worktree_base_path,omitempty"`
 	IsGlob           bool   `json:"is_glob"`
 	MatchedRepoCount int    `json:"matched_repo_count"`
+	HiddenFromUI     bool   `json:"hidden_from_ui"`
 }
 
 type ResolveConfiguredReposResult struct {

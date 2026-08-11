@@ -39,6 +39,13 @@ type SettingsCommand =
       readonly options: RepoRequestOptions;
       readonly worktreeBasePath: string;
     }
+  | {
+      readonly _tag: "UpdateRepoUIVisibility";
+      readonly owner: string;
+      readonly name: string;
+      readonly options: RepoRequestOptions;
+      readonly hidden: boolean;
+    }
   | { readonly _tag: "BulkAddRepos"; readonly repos: readonly RepoInput[] }
   | {
       readonly _tag: "PromoteRepo";
@@ -120,6 +127,12 @@ export class SettingsWorkflow extends Context.Service<
       name: string,
       options: RepoRequestOptions,
       worktreeBasePath: string,
+    ) => Effect.Effect<SettingsSnapshot, SettingsError>;
+    readonly updateRepoUIVisibility: (
+      owner: string,
+      name: string,
+      options: RepoRequestOptions,
+      hidden: boolean,
     ) => Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly previewRepos: (
       owner: string,
@@ -218,6 +231,25 @@ function exactRepoWorktreeBaseMatches(
       repo.owner === owner &&
       repo.name === name &&
       (repo.worktree_base_path ?? "") === worktreeBasePath,
+  );
+}
+
+function exactRepoUIVisibilityMatches(
+  settings: SettingsSnapshot,
+  owner: string,
+  name: string,
+  options: RepoRequestOptions,
+  hidden: boolean,
+): boolean {
+  return settings.repos.some(
+    (repo) =>
+      !repo.is_glob &&
+      canonicalProvider(repo.provider) === canonicalProvider(options.provider) &&
+      resolvedPlatformHost(repo.provider, repo.platform_host) ===
+        resolvedPlatformHost(options.provider, options.host) &&
+      repo.owner === owner &&
+      repo.name === name &&
+      repo.hidden_from_ui === hidden,
   );
 }
 
@@ -424,6 +456,24 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
             );
             return settingsCommandResult(settings);
           }
+          case "UpdateRepoUIVisibility": {
+            const ref = repoRef(command.owner, command.name, command.options);
+            const settings = yield* runRecoverableSettingsMutation(
+              "repository UI visibility save",
+              [repoMutationKey(command.owner, command.name, command.options)],
+              api.execute("PUT repository UI visibility", (signal) =>
+                api.client.PUT(providerRepoPath(ref, "/ui-visibility"), {
+                  params: { path: providerRouteParams(ref) },
+                  body: { hidden: command.hidden },
+                  signal,
+                }),
+              ),
+              (snapshot) =>
+                exactRepoUIVisibilityMatches(snapshot, command.owner, command.name, command.options, command.hidden),
+              (snapshot) => snapshot,
+            );
+            return settingsCommandResult(settings);
+          }
           case "BulkAddRepos": {
             const settings = yield* runRecoverableSettingsMutation(
               "bulk repository add",
@@ -567,6 +617,8 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
       refreshRepo: (owner, name, options) => submitSettings({ _tag: "RefreshRepo", owner, name, options }),
       updateRepoWorktreeBasePath: (owner, name, options, worktreeBasePath) =>
         submitSettings({ _tag: "UpdateRepoWorktreeBase", owner, name, options, worktreeBasePath }),
+      updateRepoUIVisibility: (owner, name, options, hidden) =>
+        submitSettings({ _tag: "UpdateRepoUIVisibility", owner, name, options, hidden }),
       previewRepos: (owner, pattern, options) =>
         api.execute("POST /repos/preview", (signal) =>
           api.client.POST("/repos/preview", { body: { ...options, owner, pattern }, signal }),

@@ -39,6 +39,11 @@ repo_path = "group/subgroup/project"
 Repository identity includes `platform`, `platform_host`, `owner`, and `name`.
 Keep `repo_path` when the provider uses nested namespaces or canonical casing.
 
+To hide a repository from lists and pickers without removing it, open the gear
+menu on its Settings row and choose "Hide from UI". Syncing continues and
+direct links keep working; choose "Show in UI" to bring it back. Hiding
+applies to exact repositories, not glob patterns.
+
 ## Credentials
 
 Credentials are scoped by provider and host:

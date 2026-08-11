@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 let isolatedServer: IsolatedE2EServer | undefined;
@@ -34,6 +34,11 @@ function git(dir: string, ...args: string[]): void {
   execFileSync("git", args, { cwd: dir, stdio: "ignore" });
 }
 
+async function toggleLocalCloneEditor(row: Locator): Promise<void> {
+  await row.getByRole("button", { name: "Configure acme/widgets" }).click();
+  await row.getByRole("menuitem", { name: "Edit local clone path" }).click();
+}
+
 test("local clone editor opens from the row gear and saves a valid path", async ({ page }) => {
   localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "mm-local-clone-")));
   git(localRepo, "init");
@@ -47,7 +52,7 @@ test("local clone editor opens from the row gear and saves a valid path", async 
   await expect(row).toBeVisible();
   await expect(input).toBeHidden();
 
-  await row.getByRole("button", { name: "Local clone for acme/widgets" }).click();
+  await toggleLocalCloneEditor(row);
   await expect(input).toBeVisible();
 
   await input.fill(localRepo);
@@ -65,10 +70,6 @@ test("local clone editor opens from the row gear and saves a valid path", async 
   await expect(row.locator(".row-error")).toHaveCount(0);
   await expect(input).toHaveValue(/mm-local-clone-/);
   await expect(saveButton).toBeDisabled();
-  await expect(row.getByRole("button", { name: "Local clone for acme/widgets" })).toHaveAttribute(
-    "title",
-    `Local clone: ${localRepo}`,
-  );
 
   await expect
     .poll(async () => {
@@ -86,15 +87,11 @@ test("local clone editor opens from the row gear and saves a valid path", async 
   await page.reload();
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   const reloadedRow = page.locator(".repo-row", { hasText: "acme/widgets" });
-  await expect(reloadedRow.getByRole("button", { name: "Local clone for acme/widgets" })).toHaveAttribute(
-    "title",
-    `Local clone: ${localRepo}`,
-  );
-  await reloadedRow.getByRole("button", { name: "Local clone for acme/widgets" }).click();
+  await toggleLocalCloneEditor(reloadedRow);
   const reloadedInput = reloadedRow.getByLabel("Local clone path for acme/widgets", { exact: true });
   await expect(reloadedInput).toHaveValue(localRepo);
 
-  await reloadedRow.getByRole("button", { name: "Local clone for acme/widgets" }).click();
+  await toggleLocalCloneEditor(reloadedRow);
   await expect(reloadedInput).toBeHidden();
 });
 
@@ -103,7 +100,7 @@ test("local clone editor keeps its draft open after a validation failure", async
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
   const row = page.locator(".repo-row", { hasText: "acme/widgets" });
-  await row.getByRole("button", { name: "Local clone for acme/widgets" }).click();
+  await toggleLocalCloneEditor(row);
 
   const input = row.getByLabel("Local clone path for acme/widgets", { exact: true });
   await input.fill("/nonexistent/clone/path");

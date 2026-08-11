@@ -2100,6 +2100,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/ui-visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update repository UI visibility */
+        put: operations["update-repo-ui-visibility-on-host"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces": {
         parameters: {
             query?: never;
@@ -3764,6 +3781,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repo/{provider}/{owner}/{name}/ui-visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update repository UI visibility */
+        put: operations["update-repo-ui-visibility"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repo/{provider}/{owner}/{name}/workspaces": {
         parameters: {
             query?: never;
@@ -4979,6 +5013,7 @@ export interface components {
             commits: components["schemas"]["CommitResponse"][] | null;
         };
         ConfiguredRepoStatus: {
+            hidden_from_ui: boolean;
             is_glob: boolean;
             /** Format: int64 */
             matched_repo_count: number;
@@ -4987,6 +5022,7 @@ export interface components {
             platform_host: string;
             provider: string;
             repo_path: string;
+            tracked_repo_path?: string;
             worktree_base_path?: string;
         };
         CreateAdHocWorkspaceHostInputBody: {
@@ -7341,6 +7377,15 @@ export interface components {
             releases: components["schemas"]["RepoSummaryReleaseResponse"][] | null;
             repo: components["schemas"]["RepoRefResponse"];
             timeline_updated_at?: string;
+        };
+        RepoUIVisibilityRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoUIVisibilityRequest.json
+             */
+            readonly $schema?: string;
+            hidden: boolean;
         };
         RepoWorktreeBaseRequest: {
             /**
@@ -12887,6 +12932,44 @@ export interface operations {
             };
         };
     };
+    "update-repo-ui-visibility-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoUIVisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "create-repo-workspace-on-host": {
         parameters: {
             query?: never;
@@ -16715,6 +16798,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResolveItemResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "update-repo-ui-visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoUIVisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
                 };
             };
             /** @description Error */

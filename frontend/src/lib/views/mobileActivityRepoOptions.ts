@@ -21,7 +21,8 @@ function repoFilterIdentity(repo: ConfigRepo) {
   };
 }
 
-export function buildMobileActivityRepoOptions(repos: ConfigRepo[]): MobileActivityRepoOption[] {
+export function buildMobileActivityRepoOptions(allRepos: ConfigRepo[]): MobileActivityRepoOption[] {
+  const repos = allRepos.filter((repo) => !repo.hidden_from_ui);
   const valuesByRepoPath = new Map<string, Set<string>>();
   for (const repo of repos) {
     const value = concreteRepoFilterValue(repoFilterIdentity(repo));

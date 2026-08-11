@@ -11,6 +11,7 @@ const {
   mockPromoteRepo,
   mockRefreshRepo,
   mockRefreshSyncStatus,
+  mockUpdateRepoUIVisibility,
   mockUpdateRepoWorktreeBasePath,
 } = vi.hoisted(() => ({
   mockAddRepo: vi.fn(),
@@ -19,6 +20,7 @@ const {
   mockPromoteRepo: vi.fn(),
   mockRefreshRepo: vi.fn(),
   mockRefreshSyncStatus: vi.fn(),
+  mockUpdateRepoUIVisibility: vi.fn(),
   mockUpdateRepoWorktreeBasePath: vi.fn(),
 }));
 
@@ -54,6 +56,8 @@ vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
       refreshRepo: (owner, name, options) => runMock("refresh repository", () => mockRefreshRepo(owner, name, options)),
       updateRepoWorktreeBasePath: (owner, name, options, path) =>
         runMock("save repository clone path", () => mockUpdateRepoWorktreeBasePath(owner, name, options, path)),
+      updateRepoUIVisibility: (owner, name, options, hidden) =>
+        runMock("save repository visibility", () => mockUpdateRepoUIVisibility(owner, name, options, hidden)),
       previewRepos: (owner, pattern, options) =>
         runMock("preview repositories", () => mockPreviewRepos(owner, pattern, options)),
       bulkAddRepos: (repos) => runMock("add repositories", () => mockBulkAddRepos(repos)),
@@ -89,6 +93,7 @@ describe("RepoSettings", () => {
     mockRefreshSyncStatus.mockReset();
     mockAddRepo.mockReset();
     mockRefreshRepo.mockReset();
+    mockUpdateRepoUIVisibility.mockReset();
     mockUpdateRepoWorktreeBasePath.mockReset();
     mockPreviewRepos.mockReset();
     mockBulkAddRepos.mockReset();
@@ -356,7 +361,8 @@ describe("RepoSettings", () => {
     });
 
     expect(screen.queryByPlaceholderText("/path/to/existing/clone")).toBeNull();
-    await fireEvent.click(screen.getByRole("button", { name: "Local clone for acme/api" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Configure acme/api" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Edit local clone path…" }));
 
     await fireEvent.input(screen.getByPlaceholderText("/path/to/existing/clone"), {
       target: { value: "/Users/acme/api" },
@@ -373,6 +379,134 @@ describe("RepoSettings", () => {
       "/Users/acme/api",
     );
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(updatedRepos));
+  });
+
+  it("offers no configure menu on glob rows because visibility and clones are exact-repo settings", () => {
+    renderRepoSettings({
+      repos: [
+        {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "*",
+          repo_path: "acme/*",
+          is_glob: true,
+          matched_repo_count: 3,
+          hidden_from_ui: false,
+        },
+      ],
+      onUpdate: vi.fn(),
+    });
+
+    expect(screen.queryByRole("button", { name: "Configure acme/* (3)" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Configure / })).toBeNull();
+  });
+
+  it("hides a repository through the settings workflow", async () => {
+    const onUpdate = vi.fn();
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "archive",
+      repo_path: "acme/archive",
+      is_glob: false,
+      matched_repo_count: 1,
+      hidden_from_ui: false,
+    };
+    const updatedRepos = [{ ...repo, hidden_from_ui: true }];
+    mockUpdateRepoUIVisibility.mockResolvedValue({ repos: updatedRepos });
+
+    renderRepoSettings({ repos: [repo], onUpdate });
+    await fireEvent.click(screen.getByRole("button", { name: "Configure acme/archive" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Hide from UI" }));
+
+    expect(mockUpdateRepoUIVisibility).toHaveBeenCalledWith(
+      "acme",
+      "archive",
+      { provider: "github", host: "github.com" },
+      true,
+    );
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(updatedRepos));
+  });
+
+  it("preserves confirmed visibility after a failed update", async () => {
+    mockUpdateRepoUIVisibility.mockRejectedValue(new Error("could not save visibility"));
+    const onUpdate = vi.fn();
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "archive",
+      repo_path: "acme/archive",
+      is_glob: false,
+      matched_repo_count: 1,
+      hidden_from_ui: true,
+    };
+
+    renderRepoSettings({ repos: [repo], onUpdate });
+    const gear = screen.getByRole("button", { name: "Configure acme/archive" });
+    await fireEvent.click(gear);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Show in UI" }));
+
+    await waitFor(() =>
+      expect(flash.getFlash()).toMatchObject({ message: "could not save visibility", tone: "danger" }),
+    );
+    expect(onUpdate).not.toHaveBeenCalled();
+    await fireEvent.click(gear);
+    expect(screen.getByRole("menuitem", { name: "Show in UI" })).toBeTruthy();
+  });
+
+  it("keeps the gear available while disabling a pending visibility action", async () => {
+    mockUpdateRepoUIVisibility.mockReturnValue(new Promise(() => {}));
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "archive",
+      repo_path: "acme/archive",
+      is_glob: false,
+      matched_repo_count: 1,
+      hidden_from_ui: false,
+    };
+
+    renderRepoSettings({ repos: [repo], onUpdate: vi.fn() });
+    const gear = screen.getByRole("button", { name: "Configure acme/archive" });
+    await fireEvent.click(gear);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Hide from UI" }));
+
+    expect((gear as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(gear);
+    expect((screen.getByRole("menuitem", { name: "Hide from UI" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("keeps repository configuration inspectable but disabled when embedded", async () => {
+    window.__kenn_forge_config = { embed: {} };
+    window.__kenn_forge_notify_config_changed?.();
+    try {
+      const repo = {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "archive",
+        repo_path: "acme/archive",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      };
+
+      renderRepoSettings({ repos: [repo], onUpdate: vi.fn() });
+      const gear = screen.getByRole("button", { name: "Configure acme/archive" });
+      expect((gear as HTMLButtonElement).disabled).toBe(false);
+      await fireEvent.click(gear);
+      expect((screen.getByRole("menuitem", { name: "Edit local clone path…" }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+      expect((screen.getByRole("menuitem", { name: "Hide from UI" }) as HTMLButtonElement).disabled).toBe(true);
+    } finally {
+      delete window.__kenn_forge_config;
+      window.__kenn_forge_notify_config_changed?.();
+    }
   });
 
   it("promotes a glob match to an exact repository with a local clone path", async () => {

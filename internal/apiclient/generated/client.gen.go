@@ -1476,6 +1476,7 @@ type CommitsResponse struct {
 
 // ConfiguredRepoStatus defines model for ConfiguredRepoStatus.
 type ConfiguredRepoStatus struct {
+	HiddenFromUi     bool    `json:"hidden_from_ui"`
 	IsGlob           bool    `json:"is_glob"`
 	MatchedRepoCount int64   `json:"matched_repo_count"`
 	Name             string  `json:"name"`
@@ -1483,6 +1484,7 @@ type ConfiguredRepoStatus struct {
 	PlatformHost     string  `json:"platform_host"`
 	Provider         string  `json:"provider"`
 	RepoPath         string  `json:"repo_path"`
+	TrackedRepoPath  *string `json:"tracked_repo_path,omitempty"`
 	WorktreeBasePath *string `json:"worktree_base_path,omitempty"`
 }
 
@@ -3584,6 +3586,13 @@ type RepoSummaryResponse struct {
 	TimelineUpdatedAt    *string                           `json:"timeline_updated_at,omitempty"`
 }
 
+// RepoUIVisibilityRequest defines model for RepoUIVisibilityRequest.
+type RepoUIVisibilityRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Hidden bool    `json:"hidden"`
+}
+
 // RepoWorktreeBaseRequest defines model for RepoWorktreeBaseRequest.
 type RepoWorktreeBaseRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -5015,6 +5024,9 @@ type SetPrReviewersOnHostJSONRequestBody = SetReviewersRequest
 // SetKanbanStateOnHostJSONRequestBody defines body for SetKanbanStateOnHost for application/json ContentType.
 type SetKanbanStateOnHostJSONRequestBody = SetKanbanStateHostInputBody
 
+// UpdateRepoUiVisibilityOnHostJSONRequestBody defines body for UpdateRepoUiVisibilityOnHost for application/json ContentType.
+type UpdateRepoUiVisibilityOnHostJSONRequestBody = RepoUIVisibilityRequest
+
 // CreateRepoWorkspaceOnHostJSONRequestBody defines body for CreateRepoWorkspaceOnHost for application/json ContentType.
 type CreateRepoWorkspaceOnHostJSONRequestBody = CreateAdHocWorkspaceHostInputBody
 
@@ -5143,6 +5155,9 @@ type SetPrReviewersJSONRequestBody = SetReviewersRequest
 
 // SetKanbanStateJSONRequestBody defines body for SetKanbanState for application/json ContentType.
 type SetKanbanStateJSONRequestBody = SetKanbanStateInputBody
+
+// UpdateRepoUiVisibilityJSONRequestBody defines body for UpdateRepoUiVisibility for application/json ContentType.
+type UpdateRepoUiVisibilityJSONRequestBody = RepoUIVisibilityRequest
 
 // CreateRepoWorkspaceJSONRequestBody defines body for CreateRepoWorkspace for application/json ContentType.
 type CreateRepoWorkspaceJSONRequestBody = CreateAdHocWorkspaceInputBody
@@ -5948,6 +5963,11 @@ type ClientInterface interface {
 	// ResolveRepoItemOnHost request
 	ResolveRepoItemOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *ResolveRepoItemOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// UpdateRepoUiVisibilityOnHostWithBody request with any body
+	UpdateRepoUiVisibilityOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateRepoUiVisibilityOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoUiVisibilityOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateRepoWorkspaceOnHostWithBody request with any body
 	CreateRepoWorkspaceOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -6360,6 +6380,11 @@ type ClientInterface interface {
 
 	// ResolveRepoItem request
 	ResolveRepoItem(ctx context.Context, provider string, owner string, name string, number int64, params *ResolveRepoItemParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateRepoUiVisibilityWithBody request with any body
+	UpdateRepoUiVisibilityWithBody(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateRepoUiVisibility(ctx context.Context, provider string, owner string, name string, body UpdateRepoUiVisibilityJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateRepoWorkspaceWithBody request with any body
 	CreateRepoWorkspaceWithBody(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -8864,6 +8889,30 @@ func (c *Client) ResolveRepoItemOnHost(ctx context.Context, platformHost string,
 	return c.Client.Do(req)
 }
 
+func (c *Client) UpdateRepoUiVisibilityOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateRepoUiVisibilityOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateRepoUiVisibilityOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoUiVisibilityOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateRepoUiVisibilityOnHostRequest(c.Server, platformHost, provider, owner, name, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) CreateRepoWorkspaceOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateRepoWorkspaceOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, contentType, body)
 	if err != nil {
@@ -10678,6 +10727,30 @@ func (c *Client) RefreshRepo(ctx context.Context, provider string, owner string,
 
 func (c *Client) ResolveRepoItem(ctx context.Context, provider string, owner string, name string, number int64, params *ResolveRepoItemParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewResolveRepoItemRequest(c.Server, provider, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateRepoUiVisibilityWithBody(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateRepoUiVisibilityRequestWithBody(c.Server, provider, owner, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateRepoUiVisibility(ctx context.Context, provider string, owner string, name string, body UpdateRepoUiVisibilityJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateRepoUiVisibilityRequest(c.Server, provider, owner, name, body)
 	if err != nil {
 		return nil, err
 	}
@@ -20866,6 +20939,74 @@ func NewResolveRepoItemOnHostRequest(server string, platformHost string, provide
 	return req, nil
 }
 
+// NewUpdateRepoUiVisibilityOnHostRequest calls the generic UpdateRepoUiVisibilityOnHost builder with application/json body
+func NewUpdateRepoUiVisibilityOnHostRequest(server string, platformHost string, provider string, owner string, name string, body UpdateRepoUiVisibilityOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateRepoUiVisibilityOnHostRequestWithBody(server, platformHost, provider, owner, name, "application/json", bodyReader)
+}
+
+// NewUpdateRepoUiVisibilityOnHostRequestWithBody generates requests for UpdateRepoUiVisibilityOnHost with any type of body
+func NewUpdateRepoUiVisibilityOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/ui-visibility", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewCreateRepoWorkspaceOnHostRequest calls the generic CreateRepoWorkspaceOnHost builder with application/json body
 func NewCreateRepoWorkspaceOnHostRequest(server string, platformHost string, provider string, owner string, name string, body CreateRepoWorkspaceOnHostJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -27835,6 +27976,67 @@ func NewResolveRepoItemRequest(server string, provider string, owner string, nam
 	return req, nil
 }
 
+// NewUpdateRepoUiVisibilityRequest calls the generic UpdateRepoUiVisibility builder with application/json body
+func NewUpdateRepoUiVisibilityRequest(server string, provider string, owner string, name string, body UpdateRepoUiVisibilityJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateRepoUiVisibilityRequestWithBody(server, provider, owner, name, "application/json", bodyReader)
+}
+
+// NewUpdateRepoUiVisibilityRequestWithBody generates requests for UpdateRepoUiVisibility with any type of body
+func NewUpdateRepoUiVisibilityRequestWithBody(server string, provider string, owner string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/ui-visibility", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewCreateRepoWorkspaceRequest calls the generic CreateRepoWorkspace builder with application/json body
 func NewCreateRepoWorkspaceRequest(server string, provider string, owner string, name string, body CreateRepoWorkspaceJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -30748,6 +30950,11 @@ type ClientWithResponsesInterface interface {
 	// ResolveRepoItemOnHostWithResponse request
 	ResolveRepoItemOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *ResolveRepoItemOnHostParams, reqEditors ...RequestEditorFn) (*ResolveRepoItemOnHostResponse, error)
 
+	// UpdateRepoUiVisibilityOnHostWithBodyWithResponse request with any body
+	UpdateRepoUiVisibilityOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateRepoUiVisibilityOnHostResponse, error)
+
+	UpdateRepoUiVisibilityOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoUiVisibilityOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoUiVisibilityOnHostResponse, error)
+
 	// CreateRepoWorkspaceOnHostWithBodyWithResponse request with any body
 	CreateRepoWorkspaceOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateRepoWorkspaceOnHostResponse, error)
 
@@ -31160,6 +31367,11 @@ type ClientWithResponsesInterface interface {
 
 	// ResolveRepoItemWithResponse request
 	ResolveRepoItemWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *ResolveRepoItemParams, reqEditors ...RequestEditorFn) (*ResolveRepoItemResponse, error)
+
+	// UpdateRepoUiVisibilityWithBodyWithResponse request with any body
+	UpdateRepoUiVisibilityWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateRepoUiVisibilityResponse, error)
+
+	UpdateRepoUiVisibilityWithResponse(ctx context.Context, provider string, owner string, name string, body UpdateRepoUiVisibilityJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoUiVisibilityResponse, error)
 
 	// CreateRepoWorkspaceWithBodyWithResponse request with any body
 	CreateRepoWorkspaceWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateRepoWorkspaceResponse, error)
@@ -34562,6 +34774,29 @@ func (r ResolveRepoItemOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type UpdateRepoUiVisibilityOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateRepoUiVisibilityOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateRepoUiVisibilityOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type CreateRepoWorkspaceOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -37043,6 +37278,29 @@ func (r ResolveRepoItemResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ResolveRepoItemResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateRepoUiVisibilityResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateRepoUiVisibilityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateRepoUiVisibilityResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -39950,6 +40208,23 @@ func (c *ClientWithResponses) ResolveRepoItemOnHostWithResponse(ctx context.Cont
 	return ParseResolveRepoItemOnHostResponse(rsp)
 }
 
+// UpdateRepoUiVisibilityOnHostWithBodyWithResponse request with arbitrary body returning *UpdateRepoUiVisibilityOnHostResponse
+func (c *ClientWithResponses) UpdateRepoUiVisibilityOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateRepoUiVisibilityOnHostResponse, error) {
+	rsp, err := c.UpdateRepoUiVisibilityOnHostWithBody(ctx, platformHost, provider, owner, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateRepoUiVisibilityOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateRepoUiVisibilityOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoUiVisibilityOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoUiVisibilityOnHostResponse, error) {
+	rsp, err := c.UpdateRepoUiVisibilityOnHost(ctx, platformHost, provider, owner, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateRepoUiVisibilityOnHostResponse(rsp)
+}
+
 // CreateRepoWorkspaceOnHostWithBodyWithResponse request with arbitrary body returning *CreateRepoWorkspaceOnHostResponse
 func (c *ClientWithResponses) CreateRepoWorkspaceOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateRepoWorkspaceOnHostResponse, error) {
 	rsp, err := c.CreateRepoWorkspaceOnHostWithBody(ctx, platformHost, provider, owner, name, contentType, body, reqEditors...)
@@ -41273,6 +41548,23 @@ func (c *ClientWithResponses) ResolveRepoItemWithResponse(ctx context.Context, p
 		return nil, err
 	}
 	return ParseResolveRepoItemResponse(rsp)
+}
+
+// UpdateRepoUiVisibilityWithBodyWithResponse request with arbitrary body returning *UpdateRepoUiVisibilityResponse
+func (c *ClientWithResponses) UpdateRepoUiVisibilityWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateRepoUiVisibilityResponse, error) {
+	rsp, err := c.UpdateRepoUiVisibilityWithBody(ctx, provider, owner, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateRepoUiVisibilityResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateRepoUiVisibilityWithResponse(ctx context.Context, provider string, owner string, name string, body UpdateRepoUiVisibilityJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoUiVisibilityResponse, error) {
+	rsp, err := c.UpdateRepoUiVisibility(ctx, provider, owner, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateRepoUiVisibilityResponse(rsp)
 }
 
 // CreateRepoWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateRepoWorkspaceResponse
@@ -46399,6 +46691,39 @@ func ParseResolveRepoItemOnHostResponse(rsp *http.Response) (*ResolveRepoItemOnH
 	return response, nil
 }
 
+// ParseUpdateRepoUiVisibilityOnHostResponse parses an HTTP response from a UpdateRepoUiVisibilityOnHostWithResponse call
+func ParseUpdateRepoUiVisibilityOnHostResponse(rsp *http.Response) (*UpdateRepoUiVisibilityOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateRepoUiVisibilityOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseCreateRepoWorkspaceOnHostResponse parses an HTTP response from a CreateRepoWorkspaceOnHostWithResponse call
 func ParseCreateRepoWorkspaceOnHostResponse(rsp *http.Response) (*CreateRepoWorkspaceOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -49839,6 +50164,39 @@ func ParseResolveRepoItemResponse(rsp *http.Response) (*ResolveRepoItemResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ResolveItemResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateRepoUiVisibilityResponse parses an HTTP response from a UpdateRepoUiVisibilityWithResponse call
+func ParseUpdateRepoUiVisibilityResponse(rsp *http.Response) (*UpdateRepoUiVisibilityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateRepoUiVisibilityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

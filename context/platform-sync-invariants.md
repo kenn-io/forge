@@ -54,6 +54,24 @@ combining repository-owned history
 - Assigning a historically occupied route to another verified repository clears
   route-scoped state even without an active occupant; migration 47 applies the same
   cleanup to preexisting reuse, while legacy adoption remains in-place (`internal/db/repository_catalog.go::ReconcileRepositoryObservation`, `internal/db/migrations/000047_repository_route_generation.up.sql:1`).
+- Hidden-from-UI is an operator preference keyed by the stable internal catalog
+  row, never by mutable config routes — renames keep it, route reuse must not
+  inherit it, and only exact configured repositories can be hidden. Correlating
+  hidden rows with configured entries and resolving visibility mutations must
+  also use the stable provider id, not route keys: a displaced row keeps its
+  old display route. Mutations resolve, validate lifecycle, and write in one
+  critical section under the repository-reconciliation read lock, rejecting
+  non-active rows — a tracked snapshot lagging reconciliation still names the
+  displaced repository
+  (`internal/server/settings_handlers.go::applyVisibilityUnderReconciliationRead`).
+  Removing the last exact entry for a repository releases its hidden
+  preference on every configuration-change path — startup, TOML hot reload,
+  and the DELETE handler (detached from request cancellation): globs can keep
+  the repository tracked but expose no visibility controls
+  (`internal/server/settings_handlers.go::reconcileOrphanedRepoVisibility`). Filtering is
+  server-owned and scoped to interactive repository catalogs; item feeds, direct
+  routes, and the settings surface stay unfiltered
+  (`internal/server/helpers.go::filterHiddenRepos`).
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.

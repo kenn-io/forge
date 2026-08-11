@@ -23,3 +23,7 @@ fixtures, or changing shell-script coverage.
 - Use provider live or container fixtures only when fake transports cannot
   catch endpoint or authentication drift. GitHub GraphQL validation is gated by
   `KENN_FORGE_LIVE_GITHUB_TESTS=1`.
+- Fixtures asserted through windowed endpoints (activity's default 7d range)
+  must seed now-relative instants, not absolute calendar dates — pinned dates
+  age out and the test starts failing on a later calendar day
+  (`internal/server/e2etest/notifications_test.go::TestNotificationSyncReconcilesReusedRouteE2E`).

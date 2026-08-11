@@ -451,6 +451,17 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		nativeStacksPrevious, newCfg.PullRequests.PreferGitHubNativeStacks,
 	)
 
+	// Removing an exact entry from the TOML file must release its
+	// hidden-from-UI preference just like the DELETE handler; otherwise a
+	// glob can keep the repository tracked and filtered with no exact row
+	// offering a "Show in UI" control.
+	if err := s.reconcileOrphanedRepoVisibility(ctx); err != nil {
+		slog.Warn(
+			"release orphaned hidden-from-UI preferences after config reload",
+			"err", err,
+		)
+	}
+
 	slog.Info(
 		"config reload applied",
 		"path", s.cfgPath,

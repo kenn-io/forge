@@ -253,9 +253,10 @@ test("settings promotes a glob match to a persisted exact repo with a local clon
   await expect(dialog).toHaveCount(0);
   const exactRow = page.locator(".repo-row", { hasText: "roborev-dev/kenn-forge" });
   await expect(exactRow).toBeVisible();
-  await expect(exactRow.getByRole("button", { name: "Local clone for roborev-dev/kenn-forge" })).toHaveAttribute(
-    "title",
-    `Local clone: ${localRepo}`,
+  await exactRow.getByRole("button", { name: "Configure roborev-dev/kenn-forge" }).click();
+  await exactRow.getByRole("menuitem", { name: "Edit local clone path" }).click();
+  await expect(exactRow.getByLabel("Local clone path for roborev-dev/kenn-forge", { exact: true })).toHaveValue(
+    localRepo,
   );
 
   if (!api) throw new Error("settings-globs API context not initialized");

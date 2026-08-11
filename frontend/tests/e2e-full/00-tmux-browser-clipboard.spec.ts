@@ -550,6 +550,22 @@ async function readBrowserClipboardWithoutFocus(page: Page): Promise<string> {
   return page.evaluate(() => navigator.clipboard.readText());
 }
 
+async function dispatchTerminalPaste(container: Locator, text: string): Promise<boolean> {
+  return container.evaluate((terminalContainer, pastedText) => {
+    const textarea = terminalContainer.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+    if (!textarea) throw new Error("xterm helper textarea is unavailable");
+    const clipboardData = new DataTransfer();
+    clipboardData.setData("text/plain", pastedText);
+    return textarea.dispatchEvent(
+      new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData,
+      }),
+    );
+  }, text);
+}
+
 async function interceptDeniedBrowserClipboard(page: Page): Promise<string[]> {
   await page.addInitScript(() => {
     const denied = () => Promise.reject(new DOMException("denied", "NotAllowedError"));
@@ -909,7 +925,7 @@ test("modified non-link terminal drags retain pointer capture through outside re
   }
 });
 
-test("insecure browser clipboard shortcuts and context menu work with tmux", async ({ page, browserName }) => {
+test("insecure browser clipboard events and context menu work with tmux", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "Insecure-origin clipboard regression targets Chromium");
   test.skip(process.env.KENN_FORGE_E2E_INSECURE_ORIGIN !== "1", "Runs only in the isolated Playwright CI container");
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
@@ -931,6 +947,8 @@ test("insecure browser clipboard shortcuts and context menu work with tmux", asy
     const output = observeTerminalOutput(page);
     const marker = "WINDOWS_REMOTE_PASTE_MARKER";
     const command = `printf '${marker}\\n'`;
+    const windowsClipboardCommand = `${command}\r\n`;
+    const normalizedTerminalCommand = `${command}\r`;
     const plainTextMarker = "WINDOWS_REMOTE_PLAIN_TEXT_PASTE_MARKER";
     const plainTextCommand = `printf '${plainTextMarker}\\n'`;
     const copyMarker = "WINDOWS_REMOTE_COPY_MARKER";
@@ -941,32 +959,17 @@ test("insecure browser clipboard shortcuts and context menu work with tmux", asy
     expect(await page.evaluate(() => typeof navigator.clipboard)).toBe("undefined");
     const terminal = await openTerminalPanel(page);
     await expect.poll(() => output.activeSocketCount(), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBeGreaterThan(0);
-    const usesMetaPasteModifier = await page.evaluate(() => /Mac/.test(navigator.platform));
-    const pasteModifier = usesMetaPasteModifier ? "Meta" : "Control";
-
-    await setBrowserClipboard(clipboardPage, command);
-    await page.bringToFront();
     await terminal.locator(".xterm-helper-textarea").focus();
-    await page.keyboard.press(`${pasteModifier}+V`);
-    await expect.poll(() => output.inputCount(command), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(1);
+    expect(await dispatchTerminalPaste(terminal, windowsClipboardCommand)).toBe(false);
+    await expect
+      .poll(() => output.inputCount(normalizedTerminalCommand), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
+      .toBe(1);
+    expect(output.inputIncludes(windowsClipboardCommand)).toBe(false);
     await page.keyboard.press("Enter");
     await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
 
-    await clipboardPage.bringToFront();
-    await setBrowserClipboard(clipboardPage, plainTextCommand);
-    await page.bringToFront();
     await terminal.locator(".xterm-helper-textarea").focus();
-    if (usesMetaPasteModifier) {
-      await terminal.evaluate((container, pastedText) => {
-        const textarea = container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
-        if (!textarea) throw new Error("xterm helper textarea is unavailable");
-        const clipboardData = new DataTransfer();
-        clipboardData.setData("text/plain", pastedText);
-        textarea.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }));
-      }, plainTextCommand);
-    } else {
-      await page.keyboard.press(`${pasteModifier}+Shift+V`);
-    }
+    expect(await dispatchTerminalPaste(terminal, plainTextCommand)).toBe(false);
     await expect.poll(() => output.inputCount(plainTextCommand), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(1);
     await page.keyboard.press("Enter");
     await expect.poll(() => output.includes(plainTextMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);

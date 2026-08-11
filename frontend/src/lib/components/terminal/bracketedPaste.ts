@@ -17,7 +17,7 @@ export function createTerminalPastePayload(text: string, bracketedPasteMode: boo
 
 export function sanitizeTerminalPasteText(text: string): string {
   let sanitizedText = "";
-  for (const character of text) {
+  for (const character of text.replace(/\r?\n/g, "\r")) {
     const codePoint = character.codePointAt(0);
     if (codePoint === undefined || isUnsafeTerminalControlByte(codePoint)) {
       continue;

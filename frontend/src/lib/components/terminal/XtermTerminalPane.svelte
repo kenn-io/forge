@@ -307,7 +307,8 @@
   }
 
   function isBrowserPasteShortcut(event: KeyboardEvent): boolean {
-    return !event.altKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
+    const pasteModifierPressed = terminalLinkUsesMetaKey ? event.metaKey : event.ctrlKey;
+    return !event.altKey && pasteModifierPressed && event.key.toLowerCase() === "v";
   }
 
   function handleInsecureTerminalRightMouse(event: MouseEvent): void {

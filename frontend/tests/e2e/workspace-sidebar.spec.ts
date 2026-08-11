@@ -2188,7 +2188,7 @@ test.describe("workspace launch home", () => {
     await expect(page.locator(".terminal-container .xterm-screen canvas")).toHaveCount(0);
   });
 
-  test("xterm workspace terminal sends multiline browser paste as one payload", async ({ page }) => {
+  test("xterm workspace terminal normalizes Windows multiline paste as one payload", async ({ page }) => {
     await page.addInitScript(() => {
       type RecordedSocket = {
         sent: unknown[];
@@ -2284,7 +2284,7 @@ test.describe("workspace launch home", () => {
       }) as ClipboardEvent;
       Object.defineProperty(event, "clipboardData", {
         value: {
-          getData: (type: string) => (type === "text/plain" ? "first\nsecond\nthird" : ""),
+          getData: (type: string) => (type === "text/plain" ? "first\r\nsecond\r\nthird" : ""),
         },
       });
       element.dispatchEvent(event);
@@ -2305,7 +2305,7 @@ test.describe("workspace launch home", () => {
             .map((frame) => (Array.isArray(frame) ? decoder.decode(new Uint8Array(frame)) : frame));
         }),
       )
-      .toContainEqual("first\nsecond\nthird");
+      .toContainEqual("first\rsecond\rthird");
   });
 
   test("opens the plain shell from the bottom terminal panel", async ({ page }) => {

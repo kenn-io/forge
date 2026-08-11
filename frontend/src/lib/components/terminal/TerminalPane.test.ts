@@ -380,14 +380,28 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
   });
 
-  it("leaves browser paste shortcuts to Chrome instead of sending control characters", async () => {
+  it("leaves Ctrl+V browser-owned on Windows and Linux", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(xtermCustomKeyEventHandlers).toHaveLength(1));
     const handler = xtermCustomKeyEventHandlers[0]!;
 
     expect(handler(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(false);
     expect(handler(new KeyboardEvent("keydown", { key: "V", ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(handler(new KeyboardEvent("keydown", { key: "v", metaKey: true }))).toBe(true);
     expect(handler(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }))).toBe(true);
+  });
+
+  it("leaves Cmd+V browser-owned on macOS without consuming Ctrl+V", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermCustomKeyEventHandlers).toHaveLength(1));
+    const handler = xtermCustomKeyEventHandlers[0]!;
+
+    expect(handler(new KeyboardEvent("keydown", { key: "v", metaKey: true }))).toBe(false);
+    expect(handler(new KeyboardEvent("keydown", { key: "V", metaKey: true, shiftKey: true }))).toBe(false);
+    expect(handler(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(true);
+    expect(handler(new KeyboardEvent("keydown", { key: "V", ctrlKey: true, shiftKey: true }))).toBe(true);
   });
 
   it("keeps insecure-origin right clicks out of tmux without blocking Chrome's context menu", async () => {
@@ -1394,7 +1408,7 @@ describe("TerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) => (type === "text/plain" ? "first\x1b[201~\nsecond\nthird" : "")),
+        getData: vi.fn((type: string) => (type === "text/plain" ? "first\x1b[201~\r\nsecond\r\nthird" : "")),
       },
     });
 
@@ -1404,7 +1418,7 @@ describe("TerminalPane", () => {
     expect(laterPasteListener).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain(
-        "\x1b[200~first[201~\nsecond\nthird\x1b[201~",
+        "\x1b[200~first[201~\rsecond\rthird\x1b[201~",
       ),
     );
   });
@@ -1426,7 +1440,7 @@ describe("TerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) => (type === "text/plain" ? "first\nsecond\nthird" : "")),
+        getData: vi.fn((type: string) => (type === "text/plain" ? "first\r\nsecond\r\nthird" : "")),
       },
     });
 
@@ -1435,7 +1449,7 @@ describe("TerminalPane", () => {
     expect(defaultAllowed).toBe(false);
     await waitFor(() =>
       expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain(
-        "first\nsecond\nthird",
+        "first\rsecond\rthird",
       ),
     );
   });

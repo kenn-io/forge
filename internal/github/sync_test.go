@@ -13163,15 +13163,39 @@ func TestSyncArchiveMRRepairsMetricsFromMergedAtOnlyRejectedSnapshot(t *testing.
 	canonical.MergeCommitSHA = &mergeSHA
 	canonical.ChangedFiles = &filesChanged
 	canonical.Head.SHA = new("head-sha")
+	canonical.MergedBy = &gh.User{Login: new("merge-admin")}
 	client := &mockClient{singlePR: canonical}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": client}, database, nil,
 		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
 	)
+	var raceStarted atomic.Bool
+	writeLockAttempted := make(chan struct{})
+	var writeLockAttemptedOnce sync.Once
+	restoreWriteLockHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
+		if raceStarted.Load() {
+			writeLockAttemptedOnce.Do(func() { close(writeLockAttempted) })
+		}
+	})
+	t.Cleanup(restoreWriteLockHook)
+	reconciliationDone := make(chan error, 1)
+	syncer.afterMergedMRMetricsRepair = func() {
+		raceStarted.Store(true)
+		go func() {
+			_, _, reconcileErr := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformRepoID: "repo-owner-repo", Owner: "owner", Name: "renamed",
+				RepoPath: "owner/renamed",
+			}, time.Now().UTC().Add(time.Hour))
+			reconciliationDone <- reconcileErr
+		}()
+		<-writeLockAttempted
+	}
 
 	require.NoError(syncer.syncMRForRepo(
 		WithArchiveSyncBudget(ctx), repo, 7, false, nil,
 	))
+	require.NoError(<-reconciliationDone)
 	after, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(after)
@@ -13181,6 +13205,10 @@ func TestSyncArchiveMRRepairsMetricsFromMergedAtOnlyRejectedSnapshot(t *testing.
 	assert.Equal("newer local title", after.Title)
 	assert.Equal(before.UpdatedAt, after.UpdatedAt)
 	assert.Equal(before.SnapshotRevision, after.SnapshotRevision)
+	events, err := database.ListMREvents(ctx, after.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("merge-admin", events[0].Author)
 }
 
 func TestSyncArchiveMRChecksMetricsByResolvedRepositoryIDAfterRename(t *testing.T) {

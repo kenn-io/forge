@@ -918,6 +918,7 @@ type Syncer struct {
 	pendingIssueCommentSyncs []queuedIssueCommentSync
 
 	afterMergeRequestParentSnapshotCommit   func()
+	afterMergedMRMetricsRepair              func()
 	afterHeadRepoSnapshotRead               func()
 	afterNotificationRepoIdentityReconciled func()
 	beforeCloneRouteValidation              func()
@@ -12434,6 +12435,15 @@ func (s *Syncer) syncMRForRepoResolved(
 			repairCtx := s.db.WithRepositoryRouteFence(
 				ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 			)
+			repairCtx, releaseRepair, lockErr :=
+				s.db.LockRepositoryReconciliationReadForWrite(repairCtx)
+			if errors.Is(lockErr, db.ErrRepositoryRouteFenceChanged) {
+				return nil
+			}
+			if lockErr != nil {
+				return fmt.Errorf("lock merged MR #%d repair: %w", number, lockErr)
+			}
+			defer releaseRepair()
 			_, repairErr := s.db.FillMissingMergedMRMetrics(
 				repairCtx,
 				db.MergeRequestMergeMetrics{
@@ -12449,6 +12459,9 @@ func (s *Syncer) syncMRForRepoResolved(
 			}
 			if repairErr != nil {
 				return fmt.Errorf("repair merged MR #%d metrics: %w", number, repairErr)
+			}
+			if s.afterMergedMRMetricsRepair != nil {
+				s.afterMergedMRMetricsRepair()
 			}
 			if _, actorErr := s.persistMergedTransitionEvent(
 				repairCtx, mrID, revision, ghPR, normalized.MergedAt,

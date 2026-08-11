@@ -263,26 +263,14 @@ describe("router basic routes", () => {
     });
   });
 
-  it("parses /kata", () => {
+  it("treats the removed /kata route as unknown", () => {
     navigate("/kata");
-    expect(getRoute()).toEqual({ page: "kata" });
-    expect(getPage()).toBe("kata");
+    expect(getRoute()).toEqual({ page: "activity" });
+    expect(getPage()).toBe("activity");
 
     navigate("/kata?issue=issue-email-susan");
-    expect(getRoute()).toEqual({ page: "kata", issue: "issue-email-susan" });
-    expect(getPage()).toBe("kata");
-
-    navigate("/kata?view=inbox&scope=project-kata&issue=issue-email-susan");
-    expect(getRoute()).toEqual({
-      page: "kata",
-      view: "inbox",
-      scope: "project-kata",
-      issue: "issue-email-susan",
-    });
-    expect(getPage()).toBe("kata");
-
-    navigate("/kata?issue=issue-email-susan&daemon=work");
-    expect(getRoute()).toEqual({ page: "kata", issue: "issue-email-susan", daemon: "work" });
+    expect(getRoute()).toEqual({ page: "activity" });
+    expect(getPage()).toBe("activity");
   });
 
   it("parses /docs route state", () => {
@@ -695,15 +683,15 @@ describe("router navigation events", () => {
     expect(payload.view).toBe("/design-system");
   });
 
-  it("maps /kata to kata navigation events", () => {
+  it("maps the removed /kata route to the unknown-route activity fallback", () => {
     const spy = vi.fn();
     installOnNavigate(spy);
 
     navigate("/kata");
 
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
-    expect(payload.page).toBe("kata");
-    expect(payload.type).toBe("kata");
+    expect(payload.page).toBe("activity");
+    expect(payload.type).toBe("activity");
     expect(payload.view).toBe("/kata");
   });
 

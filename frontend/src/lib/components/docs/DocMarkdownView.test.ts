@@ -114,20 +114,17 @@ describe("DocMarkdownView", () => {
     expect(screen.getByText(/Before/)).toBeTruthy();
   });
 
-  test("short-id links dispatch short-id handler before generic issue links", async () => {
-    const onSelectIssue = vi.fn();
-    const onSelectKataShortId = vi.fn();
+  test("short-id links dispatch a Kata reference", async () => {
+    const onSelectKataReference = vi.fn();
     renderMarkdownView({
       source: "See #budget",
       options: options(),
-      onSelectIssue,
-      onSelectKataShortId,
+      onSelectKataReference,
     });
 
     await fireEvent.click(screen.getByRole("link", { name: "#budget" }));
 
-    expect(onSelectKataShortId).toHaveBeenCalledWith("budget", undefined);
-    expect(onSelectIssue).not.toHaveBeenCalled();
+    expect(onSelectKataReference).toHaveBeenCalledWith("budget", undefined, "reference");
   });
 
   test("ambiguous note picker keeps a visible close button", async () => {

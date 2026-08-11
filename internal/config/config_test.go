@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -2829,7 +2830,6 @@ name = "b"
 
 		assert.True(*cfg.Modes.Activity)
 		assert.True(*cfg.Modes.Repos)
-		assert.False(*cfg.Modes.Kata)
 		assert.False(*cfg.Modes.Docs)
 		assert.True(*cfg.Modes.Pulls)
 		assert.True(*cfg.Modes.Issues)
@@ -2848,7 +2848,6 @@ name = "b"
 [modes]
 activity = false
 repos = false
-kata = false
 docs = false
 pulls = false
 issues = false
@@ -2867,13 +2866,38 @@ workspaces = false
 
 		assert.False(*cfg2.Modes.Activity)
 		assert.False(*cfg2.Modes.Repos)
-		assert.False(*cfg2.Modes.Kata)
 		assert.False(*cfg2.Modes.Docs)
 		assert.False(*cfg2.Modes.Pulls)
 		assert.False(*cfg2.Modes.Issues)
 		assert.False(*cfg2.Modes.Reviews)
 		assert.False(*cfg2.Modes.Workspaces)
 	})
+}
+
+func TestKataModeRemoved(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	cfg, err := Load(writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[modes]
+kata = true
+docs = true
+`))
+	require.NoError(err)
+
+	jsonModes, err := json.Marshal(cfg.Modes)
+	require.NoError(err)
+	assert.NotContains(t, string(jsonModes), "kata")
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(cfg.Save(savePath))
+	saved, err := os.ReadFile(savePath)
+	require.NoError(err)
+	assert.NotContains(t, string(saved), "kata =")
 }
 
 func TestSSEBufferSize(t *testing.T) {

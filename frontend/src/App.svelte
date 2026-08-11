@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, setContext, untrack } from "svelte";
-  import { Effect, Option } from "effect";
+  import { Effect } from "effect";
   import type { Attachment } from "svelte/attachments";
   import type { AppExecution, AppRuntime } from "./lib/app/runtime.js";
   import { setAppRuntime } from "./lib/app/runtime-context.js";
@@ -44,6 +44,7 @@
   import NewWorkspaceDialog from "./lib/components/terminal/NewWorkspaceDialog.svelte";
   import {
     closeNewWorkspaceDialog,
+    getNewWorkspaceSource,
     getNewWorkspaceSeedRepo,
     isNewWorkspaceDialogOpen,
   } from "./lib/stores/new-workspace.svelte.js";
@@ -55,21 +56,18 @@
   import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import OnboardingFlow from "./lib/components/onboarding/OnboardingFlow.svelte";
-  import KataFeature from "./lib/features/kata/KataFeature.svelte";
   import RepoBrowserFeature from "./lib/features/repo-browser/RepoBrowserFeature.svelte";
-  import { fetchKataDaemons } from "./lib/api/kata/daemons.js";
   import {
-    searchKataTaskReferences,
-    type KataTaskReferenceSearch,
-  } from "./lib/api/kata/snapshot.js";
-  import { createKataTaskAPI } from "./lib/api/kata/taskClient.js";
-  import type { KataIssueNavigationTarget } from "./lib/api/kata/navigation.js";
-  import type { KataTaskViewName } from "./lib/api/kata/taskTypes.js";
+    resolveKataIssueReference,
+    resolveKataLaunchTarget,
+    resolveKataTextReference,
+    searchKataReferences,
+  } from "./lib/api/kata/integration.js";
   import { createDocsAPI } from "./lib/api/docs/api.js";
-  import { createKataAuxiliaryAuthority } from "./lib/features/kata/kataAuxiliaryAuthority.svelte.js";
   import { FlashBanner, Spinner } from "@kenn-io/kit-ui";
   import { MonitorIcon } from "./lib/icons.ts";
   import { showFlash } from "./lib/stores/flash.svelte.js";
+  import { isSafeExternalHTTPURL } from "./lib/utils/safe-external-url.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
@@ -87,13 +85,6 @@
     initSidebar,
     setNarrowOverride,
   } from "./lib/stores/sidebar.svelte.js";
-  import {
-    getActiveKataDaemon,
-    getKataDaemonRoster,
-    getKataDaemonRosterLoaded,
-    setActiveKataDaemon,
-    setKataDaemonRoster,
-  } from "./lib/stores/active-kata-daemon.svelte.js";
   import {
     initContainerObserver,
     isNarrow,
@@ -149,7 +140,6 @@
   } from "./lib/stores/keyboard/actions.js";
   import { dispatchKeydown } from "./lib/stores/keyboard/dispatch.svelte.js";
   import { buildContext } from "./lib/stores/keyboard/context.svelte.js";
-  import { searchModePalette } from "./lib/stores/keyboard/mode-palette-search.js";
   import { registerPRDetailActions } from "./lib/stores/keyboard/pr-detail-actions.js";
   import type { PRDetailActionInput } from "./lib/components/detail/keyboard-actions.js";
   import type { Context } from "./lib/stores/keyboard/types.js";
@@ -248,7 +238,6 @@
   let renderedHeaderHeight = $state(0);
   let renderedMobileHeaderHeight = $state(0);
   let hasCoarsePointer = $state(window.matchMedia("(pointer: coarse)").matches);
-  let kataDefaultDaemonId = $state<string | undefined>(undefined);
   let DocsFeature = $state<DocsFeatureComponent | null>(null);
   let docsLoading = $state(false);
   let docsLoadError = $state<string | null>(null);
@@ -262,11 +251,6 @@
   });
   let cleanupFullAppShell: (() => void) | undefined;
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
-  const kataAPI = createKataTaskAPI();
-  const kataWorkspaceAPI = createKataTaskAPI();
-  const kataAuxiliaryAuthority = createKataAuxiliaryAuthority({});
-  const runtimeTaskReferenceSearch: KataTaskReferenceSearch = (query, options = {}) =>
-    searchKataTaskReferences(query, options);
 
   const trackMobileHeaderHeight: Attachment<HTMLElement> = (node) => {
     const update = () => {
@@ -338,96 +322,80 @@
     setGlobalRepo(next);
   }
 
-  type KataRouteUpdate = {
-    issue?: string | null;
-    view?: KataTaskViewName | null;
-    scope?: string | null;
-    daemon?: string | null;
-  };
+  let kataLaunchToken = 0;
 
-  function currentKataRouteUpdate(): KataRouteUpdate {
-    const route = getRoute();
-    if (route.page !== "kata") return {};
-    return {
-      issue: route.issue ?? null,
-      view: route.view ?? null,
-      scope: route.scope ?? null,
-      daemon: route.daemon ?? null,
-    };
-  }
-
-  function kataHref(update: KataRouteUpdate = {}): string {
-    const params = new URLSearchParams();
-    if (update.view) params.set("view", update.view);
-    if (update.scope) params.set("scope", update.scope);
-    if (update.issue) params.set("issue", update.issue);
-    if (update.daemon) params.set("daemon", update.daemon);
-    const query = params.toString();
-    return query ? `/kata?${query}` : "/kata";
-  }
-
-  function kataIssueHref(target: KataIssueNavigationTarget, daemon?: string): string {
-    return kataHref({
-      view: target.status === "closed" ? "logbook" : "all",
-      scope: target.project_uid ?? null,
-      issue: target.uid,
-      daemon: daemon ?? null,
-    });
-  }
-
-  function selectKataIssue(uid: string | null): void {
-    if (uid === null) {
-      navigate("/kata");
+  function navigateKataPopup(popup: Window, url: string): void {
+    const popupDocument = popup.document;
+    if (!popupDocument?.body) {
+      popup.location.replace(url);
       return;
     }
-    navigate(kataHref({ ...currentKataRouteUpdate(), issue: uid }));
+    const link = popupDocument.createElement("a");
+    link.href = url;
+    link.referrerPolicy = "no-referrer";
+    link.rel = "noreferrer";
+    popupDocument.body.append(link);
+    link.click();
   }
 
-  function openKataIssue(target: KataIssueNavigationTarget): void {
-    const targetDaemon = target.daemon_id && getKataDaemonRoster().includes(target.daemon_id)
-      ? target.daemon_id
-      : undefined;
-    navigate(kataIssueHref(target, targetDaemon));
-  }
-
-  let auxiliaryNavigationExecution: AppExecution<unknown, unknown> | undefined;
-
-  function openAuxiliaryKataIssue(uid: string, daemonID?: string): void {
-    // UID-only sources carry no status/project authority, and rows in the
-    // shared auxiliary snapshot can be stale during invalidation reloads.
-    // Always resolve routing authority through an isolated pinned selection,
-    // honoring an explicit daemon (for example a daemon-bound Docs folder).
-    // Only the latest click may navigate or surface an error.
-    auxiliaryNavigationExecution?.interrupt();
-    auxiliaryNavigationExecution = appRuntime.runCommand(
-      kataAuxiliaryAuthority.selectIssue(uid, daemonID).pipe(
-        Effect.tap((selection) =>
-          Effect.sync(() =>
-            navigate(
-              kataIssueHref(
-                {
-                  uid,
-                  status: selection.detail.issue.status,
-                  project_uid: selection.detail.issue.project_uid,
-                },
-                selection.daemonID,
-              ),
-            ),
-          ),
-        ),
-      ),
-      {
-        operation: "open auxiliary Kata task",
-        safeContext: { daemonId: daemonID ?? "" },
-        onFailure: () => showFlash("Could not open linked task", { tone: "danger" }),
-      },
-    );
-  }
-
-  function updateKataRoute(update: KataRouteUpdate, options?: { replace?: boolean }): void {
-    const href = kataHref({ ...currentKataRouteUpdate(), ...update });
-    if (options?.replace) replaceUrl(href);
-    else navigate(href);
+  async function openKataReference(
+    reference: string,
+    project?: string,
+    daemonID?: string,
+    kind: "reference" | "uid" = "reference",
+  ): Promise<void> {
+    const token = ++kataLaunchToken;
+    if (!daemonID) {
+      showFlash("Connect this Docs folder to a Kata daemon before opening task links.", { tone: "danger" });
+      return;
+    }
+    const pendingWindow = window.open("about:blank", "_blank");
+    if (!pendingWindow) {
+      showFlash("Allow pop-ups to open linked Kata issues.", { tone: "danger" });
+      return;
+    }
+    pendingWindow.opener = null;
+    const popupDocument = pendingWindow.document;
+    if (popupDocument?.head) {
+      const referrerPolicy = popupDocument.createElement("meta");
+      referrerPolicy.name = "referrer";
+      referrerPolicy.content = "no-referrer";
+      popupDocument.head.append(referrerPolicy);
+    }
+    try {
+      const match = kind === "uid"
+        ? await resolveKataIssueReference(daemonID, reference)
+        : await resolveKataTextReference(daemonID, project, reference);
+      if (token !== kataLaunchToken) {
+        pendingWindow.close();
+        return;
+      }
+      if (!match) {
+        pendingWindow.close();
+        showFlash("Could not resolve this Kata issue.", { tone: "danger" });
+        return;
+      }
+      const target = await resolveKataLaunchTarget(daemonID, match.uid);
+      if (token !== kataLaunchToken) {
+        pendingWindow.close();
+        return;
+      }
+      if (!target.available || !target.url) {
+        pendingWindow.close();
+        showFlash("Kata cannot open this issue in a browser.", { tone: "danger" });
+        return;
+      }
+      if (!isSafeExternalHTTPURL(target.url)) {
+        pendingWindow.close();
+        showFlash("Kata returned an unsafe browser URL.", { tone: "danger" });
+        return;
+      }
+      navigateKataPopup(pendingWindow, target.url);
+    } catch {
+      pendingWindow.close();
+      if (token !== kataLaunchToken) return;
+      showFlash("Could not open linked task", { tone: "danger" });
+    }
   }
 
   function updateRepoBrowserRoute(route: RepoBrowserRouteRef, options?: { replace?: boolean }): void {
@@ -507,67 +475,8 @@
     navigate(docsHref({ mode: "docs", folder, doc: relPath }));
   }
 
-  function runModePaletteSearch(query: string) {
-    return searchModePalette(query, { kata: kataAuxiliaryAuthority, docs: docsAPI });
-  }
-
-  const loadKataDaemonRosterAfterBackendReady = Effect.fn(
-    "App.loadKataDaemonRosterAfterBackendReady",
-  )(function* () {
-    const roster = yield* fetchKataDaemons().pipe(
-      Effect.map((daemons) => ({
-        ids: daemons.map((daemon) => daemon.id),
-        defaultId: daemons.find((daemon) => daemon.default)?.id,
-      })),
-      Effect.option,
-    );
-    yield* Effect.sync(() => {
-      if (Option.isSome(roster)) {
-        setKataDaemonRoster(roster.value.ids, roster.value.defaultId);
-        kataDefaultDaemonId = roster.value.defaultId;
-      } else {
-        kataDefaultDaemonId = undefined;
-        setKataDaemonRoster([], undefined);
-      }
-    });
-  });
-
   function isModeVisible(mode: keyof ModeVisibility): boolean {
     return stores?.settings.isModeVisible(mode) ?? true;
-  }
-
-  function openKataShortId(shortId: string, project?: string, daemonId?: string): void {
-    const requestedReference = project ? `${project}#${shortId}` : shortId;
-    appRuntime.runCommand(
-      searchKataTaskReferences(
-        requestedReference,
-        { ...(daemonId ? { daemon_id: daemonId } : {}), status: "all" },
-      ).pipe(
-        Effect.tap((results) =>
-          Effect.sync(() => {
-            const match = (results.references ?? []).find((reference) =>
-              reference.reference === requestedReference
-              || reference.qualified_id === requestedReference
-              || (project !== undefined
-                && reference.short_id === shortId
-                && (reference.project_name === project || reference.project_uid === project)),
-            );
-            if (!match) return;
-            openKataIssue({
-              uid: match.uid,
-              status: match.status,
-              project_uid: match.project_uid,
-              ...(daemonId ? { daemon_id: daemonId } : {}),
-            });
-          }),
-        ),
-      ),
-      {
-        operation: "open linked Kata task",
-        safeContext: { daemonId: daemonId ?? "" },
-        onFailure: () => showFlash("Could not open linked task", { tone: "danger" }),
-      },
-    );
   }
 
   function startFullAppShell(startupStores: StoreInstances) {
@@ -583,7 +492,6 @@
     const cleanupItemRefs = initItemRefHandler(appRuntime);
     const cancelStartup = runAppStartup(runtime, {
       stores: startupStores,
-      afterBackendReady: loadKataDaemonRosterAfterBackendReady(),
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
       onReady: () => {
         appReady = true;
@@ -619,18 +527,6 @@
     loadDocsFeature();
   });
 
-  $effect(() => {
-    if (!appReady || !getKataDaemonRosterLoaded()) return;
-    const daemonID = getActiveKataDaemon() ?? kataDefaultDaemonId;
-    const execution = untrack(() =>
-      appRuntime.runCommand(kataAuxiliaryAuthority.load(daemonID), {
-        operation: "load auxiliary Kata authority",
-        safeContext: { daemonId: daemonID ?? "" },
-        onFailure: () => {},
-      }),
-    );
-    return execution.interrupt;
-  });
 
   let lastRepo: string | undefined;
 
@@ -763,12 +659,6 @@
   }
 
   onDestroy(() => {
-    auxiliaryNavigationExecution?.interrupt();
-    appRuntime.runCommand(kataAuxiliaryAuthority.stop(), {
-      operation: "stop auxiliary Kata authority",
-      safeContext: {},
-      onFailure: () => {},
-    });
     stopFullAppShell();
     roborevPollingExecution?.interrupt();
   });
@@ -1296,19 +1186,6 @@
             onRouteChange={updateRepoBrowserRoute}
           />
         {/if}
-      {:else if getPage() === "kata"}
-        {@const route = getRoute()}
-        {#if route.page === "kata"}
-          <KataFeature
-            api={kataWorkspaceAPI}
-            selectedIssueUID={route.issue ?? null}
-            routeViewName={route.view ?? null}
-            routeScopeUID={route.scope ?? null}
-            requestedDaemonId={route.daemon ?? null}
-            onSelectedIssueChange={selectKataIssue}
-            onRouteStateChange={updateKataRoute}
-          />
-        {/if}
       {:else if getPage() === "docs"}
         {#if docsLoadError}
           <div class="loading-state">
@@ -1388,10 +1265,9 @@
               if (options?.replace) replaceUrl(docsHref(next));
               else navigate(docsHref(next));
             }}
-            searchReferences={runtimeTaskReferenceSearch}
-            onOpenIssue={openAuxiliaryKataIssue}
-            onOpenKataShortId={(shortId, project, daemonId) => {
-              void openKataShortId(shortId, project, daemonId);
+            searchReferences={searchKataReferences}
+            onOpenKataReference={(reference, project, daemonId, kind) => {
+              void openKataReference(reference, project, daemonId, kind);
             }}
           />
         </section>
@@ -1426,14 +1302,14 @@
 
     {#if !onboardingActive}
       <Palette
-        modeSearch={runModePaletteSearch}
-        onOpenKataIssue={openKataIssue}
+        docsSearch={docsAPI.searchAll}
         onOpenDoc={openDoc}
       />
       <Cheatsheet />
       <NewWorkspaceDialog
         open={isNewWorkspaceDialogOpen()}
         seedRepo={getNewWorkspaceSeedRepo()}
+        initialSource={getNewWorkspaceSource()}
         onClose={closeNewWorkspaceDialog}
       />
     {/if}

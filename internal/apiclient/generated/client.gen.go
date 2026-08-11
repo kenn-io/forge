@@ -521,18 +521,48 @@ func (e IssueResponseWorkflowStatus) Valid() bool {
 	}
 }
 
-// Defines values for KataTaskReferenceStatus.
+// Defines values for KataEffectiveLinksResponseState.
 const (
-	KataTaskReferenceStatusClosed KataTaskReferenceStatus = "closed"
-	KataTaskReferenceStatusOpen   KataTaskReferenceStatus = "open"
+	Complete    KataEffectiveLinksResponseState = "complete"
+	Partial     KataEffectiveLinksResponseState = "partial"
+	Unavailable KataEffectiveLinksResponseState = "unavailable"
 )
 
-// Valid indicates whether the value is a known member of the KataTaskReferenceStatus enum.
-func (e KataTaskReferenceStatus) Valid() bool {
+// Valid indicates whether the value is a known member of the KataEffectiveLinksResponseState enum.
+func (e KataEffectiveLinksResponseState) Valid() bool {
 	switch e {
-	case KataTaskReferenceStatusClosed:
+	case Complete:
 		return true
-	case KataTaskReferenceStatusOpen:
+	case Partial:
+		return true
+	case Unavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for KataWorkspaceTargetResponseResolutionStatus.
+const (
+	Ambiguous KataWorkspaceTargetResponseResolutionStatus = "ambiguous"
+	Error     KataWorkspaceTargetResponseResolutionStatus = "error"
+	Invalid   KataWorkspaceTargetResponseResolutionStatus = "invalid"
+	Mapped    KataWorkspaceTargetResponseResolutionStatus = "mapped"
+	Unmapped  KataWorkspaceTargetResponseResolutionStatus = "unmapped"
+)
+
+// Valid indicates whether the value is a known member of the KataWorkspaceTargetResponseResolutionStatus enum.
+func (e KataWorkspaceTargetResponseResolutionStatus) Valid() bool {
+	switch e {
+	case Ambiguous:
+		return true
+	case Error:
+		return true
+	case Invalid:
+		return true
+	case Mapped:
+		return true
+	case Unmapped:
 		return true
 	default:
 		return false
@@ -649,6 +679,7 @@ const (
 	PullNotFound                  ProblemErrorCode = "pullNotFound"
 	RateLimited                   ProblemErrorCode = "rateLimited"
 	RepoNotFound                  ProblemErrorCode = "repoNotFound"
+	ResyncRequired                ProblemErrorCode = "resyncRequired"
 	ServiceUnavailable            ProblemErrorCode = "serviceUnavailable"
 	SettingsUnavailable           ProblemErrorCode = "settingsUnavailable"
 	ToolMissing                   ProblemErrorCode = "toolMissing"
@@ -700,6 +731,8 @@ func (e ProblemErrorCode) Valid() bool {
 	case RateLimited:
 		return true
 	case RepoNotFound:
+		return true
+	case ResyncRequired:
 		return true
 	case ServiceUnavailable:
 		return true
@@ -872,66 +905,6 @@ func (e ResolveRepoItemOnHostParamsItemType) Valid() bool {
 	case ResolveRepoItemOnHostParamsItemTypeIssue:
 		return true
 	case ResolveRepoItemOnHostParamsItemTypePr:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for SearchKataTaskReferencesParamsStatus.
-const (
-	SearchKataTaskReferencesParamsStatusAll  SearchKataTaskReferencesParamsStatus = "all"
-	SearchKataTaskReferencesParamsStatusOpen SearchKataTaskReferencesParamsStatus = "open"
-)
-
-// Valid indicates whether the value is a known member of the SearchKataTaskReferencesParamsStatus enum.
-func (e SearchKataTaskReferencesParamsStatus) Valid() bool {
-	switch e {
-	case SearchKataTaskReferencesParamsStatusAll:
-		return true
-	case SearchKataTaskReferencesParamsStatusOpen:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for GetKataTaskSnapshotParamsScope.
-const (
-	Global  GetKataTaskSnapshotParamsScope = "global"
-	Project GetKataTaskSnapshotParamsScope = "project"
-)
-
-// Valid indicates whether the value is a known member of the GetKataTaskSnapshotParamsScope enum.
-func (e GetKataTaskSnapshotParamsScope) Valid() bool {
-	switch e {
-	case Global:
-		return true
-	case Project:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for GetKataTaskSnapshotParamsAuthority.
-const (
-	All    GetKataTaskSnapshotParamsAuthority = "all"
-	Closed GetKataTaskSnapshotParamsAuthority = "closed"
-	Open   GetKataTaskSnapshotParamsAuthority = "open"
-	Ready  GetKataTaskSnapshotParamsAuthority = "ready"
-)
-
-// Valid indicates whether the value is a known member of the GetKataTaskSnapshotParamsAuthority enum.
-func (e GetKataTaskSnapshotParamsAuthority) Valid() bool {
-	switch e {
-	case All:
-		return true
-	case Closed:
-		return true
-	case Open:
-		return true
-	case Ready:
 		return true
 	default:
 		return false
@@ -1938,29 +1911,6 @@ type ErrorDetail struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
-// EventEnvelope defines model for EventEnvelope.
-type EventEnvelope struct {
-	Actor               string      `json:"actor"`
-	ContentHash         string      `json:"content_hash"`
-	CreatedAt           time.Time   `json:"created_at"`
-	EventId             int64       `json:"event_id"`
-	EventUid            string      `json:"event_uid"`
-	HlcCounter          int64       `json:"hlc_counter"`
-	HlcPhysicalMs       int64       `json:"hlc_physical_ms"`
-	IssueId             *int64      `json:"issue_id,omitempty"`
-	IssueShortId        *string     `json:"issue_short_id,omitempty"`
-	IssueUid            *string     `json:"issue_uid,omitempty"`
-	OriginInstanceUid   string      `json:"origin_instance_uid"`
-	Payload             interface{} `json:"payload,omitempty"`
-	ProjectId           int64       `json:"project_id"`
-	ProjectName         string      `json:"project_name"`
-	ProjectUid          string      `json:"project_uid"`
-	RelatedIssueId      *int64      `json:"related_issue_id,omitempty"`
-	RelatedIssueShortId *string     `json:"related_issue_short_id,omitempty"`
-	RelatedIssueUid     *string     `json:"related_issue_uid,omitempty"`
-	Type                string      `json:"type"`
-}
-
 // FeatureCapabilities defines model for FeatureCapabilities.
 type FeatureCapabilities struct {
 	MoshAttach      bool    `json:"moshAttach"`
@@ -2316,27 +2266,24 @@ type ItemReviewersResponse struct {
 	Reviewers *[]string `json:"reviewers"`
 }
 
-// KataAuthorityRequest defines model for KataAuthorityRequest.
-type KataAuthorityRequest struct {
-	Authority  string  `json:"authority"`
-	ProjectUid *string `json:"project_uid,omitempty"`
-	Scope      string  `json:"scope"`
-}
-
-// KataChildCounts defines model for KataChildCounts.
-type KataChildCounts struct {
-	Open  int64 `json:"open"`
-	Total int64 `json:"total"`
+// KataCreateLinkRequest defines model for KataCreateLinkRequest.
+type KataCreateLinkRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string `json:"$schema,omitempty"`
+	DaemonId   string  `json:"daemon_id"`
+	IssueUid   string  `json:"issue_uid"`
+	ProjectUid string  `json:"project_uid"`
 }
 
 // KataDaemonResponse defines model for KataDaemonResponse.
 type KataDaemonResponse struct {
-	Auth    string  `json:"auth"`
-	Default bool    `json:"default"`
-	Health  string  `json:"health"`
-	Hint    *string `json:"hint,omitempty"`
-	Id      string  `json:"id"`
-	Url     string  `json:"url"`
+	ApiSchemaVersion *string `json:"api_schema_version,omitempty"`
+	Auth             string  `json:"auth"`
+	Default          bool    `json:"default"`
+	Health           string  `json:"health"`
+	Hint             *string `json:"hint,omitempty"`
+	Id               string  `json:"id"`
+	Url              string  `json:"url"`
 }
 
 // KataDaemonRosterResponse defines model for KataDaemonRosterResponse.
@@ -2347,10 +2294,70 @@ type KataDaemonRosterResponse struct {
 	Source  *string               `json:"source,omitempty"`
 }
 
-// KataLinkPeer defines model for KataLinkPeer.
-type KataLinkPeer struct {
-	ShortId string `json:"short_id"`
-	Uid     string `json:"uid"`
+// KataEffectiveLink defines model for KataEffectiveLink.
+type KataEffectiveLink struct {
+	ApiSchemaVersion  *string                      `json:"api_schema_version,omitempty"`
+	DaemonHealth      string                       `json:"daemon_health"`
+	DaemonId          string                       `json:"daemon_id"`
+	DirectLinkId      *int64                       `json:"direct_link_id,omitempty"`
+	IssueUid          string                       `json:"issue_uid"`
+	ProjectName       *string                      `json:"project_name,omitempty"`
+	ProjectUid        string                       `json:"project_uid"`
+	Provenance        *[]string                    `json:"provenance"`
+	Reference         *string                      `json:"reference,omitempty"`
+	Status            *string                      `json:"status,omitempty"`
+	Title             *string                      `json:"title,omitempty"`
+	UnavailableReason *string                      `json:"unavailable_reason,omitempty"`
+	Workspace         *KataWorkspaceTargetResponse `json:"workspace,omitempty"`
+}
+
+// KataEffectiveLinksResponse defines model for KataEffectiveLinksResponse.
+type KataEffectiveLinksResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string                         `json:"$schema,omitempty"`
+	Diagnostics []KataLinkDiagnostic            `json:"diagnostics"`
+	Links       []KataEffectiveLink             `json:"links"`
+	State       KataEffectiveLinksResponseState `json:"state"`
+}
+
+// KataEffectiveLinksResponseState defines model for KataEffectiveLinksResponse.State.
+type KataEffectiveLinksResponseState string
+
+// KataIssueDetailResponse defines model for KataIssueDetailResponse.
+type KataIssueDetailResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string `json:"$schema,omitempty"`
+	ApiSchemaVersion *string `json:"api_schema_version,omitempty"`
+	DaemonHealth     string  `json:"daemon_health"`
+
+	// Detail Canonical Kata issue detail. Additive fields are preserved.
+	Detail map[string]interface{} `json:"detail"`
+}
+
+// KataIssueReference defines model for KataIssueReference.
+type KataIssueReference struct {
+	ProjectName string `json:"project_name"`
+	ProjectUid  string `json:"project_uid"`
+	QualifiedId string `json:"qualified_id"`
+	ShortId     string `json:"short_id"`
+	Status      string `json:"status"`
+	Title       string `json:"title"`
+	Uid         string `json:"uid"`
+}
+
+// KataLaunchTarget defines model for KataLaunchTarget.
+type KataLaunchTarget struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	Available bool    `json:"available"`
+	Reason    *string `json:"reason,omitempty"`
+	Url       *string `json:"url,omitempty"`
+}
+
+// KataLinkDiagnostic defines model for KataLinkDiagnostic.
+type KataLinkDiagnostic struct {
+	DaemonId string `json:"daemon_id"`
+	Reason   string `json:"reason"`
 }
 
 // KataMappingTargetResponse defines model for KataMappingTargetResponse.
@@ -2387,132 +2394,35 @@ type KataProjectRepoMapping struct {
 	RepoPath     string  `json:"repo_path"`
 }
 
-// KataProjectSummary defines model for KataProjectSummary.
-type KataProjectSummary struct {
-	ClosedCount int64                  `json:"closed_count"`
-	CreatedAt   time.Time              `json:"created_at"`
-	DeletedAt   *time.Time             `json:"deleted_at,omitempty"`
-	Id          int64                  `json:"id"`
-	LastEventAt *time.Time             `json:"last_event_at,omitempty"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	Name        string                 `json:"name"`
-	OpenCount   int64                  `json:"open_count"`
-	Revision    int64                  `json:"revision"`
-	Uid         string                 `json:"uid"`
-}
-
-// KataSnapshotEnrichment defines model for KataSnapshotEnrichment.
-type KataSnapshotEnrichment struct {
-	Errors           *map[string]KataSnapshotEnrichmentError `json:"errors,omitempty"`
-	Graph            *ReachableGraphResponseBody             `json:"graph,omitempty"`
-	GraphFetchedAt   *time.Time                              `json:"graph_fetched_at,omitempty"`
-	SelectedDetail   *KataSnapshotSelectedDetail             `json:"selected_detail,omitempty"`
-	SelectedHistory  *[]EventEnvelope                        `json:"selected_history,omitempty"`
-	SelectedIssueUid *string                                 `json:"selected_issue_uid,omitempty"`
-}
-
-// KataSnapshotEnrichmentError defines model for KataSnapshotEnrichmentError.
-type KataSnapshotEnrichmentError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-// KataSnapshotSelectedDetail defines model for KataSnapshotSelectedDetail.
-type KataSnapshotSelectedDetail struct {
-	// Detail Verbatim Kata daemon issue detail payload
-	Detail interface{} `json:"detail"`
-
-	// Etag Daemon issue detail ETag, when the daemon provided one
-	Etag            *string                     `json:"etag,omitempty"`
-	WorkspaceTarget KataWorkspaceTargetResponse `json:"workspace_target"`
-}
-
-// KataTaskReference defines model for KataTaskReference.
-type KataTaskReference struct {
-	ProjectId   int64                   `json:"project_id"`
-	ProjectName string                  `json:"project_name"`
-	ProjectUid  string                  `json:"project_uid"`
-	QualifiedId string                  `json:"qualified_id"`
-	Reference   string                  `json:"reference"`
-	ShortId     string                  `json:"short_id"`
-	Status      KataTaskReferenceStatus `json:"status"`
-	Title       string                  `json:"title"`
-	Uid         string                  `json:"uid"`
-}
-
-// KataTaskReferenceStatus defines model for KataTaskReference.Status.
-type KataTaskReferenceStatus string
-
-// KataTaskReferenceResponse defines model for KataTaskReferenceResponse.
-type KataTaskReferenceResponse struct {
+// KataReferencesResponse defines model for KataReferencesResponse.
+type KataReferencesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema            *string              `json:"$schema,omitempty"`
-	DaemonId          string               `json:"daemon_id"`
-	FetchedAt         time.Time            `json:"fetched_at"`
-	Generation        int64                `json:"generation"`
-	InvalidationEpoch int64                `json:"invalidation_epoch"`
-	References        *[]KataTaskReference `json:"references"`
-	ServerInstanceId  string               `json:"server_instance_id"`
+	Schema *string              `json:"$schema,omitempty"`
+	Issues []KataIssueReference `json:"issues"`
 }
 
-// KataTaskSnapshotResponse defines model for KataTaskSnapshotResponse.
-type KataTaskSnapshotResponse struct {
+// KataResolvedIssueReference defines model for KataResolvedIssueReference.
+type KataResolvedIssueReference struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema            *string                `json:"$schema,omitempty"`
-	DaemonId          string                 `json:"daemon_id"`
-	Enrichment        KataSnapshotEnrichment `json:"enrichment"`
-	EventCursor       int64                  `json:"event_cursor"`
-	FetchedAt         time.Time              `json:"fetched_at"`
-	Generation        int64                  `json:"generation"`
-	GraphSourceUid    *string                `json:"graph_source_uid,omitempty"`
-	Intent            KataAuthorityRequest   `json:"intent"`
-	InvalidationEpoch int64                  `json:"invalidation_epoch"`
-	Issues            *[]KataTaskSummary     `json:"issues"`
-	MemberIssueUids   *[]string              `json:"member_issue_uids"`
-	Projects          *[]KataProjectSummary  `json:"projects"`
-	ServerInstanceId  string                 `json:"server_instance_id"`
-}
-
-// KataTaskSummary defines model for KataTaskSummary.
-type KataTaskSummary struct {
-	Author        string                 `json:"author"`
-	BlockedBy     *[]KataLinkPeer        `json:"blocked_by"`
-	Blocks        *[]KataLinkPeer        `json:"blocks"`
-	Body          string                 `json:"body"`
-	ChildCounts   *KataChildCounts       `json:"child_counts,omitempty"`
-	ClosedAt      *time.Time             `json:"closed_at,omitempty"`
-	ClosedReason  *string                `json:"closed_reason,omitempty"`
-	CreatedAt     time.Time              `json:"created_at"`
-	DeletedAt     *time.Time             `json:"deleted_at,omitempty"`
-	Id            int64                  `json:"id"`
-	Labels        *[]string              `json:"labels"`
-	Metadata      map[string]interface{} `json:"metadata"`
-	OccurrenceKey *string                `json:"occurrence_key,omitempty"`
-	Owner         *string                `json:"owner,omitempty"`
-	Parent        *KataLinkPeer          `json:"parent,omitempty"`
-	Priority      *int64                 `json:"priority,omitempty"`
-	ProjectId     int64                  `json:"project_id"`
-	ProjectName   string                 `json:"project_name"`
-	ProjectUid    string                 `json:"project_uid"`
-	QualifiedId   string                 `json:"qualified_id"`
-	RecurrenceId  *int64                 `json:"recurrence_id,omitempty"`
-	Related       *[]KataLinkPeer        `json:"related"`
-	Revision      int64                  `json:"revision"`
-	ShortId       string                 `json:"short_id"`
-	Status        string                 `json:"status"`
-	Title         string                 `json:"title"`
-	Uid           string                 `json:"uid"`
-	UpdatedAt     time.Time              `json:"updated_at"`
+	Schema     *string `json:"$schema,omitempty"`
+	ProjectUid string  `json:"project_uid"`
+	Uid        string  `json:"uid"`
 }
 
 // KataWorkspaceTargetResponse defines model for KataWorkspaceTargetResponse.
 type KataWorkspaceTargetResponse struct {
-	Available         bool             `json:"available"`
-	ExistingWorkspace *WorkspaceRef    `json:"existing_workspace,omitempty"`
-	ItemKey           *string          `json:"item_key,omitempty"`
-	ItemType          *string          `json:"item_type,omitempty"`
-	Repo              *RepoRefResponse `json:"repo,omitempty"`
+	Available         bool                                         `json:"available"`
+	ExistingWorkspace *WorkspaceRef                                `json:"existing_workspace,omitempty"`
+	ItemKey           *string                                      `json:"item_key,omitempty"`
+	ItemType          *string                                      `json:"item_type,omitempty"`
+	Repo              *RepoRefResponse                             `json:"repo,omitempty"`
+	ResolutionSource  *string                                      `json:"resolution_source,omitempty"`
+	ResolutionStatus  *KataWorkspaceTargetResponseResolutionStatus `json:"resolution_status,omitempty"`
+	UnavailableReason *string                                      `json:"unavailable_reason,omitempty"`
 }
+
+// KataWorkspaceTargetResponseResolutionStatus defines model for KataWorkspaceTargetResponse.ResolutionStatus.
+type KataWorkspaceTargetResponseResolutionStatus string
 
 // KataWorkspaceTaskRequest defines model for KataWorkspaceTaskRequest.
 type KataWorkspaceTaskRequest struct {
@@ -2840,7 +2750,6 @@ type ModeVisibility struct {
 	Activity   bool `json:"activity"`
 	Docs       bool `json:"docs"`
 	Issues     bool `json:"issues"`
-	Kata       bool `json:"kata"`
 	Pulls      bool `json:"pulls"`
 	Repos      bool `json:"repos"`
 	Reviews    bool `json:"reviews"`
@@ -3321,57 +3230,6 @@ type RawWorktree struct {
 	SessionBackend     *string        `json:"sessionBackend,omitempty"`
 	SyncAhead          *int64         `json:"syncAhead,omitempty"`
 	SyncBehind         *int64         `json:"syncBehind,omitempty"`
-}
-
-// ReachableGraphEdge defines model for ReachableGraphEdge.
-type ReachableGraphEdge struct {
-	FromUid string `json:"from_uid"`
-	Kind    string `json:"kind"`
-	Layout  bool   `json:"layout"`
-	ToUid   string `json:"to_uid"`
-}
-
-// ReachableGraphNode defines model for ReachableGraphNode.
-type ReachableGraphNode struct {
-	Author        string                 `json:"author"`
-	Body          string                 `json:"body"`
-	ClosedAt      *time.Time             `json:"closed_at,omitempty"`
-	ClosedReason  *string                `json:"closed_reason,omitempty"`
-	CreatedAt     time.Time              `json:"created_at"`
-	DeletedAt     *time.Time             `json:"deleted_at,omitempty"`
-	Id            int64                  `json:"id"`
-	Metadata      map[string]interface{} `json:"metadata"`
-	OccurrenceKey *string                `json:"occurrence_key,omitempty"`
-	Owner         *string                `json:"owner,omitempty"`
-	Priority      *int64                 `json:"priority,omitempty"`
-	ProjectId     int64                  `json:"project_id"`
-	ProjectUid    *string                `json:"project_uid,omitempty"`
-	QualifiedId   string                 `json:"qualified_id"`
-	RecurrenceId  *int64                 `json:"recurrence_id,omitempty"`
-	Revision      int64                  `json:"revision"`
-	ShortId       string                 `json:"short_id"`
-	Status        string                 `json:"status"`
-	Title         string                 `json:"title"`
-	Uid           string                 `json:"uid"`
-	UpdatedAt     time.Time              `json:"updated_at"`
-}
-
-// ReachableGraphResponseBody defines model for ReachableGraphResponseBody.
-type ReachableGraphResponseBody struct {
-	Depth          string                         `json:"depth"`
-	Edges          *[]ReachableGraphEdge          `json:"edges,omitempty"`
-	HideDone       bool                           `json:"hide_done"`
-	Nodes          *[]ReachableGraphNode          `json:"nodes,omitempty"`
-	SourceUid      string                         `json:"source_uid"`
-	UnresolvedRefs *[]ReachableGraphUnresolvedRef `json:"unresolved_refs,omitempty"`
-}
-
-// ReachableGraphUnresolvedRef defines model for ReachableGraphUnresolvedRef.
-type ReachableGraphUnresolvedRef struct {
-	Kind     string `json:"kind"`
-	OtherUid string `json:"other_uid"`
-	Side     string `json:"side"`
-	Uid      string `json:"uid"`
 }
 
 // RefreshFleetStatsOutputBody defines model for RefreshFleetStatsOutputBody.
@@ -4705,51 +4563,25 @@ type ListIssuesParams struct {
 	Offset   *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// ResolveKataIssueReferenceParams defines parameters for ResolveKataIssueReference.
+type ResolveKataIssueReferenceParams struct {
+	Project *string `form:"project,omitempty" json:"project,omitempty"`
+	Ref     string  `form:"ref" json:"ref"`
+}
+
+// ListKataReferencesParams defines parameters for ListKataReferences.
+type ListKataReferencesParams struct {
+	Q          *string   `form:"q,omitempty" json:"q,omitempty"`
+	ProjectUid *string   `form:"project_uid,omitempty" json:"project_uid,omitempty"`
+	IssueUid   *[]string `form:"issue_uid,omitempty" json:"issue_uid,omitempty"`
+	Limit      *int64    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // GetKataProjectMappingsParams defines parameters for GetKataProjectMappings.
 type GetKataProjectMappingsParams struct {
 	// XKennForgeKataDaemon Kata daemon id; the effective default daemon when empty
 	XKennForgeKataDaemon *string `json:"X-Kenn-Forge-Kata-Daemon,omitempty"`
 }
-
-// StreamKataTaskEventsParams defines parameters for StreamKataTaskEvents.
-type StreamKataTaskEventsParams struct {
-	// XKennForgeKataDaemon Kata daemon id; the effective default daemon when empty
-	XKennForgeKataDaemon *string `json:"X-Kenn-Forge-Kata-Daemon,omitempty"`
-}
-
-// SearchKataTaskReferencesParams defines parameters for SearchKataTaskReferences.
-type SearchKataTaskReferencesParams struct {
-	Q      *string                               `form:"q,omitempty" json:"q,omitempty"`
-	Limit  *int64                                `form:"limit,omitempty" json:"limit,omitempty"`
-	Status *SearchKataTaskReferencesParamsStatus `form:"status,omitempty" json:"status,omitempty"`
-
-	// XKennForgeKataDaemon Kata daemon id; the effective default daemon when empty
-	XKennForgeKataDaemon *string `json:"X-Kenn-Forge-Kata-Daemon,omitempty"`
-}
-
-// SearchKataTaskReferencesParamsStatus defines parameters for SearchKataTaskReferences.
-type SearchKataTaskReferencesParamsStatus string
-
-// GetKataTaskSnapshotParams defines parameters for GetKataTaskSnapshot.
-type GetKataTaskSnapshotParams struct {
-	Scope            *GetKataTaskSnapshotParamsScope     `form:"scope,omitempty" json:"scope,omitempty"`
-	ProjectUid       *string                             `form:"project_uid,omitempty" json:"project_uid,omitempty"`
-	Authority        *GetKataTaskSnapshotParamsAuthority `form:"authority,omitempty" json:"authority,omitempty"`
-	SelectedIssueUid *string                             `form:"selected_issue_uid,omitempty" json:"selected_issue_uid,omitempty"`
-	GraphSourceUid   *string                             `form:"graph_source_uid,omitempty" json:"graph_source_uid,omitempty"`
-
-	// Fresh Bypass cached daemon authority for mutation reconciliation
-	Fresh *bool `form:"fresh,omitempty" json:"fresh,omitempty"`
-
-	// XKennForgeKataDaemon Kata daemon id; the effective default daemon when empty
-	XKennForgeKataDaemon *string `json:"X-Kenn-Forge-Kata-Daemon,omitempty"`
-}
-
-// GetKataTaskSnapshotParamsScope defines parameters for GetKataTaskSnapshot.
-type GetKataTaskSnapshotParamsScope string
-
-// GetKataTaskSnapshotParamsAuthority defines parameters for GetKataTaskSnapshot.
-type GetKataTaskSnapshotParamsAuthority string
 
 // ListNotificationsParams defines parameters for ListNotifications.
 type ListNotificationsParams struct {
@@ -5098,6 +4930,9 @@ type EditIssueCommentOnHostJSONRequestBody = EditIssueCommentHostInputBody
 // SetIssueGithubStateOnHostJSONRequestBody defines body for SetIssueGithubStateOnHost for application/json ContentType.
 type SetIssueGithubStateOnHostJSONRequestBody = GithubStateHostInputBody
 
+// CreateIssueKataLinkOnHostJSONRequestBody defines body for CreateIssueKataLinkOnHost for application/json ContentType.
+type CreateIssueKataLinkOnHostJSONRequestBody = KataCreateLinkRequest
+
 // SetIssueLabelsOnHostJSONRequestBody defines body for SetIssueLabelsOnHost for application/json ContentType.
 type SetIssueLabelsOnHostJSONRequestBody = SetLabelsRequest
 
@@ -5127,6 +4962,9 @@ type ResolveDiscussionOnHostJSONRequestBody = ResolveDiscussionHostInputBody
 
 // SetPrGithubStateOnHostJSONRequestBody defines body for SetPrGithubStateOnHost for application/json ContentType.
 type SetPrGithubStateOnHostJSONRequestBody = GithubStateHostInputBody
+
+// CreatePullRequestKataLinkOnHostJSONRequestBody defines body for CreatePullRequestKataLinkOnHost for application/json ContentType.
+type CreatePullRequestKataLinkOnHostJSONRequestBody = KataCreateLinkRequest
 
 // SetPrLabelsOnHostJSONRequestBody defines body for SetPrLabelsOnHost for application/json ContentType.
 type SetPrLabelsOnHostJSONRequestBody = SetLabelsRequest
@@ -5181,6 +5019,9 @@ type EditIssueCommentJSONRequestBody = EditIssueCommentInputBody
 
 // SetIssueGithubStateJSONRequestBody defines body for SetIssueGithubState for application/json ContentType.
 type SetIssueGithubStateJSONRequestBody = GithubStateInputBody
+
+// CreateIssueKataLinkJSONRequestBody defines body for CreateIssueKataLink for application/json ContentType.
+type CreateIssueKataLinkJSONRequestBody = KataCreateLinkRequest
 
 // SetIssueLabelsJSONRequestBody defines body for SetIssueLabels for application/json ContentType.
 type SetIssueLabelsJSONRequestBody = SetLabelsRequest
@@ -5250,6 +5091,9 @@ type ResolveDiscussionJSONRequestBody = ResolveDiscussionInputBody
 
 // SetPrGithubStateJSONRequestBody defines body for SetPrGithubState for application/json ContentType.
 type SetPrGithubStateJSONRequestBody = GithubStateInputBody
+
+// CreatePullRequestKataLinkJSONRequestBody defines body for CreatePullRequestKataLink for application/json ContentType.
+type CreatePullRequestKataLinkJSONRequestBody = KataCreateLinkRequest
 
 // SetPrLabelsJSONRequestBody defines body for SetPrLabels for application/json ContentType.
 type SetPrLabelsJSONRequestBody = SetLabelsRequest
@@ -5322,6 +5166,9 @@ type SetActiveWorktreeJSONRequestBody = SetActiveWorktreeInputBody
 
 // CreateWorkspaceJSONRequestBody defines body for CreateWorkspace for application/json ContentType.
 type CreateWorkspaceJSONRequestBody = CreateWorkspaceInputBody
+
+// CreateWorkspaceKataLinkJSONRequestBody defines body for CreateWorkspaceKataLink for application/json ContentType.
+type CreateWorkspaceKataLinkJSONRequestBody = KataCreateLinkRequest
 
 // LaunchWorkspaceRuntimeSessionJSONRequestBody defines body for LaunchWorkspaceRuntimeSession for application/json ContentType.
 type LaunchWorkspaceRuntimeSessionJSONRequestBody = LaunchWorkspaceRuntimeSessionInputBody
@@ -5855,6 +5702,17 @@ type ClientInterface interface {
 
 	SetIssueGithubStateOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListIssueKataLinksOnHost request
+	ListIssueKataLinksOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIssueKataLinkOnHostWithBody request with any body
+	CreateIssueKataLinkOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateIssueKataLinkOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreateIssueKataLinkOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteIssueKataLinkOnHost request
+	DeleteIssueKataLinkOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// SetIssueLabelsOnHostWithBody request with any body
 	SetIssueLabelsOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -5937,6 +5795,17 @@ type ClientInterface interface {
 
 	// GetPullImportMetadataOnHost request
 	GetPullImportMetadataOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPullRequestKataLinksOnHost request
+	ListPullRequestKataLinksOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePullRequestKataLinkOnHostWithBody request with any body
+	CreatePullRequestKataLinkOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreatePullRequestKataLinkOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreatePullRequestKataLinkOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePullRequestKataLinkOnHost request
+	DeletePullRequestKataLinkOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetPrLabelsOnHostWithBody request with any body
 	SetPrLabelsOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6109,6 +5978,17 @@ type ClientInterface interface {
 
 	SetIssueGithubState(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListIssueKataLinks request
+	ListIssueKataLinks(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIssueKataLinkWithBody request with any body
+	CreateIssueKataLinkWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateIssueKataLink(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteIssueKataLink request
+	DeleteIssueKataLink(ctx context.Context, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// SetIssueLabelsWithBody request with any body
 	SetIssueLabelsWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -6128,17 +6008,20 @@ type ClientInterface interface {
 	// ListKataDaemons request
 	ListKataDaemons(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ResolveKataIssueReference request
+	ResolveKataIssueReference(ctx context.Context, daemonId string, params *ResolveKataIssueReferenceParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetKataIssueDetail request
+	GetKataIssueDetail(ctx context.Context, daemonId string, issueUid string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetKataLaunchTarget request
+	GetKataLaunchTarget(ctx context.Context, daemonId string, issueUid string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListKataReferences request
+	ListKataReferences(ctx context.Context, daemonId string, params *ListKataReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetKataProjectMappings request
 	GetKataProjectMappings(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// StreamKataTaskEvents request
-	StreamKataTaskEvents(ctx context.Context, params *StreamKataTaskEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SearchKataTaskReferences request
-	SearchKataTaskReferences(ctx context.Context, params *SearchKataTaskReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetKataTaskSnapshot request
-	GetKataTaskSnapshot(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateKataWorkspaceWithBody request with any body
 	CreateKataWorkspaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6322,6 +6205,17 @@ type ClientInterface interface {
 
 	// GetPullImportMetadata request
 	GetPullImportMetadata(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPullRequestKataLinks request
+	ListPullRequestKataLinks(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePullRequestKataLinkWithBody request with any body
+	CreatePullRequestKataLinkWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreatePullRequestKataLink(ctx context.Context, provider string, owner string, name string, number int64, body CreatePullRequestKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePullRequestKataLink request
+	DeletePullRequestKataLink(ctx context.Context, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetPrLabelsWithBody request with any body
 	SetPrLabelsWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6595,6 +6489,17 @@ type ClientInterface interface {
 
 	// GetWorkspaceFiles request
 	GetWorkspaceFiles(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWorkspaceKataLinks request
+	ListWorkspaceKataLinks(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateWorkspaceKataLinkWithBody request with any body
+	CreateWorkspaceKataLinkWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateWorkspaceKataLink(ctx context.Context, id string, body CreateWorkspaceKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteWorkspaceKataLink request
+	DeleteWorkspaceKataLink(ctx context.Context, id string, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PullWorkspaceBranch request
 	PullWorkspaceBranch(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -7944,6 +7849,54 @@ func (c *Client) SetIssueGithubStateOnHost(ctx context.Context, platformHost str
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListIssueKataLinksOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListIssueKataLinksOnHostRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueKataLinkOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueKataLinkOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueKataLinkOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreateIssueKataLinkOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueKataLinkOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteIssueKataLinkOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteIssueKataLinkOnHostRequest(c.Server, platformHost, provider, owner, name, number, linkId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) SetIssueLabelsOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetIssueLabelsOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
 	if err != nil {
@@ -8306,6 +8259,54 @@ func (c *Client) SetPrGithubStateOnHost(ctx context.Context, platformHost string
 
 func (c *Client) GetPullImportMetadataOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPullImportMetadataOnHostRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListPullRequestKataLinksOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPullRequestKataLinksOnHostRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePullRequestKataLinkOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePullRequestKataLinkOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePullRequestKataLinkOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreatePullRequestKataLinkOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePullRequestKataLinkOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeletePullRequestKataLinkOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePullRequestKataLinkOnHostRequest(c.Server, platformHost, provider, owner, name, number, linkId)
 	if err != nil {
 		return nil, err
 	}
@@ -9072,6 +9073,54 @@ func (c *Client) SetIssueGithubState(ctx context.Context, provider string, owner
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListIssueKataLinks(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListIssueKataLinksRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueKataLinkWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueKataLinkRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueKataLink(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueKataLinkRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteIssueKataLink(ctx context.Context, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteIssueKataLinkRequest(c.Server, provider, owner, name, number, linkId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) SetIssueLabelsWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetIssueLabelsRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
 	if err != nil {
@@ -9156,44 +9205,56 @@ func (c *Client) ListKataDaemons(ctx context.Context, reqEditors ...RequestEdito
 	return c.Client.Do(req)
 }
 
+func (c *Client) ResolveKataIssueReference(ctx context.Context, daemonId string, params *ResolveKataIssueReferenceParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveKataIssueReferenceRequest(c.Server, daemonId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetKataIssueDetail(ctx context.Context, daemonId string, issueUid string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetKataIssueDetailRequest(c.Server, daemonId, issueUid)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetKataLaunchTarget(ctx context.Context, daemonId string, issueUid string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetKataLaunchTargetRequest(c.Server, daemonId, issueUid)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListKataReferences(ctx context.Context, daemonId string, params *ListKataReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListKataReferencesRequest(c.Server, daemonId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetKataProjectMappings(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetKataProjectMappingsRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) StreamKataTaskEvents(ctx context.Context, params *StreamKataTaskEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewStreamKataTaskEventsRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SearchKataTaskReferences(ctx context.Context, params *SearchKataTaskReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSearchKataTaskReferencesRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetKataTaskSnapshot(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetKataTaskSnapshotRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -10010,6 +10071,54 @@ func (c *Client) SetPrGithubState(ctx context.Context, provider string, owner st
 
 func (c *Client) GetPullImportMetadata(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPullImportMetadataRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListPullRequestKataLinks(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPullRequestKataLinksRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePullRequestKataLinkWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePullRequestKataLinkRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePullRequestKataLink(ctx context.Context, provider string, owner string, name string, number int64, body CreatePullRequestKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePullRequestKataLinkRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeletePullRequestKataLink(ctx context.Context, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePullRequestKataLinkRequest(c.Server, provider, owner, name, number, linkId)
 	if err != nil {
 		return nil, err
 	}
@@ -11198,6 +11307,54 @@ func (c *Client) GetWorkspaceFilePreview(ctx context.Context, id string, params 
 
 func (c *Client) GetWorkspaceFiles(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspaceFilesRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListWorkspaceKataLinks(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkspaceKataLinksRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateWorkspaceKataLinkWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWorkspaceKataLinkRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateWorkspaceKataLink(ctx context.Context, id string, body CreateWorkspaceKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWorkspaceKataLinkRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteWorkspaceKataLink(ctx context.Context, id string, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteWorkspaceKataLinkRequest(c.Server, id, linkId)
 	if err != nil {
 		return nil, err
 	}
@@ -15896,6 +16053,212 @@ func NewSetIssueGithubStateOnHostRequestWithBody(server string, platformHost str
 	return req, nil
 }
 
+// NewListIssueKataLinksOnHostRequest generates requests for ListIssueKataLinksOnHost
+func NewListIssueKataLinksOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s/kata-links", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateIssueKataLinkOnHostRequest calls the generic CreateIssueKataLinkOnHost builder with application/json body
+func NewCreateIssueKataLinkOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body CreateIssueKataLinkOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateIssueKataLinkOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreateIssueKataLinkOnHostRequestWithBody generates requests for CreateIssueKataLinkOnHost with any type of body
+func NewCreateIssueKataLinkOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s/kata-links", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteIssueKataLinkOnHostRequest generates requests for DeleteIssueKataLinkOnHost
+func NewDeleteIssueKataLinkOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, linkId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "link_id", linkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s/kata-links/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewSetIssueLabelsOnHostRequest calls the generic SetIssueLabelsOnHost builder with application/json body
 func NewSetIssueLabelsOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body SetIssueLabelsOnHostJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -17487,6 +17850,212 @@ func NewGetPullImportMetadataOnHostRequest(server string, platformHost string, p
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListPullRequestKataLinksOnHostRequest generates requests for ListPullRequestKataLinksOnHost
+func NewListPullRequestKataLinksOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/kata-links", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreatePullRequestKataLinkOnHostRequest calls the generic CreatePullRequestKataLinkOnHost builder with application/json body
+func NewCreatePullRequestKataLinkOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body CreatePullRequestKataLinkOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePullRequestKataLinkOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreatePullRequestKataLinkOnHostRequestWithBody generates requests for CreatePullRequestKataLinkOnHost with any type of body
+func NewCreatePullRequestKataLinkOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/kata-links", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeletePullRequestKataLinkOnHostRequest generates requests for DeletePullRequestKataLinkOnHost
+func NewDeletePullRequestKataLinkOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, linkId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "link_id", linkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/kata-links/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -21065,6 +21634,191 @@ func NewSetIssueGithubStateRequestWithBody(server string, provider string, owner
 	return req, nil
 }
 
+// NewListIssueKataLinksRequest generates requests for ListIssueKataLinks
+func NewListIssueKataLinksRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s/kata-links", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateIssueKataLinkRequest calls the generic CreateIssueKataLink builder with application/json body
+func NewCreateIssueKataLinkRequest(server string, provider string, owner string, name string, number int64, body CreateIssueKataLinkJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateIssueKataLinkRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreateIssueKataLinkRequestWithBody generates requests for CreateIssueKataLink with any type of body
+func NewCreateIssueKataLinkRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s/kata-links", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteIssueKataLinkRequest generates requests for DeleteIssueKataLink
+func NewDeleteIssueKataLinkRequest(server string, provider string, owner string, name string, number int64, linkId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "link_id", linkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s/kata-links/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewSetIssueLabelsRequest calls the generic SetIssueLabels builder with application/json body
 func NewSetIssueLabelsRequest(server string, provider string, owner string, name string, number int64, body SetIssueLabelsJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -21338,16 +22092,99 @@ func NewListKataDaemonsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewGetKataProjectMappingsRequest generates requests for GetKataProjectMappings
-func NewGetKataProjectMappingsRequest(server string, params *GetKataProjectMappingsParams) (*http.Request, error) {
+// NewResolveKataIssueReferenceRequest generates requests for ResolveKataIssueReference
+func NewResolveKataIssueReferenceRequest(server string, daemonId string, params *ResolveKataIssueReferenceParams) (*http.Request, error) {
 	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "daemon_id", daemonId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/kata/project-mappings")
+	operationPath := fmt.Sprintf("/kata/daemons/%s/issue-reference", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref", params.Ref, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetKataIssueDetailRequest generates requests for GetKataIssueDetail
+func NewGetKataIssueDetailRequest(server string, daemonId string, issueUid string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "daemon_id", daemonId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "issue_uid", issueUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/kata/daemons/%s/issues/%s", pathParam0, pathParam1)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -21362,34 +22199,33 @@ func NewGetKataProjectMappingsRequest(server string, params *GetKataProjectMappi
 		return nil, err
 	}
 
-	if params != nil {
-
-		if params.XKennForgeKataDaemon != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Kenn-Forge-Kata-Daemon", *params.XKennForgeKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Kenn-Forge-Kata-Daemon", headerParam0)
-		}
-
-	}
-
 	return req, nil
 }
 
-// NewStreamKataTaskEventsRequest generates requests for StreamKataTaskEvents
-func NewStreamKataTaskEventsRequest(server string, params *StreamKataTaskEventsParams) (*http.Request, error) {
+// NewGetKataLaunchTargetRequest generates requests for GetKataLaunchTarget
+func NewGetKataLaunchTargetRequest(server string, daemonId string, issueUid string) (*http.Request, error) {
 	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "daemon_id", daemonId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "issue_uid", issueUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/kata/tasks/events")
+	operationPath := fmt.Sprintf("/kata/daemons/%s/issues/%s/launch-target", pathParam0, pathParam1)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -21404,34 +22240,26 @@ func NewStreamKataTaskEventsRequest(server string, params *StreamKataTaskEventsP
 		return nil, err
 	}
 
-	if params != nil {
-
-		if params.XKennForgeKataDaemon != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Kenn-Forge-Kata-Daemon", *params.XKennForgeKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Kenn-Forge-Kata-Daemon", headerParam0)
-		}
-
-	}
-
 	return req, nil
 }
 
-// NewSearchKataTaskReferencesRequest generates requests for SearchKataTaskReferences
-func NewSearchKataTaskReferencesRequest(server string, params *SearchKataTaskReferencesParams) (*http.Request, error) {
+// NewListKataReferencesRequest generates requests for ListKataReferences
+func NewListKataReferencesRequest(server string, daemonId string, params *ListKataReferencesParams) (*http.Request, error) {
 	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "daemon_id", daemonId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/kata/tasks/references")
+	operationPath := fmt.Sprintf("/kata/daemons/%s/references", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -21462,9 +22290,9 @@ func NewSearchKataTaskReferencesRequest(server string, params *SearchKataTaskRef
 
 		}
 
-		if params.Limit != nil {
+		if params.ProjectUid != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "project_uid", *params.ProjectUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -21474,9 +22302,21 @@ func NewSearchKataTaskReferencesRequest(server string, params *SearchKataTaskRef
 
 		}
 
-		if params.Status != nil {
+		if params.IssueUid != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "status", *params.Status, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "issue_uid", *params.IssueUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -21497,26 +22337,11 @@ func NewSearchKataTaskReferencesRequest(server string, params *SearchKataTaskRef
 		return nil, err
 	}
 
-	if params != nil {
-
-		if params.XKennForgeKataDaemon != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Kenn-Forge-Kata-Daemon", *params.XKennForgeKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Kenn-Forge-Kata-Daemon", headerParam0)
-		}
-
-	}
-
 	return req, nil
 }
 
-// NewGetKataTaskSnapshotRequest generates requests for GetKataTaskSnapshot
-func NewGetKataTaskSnapshotRequest(server string, params *GetKataTaskSnapshotParams) (*http.Request, error) {
+// NewGetKataProjectMappingsRequest generates requests for GetKataProjectMappings
+func NewGetKataProjectMappingsRequest(server string, params *GetKataProjectMappingsParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -21524,7 +22349,7 @@ func NewGetKataTaskSnapshotRequest(server string, params *GetKataTaskSnapshotPar
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/kata/tasks/snapshot")
+	operationPath := fmt.Sprintf("/kata/project-mappings")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -21532,93 +22357,6 @@ func NewGetKataTaskSnapshotRequest(server string, params *GetKataTaskSnapshotPar
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.Scope != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "scope", *params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.ProjectUid != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "project_uid", *params.ProjectUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Authority != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "authority", *params.Authority, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.SelectedIssueUid != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "selected_issue_uid", *params.SelectedIssueUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.GraphSourceUid != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "graph_source_uid", *params.GraphSourceUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Fresh != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "fresh", *params.Fresh, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -24313,6 +25051,191 @@ func NewGetPullImportMetadataRequest(server string, provider string, owner strin
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListPullRequestKataLinksRequest generates requests for ListPullRequestKataLinks
+func NewListPullRequestKataLinksRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/kata-links", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreatePullRequestKataLinkRequest calls the generic CreatePullRequestKataLink builder with application/json body
+func NewCreatePullRequestKataLinkRequest(server string, provider string, owner string, name string, number int64, body CreatePullRequestKataLinkJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePullRequestKataLinkRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreatePullRequestKataLinkRequestWithBody generates requests for CreatePullRequestKataLink with any type of body
+func NewCreatePullRequestKataLinkRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/kata-links", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeletePullRequestKataLinkRequest generates requests for DeletePullRequestKataLink
+func NewDeletePullRequestKataLinkRequest(server string, provider string, owner string, name string, number int64, linkId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "link_id", linkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/kata-links/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -28692,6 +29615,128 @@ func NewGetWorkspaceFilesRequest(server string, id string, params *GetWorkspaceF
 	return req, nil
 }
 
+// NewListWorkspaceKataLinksRequest generates requests for ListWorkspaceKataLinks
+func NewListWorkspaceKataLinksRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/kata-links", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateWorkspaceKataLinkRequest calls the generic CreateWorkspaceKataLink builder with application/json body
+func NewCreateWorkspaceKataLinkRequest(server string, id string, body CreateWorkspaceKataLinkJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateWorkspaceKataLinkRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewCreateWorkspaceKataLinkRequestWithBody generates requests for CreateWorkspaceKataLink with any type of body
+func NewCreateWorkspaceKataLinkRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/kata-links", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteWorkspaceKataLinkRequest generates requests for DeleteWorkspaceKataLink
+func NewDeleteWorkspaceKataLinkRequest(server string, id string, linkId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "link_id", linkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/kata-links/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewPullWorkspaceBranchRequest generates requests for PullWorkspaceBranch
 func NewPullWorkspaceBranchRequest(server string, id string) (*http.Request, error) {
 	var err error
@@ -29457,6 +30502,17 @@ type ClientWithResponsesInterface interface {
 
 	SetIssueGithubStateOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateOnHostResponse, error)
 
+	// ListIssueKataLinksOnHostWithResponse request
+	ListIssueKataLinksOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ListIssueKataLinksOnHostResponse, error)
+
+	// CreateIssueKataLinkOnHostWithBodyWithResponse request with any body
+	CreateIssueKataLinkOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueKataLinkOnHostResponse, error)
+
+	CreateIssueKataLinkOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreateIssueKataLinkOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueKataLinkOnHostResponse, error)
+
+	// DeleteIssueKataLinkOnHostWithResponse request
+	DeleteIssueKataLinkOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*DeleteIssueKataLinkOnHostResponse, error)
+
 	// SetIssueLabelsOnHostWithBodyWithResponse request with any body
 	SetIssueLabelsOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueLabelsOnHostResponse, error)
 
@@ -29539,6 +30595,17 @@ type ClientWithResponsesInterface interface {
 
 	// GetPullImportMetadataOnHostWithResponse request
 	GetPullImportMetadataOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullImportMetadataOnHostResponse, error)
+
+	// ListPullRequestKataLinksOnHostWithResponse request
+	ListPullRequestKataLinksOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ListPullRequestKataLinksOnHostResponse, error)
+
+	// CreatePullRequestKataLinkOnHostWithBodyWithResponse request with any body
+	CreatePullRequestKataLinkOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePullRequestKataLinkOnHostResponse, error)
+
+	CreatePullRequestKataLinkOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreatePullRequestKataLinkOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePullRequestKataLinkOnHostResponse, error)
+
+	// DeletePullRequestKataLinkOnHostWithResponse request
+	DeletePullRequestKataLinkOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*DeletePullRequestKataLinkOnHostResponse, error)
 
 	// SetPrLabelsOnHostWithBodyWithResponse request with any body
 	SetPrLabelsOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrLabelsOnHostResponse, error)
@@ -29711,6 +30778,17 @@ type ClientWithResponsesInterface interface {
 
 	SetIssueGithubStateWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
 
+	// ListIssueKataLinksWithResponse request
+	ListIssueKataLinksWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ListIssueKataLinksResponse, error)
+
+	// CreateIssueKataLinkWithBodyWithResponse request with any body
+	CreateIssueKataLinkWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueKataLinkResponse, error)
+
+	CreateIssueKataLinkWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueKataLinkResponse, error)
+
+	// DeleteIssueKataLinkWithResponse request
+	DeleteIssueKataLinkWithResponse(ctx context.Context, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*DeleteIssueKataLinkResponse, error)
+
 	// SetIssueLabelsWithBodyWithResponse request with any body
 	SetIssueLabelsWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueLabelsResponse, error)
 
@@ -29730,14 +30808,20 @@ type ClientWithResponsesInterface interface {
 	// ListKataDaemonsWithResponse request
 	ListKataDaemonsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListKataDaemonsResponse, error)
 
+	// ResolveKataIssueReferenceWithResponse request
+	ResolveKataIssueReferenceWithResponse(ctx context.Context, daemonId string, params *ResolveKataIssueReferenceParams, reqEditors ...RequestEditorFn) (*ResolveKataIssueReferenceResponse, error)
+
+	// GetKataIssueDetailWithResponse request
+	GetKataIssueDetailWithResponse(ctx context.Context, daemonId string, issueUid string, reqEditors ...RequestEditorFn) (*GetKataIssueDetailResponse, error)
+
+	// GetKataLaunchTargetWithResponse request
+	GetKataLaunchTargetWithResponse(ctx context.Context, daemonId string, issueUid string, reqEditors ...RequestEditorFn) (*GetKataLaunchTargetResponse, error)
+
+	// ListKataReferencesWithResponse request
+	ListKataReferencesWithResponse(ctx context.Context, daemonId string, params *ListKataReferencesParams, reqEditors ...RequestEditorFn) (*ListKataReferencesResponse, error)
+
 	// GetKataProjectMappingsWithResponse request
 	GetKataProjectMappingsWithResponse(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*GetKataProjectMappingsResponse, error)
-
-	// SearchKataTaskReferencesWithResponse request
-	SearchKataTaskReferencesWithResponse(ctx context.Context, params *SearchKataTaskReferencesParams, reqEditors ...RequestEditorFn) (*SearchKataTaskReferencesResponse, error)
-
-	// GetKataTaskSnapshotWithResponse request
-	GetKataTaskSnapshotWithResponse(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*GetKataTaskSnapshotResponse, error)
 
 	// CreateKataWorkspaceWithBodyWithResponse request with any body
 	CreateKataWorkspaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateKataWorkspaceResponse, error)
@@ -29921,6 +31005,17 @@ type ClientWithResponsesInterface interface {
 
 	// GetPullImportMetadataWithResponse request
 	GetPullImportMetadataWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullImportMetadataResponse, error)
+
+	// ListPullRequestKataLinksWithResponse request
+	ListPullRequestKataLinksWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ListPullRequestKataLinksResponse, error)
+
+	// CreatePullRequestKataLinkWithBodyWithResponse request with any body
+	CreatePullRequestKataLinkWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePullRequestKataLinkResponse, error)
+
+	CreatePullRequestKataLinkWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body CreatePullRequestKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePullRequestKataLinkResponse, error)
+
+	// DeletePullRequestKataLinkWithResponse request
+	DeletePullRequestKataLinkWithResponse(ctx context.Context, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*DeletePullRequestKataLinkResponse, error)
 
 	// SetPrLabelsWithBodyWithResponse request with any body
 	SetPrLabelsWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrLabelsResponse, error)
@@ -30194,6 +31289,17 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspaceFilesWithResponse request
 	GetWorkspaceFilesWithResponse(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*GetWorkspaceFilesResponse, error)
+
+	// ListWorkspaceKataLinksWithResponse request
+	ListWorkspaceKataLinksWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*ListWorkspaceKataLinksResponse, error)
+
+	// CreateWorkspaceKataLinkWithBodyWithResponse request with any body
+	CreateWorkspaceKataLinkWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorkspaceKataLinkResponse, error)
+
+	CreateWorkspaceKataLinkWithResponse(ctx context.Context, id string, body CreateWorkspaceKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWorkspaceKataLinkResponse, error)
+
+	// DeleteWorkspaceKataLinkWithResponse request
+	DeleteWorkspaceKataLinkWithResponse(ctx context.Context, id string, linkId int64, reqEditors ...RequestEditorFn) (*DeleteWorkspaceKataLinkResponse, error)
 
 	// PullWorkspaceBranchWithResponse request
 	PullWorkspaceBranchWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*PullWorkspaceBranchResponse, error)
@@ -32048,6 +33154,74 @@ func (r SetIssueGithubStateOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type ListIssueKataLinksOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataEffectiveLinksResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListIssueKataLinksOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListIssueKataLinksOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateIssueKataLinkOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataEffectiveLinksResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateIssueKataLinkOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateIssueKataLinkOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteIssueKataLinkOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteIssueKataLinkOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteIssueKataLinkOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type SetIssueLabelsOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -32522,6 +33696,74 @@ func (r GetPullImportMetadataOnHostResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetPullImportMetadataOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListPullRequestKataLinksOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataEffectiveLinksResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPullRequestKataLinksOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPullRequestKataLinksOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreatePullRequestKataLinkOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataEffectiveLinksResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePullRequestKataLinkOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePullRequestKataLinkOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeletePullRequestKataLinkOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePullRequestKataLinkOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePullRequestKataLinkOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -33553,6 +34795,74 @@ func (r SetIssueGithubStateResponse) StatusCode() int {
 	return 0
 }
 
+type ListIssueKataLinksResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataEffectiveLinksResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListIssueKataLinksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListIssueKataLinksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateIssueKataLinkResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataEffectiveLinksResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateIssueKataLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateIssueKataLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteIssueKataLinkResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteIssueKataLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteIssueKataLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type SetIssueLabelsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -33667,6 +34977,98 @@ func (r ListKataDaemonsResponse) StatusCode() int {
 	return 0
 }
 
+type ResolveKataIssueReferenceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataResolvedIssueReference
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ResolveKataIssueReferenceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResolveKataIssueReferenceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetKataIssueDetailResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataIssueDetailResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetKataIssueDetailResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetKataIssueDetailResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetKataLaunchTargetResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataLaunchTarget
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetKataLaunchTargetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetKataLaunchTargetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListKataReferencesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataReferencesResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListKataReferencesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListKataReferencesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetKataProjectMappingsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -33684,52 +35086,6 @@ func (r GetKataProjectMappingsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetKataProjectMappingsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type SearchKataTaskReferencesResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *KataTaskReferenceResponse
-	ApplicationproblemJSONDefault *ProblemError
-}
-
-// Status returns HTTPResponse.Status
-func (r SearchKataTaskReferencesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SearchKataTaskReferencesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetKataTaskSnapshotResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *KataTaskSnapshotResponse
-	ApplicationproblemJSONDefault *ProblemError
-}
-
-// Status returns HTTPResponse.Status
-func (r GetKataTaskSnapshotResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetKataTaskSnapshotResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -34804,6 +36160,74 @@ func (r GetPullImportMetadataResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetPullImportMetadataResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListPullRequestKataLinksResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataEffectiveLinksResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPullRequestKataLinksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPullRequestKataLinksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreatePullRequestKataLinkResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataEffectiveLinksResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePullRequestKataLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePullRequestKataLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeletePullRequestKataLinkResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePullRequestKataLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePullRequestKataLinkResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -36520,6 +37944,74 @@ func (r GetWorkspaceFilesResponse) StatusCode() int {
 	return 0
 }
 
+type ListWorkspaceKataLinksResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataEffectiveLinksResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWorkspaceKataLinksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWorkspaceKataLinksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateWorkspaceKataLinkResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataEffectiveLinksResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateWorkspaceKataLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateWorkspaceKataLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteWorkspaceKataLinkResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteWorkspaceKataLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteWorkspaceKataLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type PullWorkspaceBranchResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -37714,6 +39206,41 @@ func (c *ClientWithResponses) SetIssueGithubStateOnHostWithResponse(ctx context.
 	return ParseSetIssueGithubStateOnHostResponse(rsp)
 }
 
+// ListIssueKataLinksOnHostWithResponse request returning *ListIssueKataLinksOnHostResponse
+func (c *ClientWithResponses) ListIssueKataLinksOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ListIssueKataLinksOnHostResponse, error) {
+	rsp, err := c.ListIssueKataLinksOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListIssueKataLinksOnHostResponse(rsp)
+}
+
+// CreateIssueKataLinkOnHostWithBodyWithResponse request with arbitrary body returning *CreateIssueKataLinkOnHostResponse
+func (c *ClientWithResponses) CreateIssueKataLinkOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueKataLinkOnHostResponse, error) {
+	rsp, err := c.CreateIssueKataLinkOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueKataLinkOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateIssueKataLinkOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreateIssueKataLinkOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueKataLinkOnHostResponse, error) {
+	rsp, err := c.CreateIssueKataLinkOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueKataLinkOnHostResponse(rsp)
+}
+
+// DeleteIssueKataLinkOnHostWithResponse request returning *DeleteIssueKataLinkOnHostResponse
+func (c *ClientWithResponses) DeleteIssueKataLinkOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*DeleteIssueKataLinkOnHostResponse, error) {
+	rsp, err := c.DeleteIssueKataLinkOnHost(ctx, platformHost, provider, owner, name, number, linkId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteIssueKataLinkOnHostResponse(rsp)
+}
+
 // SetIssueLabelsOnHostWithBodyWithResponse request with arbitrary body returning *SetIssueLabelsOnHostResponse
 func (c *ClientWithResponses) SetIssueLabelsOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueLabelsOnHostResponse, error) {
 	rsp, err := c.SetIssueLabelsOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
@@ -37981,6 +39508,41 @@ func (c *ClientWithResponses) GetPullImportMetadataOnHostWithResponse(ctx contex
 		return nil, err
 	}
 	return ParseGetPullImportMetadataOnHostResponse(rsp)
+}
+
+// ListPullRequestKataLinksOnHostWithResponse request returning *ListPullRequestKataLinksOnHostResponse
+func (c *ClientWithResponses) ListPullRequestKataLinksOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ListPullRequestKataLinksOnHostResponse, error) {
+	rsp, err := c.ListPullRequestKataLinksOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPullRequestKataLinksOnHostResponse(rsp)
+}
+
+// CreatePullRequestKataLinkOnHostWithBodyWithResponse request with arbitrary body returning *CreatePullRequestKataLinkOnHostResponse
+func (c *ClientWithResponses) CreatePullRequestKataLinkOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePullRequestKataLinkOnHostResponse, error) {
+	rsp, err := c.CreatePullRequestKataLinkOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePullRequestKataLinkOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreatePullRequestKataLinkOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreatePullRequestKataLinkOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePullRequestKataLinkOnHostResponse, error) {
+	rsp, err := c.CreatePullRequestKataLinkOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePullRequestKataLinkOnHostResponse(rsp)
+}
+
+// DeletePullRequestKataLinkOnHostWithResponse request returning *DeletePullRequestKataLinkOnHostResponse
+func (c *ClientWithResponses) DeletePullRequestKataLinkOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*DeletePullRequestKataLinkOnHostResponse, error) {
+	rsp, err := c.DeletePullRequestKataLinkOnHost(ctx, platformHost, provider, owner, name, number, linkId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePullRequestKataLinkOnHostResponse(rsp)
 }
 
 // SetPrLabelsOnHostWithBodyWithResponse request with arbitrary body returning *SetPrLabelsOnHostResponse
@@ -38532,6 +40094,41 @@ func (c *ClientWithResponses) SetIssueGithubStateWithResponse(ctx context.Contex
 	return ParseSetIssueGithubStateResponse(rsp)
 }
 
+// ListIssueKataLinksWithResponse request returning *ListIssueKataLinksResponse
+func (c *ClientWithResponses) ListIssueKataLinksWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ListIssueKataLinksResponse, error) {
+	rsp, err := c.ListIssueKataLinks(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListIssueKataLinksResponse(rsp)
+}
+
+// CreateIssueKataLinkWithBodyWithResponse request with arbitrary body returning *CreateIssueKataLinkResponse
+func (c *ClientWithResponses) CreateIssueKataLinkWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueKataLinkResponse, error) {
+	rsp, err := c.CreateIssueKataLinkWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueKataLinkResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateIssueKataLinkWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueKataLinkResponse, error) {
+	rsp, err := c.CreateIssueKataLink(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueKataLinkResponse(rsp)
+}
+
+// DeleteIssueKataLinkWithResponse request returning *DeleteIssueKataLinkResponse
+func (c *ClientWithResponses) DeleteIssueKataLinkWithResponse(ctx context.Context, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*DeleteIssueKataLinkResponse, error) {
+	rsp, err := c.DeleteIssueKataLink(ctx, provider, owner, name, number, linkId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteIssueKataLinkResponse(rsp)
+}
+
 // SetIssueLabelsWithBodyWithResponse request with arbitrary body returning *SetIssueLabelsResponse
 func (c *ClientWithResponses) SetIssueLabelsWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueLabelsResponse, error) {
 	rsp, err := c.SetIssueLabelsWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
@@ -38593,6 +40190,42 @@ func (c *ClientWithResponses) ListKataDaemonsWithResponse(ctx context.Context, r
 	return ParseListKataDaemonsResponse(rsp)
 }
 
+// ResolveKataIssueReferenceWithResponse request returning *ResolveKataIssueReferenceResponse
+func (c *ClientWithResponses) ResolveKataIssueReferenceWithResponse(ctx context.Context, daemonId string, params *ResolveKataIssueReferenceParams, reqEditors ...RequestEditorFn) (*ResolveKataIssueReferenceResponse, error) {
+	rsp, err := c.ResolveKataIssueReference(ctx, daemonId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolveKataIssueReferenceResponse(rsp)
+}
+
+// GetKataIssueDetailWithResponse request returning *GetKataIssueDetailResponse
+func (c *ClientWithResponses) GetKataIssueDetailWithResponse(ctx context.Context, daemonId string, issueUid string, reqEditors ...RequestEditorFn) (*GetKataIssueDetailResponse, error) {
+	rsp, err := c.GetKataIssueDetail(ctx, daemonId, issueUid, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetKataIssueDetailResponse(rsp)
+}
+
+// GetKataLaunchTargetWithResponse request returning *GetKataLaunchTargetResponse
+func (c *ClientWithResponses) GetKataLaunchTargetWithResponse(ctx context.Context, daemonId string, issueUid string, reqEditors ...RequestEditorFn) (*GetKataLaunchTargetResponse, error) {
+	rsp, err := c.GetKataLaunchTarget(ctx, daemonId, issueUid, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetKataLaunchTargetResponse(rsp)
+}
+
+// ListKataReferencesWithResponse request returning *ListKataReferencesResponse
+func (c *ClientWithResponses) ListKataReferencesWithResponse(ctx context.Context, daemonId string, params *ListKataReferencesParams, reqEditors ...RequestEditorFn) (*ListKataReferencesResponse, error) {
+	rsp, err := c.ListKataReferences(ctx, daemonId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListKataReferencesResponse(rsp)
+}
+
 // GetKataProjectMappingsWithResponse request returning *GetKataProjectMappingsResponse
 func (c *ClientWithResponses) GetKataProjectMappingsWithResponse(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*GetKataProjectMappingsResponse, error) {
 	rsp, err := c.GetKataProjectMappings(ctx, params, reqEditors...)
@@ -38600,24 +40233,6 @@ func (c *ClientWithResponses) GetKataProjectMappingsWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseGetKataProjectMappingsResponse(rsp)
-}
-
-// SearchKataTaskReferencesWithResponse request returning *SearchKataTaskReferencesResponse
-func (c *ClientWithResponses) SearchKataTaskReferencesWithResponse(ctx context.Context, params *SearchKataTaskReferencesParams, reqEditors ...RequestEditorFn) (*SearchKataTaskReferencesResponse, error) {
-	rsp, err := c.SearchKataTaskReferences(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSearchKataTaskReferencesResponse(rsp)
-}
-
-// GetKataTaskSnapshotWithResponse request returning *GetKataTaskSnapshotResponse
-func (c *ClientWithResponses) GetKataTaskSnapshotWithResponse(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*GetKataTaskSnapshotResponse, error) {
-	rsp, err := c.GetKataTaskSnapshot(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetKataTaskSnapshotResponse(rsp)
 }
 
 // CreateKataWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateKataWorkspaceResponse
@@ -39209,6 +40824,41 @@ func (c *ClientWithResponses) GetPullImportMetadataWithResponse(ctx context.Cont
 		return nil, err
 	}
 	return ParseGetPullImportMetadataResponse(rsp)
+}
+
+// ListPullRequestKataLinksWithResponse request returning *ListPullRequestKataLinksResponse
+func (c *ClientWithResponses) ListPullRequestKataLinksWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ListPullRequestKataLinksResponse, error) {
+	rsp, err := c.ListPullRequestKataLinks(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPullRequestKataLinksResponse(rsp)
+}
+
+// CreatePullRequestKataLinkWithBodyWithResponse request with arbitrary body returning *CreatePullRequestKataLinkResponse
+func (c *ClientWithResponses) CreatePullRequestKataLinkWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePullRequestKataLinkResponse, error) {
+	rsp, err := c.CreatePullRequestKataLinkWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePullRequestKataLinkResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreatePullRequestKataLinkWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body CreatePullRequestKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePullRequestKataLinkResponse, error) {
+	rsp, err := c.CreatePullRequestKataLink(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePullRequestKataLinkResponse(rsp)
+}
+
+// DeletePullRequestKataLinkWithResponse request returning *DeletePullRequestKataLinkResponse
+func (c *ClientWithResponses) DeletePullRequestKataLinkWithResponse(ctx context.Context, provider string, owner string, name string, number int64, linkId int64, reqEditors ...RequestEditorFn) (*DeletePullRequestKataLinkResponse, error) {
+	rsp, err := c.DeletePullRequestKataLink(ctx, provider, owner, name, number, linkId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePullRequestKataLinkResponse(rsp)
 }
 
 // SetPrLabelsWithBodyWithResponse request with arbitrary body returning *SetPrLabelsResponse
@@ -40076,6 +41726,41 @@ func (c *ClientWithResponses) GetWorkspaceFilesWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseGetWorkspaceFilesResponse(rsp)
+}
+
+// ListWorkspaceKataLinksWithResponse request returning *ListWorkspaceKataLinksResponse
+func (c *ClientWithResponses) ListWorkspaceKataLinksWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*ListWorkspaceKataLinksResponse, error) {
+	rsp, err := c.ListWorkspaceKataLinks(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorkspaceKataLinksResponse(rsp)
+}
+
+// CreateWorkspaceKataLinkWithBodyWithResponse request with arbitrary body returning *CreateWorkspaceKataLinkResponse
+func (c *ClientWithResponses) CreateWorkspaceKataLinkWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorkspaceKataLinkResponse, error) {
+	rsp, err := c.CreateWorkspaceKataLinkWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWorkspaceKataLinkResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateWorkspaceKataLinkWithResponse(ctx context.Context, id string, body CreateWorkspaceKataLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWorkspaceKataLinkResponse, error) {
+	rsp, err := c.CreateWorkspaceKataLink(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWorkspaceKataLinkResponse(rsp)
+}
+
+// DeleteWorkspaceKataLinkWithResponse request returning *DeleteWorkspaceKataLinkResponse
+func (c *ClientWithResponses) DeleteWorkspaceKataLinkWithResponse(ctx context.Context, id string, linkId int64, reqEditors ...RequestEditorFn) (*DeleteWorkspaceKataLinkResponse, error) {
+	rsp, err := c.DeleteWorkspaceKataLink(ctx, id, linkId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteWorkspaceKataLinkResponse(rsp)
 }
 
 // PullWorkspaceBranchWithResponse request returning *PullWorkspaceBranchResponse
@@ -42780,6 +44465,98 @@ func ParseSetIssueGithubStateOnHostResponse(rsp *http.Response) (*SetIssueGithub
 	return response, nil
 }
 
+// ParseListIssueKataLinksOnHostResponse parses an HTTP response from a ListIssueKataLinksOnHostWithResponse call
+func ParseListIssueKataLinksOnHostResponse(rsp *http.Response) (*ListIssueKataLinksOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListIssueKataLinksOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataEffectiveLinksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateIssueKataLinkOnHostResponse parses an HTTP response from a CreateIssueKataLinkOnHostWithResponse call
+func ParseCreateIssueKataLinkOnHostResponse(rsp *http.Response) (*CreateIssueKataLinkOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateIssueKataLinkOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataEffectiveLinksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteIssueKataLinkOnHostResponse parses an HTTP response from a DeleteIssueKataLinkOnHostWithResponse call
+func ParseDeleteIssueKataLinkOnHostResponse(rsp *http.Response) (*DeleteIssueKataLinkOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteIssueKataLinkOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseSetIssueLabelsOnHostResponse parses an HTTP response from a SetIssueLabelsOnHostWithResponse call
 func ParseSetIssueLabelsOnHostResponse(rsp *http.Response) (*SetIssueLabelsOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -43440,6 +45217,98 @@ func ParseGetPullImportMetadataOnHostResponse(rsp *http.Response) (*GetPullImpor
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListPullRequestKataLinksOnHostResponse parses an HTTP response from a ListPullRequestKataLinksOnHostWithResponse call
+func ParseListPullRequestKataLinksOnHostResponse(rsp *http.Response) (*ListPullRequestKataLinksOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPullRequestKataLinksOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataEffectiveLinksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreatePullRequestKataLinkOnHostResponse parses an HTTP response from a CreatePullRequestKataLinkOnHostWithResponse call
+func ParseCreatePullRequestKataLinkOnHostResponse(rsp *http.Response) (*CreatePullRequestKataLinkOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePullRequestKataLinkOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataEffectiveLinksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeletePullRequestKataLinkOnHostResponse parses an HTTP response from a DeletePullRequestKataLinkOnHostWithResponse call
+func ParseDeletePullRequestKataLinkOnHostResponse(rsp *http.Response) (*DeletePullRequestKataLinkOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePullRequestKataLinkOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -44867,6 +46736,98 @@ func ParseSetIssueGithubStateResponse(rsp *http.Response) (*SetIssueGithubStateR
 	return response, nil
 }
 
+// ParseListIssueKataLinksResponse parses an HTTP response from a ListIssueKataLinksWithResponse call
+func ParseListIssueKataLinksResponse(rsp *http.Response) (*ListIssueKataLinksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListIssueKataLinksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataEffectiveLinksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateIssueKataLinkResponse parses an HTTP response from a CreateIssueKataLinkWithResponse call
+func ParseCreateIssueKataLinkResponse(rsp *http.Response) (*CreateIssueKataLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateIssueKataLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataEffectiveLinksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteIssueKataLinkResponse parses an HTTP response from a DeleteIssueKataLinkWithResponse call
+func ParseDeleteIssueKataLinkResponse(rsp *http.Response) (*DeleteIssueKataLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteIssueKataLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseSetIssueLabelsResponse parses an HTTP response from a SetIssueLabelsWithResponse call
 func ParseSetIssueLabelsResponse(rsp *http.Response) (*SetIssueLabelsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -45025,6 +46986,138 @@ func ParseListKataDaemonsResponse(rsp *http.Response) (*ListKataDaemonsResponse,
 	return response, nil
 }
 
+// ParseResolveKataIssueReferenceResponse parses an HTTP response from a ResolveKataIssueReferenceWithResponse call
+func ParseResolveKataIssueReferenceResponse(rsp *http.Response) (*ResolveKataIssueReferenceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResolveKataIssueReferenceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataResolvedIssueReference
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetKataIssueDetailResponse parses an HTTP response from a GetKataIssueDetailWithResponse call
+func ParseGetKataIssueDetailResponse(rsp *http.Response) (*GetKataIssueDetailResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetKataIssueDetailResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataIssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetKataLaunchTargetResponse parses an HTTP response from a GetKataLaunchTargetWithResponse call
+func ParseGetKataLaunchTargetResponse(rsp *http.Response) (*GetKataLaunchTargetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetKataLaunchTargetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataLaunchTarget
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListKataReferencesResponse parses an HTTP response from a ListKataReferencesWithResponse call
+func ParseListKataReferencesResponse(rsp *http.Response) (*ListKataReferencesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListKataReferencesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataReferencesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetKataProjectMappingsResponse parses an HTTP response from a GetKataProjectMappingsWithResponse call
 func ParseGetKataProjectMappingsResponse(rsp *http.Response) (*GetKataProjectMappingsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -45041,72 +47134,6 @@ func ParseGetKataProjectMappingsResponse(rsp *http.Response) (*GetKataProjectMap
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest KataProjectMappingsResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ProblemError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseSearchKataTaskReferencesResponse parses an HTTP response from a SearchKataTaskReferencesWithResponse call
-func ParseSearchKataTaskReferencesResponse(rsp *http.Response) (*SearchKataTaskReferencesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &SearchKataTaskReferencesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest KataTaskReferenceResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ProblemError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetKataTaskSnapshotResponse parses an HTTP response from a GetKataTaskSnapshotWithResponse call
-func ParseGetKataTaskSnapshotResponse(rsp *http.Response) (*GetKataTaskSnapshotResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetKataTaskSnapshotResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest KataTaskSnapshotResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -46614,6 +48641,98 @@ func ParseGetPullImportMetadataResponse(rsp *http.Response) (*GetPullImportMetad
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListPullRequestKataLinksResponse parses an HTTP response from a ListPullRequestKataLinksWithResponse call
+func ParseListPullRequestKataLinksResponse(rsp *http.Response) (*ListPullRequestKataLinksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPullRequestKataLinksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataEffectiveLinksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreatePullRequestKataLinkResponse parses an HTTP response from a CreatePullRequestKataLinkWithResponse call
+func ParseCreatePullRequestKataLinkResponse(rsp *http.Response) (*CreatePullRequestKataLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePullRequestKataLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataEffectiveLinksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeletePullRequestKataLinkResponse parses an HTTP response from a DeletePullRequestKataLinkWithResponse call
+func ParseDeletePullRequestKataLinkResponse(rsp *http.Response) (*DeletePullRequestKataLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePullRequestKataLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -48984,6 +51103,98 @@ func ParseGetWorkspaceFilesResponse(rsp *http.Response) (*GetWorkspaceFilesRespo
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWorkspaceKataLinksResponse parses an HTTP response from a ListWorkspaceKataLinksWithResponse call
+func ParseListWorkspaceKataLinksResponse(rsp *http.Response) (*ListWorkspaceKataLinksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorkspaceKataLinksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataEffectiveLinksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateWorkspaceKataLinkResponse parses an HTTP response from a CreateWorkspaceKataLinkWithResponse call
+func ParseCreateWorkspaceKataLinkResponse(rsp *http.Response) (*CreateWorkspaceKataLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateWorkspaceKataLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataEffectiveLinksResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteWorkspaceKataLinkResponse parses an HTTP response from a DeleteWorkspaceKataLinkWithResponse call
+func ParseDeleteWorkspaceKataLinkResponse(rsp *http.Response) (*DeleteWorkspaceKataLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteWorkspaceKataLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

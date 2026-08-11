@@ -39,7 +39,6 @@ function defaultModes(): ModeVisibility {
   return {
     activity: true,
     repos: true,
-    kata: false,
     docs: false,
     pulls: true,
     issues: true,
@@ -59,7 +58,6 @@ describe("ModeVisibilitySettings", () => {
     const modes = defaultModes();
     const updated = {
       ...modes,
-      kata: true,
       docs: true,
       workspaces: false,
     };
@@ -70,12 +68,10 @@ describe("ModeVisibilitySettings", () => {
       props: { component: ModeVisibilitySettings, componentProps: { modes, onUpdate } },
     });
 
-    expect((screen.getByLabelText("Kata") as HTMLInputElement).checked).toBe(false);
     expect((screen.getByLabelText("Docs") as HTMLInputElement).checked).toBe(false);
     expect(screen.queryByLabelText("Messages")).toBeNull();
     expect(screen.queryByLabelText("Board")).toBeNull();
 
-    await fireEvent.click(screen.getByLabelText("Kata"));
     await fireEvent.click(screen.getByLabelText("Docs"));
     await fireEvent.click(screen.getByLabelText("Workspaces"));
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));

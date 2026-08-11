@@ -162,7 +162,6 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
       getModeVisibility: () => ({
         activity: true,
         repos: true,
-        kata: false,
         docs: false,
         pulls: true,
         issues: true,
@@ -288,7 +287,6 @@ describe("app store event wiring", () => {
       modes: {
         activity: true,
         repos: true,
-        kata: false,
         docs: false,
         pulls: true,
         issues: true,

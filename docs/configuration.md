@@ -143,7 +143,6 @@ These values set the initial Activity view and local default-branch retention.
 [modes]
 activity = true
 repos = true
-kata = false
 docs = false
 pulls = true
 issues = true
@@ -151,8 +150,8 @@ reviews = true
 workspaces = true
 ```
 
-Set a mode to `false` to hide it. Kata and Docs start hidden because they need
-external or local sources.
+Set a mode to `false` to hide it. Docs starts hidden because it needs configured
+local folders. Kata integration is contextual rather than a top-level mode.
 
 ## Workspace agents
 

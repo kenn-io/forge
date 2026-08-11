@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { Effect } from "effect";
 
 import type { Folder } from "../../api/docs/types";
-import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+import type { KataReferenceSearch } from "../../api/kata/integration.js";
 import { buildDocsIssueCompletionOptions } from "./docsIssueCompletionOptions";
 
 const folders: Folder[] = [
@@ -11,16 +10,7 @@ const folders: Folder[] = [
   { id: "inbox", name: "Inbox", path: "/inbox" },
 ];
 
-const searchReferences: KataTaskReferenceSearch = vi.fn(() =>
-  Effect.succeed({
-    server_instance_id: "server-a",
-    daemon_id: "home",
-    generation: 7,
-    invalidation_epoch: 2,
-    fetched_at: "2026-07-20T12:00:00Z",
-    references: [],
-  }),
-);
+const searchReferences: KataReferenceSearch = vi.fn(async () => []);
 
 describe("buildDocsIssueCompletionOptions", () => {
   it("uses a live folder binding as the reference-search daemon", () => {
@@ -28,7 +18,6 @@ describe("buildDocsIssueCompletionOptions", () => {
       folders: () => folders,
       folderId: () => "notes",
       daemonRoster: () => ["home", "work"],
-      activeDaemon: () => "home",
       searchReferences,
     });
 
@@ -36,16 +25,15 @@ describe("buildDocsIssueCompletionOptions", () => {
     expect(options.searchReferences).toBe(searchReferences);
   });
 
-  it("uses the active daemon when a folder binding is stale", () => {
+  it("does not fall back when a folder binding is stale", () => {
     const options = buildDocsIssueCompletionOptions({
       folders: () => folders,
       folderId: () => "archive",
       daemonRoster: () => ["home", "work"],
-      activeDaemon: () => "home",
       searchReferences,
     });
 
-    expect(options.daemonId?.()).toBe("home");
+    expect(options.daemonId?.()).toBeUndefined();
   });
 
   it("uses the bound daemon in single-daemon mode", () => {
@@ -53,7 +41,6 @@ describe("buildDocsIssueCompletionOptions", () => {
       folders: () => folders,
       folderId: () => "notes",
       daemonRoster: () => ["work"],
-      activeDaemon: () => "work",
       searchReferences,
     });
 

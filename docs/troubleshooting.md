@@ -115,7 +115,7 @@ Then enable the mode if it is hidden:
 docs = true
 ```
 
-## Kata mode has no daemons
+## Kata actions show no daemons
 
 kenn-forge does not store Kata daemon definitions. Check Kata's own config:
 

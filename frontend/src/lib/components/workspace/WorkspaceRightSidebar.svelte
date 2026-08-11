@@ -1,7 +1,7 @@
 <script lang="ts">
   import { EmptyState, Spinner } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
-  import { onDestroy, type Snippet } from "svelte";
+  import { onDestroy } from "svelte";
   import { getStores } from "../../context.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import {
@@ -42,12 +42,14 @@
     from "../roborev/ReviewDrawer.svelte";
   import WorkspaceDiffPanel
     from "./WorkspaceDiffPanel.svelte";
+  import KataLinksPanel
+    from "../kata/KataLinksPanel.svelte";
 
   type RepoWithCount =
     components["schemas"]["RepoWithCount"];
 
   interface Props {
-    activeTab: "diff" | "pr" | "issue" | "reviews" | "kata_task";
+    activeTab: "diff" | "pr" | "issue" | "reviews" | "kata";
     workspaceID: string;
     workspaceHostKey?: string | undefined;
     provider: string;
@@ -63,7 +65,6 @@
     refreshToken?: number;
     diffRefreshToken?: number;
     disabled?: boolean;
-    kataTaskPanel?: Snippet | undefined;
   }
 
   let {
@@ -83,7 +84,6 @@
     refreshToken = 0,
     diffRefreshToken = 0,
     disabled = false,
-    kataTaskPanel = undefined,
   }: Props = $props();
 
   const parentStores = getStores();
@@ -301,7 +301,6 @@
     ownerItemNumber > 0 &&
     hasRepo
   );
-  const hasKataTask = $derived(ownerItemType === "kata_task");
   const hasMergeTarget = $derived(
     ownerItemType === "pull_request"
       ? ownerItemNumber > 0 && hasRepo
@@ -391,11 +390,15 @@
     {:else}
       <EmptyState title="No linked issue" />
     {/if}
-  {:else if activeTab === "kata_task"}
-    {#if hasKataTask && kataTaskPanel}
-      {@render kataTaskPanel()}
+  {:else if activeTab === "kata"}
+    {#if workspaceHostKey}
+      <EmptyState title="Kata links are unavailable for remote workspaces" />
     {:else}
-      <EmptyState title="No linked Kata task" />
+      <KataLinksPanel
+        subject={{ kind: "workspace", workspaceID }}
+        active={activeTab === "kata"}
+        {disabled}
+      />
     {/if}
   {:else if activeTab === "reviews"}
     {#if !hasRepo}

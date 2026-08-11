@@ -1,0 +1,3 @@
+DROP INDEX kata_issue_links_provider_identity;
+DROP INDEX kata_issue_links_workspace_identity;
+DROP TABLE kata_issue_links;

@@ -19,38 +19,11 @@ const startup = vi.hoisted(() => ({
   readyCallbacks: [] as Array<() => void>,
 }));
 
-const kataClients = vi.hoisted(() => ({
-  create: vi.fn(() => ({})),
-}));
-
-const kataReferences = vi.hoisted(() => ({
+const kataIntegration = vi.hoisted(() => ({
   search: vi.fn(),
-}));
-
-const kataDaemons = vi.hoisted(() => ({
-  rows: [] as Array<{ id: string; url: string; default: boolean; auth: "none"; health: "connected" }>,
-}));
-
-const kataAuxiliary = vi.hoisted(() => {
-  const instance = {
-    issues: [],
-    daemonID: "home",
-    phase: "accepted" as const,
-    error: null,
-    load: vi.fn(() => Effect.succeed(true)),
-    retry: vi.fn(() => Effect.succeed(true)),
-    selectIssue: vi.fn(),
-    stop: vi.fn(() => Effect.void),
-  };
-  return { instance, create: vi.fn(() => instance) };
-});
-
-const modePalette = vi.hoisted(() => ({
-  search: vi.fn((query: string, _deps: unknown) => ({
-    query,
-    tasks: { ok: true as const, rows: [], truncated: false },
-    docs: { ok: true as const, rows: [], truncated: false },
-  })),
+  resolveReference: vi.fn(),
+  resolveUID: vi.fn(),
+  launch: vi.fn(),
 }));
 
 const appSurfaceProps = vi.hoisted(() => ({
@@ -136,9 +109,6 @@ vi.mock("./lib/components/terminal/WorkspaceEmbedShell.svelte", async () => ({
 vi.mock("./lib/components/design-system/DesignSystemPage.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
-vi.mock("./lib/features/kata/KataFeature.svelte", async () => ({
-  default: (await import("./lib/features/kata/KataWorkspaceTestStub.svelte")).default,
-}));
 vi.mock("./lib/features/docs/DocsFeature.svelte", async () => {
   featureImports.docs += 1;
   if (featureImports.failDocsOnce) {
@@ -165,27 +135,16 @@ vi.mock("./lib/features/docs/DocsFeature.svelte?retry2", async () => {
     default: (await import("./lib/testing/AppDocsFeatureMock.svelte")).default,
   };
 });
-vi.mock("./lib/api/kata/daemons.js", () => ({
-  fetchKataDaemons: vi.fn(() => Effect.succeed(kataDaemons.rows)),
-}));
-vi.mock("./lib/api/kata/taskClient.js", () => ({
-  createKataTaskAPI: kataClients.create,
-}));
-vi.mock("./lib/api/kata/snapshot.js", () => ({
-  searchKataTaskReferences: kataReferences.search,
-}));
-vi.mock("./lib/features/kata/kataAuxiliaryAuthority.svelte.js", () => ({
-  createKataAuxiliaryAuthority: kataAuxiliary.create,
+vi.mock("./lib/api/kata/integration.js", () => ({
+  fetchKataDaemons: vi.fn(async () => []),
+  resolveKataIssueReference: kataIntegration.resolveUID,
+  resolveKataTextReference: kataIntegration.resolveReference,
+  searchKataReferences: kataIntegration.search,
+  resolveKataLaunchTarget: kataIntegration.launch,
 }));
 vi.mock("./lib/api/docs/api.js", () => ({
   createDocsAPI: () => ({}),
 }));
-vi.mock("./lib/stores/keyboard/mode-palette-search.js", async () => {
-  const { Effect } = await import("effect");
-  return {
-    searchModePalette: (query: string, deps: unknown) => Effect.succeed(modePalette.search(query, deps)),
-  };
-});
 vi.mock("./lib/utils/appStartup.js", () => ({
   runAppStartup: (
     _runtime: OwnedAppRuntime,
@@ -263,30 +222,15 @@ describe("App feature routes", () => {
     featureImports.failDocsOnce = false;
     startup.autoReady = true;
     startup.readyCallbacks = [];
-    kataDaemons.rows = [];
-    kataAuxiliary.instance.issues = [];
-    kataAuxiliary.instance.load.mockImplementation(() => Effect.succeed(true));
-    kataAuxiliary.instance.retry.mockImplementation(() => Effect.succeed(true));
-    kataAuxiliary.instance.stop.mockImplementation(() => Effect.void);
     appSurfaceProps.palette = null;
     appSurfaceProps.docs = null;
     appSurfaceProps.provider = null;
-    kataReferences.search.mockReturnValue(
-      Effect.succeed({
-        server_instance_id: "server-a",
-        daemon_id: "home",
-        generation: 7,
-        invalidation_epoch: 2,
-        fetched_at: "2026-07-20T12:00:00Z",
-        references: [],
-      }),
-    );
+    kataIntegration.search.mockResolvedValue([]);
+    kataIntegration.resolveReference.mockRejectedValue(new Error("reference not resolved"));
+    kataIntegration.launch.mockResolvedValue({ available: false, reason: "browser_unavailable" });
     installBrowserGlobals();
     window.history.replaceState(null, "", "/pulls");
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    const { resetKataDaemonRoster, setActiveKataDaemon } = await import("./lib/stores/active-kata-daemon.svelte.js");
-    resetKataDaemonRoster();
-    setActiveKataDaemon(undefined, false);
     replaceUrl("/pulls");
   });
 
@@ -337,7 +281,6 @@ describe("App feature routes", () => {
     startup.autoReady = false;
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
-    const { fetchKataDaemons } = await import("./lib/api/kata/daemons.js");
     const { default: App } = await import("./App.svelte");
 
     render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
@@ -345,13 +288,11 @@ describe("App feature routes", () => {
     await waitFor(() => expect(featureImports.docs).toBe(1));
 
     expect(screen.queryByTestId("docs-feature")).toBeNull();
-    expect(fetchKataDaemons).not.toHaveBeenCalled();
 
     for (const onReady of startup.readyCallbacks) {
       onReady();
     }
     await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
-    await waitFor(() => expect(fetchKataDaemons).toHaveBeenCalledTimes(1));
   });
 
   it("keeps Docs mounted while hidden", async () => {
@@ -368,7 +309,7 @@ describe("App feature routes", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Docs count 0" }));
     expect(document.querySelector("[data-testid='docs-feature'] button")?.textContent).toContain("Docs count 1");
 
-    navigate("/kata");
+    navigate("/repos");
     await waitFor(() => expect(document.querySelector(".docs-shell")?.hasAttribute("hidden")).toBe(true));
     expect(document.querySelector("[data-testid='docs-feature'] button")?.textContent).toContain("Docs count 1");
 
@@ -401,204 +342,19 @@ describe("App feature routes", () => {
     }
   });
 
-  it("isolates the Kata workspace client from cross-surface searches", async () => {
-    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/kata");
-    const { default: App } = await import("./App.svelte");
-
-    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
-    await waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
-
-    expect(kataClients.create).toHaveBeenCalledTimes(2);
-  });
-
-  it("shares one auxiliary Kata authority with the palette", async () => {
-    kataDaemons.rows = [
-      { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
-      { id: "work", url: "http://127.0.0.1:7778", default: false, auth: "none", health: "connected" },
-    ];
-    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/docs?folder=notes&doc=README.md");
-    const { default: App } = await import("./App.svelte");
-
-    const { unmount } = render(App, {
-      target: createAppTarget(),
-      props: { runtime: appRuntime },
+  it("opens a Docs Kata reference through its pinned daemon launch target", async () => {
+    kataIntegration.resolveReference.mockResolvedValueOnce({
+      uid: "issue-solo",
+      project_uid: "project-a",
     });
-    await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
-    await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("home"));
-
-    const modeSearch = appSurfaceProps.palette?.modeSearch as ((query: string) => Effect.Effect<unknown>) | undefined;
-    expect(modeSearch).toBeTypeOf("function");
-    if (modeSearch) await Effect.runPromise(modeSearch("linked task"));
-
-    expect(kataAuxiliary.create).toHaveBeenCalledOnce();
-    expect(modePalette.search).toHaveBeenCalledWith("linked task", {
-      kata: kataAuxiliary.instance,
-      docs: {},
+    kataIntegration.launch.mockResolvedValueOnce({
+      available: true,
+      url: "https://kata.example.test/kata?issue=issue-solo#direct=1",
     });
-
-    const { setActiveKataDaemon } = await import("./lib/stores/active-kata-daemon.svelte.js");
-    setActiveKataDaemon("work", false);
-    await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("work"));
-
-    unmount();
-    expect(kataAuxiliary.instance.stop).toHaveBeenCalledOnce();
-  });
-
-  it("opens a cross-surface Kata task in an authority that contains it", async () => {
-    kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
-    const { default: App } = await import("./App.svelte");
-
-    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
-    await waitFor(() => expect(appSurfaceProps.palette).not.toBeNull());
-
-    const openKataIssue = appSurfaceProps.palette?.onOpenKataIssue as
-      | ((target: { uid: string; status: "open" | "closed"; project_uid: string }) => void)
-      | undefined;
-    openKataIssue?.({
-      uid: "issue-closed",
-      status: "closed",
-      project_uid: "project-target",
-    });
-
-    expect(window.location.pathname + window.location.search).toBe(
-      "/kata?view=logbook&scope=project-target&issue=issue-closed",
-    );
-  });
-
-  it("resolves cross-surface navigation authority through an isolated selection", async () => {
-    kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
-    // A stale shared-snapshot row must not short-circuit routing authority:
-    // the task was reopened and closed again, so only the isolated selection
-    // carries its current status.
-    kataAuxiliary.instance.issues = [{ uid: "issue-closed", status: "open", project_uid: "project-stale" }] as never;
-    kataAuxiliary.instance.selectIssue.mockReturnValue(
-      Effect.succeed({
-        daemonID: "home",
-        detail: { issue: { uid: "issue-closed", status: "closed", project_uid: "project-target" } },
-      }),
-    );
-    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/docs?folder=notes&doc=README.md");
-    const { default: App } = await import("./App.svelte");
-
-    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
-    await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
-
-    const openIssue = appSurfaceProps.docs?.onOpenIssue as ((uid: string) => void) | undefined;
-    openIssue?.("issue-closed");
-
-    await waitFor(() =>
-      expect(window.location.pathname + window.location.search).toBe(
-        "/kata?view=logbook&scope=project-target&issue=issue-closed&daemon=home",
-      ),
-    );
-    expect(kataAuxiliary.instance.selectIssue).toHaveBeenCalledWith("issue-closed", undefined);
-  });
-
-  it("pins docs-originated task links to the folder daemon", async () => {
-    kataDaemons.rows = [
-      { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
-      { id: "docs-daemon", url: "http://127.0.0.1:7778", default: false, auth: "none", health: "connected" },
-    ];
-    kataAuxiliary.instance.selectIssue.mockReturnValue(
-      Effect.succeed({
-        daemonID: "docs-daemon",
-        detail: { issue: { uid: "issue-doc", status: "open", project_uid: "project-doc" } },
-      }),
-    );
-    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/docs?folder=notes&doc=README.md");
-    const { default: App } = await import("./App.svelte");
-
-    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
-    await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
-
-    const openIssue = appSurfaceProps.docs?.onOpenIssue as ((uid: string, daemonId?: string) => void) | undefined;
-    expect(openIssue).toBeTypeOf("function");
-    openIssue?.("issue-doc", "docs-daemon");
-
-    await waitFor(() =>
-      expect(window.location.pathname + window.location.search).toBe(
-        "/kata?view=all&scope=project-doc&issue=issue-doc&daemon=docs-daemon",
-      ),
-    );
-    expect(kataAuxiliary.instance.selectIssue).toHaveBeenCalledWith("issue-doc", "docs-daemon");
-  });
-
-  it("ignores an older auxiliary selection that resolves after a newer navigation", async () => {
-    kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
-    let resolveOlder!: (value: unknown) => void;
-    const older = new Promise((resolve) => {
-      resolveOlder = resolve;
-    });
-    kataAuxiliary.instance.selectIssue.mockReturnValueOnce(Effect.promise(() => older)).mockReturnValueOnce(
-      Effect.succeed({
-        daemonID: "home",
-        detail: { issue: { uid: "issue-new", status: "open", project_uid: "project-new" } },
-      }),
-    );
-    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/docs?folder=notes&doc=README.md");
-    const { default: App } = await import("./App.svelte");
-
-    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
-    await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
-
-    const openIssue = appSurfaceProps.docs?.onOpenIssue as ((uid: string) => void) | undefined;
-    openIssue?.("issue-old");
-    openIssue?.("issue-new");
-
-    await waitFor(() =>
-      expect(window.location.pathname + window.location.search).toBe(
-        "/kata?view=all&scope=project-new&issue=issue-new&daemon=home",
-      ),
-    );
-
-    resolveOlder({
-      daemonID: "home",
-      detail: { issue: { uid: "issue-old", status: "closed", project_uid: "project-old" } },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(window.location.pathname + window.location.search).toBe(
-      "/kata?view=all&scope=project-new&issue=issue-new&daemon=home",
-    );
-  });
-
-  it("handles an initial auxiliary authority failure at the app lifecycle boundary", async () => {
-    kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
-    kataAuxiliary.instance.load.mockReturnValueOnce(Effect.fail(new Error("snapshot unavailable")));
-    const { default: App } = await import("./App.svelte");
-
-    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
-
-    await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("home"));
-  });
-
-  it("routes open textual Kata references through the generated reference search", async () => {
-    kataReferences.search.mockReturnValueOnce(
-      Effect.succeed({
-        server_instance_id: "server-a",
-        daemon_id: "home",
-        generation: 7,
-        invalidation_epoch: 2,
-        fetched_at: "2026-07-20T12:00:00Z",
-        references: [
-          {
-            uid: "issue-solo",
-            project_id: 7,
-            project_uid: "project-a",
-            project_name: "Project A",
-            short_id: "solo",
-            qualified_id: "Project A#solo",
-            reference: "solo",
-            title: "Open task",
-            status: "open",
-          },
-        ],
-      }),
-    );
+    const replace = vi.fn();
+    const close = vi.fn();
+    const popup = { opener: window, close, location: { replace } } as unknown as Window;
+    const open = vi.spyOn(window, "open").mockReturnValue(popup);
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
@@ -608,34 +364,28 @@ describe("App feature routes", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Open Kata reference" }));
 
     await waitFor(() =>
-      expect(window.location.pathname + window.location.search).toBe("/kata?view=all&scope=project-a&issue=issue-solo"),
+      expect(replace).toHaveBeenCalledWith("https://kata.example.test/kata?issue=issue-solo#direct=1"),
     );
-    expect(kataReferences.search).toHaveBeenCalledWith("solo", { status: "all" });
+    expect(open).toHaveBeenCalledWith("about:blank", "_blank");
+    expect(popup.opener).toBeNull();
+    expect(close).not.toHaveBeenCalled();
+    expect(kataIntegration.resolveReference).toHaveBeenCalledWith("docs-daemon", undefined, "solo");
+    expect(kataIntegration.search).not.toHaveBeenCalled();
+    expect(kataIntegration.launch).toHaveBeenCalledWith("docs-daemon", "issue-solo");
   });
 
-  it("routes completed textual Kata references through all-status resolution", async () => {
-    kataReferences.search.mockReturnValueOnce(
-      Effect.succeed({
-        server_instance_id: "server-a",
-        daemon_id: "home",
-        generation: 7,
-        invalidation_epoch: 2,
-        fetched_at: "2026-07-20T12:00:00Z",
-        references: [
-          {
-            uid: "issue-closed",
-            project_id: 7,
-            project_uid: "project-a",
-            project_name: "Project A",
-            short_id: "closed-task",
-            qualified_id: "Project A#closed-task",
-            reference: "closed-task",
-            title: "Completed task",
-            status: "closed",
-          },
-        ],
-      }),
-    );
+  it("opens a completed qualified Docs Kata reference through exact resolution", async () => {
+    kataIntegration.resolveReference.mockResolvedValueOnce({
+      uid: "issue-closed",
+      project_uid: "project-a",
+    });
+    kataIntegration.launch.mockResolvedValueOnce({
+      available: true,
+      url: "https://kata.example.test/issues/issue-closed",
+    });
+    const replace = vi.fn();
+    const popup = { opener: window, close: vi.fn(), location: { replace } } as unknown as Window;
+    vi.spyOn(window, "open").mockReturnValue(popup);
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
@@ -644,37 +394,51 @@ describe("App feature routes", () => {
     await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Open closed Kata reference" }));
 
-    await waitFor(() =>
-      expect(window.location.pathname + window.location.search).toBe(
-        "/kata?view=logbook&scope=project-a&issue=issue-closed",
-      ),
-    );
-    expect(kataReferences.search).toHaveBeenCalledWith("closed-task", { status: "all" });
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("https://kata.example.test/issues/issue-closed"));
+    expect(kataIntegration.resolveReference).toHaveBeenCalledWith("docs-daemon", "Project A", "closed-task");
+    expect(kataIntegration.search).not.toHaveBeenCalled();
+    expect(kataIntegration.launch).toHaveBeenCalledWith("docs-daemon", "issue-closed");
   });
 
-  it("does not route an ambiguous bare reference from a qualified server result", async () => {
-    kataReferences.search.mockReturnValueOnce(
-      Effect.succeed({
-        server_instance_id: "server-a",
-        daemon_id: "home",
-        generation: 7,
-        invalidation_epoch: 2,
-        fetched_at: "2026-07-20T12:00:00Z",
-        references: [
-          {
-            uid: "issue-ambiguous",
-            project_id: 7,
-            project_uid: "project-a",
-            project_name: "Project A",
-            short_id: "solo",
-            qualified_id: "Project A#solo",
-            reference: "Project A#solo",
-            title: "Ambiguous task",
-            status: "open",
-          },
-        ],
-      }),
-    );
+  it("opens a completed bare Docs Kata reference through unique exact resolution", async () => {
+    kataIntegration.resolveReference.mockResolvedValueOnce({
+      uid: "issue-completed-bare",
+      project_uid: "project-a",
+    });
+    kataIntegration.launch.mockResolvedValueOnce({
+      available: true,
+      url: "https://kata.example.test/issues/issue-completed-bare",
+    });
+    const replace = vi.fn();
+    const popup = { opener: window, close: vi.fn(), location: { replace } } as unknown as Window;
+    vi.spyOn(window, "open").mockReturnValue(popup);
+    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/docs?folder=notes&doc=README.md");
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
+    await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Open completed bare Kata reference" }));
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("https://kata.example.test/issues/issue-completed-bare"));
+    expect(kataIntegration.resolveReference).toHaveBeenCalledWith("docs-daemon", undefined, "completed-bare");
+    expect(kataIntegration.search).not.toHaveBeenCalled();
+    expect(kataIntegration.launch).toHaveBeenCalledWith("docs-daemon", "issue-completed-bare");
+  });
+
+  it("rejects an unsafe Docs Kata launch target before navigating the reserved window", async () => {
+    kataIntegration.resolveReference.mockResolvedValueOnce({
+      uid: "issue-unsafe",
+      project_uid: "project-a",
+    });
+    kataIntegration.launch.mockResolvedValueOnce({
+      available: true,
+      url: "javascript:alert(document.cookie)",
+    });
+    const replace = vi.fn();
+    const close = vi.fn();
+    const popup = { opener: window, close, location: { replace } } as unknown as Window;
+    vi.spyOn(window, "open").mockReturnValue(popup);
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
@@ -683,8 +447,13 @@ describe("App feature routes", () => {
     await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Open Kata reference" }));
 
-    await waitFor(() => expect(kataReferences.search).toHaveBeenCalledWith("solo", { status: "all" }));
-    expect(window.location.pathname + window.location.search).toBe("/docs?folder=notes&doc=README.md");
+    const { getFlashes, dismissFlash } = await import("./lib/stores/flash.svelte.js");
+    await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+    expect(replace).not.toHaveBeenCalled();
+    expect(getFlashes()).toContainEqual(
+      expect.objectContaining({ message: "Kata returned an unsafe browser URL.", tone: "danger" }),
+    );
+    for (const flash of getFlashes()) dismissFlash(flash.id);
   });
 
   it("awaits Svelte unmount and managed runtime finalizers exactly once", async () => {
@@ -698,7 +467,6 @@ describe("App feature routes", () => {
 
     expect(target.childElementCount).toBe(0);
     expect(finalized).toHaveBeenCalledOnce();
-    expect(kataAuxiliary.instance.stop).toHaveBeenCalledOnce();
   });
 
   it("reports a non-interruption root finalizer defect", async () => {

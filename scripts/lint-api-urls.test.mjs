@@ -33,6 +33,20 @@ test("flags hardcoded production /api/v1 endpoint calls", async () => {
   assert.match(findings[0].message, /generated client/);
 });
 
+test("flags the removed Kata proxy helper", async () => {
+  const root = await makeRoot();
+  await write(
+    root,
+    "frontend/src/lib/api/kata/daemons.ts",
+    ["export function kataProxyPath(path) {", "  return `/api/v1/kata/proxy/${path}`;", "}", ""].join("\n"),
+  );
+
+  const findings = await lintApiUrls({ root });
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].line, 2);
+});
+
 test("flags API prefixes assembled through constants", async () => {
   const root = await makeRoot();
   await write(
@@ -119,29 +133,6 @@ test("flags dynamic API-base aliases and their endpoint consumers", async () => 
   assert.ok(findings.every((finding) => /generated client/.test(finding.message)));
 });
 
-test("allows the Kata upstream API prefix only inside its proxy path helper", async () => {
-  const root = await makeRoot();
-  await write(
-    root,
-    "frontend/src/lib/api/kata/daemons.ts",
-    [
-      "export function kataProxyPath(path) {",
-      '  return configuredAPIPath(`/kata/proxy/api/v1${path}`);',
-      "}",
-      "export function directKataPath(path) {",
-      '  return `/api/v1${path}`;',
-      "}",
-      "",
-    ].join("\n"),
-  );
-
-  const findings = await lintApiUrls({ root });
-
-  assert.equal(findings.length, 1);
-  assert.match(findings[0].file, /daemons\.ts$/);
-  assert.equal(findings[0].line, 5);
-});
-
 test("allows scoped streaming transports", async () => {
   const root = await makeRoot();
   await write(
@@ -150,9 +141,6 @@ test("allows scoped streaming transports", async () => {
     [
       '<script lang="ts">',
       "  const events = new EventSource(`${basePath}/api/v1/events`);",
-      '  await fetch("/api/v1/kata/tasks/events", {',
-      '    headers: { Accept: "text/event-stream" },',
-      "  });",
       "  const socketUrl =",
       "    `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +",
       "    `/terminal?cols=${cols}&rows=${rows}`;",

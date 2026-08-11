@@ -328,6 +328,16 @@ Intent:
 
 Do not add native `<select>` controls for visible app UI; use `SelectDropdown` instead. This is enforced by `frontend/src/no-native-select.test.ts`, which scans the component source trees and fails when a native `<select>` element is reintroduced. There is no allowlist or per-component exemption: if `SelectDropdown` cannot express a case, extend the primitive rather than reaching for a native `<select>`.
 
+### KataLinksPanel
+
+Use `KataLinksPanel` for read-only linked Kata context in provider-item and
+workspace detail panes. The panel owns Forge association controls, daemon and
+provenance disambiguation, freshness, and workspace actions; issue-detail
+projection and presentation come directly from the pinned `@kenn-io/kata-ui`
+source component. Keep the Forge link list and unlink controls outside the
+package error boundary so a Kata rendering failure cannot hide association
+recovery actions.
+
 ### FilterDropdown menu rows
 
 A binary view mode in a `FilterDropdown` menu is one toggle row named for the

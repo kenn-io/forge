@@ -21,7 +21,7 @@
     beginTerminalSettingsHydration,
     hydrateTerminalSettings,
   } from "../../stores/terminal-settings-persistence.js";
-  import { SETTINGS_PANELS, settingsPanelsForModes } from "./settingsPanels.js";
+  import { SETTINGS_PANELS } from "./settingsPanels.js";
 
   // Switched-panel model on kit SettingsLayout: this list is the single
   // source of category order, sidebar labels, and per-panel section header
@@ -40,10 +40,7 @@
   // bound `active` id is filtered out (the selection itself survives clearing
   // the query). kit renders group headings between runs in array order, so
   // `visiblePanels` keeps each group's entries contiguous.
-  const visiblePanels = $derived.by(() => {
-    const loaded = settings;
-    return loaded ? settingsPanelsForModes(loaded.modes?.kata === true) : SETTINGS_PANELS;
-  });
+  const visiblePanels = SETTINGS_PANELS;
   const categories: SettingsCategory[] = $derived.by(() => {
     const query = searchQuery.trim().toLowerCase();
     const visible =
@@ -176,7 +173,6 @@
           {:else if meta.id === "settings-kata-projects"}
             <KataProjectMappingsSettings
               mappings={loaded.kata_projects}
-              enabled={loaded.modes?.kata === true}
               onUpdate={(kata_projects) => {
                 settings = { ...settings!, kata_projects };
               }}

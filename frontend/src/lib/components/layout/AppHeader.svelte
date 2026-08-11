@@ -103,7 +103,6 @@
   type NavDestination =
     | "activity"
     | "repos"
-    | "kata"
     | "docs"
     | "pulls"
     | "issues"
@@ -114,7 +113,6 @@
   const modeNavOptions: { value: NavDestination; label: string; mode: ModeKey }[] = [
     { value: "activity", label: "Activity", mode: "activity" },
     { value: "repos", label: "Repos", mode: "repos" },
-    { value: "kata", label: "Kata", mode: "kata" },
     { value: "docs", label: "Docs", mode: "docs" },
     { value: "pulls", label: "PRs", mode: "pulls" },
     { value: "issues", label: "Issues", mode: "issues" },
@@ -296,15 +294,14 @@
     activeTab = routeTabId;
   });
 
-  type StickyMode = "kata" | "docs";
+  type StickyMode = "docs";
   const stickyModeDefaults: Record<StickyMode, string> = {
-    kata: "/kata",
     docs: "/docs",
   };
   const lastStickyModeRoutes = new SvelteMap<StickyMode, string>();
 
   function stickyModeForPage(page: ReturnType<typeof getPage>): StickyMode | null {
-    return page === "kata" || page === "docs" ? page : null;
+    return page === "docs" ? page : null;
   }
 
   function rememberCurrentStickyModeRoute(): void {
@@ -330,7 +327,7 @@
       if (getPage() !== "activity") navigate(getLastActivityRoute());
     }
     else if (destination === "repos") navigate("/repos");
-    else if (destination === "kata" || destination === "docs") {
+    else if (destination === "docs") {
       if (currentMode === destination) {
         lastStickyModeRoutes.set(destination, stickyModeDefaults[destination]);
         navigate(stickyModeDefaults[destination]);
@@ -353,7 +350,6 @@
   function handleTabChange(value: string): void {
     if (value === "activity") navigateTab("activity");
     else if (value === "repos") navigateTab("repos");
-    else if (value === "kata") navigateTab("kata");
     else if (value === "docs") navigateTab("docs");
     else if (value === "pulls") navigateTab("pulls");
     else if (value === "issues") navigateTab("issues");

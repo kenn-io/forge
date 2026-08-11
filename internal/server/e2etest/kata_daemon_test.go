@@ -2,7 +2,6 @@ package e2etest
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,7 +17,7 @@ import (
 	"go.kenn.io/forge/internal/kata"
 )
 
-func TestKataLocalDaemonChallengeIsDownAndProxyUpstreamErrorE2E(t *testing.T) {
+func TestKataLocalDaemonChallengeIsReportedDownE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -65,33 +64,12 @@ local = true
 	assert.Equal("none", localDaemon.Auth)
 	assert.Equal("down", localDaemon.Health)
 
-	req, err := http.NewRequestWithContext(
-		t.Context(),
-		http.MethodGet,
-		forge.URL+"/api/v1/kata/proxy/api/v1/instance",
-		http.NoBody,
-	)
-	require.NoError(err)
-	req.Header.Set("Accept-Encoding", "gzip")
-	resp, err := forge.Client().Do(req)
-	require.NoError(err)
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(err)
-
-	assert.Equal(http.StatusBadGateway, resp.StatusCode)
-	assert.Empty(resp.Header.Get("Content-Encoding"))
-	assert.Empty(resp.Header.Get("ETag"))
-	assert.Empty(resp.Header.Get("WWW-Authenticate"))
-	assert.Contains(string(body), `"code":"upstreamError"`)
-	assert.NotContains(string(body), "Authentication required")
-
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Equal([]string{"", ""}, authorizations)
+	assert.Equal([]string{""}, authorizations)
 }
 
-func TestKataLocalDaemonTokenEnvIsNotUsedForRosterOrProxyE2E(t *testing.T) {
+func TestKataLocalDaemonTokenEnvIsNotUsedForNarrowReadsE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -101,8 +79,13 @@ func TestKataLocalDaemonTokenEnvIsNotUsedForRosterOrProxyE2E(t *testing.T) {
 		mu.Lock()
 		authorizations = append(authorizations, r.Header.Get("Authorization"))
 		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"instance":"local"}`))
+		if r.URL.Path == "/api/v1/ui/references" {
+			_, _ = w.Write([]byte(`{"issues":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"api_schema_version":"0.10.0"}`))
 	}))
 	defer daemon.Close()
 
@@ -140,7 +123,7 @@ token_env = "KENN_FORGE_KATA_MISSING_TOKEN"
 	req, err := http.NewRequestWithContext(
 		t.Context(),
 		http.MethodGet,
-		forge.URL+"/api/v1/kata/proxy/api/v1/instance",
+		forge.URL+"/api/v1/kata/daemons/local/references?q=task",
 		http.NoBody,
 	)
 	require.NoError(err)
@@ -148,11 +131,7 @@ token_env = "KENN_FORGE_KATA_MISSING_TOKEN"
 	resp, err := forge.Client().Do(req)
 	require.NoError(err)
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(err)
-
-	assert.Equal(http.StatusOK, resp.StatusCode, string(body))
-	assert.JSONEq(`{"instance":"local"}`, string(body))
+	assert.Equal(http.StatusOK, resp.StatusCode)
 
 	mu.Lock()
 	defer mu.Unlock()

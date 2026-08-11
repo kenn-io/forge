@@ -4644,6 +4644,40 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 	return ws, nil
 }
 
+// GetKataWorkspaceByIssue returns the existing workspace for a Kata issue's
+// daemon-owned identity. Project UID is deliberately excluded because Kata
+// issues can move between projects without changing their issue UID.
+func (d *DB) GetKataWorkspaceByIssue(
+	ctx context.Context,
+	daemonID, issueUID string,
+) (*Workspace, error) {
+	daemonID = strings.TrimSpace(daemonID)
+	issueUID = strings.TrimSpace(issueUID)
+	if daemonID == "" || issueUID == "" {
+		return nil, nil
+	}
+	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
+		SELECT id, platform, platform_host, repo_owner, repo_name,
+		       item_type, item_number, item_key, associated_pr_number,
+		       git_head_ref, mr_head_repo, workspace_branch,
+		       worktree_path, tmux_session, terminal_backend, status,
+		       error_message, created_at, kata_metadata
+		FROM forge_workspaces
+		WHERE item_type = ?
+		  AND json_extract(kata_metadata, '$.daemon_id') = ?
+		  AND json_extract(kata_metadata, '$.issue_uid') = ?
+		ORDER BY created_at ASC, id ASC
+		LIMIT 1`, WorkspaceItemTypeKataTask, daemonID, issueUID,
+	))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get Kata workspace by issue: %w", err)
+	}
+	return ws, nil
+}
+
 // ListWorkspaces returns all workspaces ordered by
 // created_at DESC.
 func (d *DB) ListWorkspaces(

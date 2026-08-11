@@ -2,7 +2,15 @@
   import { Effect } from "effect";
   import { getStores } from "../../context.js";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
-  import { Button, TextInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
+  import { supportsKataAPISchema } from "@kenn-io/kata-ui/packages/kata-ui/src/index.ts";
+  import {
+    Button,
+    SearchInput,
+    SelectDropdown,
+    TextInput,
+    Typeahead,
+    type TypeaheadOption,
+  } from "@kenn-io/kit-ui";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import { canonicalProvider, providerRepoPath, providerRouteParams } from "../../api/provider-routes.js";
   import type { Repo } from "../../api/types.js";
@@ -18,11 +26,26 @@
   import { queueWorkspaceLaunch } from "../../stores/workspace-create-pending.svelte.js";
   import Modal from "../shared/Modal.svelte";
   import { apiErrorMessage } from "../../api/runtime.js";
+  import {
+    createOrOpenKataWorkspace,
+    searchKataReferences,
+    type KataIssueReference,
+  } from "../../api/kata/integration.js";
+  import { createKataDaemonsStore } from "../../stores/kata-daemons.svelte.js";
+  import {
+    beginKataWorkspaceCreate,
+    createdKataWorkspaceRef,
+    endKataWorkspaceCreate,
+    isKataWorkspaceCreatePending,
+    recordKataWorkspaceCreated,
+    type KataWorkspaceIdentity,
+  } from "../../stores/kata-workspace-create.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
   import {
     getLastUsedNewWorkspaceRepoKey,
     rememberNewWorkspaceRepoKey,
     type NewWorkspaceRepoSeed,
+    type NewWorkspaceSource,
   } from "../../stores/new-workspace.svelte.js";
 
   // Starts new work in a tracked repository without a pull request, issue, or
@@ -33,12 +56,19 @@
     open: boolean;
     onClose: () => void;
     seedRepo?: NewWorkspaceRepoSeed | null;
+    initialSource?: NewWorkspaceSource;
     // Overridable so callers embedding this dialog outside the app shell (and
     // tests) can observe the created workspace instead of navigating.
     onCreated?: ((workspaceId: string) => void) | undefined;
   }
 
-  const { open, onClose, seedRepo = null, onCreated = undefined }: Props = $props();
+  const {
+    open,
+    onClose,
+    seedRepo = null,
+    initialSource = "repository",
+    onCreated = undefined,
+  }: Props = $props();
   const { settings } = getStores();
   const runtime = getAppRuntime();
 
@@ -60,8 +90,44 @@
   let error = $state<string | null>(null);
   let suggestedBranch = $state<string | null>(null);
   let pendingLaunchTargetKey = $state<string | null>(null);
+  let source = $state<NewWorkspaceSource>("repository");
+  const kataDaemons = createKataDaemonsStore();
+  let selectedDaemonID = $state("");
+  let kataQuery = $state("");
+  let kataReferences = $state.raw<KataIssueReference[]>([]);
+  let selectedKataReference = $state.raw<KataIssueReference | null>(null);
+  let kataSearching = $state(false);
+  let kataRosterController: AbortController | null = null;
+  let kataSearchController: AbortController | null = null;
+  let kataSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  let kataSearchGeneration = 0;
   let activeSession: object | null = null;
   let repoLoadExecution: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
+
+  function clearPendingLaunch(): void {
+    pendingLaunchTargetKey = null;
+  }
+
+  function cancelKataSearch(): void {
+    if (kataSearchTimer !== null) {
+      clearTimeout(kataSearchTimer);
+      kataSearchTimer = null;
+    }
+    kataSearchController?.abort();
+    kataSearchController = null;
+  }
+
+  function resetKataSelection(): void {
+    cancelKataSearch();
+    kataSearchGeneration += 1;
+    kataRosterController?.abort();
+    kataRosterController = null;
+    selectedDaemonID = "";
+    kataQuery = "";
+    kataReferences = [];
+    selectedKataReference = null;
+    kataSearching = false;
+  }
 
   function repoOption(repo: Repo): RepoOption {
     const provider = canonicalProvider(repo.Platform);
@@ -89,11 +155,15 @@
       activeSession = null;
       repoLoadExecution?.interrupt();
       repoLoadExecution = null;
+      kataRosterController?.abort();
+      resetKataSelection();
       return;
     }
     const session = {};
     const seededRepoKey = seedKey(seedRepo);
+    const requestedSource = initialSource;
     activeSession = session;
+    source = requestedSource;
     branch = "";
     error = null;
     suggestedBranch = null;
@@ -102,7 +172,22 @@
     repos = [];
     selectedKey = "";
     reposError = null;
-    reposLoading = true;
+    reposLoading = requestedSource === "repository";
+    resetKataSelection();
+    if (requestedSource === "kata_issue") {
+      const controller = new AbortController();
+      kataRosterController = controller;
+      void kataDaemons.load(controller.signal).then(() => {
+        if (activeSession !== session || controller.signal.aborted) return;
+        selectedDaemonID = kataDaemons.defaultDaemonID();
+        if (kataRosterController === controller) kataRosterController = null;
+      });
+      return () => {
+        controller.abort();
+        cancelKataSearch();
+        if (activeSession === session) activeSession = null;
+      };
+    }
     const execution = runtime.runCommand(
       executeGeneratedApiRequest("load repositories", (client, signal) => client.GET("/repos", { signal })).pipe(
         Effect.flatMap((loaded) =>
@@ -140,15 +225,152 @@
     };
   });
 
+  function chooseSource(nextSource: NewWorkspaceSource): void {
+    if (source === nextSource || submitting) return;
+    clearPendingLaunch();
+    repoLoadExecution?.interrupt();
+    repoLoadExecution = null;
+    resetKataSelection();
+    source = nextSource;
+    branch = "";
+    error = null;
+    suggestedBranch = null;
+    repos = [];
+    selectedKey = "";
+    reposError = null;
+    const session = {};
+    activeSession = session;
+    if (source === "kata_issue") {
+      reposLoading = false;
+      const controller = new AbortController();
+      kataRosterController = controller;
+      void kataDaemons.load(controller.signal).then(() => {
+        if (activeSession !== session || controller.signal.aborted) return;
+        selectedDaemonID = kataDaemons.defaultDaemonID();
+        if (kataRosterController === controller) kataRosterController = null;
+      });
+      return;
+    }
+    reposLoading = true;
+    const execution = runtime.runCommand(
+      executeGeneratedApiRequest("load repositories", (client, signal) => client.GET("/repos", { signal })).pipe(
+        Effect.tap((loaded) => Effect.sync(() => {
+          if (activeSession !== session) return;
+          reposLoading = false;
+          repos = (loaded ?? []).map(repoOption);
+          const candidates = [seedKey(seedRepo), getLastUsedNewWorkspaceRepoKey()];
+          selectedKey = candidates.find((key) => key && repos.some((repo) => repo.key === key)) ?? repos[0]?.key ?? "";
+        })),
+        Effect.asVoid,
+      ),
+      {
+        operation: "load repositories for a new workspace",
+        safeContext: {},
+        onFailure: (failure) => {
+          if (activeSession !== session) return;
+          reposLoading = false;
+          reposError = failure instanceof ApiProblemError
+            ? apiErrorMessage(failure.problem, "Could not load repositories")
+            : "Could not load repositories";
+        },
+      },
+    );
+    repoLoadExecution = execution;
+  }
+
   const repoRows = $derived<TypeaheadOption[]>(
     repos.map((repo) => ({ name: repo.key, label: repo.label, meta: repo.platformHost })),
   );
 
   const selected = $derived(repos.find((repo) => repo.key === selectedKey) ?? null);
 
+  const selectedDaemon = $derived(
+    kataDaemons.daemons().find((daemon) => daemon.id === selectedDaemonID) ?? null,
+  );
+  const selectedDaemonUsable = $derived(
+    selectedDaemon?.health === "connected" &&
+      supportsKataAPISchema(selectedDaemon.api_schema_version ?? ""),
+  );
+  const selectedKataWorkspaceIdentity = $derived<KataWorkspaceIdentity | null>(
+    source === "kata_issue" && selectedKataReference && selectedDaemonID
+      ? { daemonID: selectedDaemonID, issueUID: selectedKataReference.uid }
+      : null,
+  );
+  const kataWorkspaceCreatePending = $derived(
+    selectedKataWorkspaceIdentity
+      ? isKataWorkspaceCreatePending(selectedKataWorkspaceIdentity)
+      : false,
+  );
+  const daemonOptions = $derived(
+    kataDaemons.daemons().map((daemon) => {
+      const healthReason = daemon.health === "connected" ? "" : daemon.hint || `Health: ${daemon.health}`;
+      const schemaReason = supportsKataAPISchema(daemon.api_schema_version ?? "")
+        ? ""
+        : `Unsupported API schema ${daemon.api_schema_version || "unknown"}`;
+      const reason = healthReason || schemaReason;
+      return {
+        value: daemon.id,
+        label: daemon.id,
+        disabled: reason !== "",
+        ...(reason === ""
+          ? { indicator: { tone: "success" as const, title: "Connected" } }
+          : { indicator: { tone: "danger" as const, title: reason } }),
+      };
+    }),
+  );
+
   const repoFallbackLabel = $derived(
     reposLoading ? "Loading repositories…" : "No tracked repositories yet",
   );
+
+  const canSubmit = $derived(
+    source === "repository"
+      ? selected !== null
+      : selectedKataReference !== null && selectedDaemonUsable,
+  );
+
+  function chooseDaemon(daemonID: string): void {
+    clearPendingLaunch();
+    selectedDaemonID = daemonID;
+    scheduleKataSearch();
+  }
+
+  function scheduleKataSearch(): void {
+    clearPendingLaunch();
+    cancelKataSearch();
+    const generation = ++kataSearchGeneration;
+    kataReferences = [];
+    selectedKataReference = null;
+    error = null;
+    if (!selectedDaemonUsable || kataQuery.trim() === "") {
+      kataSearching = false;
+      return;
+    }
+    kataSearchTimer = setTimeout(() => {
+      kataSearchTimer = null;
+      void runKataSearch(generation);
+    }, 250);
+  }
+
+  async function runKataSearch(generation: number): Promise<void> {
+    const daemonID = selectedDaemonID;
+    const query = kataQuery.trim();
+    if (daemonID === "" || query === "" || generation !== kataSearchGeneration) return;
+    const controller = new AbortController();
+    kataSearchController = controller;
+    kataSearching = true;
+    try {
+      const references = await searchKataReferences(daemonID, query, controller.signal);
+      if (generation !== kataSearchGeneration || controller.signal.aborted) return;
+      kataReferences = references;
+    } catch (cause) {
+      if (generation !== kataSearchGeneration || controller.signal.aborted) return;
+      error = cause instanceof Error ? cause.message : "Unable to search Kata issues.";
+    } finally {
+      if (generation === kataSearchGeneration) kataSearching = false;
+      if (kataSearchController === controller) kataSearchController = null;
+    }
+  }
 
   // Branch conflicts are recognized by the stable problem code and read from
   // typed `details`, never from prose or the per-field huma error array.
@@ -165,8 +387,15 @@
     const launchTargetKey = pendingLaunchTargetKey;
     if (submitting) return;
     const repo = selected;
-    if (!repo) {
+    const kataReference = selectedKataReference;
+    const requestedSource = source;
+    const daemonID = selectedDaemonID;
+    if (requestedSource === "repository" && !repo) {
       error = "Pick a repository.";
+      return;
+    }
+    if (requestedSource === "kata_issue" && (!kataReference || !selectedDaemonUsable)) {
+      error = "Pick a Kata issue.";
       return;
     }
     const requested = branch.trim();
@@ -175,23 +404,63 @@
     // the UI once its own dialog session is gone.
     const session = activeSession;
     if (session === null || !open) return;
+    const kataWorkspaceIdentity = requestedSource === "kata_issue" && kataReference
+      ? { daemonID, issueUID: kataReference.uid }
+      : null;
+    if (kataWorkspaceIdentity) {
+      const created = createdKataWorkspaceRef(kataWorkspaceIdentity);
+      if (created) {
+        if (launchTargetKey) queueWorkspaceLaunch(created.id, launchTargetKey, undefined);
+        pendingLaunchTargetKey = null;
+        onClose();
+        if (onCreated) onCreated(created.id);
+        else navigate(`/terminal/${created.id}`);
+        return;
+      }
+      if (!beginKataWorkspaceCreate(kataWorkspaceIdentity)) return;
+    }
     error = null;
     suggestedBranch = null;
     submitting = true;
-    const ref = {
-      provider: repo.provider,
-      platformHost: repo.platformHost,
-      owner: repo.owner,
-      name: repo.name,
-      repoPath: `${repo.owner}/${repo.name}`,
-    };
-    const program = executeGeneratedApiRequest("create workspace", (client, signal) =>
-      client.POST(providerRepoPath(ref, "/workspaces"), {
-        params: { path: providerRouteParams(ref) },
-        body: requested ? { branch: requested } : {},
-        signal,
-      }),
-    ).pipe(
+    const createProgram = requestedSource === "repository" && repo
+      ? (() => {
+          const ref = {
+            provider: repo.provider,
+            platformHost: repo.platformHost,
+            owner: repo.owner,
+            name: repo.name,
+            repoPath: `${repo.owner}/${repo.name}`,
+          };
+          return executeGeneratedApiRequest("create workspace", (client, signal) =>
+            client.POST(providerRepoPath(ref, "/workspaces"), {
+              params: { path: providerRouteParams(ref) },
+              body: requested ? { branch: requested } : {},
+              signal,
+            }),
+          );
+        })()
+      : Effect.tryPromise({
+          try: () => createOrOpenKataWorkspace({
+            daemon_id: daemonID,
+            issue_uid: kataReference!.uid,
+            project_uid: kataReference!.project_uid,
+            ...(kataReference!.project_name ? { project_name: kataReference!.project_name } : {}),
+            ...(kataReference!.short_id ? { short_id: kataReference!.short_id } : {}),
+            ...(kataReference!.qualified_id ? { qualified_id: kataReference!.qualified_id } : {}),
+            ...(kataReference!.title ? { title: kataReference!.title } : {}),
+          }),
+          catch: (cause) => cause,
+        });
+    const program = createProgram.pipe(
+      Effect.tap((created) =>
+        Effect.sync(() => {
+          if (!kataWorkspaceIdentity || !created?.id) return;
+          recordKataWorkspaceCreated(kataWorkspaceIdentity, {
+            id: created.id,
+            status: created.status ?? "provisioning",
+          });
+        }),
+      ),
       Effect.flatMap((created) =>
         created?.id
           ? Effect.succeed(created.id)
@@ -207,7 +476,7 @@
           if (launchTargetKey) queueWorkspaceLaunch(workspaceId, launchTargetKey, undefined);
           // The workspace exists either way, so it stays the last-used repo; only
           // the navigation is abandoned when the user moved on.
-          rememberNewWorkspaceRepoKey(repo.key);
+          if (requestedSource === "repository" && repo) rememberNewWorkspaceRepoKey(repo.key);
         }),
       ),
       Effect.tap((workspaceId) =>
@@ -221,6 +490,7 @@
       ),
       Effect.ensuring(
         Effect.sync(() => {
+          if (kataWorkspaceIdentity) endKataWorkspaceCreate(kataWorkspaceIdentity);
           // A stale create must not re-enable the form under a newer one that is
           // still in flight; each open resets this flag for its own session.
           if (open && activeSession === session) submitting = false;
@@ -230,10 +500,13 @@
     runtime.runCommand(program, {
       operation: "create workspace",
       safeContext: {
-        provider: repo.provider,
-        platformHost: repo.platformHost,
-        owner: repo.owner,
-        name: repo.name,
+        source: requestedSource,
+        ...(repo ? {
+          provider: repo.provider,
+          platformHost: repo.platformHost,
+          owner: repo.owner,
+          name: repo.name,
+        } : { daemonId: daemonID }),
       },
       onFailure: (failure) => {
         if (!open || activeSession !== session) return;
@@ -242,7 +515,11 @@
           error = apiErrorMessage(failure.problem, "Could not create workspace");
           return;
         }
-        error = "Could not create workspace";
+        error = requestedSource === "repository"
+          ? "Could not create workspace"
+          : failure instanceof Error
+            ? failure.message
+            : "Could not create or open Kata workspace";
       },
     });
   }
@@ -263,39 +540,122 @@
       submit();
     }}
   >
-    <div class="field repo-field">
-      <span class="field-label">Repository</span>
-      <Typeahead
-        options={repoRows}
-        value={selectedKey}
-        fallbackLabel={repoFallbackLabel}
-        placeholder="Filter repositories"
-        title="Repository"
-        emptyLabel="No repositories match"
-        loading={reposLoading}
-        error={reposError ?? ""}
+    <div class="source-picker" role="group" aria-label="Workspace source">
+      <button
+        type="button"
+        class={["source-button", { "source-button--active": source === "repository" }]}
+        aria-pressed={source === "repository"}
         disabled={submitting}
-        onselect={(value) => {
-          selectedKey = value;
-          reposError = null;
-        }}
-      />
+        onclick={() => chooseSource("repository")}
+      >
+        Repository
+      </button>
+      <button
+        type="button"
+        class={["source-button", { "source-button--active": source === "kata_issue" }]}
+        aria-pressed={source === "kata_issue"}
+        disabled={submitting}
+        onclick={() => chooseSource("kata_issue")}
+      >
+        Kata issue
+      </button>
     </div>
 
-    <label class="field">
-      <span class="field-label">Branch</span>
-      <TextInput
-        bind:value={branch}
-        block
-        placeholder="(generated when empty)"
-        ariaLabel="Branch name"
-        disabled={submitting}
-      />
-      <small class="field-hint">
-        <GitBranchIcon size="11" strokeWidth="2" aria-hidden="true" />
-        Branches from the repository's default branch in a new worktree.
-      </small>
-    </label>
+    {#if source === "repository"}
+      <div class="field repo-field">
+        <span class="field-label">Repository</span>
+        <Typeahead
+          options={repoRows}
+          value={selectedKey}
+          fallbackLabel={repoFallbackLabel}
+          placeholder="Filter repositories"
+          title="Repository"
+          emptyLabel="No repositories match"
+          loading={reposLoading}
+          error={reposError ?? ""}
+          disabled={submitting}
+          onselect={(value) => {
+            clearPendingLaunch();
+            selectedKey = value;
+            reposError = null;
+          }}
+        />
+      </div>
+
+      <label class="field">
+        <span class="field-label">Branch</span>
+        <TextInput
+          bind:value={branch}
+          block
+          placeholder="(generated when empty)"
+          ariaLabel="Branch name"
+          disabled={submitting}
+          oninput={clearPendingLaunch}
+        />
+        <small class="field-hint">
+          <GitBranchIcon size="11" strokeWidth="2" aria-hidden="true" />
+          Branches from the repository's default branch in a new worktree.
+        </small>
+      </label>
+    {:else}
+      <label class="field">
+        <span class="field-label">Kata daemon</span>
+        {#if kataDaemons.loading()}
+          <span class="field-message">Loading daemons…</span>
+        {:else if daemonOptions.length > 0}
+          <SelectDropdown
+            value={selectedDaemonID}
+            options={daemonOptions}
+            onchange={chooseDaemon}
+            title="Kata daemon"
+            disabled={submitting}
+          />
+        {:else}
+          <span class="field-message">{kataDaemons.error() ?? "No Kata daemons configured."}</span>
+        {/if}
+      </label>
+
+      <div class="field">
+        <span class="field-label">Issue</span>
+        <SearchInput
+          bind:value={kataQuery}
+          block
+          ariaLabel="Search Kata issues"
+          placeholder="Search by reference or title"
+          disabled={!selectedDaemonUsable || submitting}
+          oninput={scheduleKataSearch}
+        />
+      </div>
+
+      {#if kataSearching}
+        <p class="field-message" role="status">Searching…</p>
+      {:else if kataQuery.trim() !== "" && kataReferences.length === 0 && !error}
+        <p class="field-message">No matching Kata issues.</p>
+      {:else if kataReferences.length > 0}
+        <div class="kata-results" aria-label="Kata issue results">
+          {#each kataReferences as reference (`${reference.project_uid}:${reference.uid}`)}
+            <button
+              type="button"
+              class={["kata-result", {
+                "kata-result--selected": selectedKataReference?.project_uid === reference.project_uid &&
+                  selectedKataReference?.uid === reference.uid,
+              }]}
+              aria-pressed={selectedKataReference?.project_uid === reference.project_uid &&
+                selectedKataReference?.uid === reference.uid}
+              disabled={submitting}
+              onclick={() => {
+                clearPendingLaunch();
+                selectedKataReference = reference;
+              }}
+            >
+              <strong>{reference.qualified_id || reference.short_id}</strong>
+              <span>{reference.title}</span>
+              <small>{reference.project_name} · {reference.status}</small>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    {/if}
 
     {#if error}
       <p class="form-error" role="alert">
@@ -311,12 +671,12 @@
     <div class="form-actions">
       <Button onclick={onClose} disabled={submitting}>Cancel</Button>
       <WorkspaceCreateSplitButton
-        label="Create workspace"
-        busyLabel="Creating…"
+        label={source === "repository" ? "Create workspace" : "Create or open workspace"}
+        busyLabel={source === "repository" ? "Creating…" : "Opening workspace…"}
         launchTargets={settings.getLaunchTargets()}
-        busy={submitting}
-        disabled={selected === null}
-        disabledReason={selected === null ? "Pick a repository." : ""}
+        busy={submitting || kataWorkspaceCreatePending}
+        disabled={!canSubmit || kataWorkspaceCreatePending}
+        disabledReason={source === "repository" ? "Pick a repository." : "Pick a Kata issue."}
         surface="solid"
         primaryType="submit"
         onCreate={submit}
@@ -338,6 +698,37 @@
     gap: 4px;
   }
 
+  .source-picker {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 3px;
+    border-radius: var(--radius-md);
+    background: var(--bg-subtle);
+  }
+
+  .source-button {
+    min-height: 30px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+
+  .source-button:hover:not(:disabled) { color: var(--text-primary); }
+
+  .source-button--active {
+    border-color: var(--border-default);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .source-button:disabled { cursor: not-allowed; opacity: 0.55; }
+
   /* The picker defaults to a 300px cap, which reads as a misaligned control
      next to the full-width branch input. */
   .repo-field {
@@ -357,6 +748,50 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .field-message {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .kata-results {
+    display: grid;
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+  }
+
+  .kata-result {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px 8px;
+    padding: 8px 10px;
+    border: 0;
+    border-bottom: 1px solid var(--border-muted);
+    background: transparent;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .kata-result:last-child { border-bottom: 0; }
+  .kata-result:hover:not(:disabled),
+  .kata-result--selected { background: var(--bg-hover); }
+  .kata-result strong,
+  .kata-result small { white-space: nowrap; }
+  .kata-result span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .kata-result small {
+    grid-column: 1 / -1;
     color: var(--text-muted);
     font-size: var(--font-size-xs);
   }

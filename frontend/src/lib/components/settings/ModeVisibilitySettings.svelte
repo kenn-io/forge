@@ -39,7 +39,6 @@
   const modeOptions: ModeOption[] = [
     { key: "activity", label: "Activity" },
     { key: "repos", label: "Repos" },
-    { key: "kata", label: "Kata" },
     { key: "docs", label: "Docs" },
     { key: "pulls", label: "PRs" },
     { key: "issues", label: "Issues" },

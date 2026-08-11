@@ -1395,7 +1395,7 @@ describe("WorkspaceListSidebar", () => {
     });
   }
 
-  it("renders Kata task identity and opens the kata sidebar tab", async () => {
+  it("renders Kata task identity and opens the Kata links sidebar tab", async () => {
     mockGet.mockResolvedValue({
       data: { workspaces: [kataWorkspaceFixture()] },
     });
@@ -1414,7 +1414,7 @@ describe("WorkspaceListSidebar", () => {
     expect(container.textContent).not.toContain("#0");
 
     await fireEvent.click(bubble!);
-    expect(onOpenItemSidebar).toHaveBeenCalledWith("ws-kata", "kata_task", undefined);
+    expect(onOpenItemSidebar).toHaveBeenCalledWith("ws-kata", "kata", undefined);
   });
 
   it("gives a draft pull request bubble the draft state class, not open", async () => {

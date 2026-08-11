@@ -628,7 +628,6 @@ type Roborev struct {
 type ModeVisibility struct {
 	Activity   *bool `toml:"activity,omitempty" json:"activity" nullable:"false"`
 	Repos      *bool `toml:"repos,omitempty" json:"repos" nullable:"false"`
-	Kata       *bool `toml:"kata,omitempty" json:"kata" nullable:"false"`
 	Docs       *bool `toml:"docs,omitempty" json:"docs" nullable:"false"`
 	Pulls      *bool `toml:"pulls,omitempty" json:"pulls" nullable:"false"`
 	Issues     *bool `toml:"issues,omitempty" json:"issues" nullable:"false"`
@@ -640,7 +639,6 @@ func DefaultModeVisibility() ModeVisibility {
 	return ModeVisibility{
 		Activity:   new(true),
 		Repos:      new(true),
-		Kata:       new(false),
 		Docs:       new(false),
 		Pulls:      new(true),
 		Issues:     new(true),
@@ -656,9 +654,6 @@ func (m ModeVisibility) WithDefaults() ModeVisibility {
 	}
 	if m.Repos != nil {
 		defaults.Repos = m.Repos
-	}
-	if m.Kata != nil {
-		defaults.Kata = m.Kata
 	}
 	if m.Docs != nil {
 		defaults.Docs = m.Docs
@@ -1008,7 +1003,6 @@ default_branch_max_commits = 5000
 [modes]
 activity = true
 repos = true
-kata = false
 docs = false
 pulls = true
 issues = true

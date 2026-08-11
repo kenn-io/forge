@@ -113,7 +113,6 @@ vi.mock("../../context.js", async (importOriginal) => {
         getModeVisibility: () => ({
           activity: true,
           repos: true,
-          kata: false,
           docs: false,
           pulls: true,
           issues: true,

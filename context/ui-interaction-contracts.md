@@ -142,31 +142,19 @@ Interactive surfaces must agree on which item is selected.
   successful load that produced the alias; path/anchor changes reuse that load,
   while repository, ref, or resolved-SHA changes invalidate it
   (`frontend/src/lib/features/repo-browser/RepoBrowserFeature.svelte::loadRoute`).
-- Render Kata selected detail, complete selected history, mutation ETag, and workspace
-  action atomically from accepted snapshot enrichment; do not merge a prior
-  action target or mutation response into a newly accepted snapshot
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte::acceptedSnapshot`).
-- Task selection, project scope, and graph source are snapshot request identity;
-  query, owner, and label remain presentation state
-  (`frontend/src/lib/features/kata/kataWorkspaceAuthority.ts::kataWorkspaceAuthorityRequest`).
-- Derive sidebar areas and ordering from project metadata, excluding inbox projects,
-  and render a reachable graph only for the accepted snapshot's current source
-  (`frontend/src/lib/features/kata/kataWorkspaceAuthority.ts::deriveKataAreas`,
-  `frontend/src/lib/features/kata/KataWorkspace.svelte::acceptedGraph`).
-- Cross-surface Kata navigation must carry daemon, project UID, and status authority;
-  UID-only sources always resolve an isolated selected-detail read for routing —
-  never a shared-snapshot row, which can be stale during invalidation reloads —
-  and honor an explicitly pinned daemon such as a daemon-bound Docs folder
-  (`frontend/src/App.svelte::openAuxiliaryKataIssue`).
-- In-workspace Kata link navigation is typed as a full-identity target
-  (`uid`, `status`, `project_uid`); bare-UID peer navigation must not be
-  representable, and off-authority peers route to an authority that contains
-  them instead of requesting a non-member selection
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte::selectLinkedIssue`).
-  Catalog identity here is the accepted snapshot the user is acting on — unlike
-  the shared auxiliary snapshot above — and the routing load re-resolves
-  against the daemon, so a peer whose identity moved since enrichment degrades
-  to the containing authority view rather than a refused stale selection.
+- Contextual Kata panes keep association selection separate from task detail.
+  Refreshing links may replace the selected identity only when it no longer
+  exists; a detail response applies only to the daemon and issue UID that
+  initiated it (`frontend/src/lib/stores/kata-links.svelte.ts`).
+- Docs task references never route into Forge. They resolve a canonical issue
+  and safe browser launch target through the folder's explicitly pinned daemon,
+  then open Kata with `noopener,noreferrer`; missing, ambiguous, stale-daemon,
+  and browser-unavailable outcomes remain in Forge as visible errors
+  (`frontend/src/App.svelte::openKataReference`).
+- Linking and unlinking update Forge-owned associations without mutating the
+  Kata task. Open-in-Kata and create-workspace actions use the selected canonical
+  daemon/issue identity, never display text or route-number fallbacks
+  (`frontend/src/lib/components/kata/KataLinksPanel.svelte`).
 
 Responsive layout changes must not change route identity.
 
@@ -660,24 +648,10 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   quote, escape, or add shell confirmation (`frontend/src/lib/components/diff/DiffFile.svelte`).
 - If a component claims menu-like behavior, it must honor the keyboard and focus
   contract of that role. Otherwise, use simpler semantics honestly.
-- Gate unavailable menu actions at the items when the menu remains safe to
-  inspect; native-disabled triggers swallow clicks and make pending work look
-  like broken UI (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::choose`).
-- Keep navigation and context switches available during supersedable reads.
-  Kata snapshot reads are latest-wins per authority owner and accept only the
-  current intent; cross-authority changes clear prior authority instead of
-  painting it under the new route (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflowService`).
-- Snapshot acceptance and synchronous publication are latest-wins; stream startup
-  uses the same mount-unique owner. A failed same-authority replacement retains the last accepted
-  snapshot, while a cross-authority replacement clears it
-  (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::createKataWorkspaceAuthorityOwner`).
-- Once an ordered Kata mutation is accepted by the application queue, ordinary feature or submitter
-  interruption does not cancel the write; application shutdown still owns final interruption
-  (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflowService`).
-- Unknown and partial Kata mutations remain application-owned under their original daemon and target;
-  one unresolved outcome fences that daemon's writes across replacement until fresh authority resolves it,
-  and Retry never replays the write. Mutation identity and snapshot-baseline recovery evidence must name
-  that same daemon (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflowService`).
+- Keep contextual Kata association selection available while detail refreshes.
+  Background freshness work is not a navigation transaction and must not block
+  link selection or Forge-owned actions
+  (`frontend/src/lib/components/kata/KataLinksPanel.svelte`).
 - Roborev has no event replay cursor: reconnect after authoritative job-list reconciliation; a lost
   mutation response retains and fences its original target until authoritative observation, never
   replays the write. A confirmed POST stays acknowledged when its follow-up refresh fails; report
@@ -729,25 +703,6 @@ Rows that contain buttons, links, or toggles need clear event ownership.
 - Repository-browser commands use a mount-bound facade and fence every state publication;
   automatic README-first selection yields to user selection, and stale teardown cannot affect a successor
   (`frontend/src/lib/stores/repo-browser.svelte.ts::RepoBrowserMount`).
-- Keep Kata's daemon-scoped project navigation stable across same-daemon
-  authority changes; clearing scoped task authority must not clear shared chrome
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte::sidebarCatalog`).
-- Kata route callbacks require both an accepted snapshot and the current navigation
-  generation; daemon switches restore the target daemon's persisted authority, never
-  source-daemon scope or selection (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
-- Same-daemon Kata snapshot acceptance updates the task list in place:
-  freshness timestamps are not structural identity, and a visible selected row
-  keeps its viewport coordinate across row changes. Only a daemon change may
-  replace the list instance
-  (`frontend/src/lib/components/kata/KataIssueList.svelte:637`).
-- Reserve disabled navigation choices for exclusive transactions such as
-  writes, initial ownership setup, or a context switch already in progress;
-  background refresh counters are presentation state, not transaction locks
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte::daemonSwitchLocked`).
-- Treat Kata event streams as invalidation, not render replay. A matching newer
-  compact frame reloads the exact current snapshot intent; task, detail,
-  history, and graph authority remain in the accepted snapshot
-  (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::createKataWorkspaceAuthorityController`).
 
 ## Controlled Form Controls
 
@@ -852,11 +807,6 @@ responses, and discard stale responses instead of patching another item.
 - Acknowledging a provider comment POST clears and unlocks its keyed draft; follow-up
   reconciliation failure is reported separately and must never offer to replay the POST
   (`frontend/src/lib/stores/detail.svelte.ts::submitComment`).
-- Separate Kata mutation transport from post-acknowledgement authority recovery:
-  transport failure preserves drafts; acknowledgement fences mutation actions without clearing editors; only the matching unchanged draft resets after accepted snapshot and required recurrence replacement; Retry never repeats the mutation
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte::runAuthorityMutation`).
-- A recurrence 412 is not an acknowledged mutation: if revision reconciliation fails, keep the stale dialog and all mutations fenced until Retry refreshes both snapshot and recurrence data; Retry must never repeat the delete
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte::beginRecurrenceConflictRecovery`).
 - Onboarding repository setup owns its initial sync through `triggerSyncEffect`: a rejected trigger returns the flow
   to a retryable repository step with the failure visible, while an accepted trigger advances only after the ordered
   sync command settles (`frontend/src/lib/components/onboarding/OnboardingFlow.svelte::startSync`).
@@ -871,9 +821,6 @@ breakage.
 - Store tests for persistence scope and normalization logic.
 - Playwright/e2e tests for navigation away/back, Escape behavior, nested button
   activation, and other multi-surface flows.
-- Component tests for inert transactional surfaces must await an explicitly
-  enabled control before firing events; jsdom does not enforce browser inertness
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte::workspaceActionsBlocked`).
 - For controlled native form controls, assert behavior under a real
   `fireEvent.click`, not only `fireEvent.mouseDown`. A mousedown-only test skips
   the native default action (e.g. a checkbox's own toggle) and will pass while a

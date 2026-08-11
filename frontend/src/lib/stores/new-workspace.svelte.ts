@@ -9,6 +9,8 @@ export type NewWorkspaceRepoSeed = {
   name: string;
 };
 
+export type NewWorkspaceSource = "repository" | "kata_issue";
+
 // Repo of the last workspace started from the dialog. Ad-hoc work tends to
 // repeat in the same repository, so the picker prefers it whenever the caller
 // did not supply a more specific seed.
@@ -16,15 +18,21 @@ const LAST_REPO_STORAGE_KEY = "kenn-forge:workspace:new_repo";
 
 let open = $state(false);
 let seedRepo = $state<NewWorkspaceRepoSeed | null>(null);
+let source = $state<NewWorkspaceSource>("repository");
 
-export function openNewWorkspaceDialog(repo?: NewWorkspaceRepoSeed): void {
+export function openNewWorkspaceDialog(
+  repo?: NewWorkspaceRepoSeed,
+  initialSource: NewWorkspaceSource = "repository",
+): void {
   seedRepo = repo ?? null;
+  source = initialSource;
   open = true;
 }
 
 export function closeNewWorkspaceDialog(): void {
   open = false;
   seedRepo = null;
+  source = "repository";
 }
 
 export function isNewWorkspaceDialogOpen(): boolean {
@@ -35,6 +43,10 @@ export function isNewWorkspaceDialogOpen(): boolean {
 // currently open in the sidebar).
 export function getNewWorkspaceSeedRepo(): NewWorkspaceRepoSeed | null {
   return seedRepo;
+}
+
+export function getNewWorkspaceSource(): NewWorkspaceSource {
+  return source;
 }
 
 // Repository key (`provider/host/owner/name`) of the last created workspace,
@@ -59,4 +71,5 @@ export function rememberNewWorkspaceRepoKey(key: string): void {
 export function resetNewWorkspaceDialogState(): void {
   open = false;
   seedRepo = null;
+  source = "repository";
 }

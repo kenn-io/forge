@@ -7,7 +7,7 @@ everyday Go test construction and commands, also read
 
 Test server constructors that create a Workspace manager must apply their
 isolated test tmux command; they must never fall back to the host tmux server
-(`internal/server/kataapi/test_helpers_test.go::newKataTestServer`).
+(`internal/server/kata/test_helpers_test.go::newKataTestServer`).
 
 ## Live GraphQL validation
 
@@ -212,26 +212,16 @@ Playwright regressions that require a non-loopback listener must be opt-in only
 in the isolated CI container; local runs must skip before binding because the
 full-stack fixture exposes mutation and runtime endpoints (`frontend/tests/e2e-full/00-workspace-sidebar.spec.ts:172`).
 
-Mounting `KataWorkspace.svelte` in Vitest always fetches the daemon roster and
-opens the live SSE event stream; mock both fetch routes (see
-`mockDaemonAndStreamFetch` in `KataWorkspaceEventStream.test.ts`) or the
-stream's error recovery reloads the view mid-test and silently reverts
-selections made by the test.
+Contextual Kata tests should mock the narrow daemon roster, reference, detail,
+and launch routes. Shared task presentation belongs to the Kata package; Forge
+tests assert package integration, association controls, refresh gating, and
+per-task error isolation rather than duplicating Kata's component suite.
 
 Roborev `hide_classify_jobs` e2e fixtures must cover skipped design rows and classify-typed auto-design rows.
 Seed classify rows terminal unless testing worker mutation; live workers can rewrite queued/running rows during browser assertions (`internal/testutil/roborev_fixtures.go::seedRoborevMutationFixtures`).
 Keep injected Roborev `panel_run` failures controlled until the assertion observes them; drawer/list refresh demand can immediately retry member fetches and clear transient panel errors (`frontend/src/lib/stores/roborev/jobs.svelte.ts::wantsPanelMembers`).
 Roborev `/api/stream/events` is NDJSON, not SSE: use an abortable Fetch reader with bounded reconnects, and abort both pre-header and active-body requests on teardown (`frontend/src/lib/stores/roborev/jobs.svelte.ts::connectEventStream`).
 The `e2e-roborev` daemon pin (`ROBOREV_REF` in `.github/workflows/ci.yml`) must be at or after the roborev commit the generated schema (`frontend/src/lib/api/roborev/generated/`) was produced from; a stale pin makes the daemon silently omit newer response fields while seed inserts still succeed, because the seeder creates its own schema.
-
-Kata reachable-graph tests can use `window.__kenn_forge_kata_graph_debug` in
-browser/e2e runs, or `kata-graph-debug.ts` directly in unit tests, to inspect
-recent graph/store events and the latest rendered node IDs. Prefer this bridge
-when debugging or asserting graph refresh ordering, missing-ref population,
-selection detail refreshes, or node/edge stability; it avoids brittle visual
-polling for state that the app already owns in JavaScript. Browser/e2e tests
-should call `reset()` before assertions, and the graph component clears the
-bridge on unmount so assertions do not read stale graph sessions.
 
 Playwright waits must observe the state consumed by the next assertion. Direct API reads after an optimistic
 mutation wait for its response; rendered assertions wait for rendered state, since route refinement can pair new

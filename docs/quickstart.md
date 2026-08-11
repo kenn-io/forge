@@ -13,13 +13,13 @@ Download the archive for your system below or browse
 [GitHub Releases](https://github.com/kenn-io/forge/releases). Each release
 also includes <a data-download-asset="checksums" href="https://github.com/kenn-io/forge/releases"><code>SHA256SUMS</code></a>.
 
-| System | Architecture | Archive |
-| --- | --- | --- |
-| Linux | x86-64 | <a data-download-asset="linux-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge_&lt;version&gt;_linux_amd64.tar.gz</code></a> |
-| Linux | ARM64 | <a data-download-asset="linux-arm64" href="https://github.com/kenn-io/forge/releases"><code>forge_&lt;version&gt;_linux_arm64.tar.gz</code></a> |
-| macOS | Intel | <a data-download-asset="darwin-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge_&lt;version&gt;_darwin_amd64.tar.gz</code></a> |
-| macOS | Apple silicon | <a data-download-asset="darwin-arm64" href="https://github.com/kenn-io/forge/releases"><code>forge_&lt;version&gt;_darwin_arm64.tar.gz</code></a> |
-| Windows | x86-64 | <a data-download-asset="windows-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge_&lt;version&gt;_windows_amd64.zip</code></a> |
+| System  | Architecture  | Archive                                                                                                                                             |
+| ------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux   | x86-64        | <a data-download-asset="linux-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge\_&lt;version&gt;\_linux_amd64.tar.gz</code></a>   |
+| Linux   | ARM64         | <a data-download-asset="linux-arm64" href="https://github.com/kenn-io/forge/releases"><code>forge\_&lt;version&gt;\_linux_arm64.tar.gz</code></a>   |
+| macOS   | Intel         | <a data-download-asset="darwin-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge\_&lt;version&gt;\_darwin_amd64.tar.gz</code></a> |
+| macOS   | Apple silicon | <a data-download-asset="darwin-arm64" href="https://github.com/kenn-io/forge/releases"><code>forge\_&lt;version&gt;\_darwin_arm64.tar.gz</code></a> |
+| Windows | x86-64        | <a data-download-asset="windows-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge\_&lt;version&gt;\_windows_amd64.zip</code></a>  |
 
 Verify the downloaded archive against `SHA256SUMS`.
 
@@ -143,17 +143,17 @@ Unix-like kenn-forge host for that step.
 
 Press `?` to see shortcuts for the current view.
 
-## Enable optional modes
+## Enable Docs
 
-Kata and Docs are hidden by default:
+Docs is hidden by default:
 
 ```toml
 [modes]
-kata = true
 docs = true
 ```
 
-Kata reads daemon definitions from Kata's config. Docs uses folders registered
+Kata issues appear inline when linked to provider items or workspaces, and are
+available as a source in the New Workspace dialog. Docs uses folders registered
 with `kenn-forge docs add-folder`.
 
 Continue with [daily workflows](workflows.md) or the

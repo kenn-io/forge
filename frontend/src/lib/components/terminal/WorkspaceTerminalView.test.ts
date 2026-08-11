@@ -141,7 +141,6 @@ vi.mock("../../context.js", async (importOriginal) => {
         getModeVisibility: () => ({
           activity: true,
           repos: true,
-          kata: false,
           docs: false,
           pulls: true,
           issues: true,
@@ -243,6 +242,10 @@ vi.mock("../../stores/flash.svelte.js", () => ({
 
 vi.mock("../detail/PullDetail.svelte", async () => ({
   default: (await import("../../views/PRListViewTestPullDetail.svelte")).default,
+}));
+
+vi.mock("../kata/KataLinksPanel.svelte", async () => ({
+  default: (await import("../../views/KataLinksPanelTestDouble.svelte")).default,
 }));
 
 // The harness pairs the view with the session terminal pool, which WorkspaceHost
@@ -1142,6 +1145,7 @@ describe("WorkspaceTerminalView", () => {
     initialRuntime.resolve({ launch_targets: [], sessions: [] });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Kata" })).toBeNull();
     const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
     expect(runtimePoll).toBeTruthy();
 
@@ -2251,6 +2255,59 @@ describe("WorkspaceTerminalView", () => {
 
     expect(onToggleSidebar).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["pull_request", "issue", "kata_task", "adhoc"] as const)(
+    "offers Kata links for a %s workspace",
+    async (itemType) => {
+      window.__BASE_PATH__ = window.location.origin;
+      const selectedWorkspace = {
+        ...workspaceResponse,
+        item_type: itemType,
+        item_number: itemType === "adhoc" ? 0 : 7,
+        associated_pr_number: null,
+      };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation((input: Request | URL | string) => {
+          const url = input instanceof Request ? input.url : String(input);
+          const { pathname } = new URL(url, "http://localhost");
+          if (pathname.endsWith("/workspaces/ws-1")) {
+            return Promise.resolve(Response.json(selectedWorkspace));
+          }
+          if (pathname.endsWith("/api/v1/workspaces")) {
+            return Promise.resolve(Response.json({ workspaces: [selectedWorkspace] }));
+          }
+          return Promise.resolve(Response.json({}));
+        }),
+      );
+
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1" },
+        context: new Map([
+          [
+            STORES_KEY,
+            {
+              diff: mocks.diffStore,
+              roborevDaemon: { isAvailable: () => false },
+            },
+          ],
+        ]),
+      });
+
+      const kataButton = (await screen.findAllByRole("button", { name: "Kata" })).find((button) =>
+        button.classList.contains("panel-toggle-btn"),
+      );
+      if (!kataButton) throw new Error("Kata details control was not rendered");
+      await fireEvent.click(kataButton);
+
+      expect(kataButton.classList.contains("active")).toBe(true);
+      const panel = await screen.findByTestId("kata-links-panel");
+      expect(JSON.parse(panel.getAttribute("data-subject") ?? "null")).toEqual({
+        kind: "workspace",
+        workspaceID: "ws-1",
+      });
+    },
+  );
 
   it("remembers the selected details tab for each workspace", async () => {
     window.__BASE_PATH__ = window.location.origin;

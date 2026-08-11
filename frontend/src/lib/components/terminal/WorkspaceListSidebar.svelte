@@ -66,7 +66,7 @@
     selectedHostKey?: string | undefined;
     onOpenItemSidebar?: (
       workspaceId: string,
-      tab: "pr" | "issue" | "kata_task",
+      tab: "pr" | "issue" | "kata",
       hostKey?: string,
     ) => void;
     onWorkspaceListStateChange?: (
@@ -1197,7 +1197,7 @@
     e.preventDefault();
     const tab =
       ws.item_type === "kata_task"
-        ? "kata_task"
+        ? "kata"
         : ws.item_type === "issue"
           ? "issue"
           : "pr";

@@ -2034,67 +2034,6 @@ components:
         value:
           description: The value at the given location
       type: object
-    EventEnvelope:
-      additionalProperties: false
-      properties:
-        actor:
-          type: string
-        content_hash:
-          type: string
-        created_at:
-          format: date-time
-          type: string
-        event_id:
-          format: int64
-          type: integer
-        event_uid:
-          type: string
-        hlc_counter:
-          format: int64
-          type: integer
-        hlc_physical_ms:
-          format: int64
-          type: integer
-        issue_id:
-          format: int64
-          type: integer
-        issue_short_id:
-          type: string
-        issue_uid:
-          type: string
-        origin_instance_uid:
-          type: string
-        payload: {}
-        project_id:
-          format: int64
-          type: integer
-        project_name:
-          type: string
-        project_uid:
-          type: string
-        related_issue_id:
-          format: int64
-          type: integer
-        related_issue_short_id:
-          type: string
-        related_issue_uid:
-          type: string
-        type:
-          type: string
-      required:
-        - actor
-        - content_hash
-        - created_at
-        - event_id
-        - event_uid
-        - hlc_counter
-        - hlc_physical_ms
-        - origin_instance_uid
-        - project_id
-        - project_name
-        - project_uid
-        - type
-      type: object
     FeatureCapabilities:
       additionalProperties: false
       properties:
@@ -3018,35 +2957,32 @@ components:
       required:
         - reviewers
       type: object
-    KataAuthorityRequest:
+    KataCreateLinkRequest:
       additionalProperties: false
       properties:
-        authority:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/KataCreateLinkRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        daemon_id:
+          type: string
+        issue_uid:
           type: string
         project_uid:
           type: string
-        scope:
-          type: string
       required:
-        - scope
-        - authority
-      type: object
-    KataChildCounts:
-      additionalProperties: false
-      properties:
-        open:
-          format: int64
-          type: integer
-        total:
-          format: int64
-          type: integer
-      required:
-        - open
-        - total
+        - daemon_id
+        - project_uid
+        - issue_uid
       type: object
     KataDaemonResponse:
       additionalProperties: false
       properties:
+        api_schema_version:
+          type: string
         auth:
           type: string
         default:
@@ -3087,16 +3023,153 @@ components:
       required:
         - daemons
       type: object
-    KataLinkPeer:
+    KataEffectiveLink:
       additionalProperties: false
       properties:
+        api_schema_version:
+          type: string
+        daemon_health:
+          type: string
+        daemon_id:
+          type: string
+        direct_link_id:
+          format: int64
+          type: integer
+        issue_uid:
+          type: string
+        project_name:
+          type: string
+        project_uid:
+          type: string
+        provenance:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        reference:
+          type: string
+        status:
+          type: string
+        title:
+          type: string
+        unavailable_reason:
+          type: string
+        workspace:
+          $ref: "#/components/schemas/KataWorkspaceTargetResponse"
+      required:
+        - daemon_id
+        - project_uid
+        - issue_uid
+        - provenance
+        - daemon_health
+      type: object
+    KataEffectiveLinksResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/KataEffectiveLinksResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        diagnostics:
+          items:
+            $ref: "#/components/schemas/KataLinkDiagnostic"
+          type: array
+        links:
+          items:
+            $ref: "#/components/schemas/KataEffectiveLink"
+          type: array
+        state:
+          enum:
+            - complete
+            - partial
+            - unavailable
+          type: string
+      required:
+        - state
+        - links
+        - diagnostics
+      type: object
+    KataIssueDetailResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/KataIssueDetailResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        api_schema_version:
+          type: string
+        daemon_health:
+          type: string
+        detail:
+          additionalProperties: true
+          description: Canonical Kata issue detail. Additive fields are preserved.
+          type: object
+      required:
+        - daemon_health
+        - detail
+      type: object
+    KataIssueReference:
+      additionalProperties: false
+      properties:
+        project_name:
+          type: string
+        project_uid:
+          type: string
+        qualified_id:
+          type: string
         short_id:
+          type: string
+        status:
+          type: string
+        title:
           type: string
         uid:
           type: string
       required:
         - uid
+        - project_uid
+        - project_name
         - short_id
+        - qualified_id
+        - title
+        - status
+      type: object
+    KataLaunchTarget:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/KataLaunchTarget.json
+          format: uri
+          readOnly: true
+          type: string
+        available:
+          type: boolean
+        reason:
+          type: string
+        url:
+          type: string
+      required:
+        - available
+      type: object
+    KataLinkDiagnostic:
+      additionalProperties: false
+      properties:
+        daemon_id:
+          type: string
+        reason:
+          type: string
+      required:
+        - daemon_id
+        - reason
       type: object
     KataMappingTargetResponse:
       additionalProperties: false
@@ -3174,341 +3247,40 @@ components:
         - platform_host
         - repo_path
       type: object
-    KataProjectSummary:
-      additionalProperties: false
-      properties:
-        closed_count:
-          format: int64
-          type: integer
-        created_at:
-          format: date-time
-          type: string
-        deleted_at:
-          format: date-time
-          type: string
-        id:
-          format: int64
-          type: integer
-        last_event_at:
-          format: date-time
-          type: string
-        metadata:
-          additionalProperties: {}
-          type: object
-        name:
-          type: string
-        open_count:
-          format: int64
-          type: integer
-        revision:
-          format: int64
-          type: integer
-        uid:
-          type: string
-      required:
-        - id
-        - uid
-        - name
-        - metadata
-        - revision
-        - created_at
-        - open_count
-        - closed_count
-      type: object
-    KataSnapshotEnrichment:
-      additionalProperties: false
-      properties:
-        errors:
-          additionalProperties:
-            $ref: "#/components/schemas/KataSnapshotEnrichmentError"
-          type: object
-        graph:
-          $ref: "#/components/schemas/ReachableGraphResponseBody"
-        graph_fetched_at:
-          format: date-time
-          type: string
-        selected_detail:
-          $ref: "#/components/schemas/KataSnapshotSelectedDetail"
-        selected_history:
-          items:
-            $ref: "#/components/schemas/EventEnvelope"
-          type:
-            - array
-            - "null"
-        selected_issue_uid:
-          type: string
-      type: object
-    KataSnapshotEnrichmentError:
-      additionalProperties: false
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-      required:
-        - code
-        - message
-      type: object
-    KataSnapshotSelectedDetail:
-      additionalProperties: false
-      properties:
-        detail:
-          description: Verbatim Kata daemon issue detail payload
-        etag:
-          description: Daemon issue detail ETag, when the daemon provided one
-          type: string
-        workspace_target:
-          $ref: "#/components/schemas/KataWorkspaceTargetResponse"
-      required:
-        - detail
-        - workspace_target
-      type: object
-    KataTaskReference:
-      additionalProperties: false
-      properties:
-        project_id:
-          format: int64
-          type: integer
-        project_name:
-          type: string
-        project_uid:
-          type: string
-        qualified_id:
-          type: string
-        reference:
-          type: string
-        short_id:
-          type: string
-        status:
-          enum:
-            - open
-            - closed
-          type: string
-        title:
-          type: string
-        uid:
-          type: string
-      required:
-        - uid
-        - project_id
-        - project_uid
-        - project_name
-        - short_id
-        - qualified_id
-        - title
-        - reference
-        - status
-      type: object
-    KataTaskReferenceResponse:
+    KataReferencesResponse:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - /api/v1/schemas/KataTaskReferenceResponse.json
+            - /api/v1/schemas/KataReferencesResponse.json
           format: uri
           readOnly: true
           type: string
-        daemon_id:
-          type: string
-        fetched_at:
-          format: date-time
-          type: string
-        generation:
-          format: int64
-          minimum: 0
-          type: integer
-        invalidation_epoch:
-          format: int64
-          minimum: 0
-          type: integer
-        references:
-          items:
-            $ref: "#/components/schemas/KataTaskReference"
-          type:
-            - array
-            - "null"
-        server_instance_id:
-          type: string
-      required:
-        - server_instance_id
-        - daemon_id
-        - generation
-        - invalidation_epoch
-        - fetched_at
-        - references
-      type: object
-    KataTaskSnapshotResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/KataTaskSnapshotResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        daemon_id:
-          type: string
-        enrichment:
-          $ref: "#/components/schemas/KataSnapshotEnrichment"
-        event_cursor:
-          format: int64
-          minimum: 0
-          type: integer
-        fetched_at:
-          format: date-time
-          type: string
-        generation:
-          format: int64
-          minimum: 0
-          type: integer
-        graph_source_uid:
-          type: string
-        intent:
-          $ref: "#/components/schemas/KataAuthorityRequest"
-        invalidation_epoch:
-          format: int64
-          minimum: 0
-          type: integer
         issues:
           items:
-            $ref: "#/components/schemas/KataTaskSummary"
-          type:
-            - array
-            - "null"
-        member_issue_uids:
-          items:
-            type: string
-          type:
-            - array
-            - "null"
-        projects:
-          items:
-            $ref: "#/components/schemas/KataProjectSummary"
-          type:
-            - array
-            - "null"
-        server_instance_id:
-          type: string
+            $ref: "#/components/schemas/KataIssueReference"
+          type: array
       required:
-        - server_instance_id
-        - daemon_id
-        - intent
-        - generation
-        - invalidation_epoch
-        - event_cursor
-        - fetched_at
-        - projects
-        - member_issue_uids
         - issues
-        - enrichment
       type: object
-    KataTaskSummary:
+    KataResolvedIssueReference:
       additionalProperties: false
       properties:
-        author:
-          type: string
-        blocked_by:
-          items:
-            $ref: "#/components/schemas/KataLinkPeer"
-          type:
-            - array
-            - "null"
-        blocks:
-          items:
-            $ref: "#/components/schemas/KataLinkPeer"
-          type:
-            - array
-            - "null"
-        body:
-          type: string
-        child_counts:
-          $ref: "#/components/schemas/KataChildCounts"
-        closed_at:
-          format: date-time
-          type: string
-        closed_reason:
-          type: string
-        created_at:
-          format: date-time
-          type: string
-        deleted_at:
-          format: date-time
-          type: string
-        id:
-          format: int64
-          type: integer
-        labels:
-          items:
-            type: string
-          type:
-            - array
-            - "null"
-        metadata:
-          additionalProperties: {}
-          type: object
-        occurrence_key:
-          type: string
-        owner:
-          type: string
-        parent:
-          $ref: "#/components/schemas/KataLinkPeer"
-        priority:
-          format: int64
-          type: integer
-        project_id:
-          format: int64
-          type: integer
-        project_name:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/KataResolvedIssueReference.json
+          format: uri
+          readOnly: true
           type: string
         project_uid:
           type: string
-        qualified_id:
-          type: string
-        recurrence_id:
-          format: int64
-          type: integer
-        related:
-          items:
-            $ref: "#/components/schemas/KataLinkPeer"
-          type:
-            - array
-            - "null"
-        revision:
-          format: int64
-          type: integer
-        short_id:
-          type: string
-        status:
-          type: string
-        title:
-          type: string
         uid:
           type: string
-        updated_at:
-          format: date-time
-          type: string
       required:
-        - id
         - uid
-        - project_id
-        - short_id
-        - qualified_id
-        - title
-        - body
-        - status
         - project_uid
-        - project_name
-        - metadata
-        - revision
-        - author
-        - labels
-        - blocks
-        - blocked_by
-        - related
-        - created_at
-        - updated_at
       type: object
     KataWorkspaceTargetResponse:
       additionalProperties: false
@@ -3523,6 +3295,18 @@ components:
           type: string
         repo:
           $ref: "#/components/schemas/RepoRefResponse"
+        resolution_source:
+          type: string
+        resolution_status:
+          enum:
+            - mapped
+            - unmapped
+            - ambiguous
+            - invalid
+            - error
+          type: string
+        unavailable_reason:
+          type: string
       required:
         - available
       type: object
@@ -4438,8 +4222,6 @@ components:
           type: boolean
         issues:
           type: boolean
-        kata:
-          type: boolean
         pulls:
           type: boolean
         repos:
@@ -4451,7 +4233,6 @@ components:
       required:
         - activity
         - repos
-        - kata
         - docs
         - pulls
         - issues
@@ -4877,6 +4658,7 @@ components:
             - pullNotFound
             - rateLimited
             - repoNotFound
+            - resyncRequired
             - serviceUnavailable
             - settingsUnavailable
             - toolMissing
@@ -5655,142 +5437,6 @@ components:
         - projectKey
         - name
         - path
-      type: object
-    ReachableGraphEdge:
-      additionalProperties: false
-      properties:
-        from_uid:
-          type: string
-        kind:
-          type: string
-        layout:
-          type: boolean
-        to_uid:
-          type: string
-      required:
-        - from_uid
-        - kind
-        - layout
-        - to_uid
-      type: object
-    ReachableGraphNode:
-      additionalProperties: false
-      properties:
-        author:
-          type: string
-        body:
-          type: string
-        closed_at:
-          format: date-time
-          type: string
-        closed_reason:
-          type: string
-        created_at:
-          format: date-time
-          type: string
-        deleted_at:
-          format: date-time
-          type: string
-        id:
-          format: int64
-          type: integer
-        metadata:
-          additionalProperties: {}
-          type: object
-        occurrence_key:
-          type: string
-        owner:
-          type: string
-        priority:
-          format: int64
-          type: integer
-        project_id:
-          format: int64
-          type: integer
-        project_uid:
-          type: string
-        qualified_id:
-          type: string
-        recurrence_id:
-          format: int64
-          type: integer
-        revision:
-          format: int64
-          type: integer
-        short_id:
-          type: string
-        status:
-          type: string
-        title:
-          type: string
-        uid:
-          type: string
-        updated_at:
-          format: date-time
-          type: string
-      required:
-        - author
-        - body
-        - created_at
-        - id
-        - metadata
-        - project_id
-        - qualified_id
-        - revision
-        - short_id
-        - status
-        - title
-        - uid
-        - updated_at
-      type: object
-    ReachableGraphResponseBody:
-      additionalProperties: false
-      properties:
-        depth:
-          type: string
-        edges:
-          items:
-            $ref: "#/components/schemas/ReachableGraphEdge"
-          type:
-            - array
-            - "null"
-        hide_done:
-          type: boolean
-        nodes:
-          items:
-            $ref: "#/components/schemas/ReachableGraphNode"
-          type:
-            - array
-            - "null"
-        source_uid:
-          type: string
-        unresolved_refs:
-          items:
-            $ref: "#/components/schemas/ReachableGraphUnresolvedRef"
-          type:
-            - array
-            - "null"
-      required:
-        - depth
-        - hide_done
-        - source_uid
-      type: object
-    ReachableGraphUnresolvedRef:
-      additionalProperties: false
-      properties:
-        kind:
-          type: string
-        other_uid:
-          type: string
-        side:
-          type: string
-        uid:
-          type: string
-      required:
-        - kind
-        - other_uid
-        - side
-        - uid
       type: object
     RefreshFleetStatsOutputBody:
       additionalProperties: false
@@ -10936,6 +10582,155 @@ paths:
       summary: Set issue GitHub state
       tags:
         - Issues
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/kata-links:
+    get:
+      operationId: list-issue-kata-links-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataEffectiveLinksResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List effective Kata links
+      tags:
+        - Kata
+    post:
+      operationId: create-issue-kata-link-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KataCreateLinkRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataEffectiveLinksResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create Kata link
+      tags:
+        - Kata
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/kata-links/{link_id}:
+    delete:
+      operationId: delete-issue-kata-link-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - in: path
+          name: link_id
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete Kata link
+      tags:
+        - Kata
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels:
     put:
       operationId: set-issue-labels-on-host
@@ -12034,6 +11829,155 @@ paths:
       summary: Get pull request import metadata
       tags:
         - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/kata-links:
+    get:
+      operationId: list-pull-request-kata-links-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataEffectiveLinksResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List effective Kata links
+      tags:
+        - Kata
+    post:
+      operationId: create-pull-request-kata-link-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KataCreateLinkRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataEffectiveLinksResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create Kata link
+      tags:
+        - Kata
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/kata-links/{link_id}:
+    delete:
+      operationId: delete-pull-request-kata-link-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - in: path
+          name: link_id
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete Kata link
+      tags:
+        - Kata
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels:
     put:
       operationId: set-pr-labels-on-host
@@ -14363,6 +14307,140 @@ paths:
       summary: Set issue GitHub state
       tags:
         - Issues
+  /issues/{provider}/{owner}/{name}/{number}/kata-links:
+    get:
+      operationId: list-issue-kata-links
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataEffectiveLinksResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List effective Kata links
+      tags:
+        - Kata
+    post:
+      operationId: create-issue-kata-link
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KataCreateLinkRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataEffectiveLinksResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create Kata link
+      tags:
+        - Kata
+  /issues/{provider}/{owner}/{name}/{number}/kata-links/{link_id}:
+    delete:
+      operationId: delete-issue-kata-link
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - in: path
+          name: link_id
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete Kata link
+      tags:
+        - Kata
   /issues/{provider}/{owner}/{name}/{number}/labels:
     put:
       operationId: set-issue-labels
@@ -14554,6 +14632,153 @@ paths:
       summary: List Kata daemons
       tags:
         - Kata
+  /kata/daemons/{daemon_id}/issue-reference:
+    get:
+      operationId: resolve-kata-issue-reference
+      parameters:
+        - in: path
+          name: daemon_id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: project
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: ref
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataResolvedIssueReference"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Resolve a Kata issue reference
+      tags:
+        - Kata
+  /kata/daemons/{daemon_id}/issues/{issue_uid}:
+    get:
+      operationId: get-kata-issue-detail
+      parameters:
+        - in: path
+          name: daemon_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: issue_uid
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataIssueDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get Kata issue detail
+      tags:
+        - Kata
+  /kata/daemons/{daemon_id}/issues/{issue_uid}/launch-target:
+    get:
+      operationId: get-kata-launch-target
+      parameters:
+        - in: path
+          name: daemon_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: issue_uid
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataLaunchTarget"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get Kata issue launch target
+      tags:
+        - Kata
+  /kata/daemons/{daemon_id}/references:
+    get:
+      operationId: list-kata-references
+      parameters:
+        - in: path
+          name: daemon_id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: q
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: project_uid
+          schema:
+            type: string
+        - explode: true
+          in: query
+          name: issue_uid
+          schema:
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            minimum: 0
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataReferencesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List Kata issue references
+      tags:
+        - Kata
   /kata/project-mappings:
     get:
       operationId: get-kata-project-mappings
@@ -14582,155 +14807,6 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Inspect effective Kata project repository mappings
-      tags:
-        - Kata
-  /kata/tasks/events:
-    get:
-      operationId: stream-kata-task-events
-      parameters:
-        - description: Kata daemon id; the effective default daemon when empty
-          in: header
-          name: X-Kenn-Forge-Kata-Daemon
-          schema:
-            description: Kata daemon id; the effective default daemon when empty
-            type: string
-      responses:
-        "200":
-          content:
-            text/event-stream: {}
-          description: Server-sent Kata task invalidation stream
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: Stream Kata task invalidations
-      tags:
-        - Kata
-  /kata/tasks/references:
-    get:
-      operationId: search-kata-task-references
-      parameters:
-        - description: Kata daemon id; the effective default daemon when empty
-          in: header
-          name: X-Kenn-Forge-Kata-Daemon
-          schema:
-            description: Kata daemon id; the effective default daemon when empty
-            type: string
-        - explode: false
-          in: query
-          name: q
-          schema:
-            type: string
-        - explode: false
-          in: query
-          name: limit
-          schema:
-            default: 20
-            format: int64
-            maximum: 50
-            minimum: 1
-            type: integer
-        - explode: false
-          in: query
-          name: status
-          schema:
-            default: open
-            enum:
-              - open
-              - all
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/KataTaskReferenceResponse"
-          description: OK
-          headers:
-            Vary:
-              schema:
-                type: string
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: Search Kata task references
-      tags:
-        - Kata
-  /kata/tasks/snapshot:
-    get:
-      operationId: get-kata-task-snapshot
-      parameters:
-        - description: Kata daemon id; the effective default daemon when empty
-          in: header
-          name: X-Kenn-Forge-Kata-Daemon
-          schema:
-            description: Kata daemon id; the effective default daemon when empty
-            type: string
-        - explode: false
-          in: query
-          name: scope
-          schema:
-            default: global
-            enum:
-              - global
-              - project
-            type: string
-        - explode: false
-          in: query
-          name: project_uid
-          schema:
-            type: string
-        - explode: false
-          in: query
-          name: authority
-          schema:
-            default: open
-            enum:
-              - open
-              - ready
-              - closed
-              - all
-            type: string
-        - explode: false
-          in: query
-          name: selected_issue_uid
-          schema:
-            type: string
-        - explode: false
-          in: query
-          name: graph_source_uid
-          schema:
-            type: string
-        - description: Bypass cached daemon authority for mutation reconciliation
-          explode: false
-          in: query
-          name: fresh
-          schema:
-            description: Bypass cached daemon authority for mutation reconciliation
-            type: boolean
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/KataTaskSnapshotResponse"
-          description: OK
-          headers:
-            Vary:
-              schema:
-                type: string
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: Get authoritative Kata task snapshot
       tags:
         - Kata
   /kata/workspaces:
@@ -16475,6 +16551,140 @@ paths:
       summary: Get pull request import metadata
       tags:
         - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/kata-links:
+    get:
+      operationId: list-pull-request-kata-links
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataEffectiveLinksResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List effective Kata links
+      tags:
+        - Kata
+    post:
+      operationId: create-pull-request-kata-link
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KataCreateLinkRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataEffectiveLinksResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create Kata link
+      tags:
+        - Kata
+  /pulls/{provider}/{owner}/{name}/{number}/kata-links/{link_id}:
+    delete:
+      operationId: delete-pull-request-kata-link
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - in: path
+          name: link_id
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete Kata link
+      tags:
+        - Kata
   /pulls/{provider}/{owner}/{name}/{number}/labels:
     put:
       operationId: set-pr-labels
@@ -19242,6 +19452,89 @@ paths:
       summary: Get workspace files
       tags:
         - Workspaces
+  /workspaces/{id}/kata-links:
+    get:
+      operationId: list-workspace-kata-links
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataEffectiveLinksResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List effective Kata links
+      tags:
+        - Kata
+    post:
+      operationId: create-workspace-kata-link
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KataCreateLinkRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataEffectiveLinksResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create Kata link
+      tags:
+        - Kata
+  /workspaces/{id}/kata-links/{link_id}:
+    delete:
+      operationId: delete-workspace-kata-link
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: link_id
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete Kata link
+      tags:
+        - Kata
   /workspaces/{id}/pull:
     post:
       operationId: pull-workspace-branch

@@ -7,7 +7,7 @@ const mockedContainerSize = vi.hoisted(() => ({
   value: "wide" as "narrow" | "medium" | "wide",
 }));
 
-type ModeKey = "activity" | "repos" | "kata" | "docs" | "pulls" | "issues" | "reviews" | "workspaces";
+type ModeKey = "activity" | "repos" | "docs" | "pulls" | "issues" | "reviews" | "workspaces";
 
 const mockedReviewsDaemonAvailable = vi.hoisted(() => ({ value: true }));
 
@@ -21,7 +21,6 @@ const mockedModeVisibility = vi.hoisted(() => ({
   value: {
     activity: true,
     repos: true,
-    kata: false,
     docs: false,
     messages: false,
     pulls: true,
@@ -114,7 +113,6 @@ function mockMatchMedia(matches: boolean, listeners?: MediaChangeCallback[]): vo
 function showImportedModes(): void {
   mockedModeVisibility.value = {
     ...mockedModeVisibility.value,
-    kata: true,
     docs: true,
   };
 }
@@ -143,7 +141,6 @@ describe("AppHeader", () => {
     mockedModeVisibility.value = {
       activity: true,
       repos: true,
-      kata: false,
       docs: false,
       pulls: true,
       issues: true,
@@ -169,7 +166,6 @@ describe("AppHeader", () => {
     mockedModeVisibility.value = {
       activity: true,
       repos: true,
-      kata: false,
       docs: false,
       pulls: true,
       issues: true,
@@ -534,33 +530,12 @@ describe("AppHeader", () => {
     expect(expandButton!.querySelector("kbd[aria-label]")).toBeNull();
   });
 
-  it("hides imported modes from the top nav by default", () => {
+  it("never renders a global Kata mode and hides Docs by default", () => {
     initTheme();
     render(AppHeader);
 
     expect(screen.queryByRole("button", { name: "Kata" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Docs" })).toBeNull();
-  });
-
-  it("navigates to Kata from the desktop nav", async () => {
-    initTheme();
-    showImportedModes();
-    render(AppHeader);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Kata" }));
-
-    expect(window.location.pathname + window.location.search).toBe("/kata");
-  });
-
-  it("resets an active sticky mode tab to its default route", async () => {
-    initTheme();
-    showImportedModes();
-    navigate("/kata?issue=issue-q3");
-    render(AppHeader);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Kata" }));
-
-    expect(window.location.pathname + window.location.search).toBe("/kata");
   });
 
   it("navigates to Docs from the desktop nav", async () => {
@@ -571,14 +546,6 @@ describe("AppHeader", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Docs" }));
 
     expect(window.location.pathname + window.location.search).toBe("/docs");
-  });
-
-  it("reserves the provider repo selector slot on Kata without exposing the selector", () => {
-    initTheme();
-    navigate("/kata");
-    const { container } = render(AppHeader);
-
-    expectReservedRepoSelectorSlot(container);
   });
 
   it("reserves the provider repo selector slot on Docs without exposing the selector", () => {
@@ -593,26 +560,26 @@ describe("AppHeader", () => {
     initTheme();
     window.__kenn_forge_config = { ui: { hideRepoSelector: true } };
     window.__kenn_forge_notify_config_changed?.();
-    navigate("/kata");
+    navigate("/docs");
     const { container } = render(AppHeader);
 
     expect(screen.queryByTitle("Select repository")).toBeNull();
     expect(container.querySelector(".repo-selector-placeholder")).toBeNull();
   });
 
-  it("remembers sticky mode routes when the nav switches to Activity", async () => {
+  it("remembers the Docs route when the nav switches to Activity", async () => {
     initTheme();
     showImportedModes();
-    navigate("/kata?issue=issue-q3");
+    navigate("/docs?folder=notes&doc=guide.md");
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "Activity" }));
 
     expect(window.location.pathname + window.location.search).toBe("/");
 
-    await fireEvent.click(screen.getByRole("button", { name: "Kata" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Docs" }));
 
-    expect(window.location.pathname + window.location.search).toBe("/kata?issue=issue-q3");
+    expect(window.location.pathname + window.location.search).toBe("/docs?folder=notes&doc=guide.md");
   });
 
   it("opens selected Activity PR in PRs tab with files tab preserved", async () => {

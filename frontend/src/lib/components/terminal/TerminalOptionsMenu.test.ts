@@ -18,7 +18,6 @@ type TerminalSettings = {
 type ModeVisibility = {
   activity: boolean;
   repos: boolean;
-  kata: boolean;
   docs: boolean;
   pulls: boolean;
   issues: boolean;
@@ -49,7 +48,6 @@ const {
   const modes: ModeVisibility = {
     activity: true,
     repos: true,
-    kata: false,
     docs: false,
     pulls: true,
     issues: true,
@@ -79,7 +77,6 @@ vi.mock("../../context.js", async (importOriginal) => {
     DEFAULT_MODE_VISIBILITY: {
       activity: true,
       repos: true,
-      kata: false,
       docs: false,
       pulls: true,
       issues: true,

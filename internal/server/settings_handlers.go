@@ -682,10 +682,6 @@ func cloneModeVisibility(modes config.ModeVisibility) config.ModeVisibility {
 		v := *modes.Repos
 		out.Repos = &v
 	}
-	if modes.Kata != nil {
-		v := *modes.Kata
-		out.Kata = &v
-	}
 	if modes.Docs != nil {
 		v := *modes.Docs
 		out.Docs = &v

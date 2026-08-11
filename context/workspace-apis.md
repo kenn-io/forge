@@ -54,71 +54,18 @@ embedder protocol for arbitrary host state.
   (`internal/workspace/monitor.go::workspacePRMonitorEligible`); that number is
   the workspace's item identity for display, links, and search, so surfaces must
   never gate PR affordances on `item_type == "pull_request"` alone.
-- `GET /kata/tasks/snapshot`: the browser's sole Kata task authority. Daemon,
-  scope, project, status authority, selected task, and graph source form request
-  identity; selected detail, history, graph, and workspace target belong to the
-  same accepted snapshot, while query, owner, and label remain local presentation
-  state (`internal/server/kata_snapshot_frontend.go::kataTaskSnapshot`).
-- kenn-forge persists no Kata task, snapshot, or cursor state. Its only Kata
-  authority storage is a bounded, non-touching in-memory TTL cache
-  (`internal/server/kata_snapshot_cache.go::newKataSnapshotCacheWithConfig`).
-- Global Kata issue/event reads establish workspace authority and invalidation;
-  selected detail uses generated issue-detail, while complete retained history
-  uses project events with at most one valid purge reset and no global fallback
-  (`internal/server/kata_snapshot_enrichment.go::kataSnapshotEnricher`).
-- Cache capacity may evict Kata authority or enrichment entries but must never
-  truncate an API result; daemon invalidation clears every cached read for that
-  daemon (`internal/server/kata_snapshot_cache.go::kataSnapshotCache`).
-- The 128 MiB Kata authority/graph response and authority-cache ceilings bound
-  input and retention, not peak heap; transient processing amplification is acceptable
-  (`internal/server/kata_client.go::kataGeneratedResponseLimit`).
-- Do not approximate heap use with finer payload quotas absent an observed problem.
-- Oversized project history must keep paginating selected history without
-  retaining the complete project stream, but aggregated selected history is
-  bounded by `kataSelectedHistoryMaxBytes`; exceeding it degrades the history
-  stage instead of growing memory without bound
-  (`internal/server/kata_snapshot_enrichment.go::loadProjectEvents`).
-- Initial project-event miss coalescing is daemon + exact epoch + project;
-  selected UID belongs only to oversized selected-history fallback flights
-  (`internal/server/kata_snapshot_enrichment_cache.go::projectEvents`).
-- `GraphFetchedAt` identifies the daemon read that produced the graph and stays
-  stable across cache hits (`internal/server/kata_snapshot_enrichment.go::loadGraph`).
-- Selected detail and graph enrichment are revision-fenced against the
-  authority and cached under that revision; a mismatch is stale and retries
-  through epoch invalidation, never merged into an accepted snapshot
-  (`internal/server/kata_snapshot_enrichment.go::validateKataGraph`).
-- `GET /kata/tasks/events`: compact reset/invalidation transport only. Replay
-  starts at the accepted snapshot cursor; raw daemon events never enter browser
-  authority (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::KataWorkspaceAuthorityController`).
-- Cursorless live-only catch-up establishes its stream before invalidating; publishing
-  first creates an unreplayable mutation gap between snapshot reload and subscription
-  (`internal/server/kata_event_hub.go::runSupervisor`).
-- Frontend Kata event streaming must use the generated runtime client with stream
-  parsing; raw fetch paths bypass base-path and tracing policy
-  (`frontend/src/lib/api/kata/eventStream.ts::readKataEventStream`).
-- Auxiliary selected-detail reads must remain independent from shared global/all
-  authority refresh
-  (`frontend/src/lib/features/kata/kataAuxiliaryAuthority.svelte.ts::selectIssue`).
-- Every frontend Kata mutation and recurrence request is explicitly pinned to
-  the accepted snapshot daemon; ambient active/default daemon fallback is
-  forbidden (`frontend/src/lib/api/kata/taskClient.ts::pinnedDaemonHeaders`).
-- Frontend mutation results are acknowledgement-only `{ changed }`; canonical
-  project/task identity and rendered state come from a newly accepted snapshot,
-  never mutation response payloads (`frontend/src/lib/api/kata/taskTypes.ts::KataTaskMutationResponse`).
-- `GET /kata/tasks/references`: kenn-forge's global Kata reference service; it
-  defaults to open tasks for autocomplete, while navigation explicitly requests
-  `status=all` and routes from the returned canonical task status.
-  Rank exact short, qualified, or UID matches before substring matches and only
-  then apply the response limit. The returned `reference` decides whether a
-  short ID is globally unique; syntax-specific consumers may wrap that identity
-  but must not reconstruct it from display fields. Consumers needing status,
-  metadata, or closed tasks must use a snapshot. Selected link peers may be
-  best-effort enriched into the snapshot catalog without joining
-  `member_issue_uids`; browsers never issue detail reads to hydrate link rows
-  (`internal/server/kata_snapshot_enrichment.go::loadLinkedPeerCatalog`).
+- `GET /kata/daemons/{daemon_id}/references`: search canonical Kata issue references on an explicitly pinned daemon for link and workspace creation.
+- `GET /kata/daemons/{daemon_id}/issues/{issue_uid}`: return one read-only issue detail envelope plus the daemon health schema version. Forge does not cache or persist the task payload.
+- `GET /kata/daemons/{daemon_id}/issues/{issue_uid}/launch-target`: resolve Kata’s safe external browser target.
 - `POST /kata/workspaces`: create or reuse a Kata-task-backed workspace. Kata
   tasks are not provider issues, so this path never resolves or syncs a
   provider issue row.
+  - Reuse identity is daemon ID plus issue UID, independent of the task's current
+    project; project moves must reopen the existing workspace
+    (`internal/db/queries.go::DB.GetKataWorkspaceByIssue`).
+  - Serialize lookup and persistence for that identity; concurrent creates across
+    project mappings must not materialize duplicate workspaces
+    (`internal/server/kata/workspace.go::Handler.createKataWorkspace`).
 - `GET /workspaces`: list kenn-forge's persisted workspaces for the workspaces
   page and terminal picker.
 - `GET /workspaces/{id}`: load one persisted workspace for terminal view.
@@ -206,8 +153,9 @@ embedder protocol for arbitrary host state.
 
 These fields exist so PR-backed workspaces show PR/Reviews sidebars, while
 issue-backed workspaces show the issue sidebar and disable the PR/reviews path.
-Kata-backed workspaces show an embedded live Kata task pane using the same task
-detail component as the Kata browser.
+Kata-backed workspaces expose their intrinsic Kata association in the contextual
+Kata links panel; selected detail is read-only and rendered by the shared Kata UI
+package.
 
 Workspace summaries join the owning PR or issue row by full provider identity:
 `platform`, `platform_host`, `repo_owner`, `repo_name`, `item_type`, and
@@ -222,7 +170,7 @@ key by optional daemon ID plus Kata project UID and point to a known repository
 identity, including registered kenn-forge Projects. Removing a watched repo does
 not delete an override because a registered Project may still own that identity
 (`internal/config/config.go::validateKataProjectRepoMappings`,
-`internal/server/kataapi/workspace.go::Handler.kataManualWorkspaceTarget`). Automatic
+`internal/server/kata/workspace.go::Handler.kataManualWorkspaceTarget`). Automatic
 resolution first uses watched exact repos with `worktree_base_path` whose clone
 contains a matching `.kata.toml`. Matching first compares both explicit
 identifiers, `project.uid` and `project.identity`, to the Kata project UID. If
@@ -238,17 +186,16 @@ registered checkout paths are ambiguous. A unique registered match carries its
 checkout through workspace creation, while a configured clone carries its own
 base path. Only then may one synced repo matched by exact
 or globbed config and lacking readable project metadata resolve by name.
-Ambiguous, mismatched, or missing matches
-mean the Create/Open
-workspace button must not render
-(`internal/server/kataapi/workspace.go::Handler.resolveKataWorkspaceRepo`).
+Ambiguous, mismatched, or missing matches hide the Create/Open workspace action;
+the effective Kata link retains an actionable typed resolution reason
+(`internal/server/kata/workspace.go::Handler.resolveKataWorkspaceRepoResolution`).
 
 Settings lists each selected-daemon Kata project with the status and source from
 the workspace resolver. Its selector lists repository identities known from
 exact watched repositories, currently matched tracked repositories, or
 non-stale registered Projects. It defaults only to an inferred identity match
 and persists that repository identity
-(`internal/server/kataapi/workspace.go::Handler.getKataProjectMappings`).
+(`internal/server/kata/workspace.go::Handler.getKataProjectMappings`).
 
 Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so

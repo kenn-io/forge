@@ -18,7 +18,6 @@
   import type { BrowseEntry, Folder } from "../../api/docs/types";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { getKataDaemonRoster } from "../../stores/active-kata-daemon.svelte";
 
   // Add-folder dialog with a built-in folder picker. The picker drives a
   // hidden `path` text field — users can also type the path manually if
@@ -35,6 +34,8 @@
     // Optional initial path. When set, the browser opens at that
     // directory; used by tests and for "edit path" reuse later.
     initialPath?: string;
+    daemonRoster?: readonly string[];
+    daemonRosterLoaded?: boolean;
   }
 
   let {
@@ -45,6 +46,8 @@
     presentationSurfaceID,
     presentationSessionID,
     initialPath = "",
+    daemonRoster = [],
+    daemonRosterLoaded = true,
   }: Props = $props();
   const runtime = getAppRuntime();
   const browseOwner = makeDocsOwner("docs-add-folder-browse");
@@ -57,9 +60,8 @@
   let id = $state("");
   let daemon = $state("");
   let showAdvanced = $state(false);
-  let daemonRoster = $derived(getKataDaemonRoster());
   let daemonOptions = $derived([
-    { value: "", label: "Follow active daemon" },
+    { value: "", label: "No daemon" },
     ...daemonRoster.map((daemonID) => ({ value: daemonID, label: daemonID })),
   ]);
 
@@ -168,6 +170,7 @@
 
   function submit(): void {
     if (saving) return;
+    if (!daemonRosterLoaded) return;
     const trimmed = path.trim();
     if (!trimmed) {
       error = "Pick a folder or enter a path.";
@@ -175,12 +178,12 @@
     }
     error = null;
     saving = true;
-    const selectedDaemon = daemonRoster.length > 1 ? daemon.trim() : "";
+        const selectedDaemon = daemon.trim();
     const input = {
       path: trimmed,
       ...(name.trim() ? { name: name.trim() } : {}),
       ...(id.trim() ? { id: id.trim() } : {}),
-      ...(selectedDaemon ? { daemon: selectedDaemon } : {}),
+          ...(daemonRoster.includes(selectedDaemon) ? { daemon: selectedDaemon } : {}),
     };
     const requestedAPI = api;
     runtime.runCommand(
@@ -289,7 +292,9 @@
       />
     </label>
 
-    {#if daemonRoster.length > 1}
+    {#if !daemonRosterLoaded}
+      <p class="modal-hint" role="status">Loading Kata daemons…</p>
+    {:else if daemonRoster.length > 0}
       <label class="modal-field">
         <span>Daemon</span>
         <SelectDropdown
@@ -427,7 +432,12 @@
 
     <div class="modal-actions">
       <Button onclick={onClose} disabled={saving}>Cancel</Button>
-      <Button type="submit" tone="info" surface="solid" disabled={saving || !path.trim()}>
+      <Button
+        type="submit"
+        tone="info"
+        surface="solid"
+        disabled={saving || !path.trim() || !daemonRosterLoaded}
+      >
         {saving ? "Adding…" : "Add folder"}
       </Button>
     </div>

@@ -1,18 +1,20 @@
 <script lang="ts">
   import type { DocsRoute } from "../../api/docs/route.js";
   import type { DocsAPI } from "../../api/docs/api.js";
-  import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
-  import type { IssueSummary } from "../../components/docs/docsIssueTypes.js";
+  import type { KataReferenceSearch } from "../../api/kata/integration.js";
   import DocsWorkspace from "../../components/docs/DocsWorkspace.svelte";
 
   interface Props {
     route: DocsRoute;
     onRouteChange: (next: DocsRoute, options?: { replace?: boolean }) => void;
     api?: DocsAPI;
-    searchReferences: KataTaskReferenceSearch;
-    kataIssues?: readonly IssueSummary[];
-    onOpenIssue?: (uid: string, daemonId?: string) => void;
-    onOpenKataShortId?: (shortId: string, project?: string, daemonId?: string) => void;
+    searchReferences?: KataReferenceSearch;
+    onOpenKataReference?: (
+      reference: string,
+      project?: string,
+      daemonId?: string,
+      kind?: "reference" | "uid",
+    ) => void;
   }
 
   let {
@@ -20,9 +22,7 @@
     onRouteChange,
     api = undefined,
     searchReferences,
-    kataIssues = [],
-    onOpenIssue = undefined,
-    onOpenKataShortId = undefined,
+    onOpenKataReference = undefined,
   }: Props = $props();
 </script>
 
@@ -31,7 +31,5 @@
   {onRouteChange}
   {api}
   {searchReferences}
-  {kataIssues}
-  {onOpenIssue}
-  {onOpenKataShortId}
+  {onOpenKataReference}
 />

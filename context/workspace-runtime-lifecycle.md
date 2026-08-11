@@ -305,7 +305,7 @@ behavior.
   `RemoveAll` teardown, failing intermittently with "directory not empty".
 - Kata API fixtures must use their package-private tmux server and force-delete
   created workspaces; shutdown preserves durable base sessions, so temp-dir
-  cleanup alone leaks (`internal/server/kataapi/testmain_test.go::TestMain`).
+  cleanup alone leaks (`internal/server/kata/testmain_test.go::TestMain`).
 - Use tmux wrappers/fakes for missing-session and dead-server cases.
 - Add frontend or Playwright coverage when the regression is visible in tab
   selection, shell drawer state, or workspace navigation.

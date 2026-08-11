@@ -49,13 +49,13 @@ function stackedTree(groups: readonly (readonly string[])[]): TabbedPanelNode {
  */
 export const PANE_SURFACES: Record<PaneSurfaceKey, PaneSurfaceDefinition> = {
   prs: {
-    tabs: ["conversation", "files", "workspace"],
-    defaultTree: () => stackedTree([["conversation", "files"], ["workspace"]]),
+    tabs: ["conversation", "files", "kata", "workspace"],
+    defaultTree: () => stackedTree([["conversation", "files", "kata"], ["workspace"]]),
     keepIfStored: isSessionPaneKey,
   },
   issues: {
-    tabs: ["conversation", "workspace"],
-    defaultTree: () => stackedTree([["conversation"], ["workspace"]]),
+    tabs: ["conversation", "kata", "workspace"],
+    defaultTree: () => stackedTree([["conversation", "kata"], ["workspace"]]),
     keepIfStored: isSessionPaneKey,
   },
   activity: {

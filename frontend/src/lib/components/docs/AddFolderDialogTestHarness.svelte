@@ -16,6 +16,8 @@
     initialPath?: string;
     presentationSurfaceID?: string;
     presentationSessionID?: string;
+    daemonRoster?: readonly string[];
+    daemonRosterLoaded?: boolean;
   }
 
   let {
@@ -26,6 +28,8 @@
     initialPath = "",
     presentationSurfaceID = "docs-workspace",
     presentationSessionID = "docs-test-session",
+    daemonRoster = [],
+    daemonRosterLoaded = true,
   }: Props = $props();
   const runtime = makeAppRuntime();
   setAppRuntime(untrack(() => runtime));
@@ -62,4 +66,6 @@
   {initialPath}
   {presentationSurfaceID}
   {presentationSessionID}
+  {daemonRoster}
+  {daemonRosterLoaded}
 />

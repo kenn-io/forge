@@ -13,7 +13,6 @@ describe("first-run onboarding state", () => {
     expect(shouldStartOnboarding("pulls", false, null)).toBe(true);
     expect(shouldStartOnboarding("issues", false, null)).toBe(true);
     expect(shouldStartOnboarding("docs", false, null)).toBe(false);
-    expect(shouldStartOnboarding("kata", false, null)).toBe(false);
     expect(shouldStartOnboarding("settings", false, null)).toBe(false);
     expect(shouldStartOnboarding("repos", false, null)).toBe(false);
     expect(shouldStartOnboarding("workspaces", false, "active")).toBe(false);

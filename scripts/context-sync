@@ -39,7 +39,6 @@ if [ -d "$root/docs/superpowers" ] &&
   printf 'context-sync: docs/superpowers must remain absent; distill durable contracts into context topic docs, remove the transient artifacts, and do not convert them into ADRs\n' >&2
   status=1
 fi
-
 if [ -e "$root/AGENTS.md" ] && [ "$(cd "$root" && realpath AGENTS.md)" != "$(cd "$root" && realpath CLAUDE.md)" ]; then
   printf 'context-sync: AGENTS.md does not resolve to CLAUDE.md\n' >&2
   status=1

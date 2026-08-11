@@ -122,4 +122,70 @@ describe("workspace create split button in the New workspace dialog", () => {
     expect(primaryStyle.color).toBe(foreground);
     expect(optionsStyle.color).toBe(foreground);
   });
+
+  it("keeps the launch split button usable for the Kata issue source", async () => {
+    const api = createMockApiFetch([
+      ({ method, url }) =>
+        method === "GET" && url.pathname.endsWith("/kata/daemons")
+          ? jsonResponse({
+              daemons: [
+                {
+                  id: "healthy",
+                  url: "http://kata.test",
+                  health: "connected",
+                  auth: "none",
+                  default: true,
+                  api_schema_version: "0.10.0",
+                },
+              ],
+            })
+          : undefined,
+      ({ method, url }) =>
+        method === "GET" && url.pathname.endsWith("/kata/daemons/healthy/references")
+          ? jsonResponse({
+              issues: [
+                {
+                  uid: "issue-1",
+                  project_uid: "project-1",
+                  project_name: "Kata",
+                  qualified_id: "Kata#KT-1",
+                  short_id: "KT-1",
+                  status: "open",
+                  title: "Keep one UI",
+                },
+              ],
+            })
+          : undefined,
+      ({ method, url }) =>
+        method === "POST" && url.pathname.endsWith("/kata/workspaces")
+          ? jsonResponse({ id: "ws-kata", created: true }, 202)
+          : undefined,
+    ]);
+    globalThis.fetch = api.fetch;
+    const onCreated = vi.fn();
+
+    render(NewWorkspaceDialogRuntimeHarness, {
+      props: { open: true, initialSource: "kata_issue", onClose: vi.fn(), onCreated },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            settings: { getLaunchTargets: () => launchTargets },
+          },
+        ],
+      ]),
+    });
+
+    const dialog = page.getByRole("dialog", { name: "New workspace" });
+    await expect.element(dialog.getByRole("combobox", { name: /Kata daemon: healthy/ })).toBeVisible();
+    await dialog.getByRole("searchbox", { name: "Search Kata issues" }).fill("keep");
+    await dialog.getByRole("button", { name: /Kata#KT-1 Keep one UI/ }).click();
+
+    const primary = dialog.getByRole("button", { name: "Create or open workspace", exact: true });
+    await expect.element(primary).not.toBeDisabled();
+    await dialog.getByRole("button", { name: "Create or open workspace options" }).click();
+    await page.getByRole("menuitem", { name: "Codex" }).click();
+
+    await vi.waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-kata"));
+  });
 });

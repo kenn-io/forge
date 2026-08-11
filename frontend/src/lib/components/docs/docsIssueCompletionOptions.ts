@@ -1,5 +1,5 @@
 import type { Folder } from "../../api/docs/types";
-import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+import type { KataReferenceSearch } from "../../api/kata/integration.js";
 import type { IssueCompletionOptions } from "./issueCompletion";
 import { effectiveDocsFolderDaemon } from "./folderDaemon";
 
@@ -7,8 +7,7 @@ export interface DocsIssueCompletionRuntime {
   folders: () => readonly Folder[];
   folderId: () => string | null | undefined;
   daemonRoster: () => readonly string[];
-  activeDaemon: () => string | undefined;
-  searchReferences: KataTaskReferenceSearch;
+  searchReferences: KataReferenceSearch;
 }
 
 export function buildDocsIssueCompletionOptions(runtime: DocsIssueCompletionRuntime): IssueCompletionOptions {
@@ -16,6 +15,6 @@ export function buildDocsIssueCompletionOptions(runtime: DocsIssueCompletionRunt
 
   return {
     searchReferences: runtime.searchReferences,
-    daemonId: () => folderDaemon() ?? runtime.activeDaemon(),
+    daemonId: folderDaemon,
   };
 }

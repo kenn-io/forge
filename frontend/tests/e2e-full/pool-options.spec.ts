@@ -36,7 +36,7 @@ test("pooled server leases reset cleanly across option combinations", async ({ r
   const modes = await startIsolatedE2EServerWithOptions({ visibleImportedModes: true });
   try {
     const visibility = await fetchModes(request, modes.info.base_url);
-    expect(visibility.kata).toBe(true);
+    expect(visibility).not.toHaveProperty("kata");
     expect(visibility.docs).toBe(true);
     const repos = await fetchRepos(request, modes.info.base_url);
     expect(repos.some((repo) => repo.Owner === "enterprise")).toBe(false);
@@ -47,7 +47,7 @@ test("pooled server leases reset cleanly across option combinations", async ({ r
   const plain = await startIsolatedE2EServerWithOptions();
   try {
     const visibility = await fetchModes(request, plain.info.base_url);
-    expect(visibility.kata).toBe(false);
+    expect(visibility).not.toHaveProperty("kata");
     expect(visibility.docs).toBe(false);
     const repos = await fetchRepos(request, plain.info.base_url);
     expect(repos.some((repo) => repo.Owner === "enterprise")).toBe(false);

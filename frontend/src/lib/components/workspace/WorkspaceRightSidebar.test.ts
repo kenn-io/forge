@@ -13,6 +13,10 @@ beforeEach(() => {
   runtime = makeAppRuntime();
 });
 
+vi.mock("../kata/KataLinksPanel.svelte", async () => ({
+  default: (await import("../../views/KataLinksPanelTestDouble.svelte")).default,
+}));
+
 function makeStores(): Pick<StoreInstances, "diff"> & Partial<StoreInstances> {
   return {
     diff: createDiffStore({ runtime }),
@@ -99,11 +103,61 @@ function renderKataSidebarWithoutPR() {
   });
 }
 
+function renderKataLinksSidebar(
+  ownerItemType: "pull_request" | "issue" | "kata_task" | "adhoc",
+  workspaceHostKey?: string,
+) {
+  return render(WorkspaceRightSidebarTestHarness, {
+    props: {
+      runtime,
+      sidebarProps: {
+        activeTab: "kata",
+        workspaceID: "ws-linked-1",
+        workspaceHostKey,
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widgets",
+        repoPath: "acme/widgets",
+        ownerItemType,
+        ownerItemNumber: ownerItemType === "adhoc" ? 0 : 7,
+        associatedPRNumber: null,
+        branch: "feature/widgets",
+        roborevBaseUrl: "http://localhost/api/roborev",
+      },
+    },
+    context: new Map([[STORES_KEY, makeStores()]]),
+  });
+}
+
 describe("WorkspaceRightSidebar", () => {
   afterEach(async () => {
     cleanup();
     vi.restoreAllMocks();
     await Effect.runPromise(runtime.disposeEffect);
+  });
+
+  it.each(["pull_request", "issue", "kata_task", "adhoc"] as const)(
+    "shows Forge-owned Kata links for a %s workspace",
+    (ownerItemType) => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ repos: [] }));
+      renderKataLinksSidebar(ownerItemType);
+
+      const panel = screen.getByTestId("kata-links-panel");
+      expect(panel.getAttribute("data-active")).toBe("true");
+      expect(JSON.parse(panel.getAttribute("data-subject") ?? "null")).toEqual({
+        kind: "workspace",
+        workspaceID: "ws-linked-1",
+      });
+    },
+  );
+
+  it("does not send remote workspace identities to local Kata routes", () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ repos: [] }));
+    renderKataLinksSidebar("pull_request", "member-a");
+
+    expect(screen.queryByTestId("kata-links-panel")).toBeNull();
+    expect(screen.getByText("Kata links are unavailable for remote workspaces")).toBeTruthy();
   });
 
   it("preserves the workspace diff base and selected commit across refreshes", async () => {

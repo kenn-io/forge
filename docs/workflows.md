@@ -95,12 +95,12 @@ minutes without another event, then fall back to tmux activity.
 
 ## Use Kata tasks
 
-Enable Kata mode to work with daemons listed in Kata's own config and runtime
-records. Filter tasks by project, status, text, columns, and links. Open the
-dependency graph or create a workspace when a task resolves to one registered
-repository.
+Link a Kata issue from a pull request, provider issue, or workspace to view its
+read-only detail inline. Use **New workspace → Kata issue** to search a selected
+daemon and create or reopen a mapped workspace. Open the task in Kata for its
+full workflow.
 
-Kata remains the source of truth for task data.
+Kata remains the source of truth for task data; Forge owns only its associations.
 
 ## Browse and edit Docs
 

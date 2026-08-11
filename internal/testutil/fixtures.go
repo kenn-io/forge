@@ -1371,6 +1371,7 @@ func buildGHPR(
 	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
 	pr := &gh.PullRequest{
 		ID:        new(id),
+		NodeID:    new(fmt.Sprintf("PR_%d", id)),
 		Number:    new(number),
 		Title:     new(title),
 		HTMLURL:   new(url),

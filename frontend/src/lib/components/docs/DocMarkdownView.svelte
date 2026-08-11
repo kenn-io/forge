@@ -24,8 +24,7 @@
     options: DocsMarkdownOptions;
     onState?: (state: DocMarkdownState) => void;
     onSelectDoc?: (relPath: string, anchor?: string) => void;
-    onSelectIssue?: (uid: string) => void;
-    onSelectKataShortId?: (shortId: string, project?: string) => void;
+    onSelectKataReference?: (reference: string, project?: string, kind?: "reference" | "uid") => void;
     // Bind to scroll the doc to a specific heading. Set by parent when
     // route includes an anchor, or when the user clicks an outline entry.
     scrollToAnchor?: string | null;
@@ -40,8 +39,7 @@
     options,
     onState,
     onSelectDoc,
-    onSelectIssue,
-    onSelectKataShortId,
+    onSelectKataReference,
     scrollToAnchor = null,
     onAnchorConsumed,
   }: Props = $props();
@@ -167,7 +165,7 @@
     }
     if (kataShortId) {
       event.preventDefault();
-      onSelectKataShortId?.(kataShortId, kataProject);
+      onSelectKataReference?.(kataShortId, kataProject, "reference");
       return;
     }
     if (kataLink === "issue") {
@@ -176,7 +174,7 @@
       // doesn't have to pass DOMPurify's URI allowlist.
       const uid = anchor.getAttribute("data-kata-uid")
         ?? (anchor.getAttribute("href") ?? "").replace(/^kata:\/\/issue\//, "");
-      if (uid) onSelectIssue?.(uid);
+      if (uid) onSelectKataReference?.(uid, undefined, "uid");
       return;
     }
     if (anchorLink) {

@@ -18,7 +18,7 @@
     retryIdempotentDocsRequest,
     type DocsAPI,
   } from "../../api/docs/api";
-  import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+  import { searchKataReferences, type KataReferenceSearch } from "../../api/kata/integration.js";
   import type {
     GitPublishResponse,
     GitPullResponse,
@@ -32,11 +32,7 @@
   import { docsHref } from "../../api/docs/route.js";
   import { withBasePath } from "../../stores/router.svelte.js";
   import { onDestroy, untrack } from "svelte";
-  import {
-    getActiveKataDaemon,
-    getKataDaemonRoster,
-    getKataDaemonRosterLoaded,
-  } from "../../stores/active-kata-daemon.svelte";
+  import { createKataDaemonsStore } from "../../stores/kata-daemons.svelte.js";
   import DocMarkdownView, { type DocMarkdownState, type HeadingEntry } from "./DocMarkdownView.svelte";
   import DocOutline from "./DocOutline.svelte";
   import FolderTree from "./FolderTree.svelte";
@@ -45,9 +41,7 @@
   import { buildIssueCompletionSource } from "./issueCompletion";
   import { buildDocsIssueCompletionOptions } from "./docsIssueCompletionOptions";
   import { effectiveDocsFolderDaemon } from "./folderDaemon";
-  import { buildMentionCompletionSource, collectMentionNames } from "./mentionCompletion";
   import { buildWikilinkCompletionSource } from "./wikilinkCompletion";
-  import type { IssueSummary } from "./docsIssueTypes";
   import { SelectDropdown, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import { IconButton } from "@kenn-io/kit-ui";
   import type { AppExecution, AppServices } from "../../app/runtime.js";
@@ -64,25 +58,24 @@
     route: DocsRoute;
     onRouteChange: (next: DocsRoute, options?: { replace?: boolean }) => void;
     api?: DocsAPI | undefined;
-    onOpenIssue?: ((uid: string, daemonId?: string) => void) | undefined;
-    onOpenKataShortId?: ((shortId: string, project?: string, daemonId?: string) => void) | undefined;
-    // Snapshot of issues currently loaded in the tasks store. Powers
-    // the immediate `#` autocomplete results before the daemon search
-    // returns. May be empty.
-    kataIssues?: readonly IssueSummary[] | undefined;
-    searchReferences: KataTaskReferenceSearch;
+    onOpenKataReference?: ((
+      reference: string,
+      project?: string,
+      daemonId?: string,
+      kind?: "reference" | "uid",
+    ) => void) | undefined;
+    searchReferences?: KataReferenceSearch | undefined;
   }
 
   let {
     route,
     onRouteChange,
     api = createDocsAPI(),
-    onOpenIssue,
-    onOpenKataShortId,
-    kataIssues = [],
-    searchReferences,
+    onOpenKataReference,
+    searchReferences = searchKataReferences,
   }: Props = $props();
   const runtime = getAppRuntime();
+  const kataDaemons = createKataDaemonsStore();
   const docsOwner = makeDocsOwner("docs-workspace");
   const docsPresentationSurface = "docs-workspace";
 
@@ -90,16 +83,10 @@
     buildDocsIssueCompletionOptions({
       folders: () => folders,
       folderId: () => route.folder,
-      daemonRoster: getKataDaemonRoster,
-      activeDaemon: getActiveKataDaemon,
-      searchReferences: (query, options) => searchReferences(query, options),
+      daemonRoster: () => kataDaemons.daemons().map((daemon) => daemon.id),
+      searchReferences: (...args) => searchReferences(...args),
     }),
     runtime,
-  );
-  // Distinct authors/owners across loaded issues. Recomputed on read so
-  // it always tracks the latest kataIssues snapshot.
-  const mentionCompletionSource = buildMentionCompletionSource(() =>
-    collectMentionNames(kataIssues),
   );
   // Wikilink (`[[`) suggestions read the live folder index so docs
   // added or renamed during the session show up without remounting
@@ -788,17 +775,23 @@
     return api.blobURL(folderID, relPath);
   }
 
-  function handleIssueLink(uid: string) {
-    onOpenIssue?.(uid, folderDaemon());
-  }
-
-  function handleKataShortIdLink(shortId: string, project?: string) {
-    onOpenKataShortId?.(shortId, project, folderDaemon());
+  function handleKataReference(reference: string, project?: string, kind?: "reference" | "uid") {
+    onOpenKataReference?.(reference, project, folderDaemon(), kind);
   }
 
   function folderDaemon(): string | undefined {
-    return effectiveDocsFolderDaemon(folders, route.folder, getKataDaemonRoster());
+    return effectiveDocsFolderDaemon(
+      folders,
+      route.folder,
+      kataDaemons.daemons().map((daemon) => daemon.id),
+    );
   }
+
+  $effect(() => {
+    const controller = new AbortController();
+    void kataDaemons.load(controller.signal);
+    return () => controller.abort();
+  });
 
   function beginEdit(): void {
     // Refuse to enter edit mode unless the loaded body belongs to the
@@ -930,10 +923,10 @@
     folders.map((folder) => ({ value: folder.id, label: folder.name })),
   );
   let staleFolderDaemon = $derived.by(() => {
-    if (!getKataDaemonRosterLoaded()) return undefined;
+    if (!kataDaemons.loaded()) return undefined;
     const daemon = activeFolder?.daemon?.trim();
     if (!daemon) return undefined;
-    return getKataDaemonRoster().includes(daemon) ? undefined : daemon;
+    return kataDaemons.daemons().some((candidate) => candidate.id === daemon) ? undefined : daemon;
   });
 
   let activeFolderGit = $derived(
@@ -1575,7 +1568,7 @@
     <div class="list-body">
       {#if staleFolderDaemon}
         <div class="folder-daemon-warning" role="status">
-          Daemon {staleFolderDaemon} is not available. Task links use the active daemon.
+          Daemon {staleFolderDaemon} is not available. Task links cannot be opened.
         </div>
       {/if}
       {#if !route.folder}
@@ -1729,11 +1722,7 @@
                 onChange={handleEditorChange}
                 onSave={saveEdit}
                 onCancel={cancelEdit}
-                completionSources={[
-                  issueCompletionSource,
-                  mentionCompletionSource,
-                  wikilinkCompletionSource,
-                ]}
+                completionSources={[issueCompletionSource, wikilinkCompletionSource]}
               />
             {:else}
               <div class="editor-load-state" role="status">
@@ -1759,8 +1748,7 @@
               }}
               onState={handleMarkdownState}
               onSelectDoc={selectDoc}
-              onSelectIssue={handleIssueLink}
-              onSelectKataShortId={handleKataShortIdLink}
+              onSelectKataReference={handleKataReference}
               scrollToAnchor={pendingAnchor}
               onAnchorConsumed={() => (pendingAnchor = null)}
             />
@@ -1877,6 +1865,8 @@
   {api}
   presentationSurfaceID={docsPresentationSurface}
   presentationSessionID={docsOwner}
+  daemonRoster={kataDaemons.daemons().map((daemon) => daemon.id)}
+  daemonRosterLoaded={kataDaemons.loaded()}
   onClose={() => (addFolderOpen = false)}
   onAdded={handleFolderAdded}
 />

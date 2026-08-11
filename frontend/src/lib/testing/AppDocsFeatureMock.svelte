@@ -1,13 +1,18 @@
 <script lang="ts">
   let {
     route,
-    onOpenKataShortId = undefined,
+    onOpenKataReference = undefined,
   }: {
     route: {
       folder: string | null;
       doc: string | null;
     };
-    onOpenKataShortId?: ((shortId: string, project?: string, daemonId?: string) => void) | undefined;
+    onOpenKataReference?: ((
+      reference: string,
+      project?: string,
+      daemonId?: string,
+      kind?: "reference" | "uid",
+    ) => void) | undefined;
   } = $props();
 
   let count = $state(0);
@@ -18,6 +23,8 @@
   <button type="button" onclick={() => (count += 1)}>
     Docs count {count}
   </button>
-  <button type="button" onclick={() => onOpenKataShortId?.("solo")}>Open Kata reference</button>
-  <button type="button" onclick={() => onOpenKataShortId?.("closed-task")}>Open closed Kata reference</button>
+  <button type="button" onclick={() => onOpenKataReference?.("solo", undefined, "docs-daemon")}>Open Kata reference</button>
+  <button type="button" onclick={() => onOpenKataReference?.("completed-bare", undefined, "docs-daemon")}>Open completed bare Kata reference</button>
+  <button type="button" onclick={() => onOpenKataReference?.("closed-task", "Project A", "docs-daemon")}>Open closed Kata reference</button>
+  <button type="button" onclick={() => onOpenKataReference?.("issue-stable", undefined, "docs-daemon", "uid")}>Open Kata UID</button>
 </section>

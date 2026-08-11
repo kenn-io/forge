@@ -44,17 +44,11 @@ test("grouped rails share labeled native scroll regions", async ({ page, browser
     { path: "/pulls", label: "Pull requests" },
     { path: "/issues", label: "Issues" },
     { path: "/workspaces", label: "Workspaces" },
-    { path: "/kata", label: "Kata navigation" },
   ];
 
   for (const rail of rails) {
     await page.goto(rail.path);
-    const scope =
-      rail.path === "/workspaces"
-        ? page.locator(".workspace-list-sidebar")
-        : rail.path === "/kata"
-          ? page.locator(".kata-sidebar")
-          : page;
+    const scope = rail.path === "/workspaces" ? page.locator(".workspace-list-sidebar") : page;
     const scrollArea = scope.getByRole("region", { name: rail.label, exact: true });
     await expect(scrollArea).toBeVisible();
     await expect(scrollArea).toHaveAttribute("tabindex", "0");

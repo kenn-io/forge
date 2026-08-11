@@ -58,6 +58,7 @@ func TestOpenAndSchema(t *testing.T) {
 		"forge_host_runtime_sessions",
 		"forge_notification_items",
 		"forge_notification_sync_watermarks",
+		"kata_issue_links",
 	}
 	for _, tbl := range tables {
 		var name string
@@ -66,6 +67,22 @@ func TestOpenAndSchema(t *testing.T) {
 		).Scan(&name)
 		require.NoErrorf(err, "table %s should exist", tbl)
 	}
+
+	assertIndexForTest(
+		t, d.ReadDB(), "kata_issue_links", "kata_issue_links_provider_identity",
+		[]string{"subject_kind", "repo_id", "provider_item_external_id", "daemon_id", "issue_uid"},
+		true,
+	)
+	assertUniqueIndexForTest(
+		t, d.ReadDB(), "kata_issue_links", "kata_issue_links_provider_identity", true,
+	)
+	assertIndexForTest(
+		t, d.ReadDB(), "kata_issue_links", "kata_issue_links_workspace_identity",
+		[]string{"workspace_id", "daemon_id", "issue_uid"}, true,
+	)
+	assertUniqueIndexForTest(
+		t, d.ReadDB(), "kata_issue_links", "kata_issue_links_workspace_identity", true,
+	)
 
 	for _, column := range []string{"workspace_branch", "associated_pr_number", "terminal_backend"} {
 		var found string
@@ -196,6 +213,68 @@ func TestOpenAndSchema(t *testing.T) {
 	require.Error(err)
 	_, err = d.ReadDB().Exec(archiveItemInsertForTest("merge_request", 99, "item-1", "active"))
 	require.Error(err)
+}
+
+func TestKataIssueLinksMigration48IsReversible(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dbPath := filepath.Join(t.TempDir(), "kata-issue-links-v47.db")
+
+	openAtVersionForTest(t, dbPath, 47, func(raw *sql.DB) {
+		assert.False(tableExistsForTest(t, raw, "kata_issue_links"))
+	})
+
+	database, err := Open(dbPath)
+	require.NoError(err)
+	assert.True(tableExistsForTest(t, database.ReadDB(), "kata_issue_links"))
+	assertDatabaseIntegrityForTest(t, database.ReadDB())
+	require.NoError(database.Close())
+
+	raw, migrator := openMigratorForTest(t, dbPath)
+	require.NoError(migrator.Migrate(47))
+	assert.False(tableExistsForTest(t, raw, "kata_issue_links"))
+	assertDatabaseIntegrityForTest(t, raw)
+	require.NoError(raw.Close())
+}
+
+func TestKataIssueLinksMigration48EnforcesIdentityConstraints(t *testing.T) {
+	assert := assert.New(t)
+	req := require.New(t)
+	database := openDBWithMigrations(t)
+	repoID := insertTestRepo(t, database, "acme", "widget")
+	workspace := &Workspace{
+		ID: "workspace-constraints", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: WorkspaceItemTypePullRequest,
+		ItemNumber: 42, GitHeadRef: "feature", WorkspaceBranch: "feature",
+		WorktreePath: "/tmp/workspace-constraints", TmuxSession: "workspace-constraints", Status: "ready",
+	}
+	req.NoError(database.InsertWorkspace(t.Context(), workspace))
+
+	tests := []struct {
+		name string
+		args []any
+	}{
+		{name: "unknown kind", args: []any{"unknown", repoID, "provider-item-A", nil, "d", "p", "i"}},
+		{name: "provider with workspace", args: []any{"issue", repoID, "provider-item-A", workspace.ID, "d", "p", "i"}},
+		{name: "provider without external id", args: []any{"issue", repoID, nil, nil, "d", "p", "i"}},
+		{name: "provider with blank external id", args: []any{"issue", repoID, " ", nil, "d", "p", "i"}},
+		{name: "workspace with repo", args: []any{"workspace", repoID, nil, workspace.ID, "d", "p", "i"}},
+		{name: "workspace with provider id", args: []any{"workspace", nil, "provider-item-A", workspace.ID, "d", "p", "i"}},
+		{name: "blank daemon id", args: []any{"workspace", nil, nil, workspace.ID, " ", "p", "i"}},
+		{name: "blank project uid", args: []any{"workspace", nil, nil, workspace.ID, "d", " ", "i"}},
+		{name: "blank issue uid", args: []any{"workspace", nil, nil, workspace.ID, "d", "p", " "}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := database.WriteDB().ExecContext(t.Context(), `
+				INSERT INTO kata_issue_links (
+					subject_kind, repo_id, provider_item_external_id, workspace_id,
+					daemon_id, project_uid, issue_uid
+				) VALUES (?, ?, ?, ?, ?, ?, ?)`, tt.args...)
+			require.Error(t, err)
+		})
+	}
+	assert.Zero(kataIssueLinkCountForTest(t, database))
 }
 
 func TestOpenMigratesHistoricalActivityArchive(t *testing.T) {

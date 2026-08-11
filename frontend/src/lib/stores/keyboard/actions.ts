@@ -337,7 +337,6 @@ const onNumberNavPages = (ctx: Context): boolean => {
     case "settings":
     case "design-system":
     case "repos":
-    case "kata":
     case "reviews":
     case "workspaces":
     case "activity":

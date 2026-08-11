@@ -9,6 +9,7 @@
   import { CollapsibleSidebar } from "@kenn-io/kit-ui";
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
+  import KataLinksPanel from "../components/kata/KataLinksPanel.svelte";
   import { pullDetailMatchesRef } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
@@ -204,6 +205,7 @@
   const paneTabs = $derived<PaneTabSpec[]>([
     { key: "conversation", label: "Conversation", available: true },
     { key: "files", label: "Files changed", available: true },
+    { key: "kata", label: "Kata", available: true, hideable: true },
     {
       key: "workspace",
       label: inlineWorkspace?.workspacePaneLabel() ?? "Workspace",
@@ -261,6 +263,20 @@
                    sibling leaves its terminal inert rather than off screen and live. -->
               {@render sessionPane({ paneKey: tabKey, visible })}
             {/if}
+          {:else if tabKey === "kata"}
+            <KataLinksPanel
+              subject={{
+                kind: "pull_request",
+                provider: selectedPR.provider,
+                ...(selectedPR.platformHost === undefined
+                  ? {}
+                  : { platformHost: selectedPR.platformHost }),
+                owner: selectedPR.owner,
+                name: selectedPR.name,
+                number: selectedPR.number,
+              }}
+              active={visible}
+            />
           {:else}
             <PullDetailPane
               {tabKey}

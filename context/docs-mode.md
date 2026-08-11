@@ -17,8 +17,9 @@ filesystem operations, search, and git pull/publish behavior.
   (`internal/server/docsapi/routes.go::Handler.createDocsFolder`).
 - A folder may pin a Kata daemon for task-reference navigation. That binding
   applies only while the daemon remains configured and never falls back to an
-  ambient selection
-  (`frontend/src/lib/components/docs/folderDaemon.ts::effectiveDocsFolderDaemon`).
+  ambient selection. Autocomplete lists open tasks, while exact navigation also
+  resolves completed tasks before opening Kata's safe browser launch target
+  (`frontend/src/App.svelte::openKataReference`).
 - Docs reads combine an owner-local latest-wins lane with one application-wide key per exact resource;
   route changes cancel obsolete presentation work without canceling accepted reconciliation. Accepted
   mutations serialize in application scope, and presenter leases retain refreshes across replacement
@@ -78,4 +79,4 @@ filesystem operations, search, and git pull/publish behavior.
 - [`error-handling.md`](./error-handling.md): typed problem responses and
   frontend recovery.
 - [`ui-interaction-contracts.md`](./ui-interaction-contracts.md): folder route
-  normalization and cross-mode task navigation.
+  normalization and external Kata task launches.

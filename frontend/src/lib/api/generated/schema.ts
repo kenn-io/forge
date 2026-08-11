@@ -1172,6 +1172,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/kata-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List effective Kata links */
+        get: operations["list-issue-kata-links-on-host"];
+        put?: never;
+        /** Create Kata link */
+        post: operations["create-issue-kata-link-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/kata-links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Kata link */
+        delete: operations["delete-issue-kata-link-on-host"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels": {
         parameters: {
             query?: never;
@@ -1492,6 +1527,41 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/kata-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List effective Kata links */
+        get: operations["list-pull-request-kata-links-on-host"];
+        put?: never;
+        /** Create Kata link */
+        post: operations["create-pull-request-kata-link-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/kata-links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Kata link */
+        delete: operations["delete-pull-request-kata-link-on-host"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2185,6 +2255,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/issues/{provider}/{owner}/{name}/{number}/kata-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List effective Kata links */
+        get: operations["list-issue-kata-links"];
+        put?: never;
+        /** Create Kata link */
+        post: operations["create-issue-kata-link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}/kata-links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Kata link */
+        delete: operations["delete-issue-kata-link"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/issues/{provider}/{owner}/{name}/{number}/labels": {
         parameters: {
             query?: never;
@@ -2270,6 +2375,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kata/daemons/{daemon_id}/issue-reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve a Kata issue reference */
+        get: operations["resolve-kata-issue-reference"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kata/daemons/{daemon_id}/issues/{issue_uid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Kata issue detail */
+        get: operations["get-kata-issue-detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kata/daemons/{daemon_id}/issues/{issue_uid}/launch-target": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Kata issue launch target */
+        get: operations["get-kata-launch-target"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kata/daemons/{daemon_id}/references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Kata issue references */
+        get: operations["list-kata-references"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kata/project-mappings": {
         parameters: {
             query?: never;
@@ -2279,57 +2452,6 @@ export interface paths {
         };
         /** Inspect effective Kata project repository mappings */
         get: operations["get-kata-project-mappings"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/kata/tasks/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Stream Kata task invalidations */
-        get: operations["stream-kata-task-events"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/kata/tasks/references": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Search Kata task references */
-        get: operations["search-kata-task-references"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/kata/tasks/snapshot": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get authoritative Kata task snapshot */
-        get: operations["get-kata-task-snapshot"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3052,6 +3174,41 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/kata-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List effective Kata links */
+        get: operations["list-pull-request-kata-links"];
+        put?: never;
+        /** Create Kata link */
+        post: operations["create-pull-request-kata-link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/kata-links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Kata link */
+        delete: operations["delete-pull-request-kata-link"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4154,6 +4311,41 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/kata-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List effective Kata links */
+        get: operations["list-workspace-kata-links"];
+        put?: never;
+        /** Create Kata link */
+        post: operations["create-workspace-kata-link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/kata-links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Kata link */
+        delete: operations["delete-workspace-kata-link"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5295,34 +5487,6 @@ export interface components {
             /** @description The value at the given location */
             value?: unknown;
         };
-        EventEnvelope: {
-            actor: string;
-            content_hash: string;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: int64 */
-            event_id: number;
-            event_uid: string;
-            /** Format: int64 */
-            hlc_counter: number;
-            /** Format: int64 */
-            hlc_physical_ms: number;
-            /** Format: int64 */
-            issue_id?: number;
-            issue_short_id?: string;
-            issue_uid?: string;
-            origin_instance_uid: string;
-            payload?: unknown;
-            /** Format: int64 */
-            project_id: number;
-            project_name: string;
-            project_uid: string;
-            /** Format: int64 */
-            related_issue_id?: number;
-            related_issue_short_id?: string;
-            related_issue_uid?: string;
-            type: string;
-        };
         FeatureCapabilities: {
             moshAttach: boolean;
             resourceMetrics: boolean;
@@ -5728,18 +5892,19 @@ export interface components {
             readonly $schema?: string;
             reviewers: string[] | null;
         };
-        KataAuthorityRequest: {
-            authority: string;
-            project_uid?: string;
-            scope: string;
-        };
-        KataChildCounts: {
-            /** Format: int64 */
-            open: number;
-            /** Format: int64 */
-            total: number;
+        KataCreateLinkRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataCreateLinkRequest.json
+             */
+            readonly $schema?: string;
+            daemon_id: string;
+            issue_uid: string;
+            project_uid: string;
         };
         KataDaemonResponse: {
+            api_schema_version?: string;
             auth: string;
             default: boolean;
             health: string;
@@ -5757,9 +5922,71 @@ export interface components {
             daemons: components["schemas"]["KataDaemonResponse"][] | null;
             source?: string;
         };
-        KataLinkPeer: {
+        KataEffectiveLink: {
+            api_schema_version?: string;
+            daemon_health: string;
+            daemon_id: string;
+            /** Format: int64 */
+            direct_link_id?: number;
+            issue_uid: string;
+            project_name?: string;
+            project_uid: string;
+            provenance: string[] | null;
+            reference?: string;
+            status?: string;
+            title?: string;
+            unavailable_reason?: string;
+            workspace?: components["schemas"]["KataWorkspaceTargetResponse"];
+        };
+        KataEffectiveLinksResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataEffectiveLinksResponse.json
+             */
+            readonly $schema?: string;
+            diagnostics: components["schemas"]["KataLinkDiagnostic"][];
+            links: components["schemas"]["KataEffectiveLink"][];
+            /** @enum {string} */
+            state: "complete" | "partial" | "unavailable";
+        };
+        KataIssueDetailResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataIssueDetailResponse.json
+             */
+            readonly $schema?: string;
+            api_schema_version?: string;
+            daemon_health: string;
+            /** @description Canonical Kata issue detail. Additive fields are preserved. */
+            detail: {
+                [key: string]: unknown;
+            };
+        };
+        KataIssueReference: {
+            project_name: string;
+            project_uid: string;
+            qualified_id: string;
             short_id: string;
+            status: string;
+            title: string;
             uid: string;
+        };
+        KataLaunchTarget: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataLaunchTarget.json
+             */
+            readonly $schema?: string;
+            available: boolean;
+            reason?: string;
+            url?: string;
+        };
+        KataLinkDiagnostic: {
+            daemon_id: string;
+            reason: string;
         };
         KataMappingTargetResponse: {
             display_name: string;
@@ -5791,143 +6018,24 @@ export interface components {
             provider: string;
             repo_path: string;
         };
-        KataProjectSummary: {
-            /** Format: int64 */
-            closed_count: number;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            deleted_at?: string;
-            /** Format: int64 */
-            id: number;
-            /** Format: date-time */
-            last_event_at?: string;
-            metadata: {
-                [key: string]: unknown;
-            };
-            name: string;
-            /** Format: int64 */
-            open_count: number;
-            /** Format: int64 */
-            revision: number;
-            uid: string;
-        };
-        KataSnapshotEnrichment: {
-            errors?: {
-                [key: string]: components["schemas"]["KataSnapshotEnrichmentError"];
-            };
-            graph?: components["schemas"]["ReachableGraphResponseBody"];
-            /** Format: date-time */
-            graph_fetched_at?: string;
-            selected_detail?: components["schemas"]["KataSnapshotSelectedDetail"];
-            selected_history?: components["schemas"]["EventEnvelope"][] | null;
-            selected_issue_uid?: string;
-        };
-        KataSnapshotEnrichmentError: {
-            code: string;
-            message: string;
-        };
-        KataSnapshotSelectedDetail: {
-            /** @description Verbatim Kata daemon issue detail payload */
-            detail: unknown;
-            /** @description Daemon issue detail ETag, when the daemon provided one */
-            etag?: string;
-            workspace_target: components["schemas"]["KataWorkspaceTargetResponse"];
-        };
-        KataTaskReference: {
-            /** Format: int64 */
-            project_id: number;
-            project_name: string;
-            project_uid: string;
-            qualified_id: string;
-            reference: string;
-            short_id: string;
-            /** @enum {string} */
-            status: "open" | "closed";
-            title: string;
-            uid: string;
-        };
-        KataTaskReferenceResponse: {
+        KataReferencesResponse: {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/KataTaskReferenceResponse.json
+             * @example /api/v1/schemas/KataReferencesResponse.json
              */
             readonly $schema?: string;
-            daemon_id: string;
-            /** Format: date-time */
-            fetched_at: string;
-            /** Format: int64 */
-            generation: number;
-            /** Format: int64 */
-            invalidation_epoch: number;
-            references: components["schemas"]["KataTaskReference"][] | null;
-            server_instance_id: string;
+            issues: components["schemas"]["KataIssueReference"][];
         };
-        KataTaskSnapshotResponse: {
+        KataResolvedIssueReference: {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/KataTaskSnapshotResponse.json
+             * @example /api/v1/schemas/KataResolvedIssueReference.json
              */
             readonly $schema?: string;
-            daemon_id: string;
-            enrichment: components["schemas"]["KataSnapshotEnrichment"];
-            /** Format: int64 */
-            event_cursor: number;
-            /** Format: date-time */
-            fetched_at: string;
-            /** Format: int64 */
-            generation: number;
-            graph_source_uid?: string;
-            intent: components["schemas"]["KataAuthorityRequest"];
-            /** Format: int64 */
-            invalidation_epoch: number;
-            issues: components["schemas"]["KataTaskSummary"][] | null;
-            member_issue_uids: string[] | null;
-            projects: components["schemas"]["KataProjectSummary"][] | null;
-            server_instance_id: string;
-        };
-        KataTaskSummary: {
-            author: string;
-            blocked_by: components["schemas"]["KataLinkPeer"][] | null;
-            blocks: components["schemas"]["KataLinkPeer"][] | null;
-            body: string;
-            child_counts?: components["schemas"]["KataChildCounts"];
-            /** Format: date-time */
-            closed_at?: string;
-            closed_reason?: string;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            deleted_at?: string;
-            /** Format: int64 */
-            id: number;
-            labels: string[] | null;
-            metadata: {
-                [key: string]: unknown;
-            };
-            occurrence_key?: string;
-            owner?: string;
-            parent?: components["schemas"]["KataLinkPeer"];
-            /** Format: int64 */
-            priority?: number;
-            /** Format: int64 */
-            project_id: number;
-            project_name: string;
             project_uid: string;
-            qualified_id: string;
-            /** Format: int64 */
-            recurrence_id?: number;
-            related: components["schemas"]["KataLinkPeer"][] | null;
-            /** Format: int64 */
-            revision: number;
-            short_id: string;
-            status: string;
-            title: string;
             uid: string;
-            /** Format: date-time */
-            updated_at: string;
         };
         KataWorkspaceTargetResponse: {
             available: boolean;
@@ -5935,6 +6043,10 @@ export interface components {
             item_key?: string;
             item_type?: string;
             repo?: components["schemas"]["RepoRefResponse"];
+            resolution_source?: string;
+            /** @enum {string} */
+            resolution_status?: "mapped" | "unmapped" | "ambiguous" | "invalid" | "error";
+            unavailable_reason?: string;
         };
         KataWorkspaceTaskRequest: {
             /**
@@ -6312,7 +6424,6 @@ export interface components {
             activity: boolean;
             docs: boolean;
             issues: boolean;
-            kata: boolean;
             pulls: boolean;
             repos: boolean;
             reviews: boolean;
@@ -6502,7 +6613,7 @@ export interface components {
              * @example badRequest
              * @enum {string}
              */
-            code: "badRequest" | "branchConflict" | "branchInUse" | "branchProtected" | "commentNotFound" | "conflict" | "destinationExists" | "forbidden" | "hookFailed" | "internalError" | "issueNotFound" | "mutationOutcomeUnknown" | "notFound" | "payloadTooLarge" | "projectNotFound" | "pullNotFound" | "rateLimited" | "repoNotFound" | "serviceUnavailable" | "settingsUnavailable" | "toolMissing" | "toolUnauthenticated" | "unauthorized" | "unsupportedCapability" | "upstreamError" | "validationError" | "workspaceDirectoryNotReusable" | "workspaceNotFound" | "worktreeDirty";
+            code: "badRequest" | "branchConflict" | "branchInUse" | "branchProtected" | "commentNotFound" | "conflict" | "destinationExists" | "forbidden" | "hookFailed" | "internalError" | "issueNotFound" | "mutationOutcomeUnknown" | "notFound" | "payloadTooLarge" | "projectNotFound" | "pullNotFound" | "rateLimited" | "repoNotFound" | "resyncRequired" | "serviceUnavailable" | "settingsUnavailable" | "toolMissing" | "toolUnauthenticated" | "unauthorized" | "unsupportedCapability" | "upstreamError" | "validationError" | "workspaceDirectoryNotReusable" | "workspaceNotFound" | "worktreeDirty";
             /**
              * @description A human-readable explanation specific to this occurrence of the problem.
              * @example Property foo is required but is missing.
@@ -6850,60 +6961,6 @@ export interface components {
             syncAhead?: number;
             /** Format: int64 */
             syncBehind?: number;
-        };
-        ReachableGraphEdge: {
-            from_uid: string;
-            kind: string;
-            layout: boolean;
-            to_uid: string;
-        };
-        ReachableGraphNode: {
-            author: string;
-            body: string;
-            /** Format: date-time */
-            closed_at?: string;
-            closed_reason?: string;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            deleted_at?: string;
-            /** Format: int64 */
-            id: number;
-            metadata: {
-                [key: string]: unknown;
-            };
-            occurrence_key?: string;
-            owner?: string;
-            /** Format: int64 */
-            priority?: number;
-            /** Format: int64 */
-            project_id: number;
-            project_uid?: string;
-            qualified_id: string;
-            /** Format: int64 */
-            recurrence_id?: number;
-            /** Format: int64 */
-            revision: number;
-            short_id: string;
-            status: string;
-            title: string;
-            uid: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        ReachableGraphResponseBody: {
-            depth: string;
-            edges?: components["schemas"]["ReachableGraphEdge"][] | null;
-            hide_done: boolean;
-            nodes?: components["schemas"]["ReachableGraphNode"][] | null;
-            source_uid: string;
-            unresolved_refs?: components["schemas"]["ReachableGraphUnresolvedRef"][] | null;
-        };
-        ReachableGraphUnresolvedRef: {
-            kind: string;
-            other_uid: string;
-            side: string;
-            uid: string;
         };
         RefreshFleetStatsOutputBody: {
             /**
@@ -10527,6 +10584,114 @@ export interface operations {
             };
         };
     };
+    "list-issue-kata-links-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataEffectiveLinksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-issue-kata-link-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KataCreateLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataEffectiveLinksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-issue-kata-link-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                link_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "set-issue-labels-on-host": {
         parameters: {
             query?: never;
@@ -11307,6 +11472,114 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MrImportMetadataResponse"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-pull-request-kata-links-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataEffectiveLinksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-pull-request-kata-link-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KataCreateLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataEffectiveLinksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-pull-request-kata-link-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                link_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -13002,6 +13275,111 @@ export interface operations {
             };
         };
     };
+    "list-issue-kata-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataEffectiveLinksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-issue-kata-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KataCreateLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataEffectiveLinksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-issue-kata-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                link_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "set-issue-labels": {
         parameters: {
             query?: never;
@@ -13173,6 +13551,140 @@ export interface operations {
             };
         };
     };
+    "resolve-kata-issue-reference": {
+        parameters: {
+            query: {
+                project?: string;
+                ref: string;
+            };
+            header?: never;
+            path: {
+                daemon_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataResolvedIssueReference"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-kata-issue-detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                daemon_id: string;
+                issue_uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataIssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-kata-launch-target": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                daemon_id: string;
+                issue_uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataLaunchTarget"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-kata-references": {
+        parameters: {
+            query?: {
+                q?: string;
+                project_uid?: string;
+                issue_uid?: string[] | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                daemon_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataReferencesResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "get-kata-project-mappings": {
         parameters: {
             query?: never;
@@ -13193,116 +13705,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KataProjectMappingsResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemError"];
-                };
-            };
-        };
-    };
-    "stream-kata-task-events": {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description Kata daemon id; the effective default daemon when empty */
-                "X-Kenn-Forge-Kata-Daemon"?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Server-sent Kata task invalidation stream */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": unknown;
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemError"];
-                };
-            };
-        };
-    };
-    "search-kata-task-references": {
-        parameters: {
-            query?: {
-                q?: string;
-                limit?: number;
-                status?: "open" | "all";
-            };
-            header?: {
-                /** @description Kata daemon id; the effective default daemon when empty */
-                "X-Kenn-Forge-Kata-Daemon"?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    Vary?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KataTaskReferenceResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemError"];
-                };
-            };
-        };
-    };
-    "get-kata-task-snapshot": {
-        parameters: {
-            query?: {
-                scope?: "global" | "project";
-                project_uid?: string;
-                authority?: "open" | "ready" | "closed" | "all";
-                selected_issue_uid?: string;
-                graph_source_uid?: string;
-                /** @description Bypass cached daemon authority for mutation reconciliation */
-                fresh?: boolean;
-            };
-            header?: {
-                /** @description Kata daemon id; the effective default daemon when empty */
-                "X-Kenn-Forge-Kata-Daemon"?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    Vary?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KataTaskSnapshotResponse"];
                 };
             };
             /** @description Error */
@@ -14919,6 +15321,111 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MrImportMetadataResponse"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-pull-request-kata-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataEffectiveLinksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-pull-request-kata-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KataCreateLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataEffectiveLinksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-pull-request-kata-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                link_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -17488,6 +17995,102 @@ export interface operations {
             };
         };
     };
+    "list-workspace-kata-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataEffectiveLinksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-workspace-kata-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KataCreateLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataEffectiveLinksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-workspace-kata-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                link_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "pull-workspace-branch": {
         parameters: {
             query?: never;
@@ -17849,9 +18452,6 @@ type ReadonlyArray<T> = [
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
-export const pathsKataTasksReferencesGetParametersQueryStatusValues: ReadonlyArray<FlattenedDeepRequired<paths>["/kata/tasks/references"]["get"]["parameters"]["query"]["status"]> = ["open", "all"];
-export const pathsKataTasksSnapshotGetParametersQueryScopeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/kata/tasks/snapshot"]["get"]["parameters"]["query"]["scope"]> = ["global", "project"];
-export const pathsKataTasksSnapshotGetParametersQueryAuthorityValues: ReadonlyArray<FlattenedDeepRequired<paths>["/kata/tasks/snapshot"]["get"]["parameters"]["query"]["authority"]> = ["open", "ready", "closed", "all"];
 export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsWorkspacesIdFilePreviewGetParametersQueryBaseValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["base"]> = ["head", "pushed", "merge-target"];
@@ -17880,12 +18480,13 @@ export const archiveStatusResponseOperator_stateValues: ReadonlyArray<FlattenedD
 export const archiveStatusResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveStatusResponse"]["status"]> = ["running", "waiting_for_budget", "current", "partial", "paused", "blocked"];
 export const issueWorkflowStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Issue"]["WorkflowStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const issueResponseWorkflowStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueResponse"]["WorkflowStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
-export const kataTaskReferenceStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["KataTaskReference"]["status"]> = ["open", "closed"];
+export const kataEffectiveLinksResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["KataEffectiveLinksResponse"]["state"]> = ["complete", "partial", "unavailable"];
+export const kataWorkspaceTargetResponseResolution_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["KataWorkspaceTargetResponse"]["resolution_status"]> = ["mapped", "unmapped", "ambiguous", "invalid", "error"];
 export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["State"]> = ["open", "closed", "merged"];
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
-export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "mutationOutcomeUnknown", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceDirectoryNotReusable", "workspaceNotFound", "worktreeDirty"];
+export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "mutationOutcomeUnknown", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "resyncRequired", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceDirectoryNotReusable", "workspaceNotFound", "worktreeDirty"];
 export const syncStatusLast_error_codeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SyncStatus"]["last_error_code"]> = ["localSyncCeilingExhausted"];
 export const workflowStateMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval", "done"];

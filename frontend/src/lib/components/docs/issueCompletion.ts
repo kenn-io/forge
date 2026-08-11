@@ -1,11 +1,11 @@
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { Effect, Exit } from "effect";
 
-import type { KataTaskReference, KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+import type { KataIssueReference, KataReferenceSearch } from "../../api/kata/integration.js";
 import type { AppExecution, AppRuntime } from "../../app/runtime.js";
 
 export interface IssueCompletionOptions {
-  searchReferences: KataTaskReferenceSearch;
+  searchReferences: KataReferenceSearch;
   daemonId?: (() => string | undefined) | undefined;
   debounceMs?: number | undefined;
 }
@@ -32,15 +32,11 @@ export function buildIssueCompletionSource(options: IssueCompletionOptions, runt
       Effect.gen(function* () {
         if (debounceMs > 0) yield* Effect.sleep(debounceMs);
         if (context.aborted) return null;
-        const references = yield* options
-          .searchReferences(match.query, {
-            ...(daemonId ? { daemon_id: daemonId } : {}),
-            limit: 50,
-          })
-          .pipe(
-            Effect.map((response) => response.references ?? []),
-            Effect.catch(() => Effect.succeed([])),
-          );
+        if (!daemonId) return null;
+        const references = yield* Effect.tryPromise({
+          try: (signal) => options.searchReferences(daemonId, match.query, signal),
+          catch: (cause) => cause,
+        }).pipe(Effect.catch(() => Effect.succeed([])));
         if (context.aborted) return null;
         const explicitlyQualified = match.qualifiedProject !== null;
         return {
@@ -100,12 +96,8 @@ async function observeCompletion(
   return Exit.isSuccess(exit) ? exit.value : null;
 }
 
-function completion(reference: KataTaskReference, explicitlyQualified: boolean): Completion {
-  const serverQualified = reference.reference !== reference.short_id;
-  const apply =
-    explicitlyQualified || serverQualified
-      ? markdownQualifiedReference(explicitlyQualified ? reference.qualified_id : reference.reference)
-      : `#${reference.reference}`;
+function completion(reference: KataIssueReference, explicitlyQualified: boolean): Completion {
+  const apply = markdownQualifiedReference(reference.qualified_id);
   return {
     label: apply,
     detail: explicitlyQualified ? reference.title : `${reference.title}  ·  ${reference.project_name}`,

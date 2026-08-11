@@ -55,6 +55,7 @@ not an exhaustive enum.
 | `branchConflict` | 409 | Local workspace branch already exists. Include `details.branch`, `details.suggestedBranch`, and `details.existingDirectory`; when the discriminator is true, clients must not offer an alternate-branch action for the occupied deterministic path. |
 | `workspaceDirectoryNotReusable` | 409 | The deterministic kenn-forge issue-worktree directory cannot be recovered. Include `details.reason` as `missing`, `not_linked_worktree`, `repository_mismatch`, or `branch_mismatch`; branch mismatches also include `expectedBranch` and `actualBranch`. |
 | `unsupportedCapability` | 409 | Provider lacks the operation capability. Include `details.capability`, `details.provider`, and `details.platformHost`. |
+| `resyncRequired` | 409 | A provider item lacks stable external identity required for a safe mutation. Include `details.subject_kind` and `details.item_number`; clients should request a successful resync before retrying. |
 | `payloadTooLarge` | 413 | A bounded payload exceeds its accepted size. Request-body failures include `details.maxBytes` when known. Archive detailed-report failures use `details.reason = "reportTooLarge"` with integer `observedRecords`, `maxRecords`, `observedTextBytes`, and `maxTextBytes`; clients branch on the reason and camelCase fields, not prose. |
 | `rateLimited` | 429 | Upstream provider quota is exhausted. Include `details.retryAfter` as a UTC RFC3339 timestamp when known. |
 | `internalError` | 500 | Generic kenn-forge bug or unexpected local failure. |

@@ -1224,7 +1224,6 @@ func buildAppState(
 	cfg.Fleet.Key = strings.TrimSpace(opts.fleetKey)
 	if opts.visibleImportedModes {
 		modes := config.DefaultModeVisibility()
-		*modes.Kata = true
 		*modes.Docs = true
 		cfg.Modes = modes
 	}

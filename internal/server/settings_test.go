@@ -406,7 +406,6 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	modes := config.DefaultModeVisibility()
-	*modes.Kata = true
 	*modes.Docs = true
 	*modes.Workspaces = false
 
@@ -418,7 +417,6 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	assert.True(*resp.Modes.Kata)
 	assert.True(*resp.Modes.Docs)
 	assert.False(*resp.Modes.Workspaces)
 	assert.True(*resp.Modes.Activity)
@@ -429,7 +427,6 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(err)
-	assert.True(*cfg2.Modes.Kata)
 	assert.True(*cfg2.Modes.Docs)
 	assert.False(*cfg2.Modes.Workspaces)
 	assert.True(*cfg2.Modes.Activity)
@@ -503,7 +500,6 @@ func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 	assert := assert.New(t)
 	assert.True(*modes.Activity)
 	assert.True(*modes.Repos)
-	assert.False(*modes.Kata)
 	assert.False(*modes.Docs)
 	assert.True(*modes.Pulls)
 	assert.True(*modes.Issues)

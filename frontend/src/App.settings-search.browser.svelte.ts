@@ -110,7 +110,7 @@ describe("settings sidebar search", () => {
     backSpy.mockRestore();
   });
 
-  it("hides Kata mapping settings without starting diagnostics when Kata is disabled", async () => {
+  it("keeps Kata mapping settings available without a full Kata mode", async () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/settings", {
       overrides: [
@@ -119,17 +119,30 @@ describe("settings sidebar search", () => {
           return new Response(
             JSON.stringify({
               ...mockSettings,
-              modes: { ...mockSettings.modes, kata: false },
+              modes: { ...mockSettings.modes },
             }),
             { headers: { "content-type": "application/json" } },
           );
         },
+        (req) => {
+          if (req.method !== "GET" || req.url.pathname !== "/api/v1/kata/daemons") return null;
+          return Response.json({
+            daemons: [{ id: "work", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }],
+          });
+        },
+        (req) => {
+          if (req.method !== "GET" || req.url.pathname !== "/api/v1/kata/project-mappings") return null;
+          return Response.json({ daemon_id: "work", projects: [], targets: [] });
+        },
       ],
     });
 
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(8), WAIT);
-    expect(navLabels()).not.toContain("Kata mappings");
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(9), WAIT);
+    expect(navLabels()).toContain("Kata mappings");
     expect(mounted.api.requests.filter((req) => req.url.pathname.includes("/kata/daemons"))).toHaveLength(1);
-    expect(mounted.api.requests.some((req) => req.url.pathname.includes("/kata/project-mappings"))).toBe(false);
+    await vi.waitFor(
+      () => expect(mounted!.api.requests.some((req) => req.url.pathname.includes("/kata/project-mappings"))).toBe(true),
+      WAIT,
+    );
   });
 });

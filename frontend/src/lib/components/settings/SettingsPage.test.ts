@@ -103,7 +103,6 @@ function makeSettings(): Settings {
     modes: {
       activity: true,
       repos: true,
-      kata: false,
       docs: false,
       pulls: true,
       issues: true,

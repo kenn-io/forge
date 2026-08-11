@@ -65,6 +65,7 @@ only routes to them.
 - The `kenn-forge` binary has one Cobra root command. Register every public command on that tree; do not add a second parser, manual dispatcher, or command-facing `flag.FlagSet`. (`cmd/kenn-forge/cli.go::newRootCommand`)
 - CLI flags must affect execution or fail validation; reject shared persistent flags outside the commands that consume them instead of silently ignoring user input. (`internal/cli/ctl/ctl.go::installControlFlagValidation`)
 - Do the task requested, not the task imagined. Do not widen scope without explicitly confirming with the user first
+- When an invoked skill requires a specific artifact, location, or review gate, follow it exactly. ADRs and context documents may supplement that artifact but must not replace it without explicit maintainer approval.
 - When a backwards compatibility adapter, shim, alias, fallback wrapper, or legacy translation layer seems useful, ask the user for EXPRESS permission before introducing it. These shims carry very high maintenance cost because they preserve old paths, multiply edge cases, and make future changes harder to reason about; explain the compatibility benefit and why direct migration or removal is not the better choice.
 - Use `huma` for the web framework and OpenAPI generation
 - Regenerate API artifacts with `make api-generate`; the Go client also supports `go generate ./internal/apiclient/generated`

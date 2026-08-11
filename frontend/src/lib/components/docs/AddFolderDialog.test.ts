@@ -4,12 +4,9 @@ import * as flash from "../../stores/flash.svelte.js";
 import AddFolderDialogTestHarness from "./AddFolderDialogTestHarness.svelte";
 import type { DocsAPI } from "../../api/docs/api";
 import { createMockDocsBackend } from "./docsTestBackend";
-import { setActiveKataDaemon, setKataDaemonRoster } from "../../stores/active-kata-daemon.svelte";
 
 afterEach(() => {
   cleanup();
-  setActiveKataDaemon(undefined);
-  setKataDaemonRoster([], undefined);
   for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
 });
 
@@ -18,6 +15,7 @@ function renderDialog(
     api?: DocsAPI;
     open?: boolean;
     initialPath?: string;
+    daemonRoster?: readonly string[];
   } = {},
 ) {
   const api = opts.api ?? createMockDocsBackend();
@@ -29,6 +27,7 @@ function renderDialog(
     onClose,
     onAdded,
     initialPath: opts.initialPath ?? "",
+    daemonRoster: opts.daemonRoster ?? [],
   };
   const result = render(AddFolderDialogTestHarness, { props });
   return { ...result, api, onClose, onAdded, props };
@@ -152,8 +151,7 @@ describe("AddFolderDialog", () => {
   test("submits a selected daemon binding when multiple daemons are available", async () => {
     const api = createMockDocsBackend();
     const addSpy = vi.spyOn(api, "addFolder");
-    setKataDaemonRoster(["home", "work"], "home");
-    renderDialog({ api });
+    renderDialog({ api, daemonRoster: ["home", "work"] });
     await waitFor(() => screen.getByText("Documents"));
 
     await fireEvent.click(screen.getByRole("combobox", { name: /Daemon/ }));
@@ -169,8 +167,7 @@ describe("AddFolderDialog", () => {
   test("leaves a multi-daemon folder unbound until a daemon is selected", async () => {
     const api = createMockDocsBackend();
     const addSpy = vi.spyOn(api, "addFolder");
-    setKataDaemonRoster(["home", "work"], "home");
-    renderDialog({ api });
+    renderDialog({ api, daemonRoster: ["home", "work"] });
     await waitFor(() => screen.getByText("Documents"));
 
     const input = screen.getByPlaceholderText("~/Notes") as HTMLInputElement;
@@ -184,13 +181,12 @@ describe("AddFolderDialog", () => {
   test("drops a stale selected daemon when the roster shrinks before submit", async () => {
     const api = createMockDocsBackend();
     const addSpy = vi.spyOn(api, "addFolder");
-    setKataDaemonRoster(["home", "work"], "home");
-    renderDialog({ api });
+    const rendered = renderDialog({ api, daemonRoster: ["home", "work"] });
     await waitFor(() => screen.getByText("Documents"));
 
     await fireEvent.click(screen.getByRole("combobox", { name: /Daemon/ }));
     await fireEvent.click(screen.getByRole("option", { name: "work" }));
-    setKataDaemonRoster(["home"], "home");
+    await rendered.rerender({ ...rendered.props, daemonRoster: ["home"] });
     const input = screen.getByPlaceholderText("~/Notes") as HTMLInputElement;
     await fireEvent.input(input, { target: { value: "/mock/shared-notes" } });
     await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));

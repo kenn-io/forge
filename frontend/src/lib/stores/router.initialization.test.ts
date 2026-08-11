@@ -50,18 +50,11 @@ describe("router initialization", () => {
     });
   });
 
-  it("preserves kata route state on initial load", async () => {
+  it("treats the removed Kata route as unknown on initial load", async () => {
     const { getRoute, getPage } = await importRouterAt("/kata?issue=issue-email-susan");
 
-    expect(getRoute()).toEqual({ page: "kata", issue: "issue-email-susan" });
-    expect(getPage()).toBe("kata");
-  });
-
-  it("preserves kata view and scope route state on initial load", async () => {
-    const { getRoute, getPage } = await importRouterAt("/kata?view=inbox&scope=project-kata");
-
-    expect(getRoute()).toEqual({ page: "kata", view: "inbox", scope: "project-kata" });
-    expect(getPage()).toBe("kata");
+    expect(getRoute()).toEqual({ page: "activity" });
+    expect(getPage()).toBe("activity");
   });
 
   it("uses embed initialRoute before the first app render", async () => {

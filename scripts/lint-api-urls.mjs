@@ -18,12 +18,6 @@ const GENERATED_CLIENT_RUNTIME_FILES = new Set([
   "frontend/src/lib/api/runtime-base.ts",
 ]);
 
-// This helper builds a Kenn Forge proxy URL whose nested /api/v1 belongs to
-// Kata, not Kenn Forge. Keep the exception tied to the proxy boundary itself;
-// callers and neighboring files remain subject to the normal API-client rule.
-const SCOPED_UPSTREAM_PROXY_HELPERS = new Map([
-  ["frontend/src/lib/api/kata/daemons.ts", new Set(["kataProxyPath"])],
-]);
 const GENERATED_CLIENT_FACTORIES = new Set(["createAPIClient", "createRuntimeClient"]);
 
 function toPosix(path) {
@@ -68,7 +62,7 @@ function contextFor(lines, index, radius = 5) {
 }
 
 function isAllowedStreamingTransport(line, context) {
-  if (line.includes("/api/v1/events") || line.includes("/api/v1/kata/tasks/events")) {
+  if (line.includes("/api/v1/events")) {
     return true;
   }
 
@@ -93,39 +87,6 @@ function isAllowedStreamingTransport(line, context) {
 
 function lineNumberAt(content, offset) {
   return content.slice(0, offset).split(/\r?\n/).length;
-}
-
-function lineStartOffsets(content) {
-  const offsets = [0];
-  const newline = /\r?\n/g;
-  let match;
-  while ((match = newline.exec(content)) !== null) {
-    offsets.push(match.index + match[0].length);
-  }
-  return offsets;
-}
-
-function scopedUpstreamProxyRanges(content, path) {
-  const helperNames = SCOPED_UPSTREAM_PROXY_HELPERS.get(path);
-  if (!helperNames) return [];
-
-  const sourceFile = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const ranges = [];
-
-  function visit(node) {
-    if (ts.isFunctionDeclaration(node) && node.name && helperNames.has(node.name.text)) {
-      ranges.push([node.getStart(sourceFile), node.end]);
-      return;
-    }
-    ts.forEachChild(node, visit);
-  }
-
-  visit(sourceFile);
-  return ranges;
-}
-
-function isInScopedUpstreamProxy(offset, ranges) {
-  return ranges.some(([start, end]) => offset >= start && offset < end);
 }
 
 function svelteScriptRegions(content, path) {
@@ -277,7 +238,11 @@ function referencesAlias(node, aliasesByScope) {
 
 function isGeneratedClientFactoryCall(node) {
   node = unwrapExpression(node);
-  return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && GENERATED_CLIENT_FACTORIES.has(node.expression.text);
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    GENERATED_CLIENT_FACTORIES.has(node.expression.text)
+  );
 }
 
 function apiPathAliases(sourceFile) {
@@ -315,7 +280,7 @@ function apiPathAliases(sourceFile) {
   return aliasesByScope;
 }
 
-function structuralFindings(content, path, scopedProxyRanges) {
+function structuralFindings(content, path) {
   const findings = [];
 
   for (const region of svelteScriptRegions(content, path)) {
@@ -325,7 +290,6 @@ function structuralFindings(content, path, scopedProxyRanges) {
 
     function addFinding(node) {
       const offset = region.offset + node.getStart(sourceFile);
-      if (isInScopedUpstreamProxy(offset, scopedProxyRanges)) return;
       const line = lineNumberAt(content, offset);
       const lineText = content.split(/\r?\n/)[line - 1] ?? "";
       const column = offset - content.lastIndexOf("\n", offset - 1);
@@ -415,16 +379,11 @@ export async function lintApiUrls({ root = process.cwd(), paths = DEFAULT_SCAN_P
 
     const content = await readFile(file, "utf8");
     const lines = content.split(/\r?\n/);
-    const lineStarts = lineStartOffsets(content);
-    const scopedProxyRanges = scopedUpstreamProxyRanges(content, relPath);
-
-    findings.push(...structuralFindings(content, relPath, scopedProxyRanges));
+    findings.push(...structuralFindings(content, relPath));
 
     lines.forEach((line, index) => {
       const column = line.indexOf(API_MARKER);
       if (column === -1 || isCommentOnly(line)) return;
-      if (isInScopedUpstreamProxy(lineStarts[index] + column, scopedProxyRanges)) return;
-
       const context = contextFor(lines, index);
       if (isAllowedStreamingTransport(line, context)) return;
 

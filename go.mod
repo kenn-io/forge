@@ -35,8 +35,8 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/compose v0.43.0
 	github.com/yuin/goldmark v1.7.17
 	gitlab.com/gitlab-org/api/client-go/v2 v2.44.0
-	go.kenn.io/kata v0.11.1
-	go.kenn.io/kit v0.18.1
+	go.kenn.io/kata v0.14.3
+	go.kenn.io/kit v0.19.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/sdk v1.44.0
@@ -207,7 +207,7 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.10.0 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
-	github.com/shirou/gopsutil/v4 v4.26.5 // indirect
+	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
 	github.com/shurcooL/graphql v0.0.0-20240915155400-7ee5256398cf // indirect
 	github.com/sigstore/sigstore v1.10.4 // indirect
 	github.com/sigstore/sigstore-go v1.1.4 // indirect

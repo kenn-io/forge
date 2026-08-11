@@ -6,7 +6,6 @@
   import { navigate } from "../../stores/router.svelte.ts";
   import { isNarrow } from "../../stores/container.svelte.js";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
-  import KataWorkspaceSidebarPane from "./KataWorkspaceSidebarPane.svelte";
   import SessionTerminalSlot from "./SessionTerminalSlot.svelte";
   import Modal from "../shared/Modal.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
@@ -481,7 +480,7 @@
   let applyingWorkflowPresetFor = $state<string[]>([]);
   const applyingWorkflowPreset = $derived(applyingWorkflowPresetFor.includes(viewWorkspaceKey));
 
-  type SidebarTab = "diff" | "pr" | "issue" | "reviews" | "kata_task";
+  type SidebarTab = "diff" | "pr" | "issue" | "reviews" | "kata";
 
   const MIN_WORKSPACE_LIST_WIDTH = 220;
   const DEFAULT_WORKSPACE_LIST_WIDTH = 260;
@@ -575,7 +574,7 @@
     if (v === "pr") return "pr";
     if (v === "issue") return "issue";
     if (v === "reviews") return "reviews";
-    if (v === "kata_task") return "kata_task";
+    if (v === "kata") return "kata";
     return "diff";
   }
 
@@ -1910,9 +1909,7 @@
     if (tab === "issue") {
       return ws.item_type === "issue";
     }
-    if (tab === "kata_task") {
-      return ws.item_type === "kata_task";
-    }
+    if (tab === "kata") return workspaceHostKey === undefined;
     if (tab === "reviews") {
       return ws.item_type === "pull_request";
     }
@@ -4018,14 +4015,14 @@
                       Issue
                     </button>
                   {/if}
-                  {#if workspace.item_type === "kata_task"}
+                  {#if workspaceHostKey === undefined}
                     <button
                       class="panel-toggle-btn"
-                      class:active={sidebarOpen && sidebarTab === "kata_task"}
+                      class:active={sidebarOpen && sidebarTab === "kata"}
                       disabled={actionsBlocked}
-                      onclick={() => handleSidebarToggleClick("kata_task")}
+                      onclick={() => handleSidebarToggleClick("kata")}
                     >
-                      Kata task
+                      Kata
                     </button>
                   {/if}
                   {#if getWorkspacePRNumber(workspace) !== null}
@@ -4287,21 +4284,10 @@
               style="width: {renderedRightSidebarWidth}px"
             >
               {#if workspaceDetailsReady && workspace}
-                {#snippet kataTaskPanel()}
-                  {@const sidebarWorkspace = workspace}
-                  {#if sidebarWorkspace?.kata}
-                    <KataWorkspaceSidebarPane
-                      kata={sidebarWorkspace.kata}
-                      disabled={actionsBlocked}
-                    />
-                  {:else}
-                    <EmptyState title="No linked Kata task" />
-                  {/if}
-                {/snippet}
                 <WorkspaceRightSidebar
                   activeTab={sidebarTab}
                   workspaceID={workspace.id}
-                  workspaceHostKey={selectedWorkspaceHostKey(workspace)}
+                  {workspaceHostKey}
                   provider={workspace.repo.provider}
                   platformHost={workspace.repo.platform_host}
                   repoOwner={workspace.repo.owner}
@@ -4315,7 +4301,6 @@
                   refreshToken={sidebarRefreshToken}
                   {diffRefreshToken}
                   disabled={actionsBlocked}
-                  {kataTaskPanel}
                 />
               {:else}
                 <div class="state-message">

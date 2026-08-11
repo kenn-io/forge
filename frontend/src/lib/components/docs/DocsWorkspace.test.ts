@@ -1,20 +1,27 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
-import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { Effect } from "effect";
 import { makeAppRuntime } from "../../app/runtime";
 import DocsWorkspace from "./DocsWorkspaceTestHarness.svelte";
 import { createMockDocsBackend } from "./docsTestBackend";
 import { defaultDocsRoute, type DocsRoute } from "../../api/docs/route";
-import {
-  resetKataDaemonRoster,
-  setActiveKataDaemon,
-  setKataDaemonRoster,
-} from "../../stores/active-kata-daemon.svelte";
+
+const kataRoster = vi.hoisted(() => ({ fetch: vi.fn() }));
+
+vi.mock("../../api/kata/integration.js", () => ({
+  fetchKataDaemons: kataRoster.fetch,
+  searchKataReferences: vi.fn(async () => []),
+}));
+
+beforeEach(() => {
+  kataRoster.fetch.mockResolvedValue([
+    { id: "home", url: "http://kata.test", default: true, auth: "none", health: "connected" },
+    { id: "work", url: "http://work.kata.test", default: false, auth: "none", health: "connected" },
+  ]);
+});
 
 afterEach(() => {
   cleanup();
-  setActiveKataDaemon(undefined);
-  resetKataDaemonRoster();
   // The anchor-from-hash test mutates the location hash; clear it so it
   // can't leak into tests that assume a bare URL.
   if (typeof window !== "undefined") window.location.hash = "";
@@ -162,8 +169,6 @@ describe("DocsWorkspace", () => {
   });
 
   test("warns when the active folder daemon binding is stale", async () => {
-    setKataDaemonRoster(["home", "work"], "home");
-    setActiveKataDaemon("home");
     const api = createMockDocsBackend({
       folders: [
         {
@@ -184,10 +189,11 @@ describe("DocsWorkspace", () => {
     await waitFor(() => screen.getByRole("heading", { name: "Archive" }));
     const warning = screen.getByRole("status");
     expect(warning.textContent).toContain("gone");
-    expect(warning.textContent).toContain("active daemon");
+    expect(warning.textContent).toContain("cannot be opened");
   });
 
   test("does not warn before the daemon roster has resolved", async () => {
+    kataRoster.fetch.mockReturnValueOnce(new Promise(() => {}));
     const api = createMockDocsBackend({
       folders: [
         {

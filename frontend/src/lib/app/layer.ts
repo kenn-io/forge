@@ -25,8 +25,6 @@ import { RoborevDaemonWorkflowLive } from "../stores/roborev/daemon-workflow.js"
 import { RoborevWorkflowLive } from "../stores/roborev/roborev-workflow.js";
 import { RepoBrowserWorkflowLive } from "../stores/repo-browser-workflow.js";
 import { StartupWorkflowLive } from "./startup-workflow.js";
-import { KataWorkflowLive } from "../features/kata/kata-workflow.js";
-import { KataWorkspaceCreationWorkflowLive } from "../features/kata/kata-workspace-creation-workflow.js";
 import { PierreDiffWorkerPoolLive } from "../components/diff/pierre-worker-pool.js";
 import { WorkspaceListWorkflowLive } from "../components/terminal/workspace-list-workflow.js";
 import { ProjectMutationWorkflowLive } from "../components/terminal/project-mutation-workflow.js";
@@ -66,8 +64,6 @@ export function makeAppLiveLayer(generatedApiLayer: Layer.Layer<GeneratedApi>) {
     RoborevDaemonWorkflowLive,
     RoborevWorkflowLive,
     RepoBrowserWorkflowLive,
-    KataWorkflowLive,
-    KataWorkspaceCreationWorkflowLive,
     ProjectMutationWorkflowLive,
     WorkspaceRuntimeWorkflowLive,
     RepoSummaryWorkflowLive,

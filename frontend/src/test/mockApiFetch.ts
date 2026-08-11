@@ -296,7 +296,6 @@ export const mockSettings = {
     activity: true,
     docs: true,
     issues: true,
-    kata: true,
     pulls: true,
     repos: true,
     reviews: true,

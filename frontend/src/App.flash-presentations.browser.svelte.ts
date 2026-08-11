@@ -77,7 +77,7 @@ describe("flash rendering across app shells", () => {
 
   it("tracks the rendered height of a wrapping compact header", async () => {
     await page.viewport(390, 844);
-    mounted = await mountBrowserApp("/kata");
+    mounted = await mountBrowserApp("/docs");
     await vi.waitFor(() => expect(document.querySelector(".app-top-bar")).not.toBeNull(), WAIT);
 
     expectBelowHeader(await visibleFlash("compact header flash"));

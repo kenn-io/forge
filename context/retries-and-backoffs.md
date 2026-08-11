@@ -39,7 +39,7 @@ budget choices.
 
 Scope upstream timeout child contexts to the upstream call; subsequent local
 database and filesystem work must retain the request context
-(`internal/server/kataapi/workspace.go::getKataProjectMappings`).
+(`internal/server/kata/workspace.go::getKataProjectMappings`).
 
 To extend git transient matching, add a substring to the slice in
 `internal/gitclone/retry.go` and a row to `internal/gitclone/retry_test.go`.

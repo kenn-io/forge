@@ -25,13 +25,14 @@ vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
   isEmbedded: () => false,
 }));
 
-vi.mock("../../api/kata/daemons.js", () => ({
-  fetchKataDaemons: mockFetchKataDaemons,
-}));
-
-vi.mock("../../api/kata/workspaces.js", () => ({
-  getKataProjectMappings: mockGetKataProjectMappings,
-}));
+vi.mock("../../api/kata/integration.js", async () => {
+  const { Effect } = await import("effect");
+  const asPromise = <T>(value: T) => (Effect.isEffect(value) ? Effect.runPromise(value) : value);
+  return {
+    fetchKataDaemons: (...args: unknown[]) => asPromise(mockFetchKataDaemons(...args)),
+    getKataProjectMappings: (...args: unknown[]) => asPromise(mockGetKataProjectMappings(...args)),
+  };
+});
 
 describe("KataProjectMappingsSettings", () => {
   beforeEach(() => {
@@ -58,16 +59,6 @@ describe("KataProjectMappingsSettings", () => {
 
     expect(screen.getByRole("button", { name: "Add mapping" })).toBeTruthy();
     expect(screen.getByText("No known repository targets are available.")).toBeTruthy();
-  });
-
-  it("does not load diagnostics while Kata mode is disabled", async () => {
-    render(KataProjectMappingsSettings, {
-      props: { mappings: [], enabled: false, onUpdate: vi.fn() },
-    });
-
-    await Promise.resolve();
-    expect(mockFetchKataDaemons).not.toHaveBeenCalled();
-    expect(mockGetKataProjectMappings).not.toHaveBeenCalled();
   });
 
   it("shows the effective mapping and prefills a registered-project override", async () => {
@@ -228,19 +219,62 @@ describe("KataProjectMappingsSettings", () => {
       props: { mappings: [configuredMapping], onUpdate: vi.fn() },
     });
 
-    await screen.findByRole("combobox", { name: "Kata mapping daemon: work" });
+    await screen.findByRole("combobox", { name: /Kata mapping daemon: work/ });
     await fireEvent.click(screen.getByRole("button", { name: "Remove Kata project mapping project-old" }));
     await fireEvent.click(screen.getByRole("button", { name: "Save Kata mappings" }));
     await waitFor(() => expect(mockGetKataProjectMappings).toHaveBeenCalledTimes(2));
 
-    await fireEvent.click(screen.getByRole("combobox", { name: "Kata mapping daemon: work" }));
-    await fireEvent.click(screen.getByRole("option", { name: "personal" }));
-    await screen.findByRole("combobox", { name: "Kata mapping daemon: personal" });
+    await fireEvent.click(screen.getByRole("combobox", { name: /Kata mapping daemon: work/ }));
+    await fireEvent.click(screen.getByRole("option", { name: /personal.*Health: connected/ }));
+    await screen.findByRole("combobox", { name: /Kata mapping daemon: personal/ });
     if (!completePostSaveRefresh) throw new Error("post-save diagnostics refresh did not start");
     completePostSaveRefresh(workDiagnostics);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(screen.getByRole("combobox", { name: "Kata mapping daemon: personal" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: /Kata mapping daemon: personal/ })).toBeTruthy();
+  });
+
+  it("keeps the daemon roster available when the default daemon diagnostics fail", async () => {
+    mockFetchKataDaemons.mockReturnValue(
+      Effect.succeed([
+        {
+          id: "home",
+          url: "http://127.0.0.1:7777",
+          default: true,
+          auth: "none",
+          health: "unreachable",
+          hint: "Local daemon is not running",
+        },
+        {
+          id: "work",
+          url: "http://127.0.0.1:8888",
+          default: false,
+          auth: "none",
+          health: "connected",
+          api_schema_version: "0.10.0",
+        },
+      ]),
+    );
+    mockGetKataProjectMappings.mockImplementation((daemonID?: string) => {
+      if (daemonID === "home") return Effect.fail(new Error("Default Kata daemon is unavailable"));
+      return Effect.succeed({ daemon_id: "work", projects: [], targets: [] });
+    });
+
+    render(KataProjectMappingsSettings, { props: { mappings: [], onUpdate: vi.fn() } });
+
+    await screen.findByText("Default Kata daemon is unavailable");
+    const picker = screen.getByRole("combobox", { name: /Kata mapping daemon: home/ });
+    await fireEvent.click(picker);
+    expect(screen.getByRole("option", { name: /home.*Local daemon is not running/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /work.*Health: connected.*API schema 0\.10\.0/ })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("option", { name: /work.*Health: connected/ }));
+
+    await screen.findByRole("combobox", { name: /Kata mapping daemon: work/ });
+    expect(screen.getByText("This Kata daemon reports no projects.")).toBeTruthy();
+    expect(mockFetchKataDaemons).toHaveBeenCalledTimes(1);
+    expect(mockGetKataProjectMappings).toHaveBeenNthCalledWith(1, "home");
+    expect(mockGetKataProjectMappings).toHaveBeenNthCalledWith(2, "work");
   });
 
   it("does not publish a pending settings save after the panel unmounts", async () => {

@@ -20,16 +20,6 @@ func TestTransportInventoryIncludesRegisteredLongLivedRoutes(t *testing.T) {
 			Transport: TransportHTTPStream, Accept: "text/event-stream",
 		},
 		{
-			Method: http.MethodGet, Path: "/api/v1/kata/tasks/events",
-			Transport: TransportHTTPStream, Accept: "text/event-stream",
-		},
-		{
-			Method:    http.MethodGet,
-			Path:      "/api/v1/kata/proxy/api/v1/events/stream",
-			Transport: TransportHTTPStream,
-			Accept:    "text/event-stream",
-		},
-		{
 			Method: http.MethodGet, Path: "/api/roborev/api/stream/events",
 			Transport: TransportHTTPStream, Accept: "application/x-ndjson",
 		},

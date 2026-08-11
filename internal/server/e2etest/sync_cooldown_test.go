@@ -41,7 +41,7 @@ func TestTriggerSyncE2EBypassesCooldown(t *testing.T) {
 			return nil, nil
 		},
 	}
-	baseURL, client, database := startSyncCooldownE2EServer(t, `
+	baseURL, client, _, syncer := startSyncCooldownE2EServerWithSyncer(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -52,16 +52,10 @@ owner = "acme"
 name = "widget"
 `, mock)
 
+	syncer.RunOnce(t.Context())
+	require.Equal(int32(1), syncCalls.Load())
+
 	status, body := postJSON(
-		t, client, baseURL+"/api/v1/sync", nil,
-	)
-	require.Equal(http.StatusAccepted, status, body)
-
-	first := waitForRepoSynced(t, database, "acme", "widget", nil)
-	require.NotNil(first.LastSyncCompletedAt)
-	waitForSyncIdle(t, client, baseURL)
-
-	status, body = postJSON(
 		t, client, baseURL+"/api/v1/sync", nil,
 	)
 	require.Equal(http.StatusAccepted, status, body)

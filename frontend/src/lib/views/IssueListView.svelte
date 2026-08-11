@@ -6,6 +6,7 @@
     from "../components/sidebar/IssueList.svelte";
   import IssueDetail
     from "../components/detail/IssueDetail.svelte";
+  import KataLinksPanel from "../components/kata/KataLinksPanel.svelte";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
@@ -104,6 +105,7 @@
 
   const paneTabs = $derived<PaneTabSpec[]>([
     { key: "conversation", label: "Conversation", available: true },
+    { key: "kata", label: "Kata", available: true, hideable: true },
     {
       key: "workspace",
       label: inlineWorkspace?.workspacePaneLabel() ?? "Workspace",
@@ -155,6 +157,20 @@
               autoSync={autoSyncDetail}
               hideStaleWhileLoading={hideStaleDetailWhileLoading}
               {inlineWorkspace}
+            />
+          {:else if tabKey === "kata"}
+            <KataLinksPanel
+              subject={{
+                kind: "issue",
+                provider: selectedIssue.provider,
+                ...(selectedIssue.platformHost === undefined
+                  ? {}
+                  : { platformHost: selectedIssue.platformHost }),
+                owner: selectedIssue.owner,
+                name: selectedIssue.name,
+                number: selectedIssue.number,
+              }}
+              active={visible}
             />
           {:else if tabKey === "workspace" && inlineWorkspace && visible}
             <!-- Portal target for the single live terminal subtree, which the

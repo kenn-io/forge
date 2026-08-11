@@ -63,11 +63,11 @@ test("context sync accepts a valid routed context surface", async (t) => {
   assert.match(result.stdout, /structural check passed/);
 });
 
-test("context sync rejects reintroduced Superpowers documents", async (t) => {
+test("context sync accepts a skill-required Superpowers design spec", async (t) => {
   const root = await createContextRoot(t);
   const specs = path.join(root, "docs", "superpowers", "specs");
   await mkdir(specs, { recursive: true });
-  await writeFile(path.join(specs, "completed-design.md"), "# Completed design\n");
+  await writeFile(path.join(specs, "active-design.md"), "# Active design\n");
 
   await assert.rejects(execFile(scriptPath, ["--check"], { cwd: root, env: isolatedGitEnv() }), (error) => {
     assert.match(error.stderr, /docs\/superpowers must remain absent/);

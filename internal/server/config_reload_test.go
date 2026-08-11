@@ -344,7 +344,6 @@ owner = "acme"
 name = "widget"
 
 [modes]
-kata = true
 docs = true
 workspaces = false
 `
@@ -545,7 +544,6 @@ func TestConfigReload_UpdatesModes(t *testing.T) {
 	srv.cfgMu.Lock()
 	gotModes := cloneModeVisibility(srv.cfg.Modes)
 	srv.cfgMu.Unlock()
-	assert.True(*gotModes.Kata)
 	assert.True(*gotModes.Docs)
 	assert.False(*gotModes.Workspaces)
 	assert.True(*gotModes.Activity)

@@ -6,7 +6,6 @@ import {
   type RoutedItemRef,
 } from "../routes.js";
 import { canonicalProvider } from "../api/provider-routes.js";
-import type { KataTaskViewName } from "../api/kata/taskTypes.js";
 
 export type RepoRef = RepositoryRouteRef;
 export type NumberedItemRef = NumberedRouteItemRef;
@@ -24,7 +23,6 @@ export type Route =
   | { page: "mobile-issues" }
   | { page: "design-system" }
   | { page: "repos" }
-  | { page: "kata"; issue?: string; view?: KataTaskViewName; scope?: string; daemon?: string }
   | { page: "docs"; folder: string | null; doc: string | null }
   | {
       page: "repo-browser";
@@ -131,8 +129,6 @@ const defaultPlatformHosts: Record<string, string> = {
   forgejo: "codeberg.org",
   gitea: "gitea.com",
 };
-
-const kataViewNames = new Set<KataTaskViewName>(["inbox", "today", "upcoming", "deadlines", "all", "logbook"]);
 
 function defaultPlatformHost(provider: string): string | undefined {
   return defaultPlatformHosts[canonicalProvider(provider)];
@@ -314,20 +310,6 @@ function parseRoute(fullPath: string): Route {
       ...(selectedPath ? { path: selectedPath } : {}),
       ...(mode ? { mode } : {}),
       ...(anchor ? { anchor } : {}),
-    };
-  }
-  if (path === "/kata") {
-    const sp = new URLSearchParams(search);
-    const issue = emptyToNull(sp.get("issue"));
-    const view = parseKataView(sp.get("view"));
-    const scope = emptyToNull(sp.get("scope"));
-    const daemon = emptyToNull(sp.get("daemon"));
-    return {
-      page: "kata",
-      ...(view ? { view } : {}),
-      ...(scope ? { scope } : {}),
-      ...(issue ? { issue } : {}),
-      ...(daemon ? { daemon } : {}),
     };
   }
   if (path === "/docs") {
@@ -720,8 +702,6 @@ function buildRouteEvent(r: Route): ForgeNavigateEvent {
     navType = "issue";
   } else if (r.page === "repos" || r.page === "repo-browser") {
     navType = "repos";
-  } else if (r.page === "kata") {
-    navType = "kata";
   } else if (r.page === "docs") {
     navType = "docs";
   } else if (r.page === "reviews") {
@@ -831,11 +811,6 @@ function embedConfigRepoName(repo: NonNullable<ReturnType<typeof getEmbedUIConfi
 
 function emptyToNull(value: string | null): string | null {
   return value && value.length > 0 ? value : null;
-}
-
-function parseKataView(value: string | null): KataTaskViewName | undefined {
-  if (value === null) return undefined;
-  return kataViewNames.has(value as KataTaskViewName) ? (value as KataTaskViewName) : undefined;
 }
 
 function parseRepoBrowserRefType(value: string | null): "branch" | "tag" | "commit" | undefined {

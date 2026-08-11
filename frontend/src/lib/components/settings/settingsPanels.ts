@@ -6,7 +6,6 @@ export interface SettingsPanelMeta {
   description: string;
   /** Extra search-only terms; never rendered. */
   keywords: string;
-  requiresKata?: boolean;
 }
 
 export const SETTINGS_PANELS: SettingsPanelMeta[] = [
@@ -57,7 +56,6 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     group: "Workspace",
     description: "Kata project repository identity overrides",
     keywords: "kata projects repositories mappings workspaces daemon project uid",
-    requiresKata: true,
   },
   {
     id: "settings-agents",
@@ -84,7 +82,3 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     keywords: "visible modes navigation tabs prs issues reviews docs kata",
   },
 ];
-
-export function settingsPanelsForModes(kataEnabled: boolean): SettingsPanelMeta[] {
-  return SETTINGS_PANELS.filter((panel) => !panel.requiresKata || kataEnabled);
-}

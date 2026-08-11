@@ -6,18 +6,15 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
-	"go.kenn.io/forge/internal/kata"
-	"go.kenn.io/forge/internal/server/kataapi"
+	katacatalog "go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/server/kata"
 )
 
 const (
-	kataDaemonReadTimeout = 20 * time.Second
-
 	// Generated responses are decoded from a complete byte slice by the
 	// generated runtime. Keep a generous default ceiling while still bounding
 	// the memory a configured daemon can make Kenn Forge retain per request.
@@ -82,15 +79,15 @@ type kataAPIClient interface {
 	) (*http.Response, error)
 }
 
-func newKataAPIClient(ctx context.Context, daemon kata.Daemon) (kataAPIClient, error) {
-	httpClient, baseURL, err := kataapi.DefaultDaemonHTTPClient(daemon)
+func newKataAPIClient(ctx context.Context, daemon katacatalog.Daemon) (kataAPIClient, error) {
+	httpClient, baseURL, err := kata.DefaultDaemonHTTPClient(daemon)
 	if err != nil {
 		return nil, err
 	}
 	options := []runtime.APIClientOption{
 		runtime.WithHTTPClient(kataGeneratedHTTPDoer{client: httpClient}),
 	}
-	if token := kataapi.DaemonForwardToken(daemon); token != "" {
+	if token := kata.DaemonForwardToken(daemon); token != "" {
 		options = append(options, runtime.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
 			req.Header.Set("Authorization", "Bearer "+token)
 			return nil

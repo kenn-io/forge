@@ -238,7 +238,7 @@ const config = {
     // @kenn-io/kit-ui is likewise consumed as Svelte source (svelte export
     // condition); its .svelte.ts rune modules cannot go through the dep
     // optimizer's plain-JS parse.
-    exclude: ["@kenn-io/kit-ui"],
+    exclude: ["@kenn-io/kit-ui", "@kenn-io/kata-ui"],
     include: [
       "@pierre/diffs",
       "@pierre/diffs/worker",
@@ -407,6 +407,7 @@ const config = {
       "@lucide/svelte/icons/terminal",
       "@lucide/svelte/icons/trash-2",
       "@lucide/svelte/icons/undo-2",
+      "@lucide/svelte/icons/unlink",
       "@lucide/svelte/icons/upload",
       "@lucide/svelte/icons/user-check",
       "@lucide/svelte/icons/user-round",

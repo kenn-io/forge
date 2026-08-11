@@ -454,7 +454,7 @@ func (s *Server) previewRepos(
 			return nil, httpapi.ProviderCallProblem(err, "github", host)
 		}
 	} else {
-		reader, err := s.syncer.DirectRepositoryReader(provider, host)
+		reader, err := s.syncer.RepositoryReader(provider, host)
 		if err != nil {
 			return nil, httpapi.ProviderCallProblem(err, string(provider), host)
 		}
@@ -491,7 +491,7 @@ func validateBulkExactRepos(
 		}
 		seenInput[key] = struct{}{}
 
-		_, refs, err := syncer.DirectResolveConfiguredRepo(ctx, candidate)
+		_, refs, err := syncer.ResolveConfiguredRepo(ctx, candidate)
 		if err != nil {
 			return nil, err
 		}

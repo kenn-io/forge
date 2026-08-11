@@ -22,7 +22,7 @@ func (s *Handler) autoAssignWorkspaceItem(
 
 	kind := httpapi.ProviderKind(repo)
 	host := httpapi.ProviderHost(repo)
-	caps, err := s.syncer.DirectProviderCapabilities(kind, host)
+	caps, err := s.syncer.ProviderCapabilities(kind, host)
 	if err != nil {
 		return fmt.Errorf("load provider capabilities: %w", err)
 	}
@@ -30,7 +30,7 @@ func (s *Handler) autoAssignWorkspaceItem(
 		return nil
 	}
 
-	registry := s.syncer.DirectRegistry()
+	registry := s.syncer.Registry()
 	userResolver, err := registry.AuthenticatedUserResolver(kind, host)
 	if err != nil {
 		return fmt.Errorf("resolve authenticated user capability: %w", err)

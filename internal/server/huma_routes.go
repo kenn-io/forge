@@ -1126,9 +1126,6 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 }
 
 func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*acceptedOutput, error) {
-	if err := s.requireSync(); err != nil {
-		return nil, err
-	}
 	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -1197,9 +1194,6 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 }
 
 func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInput) (*acceptedOutput, error) {
-	if err := s.requireSync(); err != nil {
-		return nil, err
-	}
 	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -1468,9 +1462,6 @@ func (s *Server) resolveItem(
 				RepoTracked: true,
 			},
 		}, nil
-	}
-	if err := s.requireSync(); err != nil {
-		return nil, err
 	}
 
 	if providerKind == platform.KindGitLab && itemTypeHint != "" {

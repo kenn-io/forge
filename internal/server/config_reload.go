@@ -14,7 +14,6 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/docsapi"
-	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -476,7 +475,7 @@ func (s *Server) reloadCredentialNeedsClientRebuild(
 		return false
 	}
 	for _, pc := range cfg.Platforms {
-		if _, err := s.syncer.DirectRepositoryReader(
+		if _, err := s.syncer.RepositoryReader(
 			platform.Kind(pc.Type), pc.Host,
 		); err == nil {
 			continue
@@ -664,7 +663,7 @@ func (s *Server) resolveReposForReload(
 	for _, raw := range repos {
 		host := raw.PlatformHostOrDefault()
 		kind := platform.Kind(raw.PlatformOrDefault())
-		if _, err := s.syncer.DirectRepositoryReader(kind, host); err != nil {
+		if _, err := s.syncer.RepositoryReader(kind, host); err != nil {
 			skipped = append(skipped, fmt.Sprintf(
 				"%s/%s@%s/%s",
 				string(kind), host, raw.Owner, raw.Name,
@@ -672,7 +671,7 @@ func (s *Server) resolveReposForReload(
 			continue
 		}
 		_, expanded, err := ghclient.ResolveConfiguredRepoWithRegistry(
-			ctx, s.syncer.Registry(), raw,
+			ctx, s.syncer.SyncRegistry(), raw,
 		)
 		if err != nil {
 			// Network failure or transient API error: fall back to a
@@ -686,44 +685,13 @@ func (s *Server) resolveReposForReload(
 				"name", raw.Name,
 				"err", err,
 			)
-			expanded = s.cachedReposForReload(ctx, previous, raw)
+			expanded = ghclient.FallbackConfiguredRepoRefs(previous, raw)
 		}
 		for _, repo := range expanded {
 			set.Add(repo, err == nil)
 		}
 	}
 	return set.Refs(), skipped
-}
-
-func (s *Server) cachedReposForReload(
-	ctx context.Context,
-	previous []ghclient.RepoRef,
-	raw config.Repo,
-) []ghclient.RepoRef {
-	candidates := slices.Clone(previous)
-	if s.db == nil {
-		return ghclient.FallbackConfiguredRepoRefs(candidates, raw)
-	}
-	repos, err := s.db.ListRepos(ctx)
-	if err != nil {
-		slog.Warn("list cached repos for config reload", "err", err)
-		return ghclient.FallbackConfiguredRepoRefs(candidates, raw)
-	}
-	for _, repo := range repos {
-		candidates = append(candidates, ghclient.RepoRef{
-			Platform:           httpapi.ProviderKind(repo),
-			RepoID:             repo.ID,
-			Owner:              repo.Owner,
-			Name:               repo.Name,
-			PlatformHost:       httpapi.ProviderHost(repo),
-			RepoPath:           repo.RepoPath,
-			PlatformExternalID: repo.PlatformRepoID,
-			WebURL:             repo.WebURL,
-			CloneURL:           repo.CloneURL,
-			DefaultBranch:      repo.DefaultBranch,
-		})
-	}
-	return ghclient.FallbackConfiguredRepoRefs(candidates, raw)
 }
 
 // sanitizeConfigError trims internal path prefixes from the error so the

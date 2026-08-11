@@ -90,6 +90,13 @@ GitHub may additionally define exact-repository and owner authorization routes.
 
 - Self-hosted hosts are hostnames with optional ports, not URL paths.
 - A missing token should fail only the provider host that needs it.
+- Disabled startup registers credential descriptors without resolving them, so
+  provider tokens stay lazy (`cmd/kenn-forge/provider_startup.go::registerProviderTokenSources`).
+- Refresh access uses the gated registry; only explicit foreground provider
+  operations use direct access (`internal/github/sync.go::Syncer.SyncRegistry`).
+- Refresh interfaces that may be retained across policy setup must recheck the
+  gate when invoked, not only when resolved
+  (`internal/github/sync.go::Syncer.MergeRequestReviewThreadReader`).
 
 Provider clients must be registered by `(platform, platform_host)`. GitHub rate
 trackers and sync budgets are keyed by `(host, authenticated identity)`: PATs
@@ -148,23 +155,6 @@ timeline/comment-like events through provider capability interfaces in
 `internal/platform`. Providers implement only supported optional interfaces;
 registry helpers return typed errors for missing providers or capabilities.
 
-- The syncer stores the gated registry internally by default; only explicit
-  foreground operations unwrap `Syncer.DirectRegistry`, while refreshes use
-  `Syncer.Registry` (`internal/github/sync.go::NewSyncerWithRegistry`).
-- Review-thread reads recheck the gate when the interface method runs, so a
-  previously obtained reader cannot bypass disabled sync (`internal/platform/registry.go::mergeRequestReviewThreadReaderGate`).
-- Disabled GitHub startup derives host-scoped accounting identity locally;
-  credential-route construction must not probe the provider (`cmd/kenn-forge/provider_startup.go::githubIdentityResolverForSyncPolicy`).
-- Disabled provider work follows this operation contract:
-
-  | Operation | Disabled contract |
-  | --- | --- |
-  | Scheduled, manual, item, workspace, and post-mutation refresh | Reject before provider access; HTTP admission returns 503 before side effects (`internal/server/huma_routes.go::Server.requireSync`). |
-  | Startup or reload repository expansion | Use the gated registry and recover configured identities from SQLite (`cmd/kenn-forge/main.go::providerRegistryForSyncPolicy`). |
-  | Archive start/hydration, notification sync/ack, and deferred merge | Reject before queue or success-timestamp mutation; cached archive status/report/pause remain local (`internal/github/notifications_sync.go::Syncer.RunNotificationSync`). |
-  | Direct mutations and their required preconditions, workspace auto-assignment, repository import/preview, and Markdown images | Explicit `DirectRegistry` access may call the provider; no follow-up refresh bypasses the gate (`internal/github/sync.go::Syncer.DirectRegistry`). |
-- Run and quota-snapshot chokepoints also reject disabled sync because GitHub
-  credential routers bypass the provider registry (`internal/github/sync.go::Syncer.runOnce`).
 - Missing optional capabilities should degrade that feature with a typed
   platform error, not break unrelated sync work.
 - Never put foreground deadlines on a shared provider HTTP client; scope them to

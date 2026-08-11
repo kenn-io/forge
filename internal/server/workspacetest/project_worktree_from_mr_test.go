@@ -18,7 +18,6 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil"
@@ -340,51 +339,6 @@ func TestCreateWorktreeFromMergeRequestRouteUnknownNumber(t *testing.T) {
 	require.Equal(http.StatusNotFound, resp.StatusCode)
 	assert.Equal("pullNotFound", decodeProblemCode(t, resp))
 	resp.Body.Close()
-	_, statErr := os.Stat(dest)
-	assert.True(os.IsNotExist(statErr))
-}
-
-func TestCreateWorktreeFromMergeRequestRouteRejectsDisabledSyncOnCacheMiss(t *testing.T) {
-	acquireWorkspaceGitSlot(t)
-	require := Require.New(t)
-	assert := assert.New(t)
-
-	database := dbtest.Open(t)
-	_, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
-	)
-	require.NoError(err)
-	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": testutil.NewFixtureClient()},
-		database, nil,
-		[]ghclient.RepoRef{{
-			Platform: platform.KindGitHub, PlatformHost: "github.com",
-			Owner: "acme", Name: "widget",
-		}},
-		time.Minute, nil, nil,
-	)
-	t.Cleanup(syncer.Stop)
-	syncer.DisableSync()
-	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
-		HostCheckAllowLoopbackAnyPort: true,
-	})
-	ts := httptest.NewServer(srv)
-	defer ts.Close()
-
-	projectID := registerIdentifiedProject(t, ts, initLifecycleRouteRepo(t))
-	dest := filepath.Join(t.TempDir(), "wt")
-	resp := httpDo(t, ts, http.MethodPost,
-		"/api/v1/projects/"+projectID+"/worktrees/from-merge-request",
-		mustMarshal(t, map[string]any{
-			"number": 99,
-			"branch": "pr-99",
-			"path":   dest,
-		}),
-	)
-	defer resp.Body.Close()
-
-	require.Equal(http.StatusServiceUnavailable, resp.StatusCode)
-	assert.Equal("serviceUnavailable", decodeProblemCode(t, resp))
 	_, statErr := os.Stat(dest)
 	assert.True(os.IsNotExist(statErr))
 }

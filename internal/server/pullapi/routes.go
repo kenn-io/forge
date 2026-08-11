@@ -1097,7 +1097,7 @@ func (s *Handler) replyToDiscussion(ctx context.Context, input *replyToDiscussio
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 
-	provider, err := s.syncer.DirectRegistry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
+	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.Internal("provider lookup failed")
 	}
@@ -1222,7 +1222,7 @@ func (s *Handler) resolveDiscussion(ctx context.Context, input *resolveDiscussio
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 
-	provider, err := s.syncer.DirectRegistry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
+	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.Internal("provider lookup failed")
 	}
@@ -2067,7 +2067,10 @@ func (s *Handler) setPRGitHubState(
 			{
 				client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
 				if clientErr != nil {
-					return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
+					return nil, httpapi.ProviderCallProblemWithDetail(
+						clientErr, string(repoProviderKind(*repo)), repoProviderHost(*repo),
+						"GitHub API error: "+err.Error(),
+					)
 				}
 				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,

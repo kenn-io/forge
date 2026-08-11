@@ -19,7 +19,6 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/projects"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -732,10 +731,6 @@ func (s *Handler) createProjectWorktreeFromMergeRequest(
 			if err != nil {
 				return nil, httpapi.Internal("failed to query merge request")
 			}
-		} else if errors.Is(syncErr, platform.ErrSyncDisabled) {
-			return nil, httpapi.ProviderCallProblem(
-				syncErr, identity.Platform, identity.Host,
-			)
 		}
 	}
 	if mr == nil {

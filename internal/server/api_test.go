@@ -14499,6 +14499,54 @@ func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	assert.Nil(after.ClosedAt)
 }
 
+func TestAPIStateMutationDoesNotRecoverFromProviderWhenSyncDisabled(t *testing.T) {
+	for _, itemType := range []string{"pull request", "issue"} {
+		t.Run(itemType, func(t *testing.T) {
+			require := require.New(t)
+			var recoveryReads atomic.Int32
+			mock := &mockGH{
+				editPullRequestFn: func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
+					return nil, make422Error()
+				},
+				getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+					recoveryReads.Add(1)
+					return nil, nil
+				},
+				editIssueFn: func(context.Context, string, string, int, string) (*gh.Issue, error) {
+					return nil, make422Error()
+				},
+				getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+					recoveryReads.Add(1)
+					return nil, nil
+				},
+			}
+			srv, database := setupTestServerWithMock(t, mock)
+			srv.syncer.DisableSync()
+			client := setupTestClient(t, srv)
+			var status int
+			if itemType == "pull request" {
+				seedPR(t, database, "acme", "widget", 1)
+				resp, err := client.HTTP.SetPrGithubStateWithResponse(
+					t.Context(), "gh", "acme", "widget", 1,
+					generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+				)
+				require.NoError(err)
+				status = resp.StatusCode()
+			} else {
+				seedIssue(t, database, "acme", "widget", 5, "open")
+				resp, err := client.HTTP.SetIssueGithubStateWithResponse(
+					t.Context(), "gh", "acme", "widget", 5,
+					generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+				)
+				require.NoError(err)
+				status = resp.StatusCode()
+			}
+			require.Equal(http.StatusServiceUnavailable, status)
+			require.Zero(recoveryReads.Load())
+		})
+	}
+}
+
 func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 	require := require.New(t)
 	// EditPullRequest returns 422, but re-fetch shows PR is already closed.
@@ -30287,46 +30335,6 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	require.NotNil(pr)
 	assert.Equal(prTitleFromDetail, pr.Title)
 	assert.Equal(headSHA, pr.PlatformHeadSHA)
-}
-
-func TestWorkspaceManualRefreshRejectsDisabledSyncBeforeProviderCalls(t *testing.T) {
-	t.Parallel()
-	acquireRootWorkspaceGitSlot(t)
-
-	assert := assert.New(t)
-	require := require.New(t)
-	var providerCalls atomic.Int32
-	mock := &mockGH{
-		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
-			providerCalls.Add(1)
-			return nil, nil
-		},
-		listOpenIssuesFn: func(context.Context, string, string) ([]*gh.Issue, error) {
-			providerCalls.Add(1)
-			return nil, nil
-		},
-	}
-	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
-		t, nil, mock, "github.com",
-		ServerOptions{
-			PtyOwnerInProcess:                  true,
-			DisableWorkspaceBackgroundMonitors: true,
-		},
-	)
-	workspace := createReadyWorkspace(t, t.Context(), fixture.client)
-	fixture.server.syncer.DisableSync()
-	providerCalls.Store(0)
-
-	refreshRR := doJSON(
-		t,
-		fixture.server,
-		http.MethodPost,
-		"/api/v1/workspaces/"+workspace.Id+"/refresh",
-		nil,
-	)
-
-	require.Equal(http.StatusServiceUnavailable, refreshRR.Code, refreshRR.Body.String())
-	assert.Zero(providerCalls.Load())
 }
 
 // TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure drives

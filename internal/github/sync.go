@@ -926,8 +926,7 @@ type Syncer struct {
 }
 
 // DisableSync permanently prevents this Syncer from starting provider refresh
-// work. Call it before Start; it does not cancel work that is already running.
-// Provider capability and mutation access remain available.
+// work. It must be called during startup, before the Syncer is exposed.
 func (s *Syncer) DisableSync() {
 	if s != nil {
 		s.syncDisabled.Store(true)
@@ -1207,12 +1206,11 @@ func NewSyncerWithRegistry(
 			displayNameFailureTTL,
 		),
 	}
-	// Sync code uses the gated registry by default. Foreground provider
-	// operations must opt into the original registry through DirectRegistry().
 	s.directClients = registry
 	s.clients = registry.WithProviderGate(s.syncDisabledError)
 	s.parallelism.Store(defaultParallelism)
 	s.status.Store(&SyncStatus{})
+
 	// Wire budget reset to rate tracker window resets.
 	for h, rt := range rateTrackers {
 		if b, ok := budgets[h]; ok && rt != nil {
@@ -1244,6 +1242,9 @@ func (s *Syncer) SetArchiveService(runner archiveRunner) {
 }
 
 func (s *Syncer) WakeArchive() {
+	if !s.SyncEnabled() {
+		return
+	}
 	select {
 	case s.archiveWake <- struct{}{}:
 	default:
@@ -3718,6 +3719,9 @@ func (s *Syncer) triggerRunWithCadence(
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 ) {
+	if !s.SyncEnabled() {
+		return
+	}
 	s.lifecycleMu.Lock()
 	if s.stopped {
 		s.lifecycleMu.Unlock()
@@ -3994,6 +3998,8 @@ func (s *Syncer) optionalGitHubClientFor(repo RepoRef) (Client, bool) {
 	return client, true
 }
 
+// clientFor returns the legacy GitHub Client for the given repo's host.
+// Repos with an empty host default to "github.com".
 func clientForRegistry(registry *platform.Registry, repo RepoRef) (Client, error) {
 	host := repoHost(repo)
 	provider, err := registry.Provider(repoPlatform(repo), host)
@@ -4010,7 +4016,6 @@ func clientForRegistry(registry *platform.Registry, repo RepoRef) (Client, error
 	return legacy.GitHubClient(), nil
 }
 
-// clientFor returns the legacy GitHub client through the sync provider gate.
 func (s *Syncer) clientFor(repo RepoRef) (Client, error) {
 	return clientForRegistry(s.clients, repo)
 }
@@ -4057,17 +4062,18 @@ func (s *Syncer) ClientForRepo(
 	)
 }
 
-// ClientForHost returns a legacy GitHub client through the sync provider gate.
+// ClientForHost returns the Client for a specific host,
+// or an error if no client is configured for that host.
 func (s *Syncer) ClientForHost(
 	host string,
 ) (Client, error) {
 	return s.clientFor(RepoRef{PlatformHost: host})
 }
 
-// DirectClientForHost returns an ungated legacy GitHub client for an explicit
+// DirectClientForHost returns a legacy GitHub client for an explicit
 // foreground provider operation.
 func (s *Syncer) DirectClientForHost(host string) (Client, error) {
-	return clientForRegistry(s.DirectRegistry(), RepoRef{PlatformHost: host})
+	return clientForRegistry(s.directClients, RepoRef{PlatformHost: host})
 }
 
 func (s *Syncer) ProviderCapabilities(
@@ -4084,196 +4090,192 @@ func (s *Syncer) ProviderCapabilities(
 		}
 		host = defaultHost
 	}
-	return s.Registry().Capabilities(kind, canonicalRepoHost(host))
-}
-
-func (s *Syncer) DirectProviderCapabilities(
-	kind platform.Kind,
-	host string,
-) (platform.Capabilities, error) {
-	if kind == "" {
-		kind = platform.KindGitHub
-	}
-	if strings.TrimSpace(host) == "" {
-		defaultHost, ok := platform.DefaultHost(kind)
-		if !ok {
-			return platform.Capabilities{}, platform.ProviderNotConfigured(kind, "")
-		}
-		host = defaultHost
-	}
-	return s.DirectRegistry().Capabilities(kind, canonicalRepoHost(host))
+	return s.directClients.Capabilities(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) RepositoryReader(
 	kind platform.Kind,
 	host string,
 ) (platform.RepositoryReader, error) {
-	return s.Registry().RepositoryReader(kind, canonicalRepoHost(host))
+	return s.directClients.RepositoryReader(kind, canonicalRepoHost(host))
 }
 
-func (s *Syncer) DirectRepositoryReader(
-	kind platform.Kind,
-	host string,
-) (platform.RepositoryReader, error) {
-	return s.DirectRegistry().RepositoryReader(kind, canonicalRepoHost(host))
-}
-
-// Registry returns the gated provider registry used by sync and refresh work.
+// Registry returns the boot-time provider registry for explicit foreground
+// operations. Callers must not mutate it.
 func (s *Syncer) Registry() *platform.Registry {
-	return s.clients
+	return s.directClients
 }
 
-// DirectRegistry returns the ungated boot-time provider registry for explicit
-// foreground provider operations. Callers must not mutate the returned view.
-func (s *Syncer) DirectRegistry() *platform.Registry {
-	return s.directClients
+// SyncRegistry returns the provider-gated registry used by refresh work.
+func (s *Syncer) SyncRegistry() *platform.Registry {
+	return s.clients
 }
 
 func (s *Syncer) LabelReader(
 	kind platform.Kind,
 	host string,
 ) (platform.LabelReader, error) {
-	return s.Registry().LabelReader(kind, canonicalRepoHost(host))
+	return s.directClients.LabelReader(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) CommentMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.CommentMutator, error) {
-	return s.DirectRegistry().CommentMutator(kind, canonicalRepoHost(host))
+	return s.directClients.CommentMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) StateMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.StateMutator, error) {
-	return s.DirectRegistry().StateMutator(kind, canonicalRepoHost(host))
+	return s.directClients.StateMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) MergeMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.MergeMutator, error) {
-	return s.DirectRegistry().MergeMutator(kind, canonicalRepoHost(host))
+	return s.directClients.MergeMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) WorkflowApprovalMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.WorkflowApprovalMutator, error) {
-	return s.DirectRegistry().WorkflowApprovalMutator(kind, canonicalRepoHost(host))
+	return s.directClients.WorkflowApprovalMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) ReadyForReviewMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.ReadyForReviewMutator, error) {
-	return s.DirectRegistry().ReadyForReviewMutator(kind, canonicalRepoHost(host))
+	return s.directClients.ReadyForReviewMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) DraftMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.DraftMutator, error) {
-	return s.DirectRegistry().DraftMutator(kind, canonicalRepoHost(host))
+	return s.directClients.DraftMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) IssueMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.IssueMutator, error) {
-	return s.DirectRegistry().IssueMutator(kind, canonicalRepoHost(host))
+	return s.directClients.IssueMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) LabelMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.LabelMutator, error) {
-	return s.DirectRegistry().LabelMutator(kind, canonicalRepoHost(host))
+	return s.directClients.LabelMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) ReviewMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.ReviewMutator, error) {
-	return s.DirectRegistry().ReviewMutator(kind, canonicalRepoHost(host))
+	return s.directClients.ReviewMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) RequestChangesMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.RequestChangesMutator, error) {
-	return s.DirectRegistry().RequestChangesMutator(kind, canonicalRepoHost(host))
+	return s.directClients.RequestChangesMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) AssigneeMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.AssigneeMutator, error) {
-	return s.DirectRegistry().AssigneeMutator(kind, canonicalRepoHost(host))
+	return s.directClients.AssigneeMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) ReviewerMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.ReviewerMutator, error) {
-	return s.DirectRegistry().ReviewerMutator(kind, canonicalRepoHost(host))
+	return s.directClients.ReviewerMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) DiffReviewDraftMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.DiffReviewDraftMutator, error) {
-	return s.DirectRegistry().DiffReviewDraftMutator(kind, canonicalRepoHost(host))
+	return s.directClients.DiffReviewDraftMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) ReviewSuggestionApplier(
 	kind platform.Kind,
 	host string,
 ) (platform.ReviewSuggestionApplier, error) {
-	return s.DirectRegistry().ReviewSuggestionApplier(kind, canonicalRepoHost(host))
+	return s.directClients.ReviewSuggestionApplier(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) DiffReviewThreadResolver(
 	kind platform.Kind,
 	host string,
 ) (platform.DiffReviewThreadResolver, error) {
-	return s.DirectRegistry().DiffReviewThreadResolver(kind, canonicalRepoHost(host))
+	return s.directClients.DiffReviewThreadResolver(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) MergeRequestReviewThreadReader(
 	kind platform.Kind,
 	host string,
 ) (platform.MergeRequestReviewThreadReader, error) {
-	return s.clients.MergeRequestReviewThreadReader(kind, canonicalRepoHost(host))
+	reader, err := s.directClients.MergeRequestReviewThreadReader(kind, canonicalRepoHost(host))
+	if err != nil {
+		return nil, err
+	}
+	return syncGatedReviewThreadReader{syncer: s, reader: reader}, nil
+}
+
+type syncGatedReviewThreadReader struct {
+	syncer *Syncer
+	reader platform.MergeRequestReviewThreadReader
+}
+
+func (r syncGatedReviewThreadReader) ListMergeRequestReviewThreads(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) ([]platform.MergeRequestReviewThread, error) {
+	if err := r.syncer.syncDisabledError(); err != nil {
+		return nil, err
+	}
+	return r.reader.ListMergeRequestReviewThreads(ctx, ref, number)
 }
 
 func (s *Syncer) MergeRequestContentMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.MergeRequestContentMutator, error) {
-	return s.DirectRegistry().MergeRequestContentMutator(kind, canonicalRepoHost(host))
+	return s.directClients.MergeRequestContentMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) IssueContentMutator(
 	kind platform.Kind,
 	host string,
 ) (platform.IssueContentMutator, error) {
-	return s.DirectRegistry().IssueContentMutator(kind, canonicalRepoHost(host))
+	return s.directClients.IssueContentMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) ResolveConfiguredRepo(
 	ctx context.Context,
 	repo config.Repo,
 ) (ConfiguredRepoStatus, []RepoRef, error) {
-	return ResolveConfiguredRepoWithRegistry(ctx, s.Registry(), repo)
+	return ResolveConfiguredRepoWithRegistry(ctx, s.directClients, repo)
 }
 
-func (s *Syncer) DirectResolveConfiguredRepo(
+func (s *Syncer) ResolveConfiguredRepoForSync(
 	ctx context.Context,
 	repo config.Repo,
 ) (ConfiguredRepoStatus, []RepoRef, error) {
-	return ResolveConfiguredRepoWithRegistry(ctx, s.DirectRegistry(), repo)
+	return ResolveConfiguredRepoWithRegistry(ctx, s.clients, repo)
 }
 
 func (s *Syncer) trackedRepoOnHost(owner, name, host string) (RepoRef, bool) {
@@ -4844,6 +4846,9 @@ func (s *Syncer) SyncWatchedMRs(ctx context.Context) {
 }
 
 func (s *Syncer) syncWatchedMRs(ctx context.Context) {
+	if !s.SyncEnabled() {
+		return
+	}
 	s.watchSyncMu.Lock()
 	defer s.watchSyncMu.Unlock()
 
@@ -7478,7 +7483,7 @@ func (s *Syncer) indexSyncRepo(
 	repoID int64,
 	cloneFetchOK bool,
 ) error {
-	caps, err := s.ProviderCapabilities(repoPlatform(repo), repoHost(repo))
+	caps, err := s.clients.Capabilities(repoPlatform(repo), repoHost(repo))
 	if err != nil {
 		return fmt.Errorf("resolve provider capabilities for %s/%s: %w", repo.Owner, repo.Name, err)
 	}

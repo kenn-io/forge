@@ -8,17 +8,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	_ "modernc.org/sqlite"
@@ -306,9 +311,10 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert.NotContains(specs.frontend.env, "SESSION_COOKIE=secret-cookie")
 	assert.Contains(specs.backend.env, "KENN_FORGE_GITHUB_TOKEN=secret-token")
 	assert.Contains(specs.backend.env, "OPENAI_API_KEY=secret-openai")
+	assert.Contains(specs.backend.env, "BACKEND_ARGS=--disable-sync")
 }
 
-func TestBuildCommandSpecsControlsProviderSync(t *testing.T) {
+func TestBuildCommandSpecsAllowsExplicitSyncOptIn(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("BACKEND_ARGS", "--debug")
 	run := ephemeralRun{
@@ -318,12 +324,123 @@ func TestBuildCommandSpecsControlsProviderSync(t *testing.T) {
 		logDir:       "/tmp/kenn-forge-dev/logs",
 	}
 
-	disabled := buildCommandSpecs(run, false, nil)
-	enabled := buildCommandSpecs(run, true, nil)
+	specs := buildCommandSpecs(run, true, nil)
 
-	assert.Contains(disabled.backend.env, "BACKEND_ARGS=--debug --disable-sync")
-	assert.Contains(enabled.backend.env, "BACKEND_ARGS=--debug")
-	assert.NotContains(enabled.backend.env, "--disable-sync")
+	assert.Contains(specs.backend.env, "BACKEND_ARGS=--debug")
+	assert.NotContains(specs.backend.env, "--disable-sync")
+}
+
+func TestDevEphemeralDefaultStartsWithoutProviderAccess(t *testing.T) {
+	require := require.New(t)
+	repositoryRoot := repoRoot(t)
+	forgeBin := filepath.Join(t.TempDir(), "kenn-forge")
+	build := procutil.Command("go", "build", "-o", forgeBin, "./cmd/kenn-forge")
+	build.Dir = repositoryRoot
+	output, err := build.CombinedOutput()
+	require.NoError(err, string(output))
+	backendScript, err := os.ReadFile(filepath.Join(repositoryRoot, "scripts", "dev-stack-backend.sh"))
+	require.NoError(err)
+
+	var providerCalls atomic.Int32
+	provider := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"id":42,"path":"widget","path_with_namespace":"acme/widget"}`)
+	}))
+	provider.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			providerCalls.Add(1)
+		}
+	}
+	provider.StartTLS()
+	t.Cleanup(provider.Close)
+	providerHost := provider.Listener.Addr().String()
+
+	root := t.TempDir()
+	sourceDataDir := filepath.Join(root, "source-data")
+	require.NoError(os.MkdirAll(sourceDataDir, 0o700))
+	sourcePath := filepath.Join(root, "source.toml")
+	sourceConfig := config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, DataDir: sourceDataDir,
+		Repos: []config.Repo{{
+			Platform: "github", PlatformHost: providerHost,
+			Owner: "acme", Name: "widget",
+		}},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: providerHost, AppID: 7,
+			PrivateKeyPath: filepath.Join(root, "missing-app-key.pem"),
+			InstallationID: 789, InstallationAccount: "acme",
+			RepositorySelection: "all",
+		}},
+	}
+	require.NoError(sourceConfig.Save(sourcePath))
+	database := dbtest.OpenAt(t, filepath.Join(sourceDataDir, "forge.db"))
+	_, err = database.UpsertRepoByProviderID(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: providerHost, PlatformRepoID: "42",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+	require.NoError(database.Close())
+
+	commandDir := filepath.Join(root, "commands")
+	require.NoError(os.MkdirAll(filepath.Join(commandDir, "scripts"), 0o700))
+	require.NoError(os.WriteFile(
+		filepath.Join(commandDir, "scripts", "dev-stack-backend.sh"), backendScript, 0o700,
+	))
+	writeBlockingScript(t, filepath.Join(commandDir, "scripts", "frontend-dev.sh"))
+	airPath := filepath.Join(root, "air")
+	require.NoError(os.WriteFile(airPath, []byte(`#!/usr/bin/env sh
+while [ "$1" != "--" ]; do shift; done
+shift
+exec "$FORGE_TEST_BIN" "$@"
+`), 0o700))
+	t.Setenv("AIR_BIN", airPath)
+	t.Setenv("FORGE_TEST_BIN", forgeBin)
+	t.Setenv("KENN_FORGE_HOME", filepath.Join(root, "runtime"))
+	t.Setenv("BACKEND_ARGS", "")
+
+	oldDir, err := os.Getwd()
+	require.NoError(err)
+	require.NoError(os.Chdir(commandDir))
+	defer func() { require.NoError(os.Chdir(oldDir)) }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(ctx, []string{
+			"-config", sourcePath,
+			"-work-dir", filepath.Join(root, "run"),
+			"-backend-port", "0", "-frontend-port", "0",
+		})
+	}()
+	status := waitForStatusFile(t, filepath.Join(root, "run", "dev-ephemeral.json"))
+	require.Eventually(func() bool {
+		resp, requestErr := http.Get(status.BackendURL + "/api/v1/repos")
+		if requestErr != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, 10*time.Second, 100*time.Millisecond)
+	require.Zero(providerCalls.Load())
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodPost, status.BackendURL+"/api/v1/sync", strings.NewReader("{}"),
+	)
+	require.NoError(err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(err)
+	require.Equal(http.StatusServiceUnavailable, resp.StatusCode)
+	require.NoError(resp.Body.Close())
+
+	cancel()
+	select {
+	case runErr := <-errCh:
+		require.NoError(runErr)
+	case <-time.After(5 * time.Second):
+		require.Fail("timed out waiting for dev-ephemeral shutdown")
+	}
 }
 
 func TestBuildCommandSpecsPreservesExplicitTelemetrySetting(t *testing.T) {

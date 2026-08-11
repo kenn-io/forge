@@ -893,7 +893,7 @@ func (s *Handler) providerMergeRequestUpdatedAt(
 	repo db.Repo,
 	number int,
 ) (time.Time, error) {
-	reader, err := s.syncer.Registry().MergeRequestReader(
+	reader, err := s.syncer.SyncRegistry().MergeRequestReader(
 		repoProviderKind(repo), repoProviderHost(repo),
 	)
 	if err != nil {

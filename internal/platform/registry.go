@@ -1,9 +1,6 @@
 package platform
 
-import (
-	"context"
-	"fmt"
-)
+import "fmt"
 
 type Registry struct {
 	providers map[providerKey]Provider
@@ -43,8 +40,9 @@ func (r *Registry) Register(provider Provider) error {
 	return nil
 }
 
-// WithProviderGate returns a registry view that checks gate before exposing a
-// provider. The original registry remains unchanged.
+// WithProviderGate returns a registry view that rejects provider access when
+// gate returns an error. The original registry remains available for explicit
+// foreground provider operations.
 func (r *Registry) WithProviderGate(gate func() error) *Registry {
 	if r == nil {
 		return &Registry{gate: gate}
@@ -65,23 +63,15 @@ func (r *Registry) Provider(kind Kind, host string) (Provider, error) {
 	return provider, nil
 }
 
-func (r *Registry) Providers() ([]Provider, error) {
-	if r == nil {
-		return nil, nil
-	}
-	if r.gate != nil {
-		if err := r.gate(); err != nil {
-			return nil, err
-		}
-	}
-	if len(r.providers) == 0 {
-		return nil, nil
+func (r *Registry) Providers() []Provider {
+	if r == nil || len(r.providers) == 0 {
+		return nil
 	}
 	providers := make([]Provider, 0, len(r.providers))
 	for _, provider := range r.providers {
 		providers = append(providers, provider)
 	}
-	return providers, nil
+	return providers
 }
 
 func (r *Registry) Capabilities(kind Kind, host string) (Capabilities, error) {
@@ -505,26 +495,7 @@ func (r *Registry) MergeRequestReviewThreadReader(
 	if !ok {
 		return nil, UnsupportedCapability(kind, host, "read_review_threads")
 	}
-	if r.gate != nil {
-		return mergeRequestReviewThreadReaderGate{reader: reader, gate: r.gate}, nil
-	}
 	return reader, nil
-}
-
-type mergeRequestReviewThreadReaderGate struct {
-	reader MergeRequestReviewThreadReader
-	gate   func() error
-}
-
-func (g mergeRequestReviewThreadReaderGate) ListMergeRequestReviewThreads(
-	ctx context.Context,
-	ref RepoRef,
-	number int,
-) ([]MergeRequestReviewThread, error) {
-	if err := g.gate(); err != nil {
-		return nil, err
-	}
-	return g.reader.ListMergeRequestReviewThreads(ctx, ref, number)
 }
 
 func (r *Registry) MergeRequestContentMutator(

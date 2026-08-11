@@ -276,7 +276,7 @@ dev: ensure-embed-dir check-air
 		"$(AIR_BIN)" -c .air.toml -- serve $(ARGS); \
 	fi
 
-# Run backend and frontend dev servers on free ports with isolated config/data.
+# Run backend and frontend dev servers on free ports with isolated config/data and sync disabled.
 dev-ephemeral: ensure-embed-dir ensure-tmp-dir
 	go run ./tools/devephemeral $(ARGS)
 
@@ -432,7 +432,7 @@ help:
 	@echo "  air-install    - Install air live reload tool"
 	@echo ""
 	@echo "  dev            - Run Go server with air live reload, debug file logs, and info-level console logs"
-	@echo "  dev-ephemeral  - Run isolated dev servers with sync disabled; opt in with ARGS=\"-sync\""
+	@echo "  dev-ephemeral  - Run backend and frontend on free ports with copied DB state and sync disabled (ARGS=-sync opts in)"
 	@echo "  dev-ephemeral-stop - Stop the default ephemeral dev stack, or use STATUS=/path/to/dev-ephemeral.json"
 	@echo "  dev-clone-db   - Clone current DB into tmp/dev-db-clone and run backend on DEV_CLONE_PORT (default 8092)"
 	@echo "  frontend-dev-clone-db - Run Vite against cloned DB backend (default port $(DEV_CLONE_FRONTEND_PORT))"

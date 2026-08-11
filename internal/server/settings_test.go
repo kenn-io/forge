@@ -951,36 +951,6 @@ name = "*"
 		"glob refresh through the API must keep the exact entry's provenance")
 }
 
-func TestHandleRefreshRepoRejectsDisabledSyncBeforeProviderRead(t *testing.T) {
-	require := require.New(t)
-	var providerReads atomic.Int32
-	srv, _, _ := setupTestServerWithConfigContent(t, `
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[[repos]]
-owner = "acme"
-name = "*"
-`, &mockGH{
-		listReposByOwnerFn: func(context.Context, string) ([]*gh.Repository, error) {
-			providerReads.Add(1)
-			return nil, nil
-		},
-	})
-	srv.syncer.DisableSync()
-	providerReads.Store(0)
-
-	rr := doJSON(
-		t, srv, http.MethodPost,
-		"/api/v1/repo/gh/acme/*/refresh", nil,
-	)
-
-	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())
-	require.Zero(providerReads.Load())
-}
-
 func trackedRepoProvenancePath(srv *Server, owner, name string) string {
 	for _, repo := range srv.syncer.TrackedRepos() {
 		if strings.EqualFold(repo.Owner, owner) && strings.EqualFold(repo.Name, name) {

@@ -53,7 +53,7 @@ func (s *Server) getMarkdownImageFor(
 	}
 	kind := httpapi.ProviderKind(*repo)
 	host := httpapi.ProviderHost(*repo)
-	reader, err := s.syncer.DirectRegistry().MarkdownImageReader(kind, host)
+	reader, err := s.syncer.Registry().MarkdownImageReader(kind, host)
 	if err != nil {
 		return nil, markdownImageError(ctx, err, kind, host)
 	}

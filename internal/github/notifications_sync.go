@@ -87,8 +87,8 @@ func notificationThreadGetterFor(client notificationClient) (notificationThreadG
 }
 
 func (s *Syncer) RunNotificationSync(ctx context.Context) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
+	if !s.SyncEnabled() {
+		return platform.ErrSyncDisabled
 	}
 	if !s.BeginNotificationSync() {
 		return nil
@@ -133,9 +133,6 @@ func (s *Syncer) NotificationSyncStatus() NotificationSyncStatus {
 }
 
 func (s *Syncer) SyncNotifications(ctx context.Context) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
-	}
 	ctx = WithSyncBudget(ctx)
 	repos := excludeArchivedRepos(s.TrackedRepos())
 	tracked := make(map[string]RepoRef, len(repos))
@@ -163,10 +160,7 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 		}
 		tracked[notificationRepoKey(platformName, host, repo.Owner, repo.Name)] = trackedRepo
 	}
-	clients, err := s.notificationClients()
-	if err != nil {
-		return err
-	}
+	clients := s.notificationClients()
 	var errs []error
 	for _, entry := range clients {
 		providerWork := s.beginNotificationProviderWork(
@@ -254,11 +248,8 @@ type notificationHostClient struct {
 	client   notificationClient
 }
 
-func (s *Syncer) notificationClients() ([]notificationHostClient, error) {
-	providers, err := s.clients.Providers()
-	if err != nil {
-		return nil, err
-	}
+func (s *Syncer) notificationClients() []notificationHostClient {
+	providers := s.clients.Providers()
 	clients := make([]notificationHostClient, 0, len(providers))
 	for _, provider := range providers {
 		caps := provider.Capabilities()
@@ -277,7 +268,7 @@ func (s *Syncer) notificationClients() ([]notificationHostClient, error) {
 		}
 		return clients[i].host < clients[j].host
 	})
-	return clients, nil
+	return clients
 }
 
 func (s *Syncer) notificationClientForHost(kind platform.Kind, host string) (notificationClient, bool) {
@@ -762,9 +753,6 @@ func notificationToDB(host string, repo RepoRef, thread NotificationThread, sync
 }
 
 func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platform.Kind, host string, batchSize int) error {
-	if err := s.syncDisabledError(); err != nil {
-		return err
-	}
 	ctx = WithSyncBudget(ctx)
 	if batchSize <= 0 {
 		batchSize = 25
@@ -1284,12 +1272,8 @@ func notificationReadRateLimitNextAttempt(err error, now time.Time) (time.Time, 
 }
 
 func (s *Syncer) ProcessQueuedNotificationReadsForAllHosts(ctx context.Context, batchSize int) error {
-	clients, err := s.notificationClients()
-	if err != nil {
-		return err
-	}
 	var errs []error
-	for _, entry := range clients {
+	for _, entry := range s.notificationClients() {
 		if err := s.ProcessQueuedNotificationReads(ctx, entry.platform, entry.host, batchSize); err != nil {
 			errs = append(errs, err)
 		}

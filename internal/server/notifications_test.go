@@ -16,7 +16,6 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 func seedServerNotification(t *testing.T, database *db.DB) int64 {
@@ -514,42 +513,6 @@ func TestNotificationsAPIExposesReadPropagationStatus(t *testing.T) {
 	assert.Equal(0, read.Items[0].GitHubReadAttempts)
 	assert.Empty(read.Items[0].GitHubReadQueuedAt)
 	assert.Equal(syncedAt.UTC().Format(time.RFC3339), read.Items[0].GitHubReadSyncedAt)
-}
-
-func TestNotificationsAPIRejectsQueuedReadPropagationWhenSyncDisabled(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	id := seedServerNotification(t, database)
-	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
-	syncer.DisableSync()
-	s := New(database, syncer, nil, "/", notificationsEnabledConfig(), ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, s) })
-	input := &notificationBulkInput{}
-	input.Body.IDs = []int64{id}
-
-	for name, mutate := range map[string]func() error{
-		"read": func() error {
-			_, err := s.markNotificationsRead(t.Context(), input)
-			return err
-		},
-		"done with read": func() error {
-			_, err := s.markNotificationsDone(t.Context(), input)
-			return err
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			var problem *httpapi.ProblemError
-			require.ErrorAs(mutate(), &problem)
-			require.Equal(http.StatusServiceUnavailable, problem.Status)
-
-			unread, err := database.ListNotifications(
-				t.Context(), db.ListNotificationsOpts{State: "unread"},
-			)
-			require.NoError(err)
-			require.Len(unread, 1)
-			require.Nil(unread[0].SourceAckQueuedAt)
-		})
-	}
 }
 
 func TestNotificationsAPIRejectsNilConfigAccess(t *testing.T) {

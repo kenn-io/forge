@@ -2,7 +2,6 @@ package platform
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -123,58 +122,6 @@ func TestRegistryFindsOptionalRepositoryReader(t *testing.T) {
 	})
 	require.NoError(err)
 	assert.Equal(t, Repository{}, repo)
-}
-
-type testReviewThreadReader struct {
-	testProvider
-	list func(context.Context, RepoRef, int) ([]MergeRequestReviewThread, error)
-}
-
-func (p testReviewThreadReader) ListMergeRequestReviewThreads(
-	ctx context.Context, ref RepoRef, number int,
-) ([]MergeRequestReviewThread, error) {
-	return p.list(ctx, ref, number)
-}
-
-func TestRegistryProviderGateBlocksProviderAccessAndCapturedReviewReads(t *testing.T) {
-	require := require.New(t)
-	gateErr := errors.New("provider access disabled")
-	disabled := false
-	called := false
-	registry, err := NewRegistry(testReviewThreadReader{
-		testProvider: testProvider{
-			kind: KindGitHub,
-			host: DefaultGitHubHost,
-			caps: Capabilities{ReadReviewThreads: true},
-		},
-		list: func(context.Context, RepoRef, int) ([]MergeRequestReviewThread, error) {
-			called = true
-			return nil, nil
-		},
-	})
-	require.NoError(err)
-
-	gated := registry.WithProviderGate(func() error {
-		if disabled {
-			return gateErr
-		}
-		return nil
-	})
-	reader, err := gated.MergeRequestReviewThreadReader(KindGitHub, DefaultGitHubHost)
-	require.NoError(err)
-	disabled = true
-
-	_, err = gated.Provider(KindGitHub, DefaultGitHubHost)
-	require.ErrorIs(err, gateErr)
-	_, err = gated.Providers()
-	require.ErrorIs(err, gateErr)
-	_, err = reader.ListMergeRequestReviewThreads(
-		t.Context(), RepoRef{Platform: KindGitHub, Host: DefaultGitHubHost}, 7,
-	)
-	require.ErrorIs(err, gateErr)
-	assert.False(t, called)
-	_, err = registry.Provider(KindGitHub, DefaultGitHubHost)
-	require.NoError(err)
 }
 
 func TestRegistryReturnsUnsupportedCapabilityForMissingOptionalReader(t *testing.T) {

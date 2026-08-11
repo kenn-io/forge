@@ -48,30 +48,6 @@ type githubIdentityRuntime struct {
 	graphql  *github.RateTracker
 }
 
-type offlineGitHubIdentityResolver struct{}
-
-func (offlineGitHubIdentityResolver) ResolvePAT(
-	ctx context.Context,
-	host string,
-	source tokenauth.Source,
-) (github.GitHubIdentity, string, error) {
-	if source == nil {
-		return github.GitHubIdentity{}, "", tokenauth.ErrMissingToken
-	}
-	token, err := source.Token(tokenauth.WithMutationAuth(ctx))
-	if err != nil {
-		return github.GitHubIdentity{}, "", err
-	}
-	return github.GitHubIdentity{Key: github.HostIdentity(host)}, token, nil
-}
-
-func githubIdentityResolverForSyncPolicy(disableSync bool) github.IdentityResolver {
-	if disableSync {
-		return offlineGitHubIdentityResolver{}
-	}
-	return github.HTTPIdentityResolver{}
-}
-
 type mutationTokenSource struct {
 	tokenauth.Source
 }
@@ -262,43 +238,55 @@ func collectProviderTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 ) (map[string]tokenauth.Source, error) {
+	return providerTokenSources(ctx, cfg, set, true)
+}
+
+func registerProviderTokenSources(
+	cfg *config.Config,
+	set *tokenauth.SourceSet,
+) (map[string]tokenauth.Source, error) {
+	return providerTokenSources(context.Background(), cfg, set, false)
+}
+
+func providerTokenSources(
+	ctx context.Context,
+	cfg *config.Config,
+	set *tokenauth.SourceSet,
+	resolve bool,
+) (map[string]tokenauth.Source, error) {
 	if err := cfg.ValidateRepoTokenSourceConsistency(); err != nil {
 		return nil, err
 	}
 	providerSources := make(map[string]tokenauth.Source, len(cfg.Repos)+len(cfg.Platforms)+1)
-	add := func(plan config.ProviderTokenSource) error {
+	for _, plan := range cfg.ProviderTokenSources() {
 		desc := plan.Descriptor
 		key := providerHostKey(desc.Key.Platform, desc.Key.Host)
 		_, seen := providerSources[key]
 		src := set.Upsert(desc)
-		tokenCtx := ctx
-		if plan.GitHubOwner != "" {
-			tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
-		}
-		if _, err := src.Token(tokenCtx); err != nil {
-			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
-				return nil
-			}
-			label := fmt.Sprintf("%s host %s", desc.Key.Platform, desc.Key.Host)
+		if resolve {
+			tokenCtx := ctx
 			if plan.GitHubOwner != "" {
-				label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
+				tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
 			}
-			if plan.Required {
-				return fmt.Errorf("no token for %s via %s: %w", label, desc.SafeString(), err)
+			if _, err := src.Token(tokenCtx); err != nil {
+				if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
+					continue
+				}
+				label := fmt.Sprintf("%s host %s", desc.Key.Platform, desc.Key.Host)
+				if plan.GitHubOwner != "" {
+					label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
+				}
+				if plan.Required {
+					return nil, fmt.Errorf("no token for %s via %s: %w", label, desc.SafeString(), err)
+				}
+				return nil, fmt.Errorf(
+					"read optional token for %s via %s: %w",
+					label, desc.SafeString(), err,
+				)
 			}
-			return fmt.Errorf(
-				"read optional token for %s via %s: %w",
-				label, desc.SafeString(), err,
-			)
 		}
 		if !seen {
 			providerSources[key] = src
-		}
-		return nil
-	}
-	for _, plan := range cfg.ProviderTokenSources() {
-		if err := add(plan); err != nil {
-			return nil, err
 		}
 	}
 	return providerSources, nil

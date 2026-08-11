@@ -530,14 +530,23 @@ func run(opts serve.Options) error {
 			)
 		},
 	})
-	providerSources, err := collectProviderTokenSources(ctx, cfg, tokenSources)
+	var providerSources map[string]tokenauth.Source
+	if opts.DisableSync {
+		providerSources, err = registerProviderTokenSources(cfg, tokenSources)
+	} else {
+		providerSources, err = collectProviderTokenSources(ctx, cfg, tokenSources)
+	}
 	if err != nil {
 		return err
+	}
+	var identityResolver ghclient.IdentityResolver
+	if !opts.DisableSync {
+		identityResolver = ghclient.HTTPIdentityResolver{}
 	}
 
 	startup, err := buildProviderStartup(
 		ctx, database, cfg, tokenSources, providerSources,
-		defaultProviderFactories(), githubIdentityResolverForSyncPolicy(opts.DisableSync),
+		defaultProviderFactories(), identityResolver,
 	)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
@@ -546,12 +555,6 @@ func run(opts serve.Options) error {
 		}
 		return err
 	}
-
-	repos := resolveStartupRepos(
-		ctx, cfg, providerRegistryForSyncPolicy(startup.registry, opts.DisableSync),
-		database, startup.githubRouters,
-	)
-	slog.Debug("startup repos resolved", "count", len(repos))
 
 	if ctx.Err() != nil {
 		slog.Info("shutting down")
@@ -563,12 +566,16 @@ func run(opts serve.Options) error {
 	)
 
 	syncer = ghclient.NewSyncerWithRegistry(
-		startup.registry, database, cloneMgr, repos,
+		startup.registry, database, cloneMgr, nil,
 		cfg.SyncDuration(), startup.rateTrackers, startup.budgets,
 	)
 	if opts.DisableSync {
 		syncer.DisableSync()
 	}
+	repos := resolveStartupRepos(
+		ctx, cfg, syncer.SyncRegistry(), database, startup.githubRouters,
+	)
+	slog.Debug("startup repos resolved", "count", len(repos))
 	syncer.SetBranchActivityLimits(
 		cfg.BranchActivityRetention(),
 		cfg.Activity.DefaultBranchMaxCommits,
@@ -583,7 +590,7 @@ func run(opts serve.Options) error {
 	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
 	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
 	archiveService, err := archive.NewService(
-		database, syncer.DirectRegistry(), syncer, syncer, nil, nil,
+		database, startup.registry, syncer, syncer, nil, nil,
 	)
 	if err != nil {
 		return fmt.Errorf("create archive service: %w", err)
@@ -858,16 +865,6 @@ func profilerSrvDone(srv *profiler.Server) <-chan error {
 		return nil
 	}
 	return srv.Done()
-}
-
-func providerRegistryForSyncPolicy(
-	registry *platform.Registry,
-	disableSync bool,
-) *platform.Registry {
-	if !disableSync {
-		return registry
-	}
-	return registry.WithProviderGate(func() error { return platform.ErrSyncDisabled })
 }
 
 func resolveStartupRepos(

@@ -111,9 +111,6 @@ Rules:
 - The registry's `NotificationReader`/`NotificationMutator` accessors gate on the declared capability flags, not interface satisfaction, because stubs satisfy the interfaces.
 - The sync engine intentionally requires BOTH `ReadNotifications` and `NotificationMutation` to select a provider: listing and read-ack propagation are treated as one feature today. A future read-only provider (list without upstream mark-read) would split this — select listing on `ReadNotifications` and propagation on `NotificationMutation` separately. Until such a provider exists the coupling keeps the path simple.
 - Propagation workers must revalidate queued generation before calling provider.
-- A disabled syncer rejects read and done-with-read admission before changing local
-  state; do not queue acknowledgements that the process cannot propagate
-  (`internal/server/notifications.go::Server.markNotificationsRead`).
 - Stale queued work must not mark newer provider activity read.
 - Advanced-activity refreshes resolve legacy unlinked rows to the active route and
   commit under its fence; rejection reopens the acknowledgement and provider-unread

@@ -342,7 +342,10 @@ func (s *Handler) setIssueGitHubState(ctx context.Context, input *githubStateInp
 			githubError.Response.StatusCode == http.StatusUnprocessableEntity {
 			client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
 			if clientErr != nil {
-				return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
+				return nil, httpapi.ProviderCallProblemWithDetail(
+					clientErr, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
+					"GitHub API error: "+err.Error(),
+				)
 			}
 			githubIssue, fetchErr := client.GetIssue(ctx, input.Owner, input.Name, input.Number)
 			if fetchErr == nil {

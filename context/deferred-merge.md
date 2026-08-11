@@ -6,8 +6,6 @@ supersession, completion events, or pending-state presentation.
 - Queued deferred merges live only in the server process (`deferredMergeInFlight`
   in `internal/server/pullapi/deferred_merge.go`); a restart drops them. Detail responses
   expose the state as `deferred_merge_pending`.
-- A disabled syncer rejects deferred-merge admission because the worker requires
-  repeated provider CI refreshes (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
 - Terminal ordering contract: pending must be cleared **before** broadcasting a
   terminal `deferred_merge_completed` (success or failure). Clients refresh
   detail the moment they see the event, and that first read must not report a

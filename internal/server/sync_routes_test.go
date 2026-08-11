@@ -20,8 +20,8 @@ func TestArchiveStartRejectsDisabledSyncer(t *testing.T) {
 	syncer.DisableSync()
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
-	archiveRR := doJSON(t, srv, http.MethodPost, "/api/v1/archive/start", map[string]bool{"all": true})
-	require.Equal(http.StatusServiceUnavailable, archiveRR.Code, archiveRR.Body.String())
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/archive/start", map[string]bool{"all": true})
+	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())
 }
 
 func TestSyncRoutesWithoutSyncer(t *testing.T) {

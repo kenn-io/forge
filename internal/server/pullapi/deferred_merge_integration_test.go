@@ -361,21 +361,6 @@ func newDeferredMergeRouteServer(
 	return srv, database, repoID, client
 }
 
-func TestEnqueueDeferredMergeRejectsDisabledSync(t *testing.T) {
-	require := require.New(t)
-	syncer := ghclient.NewSyncer(nil, dbtest.Open(t), nil, nil, time.Minute, nil, nil)
-	syncer.DisableSync()
-	handler := &Handler{syncer: syncer}
-
-	_, err := handler.enqueueDeferredMerge(
-		t.Context(), "gitlab", "gitlab.example.com", "group", "project", 7,
-		mergePRInputBody{Method: "merge"}, time.Second, time.Minute,
-	)
-	var problem *httpapi.ProblemError
-	require.ErrorAs(err, &problem)
-	require.Equal(http.StatusServiceUnavailable, problem.Status)
-}
-
 func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

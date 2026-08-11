@@ -11,8 +11,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
-	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 const maxNotificationBulkIDs = 200
@@ -100,8 +98,8 @@ func (s *Server) syncNotifications(ctx context.Context, _ *struct{}) (*acceptedO
 	if !s.notificationsEnabled() {
 		return nil, huma.Error403Forbidden("notifications are disabled")
 	}
-	if err := s.requireSync(); err != nil {
-		return nil, err
+	if s.syncer == nil {
+		return nil, huma.Error503ServiceUnavailable("syncer is not configured")
 	}
 	if ok := s.runBackground(func(bgCtx context.Context) {
 		_ = s.syncer.RunNotificationSync(bgCtx)
@@ -151,9 +149,6 @@ func (s *Server) markNotificationsRead(ctx context.Context, input *notificationB
 	if !s.notificationsEnabled() {
 		return nil, huma.Error403Forbidden("notifications are disabled")
 	}
-	if s.syncer != nil && !s.syncer.SyncEnabled() {
-		return nil, httpapi.ServiceUnavailable(platform.ErrSyncDisabled.Error())
-	}
 	ids, err := validatedNotificationIDs(input.Body.IDs)
 	if err != nil {
 		return nil, err
@@ -181,11 +176,6 @@ func (s *Server) markNotificationsDone(ctx context.Context, input *notificationB
 	markRead := true
 	if input.Body.MarkRead != nil {
 		markRead = *input.Body.MarkRead
-	}
-	if markRead {
-		if s.syncer != nil && !s.syncer.SyncEnabled() {
-			return nil, httpapi.ServiceUnavailable(platform.ErrSyncDisabled.Error())
-		}
 	}
 	scopedIDs, err := s.scopedNotificationIDs(ctx, ids)
 	if err != nil {

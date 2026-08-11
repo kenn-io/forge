@@ -105,14 +105,6 @@ func (s *Handler) enqueueDeferredMerge(
 	if maxWait <= 0 {
 		maxWait = defaultDeferredMergeMaxWait
 	}
-	if s.syncer == nil {
-		return deferMergePRBody{}, httpapi.ServiceUnavailable("syncer not configured")
-	}
-	if !s.syncer.SyncEnabled() {
-		return deferMergePRBody{}, httpapi.ServiceUnavailable(
-			platform.ErrSyncDisabled.Error(),
-		)
-	}
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
 		provider, platformHost, owner, name,
@@ -471,7 +463,7 @@ func (s *Handler) ensureDeferredMergeTargetUnchanged(ctx context.Context, repo d
 	if err := deferredMergeRequireOpenDB(mr); err != nil {
 		return err
 	}
-	reader, err := s.syncer.Registry().MergeRequestReader(repoProviderKind(repo), repoProviderHost(repo))
+	reader, err := s.syncer.SyncRegistry().MergeRequestReader(repoProviderKind(repo), repoProviderHost(repo))
 	if err != nil {
 		return err
 	}

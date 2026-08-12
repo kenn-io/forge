@@ -71,6 +71,7 @@ async function fulfillJson(route: Route, body: unknown): Promise<void> {
 
 async function mockSplitViewPR(page: Page): Promise<void> {
   const detailPath = "**/api/v1/pulls/github/acme/widgets/42";
+  const replacementDetailPath = "**/api/v1/pulls/github/acme/widgets/55";
 
   await page.route(detailPath, async (route) => {
     if (route.request().method() !== "GET") {
@@ -143,6 +144,12 @@ async function mockSplitViewPR(page: Page): Promise<void> {
     await fulfillJson(route, diffResponse);
   });
   await page.route(`${detailPath}/diff**`, async (route) => {
+    await fulfillJson(route, diffResponse);
+  });
+  await page.route(`${replacementDetailPath}/files`, async (route) => {
+    await fulfillJson(route, diffResponse);
+  });
+  await page.route(`${replacementDetailPath}/diff**`, async (route) => {
     await fulfillJson(route, diffResponse);
   });
 }
@@ -396,4 +403,21 @@ test("restores layout focus when a focused pane is replaced across the flatten t
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
   await expect(layout).toBeFocused();
+});
+
+test("restores layout focus when history replaces focused same-tab content", async ({ page }) => {
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  const layout = page.locator(".detail-pane-layout");
+  const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
+  await diffArea.focus();
+  await expect(diffArea).toBeFocused();
+
+  await page.evaluate(() => {
+    window.history.pushState(null, "", "/pulls/github/acme/widgets/55/files");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+
+  await expect(page.locator(".detail-title")).toContainText("Refactor theme system");
+  await expect(layout).toBeFocused();
+  await expect(page.locator(".tabbed-panel-leaf.input-active")).toHaveCount(0);
 });

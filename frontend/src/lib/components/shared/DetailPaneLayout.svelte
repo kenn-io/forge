@@ -312,7 +312,11 @@
     if (next instanceof Node && event.currentTarget.contains(next)) return;
     focusedInputLeafID = null;
     focusedInputTabKey = null;
-    focusedInputElement = null;
+    // Chromium reports no next target while a keyed subtree removes the
+    // focused node. Keep that exact node until the mutation observer can test
+    // whether it disconnected; a real destination outside the layout no
+    // longer needs the record.
+    if (next !== null) focusedInputElement = null;
   }
 
   // Pane identity can replace focused content without changing the pane tree,

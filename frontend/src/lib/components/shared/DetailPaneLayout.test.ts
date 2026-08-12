@@ -505,6 +505,7 @@ describe("detail pane layout", () => {
     conversationFocusTarget.focus();
     await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBe("conversation"));
 
+    fireEvent.focusOut(conversationFocusTarget, { relatedTarget: null });
     await rerender({ layout, paneIdentity: "second" });
 
     await vi.waitFor(() => {

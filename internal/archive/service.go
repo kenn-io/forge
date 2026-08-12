@@ -24,7 +24,14 @@ type ItemSyncer interface {
 	ArchiveItemSyncCost(platform.Kind, db.ArchiveItemType) int
 	SyncArchiveItem(
 		context.Context, platform.RepoRef, db.ArchiveItemType, int,
-	) (providerAttempted bool, err error)
+	) (ItemSyncResult, error)
+}
+
+// ItemSyncResult carries provider work accounting and any canonical evidence
+// that archive progress must revalidate atomically after domain persistence.
+type ItemSyncResult struct {
+	ProviderAttempted    bool
+	MergeRequestEvidence *db.ArchiveMergeRequestEvidence
 }
 
 type AdmissionResult struct {

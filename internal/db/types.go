@@ -217,19 +217,29 @@ const (
 	ArchiveLookupInaccessible ArchiveLookupOutcome = "inaccessible"
 )
 
+// ArchiveMergeRequestEvidence is canonical provider evidence that must still
+// match storage when archive progress is committed.
+type ArchiveMergeRequestEvidence struct {
+	Merged         bool
+	HeadSHA        string
+	MergeCommitSHA string
+	FilesChanged   *int
+}
+
 // ArchiveItemSyncCommit records the outcome of running the existing full item
 // sync for archive hydration. Provider content is already persisted by the
 // syncer; this commit advances only archive progress and terminal lifecycle.
 type ArchiveItemSyncCommit struct {
-	RepoID         int64
-	ItemType       ArchiveItemType
-	ItemNumber     int
-	ScanGeneration int64
-	Outcome        ArchiveLookupOutcome
-	Destination    *RepoIdentity
-	ErrorCode      string
-	ErrorDetail    string
-	Now            time.Time
+	RepoID               int64
+	ItemType             ArchiveItemType
+	ItemNumber           int
+	ScanGeneration       int64
+	Outcome              ArchiveLookupOutcome
+	Destination          *RepoIdentity
+	ErrorCode            string
+	ErrorDetail          string
+	MergeRequestEvidence *ArchiveMergeRequestEvidence
+	Now                  time.Time
 }
 
 // ArchiveDatasetProgressKey addresses one dataset progress row.

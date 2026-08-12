@@ -874,8 +874,8 @@ func (archiveFailingItemSource) SyncArchiveItem(
 	platform.RepoRef,
 	db.ArchiveItemType,
 	int,
-) (bool, error) {
-	return true, errors.New("transient provider failure")
+) (ItemSyncResult, error) {
+	return ItemSyncResult{ProviderAttempted: true}, errors.New("transient provider failure")
 }
 
 type archiveTestSource struct{ refs []platform.RepoRef }
@@ -891,8 +891,8 @@ func (archiveTestSource) SyncArchiveItem(
 	platform.RepoRef,
 	db.ArchiveItemType,
 	int,
-) (bool, error) {
-	return true, nil
+) (ItemSyncResult, error) {
+	return ItemSyncResult{ProviderAttempted: true}, nil
 }
 
 type archiveMutableSource struct{ refs []platform.RepoRef }

@@ -456,6 +456,9 @@ fallback repository listing.
 - A GitHub archive lookup requires fetched and stored merge state to agree;
   merged lookups also require completed lifecycle persistence, merge time, and
   matching canonical SHAs and file count. (`internal/github/sync.go::requireGitHubArchiveMergedMRMetrics`)
+- Archive completion atomically revalidates fetched merge evidence against the
+  transaction-current row; a mismatch remains retryable, never complete.
+  (`internal/db/queries_dataset_progress.go::validateArchiveMergeRequestEvidenceTx`)
 - An accepted merged snapshot preserves the stored immutable merge time when
   the provider omits it; partial detail must not erase durable lifecycle data.
   (`internal/github/sync.go::preserveMergedAtIfOmitted`)

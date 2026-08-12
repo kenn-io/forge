@@ -27,11 +27,11 @@ func (s *Service) hydrateItem(
 	if err != nil {
 		return err
 	}
-	providerAttempted, syncErr := s.items.SyncArchiveItem(
+	syncResult, syncErr := s.items.SyncArchiveItem(
 		requestCtx, repo.Ref, work.ItemType, work.ItemNumber,
 	)
 	preempted := archivePreempted(ctx, requestCtx)
-	deferred := complete(syncErr, providerAttempted)
+	deferred := complete(syncErr, syncResult.ProviderAttempted)
 	if preempted {
 		return errAdmissionDeferred
 	}
@@ -41,10 +41,17 @@ func (s *Service) hydrateItem(
 	commit := db.ArchiveItemSyncCommit{
 		RepoID: work.RepoID, ItemType: work.ItemType, ItemNumber: work.ItemNumber,
 		ScanGeneration: work.ScanGeneration, Now: s.now(),
+		MergeRequestEvidence: syncResult.MergeRequestEvidence,
 	}
 	if syncErr == nil {
 		commit.Outcome = db.ArchiveLookupPresent
-		return s.db.CommitArchiveItemSync(ctx, commit)
+		if err := s.db.CommitArchiveItemSync(ctx, commit); err != nil {
+			if errors.Is(err, db.ErrArchiveItemEvidenceChanged) {
+				return s.recordItemSyncFailure(ctx, commit, work.AttemptCount, err)
+			}
+			return err
+		}
+		return nil
 	}
 
 	outcome, destination, terminal := archiveTerminalSyncOutcome(syncErr)

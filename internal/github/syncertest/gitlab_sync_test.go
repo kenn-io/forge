@@ -347,7 +347,7 @@ func TestGitLabArchiveIssueLifecyclePersistsCloseActorInReport(t *testing.T) {
 		time.Minute, nil, nil,
 	)
 
-	providerAttempted, err := syncer.SyncArchiveItem(
+	result, err := syncer.SyncArchiveItem(
 		ghclient.WithArchiveSyncBudget(ctx),
 		platform.RepoRef{
 			Platform: platform.KindGitLab, Host: "gitlab.example.com",
@@ -357,7 +357,7 @@ func TestGitLabArchiveIssueLifecyclePersistsCloseActorInReport(t *testing.T) {
 		db.ArchiveItemTypeIssue, 7,
 	)
 	require.NoError(err)
-	assert.True(providerAttempted)
+	assert.True(result.ProviderAttempted)
 
 	issue, err := database.GetIssue(
 		ctx, "gitlab", "gitlab.example.com", "group", "project", 7,

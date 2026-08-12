@@ -13101,7 +13101,7 @@ func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T)
 		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
 	)
 
-	providerAttempted, err := syncer.SyncArchiveItem(
+	result, err := syncer.SyncArchiveItem(
 		WithArchiveSyncBudget(ctx),
 		platform.RepoRef{
 			Platform: platform.KindGitHub, Host: "github.com",
@@ -13110,7 +13110,7 @@ func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T)
 		db.ArchiveItemTypeIssue, 7,
 	)
 	require.NoError(err)
-	assert.True(providerAttempted)
+	assert.True(result.ProviderAttempted)
 	assert.Zero(int(client.conditionalCalls.Load()))
 	assert.Equal(int32(1), client.unconditionalCalls.Load())
 	assert.Equal(int32(1), client.timelineCalls.Load())
@@ -13250,13 +13250,13 @@ func TestSyncArchiveMRRetriesWhenMergedResponseCannotRepairNewerOpenSnapshot(t *
 		database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),
 	)
 
-	providerAttempted, err := syncer.SyncArchiveItem(
+	result, err := syncer.SyncArchiveItem(
 		WithArchiveSyncBudget(ctx), platform.RepoRef{
 			Platform: platform.KindGitHub, Host: "github.com",
 			Owner: repo.Owner, Name: repo.Name,
 		}, db.ArchiveItemTypeMergeRequest, 7,
 	)
-	require.True(providerAttempted)
+	require.True(result.ProviderAttempted)
 	require.ErrorContains(err, "merge_state")
 
 	after, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
@@ -13388,11 +13388,11 @@ func TestSyncArchiveMRPreservesStoredMergedAtWhenAcceptedResponseOmitsIt(t *test
 		database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),
 	)
 
-	providerAttempted, err := syncer.SyncArchiveItem(
+	result, err := syncer.SyncArchiveItem(
 		WithArchiveSyncBudget(ctx), platformRepoRef(repo),
 		db.ArchiveItemTypeMergeRequest, 7,
 	)
-	require.True(providerAttempted)
+	require.True(result.ProviderAttempted)
 	require.NoError(err)
 
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, entry.Repository.ID, 7)
@@ -13490,11 +13490,11 @@ func TestSyncArchiveMRRetriesWhenAcceptedSnapshotLosesRouteFenceBeforeActor(t *t
 		<-writeLockAttempted
 	}
 
-	providerAttempted, err := syncer.SyncArchiveItem(
+	result, err := syncer.SyncArchiveItem(
 		WithArchiveSyncBudget(ctx), platformRepoRef(repo),
 		db.ArchiveItemTypeMergeRequest, 7,
 	)
-	require.True(providerAttempted)
+	require.True(result.ProviderAttempted)
 	require.ErrorContains(err, "lifecycle persistence")
 	require.NoError(<-reconciliationDone)
 
@@ -13579,11 +13579,11 @@ func TestSyncArchiveMRRetriesWhenRejectedRepairLosesRouteFence(t *testing.T) {
 		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
 	)
 
-	providerAttempted, err := syncer.SyncArchiveItem(
+	result, err := syncer.SyncArchiveItem(
 		WithArchiveSyncBudget(ctx), platformRepoRef(repo),
 		db.ArchiveItemTypeMergeRequest, 7,
 	)
-	require.True(providerAttempted)
+	require.True(result.ProviderAttempted)
 	require.ErrorContains(err, "repository was not resolved")
 
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, entry.Repository.ID, 7)
@@ -13680,7 +13680,7 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 				database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),
 			)
 
-			providerAttempted, err := syncer.SyncArchiveItem(
+			result, err := syncer.SyncArchiveItem(
 				WithArchiveSyncBudget(ctx),
 				platform.RepoRef{
 					Platform: platform.KindGitHub, Host: "github.com",
@@ -13689,7 +13689,7 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 				db.ArchiveItemTypeMergeRequest, 7,
 			)
 			require.ErrorContains(err, tt.missingFieldLabel)
-			require.True(providerAttempted)
+			require.True(result.ProviderAttempted)
 		})
 	}
 }
@@ -13730,7 +13730,7 @@ func TestSyncArchiveMRRejectsCanonicalUnmergedStoredMergedDisagreement(t *testin
 		database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),
 	)
 
-	providerAttempted, err := syncer.SyncArchiveItem(
+	result, err := syncer.SyncArchiveItem(
 		WithArchiveSyncBudget(ctx),
 		platform.RepoRef{
 			Platform: platform.KindGitHub, Host: "github.com",
@@ -13739,7 +13739,7 @@ func TestSyncArchiveMRRejectsCanonicalUnmergedStoredMergedDisagreement(t *testin
 		db.ArchiveItemTypeMergeRequest, 7,
 	)
 	require.ErrorContains(err, "merge_state")
-	require.True(providerAttempted)
+	require.True(result.ProviderAttempted)
 
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
@@ -13807,7 +13807,7 @@ func TestSyncArchiveMROpenPullRequestDoesNotRequireMergeMetrics(t *testing.T) {
 		database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),
 	)
 
-	providerAttempted, err := syncer.SyncArchiveItem(
+	result, err := syncer.SyncArchiveItem(
 		WithArchiveSyncBudget(ctx),
 		platform.RepoRef{
 			Platform: platform.KindGitHub, Host: "github.com",
@@ -13816,7 +13816,7 @@ func TestSyncArchiveMROpenPullRequestDoesNotRequireMergeMetrics(t *testing.T) {
 		db.ArchiveItemTypeMergeRequest, 7,
 	)
 	require.NoError(err)
-	require.True(providerAttempted)
+	require.True(result.ProviderAttempted)
 }
 
 func TestSyncArchiveIssuePropagatesTimelineFailure(t *testing.T) {
@@ -13841,7 +13841,7 @@ func TestSyncArchiveIssuePropagatesTimelineFailure(t *testing.T) {
 		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
 	)
 
-	providerAttempted, err := syncer.SyncArchiveItem(
+	result, err := syncer.SyncArchiveItem(
 		WithArchiveSyncBudget(ctx),
 		platform.RepoRef{
 			Platform: platform.KindGitHub, Host: "github.com",
@@ -13851,7 +13851,7 @@ func TestSyncArchiveIssuePropagatesTimelineFailure(t *testing.T) {
 	)
 
 	require.ErrorIs(err, timelineErr)
-	assert.True(providerAttempted)
+	assert.True(result.ProviderAttempted)
 	assert.Equal(int32(1), client.issueTimelineCalls.Load())
 }
 

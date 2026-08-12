@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -16,6 +17,8 @@ const (
 	datasetErrorCodePageBound     = "page_bound"
 	datasetErrorCodeInvalidCursor = "invalid_cursor"
 )
+
+var ErrArchiveItemEvidenceChanged = errors.New("archive item evidence changed")
 
 func formatDatasetProgressTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
@@ -78,6 +81,10 @@ func (d *DB) CommitArchiveItemSync(ctx context.Context, commit ArchiveItemSyncCo
 	default:
 		return fmt.Errorf("commit archive item sync: invalid outcome %q", commit.Outcome)
 	}
+	if commit.MergeRequestEvidence != nil &&
+		(commit.ItemType != ArchiveItemTypeMergeRequest || commit.Outcome != ArchiveLookupPresent) {
+		return errors.New("commit archive item sync: merge request evidence requires a present merge request")
+	}
 	commit.Now = canonicalUTCTime(commit.Now)
 	var typedErr error
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
@@ -110,6 +117,14 @@ func (d *DB) CommitArchiveItemSync(ctx context.Context, commit ArchiveItemSyncCo
 		if commit.Outcome == ArchiveLookupPresent {
 			if status == ArchiveDatasetProgressComplete {
 				return nil
+			}
+			if commit.MergeRequestEvidence != nil {
+				if err := validateArchiveMergeRequestEvidenceTx(
+					ctx, tx, commit.RepoID, commit.ItemNumber,
+					*commit.MergeRequestEvidence,
+				); err != nil {
+					return err
+				}
 			}
 			revision, err := lookupDomainRevisionTx(
 				ctx, tx, commit.RepoID, commit.ItemType, commit.ItemNumber,
@@ -176,6 +191,62 @@ func (d *DB) CommitArchiveItemSync(ctx context.Context, commit ArchiveItemSyncCo
 		return err
 	}
 	return typedErr
+}
+
+func validateArchiveMergeRequestEvidenceTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	number int,
+	evidence ArchiveMergeRequestEvidence,
+) error {
+	var mr MergeRequest
+	err := tx.QueryRowContext(ctx, `
+		SELECT state, platform_head_sha, merge_commit_sha, files_changed, merged_at
+		FROM forge_merge_requests
+		WHERE repo_id = ? AND number = ?`, repoID, number,
+	).Scan(
+		&mr.State, &mr.PlatformHeadSHA, &mr.MergeCommitSHA,
+		&mr.FilesChanged, &mr.MergedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf(
+			"%w: repo %d merge request %d is not stored",
+			ErrArchiveItemEvidenceChanged, repoID, number,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("validate archive merge request evidence: %w", err)
+	}
+
+	storedMerged := mr.State == MergeRequestStateMerged || mr.MergedAt != nil
+	mismatched := make([]string, 0, 5)
+	if evidence.Merged != storedMerged {
+		mismatched = append(mismatched, "merge_state")
+	}
+	if evidence.Merged {
+		if mr.MergedAt == nil {
+			mismatched = append(mismatched, "merged_at")
+		}
+		if evidence.HeadSHA == "" || mr.PlatformHeadSHA != evidence.HeadSHA {
+			mismatched = append(mismatched, "platform_head_sha")
+		}
+		if evidence.MergeCommitSHA == "" || mr.MergeCommitSHA != evidence.MergeCommitSHA {
+			mismatched = append(mismatched, "merge_commit_sha")
+		}
+		if evidence.FilesChanged == nil || mr.FilesChanged == nil ||
+			*mr.FilesChanged != *evidence.FilesChanged {
+			mismatched = append(mismatched, "files_changed")
+		}
+	}
+	if len(mismatched) > 0 {
+		return fmt.Errorf(
+			"%w for repo %d merge request %d: %s",
+			ErrArchiveItemEvidenceChanged, repoID, number,
+			strings.Join(mismatched, ", "),
+		)
+	}
+	return nil
 }
 
 // FailArchiveItemSync applies one retry boundary to the item-level sync.

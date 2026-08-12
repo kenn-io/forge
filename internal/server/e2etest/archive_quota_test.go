@@ -39,16 +39,16 @@ func (s archiveQuotaBurstSource) SyncArchiveItem(
 	ref platform.RepoRef,
 	_ db.ArchiveItemType,
 	number int,
-) (bool, error) {
+) (archive.ItemSyncResult, error) {
 	attempted := false
 	for range 10 {
 		_, err := s.client.GetIssue(ctx, ref.Owner, ref.Name, number)
 		if err != nil {
-			return attempted, err
+			return archive.ItemSyncResult{ProviderAttempted: attempted}, err
 		}
 		attempted = true
 	}
-	return attempted, nil
+	return archive.ItemSyncResult{ProviderAttempted: attempted}, nil
 }
 
 func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {

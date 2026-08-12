@@ -1,6 +1,7 @@
 package e2etest
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,36 @@ import (
 type archiveMergeMetricsClock struct{ now time.Time }
 
 func (c archiveMergeMetricsClock) Now() time.Time { return c.now }
+
+type interveningMergeSnapshotSyncer struct {
+	*ghclient.Syncer
+	database *db.DB
+	repoID   int64
+	now      time.Time
+}
+
+func (s *interveningMergeSnapshotSyncer) SyncArchiveItem(
+	ctx context.Context,
+	ref platform.RepoRef,
+	itemType db.ArchiveItemType,
+	number int,
+) (archive.ItemSyncResult, error) {
+	result, err := s.Syncer.SyncArchiveItem(ctx, ref, itemType, number)
+	if err != nil || itemType != db.ArchiveItemTypeMergeRequest {
+		return result, err
+	}
+	current, err := s.database.GetMergeRequestByRepoIDAndNumber(ctx, s.repoID, number)
+	if err != nil || current == nil {
+		return result, err
+	}
+	intervening := *current
+	intervening.MergeCommitSHA = "intervening-merge-sha"
+	intervening.FilesChanged = new(9)
+	intervening.UpdatedAt = s.now.Add(time.Minute)
+	intervening.LastActivityAt = intervening.UpdatedAt
+	_, err = s.database.UpsertMergeRequest(ctx, &intervening)
+	return result, err
+}
 
 type archiveMergeMetricsCase struct {
 	name                 string
@@ -74,6 +105,115 @@ func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T
 			testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(t, tt)
 		})
 	}
+}
+
+func TestArchiveHydrationRejectsInterveningMergeRequestSnapshotE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 8, 2, 13, 0, 0, 0, time.UTC)
+	mergedAt := now.Add(-time.Hour)
+
+	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v3/repos/acme/widget":
+			_, _ = w.Write([]byte(`{"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget","owner":{"login":"acme"}}`))
+		case "/api/v3/repos/acme/widget/pulls/7":
+			_, _ = w.Write([]byte(`{
+				"id":7,"node_id":"PR_7","number":7,
+				"html_url":"https://github.com/acme/widget/pull/7",
+				"title":"canonical title","state":"closed","merged":true,
+				"created_at":"2026-08-02T10:00:00Z",
+				"updated_at":"2026-08-02T12:00:00Z",
+				"closed_at":"2026-08-02T12:00:00Z",
+				"merged_at":"2026-08-02T12:00:00Z",
+				"merged_by":{"login":"merge-admin"},
+				"merge_commit_sha":"merge-sha","changed_files":4,
+				"head":{"ref":"feature","sha":"head-sha","repo":{"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget","owner":{"login":"acme"}}},
+				"base":{"ref":"main","sha":"base-sha","repo":{"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget","owner":{"login":"acme"}}}
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(providerServer.Close)
+
+	providerClient, err := ghclient.NewClient(
+		staticTokenSource("archive-token"), "github.com", nil, nil,
+		ghclient.WithBaseURLForTesting(providerServer.URL),
+	)
+	require.NoError(err)
+	registry, err := ghclient.NewProviderRegistry(map[string]ghclient.Client{
+		"github.com": providerClient,
+	})
+	require.NoError(err)
+	database := dbtest.Open(t)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil,
+		[]ghclient.RepoRef{{
+			Platform: ref.Platform, PlatformHost: ref.Host,
+			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+		}},
+		time.Hour, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	wrapped := &interveningMergeSnapshotSyncer{
+		Syncer: syncer, database: database, now: now,
+	}
+	archiveService, err := archive.NewService(
+		database, registry, nil, wrapped, nil, archiveMergeMetricsClock{now: now},
+	)
+	require.NoError(err)
+	requireEnsureConfigured(t, archiveService, []platform.RepoRef{ref})
+	repo, err := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+	wrapped.repoID = repo.ID
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repo.ID, PlatformID: 7, PlatformExternalID: "PR_7", Number: 7,
+		URL: "https://github.com/acme/widget/pull/7", Title: "stored title",
+		State: db.MergeRequestStateMerged, PlatformHeadSHA: "head-sha",
+		CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now, LastActivityAt: now,
+		MergedAt: &mergedAt, ClosedAt: &mergedAt,
+		FilesChanged: new(4), MergeCommitSHA: "merge-sha",
+	})
+	require.NoError(err)
+	require.NoError(database.StartFullArchives(ctx, []int64{repo.ID}, now))
+	require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{
+		RepoID: repo.ID, ItemType: db.ArchiveItemTypeIssue,
+		ScanGeneration: 1, Exhausted: true, Coverage: db.ArchiveCoverageSupported,
+		Now: now,
+	}))
+	require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{
+		RepoID: repo.ID, ItemType: db.ArchiveItemTypeMergeRequest,
+		Items: []db.ArchiveInventoryItem{{
+			Number: 7, ProviderItemID: "PR_7",
+			ProviderCreatedAt: now.Add(-3 * time.Hour), ProviderUpdatedAt: mergedAt,
+		}},
+		ScanGeneration: 1, Exhausted: true, Coverage: db.ArchiveCoverageSupported,
+		Now: now,
+	}))
+
+	runErr := archiveService.RunEligible(ctx)
+	require.ErrorIs(runErr, db.ErrArchiveItemEvidenceChanged)
+	progress, err := database.GetDatasetProgress(
+		ctx, repo.ID, db.ArchiveItemTypeMergeRequest, 7, db.ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressFailed, progress.Status)
+	require.NotNil(progress.LastErrorCode)
+	assert.Equal(string(db.ArchiveErrorCodeTransient), *progress.LastErrorCode)
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("intervening-merge-sha", stored.MergeCommitSHA)
+	require.NotNil(stored.FilesChanged)
+	assert.Equal(9, *stored.FilesChanged)
 }
 
 func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(

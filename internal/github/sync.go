@@ -13048,10 +13048,11 @@ func (s *Syncer) SyncArchiveItem(
 	ref platform.RepoRef,
 	itemType db.ArchiveItemType,
 	number int,
-) (bool, error) {
+) (archive.ItemSyncResult, error) {
+	result := archive.ItemSyncResult{}
 	repo, ok := s.trackedRepoByIdentity(ref.Platform, ref.Owner, ref.Name, ref.Host)
 	if !ok {
-		return false, fmt.Errorf(
+		return result, fmt.Errorf(
 			"repo %s/%s on %s/%s is not tracked",
 			ref.Owner, ref.Name, ref.Platform, ref.Host,
 		)
@@ -13063,7 +13064,8 @@ func (s *Syncer) SyncArchiveItem(
 	case db.ArchiveItemTypeIssue:
 		providerAttempted := false
 		err := s.syncIssueForRepo(ctx, repo, number, &providerAttempted)
-		return providerAttempted, err
+		result.ProviderAttempted = providerAttempted
+		return result, err
 	case db.ArchiveItemTypeMergeRequest:
 		providerAttempted := false
 		var resolvedRepoID int64
@@ -13080,10 +13082,23 @@ func (s *Syncer) SyncArchiveItem(
 			err = s.requireGitHubArchiveMergedMRMetrics(
 				ctx, resolvedRepoID, number, fetchedEvidence, lifecyclePersisted,
 			)
+			if err == nil {
+				var filesChanged *int
+				if fetchedEvidence.filesChanged != nil {
+					value := *fetchedEvidence.filesChanged
+					filesChanged = &value
+				}
+				result.MergeRequestEvidence = &db.ArchiveMergeRequestEvidence{
+					Merged: fetchedEvidence.merged, HeadSHA: fetchedEvidence.headSHA,
+					MergeCommitSHA: fetchedEvidence.mergeCommitSHA,
+					FilesChanged:   filesChanged,
+				}
+			}
 		}
-		return providerAttempted, err
+		result.ProviderAttempted = providerAttempted
+		return result, err
 	default:
-		return false, fmt.Errorf("sync archive item: invalid item type %q", itemType)
+		return result, fmt.Errorf("sync archive item: invalid item type %q", itemType)
 	}
 }
 

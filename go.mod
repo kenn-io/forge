@@ -6,14 +6,14 @@ require (
 	code.gitea.io/sdk/gitea v0.25.1
 	codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3 v3.0.0
 	github.com/BurntSushi/toml v1.6.0
-	github.com/andybalholm/brotli v1.2.1
+	github.com/andybalholm/brotli v1.2.2
 	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/cenkalti/backoff/v7 v7.0.0
 	github.com/coder/websocket v1.8.15
 	github.com/creack/pty/v2 v2.0.1
-	github.com/danielgtaylor/huma/v2 v2.38.0
+	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/danielgtaylor/shorthand/v2 v2.4.0
-	github.com/doordash-oss/oapi-codegen-dd/v3 v3.75.5
+	github.com/doordash-oss/oapi-codegen-dd/v3 v3.75.7
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/gofrs/flock v0.13.0
@@ -21,9 +21,9 @@ require (
 	github.com/google/go-github/v89 v89.0.0
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
-	github.com/klauspost/compress v1.18.7
-	github.com/oapi-codegen/runtime v1.4.2
-	github.com/posthog/posthog-go v1.16.1
+	github.com/klauspost/compress v1.19.2
+	github.com/oapi-codegen/runtime v1.6.0
+	github.com/posthog/posthog-go v1.22.0
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	github.com/sourcegraph/go-diff v0.8.0
@@ -33,21 +33,21 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.43.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.43.0
-	github.com/yuin/goldmark v1.7.17
-	gitlab.com/gitlab-org/api/client-go/v2 v2.44.0
+	github.com/yuin/goldmark v1.8.5
+	gitlab.com/gitlab-org/api/client-go/v2 v2.55.1
 	go.kenn.io/kata v0.14.3
 	go.kenn.io/kit v0.19.1
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
-	go.opentelemetry.io/otel v1.44.0
-	go.opentelemetry.io/otel/sdk v1.44.0
-	go.opentelemetry.io/otel/trace v1.44.0
-	go.yaml.in/yaml/v3 v3.0.4
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0
+	go.opentelemetry.io/otel v1.45.0
+	go.opentelemetry.io/otel/sdk v1.45.0
+	go.opentelemetry.io/otel/trace v1.45.0
+	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.40.0
-	golang.org/x/tools v0.47.0
-	modernc.org/sqlite v1.53.0
+	golang.org/x/tools v0.48.0
+	modernc.org/sqlite v1.56.0
 )
 
 require (
@@ -183,7 +183,7 @@ require (
 	github.com/morikuni/aec v1.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/oapi-codegen/oapi-codegen/v2 v2.7.1 // indirect
+	github.com/oapi-codegen/oapi-codegen/v2 v2.8.0 // indirect
 	github.com/oasdiff/yaml v0.0.9 // indirect
 	github.com/oasdiff/yaml3 v0.0.9 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect

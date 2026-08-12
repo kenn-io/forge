@@ -685,7 +685,13 @@
   );
   const renderedWorkspaceInputRegion = $derived.by<WorkspaceInputRegion | null>(() => {
     if (!hostVisible) return null;
-    if (workspaceInputRegion === "details" && (hideRightSidebar || !sidebarOpen)) return null;
+    if (workspaceInputRegion === "workflow" && !runtimeLive) return null;
+    if (
+      workspaceInputRegion === "details" &&
+      (!workspaceDetailsReady || hideRightSidebar || !sidebarOpen)
+    ) {
+      return null;
+    }
     if (workspaceInputRegion === "terminal" && terminalLayout.dock !== "bottom") {
       return null;
     }
@@ -693,10 +699,13 @@
   });
 
   $effect.pre(() => {
-    const detailsVisible = hostVisible && !hideRightSidebar && sidebarOpen;
+    const workflowVisible = hostVisible && runtimeLive;
+    const detailsVisible =
+      hostVisible && workspaceDetailsReady && !hideRightSidebar && sidebarOpen;
     const terminalVisible = hostVisible && terminalLayout.dock === "bottom";
     const focusedRegion = untrack(() => workspaceInputRegion);
     const focusedRegionDisappears =
+      (focusedRegion === "workflow" && !workflowVisible) ||
       (focusedRegion === "details" && !detailsVisible) ||
       (focusedRegion === "terminal" && !terminalVisible);
     if (!focusedRegionDisappears || !hostVisible) return;
@@ -705,7 +714,10 @@
     // then reports focusout after the DOM update, which is too late to know which
     // workspace sibling owned focus. Reclaim only when the browser has nowhere
     // better to put it; a replacement control or modal always keeps ownership.
-    const execution = appRuntime.runCommand(
+    // Readiness settles in phases during a workspace switch. Keep this bounded
+    // one-tick command independent of effect reruns so the next phase cannot
+    // interrupt the recovery before it observes the updated DOM.
+    appRuntime.runCommand(
       Effect.promise(() => tick()).pipe(
         Effect.andThen(Effect.sync(() => {
           if (!hostVisible || document.activeElement !== document.body) return;
@@ -718,7 +730,6 @@
         onFailure: () => undefined,
       },
     );
-    return execution.interrupt;
   });
 
   $effect(() => {

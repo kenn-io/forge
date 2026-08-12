@@ -1380,81 +1380,107 @@ describe("WorkspaceTerminalView", () => {
     });
   });
 
-  it("removes the old sidebar and waits for matching runtime before loading the new diff", async () => {
-    window.__BASE_PATH__ = window.location.origin;
-    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
-    localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "diff");
-    const workspaceB = { ...workspaceResponse, id: "ws-2", git_head_ref: "feature/two" };
-    const workspaceBGate = deferred<typeof workspaceB>();
-    const runtimeBGate = deferred<ReturnType<typeof runtimeWithStaleSession>>();
-    const eventListeners: Array<Record<string, (event: MessageEvent) => void>> = [];
-    const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
+  it.each(["details", "workflow"] as const)(
+    "releases %s focus while waiting for matching workspace state",
+    async (focusedRegion) => {
+      window.__BASE_PATH__ = window.location.origin;
+      localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+      localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "diff");
+      const workspaceB = { ...workspaceResponse, id: "ws-2", git_head_ref: "feature/two" };
+      const workspaceBGate = deferred<typeof workspaceB>();
+      const runtimeBGate = deferred<ReturnType<typeof runtimeWithStaleSession>>();
+      const eventListeners: Array<Record<string, (event: MessageEvent) => void>> = [];
+      const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: Request | URL | string) => {
-        const path = fetchPath(input);
-        if (path.endsWith("/workspaces/ws-1")) return Promise.resolve(Response.json(workspaceResponse));
-        if (path.endsWith("/workspaces/ws-2")) {
-          return workspaceBGate.promise.then((workspace) => Response.json(workspace));
-        }
-        if (path.endsWith("/api/v1/workspaces")) {
-          return Promise.resolve(Response.json({ workspaces: [workspaceResponse, workspaceB] }));
-        }
-        return Promise.resolve(Response.json({}));
-      }),
-    );
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        private listeners: Record<string, (event: MessageEvent) => void> = {};
-        constructor() {
-          eventListeners.push(this.listeners);
-        }
-        addEventListener(type: string, callback: (event: MessageEvent) => void): void {
-          this.listeners[type] = callback;
-        }
-        close(): void {}
-      },
-    );
-    mocks.getWorkspaceRuntime
-      .mockResolvedValueOnce(runtimeWithStaleSession())
-      .mockReturnValueOnce(runtimeBGate.promise);
-
-    const { rerender } = render(WorkspaceTerminalView, {
-      props: { workspaceId: "ws-1" },
-      context: new Map([[STORES_KEY, { diff: mocks.diffStore }]]),
-    });
-    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "head", false, expect.anything()));
-
-    await rerender({ workspaceId: "ws-2" });
-
-    // Liveness gating unmounts the stale ws-1 view entirely while ws-2
-    // loads: the old toolbar and sidebar are gone, not lingering behind
-    // action guards.
-    expect(await screen.findByText("Setting up workspace...")).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
-    expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
-
-    eventListeners
-      .findLast((listeners) => listeners.workspace_diff_ready !== undefined)
-      ?.workspace_diff_ready?.(
-        new MessageEvent("workspace_diff_ready", {
-          data: JSON.stringify({ workspace_id: "ws-2", version: "generation:2" }),
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation((input: Request | URL | string) => {
+          const path = fetchPath(input);
+          if (path.endsWith("/workspaces/ws-1")) return Promise.resolve(Response.json(workspaceResponse));
+          if (path.endsWith("/workspaces/ws-2")) {
+            return workspaceBGate.promise.then((workspace) => Response.json(workspace));
+          }
+          if (path.endsWith("/api/v1/workspaces")) {
+            return Promise.resolve(Response.json({ workspaces: [workspaceResponse, workspaceB] }));
+          }
+          return Promise.resolve(Response.json({}));
         }),
       );
-    workspaceBGate.resolve(workspaceB);
-    // ws-2's payload landed but its runtime is still pending: the ready
-    // view mounts with the details-loading sub-state and the diff still
-    // waits for the matching runtime.
-    expect(await screen.findByText("Loading workspace details...")).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
-    expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
+      vi.stubGlobal(
+        "EventSource",
+        class {
+          private listeners: Record<string, (event: MessageEvent) => void> = {};
+          constructor() {
+            eventListeners.push(this.listeners);
+          }
+          addEventListener(type: string, callback: (event: MessageEvent) => void): void {
+            this.listeners[type] = callback;
+          }
+          close(): void {}
+        },
+      );
+      mocks.getWorkspaceRuntime
+        .mockResolvedValueOnce(runtimeWithStaleSession())
+        .mockReturnValueOnce(runtimeBGate.promise);
 
-    runtimeBGate.resolve(runtimeWithStaleSession());
-    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-2", "head", false, expect.anything()));
-    expect(screen.queryByText("Loading workspace details...")).toBeNull();
-  });
+      const { rerender } = render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1" },
+        context: new Map([[STORES_KEY, { diff: mocks.diffStore }]]),
+      });
+      await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "head", false, expect.anything()));
+
+      const inputOwner =
+        focusedRegion === "details"
+          ? await screen.findByRole("region", { name: "Workspace details pane" })
+          : await waitFor(() => {
+              const pane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:helper"]');
+              expect(pane).not.toBeNull();
+              return pane!;
+            });
+      const focusTarget = document.createElement("button");
+      inputOwner.append(focusTarget);
+      focusTarget.focus();
+      expect(document.activeElement).toBe(focusTarget);
+      if (focusedRegion === "details") {
+        await waitFor(() => expect(inputOwner.classList.contains("input-active")).toBe(true));
+      } else {
+        await waitFor(() =>
+          expect(document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveLength(1),
+        );
+      }
+
+      await rerender({ workspaceId: "ws-2" });
+
+      // Liveness gating unmounts the stale ws-1 view entirely while ws-2
+      // loads: the old toolbar and sidebar are gone, not lingering behind
+      // action guards.
+      expect(await screen.findByText("Setting up workspace...")).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
+      expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".terminal-view")));
+      expect(document.querySelector(".right-sidebar.input-active")).toBeNull();
+      expect(document.querySelector(".workspace-stage .tabbed-panel-leaf.input-active")).toBeNull();
+
+      eventListeners
+        .findLast((listeners) => listeners.workspace_diff_ready !== undefined)
+        ?.workspace_diff_ready?.(
+          new MessageEvent("workspace_diff_ready", {
+            data: JSON.stringify({ workspace_id: "ws-2", version: "generation:2" }),
+          }),
+        );
+      workspaceBGate.resolve(workspaceB);
+      // ws-2's payload landed but its runtime is still pending: the ready
+      // view mounts with the details-loading sub-state and the diff still
+      // waits for the matching runtime.
+      expect(await screen.findByText("Loading workspace details...")).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
+      expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
+
+      runtimeBGate.resolve(runtimeWithStaleSession());
+      await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-2", "head", false, expect.anything()));
+      expect(screen.queryByText("Loading workspace details...")).toBeNull();
+    },
+  );
 
   it("renders matching workspace details when runtime loading fails", async () => {
     window.__BASE_PATH__ = window.location.origin;

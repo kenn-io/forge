@@ -310,6 +310,9 @@ Keyboard handlers must have one clear owner for each key press.
 - If a same-leaf tab change removes focused content without `focusout`, reclaim
   the layout only when focus fell to `document.body`
   (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::reclaimFocus`).
+- Same-tab content identity replacement must also release disconnected focus;
+  renderer DOM removal is the signal because pane layout state does not change
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::observeMutation`).
 - Activity commit diffs use live pane `inputActive` for global shortcuts, not
   pane visibility (`frontend/src/lib/components/CommitDiffPanel.svelte::Props`).
 - Nested pane trees paint focus only while DOM focus is inside both the nested

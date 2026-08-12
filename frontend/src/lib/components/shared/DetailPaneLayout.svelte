@@ -16,7 +16,7 @@
   import type { PaneLayoutStore, PaneTabSpec } from "../../stores/paneLayout.svelte.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { observeResize } from "../../browser/observers.js";
+  import { observeMutation, observeResize } from "../../browser/observers.js";
 
   interface Props {
     layout: PaneLayoutStore;
@@ -314,6 +314,35 @@
     focusedInputTabKey = null;
     focusedInputElement = null;
   }
+
+  // Pane identity can replace focused content without changing the pane tree,
+  // selected tab, or emitting focusout. Observe the renderer boundary itself:
+  // a pooled terminal parked elsewhere stays connected, while removed content
+  // does not and must release keyboard ownership.
+  $effect(() => {
+    const el = host;
+    if (!el || typeof MutationObserver === "undefined") return;
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.scoped(
+          observeMutation(
+            el,
+            () => {
+              const focused = focusedInputElement;
+              if (focused === null || focused.isConnected) return;
+              focusedInputLeafID = null;
+              focusedInputTabKey = null;
+              focusedInputElement = null;
+              reclaimFocus();
+            },
+            { childList: true, subtree: true },
+          ).pipe(Effect.andThen(Effect.never)),
+        ),
+        { operation: "observe detail pane focus", safeContext: {}, onFailure: () => {} },
+      ),
+    );
+    return execution.interrupt;
+  });
 
   // A zoom must not survive the disappearance of what was zoomed. The store
   // cannot see availability, so masking it at render time is not enough: a

@@ -497,6 +497,22 @@ describe("detail pane layout", () => {
     });
   });
 
+  it("reclaims focus when same-tab content identity replaces the focused body", async () => {
+    const layout = store(mergedTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, { layout, paneIdentity: "first" });
+    const conversationFocusTarget = screen.getByTestId("pane-focus-target-conversation");
+
+    conversationFocusTarget.focus();
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBe("conversation"));
+
+    await rerender({ layout, paneIdentity: "second" });
+
+    await vi.waitFor(() => {
+      expect(document.activeElement?.classList.contains("detail-pane-layout")).toBe(true);
+      expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+    });
+  });
+
   it("drops stale ownership when a focused inactive tab moves to another leaf", async () => {
     const layout = store(mergedTree());
     render(DetailPaneLayoutTestHarness, { layout });

@@ -23,6 +23,8 @@
      * changes on unrelated state — including as a consequence of a zoom.
      */
     tabsNonce?: number;
+    /** Replaces pane content without changing its leaf or selected tab. */
+    paneIdentity?: string;
   }
 
   const runtime = makeAppRuntime();
@@ -40,6 +42,7 @@
     withLeafExtras = false,
     labelFromRender = false,
     tabsNonce = 0,
+    paneIdentity = "initial",
   }: Props = $props();
 
   const workspaceLabel = $derived(
@@ -69,15 +72,17 @@
   paneLeafExtras={withLeafExtras ? leafExtras : undefined}
 >
   {#snippet renderPane(tabKey, visible, inputActive)}
-    <section
-      data-testid={`pane-${tabKey}`}
-      data-visible={String(visible)}
-      data-input-active={String(inputActive)}
-    >
-      Pane {tabKey}
-      {#if visible}
-        <button type="button" data-testid={`pane-focus-target-${tabKey}`}>Focus {tabKey}</button>
-      {/if}
-    </section>
+    {#key paneIdentity}
+      <section
+        data-testid={`pane-${tabKey}`}
+        data-visible={String(visible)}
+        data-input-active={String(inputActive)}
+      >
+        Pane {tabKey}
+        {#if visible}
+          <button type="button" data-testid={`pane-focus-target-${tabKey}`}>Focus {tabKey}</button>
+        {/if}
+      </section>
+    {/key}
   {/snippet}
 </DetailPaneLayout>

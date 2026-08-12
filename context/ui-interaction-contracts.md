@@ -333,9 +333,12 @@ Keyboard handlers must have one clear owner for each key press.
 - Pane keyboard ownership follows the exact rendered leaf and tab containing DOM focus;
   nested tab identity never bubbles into an outer tree
   (`frontend/src/lib/components/shared/TabbedPanelTree.svelte::handleLeafFocusIn`).
-- Preserve a focused node through no-destination `focusout` until the Effect-scoped layout observer tests connectivity;
-  keyed replacement releases ownership and restores focus, while connected pooled terminals stay untouched
+- Preserve a focused node through no-destination `focusout` only for the immediate Effect-managed replacement window;
+  keyed replacement restores focus, while an ordinary blur cannot affect later DOM removal
   (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::handleLayoutFocusOut`).
+- A terminal dock tracks the exact focused descendant across silent session removal; it releases ownership when that
+  node leaves the dock, restores a surviving dock only for disconnected content, and leaves connected pooled moves alone
+  (`frontend/src/lib/components/terminal/DockedTerminalPanel.svelte::handleFocusOut`).
 - Focus Terminal reveals, it never maximizes: a closed workspace pane reopens
   alongside the detail and a visible one keeps its arrangement. Maximizing over
   the detail is only ever an explicit user action. Reopening also has to clear a

@@ -129,4 +129,64 @@ describe("DockedTerminalPanel", () => {
 
     expect(onInputDeactivate).toHaveBeenCalledOnce();
   });
+
+  it("releases input ownership when the focused session disappears", async () => {
+    const onInputActivate = vi.fn();
+    const onInputDeactivate = vi.fn();
+    const view = renderDockedTerminalPanel({
+      sessions,
+      tree: {
+        type: "split",
+        id: "split-a-b",
+        direction: "horizontal",
+        ratio: 0.5,
+        first: { type: "leaf", id: "leaf-a", sessionKey: sessions[0]!.key },
+        second: { type: "leaf", id: "leaf-b", sessionKey: sessions[1]!.key },
+      },
+      activeSessionKey: sessions[0]!.key,
+      onInputActivate,
+      onInputDeactivate,
+    });
+    const focusedSession = document.querySelector<HTMLElement>(".session-terminal-slot");
+    expect(focusedSession).not.toBeNull();
+    const focusTarget = document.createElement("button");
+    focusedSession?.append(focusTarget);
+    focusTarget.focus();
+    await vi.waitFor(() => expect(onInputActivate).toHaveBeenCalled());
+
+    await view.rerender({
+      component: DockedTerminalPanelTestHarness,
+      sessions: [sessions[1]!],
+      tree: { type: "leaf", id: "leaf-b", sessionKey: sessions[1]!.key },
+      activeSessionKey: sessions[1]!.key,
+      onInputActivate,
+      onInputDeactivate,
+    });
+
+    const panel = screen.getByRole("region", { name: "Terminal panel" });
+    await vi.waitFor(() => {
+      expect(onInputDeactivate).toHaveBeenCalledOnce();
+      expect(document.activeElement).toBe(panel);
+    });
+  });
+
+  it("leaves focus with a connected session moved outside the dock", async () => {
+    const onInputDeactivate = vi.fn();
+    renderDockedTerminalPanel({
+      sessions: [sessions[0]!],
+      tree: { type: "leaf", id: "leaf-a", sessionKey: sessions[0]!.key },
+      activeSessionKey: sessions[0]!.key,
+      onInputDeactivate,
+    });
+    const focusedSession = document.querySelector<HTMLElement>(".session-terminal-slot");
+    expect(focusedSession).not.toBeNull();
+    const focusTarget = document.createElement("button");
+    focusedSession?.append(focusTarget);
+    focusTarget.focus();
+
+    document.body.append(focusTarget);
+
+    await vi.waitFor(() => expect(onInputDeactivate).toHaveBeenCalledOnce());
+    expect(document.activeElement).not.toBe(screen.getByRole("region", { name: "Terminal panel" }));
+  });
 });

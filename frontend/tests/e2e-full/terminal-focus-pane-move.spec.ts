@@ -22,6 +22,10 @@ type WorkspaceStatusResponse = {
   error_message?: string | null;
 };
 
+type WorkspaceRuntimeResponse = {
+  sessions?: Array<{ key: string; status: string }>;
+};
+
 const preMarker = "TERM_FOCUS_PRE_MOVE";
 const postMarker = "TERM_FOCUS_POST_MOVE";
 const clipboardMarker = "TERM_FOCUS_TMUX_CLIP";
@@ -74,6 +78,13 @@ async function launchShell(
 
 async function launchDockedShell(api: APIRequestContext, workspaceId: string): Promise<void> {
   await launchShell(api, workspaceId, "terminal");
+}
+
+async function runningSessionKeys(api: APIRequestContext, workspaceId: string): Promise<string[]> {
+  const response = await api.get(`/api/v1/workspaces/${workspaceId}/runtime`);
+  expect(response.ok()).toBe(true);
+  const runtime = (await response.json()) as WorkspaceRuntimeResponse;
+  return (runtime.sessions ?? []).filter((session) => session.status === "running").map((session) => session.key);
 }
 
 async function focusedSessionHost(page: Page): Promise<string | null> {
@@ -334,6 +345,52 @@ test("terminal acquires keyboard focus on every item switch, not just the first"
     await page.locator("aside button", { hasText: "#10" }).first().click();
     await expect.poll(() => focusedSessionHost(page), { timeout: 15_000 }).toContain(first.id);
     await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
+  } finally {
+    await api?.dispose();
+    await isolatedServer?.stop();
+  }
+});
+
+test("dock reclaims focus when its focused session stops", async ({ page }) => {
+  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  let isolatedServer: IsolatedE2EServer | null = null;
+  let api: APIRequestContext | null = null;
+  try {
+    isolatedServer = await startIsolatedWorkspaceE2EServer();
+    api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+    const workspace = await createIssueWorkspace(api);
+    await launchDockedShell(api, workspace.id);
+    await launchDockedShell(api, workspace.id);
+    await launchDockedShell(api, workspace.id);
+    const sessionKeys = await runningSessionKeys(api, workspace.id);
+    expect(sessionKeys).toHaveLength(3);
+
+    await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+    await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+    const panel = await openTerminalPanel(page);
+    const focusedTerminal = panel.locator(".terminal-container").first();
+    await focusedTerminal.click({ position: { x: 10, y: 10 } });
+    const focusedHostKey = await focusedSessionHost(page);
+    if (focusedHostKey === null) {
+      throw new Error("Expected the focused dock terminal to expose its session host key");
+    }
+    const focusedSessionKey = sessionKeys.find((key) => focusedHostKey?.includes(key));
+    if (focusedSessionKey === undefined) {
+      throw new Error(`Focused terminal ${focusedHostKey} did not match a running session`);
+    }
+
+    const response = await api.delete(
+      `/api/v1/workspaces/${workspace.id}/runtime/sessions/${encodeURIComponent(focusedSessionKey)}`,
+      { data: {} },
+    );
+    expect(response.status(), await response.text()).toBe(204);
+
+    await expect(page.locator(`[data-session-host="${focusedHostKey}"]`)).toHaveCount(0);
+    await expect(panel).toBeFocused();
+    await expect(panel).toHaveClass(/input-active/);
+    await expect(panel.locator(".terminal-container")).toBeVisible();
   } finally {
     await api?.dispose();
     await isolatedServer?.stop();

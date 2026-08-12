@@ -16,6 +16,7 @@
   import type { PaneLayoutStore, PaneTabSpec } from "../../stores/paneLayout.svelte.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { observeMutation, observeResize } from "../../browser/observers.js";
 
   interface Props {
@@ -70,6 +71,7 @@
   }: Props = $props();
   const runtime = getAppRuntime();
   let focusExecution: AppExecution<void, never> | null = null;
+  let focusRecordExecution: AppExecution<void, never> | null = null;
 
   /**
    * The workspace pane draws its own tab strip: one tab per session, plus the dock.
@@ -297,6 +299,8 @@
   }
 
   function handleLayoutFocusIn(event: FocusEvent & { currentTarget: HTMLElement }): void {
+    focusRecordExecution?.interrupt();
+    focusRecordExecution = null;
     const target = event.target;
     if (target instanceof HTMLElement && target.closest(".tabbed-panel-leaf") !== null) {
       focusedInputElement = target;
@@ -316,7 +320,29 @@
     // focused node. Keep that exact node until the mutation observer can test
     // whether it disconnected; a real destination outside the layout no
     // longer needs the record.
-    if (next !== null) focusedInputElement = null;
+    if (next !== null) {
+      focusRecordExecution?.interrupt();
+      focusRecordExecution = null;
+      focusedInputElement = null;
+      return;
+    }
+    const blurred = focusedInputElement;
+    focusRecordExecution?.interrupt();
+    focusRecordExecution = runtime.runCommand(
+      nextAnimationFrame.pipe(
+        Effect.andThen(Effect.sync(() => {
+          if (focusedInputElement === blurred && blurred?.isConnected) {
+            focusedInputElement = null;
+          }
+          focusRecordExecution = null;
+        })),
+      ),
+      {
+        operation: "release detail pane focus record",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
   }
 
   // Pane identity can replace focused content without changing the pane tree,

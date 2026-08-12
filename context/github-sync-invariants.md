@@ -456,9 +456,9 @@ fallback repository listing.
   missing lifecycle fields when the head SHA matches; never weaken ordering.
   (`internal/github/sync.go::requireGitHubArchiveMergedMRMetrics`,
   `internal/db/queries_merge_lifecycle.go::FillMissingMergedMRMetrics`)
-- Rejected canonical merged snapshots persist the merger event even if metrics
-  are omitted; metric repair shares one route-fence lease, and stored
-  `merged_at` proves merge despite open legacy state. (`internal/github/sync.go::syncMRForRepoResolved`)
+- Rejected canonical merged snapshots repair each available lifecycle field and
+  the merger event under one route-fence lease; a rejected fenced repair stays
+  retryable. (`internal/github/sync.go::syncMRForRepoResolved`)
 - Post-hydration completeness queries the repository ID resolved by that sync;
   never re-resolve the caller's mutable route after reconciliation.
   (`internal/github/sync.go::SyncArchiveItem`)

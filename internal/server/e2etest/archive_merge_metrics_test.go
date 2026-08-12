@@ -48,6 +48,10 @@ func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T
 			name: "complete metrics missing actor", state: db.MergeRequestStateMerged,
 			storeMergedTime: true, storeMergeMetrics: true,
 		},
+		{
+			name: "state only with stored metrics", state: db.MergeRequestStateMerged,
+			storeMergeMetrics: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

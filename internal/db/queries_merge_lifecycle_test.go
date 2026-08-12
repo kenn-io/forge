@@ -30,7 +30,7 @@ func TestFillMissingMergedMRMetricsFillsOnlyMissingFields(t *testing.T) {
 
 	changed, err := database.FillMissingMergedMRMetrics(ctx, MergeRequestMergeMetrics{
 		RepoID: repoID, Number: 7, HeadSHA: "head-sha",
-		MergeCommitSHA: "merge-sha", FilesChanged: 4,
+		MergeCommitSHA: new("merge-sha"), FilesChanged: new(4),
 	})
 	require.NoError(err)
 	assert.True(changed)
@@ -44,6 +44,36 @@ func TestFillMissingMergedMRMetricsFillsOnlyMissingFields(t *testing.T) {
 	assert.Equal("newer title", after.Title)
 	assert.Equal(before.UpdatedAt, after.UpdatedAt)
 	assert.Equal(before.SnapshotRevision, after.SnapshotRevision)
+}
+
+func TestFillMissingMergedMRMetricsUsesAvailableProviderFields(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID := insertTestRepo(t, database, "acme", "widget")
+	mergedAt := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	_, err := database.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: repoID, PlatformID: 7, Number: 7,
+		State: MergeRequestStateMerged, PlatformHeadSHA: "head-sha",
+		MergeCommitSHA: "stored-merge-sha", FilesChanged: new(4),
+		CreatedAt: mergedAt.Add(-time.Hour), UpdatedAt: mergedAt,
+		LastActivityAt: mergedAt,
+	})
+	require.NoError(err)
+
+	changed, err := database.FillMissingMergedMRMetrics(ctx, MergeRequestMergeMetrics{
+		RepoID: repoID, Number: 7, HeadSHA: "head-sha", MergedAt: &mergedAt,
+	})
+	require.NoError(err)
+	require.True(changed)
+
+	after, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(after)
+	require.Equal("stored-merge-sha", after.MergeCommitSHA)
+	require.Equal(4, *after.FilesChanged)
+	require.Equal(mergedAt, *after.MergedAt)
 }
 
 func TestFillMissingMergedMRMetricsAcceptsEitherMergedIndicator(t *testing.T) {
@@ -77,7 +107,7 @@ func TestFillMissingMergedMRMetricsAcceptsEitherMergedIndicator(t *testing.T) {
 
 			changed, err := database.FillMissingMergedMRMetrics(ctx, MergeRequestMergeMetrics{
 				RepoID: repoID, Number: 7, HeadSHA: "head-sha",
-				MergeCommitSHA: "merge-sha", FilesChanged: 4, MergedAt: &mergedAt,
+				MergeCommitSHA: new("merge-sha"), FilesChanged: new(4), MergedAt: &mergedAt,
 			})
 			require.NoError(err)
 			require.True(changed)
@@ -113,14 +143,14 @@ func TestFillMissingMergedMRMetricsPreservesExistingFields(t *testing.T) {
 
 	changed, err := database.FillMissingMergedMRMetrics(ctx, MergeRequestMergeMetrics{
 		RepoID: repoID, Number: 7, HeadSHA: "head-sha",
-		MergeCommitSHA: "provider-merge-sha", FilesChanged: 4,
+		MergeCommitSHA: new("provider-merge-sha"), FilesChanged: new(4),
 	})
 	require.NoError(err)
 	assert.True(changed)
 
 	changed, err = database.FillMissingMergedMRMetrics(ctx, MergeRequestMergeMetrics{
 		RepoID: repoID, Number: 7, HeadSHA: "head-sha",
-		MergeCommitSHA: "later-merge-sha", FilesChanged: 9,
+		MergeCommitSHA: new("later-merge-sha"), FilesChanged: new(9),
 	})
 	require.NoError(err)
 	assert.False(changed)
@@ -171,10 +201,6 @@ func TestFillMissingMergedMRMetricsRejectsUnprovenIdentity(t *testing.T) {
 			name: "empty provider head", state: MergeRequestStateMerged,
 			storedHead: "head-sha", inputNumber: 7, mergeSHA: "merge-sha",
 		},
-		{
-			name: "empty provider merge SHA", state: MergeRequestStateMerged,
-			storedHead: "head-sha", inputNumber: 7, inputHead: "head-sha",
-		},
 	}
 
 	for _, tt := range tests {
@@ -202,7 +228,7 @@ func TestFillMissingMergedMRMetricsRejectsUnprovenIdentity(t *testing.T) {
 			}
 			changed, err := database.FillMissingMergedMRMetrics(ctx, MergeRequestMergeMetrics{
 				RepoID: inputRepoID, Number: tt.inputNumber, HeadSHA: tt.inputHead,
-				MergeCommitSHA: tt.mergeSHA, FilesChanged: 4,
+				MergeCommitSHA: new(tt.mergeSHA), FilesChanged: new(4),
 			})
 			require.NoError(err)
 			assert.False(changed)

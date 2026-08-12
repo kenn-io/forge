@@ -13271,6 +13271,94 @@ func TestSyncArchiveMRChecksMetricsByResolvedRepositoryIDAfterRename(t *testing.
 	require.Equal(4, *mr.FilesChanged)
 }
 
+func TestSyncArchiveMRRetriesWhenRejectedRepairLosesRouteFence(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-a",
+	}
+	entry, accepted, err := database.ReconcileRepositoryObservation(
+		ctx,
+		db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-a", Owner: "acme", Name: "widget",
+			RepoPath: "acme/widget",
+		},
+		time.Now().UTC().Add(-time.Hour),
+	)
+	require.NoError(err)
+	require.True(accepted)
+
+	providerUpdatedAt := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	localUpdatedAt := providerUpdatedAt.Add(835 * time.Millisecond)
+	mergedAt := providerUpdatedAt.Add(-time.Second)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: entry.Repository.ID, PlatformID: 7, Number: 7,
+		State: db.MergeRequestStateMerged, PlatformHeadSHA: "head-sha",
+		MergeCommitSHA: "merge-sha", FilesChanged: new(4),
+		CreatedAt: providerUpdatedAt.Add(-time.Hour), UpdatedAt: localUpdatedAt,
+		LastActivityAt: localUpdatedAt, MergedAt: &mergedAt, ClosedAt: &mergedAt,
+	})
+	require.NoError(err)
+
+	canonical := buildOpenPR(7, providerUpdatedAt)
+	canonical.State = new("closed")
+	canonical.Merged = new(true)
+	canonical.MergedAt = makeTimestamp(mergedAt)
+	canonical.ClosedAt = makeTimestamp(mergedAt)
+	canonical.MergeCommitSHA = new("merge-sha")
+	canonical.ChangedFiles = nil
+	canonical.Head.SHA = new("head-sha")
+	canonical.MergedBy = &gh.User{Login: new("merge-admin")}
+	client := &mockClient{
+		getRepositoryFn: func(
+			context.Context, string, string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				ID: new(int64(1)), NodeID: new("repo-a"), Name: new("widget"),
+				Owner: &gh.User{Login: new("acme")}, Archived: new(false),
+			}, nil
+		},
+		getPullRequestFn: func(
+			context.Context, string, string, int,
+		) (*gh.PullRequest, error) {
+			_, accepted, reconcileErr := database.ReconcileRepositoryObservation(
+				ctx,
+				db.RepoIdentity{
+					Platform: "github", PlatformHost: "github.com",
+					PlatformRepoID: "repo-a", Owner: "acme", Name: "renamed",
+					RepoPath: "acme/renamed",
+				},
+				time.Now().UTC().Add(time.Hour),
+			)
+			require.NoError(reconcileErr)
+			require.True(accepted)
+			return canonical, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	providerAttempted, err := syncer.SyncArchiveItem(
+		WithArchiveSyncBudget(ctx), platformRepoRef(repo),
+		db.ArchiveItemTypeMergeRequest, 7,
+	)
+	require.True(providerAttempted)
+	require.ErrorContains(err, "repository was not resolved")
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, entry.Repository.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	events, err := database.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Empty(events)
+}
+
 func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 	tests := []struct {
 		name              string

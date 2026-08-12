@@ -12432,42 +12432,48 @@ func (s *Syncer) syncMRForRepoResolved(
 	}
 	if !accepted {
 		if ghPR != nil && pullRequestWasMerged(ghPR) {
+			abandonRepair := func() {
+				if resolvedRepoID != nil {
+					*resolvedRepoID = 0
+				}
+			}
 			repairCtx := s.db.WithRepositoryRouteFence(
 				ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 			)
 			repairCtx, releaseRepair, lockErr :=
 				s.db.LockRepositoryReconciliationReadForWrite(repairCtx)
 			if errors.Is(lockErr, db.ErrRepositoryRouteFenceChanged) {
+				abandonRepair()
 				return nil
 			}
 			if lockErr != nil {
 				return fmt.Errorf("lock merged MR #%d repair: %w", number, lockErr)
 			}
 			defer releaseRepair()
-			if normalized.FilesChanged != nil {
-				_, repairErr := s.db.FillMissingMergedMRMetrics(
-					repairCtx,
-					db.MergeRequestMergeMetrics{
-						RepoID: repoID, Number: number,
-						HeadSHA:        normalized.PlatformHeadSHA,
-						MergeCommitSHA: normalized.MergeCommitSHA,
-						FilesChanged:   *normalized.FilesChanged,
-						MergedAt:       normalized.MergedAt,
-					},
-				)
-				if errors.Is(repairErr, db.ErrRepositoryRouteFenceChanged) {
-					return nil
-				}
-				if repairErr != nil {
-					return fmt.Errorf("repair merged MR #%d metrics: %w", number, repairErr)
-				}
-				if s.afterMergedMRMetricsRepair != nil {
-					s.afterMergedMRMetricsRepair()
-				}
+			_, repairErr := s.db.FillMissingMergedMRMetrics(
+				repairCtx,
+				db.MergeRequestMergeMetrics{
+					RepoID: repoID, Number: number,
+					HeadSHA:        normalized.PlatformHeadSHA,
+					MergeCommitSHA: &normalized.MergeCommitSHA,
+					FilesChanged:   normalized.FilesChanged,
+					MergedAt:       normalized.MergedAt,
+				},
+			)
+			if errors.Is(repairErr, db.ErrRepositoryRouteFenceChanged) {
+				abandonRepair()
+				return nil
+			}
+			if repairErr != nil {
+				return fmt.Errorf("repair merged MR #%d metrics: %w", number, repairErr)
+			}
+			if s.afterMergedMRMetricsRepair != nil {
+				s.afterMergedMRMetricsRepair()
 			}
 			if _, actorErr := s.persistMergedTransitionEvent(
 				repairCtx, mrID, revision, ghPR, normalized.MergedAt,
 			); errors.Is(actorErr, db.ErrRepositoryRouteFenceChanged) {
+				abandonRepair()
 				return nil
 			} else if actorErr != nil {
 				return fmt.Errorf("repair merged MR #%d actor: %w", number, actorErr)

@@ -1236,8 +1236,12 @@ func (g *fleetSSHResizeGroup) selectOwnerLocked() {
 		if !member.active {
 			continue
 		}
+		if g.ownerID == 0 {
+			g.ownerID = id
+			continue
+		}
 		owner := g.members[g.ownerID]
-		if g.ownerID == 0 || member.claim > owner.claim ||
+		if owner == nil || member.claim > owner.claim ||
 			(member.claim == owner.claim && id < g.ownerID) {
 			g.ownerID = id
 		}

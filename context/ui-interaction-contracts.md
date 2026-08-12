@@ -310,6 +310,9 @@ Keyboard handlers must have one clear owner for each key press.
   pane and its containing pane, and only the deepest focused pane paints;
   workspace Workflow, Details, and bottom Terminal regions are siblings
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::renderedWorkspaceInputRegion`).
+- If focused Workspace Details or bottom Terminal disappears while its host stays visible,
+  reclaim the Workspace root only when focus fell to `document.body`; parking never reclaims focus
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceRoot`).
 - A focused surface-hosted dock outside the pane tree becomes the live focused
   surface until focus leaves it. Persisted last-focused state is restoration and
   command memory only; it never represents current focus. Workspace window

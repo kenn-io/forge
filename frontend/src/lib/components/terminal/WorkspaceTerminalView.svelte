@@ -692,6 +692,35 @@
     return workspaceInputRegion;
   });
 
+  $effect.pre(() => {
+    const detailsVisible = hostVisible && !hideRightSidebar && sidebarOpen;
+    const terminalVisible = hostVisible && terminalLayout.dock === "bottom";
+    const focusedRegion = untrack(() => workspaceInputRegion);
+    const focusedRegionDisappears =
+      (focusedRegion === "details" && !detailsVisible) ||
+      (focusedRegion === "terminal" && !terminalVisible);
+    if (!focusedRegionDisappears || !hostVisible) return;
+
+    // Capture disappearance before Svelte removes the focused region. Chromium
+    // then reports focusout after the DOM update, which is too late to know which
+    // workspace sibling owned focus. Reclaim only when the browser has nowhere
+    // better to put it; a replacement control or modal always keeps ownership.
+    const execution = appRuntime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => {
+          if (!hostVisible || document.activeElement !== document.body) return;
+          workspaceRoot?.focus();
+        })),
+      ),
+      {
+        operation: "workspace.restore.focus",
+        safeContext: { surface: "workspace", region: focusedRegion },
+        onFailure: () => undefined,
+      },
+    );
+    return execution.interrupt;
+  });
+
   $effect(() => {
     if (workspaceInputRegion !== null && renderedWorkspaceInputRegion === null) {
       if (workspaceInputRegion === "workflow") focusedWorkflowTabKey = null;
@@ -1547,7 +1576,8 @@
       if (
         e.key === "]" &&
         (e.metaKey || e.ctrlKey) &&
-        !e.defaultPrevented
+        !e.defaultPrevented &&
+        getStackDepth() === 0
       ) {
         e.preventDefault();
         toggleRightSidebar();

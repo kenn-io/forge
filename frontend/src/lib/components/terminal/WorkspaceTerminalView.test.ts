@@ -5,6 +5,7 @@ import type { RuntimeSession } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
+import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../../stores/paneLayout.svelte.js";
 import { sessionPaneKey } from "../../stores/session-pane-key.js";
 import {
@@ -3420,6 +3421,17 @@ describe("WorkspaceTerminalView", () => {
     );
     await fireEvent.keyDown(window, { key: "]", ctrlKey: true });
     expect(document.querySelector(".right-sidebar")).not.toBeNull();
+
+    await fireEvent.keyDown(window, { key: "]", ctrlKey: true });
+    expect(document.querySelector(".right-sidebar")).toBeNull();
+
+    const releaseModal = pushModalFrame("workspace-sidebar-shortcut-test", []);
+    try {
+      await fireEvent.keyDown(window, { key: "]", ctrlKey: true });
+      expect(document.querySelector(".right-sidebar")).toBeNull();
+    } finally {
+      releaseModal();
+    }
   });
 
   it("keeps the workspace header for a sole standalone session", async () => {

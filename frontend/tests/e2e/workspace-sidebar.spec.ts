@@ -2965,6 +2965,49 @@ test.describe("sidebar toggle behavior", () => {
     await page.keyboard.press("Meta+]");
     await expect(page.locator(".right-sidebar")).toHaveCount(0);
   });
+
+  test("Cmd+] leaves the workspace sidebar closed while the command palette owns focus", async ({ page }) => {
+    await page.goto("/terminal/ws-123");
+
+    await page.keyboard.press("Meta+K");
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    await expect(palette).toBeVisible();
+    await expect(palette.getByRole("textbox", { name: "Search command palette" })).toBeFocused();
+
+    await page.keyboard.press("Meta+]");
+
+    await expect(page.locator(".right-sidebar")).toHaveCount(0);
+    await expect(palette.getByRole("textbox", { name: "Search command palette" })).toBeFocused();
+  });
+
+  test("closing focused workspace details returns focus to the workspace", async ({ page }) => {
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();
+
+    const details = page.getByRole("region", { name: "Workspace details pane" });
+    const detailsViewport = details.locator(".kit-scrollbox__viewport").first();
+    await detailsViewport.focus();
+    await expect(detailsViewport).toBeFocused();
+
+    await page.keyboard.press("Meta+]");
+
+    await expect(details).toHaveCount(0);
+    await expect(page.locator(".terminal-view")).toBeFocused();
+  });
+
+  test("moving the focused bottom terminal into Workflow returns focus to the workspace", async ({ page }) => {
+    await page.goto("/terminal/ws-123");
+    await page.getByRole("button", { name: "Open terminal panel" }).click();
+
+    const moveToWorkflow = page.getByRole("button", { name: "Move terminal panel to workflow" });
+    await moveToWorkflow.focus();
+    await expect(moveToWorkflow).toBeFocused();
+    await moveToWorkflow.click();
+
+    await expect(page.locator(".terminal-panel.bottom")).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Terminal" })).toBeVisible();
+    await expect(page.locator(".terminal-view")).toBeFocused();
+  });
 });
 
 test.describe("workspace list fleet inventory", () => {

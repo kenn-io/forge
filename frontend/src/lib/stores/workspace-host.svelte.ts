@@ -592,10 +592,15 @@ export function registerSessionPaneSnippet(snippet: Snippet<[{ paneKey: string; 
 export interface HostedWorkspaceControls {
   snippet: Snippet;
   /**
-   * The few controls that sit in the tab strip itself rather than behind the
-   * popover. Deleting a workspace is the one thing a maintainer does often enough
-   * that a click to open a menu first is a click too many, and it is the same
-   * action either way - so it lives here instead of in `snippet`, not in both.
+   * Non-destructive actions shown in every pane that belongs to the workspace.
+   * A promoted session pane still needs a direct route to launch another session,
+   * even though it is not the leaf that owns workspace-level destructive actions.
+   */
+  paneActions?: Snippet;
+  /**
+   * Owner-only controls that sit in the workspace pane's tab strip rather than
+   * behind the popover. Destructive actions must have one visible owner even when
+   * a workspace is split across several session panes.
    */
   stripActions?: Snippet;
   /**
@@ -627,6 +632,7 @@ export interface HostedWorkspaceControls {
 export function registerWorkspaceControls(controls: HostedWorkspaceControls | null): void {
   if (
     controls?.snippet === hostedControls?.snippet &&
+    controls?.paneActions === hostedControls?.paneActions &&
     controls?.stripActions === hostedControls?.stripActions &&
     controls?.dockRow === hostedControls?.dockRow &&
     controls?.workspacePaneRowOnly === hostedControls?.workspacePaneRowOnly &&

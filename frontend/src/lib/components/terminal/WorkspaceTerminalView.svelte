@@ -1224,6 +1224,7 @@
     untrack(() =>
       registerWorkspaceControls({
         snippet: workspaceControls,
+        paneActions: workspacePaneActions,
         stripActions: workspaceStripActions,
         dockRow: workspaceDockRow,
         workspacePaneRowOnly: rowOnly,
@@ -4633,15 +4634,12 @@
   {/if}
 {/snippet}
 
-<!-- Sits in the tab strip beside the controls trigger, not inside the popover.
-     Launching and deleting are the workspace actions a maintainer reaches for often
-     enough that opening a menu first is a click too many. Launch remains in the
-     popover as well because promoted session panes intentionally suppress these
-     workspace-level strip actions. -->
-{#snippet workspaceStripActions()}
+<!-- Sits in every related pane's tab strip. Launching is non-destructive and useful
+     from a promoted session too, so it must not disappear with owner-only actions. -->
+{#snippet workspacePaneActions()}
   <!-- Ready only. A workspace whose setup failed renders its own actions beside the
        Retry in the error panel, which is where the user is already looking, and one
-       still being created cannot launch or be deleted yet. -->
+       still being created cannot launch yet. -->
   {#if workspaceLive && workspace?.status === "ready"}
     <IconButton
       size="sm"
@@ -4653,6 +4651,13 @@
     >
       <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
     </IconButton>
+  {/if}
+{/snippet}
+
+<!-- The workspace pane alone owns destructive strip actions. A workspace split
+     across promoted session panes must still present exactly one Delete button. -->
+{#snippet workspaceStripActions()}
+  {#if workspaceLive && workspace?.status === "ready"}
     <IconButton
       size="sm"
       tone="danger"

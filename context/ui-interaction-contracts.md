@@ -591,6 +591,9 @@ Keyboard handlers must have one clear owner for each key press.
   Dock mode changes are pure local UI — never disable them behind mutation
   guards like `actionsBlocked`; only the modal-stack guard applies, and only
   to the expand direction.
+- Every pane belonging to a workspace keeps direct non-destructive actions such
+  as session launch; only destructive workspace actions are limited to the
+  workspace-owner leaf (`frontend/src/lib/components/terminal/WorkspacePaneControls.svelte`).
 - The workspace view renders by liveness, not cached presence: the previous
   workspace stays cached across an in-place A→B switch, and branching on
   `workspace` alone shows A's stale ready toolbar (with action guards

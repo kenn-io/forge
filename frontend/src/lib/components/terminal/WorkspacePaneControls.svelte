@@ -13,12 +13,12 @@
 
   interface Props {
     /**
-     * Whether this instance renders the strip actions (Delete). One popover per
-     * related leaf is fine - it acts on the workspace wherever it opens - but the
-     * strip actions are visible destructive controls, and a workspace split across
-     * leaves (its pane in one, a promoted session in another) must not grow one
-     * Delete per leaf. The surface passes true only for the leaf holding the
-     * workspace pane itself.
+     * Whether this instance renders the owner-only strip actions (Delete). One
+     * popover per related leaf is fine - it acts on the workspace wherever it
+     * opens - but the owner-only actions are visible destructive controls, and a
+     * workspace split across leaves (its pane in one, a promoted session in
+     * another) must not grow one Delete per leaf. The surface passes true only for
+     * the leaf holding the workspace pane itself.
      */
     showStripActions?: boolean;
   }
@@ -147,6 +147,7 @@
 
 {#if controls}
   <div class="workspace-pane-controls">
+    {@render controls.paneActions?.()}
     {#if showStripActions}
       {@render controls.stripActions?.()}
     {/if}

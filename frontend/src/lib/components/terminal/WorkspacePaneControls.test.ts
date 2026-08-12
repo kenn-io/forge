@@ -65,20 +65,26 @@ describe("WorkspacePaneControls", () => {
     expect(button!.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("renders the strip actions only for the leaf that owns them", () => {
+  it("keeps shared pane actions visible when owner-only strip actions are suppressed", () => {
     // The popover follows the workspace to any leaf hosting one of its panes, but
-    // the strip actions carry Delete: a workspace split across leaves must not
-    // grow one visible Delete per leaf.
+    // owner-only strip actions carry Delete: a workspace split across leaves must
+    // not grow one visible Delete per leaf. Launch remains a direct action in every
+    // related pane, including a promoted session pane.
+    const paneActions = createRawSnippet(() => ({
+      render: () => `<button type="button">Launch session</button>`,
+    }));
     const stripActions = createRawSnippet(() => ({
       render: () => `<button type="button">Delete workspace main</button>`,
     }));
-    registerWorkspaceControls({ snippet, stripActions, workspaceKey: "ws-1" });
+    registerWorkspaceControls({ snippet, paneActions, stripActions, workspaceKey: "ws-1" });
 
     renderControls({ showStripActions: false });
+    expect(screen.getByRole("button", { name: "Launch session" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Delete workspace main" })).toBeNull();
     cleanup();
 
     renderControls();
+    expect(screen.getByRole("button", { name: "Launch session" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Delete workspace main" })).toBeTruthy();
   });
 

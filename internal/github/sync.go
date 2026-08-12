@@ -12487,8 +12487,18 @@ func (s *Syncer) syncMRForRepoResolved(
 			if s.afterMergedMRMetricsRepair != nil {
 				s.afterMergedMRMetricsRepair()
 			}
+			current, currentErr := s.db.GetMergeRequestByRepoIDAndNumber(
+				repairCtx, repoID, number,
+			)
+			if currentErr != nil {
+				return fmt.Errorf("read merged MR #%d after repair: %w", number, currentErr)
+			}
+			var currentMergedAt *time.Time
+			if current != nil {
+				currentMergedAt = current.MergedAt
+			}
 			if _, actorErr := s.persistMergedTransitionEvent(
-				repairCtx, mrID, revision, ghPR, normalized.MergedAt,
+				repairCtx, mrID, revision, ghPR, currentMergedAt,
 			); errors.Is(actorErr, db.ErrRepositoryRouteFenceChanged) {
 				abandonRepair()
 				return nil

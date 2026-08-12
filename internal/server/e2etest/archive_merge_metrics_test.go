@@ -32,6 +32,7 @@ type archiveMergeMetricsCase struct {
 	storeMergedTime      bool
 	storeMergeMetrics    bool
 	providerFilesChanged bool
+	omitProviderMergedAt bool
 }
 
 func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T) {
@@ -51,6 +52,10 @@ func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T
 		{
 			name: "state only with stored metrics", state: db.MergeRequestStateMerged,
 			storeMergeMetrics: true,
+		},
+		{
+			name: "stored timestamp with provider actor", state: db.MergeRequestStateMerged,
+			storeMergedTime: true, storeMergeMetrics: true, omitProviderMergedAt: true,
 		},
 	}
 	for _, tt := range tests {
@@ -75,6 +80,10 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 	if tt.providerFilesChanged {
 		changedFilesField = `,"changed_files":4`
 	}
+	mergedAtField := `"merged_at":"2026-08-02T11:59:59Z",`
+	if tt.omitProviderMergedAt {
+		mergedAtField = ""
+	}
 	var renamed atomic.Bool
 
 	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,12 +103,12 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 				"created_at":"2026-08-02T10:00:00Z",
 				"updated_at":"2026-08-02T12:00:00Z",
 				"closed_at":"2026-08-02T11:59:59Z",
-				"merged_at":"2026-08-02T11:59:59Z",
+				"merged":true,%s
 				"merged_by":{"login":"merge-admin"},
 				"merge_commit_sha":"merge-sha"%s,
 				"head":{"ref":"feature","sha":"head-sha","repo":{"id":1,"node_id":"R_widget","name":"renamed","full_name":"acme/renamed","owner":{"login":"acme"}}},
 				"base":{"ref":"main","sha":"base-sha","repo":{"id":1,"node_id":"R_widget","name":"renamed","full_name":"acme/renamed","owner":{"login":"acme"}}}
-			}`, changedFilesField)
+			}`, mergedAtField, changedFilesField)
 		default:
 			http.NotFound(w, r)
 		}

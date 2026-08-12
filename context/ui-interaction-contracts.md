@@ -336,6 +336,9 @@ Keyboard handlers must have one clear owner for each key press.
 - Preserve a focused node through no-destination `focusout` only for the immediate Effect-managed replacement window;
   keyed replacement restores focus, while an ordinary blur or document hiding cannot affect later DOM removal
   (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::handleLayoutFocusOut`).
+- When focused content leaves a detail layout without `focusout`, release that layout's ownership. Reclaim layout focus
+  only for disconnected content; connected pooled terminals keep their own restoration path
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::observeMutation`).
 - A terminal dock tracks the exact focused descendant across silent session removal; it releases ownership when that
   node leaves the dock, restores a surviving dock only for disconnected content, and leaves connected pooled moves alone
   (`frontend/src/lib/components/terminal/DockedTerminalPanel.svelte::handleFocusOut`).

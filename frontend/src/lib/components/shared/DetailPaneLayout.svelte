@@ -347,8 +347,9 @@
 
   // Pane identity can replace focused content without changing the pane tree,
   // selected tab, or emitting focusout. Observe the renderer boundary itself:
-  // a pooled terminal parked elsewhere stays connected, while removed content
-  // does not and must release keyboard ownership.
+  // any node that leaves this layout releases its ownership. Only disconnected
+  // content needs layout focus recovery; a connected pooled terminal owns its
+  // own restoration while it moves through parking.
   $effect(() => {
     const el = host;
     if (!el || typeof MutationObserver === "undefined") return;
@@ -359,11 +360,11 @@
             el,
             () => {
               const focused = focusedInputElement;
-              if (focused === null || focused.isConnected) return;
+              if (focused === null || el.contains(focused)) return;
               focusedInputLeafID = null;
               focusedInputTabKey = null;
               focusedInputElement = null;
-              reclaimFocus();
+              if (!focused.isConnected) reclaimFocus();
             },
             { childList: true, subtree: true },
           ).pipe(Effect.andThen(Effect.never)),

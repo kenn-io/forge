@@ -555,6 +555,20 @@ describe("detail pane layout", () => {
     expect(layout.paneRender()?.activeInputTabKey).toBeNull();
   });
 
+  it("releases layout ownership when focused content is reparented outside it", async () => {
+    const layout = store(mergedTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const conversationFocusTarget = screen.getByTestId("pane-focus-target-conversation");
+
+    conversationFocusTarget.focus();
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBe("conversation"));
+
+    document.body.append(conversationFocusTarget);
+
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBeNull());
+    expect(document.activeElement).not.toBe(document.querySelector(".detail-pane-layout"));
+  });
+
   it("drops stale ownership when a focused inactive tab moves to another leaf", async () => {
     const layout = store(mergedTree());
     render(DetailPaneLayoutTestHarness, { layout });

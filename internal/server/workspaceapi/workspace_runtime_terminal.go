@@ -318,7 +318,10 @@ func bridgeRuntimeAttachment(
 					return
 				}
 			case websocket.MessageText:
-				handleRuntimeTerminalControl(ctx, attachment, data)
+				if err := handleRuntimeTerminalControl(ctx, attachment, data); err != nil {
+					slog.Warn("runtime terminal control failed", "err", err)
+					return
+				}
 			}
 		}
 	}()
@@ -429,34 +432,34 @@ func handleRuntimeTerminalControl(
 	ctx context.Context,
 	attachment *localruntime.Attachment,
 	data []byte,
-) {
+) error {
 	var msg runtimeTerminalControlMsg
 	if err := json.Unmarshal(data, &msg); err != nil {
 		slog.Warn("bad runtime terminal control message", "err", err)
-		return
+		return nil
 	}
 	info := attachment.Info()
 	switch msg.Type {
 	case "claim_resize":
 		settle, err := attachment.ClaimResize(msg.Cols, msg.Rows)
 		if err != nil {
-			slog.Warn("runtime terminal resize claim", "err", err)
-			return
+			return err
 		}
 		if !settle {
-			return
+			return nil
 		}
 		refreshCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		if err := attachment.Refresh(refreshCtx); err != nil {
-			slog.Warn("runtime terminal resize claim refresh", "err", err)
+			return err
 		}
-		return
+		attachment.ResizeSettled()
+		return nil
 	case "resize_active":
 		if msg.Active != nil {
 			attachment.SetResizeActive(*msg.Active)
 		}
-		return
+		return nil
 	case "refresh":
 		logWebsocketDebug(
 			"runtime terminal refresh requested",
@@ -475,7 +478,7 @@ func handleRuntimeTerminalControl(
 		if err := attachment.Refresh(refreshCtx); err != nil {
 			slog.Warn("runtime terminal refresh", "err", err)
 		}
-		return
+		return nil
 	case "resize":
 		logWebsocketDebug(
 			"runtime terminal resize requested",
@@ -488,6 +491,7 @@ func handleRuntimeTerminalControl(
 			slog.Warn("runtime terminal resize", "err", err)
 		}
 	}
+	return nil
 }
 
 func writeRuntimeExit(

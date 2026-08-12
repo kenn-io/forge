@@ -476,11 +476,13 @@ Keyboard handlers must have one clear owner for each key press.
   only once the socket carried it, or a resize computed before the socket opened
   is suppressed forever and the PTY keeps its launch default. Synchronize
   resize eligibility on every measurement, but passive lifecycle or geometry
-  changes never transfer ownership. Within a priority, the latest deliberate
-  terminal action wins; local attachments outrank Fleet/remote. Claims apply
-  fitted dimensions and settle tmux before following input, while ordinary
-  resizes only retain fallback dimensions and owner loss restores the most-recent
-  eligible claimant. The preflight measurement establishes eligibility only:
+  changes never transfer ownership among equal-priority attachments. The latest
+  deliberate terminal action wins within a priority; activating a higher-priority
+  local attachment may preempt an HTTP Fleet attachment. Claims apply fitted
+  dimensions and direct/HTTP Fleet streams close rather than forward following
+  input when tmux settlement fails. Ordinary resizes apply for the current owner,
+  only retain fallback dimensions for non-owners, and owner loss restores the
+  most-recent eligible claimant. The preflight measurement establishes eligibility only:
   send xterm's dimensions after
   `fit()`, which measures again and may cross a cell boundary
   (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte::terminal-leaf-body`,

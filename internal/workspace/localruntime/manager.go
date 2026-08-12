@@ -204,7 +204,8 @@ type session struct {
 	nextResizeClaim           uint64
 	resizeOwnerID             uint64
 	resizeOwnerPriority       ResizePriority
-	resizeOwnerNeedsSettle    bool
+	resizeGeneration          uint64
+	resizeSettledGeneration   uint64
 	resizeAttachments         map[uint64]resizeAttachment
 	replayBoundarySubscribers map[chan []byte]struct{}
 }
@@ -239,6 +240,7 @@ type Attachment struct {
 	write           func([]byte) error
 	resize          func(cols, rows int) error
 	claimResize     func(cols, rows int) (bool, error)
+	resizeSettled   func()
 	refresh         func(context.Context) error
 	setResizeActive func(active bool)
 	close           func()
@@ -1309,6 +1311,15 @@ func (a *Attachment) ClaimResize(cols, rows int) (bool, error) {
 	return a.claimResize(cols, rows)
 }
 
+// ResizeSettled records that the synchronous tmux refresh following a resize
+// claim completed successfully. Failed refreshes deliberately leave the claim
+// pending so a later attachment can retry before forwarding input.
+func (a *Attachment) ResizeSettled() {
+	if a != nil && a.resizeSettled != nil {
+		a.resizeSettled()
+	}
+}
+
 // clampWinsizeDim bounds a client-supplied terminal dimension into the
 // uint16 range pty.Winsize requires, so an oversized cols/rows value is
 // capped rather than silently truncated by the narrowing conversion.
@@ -2247,9 +2258,9 @@ func (s *session) resizeAttachment(
 	cols int,
 	rows int,
 	claim bool,
-) (bool, error) {
+) (uint64, error) {
 	if cols <= 0 || rows <= 0 {
-		return false, nil
+		return 0, nil
 	}
 	clampedCols := int(clampWinsizeDim(cols))
 	clampedRows := int(clampWinsizeDim(rows))
@@ -2259,7 +2270,7 @@ func (s *session) resizeAttachment(
 
 	attachment, ok := s.resizeAttachments[id]
 	if !ok || !attachment.active {
-		return false, nil
+		return 0, nil
 	}
 	sizeChanged := !attachment.hasSize ||
 		attachment.cols != clampedCols ||
@@ -2282,19 +2293,25 @@ func (s *session) resizeAttachment(
 		ownerChanged = true
 	}
 	if s.resizeOwnerID != id {
-		return false, nil
+		return 0, nil
 	}
 	if !claim || ownerChanged || sizeChanged {
-		if err := s.resizePTYLocked(clampedCols, clampedRows); err != nil {
-			return false, err
+		if err := s.resizePTYAndMarkLocked(clampedCols, clampedRows); err != nil {
+			return 0, err
 		}
-		s.resizeOwnerNeedsSettle = true
 	}
-	if !claim || !s.resizeOwnerNeedsSettle {
-		return false, nil
+	if !claim || s.resizeGeneration <= s.resizeSettledGeneration {
+		return 0, nil
 	}
-	s.resizeOwnerNeedsSettle = false
-	return true, nil
+	return s.resizeGeneration, nil
+}
+
+func (s *session) markResizeSettled(generation uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if generation > s.resizeSettledGeneration {
+		s.resizeSettledGeneration = generation
+	}
 }
 
 func (s *session) setResizeAttachmentActive(id uint64, active bool) {
@@ -2345,9 +2362,15 @@ func (s *session) applyResizeOwnerSizeLocked(attachment resizeAttachment) {
 	if !attachment.hasSize {
 		return
 	}
-	if s.resizePTYLocked(attachment.cols, attachment.rows) == nil {
-		s.resizeOwnerNeedsSettle = true
+	_ = s.resizePTYAndMarkLocked(attachment.cols, attachment.rows)
+}
+
+func (s *session) resizePTYAndMarkLocked(cols, rows int) error {
+	if err := s.resizePTYLocked(cols, rows); err != nil {
+		return err
 	}
+	s.resizeGeneration++
+	return nil
 }
 
 func (s *session) resizePTYLocked(cols, rows int) error {
@@ -2638,6 +2661,8 @@ func attachToSession(
 		options.ResizePriority,
 		options.ResizeActive,
 	)
+	var resizeSettlementMu sync.Mutex
+	var resizeSettlementGeneration uint64
 	return &Attachment{
 		Output: output,
 		Done:   s.done,
@@ -2654,7 +2679,20 @@ func attachToSession(
 			return err
 		},
 		claimResize: func(cols, rows int) (bool, error) {
-			return s.resizeAttachment(resizeAttachmentID, cols, rows, true)
+			generation, err := s.resizeAttachment(
+				resizeAttachmentID, cols, rows, true,
+			)
+			resizeSettlementMu.Lock()
+			resizeSettlementGeneration = generation
+			resizeSettlementMu.Unlock()
+			return generation > 0, err
+		},
+		resizeSettled: func() {
+			resizeSettlementMu.Lock()
+			generation := resizeSettlementGeneration
+			resizeSettlementGeneration = 0
+			resizeSettlementMu.Unlock()
+			s.markResizeSettled(generation)
 		},
 		refresh: func(ctx context.Context) error {
 			if refresh == nil {

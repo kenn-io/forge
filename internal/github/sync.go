@@ -13117,7 +13117,14 @@ func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	if mr == nil {
 		return fmt.Errorf("verify GitHub archive MR #%d metrics: pull request is not stored", number)
 	}
-	if !fetched.merged && mr.State != db.MergeRequestStateMerged && mr.MergedAt == nil {
+	storedMerged := mr.State == db.MergeRequestStateMerged || mr.MergedAt != nil
+	if fetched.merged != storedMerged {
+		return fmt.Errorf(
+			"verify GitHub archive MR %s/%s#%d metrics: incomplete or mismatched merge_state",
+			storedRepo.Owner, storedRepo.Name, number,
+		)
+	}
+	if !fetched.merged {
 		return nil
 	}
 	incomplete := make([]string, 0, 4)

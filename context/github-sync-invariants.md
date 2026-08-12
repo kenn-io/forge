@@ -453,9 +453,9 @@ fallback repository listing.
 - Every older-generation active merged GitHub lookup is requeued once; its new
   generation proves canonical merged detail passed the current verification.
   (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`)
-- A merged GitHub archive lookup requires completed lifecycle persistence,
-  merge time, and fetched canonical SHAs and file count that match storage;
-  interrupted or incomplete rounds stay retryable. (`internal/github/sync.go::requireGitHubArchiveMergedMRMetrics`)
+- A GitHub archive lookup requires fetched and stored merge state to agree;
+  merged lookups also require completed lifecycle persistence, merge time, and
+  matching canonical SHAs and file count. (`internal/github/sync.go::requireGitHubArchiveMergedMRMetrics`)
 - An accepted merged snapshot preserves the stored immutable merge time when
   the provider omits it; partial detail must not erase durable lifecycle data.
   (`internal/github/sync.go::preserveMergedAtIfOmitted`)

@@ -13257,7 +13257,7 @@ func TestSyncArchiveMRRetriesWhenMergedResponseCannotRepairNewerOpenSnapshot(t *
 		}, db.ArchiveItemTypeMergeRequest, 7,
 	)
 	require.True(providerAttempted)
-	require.ErrorContains(err, "merged_at")
+	require.ErrorContains(err, "merge_state")
 
 	after, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
@@ -13692,6 +13692,64 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 			require.True(providerAttempted)
 		})
 	}
+}
+
+func TestSyncArchiveMRRejectsCanonicalUnmergedStoredMergedDisagreement(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, Owner: "owner", Name: "repo",
+		PlatformHost: "github.com",
+	}
+	repoID, err := database.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name),
+	)
+	require.NoError(err)
+	providerUpdatedAt := time.Date(2026, 7, 28, 0, 41, 21, 0, time.UTC)
+	localUpdatedAt := providerUpdatedAt.Add(time.Second)
+	mergedAt := providerUpdatedAt.Add(-time.Minute)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 7000, Number: 7,
+		State: db.MergeRequestStateMerged, PlatformHeadSHA: "head-sha",
+		MergeCommitSHA: "merge-sha", FilesChanged: new(4),
+		CreatedAt: providerUpdatedAt.Add(-time.Hour), UpdatedAt: localUpdatedAt,
+		LastActivityAt: localUpdatedAt, MergedAt: &mergedAt, ClosedAt: &mergedAt,
+	})
+	require.NoError(err)
+
+	canonical := buildOpenPR(7, providerUpdatedAt)
+	canonical.State = new("closed")
+	canonical.Merged = new(false)
+	canonical.MergedAt = nil
+	canonical.ClosedAt = makeTimestamp(providerUpdatedAt.Add(-time.Minute))
+	canonical.MergeCommitSHA = nil
+	canonical.Head.SHA = new("head-sha")
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{singlePR: canonical}},
+		database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	providerAttempted, err := syncer.SyncArchiveItem(
+		WithArchiveSyncBudget(ctx),
+		platform.RepoRef{
+			Platform: platform.KindGitHub, Host: "github.com",
+			Owner: repo.Owner, Name: repo.Name,
+		},
+		db.ArchiveItemTypeMergeRequest, 7,
+	)
+	require.ErrorContains(err, "merge_state")
+	require.True(providerAttempted)
+
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Equal(db.MergeRequestStateMerged, stored.State)
+	require.NotNil(stored.MergedAt)
+	require.Equal(mergedAt, *stored.MergedAt)
+	require.Equal("merge-sha", stored.MergeCommitSHA)
+	require.NotNil(stored.FilesChanged)
+	require.Equal(4, *stored.FilesChanged)
 }
 
 func TestRequireGitHubArchiveMergedMRMetricsRejectsMismatchedFilesChanged(t *testing.T) {

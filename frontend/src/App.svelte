@@ -682,8 +682,12 @@
     };
   }
 
-  function openMobileWorkspace(workspaceId: string, hostKey?: string): void {
+  function openMobileWorkspaceFromList(workspaceId: string, hostKey?: string): void {
     navigate(buildMobileWorkspaceRoute(workspaceId, hostKey), mobileWorkspaceHistoryState("list"));
+  }
+
+  function openCreatedMobileWorkspace(workspaceId: string): void {
+    navigate(buildMobileWorkspaceRoute(workspaceId));
   }
 
   function openMobileWorkspaceItemFromList(workspaceId: string, hostKey?: string): void {
@@ -1169,7 +1173,7 @@
           </div>
         {:else if getPage() === "mobile-workspaces"}
           <MobileWorkspaceList
-            onOpen={openMobileWorkspace}
+            onOpen={openMobileWorkspaceFromList}
             onOpenItem={openMobileWorkspaceItemFromList}
           />
         {:else if getPage() === "mobile-workspace-terminal" || getPage() === "mobile-workspace-item"}
@@ -1191,6 +1195,7 @@
                   workspaceId={route.workspaceId}
                   hostKey={route.hostKey}
                   tab={route.tab}
+                  backDestination={mobileWorkspaceHistory()?.origin === "list" ? "list" : "terminal"}
                   onBack={() => leaveMobileWorkspaceItem(route.workspaceId, route.hostKey)}
                   onTabChange={(tab, options) => {
                     const path = buildMobileWorkspaceItemRoute(
@@ -1388,7 +1393,7 @@
         initialSource={getNewWorkspaceSource()}
         onClose={closeNewWorkspaceDialog}
         onCreated={(workspaceId) => {
-          if (isMobilePage(getPage())) openMobileWorkspace(workspaceId);
+          if (isMobilePage(getPage())) openCreatedMobileWorkspace(workspaceId);
           else navigate(`/terminal/${encodeURIComponent(workspaceId)}`);
         }}
       />

@@ -484,7 +484,7 @@ test.describe("workspace create-and-launch full stack", () => {
       });
       expect(hookResponse.ok(), await hookResponse.text()).toBe(true);
       await page.goto(`${server.info.base_url}/m/workspaces`);
-      await expect(page.getByLabel("Agent working")).toHaveText("Working");
+      await expect(page.getByRole("button", { name: /agent working/ })).toContainText("Working");
       await page.goto(`${server.info.base_url}/m/workspaces/local/${created.id}`);
 
       await expect(page.getByRole("button", { name: "Launch session" })).toHaveCount(0);
@@ -493,6 +493,12 @@ test.describe("workspace create-and-launch full stack", () => {
       await terminalOptionsButton.click();
       const terminalOptions = page.getByRole("dialog", { name: "Terminal options" });
       await expect(terminalOptions.getByRole("spinbutton", { name: "Font size", exact: true })).toBeVisible();
+      await terminalOptions.getByRole("button", { name: "Choose" }).click();
+      const fontDialog = page.getByRole("dialog", { name: "Choose monospace font" });
+      await expect(fontDialog).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(fontDialog).not.toBeVisible();
+      await expect(terminalOptions).toBeVisible();
       await terminalOptions.getByRole("button", { name: "New terminal" }).click();
       const launchSheet = page.getByRole("dialog", { name: "Launch workspace session" });
       await expect(launchSheet).toBeVisible();

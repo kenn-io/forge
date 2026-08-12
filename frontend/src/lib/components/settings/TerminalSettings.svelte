@@ -29,6 +29,7 @@
     compact?: boolean;
     livePreview?: boolean;
     onSavingChange?: (saving: boolean) => void;
+    onFontDialogOpenChange?: (open: boolean) => void;
   }
 
   const {
@@ -37,6 +38,7 @@
     compact = false,
     livePreview = false,
     onSavingChange,
+    onFontDialogOpenChange,
   }: Props = $props();
 
   const { settings: settingsStore } = getStores();
@@ -88,6 +90,10 @@
   let fontLoadError = $state<string | null>(null);
   let loadingFonts = $state(false);
   let livePreviewBaseline = $state<TerminalSettingsType | null>(null);
+
+  $effect(() => {
+    onFontDialogOpenChange?.(fontDialogOpen);
+  });
 
   function normalizeFontFamily(value: string): string {
     return value.trim();
@@ -295,6 +301,12 @@
     fontDialogOpen = false;
   }
 
+  function closeFontDialogForEscape(event: KeyboardEvent): void {
+    if (!fontDialogOpen || event.key !== "Escape" || event.defaultPrevented) return;
+    event.preventDefault();
+    fontDialogOpen = false;
+  }
+
   function save(): void {
     if (embedded) return;
     if (!isDirty) return;
@@ -337,6 +349,8 @@
   }
 
 </script>
+
+<svelte:window onkeydowncapture={closeFontDialogForEscape} />
 
 <div
   class:compact

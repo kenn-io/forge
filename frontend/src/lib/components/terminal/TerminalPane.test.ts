@@ -606,7 +606,7 @@ describe("TerminalPane", () => {
     expect(mockWebglCtor).toHaveBeenCalledWith({ customGlyphs: true });
   });
 
-  it("uses the canvas renderer on Android", async () => {
+  it("keeps xterm's built-in renderer on Android", async () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
       "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/133.0 Mobile Safari/537.36",
     );

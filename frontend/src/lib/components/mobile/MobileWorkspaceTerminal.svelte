@@ -83,6 +83,7 @@
   let launchSheetOpen = $state(false);
   let terminalOptionsOpen = $state(false);
   let terminalOptionsSaving = $state(false);
+  let terminalSettingsDialogOpen = $state(false);
   let terminalSettings = $state<TerminalSettingsType>(settingsStore.getTerminalSettings());
   let composedInput = $state("");
   let inputError = $state<string | null>(null);
@@ -353,7 +354,17 @@
             ? {
                 onSettled: (settlement) => {
                   if (settlement._tag === "Accepted") {
-                    acceptWorkspaceLaunch(launchClaim, settlement.sessionKey);
+                    const acceptedAt = Date.now();
+                    if (acceptWorkspaceLaunch(launchClaim, settlement.sessionKey, acceptedAt)) {
+                      const label = launchTargets.find((candidate) => candidate.key === launchClaim.targetKey)?.label
+                        ?? launchClaim.targetKey;
+                      startAcceptedWorkspaceLaunchReconciliation(
+                        launchClaim,
+                        settlement.sessionKey,
+                        acceptedAt,
+                        label,
+                      );
+                    }
                   } else {
                     failWorkspaceLaunch(launchClaim);
                   }
@@ -374,15 +385,48 @@
     );
   }
 
+  function startAcceptedWorkspaceLaunchReconciliation(
+    launchClaim: WorkspaceLaunchClaim,
+    sessionKey: string,
+    acceptedAt: number,
+    label: string,
+  ): void {
+    const acceptedTarget: WorkspaceRuntimeTarget = {
+      workspaceId: launchClaim.workspaceId,
+      ...(launchClaim.workspaceHostKey === undefined ? {} : { hostKey: launchClaim.workspaceHostKey }),
+    };
+    appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkspaceRuntimeWorkflow;
+        yield* workflow.reconcileAcceptedLaunch({
+          target: acceptedTarget,
+          sessionKey,
+          acceptedAt,
+          onExpired: Effect.sync(() => {
+            if (workspaceId === launchClaim.workspaceId && hostKey === launchClaim.workspaceHostKey) {
+              runtimeError = `${label} launched, but its session did not become available`;
+            }
+          }),
+        });
+      }),
+      {
+        operation: "reconcile accepted mobile workspace launch",
+        safeContext: { workspaceId: launchClaim.workspaceId, remote: Boolean(launchClaim.workspaceHostKey) },
+        onFailure: () => undefined,
+      },
+    );
+  }
+
   function openTerminalOptions(): void {
     if (!workspace || workspace.status !== "ready") return;
     terminalSettings = settingsStore.getTerminalSettings();
     terminalOptionsSaving = false;
+    terminalSettingsDialogOpen = false;
     terminalOptionsOpen = true;
   }
 
   function closeTerminalOptions(): void {
-    if (terminalOptionsSaving) return;
+    if (terminalOptionsSaving || terminalSettingsDialogOpen) return;
     terminalOptionsOpen = false;
   }
 
@@ -437,6 +481,7 @@
     launchSheetOpen = false;
     terminalOptionsOpen = false;
     terminalOptionsSaving = false;
+    terminalSettingsDialogOpen = false;
     releaseOwnedSessions();
 
     const execution = untrack(() =>
@@ -658,6 +703,9 @@
           }}
           onSavingChange={(saving) => {
             terminalOptionsSaving = saving;
+          }}
+          onFontDialogOpenChange={(open) => {
+            terminalSettingsDialogOpen = open;
           }}
         />
       </section>

@@ -226,25 +226,23 @@
   function agentStatePresentation(workspace: WorkspaceListItem): {
     label: "Working" | "Approval" | "Input" | "Done";
     tone: "working" | "approval" | "input" | "done";
+    announcement: "working" | "waiting for approval" | "waiting for input" | "done";
   } | null {
     switch (workspace.agent_state) {
       case "working":
-        return { label: "Working", tone: "working" };
+        return { label: "Working", tone: "working", announcement: "working" };
       case "approval":
-        return { label: "Approval", tone: "approval" };
+        return { label: "Approval", tone: "approval", announcement: "waiting for approval" };
       case "input":
-        return { label: "Input", tone: "input" };
+        return { label: "Input", tone: "input", announcement: "waiting for input" };
       case "done":
-        return { label: "Done", tone: "done" };
+        return { label: "Done", tone: "done", announcement: "done" };
       default:
         return null;
     }
   }
 
   function itemLabel(workspace: WorkspaceListItem): string | null {
-    if (workspace.item_type === "kata_task") {
-      return workspace.kata?.short_id?.trim() || workspace.kata?.qualified_id?.trim() || "Kata";
-    }
     const number = mobileWorkspaceItemNumber(workspace);
     return number === null ? null : `#${number}`;
   }
@@ -499,7 +497,7 @@
     <button
       class="mobile-workspace-row__main"
       type="button"
-      aria-label={`Open workspace ${mobileWorkspaceDisplayName(workspace)}`}
+      aria-label={`Open workspace ${mobileWorkspaceDisplayName(workspace)}${agentState ? `, agent ${agentState.announcement}` : ""}`}
       onclick={() => onOpen(workspace.id, workspace.fleet_host_key)}
     >
       <span class="mobile-workspace-row__title">
@@ -508,7 +506,7 @@
         {#if agentState}
           <span
             class={["mobile-workspace-row__agent-state", `mobile-workspace-row__agent-state--${agentState.tone}`]}
-            aria-label={`Agent ${agentState.label.toLowerCase()}`}
+            aria-hidden="true"
           >{agentState.label}</span>
         {/if}
       </span>

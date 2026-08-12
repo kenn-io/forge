@@ -580,7 +580,7 @@
     terminal.refresh(0, Math.max(0, terminal.rows - 1));
   }
 
-  function requiresCanvasRenderer(): boolean {
+  function shouldUseBuiltinRenderer(): boolean {
     const userAgent = navigator.userAgent.toLowerCase();
     return userAgent.includes("firefox/") || userAgent.includes("android");
   }
@@ -590,7 +590,7 @@
     webglAddon?.dispose();
     webglAddon = null;
     if (rendererParked) return;
-    if (requiresCanvasRenderer()) {
+    if (shouldUseBuiltinRenderer()) {
       scheduleTerminalResize();
       return;
     }
@@ -605,7 +605,7 @@
       webglAddon = wgl;
       scheduleTerminalResize();
     } catch {
-      // WebGL unavailable; canvas renderer used as fallback.
+      // WebGL unavailable; xterm's built-in renderer remains active.
     }
   }
 

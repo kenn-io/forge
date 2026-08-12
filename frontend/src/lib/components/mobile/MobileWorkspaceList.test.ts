@@ -89,11 +89,11 @@ describe("MobileWorkspaceList", () => {
   });
 
   it.each([
-    ["working", "Working"],
-    ["approval", "Approval"],
-    ["input", "Input"],
-    ["done", "Done"],
-  ] as const)("shows the hook-reported %s agent state", async (agentState, label) => {
+    ["working", "Working", "working"],
+    ["approval", "Approval", "waiting for approval"],
+    ["input", "Input", "waiting for input"],
+    ["done", "Done", "done"],
+  ] as const)("shows the hook-reported %s agent state", async (agentState, label, announcement) => {
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") return Promise.resolve({ data: { hosts: [] } });
       if (path === "/workspaces") {
@@ -104,7 +104,43 @@ describe("MobileWorkspaceList", () => {
 
     render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
 
-    expect((await screen.findByLabelText(`Agent ${label.toLowerCase()}`)).textContent).toBe(label);
+    expect(await screen.findByText(label)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: `Open workspace Build mobile workspaces, agent ${announcement}` }),
+    ).toBeTruthy();
+  });
+
+  it("does not expose a dead linked-item action for Kata workspaces", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") return Promise.resolve({ data: { hosts: [] } });
+      if (path === "/workspaces") {
+        return Promise.resolve({
+          data: {
+            workspaces: [
+              {
+                ...fixture,
+                item_type: "kata_task",
+                item_number: 0,
+                kata: {
+                  daemon_id: "desktop",
+                  project_uid: "project-7",
+                  project_name: "Example project",
+                  issue_uid: "issue-7",
+                  short_id: "task-7",
+                  title: "Build mobile workspaces",
+                },
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+
+    await screen.findByText("Build mobile workspaces");
+    expect(screen.queryByRole("button", { name: /Open linked item/ })).toBeNull();
   });
 
   it("exposes the View sheet and persists display choices", async () => {

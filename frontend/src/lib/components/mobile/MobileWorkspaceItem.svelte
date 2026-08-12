@@ -18,11 +18,19 @@
     workspaceId: string;
     hostKey?: string | undefined;
     tab?: "files" | undefined;
+    backDestination?: "terminal" | "list";
     onBack: () => void;
     onTabChange: (tab: "conversation" | "files", options?: { replace?: boolean }) => void;
   }
 
-  let { workspaceId, hostKey = undefined, tab = undefined, onBack, onTabChange }: Props = $props();
+  let {
+    workspaceId,
+    hostKey = undefined,
+    tab = undefined,
+    backDestination = "terminal",
+    onBack,
+    onTabChange,
+  }: Props = $props();
   const appRuntime = getAppRuntime();
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
@@ -95,11 +103,16 @@
 
 <section class="mobile-workspace-item" aria-label="Workspace linked item">
   <header class="mobile-workspace-item__toolbar">
-    <button type="button" class="mobile-workspace-item__back" aria-label="Back to workspace terminal" onclick={onBack}>
+    <button
+      type="button"
+      class="mobile-workspace-item__back"
+      aria-label={backDestination === "list" ? "Back to workspaces" : "Back to workspace terminal"}
+      onclick={onBack}
+    >
       <ArrowLeftIcon size="20" strokeWidth="2" aria-hidden="true" />
       <span>
-        <strong>Terminal</strong>
-        {#if sessionLabel}<small>{sessionLabel}</small>{/if}
+        <strong>{backDestination === "list" ? "Workspaces" : "Terminal"}</strong>
+        {#if backDestination === "terminal" && sessionLabel}<small>{sessionLabel}</small>{/if}
       </span>
     </button>
     {#if linkedItem}
@@ -121,7 +134,7 @@
     <div class="mobile-workspace-item__state">
       <strong>No linked PR or issue</strong>
       <span>This workspace is not associated with a provider item.</span>
-      <button type="button" onclick={onBack}>Return to terminal</button>
+      <button type="button" onclick={onBack}>Return to {backDestination === "list" ? "workspaces" : "terminal"}</button>
     </div>
   {:else}
     <div class="mobile-workspace-item__content">

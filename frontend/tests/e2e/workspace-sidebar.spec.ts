@@ -1030,6 +1030,19 @@ test("phone workspace terminal opens its linked issue and returns", async ({ pag
   await expect(page.getByText("No terminal sessions")).toBeVisible();
 });
 
+test("phone workspace list opens a linked item and returns to the list", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page);
+
+  await page.goto("/m/workspaces");
+  await page.getByRole("button", { name: "Open linked item #42" }).click();
+
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123\/item$/);
+  await expect(page.getByRole("button", { name: "Back to workspaces" })).toBeVisible();
+  await page.getByRole("button", { name: "Back to workspaces" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces$/);
+});
+
 test.describe("terminal state icons", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(clearWorkspaceSidebarTabStorage);

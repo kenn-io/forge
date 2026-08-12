@@ -12268,6 +12268,7 @@ type mergeRequestFetchEvidence struct {
 	merged         bool
 	headSHA        string
 	mergeCommitSHA string
+	filesChanged   *int
 }
 
 func (s *Syncer) syncMRForRepoResolved(
@@ -12410,6 +12411,7 @@ func (s *Syncer) syncMRForRepoResolved(
 			merged:         normalized.State == db.MergeRequestStateMerged || normalized.MergedAt != nil,
 			headSHA:        normalized.PlatformHeadSHA,
 			mergeCommitSHA: normalized.MergeCommitSHA,
+			filesChanged:   normalized.FilesChanged,
 		}
 	}
 	headChanged := existing != nil &&
@@ -13129,11 +13131,17 @@ func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 		if fetched.mergeCommitSHA == "" || mr.MergeCommitSHA != fetched.mergeCommitSHA {
 			incomplete = append(incomplete, "merge_commit_sha")
 		}
-	} else if mr.MergeCommitSHA == "" {
-		incomplete = append(incomplete, "merge_commit_sha")
-	}
-	if mr.FilesChanged == nil {
-		incomplete = append(incomplete, "files_changed")
+		if fetched.filesChanged == nil || mr.FilesChanged == nil ||
+			*mr.FilesChanged != *fetched.filesChanged {
+			incomplete = append(incomplete, "files_changed")
+		}
+	} else {
+		if mr.MergeCommitSHA == "" {
+			incomplete = append(incomplete, "merge_commit_sha")
+		}
+		if mr.FilesChanged == nil {
+			incomplete = append(incomplete, "files_changed")
+		}
 	}
 	if len(incomplete) > 0 {
 		return fmt.Errorf(

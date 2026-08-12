@@ -31,8 +31,12 @@ type archiveMergeMetricsCase struct {
 	state                db.MergeRequestState
 	storeMergedTime      bool
 	storeMergeMetrics    bool
+	storeMergeActor      bool
+	storedMergeSHA       string
+	storedFilesChanged   int
 	providerFilesChanged bool
 	omitProviderMergedAt bool
+	expectMissingFiles   bool
 }
 
 func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T) {
@@ -47,15 +51,22 @@ func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T
 		},
 		{
 			name: "complete metrics missing actor", state: db.MergeRequestStateMerged,
-			storeMergedTime: true, storeMergeMetrics: true,
+			storeMergedTime: true, storeMergeMetrics: true, expectMissingFiles: true,
 		},
 		{
 			name: "state only with stored metrics", state: db.MergeRequestStateMerged,
-			storeMergeMetrics: true,
+			storeMergeMetrics: true, providerFilesChanged: true,
 		},
 		{
 			name: "stored timestamp with provider actor", state: db.MergeRequestStateMerged,
-			storeMergedTime: true, storeMergeMetrics: true, omitProviderMergedAt: true,
+			storeMergedTime: true, storeMergeMetrics: true, providerFilesChanged: true,
+			omitProviderMergedAt: true,
+		},
+		{
+			name: "old generation with stale canonical metrics", state: db.MergeRequestStateMerged,
+			storeMergedTime: true, storeMergeMetrics: true, storeMergeActor: true,
+			storedMergeSHA: "pre-merge-test-sha", storedFilesChanged: 9,
+			providerFilesChanged: true,
 		},
 	}
 	for _, tt := range tests {
@@ -174,10 +185,16 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 	var storedFilesChanged *int
 	storedMergeCommitSHA := ""
 	if tt.storeMergeMetrics {
-		storedFilesChanged = new(4)
-		storedMergeCommitSHA = "merge-sha"
+		storedFilesChanged = new(tt.storedFilesChanged)
+		if tt.storedFilesChanged == 0 {
+			storedFilesChanged = new(4)
+		}
+		storedMergeCommitSHA = tt.storedMergeSHA
+		if storedMergeCommitSHA == "" {
+			storedMergeCommitSHA = "merge-sha"
+		}
 	}
-	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repo.ID, PlatformID: 7, PlatformExternalID: "PR_7", Number: 7,
 		URL: "https://github.com/acme/widget/pull/7", Title: "newer local title",
 		State: tt.state, PlatformHeadSHA: "head-sha",
@@ -186,6 +203,13 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 		FilesChanged: storedFilesChanged, MergeCommitSHA: storedMergeCommitSHA,
 	})
 	require.NoError(err)
+	if tt.storeMergeActor {
+		require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+			MergeRequestID: mrID, EventType: "merged", Author: "merge-admin",
+			Summary: "merged this", CreatedAt: mergedAt,
+			DedupeKey: "merged-existing",
+		}}))
+	}
 	require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{
 		RepoID: repo.ID, ItemType: db.ArchiveItemTypeIssue,
 		ScanGeneration: 1, Exhausted: true, Coverage: db.ArchiveCoverageSupported,
@@ -225,11 +249,24 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 	assert.Equal(db.ArchiveDatasetProgressPending, progress.Status)
 
 	renamed.Store(true)
-	require.NoError(archiveService.RunEligible(ctx))
+	runErr := archiveService.RunEligible(ctx)
 	progress, err = database.GetDatasetProgress(
 		ctx, repo.ID, db.ArchiveItemTypeMergeRequest, 7, db.ArchiveDatasetLookup,
 	)
 	require.NoError(err)
+	if tt.expectMissingFiles {
+		require.ErrorContains(runErr, "files_changed")
+		assert.NotEqual(db.ArchiveDatasetProgressComplete, progress.Status)
+		storedMR, readErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+		require.NoError(readErr)
+		require.NotNil(storedMR)
+		events, eventsErr := database.ListMREvents(ctx, storedMR.ID)
+		require.NoError(eventsErr)
+		require.Len(events, 1)
+		assert.Equal("merge-admin", events[0].Author)
+		return
+	}
+	require.NoError(runErr)
 	assert.Equal(db.ArchiveDatasetProgressComplete, progress.Status)
 
 	storedRepo, err := database.GetRepoByID(ctx, repo.ID)

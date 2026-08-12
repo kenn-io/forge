@@ -330,8 +330,8 @@ func requeueArchiveKnownItemLookupsTx(
 }
 
 // RequeueArchiveLifecycleDetails reopens completed provider lookups whose
-// persisted rows predate lifecycle actors or merge metrics. The normal archive
-// hydration path owns the provider read and persistence.
+// persisted rows predate the current lifecycle verification contract. The
+// normal archive hydration path owns the provider read and persistence.
 func (d *DB) RequeueArchiveLifecycleDetails(
 	ctx context.Context,
 	repoIDs []int64,
@@ -360,6 +360,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 			SELECT 1
 			FROM forge_archive_items ai
 			JOIN forge_archive_repos ar ON ar.repo_id = ai.repo_id
+			JOIN forge_repos r ON r.id = ai.repo_id
 			WHERE ai.repo_id = forge_archive_dataset_progress.repo_id
 			  AND ai.item_type = forge_archive_dataset_progress.item_type
 			  AND ai.item_number = forge_archive_dataset_progress.item_number
@@ -383,14 +384,14 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 					SELECT 1 FROM forge_merge_requests mr
 					WHERE mr.repo_id = ai.repo_id AND mr.number = ai.item_number
 					  AND (mr.state = 'merged' OR mr.merged_at IS NOT NULL)
-					  AND (
+					  AND (r.platform = 'github' OR (
 						mr.merged_at IS NULL OR mr.files_changed IS NULL OR mr.merge_commit_sha = ''
 						OR NOT EXISTS (
 							SELECT 1 FROM forge_mr_events e
 							WHERE e.merge_request_id = mr.id
 							  AND e.event_type = 'merged' AND e.author <> ''
 						)
-					  )
+					  ))
 				))
 			  )
 		  )`, sqlPlaceholders(len(repoIDs))), args...)

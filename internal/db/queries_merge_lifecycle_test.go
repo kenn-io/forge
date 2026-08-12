@@ -124,7 +124,7 @@ func TestFillMissingMergedMRMetricsAcceptsEitherMergedIndicator(t *testing.T) {
 	}
 }
 
-func TestFillMissingMergedMRMetricsReplacesPreMergeSHAAndPreservesFilledMetrics(t *testing.T) {
+func TestFillMissingMergedMRMetricsReplacesCanonicalMetrics(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -153,14 +153,14 @@ func TestFillMissingMergedMRMetricsReplacesPreMergeSHAAndPreservesFilledMetrics(
 		MergeCommitSHA: new("provider-merge-sha"), FilesChanged: new(9),
 	})
 	require.NoError(err)
-	assert.False(changed)
+	assert.True(changed)
 
 	after, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(after)
 	assert.Equal("provider-merge-sha", after.MergeCommitSHA)
 	require.NotNil(after.FilesChanged)
-	assert.Equal(4, *after.FilesChanged)
+	assert.Equal(9, *after.FilesChanged)
 }
 
 func TestFillMissingMergedMRMetricsRejectsUnprovenIdentity(t *testing.T) {

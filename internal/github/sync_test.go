@@ -13694,6 +13694,33 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 	}
 }
 
+func TestRequireGitHubArchiveMergedMRMetricsRejectsMismatchedFilesChanged(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	mergedAt := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 7, Number: 7,
+		State: db.MergeRequestStateMerged, PlatformHeadSHA: "head-sha",
+		MergeCommitSHA: "merge-sha", FilesChanged: new(9),
+		CreatedAt: mergedAt.Add(-time.Hour), UpdatedAt: mergedAt,
+		LastActivityAt: mergedAt, MergedAt: &mergedAt, ClosedAt: &mergedAt,
+	})
+	require.NoError(err)
+
+	err = (&Syncer{db: database}).requireGitHubArchiveMergedMRMetrics(
+		ctx, repoID, 7, mergeRequestFetchEvidence{
+			merged: true, headSHA: "head-sha", mergeCommitSHA: "merge-sha",
+			filesChanged: new(4),
+		}, true,
+	)
+	require.ErrorContains(err, "files_changed")
+}
+
 func TestSyncArchiveMROpenPullRequestDoesNotRequireMergeMetrics(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

@@ -18,10 +18,9 @@ type MergeRequestMergeMetrics struct {
 	MergedAt       *time.Time
 }
 
-// FillMissingMergedMRMetrics repairs lifecycle fields omitted by an earlier
-// merged snapshot without weakening the parent snapshot timestamp guard. The
-// canonical merged response replaces merge_commit_sha because GitHub may have
-// stored a noncanonical test-merge SHA before the pull request merged.
+// FillMissingMergedMRMetrics repairs lifecycle fields from canonical merged
+// detail without weakening the parent snapshot timestamp guard. Canonical
+// merge_commit_sha and files_changed replace values from partial snapshots.
 func (d *DB) FillMissingMergedMRMetrics(
 	ctx context.Context,
 	metrics MergeRequestMergeMetrics,
@@ -40,9 +39,10 @@ func (d *DB) FillMissingMergedMRMetrics(
 		repairArgs = append(repairArgs, *metrics.MergeCommitSHA)
 	}
 	if metrics.FilesChanged != nil && *metrics.FilesChanged >= 0 {
-		setClauses = append(setClauses, "files_changed = COALESCE(files_changed, ?)")
-		missingClauses = append(missingClauses, "files_changed IS NULL")
+		setClauses = append(setClauses, "files_changed = ?")
+		missingClauses = append(missingClauses, "(files_changed IS NULL OR files_changed <> ?)")
 		setArgs = append(setArgs, *metrics.FilesChanged)
+		repairArgs = append(repairArgs, *metrics.FilesChanged)
 	}
 	var mergedAt any
 	if metrics.MergedAt != nil {

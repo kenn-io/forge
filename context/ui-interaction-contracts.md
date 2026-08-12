@@ -301,6 +301,9 @@ Keyboard handlers must have one clear owner for each key press.
 - Focus callbacks carry the exact rendered leaf ID; never infer it from the
   persisted tree because narrow layouts render one synthetic leaf
   (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::focusPane`).
+- When a focused tab moves between rendered leaves, move live pane ownership
+  with that tab even if its old leaf still renders; pooled focus restoration
+  must not race a layout-host fallback (`frontend/src/lib/components/shared/DetailPaneLayout.svelte`).
 - If a same-leaf tab change removes focused content without `focusout`, reclaim
   the layout only when focus fell to `document.body`
   (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::reclaimFocus`).

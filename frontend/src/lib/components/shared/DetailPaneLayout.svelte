@@ -86,6 +86,7 @@
   let hostWidth = $state(0);
   let focusedInputLeafID = $state<string | null>(null);
   let focusedInputTabKey = $state<string | null>(null);
+  let focusedInputElement: HTMLElement | null = null;
 
   const availableTabs = $derived(tabs.filter((tab) => tab.available).map((tab) => tab.key));
   const hideableTabKeys = $derived(tabs.filter((tab) => tab.hideable === true).map((tab) => tab.key));
@@ -148,15 +149,21 @@
     return renderedLeaves.find((leaf) => leaf.id === focusedInputLeafID)?.activeTabKey ?? "";
   });
 
-  // A focused pane can disappear without dispatching focusout (for example when
-  // it is hidden, becomes unavailable, or is covered by another leaf's zoom).
-  // Forget that live focus immediately so revealing it later cannot resurrect a
-  // border for focus that no longer exists.
+  // A focused pane can disappear or move to another rendered leaf without
+  // dispatching focusout (for example when hidden, covered by a zoom, or split).
+  // Follow the exact rendered tab when it moved; otherwise forget live focus so
+  // revealing removed content later cannot resurrect a stale ownership border.
   $effect.pre(() => {
-    if (focusedInputLeafID === null || renderedLeaves.some((leaf) => leaf.id === focusedInputLeafID)) return;
+    if (focusedInputLeafID === null) return;
+    const focusedLeaf = renderedLeaves.find((leaf) => leaf.id === focusedInputLeafID);
+    if (focusedLeaf?.activeTabKey === focusedInputTabKey) return;
     const replacement = renderedLeaves.find((leaf) => leaf.activeTabKey === focusedInputTabKey);
+    // The leaf still exists and no other rendered leaf took its focused tab: this
+    // is an ordinary same-leaf selection change, handled by the effect below.
+    if (focusedLeaf && !replacement) return;
+    const focusedDescendant = focusedInputElement;
     focusedInputLeafID = replacement?.id ?? null;
-    if (replacement) reclaimFocus();
+    if (replacement) reclaimFocus(focusedDescendant);
   });
 
   // Publish the renderer-only facts the command layer needs: that a layout is
@@ -210,13 +217,18 @@
    * a pane declined restoration and stranded focus. Focus already elsewhere is
    * never stolen, so a background close leaves the user's control alone.
    */
-  function reclaimFocus(): void {
+  function reclaimFocus(preferredTarget: HTMLElement | null = null): void {
     focusExecution?.interrupt();
     focusExecution = runtime.runCommand(
       Effect.promise(() => tick()).pipe(
         Effect.andThen(Effect.sync(() => {
           const focused = document.activeElement;
-          if (focused === null || focused === document.body) host?.focus();
+          if (focused !== null && focused !== document.body) return;
+          if (preferredTarget?.isConnected) {
+            if (host?.contains(preferredTarget)) preferredTarget.focus();
+            return;
+          }
+          host?.focus();
         })),
       ),
       {
@@ -286,9 +298,13 @@
 
   function handleLayoutFocusIn(event: FocusEvent & { currentTarget: HTMLElement }): void {
     const target = event.target;
-    if (target instanceof Element && target.closest(".tabbed-panel-leaf") !== null) return;
+    if (target instanceof HTMLElement && target.closest(".tabbed-panel-leaf") !== null) {
+      focusedInputElement = target;
+      return;
+    }
     focusedInputLeafID = null;
     focusedInputTabKey = null;
+    focusedInputElement = null;
   }
 
   function handleLayoutFocusOut(event: FocusEvent & { currentTarget: HTMLElement }): void {
@@ -296,6 +312,7 @@
     if (next instanceof Node && event.currentTarget.contains(next)) return;
     focusedInputLeafID = null;
     focusedInputTabKey = null;
+    focusedInputElement = null;
   }
 
   // A zoom must not survive the disappearance of what was zoomed. The store

@@ -14,6 +14,7 @@
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
   import { isSessionPaneKey } from "../stores/session-pane-key.js";
+  import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
   import {
     buildFocusPullRequestRoute,
@@ -134,6 +135,7 @@
   function diffKeyboardActive(tabKey: string, inputActive: boolean): boolean {
     if (inputActive) return true;
     if (tabKey !== "files" || detailTab !== "files") return false;
+    if (getStackDepth() > 0) return false;
     const render = paneLayout.paneRender();
     return render !== null && render.activeInputTabKey === null && !paneLayout.externalInputActive();
   }

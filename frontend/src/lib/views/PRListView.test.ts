@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { createRawSnippet, flushSync, tick, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../context.js";
-import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
+import { pushModalFrame, resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import { sessionPaneKey } from "../stores/session-pane-key.js";
 import type { PullRequestRouteRef } from "../routes.js";
@@ -250,6 +250,22 @@ describe("PRListView detail panes", () => {
     await fireEvent.focusIn(screen.getByTestId("diff-files"));
     expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
     expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
+  });
+
+  it("suspends dedicated files shortcuts while a modal owns the keyboard", async () => {
+    renderPRListView({ detailTab: "files" });
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+    await tick();
+
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
+
+    const popModal = pushModalFrame("test-dialog", []);
+    await tick();
+
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
+    popModal();
   });
 
   it("moves visible keyboard routing only when focus moves", async () => {

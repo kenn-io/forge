@@ -210,6 +210,61 @@ describe("WorkspaceTerminalView hostVisible", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  it("clears workflow focus ownership when the host is parked", async () => {
+    const api = createMockApiFetch([
+      (request) =>
+        request.url.pathname === "/api/v1/workspaces/ws-1/runtime" && request.method === "GET"
+          ? jsonResponse(agentRuntime)
+          : null,
+      workspaceRoutes(),
+    ]);
+    const originalFetch = globalThis.fetch;
+    const originalEventSource = globalThis.EventSource;
+    globalThis.fetch = api.fetch;
+    globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
+    vi.stubGlobal("WebSocket", ControlledWebSocket);
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+
+    let hostVisible = $state(true);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const settingsStore = createSettingsStore();
+    const instance = mount(WorkspaceTerminalView, {
+      target,
+      props: {
+        runtime,
+        workspaceId: "ws-1",
+        hideWorkspaceList: true,
+        hideRightSidebar: true,
+        get hostVisible() {
+          return hostVisible;
+        },
+      },
+      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+    });
+
+    try {
+      await vi.waitFor(() => expect(target.querySelector(".xterm-helper-textarea")).not.toBeNull(), WAIT);
+      const terminalInput = target.querySelector<HTMLElement>(".xterm-helper-textarea");
+      if (terminalInput === null) throw new Error("agent terminal focus target was not created");
+
+      terminalInput.focus();
+      await vi.waitFor(() => expect(target.querySelectorAll(".workspace-stage .input-active")).toHaveLength(1), WAIT);
+
+      hostVisible = false;
+      flushSync();
+
+      expect(target.querySelectorAll(".workspace-stage .input-active")).toHaveLength(0);
+    } finally {
+      flushSync(() => unmount(instance));
+      target.remove();
+      globalThis.fetch = originalFetch;
+      globalThis.EventSource = originalEventSource;
+      vi.unstubAllGlobals();
+      localStorage.removeItem("kenn-forge-workspace-active-tab:ws-1");
+    }
+  });
+
   it("unmounts an open dialog while hidden and restores it when visible", async () => {
     const api = createMockApiFetch([workspaceRoutes()]);
     const originalFetch = globalThis.fetch;

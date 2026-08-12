@@ -3280,6 +3280,53 @@ describe("WorkspaceTerminalView", () => {
     expect(activePaneKey()).toBeUndefined();
   });
 
+  it("moves workflow focus ownership while workspace actions are blocked", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    const reviewerPane = await waitFor(() => {
+      const pane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]');
+      expect(pane).not.toBeNull();
+      return pane!;
+    });
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+
+    beginWorkspaceDeletion("ws-1", undefined);
+    await fireEvent.focusIn(reviewerPane);
+
+    expect(activePaneKey()).toBe("session:ws-1:reviewer");
+    endWorkspaceDeletion("ws-1", undefined);
+  });
+
+  it("clears workflow focus ownership when the host is parked", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hostVisible: true } });
+    const reviewerPane = await waitFor(() => {
+      const pane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]');
+      expect(pane).not.toBeNull();
+      return pane!;
+    });
+
+    await fireEvent.focusIn(reviewerPane);
+    expect(document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveLength(1);
+
+    await view.rerender({ workspaceId: "ws-1", hostVisible: false });
+
+    expect(document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveLength(0);
+  });
+
   it("keeps a focused bottom dock active while its header opens the panel", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());

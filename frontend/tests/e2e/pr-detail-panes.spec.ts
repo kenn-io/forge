@@ -318,6 +318,29 @@ test("routes page keys by focus while wheel input remains focus-neutral", async 
   await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(afterFocus);
 });
 
+test("keeps page keys out of the files diff while a modal owns focus", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
+  await page.locator(".diff-content").evaluate((content) => {
+    const spacer = document.createElement("div");
+    spacer.style.height = "2000px";
+    content.append(spacer);
+  });
+  await diffArea.evaluate((area) => {
+    area.scrollTop = 0;
+  });
+
+  await page.keyboard.press("Meta+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await expect(palette).toBeVisible();
+  await expect(palette.getByRole("textbox", { name: "Search command palette" })).toBeFocused();
+
+  await page.keyboard.press("PageDown");
+
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBe(0);
+});
+
 async function detailPaneHostWidth(page: Page): Promise<number> {
   return Math.round(await page.locator(".detail-pane-layout").evaluate((el) => el.getBoundingClientRect().width));
 }
@@ -351,4 +374,26 @@ test("keeps the arrangement at an ordinary window width and flattens below 720px
   // Back above the threshold the split the user made is still there.
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+});
+
+test("restores layout focus when a focused pane is replaced across the flatten threshold", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/pulls/github/acme/widgets/42");
+  await splitFocusedPane(page, "right");
+
+  const layout = page.locator(".detail-pane-layout");
+  const filesTab = page.getByRole("tab", { name: "Files changed" });
+  await filesTab.focus();
+  await expect(filesTab).toBeFocused();
+
+  await page.setViewportSize({ width: 700, height: 900 });
+  await expect.poll(async () => detailPaneHostWidth(page)).toBeLessThan(720);
+  await expect(layout).toBeFocused();
+
+  await filesTab.focus();
+  await expect(filesTab).toBeFocused();
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+  await expect(layout).toBeFocused();
 });

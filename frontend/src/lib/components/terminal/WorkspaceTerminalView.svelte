@@ -65,6 +65,7 @@
     createTerminalGroup,
     defaultTerminalLayout,
     findLeafBySession,
+    findWorkflowLeafByTab,
     firstLeaf,
     moveWorkflowTabBefore,
     normalizeTerminalLayout,
@@ -676,11 +677,14 @@
   // record of which sessions have been promoted out of this container.
   const surfaceLayout = $derived(paneSurface ? getPaneLayoutStore(paneSurface) : null);
   type WorkspaceInputRegion = "workflow" | "details" | "terminal";
+  let workspaceRoot = $state<HTMLElement | null>(null);
   let workspaceInputRegion = $state<WorkspaceInputRegion | null>(null);
+  let focusedWorkflowTabKey = $state<WorkflowTabKey | null>(null);
   const workspaceContainerInputActive = $derived(
     surfaceLayout === null || surfaceLayout.paneRender()?.activeInputTabKey === "workspace",
   );
   const renderedWorkspaceInputRegion = $derived.by<WorkspaceInputRegion | null>(() => {
+    if (!hostVisible) return null;
     if (workspaceInputRegion === "details" && (hideRightSidebar || !sidebarOpen)) return null;
     if (workspaceInputRegion === "terminal" && terminalLayout.dock !== "bottom") {
       return null;
@@ -690,6 +694,7 @@
 
   $effect(() => {
     if (workspaceInputRegion !== null && renderedWorkspaceInputRegion === null) {
+      if (workspaceInputRegion === "workflow") focusedWorkflowTabKey = null;
       workspaceInputRegion = null;
     }
   });
@@ -704,7 +709,10 @@
   ): void {
     const next = event.relatedTarget;
     if (next instanceof Node && event.currentTarget.contains(next)) return;
-    if (workspaceInputRegion === region) workspaceInputRegion = null;
+    if (workspaceInputRegion === region) {
+      if (region === "workflow") focusedWorkflowTabKey = null;
+      workspaceInputRegion = null;
+    }
   }
 
   function sessionPaneKeyFor(session: RuntimeSession): string {
@@ -1211,6 +1219,42 @@
           workflowTabDescriptors.map((tab) => tab.key),
       ),
   );
+  function workflowContentKeyFor(tabKey: WorkflowTabKey | null): string | null {
+    if (tabKey === null) return soleEmbeddedSessionHostKey;
+    const leaf = findWorkflowLeafByTab(renderedWorkflowTree, tabKey);
+    return leaf === null ? null : `${leaf.id}|${leaf.activeTabKey}`;
+  }
+
+  const workflowInputContentKey = $derived(workflowContentKeyFor(focusedWorkflowTabKey));
+  let lastWorkflowInputContentKey = untrack(() => workflowInputContentKey);
+
+  $effect.pre(() => {
+    const contentKey = workflowInputContentKey;
+    const contentChanged = contentKey !== lastWorkflowInputContentKey;
+    lastWorkflowInputContentKey = contentKey;
+    const shouldRestore = untrack(() => workspaceInputRegion === "workflow" && hostVisible);
+    if (!contentChanged || !shouldRestore) return;
+    // A focused session can disappear without focusout. Inspect the updated DOM
+    // before clearing ownership or moving focus; a live destination always wins.
+    const execution = appRuntime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => {
+          if (!hostVisible) return;
+          const focused = document.activeElement;
+          if (focused !== null && focused !== document.body) return;
+          focusedWorkflowTabKey = null;
+          workspaceInputRegion = null;
+          workspaceRoot?.focus();
+        })),
+      ),
+      {
+        operation: "workspace.restore.focus",
+        safeContext: { surface: "workspace", region: "workflow" },
+        onFailure: () => undefined,
+      },
+    );
+    return execution.interrupt;
+  });
   const workspacePaneEmpty = $derived(
     controlsInPane &&
       runtimeSessions.length > 0 &&
@@ -1915,6 +1959,12 @@
     const sessionKey = sessionKeyFromWorkflowTab(key);
     if (sessionKey) mountSessionTerminal(sessionKey);
     selectWorkspaceTab(key);
+  }
+
+  function handleWorkflowPaneFocus(key: WorkflowTabKey): void {
+    focusedWorkflowTabKey = key;
+    lastWorkflowInputContentKey = workflowContentKeyFor(key);
+    handleWorkflowTabActivation(key);
   }
 
   function restoreWorkspaceTabSelection(key: WorkflowTabKey): void {
@@ -3850,6 +3900,8 @@
 
 <div
   class="terminal-view"
+  bind:this={workspaceRoot}
+  tabindex="-1"
   inert={modalOpen}
 >
   {#snippet inlineCollapseControl()}
@@ -4203,7 +4255,7 @@
                       inputActive={workspaceContainerInputActive && renderedWorkspaceInputRegion === "workflow"}
                       disabled={actionsBlocked}
                       onSelectTab={handleWorkflowTabActivation}
-                      onFocusPane={handleWorkflowTabActivation}
+                      onFocusPane={handleWorkflowPaneFocus}
                       onMoveTabBefore={moveWorkflowTabBeforeTarget}
                       onAppendTabToLeaf={appendWorkflowTabToGroup}
                       onSplitTab={splitWorkflowTabIntoGroup}

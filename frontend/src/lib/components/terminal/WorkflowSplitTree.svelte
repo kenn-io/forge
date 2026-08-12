@@ -163,7 +163,6 @@
     onSelectTab?.(workflowTabFrom(tabKey));
   }}
   onFocusPane={(tabKey) => {
-    if (disabled) return;
     onFocusPane?.(workflowTabFrom(tabKey));
   }}
   onMoveTabBefore={(source, target) =>

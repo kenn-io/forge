@@ -85,6 +85,7 @@
   let host = $state<HTMLElement | null>(null);
   let hostWidth = $state(0);
   let focusedInputLeafID = $state<string | null>(null);
+  let focusedInputTabKey = $state<string | null>(null);
 
   const availableTabs = $derived(tabs.filter((tab) => tab.available).map((tab) => tab.key));
   const hideableTabKeys = $derived(tabs.filter((tab) => tab.hideable === true).map((tab) => tab.key));
@@ -151,10 +152,11 @@
   // it is hidden, becomes unavailable, or is covered by another leaf's zoom).
   // Forget that live focus immediately so revealing it later cannot resurrect a
   // border for focus that no longer exists.
-  $effect(() => {
-    if (focusedInputLeafID !== null && !renderedLeaves.some((leaf) => leaf.id === focusedInputLeafID)) {
-      focusedInputLeafID = null;
-    }
+  $effect.pre(() => {
+    if (focusedInputLeafID === null || renderedLeaves.some((leaf) => leaf.id === focusedInputLeafID)) return;
+    const replacement = renderedLeaves.find((leaf) => leaf.activeTabKey === focusedInputTabKey);
+    focusedInputLeafID = replacement?.id ?? null;
+    if (replacement) reclaimFocus();
   });
 
   // Publish the renderer-only facts the command layer needs: that a layout is
@@ -274,6 +276,7 @@
 
   function focusPane(tabKey: string, leafID: string): void {
     focusedInputLeafID = leafID;
+    focusedInputTabKey = tabKey;
     layout.setExternalInputActive(false);
     layout.noteFocused(tabKey);
     if (lastReportedFocus === tabKey) return;
@@ -285,12 +288,14 @@
     const target = event.target;
     if (target instanceof Element && target.closest(".tabbed-panel-leaf") !== null) return;
     focusedInputLeafID = null;
+    focusedInputTabKey = null;
   }
 
   function handleLayoutFocusOut(event: FocusEvent & { currentTarget: HTMLElement }): void {
     const next = event.relatedTarget;
     if (next instanceof Node && event.currentTarget.contains(next)) return;
     focusedInputLeafID = null;
+    focusedInputTabKey = null;
   }
 
   // A zoom must not survive the disappearance of what was zoomed. The store

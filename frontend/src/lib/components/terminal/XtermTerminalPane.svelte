@@ -43,6 +43,7 @@
     type TerminalSessionController,
   } from "./terminal-session.js";
   import { terminalAttachment } from "./terminal-attachment.js";
+  import { hasTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
@@ -486,8 +487,8 @@
     }
   }
 
-  function sendResize(cols: number, rows: number): boolean {
-    return sendControl("resize", cols, rows);
+  function sendResize(cols: number, rows: number, claim: boolean = false): boolean {
+    return sendControl(claim ? "claim_resize" : "resize", cols, rows);
   }
 
   function sendRefresh(cols: number, rows: number): boolean {
@@ -523,7 +524,7 @@
   }
 
   function sendControl(
-    type: "resize" | "refresh",
+    type: "claim_resize" | "resize" | "refresh",
     cols: number,
     rows: number,
   ): boolean {
@@ -656,16 +657,17 @@
 
     fitAddon?.fit();
     const fittedSize = { cols: terminal.cols, rows: terminal.rows };
+    const dimensionsChanged = fittedSize.cols !== sentCols || fittedSize.rows !== sentRows;
     terminal.refresh(0, Math.max(0, fittedSize.rows - 1));
     // Report the dimensions fit() actually applied. It takes its own fresh
     // measurement, so the region can cross a row or column boundary after the
     // authority preflight above but before xterm is resized.
     // Re-send unchanged dimensions when reclaiming authority because another
     // attachment may have resized the PTY while this region had no geometry.
-    if (!authorityChanged && fittedSize.cols === sentCols && fittedSize.rows === sentRows) return;
+    if (!authorityChanged && !dimensionsChanged) return;
     // Recorded only once the socket carried it — a resize computed before the
     // socket opened would otherwise be suppressed forever as already sent.
-    if (sendResize(fittedSize.cols, fittedSize.rows)) {
+    if (sendResize(fittedSize.cols, fittedSize.rows, dimensionsChanged && hasTerminalGeometryIntent())) {
       sentCols = fittedSize.cols;
       sentRows = fittedSize.rows;
     }

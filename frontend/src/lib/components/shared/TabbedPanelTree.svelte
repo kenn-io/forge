@@ -6,6 +6,7 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { observeResize } from "../../browser/observers.js";
+  import { markTerminalGeometryIntent } from "../terminal/terminalGeometryIntent.js";
   import Self from "./TabbedPanelTree.svelte";
   import {
     assertNamespacedDragScope,
@@ -532,7 +533,11 @@
   function handleResize(event: SplitResizeEvent): void {
     if (node?.type !== "split") return;
     const ratio = resizeStartRatio + event.delta / Math.max(1, resizeStartSize);
-    onRatioChange?.(node.id, clampTabbedPanelRatio(ratio));
+    const nextRatio = clampTabbedPanelRatio(ratio);
+    if (nextRatio !== node.ratio) {
+      markTerminalGeometryIntent();
+    }
+    onRatioChange?.(node.id, nextRatio);
   }
 
   function tabDragEnabled(): boolean {

@@ -745,7 +745,7 @@ test.describe("inline workspace pane continuity", () => {
       const workspace = await createIssueWorkspace(api, 10);
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
-      const desktopTerminal = await openTerminalPanel(page);
+      await openTerminalPanel(page);
       await phonePage.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
       const phoneTerminal = await ensureTerminalPanelOpen(phonePage);
 
@@ -774,10 +774,34 @@ test.describe("inline workspace pane continuity", () => {
         .poll(() => tmuxClientPtyGeometries(isolatedServer!))
         .toContainEqual({ cols: phoneClaim.cols, rows: phoneClaim.rows });
 
-      await desktopTerminal.click({ position: { x: 12, y: 12 } });
+      const resizeHandle = page.getByRole("separator", { name: "Resize terminal panel" });
+      const resizeHandleBox = await resizeHandle.boundingBox();
+      expect(resizeHandleBox).not.toBeNull();
+      await page.mouse.move(
+        resizeHandleBox!.x + resizeHandleBox!.width / 2,
+        resizeHandleBox!.y + resizeHandleBox!.height / 2,
+      );
+      await page.mouse.down();
+      await page.mouse.move(resizeHandleBox!.x + resizeHandleBox!.width / 2, resizeHandleBox!.y - 80, { steps: 10 });
+      await page.mouse.up();
       await expect
         .poll(() => desktopFrames.filter((frame) => frame.type === "claim_resize").length)
         .toBeGreaterThan(desktopClaimsBeforeResize);
+      let settledClaimCount = -1;
+      let lastClaimAt = Date.now();
+      await expect
+        .poll(
+          () => {
+            const claimCount = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
+            if (claimCount !== settledClaimCount) {
+              settledClaimCount = claimCount;
+              lastClaimAt = Date.now();
+            }
+            return Date.now() - lastClaimAt;
+          },
+          { timeout: 5_000, intervals: [50] },
+        )
+        .toBeGreaterThanOrEqual(300);
       const desktopClaim = desktopFrames.filter((frame) => frame.type === "claim_resize").at(-1)!;
       expect(desktopClaim.cols).toBeGreaterThan(phoneClaim.cols!);
       await expect

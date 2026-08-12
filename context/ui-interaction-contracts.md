@@ -478,7 +478,9 @@ Keyboard handlers must have one clear owner for each key press.
   resize eligibility on every measurement, but passive lifecycle or geometry
   changes never transfer ownership among equal-priority attachments. The latest
   deliberate terminal action wins within a priority; activating a higher-priority
-  local attachment may preempt an HTTP Fleet attachment. Claims apply fitted
+  local attachment may preempt an HTTP Fleet attachment. Effective pointer or
+  arrow-key split/dock divider changes are deliberate for terminals whose fitted
+  cells change; zero-motion and passive reflow are not. Claims apply fitted
   dimensions and direct/HTTP Fleet streams close rather than forward following
   input when tmux settlement fails. Ordinary resizes apply for the current owner,
   only retain fallback dimensions for non-owners, and owner loss restores the

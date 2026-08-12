@@ -7,6 +7,7 @@ import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import TerminalSplitTree from "./TerminalSplitTree.svelte";
 import type { PaneNode } from "./terminal-layout";
 import { clearActiveTerminalDrag, readRuntimeSessionDrag } from "./terminal-drag";
+import { hasTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 import { isSessionSlotVisible, resetSessionHostForTest, sessionHostKey } from "../../stores/session-host.svelte.ts";
 
 vi.mock("./TerminalPane.svelte", async () => ({
@@ -91,7 +92,13 @@ describe("TerminalSplitTree", () => {
     );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    if (vi.isFakeTimers()) {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    } else if (hasTerminalGeometryIntent()) {
+      await new Promise((resolve) => setTimeout(resolve, 251));
+    }
     cleanup();
     clearActiveTerminalDrag();
     clearActiveTabbedPanelDrag();
@@ -186,6 +193,39 @@ describe("TerminalSplitTree", () => {
     onRatioChange.mockClear();
     await fireEvent.keyDown(handle, { key: "ArrowDown" });
     expect(onRatioChange).not.toHaveBeenCalled();
+  });
+
+  it("marks effective pointer and keyboard split changes as deliberate geometry", async () => {
+    mockRect();
+    Object.defineProperties(HTMLElement.prototype, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    vi.useFakeTimers();
+    renderTerminalSplitTree({
+      workspaceId: "ws-1",
+      node: split(),
+      sessions,
+      displayLabels: {},
+      activeSessionKey: sessions[0]!.key,
+      onRatioChange: vi.fn(),
+    });
+    const handle = screen.getByRole("separator", { name: "Resize split" });
+
+    await fireEvent.pointerDown(handle, { clientX: 400, pointerId: 1, button: 0 });
+    await fireEvent.pointerUp(handle, { clientX: 400, pointerId: 1 });
+    expect(hasTerminalGeometryIntent()).toBe(false);
+
+    await fireEvent.pointerDown(handle, { clientX: 400, pointerId: 2, button: 0 });
+    await fireEvent.pointerMove(handle, { clientX: 424, pointerId: 2 });
+    expect(hasTerminalGeometryIntent()).toBe(true);
+    await fireEvent.pointerUp(handle, { clientX: 424, pointerId: 2 });
+
+    vi.runOnlyPendingTimers();
+    expect(hasTerminalGeometryIntent()).toBe(false);
+    await fireEvent.keyDown(handle, { key: "ArrowRight" });
+    expect(hasTerminalGeometryIntent()).toBe(true);
   });
 
   it("uses the vertical extent and clamps split ratios", async () => {

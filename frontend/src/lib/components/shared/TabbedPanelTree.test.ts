@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import TabbedPanelTreeTestHarness from "./TabbedPanelTreeTestHarness.svelte";
+import { hasTerminalGeometryIntent } from "../terminal/terminalGeometryIntent.js";
 import {
   appendTabbedPanelTabToLeaf,
   moveTabbedPanelTabBefore,
@@ -61,7 +62,13 @@ function splitNode(direction: "horizontal" | "vertical" = "horizontal"): TabbedP
 }
 
 describe("TabbedPanelTree", () => {
-  afterEach(() => {
+  afterEach(async () => {
+    if (vi.isFakeTimers()) {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    } else if (hasTerminalGeometryIntent()) {
+      await new Promise((resolve) => setTimeout(resolve, 251));
+    }
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -299,6 +306,30 @@ describe("TabbedPanelTree", () => {
     onRatioChange.mockClear();
     await fireEvent.keyDown(divider, { key: "ArrowUp" });
     expect(onRatioChange).not.toHaveBeenCalled();
+  });
+
+  it("marks effective pointer and keyboard panel changes as deliberate geometry", async () => {
+    mockSplitRect();
+    Object.defineProperties(HTMLElement.prototype, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    vi.useFakeTimers();
+    render(TabbedPanelTreeTestHarness, {
+      props: { node: splitNode(), onRatioChange: vi.fn() },
+    });
+    const divider = screen.getByRole("separator", { name: "Resize test split" });
+
+    await fireEvent.pointerDown(divider, { clientX: 400, pointerId: 1, button: 0 });
+    await fireEvent.pointerMove(divider, { clientX: 424, pointerId: 1 });
+    expect(hasTerminalGeometryIntent()).toBe(true);
+    await fireEvent.pointerUp(divider, { clientX: 424, pointerId: 1 });
+
+    vi.runOnlyPendingTimers();
+    expect(hasTerminalGeometryIntent()).toBe(false);
+    await fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(hasTerminalGeometryIntent()).toBe(true);
   });
 
   it("uses the vertical axis for stacked split resizing", async () => {

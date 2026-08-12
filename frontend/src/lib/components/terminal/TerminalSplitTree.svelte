@@ -27,6 +27,7 @@
   import { sessionHostKey } from "../../stores/session-host.svelte.ts";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { observeResize } from "../../browser/observers.js";
+  import { markTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 
   const runtime = getAppRuntime();
 
@@ -246,7 +247,11 @@
   function handleResize(event: SplitResizeEvent): void {
     if (node.type !== "split") return;
     const ratio = resizeStartRatio + event.delta / Math.max(1, resizeStartSize);
-    onRatioChange?.(node.id, clampRatio(ratio));
+    const nextRatio = clampRatio(ratio);
+    if (nextRatio !== node.ratio) {
+      markTerminalGeometryIntent();
+    }
+    onRatioChange?.(node.id, nextRatio);
   }
 
   function inheritTrim(target: BorderTrim, edge: BorderEdge): void {

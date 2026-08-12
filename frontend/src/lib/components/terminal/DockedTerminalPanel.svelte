@@ -36,6 +36,7 @@
     collectSessionKeys,
     countLeaves,
   } from "./terminal-layout";
+  import { markTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 
   interface Props {
     workspaceId: string;
@@ -201,7 +202,11 @@
   }
 
   function resizePanel(event: SplitResizeEvent): void {
-    onResize?.(clampTerminalHeight(resizeStartHeight - event.delta));
+    const nextHeight = clampTerminalHeight(resizeStartHeight - event.delta);
+    if (nextHeight !== height) {
+      markTerminalGeometryIntent();
+    }
+    onResize?.(nextHeight);
   }
 
   function handleFocusIn(event: FocusEvent): void {

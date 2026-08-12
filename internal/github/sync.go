@@ -12260,7 +12260,7 @@ func (s *Syncer) syncMRForRepo(
 	providerAttempted *bool,
 ) error {
 	return s.syncMRForRepoResolved(
-		ctx, repo, number, useConditionalPRDetail, providerAttempted, nil, nil,
+		ctx, repo, number, useConditionalPRDetail, providerAttempted, nil, nil, nil,
 	)
 }
 
@@ -12278,12 +12278,16 @@ func (s *Syncer) syncMRForRepoResolved(
 	providerAttempted *bool,
 	resolvedRepoID *int64,
 	fetchedEvidence *mergeRequestFetchEvidence,
+	lifecyclePersisted *bool,
 ) error {
 	if resolvedRepoID != nil {
 		*resolvedRepoID = 0
 	}
 	if fetchedEvidence != nil {
 		*fetchedEvidence = mergeRequestFetchEvidence{}
+	}
+	if lifecyclePersisted != nil {
+		*lifecyclePersisted = false
 	}
 	if !IsArchiveSyncBudgetContext(ctx) {
 		bucket, err := s.bucketKeyForRepo(repo, false)
@@ -12414,6 +12418,7 @@ func (s *Syncer) syncMRForRepoResolved(
 		normalized.CommentCount = existing.CommentCount
 		normalized.ReviewDecision = existing.ReviewDecision
 		preserveMergeableStateIfOmitted(normalized, existing)
+		preserveMergedAtIfOmitted(normalized, existing)
 		// CI is tied to the head SHA. If the head moved we must clear the
 		// previous values; otherwise a failed CI refresh would leave stale
 		// checks attached to the new commit.
@@ -12505,6 +12510,9 @@ func (s *Syncer) syncMRForRepoResolved(
 			} else if actorErr != nil {
 				return fmt.Errorf("repair merged MR #%d actor: %w", number, actorErr)
 			}
+			if lifecyclePersisted != nil {
+				*lifecyclePersisted = true
+			}
 		}
 		return nil
 	}
@@ -12559,6 +12567,9 @@ func (s *Syncer) syncMRForRepoResolved(
 		}
 		if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, ghPR, normalized.MergedAt); err != nil {
 			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+		}
+		if lifecyclePersisted != nil {
+			*lifecyclePersisted = true
 		}
 
 		syncMRHeadSHA := ""
@@ -12629,6 +12640,9 @@ func (s *Syncer) syncMRForRepoResolved(
 		}
 		if _, err := s.persistMergedActorEvent(ctx, mrID, revision, platformMR.MergedBy, normalized.MergedAt); err != nil {
 			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+		}
+		if lifecyclePersisted != nil {
+			*lifecyclePersisted = true
 		}
 		detailApplied, err := s.markMergeRequestDetailFetchedIfRouteFence(
 			ctx, repo, routeFence, mrID, revision, pending, nil,
@@ -12722,6 +12736,17 @@ func preserveMergeableStateIfOmitted(
 	if normalized.MergeableState == "" ||
 		(normalized.MergeableState == "unknown" && existing.MergeableState != "") {
 		normalized.MergeableState = existing.MergeableState
+	}
+}
+
+func preserveMergedAtIfOmitted(
+	normalized *db.MergeRequest,
+	existing *db.MergeRequest,
+) {
+	if normalized.State == db.MergeRequestStateMerged &&
+		normalized.MergedAt == nil && existing.MergedAt != nil {
+		mergedAt := *existing.MergedAt
+		normalized.MergedAt = &mergedAt
 	}
 }
 
@@ -13041,15 +13066,17 @@ func (s *Syncer) SyncArchiveItem(
 		providerAttempted := false
 		var resolvedRepoID int64
 		var fetchedEvidence mergeRequestFetchEvidence
+		var lifecyclePersisted bool
 		err := s.syncMRForRepoResolved(
 			ctx, repo, number, false, &providerAttempted, &resolvedRepoID, &fetchedEvidence,
+			&lifecyclePersisted,
 		)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
 			err = nil
 		}
 		if err == nil && repoPlatform(repo) == platform.KindGitHub {
 			err = s.requireGitHubArchiveMergedMRMetrics(
-				ctx, resolvedRepoID, number, fetchedEvidence,
+				ctx, resolvedRepoID, number, fetchedEvidence, lifecyclePersisted,
 			)
 		}
 		return providerAttempted, err
@@ -13063,6 +13090,7 @@ func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	repoID int64,
 	number int,
 	fetched mergeRequestFetchEvidence,
+	lifecyclePersisted bool,
 ) error {
 	if repoID == 0 {
 		return fmt.Errorf("verify GitHub archive MR #%d: repository was not resolved", number)
@@ -13073,6 +13101,12 @@ func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	}
 	if storedRepo == nil {
 		return fmt.Errorf("verify GitHub archive MR #%d: repository is not stored", number)
+	}
+	if fetched.merged && !lifecyclePersisted {
+		return fmt.Errorf(
+			"verify GitHub archive MR %s/%s#%d: lifecycle persistence incomplete",
+			storedRepo.Owner, storedRepo.Name, number,
+		)
 	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 	if err != nil {

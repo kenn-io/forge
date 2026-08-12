@@ -13331,6 +13331,181 @@ func TestSyncArchiveMRChecksMetricsByResolvedRepositoryIDAfterRename(t *testing.
 	require.Equal(4, *mr.FilesChanged)
 }
 
+func TestSyncArchiveMRPreservesStoredMergedAtWhenAcceptedResponseOmitsIt(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-a",
+	}
+	entry, accepted, err := database.ReconcileRepositoryObservation(
+		ctx,
+		db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-a", Owner: "acme", Name: "widget",
+			RepoPath: "acme/widget",
+		},
+		time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+	)
+	require.NoError(err)
+	require.True(accepted)
+
+	mergedAt := time.Date(2026, 8, 2, 11, 59, 59, 0, time.UTC)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: entry.Repository.ID, PlatformID: 7, Number: 7,
+		State: db.MergeRequestStateMerged, PlatformHeadSHA: "head-sha",
+		MergeCommitSHA: "merge-sha", FilesChanged: new(4),
+		CreatedAt: mergedAt.Add(-time.Hour), UpdatedAt: mergedAt,
+		LastActivityAt: mergedAt, MergedAt: &mergedAt, ClosedAt: &mergedAt,
+	})
+	require.NoError(err)
+
+	providerUpdatedAt := mergedAt.Add(time.Minute)
+	canonical := buildOpenPR(7, providerUpdatedAt)
+	canonical.State = new("closed")
+	canonical.Merged = new(true)
+	canonical.MergedAt = nil
+	canonical.ClosedAt = makeTimestamp(mergedAt)
+	canonical.MergeCommitSHA = new("merge-sha")
+	canonical.ChangedFiles = new(4)
+	canonical.Head.SHA = new("head-sha")
+	canonical.MergedBy = &gh.User{Login: new("merge-admin")}
+	client := &mockClient{
+		singlePR: canonical,
+		getRepositoryFn: func(
+			context.Context, string, string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				ID: new(int64(1)), NodeID: new("repo-a"), Name: new("widget"),
+				Owner: &gh.User{Login: new("acme")}, Archived: new(false),
+			}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	providerAttempted, err := syncer.SyncArchiveItem(
+		WithArchiveSyncBudget(ctx), platformRepoRef(repo),
+		db.ArchiveItemTypeMergeRequest, 7,
+	)
+	require.True(providerAttempted)
+	require.NoError(err)
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, entry.Repository.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NotNil(mr.MergedAt)
+	require.Equal(mergedAt, *mr.MergedAt)
+	events, err := database.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal("merge-admin", events[0].Author)
+}
+
+func TestSyncArchiveMRRetriesWhenAcceptedSnapshotLosesRouteFenceBeforeActor(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-a",
+	}
+	entry, accepted, err := database.ReconcileRepositoryObservation(
+		ctx,
+		db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-a", Owner: "acme", Name: "widget",
+			RepoPath: "acme/widget",
+		},
+		time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+	)
+	require.NoError(err)
+	require.True(accepted)
+
+	mergedAt := time.Date(2026, 8, 2, 11, 59, 59, 0, time.UTC)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: entry.Repository.ID, PlatformID: 7, Number: 7,
+		State: db.MergeRequestStateMerged, PlatformHeadSHA: "head-sha",
+		MergeCommitSHA: "merge-sha", FilesChanged: new(4),
+		CreatedAt: mergedAt.Add(-time.Hour), UpdatedAt: mergedAt,
+		LastActivityAt: mergedAt, MergedAt: &mergedAt, ClosedAt: &mergedAt,
+	})
+	require.NoError(err)
+
+	providerUpdatedAt := mergedAt.Add(time.Minute)
+	canonical := buildOpenPR(7, providerUpdatedAt)
+	canonical.State = new("closed")
+	canonical.Merged = new(true)
+	canonical.MergedAt = makeTimestamp(mergedAt)
+	canonical.ClosedAt = makeTimestamp(mergedAt)
+	canonical.MergeCommitSHA = new("merge-sha")
+	canonical.ChangedFiles = new(4)
+	canonical.Head.SHA = new("head-sha")
+	canonical.MergedBy = &gh.User{Login: new("merge-admin")}
+	client := &mockClient{
+		singlePR: canonical,
+		getRepositoryFn: func(
+			context.Context, string, string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				ID: new(int64(1)), NodeID: new("repo-a"), Name: new("widget"),
+				Owner: &gh.User{Login: new("acme")}, Archived: new(false),
+			}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	var raceStarted atomic.Bool
+	writeLockAttempted := make(chan struct{})
+	var writeLockAttemptedOnce sync.Once
+	restoreWriteLockHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
+		if raceStarted.Load() {
+			writeLockAttemptedOnce.Do(func() { close(writeLockAttempted) })
+		}
+	})
+	t.Cleanup(restoreWriteLockHook)
+	reconciliationDone := make(chan error, 1)
+	syncer.afterMergeRequestParentSnapshotCommit = func() {
+		raceStarted.Store(true)
+		go func() {
+			_, _, reconcileErr := database.ReconcileRepositoryObservation(
+				ctx,
+				db.RepoIdentity{
+					Platform: "github", PlatformHost: "github.com",
+					PlatformRepoID: "repo-a", Owner: "acme", Name: "renamed",
+					RepoPath: "acme/renamed",
+				},
+				time.Now().UTC().Add(time.Hour),
+			)
+			reconciliationDone <- reconcileErr
+		}()
+		<-writeLockAttempted
+	}
+
+	providerAttempted, err := syncer.SyncArchiveItem(
+		WithArchiveSyncBudget(ctx), platformRepoRef(repo),
+		db.ArchiveItemTypeMergeRequest, 7,
+	)
+	require.True(providerAttempted)
+	require.ErrorContains(err, "lifecycle persistence")
+	require.NoError(<-reconciliationDone)
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, entry.Repository.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	events, err := database.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Empty(events)
+}
+
 func TestSyncArchiveMRRetriesWhenRejectedRepairLosesRouteFence(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

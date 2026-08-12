@@ -450,7 +450,7 @@ fallback repository listing.
 - Archive REST and GraphQL failures must preserve typed authentication and reset-aware rate-limit errors so scheduling defers rather than hot-looping generic retries. (`internal/github/pages.go::archiveTransportError`)
 - GitHub archive code owns historical identity inventory only; hydration must invoke ordinary item sync instead of adding archive-specific lookup, normalization, or persistence. (`internal/github/pages.go::ListIssuesPage`, `internal/github/sync.go::SyncArchiveItem`)
 - Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
-- A merged GitHub archive lookup requires merge time, merge commit SHA, and files changed; fetched merged evidence survives rejection by newer local detail so hydration remains retryable. (`internal/github/sync.go::requireGitHubArchiveMergedMRMetrics`)
+- A merged GitHub archive lookup requires merge time and files changed plus fetched canonical head and merge SHAs that exactly match storage; absent or rejected canonical evidence keeps hydration retryable. (`internal/github/sync.go::requireGitHubArchiveMergedMRMetrics`)
 - Under repository, number, merged-row, and head-SHA guards, canonical merged detail replaces a stored pre-merge test SHA and fills other missing lifecycle fields without weakening snapshot ordering. (`internal/db/queries_merge_lifecycle.go::FillMissingMergedMRMetrics`)
 - Rejected canonical merged snapshots repair each available lifecycle field and
   the merger event under one route-fence lease; a rejected fenced repair stays

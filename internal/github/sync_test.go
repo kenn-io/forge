@@ -13424,13 +13424,16 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 		name              string
 		storedMergeSHA    string
 		storedFiles       *int
+		storedHeadSHA     string
 		providerMergeSHA  string
 		providerFiles     *int
+		providerHeadSHA   string
 		missingMergedAt   bool
 		missingFieldLabel string
 	}{
 		{
-			name: "merge commit SHA", storedFiles: new(4), providerFiles: new(4),
+			name: "canonical merge commit SHA", storedMergeSHA: "pre-merge-test-sha",
+			storedFiles: new(4), providerFiles: new(4),
 			missingFieldLabel: "merge_commit_sha",
 		},
 		{
@@ -13441,6 +13444,12 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 			name: "merged timestamp", storedMergeSHA: "merge-sha", storedFiles: new(4),
 			providerMergeSHA: "merge-sha", providerFiles: new(4), missingMergedAt: true,
 			missingFieldLabel: "merged_at",
+		},
+		{
+			name: "canonical head SHA", storedMergeSHA: "pre-merge-test-sha",
+			storedFiles: new(4), storedHeadSHA: "newer-head-sha",
+			providerMergeSHA: "merge-sha", providerFiles: new(4),
+			providerHeadSHA: "canonical-head-sha", missingFieldLabel: "platform_head_sha",
 		},
 	}
 
@@ -13464,9 +13473,13 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 			if !tt.missingMergedAt {
 				storedMergedAt = &mergedAt
 			}
+			storedHeadSHA := tt.storedHeadSHA
+			if storedHeadSHA == "" {
+				storedHeadSHA = "head-sha"
+			}
 			_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 				RepoID: repoID, PlatformID: 7000, Number: 7,
-				State: db.MergeRequestStateMerged, PlatformHeadSHA: "head-sha",
+				State: db.MergeRequestStateMerged, PlatformHeadSHA: storedHeadSHA,
 				MergeCommitSHA: tt.storedMergeSHA, FilesChanged: tt.storedFiles,
 				CreatedAt: providerUpdatedAt.Add(-time.Hour), UpdatedAt: localUpdatedAt,
 				LastActivityAt: localUpdatedAt, MergedAt: storedMergedAt, ClosedAt: &mergedAt,
@@ -13482,7 +13495,11 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 			canonical.ClosedAt = makeTimestamp(mergedAt)
 			canonical.MergeCommitSHA = &tt.providerMergeSHA
 			canonical.ChangedFiles = tt.providerFiles
-			canonical.Head.SHA = new("head-sha")
+			providerHeadSHA := tt.providerHeadSHA
+			if providerHeadSHA == "" {
+				providerHeadSHA = "head-sha"
+			}
+			canonical.Head.SHA = &providerHeadSHA
 			syncer := NewSyncer(
 				map[string]Client{"github.com": &mockClient{singlePR: canonical}},
 				database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),

@@ -12264,6 +12264,12 @@ func (s *Syncer) syncMRForRepo(
 	)
 }
 
+type mergeRequestFetchEvidence struct {
+	merged         bool
+	headSHA        string
+	mergeCommitSHA string
+}
+
 func (s *Syncer) syncMRForRepoResolved(
 	ctx context.Context,
 	repo RepoRef,
@@ -12271,13 +12277,13 @@ func (s *Syncer) syncMRForRepoResolved(
 	useConditionalPRDetail bool,
 	providerAttempted *bool,
 	resolvedRepoID *int64,
-	fetchedMerged *bool,
+	fetchedEvidence *mergeRequestFetchEvidence,
 ) error {
 	if resolvedRepoID != nil {
 		*resolvedRepoID = 0
 	}
-	if fetchedMerged != nil {
-		*fetchedMerged = false
+	if fetchedEvidence != nil {
+		*fetchedEvidence = mergeRequestFetchEvidence{}
 	}
 	if !IsArchiveSyncBudgetContext(ctx) {
 		bucket, err := s.bucketKeyForRepo(repo, false)
@@ -12395,8 +12401,12 @@ func (s *Syncer) syncMRForRepoResolved(
 	if normalized == nil {
 		return fmt.Errorf("get MR %s/%s#%d: provider returned no merge request", owner, name, number)
 	}
-	if fetchedMerged != nil {
-		*fetchedMerged = normalized.State == db.MergeRequestStateMerged || normalized.MergedAt != nil
+	if fetchedEvidence != nil {
+		*fetchedEvidence = mergeRequestFetchEvidence{
+			merged:         normalized.State == db.MergeRequestStateMerged || normalized.MergedAt != nil,
+			headSHA:        normalized.PlatformHeadSHA,
+			mergeCommitSHA: normalized.MergeCommitSHA,
+		}
 	}
 	headChanged := existing != nil &&
 		existing.PlatformHeadSHA != normalized.PlatformHeadSHA
@@ -13020,16 +13030,16 @@ func (s *Syncer) SyncArchiveItem(
 	case db.ArchiveItemTypeMergeRequest:
 		providerAttempted := false
 		var resolvedRepoID int64
-		var fetchedMerged bool
+		var fetchedEvidence mergeRequestFetchEvidence
 		err := s.syncMRForRepoResolved(
-			ctx, repo, number, false, &providerAttempted, &resolvedRepoID, &fetchedMerged,
+			ctx, repo, number, false, &providerAttempted, &resolvedRepoID, &fetchedEvidence,
 		)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
 			err = nil
 		}
 		if err == nil && repoPlatform(repo) == platform.KindGitHub {
 			err = s.requireGitHubArchiveMergedMRMetrics(
-				ctx, resolvedRepoID, number, fetchedMerged,
+				ctx, resolvedRepoID, number, fetchedEvidence,
 			)
 		}
 		return providerAttempted, err
@@ -13042,7 +13052,7 @@ func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	ctx context.Context,
 	repoID int64,
 	number int,
-	fetchedMerged bool,
+	fetched mergeRequestFetchEvidence,
 ) error {
 	if repoID == 0 {
 		return fmt.Errorf("verify GitHub archive MR #%d: repository was not resolved", number)
@@ -13061,23 +13071,30 @@ func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	if mr == nil {
 		return fmt.Errorf("verify GitHub archive MR #%d metrics: pull request is not stored", number)
 	}
-	if !fetchedMerged && mr.State != db.MergeRequestStateMerged && mr.MergedAt == nil {
+	if !fetched.merged && mr.State != db.MergeRequestStateMerged && mr.MergedAt == nil {
 		return nil
 	}
-	missing := make([]string, 0, 3)
+	incomplete := make([]string, 0, 4)
 	if mr.MergedAt == nil {
-		missing = append(missing, "merged_at")
+		incomplete = append(incomplete, "merged_at")
 	}
-	if mr.MergeCommitSHA == "" {
-		missing = append(missing, "merge_commit_sha")
+	if fetched.merged {
+		if fetched.headSHA == "" || mr.PlatformHeadSHA != fetched.headSHA {
+			incomplete = append(incomplete, "platform_head_sha")
+		}
+		if fetched.mergeCommitSHA == "" || mr.MergeCommitSHA != fetched.mergeCommitSHA {
+			incomplete = append(incomplete, "merge_commit_sha")
+		}
+	} else if mr.MergeCommitSHA == "" {
+		incomplete = append(incomplete, "merge_commit_sha")
 	}
 	if mr.FilesChanged == nil {
-		missing = append(missing, "files_changed")
+		incomplete = append(incomplete, "files_changed")
 	}
-	if len(missing) > 0 {
+	if len(incomplete) > 0 {
 		return fmt.Errorf(
-			"verify GitHub archive MR %s/%s#%d metrics: missing %s",
-			storedRepo.Owner, storedRepo.Name, number, strings.Join(missing, ", "),
+			"verify GitHub archive MR %s/%s#%d metrics: incomplete or mismatched %s",
+			storedRepo.Owner, storedRepo.Name, number, strings.Join(incomplete, ", "),
 		)
 	}
 	return nil

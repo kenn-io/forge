@@ -16,7 +16,7 @@
   import type { PaneLayoutStore, PaneTabSpec } from "../../stores/paneLayout.svelte.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { nextAnimationFrame } from "../../browser/animation-frame.js";
+  import { nextAnimationFrameOrDocumentHidden } from "../../browser/animation-frame.js";
   import { observeMutation, observeResize } from "../../browser/observers.js";
 
   interface Props {
@@ -329,7 +329,7 @@
     const blurred = focusedInputElement;
     focusRecordExecution?.interrupt();
     focusRecordExecution = runtime.runCommand(
-      nextAnimationFrame.pipe(
+      nextAnimationFrameOrDocumentHidden.pipe(
         Effect.andThen(Effect.sync(() => {
           if (focusedInputElement === blurred && blurred?.isConnected) {
             focusedInputElement = null;

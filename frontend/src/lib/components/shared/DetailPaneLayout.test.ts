@@ -533,6 +533,28 @@ describe("detail pane layout", () => {
     expect(layout.paneRender()?.activeInputTabKey).toBeNull();
   });
 
+  it("forgets a connected focus target when the document hides before the next frame", async () => {
+    const layout = store(mergedTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, { layout, paneIdentity: "first" });
+    const conversationFocusTarget = screen.getByTestId("pane-focus-target-conversation");
+    vi.spyOn(window, "requestAnimationFrame").mockReturnValue(1);
+    const visibilityState = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+
+    conversationFocusTarget.focus();
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBe("conversation"));
+
+    conversationFocusTarget.blur();
+    expect(document.activeElement).toBe(document.body);
+    visibilityState.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await rerender({ layout, paneIdentity: "second" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.activeElement).toBe(document.body);
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+  });
+
   it("drops stale ownership when a focused inactive tab moves to another leaf", async () => {
     const layout = store(mergedTree());
     render(DetailPaneLayoutTestHarness, { layout });

@@ -23,6 +23,18 @@ export const nextAnimationFrame = Effect.gen(function* () {
   });
 });
 
+export const nextAnimationFrameOrDocumentHidden = Effect.suspend(() => {
+  if (document.visibilityState === "hidden") return Effect.void;
+  const documentHidden = Effect.callback<void>((resume) => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") resume(Effect.void);
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return Effect.sync(() => document.removeEventListener("visibilitychange", handleVisibilityChange));
+  });
+  return Effect.raceFirst(Effect.asVoid(nextAnimationFrame), documentHidden);
+});
+
 export interface AnimationFrameScheduler {
   readonly cancel: () => void;
   readonly schedule: () => boolean;

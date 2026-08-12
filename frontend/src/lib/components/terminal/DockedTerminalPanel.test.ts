@@ -39,6 +39,7 @@ describe("DockedTerminalPanel", () => {
     cleanup();
     clearActiveTerminalDrag();
     clearActiveTabbedPanelDrag();
+    vi.restoreAllMocks();
   });
 
   it("publishes and clears a detail-pane payload from the terminal selector", async () => {
@@ -188,5 +189,42 @@ describe("DockedTerminalPanel", () => {
 
     await vi.waitFor(() => expect(onInputDeactivate).toHaveBeenCalledOnce());
     expect(document.activeElement).not.toBe(screen.getByRole("region", { name: "Terminal panel" }));
+  });
+
+  it("does not reclaim a blurred session after the document hides", async () => {
+    const view = renderDockedTerminalPanel({
+      sessions,
+      tree: {
+        type: "split",
+        id: "split-a-b",
+        direction: "horizontal",
+        ratio: 0.5,
+        first: { type: "leaf", id: "leaf-a", sessionKey: sessions[0]!.key },
+        second: { type: "leaf", id: "leaf-b", sessionKey: sessions[1]!.key },
+      },
+      activeSessionKey: sessions[0]!.key,
+    });
+    vi.spyOn(window, "requestAnimationFrame").mockReturnValue(1);
+    const visibilityState = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const focusedSession = document.querySelector<HTMLElement>(".session-terminal-slot");
+    expect(focusedSession).not.toBeNull();
+    const focusTarget = document.createElement("button");
+    focusedSession?.append(focusTarget);
+    focusTarget.focus();
+
+    focusTarget.blur();
+    expect(document.activeElement).toBe(document.body);
+    visibilityState.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await view.rerender({
+      component: DockedTerminalPanelTestHarness,
+      sessions: [sessions[1]!],
+      tree: { type: "leaf", id: "leaf-b", sessionKey: sessions[1]!.key },
+      activeSessionKey: sessions[1]!.key,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.activeElement).toBe(document.body);
   });
 });

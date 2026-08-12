@@ -334,7 +334,7 @@ Keyboard handlers must have one clear owner for each key press.
   nested tab identity never bubbles into an outer tree
   (`frontend/src/lib/components/shared/TabbedPanelTree.svelte::handleLeafFocusIn`).
 - Preserve a focused node through no-destination `focusout` only for the immediate Effect-managed replacement window;
-  keyed replacement restores focus, while an ordinary blur cannot affect later DOM removal
+  keyed replacement restores focus, while an ordinary blur or document hiding cannot affect later DOM removal
   (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::handleLayoutFocusOut`).
 - A terminal dock tracks the exact focused descendant across silent session removal; it releases ownership when that
   node leaves the dock, restores a surviving dock only for disconnected content, and leaves connected pooled moves alone

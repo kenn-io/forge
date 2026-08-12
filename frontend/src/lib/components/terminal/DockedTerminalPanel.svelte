@@ -16,7 +16,7 @@
   import TerminalSplitTree from "./TerminalSplitTree.svelte";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { nextAnimationFrame } from "../../browser/animation-frame.js";
+  import { nextAnimationFrameOrDocumentHidden } from "../../browser/animation-frame.js";
   import { observeMutation } from "../../browser/observers.js";
   import {
     clearActiveTerminalDrag,
@@ -230,7 +230,7 @@
     const blurred = focusedInputElement;
     focusRecordExecution?.interrupt();
     focusRecordExecution = runtime.runCommand(
-      nextAnimationFrame.pipe(
+      nextAnimationFrameOrDocumentHidden.pipe(
         Effect.andThen(Effect.sync(() => {
           if (focusedInputElement === blurred && panel?.contains(blurred) === true) {
             focusedInputElement = null;

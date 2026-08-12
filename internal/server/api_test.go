@@ -22063,8 +22063,11 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 		userIdentity, ghclient.QuotaResourceREST,
 		ghclient.Rate{Limit: 5000, Remaining: 4900, Reset: reset},
 	)
-	budget := ghclient.NewSyncBudget(50000)
-	budget.Spend(42)
+	budget := ghclient.NewSyncBudgetWithEssentialReserve(3001)
+	_, ok := budget.TrySpend(2701)
+	require.True(ok)
+	_, ok = budget.TrySpend(1)
+	require.False(ok, "optional work must stop at the background boundary")
 	expectedCeilingResetAt := budget.ResetAt().UTC().Format(time.RFC3339)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -22096,10 +22099,75 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	assert.False(user.GraphQL.Known)
 	ceiling, ok := body.LocalCeilings["github.com"]
 	require.True(ok)
-	assert.Equal(50000, ceiling.Limit)
-	assert.Equal(42, ceiling.Spent)
-	assert.Equal(49958, ceiling.Remaining)
+	assert.Equal(3001, ceiling.Limit)
+	assert.Equal(2701, ceiling.BackgroundLimit)
+	assert.Equal(2701, ceiling.Spent)
+	assert.Equal(300, ceiling.Remaining)
 	assert.Equal(expectedCeilingResetAt, ceiling.ResetAt)
+}
+
+func TestAPIRateLimitsMarksExpiredProviderQuotaUnknown(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	identity := ghclient.IdentityKey{Host: "github.com", Principal: "user:7"}
+	registry := ghclient.NewQuotaRegistry()
+	registry.UpdateSnapshot(identity, ghclient.QuotaResourceREST, ghclient.Rate{
+		Limit: 5000, Remaining: 4800, Reset: time.Now().UTC().Add(-time.Second),
+	})
+	availability := registry.CheckReserve(
+		identity, []ghclient.QuotaResource{ghclient.QuotaResourceREST}, 1,
+		ghclient.RateReserveBuffer,
+	)
+	require.False(availability.Known)
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}}, database, nil, nil,
+		time.Minute, nil, nil,
+	)
+	syncer.SetQuotaRegistry(registry)
+	t.Cleanup(syncer.Stop)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/rate-limits", nil)
+	New(database, syncer, nil, "/", nil, ServerOptions{}).ServeHTTP(recorder, request)
+	require.Equal(http.StatusOK, recorder.Code)
+
+	var response rateLimitsResponse
+	require.NoError(json.NewDecoder(recorder.Body).Decode(&response))
+	status, ok := response.ProviderPools["github:github.com:user:7"]
+	require.True(ok)
+	assert.False(status.REST.Known)
+	assert.Equal(4800, status.REST.Remaining)
+}
+
+func TestAPIRateLimitsRollsExpiredTrackerBeforeResponse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	tracker := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	tracker.UpdateFromRate(ghclient.Rate{
+		Limit: 5000, Remaining: 3000, Reset: time.Now().UTC().Add(time.Hour),
+	})
+	tracker.SetResetAtForTesting(time.Now().UTC().Add(-time.Second))
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}}, database, nil, nil,
+		time.Minute, map[string]*ghclient.RateTracker{"github.com": tracker}, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/rate-limits", nil)
+	New(database, syncer, nil, "/", nil, ServerOptions{}).ServeHTTP(recorder, request)
+	require.Equal(http.StatusOK, recorder.Code)
+
+	var response rateLimitsResponse
+	require.NoError(json.NewDecoder(recorder.Body).Decode(&response))
+	status, ok := response.ProviderPools["github.com"]
+	require.True(ok)
+	assert.False(status.REST.Known)
+	assert.Equal(-1, status.REST.Remaining)
+	assert.Empty(status.REST.ResetAt)
 }
 
 func TestAPISyncPRIncrementsRequestCount(t *testing.T) {

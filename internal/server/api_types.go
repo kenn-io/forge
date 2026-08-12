@@ -195,14 +195,15 @@ type rateLimitHostStatus struct {
 // principal. It is independent of provider quota: the ceiling can be reached
 // while GitHub still reports capacity, and it resets on its own clock.
 type localSyncCeilingStatus struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	RatePrincipal  string `json:"rate_principal"`
-	PrincipalLabel string `json:"principal_label"`
-	Limit          int    `json:"limit"`
-	Spent          int    `json:"spent"`
-	Remaining      int    `json:"remaining"`
-	ResetAt        string `json:"reset_at"`
+	Provider        string `json:"provider"`
+	PlatformHost    string `json:"platform_host"`
+	RatePrincipal   string `json:"rate_principal"`
+	PrincipalLabel  string `json:"principal_label"`
+	Limit           int    `json:"limit"`
+	BackgroundLimit int    `json:"background_limit"`
+	Spent           int    `json:"spent"`
+	Remaining       int    `json:"remaining"`
+	ResetAt         string `json:"reset_at"`
 }
 
 type rateLimitsResponse struct {

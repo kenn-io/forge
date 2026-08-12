@@ -47,7 +47,19 @@ function syncStatus(status: Record<string, unknown>): MockRouteOverride {
   };
 }
 
-function credentialAwareRateLimits(): MockRouteOverride {
+function credentialAwareRateLimits(
+  localCeilings: Record<string, unknown> = {
+    "github.com": {
+      provider: "github",
+      platform_host: "github.com",
+      rate_principal: "host",
+      principal_label: "Host credential",
+      limit: 50000,
+      spent: 42,
+      remaining: 49958,
+    },
+  },
+): MockRouteOverride {
   return (req) => {
     if (req.method !== "GET" || req.url.pathname !== "/api/v1/rate-limits") return null;
     const reset = new Date(Date.now() + 30 * 60_000).toISOString();
@@ -76,17 +88,7 @@ function credentialAwareRateLimits(): MockRouteOverride {
           graphql: { remaining: -1, limit: -1, reset_at: "", known: false, requests: 0 },
         },
       },
-      local_ceilings: {
-        "github.com": {
-          provider: "github",
-          platform_host: "github.com",
-          rate_principal: "host",
-          principal_label: "Host credential",
-          limit: 50000,
-          spent: 42,
-          remaining: 49958,
-        },
-      },
+      local_ceilings: localCeilings,
     });
   };
 }
@@ -206,11 +208,144 @@ describe("budget display", () => {
     const popover = await openPopover(bars);
     expect(popover.textContent).toContain("Provider quota");
     expect(popover.textContent).toContain("GitHub App installation 42");
-    expect(popover.textContent).toContain("GitHub user maintainer");
-    expect(popover.textContent).toContain("Local sync ceiling");
+    expect(popover.textContent).toContain("@maintainer");
+    expect(popover.textContent).toContain("App sync limit");
     expect(popover.textContent).toContain("42 / 50k requests");
     expect(popover.textContent).not.toContain("Eager refresh");
     expect(popover.textContent).not.toContain("budgeted req/hr");
+    expect(popover.querySelector(".ceiling-identity")).toBeNull();
+  });
+
+  it("labels each app sync limit when multiple credentials have local ceilings", async () => {
+    const reset = new Date(Date.now() + 30 * 60_000).toISOString();
+    const bars = await mountStatusBar([
+      credentialAwareRateLimits({
+        "github:github.com:installation:42": {
+          provider: "github",
+          platform_host: "github.com",
+          rate_principal: "installation:42",
+          principal_label: "GitHub App installation 42",
+          limit: 1500,
+          background_limit: 1200,
+          spent: 400,
+          remaining: 1100,
+          reset_at: reset,
+        },
+        "github:github.com:user:7": {
+          provider: "github",
+          platform_host: "github.com",
+          rate_principal: "user:7",
+          principal_label: "GitHub user maintainer",
+          limit: 500,
+          background_limit: 400,
+          spent: 400,
+          remaining: 100,
+          reset_at: reset,
+        },
+      }),
+    ]);
+
+    const popover = await openPopover(bars);
+    const identities = Array.from(popover.querySelectorAll<HTMLElement>(".ceiling-identity")).map((identity) =>
+      identity.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(identities).toEqual(["github.com: GitHub App installation 42", "github.com: @maintainer"]);
+    expect(popover.scrollWidth).toBeLessThanOrEqual(popover.clientWidth);
+  });
+
+  it("distinguishes provider capacity from a paused local background boundary", async () => {
+    const reset = new Date(Date.now() + 30 * 60_000).toISOString();
+    const bars = await mountStatusBar([
+      rateLimits(
+        {
+          "github.com": {
+            provider: "github",
+            rate_principal: "user:7",
+            principal_label: "GitHub user maintainer",
+            reserve_buffer: 200,
+            sync_throttle_factor: 1,
+            sync_paused: true,
+            rest: {
+              remaining: 3800,
+              limit: 5000,
+              reset_at: reset,
+              known: true,
+              requests: 1200,
+            },
+            graphql: {
+              remaining: 4800,
+              limit: 5000,
+              reset_at: reset,
+              known: true,
+              requests: 200,
+            },
+          },
+        },
+        {
+          "github:github.com:user:7": {
+            provider: "github",
+            platform_host: "github.com",
+            rate_principal: "user:7",
+            principal_label: "GitHub user maintainer",
+            limit: 3000,
+            background_limit: 2700,
+            spent: 2800,
+            remaining: 200,
+            reset_at: reset,
+          },
+        },
+      ),
+    ]);
+
+    const popover = await openPopover(bars);
+    expect(popover.textContent).not.toContain("sync paused");
+    expect(popover.textContent).toContain("background refresh paused");
+    expect(popover.textContent).toContain("200 discovery requests before app sync pauses");
+    expect(popover.textContent).not.toMatch(/\b(?:remaining|used|rem)\b/i);
+    expect(popover.textContent).not.toContain("GitHub user maintainer");
+    const identities = popover.querySelectorAll<HTMLElement>(".host-identity");
+    expect(identities).toHaveLength(1);
+    expect(identities[0]?.textContent?.replace(/\s+/g, " ").trim()).toBe("github.com: @maintainer");
+    const principal = popover.querySelector<HTMLElement>(".principal-label--user");
+    expect(principal?.textContent).toBe("@maintainer");
+    expect(getComputedStyle(principal!).fontFamily).toBe(
+      getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim(),
+    );
+    const secondaryTextProbe = document.createElement("span");
+    secondaryTextProbe.style.color = "var(--text-secondary)";
+    document.body.append(secondaryTextProbe);
+    expect(getComputedStyle(principal!).color).toBe(getComputedStyle(secondaryTextProbe).color);
+    secondaryTextProbe.remove();
+    expect(healthDot(popover, "github.com").style.background).toBe("var(--budget-green)");
+
+    const providerMeters = popover.querySelectorAll<HTMLElement>('.bar-track--provider[role="meter"]');
+    expect(providerMeters).toHaveLength(2);
+    expect(providerMeters[0]?.getAttribute("aria-label")).toContain("REST capacity remaining");
+    expect(providerMeters[0]?.getAttribute("aria-valuenow")).toBe("3800");
+    expect(providerMeters[0]?.getAttribute("aria-valuemax")).toBe("5000");
+    for (const meter of providerMeters) {
+      const fill = meter.querySelector<HTMLElement>(".bar-fill");
+      expect(fill).not.toBeNull();
+      expect(Math.abs(fill!.getBoundingClientRect().right - meter.getBoundingClientRect().right)).toBeLessThan(1);
+    }
+
+    const localMeter = popover.querySelector<HTMLElement>('.bar-track--local[role="meter"]');
+    expect(localMeter).not.toBeNull();
+    expect(localMeter?.getAttribute("aria-label")).toContain("Local requests used");
+    expect(localMeter?.getAttribute("aria-valuenow")).toBe("2800");
+    expect(localMeter?.getAttribute("aria-valuemax")).toBe("3000");
+    const localFill = localMeter!.querySelector<HTMLElement>(".bar-fill");
+    expect(localFill).not.toBeNull();
+    expect(Math.abs(localFill!.getBoundingClientRect().left - localMeter!.getBoundingClientRect().left)).toBeLessThan(
+      1,
+    );
+    const threshold = localMeter!.querySelector<HTMLElement>(".background-limit-marker");
+    expect(threshold).not.toBeNull();
+    const expectedThreshold =
+      localMeter!.getBoundingClientRect().left + localMeter!.getBoundingClientRect().width * 0.9;
+    expect(Math.abs(threshold!.getBoundingClientRect().left - expectedThreshold)).toBeLessThan(1);
+
+    expect(popover.scrollWidth).toBeLessThanOrEqual(popover.clientWidth);
   });
 
   it("budget bars keep eager refresh budget out of the compact status", async () => {
@@ -229,9 +364,9 @@ describe("budget display", () => {
     expect(units).toContain("req");
     expect(units).toContain("pts");
     expect(popover.textContent).toContain("Provider quota");
-    expect(popover.textContent).toContain("Local sync ceiling");
+    expect(popover.textContent).toContain("App sync limit");
     expect(popover.textContent).toContain("42 / 50k requests");
-    expect(popover.textContent).toContain("provider quota above is authoritative");
+    expect(popover.textContent).toContain("provider quota above is separate");
     expect(popover.querySelector(".budget-spent")?.textContent).toBe("42");
 
     const ceilingNote = popover.querySelector<HTMLElement>(".budget-row--ceiling .row-note");
@@ -240,12 +375,17 @@ describe("budget display", () => {
     expect(ceilingNote!.getBoundingClientRect().height).toBeGreaterThan(noteLineHeight * 1.5);
 
     const ceilingLabel = popover.querySelector<HTMLElement>(".budget-row--ceiling .row-label");
+    const ceilingMeter = popover.querySelector<HTMLElement>(".budget-row--ceiling .bar-track");
     const ceilingValue = popover.querySelector<HTMLElement>(".budget-row--ceiling .row-value");
     expect(ceilingLabel).not.toBeNull();
+    expect(ceilingMeter).not.toBeNull();
     expect(ceilingValue).not.toBeNull();
     expect(
       Math.abs(ceilingLabel!.getBoundingClientRect().top - ceilingValue!.getBoundingClientRect().top),
     ).toBeLessThan(2);
+    const meterRect = ceilingMeter!.getBoundingClientRect();
+    const valueRect = ceilingValue!.getBoundingClientRect();
+    expect(Math.abs(meterRect.top + meterRect.height / 2 - (valueRect.top + valueRect.height / 2))).toBeLessThan(1);
 
     // The bar runs with overflow="visible" so the popover's absolute
     // bottom-anchored panel can open fully above the 24px bar rather than
@@ -268,6 +408,7 @@ describe("budget display", () => {
             provider: "github",
             platform_host: "github.com",
             limit: 500,
+            background_limit: 450,
             spent: 500,
             remaining: 0,
           },
@@ -283,7 +424,10 @@ describe("budget display", () => {
     const spent = popover.querySelector<HTMLElement>(".budget-spent");
     expect(spent?.textContent).toBe("500");
     expect(spent?.style.color).toBe("var(--budget-red)");
-    expect(popover.textContent).toContain("Local sync ceiling");
+    expect(popover.textContent).toContain("App sync limit");
+    expect(popover.textContent).toContain("app sync paused");
+    expect(popover.textContent).toContain("discovery reserve exhausted");
+    expect(popover.textContent).not.toContain("background refresh paused");
   });
 
   it("identifies a local ceiling failure while provider quota remains healthy", async () => {
@@ -514,7 +658,7 @@ describe("budget display", () => {
 
     const popover = await openPopover(bars);
     expect(popover.textContent).toContain("Provider quota");
-    expect(popover.textContent).not.toContain("Local sync ceiling");
+    expect(popover.textContent).not.toContain("App sync limit");
   });
 
   it("stale host excluded from compact bars, fresh host drives ratio", async () => {
@@ -530,7 +674,9 @@ describe("budget display", () => {
     expect(bars.textContent).toContain("REST");
     expect(bars.textContent).toContain("GQL");
     // Bar fill should be present (driven by fresh host, not stale)
-    expect(bars.querySelector(".budget-fill")).not.toBeNull();
+    const restFill = bars.querySelector<HTMLElement>(".budget-fill");
+    expect(restFill).not.toBeNull();
+    expect(restFill?.style.background).toBe("var(--budget-green)");
 
     // Popover: stale host health dot should be muted
     const popover = await openPopover(bars);

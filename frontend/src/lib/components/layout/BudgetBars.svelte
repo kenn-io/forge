@@ -10,14 +10,16 @@
 
   let { providerPools, onclick, expanded = false }: Props = $props();
 
-  function anyPaused(): boolean {
-    return Object.values(providerPools).some(
-      (pool) =>
-        pool.sync_paused ||
-        [pool.rest, pool.graphql].some(
-          (resource) => resource.known && resource.remaining <= pool.reserve_buffer,
-        ),
-    );
+  function resourceAtReserve(resource: "rest" | "graphql"): boolean {
+    return Object.values(providerPools).some((pool) => {
+      const status = pool[resource];
+      return (
+        status.known &&
+        status.limit > 0 &&
+        status.remaining >= 0 &&
+        status.remaining <= pool.reserve_buffer
+      );
+    });
   }
 
   function restEntries() {
@@ -36,14 +38,15 @@
     return worstCaseRatio(gqlEntries());
   }
 
-  function barColor(ratio: number): string {
-    if (anyPaused()) return "var(--budget-red)";
+  function barColor(ratio: number, atReserve: boolean): string {
+    if (atReserve) return "var(--budget-red)";
     return budgetColor(ratio);
   }
 
   const rr = $derived(restRatio());
   const gr = $derived(gqlRatio());
-  const paused = $derived(anyPaused());
+  const restAtReserve = $derived(resourceAtReserve("rest"));
+  const gqlAtReserve = $derived(resourceAtReserve("graphql"));
 </script>
 
 <button
@@ -52,19 +55,20 @@
   {onclick}
   aria-haspopup="dialog"
   aria-expanded={expanded}
+  aria-label="Show provider quota details"
 >
 
   <span class="budget-bar-group">
     <span
       class="budget-label"
-      style:color={rr >= 0 ? barColor(rr) : paused ? "var(--budget-red)" : "var(--text-muted)"}
+      style:color={rr >= 0 ? barColor(rr, restAtReserve) : "var(--text-muted)"}
     >{rr >= 0 ? "REST" : "--"}</span>
     <span class="budget-track">
       {#if rr >= 0}
         <span
           class="budget-fill"
-          style:width="{Math.max(rr * 100, 2)}%"
-          style:background={barColor(rr)}
+          style:width="{Math.max(rr * 100, 0)}%"
+          style:background={barColor(rr, restAtReserve)}
         ></span>
       {/if}
     </span>
@@ -73,14 +77,14 @@
   <span class="budget-bar-group">
     <span
       class="budget-label"
-      style:color={gr >= 0 ? barColor(gr) : paused ? "var(--budget-red)" : "var(--text-muted)"}
+      style:color={gr >= 0 ? barColor(gr, gqlAtReserve) : "var(--text-muted)"}
     >{gr >= 0 ? "GQL" : "--"}</span>
     <span class="budget-track">
       {#if gr >= 0}
         <span
           class="budget-fill"
-          style:width="{Math.max(gr * 100, 2)}%"
-          style:background={barColor(gr)}
+          style:width="{Math.max(gr * 100, 0)}%"
+          style:background={barColor(gr, gqlAtReserve)}
         ></span>
       {/if}
     </span>
@@ -132,7 +136,7 @@
   .budget-fill {
     display: block;
     height: 100%;
+    margin-left: auto;
     border-radius: 2px;
-    transition: width 0.5s ease;
   }
 </style>

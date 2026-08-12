@@ -6205,6 +6205,8 @@ export interface components {
         };
         LocalSyncCeilingStatus: {
             /** Format: int64 */
+            background_limit: number;
+            /** Format: int64 */
             limit: number;
             platform_host: string;
             principal_label: string;

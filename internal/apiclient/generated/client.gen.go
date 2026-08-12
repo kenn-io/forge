@@ -2556,14 +2556,15 @@ type ListWorktreesOutputBody struct {
 
 // LocalSyncCeilingStatus defines model for LocalSyncCeilingStatus.
 type LocalSyncCeilingStatus struct {
-	Limit          int64  `json:"limit"`
-	PlatformHost   string `json:"platform_host"`
-	PrincipalLabel string `json:"principal_label"`
-	Provider       string `json:"provider"`
-	RatePrincipal  string `json:"rate_principal"`
-	Remaining      int64  `json:"remaining"`
-	ResetAt        string `json:"reset_at"`
-	Spent          int64  `json:"spent"`
+	BackgroundLimit int64  `json:"background_limit"`
+	Limit           int64  `json:"limit"`
+	PlatformHost    string `json:"platform_host"`
+	PrincipalLabel  string `json:"principal_label"`
+	Provider        string `json:"provider"`
+	RatePrincipal   string `json:"rate_principal"`
+	Remaining       int64  `json:"remaining"`
+	ResetAt         string `json:"reset_at"`
+	Spent           int64  `json:"spent"`
 }
 
 // MergePRBody defines model for MergePRBody.

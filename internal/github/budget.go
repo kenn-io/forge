@@ -222,6 +222,16 @@ func (b *SyncBudget) Limit() int {
 	return b.limit
 }
 
+// BackgroundLimit returns the maximum total spend optional background work
+// may consume in the current local window. Capacity above this boundary stays
+// available to essential discovery.
+func (b *SyncBudget) BackgroundLimit() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.rollLocked()
+	return b.optionalLimitLocked()
+}
+
 // ResetAt returns the end of the budget's current local hourly window.
 func (b *SyncBudget) ResetAt() time.Time {
 	b.mu.Lock()

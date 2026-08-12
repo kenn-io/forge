@@ -896,9 +896,11 @@ func (s *Server) getRateLimits(
 		if rt == nil {
 			return rateLimitResourceStatus{Remaining: -1, Limit: -1}
 		}
+		requests := rt.RequestsThisHour()
+		remaining := rt.Remaining()
 		resource := rateLimitResourceStatus{
-			Remaining: rt.Remaining(), Limit: rt.RateLimit(),
-			Known: rt.Known(), Requests: rt.RequestsThisHour(),
+			Remaining: remaining, Limit: rt.RateLimit(),
+			Known: rt.Known() && remaining >= 0, Requests: requests,
 		}
 		if resetAt := rt.ResetAt(); resetAt != nil {
 			resource.ResetAt = formatUTCRFC3339(*resetAt)
@@ -925,6 +927,7 @@ func (s *Server) getRateLimits(
 	// per resource, including pools no local tracker observed yet, so it
 	// overrides the tracker-derived view wherever it holds a pool.
 	if quotaRegistry != nil {
+		now := time.Now().UTC()
 		for _, pool := range quotaRegistry.Snapshot() {
 			key := rateLimitStatusKeyFor(
 				string(platform.KindGitHub), pool.Identity.Host, pool.Identity.Principal,
@@ -943,7 +946,7 @@ func (s *Server) getRateLimits(
 			}
 			resource := rateLimitResourceStatus{
 				Remaining: pool.Remaining, Limit: pool.Limit,
-				Known: pool.Known, Requests: pool.Requests,
+				Known: pool.Known && pool.ResetAt.After(now), Requests: pool.Requests,
 			}
 			if !pool.ResetAt.IsZero() {
 				resource.ResetAt = formatUTCRFC3339(pool.ResetAt)
@@ -977,12 +980,13 @@ func (s *Server) getRateLimits(
 		}
 		ceilings[statusKey] = localSyncCeilingStatus{
 			Provider: providerName, PlatformHost: host,
-			RatePrincipal:  principal,
-			PrincipalLabel: labelFor(key, providerName, principal),
-			Limit:          budget.Limit(),
-			Spent:          budget.Spent(),
-			Remaining:      budget.Remaining(),
-			ResetAt:        formatUTCRFC3339(budget.ResetAt()),
+			RatePrincipal:   principal,
+			PrincipalLabel:  labelFor(key, providerName, principal),
+			Limit:           budget.Limit(),
+			BackgroundLimit: budget.BackgroundLimit(),
+			Spent:           budget.Spent(),
+			Remaining:       budget.Remaining(),
+			ResetAt:         formatUTCRFC3339(budget.ResetAt()),
 		}
 	}
 	return &rateLimitsOutput{

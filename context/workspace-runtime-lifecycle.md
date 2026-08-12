@@ -120,6 +120,12 @@ still exists.
 - During kenn-forge shutdown, detach/restart behavior is different: do not treat
   normal server shutdown as a natural user exit that should erase recoverable
   base runtime state.
+- Air-based development launchers opt into restart-detach classification via
+  `KENN_FORGE_DEV_RESTART`; terminal bridges close without an `exited` frame so
+  the browser reconnects to the surviving tmux or ptyowner session. Genuine
+  process exits and non-development shutdown behavior remain unchanged
+  (`scripts/dev-stack-backend.sh`, `docker/backend-dev-entrypoint.sh`,
+  `internal/workspace/localruntime/manager.go::Manager.Shutdown`).
 - New tmux sessions use the `forge-` prefix; persisted `middleman-` session
   names remain valid and must not be rewritten (`internal/workspace/`).
 - Every tmux client attach must force UTF-8; service launchers may omit locale

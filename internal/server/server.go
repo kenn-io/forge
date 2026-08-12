@@ -91,7 +91,11 @@ type ServerOptions struct {
 	// port matching after HostCheck/cfg options have been selected.
 	// Use this for httptest-style listeners on ephemeral ports.
 	HostCheckAllowLoopbackAnyPort bool
-	deferredMergeMaxWait          time.Duration
+	// DetachRuntimeSessionsForRestart makes shutdown-driven terminal
+	// attachment loss reconnectable. Development reloaders use this because
+	// the durable tmux/ptyowner process outlives the server process.
+	DetachRuntimeSessionsForRestart bool
+	deferredMergeMaxWait            time.Duration
 }
 
 type shutdownDeadline struct {
@@ -930,15 +934,16 @@ func newServer(
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
 			),
-			TmuxCommand:              tmuxCmd,
-			TmuxOwnerMarker:          s.workspaces.TmuxOwnerMarker(),
-			WrapAgentSessionsInTmux:  cfg.TmuxAgentSessionsEnabled(),
-			HideTmuxStatus:           hideTmuxStatus,
-			StripEnvVars:             s.runtimeStripEnvVars,
-			ShellCommand:             cfg.ShellCommand(),
-			OnSessionExit:            s.handleRuntimeSessionExit,
-			PtyOwnerRuntime:          runtimePtyOwner,
-			KnownPtyOwnerSessionKeys: s.workspaces.RuntimeSessionKeysForWorkspace,
+			TmuxCommand:                    tmuxCmd,
+			TmuxOwnerMarker:                s.workspaces.TmuxOwnerMarker(),
+			WrapAgentSessionsInTmux:        cfg.TmuxAgentSessionsEnabled(),
+			HideTmuxStatus:                 hideTmuxStatus,
+			StripEnvVars:                   s.runtimeStripEnvVars,
+			ShellCommand:                   cfg.ShellCommand(),
+			OnSessionExit:                  s.handleRuntimeSessionExit,
+			PtyOwnerRuntime:                runtimePtyOwner,
+			KnownPtyOwnerSessionKeys:       s.workspaces.RuntimeSessionKeysForWorkspace,
+			DetachSessionsForServerRestart: options.DetachRuntimeSessionsForRestart,
 		})
 	}
 	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{

@@ -117,6 +117,10 @@ type Options struct {
 	// KnownPtyOwnerSessionKeys returns durable session keys that may no longer
 	// have an in-memory attachment after a server restart.
 	KnownPtyOwnerSessionKeys func(context.Context, string) ([]string, error)
+	// DetachSessionsForServerRestart marks shutdown-driven attachment loss as
+	// recoverable so terminal bridges do not report a natural process exit.
+	// Normal shutdown behavior is unchanged unless the caller opts in.
+	DetachSessionsForServerRestart bool
 }
 
 type Manager struct {
@@ -134,6 +138,7 @@ type Manager struct {
 	onSessionExit     func(SessionInfo)
 	ptyOwnerRuntime   ptyownerruntime.Owner
 	knownSessionKeys  func(context.Context, string) ([]string, error)
+	detachForRestart  bool
 	startLocks        map[string]*sync.Mutex
 	stoppingWS        map[string]int
 	inflightWS        map[string]int
@@ -194,6 +199,7 @@ type session struct {
 	lifecycleMu               sync.Mutex
 	lifecycleClosed           bool
 	stopRequested             bool
+	detachedForServerRestart  bool
 	nextAttachmentID          uint64
 	resizeOwnerID             uint64
 	resizeOwnerPriority       ResizePriority
@@ -236,6 +242,7 @@ type Attachment struct {
 	// this subscriber for falling behind; that is not a session exit
 	// and bridges must not propagate it as one.
 	sessionOutputClosed func() bool
+	detachedForRestart  func() bool
 }
 
 func NewManager(options Options) *Manager {
@@ -260,6 +267,7 @@ func NewManager(options Options) *Manager {
 		onSessionExit:     options.OnSessionExit,
 		ptyOwnerRuntime:   options.PtyOwnerRuntime,
 		knownSessionKeys:  options.KnownPtyOwnerSessionKeys,
+		detachForRestart:  options.DetachSessionsForServerRestart,
 		startLocks:        make(map[string]*sync.Mutex),
 		stoppingWS:        make(map[string]int),
 		inflightWS:        make(map[string]int),
@@ -1336,6 +1344,16 @@ func (a *Attachment) SessionOutputClosed() bool {
 	return a.sessionOutputClosed()
 }
 
+// DetachedForServerRestart reports whether the server deliberately detached
+// this recoverable session during shutdown. That is a connection interruption,
+// not a process exit.
+func (a *Attachment) DetachedForServerRestart() bool {
+	if a == nil || a.detachedForRestart == nil {
+		return false
+	}
+	return a.detachedForRestart()
+}
+
 func fallbackSessionLabel(label string, fallback string) string {
 	label = strings.TrimSpace(label)
 	if label != "" {
@@ -1488,6 +1506,9 @@ func (m *Manager) Shutdown() {
 	m.mu.Unlock()
 
 	for _, s := range sessions {
+		if m.detachForRestart {
+			s.markDetachedForServerRestart()
+		}
 		s.detach()
 	}
 	for _, s := range sessions {
@@ -2316,6 +2337,12 @@ func (s *session) wasStopRequested() bool {
 	return s.stopRequested
 }
 
+func (s *session) markDetachedForServerRestart() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.detachedForServerRestart = true
+}
+
 func (s *session) detach() {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
@@ -2577,6 +2604,11 @@ func attachToSession(
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			return s.outputClosed
+		},
+		detachedForRestart: func() bool {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return s.detachedForServerRestart
 		},
 	}, nil
 }

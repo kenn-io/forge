@@ -19,6 +19,7 @@ printf 'tail with: tail -F %s\n' "${KENN_FORGE_LOG_FILE:-tmp/logs/backend-dev.lo
 export KENN_FORGE_LOG_LEVEL="${KENN_FORGE_LOG_LEVEL:-debug}"
 export KENN_FORGE_LOG_FILE="${KENN_FORGE_LOG_FILE:-tmp/logs/backend-dev.log}"
 export KENN_FORGE_LOG_STDERR_LEVEL="${KENN_FORGE_LOG_STDERR_LEVEL:-info}"
+export KENN_FORGE_DEV_RESTART=1
 
 air_bin="${AIR_BIN:-}"
 if [ -z "$air_bin" ]; then

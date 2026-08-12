@@ -269,6 +269,8 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     // The only terminal click in the scenario under test.
     await movedTerminal.click({ position: { x: 10, y: 10 } });
     await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
+    const sourceOwner = page.locator('.tabbed-panel-leaf:has([data-pane-key="conversation"])');
+    await expect(sourceOwner).toHaveClass(/input-active/);
     await typeMarker(page, preMarker);
     await expect.poll(() => terminal.sent(preMarker), { timeout: 15_000 }).toBe(true);
     await expect.poll(() => terminal.received(preMarker), { timeout: 15_000 }).toBe(true);
@@ -287,9 +289,18 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     await expect(page.locator('[data-focus-source-slot="true"]')).toHaveCount(0);
     await expect(movedTerminal).toBeVisible();
 
-    // The regression: focus must come back to xterm on its own, and keystrokes
-    // must reach the live tmux session with no further click.
+    // The source leaf must release its keyboard claim while the focused terminal
+    // passes through parking. The pool restores focus in the destination, which
+    // becomes the layout's only owner; the old source border must not survive.
     await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
+    const destinationOwner = page.locator(
+      '.tabbed-panel-leaf:has(.session-terminal-slot [data-focus-reparent-witness="live-terminal"])',
+    );
+    await expect(sourceOwner).not.toHaveClass(/input-active/);
+    await expect(destinationOwner).toHaveClass(/input-active/);
+    await expect(page.locator(".detail-pane-layout .tabbed-panel-leaf.input-active")).toHaveCount(1);
+
+    // Keystrokes must still reach the live tmux session with no further click.
     await typeMarker(page, postMarker);
     await expect.poll(() => terminal.sent(postMarker), { timeout: 15_000 }).toBe(true);
     await expect.poll(() => terminal.received(postMarker), { timeout: 15_000 }).toBe(true);

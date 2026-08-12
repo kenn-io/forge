@@ -301,6 +301,9 @@ Keyboard handlers must have one clear owner for each key press.
 - Focus callbacks carry the exact rendered leaf ID; never infer it from the
   persisted tree because narrow layouts render one synthetic leaf
   (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::focusPane`).
+- A focused tab header reports that exact tab, including an inactive one;
+  reporting only the leaf's selected tab misroutes ownership after dragging the
+  focused header (`frontend/src/lib/components/shared/TabbedPanelTree.svelte::handleLeafFocusIn`).
 - When a focused tab moves between rendered leaves, move live pane ownership
   with that tab even if its old leaf still renders; pooled focus restoration
   must not race a layout-host fallback (`frontend/src/lib/components/shared/DetailPaneLayout.svelte`).
@@ -316,6 +319,9 @@ Keyboard handlers must have one clear owner for each key press.
 - If focused Workspace Details or bottom Terminal disappears while its host stays visible,
   reclaim the Workspace root only when focus fell to `document.body`; parking never reclaims focus
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceRoot`).
+- Standalone Workspace shortcuts accept unclaimed `document.body` focus, but a
+  concrete focus owner outside the Workspace root (including app chrome) blocks
+  them (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::onKeydown`).
 - A focused surface-hosted dock outside the pane tree becomes the live focused
   surface until focus leaves it. Persisted last-focused state is restoration and
   command memory only; it never represents current focus. Workspace window

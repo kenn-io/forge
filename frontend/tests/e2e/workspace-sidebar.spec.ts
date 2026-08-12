@@ -2980,6 +2980,18 @@ test.describe("sidebar toggle behavior", () => {
     await expect(palette.getByRole("textbox", { name: "Search command palette" })).toBeFocused();
   });
 
+  test("Cmd+] leaves the workspace sidebar closed while application chrome owns focus", async ({ page }) => {
+    await page.goto("/terminal/ws-123");
+    const settings = page.getByRole("button", { name: "Settings" });
+    await settings.focus();
+    await expect(settings).toBeFocused();
+
+    await page.keyboard.press("Meta+]");
+
+    await expect(page.locator(".right-sidebar")).toHaveCount(0);
+    await expect(settings).toBeFocused();
+  });
+
   test("closing focused workspace details returns focus to the workspace", async ({ page }) => {
     await page.goto("/terminal/ws-123");
     await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();

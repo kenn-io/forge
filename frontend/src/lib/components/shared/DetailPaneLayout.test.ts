@@ -497,6 +497,23 @@ describe("detail pane layout", () => {
     });
   });
 
+  it("drops stale ownership when a focused inactive tab moves to another leaf", async () => {
+    const layout = store(mergedTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const filesTab = screen.getByRole("tab", { name: "Files" });
+
+    filesTab.focus();
+    expect(filesTab).toBe(document.activeElement);
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBe("conversation"));
+
+    flushSync(() => layout.splitTab("files", "leaf-all", "horizontal", "after"));
+
+    await vi.waitFor(() => {
+      expect(document.activeElement?.classList.contains("detail-pane-layout")).toBe(true);
+      expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+    });
+  });
+
   it("keeps a zoom on a non-route leaf when the tab list re-derives", async () => {
     // Route authority is a transition, not an invariant. The deep-link effect
     // also tracks `tabs`, whose identity changes on unrelated store state — the

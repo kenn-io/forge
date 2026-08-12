@@ -489,6 +489,12 @@
     return `--dragged-tab-width: ${width}px;`;
   }
 
+  function handleLeafFocusIn(event: FocusEvent, leaf: TabbedPanelLeaf): void {
+    const target = event.target;
+    const focusedTab = target instanceof Element ? target.closest<HTMLElement>("[data-tabbed-panel-tab-key]") : null;
+    onFocusPane?.(focusedTab?.dataset.tabbedPanelTabKey ?? leaf.activeTabKey, leaf.id);
+  }
+
   function measureSplit(): number {
     // Reached from a ResizeObserver batch, which can be delivered after the
     // parent stopped being a split.
@@ -570,7 +576,7 @@
       },
     ]}
     aria-label={leafLabel}
-    onfocusin={onFocusPane ? () => onFocusPane(node.activeTabKey, node.id) : undefined}
+    onfocusin={onFocusPane ? (event) => handleLeafFocusIn(event, node) : undefined}
   >
     {#if !soloChrome}
     <div

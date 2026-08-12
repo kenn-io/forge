@@ -1573,6 +1573,14 @@
   $effect(() => {
     if (!hostVisible || hideRightSidebar || !workspaceContainerInputActive) return;
     function onKeydown(e: KeyboardEvent): void {
+      const focusTarget = e.target instanceof Node ? e.target : document.activeElement;
+      if (
+        focusTarget !== null &&
+        focusTarget !== document.body &&
+        workspaceRoot?.contains(focusTarget) !== true
+      ) {
+        return;
+      }
       if (
         e.key === "]" &&
         (e.metaKey || e.ctrlKey) &&

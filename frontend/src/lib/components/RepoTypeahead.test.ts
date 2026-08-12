@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
 
-import type { Repo } from "../api/types.js";
+import type { Repo, RepoPreset } from "../api/types.js";
 import { createSettingsStore } from "../stores/settings.svelte.js";
+import { getGlobalRepo, setGlobalRepoPresetSelection } from "../stores/filter.svelte.js";
 import { client } from "../api/runtime.js";
 import RepoTypeahead from "./RepoTypeaheadRuntimeHarness.svelte";
 
@@ -22,12 +23,14 @@ vi.mock("../api/runtime.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/runtime.js")>()),
   client: {
     GET: vi.fn(() => Promise.resolve({ data: [], error: undefined })),
+    PUT: vi.fn(),
   },
 }));
 
 const getRepos = client.GET as unknown as Mock<
   (path: string, options?: { signal?: AbortSignal }) => Promise<{ data: Repo[]; error: undefined }>
 >;
+const putSettings = client.PUT as unknown as Mock;
 
 describe("RepoTypeahead", () => {
   beforeEach(() => {
@@ -36,8 +39,11 @@ describe("RepoTypeahead", () => {
     localStorage.clear();
     settingsStore = createSettingsStore();
     settingsStore.setConfiguredRepos([]);
+    settingsStore.setRepoPresets([]);
+    setGlobalRepoPresetSelection(undefined, undefined);
     getRepos.mockReset();
     getRepos.mockResolvedValue({ data: [], error: undefined });
+    putSettings.mockReset();
   });
 
   afterEach(() => {
@@ -52,7 +58,7 @@ describe("RepoTypeahead", () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     expect(screen.queryByRole("option", { name: /import-lab\/api/i })).toBeNull();
 
     settingsStore.setConfiguredRepos([
@@ -103,7 +109,7 @@ describe("RepoTypeahead", () => {
       },
     ]);
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     await waitFor(() => {
       expect(screen.getByRole("option", { name: /acme\/api/i })).toBeTruthy();
     });
@@ -166,7 +172,7 @@ describe("RepoTypeahead", () => {
       data: [{ Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "one" }] as unknown as Repo[],
       error: undefined,
     });
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     await waitFor(() => expect(screen.getByRole("option", { name: /acme\/two/i })).toBeTruthy());
     expect(screen.queryByRole("option", { name: /acme\/one/i })).toBeNull();
   });
@@ -211,7 +217,7 @@ describe("RepoTypeahead", () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("option", { name: /roborev-dev\/kenn-forge/i })).toBeTruthy();
@@ -249,7 +255,7 @@ describe("RepoTypeahead", () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     await fireEvent.mouseDown(
       screen.getByRole("option", {
         name: /github.com\/import-lab\/api/i,
@@ -294,7 +300,7 @@ describe("RepoTypeahead", () => {
 
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     const ownerCheckbox = screen
       .getByRole("option", { name: "github.com/import-lab" })
       .querySelector("input[type='checkbox']") as HTMLInputElement;
@@ -329,7 +335,7 @@ describe("RepoTypeahead", () => {
       props: { selected: undefined, onchange: vi.fn() },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     await fireEvent.input(screen.getByPlaceholderText("Filter repos..."), {
       target: { value: "web" },
     });
@@ -373,7 +379,7 @@ describe("RepoTypeahead", () => {
       },
     ]);
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
 
     // leaves visible initially
     expect(screen.getByRole("option", { name: "github/github.com/import-lab/api" })).toBeTruthy();
@@ -414,7 +420,7 @@ describe("RepoTypeahead", () => {
       },
     ]);
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     const leaf = screen.getByRole("option", {
       name: "github/github.com/import-lab/api",
     });
@@ -513,7 +519,7 @@ describe("RepoTypeahead", () => {
       props: { selected: undefined, onchange: vi.fn() },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     const input = screen.getByPlaceholderText("Filter repos...");
 
     // leaves visible by default
@@ -542,7 +548,7 @@ describe("RepoTypeahead", () => {
   });
 
   it("moves focus from a leaf to its parent owner on ArrowLeft", async () => {
-    // Single host auto-flattens, so rows are: [All repos], import-lab (owner,
+    // Single host auto-flattens, so rows are: [Global], import-lab (owner,
     // depth 0), api (leaf, depth 1), web (leaf, depth 1). ArrowLeft on a leaf
     // should jump focus up to the owner row, per the keyboard contract.
     settingsStore.setConfiguredRepos([
@@ -570,7 +576,7 @@ describe("RepoTypeahead", () => {
       props: { selected: undefined, onchange: vi.fn() },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     const input = screen.getByPlaceholderText("Filter repos...");
 
     // ArrowDown onto the owner row, then onto the first leaf (api).
@@ -619,7 +625,7 @@ describe("RepoTypeahead", () => {
 
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     const input = screen.getByPlaceholderText("Filter repos...");
 
     // highlight the owner row and select its subtree
@@ -654,7 +660,7 @@ describe("RepoTypeahead", () => {
 
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     await fireEvent.input(screen.getByPlaceholderText("Filter repos..."), {
       target: { value: "gitea/widgets" },
     });
@@ -732,5 +738,194 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(onchange).toHaveBeenCalledWith("github|github.com/acme/missing");
     });
+  });
+
+  it("shows Global and saved presets above the scrollable repository tree", async () => {
+    const selected = "github|github.com/acme/api";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [selected] }] as RepoPreset[]);
+
+    const view = render(RepoTypeahead, {
+      props: { selected, onchange: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Select repository: Backend" }));
+
+    expect(screen.getByRole("option", { name: "Global" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Backend" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete preset Backend" })).toBeTruthy();
+    expect(view.container.querySelector(".typeahead-repo-list")).toBeTruthy();
+    expect(view.container.querySelector(".typeahead-footer")).toBeTruthy();
+    expect(view.container.querySelector(".typeahead-footer")?.parentElement).toBe(
+      view.container.querySelector(".typeahead-repo-list")?.parentElement,
+    );
+  });
+
+  it("applies a saved preset and records it as the browser-local source", async () => {
+    const onchange = vi.fn();
+    const selected = "github|github.com/acme/api";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [selected] }]);
+    render(RepoTypeahead, { props: { selected: undefined, onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Backend" }));
+
+    expect(onchange).toHaveBeenLastCalledWith(selected);
+    expect(localStorage.getItem("kenn-forge-filter-repo-preset")).toBe("Backend");
+  });
+
+  it("defaults an edited preset to overwriting its prior name", async () => {
+    const api = "github|github.com/acme/api";
+    const web = "github|github.com/acme/web";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "web",
+        repo_path: "acme/web",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [api] }]);
+    setGlobalRepoPresetSelection("Backend", `${api},${web}`);
+    render(RepoTypeahead, {
+      props: { selected: `${api},${web}`, onchange: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /2 repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save preset" }));
+
+    expect((screen.getByRole("radio", { name: "Overwrite preset" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole("combobox", { name: "Preset to overwrite: Backend" })).toBeTruthy();
+  });
+
+  it("saves a newly named preset through settings", async () => {
+    const selected = "github|github.com/acme/api";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+    putSettings.mockResolvedValue({
+      data: { repo_presets: [{ name: "Review", repos: [selected] }], repos: [] },
+      response: new Response(),
+    });
+    render(RepoTypeahead, { props: { selected, onchange: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /acme\/api/i }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save preset" }));
+    await fireEvent.input(screen.getByRole("textbox", { name: "Preset name" }), {
+      target: { value: "Review" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(putSettings).toHaveBeenCalledWith(
+        "/settings",
+        expect.objectContaining({
+          body: { repo_presets: [{ name: "Review", repos: [selected] }] },
+        }),
+      );
+      expect(settingsStore.getRepoPresets()).toEqual([{ name: "Review", repos: [selected] }]);
+    });
+  });
+
+  it("keeps the save dialog open and reports settings failures", async () => {
+    const selected = "github|github.com/acme/api";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+    putSettings.mockRejectedValue(new Error("offline"));
+    render(RepoTypeahead, { props: { selected, onchange: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /acme\/api/i }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save preset" }));
+    await fireEvent.input(screen.getByRole("textbox", { name: "Preset name" }), {
+      target: { value: "Review" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Could not reach Kenn Forge")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Save repository preset" })).toBeTruthy();
+    expect(settingsStore.getRepoPresets()).toEqual([]);
+  });
+
+  it("confirms preset deletion while retaining the active repository selection", async () => {
+    const selected = "github|github.com/acme/api";
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [selected] }]);
+    setGlobalRepoPresetSelection("Backend", selected);
+    putSettings.mockResolvedValue({
+      data: { repo_presets: [], repos: [] },
+      response: new Response(),
+    });
+    render(RepoTypeahead, { props: { selected, onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Select repository: Backend" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Delete preset Backend" }));
+    expect(screen.getByText("Delete the preset ‘Backend’?")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Delete preset" }));
+
+    await waitFor(() => expect(settingsStore.getRepoPresets()).toEqual([]));
+    expect(getGlobalRepo()).toBe(selected);
+    expect(localStorage.getItem("kenn-forge-filter-repo-preset")).toBeNull();
+    expect(onchange).not.toHaveBeenCalled();
   });
 });

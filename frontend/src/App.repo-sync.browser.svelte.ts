@@ -225,15 +225,15 @@ describe("deep-link repo dropdown + sidebar sync", () => {
     await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/tools"), WAIT);
   });
 
-  it("selecting an item from All repos keeps the all-repo filter", async () => {
+  it("selecting an item from Global keeps the all-repo filter", async () => {
     mounted = await mountBrowserApp("/pulls", { overrides: overrides() });
 
     await expect.element(page.getByText("Add widget caching layer")).toBeVisible();
-    await vi.waitFor(() => expect(typeaheadValue()).toBe("All repos"), WAIT);
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("Global"), WAIT);
 
     await clickPullItem("Add widget caching layer");
     await vi.waitFor(() => expect(document.querySelector(".pull-detail")).not.toBeNull(), WAIT);
-    expect(typeaheadValue()).toBe("All repos");
+    expect(typeaheadValue()).toBe("Global");
   });
 
   it("opening /pulls without a selection preserves the user's chosen repo", async () => {

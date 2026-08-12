@@ -3745,6 +3745,12 @@ type RepoOperations struct {
 	UpdateContent         OperationAvailability `json:"update_content"`
 }
 
+// RepoPreset defines model for RepoPreset.
+type RepoPreset struct {
+	Name  string   `json:"name"`
+	Repos []string `json:"repos"`
+}
+
 // RepoPreviewRequest defines model for RepoPreviewRequest.
 type RepoPreviewRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -4125,6 +4131,7 @@ type SettingsResponse struct {
 	Modes         *ModeVisibility               `json:"modes,omitempty"`
 	Notifications NotificationsSettingsResponse `json:"notifications"`
 	PullRequests  PullRequests                  `json:"pull_requests"`
+	RepoPresets   []RepoPreset                  `json:"repo_presets"`
 	Repos         []ConfiguredRepoStatus        `json:"repos"`
 	Terminal      Terminal                      `json:"terminal"`
 	Workspaces    Workspaces                    `json:"workspaces"`
@@ -4344,6 +4351,7 @@ type UpdateSettingsRequest struct {
 	KataProjects *[]KataProjectRepoMapping `json:"kata_projects,omitempty"`
 	Modes        *ModeVisibility           `json:"modes,omitempty"`
 	PullRequests *PullRequests             `json:"pull_requests,omitempty"`
+	RepoPresets  *[]RepoPreset             `json:"repo_presets,omitempty"`
 	Terminal     *Terminal                 `json:"terminal,omitempty"`
 	Workspaces   *Workspaces               `json:"workspaces,omitempty"`
 }

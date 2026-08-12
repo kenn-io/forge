@@ -400,6 +400,82 @@ name = "widget"
 	assert.JSONEq("[]", string(raw["kata_projects"]))
 }
 
+func TestHandleGetSettingsEncodesEmptyRepoPresetsAsArray(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var raw map[string]json.RawMessage
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &raw))
+	require.Contains(raw, "repo_presets")
+	assert.JSONEq("[]", string(raw["repo_presets"]))
+}
+
+func TestHandleUpdateSettingsPersistsRepoPresets(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+	presets := []config.RepoPreset{
+		{
+			Name: "Review queue",
+			Repos: []string{
+				"github|github.com/acme/widgets",
+				"gitlab|git.example.com/group/project",
+			},
+		},
+	}
+
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		RepoPresets: &presets,
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.Equal(presets, resp.RepoPresets)
+
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal(presets, reloaded.RepoPresets)
+}
+
+func TestHandleUpdateSettingsRestoresRepoPresetsAfterSaveFailure(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repo_presets]]
+name = "Existing"
+repos = ["github|github.com/acme/widget"]
+`, &mockGH{})
+
+	srv.configReloadMu.Lock()
+	srv.cfgPath = t.TempDir()
+	srv.configReloadMu.Unlock()
+	replacement := []config.RepoPreset{{
+		Name:  "Replacement",
+		Repos: []string{"github|github.com/acme/other"},
+	}}
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		RepoPresets: &replacement,
+	})
+	require.Equal(http.StatusInternalServerError, rr.Code, rr.Body.String())
+	require.Equal([]config.RepoPreset{{
+		Name:  "Existing",
+		Repos: []string{"github|github.com/acme/widget"},
+	}}, srv.cfg.RepoPresets)
+}
+
 func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

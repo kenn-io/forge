@@ -154,6 +154,7 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
     const store = {
       getConfiguredRepos: () => [],
       setConfiguredRepos: vi.fn(),
+      setRepoPresets: vi.fn(),
       getPullRequestSettings: () => ({
         allow_mid_stack_merges: false,
         prefer_github_native_stacks: false,

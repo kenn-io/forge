@@ -392,6 +392,147 @@ describe("WorkspaceListSidebar", () => {
     });
   });
 
+  it("applies repository scope before the workspace text filter", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "api-workspace",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "api",
+            number: 1,
+            title: "API cleanup",
+          }),
+          workspaceFixture({
+            id: "web-workspace",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "web",
+            number: 2,
+            title: "Web cleanup",
+          }),
+        ],
+      },
+    });
+
+    render(WorkspaceListSidebar, {
+      props: {
+        selectedId: "",
+        selectedRepos: "github|github.com/acme/api",
+      },
+    });
+
+    expect(await screen.findByText("API cleanup")).toBeTruthy();
+    expect(screen.queryByText("Web cleanup")).toBeNull();
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Filter workspaces" }), {
+      target: { value: "web" },
+    });
+    expect(screen.queryByText("API cleanup")).toBeNull();
+    expect(screen.queryByText("Web cleanup")).toBeNull();
+  });
+
+  it("applies repository scope to local and fleet workspace rows", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "member",
+                diagnostics: [],
+                id: "member",
+                kind: "remote",
+                name: "member",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      if (path === "/fleet/hosts/{host_key}/workspaces") {
+        return Promise.resolve({
+          data: {
+            workspaces: [
+              workspaceFixture({
+                id: "remote-api",
+                provider: "gitlab",
+                platformHost: "gitlab.example.com",
+                owner: "platform",
+                name: "api",
+                number: 3,
+                title: "Remote API",
+              }),
+              workspaceFixture({
+                id: "remote-web",
+                provider: "gitlab",
+                platformHost: "gitlab.example.com",
+                owner: "platform",
+                name: "web",
+                number: 4,
+                title: "Remote Web",
+              }),
+            ],
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          workspaces: [
+            workspaceFixture({
+              id: "local-api",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "acme",
+              name: "api",
+              number: 1,
+              title: "Local API",
+            }),
+            workspaceFixture({
+              id: "local-web",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "acme",
+              name: "web",
+              number: 2,
+              title: "Local Web",
+            }),
+          ],
+        },
+      });
+    });
+
+    render(WorkspaceListSidebar, {
+      props: {
+        selectedId: "",
+        selectedRepos: "github|github.com/acme/api,gitlab|gitlab.example.com/platform/api",
+      },
+    });
+
+    expect(await screen.findByText("Local API")).toBeTruthy();
+    expect(await screen.findByText("Remote API")).toBeTruthy();
+    expect(screen.queryByText("Local Web")).toBeNull();
+    expect(screen.queryByText("Remote Web")).toBeNull();
+  });
+
   it("loads workspaces from reachable ssh fleet hosts", async () => {
     mockGet.mockImplementation((path: string, options?: { params?: { path?: { host_key?: string } } }) => {
       if (path === "/snapshot") {

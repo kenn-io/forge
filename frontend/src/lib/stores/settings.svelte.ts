@@ -6,6 +6,7 @@ import {
   type LaunchTarget,
   type ModeVisibility,
   type PullRequestSettings,
+  type RepoPreset,
   type TerminalSettings,
 } from "../api/types.js";
 
@@ -21,6 +22,7 @@ export function createSettingsStore() {
     ...DEFAULT_PULL_REQUEST_SETTINGS,
   });
   let launchTargets = $state.raw<LaunchTarget[]>([]);
+  let repoPresets = $state.raw<RepoPreset[]>([]);
   let loaded = $state(false);
 
   function getConfiguredRepos(): ConfigRepo[] {
@@ -30,6 +32,17 @@ export function createSettingsStore() {
   function setConfiguredRepos(r: ConfigRepo[]): void {
     repos = r ?? [];
     loaded = true;
+  }
+
+  function getRepoPresets(): RepoPreset[] {
+    return repoPresets;
+  }
+
+  function setRepoPresets(presets: RepoPreset[] | null | undefined): void {
+    repoPresets = (presets ?? []).map((preset) => ({
+      ...preset,
+      repos: [...preset.repos],
+    }));
   }
 
   function getTerminalSettings(): TerminalSettings {
@@ -124,6 +137,8 @@ export function createSettingsStore() {
   return {
     getConfiguredRepos,
     setConfiguredRepos,
+    getRepoPresets,
+    setRepoPresets,
     getTerminalSettings,
     setTerminalSettings,
     getModeVisibility,

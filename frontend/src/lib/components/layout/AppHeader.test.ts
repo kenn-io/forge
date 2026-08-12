@@ -405,7 +405,7 @@ describe("AppHeader", () => {
     expect(container.querySelector("button[title='Open command palette'] svg")).toBeTruthy();
     expect(container.querySelector("button[title='Toggle theme'] svg")).toBeTruthy();
     expect(container.querySelector("button[title='Settings'] svg")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Select repository: All repos/i }).querySelector("svg")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Select repository: Global/i }).querySelector("svg")).toBeTruthy();
   });
 
   it("spaces the command palette icon and shortcut hint", () => {
@@ -517,6 +517,15 @@ describe("AppHeader", () => {
 
     const workspacesTab = screen.getByRole("button", { name: "Workspaces" });
     expect(workspacesTab.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("renders the repository selector on Workspaces", () => {
+    initTheme();
+    navigate("/workspaces");
+    const { container } = render(AppHeader);
+
+    expect(screen.getByRole("button", { name: "Select repository: Global" })).toBeTruthy();
+    expect(container.querySelector(".repo-selector-placeholder")).toBeNull();
   });
 
   it("does not show the collapsed sidebar shortcut hint on Activity", () => {

@@ -7275,6 +7275,10 @@ export interface components {
             submit_review: components["schemas"]["OperationAvailability"];
             update_content: components["schemas"]["OperationAvailability"];
         };
+        RepoPreset: {
+            name: string;
+            repos: string[];
+        };
         RepoPreviewRequest: {
             /**
              * Format: uri
@@ -7657,6 +7661,7 @@ export interface components {
             modes?: components["schemas"]["ModeVisibility"];
             notifications: components["schemas"]["NotificationsSettingsResponse"];
             pull_requests: components["schemas"]["PullRequests"];
+            repo_presets: components["schemas"]["RepoPreset"][];
             repos: components["schemas"]["ConfiguredRepoStatus"][];
             terminal: components["schemas"]["Terminal"];
             workspaces: components["schemas"]["Workspaces"];
@@ -7883,6 +7888,7 @@ export interface components {
             kata_projects?: components["schemas"]["KataProjectRepoMapping"][];
             modes?: components["schemas"]["ModeVisibility"];
             pull_requests?: components["schemas"]["PullRequests"];
+            repo_presets?: components["schemas"]["RepoPreset"][];
             terminal?: components["schemas"]["Terminal"];
             workspaces?: components["schemas"]["Workspaces"];
         };

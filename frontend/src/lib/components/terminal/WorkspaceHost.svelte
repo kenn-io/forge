@@ -7,6 +7,7 @@
   import SessionTerminalPool from "./SessionTerminalPool.svelte";
   import SessionTerminalSlot from "./SessionTerminalSlot.svelte";
   import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
+  import { getGlobalRepo } from "../../stores/filter.svelte.js";
   import { getRoute } from "../../stores/router.svelte.ts";
   import {
     clearPendingHostFocus, consumePendingHostFocus,
@@ -173,6 +174,7 @@
   <WorkspaceTerminalView
     workspaceId={key.workspaceId}
     workspaceHostKey={key.hostKey}
+    selectedRepos={getGlobalRepo()}
     hideWorkspaceList={embedded || slot === null}
     hideRightSidebar={embedded || slot === null}
     hostVisible={visible}

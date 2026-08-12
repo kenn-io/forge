@@ -2440,6 +2440,122 @@ prefer_github_native_stacks = true
 	assert.True(cfg2.PullRequests.PreferGitHubNativeStacks)
 }
 
+func TestRepoPresetsConfigRoundTrip(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cfg, saved := roundTripConfigString(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[[repo_presets]]
+name = "  Review queue  "
+repos = [
+  " github|github.com/acme/widgets ",
+  "gitlab|git.example.com/group/project",
+  "github|github.com/acme/widgets",
+]
+`)
+
+	want := []RepoPreset{{
+		Name: "Review queue",
+		Repos: []string{
+			"github|github.com/acme/widgets",
+			"gitlab|git.example.com/group/project",
+		},
+	}}
+	assert.Equal(want, cfg.RepoPresets)
+	assert.Equal(want, saved.RepoPresets)
+	require.Len(saved.RepoPresets, 1)
+}
+
+func TestRepoPresetValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		presets string
+		wantErr string
+	}{
+		{
+			name: "reserved global name",
+			presets: `
+[[repo_presets]]
+name = "GLOBAL"
+repos = ["github|github.com/acme/widgets"]
+`,
+			wantErr: `repo_presets[0]: name "GLOBAL" is reserved`,
+		},
+		{
+			name: "names must be unique ignoring case",
+			presets: `
+[[repo_presets]]
+name = "Review Queue"
+repos = ["github|github.com/acme/widgets"]
+
+[[repo_presets]]
+name = "review queue"
+repos = ["github|github.com/acme/docs"]
+`,
+			wantErr: `duplicate repo preset name "review queue"`,
+		},
+		{
+			name: "name is required",
+			presets: `
+[[repo_presets]]
+name = "   "
+repos = ["github|github.com/acme/widgets"]
+`,
+			wantErr: "repo_presets[0]: name is required",
+		},
+		{
+			name: "repositories are required",
+			presets: `
+[[repo_presets]]
+name = "Review queue"
+repos = []
+`,
+			wantErr: "repo_presets[0]: at least one repository is required",
+		},
+		{
+			name: "provider must be canonical",
+			presets: `
+[[repo_presets]]
+name = "Review queue"
+repos = ["GitHub|github.com/acme/widgets"]
+`,
+			wantErr: `repo_presets[0].repos[0]: repository identity must use a canonical provider`,
+		},
+		{
+			name: "provider must be supported",
+			presets: `
+[[repo_presets]]
+name = "Review queue"
+repos = ["bitbucket|bitbucket.org/acme/widgets"]
+`,
+			wantErr: `repo_presets[0].repos[0]: unsupported provider "bitbucket"`,
+		},
+		{
+			name: "host and repository path are required",
+			presets: `
+[[repo_presets]]
+name = "Review queue"
+repos = ["github|github.com/widgets"]
+`,
+			wantErr: `repo_presets[0].repos[0]: repository identity must be provider|platform_host/repo_path`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`+tt.presets))
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
 func TestTerminalConfigRoundTrip(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

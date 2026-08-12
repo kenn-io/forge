@@ -5989,6 +5989,19 @@ components:
         - resolve_review_thread
         - apply_review_suggestion
       type: object
+    RepoPreset:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        repos:
+          items:
+            type: string
+          type: array
+      required:
+        - name
+        - repos
+      type: object
     RepoPreviewRequest:
       additionalProperties: false
       properties:
@@ -6820,6 +6833,10 @@ components:
           $ref: "#/components/schemas/NotificationsSettingsResponse"
         pull_requests:
           $ref: "#/components/schemas/PullRequests"
+        repo_presets:
+          items:
+            $ref: "#/components/schemas/RepoPreset"
+          type: array
         repos:
           items:
             $ref: "#/components/schemas/ConfiguredRepoStatus"
@@ -6830,6 +6847,7 @@ components:
           $ref: "#/components/schemas/Workspaces"
       required:
         - repos
+        - repo_presets
         - activity
         - pull_requests
         - workspaces
@@ -7328,6 +7346,10 @@ components:
           $ref: "#/components/schemas/ModeVisibility"
         pull_requests:
           $ref: "#/components/schemas/PullRequests"
+        repo_presets:
+          items:
+            $ref: "#/components/schemas/RepoPreset"
+          type: array
         terminal:
           $ref: "#/components/schemas/Terminal"
         workspaces:

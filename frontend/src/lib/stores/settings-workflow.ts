@@ -199,6 +199,7 @@ function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSetting
     (request.kata_projects === undefined || sameValue(settings.kata_projects, request.kata_projects)) &&
     (request.modes === undefined || sameValue(settings.modes, request.modes)) &&
     (request.pull_requests === undefined || sameValue(settings.pull_requests, request.pull_requests)) &&
+    (request.repo_presets === undefined || sameValue(settings.repo_presets, request.repo_presets)) &&
     (request.terminal === undefined || sameValue(settings.terminal, request.terminal)) &&
     (request.workspaces === undefined || sameValue(settings.workspaces, request.workspaces))
   );

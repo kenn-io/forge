@@ -79,6 +79,96 @@ type KataProjectRepoMapping struct {
 	RepoPath     string `toml:"repo_path" json:"repo_path"`
 }
 
+// RepoPreset is a named repository scope shown by the global repository
+// selector. Global is a built-in UI scope and is never persisted here.
+type RepoPreset struct {
+	Name  string   `toml:"name" json:"name"`
+	Repos []string `toml:"repos" json:"repos" nullable:"false"`
+}
+
+func cloneRepoPresets(presets []RepoPreset) []RepoPreset {
+	if presets == nil {
+		return nil
+	}
+	out := slices.Clone(presets)
+	for i := range out {
+		out[i].Repos = slices.Clone(out[i].Repos)
+	}
+	return out
+}
+
+func normalizeRepoPresets(presets []RepoPreset) error {
+	seenNames := make(map[string]struct{}, len(presets))
+	for i := range presets {
+		preset := &presets[i]
+		preset.Name = strings.TrimSpace(preset.Name)
+		if preset.Name == "" {
+			return fmt.Errorf("repo_presets[%d]: name is required", i)
+		}
+		nameKey := strings.ToLower(preset.Name)
+		if nameKey == "global" {
+			return fmt.Errorf("repo_presets[%d]: name %q is reserved", i, preset.Name)
+		}
+		if _, ok := seenNames[nameKey]; ok {
+			return fmt.Errorf("config: duplicate repo preset name %q", preset.Name)
+		}
+		seenNames[nameKey] = struct{}{}
+
+		repos := make([]string, 0, len(preset.Repos))
+		seenRepos := make(map[string]struct{}, len(preset.Repos))
+		for j, raw := range preset.Repos {
+			value := strings.TrimSpace(raw)
+			providerPart, hostedPath, ok := strings.Cut(value, "|")
+			if !ok || providerPart == "" || providerPart != strings.ToLower(providerPart) {
+				return fmt.Errorf(
+					"repo_presets[%d].repos[%d]: repository identity must use a canonical provider", i, j,
+				)
+			}
+			provider, err := normalizePlatform(providerPart)
+			if err != nil {
+				return fmt.Errorf("repo_presets[%d].repos[%d]: %w", i, j, err)
+			}
+			if _, ok := platformpkg.MetadataFor(platformpkg.Kind(provider)); !ok {
+				return fmt.Errorf(
+					"repo_presets[%d].repos[%d]: unsupported provider %q", i, j, provider,
+				)
+			}
+			host, repoPath, ok := strings.Cut(strings.Trim(hostedPath, "/"), "/")
+			if !ok || strings.TrimSpace(host) == "" || strings.TrimSpace(repoPath) == "" {
+				return fmt.Errorf(
+					"repo_presets[%d].repos[%d]: repository identity must be provider|platform_host/repo_path", i, j,
+				)
+			}
+			host, err = normalizePlatformHost(provider, host)
+			if err != nil {
+				return fmt.Errorf("repo_presets[%d].repos[%d]: %w", i, j, err)
+			}
+			repoPath = cleanPath(strings.TrimSpace(repoPath))
+			if platformpkg.AllowsNestedOwner(platformpkg.Kind(provider)) {
+				_, _, err = splitGitLabPath(value, repoPath)
+			} else {
+				_, _, err = splitGitHubPath(value, repoPath)
+			}
+			if err != nil {
+				return fmt.Errorf(
+					"repo_presets[%d].repos[%d]: repository identity must be provider|platform_host/repo_path", i, j,
+				)
+			}
+			canonical := provider + "|" + host + "/" + repoPath
+			if _, exists := seenRepos[canonical]; exists {
+				continue
+			}
+			seenRepos[canonical] = struct{}{}
+			repos = append(repos, canonical)
+		}
+		if len(repos) == 0 {
+			return fmt.Errorf("repo_presets[%d]: at least one repository is required", i)
+		}
+		preset.Repos = repos
+	}
+	return nil
+}
+
 // DocFolder names a markdown folder registered for docs mode. Path
 // normalization and existence checks are handled by the docs registry
 // when the folder is used or edited.
@@ -779,6 +869,7 @@ type Config struct {
 	// before any forwarded header is read.
 	TrustReverseProxy bool                     `toml:"trust_reverse_proxy"`
 	Repos             []Repo                   `toml:"repos"`
+	RepoPresets       []RepoPreset             `toml:"repo_presets"`
 	KataProjects      []KataProjectRepoMapping `toml:"kata_projects"`
 	Platforms         []PlatformConfig         `toml:"platforms"`
 	GitHubOwnerTokens []GitHubOwnerTokenConfig `toml:"github_owner_tokens"`
@@ -1307,6 +1398,9 @@ func (c *Config) validate() error {
 		seen[key] = display
 	}
 	if err := c.validateKataProjectRepoMappings(); err != nil {
+		return err
+	}
+	if err := normalizeRepoPresets(c.RepoPresets); err != nil {
 		return err
 	}
 
@@ -2866,6 +2960,7 @@ type configFile struct {
 	AllowedHosts              []string                 `toml:"allowed_hosts,omitempty"`
 	TrustReverseProxy         bool                     `toml:"trust_reverse_proxy,omitempty"`
 	Repos                     []Repo                   `toml:"repos"`
+	RepoPresets               []RepoPreset             `toml:"repo_presets,omitempty"`
 	KataProjects              []KataProjectRepoMapping `toml:"kata_projects,omitempty"`
 	Platforms                 []PlatformConfig         `toml:"platforms,omitempty"`
 	GitHubOwnerTokens         []GitHubOwnerTokenConfig `toml:"github_owner_tokens,omitempty"`
@@ -2903,6 +2998,7 @@ func (c *Config) Save(path string) error {
 		AllowedHosts:            slices.Clone(cfg.AllowedHosts),
 		TrustReverseProxy:       cfg.TrustReverseProxy,
 		Repos:                   reposForSave(cfg.Repos),
+		RepoPresets:             cloneRepoPresets(cfg.RepoPresets),
 		KataProjects:            slices.Clone(cfg.KataProjects),
 		Platforms:               cfg.Platforms,
 		GitHubOwnerTokens:       cfg.GitHubOwnerTokens,
@@ -2990,6 +3086,7 @@ func (c *Config) copyForSave() Config {
 	}
 	cfg := *c
 	cfg.Repos = slices.Clone(c.Repos)
+	cfg.RepoPresets = cloneRepoPresets(c.RepoPresets)
 	cfg.KataProjects = slices.Clone(c.KataProjects)
 	cfg.Platforms = slices.Clone(c.Platforms)
 	cfg.AllowedHosts = slices.Clone(c.AllowedHosts)

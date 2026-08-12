@@ -21,6 +21,7 @@ import (
 
 type settingsResponse struct {
 	Repos         []ghclient.ConfiguredRepoStatus `json:"repos" nullable:"false"`
+	RepoPresets   []config.RepoPreset             `json:"repo_presets" nullable:"false"`
 	Activity      config.Activity                 `json:"activity"`
 	PullRequests  config.PullRequests             `json:"pull_requests"`
 	Workspaces    config.Workspaces               `json:"workspaces"`
@@ -39,6 +40,7 @@ type notificationsSettingsResponse struct {
 }
 
 type updateSettingsRequest struct {
+	RepoPresets  *[]config.RepoPreset             `json:"repo_presets,omitempty"`
 	Activity     *config.Activity                 `json:"activity,omitempty"`
 	PullRequests *config.PullRequests             `json:"pull_requests,omitempty"`
 	Workspaces   *config.Workspaces               `json:"workspaces,omitempty"`
@@ -75,6 +77,10 @@ func (s *Server) buildLocalSettingsResponse(
 ) (settingsResponse, error) {
 	s.cfgMu.Lock()
 	repos := slices.Clone(s.cfg.Repos)
+	repoPresets := cloneRepoPresets(s.cfg.RepoPresets)
+	if repoPresets == nil {
+		repoPresets = []config.RepoPreset{}
+	}
 	activity := s.cfg.Activity
 	pullRequests := s.cfg.PullRequests
 	workspaces := s.cfg.Workspaces
@@ -128,6 +134,7 @@ func (s *Server) buildLocalSettingsResponse(
 	}
 	return settingsResponse{
 		Repos:        configured,
+		RepoPresets:  repoPresets,
 		Activity:     activity,
 		PullRequests: pullRequests,
 		Workspaces:   workspaces,
@@ -726,6 +733,7 @@ func (s *Server) updateSettings(
 
 	s.cfgMu.Lock()
 	prevActivity := s.cfg.Activity
+	prevRepoPresets := cloneRepoPresets(s.cfg.RepoPresets)
 	prevPullRequests := s.cfg.PullRequests
 	prevWorkspaces := s.cfg.Workspaces
 	prevIssues := s.cfg.Issues
@@ -733,6 +741,9 @@ func (s *Server) updateSettings(
 	prevModes := cloneModeVisibility(s.cfg.Modes)
 	prevAgents := cloneConfigAgents(s.cfg.Agents)
 	prevKataProjects := slices.Clone(s.cfg.KataProjects)
+	if input.Body.RepoPresets != nil {
+		s.cfg.RepoPresets = cloneRepoPresets(*input.Body.RepoPresets)
+	}
 	if input.Body.Activity != nil {
 		candidate := *input.Body.Activity
 		if candidate.ViewMode == "" {
@@ -765,6 +776,7 @@ func (s *Server) updateSettings(
 		s.cfg.KataProjects = slices.Clone(*input.Body.KataProjects)
 	}
 	if err := s.cfg.Validate(); err != nil {
+		s.cfg.RepoPresets = prevRepoPresets
 		s.cfg.Activity = prevActivity
 		s.cfg.PullRequests = prevPullRequests
 		s.cfg.Workspaces = prevWorkspaces
@@ -777,6 +789,7 @@ func (s *Server) updateSettings(
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
+		s.cfg.RepoPresets = prevRepoPresets
 		s.cfg.Activity = prevActivity
 		s.cfg.PullRequests = prevPullRequests
 		s.cfg.Workspaces = prevWorkspaces
@@ -803,6 +816,17 @@ func (s *Server) updateSettings(
 	s.reconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
 
 	return s.settingsOutputResponse(ctx)
+}
+
+func cloneRepoPresets(presets []config.RepoPreset) []config.RepoPreset {
+	if presets == nil {
+		return nil
+	}
+	out := slices.Clone(presets)
+	for i := range out {
+		out[i].Repos = slices.Clone(out[i].Repos)
+	}
+	return out
 }
 
 func cloneModeVisibility(modes config.ModeVisibility) config.ModeVisibility {

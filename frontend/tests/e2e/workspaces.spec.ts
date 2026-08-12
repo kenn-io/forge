@@ -77,6 +77,91 @@ test("workspaces route renders the terminal workspace list shell", async ({ page
   await expect(page.getByText("Select a workspace from the sidebar")).toBeVisible();
 });
 
+test("repository selector filters Workspaces and keeps preset actions fixed", async ({ page }) => {
+  const repoNames = ["api", "web", ...Array.from({ length: 28 }, (_, index) => `service-${index + 1}`)];
+  const repos = repoNames.map((name, index) => ({
+    ID: index + 1,
+    Owner: "acme",
+    Name: name,
+    Platform: "github",
+    PlatformHost: "github.com",
+  }));
+  const configuredRepos = repoNames.map((name) => ({
+    provider: "github",
+    platform_host: "github.com",
+    owner: "acme",
+    name,
+    repo_path: `acme/${name}`,
+    is_glob: false,
+    matched_repo_count: 1,
+    hidden_from_ui: false,
+  }));
+  const workspace = (name: string, title: string, number: number) => ({
+    ...contextMenuWorkspace,
+    id: `ws-${name}`,
+    repo_name: name,
+    repo: {
+      ...contextMenuWorkspace.repo,
+      name,
+      repo_path: `acme/${name}`,
+    },
+    item_number: number,
+    mr_title: title,
+    git_head_ref: `feature/${name}`,
+  });
+
+  await page.route("**/api/v1/settings", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...defaultSettings,
+        repos: configuredRepos,
+        repo_presets: [],
+      }),
+    });
+  });
+  await page.route("**/api/v1/repos", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(repos),
+    });
+  });
+  await page.route("**/api/v1/workspaces", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        workspaces: [workspace("api", "API workspace", 1), workspace("web", "Web workspace", 2)],
+      }),
+    });
+  });
+
+  await page.goto("/workspaces");
+  const selector = page.getByRole("button", { name: "Select repository: Global" });
+  await expect(selector).toBeVisible();
+  await selector.click();
+
+  const repoList = page.getByRole("listbox", { name: "Repositories" });
+  const presetList = page.getByRole("listbox", { name: "Repository presets" });
+  const footer = page.locator(".typeahead-footer");
+  await expect(presetList.getByRole("option", { name: "Global" })).toBeVisible();
+  await expect(footer.getByRole("button", { name: "Save preset" })).toBeVisible();
+  expect(await repoList.evaluate((node) => getComputedStyle(node).overflowY)).toBe("auto");
+  expect(await repoList.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+
+  const footerTop = (await footer.boundingBox())?.y;
+  await repoList.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  expect((await footer.boundingBox())?.y).toBe(footerTop);
+
+  await repoList.getByRole("option", { name: "github/github.com/acme/api" }).click();
+  await expect(page.getByText("API workspace")).toBeVisible();
+  await expect(page.getByText("Web workspace")).toHaveCount(0);
+});
+
 test("workspace row context menu escapes the clipped sidebar", async ({ page }) => {
   await mockWorkspaceContextMenuRoutes(page);
   await page.setViewportSize({ width: 640, height: 480 });

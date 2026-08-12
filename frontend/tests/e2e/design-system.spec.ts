@@ -198,7 +198,7 @@ test("design system panel supports drag mutations and typeahead dropdown states"
   await expect(openTypeahead.getByRole("option", { name: /acme\/widgets/ })).toBeVisible();
 
   const defaultTypeahead = typeaheadDemo.getByTestId("typeahead-default");
-  await defaultTypeahead.getByRole("button", { name: /All repos/ }).click();
+  await defaultTypeahead.getByRole("button", { name: /Global/ }).click();
   const input = defaultTypeahead.getByRole("textbox", { name: "Filter repos" });
   await expect(input).toBeVisible();
   await input.fill("widgets");

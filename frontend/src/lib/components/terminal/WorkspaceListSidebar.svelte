@@ -56,6 +56,11 @@
     workspaceListLifecycle,
   } from "./workspace-list-workflow.js";
   import { decodeWorkspaceList, type WorkspaceListItem } from "./workspace-list-schema.js";
+  import { parseRepoFilterValue } from "../../stores/filter.svelte.js";
+  import {
+    canonicalRepoFilterValue,
+    type RepoFilterIdentity,
+  } from "../../utils/repo-filter-values.js";
 
   type Workspace = WorkspaceListItem;
 
@@ -63,6 +68,7 @@
 
   interface Props {
     selectedId: string;
+    selectedRepos?: string | undefined;
     selectedHostKey?: string | undefined;
     onOpenItemSidebar?: (
       workspaceId: string,
@@ -100,6 +106,7 @@
 
   const {
     selectedId,
+    selectedRepos = undefined,
     selectedHostKey = undefined,
     onOpenItemSidebar,
     onWorkspaceListStateChange,
@@ -177,20 +184,29 @@
   const normalizedSearchQuery = $derived(
     searchQuery.trim().toLowerCase(),
   );
+  const selectedRepoValues = $derived(new Set(parseRepoFilterValue(selectedRepos)));
   const deleteConfirmBusy = $derived(
     deleteConfirmWorkspace !== null &&
       workspaceActionMatches(deleteConfirmWorkspace, "delete"),
   );
 
   const visibleWorkspaces = $derived.by(() => {
-    if (!normalizedSearchQuery) return workspaces;
-    return workspaces.filter((ws) =>
-      workspaceMatchesSearch(ws, normalizedSearchQuery),
-    );
+    const repoIdentities = workspaces.map(workspaceRepoFilterIdentity);
+    const scoped = selectedRepoValues.size === 0
+      ? workspaces
+      : workspaces.filter((workspace) => {
+          const value = canonicalRepoFilterValue(
+            workspaceRepoFilterIdentity(workspace),
+            repoIdentities,
+          );
+          return value !== null && selectedRepoValues.has(value);
+        });
+    if (!normalizedSearchQuery) return scoped;
+    return scoped.filter((ws) => workspaceMatchesSearch(ws, normalizedSearchQuery));
   });
 
   const sidebarCountLabel = $derived(
-    normalizedSearchQuery
+    normalizedSearchQuery || selectedRepoValues.size > 0
       ? `${visibleWorkspaces.length}/${workspaces.length}`
       : `${workspaces.length}`,
   );
@@ -774,6 +790,15 @@
       owner: ws.repo_owner,
       name: ws.repo_name,
       repoPath: ws.repo?.repo_path,
+    };
+  }
+
+  function workspaceRepoFilterIdentity(ws: Workspace): RepoFilterIdentity {
+    return {
+      ...(ws.repo?.provider === undefined ? {} : { provider: ws.repo.provider }),
+      platformHost: ws.platform_host,
+      repoPath: ws.repo?.repo_path ?? `${ws.repo_owner}/${ws.repo_name}`,
+      isGlob: false,
     };
   }
 

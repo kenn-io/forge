@@ -46,6 +46,7 @@ function makeSettings(repos: SettingsResponse["repos"] = []): SettingsResponse {
       allow_mid_stack_merges: false,
       prefer_github_native_stacks: false,
     },
+    repo_presets: [],
     repos,
     terminal: {
       font_family: "",
@@ -565,6 +566,48 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
       const result = yield* workflow.persist(() => ({ activity: saved.activity }));
 
       assert.isTrue(result.activity.hide_bots);
+    }),
+  );
+
+  it.effect("reconciles repository preset saves after a response is lost", () =>
+    Effect.gen(function* () {
+      const original = makeSettings();
+      const repoPresets = [{ name: "Review queue", repos: ["github|github.com/acme/widgets"] }];
+      const saved = { ...original, repo_presets: repoPresets };
+      let committed = false;
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (request.method === "PUT") {
+          committed = true;
+          return Promise.reject(new TypeError("response lost after commit"));
+        }
+        return Promise.resolve(Response.json(committed ? saved : original));
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const workflow = yield* SettingsWorkflow;
+      const result = yield* workflow.persist(() => ({ repo_presets: repoPresets }));
+
+      assert.deepStrictEqual(result.repo_presets, repoPresets);
+    }),
+  );
+
+  it.effect("does not report repository presets committed when reconciliation returns the old collection", () =>
+    Effect.gen(function* () {
+      const original = makeSettings();
+      const repoPresets = [{ name: "Review queue", repos: ["github|github.com/acme/widgets"] }];
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return request.method === "PUT"
+          ? Promise.reject(new TypeError("response lost before commit"))
+          : Promise.resolve(Response.json(original));
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const workflow = yield* SettingsWorkflow;
+      const failure = yield* Effect.flip(workflow.persist(() => ({ repo_presets: repoPresets })));
+
+      assert.strictEqual(failure._tag, "TransientTransportError");
     }),
   );
 

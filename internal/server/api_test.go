@@ -23660,40 +23660,6 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 	assert.Equal("ws-41", got[0].Workspace.ID)
 }
 
-func TestWorkspaceActivitySearchMatchesItemNumber(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
-	key := db.WorkspaceSubjectKey{
-		RepoID: 7, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 41,
-	}
-	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
-		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
-		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
-			key: {
-				Subject: db.WorkspaceSubjectMetadata{
-					Key: key, Platform: "github", PlatformHost: "github.com",
-					RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
-					Title: "Unrelated title", Author: "alice", State: "open",
-				},
-				Workspace:  workspaceapi.WorkspaceRef{ID: "ws-41", Status: "ready"},
-				ActivityAt: &now,
-			},
-		},
-	}
-	srv := &Server{repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{})}
-
-	got := srv.workspaceActivityResponse(
-		&listActivityInput{},
-		db.ListActivityOpts{Search: "#41"},
-		snapshot,
-		nil,
-	)
-
-	require.Len(got, 1)
-	assert.Equal(41, got[0].ItemNumber)
-}
-
 func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -520,6 +520,72 @@ func TestSearchedActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	assert.Equal(workspaceID, incrementalWorkspace.Workspace.Id)
 }
 
+func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("TMUX_PANE_OUTPUT", "baseline output")
+	script, _ := writeTmuxRecorder(t)
+	client, _, database, _ := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	mr.Title = "Unrelated title"
+	_, err = database.UpsertMergeRequest(ctx, mr)
+	require.NoError(err)
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", MrNumber: 1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	workspaceID := createResp.JSON202.Id
+	waitForWorkspaceReady(t, ctx, client, workspaceID)
+
+	require.Eventually(func() bool {
+		activity := getRawWorkspaceActivity(t, client, ctx, workspaceID)
+		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
+	}, 3*time.Second, 50*time.Millisecond, "tmux baseline was not observed")
+	since := time.Now().UTC().Format(time.RFC3339Nano)
+	t.Setenv("TMUX_PANE_OUTPUT", "changed output")
+
+	for _, search := range []string{"1", "#1"} {
+		var response *generated.ListActivityResponse
+		require.Eventually(func() bool {
+			got, requestErr := client.HTTP.ListActivityWithResponse(
+				ctx, &generated.ListActivityParams{Search: &search, Since: &since},
+			)
+			if requestErr != nil || got.JSON200 == nil || got.JSON200.WorkspaceActivity == nil {
+				return false
+			}
+			response = got
+			return len(*got.JSON200.WorkspaceActivity) == 1
+		}, 8*time.Second, 100*time.Millisecond, "workspace activity did not match %q", search)
+		require.NotNil(response)
+		require.NotNil(response.JSON200)
+		require.NotNil(response.JSON200.Items)
+		assert.Empty(*response.JSON200.Items, "provider Activity must remain outside the window")
+		require.NotNil(response.JSON200.WorkspaceActivity)
+		require.Len(*response.JSON200.WorkspaceActivity, 1)
+		workspaceSubject := (*response.JSON200.WorkspaceActivity)[0]
+		assert.EqualValues(1, workspaceSubject.ItemNumber)
+		assert.Equal("Unrelated title", workspaceSubject.ItemTitle)
+		require.NotNil(workspaceSubject.Workspace)
+		assert.Equal(workspaceID, workspaceSubject.Workspace.Id)
+	}
+}
+
 func getRawWorkspaceActivity(
 	t *testing.T,
 	client *apiclient.Client,

@@ -223,6 +223,24 @@
     return `Workspace ${workspace.status}`;
   }
 
+  function agentStatePresentation(workspace: WorkspaceListItem): {
+    label: "Working" | "Approval" | "Input" | "Done";
+    tone: "working" | "approval" | "input" | "done";
+  } | null {
+    switch (workspace.agent_state) {
+      case "working":
+        return { label: "Working", tone: "working" };
+      case "approval":
+        return { label: "Approval", tone: "approval" };
+      case "input":
+        return { label: "Input", tone: "input" };
+      case "done":
+        return { label: "Done", tone: "done" };
+      default:
+        return null;
+    }
+  }
+
   function itemLabel(workspace: WorkspaceListItem): string | null {
     if (workspace.item_type === "kata_task") {
       return workspace.kata?.short_id?.trim() || workspace.kata?.qualified_id?.trim() || "Kata";
@@ -476,6 +494,7 @@
 
 {#snippet workspaceRow(workspace: WorkspaceListItem, showRepository: boolean)}
   {@const label = itemLabel(workspace)}
+  {@const agentState = agentStatePresentation(workspace)}
   <article class="mobile-workspace-row">
     <button
       class="mobile-workspace-row__main"
@@ -486,6 +505,12 @@
       <span class="mobile-workspace-row__title">
         <StatusDot status={status(workspace)} label={statusLabel(workspace)} size={7} />
         <strong>{mobileWorkspaceDisplayName(workspace)}</strong>
+        {#if agentState}
+          <span
+            class={["mobile-workspace-row__agent-state", `mobile-workspace-row__agent-state--${agentState.tone}`]}
+            aria-label={`Agent ${agentState.label.toLowerCase()}`}
+          >{agentState.label}</span>
+        {/if}
       </span>
       <span class="mobile-workspace-row__meta">
         {#if workspace.fleet_host_key}<em>{workspace.fleet_host_key}</em>{/if}
@@ -611,7 +636,11 @@
   .mobile-workspace-row button { border: 0; color: inherit; background: transparent; font: inherit; }
   .mobile-workspace-row__main { min-width: 0; min-height: 5.5rem; display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; padding: 0.75rem 0.25rem 0.75rem 0.875rem; text-align: left; }
   .mobile-workspace-row__title { min-width: 0; display: flex; align-items: center; gap: 0.5rem; }
-  .mobile-workspace-row__title strong { overflow: hidden; color: var(--text-primary); font-size: var(--font-size-md); font-weight: 650; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-workspace-row__title strong { min-width: 0; flex: 1; overflow: hidden; color: var(--text-primary); font-size: var(--font-size-md); font-weight: 650; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-workspace-row__agent-state { flex-shrink: 0; padding: 0.1875rem 0.375rem; border: thin solid currentColor; border-radius: 999px; background: var(--bg-inset); font-size: var(--font-size-xs); font-weight: 700; line-height: 1; }
+  .mobile-workspace-row__agent-state--working, .mobile-workspace-row__agent-state--done { color: var(--accent-green); }
+  .mobile-workspace-row__agent-state--approval { color: var(--accent-amber); }
+  .mobile-workspace-row__agent-state--input { color: var(--accent-purple); }
   .mobile-workspace-row__meta { min-width: 0; display: flex; align-items: center; gap: 0.5rem; overflow: hidden; color: var(--text-muted); font-size: var(--font-size-sm); }
   .mobile-workspace-row__meta > span, .mobile-workspace-row__meta code, .mobile-workspace-row__meta em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-workspace-row__meta code { flex: 1; color: var(--text-secondary); font-family: var(--font-mono); }

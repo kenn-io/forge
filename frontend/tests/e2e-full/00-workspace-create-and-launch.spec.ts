@@ -7,6 +7,7 @@ type WorkspaceResponse = {
   id: string;
   status: string;
   git_head_ref?: string;
+  worktree_path?: string;
   created?: boolean;
   mr_head_repo_kind?: "same_repo" | "fork" | "unknown";
   error_message?: string | null;
@@ -446,6 +447,7 @@ test.describe("workspace create-and-launch full stack", () => {
       const ready = await waitForWorkspaceReady(api, created.id);
       const launchResponse = await launchResponsePromise;
       expect(launchResponse.status(), await launchResponse.text()).toBe(200);
+      const launchedSession = (await launchResponse.json()) as { key: string };
       await expect.poll(() => runtimeTargets(api!, created.id)).toContain(agentKey);
       await expect.poll(() => persistedRuntimeTargets(api!, created.id)).toEqual([agentKey]);
 
@@ -470,6 +472,20 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect
         .poll(async () => (await sessionWebSockets(page, created.id)).flatMap((socket) => socket.sent))
         .toContain("printf 'mobile-input-ok\\n'\nprintf 'second-line\\n'\r");
+
+      expect(ready.worktree_path).toBeTruthy();
+      const hookResponse = await api.post("/api/v1/agent-hooks/claude", {
+        headers: { "X-Kenn-Forge-Runtime-Session-Key": launchedSession.key },
+        data: {
+          session_id: "mobile-agent",
+          cwd: ready.worktree_path,
+          hook_event_name: "UserPromptSubmit",
+        },
+      });
+      expect(hookResponse.ok(), await hookResponse.text()).toBe(true);
+      await page.goto(`${server.info.base_url}/m/workspaces`);
+      await expect(page.getByLabel("Agent working")).toHaveText("Working");
+      await page.goto(`${server.info.base_url}/m/workspaces/local/${created.id}`);
 
       await expect(page.getByRole("button", { name: "Launch session" })).toHaveCount(0);
       await expect(page.getByRole("button", { name: `Stop terminal ${agentLabel}` })).toHaveCount(0);

@@ -88,6 +88,25 @@ describe("MobileWorkspaceList", () => {
     expect(onOpen).toHaveBeenCalledWith("ws-1", undefined);
   });
 
+  it.each([
+    ["working", "Working"],
+    ["approval", "Approval"],
+    ["input", "Input"],
+    ["done", "Done"],
+  ] as const)("shows the hook-reported %s agent state", async (agentState, label) => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") return Promise.resolve({ data: { hosts: [] } });
+      if (path === "/workspaces") {
+        return Promise.resolve({ data: { workspaces: [{ ...fixture, agent_state: agentState }] } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+
+    expect((await screen.findByLabelText(`Agent ${label.toLowerCase()}`)).textContent).toBe(label);
+  });
+
   it("exposes the View sheet and persists display choices", async () => {
     render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
     await screen.findByText("Build mobile workspaces");

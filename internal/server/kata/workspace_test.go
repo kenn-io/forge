@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
@@ -568,6 +569,10 @@ func TestKataProjectMappingsReportsManualRegisteredProjectTarget(t *testing.T) {
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/health" {
+			_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.10.0"}`))
+			return
+		}
 		if r.URL.Path != "/api/v1/projects" {
 			http.NotFound(w, r)
 			return
@@ -621,6 +626,36 @@ repo_path = "acme/kenn-forge"
 	require.Len(resp.Targets, 1)
 	assert.Equal("Kenn Forge", resp.Targets[0].DisplayName)
 	assert.Equal("acme/kenn-forge", resp.Targets[0].Repo.RepoPath)
+}
+
+func TestKataProjectMappingsRequiresConnectedHealthBeforeProjectsRead(t *testing.T) {
+	assert := assert.New(t)
+	var projectCalls int
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/health" {
+			http.Error(w, "unavailable", http.StatusInternalServerError)
+			return
+		}
+		projectCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"projects":[]}`))
+	}))
+	t.Cleanup(daemon.Close)
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataProxyCatalog(t, home, `
+[[daemon]]
+name = "desktop"
+url = "`+daemon.URL+`"
+`)
+	srv, _ := setupTestServer(t)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/project-mappings", nil)
+	require.Equal(t, http.StatusServiceUnavailable, rr.Code, rr.Body.String())
+	problem := decodeProblem(t, rr)
+	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
+	assert.Equal("down", problem.Details["health"])
+	assert.Zero(projectCalls)
 }
 
 func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresOneMatch(t *testing.T) {

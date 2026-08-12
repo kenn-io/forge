@@ -187,7 +187,7 @@ func (h *Handler) kataClientForCompatibleDaemon(daemonID string) (*kataDaemonCli
 		return nil, problem
 	}
 	health := h.kataDaemonHealth(client.daemon.ID, client.daemon)
-	if health.State == "incompatible" {
+	if health.State != "connected" {
 		return nil, kataDaemonUnavailableProblem(daemonID, health)
 	}
 	return client, nil

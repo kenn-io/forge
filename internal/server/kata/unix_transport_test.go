@@ -66,6 +66,10 @@ func TestKataProjectMappingsClosesUnixConnections(t *testing.T) {
 
 	upstream := startTrackedKataUnixServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/health" {
+			_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.10.0"}`))
+			return
+		}
 		if r.URL.Path != "/api/v1/projects" {
 			http.NotFound(w, r)
 			return

@@ -136,6 +136,36 @@ func TestSupportsKataAPISchema(t *testing.T) {
 	}
 }
 
+func TestKataDaemonCompatibilityMessagePointsToCompatibleProduct(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		version     string
+		want        string
+		doesNotWant string
+	}{
+		{name: "missing", version: "", want: "Upgrade Kata to v0.14.3 or newer"},
+		{name: "older", version: "0.8.9", want: "Upgrade Kata to v0.14.3 or newer"},
+		{
+			name:        "newer",
+			version:     "0.11.0",
+			want:        "Upgrade Forge or use a supported Kata release",
+			doesNotWant: "Upgrade Kata to v0.14.3 or newer",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			message := kataDaemonCompatibilityMessage(tt.version)
+			assert.Contains(t, message, tt.want)
+			if tt.doesNotWant != "" {
+				assert.NotContains(t, message, tt.doesNotWant)
+			}
+		})
+	}
+}
+
 func TestKataDaemonClientReferencesPinsFiltersAndCapsLimit(t *testing.T) {
 	assert := assert.New(t)
 	issueUIDs := []string{

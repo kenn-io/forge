@@ -258,7 +258,12 @@ url = "`+down.URL+`"
 
 func TestKataReferencesRouteReportsDaemonOnUpstreamFailure(t *testing.T) {
 	assert := assert.New(t)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/health" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.10.0"}`))
+			return
+		}
 		http.Error(w, "unavailable", http.StatusInternalServerError)
 	}))
 	defer upstream.Close()
@@ -314,6 +319,57 @@ url = "`+upstream.URL+`"
 	assert.Equal(">=0.9.0 and <0.11.0", problem.Details["supported_api_schema"])
 	assert.Contains(problem.Detail, "Upgrade Kata")
 	assert.Zero(referenceCalls)
+}
+
+func TestKataReferencesRouteRequiresConnectedHealthBeforeNarrowRead(t *testing.T) {
+	tests := []struct {
+		name         string
+		healthStatus int
+		healthBody   string
+		wantHealth   string
+	}{
+		{name: "failed probe", healthStatus: http.StatusInternalServerError, wantHealth: "down"},
+		{name: "malformed probe", healthStatus: http.StatusOK, healthBody: "{", wantHealth: "down"},
+		{name: "authentication required", healthStatus: http.StatusUnauthorized, wantHealth: "auth_required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			var referenceCalls int
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/v1/health" {
+					if tt.healthBody != "" {
+						_, _ = w.Write([]byte(tt.healthBody))
+						return
+					}
+					http.Error(w, "unavailable", tt.healthStatus)
+					return
+				}
+				referenceCalls++
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"issues":[]}`))
+			}))
+			defer upstream.Close()
+
+			home := t.TempDir()
+			t.Setenv("KATA_HOME", home)
+			writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "unavailable"
+url = "`+upstream.URL+`"
+`)
+			srv, _ := setupTestServer(t)
+
+			rr := doJSON(t, srv, http.MethodGet,
+				"/api/v1/kata/daemons/unavailable/references?q=task", nil)
+			require.Equal(t, http.StatusServiceUnavailable, rr.Code, rr.Body.String())
+			problem := decodeProblem(t, rr)
+			assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
+			assert.Equal(tt.wantHealth, problem.Details["health"])
+			assert.NotContains(problem.Details, "reason")
+			assert.Zero(referenceCalls)
+		})
+	}
 }
 
 func TestKataReferencesRouteCollectsRequestedOpenResultsBeyondClosedMatches(t *testing.T) {

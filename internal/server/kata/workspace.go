@@ -807,7 +807,7 @@ func (h *Handler) getKataProjectMappings(
 		return nil, problem
 	}
 	health := h.kataDaemonHealth(daemon.ID, daemon)
-	if health.State == "incompatible" {
+	if health.State != "connected" {
 		return nil, kataDaemonUnavailableProblem(daemon.ID, health)
 	}
 	client, baseURL, err := h.kataDaemonHTTPClient(daemon)

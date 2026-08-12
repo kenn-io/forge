@@ -32,6 +32,24 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 		},
 	})
 	ws := createReadyWorkspace(t, context.Background(), fixture.client)
+	workspaceByID := func() *generated.WorkspaceResponse {
+		resp, err := fixture.client.HTTP.ListWorkspacesWithResponse(t.Context())
+		if err != nil || resp.JSON200 == nil || resp.JSON200.Workspaces == nil {
+			return nil
+		}
+		for i := range *resp.JSON200.Workspaces {
+			candidate := &(*resp.JSON200.Workspaces)[i]
+			if candidate.Id == ws.Id {
+				return candidate
+			}
+		}
+		return nil
+	}
+	require.Eventually(func() bool {
+		initial := workspaceByID()
+		return initial != nil && initial.CommitsAhead != nil && initial.CommitsBehind != nil &&
+			*initial.CommitsAhead == 0 && *initial.CommitsBehind == 0
+	}, 10*time.Second, 10*time.Millisecond)
 
 	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
 	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
@@ -44,20 +62,10 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 
 	var found *generated.WorkspaceResponse
 	require.Eventually(func() bool {
-		resp, err := fixture.client.HTTP.ListWorkspacesWithResponse(t.Context())
-		if err != nil || resp.JSON200 == nil || resp.JSON200.Workspaces == nil {
-			return false
-		}
-		for i := range *resp.JSON200.Workspaces {
-			candidate := &(*resp.JSON200.Workspaces)[i]
-			if candidate.Id == ws.Id {
-				found = candidate
-				break
-			}
-		}
+		found = workspaceByID()
 		return found != nil && found.CommitsAhead != nil && found.CommitsBehind != nil &&
 			*found.CommitsAhead == 2 && *found.CommitsBehind == 0
-	}, 2*time.Second, 10*time.Millisecond)
+	}, 10*time.Second, 10*time.Millisecond)
 	require.NotNil(found)
 	assert.Equal(int64(2), *found.CommitsAhead)
 	assert.Equal(int64(0), *found.CommitsBehind)

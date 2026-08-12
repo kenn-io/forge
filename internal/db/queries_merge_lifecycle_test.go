@@ -124,7 +124,7 @@ func TestFillMissingMergedMRMetricsAcceptsEitherMergedIndicator(t *testing.T) {
 	}
 }
 
-func TestFillMissingMergedMRMetricsPreservesExistingFields(t *testing.T) {
+func TestFillMissingMergedMRMetricsReplacesPreMergeSHAAndPreservesFilledMetrics(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -135,7 +135,7 @@ func TestFillMissingMergedMRMetricsPreservesExistingFields(t *testing.T) {
 	_, err := database.UpsertMergeRequest(ctx, &MergeRequest{
 		RepoID: repoID, PlatformID: 7, Number: 7,
 		State: MergeRequestStateMerged, PlatformHeadSHA: "head-sha",
-		MergeCommitSHA: "stored-merge-sha",
+		MergeCommitSHA: "pre-merge-test-sha",
 		CreatedAt:      mergedAt.Add(-time.Hour), UpdatedAt: mergedAt,
 		LastActivityAt: mergedAt, MergedAt: &mergedAt,
 	})
@@ -150,7 +150,7 @@ func TestFillMissingMergedMRMetricsPreservesExistingFields(t *testing.T) {
 
 	changed, err = database.FillMissingMergedMRMetrics(ctx, MergeRequestMergeMetrics{
 		RepoID: repoID, Number: 7, HeadSHA: "head-sha",
-		MergeCommitSHA: new("later-merge-sha"), FilesChanged: new(9),
+		MergeCommitSHA: new("provider-merge-sha"), FilesChanged: new(9),
 	})
 	require.NoError(err)
 	assert.False(changed)
@@ -158,7 +158,7 @@ func TestFillMissingMergedMRMetricsPreservesExistingFields(t *testing.T) {
 	after, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(after)
-	assert.Equal("stored-merge-sha", after.MergeCommitSHA)
+	assert.Equal("provider-merge-sha", after.MergeCommitSHA)
 	require.NotNil(after.FilesChanged)
 	assert.Equal(4, *after.FilesChanged)
 }

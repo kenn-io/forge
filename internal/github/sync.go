@@ -12260,7 +12260,7 @@ func (s *Syncer) syncMRForRepo(
 	providerAttempted *bool,
 ) error {
 	return s.syncMRForRepoResolved(
-		ctx, repo, number, useConditionalPRDetail, providerAttempted, nil,
+		ctx, repo, number, useConditionalPRDetail, providerAttempted, nil, nil,
 	)
 }
 
@@ -12271,9 +12271,13 @@ func (s *Syncer) syncMRForRepoResolved(
 	useConditionalPRDetail bool,
 	providerAttempted *bool,
 	resolvedRepoID *int64,
+	fetchedMerged *bool,
 ) error {
 	if resolvedRepoID != nil {
 		*resolvedRepoID = 0
+	}
+	if fetchedMerged != nil {
+		*fetchedMerged = false
 	}
 	if !IsArchiveSyncBudgetContext(ctx) {
 		bucket, err := s.bucketKeyForRepo(repo, false)
@@ -12390,6 +12394,9 @@ func (s *Syncer) syncMRForRepoResolved(
 	}
 	if normalized == nil {
 		return fmt.Errorf("get MR %s/%s#%d: provider returned no merge request", owner, name, number)
+	}
+	if fetchedMerged != nil {
+		*fetchedMerged = normalized.State == db.MergeRequestStateMerged || normalized.MergedAt != nil
 	}
 	headChanged := existing != nil &&
 		existing.PlatformHeadSHA != normalized.PlatformHeadSHA
@@ -13013,14 +13020,17 @@ func (s *Syncer) SyncArchiveItem(
 	case db.ArchiveItemTypeMergeRequest:
 		providerAttempted := false
 		var resolvedRepoID int64
+		var fetchedMerged bool
 		err := s.syncMRForRepoResolved(
-			ctx, repo, number, false, &providerAttempted, &resolvedRepoID,
+			ctx, repo, number, false, &providerAttempted, &resolvedRepoID, &fetchedMerged,
 		)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
 			err = nil
 		}
 		if err == nil && repoPlatform(repo) == platform.KindGitHub {
-			err = s.requireGitHubArchiveMergedMRMetrics(ctx, resolvedRepoID, number)
+			err = s.requireGitHubArchiveMergedMRMetrics(
+				ctx, resolvedRepoID, number, fetchedMerged,
+			)
 		}
 		return providerAttempted, err
 	default:
@@ -13032,6 +13042,7 @@ func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	ctx context.Context,
 	repoID int64,
 	number int,
+	fetchedMerged bool,
 ) error {
 	if repoID == 0 {
 		return fmt.Errorf("verify GitHub archive MR #%d: repository was not resolved", number)
@@ -13050,7 +13061,7 @@ func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	if mr == nil {
 		return fmt.Errorf("verify GitHub archive MR #%d metrics: pull request is not stored", number)
 	}
-	if mr.State != db.MergeRequestStateMerged && mr.MergedAt == nil {
+	if !fetchedMerged && mr.State != db.MergeRequestStateMerged && mr.MergedAt == nil {
 		return nil
 	}
 	missing := make([]string, 0, 3)

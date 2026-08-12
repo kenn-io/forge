@@ -18,8 +18,10 @@ type MergeRequestMergeMetrics struct {
 	MergedAt       *time.Time
 }
 
-// FillMissingMergedMRMetrics fills lifecycle fields omitted by an earlier
-// merged snapshot without weakening the parent snapshot timestamp guard.
+// FillMissingMergedMRMetrics repairs lifecycle fields omitted by an earlier
+// merged snapshot without weakening the parent snapshot timestamp guard. The
+// canonical merged response replaces merge_commit_sha because GitHub may have
+// stored a noncanonical test-merge SHA before the pull request merged.
 func (d *DB) FillMissingMergedMRMetrics(
 	ctx context.Context,
 	metrics MergeRequestMergeMetrics,
@@ -29,30 +31,31 @@ func (d *DB) FillMissingMergedMRMetrics(
 	}
 	setClauses := make([]string, 0, 3)
 	missingClauses := make([]string, 0, 3)
-	args := make([]any, 0, 6)
+	setArgs := make([]any, 0, 3)
+	repairArgs := make([]any, 0, 1)
 	if metrics.MergeCommitSHA != nil && *metrics.MergeCommitSHA != "" {
-		setClauses = append(setClauses, `merge_commit_sha = CASE
-			WHEN merge_commit_sha = '' THEN ? ELSE merge_commit_sha
-		END`)
-		missingClauses = append(missingClauses, "merge_commit_sha = ''")
-		args = append(args, *metrics.MergeCommitSHA)
+		setClauses = append(setClauses, "merge_commit_sha = ?")
+		missingClauses = append(missingClauses, "merge_commit_sha <> ?")
+		setArgs = append(setArgs, *metrics.MergeCommitSHA)
+		repairArgs = append(repairArgs, *metrics.MergeCommitSHA)
 	}
 	if metrics.FilesChanged != nil && *metrics.FilesChanged >= 0 {
 		setClauses = append(setClauses, "files_changed = COALESCE(files_changed, ?)")
 		missingClauses = append(missingClauses, "files_changed IS NULL")
-		args = append(args, *metrics.FilesChanged)
+		setArgs = append(setArgs, *metrics.FilesChanged)
 	}
 	var mergedAt any
 	if metrics.MergedAt != nil {
 		mergedAt = canonicalUTCTime(*metrics.MergedAt)
 		setClauses = append(setClauses, "merged_at = COALESCE(merged_at, ?)")
 		missingClauses = append(missingClauses, "merged_at IS NULL")
-		args = append(args, mergedAt)
+		setArgs = append(setArgs, mergedAt)
 	}
 	if len(setClauses) == 0 {
 		return false, nil
 	}
-	args = append(args, metrics.RepoID, metrics.Number, metrics.HeadSHA)
+	args := append(setArgs, metrics.RepoID, metrics.Number, metrics.HeadSHA)
+	args = append(args, repairArgs...)
 	result, err := d.execContext(ctx, fmt.Sprintf(`
 		UPDATE forge_merge_requests
 		SET %s

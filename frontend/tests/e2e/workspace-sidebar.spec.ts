@@ -879,6 +879,157 @@ test("provider-aware detail mocks enforce provider and host identity", async ({ 
   });
 });
 
+test("phone workspace list keeps its selected terminal alive through linked PR navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    type RecordedSocket = { url: string };
+    const recordedSockets: RecordedSocket[] = [];
+    Object.defineProperty(window, "__kenn_forgeMobileTerminalSockets", { value: recordedSockets });
+
+    class MockTerminalWebSocket extends EventTarget {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+
+      binaryType = "arraybuffer";
+      extensions = "";
+      onclose: ((event: CloseEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onopen: ((event: Event) => void) | null = null;
+      protocol = "";
+      readyState = MockTerminalWebSocket.OPEN;
+      readonly url: string;
+
+      constructor(url: string | URL) {
+        super();
+        this.url = String(url);
+        recordedSockets.push({ url: this.url });
+        queueMicrotask(() => {
+          const opened = new Event("open");
+          this.dispatchEvent(opened);
+          this.onopen?.(opened);
+          const replayReady = new MessageEvent("message", {
+            data: JSON.stringify({ type: "replay_ready" }),
+          });
+          this.dispatchEvent(replayReady);
+          this.onmessage?.(replayReady);
+        });
+      }
+
+      close(): void {
+        this.readyState = MockTerminalWebSocket.CLOSED;
+        const closed = new CloseEvent("close");
+        this.dispatchEvent(closed);
+        this.onclose?.(closed);
+      }
+
+      send(): void {}
+    }
+
+    window.WebSocket = MockTerminalWebSocket as unknown as typeof WebSocket;
+  });
+  await setupTerminalMocks(page, {
+    runtime: {
+      ...workspaceRuntime,
+      sessions: [
+        {
+          key: "ws-123:codex",
+          workspace_id: "ws-123",
+          target_key: "codex",
+          label: "Codex",
+          kind: "agent",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        },
+      ],
+    },
+  });
+
+  await page.goto("/m/workspaces");
+
+  await expect(page.getByRole("combobox", { name: /Phone mode/ })).toHaveText("Workspaces");
+  await expect(page.getByRole("searchbox", { name: "Filter workspaces" })).toBeVisible();
+  await page.getByRole("button", { name: "View workspace options" }).click();
+  await expect(page.getByRole("dialog", { name: "View workspace options" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /Org \/ repo/ })).toBeChecked();
+  await page.getByRole("button", { name: "Close View options" }).click();
+
+  await page.getByRole("searchbox", { name: "Filter workspaces" }).fill("feature/auth");
+  await expect(page.getByRole("button", { name: "Open workspace Add auth middleware" })).toBeVisible();
+  await page.getByRole("searchbox", { name: "Filter workspaces" }).fill("");
+  await page.getByRole("button", { name: "Open workspace Add auth middleware" }).click();
+
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123$/);
+  await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Codex");
+  await expect(page.locator(".mobile-workspace-terminal__stage")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __kenn_forgeMobileTerminalSockets: Array<{ url: string }>;
+            }
+          ).__kenn_forgeMobileTerminalSockets.filter(({ url }) => url.includes("/ws/v1/workspaces/")).length,
+      ),
+    )
+    .toBe(1);
+
+  await page.getByRole("button", { name: "Open linked PR #42" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123\/item$/);
+  await expect(page.locator(".mobile-workspace-item .pull-detail .detail-title")).toContainText(
+    "Add browser regression coverage",
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __kenn_forgeMobileTerminalSockets: Array<{ url: string }>;
+            }
+          ).__kenn_forgeMobileTerminalSockets.filter(({ url }) => url.includes("/ws/v1/workspaces/")).length,
+      ),
+    )
+    .toBe(1);
+
+  await page.getByRole("button", { name: "Back to workspace terminal" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123$/);
+  await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Codex");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __kenn_forgeMobileTerminalSockets: Array<{ url: string }>;
+            }
+          ).__kenn_forgeMobileTerminalSockets.filter(({ url }) => url.includes("/ws/v1/workspaces/")).length,
+      ),
+    )
+    .toBe(1);
+});
+
+test("phone workspace terminal opens its linked issue and returns", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page, { workspace: testIssueWorkspace });
+
+  await page.goto("/m/workspaces/local/ws-issue-7");
+
+  await expect(page.getByRole("button", { name: "Open linked issue #7" })).toBeVisible();
+  await page.getByRole("button", { name: "Open linked issue #7" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-issue-7\/item$/);
+  await expect(page.locator(".mobile-workspace-item .issue-detail .detail-title")).toContainText(
+    "Theme toggle does not stick",
+  );
+
+  await page.getByRole("button", { name: "Back to workspace terminal" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-issue-7$/);
+  await expect(page.getByText("No terminal sessions")).toBeVisible();
+});
+
 test.describe("terminal state icons", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(clearWorkspaceSidebarTabStorage);

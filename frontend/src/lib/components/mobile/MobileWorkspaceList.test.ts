@@ -1,0 +1,110 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { isNewWorkspaceDialogOpen, resetNewWorkspaceDialogState } from "../../stores/new-workspace.svelte.js";
+import MobileWorkspaceList from "./MobileWorkspaceListTestHarness.svelte";
+
+const mockGet = vi.fn();
+const mockPost = vi.fn();
+const mockDelete = vi.fn();
+
+vi.mock("../../api/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/runtime.js")>();
+  const client = {
+    DELETE: (...args: unknown[]) => mockDelete(...args),
+    GET: (...args: unknown[]) => mockGet(...args),
+    POST: (...args: unknown[]) => mockPost(...args),
+  };
+  return { ...actual, client, createRuntimeClient: () => client };
+});
+
+class MockEventSource {
+  addEventListener = vi.fn();
+  removeEventListener = vi.fn();
+  close = vi.fn();
+}
+
+const fixture = {
+  id: "ws-1",
+  created_at: "2026-08-11T12:00:00Z",
+  git_head_ref: "feature/mobile-workspaces",
+  item_number: 42,
+  item_type: "pull_request",
+  platform_host: "github.com",
+  repo_name: "widgets",
+  repo_owner: "acme",
+  status: "ready",
+  tmux_activity_source: "unknown",
+  tmux_last_output_at: null,
+  tmux_working: false,
+  worktree_path: "/tmp/ws-1",
+  mr_title: "Build mobile workspaces",
+  mr_state: "open",
+  mr_additions: 120,
+  mr_deletions: 12,
+  repo: {
+    provider: "github",
+    platform_host: "github.com",
+    owner: "acme",
+    name: "widgets",
+    repo_path: "acme/widgets",
+  },
+};
+
+describe("MobileWorkspaceList", () => {
+  beforeEach(() => {
+    mockGet.mockReset();
+    mockPost.mockReset();
+    mockDelete.mockReset();
+    localStorage.clear();
+    resetNewWorkspaceDialogState();
+    vi.stubGlobal("EventSource", MockEventSource);
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") return Promise.resolve({ data: { hosts: [] } });
+      if (path === "/workspaces") return Promise.resolve({ data: { workspaces: [fixture] } });
+      return Promise.resolve({ data: {} });
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("filters rows and opens the selected workspace", async () => {
+    const onOpen = vi.fn();
+    render(MobileWorkspaceList, { props: { onOpen, onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Filter workspaces" }), {
+      target: { value: "unrelated" },
+    });
+    expect(screen.queryByText("Build mobile workspaces")).toBeNull();
+
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Filter workspaces" }), {
+      target: { value: "mobile" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Open workspace Build mobile workspaces" }));
+    expect(onOpen).toHaveBeenCalledWith("ws-1", undefined);
+  });
+
+  it("exposes the View sheet and persists display choices", async () => {
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+
+    await fireEvent.click(screen.getByRole("button", { name: "View workspace options" }));
+    expect(screen.getByRole("dialog", { name: "View workspace options" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /^Terminal activity/ })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("switch", { name: "Show organization names" }));
+    await waitFor(() => {
+      expect(localStorage.getItem("kenn-forge:workspaceListDisplayOptions")).toContain('"showOrgNames":false');
+    });
+  });
+
+  it("opens New Workspace from the list header", async () => {
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+    await fireEvent.click(screen.getByRole("button", { name: "New workspace" }));
+    expect(isNewWorkspaceDialogOpen()).toBe(true);
+  });
+});

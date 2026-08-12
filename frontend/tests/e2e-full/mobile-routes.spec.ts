@@ -125,7 +125,7 @@ test.describe("phone routes", () => {
 
     await expectPathname(page, "/");
     await expect(page.locator(".mobile-shell")).toBeVisible();
-    await expect(page.locator(".mobile-tab--active")).toHaveText("Activity");
+    await expect(page.getByRole("combobox", { name: /Phone mode/ })).toHaveText("Activity");
     await expect(page.locator(".mobile-topbar .mobile-app-icon")).toBeVisible();
     await expect(page.getByRole("button", { name: "Open desktop view" })).toBeVisible();
     await expect(page.locator(".app-top-bar")).toHaveCount(0);
@@ -175,7 +175,7 @@ test.describe("phone routes", () => {
       const eventAuthor = document.querySelector(".mobile-activity-event__body span");
       const eventTime = document.querySelector(".mobile-activity-event time");
       const mobileTitle = document.querySelector(".mobile-title");
-      const mobileTab = document.querySelector(".mobile-tabs a");
+      const mobileModePicker = document.querySelector(".mobile-mode-picker .kit-select-dropdown__trigger");
       const desktopButton = document.querySelector(".mobile-desktop-link");
       const desktopIcon = document.querySelector(".mobile-desktop-link svg");
       const appIcon = document.querySelector(".mobile-app-icon");
@@ -246,7 +246,7 @@ test.describe("phone routes", () => {
         eventAuthorFontSize: fontSize(eventAuthor),
         eventTimeFontSize: fontSize(eventTime),
         mobileTitleFontSize: fontSize(mobileTitle),
-        mobileTabFontSize: fontSize(mobileTab),
+        mobileModePickerFontSize: fontSize(mobileModePicker),
         desktopButtonText: desktopButton?.textContent?.trim() ?? "",
         desktopButtonRect: compactRect(desktopButton),
         desktopIconPresent: Boolean(desktopIcon),
@@ -289,7 +289,7 @@ test.describe("phone routes", () => {
     expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(14);
     expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(14);
     expect(metrics.mobileTitleFontSize).toBeGreaterThanOrEqual(16);
-    expect(metrics.mobileTabFontSize).toBeGreaterThanOrEqual(16);
+    expect(metrics.mobileModePickerFontSize).toBeGreaterThanOrEqual(16);
     expect(metrics.desktopButtonText).toBe("");
     expect(metrics.desktopButtonRect?.height ?? 0).toBeGreaterThanOrEqual(44);
     expect(metrics.desktopIconPresent).toBe(true);
@@ -557,16 +557,18 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
-  test("mobile PR and issue tabs use dedicated phone routes", async ({ page }) => {
+  test("mobile mode picker uses dedicated PR and issue routes", async ({ page }) => {
     await page.goto("/m/pulls");
     await expect(page.locator(".mobile-shell")).toBeVisible();
-    await expect(page.locator(".mobile-tab--active")).toHaveText("PRs");
+    const modePicker = page.getByRole("combobox", { name: /Phone mode/ });
+    await expect(modePicker).toHaveText("PRs");
     await expect(page.locator(".focus-list")).toBeVisible();
     await expectReadableFocusList(page, ".pull-item");
 
-    await page.getByRole("link", { name: "Issues" }).click();
+    await modePicker.click();
+    await page.getByRole("option", { name: "Issues" }).click();
     await expect(page).toHaveURL(/\/m\/issues(?:\?|$)/);
-    await expect(page.locator(".mobile-tab--active")).toHaveText("Issues");
+    await expect(modePicker).toHaveText("Issues");
     await expect(page.locator(".focus-list")).toBeVisible();
     await expectReadableFocusList(page, ".issue-item");
   });
@@ -626,7 +628,8 @@ test.describe("phone routes", () => {
       await expect(page.locator(".pull-item .repo-name", { hasText: "gitea/github.com/acme/widgets" })).toHaveCount(1);
       await expect(page.locator(".pull-item .repo-name", { hasText: /^tools$/ }).first()).toHaveText("tools");
 
-      await page.getByRole("link", { name: "Issues" }).click();
+      await page.getByRole("combobox", { name: /Phone mode/ }).click();
+      await page.getByRole("option", { name: "Issues" }).click();
       await expect(page.locator(".issue-item .repo-name", { hasText: "github/github.com/acme/widgets" })).toHaveCount(
         3,
       );
@@ -691,7 +694,7 @@ test.describe("high-density phone routes", () => {
         filterFontSize: fontSize(".mobile-item-type-toggle .kit-toggle__label"),
         filterOptionFontSize: fontSize(".mobile-filter-dropdown .kit-select-dropdown__option"),
         filterOptionHeight: firstOption?.height ?? 0,
-        tabFontSize: fontSize(".mobile-tabs a"),
+        modePickerFontSize: fontSize(".mobile-mode-picker .kit-select-dropdown__trigger"),
         searchHeight: search?.height ?? 0,
         searchLeft: search?.left ?? 0,
         searchRight: search?.right ?? 0,
@@ -708,7 +711,7 @@ test.describe("high-density phone routes", () => {
     expect(metrics.filterFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.filterOptionFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.filterOptionHeight).toBeGreaterThanOrEqual(44);
-    expect(metrics.tabFontSize).toBeGreaterThanOrEqual(16);
+    expect(metrics.modePickerFontSize).toBeGreaterThanOrEqual(16);
     expect(metrics.searchHeight).toBeGreaterThanOrEqual(44);
     expect(metrics.searchLeft).toBeGreaterThanOrEqual(0);
     expect(metrics.searchRight).toBeLessThanOrEqual(metrics.viewportWidth);

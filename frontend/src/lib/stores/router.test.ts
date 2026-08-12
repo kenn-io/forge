@@ -10,6 +10,8 @@ import {
   getLastActivityRoute,
   getLastWorkspaceRoute,
   forgetWorkspaceRoute,
+  buildMobileWorkspaceRoute,
+  buildMobileWorkspaceItemRoute,
 } from "./router.svelte.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
@@ -119,6 +121,33 @@ describe("router /pulls files route", () => {
 });
 
 describe("router basic routes", () => {
+  it("parses local and Fleet mobile workspace routes", () => {
+    navigate("/m/workspaces");
+    expect(getRoute()).toEqual({ page: "mobile-workspaces" });
+
+    navigate("/m/workspaces/local/ws-1");
+    expect(getRoute()).toEqual({
+      page: "mobile-workspace-terminal",
+      workspaceId: "ws-1",
+    });
+
+    navigate("/m/workspaces/fleet/laptop/ws-2/item/files");
+    expect(getRoute()).toEqual({
+      page: "mobile-workspace-item",
+      workspaceId: "ws-2",
+      hostKey: "laptop",
+      tab: "files",
+    });
+  });
+
+  it("builds escaped local and Fleet mobile workspace routes", () => {
+    expect(buildMobileWorkspaceRoute("ws/one")).toBe("/m/workspaces/local/ws%2Fone");
+    expect(buildMobileWorkspaceRoute("ws two", "dev/laptop")).toBe("/m/workspaces/fleet/dev%2Flaptop/ws%20two");
+    expect(buildMobileWorkspaceItemRoute("ws two", "dev/laptop", "files")).toBe(
+      "/m/workspaces/fleet/dev%2Flaptop/ws%20two/item/files",
+    );
+  });
+
   it("parses /design-system", () => {
     navigate("/design-system");
     expect(getRoute()).toEqual({ page: "design-system" });

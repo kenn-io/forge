@@ -188,7 +188,8 @@ test("settings saves visible modes and hides disabled nav entries", async ({ pag
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${isolatedServer!.info.base_url}/m`);
-    await expect(page.locator(".mobile-tabs").getByText("PRs", { exact: true })).toHaveCount(0);
+    await page.getByRole("combobox", { name: /Phone mode/ }).click();
+    await expect(page.getByRole("option", { name: "PRs" })).toHaveCount(0);
   } finally {
     const restore = await api.put("/api/v1/settings", { data: { modes: originalModes } });
     expect(restore.ok()).toBe(true);

@@ -413,6 +413,7 @@ const config = {
       "@lucide/svelte/icons/settings",
       "@lucide/svelte/icons/shield-alert",
       "@lucide/svelte/icons/sparkles",
+      "@lucide/svelte/icons/square",
       "@lucide/svelte/icons/star",
       "@lucide/svelte/icons/sun",
       "@lucide/svelte/icons/tag",

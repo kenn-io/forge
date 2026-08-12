@@ -21,6 +21,18 @@ export type Route =
   | { page: "mobile-activity" }
   | { page: "mobile-pulls" }
   | { page: "mobile-issues" }
+  | { page: "mobile-workspaces" }
+  | {
+      page: "mobile-workspace-terminal";
+      workspaceId: string;
+      hostKey?: string | undefined;
+    }
+  | {
+      page: "mobile-workspace-item";
+      workspaceId: string;
+      hostKey?: string | undefined;
+      tab?: "files" | undefined;
+    }
   | { page: "design-system" }
   | { page: "repos" }
   | { page: "docs"; folder: string | null; doc: string | null }
@@ -227,6 +239,37 @@ function parseRoute(fullPath: string): Route {
   }
   if (path === "/m/issues") {
     return { page: "mobile-issues" };
+  }
+  if (path === "/m/workspaces") {
+    return { page: "mobile-workspaces" };
+  }
+  const mobileFleetWorkspaceMatch = path.match(/^\/m\/workspaces\/fleet\/([^/]+)\/([^/]+)(?:\/item(?:\/(files))?)?$/);
+  if (mobileFleetWorkspaceMatch) {
+    const hostKey = decodeRouteSegment(mobileFleetWorkspaceMatch[1] ?? "");
+    const workspaceId = decodeRouteSegment(mobileFleetWorkspaceMatch[2] ?? "");
+    if (hostKey && workspaceId) {
+      return mobileFleetWorkspaceMatch[0].includes("/item")
+        ? {
+            page: "mobile-workspace-item",
+            workspaceId,
+            hostKey,
+            ...(mobileFleetWorkspaceMatch[3] === "files" && { tab: "files" as const }),
+          }
+        : { page: "mobile-workspace-terminal", workspaceId, hostKey };
+    }
+  }
+  const mobileLocalWorkspaceMatch = path.match(/^\/m\/workspaces\/local\/([^/]+)(?:\/item(?:\/(files))?)?$/);
+  if (mobileLocalWorkspaceMatch) {
+    const workspaceId = decodeRouteSegment(mobileLocalWorkspaceMatch[1] ?? "");
+    if (workspaceId) {
+      return mobileLocalWorkspaceMatch[0].includes("/item")
+        ? {
+            page: "mobile-workspace-item",
+            workspaceId,
+            ...(mobileLocalWorkspaceMatch[2] === "files" && { tab: "files" as const }),
+          }
+        : { page: "mobile-workspace-terminal", workspaceId };
+    }
   }
   if (path.startsWith("/focus/")) {
     if (path === "/focus/mrs") {
@@ -822,7 +865,14 @@ function parseRepoBrowserViewMode(value: string | null): "source" | "preview" | 
 }
 
 export function isWorkspacePage(page: Page): boolean {
-  return page === "workspaces" || page === "terminal" || isWorkspaceEmbedPage(page);
+  return (
+    page === "workspaces" ||
+    page === "terminal" ||
+    page === "mobile-workspaces" ||
+    page === "mobile-workspace-terminal" ||
+    page === "mobile-workspace-item" ||
+    isWorkspaceEmbedPage(page)
+  );
 }
 
 export function isWorkspaceEmbedPage(page: Page): boolean {
@@ -840,7 +890,26 @@ export function isWorkspaceEmbedPage(page: Page): boolean {
 }
 
 export function isMobilePage(page: Page): boolean {
-  return page === "mobile-activity" || page === "mobile-pulls" || page === "mobile-issues";
+  return (
+    page === "mobile-activity" ||
+    page === "mobile-pulls" ||
+    page === "mobile-issues" ||
+    page === "mobile-workspaces" ||
+    page === "mobile-workspace-terminal" ||
+    page === "mobile-workspace-item"
+  );
+}
+
+export function buildMobileWorkspaceRoute(workspaceId: string, hostKey?: string): string {
+  const encodedWorkspaceId = encodeURIComponent(workspaceId);
+  return hostKey
+    ? `/m/workspaces/fleet/${encodeURIComponent(hostKey)}/${encodedWorkspaceId}`
+    : `/m/workspaces/local/${encodedWorkspaceId}`;
+}
+
+export function buildMobileWorkspaceItemRoute(workspaceId: string, hostKey?: string, tab?: "files"): string {
+  const base = buildMobileWorkspaceRoute(workspaceId, hostKey);
+  return `${base}/item${tab === "files" ? "/files" : ""}`;
 }
 
 function fireForgeNavigateEvent(r: Route): void {
@@ -893,6 +962,9 @@ export function getDetailTab(): DetailTab {
     return "files";
   }
   if (route.page === "focus" && route.itemType === "pr" && "tab" in route && route.tab === "files") {
+    return "files";
+  }
+  if (route.page === "mobile-workspace-item" && route.tab === "files") {
     return "files";
   }
   return "conversation";

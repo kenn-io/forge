@@ -177,6 +177,34 @@ func TestServeRuntimeTerminalReplayBoundaryDefersInitialResize(t *testing.T) {
 	}
 }
 
+func TestHandleRuntimeTerminalControlSettlesResizeClaimBeforeReturning(t *testing.T) {
+	require := require.New(t)
+	events := make([]string, 0, 3)
+	attachment := localruntime.NewAttachmentForTesting(
+		localruntime.AttachmentForTestingOptions{
+			ClaimResize: func(cols, rows int) (bool, error) {
+				require.Equal(132, cols)
+				require.Equal(43, rows)
+				events = append(events, "claim")
+				return true, nil
+			},
+			Refresh: func(context.Context) error {
+				events = append(events, "refresh")
+				return nil
+			},
+		},
+	)
+
+	handleRuntimeTerminalControl(
+		context.Background(),
+		attachment,
+		[]byte(`{"type":"claim_resize","cols":132,"rows":43}`),
+	)
+	events = append(events, "next input")
+
+	require.Equal([]string{"claim", "refresh", "next input"}, events)
+}
+
 func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
 	require := require.New(t)
 	output := make(chan []byte)

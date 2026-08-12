@@ -61,7 +61,7 @@ type TerminalControlFrame = {
   active: boolean | undefined;
   cols: number | undefined;
   rows: number | undefined;
-  type: "refresh" | "resize" | "resize_active";
+  type: "claim_resize" | "refresh" | "resize" | "resize_active";
 };
 
 type TerminalOutputObserver = {
@@ -101,7 +101,13 @@ function observeTerminalControlFrames(page: Page): TerminalControlFrame[] {
           cols?: number;
           rows?: number;
         };
-        if (message.type !== "refresh" && message.type !== "resize" && message.type !== "resize_active") return;
+        if (
+          message.type !== "claim_resize" &&
+          message.type !== "refresh" &&
+          message.type !== "resize" &&
+          message.type !== "resize_active"
+        )
+          return;
         frames.push({
           active: message.active,
           cols: message.cols,
@@ -713,6 +719,72 @@ test.describe("inline workspace pane continuity", () => {
         .poll(() => tmuxClientPtyGeometries(isolatedServer!))
         .toContainEqual({ cols: renderedCols, rows: renderedRows });
     } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("deliberate terminal use transfers resize ownership between desktop and phone-sized browsers", async ({
+    page,
+  }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const phonePage = await page.context().newPage();
+    await phonePage.setViewportSize({ width: 390, height: 844 });
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      const desktopFrames = observeTerminalControlFrames(page);
+      const phoneFrames = observeTerminalControlFrames(phonePage);
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      const desktopTerminal = await openTerminalPanel(page);
+      await phonePage.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      const phoneTerminal = await ensureTerminalPanelOpen(phonePage);
+
+      const phoneClaimsBefore = phoneFrames.filter((frame) => frame.type === "claim_resize").length;
+      await phoneTerminal.click({ position: { x: 12, y: 12 } });
+      await expect
+        .poll(() => phoneFrames.filter((frame) => frame.type === "claim_resize").length)
+        .toBeGreaterThan(phoneClaimsBefore);
+      const phoneClaim = phoneFrames.filter((frame) => frame.type === "claim_resize").at(-1)!;
+      expect(phoneClaim.cols).toBeGreaterThan(0);
+      expect(phoneClaim.rows).toBeGreaterThan(0);
+      await expect
+        .poll(() => tmuxClientPtyGeometries(isolatedServer!))
+        .toContainEqual({ cols: phoneClaim.cols, rows: phoneClaim.rows });
+
+      const desktopClaimsBeforeResize = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
+      const desktopGeometryBeforeResize = desktopFrames.filter(
+        (frame) => frame.type === "resize" || frame.type === "refresh",
+      ).length;
+      await page.setViewportSize({ width: 1180, height: 760 });
+      await expect
+        .poll(() => desktopFrames.filter((frame) => frame.type === "resize" || frame.type === "refresh").length)
+        .toBeGreaterThan(desktopGeometryBeforeResize);
+      expect(desktopFrames.filter((frame) => frame.type === "claim_resize")).toHaveLength(desktopClaimsBeforeResize);
+      await expect
+        .poll(() => tmuxClientPtyGeometries(isolatedServer!))
+        .toContainEqual({ cols: phoneClaim.cols, rows: phoneClaim.rows });
+
+      await desktopTerminal.click({ position: { x: 12, y: 12 } });
+      await expect
+        .poll(() => desktopFrames.filter((frame) => frame.type === "claim_resize").length)
+        .toBeGreaterThan(desktopClaimsBeforeResize);
+      const desktopClaim = desktopFrames.filter((frame) => frame.type === "claim_resize").at(-1)!;
+      expect(desktopClaim.cols).toBeGreaterThan(phoneClaim.cols!);
+      await expect
+        .poll(() => tmuxClientPtyGeometries(isolatedServer!))
+        .toContainEqual({ cols: desktopClaim.cols, rows: desktopClaim.rows });
+    } finally {
+      await phonePage.close();
       await api?.dispose();
       await isolatedServer?.stop();
     }

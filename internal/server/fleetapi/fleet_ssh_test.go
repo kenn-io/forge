@@ -921,7 +921,7 @@ func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 	assert.Equal("epyc", attrs["host.key"])
 }
 
-func TestSSHFleetWebSocketTerminalHonorsResizeActive(t *testing.T) {
+func TestSSHFleetWebSocketTerminalClaimsSharedResizeOwnership(t *testing.T) {
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)
@@ -958,22 +958,41 @@ func TestSSHFleetWebSocketTerminalHonorsResizeActive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/fleet/hosts/epyc/workspaces/ws_1/runtime/sessions/sess-1/terminal?cols=80&rows=24&resize_active=0"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+		"/ws/v1/fleet/hosts/epyc/workspaces/ws_1/runtime/sessions/sess-1/terminal"
+	first, _, err := websocket.Dial(
+		ctx, wsURL+"?cols=80&rows=24&resize_active=1", nil,
+	)
 	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "test done")
+	defer first.Close(websocket.StatusNormalClosure, "test done")
+	second, _, err := websocket.Dial(
+		ctx, wsURL+"?cols=50&rows=12&resize_active=1", nil,
+	)
+	require.NoError(err)
 
-	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("before\n")))
-	readWebSocketBinaryUntil(t, ctx, conn, 2*time.Second, "size:30:120:before")
+	require.NoError(first.Write(ctx, websocket.MessageBinary, []byte("before\n")))
+	readWebSocketBinaryUntil(t, ctx, first, 2*time.Second, "size:24:80:before")
 
-	require.NoError(conn.Write(ctx, websocket.MessageText, []byte(`{"type":"resize","cols":81,"rows":25}`)))
-	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("inactive\n")))
-	readWebSocketBinaryUntil(t, ctx, conn, 2*time.Second, "size:30:120:inactive")
+	require.NoError(second.Write(
+		ctx,
+		websocket.MessageText,
+		[]byte(`{"type":"claim_resize","cols":90,"rows":25}`),
+	))
+	require.NoError(second.Write(ctx, websocket.MessageBinary, []byte("second\n")))
+	readWebSocketBinaryUntil(t, ctx, second, 2*time.Second, "size:25:90:second")
+	require.NoError(first.Write(ctx, websocket.MessageBinary, []byte("shared\n")))
+	readWebSocketBinaryUntil(t, ctx, first, 2*time.Second, "size:25:90:shared")
 
-	require.NoError(conn.Write(ctx, websocket.MessageText, []byte(`{"type":"resize_active","active":true}`)))
-	require.NoError(conn.Write(ctx, websocket.MessageText, []byte(`{"type":"resize","cols":82,"rows":26}`)))
-	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("active\n")))
-	readWebSocketBinaryUntil(t, ctx, conn, 2*time.Second, "size:26:82:active")
+	require.NoError(first.Write(
+		ctx,
+		websocket.MessageText,
+		[]byte(`{"type":"resize","cols":100,"rows":31}`),
+	))
+	require.NoError(first.Write(ctx, websocket.MessageBinary, []byte("stale\n")))
+	readWebSocketBinaryUntil(t, ctx, first, 2*time.Second, "size:25:90:stale")
+
+	require.NoError(second.Close(websocket.StatusNormalClosure, "test done"))
+	require.NoError(first.Write(ctx, websocket.MessageBinary, []byte("fallback\n")))
+	readWebSocketBinaryUntil(t, ctx, first, 2*time.Second, "size:31:100:fallback")
 }
 
 func TestSSHFleetAttachPTYWritesExitFrameWhenPTYEOFPrecedesWait(t *testing.T) {
@@ -984,10 +1003,10 @@ func TestSSHFleetAttachPTYWritesExitFrameWhenPTYEOFPrecedesWait(t *testing.T) {
 	require.NoError(err)
 	done := make(chan int, 1)
 	attach := &fleetSSHPTYAttachment{
-		ptmx:   ptyReader,
-		done:   done,
-		active: true,
+		ptmx: ptyReader,
+		done: done,
 	}
+	resizeMember := new(fleetSSHResizeGroup).register(attach, true, 120, 30)
 
 	bridgeDone := make(chan struct{})
 	acceptErrors := make(chan error, 1)
@@ -1000,7 +1019,7 @@ func TestSSHFleetAttachPTYWritesExitFrameWhenPTYEOFPrecedesWait(t *testing.T) {
 				acceptErrors <- err
 				return
 			}
-			bridgeFleetSSHAttachPTY(r.Context(), conn, attach)
+			bridgeFleetSSHAttachPTY(r.Context(), conn, attach, resizeMember)
 			conn.Close(websocket.StatusNormalClosure, "test done")
 			close(bridgeDone)
 		},

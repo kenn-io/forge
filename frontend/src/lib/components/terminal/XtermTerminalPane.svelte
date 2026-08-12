@@ -206,6 +206,7 @@
       terminal?.focus();
     }
     if (!event.isTrusted) return;
+    claimTerminalResize();
     if (activePointerId !== null) {
       cancelTerminalPointerGesture();
     }
@@ -303,6 +304,7 @@
 
   function handleTerminalKeyDown(event: KeyboardEvent): void {
     if (disposed || disabled || event.isComposing || !event.isTrusted) return;
+    claimTerminalResize();
     clipboardWriter?.authorizeKeyboardGesture();
   }
 
@@ -337,6 +339,7 @@
 
     event.preventDefault();
     event.stopPropagation();
+    claimTerminalResize();
     const cursorPrefix = terminal.modes.applicationCursorKeysMode ? "O" : "[";
     const cursorDirection = event.deltaY < 0 ? "A" : "B";
     terminalSession.send(encoder.encode(`\x1b${cursorPrefix}${cursorDirection}`));
@@ -489,6 +492,24 @@
 
   function sendRefresh(cols: number, rows: number): boolean {
     return sendControl("refresh", cols, rows);
+  }
+
+  function claimTerminalResize(): boolean {
+    const size = resizeAuthorityRegionSize();
+    if (!resizeReady || !size || !terminal || !terminalSession?.isConnected()) return false;
+
+    if (terminal.cols !== size.cols || terminal.rows !== size.rows) {
+      fitAddon?.fit();
+      terminal.refresh(0, Math.max(0, terminal.rows - 1));
+    }
+    terminalSession.send(JSON.stringify({
+      type: "claim_resize",
+      cols: terminal.cols,
+      rows: terminal.rows,
+    }));
+    sentCols = terminal.cols;
+    sentRows = terminal.rows;
+    return true;
   }
 
   function sendResizeActive(nextActive: boolean): boolean {
@@ -666,6 +687,7 @@
 
     event.preventDefault();
     event.stopImmediatePropagation();
+    claimTerminalResize();
     terminalSession.send(
       encoder.encode(
         createTerminalPastePayload(
@@ -974,6 +996,7 @@
       term.onData((data: string) => {
         if (disabled) return;
         if (terminalSession?.isConnected()) {
+          claimTerminalResize();
           terminalSession.send(encoder.encode(data));
           mouseDragAutoscroll?.observeTerminalData(data);
         }
@@ -982,6 +1005,7 @@
       term.onBinary((data: string) => {
         if (disabled) return;
         if (terminalSession?.isConnected()) {
+          claimTerminalResize();
           const buf = new Uint8Array(data.length);
           for (let i = 0; i < data.length; i++) {
             buf[i] = data.charCodeAt(i) & 0xff;

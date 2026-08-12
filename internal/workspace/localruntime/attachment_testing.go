@@ -13,6 +13,7 @@ type AttachmentForTestingOptions struct {
 	Done                     <-chan struct{}
 	Info                     func() SessionInfo
 	Resize                   func(cols, rows int) error
+	ClaimResize              func(cols, rows int) (bool, error)
 	Refresh                  func(context.Context) error
 	SessionOutputClosed      func() bool
 	DetachedForServerRestart func() bool
@@ -42,6 +43,7 @@ func NewAttachmentForTesting(opts AttachmentForTestingOptions) *Attachment {
 		Done:                opts.Done,
 		info:                info,
 		resize:              opts.Resize,
+		claimResize:         opts.ClaimResize,
 		refresh:             opts.Refresh,
 		sessionOutputClosed: sessionOutputClosed,
 		detachedForRestart:  detachedForRestart,

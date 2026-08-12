@@ -43,6 +43,9 @@ peer transports, or remote workspace and session operations.
   second socket lifecycle (`internal/server/fleetapi/fleet_ssh.go::sshFleetTransport.relay`).
 - WebSocket attach tracing ends after bounded connection setup and before the
   long-lived bridge (`internal/server/fleetapi/fleet_proxy.go::startFleetAttachSpan`).
+- SSH terminal viewers have independent proxy PTYs; mirror the winning size across
+  every attachment so stale viewer geometry cannot constrain remote tmux, while
+  retaining each viewer's fallback size (`internal/server/fleetapi/fleet_proxy.go::fleetSSHResizeGroup.applySizeLocked`).
 
 ## Configuration And Lifecycle
 

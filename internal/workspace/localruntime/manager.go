@@ -201,8 +201,10 @@ type session struct {
 	stopRequested             bool
 	detachedForServerRestart  bool
 	nextAttachmentID          uint64
+	nextResizeClaim           uint64
 	resizeOwnerID             uint64
 	resizeOwnerPriority       ResizePriority
+	resizeOwnerNeedsSettle    bool
 	resizeAttachments         map[uint64]resizeAttachment
 	replayBoundarySubscribers map[chan []byte]struct{}
 }
@@ -223,6 +225,10 @@ type AttachSessionOptions struct {
 type resizeAttachment struct {
 	priority ResizePriority
 	active   bool
+	claim    uint64
+	cols     int
+	rows     int
+	hasSize  bool
 }
 
 type Attachment struct {
@@ -232,6 +238,7 @@ type Attachment struct {
 	info            func() SessionInfo
 	write           func([]byte) error
 	resize          func(cols, rows int) error
+	claimResize     func(cols, rows int) (bool, error)
 	refresh         func(context.Context) error
 	setResizeActive func(active bool)
 	close           func()
@@ -1291,6 +1298,17 @@ func (a *Attachment) Resize(cols, rows int) error {
 	return a.resize(cols, rows)
 }
 
+// ClaimResize records a deliberate interaction from this attachment and
+// applies its dimensions when its priority permits it to own PTY sizing. The
+// returned bool tells the caller that tmux must be synchronously refreshed
+// before forwarding the input that followed the claim.
+func (a *Attachment) ClaimResize(cols, rows int) (bool, error) {
+	if a == nil || a.claimResize == nil {
+		return false, errors.New("attachment is closed")
+	}
+	return a.claimResize(cols, rows)
+}
+
 // clampWinsizeDim bounds a client-supplied terminal dimension into the
 // uint16 range pty.Winsize requires, so an oversized cols/rows value is
 // capped rather than silently truncated by the narrowing conversion.
@@ -2221,27 +2239,62 @@ func (s *session) unregisterResizeAttachment(id uint64) {
 	s.resizeOwnerID = 0
 	s.resizeOwnerPriority = 0
 	s.selectResizeOwnerLocked()
+	s.applyResizeOwnerSizeLocked(s.resizeAttachments[s.resizeOwnerID])
 }
 
-func (s *session) canResize(id uint64) bool {
+func (s *session) resizeAttachment(
+	id uint64,
+	cols int,
+	rows int,
+	claim bool,
+) (bool, error) {
+	if cols <= 0 || rows <= 0 {
+		return false, nil
+	}
+	clampedCols := int(clampWinsizeDim(cols))
+	clampedRows := int(clampWinsizeDim(rows))
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	attachment, ok := s.resizeAttachments[id]
 	if !ok || !attachment.active {
-		return false
+		return false, nil
 	}
-	if s.resizeOwnerID == 0 {
+	sizeChanged := !attachment.hasSize ||
+		attachment.cols != clampedCols ||
+		attachment.rows != clampedRows
+	attachment.cols = clampedCols
+	attachment.rows = clampedRows
+	attachment.hasSize = true
+	if claim {
+		s.nextResizeClaim++
+		attachment.claim = s.nextResizeClaim
+	}
+	s.resizeAttachments[id] = attachment
+
+	ownerChanged := false
+	if claim && (s.resizeOwnerID == 0 ||
+		attachment.priority >= s.resizeOwnerPriority) &&
+		s.resizeOwnerID != id {
 		s.resizeOwnerID = id
 		s.resizeOwnerPriority = attachment.priority
-		return true
+		ownerChanged = true
 	}
-	if attachment.priority > s.resizeOwnerPriority {
-		s.resizeOwnerID = id
-		s.resizeOwnerPriority = attachment.priority
-		return true
+	if s.resizeOwnerID != id {
+		return false, nil
 	}
-	return s.resizeOwnerID == id
+	if !claim || ownerChanged || sizeChanged {
+		if err := s.resizePTYLocked(clampedCols, clampedRows); err != nil {
+			return false, err
+		}
+		s.resizeOwnerNeedsSettle = true
+	}
+	if !claim || !s.resizeOwnerNeedsSettle {
+		return false, nil
+	}
+	s.resizeOwnerNeedsSettle = false
+	return true, nil
 }
 
 func (s *session) setResizeAttachmentActive(id uint64, active bool) {
@@ -2259,6 +2312,7 @@ func (s *session) setResizeAttachmentActive(id uint64, active bool) {
 			attachment.priority > s.resizeOwnerPriority {
 			s.resizeOwnerID = id
 			s.resizeOwnerPriority = attachment.priority
+			s.applyResizeOwnerSizeLocked(attachment)
 		}
 		return
 	}
@@ -2266,6 +2320,7 @@ func (s *session) setResizeAttachmentActive(id uint64, active bool) {
 		s.resizeOwnerID = 0
 		s.resizeOwnerPriority = 0
 		s.selectResizeOwnerLocked()
+		s.applyResizeOwnerSizeLocked(s.resizeAttachments[s.resizeOwnerID])
 	}
 }
 
@@ -2274,11 +2329,35 @@ func (s *session) selectResizeOwnerLocked() {
 		if !attachment.active {
 			continue
 		}
-		if s.resizeOwnerID == 0 || attachment.priority > s.resizeOwnerPriority {
+		owner := s.resizeAttachments[s.resizeOwnerID]
+		if s.resizeOwnerID == 0 ||
+			attachment.priority > s.resizeOwnerPriority ||
+			(attachment.priority == s.resizeOwnerPriority &&
+				(attachment.claim > owner.claim ||
+					(attachment.claim == owner.claim && attachmentID < s.resizeOwnerID))) {
 			s.resizeOwnerID = attachmentID
 			s.resizeOwnerPriority = attachment.priority
 		}
 	}
+}
+
+func (s *session) applyResizeOwnerSizeLocked(attachment resizeAttachment) {
+	if !attachment.hasSize {
+		return
+	}
+	if s.resizePTYLocked(attachment.cols, attachment.rows) == nil {
+		s.resizeOwnerNeedsSettle = true
+	}
+}
+
+func (s *session) resizePTYLocked(cols, rows int) error {
+	if s.pty != nil {
+		return s.pty.Resize(cols, rows)
+	}
+	return pty.Setsize(s.ptmx, &pty.Winsize{
+		Rows: uint16(rows),
+		Cols: uint16(cols),
+	})
 }
 
 func (s *session) closeSubscribers() {
@@ -2571,21 +2650,11 @@ func attachToSession(
 			return err
 		},
 		resize: func(cols, rows int) error {
-			if cols <= 0 || rows <= 0 {
-				return nil
-			}
-			if !s.canResize(resizeAttachmentID) {
-				return nil
-			}
-			clampedCols := clampWinsizeDim(cols)
-			clampedRows := clampWinsizeDim(rows)
-			if s.pty != nil {
-				return s.pty.Resize(int(clampedCols), int(clampedRows))
-			}
-			return pty.Setsize(s.ptmx, &pty.Winsize{
-				Rows: clampedRows,
-				Cols: clampedCols,
-			})
+			_, err := s.resizeAttachment(resizeAttachmentID, cols, rows, false)
+			return err
+		},
+		claimResize: func(cols, rows int) (bool, error) {
+			return s.resizeAttachment(resizeAttachmentID, cols, rows, true)
 		},
 		refresh: func(ctx context.Context) error {
 			if refresh == nil {

@@ -1070,6 +1070,25 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(fitAddon.fit).toHaveBeenCalled());
     expect(terminal.clearTextureAtlas).not.toHaveBeenCalled();
     expect(terminal.refresh).toHaveBeenCalledWith(0, 23);
+    expect(socketFramesOfType(mockSockets[0]!, "claim_resize")).toHaveLength(0);
+  });
+
+  it("claims the fitted terminal size before forwarding xterm input", async () => {
+    fitDimensions = { cols: 101, rows: 33 };
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    const socket = mockSockets[0]!;
+    socket.sent = [];
+
+    xtermOnDataHandlers[0]!("input");
+
+    await waitFor(() => expect(socket.sent).toHaveLength(2));
+    expect(socket.sent.map((_, index) => sentText(socket, index))).toEqual([
+      JSON.stringify({ type: "claim_resize", cols: 101, rows: 33 }),
+      "input",
+    ]);
   });
 
   it("forwards complete tmux mouse drags without a local threshold", async () => {
@@ -1102,7 +1121,11 @@ describe("TerminalPane", () => {
     );
 
     expect(defaultAllowed).toBe(false);
-    await waitFor(() => expect(socket.sent.map((_, index) => sentText(socket, index))).toContain("\x1b[A"));
+    await waitFor(() => expect(socket.sent).toHaveLength(2));
+    expect(socket.sent.map((_, index) => sentText(socket, index))).toEqual([
+      JSON.stringify({ type: "claim_resize", cols: 80, rows: 24 }),
+      "\x1b[A",
+    ]);
   });
 
   it("leaves Ctrl-wheel gestures with the browser", async () => {
@@ -1481,16 +1504,26 @@ describe("TerminalPane", () => {
 
     expect(defaultAllowed).toBe(false);
     expect(laterPasteListener).not.toHaveBeenCalled();
-    await waitFor(() =>
-      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain("single[201~ line"),
-    );
-    expect(
-      mockSockets[0]!.sent
-        .map((_, index) => sentText(mockSockets[0]!, index))
-        .filter((text) => text === "single[201~ line"),
-    ).toHaveLength(1);
+    await waitFor(() => expect(mockSockets[0]!.sent).toHaveLength(2));
+    expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toEqual([
+      JSON.stringify({ type: "claim_resize", cols: 80, rows: 24 }),
+      "single[201~ line",
+    ]);
   });
 });
+
+function socketFramesOfType(socket: MockWebSocket, type: string): string[] {
+  return socket.sent
+    .map((_, index) => sentText(socket, index))
+    .filter((frame) => {
+      try {
+        const decoded: unknown = JSON.parse(frame);
+        return typeof decoded === "object" && decoded !== null && "type" in decoded && decoded.type === type;
+      } catch {
+        return false;
+      }
+    });
+}
 
 function sentText(socket: MockWebSocket, index: number): string {
   const value = socket.sent[index];

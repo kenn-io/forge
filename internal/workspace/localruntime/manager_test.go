@@ -2089,7 +2089,127 @@ func TestAttachmentResizeOwnerPrefersActiveLocalUntilInactive(t *testing.T) {
 		{cols: 80, rows: 24},
 		{cols: 90, rows: 25},
 		{cols: 100, rows: 30},
+		{cols: 95, rows: 26},
 		{cols: 120, rows: 40},
+	}, pty.resizes())
+}
+
+func TestAttachmentResizeOwnerFollowsLatestDeliberateLocalClaim(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	pty := &fakeRuntimePTY{
+		output: make(chan []byte),
+		done:   make(chan struct{}),
+	}
+	s := &session{
+		info: SessionInfo{
+			Key:         "session-1",
+			WorkspaceID: "ws-1",
+			Status:      SessionStatusRunning,
+		},
+		pty:         pty,
+		done:        make(chan struct{}),
+		outputDone:  make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+
+	first, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityLocal,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	defer first.Close()
+	second, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityLocal,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	defer second.Close()
+
+	_, err = first.ClaimResize(100, 30)
+	require.NoError(err)
+	_, err = second.ClaimResize(120, 40)
+	require.NoError(err)
+	require.NoError(first.Resize(101, 31))
+	_, err = first.ClaimResize(101, 31)
+	require.NoError(err)
+
+	assert.Equal([]terminalResize{
+		{cols: 100, rows: 30},
+		{cols: 120, rows: 40},
+		{cols: 101, rows: 31},
+	}, pty.resizes())
+}
+
+func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	pty := &fakeRuntimePTY{
+		output: make(chan []byte),
+		done:   make(chan struct{}),
+	}
+	s := &session{
+		info: SessionInfo{
+			Key:         "session-1",
+			WorkspaceID: "ws-1",
+			Status:      SessionStatusRunning,
+		},
+		pty:         pty,
+		done:        make(chan struct{}),
+		outputDone:  make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+
+	first, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityLocal,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	defer first.Close()
+	_, err = first.ClaimResize(80, 24)
+	require.NoError(err)
+
+	second, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityLocal,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	defer second.Close()
+	_, err = second.ClaimResize(90, 25)
+	require.NoError(err)
+
+	third, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityLocal,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	_, err = third.ClaimResize(100, 30)
+	require.NoError(err)
+	require.NoError(first.Resize(81, 24))
+	third.Close()
+
+	assert.Equal([]terminalResize{
+		{cols: 80, rows: 24},
+		{cols: 90, rows: 25},
+		{cols: 100, rows: 30},
+		{cols: 90, rows: 25},
 	}, pty.resizes())
 }
 

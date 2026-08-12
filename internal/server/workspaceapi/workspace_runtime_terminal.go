@@ -437,6 +437,21 @@ func handleRuntimeTerminalControl(
 	}
 	info := attachment.Info()
 	switch msg.Type {
+	case "claim_resize":
+		settle, err := attachment.ClaimResize(msg.Cols, msg.Rows)
+		if err != nil {
+			slog.Warn("runtime terminal resize claim", "err", err)
+			return
+		}
+		if !settle {
+			return
+		}
+		refreshCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		if err := attachment.Refresh(refreshCtx); err != nil {
+			slog.Warn("runtime terminal resize claim refresh", "err", err)
+		}
+		return
 	case "resize_active":
 		if msg.Active != nil {
 			attachment.SetResizeActive(*msg.Active)

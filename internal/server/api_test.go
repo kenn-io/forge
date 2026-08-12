@@ -23588,6 +23588,19 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Equal("comment", (*filtered.JSON200.Items)[0].ActivityType)
 	assert.Equal("reviewer", (*filtered.JSON200.Items)[0].Author)
 
+	itemNumber := "#1"
+	byNumber, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since, Search: &itemNumber},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, byNumber.StatusCode())
+	require.NotNil(byNumber.JSON200)
+	require.NotNil(byNumber.JSON200.Items)
+	require.Len(*byNumber.JSON200.Items, 2)
+	for _, item := range *byNumber.JSON200.Items {
+		assert.Equal(int64(1), item.ItemNumber)
+	}
+
 	whitespace := " \t "
 	unfiltered, err := client.HTTP.ListActivityWithResponse(
 		ctx, &generated.ListActivityParams{Since: &since, Search: &whitespace},
@@ -23645,6 +23658,40 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 	assert.Equal(matchedKey.ItemNumber, got[0].ItemNumber)
 	require.NotNil(got[0].Workspace)
 	assert.Equal("ws-41", got[0].Workspace.ID)
+}
+
+func TestWorkspaceActivitySearchMatchesItemNumber(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	key := db.WorkspaceSubjectKey{
+		RepoID: 7, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 41,
+	}
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+			key: {
+				Subject: db.WorkspaceSubjectMetadata{
+					Key: key, Platform: "github", PlatformHost: "github.com",
+					RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+					Title: "Unrelated title", Author: "alice", State: "open",
+				},
+				Workspace:  workspaceapi.WorkspaceRef{ID: "ws-41", Status: "ready"},
+				ActivityAt: &now,
+			},
+		},
+	}
+	srv := &Server{repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{})}
+
+	got := srv.workspaceActivityResponse(
+		&listActivityInput{},
+		db.ListActivityOpts{Search: "#41"},
+		snapshot,
+		nil,
+	)
+
+	require.Len(got, 1)
+	assert.Equal(41, got[0].ItemNumber)
 }
 
 func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {

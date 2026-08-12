@@ -1470,7 +1470,7 @@ func (s *Server) workspaceActivityResponse(
 		if opts.Search != "" {
 			haystack := strings.ToLower(strings.Join([]string{
 				subject.Title, subject.Author, subject.RepoOwner + "/" + subject.RepoName,
-				subject.RepoPath, strconv.Itoa(key.ItemNumber),
+				subject.RepoPath, "#" + strconv.Itoa(key.ItemNumber),
 			}, " "))
 			if _, matchedProviderEvent := matchedSubjects[key]; !matchedProviderEvent && !strings.Contains(haystack, opts.Search) {
 				continue

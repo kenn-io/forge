@@ -86,9 +86,9 @@ embedder protocol for arbitrary host state.
 - Threaded and Mobile Activity merge that snapshot after provider-event filters,
   so workspace recency can keep an event-less subject visible; Flat Activity
   remains provider-event-only (`frontend/src/lib/views/MobileActivityView.svelte::groups`).
-- Activity normalizes search once and keeps workspace recency for subjects with
-  matching provider events across incremental polls; metadata search filters only
-  eventless rows (`internal/server/huma_routes.go::Server.workspaceActivityResponse`).
+- Activity number search uses the same `#number` shape for provider events,
+  notifications, and eventless workspace subjects; matching provider events keep
+  workspace recency across incremental polls (`internal/server/huma_routes.go::Server.workspaceActivityResponse`).
 - Activity event references key that snapshot by stable repo ID: issues use
   own identity and PRs use resolved identity, so route reuse stays fail-closed
   (`internal/server/helpers.go::workspaceRefForActivityItem`).

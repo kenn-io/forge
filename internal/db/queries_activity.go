@@ -69,13 +69,14 @@ func (d *DB) ListActivity(
 	if opts.Search != "" {
 		pattern := "%" + strings.ToLower(opts.Search) + "%"
 		whereClauses = append(whereClauses,
-			"(LOWER(item_title) LIKE ? OR LOWER(body_preview) LIKE ? OR LOWER(branch_name) LIKE ? OR "+
+			"((item_type IN ('pr', 'issue') AND LOWER('#' || item_number || ' ' || item_title) LIKE ?) OR "+
+				"LOWER(item_title) LIKE ? OR LOWER(body_preview) LIKE ? OR LOWER(branch_name) LIKE ? OR "+
 				"LOWER(commit_sha) LIKE ? OR LOWER(before_sha) LIKE ? OR LOWER(after_sha) LIKE ? OR "+
 				"LOWER(author) LIKE ? OR LOWER(item_author) LIKE ? OR "+
 				"LOWER(author_name) LIKE ? OR LOWER(author_email) LIKE ? OR "+
 				"LOWER(committer_name) LIKE ? OR LOWER(committer_email) LIKE ?)")
 		args = append(args,
-			pattern, pattern, pattern, pattern, pattern, pattern,
+			pattern, pattern, pattern, pattern, pattern, pattern, pattern,
 			pattern, pattern, pattern, pattern, pattern, pattern)
 	}
 

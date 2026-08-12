@@ -248,6 +248,24 @@ func TestListActivity(t *testing.T) {
 		}
 	})
 
+	t.Run("search matches item numbers", func(t *testing.T) {
+		for _, search := range []string{"10", "#10"} {
+			t.Run(search, func(t *testing.T) {
+				assert := assert.New(t)
+				require := require.New(t)
+				items, err := d.ListActivity(ctx, ListActivityOpts{
+					Search: search, Limit: 50,
+				})
+				require.NoError(err)
+				require.Len(items, 2)
+				for _, item := range items {
+					assert.Equal("issue", item.ItemType)
+					assert.Equal(10, item.ItemNumber)
+				}
+			})
+		}
+	})
+
 	t.Run("search matches activity actor and item author", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)

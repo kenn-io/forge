@@ -125,6 +125,46 @@ func TestListActivity(t *testing.T) {
 		})
 	})
 
+	t.Run("allowed repo filters apply before the result limit", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+
+		trackedRepo := insertTestRepo(t, d, "alice", "alpha")
+		untrackedRepo := insertTestRepo(t, d, "bob", "beta")
+		insertTestMRWithOptions(t, d, testMR(
+			trackedRepo,
+			1,
+			withMRAuthor("Reviewer"),
+			withMRActivity(base),
+		))
+		insertTestMRWithOptions(t, d, testMR(
+			untrackedRepo,
+			2,
+			withMRAuthor("Reviewer"),
+			withMRActivity(base.Add(time.Minute)),
+		))
+		insertTestMRWithOptions(t, d, testMR(
+			untrackedRepo,
+			3,
+			withMRAuthor("Reviewer"),
+			withMRActivity(base.Add(2*time.Minute)),
+		))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{
+			AllowedRepoIDs: []int64{trackedRepo},
+			Author:         "Reviewer",
+			Limit:          2,
+		})
+		require.NoError(err)
+		require.Len(items, 1)
+		assert.Equal("alice", items[0].RepoOwner)
+		assert.Equal("alpha", items[0].RepoName)
+		assert.Equal(1, items[0].ItemNumber)
+	})
+
 	t.Run("provider qualified repo filter", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -306,6 +346,54 @@ func TestListActivity(t *testing.T) {
 		for _, it := range itemAuthorItems {
 			assert.Equal("item-author-one", it.ItemAuthor)
 		}
+	})
+
+	t.Run("author filter matches the PR author instead of child activity actors", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "example", "actor-filter")
+		prID := insertTestMRWithOptions(t, d, testMR(
+			repoID,
+			1,
+			withMRAuthor("Alice"),
+			withMRActivity(base),
+		))
+		require.NoError(d.UpsertMREvents(ctx, []MREvent{
+			{
+				MergeRequestID: prID,
+				EventType:      "issue_comment",
+				Author:         "Reviewer",
+				CreatedAt:      base.Add(2 * time.Minute),
+				DedupeKey:      "newer-reviewer-comment",
+			},
+			{
+				MergeRequestID: prID,
+				EventType:      "issue_comment",
+				Author:         "Another Participant",
+				CreatedAt:      base.Add(time.Minute),
+				DedupeKey:      "older-participant-comment",
+			},
+		}))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{
+			Author: "ALICE",
+			Limit:  50,
+		})
+		require.NoError(err)
+		require.Len(items, 3)
+		for _, item := range items {
+			assert.Equal("Alice", item.ItemAuthor)
+		}
+
+		commenterItems, err := d.ListActivity(ctx, ListActivityOpts{
+			Author: "reviewer",
+			Limit:  50,
+		})
+		require.NoError(err)
+		assert.Empty(commenterItems)
 	})
 
 	t.Run("limit and before cursor", func(t *testing.T) {
@@ -1131,6 +1219,130 @@ func TestListActivityIncludesNotifications(t *testing.T) {
 	for _, it := range excluded {
 		assert.NotEqual("notification", it.ActivityType)
 	}
+}
+
+func TestListActivityAuthors(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	alphaID := insertTestRepo(t, d, "alice", "alpha")
+	betaID := insertTestRepo(t, d, "bob", "beta")
+
+	alphaPRID := insertTestMRWithOptions(t, d, testMR(
+		alphaID,
+		1,
+		withMRAuthor("Alice"),
+		withMRActivity(base),
+	))
+	insertTestIssueWithOptions(t, d, testIssue(
+		alphaID,
+		2,
+		withIssueAuthor("bob"),
+		withIssueActivity(base.Add(2*time.Minute)),
+	))
+	insertTestIssueWithOptions(t, d, testIssue(
+		alphaID,
+		3,
+		withIssueAuthor("Old Actor"),
+		withIssueActivity(base.Add(-time.Hour)),
+	))
+	insertTestMRWithOptions(t, d, testMR(
+		betaID,
+		1,
+		withMRAuthor("Excluded Actor"),
+		withMRActivity(base.Add(10*time.Minute)),
+	))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{
+			MergeRequestID: alphaPRID,
+			EventType:      "issue_comment",
+			Author:         "Commenter",
+			CreatedAt:      base.Add(3 * time.Minute),
+			DedupeKey:      "recent-alice-casing",
+		},
+		{
+			MergeRequestID: alphaPRID,
+			EventType:      "issue_comment",
+			Author:         "",
+			CreatedAt:      base.Add(4 * time.Minute),
+			DedupeKey:      "empty-actor",
+		},
+	}))
+	commit := testBranchCommit(
+		alphaID,
+		"main",
+		"activity-author-sha",
+		"candidate author",
+		base.Add(4*time.Minute),
+	)
+	commit.AuthorName = "Carol"
+	require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{commit}))
+
+	number := 99
+	require.NoError(d.UpsertNotifications(ctx, []Notification{
+		{
+			Platform:               "github",
+			PlatformHost:           "github.com",
+			PlatformNotificationID: "activity-author-notification",
+			RepoOwner:              "alice",
+			RepoName:               "alpha",
+			SubjectType:            "PullRequest",
+			SubjectTitle:           "Review requested",
+			WebURL:                 "https://github.com/alice/alpha/pull/99",
+			ItemNumber:             &number,
+			ItemType:               "pr",
+			ItemAuthor:             "Dana",
+			Reason:                 "review_requested",
+			SourceUpdatedAt:        base.Add(5 * time.Minute),
+			SyncedAt:               base.Add(5 * time.Minute),
+		},
+		{
+			Platform:               "github",
+			PlatformHost:           "github.com",
+			PlatformNotificationID: "activity-author-self-notification",
+			RepoOwner:              "alice",
+			RepoName:               "alpha",
+			SubjectType:            "PullRequest",
+			SubjectTitle:           "Own thread",
+			WebURL:                 "https://github.com/alice/alpha/pull/99",
+			ItemNumber:             &number,
+			ItemType:               "pr",
+			ItemAuthor:             "Self Actor",
+			Reason:                 "author",
+			SourceUpdatedAt:        base.Add(6 * time.Minute),
+			SyncedAt:               base.Add(6 * time.Minute),
+		},
+	}))
+
+	repoFilter := RepoFilter{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "alice",
+		RepoName:     "alpha",
+	}
+	since := base.Add(-time.Minute)
+	authors, err := d.ListActivityAuthors(ctx, ListActivityAuthorsOpts{
+		RepoFilters:    []RepoFilter{repoFilter},
+		AllowedRepoIDs: []int64{alphaID},
+		NotificationRepoFilters: []NotificationRepoFilter{{
+			Platform:     "github",
+			PlatformHost: "github.com",
+			RepoOwner:    "alice",
+			RepoName:     "alpha",
+		}},
+		Since: &since,
+	})
+	require.NoError(err)
+	require.Equal([]string{"Dana", "Alice", "bob"}, authors)
+
+	authors, err = d.ListActivityAuthors(ctx, ListActivityAuthorsOpts{
+		RepoFilters:    []RepoFilter{repoFilter},
+		AllowedRepoIDs: []int64{betaID},
+		Since:          &since,
+	})
+	require.NoError(err)
+	require.Empty(authors, "explicit repo scope must intersect the allowed repo scope")
 }
 
 func TestListActivityNotificationCarriesSubjectState(t *testing.T) {

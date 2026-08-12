@@ -15,9 +15,9 @@ async function waitForTable(page: Page): Promise<void> {
 }
 
 async function selectActivityFilterItem(page: Page, label: string): Promise<void> {
-  await page.locator(".kit-filter-dropdown__btn").click();
-  await page.locator(".kit-filter-dropdown__panel").waitFor({ state: "visible" });
-  await page.locator(".kit-filter-dropdown__item", { hasText: label }).click();
+  await page.locator(".activity-filters__trigger").click();
+  await page.locator(".activity-filters__panel").waitFor({ state: "visible" });
+  await page.locator(".activity-filters__item", { hasText: label }).click();
 }
 
 // Verify every badge in the activity table matches the expected text.
@@ -169,6 +169,39 @@ test.describe("activity feed filters", () => {
         expect(title).toContain("Add widget caching layer");
       }
     }).toPass({ timeout: 10_000 });
+  });
+
+  test("author typeahead filters by the PR or issue author", async ({ page }) => {
+    const filteredResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/activity" && url.searchParams.get("author") === "alice";
+    });
+
+    await page.getByRole("button", { name: /^Filters/ }).click();
+    await page.getByRole("button", { name: "Filter authors" }).click();
+    await page.getByRole("option", { name: "alice" }).click();
+    const response = await filteredResponse;
+    expect(response.status()).toBe(200);
+    const payload = await response.json();
+    expect(payload.items.length).toBeGreaterThan(0);
+    expect(payload.items.every((item: { item_author: string }) => item.item_author.toLowerCase() === "alice")).toBe(
+      true,
+    );
+
+    await expect(page.locator(".activity-row").first()).toBeVisible();
+    const eventAuthors = await page.locator(".activity-row .col-author").allTextContents();
+    expect(eventAuthors.some((author) => author.trim().toLowerCase() !== "alice")).toBe(true);
+    await expect(page).toHaveURL(/author=alice/);
+
+    const authorChip = page.getByRole("button", { name: "Clear author filter alice" });
+    await expect(authorChip).toBeVisible();
+    const unfilteredResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/activity" && !url.searchParams.has("author");
+    });
+    await authorChip.click();
+    expect((await unfilteredResponse).status()).toBe(200);
+    await expect(page).not.toHaveURL(/author=/);
   });
 
   test("combined: PRs + hide closed/merged shows only open PRs", async ({ page }) => {

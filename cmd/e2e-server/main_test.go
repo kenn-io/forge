@@ -262,6 +262,7 @@ func TestTmuxCreationGateRejectsNewSessionsAfterShutdownStarts(t *testing.T) {
 	}
 	require := require.New(t)
 	assert := assert.New(t)
+	const waitTimeout = 5 * time.Second
 	dir := t.TempDir()
 	started := filepath.Join(dir, "started")
 	release := filepath.Join(dir, "release")
@@ -290,7 +291,7 @@ esac
 	require.Eventually(func() bool {
 		_, statErr := os.Stat(started)
 		return statErr == nil
-	}, 5*time.Second, 10*time.Millisecond)
+	}, waitTimeout, 10*time.Millisecond)
 
 	stopDone := make(chan struct{})
 	go func() {
@@ -302,7 +303,7 @@ esac
 	require.Eventually(func() bool {
 		_, statErr := os.Stat(filepath.Join(gate.dir, "killing"))
 		return statErr == nil
-	}, 5*time.Second, 10*time.Millisecond)
+	}, waitTimeout, 10*time.Millisecond)
 
 	output, startErr := procutil.Command(
 		guarded[0], append(guarded[1:], "new-session")...,
@@ -313,7 +314,7 @@ esac
 	require.NoError(<-firstDone)
 	select {
 	case <-stopDone:
-	case <-time.After(5 * time.Second):
+	case <-time.After(waitTimeout):
 		require.Fail("tmux stop did not acquire the creation gate")
 	}
 

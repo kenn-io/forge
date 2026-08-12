@@ -200,6 +200,26 @@ Persisted controls must state their scope clearly.
 - Activity filters remain URL-backed and session-scoped. Missing filter params on a
   partial Activity URL inherit the last validated route before store hydration, while
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
+- Activity's Author filter follows GitHub `author:` semantics: it matches the parent PR
+  or issue author, never a child event actor; its URL/API key remains `author`
+  (`internal/db/queries_activity.go::ListActivity`).
+- Activity compact mode means a detail is active, not that its resizable feed pane is
+  narrow; controls stay content-sized until their own container is narrow (`frontend/src/lib/components/ActivityFeed.svelte`).
+- Activity's viewport-positioned filter panel leaves the feed's containment chain and
+  owns focus while open; retain inline-size containment for compact control sizing
+  (`frontend/src/lib/components/ActivityFilters.svelte::portalToBody`).
+- Arrow/Home/End radio navigation selects and refocuses within that panel without
+  honoring the pointer-only close-on-select behavior
+  (`frontend/src/lib/components/ActivityFilters.svelte::handleRadioKeydown`).
+- Activity author candidates follow only the current tracked-repository and time-range
+  scope. Search text, activity type, and the selected author must not shrink the picker
+  (`frontend/src/lib/stores/activity.svelte.ts::loadActivityAuthorsEffect`).
+- That scope key deduplicates unchanged reads; it is not freshness authority. Activity
+  remounts and feed reconciliation, polling changes, or full refetches must revalidate it
+  (`frontend/src/lib/stores/activity.svelte.ts::loadActivityAuthorsEffect`).
+- A foreground Activity load replaces a same-scope author read owned by supersedable
+  reconciliation; joining that read can let its interruption strand stale candidates
+  (`frontend/src/lib/stores/activity.svelte.ts::loadActivity`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
 - Concurrent controls for one server-backed settings object must share a

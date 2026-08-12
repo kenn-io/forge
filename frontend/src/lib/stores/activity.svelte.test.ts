@@ -296,6 +296,17 @@ describe("isActivityItemTypeEnabled", () => {
 });
 
 describe("activity store URL hydration", () => {
+  it("round trips the selected author", () => {
+    window.history.replaceState(null, "", "/?author=Alice");
+    const s = makeStore();
+    s.initializeFromMount();
+
+    expect(s.getActivityAuthor()).toBe("Alice");
+    s.setActivityAuthor(undefined);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).has("author")).toBe(false);
+  });
+
   it("normalizes legacy URLs that kept default-branch commits while commit was deselected", () => {
     window.history.replaceState(
       null,
@@ -381,6 +392,232 @@ describe("activity store URL hydration", () => {
     expect(s.getHideDefaultBranchActivity()).toBe(true);
     expect(s.getActivityFilterTypes()).toEqual(["none"]);
     expect(new URLSearchParams(window.location.search).get("types")).toBe("none");
+  });
+});
+
+describe("activity store author candidates", () => {
+  it("keeps a URL-selected author available when it is absent from the current candidates", () => {
+    window.history.replaceState(null, "", "/?author=FormerUser");
+    const s = makeStore();
+    s.initializeFromMount();
+
+    expect(s.getActivityAuthors()).toEqual(["FormerUser"]);
+  });
+
+  it("preserves the selected spelling when a candidate differs only by case", async () => {
+    window.history.replaceState(null, "", "/?author=Alice");
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") {
+        return { data: { authors: ["ALICE", "Bob"] }, error: null };
+      }
+      return { data: { items: [], capped: false }, error: null };
+    });
+    const s = createActivityStore({
+      client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
+    });
+    s.initializeFromMount();
+
+    s.loadActivityAuthors();
+
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice", "Bob"]));
+    expect(s.getActivityAuthor()).toBe("Alice");
+  });
+
+  it("filters the feed by author while candidate requests only use repo and time range", async () => {
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: ["Alice"] }, error: null };
+      return { data: { items: [], capped: false }, error: null };
+    });
+    const s = createActivityStore({
+      client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
+      getGlobalRepo: () => "github|github.com/acme/widget",
+    });
+    s.setActivityAuthor("Alice");
+    s.setActivitySearch("cache");
+    s.setActivityFilterTypes(["comment"]);
+
+    s.loadActivityAuthors();
+    s.loadActivity();
+    await vi.waitFor(() => expect(get.mock.calls.some(([path]) => path === "/activity/authors")).toBe(true));
+    await vi.waitFor(() => expect(get.mock.calls.some(([path]) => path === "/activity")).toBe(true));
+
+    const authorCall = get.mock.calls.find(([path]) => path === "/activity/authors");
+    expect(authorCall?.[1]).toEqual({
+      params: {
+        query: {
+          repo: "github|github.com/acme/widget",
+          since: expect.any(String),
+        },
+      },
+      signal: expect.any(AbortSignal),
+    });
+    const feedCall = get.mock.calls.find(([path]) => path === "/activity");
+    expect(feedCall?.[1]).toEqual({
+      params: {
+        query: expect.objectContaining({
+          author: "Alice",
+          search: "cache",
+          types: ["comment"],
+        }),
+      },
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it("reports candidate errors independently from feed errors", async () => {
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") {
+        return { error: { detail: "authors unavailable" }, response: new Response(null, { status: 500 }) };
+      }
+      return { data: { items: [], capped: false }, error: null };
+    });
+    const s = createActivityStore({
+      client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
+    });
+
+    s.loadActivityAuthors();
+    await vi.waitFor(() => expect(s.getActivityAuthorsError()).toBe("authors unavailable"));
+
+    expect(s.getActivityAuthorsError()).toBe("authors unavailable");
+    expect(s.getActivityError()).toBeNull();
+  });
+
+  it("clears candidates for a new scope and retries that scope after failure", async () => {
+    let repo = "github|github.com/acme/widgets";
+    let secondScopeFails = true;
+    const get = vi.fn(async (path: string) => {
+      if (path !== "/activity/authors") {
+        return { data: { items: [], capped: false }, error: null };
+      }
+      if (repo.endsWith("widgets")) {
+        return { data: { authors: ["Alice"] }, error: null };
+      }
+      if (secondScopeFails) {
+        return { error: { detail: "authors unavailable" }, response: new Response(null, { status: 500 }) };
+      }
+      return { data: { authors: ["Bob"] }, error: null };
+    });
+    const s = createActivityStore({
+      client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
+      getGlobalRepo: () => repo,
+    });
+
+    s.loadActivityAuthors();
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice"]));
+
+    repo = "github|github.com/acme/tools";
+    s.setTimeRange("30d");
+    s.loadActivityAuthors();
+    await vi.waitFor(() => expect(s.getActivityAuthorsError()).toBe("authors unavailable"));
+    expect(s.getActivityAuthors()).toEqual([]);
+
+    secondScopeFails = false;
+    s.loadActivityAuthors();
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Bob"]));
+    expect(s.getActivityAuthorsError()).toBeNull();
+    expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(3);
+  });
+
+  it("refreshes same-scope candidates during activity reconciliation", async () => {
+    let authors = ["Alice"];
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors }, error: null };
+      return { data: { items: [], capped: false }, error: null };
+    });
+    const s = createActivityStore({
+      client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
+    });
+
+    s.loadActivityAuthors();
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice"]));
+
+    authors = ["Alice", "FreshActor"];
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(s.reconcileActivityEffect(), {
+      operation: "reconcile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    expect(s.getActivityAuthors()).toEqual(["Alice", "FreshActor"]);
+    expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(2);
+  });
+
+  it("force-refreshes same-scope candidates with an Activity load", async () => {
+    let authors = ["Alice"];
+    let feedReads = 0;
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors }, error: null };
+      feedReads += 1;
+      return { data: { items: [], capped: false }, error: null };
+    });
+    const s = createActivityStore({
+      client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
+    });
+
+    s.loadActivity();
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice"]));
+
+    authors = ["Bob"];
+    s.loadActivity(true);
+    await vi.waitFor(() => expect(feedReads).toBe(2));
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Bob"]));
+    expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(2);
+  });
+
+  it("replaces an in-flight same-scope author refresh during a foreground activity load", async () => {
+    type ActivityResponse = { data: { items: never[]; capped: false }; error: null };
+
+    let activityRequests = 0;
+    let authorRequests = 0;
+    let resolveReconciliation!: (response: ActivityResponse) => void;
+    const pendingReconciliation = new Promise<ActivityResponse>((resolve) => {
+      resolveReconciliation = resolve;
+    });
+    const get = vi.fn((path: string, options?: { signal?: AbortSignal }) => {
+      if (path === "/activity/authors") {
+        authorRequests += 1;
+        if (authorRequests > 1) {
+          return Promise.resolve({ data: { authors: ["Bob"] }, error: null });
+        }
+        return new Promise((_, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+        });
+      }
+
+      activityRequests += 1;
+      if (activityRequests === 1) return pendingReconciliation;
+      return Promise.resolve({ data: { items: [], capped: false }, error: null });
+    });
+    const s = createActivityStore({
+      client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
+    });
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    const reconciliation = runtime.runCommand(s.reconcileActivityEffect(), {
+      operation: "reconcile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => {
+      expect(activityRequests).toBe(1);
+      expect(authorRequests).toBe(1);
+      expect(s.isActivityAuthorsLoading()).toBe(true);
+    });
+
+    s.loadActivity();
+    await vi.waitFor(() => {
+      expect(activityRequests).toBe(2);
+      expect(authorRequests).toBe(2);
+    });
+    resolveReconciliation({ data: { items: [], capped: false }, error: null });
+    await reconciliation.exit;
+
+    await vi.waitFor(() => expect(s.isActivityAuthorsLoading()).toBe(false));
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Bob"]));
+    expect(authorRequests).toBe(2);
   });
 });
 
@@ -560,10 +797,18 @@ describe("activity store markNotificationSeen", () => {
       data: { items: ActivityItem[]; capped: boolean };
       error: null;
     }>();
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({ data: { items: [notificationItem("ntf:42", "unread")], capped: false }, error: null })
-      .mockReturnValueOnce(olderRead.promise);
+    let feedReads = 0;
+    const get = vi.fn((path: string) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      feedReads++;
+      if (feedReads === 1) {
+        return Promise.resolve({
+          data: { items: [notificationItem("ntf:42", "unread")], capped: false },
+          error: null,
+        });
+      }
+      return olderRead.promise;
+    });
     const post = vi.fn().mockResolvedValue({
       data: { queued: [42], succeeded: [], failed: [] },
       error: null,
@@ -573,7 +818,7 @@ describe("activity store markNotificationSeen", () => {
     await vi.waitFor(() => expect(s.isActivityLoading()).toBe(false));
 
     s.loadActivity();
-    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(feedReads).toBe(2));
     s.markNotificationSeen(s.getActivityItems()[0]!);
     await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     olderRead.resolve({ data: { items: [notificationItem("ntf:42", "unread")], capped: false }, error: null });
@@ -591,10 +836,18 @@ describe("activity store markNotificationSeen", () => {
       data: { queued: number[]; succeeded: number[]; failed: never[] };
       error: null;
     }>();
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({ data: { items: [notificationItem("ntf:42", "unread")], capped: false }, error: null })
-      .mockReturnValueOnce(pendingRead.promise);
+    let feedReads = 0;
+    const get = vi.fn((path: string) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      feedReads++;
+      if (feedReads === 1) {
+        return Promise.resolve({
+          data: { items: [notificationItem("ntf:42", "unread")], capped: false },
+          error: null,
+        });
+      }
+      return pendingRead.promise;
+    });
     const post = vi.fn(() => acknowledgement.promise);
     const s = createActivityStore({ client: { GET: get, POST: post } as unknown as GeneratedClient });
     s.loadActivity();
@@ -603,7 +856,7 @@ describe("activity store markNotificationSeen", () => {
     s.markNotificationSeen(s.getActivityItems()[0]!);
     await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     s.loadActivity();
-    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(feedReads).toBe(2));
     acknowledgement.resolve({ data: { queued: [42], succeeded: [], failed: [] }, error: null });
     await vi.waitFor(() => expect(s.getActivityItems()[0]!.item_state).toBe("read"));
     pendingRead.resolve({ data: { items: [notificationItem("ntf:42", "unread")], capped: false }, error: null });
@@ -626,6 +879,31 @@ describe("activity store markNotificationSeen", () => {
 });
 
 describe("activity polling recovery", () => {
+  it("refreshes author candidates when polling appends new activity", async () => {
+    let authors = ["Alice"];
+    let feedReads = 0;
+    const now = new Date().toISOString();
+    const initial = { ...notificationItem("ntf:1", "unread"), author: "Alice", created_at: now };
+    const fresh = { ...notificationItem("ntf:2", "unread"), author: "FreshActor", created_at: now };
+    const client = {
+      GET: vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors }, error: null };
+        feedReads += 1;
+        if (feedReads === 1) return { data: { items: [initial], capped: false }, error: null };
+        return { data: { items: [fresh], capped: false }, error: null };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:1"]));
+    await vi.waitFor(() => expect(store.getActivityAuthors()).toEqual(["Alice"]));
+
+    authors = ["FreshActor", "Alice"];
+    store.startActivityPolling();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:2", "ntf:1"]));
+    await vi.waitFor(() => expect(store.getActivityAuthors()).toEqual(["FreshActor", "Alice"]));
+  });
+
   it("does not project a poll started before a newer foreground search", async () => {
     const pendingPoll = Promise.withResolvers<{
       data: { items: ActivityItem[]; capped: boolean };
@@ -636,18 +914,19 @@ describe("activity polling recovery", () => {
     const initial = { ...notificationItem("ntf:1", "unread"), created_at: now };
     const stalePollItem = { ...notificationItem("ntf:2", "unread"), created_at: now };
     const foregroundItem = { ...notificationItem("ntf:3", "unread"), created_at: now };
-    let calls = 0;
+    let feedReads = 0;
     const client = {
-      GET: vi.fn(async () => {
-        calls += 1;
-        if (calls === 1) return { data: { items: [initial], capped: false }, error: null };
-        if (calls === 2) {
+      GET: vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        feedReads += 1;
+        if (feedReads === 1) return { data: { items: [initial], capped: false }, error: null };
+        if (feedReads === 2) {
           const response = await pendingPoll.promise;
           pollReturned.resolve();
           return response;
         }
-        if (calls === 3) return { data: { items: [foregroundItem], capped: false }, error: null };
-        throw new Error(`unexpected activity request ${calls}`);
+        if (feedReads === 3) return { data: { items: [foregroundItem], capped: false }, error: null };
+        throw new Error(`unexpected activity request ${feedReads}`);
       }),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
@@ -655,7 +934,7 @@ describe("activity polling recovery", () => {
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:1"]));
 
     store.startActivityPolling();
-    await vi.waitFor(() => expect(calls).toBe(2));
+    await vi.waitFor(() => expect(feedReads).toBe(2));
     store.setActivitySearch("new selection");
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:3"]));
@@ -668,11 +947,12 @@ describe("activity polling recovery", () => {
   });
 
   it("clears loading after an empty-feed poll reload fails", async () => {
-    let calls = 0;
+    let feedReads = 0;
     const client = {
-      GET: vi.fn(async () => {
-        calls += 1;
-        if (calls === 1) return { data: { items: [], capped: false } };
+      GET: vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        feedReads += 1;
+        if (feedReads === 1) return { data: { items: [], capped: false } };
         return {
           error: {
             code: "validationError",
@@ -689,18 +969,19 @@ describe("activity polling recovery", () => {
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
     store.startActivityPolling();
-    await vi.waitFor(() => expect(calls).toBe(2));
+    await vi.waitFor(() => expect(feedReads).toBe(2));
 
     expect(store.isActivityLoading()).toBe(false);
   });
 
   it("clears loading after a capped poll reload fails", async () => {
-    let calls = 0;
+    let feedReads = 0;
     const client = {
-      GET: vi.fn(async () => {
-        calls += 1;
-        if (calls === 1) return { data: { items: [notificationItem("ntf:42", "unread")], capped: false } };
-        if (calls === 2) return { data: { items: [], capped: true } };
+      GET: vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        feedReads += 1;
+        if (feedReads === 1) return { data: { items: [notificationItem("ntf:42", "unread")], capped: false } };
+        if (feedReads === 2) return { data: { items: [], capped: true } };
         return {
           error: {
             code: "validationError",
@@ -717,7 +998,7 @@ describe("activity polling recovery", () => {
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
     store.startActivityPolling();
-    await vi.waitFor(() => expect(calls).toBe(3));
+    await vi.waitFor(() => expect(feedReads).toBe(3));
 
     expect(store.isActivityLoading()).toBe(false);
   });

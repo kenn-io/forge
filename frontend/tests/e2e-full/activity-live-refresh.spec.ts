@@ -75,6 +75,51 @@ test("persisted Activity events appear in the open PR timeline after SSE invalid
   }
 });
 
+test("SSE comment refresh does not promote the commenter to an Activity author candidate", async ({ page }) => {
+  const server = await startIsolatedE2EServer();
+  try {
+    const initialAuthors = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/api/v1/activity/authors"),
+    );
+    const streamRequested = page.waitForRequest((request) =>
+      new URL(request.url()).pathname.endsWith("/api/v1/events"),
+    );
+    await page.goto(`${server.info.base_url}/`);
+    await streamRequested;
+    expect((await initialAuthors).status()).toBe(200);
+    await expect(page.locator(".activity-table .activity-row").first()).toBeVisible();
+
+    const filtersTrigger = page.locator(".activity-filters__trigger");
+    const filtersPanel = page.locator(".activity-filters__panel");
+    await filtersTrigger.click();
+    const authorTrigger = filtersPanel.getByRole("button", { name: "Filter authors" });
+    await authorTrigger.click();
+    await expect(page.getByRole("option", { name: "alice" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "fixture-bot" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    const refreshedAuthors = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/api/v1/activity/authors"),
+    );
+    const refreshedActivity = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/api/v1/activity"),
+    );
+    await persistActivityComment(page, server.info.base_url, "Fresh actor Activity comment");
+    expect((await refreshedActivity).status()).toBe(200);
+    expect((await refreshedAuthors).status()).toBe(200);
+
+    await expect(page.locator(".activity-row .col-author", { hasText: "fixture-bot" }).first()).toBeVisible();
+    if (!(await filtersPanel.isVisible())) {
+      await filtersTrigger.click();
+    }
+    await authorTrigger.click();
+    await expect(page.getByRole("option", { name: "alice" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "fixture-bot" })).toHaveCount(0);
+  } finally {
+    await server.stop();
+  }
+});
+
 test("viewed-hot PR fast sync refreshes Activity without a notification", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {

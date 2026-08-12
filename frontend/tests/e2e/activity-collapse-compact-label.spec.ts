@@ -99,3 +99,81 @@ test("compact collapse control hides its text label in the side detail pane", as
   await expect(collapseBtn).toBeVisible();
   await expect(page.locator(".collapse-all-btn .collapse-all-label")).toBeHidden();
 });
+
+test("compact activity controls stay in two rows with the author summarized in Filters", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockActivity(page);
+  await page.goto("/?view=threaded&author=long-author-name");
+  await page.addStyleTag({
+    content: ".activity-pane { flex: 0 0 360px !important; width: 360px !important; }",
+  });
+
+  await page.locator(".item-row").first().locator(".item-title").click();
+  await expect(page.locator(".activity-feed--compact")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Filters · long-author-name" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Clear author filter long-author-name" })).toHaveCount(0);
+
+  const metrics = await page.locator(".activity-feed--compact .controls-bar").evaluate((controls) => {
+    const bounds = controls.getBoundingClientRect();
+    const searchTop = Math.round(controls.querySelector(".search-wrap")!.getBoundingClientRect().top);
+    const togglesTop = Math.round(controls.querySelector(".filter-group")!.getBoundingClientRect().top);
+    const filtersTop = Math.round(controls.querySelector(".filters-wrap")!.getBoundingClientRect().top);
+    const collapseTop = Math.round(controls.querySelector(".collapse-all-btn")!.getBoundingClientRect().top);
+    const childBounds = [...controls.children].map((child) => {
+      const rect = child.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: Math.round(rect.top) };
+    });
+    return {
+      left: bounds.left,
+      right: bounds.right,
+      scrollWidth: controls.scrollWidth,
+      clientWidth: controls.clientWidth,
+      rowTops: [...new Set(childBounds.map((rect) => rect.top))],
+      childBounds,
+      searchTop,
+      togglesTop,
+      filtersTop,
+      collapseTop,
+    };
+  });
+
+  expect(metrics.rowTops).toHaveLength(2);
+  expect(metrics.togglesTop).toBe(metrics.filtersTop);
+  expect(metrics.filtersTop).toBe(metrics.collapseTop);
+  expect(metrics.searchTop).not.toBe(metrics.filtersTop);
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
+  for (const bounds of metrics.childBounds) {
+    expect(bounds.left).toBeGreaterThanOrEqual(metrics.left);
+    expect(bounds.right).toBeLessThanOrEqual(metrics.right);
+  }
+});
+
+test("compact Filters stays content-sized when the Activity pane is wide", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockActivity(page);
+  await page.goto("/?view=threaded&author=fixture-bot");
+  await page.addStyleTag({
+    content: ".activity-pane { flex: 0 0 1000px !important; width: 1000px !important; }",
+  });
+
+  await page.locator(".item-row").first().locator(".item-title").click();
+  await expect(page.locator(".activity-feed--compact")).toBeVisible();
+
+  const metrics = await page.locator(".activity-feed--compact .controls-bar").evaluate((controls) => {
+    const controlsBounds = controls.getBoundingClientRect();
+    const filters = controls.querySelector<HTMLElement>(".filters-wrap")!;
+    const filtersBounds = filters.getBoundingClientRect();
+    const trigger = filters.querySelector<HTMLElement>(".activity-filters__trigger")!;
+    const collapseBounds = controls.querySelector<HTMLElement>(".collapse-all-btn")!.getBoundingClientRect();
+    return {
+      controlsRight: controlsBounds.right,
+      filtersWidth: filtersBounds.width,
+      triggerScrollWidth: trigger.scrollWidth,
+      collapseRight: collapseBounds.right,
+    };
+  });
+
+  expect(metrics.filtersWidth).toBeLessThan(320);
+  expect(metrics.filtersWidth).toBeGreaterThanOrEqual(metrics.triggerScrollWidth);
+  expect(metrics.collapseRight).toBeLessThan(metrics.controlsRight - 200);
+});

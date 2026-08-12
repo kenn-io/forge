@@ -127,8 +127,14 @@ type listActivityInput struct {
 	Types     []string `query:"types"`
 	ItemTypes []string `query:"item_types" doc:"Item scopes included before limiting activity results: pr, issue, or repo."`
 	Search    string   `query:"search"`
+	Author    string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
 	After     string   `query:"after"`
 	Since     string   `query:"since"`
+}
+
+type listActivityAuthorsInput struct {
+	Repo  string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	Since string `query:"since"`
 }
 
 type triggerSyncInput struct {
@@ -137,6 +143,8 @@ type triggerSyncInput struct {
 }
 
 type listActivityOutput = httpapi.BodyOutput[activityResponse]
+
+type listActivityAuthorsOutput = httpapi.BodyOutput[activityAuthorsResponse]
 
 type listNotificationsInput struct {
 	State  string   `query:"state"`
@@ -186,6 +194,8 @@ func (s *Server) registerAPI(api huma.API) {
 
 	huma.Get(api, "/activity", s.listActivity,
 		httpapi.DocumentOperation("list-activity", "List activity", "Activity"))
+	huma.Get(api, "/activity/authors", s.listActivityAuthors,
+		httpapi.DocumentOperation("list-activity-authors", "List activity authors", "Activity"))
 	s.kataAPI.Register(api)
 	s.docsAPI.Register(api)
 	s.registerArchiveAPI(api)
@@ -1248,6 +1258,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		Types:       input.Types,
 		ItemTypes:   input.ItemTypes,
 		Search:      strings.ToLower(strings.TrimSpace(input.Search)),
+		Author:      strings.TrimSpace(input.Author),
 		// Notifications are always on; this only drops notification rows in
 		// SQL when no config is loaded (the nil-config safety guard), so the
 		// safety-cap window is filled by real activity, not stale notifications.
@@ -1277,20 +1288,18 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		opts.AfterSourceID = sourceID
 	}
 
-	if s.cfg != nil {
-		trackedRepos, err := s.trackedNotificationRepoFilters()
-		if err != nil {
-			return nil, httpapi.Internal("load tracked notification repos failed")
-		}
-		opts.NotificationRepoFilters = trackedRepos
-	}
-
 	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
 	if err != nil {
 		slog.Error("lock activity repository snapshot failed", "err", err)
 		return nil, httpapi.Internal("list activity failed")
 	}
 	defer releaseReconciliation()
+	if s.cfg != nil {
+		opts.AllowedRepoIDs, err = s.trackedActivityRepoIDsUnderRepositoryReconciliationRead(ctx)
+		if err != nil {
+			return nil, httpapi.Internal("load tracked activity repos failed")
+		}
+	}
 
 	items, err := s.db.ListActivity(ctx, opts)
 	if err != nil {
@@ -1317,17 +1326,6 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	if err != nil {
 		slog.Error("list workspace activity failed", "err", err)
 		return nil, httpapi.Internal("list workspace activity failed")
-	}
-
-	if s.cfg != nil {
-		tracked := make(map[string]struct{})
-		for _, repo := range s.syncer.TrackedRepos() {
-			tracked[trackedRepoKey(repo)] = struct{}{}
-		}
-		items = filterActivityItemsToTrackedRepositories(items, tracked)
-		if hasFullWorkspaceEventItems {
-			workspaceEventItems = filterActivityItemsToTrackedRepositories(workspaceEventItems, tracked)
-		}
 	}
 
 	capped := len(items) > activitySafetyCap
@@ -1393,25 +1391,6 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	}, nil
 }
 
-func filterActivityItemsToTrackedRepositories(
-	items []db.ActivityItem,
-	tracked map[string]struct{},
-) []db.ActivityItem {
-	filtered := make([]db.ActivityItem, 0, len(items))
-	for _, item := range items {
-		key := trackedRepoKey(ghclient.RepoRef{
-			Platform:     platform.Kind(item.Platform),
-			PlatformHost: item.PlatformHost,
-			Owner:        item.RepoOwner,
-			Name:         item.RepoName,
-		})
-		if _, ok := tracked[key]; ok {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
-}
-
 func (s *Server) workspaceActivityResponse(
 	input *listActivityInput,
 	opts db.ListActivityOpts,
@@ -1422,11 +1401,9 @@ func (s *Server) workspaceActivityResponse(
 	for _, itemType := range input.ItemTypes {
 		itemTypes[strings.ToLower(strings.TrimSpace(itemType))] = struct{}{}
 	}
-	tracked := make(map[string]struct{})
-	if s.cfg != nil {
-		for _, repo := range s.syncer.TrackedRepos() {
-			tracked[trackedRepoKey(repo)] = struct{}{}
-		}
+	allowedRepoIDs := make(map[int64]struct{}, len(opts.AllowedRepoIDs))
+	for _, repoID := range opts.AllowedRepoIDs {
+		allowedRepoIDs[repoID] = struct{}{}
 	}
 	matchedSubjects := make(map[db.WorkspaceSubjectKey]struct{})
 	if opts.Search != "" {
@@ -1455,16 +1432,16 @@ func (s *Server) workspaceActivityResponse(
 			}
 		}
 		subject := activity.Subject
-		if s.cfg != nil {
-			trackedKey := trackedRepoKey(ghclient.RepoRef{
-				Platform: platform.Kind(subject.Platform), PlatformHost: subject.PlatformHost,
-				Owner: subject.RepoOwner, Name: subject.RepoName,
-			})
-			if _, ok := tracked[trackedKey]; !ok {
+		if opts.AllowedRepoIDs != nil {
+			if _, ok := allowedRepoIDs[key.RepoID]; !ok {
 				continue
 			}
 		}
 		if !workspaceSubjectMatchesRepoFilters(subject, opts.RepoFilters) {
+			continue
+		}
+		_, matchedProviderEvent := matchedSubjects[key]
+		if opts.Author != "" && !strings.EqualFold(subject.Author, opts.Author) {
 			continue
 		}
 		if opts.Search != "" {
@@ -1472,7 +1449,7 @@ func (s *Server) workspaceActivityResponse(
 				subject.Title, subject.Author, subject.RepoOwner + "/" + subject.RepoName,
 				subject.RepoPath, "#" + strconv.Itoa(key.ItemNumber),
 			}, " "))
-			if _, matchedProviderEvent := matchedSubjects[key]; !matchedProviderEvent && !strings.Contains(haystack, opts.Search) {
+			if !matchedProviderEvent && !strings.Contains(haystack, opts.Search) {
 				continue
 			}
 		}
@@ -1520,6 +1497,176 @@ func workspaceSubjectMatchesRepoFilters(
 		}
 	}
 	return false
+}
+
+func (s *Server) listActivityAuthors(
+	ctx context.Context, input *listActivityAuthorsInput,
+) (*listActivityAuthorsOutput, error) {
+	if hasInvalidRepoFilter(input.Repo) {
+		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
+	}
+
+	opts := db.ListActivityAuthorsOpts{
+		RepoFilters:          parseRepoFilters(input.Repo),
+		ExcludeNotifications: !s.notificationsEnabled(),
+	}
+	if input.Since != "" {
+		t, err := time.Parse(time.RFC3339, input.Since)
+		if err != nil {
+			return nil, httpapi.Validation("query.since", "invalid since: "+err.Error())
+		}
+		opts.Since = &t
+	} else {
+		defaultSince := s.now().UTC().AddDate(0, 0, -7)
+		opts.Since = &defaultSince
+	}
+	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		slog.Error("lock activity author repository snapshot failed", "err", err)
+		return nil, httpapi.Internal("list activity authors failed")
+	}
+	defer releaseReconciliation()
+	opts.AllowedRepoIDs, err = s.trackedActivityRepoIDsUnderRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return nil, httpapi.Internal("load tracked activity repos failed")
+	}
+
+	authors, err := s.db.ListActivityAuthors(ctx, opts)
+	if err != nil {
+		slog.Error("list activity authors failed", "err", err)
+		return nil, httpapi.Internal("list activity authors failed")
+	}
+	workspaceSnapshot, err := s.workspaceAPI.WorkspaceSubjectSnapshotUnderRepositoryReconciliationRead(ctx)
+	if err != nil {
+		slog.Error("list workspace activity authors failed", "err", err)
+		return nil, httpapi.Internal("list activity authors failed")
+	}
+	authors = mergeWorkspaceActivityAuthors(authors, workspaceSnapshot, opts)
+	return &listActivityAuthorsOutput{
+		Body: activityAuthorsResponse{Authors: authors},
+	}, nil
+}
+
+type workspaceActivityAuthorCandidate struct {
+	author     string
+	activityAt time.Time
+}
+
+func mergeWorkspaceActivityAuthors(
+	providerAuthors []string,
+	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+	opts db.ListActivityAuthorsOpts,
+) []string {
+	authors := make([]string, 0, len(providerAuthors)+len(snapshot.Subjects))
+	seen := make(map[string]struct{}, len(providerAuthors)+len(snapshot.Subjects))
+	for _, author := range providerAuthors {
+		key := strings.ToLower(strings.TrimSpace(author))
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		authors = append(authors, author)
+	}
+
+	allowedRepoIDs := make(map[int64]struct{}, len(opts.AllowedRepoIDs))
+	for _, repoID := range opts.AllowedRepoIDs {
+		allowedRepoIDs[repoID] = struct{}{}
+	}
+	workspaceCandidates := make(map[string]workspaceActivityAuthorCandidate)
+	for key, activity := range snapshot.Subjects {
+		if activity.ActivityAt == nil || (opts.Since != nil && activity.ActivityAt.Before(*opts.Since)) {
+			continue
+		}
+		if opts.AllowedRepoIDs != nil {
+			if _, ok := allowedRepoIDs[key.RepoID]; !ok {
+				continue
+			}
+		}
+		if !workspaceSubjectMatchesRepoFilters(activity.Subject, opts.RepoFilters) {
+			continue
+		}
+		author := strings.TrimSpace(activity.Subject.Author)
+		authorKey := strings.ToLower(author)
+		if authorKey == "" {
+			continue
+		}
+		if _, ok := seen[authorKey]; ok {
+			continue
+		}
+		candidate, ok := workspaceCandidates[authorKey]
+		if !ok || activity.ActivityAt.After(candidate.activityAt) ||
+			(activity.ActivityAt.Equal(candidate.activityAt) && author < candidate.author) {
+			workspaceCandidates[authorKey] = workspaceActivityAuthorCandidate{
+				author: author, activityAt: *activity.ActivityAt,
+			}
+		}
+	}
+
+	orderedWorkspaceCandidates := make([]workspaceActivityAuthorCandidate, 0, len(workspaceCandidates))
+	for _, candidate := range workspaceCandidates {
+		orderedWorkspaceCandidates = append(orderedWorkspaceCandidates, candidate)
+	}
+	sort.Slice(orderedWorkspaceCandidates, func(i, j int) bool {
+		left, right := orderedWorkspaceCandidates[i], orderedWorkspaceCandidates[j]
+		if !left.activityAt.Equal(right.activityAt) {
+			return left.activityAt.After(right.activityAt)
+		}
+		leftKey, rightKey := strings.ToLower(left.author), strings.ToLower(right.author)
+		if leftKey != rightKey {
+			return leftKey < rightKey
+		}
+		return left.author < right.author
+	})
+	for _, candidate := range orderedWorkspaceCandidates {
+		authors = append(authors, candidate.author)
+	}
+	return authors
+}
+
+func (s *Server) trackedActivityRepoIDsUnderRepositoryReconciliationRead(
+	ctx context.Context,
+) ([]int64, error) {
+	repoIDs := make([]int64, 0)
+	if s.syncer == nil {
+		return repoIDs, nil
+	}
+	tracked := s.syncer.TrackedRepos()
+	repoIDs = make([]int64, 0, len(tracked))
+	seen := make(map[int64]struct{}, len(tracked))
+	for _, repo := range tracked {
+		repoID := repo.RepoID
+		if repoID == 0 {
+			resolvedID, found, err := s.db.ResolveRepositoryIDUnderRepositoryReconciliationRead(
+				ctx, db.RepoIdentity{
+					Platform:       string(repo.Platform),
+					PlatformHost:   repo.PlatformHost,
+					PlatformRepoID: repo.PlatformExternalID,
+					Owner:          repo.Owner,
+					Name:           repo.Name,
+					RepoPath:       repo.RepoPath,
+				},
+			)
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				continue
+			}
+			repoID = resolvedID
+		}
+		if repoID <= 0 {
+			continue
+		}
+		if _, ok := seen[repoID]; ok {
+			continue
+		}
+		seen[repoID] = struct{}{}
+		repoIDs = append(repoIDs, repoID)
+	}
+	return repoIDs, nil
 }
 
 func branchActivityURL(it db.ActivityItem) string {

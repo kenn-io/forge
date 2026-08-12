@@ -252,6 +252,29 @@ func (d *DB) resolveActiveRepositoryRoute(
 	)
 }
 
+// ResolveRepositoryIDUnderRepositoryReconciliationRead resolves a tracked
+// provider identity to its stable catalog ID. The caller must already hold the
+// repository reconciliation read lock so the ID and subsequent reads share one
+// catalog snapshot.
+func (d *DB) ResolveRepositoryIDUnderRepositoryReconciliationRead(
+	ctx context.Context,
+	identity RepoIdentity,
+) (int64, bool, error) {
+	var entry *RepositoryCatalogEntry
+	var err error
+	if strings.TrimSpace(identity.PlatformRepoID) != "" {
+		entry, err = d.getRepositoryByProviderID(
+			ctx, identity.Platform, identity.PlatformHost, identity.PlatformRepoID,
+		)
+	} else {
+		entry, err = d.resolveActiveRepositoryRoute(ctx, identity)
+	}
+	if err != nil || entry == nil || entry.Lifecycle != RepositoryLifecycleActive {
+		return 0, false, err
+	}
+	return entry.Repository.ID, true, nil
+}
+
 func (d *DB) ListRepositoryCatalog(
 	ctx context.Context,
 	filter RepositoryCatalogFilter,

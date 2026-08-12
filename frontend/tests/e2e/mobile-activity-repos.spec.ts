@@ -83,6 +83,7 @@ test.describe("mobile activity repository selector", () => {
     const activityRepos = await mockMobileRepoSettings(page);
 
     await page.goto("/m?range=30d&view=threaded");
+    await page.getByRole("button", { name: /Filters/ }).click();
     const repoSelect = page.getByRole("combobox", {
       name: /Repository/,
     });

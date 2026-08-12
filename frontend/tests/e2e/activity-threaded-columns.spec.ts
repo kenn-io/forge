@@ -198,9 +198,9 @@ test.describe("threaded activity columns", () => {
     const repoLabel = page.locator(".item-row .repo-chip__label").first();
     await expect(repoLabel).toHaveText("acme/widgets");
 
-    // Toggle "Hide org name" via the View dropdown.
-    await page.getByRole("button", { name: "View", exact: true }).click();
-    await page.locator(".kit-filter-dropdown__item", { hasText: "Hide org name" }).click();
+    // Toggle "Hide org name" via Filters.
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
+    await page.locator(".activity-filters__item", { hasText: "Hide org name" }).click();
     await page.keyboard.press("Escape");
 
     await expect(repoLabel).toHaveText("widgets");

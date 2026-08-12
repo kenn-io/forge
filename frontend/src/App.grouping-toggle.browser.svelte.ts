@@ -254,31 +254,26 @@ function compactPullGroupingLabel(label: string): string {
   return label;
 }
 
-function activityViewBtn(): Element {
-  return Array.from(document.querySelectorAll(".activity-feed .kit-filter-dropdown__btn")).find((b) =>
-    (b.textContent ?? "").includes("View"),
-  )!;
+function activityFiltersBtn(): Element {
+  return document.querySelector(".activity-feed .activity-filters__trigger")!;
 }
 
 async function selectActivityViewItem(label: string): Promise<void> {
-  // Open the activity feed's View dropdown fresh, then click the labelled item.
-  if (!document.querySelector(".activity-feed .kit-filter-dropdown__panel")) {
-    await page.elementLocator(activityViewBtn()).click();
-    await vi.waitFor(
-      () => expect(document.querySelector(".activity-feed .kit-filter-dropdown__panel")).not.toBeNull(),
-      WAIT,
-    );
+  // Open the activity feed's Filters popover fresh, then click the labelled item.
+  if (!document.querySelector(".activity-filters__panel")) {
+    await page.elementLocator(activityFiltersBtn()).click();
+    await vi.waitFor(() => expect(document.querySelector(".activity-filters__panel")).not.toBeNull(), WAIT);
   }
-  const item = Array.from(
-    document.querySelectorAll(".activity-feed .kit-filter-dropdown__panel .kit-filter-dropdown__item"),
-  ).find((el) => (el.textContent ?? "").includes(label))!;
+  const item = Array.from(document.querySelectorAll(".activity-filters__panel .activity-filters__item")).find((el) =>
+    (el.textContent ?? "").includes(label),
+  )!;
   await page.elementLocator(item).click();
 }
 
 function activityDropdownHas(label: string): boolean {
-  return Array.from(
-    document.querySelectorAll(".activity-feed .kit-filter-dropdown__panel .kit-filter-dropdown__item"),
-  ).some((el) => (el.textContent ?? "").includes(label));
+  return Array.from(document.querySelectorAll(".activity-filters__panel .activity-filters__item")).some((el) =>
+    (el.textContent ?? "").includes(label),
+  );
 }
 
 describe("grouping toggle", () => {
@@ -436,20 +431,14 @@ describe("grouping toggle", () => {
     mounted = await mountBrowserApp("/", { overrides: overrides() });
     await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
 
-    await page.elementLocator(activityViewBtn()).click();
-    await vi.waitFor(
-      () => expect(document.querySelector(".activity-feed .kit-filter-dropdown__panel")).not.toBeNull(),
-      WAIT,
-    );
+    await page.elementLocator(activityFiltersBtn()).click();
+    await vi.waitFor(() => expect(document.querySelector(".activity-filters__panel")).not.toBeNull(), WAIT);
     expect(activityDropdownHas("By repo")).toBe(false);
 
     await selectActivityViewItem("Threaded");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view")).not.toBeNull(), WAIT);
-    await page.elementLocator(activityViewBtn()).click();
-    await vi.waitFor(
-      () => expect(document.querySelector(".activity-feed .kit-filter-dropdown__panel")).not.toBeNull(),
-      WAIT,
-    );
+    await page.elementLocator(activityFiltersBtn()).click();
+    await vi.waitFor(() => expect(document.querySelector(".activity-filters__panel")).not.toBeNull(), WAIT);
     expect(activityDropdownHas("By repo")).toBe(true);
   });
 

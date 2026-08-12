@@ -286,8 +286,8 @@ async function pierreDiffCount(file: ReturnType<Page["locator"]>, selector: stri
 }
 
 async function selectActivityFilterItem(page: Page, label: string): Promise<void> {
-  await page.locator(".activity-feed .kit-filter-dropdown__btn", { hasText: "View" }).click();
-  const dropdown = page.locator(".activity-feed .kit-filter-dropdown__panel");
+  await page.locator(".activity-feed .activity-filters__trigger").click();
+  const dropdown = page.locator(".activity-filters__panel");
   await dropdown.waitFor({
     state: "visible",
   });

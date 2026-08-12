@@ -38,6 +38,7 @@ test.describe("mobile activity notifications", () => {
       const reload = page.waitForResponse(
         (r) => r.request().method() === "GET" && r.url().includes("/api/v1/activity"),
       );
+      await page.getByRole("button", { name: /^Filters/ }).click();
       await page.getByRole("button", { name: "Hide notifications" }).click();
       expect((await reload).status()).toBe(200);
 

@@ -89,6 +89,10 @@ embedder protocol for arbitrary host state.
 - Activity number search uses the same `#number` shape for provider events,
   notifications, and eventless workspace subjects; matching provider events keep
   workspace recency across incremental polls (`internal/server/huma_routes.go::Server.workspaceActivityResponse`).
+- Activity author filtering and candidates match workspace subject authors;
+  candidates include eventless subjects in the same repository and time scope,
+  while provider-event matching preserves workspace recency only for text search
+  (`internal/server/huma_routes.go::mergeWorkspaceActivityAuthors`).
 - Activity event references key that snapshot by stable repo ID: issues use
   own identity and PRs use resolved identity, so route reuse stays fail-closed
   (`internal/server/helpers.go::workspaceRefForActivityItem`).

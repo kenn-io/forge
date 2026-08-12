@@ -5,6 +5,7 @@ import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
 import type {
   ActivityItem,
+  ActivityAuthorsParams,
   ActivityParams,
   ActivityResponse,
   ActivitySettings,
@@ -115,9 +116,12 @@ function apiErrorMessage(error: { detail?: string; title?: string }, fallback: s
   return error.detail ?? error.title ?? fallback;
 }
 
-function readErrorMessage(error: ApiProblemError | TransientTransportError): string {
+function readErrorMessage(
+  error: ApiProblemError | TransientTransportError,
+  fallback = "failed to load activity",
+): string {
   if (error._tag === "ApiProblemError") {
-    return apiErrorMessage(error.problem, "failed to load activity");
+    return apiErrorMessage(error.problem, fallback);
   }
   return "Could not reach Kenn Forge";
 }
@@ -136,12 +140,18 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let capped = $state(false);
   let filterTypes = $state<string[]>([]);
   let searchQuery = $state<string | undefined>(undefined);
+  let authorFilter = $state<string | undefined>(undefined);
+  let authorCandidates = $state.raw<string[]>([]);
+  let authorsLoading = $state(false);
+  let authorsError = $state<string | null>(null);
   let timeRange = $state<TimeRange>("7d");
   let viewMode = $state<ViewMode>("flat");
   let collapseThreads = $state(false);
   let rollUpCommits = $state(false);
   let collapseThreadsDefault = false;
   let expandOverrides = $state<Set<string>>(new Set());
+  let authorRequestVersion = 0;
+  let authorScopeKey: string | null = null;
   let pollCount = 0;
   const FULL_REFRESH_EVERY = 4;
   let activityLifecycleTick = 0;
@@ -177,6 +187,25 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function getActivitySearch(): string | undefined {
     return searchQuery;
+  }
+  function getActivityAuthor(): string | undefined {
+    return authorFilter;
+  }
+  function getActivityAuthors(): string[] {
+    const selected = authorFilter;
+    if (!selected) return authorCandidates;
+    const selectedIndex = authorCandidates.findIndex((candidate) => candidate.toLowerCase() === selected.toLowerCase());
+    if (selectedIndex < 0) return [selected, ...authorCandidates];
+    if (authorCandidates[selectedIndex] === selected) return authorCandidates;
+    const candidates = [...authorCandidates];
+    candidates[selectedIndex] = selected;
+    return candidates;
+  }
+  function isActivityAuthorsLoading(): boolean {
+    return authorsLoading;
+  }
+  function getActivityAuthorsError(): string | null {
+    return authorsError;
   }
   function getTimeRange(): TimeRange {
     return timeRange;
@@ -222,6 +251,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function setActivitySearch(q: string | undefined): void {
     searchQuery = q;
+  }
+  function setActivityAuthor(author: string | undefined): void {
+    authorFilter = author?.trim() || undefined;
   }
   function setTimeRange(range_: TimeRange): void {
     timeRange = range_;
@@ -311,7 +343,60 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       p.item_types = itemTypes;
     }
     if (searchQuery) p.search = searchQuery;
+    if (authorFilter) p.author = authorFilter;
     return p;
+  }
+
+  function loadActivityAuthorsEffect(force = false) {
+    return Effect.suspend(() => {
+      const repo = getGlobalRepo();
+      const scopeKey = `${repo ?? ""}\0${timeRange}`;
+      if (!force && scopeKey === authorScopeKey) return Effect.void;
+
+      if (scopeKey !== authorScopeKey) {
+        authorCandidates = [];
+      }
+      authorScopeKey = scopeKey;
+      const version = ++authorRequestVersion;
+      authorsLoading = true;
+      authorsError = null;
+      const query: ActivityAuthorsParams = { since: computeSince(), ...(repo ? { repo } : {}) };
+      return executeGeneratedApiRequest("GET /activity/authors", (client, signal) =>
+        client.GET("/activity/authors", { params: { query }, signal }),
+      ).pipe(
+        retryIdempotentRead,
+        Effect.tap((response) =>
+          Effect.sync(() => {
+            if (version !== authorRequestVersion) return;
+            authorCandidates = response.authors ?? [];
+            authorsLoading = false;
+          }),
+        ),
+        Effect.catch((failure) =>
+          Effect.sync(() => {
+            if (version !== authorRequestVersion) return;
+            authorsError = readErrorMessage(failure, "failed to load activity authors");
+            authorsLoading = false;
+            authorScopeKey = null;
+          }),
+        ),
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            if (version !== authorRequestVersion || scopeKey !== authorScopeKey) return;
+            authorsLoading = false;
+            authorScopeKey = null;
+          }),
+        ),
+      );
+    });
+  }
+
+  function loadActivityAuthors(force = false): void {
+    runtime.runCommand(loadActivityAuthorsEffect(force), {
+      operation: "load activity authors",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   function activityRead(params: ActivityParams) {
@@ -392,12 +477,16 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         });
       return Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;
-        yield* workflow.reconcileRead(read, project);
+        yield* Effect.all([workflow.reconcileRead(read, project), loadActivityAuthorsEffect(true)], {
+          concurrency: "unbounded",
+          discard: true,
+        });
       });
     });
   }
 
-  function loadActivity(): void {
+  function loadActivity(forceAuthors = false): void {
+    loadActivityAuthors(forceAuthors || authorsLoading);
     runtime.runCommand(loadActivityEffect(), {
       operation: "load activity",
       safeContext: {},
@@ -490,10 +579,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const params = buildParams();
     if (items.length === 0) {
       loading = true;
-      return loadActivityProgram(params, "poll");
+      return loadActivityProgram(params, "poll").pipe(Effect.andThen(loadActivityAuthorsEffect(true)));
     }
     if (pollCount % FULL_REFRESH_EVERY === 0) {
-      return refreshActivityProgram(params);
+      return refreshActivityProgram(params).pipe(Effect.andThen(loadActivityAuthorsEffect(true)));
     }
     const newestItem = items[0];
     if (newestItem === undefined) return Effect.void;
@@ -511,22 +600,28 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       yield* workflow.pollRead(
         pollRead,
         ({ mode, result }) =>
-          Effect.sync(() => {
-            if (mode === "replace") {
-              items = projectOwnedNotificationStates(result);
+          Effect.gen(function* () {
+            const activityChanged = yield* Effect.sync(() => {
+              if (mode === "replace") {
+                items = projectOwnedNotificationStates(result);
+                workspaceActivity = result.response.workspace_activity ?? [];
+                capped = result.response.capped;
+                loading = false;
+                return true;
+              }
               workspaceActivity = result.response.workspace_activity ?? [];
-              capped = result.response.capped;
-              loading = false;
-              return;
-            }
-            workspaceActivity = result.response.workspace_activity ?? [];
-            const existingIds = new Set(items.map((item) => item.id));
-            const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
-            if (newItems.length > 0) {
-              items = [...newItems, ...items];
-            }
-            const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
-            items = items.filter((item) => new Date(item.created_at) >= cutoff);
+              const existingIds = new Set(items.map((item) => item.id));
+              const newItems = projectOwnedNotificationStates(result, false).filter(
+                (item) => !existingIds.has(item.id),
+              );
+              if (newItems.length > 0) {
+                items = [...newItems, ...items];
+              }
+              const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
+              items = items.filter((item) => new Date(item.created_at) >= cutoff);
+              return newItems.length > 0;
+            });
+            if (activityChanged) yield* loadActivityAuthorsEffect(true);
           }),
         Effect.sync(() => {
           loading = false;
@@ -619,6 +714,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       filterTypes = typesParam ? typesParam.split(",") : [];
     }
     if (sp.has("search")) searchQuery = sp.get("search") ?? undefined;
+    authorFilter = sp.get("author")?.trim() || undefined;
     if (sp.has("range")) {
       const rangeParam = sp.get("range");
       if (rangeParam && rangeParam in RANGE_MS) timeRange = rangeParam as TimeRange;
@@ -640,6 +736,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     else sp.delete("types");
     if (searchQuery) sp.set("search", searchQuery);
     else sp.delete("search");
+    if (authorFilter) sp.set("author", authorFilter);
+    else sp.delete("author");
     if (timeRange !== "7d") sp.set("range", timeRange);
     else sp.delete("range");
     if (viewMode !== "flat") sp.set("view", viewMode);
@@ -669,6 +767,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     isActivityCapped,
     getActivityFilterTypes,
     getActivitySearch,
+    getActivityAuthor,
+    getActivityAuthors,
+    isActivityAuthorsLoading,
+    getActivityAuthorsError,
     getTimeRange,
     getViewMode,
     getCollapseThreads,
@@ -683,6 +785,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     isInitialized,
     setActivityFilterTypes,
     setActivitySearch,
+    setActivityAuthor,
     setTimeRange,
     setViewMode,
     setRollUpCommits,
@@ -697,6 +800,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     setShowNotifications,
     hydrateDefaults,
     initializeFromMount,
+    loadActivityAuthors,
     loadActivity,
     loadActivityEffect,
     reconcileActivityEffect,

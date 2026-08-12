@@ -234,6 +234,10 @@ type workspaceActivitySubjectResponse struct {
 	ActivityAt   string                     `json:"activity_at" format:"date-time"`
 }
 
+type activityAuthorsResponse struct {
+	Authors []string `json:"authors"`
+}
+
 type activityItemResponse struct {
 	ID             string                     `json:"id"`
 	Cursor         string                     `json:"cursor"`

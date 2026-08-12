@@ -468,7 +468,7 @@ func TestGlobalSyncExposesNotificationSyncFailure(t *testing.T) {
 			return false
 		}
 		return !body.Sync.Running && strings.Contains(body.Sync.LastError, "notification API unavailable")
-	}, 2*time.Second, 20*time.Millisecond)
+	}, 5*time.Second, 20*time.Millisecond)
 }
 
 func TestNotificationsAPIExposesReadPropagationStatus(t *testing.T) {

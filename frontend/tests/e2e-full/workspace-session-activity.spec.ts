@@ -79,12 +79,12 @@ async function listIssues(api: APIRequestContext): Promise<IssueResponse> {
 }
 
 async function selectActivityViewItem(page: Page, label: string): Promise<void> {
-  const dropdown = page.locator(".activity-feed .kit-filter-dropdown__panel");
-  if (!(await dropdown.isVisible())) {
-    await page.locator(".activity-feed .kit-filter-dropdown__btn", { hasText: "View" }).click();
-    await expect(dropdown).toBeVisible();
+  const panel = page.locator(".activity-filters__panel");
+  if (!(await panel.isVisible())) {
+    await page.locator(".activity-feed .activity-filters__trigger").click();
+    await expect(panel).toBeVisible();
   }
-  await dropdown.locator(".kit-filter-dropdown__item", { hasText: label }).click();
+  await panel.locator(".activity-filters__item", { hasText: label }).click();
 }
 
 test.describe("workspace session activity across item surfaces", () => {

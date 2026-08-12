@@ -20,6 +20,8 @@
     Timeline,
     TimelineItem,
     Toggle,
+    Typeahead,
+    type TypeaheadOption,
     type TimelineTone,
   } from "@kenn-io/kit-ui";
   import { parseAPITimestamp } from "../utils/time.js";
@@ -72,6 +74,7 @@
     label: range,
   }));
   let searchInput = $state("");
+  let filtersExpanded = $state(false);
   let searchExecution: AppExecution<void, never> | null = null;
   let unsubSync: (() => void) | undefined;
 
@@ -84,9 +87,12 @@
   onMount(() => {
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
-    activity.loadActivity();
+    activity.loadActivity(true);
     activity.startActivityPolling();
-    unsubSync = sync.subscribeSyncComplete(activity.loadActivity);
+    unsubSync = sync.subscribeSyncComplete(() => {
+      activity.loadActivity();
+      activity.loadActivityAuthors(true);
+    });
   });
 
   onDestroy(() => {
@@ -230,6 +236,24 @@
 
   const visibleGroups = $derived(groups.slice(0, 30));
 
+  const authorOptions = $derived.by<TypeaheadOption[]>(() =>
+    activity.getActivityAuthors().map((author) => ({
+      name: author,
+      label: author,
+    })),
+  );
+
+  const activeFilterCount = $derived(
+    (activity.getActivityAuthor() ? 1 : 0)
+    + (selectedRepo ? 1 : 0)
+    + (activity.getEnabledItemTypes().has("pr") ? 0 : 1)
+    + (activity.getEnabledItemTypes().has("issue") ? 0 : 1)
+    + (activity.getHideBots() ? 1 : 0)
+    + (activity.getHideDefaultBranchActivity() ? 1 : 0)
+    + (grouping.getHideOrgName() ? 1 : 0)
+    + (activity.getShowNotifications() ? 0 : 1),
+  );
+
   const repoLabelFormatter = $derived.by(() =>
     createRepoLabelFormatter(
       [
@@ -271,6 +295,12 @@
 
   function handleRepoChange(value: string): void {
     onRepoChange?.(value || undefined);
+    activity.loadActivity();
+  }
+
+  function handleAuthorSelect(author: string): void {
+    activity.setActivityAuthor(author || undefined);
+    activity.syncToURL();
     activity.loadActivity();
   }
 
@@ -486,13 +516,55 @@
       <SearchInput
         bind:value={searchInput}
         block
-        placeholder="Search issues, PRs, authors"
-        ariaLabel="Search issues, PRs, authors"
+        placeholder="Search activity"
+        ariaLabel="Search activity"
         oninput={handleSearchInput}
       />
     </div>
 
-    <div class="mobile-activity-filter-grid" aria-label="Activity filters">
+    <div class="mobile-filter-summary">
+      <button
+        type="button"
+        class="mobile-filter-disclosure"
+        aria-label={activity.getActivityAuthor()
+          ? `Filters · ${activity.getActivityAuthor()}`
+          : "Filters"}
+        aria-expanded={filtersExpanded}
+        aria-controls="mobile-activity-filters"
+        onclick={() => filtersExpanded = !filtersExpanded}
+      >
+        <span>Filters</span>
+        {#if activity.getActivityAuthor()}
+          <span class="mobile-filter-author">· {activity.getActivityAuthor()}</span>
+        {/if}
+        {#if activeFilterCount > 0}
+          <span class="mobile-filter-count" aria-label={`${activeFilterCount} active filters`}>
+            {activeFilterCount}
+          </span>
+        {/if}
+        <span aria-hidden="true">{filtersExpanded ? "−" : "+"}</span>
+      </button>
+
+    </div>
+
+    {#if filtersExpanded}
+    <div id="mobile-activity-filters" class="mobile-activity-filter-grid" aria-label="Activity filters">
+      <div class="mobile-author-filter">
+        <span>Author</span>
+        <Typeahead
+          options={authorOptions}
+          value={activity.getActivityAuthor() ?? ""}
+          fallbackLabel="Anyone"
+          placeholder="Filter authors"
+          title="Filter by PR or issue author"
+          allowClear
+          clearLabel="Anyone"
+          loading={activity.isActivityAuthorsLoading()}
+          error={activity.getActivityAuthorsError() ?? ""}
+          onselect={handleAuthorSelect}
+        />
+      </div>
+
       <div class="mobile-item-type-toggle">
         <Toggle
           checked={activity.getEnabledItemTypes().has("pr")}
@@ -563,6 +635,7 @@
         onclick={toggleHideNotifications}
       >Hide notifications</button>
     </div>
+    {/if}
 
 
     {#if activity.getActivityError()}
@@ -738,11 +811,80 @@
     background: var(--bg-inset);
   }
 
+  .mobile-filter-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--mobile-space-xs);
+    margin-bottom: var(--mobile-space-sm);
+  }
+
+  .mobile-filter-disclosure {
+    max-width: 100%;
+    min-height: var(--mobile-hit-target);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--mobile-space-xs);
+    padding: 0 var(--mobile-space-md);
+    border: thin solid var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    background: var(--bg-inset);
+    font: inherit;
+    font-weight: 750;
+  }
+
+  .mobile-filter-author {
+    min-width: 0;
+    max-width: 12rem;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-medium, 500);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-filter-count {
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+    font-size: var(--font-size-xs);
+    text-align: center;
+  }
+
   .mobile-activity-filter-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--mobile-space-xs);
     margin-bottom: var(--mobile-space-sm);
+  }
+
+  .mobile-author-filter {
+    grid-column: 1 / -1;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--mobile-space-xs);
+    min-height: var(--mobile-hit-target);
+    padding: 0 var(--mobile-space-sm);
+    border: thin solid var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    background: var(--bg-inset);
+  }
+
+  .mobile-author-filter > span {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 750;
+  }
+
+  .mobile-author-filter :global(.kit-typeahead) {
+    width: 100%;
+    min-width: 0;
   }
 
   .mobile-filter-select,

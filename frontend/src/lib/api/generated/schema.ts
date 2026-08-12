@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/activity/authors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List activity authors */
+        get: operations["list-activity-authors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent-hooks/{agent}": {
         parameters: {
             query?: never;
@@ -4584,6 +4601,15 @@ export interface components {
             /** @enum {string} */
             view_mode: "flat" | "threaded";
         };
+        ActivityAuthorsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ActivityAuthorsResponse.json
+             */
+            readonly $schema?: string;
+            authors: string[] | null;
+        };
         ActivityItemResponse: {
             activity_type: string;
             activity_url?: string;
@@ -7774,9 +7800,6 @@ export interface components {
             /** Format: int64 */
             scrollback: number;
         };
-        TerminalClipboardInputBody: {
-            text: string;
-        };
         TmuxSessionInfo: {
             createdAt?: string;
             managed: boolean;
@@ -8124,6 +8147,8 @@ export interface operations {
                 /** @description Item scopes included before limiting activity results: pr, issue, or repo. */
                 item_types?: string[] | null;
                 search?: string;
+                /** @description Exact, case-insensitive pull request or issue author filter. */
+                author?: string;
                 after?: string;
                 since?: string;
             };
@@ -8140,6 +8165,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-activity-authors": {
+        parameters: {
+            query?: {
+                /** @description Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
+                repo?: string;
+                since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityAuthorsResponse"];
                 };
             };
             /** @description Error */

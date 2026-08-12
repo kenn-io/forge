@@ -154,6 +154,9 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
     await expect(page.getByRole("heading", { name: "What needs attention?" })).toBeVisible();
     await expect(page.getByText("Readable threads first")).toHaveCount(0);
+    const filters = page.getByRole("button", { name: /^Filters/ });
+    await expect(filters).toHaveAttribute("aria-expanded", "false");
+    await filters.click();
     await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();
     await expect(page.getByLabel("Time range")).toBeVisible();
@@ -308,6 +311,7 @@ test.describe("phone routes", () => {
   test("mobile activity filters can narrow by type, range, and repository", async ({ page }) => {
     await page.goto("/m?range=30d&view=threaded");
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
+    await page.getByRole("button", { name: /^Filters/ }).click();
 
     await page.getByRole("switch", { name: "Issues" }).click();
     await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
@@ -319,13 +323,90 @@ test.describe("phone routes", () => {
     await expect(page).toHaveURL(/range=24h/);
 
     const activityForRepo = page.waitForResponse((response) => {
-      const url = response.url();
-      return url.includes("/api/v1/activity") && url.includes("repo=github%7Cgithub.com%2Facme%2Fwidgets");
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/activity" && url.searchParams.get("repo") === "github|github.com/acme/widgets";
     });
     await page.getByRole("combobox", { name: /Repository/ }).click();
     await page.getByRole("option", { name: "github/github.com/acme/widgets" }).click();
     await expect(page.getByRole("combobox", { name: "Repository: acme/widgets" })).toHaveText("acme/widgets");
-    await activityForRepo;
+    expect((await activityForRepo).ok()).toBe(true);
+
+    const repoLabels = page.locator(".mobile-activity-card__meta > span:first-child");
+    await expect(repoLabels.first()).toBeVisible();
+    await expect(repoLabels).toHaveText(["acme/widgets"]);
+  });
+
+  test("mobile activity filters by author without overflowing the phone viewport", async ({ page }) => {
+    await page.goto("/m?range=30d&view=threaded");
+    await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
+
+    const filters = page.getByRole("button", { name: /^Filters/ });
+    await expect(filters).toHaveAttribute("aria-expanded", "false");
+    await filters.click();
+    await expect(filters).toHaveAttribute("aria-expanded", "true");
+
+    await page.getByRole("button", { name: "Filter authors" }).click();
+    await expect(page.getByRole("combobox", { name: "Filter authors" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "carol" })).toBeVisible();
+
+    const overlayMetrics = await page.locator(".mobile-author-filter .kit-typeahead__panel").evaluate((panel) => {
+      const bounds = panel.getBoundingClientRect();
+      return {
+        viewportWidth: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        left: bounds.left,
+        right: bounds.right,
+      };
+    });
+    expect(overlayMetrics.documentWidth).toBeLessThanOrEqual(overlayMetrics.viewportWidth);
+    expect(overlayMetrics.left).toBeGreaterThanOrEqual(0);
+    expect(overlayMetrics.right).toBeLessThanOrEqual(overlayMetrics.viewportWidth);
+
+    const filteredResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/activity" && url.searchParams.get("author") === "carol";
+    });
+    await page.getByRole("option", { name: "carol" }).click();
+    const response = await filteredResponse;
+    expect(response.status()).toBe(200);
+    const payload = await response.json();
+    expect(payload.items.length).toBeGreaterThan(0);
+    expect(payload.items.every((item: { item_author: string }) => item.item_author.toLowerCase() === "carol")).toBe(
+      true,
+    );
+
+    await expect(page).toHaveURL(/author=carol/);
+    await expect(page.getByRole("button", { name: "Filters · carol" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Clear author filter carol" })).toHaveCount(0);
+
+    const summaryMetrics = await page.locator(".mobile-filter-summary").evaluate((summary) => {
+      const bounds = summary.getBoundingClientRect();
+      return {
+        viewportWidth: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        left: bounds.left,
+        right: bounds.right,
+      };
+    });
+    expect(summaryMetrics.documentWidth).toBeLessThanOrEqual(summaryMetrics.viewportWidth);
+    expect(summaryMetrics.left).toBeGreaterThanOrEqual(0);
+    expect(summaryMetrics.right).toBeLessThanOrEqual(summaryMetrics.viewportWidth);
+
+    const unfilteredResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/activity" && !url.searchParams.has("author");
+    });
+    await page.locator(".mobile-author-filter .kit-typeahead__trigger").click();
+    await page.getByRole("option", { name: "Anyone" }).click();
+    expect((await unfilteredResponse).status()).toBe(200);
+
+    await expect(page.getByRole("button", { name: "Filters" })).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.has("author")).toBe(false);
+    const eventAuthors = page.locator(".mobile-activity-event__body > span");
+    await expect(async () => {
+      const authors = await eventAuthors.allTextContents();
+      expect(authors.some((author) => author.trim().toLowerCase() !== "carol")).toBe(true);
+    }).toPass({ timeout: 10_000 });
   });
 
   test("mobile activity hide-org toggle updates card repo labels and persists", async ({ page }) => {
@@ -339,6 +420,7 @@ test.describe("phone routes", () => {
 
     await page.goto("/m?range=30d&view=threaded");
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
+    await page.getByRole("button", { name: /^Filters/ }).click();
 
     const card = page
       .locator(".mobile-activity-card", {
@@ -365,6 +447,7 @@ test.describe("phone routes", () => {
     await page.reload();
 
     await expect(card).toBeVisible({ timeout: 10_000 });
+    await page.getByRole("button", { name: /^Filters/ }).click();
     await expect(hideOrgToggle).toHaveAttribute("aria-pressed", "true");
     await expect(repoLabel).toHaveText("widgets");
   });
@@ -571,6 +654,7 @@ test.describe("high-density phone routes", () => {
 
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
+    await page.getByRole("button", { name: /^Filters/ }).click();
     await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();
     await page.getByRole("combobox", { name: /Time range/ }).click();

@@ -42,6 +42,7 @@ Rules:
 - Queued-ack deferral matches linked rows by `repo_id` across renames; route owner/name matching is restricted to null-ID legacy rows (`internal/db/queries_notifications.go::DB.DeferQueuedNotificationAcksForRepos`).
 - `platform` is required. Blank provider/platform values are errors, not implicit GitHub defaults.
 - Show notifications only for current monitored repo set from config/syncer repo refs.
+- Capture the monitored-repository scope as stable internal IDs under the repository-reconciliation fence, then apply it inside Activity and actor-candidate SQL before ordering and limits; mutable routes or handler-side filtering can hide valid rows (`internal/server/huma_routes.go::Server.trackedActivityRepoIDsUnderRepositoryReconciliationRead`).
 - Historical notifications for removed repos may stay in SQLite but must not appear in `unread`, `active`, `read`, `done`, or `all` unless future explicit `include_unmonitored` contract exists.
 - `repo_id` is enrichment/optimization, not visibility authority.
 - Sync watermarks are keyed by full repository identity `(platform, platform_host, repo_owner, repo_name)`, never by host alone.

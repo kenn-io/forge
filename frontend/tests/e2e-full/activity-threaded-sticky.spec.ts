@@ -5,19 +5,19 @@ import { expect, test, type Page } from "@playwright/test";
 // server seeds two repos (acme/widgets, acme/tools) in 7d, so grouped
 // threaded mode has multiple sections that the scroll behavior can exercise.
 
-async function openActivityViewDropdown(page: Page) {
-  const dropdown = page.locator(".activity-feed .kit-filter-dropdown__panel");
-  if (await dropdown.isVisible()) {
-    return dropdown;
+async function openActivityFilters(page: Page) {
+  const panel = page.locator(".activity-filters__panel");
+  if (await panel.isVisible()) {
+    return panel;
   }
-  await page.locator(".activity-feed .kit-filter-dropdown__btn", { hasText: "View" }).click();
-  await expect(dropdown).toBeVisible();
-  return dropdown;
+  await page.locator(".activity-feed .activity-filters__trigger").click();
+  await expect(panel).toBeVisible();
+  return panel;
 }
 
 async function selectActivityViewItem(page: Page, label: string): Promise<void> {
-  const dropdown = await openActivityViewDropdown(page);
-  await dropdown.locator(".kit-filter-dropdown__item", { hasText: label }).click();
+  const panel = await openActivityFilters(page);
+  await panel.locator(".activity-filters__item", { hasText: label }).click();
 }
 
 async function gotoThreadedGrouped(page: Page): Promise<void> {

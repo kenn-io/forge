@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { EmptyState, SearchInput, Spinner, Toggle } from "@kenn-io/kit-ui";
+  import {
+    EmptyState,
+    SearchInput,
+    Spinner,
+    Toggle,
+    type TypeaheadOption,
+  } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onMount, onDestroy } from "svelte";
   import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
@@ -7,7 +13,6 @@
   import { getAppRuntime } from "../app/runtime-context.js";
   import {
     buildActivityFilterTypes,
-    DEFAULT_ACTIVITY_ITEM_TYPES,
     DEFAULT_EVENT_TYPES,
     isActivityItemTypeEnabled,
     type ActivityItemType,
@@ -16,8 +21,8 @@
   } from "../stores/activity.svelte.js";
   import { getStores, getNavigate, getSidebar } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
+  import ActivityFilters from "./ActivityFilters.svelte";
   import { ScrollBox } from "@kenn-io/kit-ui";
-  import { FilterDropdown } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,
     isDefaultBranchCommitActivity,
@@ -113,8 +118,8 @@
     return BOT_SUFFIXES.some((s) => lower.endsWith(s));
   }
 
-  const hiddenFilterCount = $derived(
-    (DEFAULT_ACTIVITY_ITEM_TYPES.length - activity.getEnabledItemTypes().size)
+  const popoverFilterCount = $derived(
+    (activity.getActivityAuthor() ? 1 : 0)
     + (EVENT_TYPES.length - activity.getEnabledEvents().size)
     + (activity.getShowNotifications() ? 0 : 1)
     + (activity.getHideClosedMerged() ? 1 : 0)
@@ -128,9 +133,12 @@
   onMount(() => {
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
-    activity.loadActivity();
+    activity.loadActivity(true);
     activity.startActivityPolling();
-    unsubSync = sync.subscribeSyncComplete(activity.loadActivity);
+    unsubSync = sync.subscribeSyncComplete(() => {
+      activity.loadActivity();
+      activity.loadActivityAuthors(true);
+    });
   });
 
   onDestroy(() => {
@@ -215,6 +223,19 @@
         onFailure: () => {},
       },
     );
+  }
+
+  const authorOptions = $derived.by<TypeaheadOption[]>(() =>
+    activity.getActivityAuthors().map((author) => ({
+      name: author,
+      label: author,
+    })),
+  );
+
+  function handleAuthorSelect(author: string): void {
+    activity.setActivityAuthor(author || undefined);
+    activity.syncToURL();
+    activity.loadActivity();
   }
 
   function eventLabel(item: ActivityItem): string {
@@ -323,7 +344,7 @@
   }
 
   function resetFilters(): void {
-    activity.setEnabledItemTypes(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
+    activity.setActivityAuthor(undefined);
     activity.setEnabledEvents(new Set(EVENT_TYPES));
     activity.setShowNotifications(true);
     activity.setHideClosedMerged(false);
@@ -418,6 +439,7 @@
   const filterSections = $derived.by(() => [
     {
       title: "View",
+      selectionMode: "single" as const,
       items: [
         {
           id: "view-flat",
@@ -437,6 +459,7 @@
     },
     {
       title: "Time range",
+      selectionMode: "single" as const,
       items: TIME_RANGES.map((range) => ({
         id: `range-${range.value}`,
         label: range.label,
@@ -460,6 +483,7 @@
       ? [
           {
             title: "Grouping",
+            selectionMode: "single" as const,
             items: [
               {
                 id: "group-by-repo",
@@ -604,21 +628,36 @@
       />
     </div>
 
-    <FilterDropdown
-      label="View"
-      detail={currentViewDetail}
-      active={hiddenFilterCount > 0}
-      badgeCount={hiddenFilterCount}
-      title="View and filter activity"
-      sections={filterSections}
-      minWidth="220px"
-      {...hiddenFilterCount > 0
-        ? {
-            resetLabel: "Show hidden activity",
-            onReset: resetFilters,
-          }
-        : {}}
-    />
+    <div class="filters-wrap">
+      <ActivityFilters
+        author={activity.getActivityAuthor() ?? ""}
+        {authorOptions}
+        authorLoading={activity.isActivityAuthorsLoading()}
+        authorError={activity.getActivityAuthorsError() ?? ""}
+        detail={currentViewDetail}
+        {compact}
+        badgeCount={popoverFilterCount}
+        sections={filterSections}
+        onAuthorSelect={handleAuthorSelect}
+        onReset={resetFilters}
+      />
+    </div>
+
+    {#if !compact && activity.getActivityAuthor()}
+      <div class="author-chip-wrap">
+        <Chip
+          size="sm"
+          tone="info"
+          uppercase={false}
+          interactive
+          ariaLabel={`Clear author filter ${activity.getActivityAuthor()}`}
+          onclick={() => handleAuthorSelect("")}
+        >
+          {activity.getActivityAuthor()}
+          {#snippet trailing()}<span aria-hidden="true">×</span>{/snippet}
+        </Chip>
+      </div>
+    {/if}
 
     {#if activity.getViewMode() === "threaded"}
       <button
@@ -966,6 +1005,7 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+    container-type: inline-size;
   }
 
   .loading-placeholder {
@@ -997,6 +1037,10 @@
   .search-wrap {
     margin-left: auto;
     width: 180px;
+  }
+
+  .author-chip-wrap {
+    min-width: 0;
   }
 
   .collapse-all-btn {
@@ -1032,8 +1076,7 @@
 
   .activity-feed--compact .filter-group {
     order: 2;
-    flex: 1 1 auto;
-    min-width: 0;
+    flex: 0 0 auto;
   }
 
   .activity-feed--compact .search-wrap {
@@ -1043,11 +1086,6 @@
     margin-left: 0;
   }
 
-  .activity-feed--compact .collapse-all-btn {
-    order: 4;
-    flex: 0 0 auto;
-  }
-
   /* In the narrow side pane the labeled button wraps to its own row and
      stacks awkwardly, so collapse to an icon-only control there. The
      aria-label/title keep the accessible name intact. */
@@ -1055,9 +1093,22 @@
     display: none;
   }
 
-  .activity-feed--compact :global(.kit-filter-dropdown) {
+  .activity-feed--compact .filters-wrap {
     order: 3;
-    flex-shrink: 0;
+    min-width: 0;
+    max-width: min(320px, 100%);
+    flex: 0 1 auto;
+  }
+
+  .activity-feed--compact .collapse-all-btn {
+    order: 4;
+    flex: 0 0 auto;
+  }
+
+  @container (max-width: 480px) {
+    .activity-feed--compact .filters-wrap {
+      flex: 1 1 0;
+    }
   }
 
   .table-container {

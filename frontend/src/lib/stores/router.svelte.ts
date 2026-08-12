@@ -517,7 +517,7 @@ let route = $state<Route>(parseRoute(configuredInitialRoute ?? currentLocationPa
 // Back/Forward), and initial load — so it stays current regardless of how
 // Activity is entered or left.
 const LAST_ACTIVITY_ROUTE_STORAGE_KEY = "kenn-forge:last-activity-route";
-const RESTORABLE_ACTIVITY_FILTER_PARAMS = ["types", "notif", "hide_branch"] as const;
+const RESTORABLE_ACTIVITY_FILTER_PARAMS = ["types", "notif", "hide_branch", "author"] as const;
 
 function isRestorableActivityRoute(routePath: string): boolean {
   if (!routePath.startsWith("/") || routePath.startsWith("//")) return false;

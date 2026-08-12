@@ -54,6 +54,25 @@ components:
         - default_branch_retention_days
         - default_branch_max_commits
       type: object
+    ActivityAuthorsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ActivityAuthorsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        authors:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - authors
+      type: object
     ActivityItemResponse:
       additionalProperties: false
       properties:
@@ -7130,14 +7149,6 @@ components:
         - hide_tmux_status
         - retained_sessions
       type: object
-    TerminalClipboardInputBody:
-      additionalProperties: false
-      properties:
-        text:
-          type: string
-      required:
-        - text
-      type: object
     TmuxSessionInfo:
       additionalProperties: false
       properties:
@@ -7905,6 +7916,13 @@ paths:
           name: search
           schema:
             type: string
+        - description: Exact, case-insensitive pull request or issue author filter.
+          explode: false
+          in: query
+          name: author
+          schema:
+            description: Exact, case-insensitive pull request or issue author filter.
+            type: string
         - explode: false
           in: query
           name: after
@@ -7929,6 +7947,38 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List activity
+      tags:
+        - Activity
+  /activity/authors:
+    get:
+      operationId: list-activity-authors
+      parameters:
+        - description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
+          explode: false
+          in: query
+          name: repo
+          schema:
+            description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
+            type: string
+        - explode: false
+          in: query
+          name: since
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityAuthorsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List activity authors
       tags:
         - Activity
   /agent-hooks/{agent}:

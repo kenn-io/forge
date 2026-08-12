@@ -1332,13 +1332,15 @@ type WorkspaceRuntimeSession struct {
 
 // ListActivityOpts holds filters and pagination for the activity feed.
 type ListActivityOpts struct {
-	Repo        string       // "owner/name" filter
-	RepoFilters []RepoFilter // one or more repository filters
-	Types       []string     // activity type filter
+	Repo           string       // "owner/name" filter
+	RepoFilters    []RepoFilter // one or more repository filters
+	AllowedRepoIDs []int64      // caller-visible stable repository scope
+	Types          []string     // activity type filter
 	// ItemTypes filters item-scoped rows before ordering and limiting.
 	// "repo" selects rows without a PR or issue parent.
 	ItemTypes []string
 	Search    string // title/body search
+	Author    string // exact, case-insensitive PR or issue author filter
 	// ExcludeNotifications drops notification rows from the union before
 	// ordering/limit. Notifications are always enabled in normal operation;
 	// the server only sets this when no config is loaded (nil-config
@@ -1359,4 +1361,15 @@ type ListActivityOpts struct {
 	AfterTime      *time.Time
 	AfterSource    string
 	AfterSourceID  int64
+}
+
+// ListActivityAuthorsOpts holds the repository and time scopes used to build
+// the activity author's typeahead candidates. Feed-only filters such as search
+// and activity type intentionally do not participate.
+type ListActivityAuthorsOpts struct {
+	RepoFilters             []RepoFilter
+	AllowedRepoIDs          []int64
+	ExcludeNotifications    bool
+	NotificationRepoFilters []NotificationRepoFilter
+	Since                   *time.Time
 }

@@ -17,6 +17,9 @@ fixtures, or changing shell-script coverage.
 - Prefer the generated Go API client for integration-style API tests.
 - Use established package fixtures instead of opening databases directly. Use
   `t.TempDir()` when a test needs filesystem isolation.
+- Fixed historical timestamps must use an explicit query window or controlled
+  clock; rolling defaults otherwise make fixtures expire with wall time
+  (`internal/server/e2etest/notifications_test.go::TestNotificationSyncReconcilesReusedRouteE2E`).
 - Shell-script tests must execute the script against controlled inputs and
   assert observable output, side effects, or exit status. Do not grep scripts,
   workflows, config, or docs for expected implementation text.

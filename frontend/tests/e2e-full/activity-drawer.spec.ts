@@ -615,9 +615,9 @@ test.describe("activity split view", () => {
     const repoLabel = row.locator(".compact-meta > span").first();
     await expect(repoLabel).toHaveText("acme/widgets");
 
-    await page.locator(".activity-feed .kit-filter-dropdown__btn", { hasText: "View" }).click();
+    await page.locator(".activity-feed .activity-filters__trigger").click();
     await page
-      .locator(".activity-feed .kit-filter-dropdown__panel .kit-filter-dropdown__item", {
+      .locator(".activity-filters__panel .activity-filters__item", {
         hasText: "Hide org name",
       })
       .click();
@@ -1158,22 +1158,22 @@ test.describe("activity split view", () => {
     expect(detailBox!.width).toBeGreaterThan(300);
   });
 
-  test("activity split view lets the View dropdown float past the rail splitter", async ({ page }) => {
+  test("activity split view lets the Filters popover float past the rail splitter", async ({ page }) => {
     await page.goto("/");
     await waitForActivityTable(page);
 
     await openActivityPRSplit(page);
 
     const rail = page.locator(".activity-pane");
-    const viewButton = rail.locator(".kit-filter-dropdown__btn", { hasText: "View" });
-    await expect(viewButton).toBeVisible();
-    await viewButton.click();
+    const filtersButton = rail.locator(".activity-filters__trigger");
+    await expect(filtersButton).toBeVisible();
+    await filtersButton.click();
 
-    const dropdown = page.locator(".activity-feed .kit-filter-dropdown__panel");
-    await expect(dropdown).toBeVisible();
+    const popover = page.locator(".activity-filters__panel");
+    await expect(popover).toBeVisible();
 
     const railBox = await rail.boundingBox();
-    const dropdownBox = await dropdown.boundingBox();
+    const dropdownBox = await popover.boundingBox();
     expect(railBox).not.toBeNull();
     expect(dropdownBox).not.toBeNull();
     const railRight = railBox!.x + railBox!.width;
@@ -1183,7 +1183,7 @@ test.describe("activity split view", () => {
     const itemBeyondRail = await page.evaluate(
       ({ x, y }) => {
         const element = document.elementFromPoint(x, y);
-        return element?.closest(".kit-filter-dropdown__panel") !== null;
+        return element?.closest(".activity-filters__panel") !== null;
       },
       {
         x: railRight + 8,

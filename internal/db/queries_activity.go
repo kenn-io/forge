@@ -41,6 +41,13 @@ func (d *DB) ListActivity(
 			}
 		}
 	}
+	if opts.AllowedRepoIDs != nil {
+		cond := activityRepoIDCondition(opts.AllowedRepoIDs, &args)
+		if cond == "" {
+			cond = "0 = 1"
+		}
+		whereClauses = append(whereClauses, cond)
+	}
 
 	if len(opts.Types) > 0 {
 		placeholders := make([]string, len(opts.Types))
@@ -78,6 +85,11 @@ func (d *DB) ListActivity(
 		args = append(args,
 			pattern, pattern, pattern, pattern, pattern, pattern, pattern,
 			pattern, pattern, pattern, pattern, pattern, pattern)
+	}
+
+	if opts.Author != "" {
+		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
+		args = append(args, opts.Author)
 	}
 
 	// Time window filter.
@@ -133,7 +145,9 @@ func (d *DB) ListActivity(
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       n.item_type, COALESCE(n.item_number, 0), n.subject_title,
 			       n.web_url, CASE WHEN n.unread = 1 THEN 'unread' ELSE 'read' END,
-			       n.item_author, n.item_author, n.source_updated_at,
+			       COALESCE(NULLIF(mr.author, ''), NULLIF(iss.author, ''), n.item_author),
+			       COALESCE(NULLIF(mr.author, ''), NULLIF(iss.author, ''), n.item_author),
+			       n.source_updated_at,
 			       substr(n.reason, 1, 200),
 			       '', '', '', '',
 			       '', '',
@@ -344,6 +358,142 @@ func (d *DB) ListActivity(
 	return items, rows.Err()
 }
 
+// ListActivityAuthors returns the distinct, non-empty PR and issue authors
+// available in an activity scope. Identity is case-insensitive; when casing
+// differs, the most recently active subject's spelling wins. Results are
+// ordered by most recent activity so the typeahead puts currently active
+// authors first.
+func (d *DB) ListActivityAuthors(
+	ctx context.Context, opts ListActivityAuthorsOpts,
+) ([]string, error) {
+	var whereClauses []string
+	var args []any
+
+	if len(opts.RepoFilters) > 0 {
+		if cond := activityRepoFilterCondition(opts.RepoFilters, &args); cond != "" {
+			whereClauses = append(whereClauses, cond)
+		}
+	}
+	if opts.AllowedRepoIDs != nil {
+		cond := activityRepoIDCondition(opts.AllowedRepoIDs, &args)
+		if cond == "" {
+			cond = "0 = 1"
+		}
+		whereClauses = append(whereClauses, cond)
+	}
+	if opts.Since != nil {
+		whereClauses = append(whereClauses, "created_at >= ?")
+		args = append(args, *opts.Since)
+	}
+	whereClauses = append(whereClauses, "TRIM(author) != ''")
+
+	notificationUnion := ""
+	var notificationArgs []any
+	if !opts.ExcludeNotifications {
+		notificationScope := ""
+		if opts.NotificationRepoFilters != nil {
+			notificationScope = activityNotificationRepoFilterCondition(
+				opts.NotificationRepoFilters, &notificationArgs,
+			)
+		}
+		if notificationScope != "" {
+			notificationScope = " AND " + notificationScope
+		}
+		notificationUnion = `
+			UNION ALL
+			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
+			       COALESCE(NULLIF(mr.author, ''), NULLIF(iss.author, ''), n.item_author),
+			       n.source_updated_at
+			FROM forge_notification_items n
+			JOIN forge_repos r
+			       ON r.lifecycle_state = 'active'
+			      AND (
+			          n.repo_id = r.id
+			          OR (n.repo_id IS NULL
+			              AND r.platform = n.platform
+			              AND r.platform_host = n.platform_host
+			              AND r.owner_key = n.repo_owner
+			              AND r.name_key = n.repo_name)
+			      )
+			LEFT JOIN forge_merge_requests mr
+			       ON n.item_type = 'pr' AND mr.repo_id = r.id AND mr.number = n.item_number
+			LEFT JOIN forge_issues iss
+			       ON n.item_type = 'issue' AND iss.repo_id = r.id AND iss.number = n.item_number
+			WHERE n.item_type IN ('pr', 'issue') AND n.item_number IS NOT NULL
+			      AND n.reason != 'author'` + notificationScope
+	}
+
+	query := fmt.Sprintf(`
+		WITH candidates AS (
+			SELECT r.id AS repo_id, r.platform, r.platform_host, r.owner AS repo_owner,
+			       r.name AS repo_name, r.repo_path_key,
+			       p.author, p.created_at
+			FROM forge_merge_requests p
+			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
+			UNION ALL
+			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
+			       i.author, i.created_at
+			FROM forge_issues i
+			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
+			UNION ALL
+			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
+			       p.author, e.created_at
+			FROM forge_mr_events e
+			JOIN forge_merge_requests p ON e.merge_request_id = p.id
+			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
+			WHERE e.event_type IN ('issue_comment', 'review', 'commit', 'force_push')
+			UNION ALL
+			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
+			       i.author, e.created_at
+			FROM forge_issue_events e
+			JOIN forge_issues i ON e.issue_id = i.id
+			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
+			WHERE e.event_type = 'issue_comment'
+			%[1]s
+		), scoped AS (
+			SELECT author, created_at
+			FROM candidates
+			WHERE %[2]s
+		), ranked AS (
+			SELECT author,
+			       MAX(created_at) OVER (PARTITION BY LOWER(author)) AS last_seen,
+			       ROW_NUMBER() OVER (
+			           PARTITION BY LOWER(author)
+			           ORDER BY created_at DESC, author COLLATE NOCASE, author
+			       ) AS casing_rank
+			FROM scoped
+		)
+		SELECT author
+		FROM ranked
+		WHERE casing_rank = 1
+		ORDER BY last_seen DESC, LOWER(author), author`,
+		notificationUnion,
+		strings.Join(whereClauses, " AND "),
+	)
+
+	queryArgs := make([]any, 0, len(notificationArgs)+len(args))
+	queryArgs = append(queryArgs, notificationArgs...)
+	queryArgs = append(queryArgs, args...)
+	rows, err := d.ro.QueryContext(ctx, query, queryArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("list activity authors: %w", err)
+	}
+	defer rows.Close()
+
+	authors := make([]string, 0)
+	for rows.Next() {
+		var author string
+		if err := rows.Scan(&author); err != nil {
+			return nil, fmt.Errorf("scan activity author: %w", err)
+		}
+		authors = append(authors, author)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list activity authors rows: %w", err)
+	}
+	return authors, nil
+}
+
 func activityRepoFilterCondition(filters []RepoFilter, args *[]any) string {
 	var groups []string
 	for _, filter := range filters {
@@ -385,6 +535,26 @@ func activityRepoFilterCondition(filters []RepoFilter, args *[]any) string {
 		return ""
 	}
 	return "(" + strings.Join(groups, " OR ") + ")"
+}
+
+func activityRepoIDCondition(repoIDs []int64, args *[]any) string {
+	placeholders := make([]string, 0, len(repoIDs))
+	seen := make(map[int64]struct{}, len(repoIDs))
+	for _, repoID := range repoIDs {
+		if repoID <= 0 {
+			continue
+		}
+		if _, ok := seen[repoID]; ok {
+			continue
+		}
+		seen[repoID] = struct{}{}
+		placeholders = append(placeholders, "?")
+		*args = append(*args, repoID)
+	}
+	if len(placeholders) == 0 {
+		return ""
+	}
+	return "repo_id IN (" + strings.Join(placeholders, ",") + ")"
 }
 
 // activityNotificationRepoFilterCondition scopes the notification union to

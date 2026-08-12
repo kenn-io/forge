@@ -17,8 +17,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
+import { tick } from "svelte";
 
-import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
+import {
+  mountBrowserApp,
+  pressKey,
+  resetKeyboardModuleState,
+  type MountedBrowserApp,
+} from "./test/browserAppHarness.js";
 import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
@@ -227,6 +233,30 @@ describe("view navigation", () => {
     await page.elementLocator(viewTab("Activity")).click();
     await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).not.toBeNull(), WAIT);
     expect(window.location.search).toContain("selected=pr%3A");
+  });
+
+  it("keeps Activity filter shortcuts and Escape isolated from the open detail pane", async () => {
+    mounted = await mountBrowserApp("/", { overrides: overrides() });
+    await vi.waitFor(() => expect(document.querySelector(".activity-table .activity-row")).not.toBeNull(), WAIT);
+
+    await page.elementLocator(document.querySelector(".activity-table .activity-row")!).click();
+    await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).not.toBeNull(), WAIT);
+
+    await page.elementLocator(document.querySelector(".activity-feed .activity-filters__trigger")!).click();
+    await vi.waitFor(() => expect(document.querySelector("[aria-label='Activity filters']")).not.toBeNull(), WAIT);
+
+    const paletteShortcut = pressKey("k", { meta: true });
+    await tick();
+    expect(paletteShortcut.defaultPrevented).toBe(true);
+    expect(document.querySelector("[role='dialog'][aria-label='Command palette']")).toBeNull();
+    expect(document.querySelector("[aria-label='Activity filters']")).not.toBeNull();
+
+    pressKey("Escape");
+    await vi.waitFor(() => expect(document.querySelector("[aria-label='Activity filters']")).toBeNull(), WAIT);
+    expect(document.querySelector(".activity-shell--split")).not.toBeNull();
+
+    pressKey("Escape");
+    await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).toBeNull(), WAIT);
   });
 
   it("legacy /mail route falls through to Activity", async () => {

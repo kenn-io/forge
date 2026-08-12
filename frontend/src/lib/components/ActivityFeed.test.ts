@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
@@ -111,6 +111,12 @@ const enabledEvents = vi.hoisted(() => ({
 }));
 const showNotifications = vi.hoisted(() => ({ value: true }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
+const selectedAuthor = vi.hoisted(() => ({ value: undefined as string | undefined }));
+const setActivityAuthor = vi.hoisted(() =>
+  vi.fn((author: string | undefined) => {
+    selectedAuthor.value = author;
+  }),
+);
 
 vi.mock("../context.js", () => ({
   getNavigate: () => vi.fn(),
@@ -122,6 +128,10 @@ vi.mock("../context.js", () => ({
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
+      getActivityAuthor: () => selectedAuthor.value,
+      getActivityAuthors: () => ["Alice", "Bob"],
+      isActivityAuthorsLoading: () => false,
+      getActivityAuthorsError: () => null,
       getEnabledEvents: () => enabledEvents.value,
       getShowNotifications: () => showNotifications.value,
       getHideClosedMerged: () => hideClosedMerged.value,
@@ -161,6 +171,7 @@ vi.mock("../context.js", () => ({
         hideDefaultBranchActivity.value = value;
       }),
       setActivitySearch: vi.fn(),
+      setActivityAuthor,
       setTimeRange: vi.fn(),
       setViewMode: vi.fn(),
       syncToURL: vi.fn(),
@@ -194,6 +205,8 @@ describe("ActivityFeed compact mode", () => {
     enabledItemTypes.value = new Set(["pr", "issue"]);
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
     showNotifications.value = true;
+    selectedAuthor.value = undefined;
+    setActivityAuthor.mockClear();
     setActivityFilterTypes.mockClear();
     items.value = [
       activityItem("selected"),
@@ -249,6 +262,87 @@ describe("ActivityFeed compact mode", () => {
 
     const { container } = render(ActivityFeed, { props: { compact: true } });
     expect(container.textContent).not.toContain("Workspace-only work");
+  });
+
+  it("selects a single PR or issue author from the typeahead", async () => {
+    render(ActivityFeed, { props: { compact: false } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filter authors" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Alice" }));
+
+    expect(setActivityAuthor).toHaveBeenCalledWith("Alice");
+  });
+
+  it("shows a clearable author chip in the wide toolbar", async () => {
+    selectedAuthor.value = "Alice";
+    render(ActivityFeed, { props: { compact: false } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Clear author filter Alice" }));
+
+    expect(setActivityAuthor).toHaveBeenCalledWith(undefined);
+  });
+
+  it("summarizes the author in compact Filters without adding a chip row", () => {
+    selectedAuthor.value = "Alice";
+    render(ActivityFeed, { props: { compact: true } });
+
+    expect(screen.getByRole("button", { name: /Filters.*Alice/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Clear author filter Alice" })).toBeNull();
+  });
+
+  it("resets popover filters and author without changing the PR and issue toggles", async () => {
+    selectedAuthor.value = "Alice";
+    enabledItemTypes.value = new Set(["pr"]);
+    render(ActivityFeed, { props: { compact: false } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+
+    expect(setActivityAuthor).toHaveBeenCalledWith(undefined);
+    expect(enabledItemTypes.value).toEqual(new Set(["pr"]));
+  });
+
+  it("exposes exclusive choices as radio groups and independent filters as toggles", async () => {
+    render(ActivityFeed, { props: { compact: false } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+
+    const viewGroup = screen.getByRole("radiogroup", { name: "View" });
+    expect(within(viewGroup).getByRole("radio", { name: "Flat" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(viewGroup).getByRole("radio", { name: "Threaded" }).getAttribute("aria-checked")).toBe("false");
+
+    const rangeGroup = screen.getByRole("radiogroup", { name: "Time range" });
+    expect(within(rangeGroup).getByRole("radio", { name: "7d" }).getAttribute("aria-checked")).toBe("true");
+
+    expect(screen.getByRole("button", { name: "Roll up commits" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Comments" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keeps the filter popover open and focus on the selected radio during keyboard navigation", async () => {
+    render(ActivityFeed, { props: { compact: false } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    const viewGroup = screen.getByRole("radiogroup", { name: "View" });
+    const flat = within(viewGroup).getByRole("radio", { name: "Flat" });
+    const threaded = within(viewGroup).getByRole("radio", { name: "Threaded" });
+
+    flat.focus();
+    await fireEvent.keyDown(flat, { key: "ArrowRight" });
+
+    expect(screen.getByLabelText("Activity filters")).toBeTruthy();
+    expect(document.activeElement).toBe(threaded);
+  });
+
+  it("exposes threaded grouping as an exclusive choice", async () => {
+    viewMode.value = "threaded";
+    render(ActivityFeed, { props: { compact: false } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+
+    const grouping = screen.getByRole("radiogroup", { name: "Grouping" });
+    expect(within(grouping).getByRole("radio", { name: "By repo" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(grouping).getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("false");
   });
 
   it("independently toggles PR and issue visibility", async () => {
@@ -572,7 +666,7 @@ describe("ActivityFeed compact mode", () => {
   it("deselecting Commits also hides default-branch commit activity", async () => {
     render(ActivityFeed, { props: { compact: true } });
 
-    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     await fireEvent.click(screen.getByRole("button", { name: "Commits" }));
 
     expect(setActivityFilterTypes).toHaveBeenCalledWith([
@@ -589,7 +683,7 @@ describe("ActivityFeed compact mode", () => {
   it("deselecting Force pushes also hides default-branch force pushes", async () => {
     render(ActivityFeed, { props: { compact: true } });
 
-    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     await fireEvent.click(screen.getByRole("button", { name: "Force pushes" }));
 
     expect(setActivityFilterTypes).toHaveBeenCalledWith([
@@ -606,7 +700,7 @@ describe("ActivityFeed compact mode", () => {
   it("can hide default-branch activity from the filter dropdown", async () => {
     render(ActivityFeed, { props: { compact: true } });
 
-    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     await fireEvent.click(
       screen.getByRole("button", {
         name: "Hide default-branch activity",
@@ -628,7 +722,7 @@ describe("ActivityFeed compact mode", () => {
   it("deselecting Notifications drops the notification type from the request", async () => {
     render(ActivityFeed, { props: { compact: true } });
 
-    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     await fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
 
     expect(showNotifications.value).toBe(false);
@@ -647,7 +741,7 @@ describe("ActivityFeed compact mode", () => {
   it("can enable commit roll-up from the view dropdown", async () => {
     render(ActivityFeed, { props: { compact: true } });
 
-    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     await fireEvent.click(screen.getByRole("button", { name: "Roll up commits" }));
 
     expect(rollUpCommits.value).toBe(true);
@@ -657,7 +751,7 @@ describe("ActivityFeed compact mode", () => {
     enabledEvents.value = new Set(["comment"]);
     render(ActivityFeed, { props: { compact: true } });
 
-    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     await fireEvent.click(screen.getByRole("button", { name: "Comments" }));
 
     // Removing the last content event preserves the established

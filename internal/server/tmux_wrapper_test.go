@@ -431,7 +431,7 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	assert.True(listed.Workspaces[0].TmuxWorking)
 }
 
-func TestSearchedActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
+func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	t.Setenv("TMUX_PANE_OUTPUT", "baseline output")
@@ -518,6 +518,108 @@ func TestSearchedActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	assert.EqualValues(1, incrementalWorkspace.ItemNumber)
 	require.NotNil(incrementalWorkspace.Workspace)
 	assert.Equal(workspaceID, incrementalWorkspace.Workspace.Id)
+
+	author := mr.Author
+	authorInitial, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Author: &author, Since: &since},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, authorInitial.StatusCode())
+	require.NotNil(authorInitial.JSON200)
+	require.NotNil(authorInitial.JSON200.Items)
+	require.NotEmpty(*authorInitial.JSON200.Items)
+
+	authorAfter := (*authorInitial.JSON200.Items)[0].Cursor
+	authorIncremental, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Author: &author, Since: &since, After: &authorAfter},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, authorIncremental.StatusCode())
+	require.NotNil(authorIncremental.JSON200)
+	require.NotNil(authorIncremental.JSON200.Items)
+	assert.Empty(*authorIncremental.JSON200.Items)
+	require.NotNil(authorIncremental.JSON200.WorkspaceActivity)
+	require.Len(*authorIncremental.JSON200.WorkspaceActivity, 1)
+	authorWorkspace := (*authorIncremental.JSON200.WorkspaceActivity)[0]
+	assert.EqualValues(1, authorWorkspace.ItemNumber)
+	require.NotNil(authorWorkspace.Workspace)
+	assert.Equal(workspaceID, authorWorkspace.Workspace.Id)
+}
+
+func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("TMUX_PANE_OUTPUT", "baseline output")
+	script, _ := writeTmuxRecorder(t)
+	client, _, database, _ := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", MrNumber: 1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+
+	require.Eventually(func() bool {
+		activity := getRawWorkspaceActivity(t, client, ctx, createResp.JSON202.Id)
+		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
+	}, 3*time.Second, 50*time.Millisecond, "tmux baseline was not observed")
+	since := time.Now().UTC().Format(time.RFC3339Nano)
+	t.Setenv("TMUX_PANE_OUTPUT", "workspace-only activity")
+
+	params := &generated.ListActivityAuthorsParams{Since: &since}
+	var response *generated.ListActivityAuthorsResponse
+	require.Eventually(func() bool {
+		got, requestErr := client.HTTP.ListActivityAuthorsWithResponse(ctx, params)
+		if requestErr != nil || got.JSON200 == nil || got.JSON200.Authors == nil {
+			return false
+		}
+		response = got
+		for _, author := range *got.JSON200.Authors {
+			if strings.EqualFold(author, mr.Author) {
+				return true
+			}
+		}
+		return false
+	}, 8*time.Second, 100*time.Millisecond, "workspace-only author was not listed")
+	require.NotNil(response)
+	require.NotNil(response.JSON200)
+	require.NotNil(response.JSON200.Authors)
+	assert.Equal([]string{mr.Author}, *response.JSON200.Authors)
+
+	missingRepo := "github|github.com/acme/missing"
+	params.Repo = &missingRepo
+	scoped, err := client.HTTP.ListActivityAuthorsWithResponse(ctx, params)
+	require.NoError(err)
+	require.Equal(http.StatusOK, scoped.StatusCode())
+	require.NotNil(scoped.JSON200)
+	require.NotNil(scoped.JSON200.Authors)
+	assert.Empty(*scoped.JSON200.Authors)
+
+	future := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+	params.Repo = nil
+	params.Since = &future
+	outOfRange, err := client.HTTP.ListActivityAuthorsWithResponse(ctx, params)
+	require.NoError(err)
+	require.Equal(http.StatusOK, outOfRange.StatusCode())
+	require.NotNil(outOfRange.JSON200)
+	require.NotNil(outOfRange.JSON200.Authors)
+	assert.Empty(*outOfRange.JSON200.Authors)
 }
 
 func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {

@@ -169,17 +169,15 @@ describe("threaded activity collapse", () => {
   });
 
   // Starting from flat view mode, the test switches to Threaded through the
-  // View dropdown before exercising the collapse controls.
-  it("switches to threaded via the View dropdown, then collapse/expand all", async () => {
+  // Filters popover before exercising the collapse controls.
+  it("switches to threaded via Filters, then collapse/expand all", async () => {
     mounted = await mountBrowserApp("/", {
       overrides: [activitySettings("flat"), activityItems(defaultEvents)],
     });
     await vi.waitFor(() => expect(document.querySelector(".activity-table .activity-row")).not.toBeNull(), WAIT);
 
-    // Two buttons carry "View" in their accessible name (the Reviews view-tab
-    // and the filter button labelled exactly "View"); target the filter button.
-    await page.getByRole("button", { name: "View", exact: true }).click();
-    await page.getByRole("button", { name: "Threaded" }).click();
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
+    await page.getByRole("radio", { name: "Threaded" }).click();
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .item-row")).not.toBeNull(), WAIT);
 
     const initialCount = eventRows().length;

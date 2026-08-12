@@ -23660,6 +23660,305 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 	assert.Equal("ws-41", got[0].Workspace.ID)
 }
 
+func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	since := now.Add(-time.Hour)
+	repoID := int64(7)
+	matchedKey := db.WorkspaceSubjectKey{
+		RepoID: repoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 41,
+	}
+	eventlessKey := db.WorkspaceSubjectKey{
+		RepoID: repoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+	}
+	subject := func(key db.WorkspaceSubjectKey) workspaceapi.SubjectActivity {
+		return workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+				Title: "Workspace work", Author: "alice", State: "open",
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: "ws-" + strconv.Itoa(key.ItemNumber), Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+			matchedKey:   subject(matchedKey),
+			eventlessKey: subject(eventlessKey),
+		},
+	}
+	srv := &Server{repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{})}
+
+	byAuthor := srv.workspaceActivityResponse(
+		&listActivityInput{},
+		db.ListActivityOpts{Author: "ALICE", Since: &since},
+		snapshot,
+		[]db.ActivityItem{{
+			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
+			Author: "reviewer", ItemAuthor: "alice",
+		}},
+	)
+
+	require.Len(byAuthor, 2)
+	assert.ElementsMatch([]int{matchedKey.ItemNumber, eventlessKey.ItemNumber}, []int{
+		byAuthor[0].ItemNumber,
+		byAuthor[1].ItemNumber,
+	})
+
+	byCommenter := srv.workspaceActivityResponse(
+		&listActivityInput{},
+		db.ListActivityOpts{Author: "reviewer", Since: &since},
+		snapshot,
+		[]db.ActivityItem{{
+			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
+			Author: "reviewer", ItemAuthor: "alice",
+		}},
+	)
+	require.Empty(byCommenter)
+}
+
+func TestMergeWorkspaceActivityAuthorsDeduplicatesCaseInsensitively(t *testing.T) {
+	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	since := now.Add(-time.Hour)
+	activityAt := func(offset time.Duration) *time.Time {
+		value := now.Add(offset)
+		return &value
+	}
+	subject := func(repoID int64, number int, author string, at *time.Time) workspaceapi.SubjectActivity {
+		key := db.WorkspaceSubjectKey{
+			RepoID: repoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
+		}
+		return workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+				Author: author,
+			},
+			ActivityAt: at,
+		}
+	}
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	for _, item := range []workspaceapi.SubjectActivity{
+		subject(7, 41, "workspace owner", activityAt(-30*time.Minute)),
+		subject(7, 42, "Fresh Owner", activityAt(-10*time.Minute)),
+		subject(7, 43, "FRESH OWNER", activityAt(-20*time.Minute)),
+		subject(7, 44, "Old Owner", activityAt(-2*time.Hour)),
+		subject(8, 45, "Other Repo Owner", activityAt(-5*time.Minute)),
+	} {
+		snapshot.Subjects[item.Subject.Key] = item
+	}
+
+	got := mergeWorkspaceActivityAuthors(
+		[]string{"Provider Owner", "Workspace Owner"},
+		snapshot,
+		db.ListActivityAuthorsOpts{
+			AllowedRepoIDs: []int64{7},
+			RepoFilters: []db.RepoFilter{{
+				Platform: "github", PlatformHost: "github.com", RepoPath: "acme/widget",
+			}},
+			Since: &since,
+		},
+	)
+
+	assert.Equal(t, []string{"Provider Owner", "Workspace Owner", "Fresh Owner"}, got)
+}
+
+func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+
+	trackedPRID := seedPR(
+		t, database, "acme", "widget", 1,
+		withSeedPRAuthor("Item Owner"),
+		withSeedPRTimes(base, base, base),
+	)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: trackedPRID,
+			EventType:      "issue_comment",
+			Author:         "Reviewer",
+			CreatedAt:      base.Add(time.Minute),
+			DedupeKey:      "tracked-reviewer",
+		},
+		{
+			MergeRequestID: trackedPRID,
+			EventType:      "issue_comment",
+			Author:         "reviewer-bot",
+			CreatedAt:      base.Add(2 * time.Minute),
+			DedupeKey:      "tracked-reviewer-bot",
+		},
+	}))
+	seedPR(
+		t, database, "acme", "untracked", 1,
+		withSeedPRAuthor("Hidden Actor"),
+		withSeedPRTimes(base.Add(3*time.Minute), base.Add(3*time.Minute), base.Add(3*time.Minute)),
+	)
+
+	since := base.Add(-time.Minute).Format(time.RFC3339)
+	feed := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+url.QueryEscape(since)+"&author=ITEM%20OWNER",
+		nil,
+	)
+	require.Equal(http.StatusOK, feed.Code)
+	var feedBody activityResponse
+	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
+	require.Len(feedBody.Items, 3)
+	for _, item := range feedBody.Items {
+		assert.Equal("Item Owner", item.ItemAuthor)
+	}
+
+	commenterFeed := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+url.QueryEscape(since)+"&author=REVIEWER",
+		nil,
+	)
+	require.Equal(http.StatusOK, commenterFeed.Code)
+	var commenterFeedBody activityResponse
+	require.NoError(json.Unmarshal(commenterFeed.Body.Bytes(), &commenterFeedBody))
+	assert.Empty(commenterFeedBody.Items)
+
+	candidates := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity/authors?since="+url.QueryEscape(since),
+		nil,
+	)
+	require.Equal(http.StatusOK, candidates.Code)
+	var candidateBody struct {
+		Authors []string `json:"authors"`
+	}
+	require.NoError(json.Unmarshal(candidates.Body.Bytes(), &candidateBody))
+	assert.Equal([]string{"Item Owner"}, candidateBody.Authors)
+	assert.NotContains(candidateBody.Authors, "Hidden Actor")
+}
+
+func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	srv.cfg = &config.Config{}
+	ctx := t.Context()
+	now := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+
+	repo, err := database.GetRepoByIdentity(
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	tracked[0].RepoID = repo.ID
+	srv.syncer.SetRepos(tracked)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repo.ID, PlatformID: 702, Number: 702,
+		URL: "https://github.com/acme/gadget/pull/702", Title: "Renamed activity",
+		Author: "Rename Actor", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	renamed := db.GitHubRepoIdentity("github.com", "acme", "gadget")
+	renamed.PlatformRepoID = repo.PlatformRepoID
+	_, applied, err := database.ReconcileRepositoryObservation(
+		ctx, renamed, time.Now().UTC().Add(time.Minute),
+	)
+	require.NoError(err)
+	require.True(applied)
+
+	since := now.Add(-time.Minute).Format(time.RFC3339)
+	feed := doJSON(
+		t, srv, http.MethodGet,
+		"/api/v1/activity?since="+url.QueryEscape(since), nil,
+	)
+	require.Equal(http.StatusOK, feed.Code)
+	var feedBody activityResponse
+	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
+	require.Len(feedBody.Items, 1)
+	assert.Equal("gadget", feedBody.Items[0].RepoName)
+
+	candidates := doJSON(
+		t, srv, http.MethodGet,
+		"/api/v1/activity/authors?since="+url.QueryEscape(since), nil,
+	)
+	require.Equal(http.StatusOK, candidates.Code)
+	var candidateBody struct {
+		Authors []string `json:"authors"`
+	}
+	require.NoError(json.Unmarshal(candidates.Body.Bytes(), &candidateBody))
+	assert.Equal([]string{"Rename Actor"}, candidateBody.Authors)
+}
+
+func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupNotificationsEnabledTestServer(t)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+
+	trackedPRID := seedPR(
+		t, database, "acme", "widget", 1,
+		withSeedPRAuthor("Item Owner"),
+		withSeedPRTimes(base, base, base),
+	)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: trackedPRID,
+		EventType:      "issue_comment",
+		Author:         "Reviewer",
+		CreatedAt:      base.Add(time.Minute),
+		DedupeKey:      "tracked-reviewer",
+	}}))
+
+	untrackedPRID := seedPR(
+		t, database, "acme", "untracked", 1,
+		withSeedPRAuthor("Item Owner"),
+		withSeedPRTimes(base, base, base),
+	)
+	untrackedEvents := make([]db.MREvent, activitySafetyCap+1)
+	for i := range untrackedEvents {
+		untrackedEvents[i] = db.MREvent{
+			MergeRequestID: untrackedPRID,
+			EventType:      "issue_comment",
+			Author:         "Reviewer",
+			CreatedAt:      base.Add(2*time.Minute + time.Duration(i)*time.Second),
+			DedupeKey:      fmt.Sprintf("untracked-reviewer-%d", i),
+		}
+	}
+	require.NoError(database.UpsertMREvents(ctx, untrackedEvents))
+
+	since := base.Add(-time.Minute).Format(time.RFC3339)
+	feed := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+url.QueryEscape(since)+"&author=ITEM%20OWNER",
+		nil,
+	)
+	require.Equal(http.StatusOK, feed.Code)
+	var feedBody activityResponse
+	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
+	require.Len(feedBody.Items, 2)
+	for _, item := range feedBody.Items {
+		assert.Equal("acme", item.RepoOwner)
+		assert.Equal("widget", item.RepoName)
+		assert.Equal("Item Owner", item.ItemAuthor)
+	}
+	assert.False(feedBody.Capped)
+}
+
 func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -31003,7 +31302,7 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
 	require.NotNil(ready.MrHeadRepoKind)
-	assert.Equal(generated.Fork, *ready.MrHeadRepoKind)
+	assert.Equal(generated.WorkspaceResponseMrHeadRepoKindFork, *ready.MrHeadRepoKind)
 	stored, err := fixture.database.GetWorkspace(ctx, ready.Id)
 	require.NoError(err)
 	require.NotNil(stored)

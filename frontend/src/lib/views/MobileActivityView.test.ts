@@ -60,6 +60,12 @@ const setShowNotifications = vi.hoisted(() =>
   }),
 );
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
+const selectedAuthor = vi.hoisted(() => ({ value: undefined as string | undefined }));
+const setActivityAuthor = vi.hoisted(() =>
+  vi.fn((author: string | undefined) => {
+    selectedAuthor.value = author;
+  }),
+);
 
 vi.mock("../context.js", () => ({
   getStores: () => ({
@@ -69,6 +75,10 @@ vi.mock("../context.js", () => ({
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
+      getActivityAuthor: () => selectedAuthor.value,
+      getActivityAuthors: () => ["Alice", "Bob"],
+      isActivityAuthorsLoading: () => false,
+      getActivityAuthorsError: () => null,
       getActivityItems: () => items.value,
       getWorkspaceActivity: () => workspaceActivity.value,
       getActivityError: () => null,
@@ -83,6 +93,7 @@ vi.mock("../context.js", () => ({
       isActivityCapped: () => false,
       setActivityFilterTypes: vi.fn(),
       setActivitySearch: vi.fn(),
+      setActivityAuthor,
       setTimeRange: vi.fn(),
       setEnabledItemTypes,
       setShowNotifications,
@@ -116,6 +127,8 @@ describe("MobileActivityView branch activity", () => {
     onSelectItem.mockClear();
     setEnabledItemTypes.mockClear();
     setHideOrgName.mockClear();
+    selectedAuthor.value = undefined;
+    setActivityAuthor.mockClear();
   });
 
   afterEach(() => {
@@ -142,6 +155,8 @@ describe("MobileActivityView branch activity", () => {
       props: { onSelectItem },
     });
 
+    expect(screen.queryByRole("switch", { name: "PRs" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     const prs = screen.getByRole("switch", { name: "PRs" });
     const issues = screen.getByRole("switch", { name: "Issues" });
     expect((prs as HTMLInputElement).checked).toBe(true);
@@ -232,12 +247,38 @@ describe("MobileActivityView branch activity", () => {
       props: { onSelectItem },
     });
 
+    await fireEvent.click(getByRole("button", { name: /^Filters/ }));
     const button = getByRole("button", { name: "Hide org" });
     expect(button.getAttribute("aria-pressed")).toBe("false");
 
     await fireEvent.click(button);
 
     expect(setHideOrgName).toHaveBeenCalledWith(true);
+  });
+
+  it("keeps author filtering in the collapsed filter panel and summarizes it without a chip row", async () => {
+    render(MobileActivityView, { props: { onSelectItem } });
+
+    const filters = screen.getByRole("button", { name: /^Filters/ });
+    expect(filters.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByPlaceholderText("Search activity")).toBeTruthy();
+
+    await fireEvent.click(filters);
+    await fireEvent.click(screen.getByRole("button", { name: "Filter authors" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Alice" }));
+
+    expect(setActivityAuthor).toHaveBeenCalledWith("Alice");
+
+    cleanup();
+    selectedAuthor.value = "Alice";
+    render(MobileActivityView, { props: { onSelectItem } });
+    expect(screen.getByRole("button", { name: /Filters.*Alice/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Clear author filter Alice" })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: /Filters.*Alice/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filter authors" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Anyone" }));
+    expect(setActivityAuthor).toHaveBeenLastCalledWith(undefined);
   });
 
   it("does not select a PR or issue when tapping a branch event", async () => {
@@ -412,6 +453,7 @@ describe("MobileActivityView notifications", () => {
       props: { onSelectItem },
     });
 
+    await fireEvent.click(getByRole("button", { name: /^Filters/ }));
     const button = getByRole("button", { name: "Hide notifications" });
     expect(button.getAttribute("aria-pressed")).toBe("false");
 

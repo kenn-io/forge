@@ -27,3 +27,6 @@ fixtures, or changing shell-script coverage.
   must seed now-relative instants, not absolute calendar dates — pinned dates
   age out and the test starts failing on a later calendar day
   (`internal/server/e2etest/notifications_test.go::TestNotificationSyncReconcilesReusedRouteE2E`).
+- Build boundary-size Git histories through one fast-import stream, not a
+  subprocess per add/commit; parallel packages share process capacity
+  (`internal/testutil/gitfixture/history.go::AppendFileCommits`).

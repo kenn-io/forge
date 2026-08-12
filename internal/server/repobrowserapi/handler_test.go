@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/repobrowserapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/tokenauth"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"golang.org/x/sync/semaphore"
@@ -593,11 +594,7 @@ func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
 	readmeSHA := testGitSHA(t, work, "HEAD")
 
-	for i := range gitclone.RepoBrowserLastChangedLogLimit + 1 {
-		require.NoError(os.WriteFile(filepath.Join(work, "churn.txt"), fmt.Appendf(nil, "%d\n", i), 0o644))
-		serverRepoBrowserGit(t, work, "add", ".")
-		serverRepoBrowserGit(t, work, "commit", "-m", fmt.Sprintf("churn %03d", i))
-	}
+	gitfixture.AppendFileCommits(t, work, "main", "churn.txt", gitclone.RepoBrowserLastChangedLogLimit+1)
 	churnSHA := testGitSHA(t, work, "HEAD")
 	serverRepoBrowserGit(t, work, "push", "origin", "main")
 
@@ -605,7 +602,7 @@ func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md&path=churn.txt",
 	)
 
-	require.Equal(http.StatusOK, rr.Code)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var body repobrowserapi.RepoBrowserLastChangedResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Equal(readmeSHA, body.Commits["README.md"].SHA)

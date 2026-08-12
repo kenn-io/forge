@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -981,11 +982,7 @@ func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
 	mgr, repo, work := setupRepoBrowserTestRepo(t)
 	readmeSHA := gitSHA(t, work, "HEAD")
 
-	for i := range RepoBrowserLastChangedLogLimit + 1 {
-		require.NoError(os.WriteFile(filepath.Join(work, "churn.txt"), fmt.Appendf(nil, "%d\n", i), 0o644))
-		commitTestRun(t, work, "git", "add", ".")
-		commitTestRun(t, work, "git", "commit", "-m", fmt.Sprintf("churn %03d", i))
-	}
+	gitfixture.AppendFileCommits(t, work, "main", "churn.txt", RepoBrowserLastChangedLogLimit+1)
 	commitTestRun(t, work, "git", "push", "origin", "main")
 	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	ref := repoBrowserMainRef(t, mgr, repo)

@@ -95,6 +95,17 @@ Avoid by default:
 - Automatic responsive redirects should be rare. Prefer presentation selection over URL replacement for canonical routes; when redirects are truly needed, preserve user intent for deep links and do not bounce focused/detail routes back to a landing page.
 - Desktop opt-out links are acceptable, but they should be explicit and test-covered.
 
+## Mobile workspace workflow
+
+- Workspaces is a first-class phone mode selected from the shared mobile mode picker; `/m/workspaces` uses a dedicated card list and never mounts the desktop workspace layout.
+- Keep search and workspace creation inline. Put the existing sort, grouping, organization-name, and diff-stat controls in a touch-sized View sheet backed by the same persisted settings as desktop.
+- Opening a workspace shows exactly one terminal. A top-left switcher selects base, agent, or shell sessions and exposes launch actions without destroying background sessions.
+- Remember the selected session per workspace. Show launch actions when none exist, and fall back to another live session or that launch state when the selected session exits.
+- A visible linked PR or issue action opens a workspace-scoped focused item view; Back restores the exact workspace and terminal selection, while browser Back from the terminal returns to the workspace list.
+- Routes retain local or Fleet identity. Missing workspaces return to the list; unavailable Fleet hosts and failed terminal connections remain in context with Retry or reconnect affordances.
+- Mobile workspace screens may share data, persistence, runtime, and focused-item primitives with desktop, but must not depend on its pane tree, dock, sidebar, or resize coordinator.
+- Verify phone routing, overflow, filters, touch input, session switching and exit, Fleet failures, item round trips, retained workspace actions, and desktop workspace regressions.
+
 ## Verification expectations
 
 For mobile-visible changes, verify behavior with a real phone profile, not only a resized desktop viewport.

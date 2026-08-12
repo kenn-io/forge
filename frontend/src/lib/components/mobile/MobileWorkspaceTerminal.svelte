@@ -3,16 +3,18 @@
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
+  import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import SquareIcon from "@lucide/svelte/icons/square";
   import { Effect, Option } from "effect";
   import { tick, untrack } from "svelte";
-  import type { RuntimeSession } from "../../api/types.js";
+  import type { RuntimeSession, TerminalSettings as TerminalSettingsType } from "../../api/types.js";
   import { apiErrorMessage } from "../../api/runtime.js";
   import { ApiProblemError } from "../../api/effect-errors.js";
   import { workspaceSessionWebSocketPath, type WorkspaceRuntimeState } from "../../api/workspace-runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { getStores } from "../../context.js";
   import {
     acceptWorkspaceLaunch,
     claimWorkspaceLaunch,
@@ -33,6 +35,7 @@
     type SessionHostKey,
   } from "../../stores/session-host.svelte.js";
   import SessionTerminalSlot from "../terminal/SessionTerminalSlot.svelte";
+  import TerminalSettings from "../settings/TerminalSettings.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import type { WorkspaceDetail } from "../terminal/workspace-detail.js";
   import {
@@ -64,6 +67,7 @@
 
   let { workspaceId, hostKey = undefined, visible = true, onBack, onMissing, onOpenItem }: Props = $props();
   const appRuntime = getAppRuntime();
+  const { settings: settingsStore } = getStores();
   const runtimeOwner = makeWorkspaceRuntimeOwner("mobile-workspace");
   const presenterID = makeWorkspaceRuntimePresenterID();
 
@@ -77,6 +81,9 @@
   let stoppingSession = $state<string | null>(null);
   let stopSession = $state.raw<RuntimeSession | null>(null);
   let launchSheetOpen = $state(false);
+  let terminalOptionsOpen = $state(false);
+  let terminalOptionsSaving = $state(false);
+  let terminalSettings = $state<TerminalSettingsType>(settingsStore.getTerminalSettings());
   let composedInput = $state("");
   let inputError = $state<string | null>(null);
   let composerInput = $state<HTMLTextAreaElement | null>(null);
@@ -273,6 +280,7 @@
     composedInput = "";
     inputError = null;
     composerOpen = false;
+    terminalOptionsOpen = false;
     saveMobileWorkspaceSession(workspaceId, hostKey, selectedSessionKey);
     requestSessionFocusForSelection();
   }
@@ -366,8 +374,27 @@
     );
   }
 
+  function openTerminalOptions(): void {
+    if (!workspace || workspace.status !== "ready") return;
+    terminalSettings = settingsStore.getTerminalSettings();
+    terminalOptionsSaving = false;
+    terminalOptionsOpen = true;
+  }
+
+  function closeTerminalOptions(): void {
+    if (terminalOptionsSaving) return;
+    terminalOptionsOpen = false;
+  }
+
+  function openLaunchSheet(): void {
+    if (terminalOptionsSaving) return;
+    terminalOptionsOpen = false;
+    launchSheetOpen = true;
+  }
+
   function promptStopSelectedSession(): void {
     if (selectedSession && !stoppingSession && !launchingTarget) {
+      terminalOptionsOpen = false;
       stopSession = selectedSession;
     }
   }
@@ -407,6 +434,9 @@
     composedInput = "";
     inputError = null;
     composerOpen = false;
+    launchSheetOpen = false;
+    terminalOptionsOpen = false;
+    terminalOptionsSaving = false;
     releaseOwnedSessions();
 
     const execution = untrack(() =>
@@ -478,14 +508,16 @@
       {#if linkedItem}
         <button type="button" class="mobile-workspace-terminal__item" aria-label={`Open linked ${linkedItem.itemType === "pr" ? "PR" : "issue"} #${linkedItem.number}`} onclick={onOpenItem}>#{linkedItem.number}</button>
       {/if}
-      <button type="button" aria-label="Launch session" onclick={() => (launchSheetOpen = true)} disabled={!workspace || workspace.status !== "ready"}>
-        <PlusIcon size="20" strokeWidth="2" aria-hidden="true" />
+      <button
+        type="button"
+        aria-label="Terminal options"
+        aria-haspopup="dialog"
+        aria-expanded={terminalOptionsOpen}
+        onclick={openTerminalOptions}
+        disabled={!workspace || workspace.status !== "ready"}
+      >
+        <MoreHorizontalIcon size="20" strokeWidth="2" aria-hidden="true" />
       </button>
-      {#if selectedSession}
-        <button type="button" aria-label={`Stop terminal ${selectedSession.label}`} disabled={stoppingSession !== null || launchingTarget !== null} onclick={promptStopSelectedSession}>
-          {#if stoppingSession === selectedSession.key}<Spinner size={16} />{:else}<SquareIcon size="17" strokeWidth="2" aria-hidden="true" />{/if}
-        </button>
-      {/if}
     </div>
   </header>
 
@@ -583,6 +615,56 @@
   {/if}
 </section>
 
+{#if terminalOptionsOpen}
+  <Modal
+    title="Terminal options"
+    ariaLabel="Terminal options"
+    closeLabel="Close terminal options"
+    width="min(100%, 38rem)"
+    maxWidth="100%"
+    onclose={closeTerminalOptions}
+  >
+    <div class="mobile-terminal-options-sheet">
+      <div class="mobile-terminal-options-sheet__actions">
+        <button type="button" disabled={terminalOptionsSaving || launchingTarget !== null || stoppingSession !== null} onclick={openLaunchSheet}>
+          <span><PlusIcon size="18" strokeWidth="2" aria-hidden="true" />New terminal</span>
+          <small>Launch a shell or configured agent.</small>
+        </button>
+      </div>
+
+      {#if selectedSession}
+        <div class="mobile-terminal-options-sheet__danger">
+          <button
+            type="button"
+            aria-label={`Stop terminal ${selectedSession.label}`}
+            disabled={terminalOptionsSaving || stoppingSession !== null || launchingTarget !== null}
+            onclick={promptStopSelectedSession}
+          >
+            {#if stoppingSession === selectedSession.key}<Spinner size={16} />{:else}<SquareIcon size="17" strokeWidth="2" aria-hidden="true" />{/if}
+            Stop terminal…
+          </button>
+          <small>Terminates the process running in {selectedSession.label}.</small>
+        </div>
+      {/if}
+
+      <section class="mobile-terminal-options-sheet__settings" aria-labelledby="mobile-terminal-settings-heading">
+        <h3 id="mobile-terminal-settings-heading">Appearance and behavior</h3>
+        <TerminalSettings
+          terminal={terminalSettings}
+          compact={true}
+          livePreview={true}
+          onUpdate={(updated) => {
+            terminalSettings = updated;
+          }}
+          onSavingChange={(saving) => {
+            terminalOptionsSaving = saving;
+          }}
+        />
+      </section>
+    </div>
+  </Modal>
+{/if}
+
 {#if launchSheetOpen}
   <Modal
     title="Launch session"
@@ -625,7 +707,7 @@
   .mobile-workspace-terminal { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg-primary); }
   .mobile-workspace-terminal__toolbar { min-height: 3.5rem; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 0.5rem; row-gap: 0.25rem; padding: 0.375rem 0.5rem; border-bottom: thin solid var(--border-default); background: var(--bg-surface); }
   .mobile-workspace-terminal__toolbar button { min-width: 2.75rem; min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 0.625rem; border: thin solid var(--border-default); border-radius: var(--radius-md); color: var(--text-secondary); background: var(--bg-inset); font: inherit; }
-  .mobile-workspace-terminal__toolbar button:focus-visible, .mobile-workspace-terminal__empty button:focus-visible, .mobile-terminal-sheet button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+  .mobile-workspace-terminal__toolbar button:focus-visible, .mobile-workspace-terminal__empty button:focus-visible, .mobile-terminal-sheet button:focus-visible, .mobile-terminal-options-sheet button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
   .mobile-workspace-terminal__context { grid-column: 1 / -1; min-width: 0; overflow: hidden; padding: 0 0.25rem; color: var(--text-muted); font-size: var(--font-size-sm); line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-workspace-terminal__back { padding: 0 !important; }
   .mobile-workspace-terminal__switcher { min-width: 0; position: relative; }
@@ -655,8 +737,8 @@
   .mobile-workspace-terminal__empty > div:first-child { display: flex; flex-direction: column; gap: 0.375rem; }
   .mobile-workspace-terminal__launch-grid { width: min(100%, 28rem); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.625rem; }
   .mobile-workspace-terminal__launch-grid button { min-height: 3rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0 0.75rem; border: thin solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary); background: var(--bg-surface); font: inherit; font-weight: 650; }
-  :global(.kit-modal-overlay:has(.mobile-terminal-sheet)) { align-items: flex-end; }
-  :global(.kit-modal-panel:has(.mobile-terminal-sheet)) { max-height: 78vh; border-bottom: 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  :global(.kit-modal-overlay:has(.mobile-terminal-sheet)), :global(.kit-modal-overlay:has(.mobile-terminal-options-sheet)) { align-items: flex-end; }
+  :global(.kit-modal-panel:has(.mobile-terminal-sheet)), :global(.kit-modal-panel:has(.mobile-terminal-options-sheet)) { max-height: 78vh; border-bottom: 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
   :global(.kit-modal-body:has(> .mobile-terminal-sheet)) { padding: 0 0 max(1rem, env(safe-area-inset-bottom)); }
   .mobile-terminal-sheet__branch { display: block; overflow: hidden; padding: 0.625rem 0.875rem; color: var(--text-muted); border-bottom: thin solid var(--border-muted); font-family: var(--font-mono); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
   .mobile-terminal-sheet__targets { display: grid; padding: 0 0.875rem; }
@@ -664,4 +746,15 @@
   .mobile-terminal-sheet__targets > button span { min-width: 0; display: flex; flex-direction: column; gap: 0.125rem; }
   .mobile-terminal-sheet__targets small { color: var(--text-muted); font-size: var(--font-size-sm); }
   .mobile-terminal-sheet__targets p { color: var(--text-muted); font-size: var(--font-size-md); }
+  :global(.kit-modal-body:has(> .mobile-terminal-options-sheet)) { padding: 0; }
+  .mobile-terminal-options-sheet { display: grid; gap: 0; padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  .mobile-terminal-options-sheet__actions { padding: 0 0.875rem; border-bottom: thin solid var(--border-muted); }
+  .mobile-terminal-options-sheet__actions > button { width: 100%; min-height: 4rem; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0.125rem; padding: 0.5rem 0; color: var(--text-primary); border: 0; background: transparent; font: inherit; text-align: left; }
+  .mobile-terminal-options-sheet__actions span { display: inline-flex; align-items: center; gap: 0.625rem; font-weight: 650; }
+  .mobile-terminal-options-sheet__actions small, .mobile-terminal-options-sheet__danger small { color: var(--text-muted); font-size: var(--font-size-sm); }
+  .mobile-terminal-options-sheet__settings { padding: 1rem 0.875rem 0; }
+  .mobile-terminal-options-sheet__settings h3 { margin: 0 0 0.875rem; color: var(--text-muted); font-size: var(--font-size-sm); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+  .mobile-terminal-options-sheet__settings :global(.terminal-settings.compact) { width: 100%; }
+  .mobile-terminal-options-sheet__danger { display: flex; flex-direction: column; gap: 0.375rem; padding: 0.75rem 0.875rem; border-bottom: thin solid var(--border-muted); }
+  .mobile-terminal-options-sheet__danger > button { min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.5rem; padding: 0; color: var(--accent-red); border: 0; background: transparent; font: inherit; font-weight: 700; }
 </style>

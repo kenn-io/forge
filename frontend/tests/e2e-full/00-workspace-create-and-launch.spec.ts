@@ -471,9 +471,19 @@ test.describe("workspace create-and-launch full stack", () => {
         .poll(async () => (await sessionWebSockets(page, created.id)).flatMap((socket) => socket.sent))
         .toContain("printf 'mobile-input-ok\\n'\nprintf 'second-line\\n'\r");
 
-      const stop = page.getByRole("button", { name: `Stop terminal ${agentLabel}` });
-      await expect(stop).toBeVisible();
-      await stop.click();
+      await expect(page.getByRole("button", { name: "Launch session" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: `Stop terminal ${agentLabel}` })).toHaveCount(0);
+      const terminalOptionsButton = page.getByRole("button", { name: "Terminal options" });
+      await terminalOptionsButton.click();
+      const terminalOptions = page.getByRole("dialog", { name: "Terminal options" });
+      await expect(terminalOptions.getByRole("spinbutton", { name: "Font size", exact: true })).toBeVisible();
+      await terminalOptions.getByRole("button", { name: "New terminal" }).click();
+      const launchSheet = page.getByRole("dialog", { name: "Launch workspace session" });
+      await expect(launchSheet).toBeVisible();
+      await launchSheet.getByRole("button", { name: "Close launch session" }).click();
+
+      await terminalOptionsButton.click();
+      await terminalOptions.getByRole("button", { name: `Stop terminal ${agentLabel}` }).click();
       const confirmation = page.getByRole("dialog", { name: "Stop terminal?" });
       await expect(confirmation).toBeVisible();
       expect(await runtimeTargets(api, created.id)).toContain(agentKey);
@@ -526,7 +536,7 @@ test.describe("workspace create-and-launch full stack", () => {
       await trackSessionWebSockets(page);
 
       await page.goto(`${server.info.base_url}/m/workspaces/local/${created.id}`);
-      await expect(page.getByRole("button", { name: `Stop terminal ${agentLabel}` })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Terminal options" })).toBeVisible();
       await expect.poll(() => liveSessionWebSockets(page, created.id)).toHaveLength(1);
 
       await page.getByRole("button", { name: "Open linked PR #1" }).click();

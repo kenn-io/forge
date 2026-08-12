@@ -297,6 +297,12 @@
     selectedDaemon?.health === "connected" &&
       supportsKataAPISchema(selectedDaemon.api_schema_version ?? ""),
   );
+  const selectedDaemonProblem = $derived.by(() => {
+    if (!selectedDaemon || selectedDaemonUsable) return null;
+    if (selectedDaemon.hint) return selectedDaemon.hint;
+    if (selectedDaemon.health !== "connected") return `Kata daemon health: ${selectedDaemon.health}.`;
+    return `Kata API schema ${selectedDaemon.api_schema_version || "unknown"} is incompatible.`;
+  });
   const selectedKataWorkspaceIdentity = $derived<KataWorkspaceIdentity | null>(
     source === "kata_issue" && selectedKataReference && selectedDaemonID
       ? { daemonID: selectedDaemonID, issueUID: selectedKataReference.uid }
@@ -632,6 +638,10 @@
           oninput={scheduleKataSearch}
         />
       </div>
+
+      {#if selectedDaemonProblem}
+        <p class="form-error" role="alert">{selectedDaemonProblem}</p>
+      {/if}
 
       {#if kataSearching}
         <p class="field-message" role="status">Searching…</p>

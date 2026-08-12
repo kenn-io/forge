@@ -207,6 +207,35 @@ func TestKataEffectiveLinkHydrationReportsOneDiagnosticPerDaemonFailure(t *testi
 	assert.Equal([]kataLinkDiagnostic{{DaemonID: "primary", Reason: "daemon unavailable"}}, response.Diagnostics)
 }
 
+func TestKataEffectiveLinkHydrationExplainsIncompatibleDaemon(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !assert.Equal("/api/v1/health", r.URL.Path, "unexpected incompatible daemon request") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.7.0"}`))
+	}))
+	t.Cleanup(old.Close)
+	configureKataLinkTestDaemon(t, old.URL)
+	srv, _ := setupTestServer(t)
+	candidates := make(map[string]*kataLinkCandidate)
+	mergeKataLinkCandidate(candidates, "primary", "project-a", "issue-a", kataLinkDirect)
+
+	response := srv.hydrateKataLinkCandidates(t.Context(), candidates)
+
+	assert.Equal("unavailable", response.State)
+	require.Len(response.Links, 1)
+	assert.Contains(response.Links[0].UnavailableReason, "Kata API schema 0.7.0 is incompatible")
+	assert.Contains(response.Links[0].UnavailableReason, "Upgrade Kata to v0.14.3 or newer")
+	assert.Equal([]kataLinkDiagnostic{{
+		DaemonID: "primary",
+		Reason:   response.Links[0].UnavailableReason,
+	}}, response.Diagnostics)
+}
+
 func TestKataEffectiveLinkHydrationKeepsExistingWorkspaceWhenDaemonUnavailable(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

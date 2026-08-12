@@ -208,7 +208,7 @@ func (h *Handler) validateKataLinkRequest(
 	}
 	health, healthErr := client.Health(ctx)
 	if healthErr != nil || health.State != "connected" {
-		return kataCreateLinkRequest{}, kataDaemonUnavailableProblem(request.DaemonID, health.State)
+		return kataCreateLinkRequest{}, kataDaemonUnavailableProblem(request.DaemonID, health)
 	}
 	detail, detailErr := client.IssueDetail(ctx, request.IssueUID)
 	if detailErr != nil {

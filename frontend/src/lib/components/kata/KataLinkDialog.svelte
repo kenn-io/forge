@@ -62,6 +62,12 @@
     selectedDaemon?.health === "connected" &&
       supportsKataAPISchema(selectedDaemon.api_schema_version ?? ""),
   );
+  const selectedDaemonProblem = $derived.by(() => {
+    if (!selectedDaemon || selectedDaemonUsable) return null;
+    if (selectedDaemon.hint) return selectedDaemon.hint;
+    if (selectedDaemon.health !== "connected") return `Kata daemon health: ${selectedDaemon.health}.`;
+    return `Kata API schema ${selectedDaemon.api_schema_version || "unknown"} is incompatible.`;
+  });
 
   function problemMessage(problem: unknown, fallback: string): string {
     if (typeof problem !== "object" || problem === null) return fallback;
@@ -224,6 +230,10 @@
         oninput={() => scheduleSearch()}
       />
     </div>
+
+    {#if selectedDaemonProblem}
+      <p class="error" role="alert">{selectedDaemonProblem}</p>
+    {/if}
 
     {#if error}
       <p class="error" role="alert">{error}</p>

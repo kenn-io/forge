@@ -150,6 +150,32 @@ url = "`+authRequired.URL+`"
 	assert.Equal("auth_required", body.Daemons[1].Health)
 }
 
+func TestKataDaemonsEndpointSurfacesIncompatibleSchema(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.7.0"}`))
+	}))
+	defer upstream.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "old"
+url = "`+upstream.URL+`"
+`)
+	srv, _ := setupTestServer(t)
+
+	daemons := requestKataDaemons(t, srv)
+	require.Len(daemons, 1)
+	assert.Equal("incompatible", daemons[0].Health)
+	assert.Equal("0.7.0", daemons[0].APISchemaVersion)
+	assert.Contains(daemons[0].Hint, "Forge requires >=0.9.0 and <0.11.0")
+	assert.Contains(daemons[0].Hint, "Upgrade Kata")
+}
+
 func TestKataDaemonsEndpointRejectsUnsetTokenEnv(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -774,7 +800,7 @@ func requestKataDaemons(t *testing.T, srv *Server) []kataDaemonWire {
 
 func writeKataHealthOK(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"ok":true}`))
+	_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.10.0"}`))
 }
 
 func writeKataServerCatalog(t *testing.T, home string, body string) {

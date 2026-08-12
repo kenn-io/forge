@@ -296,6 +296,37 @@ describe("NewWorkspaceDialog", () => {
     });
   });
 
+  it("explains how to recover when the selected Kata daemon is incompatible", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget")] });
+      if (path === "/kata/daemons") {
+        return Promise.resolve({
+          data: {
+            daemons: [
+              {
+                id: "old",
+                url: "http://old",
+                health: "incompatible",
+                auth: "none",
+                default: true,
+                api_schema_version: "0.7.0",
+                hint: "Kata API schema 0.7.0 is incompatible; Forge requires >=0.9.0 and <0.11.0. Upgrade Kata.",
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`unexpected GET ${path}`);
+    });
+    await renderDialog();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Kata issue" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Kata API schema 0.7.0 is incompatible");
+    expect(alert.textContent).toContain("Upgrade Kata");
+    expect((screen.getByRole("searchbox", { name: "Search Kata issues" }) as HTMLInputElement).disabled).toBe(true);
+  });
+
   it("routes non-default hosts through the host-scoped path", async () => {
     mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", "git.example.test", "forgejo")] });
     await renderDialog();

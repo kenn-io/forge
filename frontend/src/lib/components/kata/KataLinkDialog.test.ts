@@ -78,6 +78,30 @@ describe("KataLinkDialog", () => {
     expect(screen.queryByLabelText(/issue UID/i)).toBeNull();
   });
 
+  it("explains how to recover when the selected daemon is incompatible", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: {
+        daemons: [
+          {
+            id: "old",
+            url: "http://old",
+            health: "incompatible",
+            auth: "none",
+            default: true,
+            api_schema_version: "0.7.0",
+            hint: "Kata API schema 0.7.0 is incompatible; Forge requires >=0.9.0 and <0.11.0. Upgrade Kata.",
+          },
+        ],
+      },
+    });
+    renderDialog(clientWith(get));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Kata API schema 0.7.0 is incompatible");
+    expect(alert.textContent).toContain("Upgrade Kata");
+    expect((screen.getByRole("searchbox", { name: "Search Kata issues" }) as HTMLInputElement).disabled).toBe(true);
+  });
+
   it("debounces reference search and submits the selected canonical identity", async () => {
     const get = vi.fn().mockImplementation((path: string) => {
       if (path === "/kata/daemons") {

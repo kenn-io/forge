@@ -18,6 +18,8 @@ const (
 	maxKataDaemonHealthBytes  = 1 << 20
 	defaultKataReferenceLimit = 100
 	maxKataReferenceLimit     = 200
+	kataMinimumVersion        = "v0.14.3"
+	kataSupportedAPISchemas   = ">=0.9.0 and <0.11.0"
 )
 
 type kataDaemonHealth struct {
@@ -91,10 +93,48 @@ func (c *kataDaemonClient) Health(ctx context.Context) (kataDaemonHealth, error)
 			"decode Kata daemon %q health response: %w", c.daemon.ID, err,
 		)
 	}
-	return kataDaemonHealth{
-		State:            "connected",
-		APISchemaVersion: payload.APISchemaVersion,
-	}, nil
+	state := "connected"
+	if !supportsKataAPISchema(payload.APISchemaVersion) {
+		state = "incompatible"
+	}
+	return kataDaemonHealth{State: state, APISchemaVersion: payload.APISchemaVersion}, nil
+}
+
+func supportsKataAPISchema(version string) bool {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || strings.IndexFunc(part, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+			return false
+		}
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false
+	}
+	if _, err := strconv.Atoi(parts[2]); err != nil {
+		return false
+	}
+	return major == 0 && (minor == 9 || minor == 10)
+}
+
+func kataDaemonCompatibilityMessage(version string) string {
+	detected := strings.TrimSpace(version)
+	if detected == "" {
+		detected = "unknown"
+	}
+	return fmt.Sprintf(
+		"Kata API schema %s is incompatible; Forge requires %s. Upgrade Kata to %s or newer with a supported API schema, then restart the daemon.",
+		detected,
+		kataSupportedAPISchemas,
+		kataMinimumVersion,
+	)
 }
 
 func (c *kataDaemonClient) References(

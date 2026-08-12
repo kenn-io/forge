@@ -225,12 +225,20 @@ func (h *Handler) hydrateKataDaemonLinks(
 ) int {
 	client, problem := h.kataClientForDaemon(daemonID)
 	if problem != nil {
-		h.appendUnavailableKataLinks(ctx, response, links, "daemon unavailable", "")
+		reason := "daemon unavailable"
+		if problem.Detail != "" {
+			reason = problem.Detail
+		}
+		h.appendUnavailableKataLinks(ctx, response, links, reason, "")
 		return 0
 	}
 	health, err := client.Health(upstreamCtx)
 	if err != nil || health.State != "connected" {
-		h.appendUnavailableKataLinks(ctx, response, links, "daemon unavailable", health.State)
+		reason := "daemon unavailable"
+		if health.State == "incompatible" {
+			reason = kataDaemonCompatibilityMessage(health.APISchemaVersion)
+		}
+		h.appendUnavailableKataLinks(ctx, response, links, reason, health.State)
 		return 0
 	}
 	issueUIDs := make([]string, 0, len(links))

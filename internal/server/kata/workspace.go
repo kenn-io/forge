@@ -321,7 +321,7 @@ func (h *Handler) canonicalKataWorkspaceMetadata(
 	ctx context.Context,
 	requested db.WorkspaceKataMetadata,
 ) (db.WorkspaceKataMetadata, error) {
-	client, problem := h.kataClientForDaemon(requested.DaemonID)
+	client, problem := h.kataClientForCompatibleDaemon(requested.DaemonID)
 	if problem != nil {
 		return db.WorkspaceKataMetadata{}, problem
 	}
@@ -805,6 +805,10 @@ func (h *Handler) getKataProjectMappings(
 	daemon, problem := h.selectKataDaemonForID(input.DaemonID)
 	if problem != nil {
 		return nil, problem
+	}
+	health := h.kataDaemonHealth(daemon.ID, daemon)
+	if health.State == "incompatible" {
+		return nil, kataDaemonUnavailableProblem(daemon.ID, health)
 	}
 	client, baseURL, err := h.kataDaemonHTTPClient(daemon)
 	if err != nil {

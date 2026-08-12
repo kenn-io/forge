@@ -78,7 +78,7 @@ func (h *Handler) listKataReferences(
 ) (*kataReferencesOutput, error) {
 	ctx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
 	defer cancel()
-	client, problem := h.kataClientForDaemon(input.DaemonID)
+	client, problem := h.kataClientForCompatibleDaemon(input.DaemonID)
 	if problem != nil {
 		return nil, problem
 	}
@@ -102,7 +102,7 @@ func (h *Handler) resolveKataIssueReference(
 ) (*kataIssueReferenceResolveOutput, error) {
 	ctx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
 	defer cancel()
-	client, problem := h.kataClientForDaemon(input.DaemonID)
+	client, problem := h.kataClientForCompatibleDaemon(input.DaemonID)
 	if problem != nil {
 		return nil, problem
 	}
@@ -128,7 +128,7 @@ func (h *Handler) getKataIssueDetail(
 	}
 	health, err := client.Health(ctx)
 	if err != nil || health.State != "connected" {
-		return nil, kataDaemonUnavailableProblem(input.DaemonID, health.State)
+		return nil, kataDaemonUnavailableProblem(input.DaemonID, health)
 	}
 	detail, err := client.IssueDetail(ctx, input.IssueUID)
 	if err != nil {
@@ -145,7 +145,7 @@ func (h *Handler) getKataLaunchTarget(
 ) (*kataLaunchTargetOutput, error) {
 	ctx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
 	defer cancel()
-	client, problem := h.kataClientForDaemon(input.DaemonID)
+	client, problem := h.kataClientForCompatibleDaemon(input.DaemonID)
 	if problem != nil {
 		return nil, problem
 	}
@@ -181,10 +181,33 @@ func (h *Handler) kataClientForDaemon(daemonID string) (*kataDaemonClient, *http
 	return &kataDaemonClient{daemon: daemon, client: client, baseURL: baseURL}, nil
 }
 
-func kataDaemonUnavailableProblem(daemonID, health string) *httpapi.ProblemError {
+func (h *Handler) kataClientForCompatibleDaemon(daemonID string) (*kataDaemonClient, *httpapi.ProblemError) {
+	client, problem := h.kataClientForDaemon(daemonID)
+	if problem != nil {
+		return nil, problem
+	}
+	health := h.kataDaemonHealth(client.daemon.ID, client.daemon)
+	if health.State == "incompatible" {
+		return nil, kataDaemonUnavailableProblem(daemonID, health)
+	}
+	return client, nil
+}
+
+func kataDaemonUnavailableProblem(daemonID string, health kataDaemonHealth) *httpapi.ProblemError {
 	details := map[string]any{"daemon": daemonID}
-	if health != "" {
-		details["health"] = health
+	if health.State != "" {
+		details["health"] = health.State
+	}
+	if health.State == "incompatible" {
+		details["reason"] = "incompatible_api_schema"
+		details["api_schema_version"] = health.APISchemaVersion
+		details["supported_api_schema"] = kataSupportedAPISchemas
+		return httpapi.NewProblem(
+			http.StatusServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
+			kataDaemonCompatibilityMessage(health.APISchemaVersion),
+			details,
+		)
 	}
 	return httpapi.NewProblem(
 		http.StatusServiceUnavailable,

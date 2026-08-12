@@ -65,6 +65,9 @@ in [`ui-interaction-contracts.md`](./ui-interaction-contracts.md).
 - Narrow reference, detail, and launch reads resolve the daemon from the route's
   daemon ID. Browser input never supplies daemon credentials or an ambient
   active-daemon fallback (`internal/server/kata/read_routes.go`).
+- Forge requires Kata v0.14.3 or newer with API schema `>=0.9.0 and <0.11.0`.
+  Mark other or missing schemas incompatible, fail narrow reads with a typed 503,
+  and surface upgrade guidance in the UI (`internal/server/kata/client.go::supportsKataAPISchema`).
 - Reference lists expose only open tasks, including empty-query autocomplete;
   completed tasks remain reachable through exact reference and issue-UID reads
   (`internal/server/kata/read_routes.go::Handler.listKataReferences`).

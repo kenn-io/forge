@@ -97,7 +97,43 @@ func TestKataDaemonClientHealthKeepsMissingSchemaVersionVisible(t *testing.T) {
 	}).Health(t.Context())
 
 	require.NoError(t, err)
-	assert.Equal(t, kataDaemonHealth{State: "connected"}, health)
+	assert.Equal(t, kataDaemonHealth{State: "incompatible"}, health)
+}
+
+func TestKataDaemonClientHealthMarksUnsupportedSchemaIncompatible(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.7.0"}`))
+	}))
+	defer upstream.Close()
+
+	health, err := newTestKataDaemonClient(t, katacatalog.Daemon{
+		ID: "example", URL: upstream.URL,
+	}).Health(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, kataDaemonHealth{State: "incompatible", APISchemaVersion: "0.7.0"}, health)
+}
+
+func TestSupportsKataAPISchema(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]bool{
+		"0.9.0":  true,
+		"0.10.7": true,
+		"0.8.9":  false,
+		"0.11.0": false,
+		"":       false,
+		"0.9":    false,
+		"0.9.-1": false,
+		"0.+9.0": false,
+	}
+	for version, want := range tests {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, want, supportsKataAPISchema(version))
+		})
+	}
 }
 
 func TestKataDaemonClientReferencesPinsFiltersAndCapsLimit(t *testing.T) {

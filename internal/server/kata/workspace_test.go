@@ -49,6 +49,11 @@ func setupWorkspaceTestServerWithConfigContent(
 func setupKataWorkspaceReferenceDaemon(t *testing.T, reference kataIssueReference) {
 	t.Helper()
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/health" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.10.0"}`))
+			return
+		}
 		assert.Equal(t, "/api/v1/ui/references", r.URL.Path)
 		assert.Equal(t, []string{reference.UID}, r.URL.Query()["issue_uid"])
 		w.Header().Set("Content-Type", "application/json")
@@ -1343,6 +1348,11 @@ func TestCreateKataWorkspaceUsesCanonicalMovedTaskMetadata(t *testing.T) {
 
 	daemonCalls := 0
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/health" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.10.0"}`))
+			return
+		}
 		daemonCalls++
 		assert.Equal("/api/v1/ui/references", r.URL.Path)
 		assert.Equal([]string{"issue-moved"}, r.URL.Query()["issue_uid"])
@@ -1422,6 +1432,11 @@ func TestCreateKataWorkspaceRejectsDeletedTask(t *testing.T) {
 	require := require.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/health" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.10.0"}`))
+			return
+		}
 		assert.Equal("/api/v1/ui/references", r.URL.Path)
 		assert.Equal([]string{"issue-deleted"}, r.URL.Query()["issue_uid"])
 		http.NotFound(w, r)

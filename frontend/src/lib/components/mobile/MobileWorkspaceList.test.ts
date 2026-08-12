@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { isNewWorkspaceDialogOpen, resetNewWorkspaceDialogState } from "../../stores/new-workspace.svelte.js";
+import * as workspaceHost from "../../stores/workspace-host.svelte.js";
 import MobileWorkspaceList from "./MobileWorkspaceListTestHarness.svelte";
 
 const mockGet = vi.fn();
@@ -106,5 +107,35 @@ describe("MobileWorkspaceList", () => {
     await screen.findByText("Build mobile workspaces");
     await fireEvent.click(screen.getByRole("button", { name: "New workspace" }));
     expect(isNewWorkspaceDialogOpen()).toBe(true);
+  });
+
+  it("invalidates shared terminal and route state after deletion", async () => {
+    const notifyWorkspaceDeleted = vi.spyOn(workspaceHost, "notifyWorkspaceDeleted");
+    mockDelete.mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { ok: true, status: 204 },
+    });
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Build mobile workspaces" }));
+    const actions = await screen.findByRole("dialog", { name: "Workspace actions" });
+    await fireEvent.click(within(actions).getByRole("button", { name: "Delete workspace…" }));
+    const confirmation = await screen.findByRole("dialog", { name: "Delete workspace?" });
+    await fireEvent.click(within(confirmation).getByRole("button", { name: "Delete workspace" }));
+
+    await waitFor(() => {
+      expect(notifyWorkspaceDeleted).toHaveBeenCalledWith("ws-1", undefined, {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+        number: 42,
+        itemType: "pull_request",
+      });
+    });
+    notifyWorkspaceDeleted.mockRestore();
   });
 });

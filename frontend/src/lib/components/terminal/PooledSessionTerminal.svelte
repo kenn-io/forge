@@ -9,6 +9,7 @@
   import {
     consumeSessionFocus,
     pendingSessionFocus,
+    registerSessionInput,
     type MountedSession,
   } from "../../stores/session-host.svelte.ts";
 
@@ -182,6 +183,12 @@
       ),
     );
     return execution.interrupt;
+  });
+
+  $effect(() => {
+    const pane = terminalPane;
+    if (!pane) return;
+    return registerSessionInput(session.hostKey, (data) => pane.sendInput(data));
   });
 
   // The wrapper is reparented out of this component's own fragment, so Svelte

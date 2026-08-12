@@ -1,26 +1,39 @@
 <script lang="ts">
   import { Modal, SelectDropdown, Spinner, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import SquareIcon from "@lucide/svelte/icons/square";
   import { Effect, Option } from "effect";
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import type { RuntimeSession } from "../../api/types.js";
   import { apiErrorMessage } from "../../api/runtime.js";
   import { ApiProblemError } from "../../api/effect-errors.js";
   import { workspaceSessionWebSocketPath, type WorkspaceRuntimeState } from "../../api/workspace-runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import {
+    acceptWorkspaceLaunch,
+    claimWorkspaceLaunch,
+    completeAcceptedWorkspaceLaunch,
+    discardWorkspaceLaunch,
+    failWorkspaceLaunch,
+    pendingWorkspaceLaunch,
+    type WorkspaceLaunchClaim,
+  } from "../../stores/workspace-create-pending.svelte.js";
+  import {
     noteSessionDiscarded,
     noteSessionMounted,
     noteSessionReleased,
     onSessionExited,
     requestSessionFocus,
+    sendSessionInput,
     sessionHostKey,
     type SessionHostKey,
   } from "../../stores/session-host.svelte.js";
   import SessionTerminalSlot from "../terminal/SessionTerminalSlot.svelte";
+  import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import type { WorkspaceDetail } from "../terminal/workspace-detail.js";
   import {
     makeWorkspaceRuntimeOwner,
@@ -29,7 +42,11 @@
     type WorkspaceRuntimeMutationState,
     type WorkspaceRuntimeTarget,
   } from "../terminal/workspace-runtime-workflow.js";
-  import { loadMobileWorkspaceDetail, mobileWorkspaceLinkedItem } from "./mobile-workspace-detail.js";
+  import {
+    loadMobileWorkspaceDetail,
+    mobileWorkspaceIdentity,
+    mobileWorkspaceLinkedItem,
+  } from "./mobile-workspace-detail.js";
   import {
     loadMobileWorkspaceSession,
     saveMobileWorkspaceSession,
@@ -39,11 +56,13 @@
   interface Props {
     workspaceId: string;
     hostKey?: string | undefined;
+    visible?: boolean;
     onBack: () => void;
+    onMissing: () => void;
     onOpenItem: () => void;
   }
 
-  let { workspaceId, hostKey = undefined, onBack, onOpenItem }: Props = $props();
+  let { workspaceId, hostKey = undefined, visible = true, onBack, onMissing, onOpenItem }: Props = $props();
   const appRuntime = getAppRuntime();
   const runtimeOwner = makeWorkspaceRuntimeOwner("mobile-workspace");
   const presenterID = makeWorkspaceRuntimePresenterID();
@@ -56,7 +75,13 @@
   let runtimeError = $state<string | null>(null);
   let launchingTarget = $state<string | null>(null);
   let stoppingSession = $state<string | null>(null);
+  let stopSession = $state.raw<RuntimeSession | null>(null);
   let launchSheetOpen = $state(false);
+  let composedInput = $state("");
+  let inputError = $state<string | null>(null);
+  let composerInput = $state<HTMLTextAreaElement | null>(null);
+  let composerOpen = $state(false);
+  let composerDragStartY: number | null = null;
 
   const sessions = $derived(runtime?.sessions ?? []);
   const launchTargets = $derived(runtime?.launch_targets ?? []);
@@ -70,6 +95,13 @@
     selectedSession ? pooledHostKey(selectedSession) : null,
   );
   const linkedItem = $derived(workspace ? mobileWorkspaceLinkedItem(workspace) : null);
+  const workspaceIdentity = $derived(
+    workspace
+      ? mobileWorkspaceIdentity(workspace, hostKey)
+      : hostKey
+        ? `Fleet · ${hostKey}`
+        : "Workspace",
+  );
 
   function target(): WorkspaceRuntimeTarget {
     return { workspaceId, ...(hostKey === undefined ? {} : { hostKey }) };
@@ -110,11 +142,36 @@
   function applyRuntime(next: WorkspaceRuntimeState): void {
     runtime = next;
     reconcilePooledSessions(next.sessions);
+    if (stopSession && !next.sessions.some((session) => session.key === stopSession?.key)) {
+      stopSession = null;
+    }
     const preferred =
       selectedSessionKey ?? loadMobileWorkspaceSession(workspaceId, hostKey);
     selectedSessionKey = selectMobileWorkspaceSession(next.sessions, preferred);
     saveMobileWorkspaceSession(workspaceId, hostKey, selectedSessionKey);
     runtimeError = null;
+    for (const session of next.sessions) {
+      completeAcceptedWorkspaceLaunch(workspaceId, hostKey, session.key);
+    }
+    reconcileQueuedWorkspaceLaunch(next);
+  }
+
+  function reconcileQueuedWorkspaceLaunch(next: WorkspaceRuntimeState): void {
+    const pending = pendingWorkspaceLaunch(workspaceId, hostKey);
+    if (!pending || pending.phase === "awaiting_session") return;
+    if (next.sessions.length > 0) {
+      discardWorkspaceLaunch(workspaceId, hostKey);
+      return;
+    }
+    const launchTarget = next.launch_targets.find((candidate) => candidate.key === pending.targetKey);
+    if (!launchTarget || launchTarget.kind !== "agent" || !launchTarget.available) {
+      if (discardWorkspaceLaunch(workspaceId, hostKey) !== null) {
+        runtimeError = `Agent "${pending.targetKey}" could not launch: ${launchTarget?.disabled_reason ?? "not available"}`;
+      }
+      return;
+    }
+    const claim = claimWorkspaceLaunch(workspaceId, hostKey);
+    if (claim) launch(claim.targetKey, claim);
   }
 
   function requestSessionFocusForSelection(): void {
@@ -150,7 +207,7 @@
       Effect.catch((failure) =>
         Effect.sync(() => {
           if (failure instanceof ApiProblemError && failure.problem.status === 404) {
-            onBack();
+            onMissing();
             return;
           }
           loadError = failureMessage(failure, hostKey ? "Fleet workspace unavailable" : "Workspace unavailable");
@@ -178,9 +235,11 @@
         if (state.kind === "pending") stoppingSession = state.request.sessionKey;
         else if (state.kind === "succeeded") {
           stoppingSession = null;
+          stopSession = null;
           requestRuntimeRefresh();
         } else if (state.kind === "failed" || state.kind === "uncertain") {
           stoppingSession = null;
+          stopSession = null;
           showMutationFailure(state, "Stop failed");
         }
       }
@@ -203,32 +262,118 @@
     });
   }
 
+  function refreshWorkspaceState() {
+    return Effect.suspend(() =>
+      workspace?.status === "ready" ? readRuntime(true) : loadWorkspaceAndRuntime(),
+    );
+  }
+
   function selectSession(sessionKey: string): void {
     selectedSessionKey = sessionKey;
+    composedInput = "";
+    inputError = null;
+    composerOpen = false;
     saveMobileWorkspaceSession(workspaceId, hostKey, selectedSessionKey);
     requestSessionFocusForSelection();
   }
 
-  function launch(targetKey: string): void {
+  function sendComposedInput(): void {
+    const key = selectedHostKey;
+    if (!key) return;
+    if (!sendSessionInput(key, `${composedInput}\r`)) {
+      inputError = "Terminal is reconnecting. Try again in a moment.";
+      return;
+    }
+    composedInput = "";
+    inputError = null;
+    void tick().then(resizeComposer);
+  }
+
+  function resizeComposer(): void {
+    const input = composerInput;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight}px`;
+  }
+
+  function handleComposerInput(): void {
+    inputError = null;
+    resizeComposer();
+  }
+
+  function openComposer(): void {
+    composerOpen = true;
+    void tick().then(() => {
+      resizeComposer();
+      composerInput?.focus();
+    });
+  }
+
+  function closeComposer(): void {
+    composerInput?.blur();
+    composerOpen = false;
+    inputError = null;
+  }
+
+  function startComposerDrag(event: PointerEvent): void {
+    composerDragStartY = event.clientY;
+    const handle = event.currentTarget;
+    if (handle instanceof HTMLButtonElement) handle.setPointerCapture(event.pointerId);
+  }
+
+  function finishComposerDrag(event: PointerEvent, direction: "open" | "close"): void {
+    const handle = event.currentTarget;
+    if (handle instanceof HTMLButtonElement && handle.hasPointerCapture(event.pointerId)) {
+      handle.releasePointerCapture(event.pointerId);
+    }
+    const startY = composerDragStartY;
+    composerDragStartY = null;
+    if (startY === null) return;
+    const distance = event.clientY - startY;
+    if (direction === "open" && distance < -24) openComposer();
+    if (direction === "close" && distance > 24) closeComposer();
+  }
+
+  function launch(targetKey: string, launchClaim?: WorkspaceLaunchClaim): void {
     if (launchingTarget || stoppingSession) return;
     appRuntime.runCommand(
       Effect.gen(function* () {
         const workflow = yield* WorkspaceRuntimeWorkflow;
-        yield* workflow.launch(target(), targetKey, "workflow", { _tag: "Workflow" });
+        yield* workflow.launch(target(), targetKey, "workflow", {
+          _tag: "Workflow",
+          ...(launchClaim
+            ? {
+                onSettled: (settlement) => {
+                  if (settlement._tag === "Accepted") {
+                    acceptWorkspaceLaunch(launchClaim, settlement.sessionKey);
+                  } else {
+                    failWorkspaceLaunch(launchClaim);
+                  }
+                },
+              }
+            : {}),
+        });
       }),
       {
         operation: "launch mobile workspace session",
         safeContext: { workspaceId, targetKey, remote: Boolean(hostKey) },
         onFailure: (failure) => {
           launchingTarget = null;
+          if (launchClaim) failWorkspaceLaunch(launchClaim);
           runtimeError = failureMessage(failure, "Launch failed");
         },
       },
     );
   }
 
+  function promptStopSelectedSession(): void {
+    if (selectedSession && !stoppingSession && !launchingTarget) {
+      stopSession = selectedSession;
+    }
+  }
+
   function stopSelectedSession(): void {
-    const session = selectedSession;
+    const session = stopSession;
     if (!session || stoppingSession || launchingTarget) return;
     appRuntime.runCommand(
       Effect.gen(function* () {
@@ -240,6 +385,7 @@
         safeContext: { workspaceId, sessionKey: session.key, remote: Boolean(hostKey) },
         onFailure: (failure) => {
           stoppingSession = null;
+          stopSession = null;
           runtimeError = failureMessage(failure, "Stop failed");
         },
       },
@@ -258,6 +404,9 @@
     selectedSessionKey = loadMobileWorkspaceSession(activeWorkspaceId, activeHostKey);
     loadError = null;
     runtimeError = null;
+    composedInput = "";
+    inputError = null;
+    composerOpen = false;
     releaseOwnedSessions();
 
     const execution = untrack(() =>
@@ -275,7 +424,7 @@
             );
             yield* loadWorkspaceAndRuntime();
             yield* Effect.forever(
-              Effect.sleep("5 seconds").pipe(Effect.andThen(readRuntime(true))),
+              Effect.sleep("5 seconds").pipe(Effect.andThen(refreshWorkspaceState())),
             );
           }),
         ),
@@ -307,6 +456,7 @@
 
 <section class="mobile-workspace-terminal" aria-label="Workspace terminal">
   <header class="mobile-workspace-terminal__toolbar">
+    <small class="mobile-workspace-terminal__context" title={workspaceIdentity}>{workspaceIdentity}</small>
     <button type="button" class="mobile-workspace-terminal__back" aria-label="Back to workspaces" onclick={onBack}>
       <ArrowLeftIcon size="20" strokeWidth="2" aria-hidden="true" />
     </button>
@@ -321,8 +471,7 @@
       </div>
     {:else}
       <div class="mobile-workspace-terminal__identity">
-        <strong>{workspace ? workspace.git_head_ref : "Workspace"}</strong>
-        {#if hostKey}<small>{hostKey}</small>{/if}
+        <strong>Workspace terminal</strong>
       </div>
     {/if}
     <div class="mobile-workspace-terminal__actions">
@@ -333,7 +482,7 @@
         <PlusIcon size="20" strokeWidth="2" aria-hidden="true" />
       </button>
       {#if selectedSession}
-        <button type="button" aria-label={`Stop terminal ${selectedSession.label}`} disabled={stoppingSession !== null || launchingTarget !== null} onclick={stopSelectedSession}>
+        <button type="button" aria-label={`Stop terminal ${selectedSession.label}`} disabled={stoppingSession !== null || launchingTarget !== null} onclick={promptStopSelectedSession}>
           {#if stoppingSession === selectedSession.key}<Spinner size={16} />{:else}<SquareIcon size="17" strokeWidth="2" aria-hidden="true" />{/if}
         </button>
       {/if}
@@ -369,7 +518,55 @@
     </div>
   {:else if selectedHostKey}
     <div class="mobile-workspace-terminal__stage" aria-label={`Selected terminal: ${selectedSession?.label ?? "Terminal"}`}>
-      <SessionTerminalSlot hostKey={selectedHostKey} visible />
+      <div class="mobile-workspace-terminal__viewport">
+        <SessionTerminalSlot hostKey={selectedHostKey} {visible} />
+      </div>
+      {#if composerOpen}
+        <form class="mobile-workspace-terminal__composer" onsubmit={(event) => {
+          event.preventDefault();
+          sendComposedInput();
+        }}>
+          <button
+            type="button"
+            class="mobile-workspace-terminal__composer-handle"
+            aria-label="Collapse terminal composer"
+            onclick={closeComposer}
+            onpointerdown={startComposerDrag}
+            onpointerup={(event) => finishComposerDrag(event, "close")}
+            onpointercancel={() => (composerDragStartY = null)}
+          >
+            <span aria-hidden="true"></span>
+            <ChevronDownIcon size="16" aria-hidden="true" />
+          </button>
+          <textarea
+            bind:this={composerInput}
+            aria-label="Terminal command"
+            bind:value={composedInput}
+            autocomplete="off"
+            autocapitalize="none"
+            oninput={handleComposerInput}
+            rows="1"
+            spellcheck="false"
+            placeholder="Type terminal input"
+          ></textarea>
+          <button type="submit" class="mobile-workspace-terminal__send" aria-label="Send terminal input">Send</button>
+          {#if inputError}<small role="status">{inputError}</small>{/if}
+        </form>
+      {:else}
+        <button
+          type="button"
+          class="mobile-workspace-terminal__composer-toggle"
+          aria-label="Open terminal composer"
+          onclick={openComposer}
+          onpointerdown={startComposerDrag}
+          onpointerup={(event) => finishComposerDrag(event, "open")}
+          onpointercancel={() => (composerDragStartY = null)}
+        >
+          <span aria-hidden="true"></span>
+          Compose
+          <ChevronUpIcon size="16" aria-hidden="true" />
+        </button>
+      {/if}
     </div>
   {:else}
     <div class="mobile-workspace-terminal__empty">
@@ -410,23 +607,47 @@
   </Modal>
 {/if}
 
+<ConfirmDialog
+  open={stopSession !== null}
+  title="Stop terminal?"
+  message={stopSession ? `Stop terminal "${stopSession.label}"?` : ""}
+  hint="This terminates the process running in this terminal session."
+  confirmLabel="Stop terminal"
+  pendingLabel="Stopping…"
+  busy={stoppingSession !== null}
+  tone="danger"
+  frameId="mobile-workspace-stop-terminal"
+  onCancel={() => (stopSession = null)}
+  onConfirm={stopSelectedSession}
+/>
+
 <style>
   .mobile-workspace-terminal { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg-primary); }
-  .mobile-workspace-terminal__toolbar { min-height: 3.5rem; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.5rem; padding: 0.375rem 0.5rem; border-bottom: thin solid var(--border-default); background: var(--bg-surface); }
+  .mobile-workspace-terminal__toolbar { min-height: 3.5rem; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 0.5rem; row-gap: 0.25rem; padding: 0.375rem 0.5rem; border-bottom: thin solid var(--border-default); background: var(--bg-surface); }
   .mobile-workspace-terminal__toolbar button { min-width: 2.75rem; min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 0.625rem; border: thin solid var(--border-default); border-radius: var(--radius-md); color: var(--text-secondary); background: var(--bg-inset); font: inherit; }
   .mobile-workspace-terminal__toolbar button:focus-visible, .mobile-workspace-terminal__empty button:focus-visible, .mobile-terminal-sheet button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+  .mobile-workspace-terminal__context { grid-column: 1 / -1; min-width: 0; overflow: hidden; padding: 0 0.25rem; color: var(--text-muted); font-size: var(--font-size-sm); line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-workspace-terminal__back { padding: 0 !important; }
   .mobile-workspace-terminal__switcher { min-width: 0; position: relative; }
   .mobile-workspace-terminal__switcher :global(.kit-select-dropdown) { width: 100%; min-width: 0; }
   .mobile-workspace-terminal__switcher :global(.kit-select-dropdown__trigger) { min-height: 2.75rem; padding: 0 2rem 0 0.75rem; border-color: var(--border-default); border-radius: var(--radius-md); color: var(--text-primary); font-size: var(--font-size-md); font-weight: 650; }
   .mobile-workspace-terminal__switcher :global(.kit-select-dropdown__option) { min-height: 2.75rem; font-size: var(--font-size-md); }
-  .mobile-workspace-terminal__identity { min-width: 0; display: flex; flex-direction: column; }
-  .mobile-workspace-terminal__identity strong, .mobile-workspace-terminal__identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-workspace-terminal__identity { min-width: 0; }
+  .mobile-workspace-terminal__identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-workspace-terminal__identity strong { color: var(--text-primary); font-size: var(--font-size-md); }
-  .mobile-workspace-terminal__identity small { color: var(--accent-blue); font-size: var(--font-size-sm); }
   .mobile-workspace-terminal__actions { display: flex; gap: 0.375rem; }
   .mobile-workspace-terminal__item { min-width: auto !important; min-height: 2rem !important; color: var(--text-on-accent) !important; border-color: var(--accent-green) !important; background: var(--accent-green) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
-  .mobile-workspace-terminal__stage { flex: 1; min-height: 0; display: flex; background: var(--terminal-bg, var(--bg-primary)); }
+  .mobile-workspace-terminal__stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--terminal-bg, var(--bg-primary)); }
+  .mobile-workspace-terminal__viewport { flex: 1; min-height: 0; display: flex; }
+  .mobile-workspace-terminal__composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 0.5rem; padding: 0.5rem 0.5rem max(0.5rem, env(safe-area-inset-bottom)); border-top: thin solid var(--border-default); background: var(--bg-surface); }
+  .mobile-workspace-terminal__composer textarea, .mobile-workspace-terminal__send { min-height: 2.75rem; border: thin solid var(--border-default); border-radius: var(--radius-md); font: inherit; }
+  .mobile-workspace-terminal__composer textarea { width: 100%; min-width: 0; max-height: 8rem; overflow-y: auto; resize: none; padding: 0.625rem 0.75rem; color: var(--text-primary); background: var(--bg-inset); font-family: var(--font-mono); font-size: var(--font-size-md); line-height: 1.4; }
+  .mobile-workspace-terminal__send { padding: 0 1rem; color: var(--text-on-accent); border-color: var(--accent-blue); background: var(--accent-blue); font-weight: 700; }
+  .mobile-workspace-terminal__composer-handle { grid-column: 1 / -1; width: 100%; min-height: 1.5rem; display: flex; align-items: center; justify-content: center; gap: 0.375rem; padding: 0; color: var(--text-muted); border: 0; background: transparent; touch-action: none; }
+  .mobile-workspace-terminal__composer-handle > span, .mobile-workspace-terminal__composer-toggle > span { width: 2.25rem; height: 0.25rem; border-radius: 999px; background: var(--border-strong); }
+  .mobile-workspace-terminal__composer-toggle { position: absolute; z-index: 4; left: 50%; bottom: max(0.5rem, env(safe-area-inset-bottom)); min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0 0.75rem; color: var(--text-secondary); border: thin solid var(--border-default); border-radius: 999px; background: color-mix(in srgb, var(--bg-surface) 92%, transparent); box-shadow: var(--shadow-md); font: inherit; font-size: var(--font-size-sm); font-weight: 650; touch-action: none; transform: translateX(-50%); }
+  .mobile-workspace-terminal__composer small { grid-column: 1 / -1; color: var(--accent-red); font-size: var(--font-size-sm); }
+  .mobile-workspace-terminal__composer textarea:focus-visible, .mobile-workspace-terminal__composer button:focus-visible, .mobile-workspace-terminal__composer-toggle:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
   .mobile-workspace-terminal__state, .mobile-workspace-terminal__empty { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 2rem 1rem; color: var(--text-muted); text-align: center; font-size: var(--font-size-md); }
   .mobile-workspace-terminal__state strong, .mobile-workspace-terminal__empty strong { color: var(--text-primary); font-size: var(--font-size-xl); }
   .mobile-workspace-terminal__state button { min-height: 2.75rem; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0 1rem; border: thin solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary); background: var(--bg-surface); font: inherit; font-weight: 650; }

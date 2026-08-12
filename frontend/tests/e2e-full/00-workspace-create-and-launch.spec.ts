@@ -6,6 +6,7 @@ import { openSettingsPanel } from "./support/settingsPanel";
 type WorkspaceResponse = {
   id: string;
   status: string;
+  git_head_ref?: string;
   created?: boolean;
   mr_head_repo_kind?: "same_repo" | "fork" | "unknown";
   error_message?: string | null;
@@ -114,6 +115,58 @@ async function persistedRuntimeTargets(api: APIRequestContext, workspaceID: stri
   expect(response.ok()).toBe(true);
   const runtime = (await response.json()) as PersistedRuntimeResponse;
   return runtime.target_keys;
+}
+
+async function setRetainedSessions(api: APIRequestContext, limit: number): Promise<void> {
+  const currentResponse = await api.get("/api/v1/settings");
+  expect(currentResponse.ok()).toBe(true);
+  const current = (await currentResponse.json()) as { terminal: Record<string, unknown> };
+  const updateResponse = await api.put("/api/v1/settings", {
+    data: { terminal: { ...current.terminal, retained_sessions: limit } },
+  });
+  expect(updateResponse.ok(), await updateResponse.text()).toBe(true);
+}
+
+async function trackSessionWebSockets(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const log: Array<{ id: number; url: string; closed: boolean; sent: string[] }> = [];
+    const entries = new WeakMap<WebSocket, (typeof log)[number]>();
+    Reflect.set(window, "__mobileWorkspaceWebSockets", log);
+    const Native = window.WebSocket;
+    class TrackedWebSocket extends Native {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        const entry = { id: log.length + 1, url: String(url), closed: false, sent: [] as string[] };
+        log.push(entry);
+        entries.set(this, entry);
+        this.addEventListener("close", () => {
+          entry.closed = true;
+        });
+      }
+
+      override send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+        const entry = entries.get(this);
+        if (typeof data === "string") entry?.sent.push(data);
+        else if (ArrayBuffer.isView(data)) entry?.sent.push(new TextDecoder().decode(data));
+        else if (data instanceof ArrayBuffer) entry?.sent.push(new TextDecoder().decode(data));
+        super.send(data);
+      }
+    }
+    window.WebSocket = TrackedWebSocket as unknown as typeof WebSocket;
+  });
+}
+
+function sessionWebSockets(page: Page, workspaceId: string) {
+  return page.evaluate((needle) => {
+    const log = Reflect.get(window, "__mobileWorkspaceWebSockets") as
+      | Array<{ id: number; url: string; closed: boolean; sent: string[] }>
+      | undefined;
+    return (log ?? []).filter((entry) => entry.url.includes(needle));
+  }, `/workspaces/${workspaceId}/runtime/sessions/`);
+}
+
+async function liveSessionWebSockets(page: Page, workspaceId: string) {
+  return (await sessionWebSockets(page, workspaceId)).filter((entry) => !entry.closed);
 }
 
 test.describe("workspace create-and-launch full stack", () => {
@@ -346,7 +399,7 @@ test.describe("workspace create-and-launch full stack", () => {
     }
   });
 
-  test("New workspace dialog creates and persists the selected agent launch", async ({ page }) => {
+  test("phone workspace creation opens the terminal and confirms before stopping its session", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
       "git, tmux, and sh are required for the real workspace runtime flow",
@@ -360,6 +413,7 @@ test.describe("workspace create-and-launch full stack", () => {
         baseURL: server.info.base_url,
       });
       await configureAgent(page, server.info.base_url);
+      await trackSessionWebSockets(page);
 
       const createResponsePromise = page.waitForResponse(
         (response) =>
@@ -372,7 +426,8 @@ test.describe("workspace create-and-launch full stack", () => {
           /\/api\/v1\/workspaces\/[^/]+\/runtime\/sessions$/.test(response.url()),
       );
 
-      await page.goto(`${server.info.base_url}/workspaces`);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`${server.info.base_url}/m/workspaces`);
       await page.getByRole("button", { name: "New workspace" }).click();
       const dialog = page.getByRole("dialog", { name: "New workspace" });
       await expect(dialog).toBeVisible();
@@ -387,11 +442,108 @@ test.describe("workspace create-and-launch full stack", () => {
       const createResponse = await createResponsePromise;
       expect(createResponse.status(), await createResponse.text()).toBe(202);
       const created = (await createResponse.json()) as WorkspaceResponse;
-      await waitForWorkspaceReady(api, created.id);
+      await expect(page).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
+      const ready = await waitForWorkspaceReady(api, created.id);
       const launchResponse = await launchResponsePromise;
       expect(launchResponse.status(), await launchResponse.text()).toBe(200);
       await expect.poll(() => runtimeTargets(api!, created.id)).toContain(agentKey);
       await expect.poll(() => persistedRuntimeTargets(api!, created.id)).toEqual([agentKey]);
+
+      const input = page.getByRole("textbox", { name: "Terminal command" });
+      await expect(input).not.toBeVisible();
+      const composerToggle = page.getByRole("button", { name: "Open terminal composer" });
+      await expect(composerToggle).toBeVisible();
+      const toggleBox = await composerToggle.boundingBox();
+      expect(toggleBox).not.toBeNull();
+      await page.mouse.move(toggleBox!.x + toggleBox!.width / 2, toggleBox!.y + toggleBox!.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(toggleBox!.x + toggleBox!.width / 2, toggleBox!.y - 32);
+      await page.mouse.up();
+      await expect(input).toBeVisible();
+      const initialInputHeight = (await input.boundingBox())?.height ?? 0;
+      await input.fill("printf 'mobile-input-ok\\n'\nprintf 'second-line\\n'");
+      await expect(input).toHaveValue("printf 'mobile-input-ok\\n'\nprintf 'second-line\\n'");
+      await expect.poll(async () => (await input.boundingBox())?.height ?? 0).toBeGreaterThan(initialInputHeight);
+      await page.getByRole("button", { name: "Send terminal input" }).click();
+      await expect(input).toHaveValue("");
+      await expect.poll(async () => (await input.boundingBox())?.height ?? 0).toBeLessThanOrEqual(initialInputHeight);
+      await expect
+        .poll(async () => (await sessionWebSockets(page, created.id)).flatMap((socket) => socket.sent))
+        .toContain("printf 'mobile-input-ok\\n'\nprintf 'second-line\\n'\r");
+
+      const stop = page.getByRole("button", { name: `Stop terminal ${agentLabel}` });
+      await expect(stop).toBeVisible();
+      await stop.click();
+      const confirmation = page.getByRole("dialog", { name: "Stop terminal?" });
+      await expect(confirmation).toBeVisible();
+      expect(await runtimeTargets(api, created.id)).toContain(agentKey);
+      await confirmation.getByRole("button", { name: "Stop terminal" }).click();
+      await expect(confirmation).not.toBeVisible();
+      await expect.poll(() => runtimeTargets(api!, created.id)).not.toContain(agentKey);
+
+      await page.getByRole("button", { name: "Back to workspaces" }).click();
+      await expect(page).toHaveURL(/\/m\/workspaces$/);
+      const workspaceName = ready.git_head_ref ?? created.git_head_ref ?? created.id;
+      await page.getByRole("button", { name: `Workspace actions for ${workspaceName}` }).click();
+      await page.getByRole("button", { name: "Delete workspace…" }).click();
+      const deleteConfirmation = page.getByRole("dialog", { name: "Delete workspace?" });
+      await expect(deleteConfirmation).toBeVisible();
+      const deleteResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "DELETE" && response.url().endsWith(`/api/v1/workspaces/${created.id}`),
+      );
+      await deleteConfirmation.getByRole("button", { name: "Delete workspace" }).click();
+      expect((await deleteResponsePromise).status()).toBe(204);
+      await expect.poll(async () => (await api!.get(`/api/v1/workspaces/${created.id}`)).status()).toBe(404);
+    } finally {
+      await api?.dispose();
+      await server?.stop();
+    }
+  });
+
+  test("phone linked-item navigation preserves a zero-retention terminal session", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
+      "git, tmux, and sh are required for the real workspace runtime flow",
+    );
+
+    let server: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      server = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: server.info.base_url });
+      await configureAgent(page, server.info.base_url);
+      const launchResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          /\/api\/v1\/workspaces\/[^/]+\/runtime\/sessions$/.test(response.url()),
+      );
+      const created = await createPullRequestWorkspaceWithAgent(page, server.info.base_url);
+      await waitForWorkspaceReady(api, created.id);
+      expect((await launchResponsePromise).status()).toBe(200);
+      await expect.poll(() => runtimeTargets(api!, created.id)).toContain(agentKey);
+      await setRetainedSessions(api, 0);
+      await trackSessionWebSockets(page);
+
+      await page.goto(`${server.info.base_url}/m/workspaces/local/${created.id}`);
+      await expect(page.getByRole("button", { name: `Stop terminal ${agentLabel}` })).toBeVisible();
+      await expect.poll(() => liveSessionWebSockets(page, created.id)).toHaveLength(1);
+
+      await page.getByRole("button", { name: "Open linked PR #1" }).click();
+      await expect(page).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}/item$`));
+      await expect(page.locator(".pull-detail .detail-title")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Workspace terminal" })).not.toBeVisible();
+      await expect.poll(() => liveSessionWebSockets(page, created.id)).toHaveLength(1);
+
+      await page.getByRole("button", { name: "Back to workspace terminal" }).click();
+      await expect(page).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
+      await expect.poll(() => liveSessionWebSockets(page, created.id)).toHaveLength(1);
+
+      await page.goForward();
+      await expect(page).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}/item$`));
+      await page.goBack();
+      await expect(page).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
+      await expect.poll(() => liveSessionWebSockets(page, created.id)).toHaveLength(1);
     } finally {
       await api?.dispose();
       await server?.stop();

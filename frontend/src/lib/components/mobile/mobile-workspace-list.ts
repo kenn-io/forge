@@ -22,6 +22,7 @@ export function mobileWorkspaceDisplayName(workspace: WorkspaceListItem): string
 }
 
 export function mobileWorkspaceItemNumber(workspace: WorkspaceListItem): number | null {
+  if (workspace.item_type === "kata_task") return null;
   if (workspace.item_type !== "adhoc") return workspace.item_number;
   const number = workspace.associated_pr_number;
   return number !== null && number !== undefined && number > 0 ? number : null;

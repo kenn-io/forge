@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { WorkspaceListItem } from "../terminal/workspace-list-schema.js";
-import { groupMobileWorkspaces, sortMobileWorkspaces, workspaceMatchesMobileSearch } from "./mobile-workspace-list.js";
+import {
+  groupMobileWorkspaces,
+  mobileWorkspaceItemNumber,
+  sortMobileWorkspaces,
+  workspaceMatchesMobileSearch,
+} from "./mobile-workspace-list.js";
 
 function workspace(
   id: string,
@@ -57,5 +62,9 @@ describe("mobile workspace list model", () => {
     expect(workspaceMatchesMobileSearch(items[1]!, "#42")).toBe(true);
     expect(workspaceMatchesMobileSearch(remote, "phone-dev")).toBe(true);
     expect(workspaceMatchesMobileSearch(items[1]!, "unrelated")).toBe(false);
+  });
+
+  it("does not expose Kata tasks as mobile linked items", () => {
+    expect(mobileWorkspaceItemNumber({ ...items[0]!, item_type: "kata_task" })).toBeNull();
   });
 });

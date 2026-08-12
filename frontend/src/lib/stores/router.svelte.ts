@@ -243,30 +243,30 @@ function parseRoute(fullPath: string): Route {
   if (path === "/m/workspaces") {
     return { page: "mobile-workspaces" };
   }
-  const mobileFleetWorkspaceMatch = path.match(/^\/m\/workspaces\/fleet\/([^/]+)\/([^/]+)(?:\/item(?:\/(files))?)?$/);
+  const mobileFleetWorkspaceMatch = path.match(/^\/m\/workspaces\/fleet\/([^/]+)\/([^/]+)(?:\/(item)(?:\/(files))?)?$/);
   if (mobileFleetWorkspaceMatch) {
     const hostKey = decodeRouteSegment(mobileFleetWorkspaceMatch[1] ?? "");
     const workspaceId = decodeRouteSegment(mobileFleetWorkspaceMatch[2] ?? "");
     if (hostKey && workspaceId) {
-      return mobileFleetWorkspaceMatch[0].includes("/item")
+      return mobileFleetWorkspaceMatch[3] === "item"
         ? {
             page: "mobile-workspace-item",
             workspaceId,
             hostKey,
-            ...(mobileFleetWorkspaceMatch[3] === "files" && { tab: "files" as const }),
+            ...(mobileFleetWorkspaceMatch[4] === "files" && { tab: "files" as const }),
           }
         : { page: "mobile-workspace-terminal", workspaceId, hostKey };
     }
   }
-  const mobileLocalWorkspaceMatch = path.match(/^\/m\/workspaces\/local\/([^/]+)(?:\/item(?:\/(files))?)?$/);
+  const mobileLocalWorkspaceMatch = path.match(/^\/m\/workspaces\/local\/([^/]+)(?:\/(item)(?:\/(files))?)?$/);
   if (mobileLocalWorkspaceMatch) {
     const workspaceId = decodeRouteSegment(mobileLocalWorkspaceMatch[1] ?? "");
     if (workspaceId) {
-      return mobileLocalWorkspaceMatch[0].includes("/item")
+      return mobileLocalWorkspaceMatch[2] === "item"
         ? {
             page: "mobile-workspace-item",
             workspaceId,
-            ...(mobileLocalWorkspaceMatch[2] === "files" && { tab: "files" as const }),
+            ...(mobileLocalWorkspaceMatch[3] === "files" && { tab: "files" as const }),
           }
         : { page: "mobile-workspace-terminal", workspaceId };
     }
@@ -926,9 +926,9 @@ export function notifyInitialRouteChange(): void {
   fireRouteChange(route);
 }
 
-export function replaceUrl(path: string): void {
+export function replaceUrl(path: string, state?: Record<string, unknown>): void {
   const fullPath = basePrefix + path;
-  history.replaceState(null, "", fullPath);
+  history.replaceState(state ?? null, "", fullPath);
   route = parseRoute(fullPath);
   rememberActivityRoute();
   rememberWorkspaceRoute();

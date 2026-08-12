@@ -135,6 +135,12 @@
     explicitFocusRequested = true;
   }
 
+  export function sendInput(data: string): boolean {
+    if (disabled || !terminal || !terminalSession?.isConnected()) return false;
+    terminal.input(data, true);
+    return true;
+  }
+
   const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
   const TERMINAL_FONT_WAIT_MS = 300;
@@ -574,8 +580,9 @@
     terminal.refresh(0, Math.max(0, terminal.rows - 1));
   }
 
-  function isFirefox(): boolean {
-    return navigator.userAgent.toLowerCase().includes("firefox/");
+  function requiresCanvasRenderer(): boolean {
+    const userAgent = navigator.userAgent.toLowerCase();
+    return userAgent.includes("firefox/") || userAgent.includes("android");
   }
 
   function recreateWebglAddon(): void {
@@ -583,7 +590,7 @@
     webglAddon?.dispose();
     webglAddon = null;
     if (rendererParked) return;
-    if (isFirefox()) {
+    if (requiresCanvasRenderer()) {
       scheduleTerminalResize();
       return;
     }

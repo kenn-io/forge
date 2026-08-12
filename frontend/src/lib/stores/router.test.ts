@@ -138,6 +138,19 @@ describe("router basic routes", () => {
       hostKey: "laptop",
       tab: "files",
     });
+
+    navigate("/m/workspaces/local/itemized-workspace");
+    expect(getRoute()).toEqual({
+      page: "mobile-workspace-terminal",
+      workspaceId: "itemized-workspace",
+    });
+
+    navigate("/m/workspaces/fleet/itemized-host/ws-3");
+    expect(getRoute()).toEqual({
+      page: "mobile-workspace-terminal",
+      workspaceId: "ws-3",
+      hostKey: "itemized-host",
+    });
   });
 
   it("builds escaped local and Fleet mobile workspace routes", () => {

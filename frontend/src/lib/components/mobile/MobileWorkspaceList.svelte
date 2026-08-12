@@ -17,6 +17,7 @@
   import { eventSourceStream } from "../../browser/event-source.js";
   import { openNewWorkspaceDialog } from "../../stores/new-workspace.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import {
     WorkspaceListWorkflow,
@@ -319,9 +320,19 @@
       command.pipe(
         Effect.tap(() =>
           Effect.sync(() => {
+            notifyWorkspaceDeleted(workspace.id, hostKey, {
+              provider: workspace.repo?.provider ?? "",
+              platformHost: workspace.platform_host,
+              owner: workspace.repo_owner,
+              name: workspace.repo_name,
+              repoPath: workspace.repo?.repo_path ?? `${workspace.repo_owner}/${workspace.repo_name}`,
+              number: workspace.item_number,
+              itemType: workspace.item_type,
+            });
             workspaces = workspaces.filter(
               (candidate) => candidate.id !== workspace.id || candidate.fleet_host_key !== hostKey,
             );
+            refreshWorkspaces.request();
           }),
         ),
         Effect.ensuring(

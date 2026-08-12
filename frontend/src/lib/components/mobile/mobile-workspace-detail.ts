@@ -30,6 +30,7 @@ export function mobileWorkspaceLinkedItem(workspace: WorkspaceDetail): {
   itemType: "pr" | "issue";
   number: number;
 } | null {
+  if (workspace.item_type === "kata_task") return null;
   if (workspace.item_type === "issue") {
     return workspace.item_number > 0 ? { itemType: "issue", number: workspace.item_number } : null;
   }
@@ -38,4 +39,9 @@ export function mobileWorkspaceLinkedItem(workspace: WorkspaceDetail): {
   }
   const number = workspace.associated_pr_number;
   return number !== null && number !== undefined && number > 0 ? { itemType: "pr", number } : null;
+}
+
+export function mobileWorkspaceIdentity(workspace: WorkspaceDetail, hostKey?: string): string {
+  const local = `${workspace.repo_owner}/${workspace.repo_name} · ${workspace.git_head_ref}`;
+  return hostKey ? `${local} · ${hostKey}` : local;
 }

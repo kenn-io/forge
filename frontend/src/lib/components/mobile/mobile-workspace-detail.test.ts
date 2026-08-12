@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { WorkspaceDetail } from "../terminal/workspace-detail.js";
-import { mobileWorkspaceLinkedItem } from "./mobile-workspace-detail.js";
+import { mobileWorkspaceIdentity, mobileWorkspaceLinkedItem } from "./mobile-workspace-detail.js";
 
 function detail(itemType: WorkspaceDetail["item_type"], number: number): WorkspaceDetail {
   return {
@@ -35,6 +35,12 @@ describe("mobile workspace linked item", () => {
   });
 
   it("hides missing linked items", () => {
-    expect(mobileWorkspaceLinkedItem(detail("kata_task", 0))).toBeNull();
+    expect(mobileWorkspaceLinkedItem({ ...detail("kata_task", 7), associated_pr_number: 99 })).toBeNull();
+  });
+
+  it("keeps repository, branch, and optional Fleet identity visible", () => {
+    const workspace = detail("pull_request", 7);
+    expect(mobileWorkspaceIdentity(workspace)).toBe("acme/widgets · feature/mobile");
+    expect(mobileWorkspaceIdentity(workspace, "dev-laptop")).toBe("acme/widgets · feature/mobile · dev-laptop");
   });
 });

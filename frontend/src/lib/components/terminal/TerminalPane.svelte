@@ -37,6 +37,10 @@
   export function focus(): void {
     xtermPane?.focus();
   }
+
+  export function sendInput(data: string): boolean {
+    return xtermPane?.sendInput(data) ?? false;
+  }
 </script>
 
 <XtermTerminalPane

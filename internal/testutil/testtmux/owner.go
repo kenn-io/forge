@@ -312,10 +312,13 @@ func (o *Owner) Cleanup() error {
 		o.mu.Unlock()
 
 		var cleanupErrors []error
-		if err := closeAdmission(o.admissionDir); err != nil {
-			cleanupErrors = append(cleanupErrors, err)
-		} else if err := drainAdmittedCreations(o.admissionDir); err != nil {
-			cleanupErrors = append(cleanupErrors, err)
+		gateErr := closeAdmission(o.admissionDir)
+		if gateErr == nil {
+			gateErr = drainAdmittedCreations(o.admissionDir)
+		}
+		if gateErr != nil {
+			o.cleanupErr = gateErr
+			return
 		}
 
 		o.mu.Lock()
@@ -483,17 +486,41 @@ func prepareRoot(root string) error {
 }
 
 func reapStale(root string) error {
+	return reapStaleWithLookup(root, processStart)
+}
+
+func reapStaleWithLookup(
+	root string,
+	lookupStart func(int) (string, error),
+) error {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return fmt.Errorf("list tmux test root: %w", err)
 	}
 	var cleanupErrors []error
-	var staleAdmissions []string
+	type staleAdmission struct {
+		runName string
+		dir     string
+	}
+	type gateState uint8
+	const (
+		gateDeferred gateState = iota + 1
+		gateFailed
+		gateSafe
+	)
+	var staleAdmissions []staleAdmission
+	gateStates := make(map[string]gateState)
 	for _, entry := range entries {
 		identity, ok := parseAdmissionName(entry.Name())
-		if !ok || runIsLive(identity, processStart) {
+		if !ok {
 			continue
 		}
+		runName := strings.TrimPrefix(entry.Name(), admissionPrefix)
+		if runIsLive(identity, lookupStart) {
+			gateStates[runName] = gateDeferred
+			continue
+		}
+		gateStates[runName] = gateFailed
 		admissionDir := filepath.Join(root, entry.Name())
 		info, statErr := os.Lstat(admissionDir)
 		if statErr != nil {
@@ -514,17 +541,47 @@ func reapStale(root string) error {
 			cleanupErrors = append(cleanupErrors, err)
 			continue
 		}
-		staleAdmissions = append(staleAdmissions, admissionDir)
+		staleAdmissions = append(staleAdmissions, staleAdmission{
+			runName: runName,
+			dir:     admissionDir,
+		})
 	}
 	if len(staleAdmissions) > 0 {
-		if err := drainAdmittedCreations(staleAdmissions...); err != nil {
+		admissionDirs := make([]string, 0, len(staleAdmissions))
+		for _, admission := range staleAdmissions {
+			admissionDirs = append(admissionDirs, admission.dir)
+		}
+		if err := drainAdmittedCreations(admissionDirs...); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
 			staleAdmissions = nil
+		} else {
+			for _, admission := range staleAdmissions {
+				gateStates[admission.runName] = gateSafe
+			}
 		}
 	}
 	for _, entry := range entries {
 		identity, ok := parseRunName(entry.Name())
-		if !ok || runIsLive(identity, processStart) {
+		if !ok {
+			continue
+		}
+		switch gateStates[entry.Name()] {
+		case gateDeferred, gateFailed:
+			continue
+		case gateSafe:
+		default:
+			if runIsLive(identity, lookupStart) {
+				continue
+			}
+			runDir := filepath.Join(root, entry.Name())
+			if err := validateRunMarker(runDir, identity); err != nil {
+				cleanupErrors = append(cleanupErrors, err)
+			} else {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf(
+					"refusing stale tmux test run without admission gate: %s",
+					runDir,
+				))
+			}
 			continue
 		}
 		runDir := filepath.Join(root, entry.Name())
@@ -561,8 +618,8 @@ func reapStale(root string) error {
 	if err := reapStaleProcesses(root); err != nil {
 		cleanupErrors = append(cleanupErrors, err)
 	}
-	for _, admissionDir := range staleAdmissions {
-		if err := os.RemoveAll(admissionDir); err != nil {
+	for _, admission := range staleAdmissions {
+		if err := os.RemoveAll(admission.dir); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
 		}
 	}
@@ -666,6 +723,9 @@ func killRunProcesses(runDir string) error {
 }
 
 func explicitSocket(command string) (string, bool) {
+	if socket, ok := tmuxServerTitleSocket(command); ok {
+		return socket, true
+	}
 	fields := strings.Fields(command)
 	for index := 0; index+1 < len(fields); index++ {
 		if fields[index] == "-S" && filepath.IsAbs(fields[index+1]) {
@@ -673,6 +733,18 @@ func explicitSocket(command string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func tmuxServerTitleSocket(command string) (string, bool) {
+	const prefix = "tmux: server ("
+	if !strings.HasPrefix(command, prefix) || !strings.HasSuffix(command, ")") {
+		return "", false
+	}
+	socket := strings.TrimSuffix(strings.TrimPrefix(command, prefix), ")")
+	if !filepath.IsAbs(socket) || strings.ContainsAny(socket, " \t\r\n()") {
+		return "", false
+	}
+	return filepath.Clean(socket), true
 }
 
 func randomToken(bytes int) (string, error) {

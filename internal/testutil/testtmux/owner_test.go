@@ -224,6 +224,39 @@ func TestOwnerCleanupRetainsSharedRoot(t *testing.T) {
 	require.True(info.IsDir())
 }
 
+func TestOwnerCleanupPreservesStateWhenAdmissionCannotClose(t *testing.T) {
+	require := require.New(t)
+	owner, err := newAt(filepath.Join(t.TempDir(), "root"))
+	require.NoError(err)
+	require.NoError(os.Mkdir(
+		filepath.Join(owner.admissionDir, admissionClosedName),
+		0o700,
+	))
+
+	require.Error(owner.Cleanup())
+	require.DirExists(owner.runDir)
+	require.DirExists(owner.admissionDir)
+}
+
+func TestOwnerCleanupPreservesStateWhenAdmissionDrainFails(t *testing.T) {
+	require := require.New(t)
+	root := t.TempDir()
+	runDir := filepath.Join(root, "run")
+	admissionDir := filepath.Join(root, "admission.[")
+	require.NoError(os.Mkdir(runDir, 0o700))
+	require.NoError(os.Mkdir(admissionDir, 0o700))
+	owner := &Owner{
+		root:         root,
+		runDir:       runDir,
+		admissionDir: admissionDir,
+		servers:      make(map[string]registeredServer),
+	}
+
+	require.Error(owner.Cleanup())
+	require.DirExists(runDir)
+	require.DirExists(admissionDir)
+}
+
 func TestRunIsLiveRequiresMatchingProcessStart(t *testing.T) {
 	t.Parallel()
 
@@ -302,6 +335,26 @@ func TestIdentityForSocketRequiresContainedRunPath(t *testing.T) {
 	assert.False(ok)
 	_, ok = identityForSocket(root, "relative/tmux.sock")
 	assert.False(ok)
+}
+
+func TestExplicitSocketRecognizesTmuxServerTitle(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	socket, ok := explicitSocket("tmux: server (/tmp/owned/run.1/token/tmux.sock)")
+	assert.True(ok)
+	assert.Equal("/tmp/owned/run.1/token/tmux.sock", socket)
+
+	invalid := []string{
+		"tmux: server (relative/tmux.sock)",
+		"tmux: server (/tmp/owned/tmux.sock) trailing",
+		"tmux: client (/tmp/owned/tmux.sock)",
+		"other: server (/tmp/owned/tmux.sock)",
+	}
+	for _, command := range invalid {
+		_, ok := explicitSocket(command)
+		assert.False(ok, command)
+	}
 }
 
 func TestOwnerCleanupStopsRegisteredServerAndPreservesControl(t *testing.T) {
@@ -564,6 +617,73 @@ func TestNewAtDrainsMultipleStaleAdmissionsWithinOneDeadline(t *testing.T) {
 		require.Error(<-startup.done)
 		requireProcessGone(t, startup.command.Process.Pid)
 	}
+}
+
+func TestReapStalePreservesRunWhenAdmissionCannotClose(t *testing.T) {
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), "root")
+	require.NoError(prepareRoot(root))
+	start := "dead-owner"
+	identity := processIdentity{
+		pid:        999_999,
+		startToken: tokenForStart(start),
+	}
+	runName := fmt.Sprintf(
+		"run.%d.%s.abcdef", identity.pid, identity.startToken,
+	)
+	runDir, err := publishRun(root, runName, ownerMarker{
+		PID:          identity.pid,
+		ProcessStart: start,
+		StartToken:   identity.startToken,
+	}, os.Rename)
+	require.NoError(err)
+	admissionDir := filepath.Join(root, admissionPrefix+runName)
+	require.NoError(os.Mkdir(admissionDir, 0o700))
+	require.NoError(os.Mkdir(
+		filepath.Join(admissionDir, admissionClosedName),
+		0o700,
+	))
+
+	require.Error(reapStale(root))
+	require.DirExists(runDir)
+	require.DirExists(admissionDir)
+}
+
+func TestReapStaleDefersOwnerThatDiesAfterAdmissionSnapshot(t *testing.T) {
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), "root")
+	require.NoError(prepareRoot(root))
+	start := "live-owner"
+	identity := processIdentity{
+		pid:        31415,
+		startToken: tokenForStart(start),
+	}
+	runName := fmt.Sprintf(
+		"run.%d.%s.abcdef", identity.pid, identity.startToken,
+	)
+	runDir, err := publishRun(root, runName, ownerMarker{
+		PID:          identity.pid,
+		ProcessStart: start,
+		StartToken:   identity.startToken,
+	}, os.Rename)
+	require.NoError(err)
+	admissionDir := filepath.Join(root, admissionPrefix+runName)
+	require.NoError(os.Mkdir(admissionDir, 0o700))
+
+	lookups := 0
+	lookupStart := func(pid int) (string, error) {
+		require.Equal(identity.pid, pid)
+		lookups++
+		if lookups == 1 {
+			return start, nil
+		}
+		return "", errors.New("owner exited")
+	}
+
+	require.NoError(reapStaleWithLookup(root, lookupStart))
+	require.Equal(1, lookups)
+	require.DirExists(runDir)
+	require.DirExists(admissionDir)
 }
 
 func TestNewAtReapsServerAfterRunDirectoryDisappears(t *testing.T) {

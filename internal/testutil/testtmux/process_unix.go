@@ -54,8 +54,10 @@ func tmuxProcesses() ([]tmuxProcess, error) {
 		if pidErr != nil || uidErr != nil || uid != os.Getuid() {
 			continue
 		}
+		processCommand := strings.Join(fields[2:], " ")
 		executable := strings.TrimPrefix(filepathBase(fields[2]), "-")
-		if executable != "tmux" {
+		_, titledServer := tmuxServerTitleSocket(processCommand)
+		if executable != "tmux" && !titledServer {
 			continue
 		}
 		start, startErr := processStart(pid)
@@ -64,7 +66,7 @@ func tmuxProcesses() ([]tmuxProcess, error) {
 		}
 		processes = append(processes, tmuxProcess{
 			pid:     pid,
-			command: strings.Join(fields[2:], " "),
+			command: processCommand,
 			start:   start,
 		})
 	}

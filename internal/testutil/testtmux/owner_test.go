@@ -119,7 +119,7 @@ func TestParseRunName(t *testing.T) {
 func TestSupportedMatchesPlatform(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, runtime.GOOS != "windows", Supported())
+	assert.Equal(t, runtime.GOOS == "darwin" || runtime.GOOS == "linux", Supported())
 }
 
 func TestPublishRunDoesNotExposeUnmarkedFinalDirectory(t *testing.T) {
@@ -297,8 +297,28 @@ func TestOwnerCleanupPreservesAdmissionWhenRunRemovalFails(t *testing.T) {
 	require.DirExists(admissionDir)
 }
 
-func TestRunIsLiveRequiresMatchingProcessStart(t *testing.T) {
+func TestAdmittedCreationsPreservesMarkerWhenLookupIsIndeterminate(t *testing.T) {
+	require := require.New(t)
+	admissionDir := t.TempDir()
+	start := "startup-identity"
+	marker := filepath.Join(admissionDir, fmt.Sprintf(
+		"starting.%d.%s", 31415, tokenForStart(start),
+	))
+	require.NoError(os.WriteFile(marker, []byte(start), 0o600))
+
+	_, err := admittedCreationsWithLookup(
+		[]string{admissionDir},
+		func(int) (string, error) {
+			return "", errors.New("transient identity lookup failure")
+		},
+	)
+	require.Error(err)
+	require.FileExists(marker)
+}
+
+func TestRunProcessIdentityStateRequiresMatchingStart(t *testing.T) {
 	t.Parallel()
+	require := require.New(t)
 
 	lookup := func(pid int) (string, error) {
 		switch pid {
@@ -307,29 +327,37 @@ func TestRunIsLiveRequiresMatchingProcessStart(t *testing.T) {
 		case 202:
 			return "reused-start", nil
 		default:
-			return "", errors.New("process not found")
+			return "", errProcessAbsent
 		}
 	}
 
-	assert.True(t, runIsLive(
+	status, err := runProcessIdentityState(
 		processIdentity{pid: 101, startToken: tokenForStart("same-start")},
 		lookup,
-	))
-	assert.False(t, runIsLive(
+	)
+	require.NoError(err)
+	require.Equal(processIdentityLive, status)
+
+	status, err = runProcessIdentityState(
 		processIdentity{pid: 202, startToken: tokenForStart("original-start")},
 		lookup,
-	), "a reused PID must not pin a dead run")
-	assert.False(t, runIsLive(
+	)
+	require.NoError(err)
+	require.Equal(processIdentityAbsent, status, "a reused PID must not pin a dead run")
+
+	status, err = runProcessIdentityState(
 		processIdentity{pid: 303, startToken: tokenForStart("gone")},
 		lookup,
-	))
+	)
+	require.NoError(err)
+	require.Equal(processIdentityAbsent, status)
 }
 
 func TestProcessStartIsStableForLiveProcess(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("the Windows identity implementation is cross-compiled here")
+	if !Supported() {
+		t.Skip("high-resolution process identity is unavailable")
 	}
 	first, err := processStart(os.Getpid())
 	require.NoError(err)
@@ -340,19 +368,34 @@ func TestProcessStartIsStableForLiveProcess(t *testing.T) {
 	assert.Equal(first, second)
 }
 
-func TestProcessStillMatchesRequiresOriginalStart(t *testing.T) {
+func TestProcessStartReportsDefiniteAbsence(t *testing.T) {
+	if !Supported() {
+		t.Skip("high-resolution process identity is unavailable")
+	}
+
+	_, err := processStart(2_000_000_000)
+	require.ErrorIs(t, err, errProcessAbsent)
+}
+
+func TestExactProcessIdentityStateRequiresOriginalStart(t *testing.T) {
 	t.Parallel()
-	assert := assert.New(t)
+	require := require.New(t)
 
 	lookup := func(pid int) (string, error) {
 		if pid == 101 {
 			return "current-start", nil
 		}
-		return "", errors.New("process not found")
+		return "", errProcessAbsent
 	}
-	assert.True(processStillMatches(101, "current-start", lookup))
-	assert.False(processStillMatches(101, "prior-start", lookup))
-	assert.False(processStillMatches(202, "gone", lookup))
+	status, err := exactProcessIdentityState(101, "current-start", lookup)
+	require.NoError(err)
+	require.Equal(processIdentityLive, status)
+	status, err = exactProcessIdentityState(101, "prior-start", lookup)
+	require.NoError(err)
+	require.Equal(processIdentityAbsent, status)
+	status, err = exactProcessIdentityState(202, "gone", lookup)
+	require.NoError(err)
+	require.Equal(processIdentityAbsent, status)
 }
 
 func TestIdentityForSocketRequiresContainedRunPath(t *testing.T) {
@@ -704,7 +747,7 @@ func TestReapStaleRemovesAdmissionWithoutRun(t *testing.T) {
 	require.NoError(os.Mkdir(admissionDir, 0o700))
 
 	require.NoError(reapStaleWithLookup(root, func(int) (string, error) {
-		return "", errors.New("owner exited")
+		return "", errProcessAbsent
 	}))
 	require.NoDirExists(admissionDir)
 }
@@ -730,7 +773,7 @@ func TestReapStalePreservesAdmissionWhenRunValidationFails(t *testing.T) {
 	require.NoError(os.Mkdir(admissionDir, 0o700))
 
 	require.Error(reapStaleWithLookup(root, func(int) (string, error) {
-		return "", errors.New("owner exited")
+		return "", errProcessAbsent
 	}))
 	require.DirExists(runDir)
 	require.DirExists(admissionDir)
@@ -764,13 +807,42 @@ func TestReapStaleDefersOwnerThatDiesAfterAdmissionSnapshot(t *testing.T) {
 		if lookups == 1 {
 			return start, nil
 		}
-		return "", errors.New("owner exited")
+		return "", errProcessAbsent
 	}
 
 	require.NoError(reapStaleWithLookup(root, lookupStart))
 	require.Equal(1, lookups)
 	require.DirExists(runDir)
 	require.DirExists(admissionDir)
+}
+
+func TestReapStalePreservesOwnerWhenLookupIsIndeterminate(t *testing.T) {
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), "root")
+	require.NoError(prepareRoot(root))
+	start := "live-owner"
+	identity := processIdentity{
+		pid:        31415,
+		startToken: tokenForStart(start),
+	}
+	runName := fmt.Sprintf(
+		"run.%d.%s.abcdef", identity.pid, identity.startToken,
+	)
+	runDir, err := publishRun(root, runName, ownerMarker{
+		PID:          identity.pid,
+		ProcessStart: start,
+		StartToken:   identity.startToken,
+	}, os.Rename)
+	require.NoError(err)
+	admissionDir := filepath.Join(root, admissionPrefix+runName)
+	require.NoError(os.Mkdir(admissionDir, 0o700))
+
+	require.Error(reapStaleWithLookup(root, func(int) (string, error) {
+		return "", errors.New("transient identity lookup failure")
+	}))
+	require.DirExists(runDir)
+	require.DirExists(admissionDir)
+	require.NoFileExists(filepath.Join(admissionDir, admissionClosedName))
 }
 
 func TestNewAtReapsServerAfterRunDirectoryDisappears(t *testing.T) {

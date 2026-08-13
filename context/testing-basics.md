@@ -26,6 +26,9 @@ fixtures, or changing shell-script coverage.
 - Real private tmux tests use `testtmux`: publish admission gates before runs and
   remove paired gates only after runs; retain PID-plus-start state on gate errors,
   share one stale-owner drain deadline, and never address the default server. (`internal/testutil/testtmux/owner.go::Owner`)
+- Tmux recovery reaps only definitely absent identities and preserves state when
+  lookup is indeterminate; real tmux ownership is supported only on Darwin and
+  Linux, which provide high-resolution process starts. (`internal/testutil/testtmux/process_identity.go::processIdentityStatus`)
 - Orphan recovery accepts explicit or exact server-title socket paths only when
   contained by the dedicated root. (`internal/testutil/testtmux/owner.go::reapStaleProcesses`)
 - Use provider live or container fixtures only when fake transports cannot

@@ -13,6 +13,9 @@ import (
 func processStart(pid int) (string, error) {
 	content, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("%w: process %d", errProcessAbsent, pid)
+		}
 		return "", err
 	}
 	closingName := strings.LastIndexByte(string(content), ')')

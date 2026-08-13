@@ -417,6 +417,13 @@ func waitForAdmittedCreations(ctx context.Context, admissionDirs []string) error
 }
 
 func admittedCreations(admissionDirs []string) ([]tmuxProcess, error) {
+	return admittedCreationsWithLookup(admissionDirs, processStart)
+}
+
+func admittedCreationsWithLookup(
+	admissionDirs []string,
+	lookupStart processStartLookup,
+) ([]tmuxProcess, error) {
 	seen := make(map[tmuxProcess]bool)
 	for _, admissionDir := range admissionDirs {
 		markers, err := filepath.Glob(filepath.Join(admissionDir, "starting.*"))
@@ -432,8 +439,19 @@ func admittedCreations(admissionDirs []string) ([]tmuxProcess, error) {
 			pid, parseErr := strconv.Atoi(parts[1])
 			start, readErr := os.ReadFile(marker)
 			if parseErr != nil || readErr != nil ||
-				tokenForStart(string(start)) != parts[2] ||
-				!processStillMatches(pid, string(start), processStart) {
+				tokenForStart(string(start)) != parts[2] {
+				_ = os.Remove(marker)
+				continue
+			}
+			status, statusErr := exactProcessIdentityState(
+				pid, string(start), lookupStart,
+			)
+			if statusErr != nil {
+				return nil, fmt.Errorf(
+					"inspect admitted private tmux startup %s: %w", marker, statusErr,
+				)
+			}
+			if status == processIdentityAbsent {
 				_ = os.Remove(marker)
 				continue
 			}
@@ -515,7 +533,7 @@ func reapStale(root string) error {
 
 func reapStaleWithLookup(
 	root string,
-	lookupStart func(int) (string, error),
+	lookupStart processStartLookup,
 ) error {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -540,7 +558,13 @@ func reapStaleWithLookup(
 			continue
 		}
 		runName := strings.TrimPrefix(entry.Name(), admissionPrefix)
-		if runIsLive(identity, lookupStart) {
+		ownerStatus, ownerErr := runProcessIdentityState(identity, lookupStart)
+		if ownerErr != nil {
+			gateStates[runName] = gateFailed
+			cleanupErrors = append(cleanupErrors, ownerErr)
+			continue
+		}
+		if ownerStatus == processIdentityLive {
 			gateStates[runName] = gateDeferred
 			continue
 		}
@@ -594,7 +618,12 @@ func reapStaleWithLookup(
 			continue
 		case gateSafe:
 		default:
-			if runIsLive(identity, lookupStart) {
+			ownerStatus, ownerErr := runProcessIdentityState(identity, lookupStart)
+			if ownerErr != nil {
+				cleanupErrors = append(cleanupErrors, ownerErr)
+				continue
+			}
+			if ownerStatus == processIdentityLive {
 				continue
 			}
 			runDir := filepath.Join(root, entry.Name())
@@ -722,7 +751,15 @@ func reapStaleProcesses(root string) error {
 			continue
 		}
 		identity, runDir, ok := runForSocket(root, socket)
-		if !ok || runIsLive(identity, processStart) {
+		if !ok {
+			continue
+		}
+		ownerStatus, ownerErr := runProcessIdentityState(identity, processStart)
+		if ownerErr != nil {
+			cleanupErrors = append(cleanupErrors, ownerErr)
+			continue
+		}
+		if ownerStatus == processIdentityLive {
 			continue
 		}
 		if _, statErr := os.Lstat(runDir); statErr == nil ||
@@ -810,14 +847,6 @@ func parseAdmissionName(name string) (processIdentity, bool) {
 		return processIdentity{}, false
 	}
 	return parseRunName(strings.TrimPrefix(name, admissionPrefix))
-}
-
-func runIsLive(
-	identity processIdentity,
-	lookupStart func(int) (string, error),
-) bool {
-	start, err := lookupStart(identity.pid)
-	return err == nil && tokenForStart(start) == identity.startToken
 }
 
 func identityForSocket(root, socket string) (processIdentity, bool) {

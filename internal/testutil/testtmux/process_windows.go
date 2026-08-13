@@ -50,15 +50,6 @@ func tmuxProcesses() ([]tmuxProcess, error) {
 	return nil, nil
 }
 
-func processStillMatches(
-	pid int,
-	expectedStart string,
-	lookupStart func(int) (string, error),
-) bool {
-	actualStart, err := lookupStart(pid)
-	return err == nil && actualStart == expectedStart
-}
-
 func stopProcess(int, string) error {
 	return errors.New("direct tmux process recovery is unavailable on Windows")
 }

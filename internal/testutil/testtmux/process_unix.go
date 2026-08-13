@@ -43,6 +43,13 @@ func tmuxProcesses() ([]tmuxProcess, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list tmux processes: %w", err)
 	}
+	return parseTmuxProcesses(output, processStart)
+}
+
+func parseTmuxProcesses(
+	output []byte,
+	lookupStart processStartLookup,
+) ([]tmuxProcess, error) {
 	var processes []tmuxProcess
 	for line := range strings.SplitSeq(string(output), "\n") {
 		fields := strings.Fields(line)
@@ -60,8 +67,11 @@ func tmuxProcesses() ([]tmuxProcess, error) {
 		if executable != "tmux" && !titledServer {
 			continue
 		}
-		start, startErr := processStart(pid)
+		start, status, startErr := lookupProcessStartState(pid, lookupStart)
 		if startErr != nil {
+			return nil, fmt.Errorf("identify tmux process %d: %w", pid, startErr)
+		}
+		if status == processIdentityAbsent {
 			continue
 		}
 		processes = append(processes, tmuxProcess{
@@ -80,17 +90,20 @@ func filepathBase(path string) string {
 	return path
 }
 
-func processStillMatches(
-	pid int,
-	expectedStart string,
-	lookupStart func(int) (string, error),
-) bool {
-	actualStart, err := lookupStart(pid)
-	return err == nil && actualStart == expectedStart
+func stopProcess(pid int, expectedStart string) error {
+	return stopProcessWithLookup(pid, expectedStart, processStart)
 }
 
-func stopProcess(pid int, expectedStart string) error {
-	if !processStillMatches(pid, expectedStart, processStart) {
+func stopProcessWithLookup(
+	pid int,
+	expectedStart string,
+	lookupStart processStartLookup,
+) error {
+	status, err := exactProcessIdentityState(pid, expectedStart, lookupStart)
+	if err != nil {
+		return fmt.Errorf("verify stale tmux process %d: %w", pid, err)
+	}
+	if status == processIdentityAbsent {
 		return nil
 	}
 	process, err := os.FindProcess(pid)
@@ -103,12 +116,20 @@ func stopProcess(pid int, expectedStart string) error {
 	}
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if !processStillMatches(pid, expectedStart, processStart) {
+		status, err = exactProcessIdentityState(pid, expectedStart, lookupStart)
+		if err != nil {
+			return fmt.Errorf("verify terminated tmux process %d: %w", pid, err)
+		}
+		if status == processIdentityAbsent {
 			return nil
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	if !processStillMatches(pid, expectedStart, processStart) {
+	status, err = exactProcessIdentityState(pid, expectedStart, lookupStart)
+	if err != nil {
+		return fmt.Errorf("verify terminated tmux process %d: %w", pid, err)
+	}
+	if status == processIdentityAbsent {
 		return nil
 	}
 	if err := process.Signal(syscall.SIGKILL); err != nil &&

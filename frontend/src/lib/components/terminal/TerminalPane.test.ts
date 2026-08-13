@@ -1,7 +1,7 @@
 import { cleanup, render, waitFor } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { markTerminalGeometryIntent } from "./terminalGeometryIntent.js";
+import { beginTerminalGeometryIntent, extendTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 
 const {
   clipboardWriteText,
@@ -1087,7 +1087,7 @@ describe("TerminalPane", () => {
     await waitForInitialGeometry(mockSockets[0]!);
     const socket = mockSockets[0]!;
     socket.sent = [];
-    markTerminalGeometryIntent();
+    beginTerminalGeometryIntent();
     fitDimensions = { cols: 101, rows: 33 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
     await waitFor(() => expect(socket.sent).toHaveLength(1));
@@ -1096,6 +1096,13 @@ describe("TerminalPane", () => {
       JSON.stringify({ type: "claim_resize", cols: 101, rows: 33 }),
     ]);
     expect(socketFramesOfType(socket, "resize")).toHaveLength(0);
+    extendTerminalGeometryIntent();
+    fitDimensions = { cols: 102, rows: 34 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    await waitFor(() => expect(socket.sent).toHaveLength(2));
+
+    expect(socketFramesOfType(socket, "claim_resize")).toHaveLength(1);
+    expect(socketFramesOfType(socket, "resize")).toEqual([JSON.stringify({ type: "resize", cols: 102, rows: 34 })]);
     await new Promise((resolve) => setTimeout(resolve, 250));
   });
 
@@ -1107,7 +1114,7 @@ describe("TerminalPane", () => {
     await waitForInitialGeometry(mockSockets[0]!);
     const socket = mockSockets[0]!;
     socket.sent = [];
-    markTerminalGeometryIntent();
+    beginTerminalGeometryIntent();
     fitDimensions = { cols: 80, rows: 24 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -1123,6 +1130,8 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     const socket = mockSockets[0]!;
+    await waitForSocketConnected(socket);
+    await waitForInitialGeometry(socket);
     socket.sent = [];
 
     xtermOnDataHandlers[0]!("input");

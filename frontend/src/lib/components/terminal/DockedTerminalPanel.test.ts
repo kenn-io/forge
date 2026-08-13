@@ -6,7 +6,7 @@ import type { ComponentProps } from "svelte";
 import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import DockedTerminalPanelTestHarness from "./DockedTerminalPanelTestHarness.svelte";
 import { clearActiveTerminalDrag, readRuntimeSessionDrag } from "./terminal-drag";
-import { hasTerminalGeometryIntent } from "./terminalGeometryIntent.js";
+import { currentTerminalGeometryIntent, hasTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 
 const sessions = [
   {
@@ -106,12 +106,16 @@ describe("DockedTerminalPanel", () => {
     await fireEvent.pointerDown(handle, { clientY: 300, pointerId: 1, button: 0 });
     await fireEvent.pointerMove(handle, { clientY: 276, pointerId: 1 });
     expect(hasTerminalGeometryIntent()).toBe(true);
+    const pointerGeneration = currentTerminalGeometryIntent();
+    await fireEvent.pointerMove(handle, { clientY: 252, pointerId: 1 });
+    expect(currentTerminalGeometryIntent()).toBe(pointerGeneration);
     await fireEvent.pointerUp(handle, { clientY: 276, pointerId: 1 });
 
     vi.runOnlyPendingTimers();
     expect(hasTerminalGeometryIntent()).toBe(false);
     await fireEvent.keyDown(handle, { key: "ArrowUp" });
     expect(hasTerminalGeometryIntent()).toBe(true);
+    expect(currentTerminalGeometryIntent()).not.toBe(pointerGeneration);
   });
 
   it("clamps keyboard resizing at the terminal height limits", async () => {

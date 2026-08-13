@@ -82,7 +82,7 @@ func wsToPTY(
 }
 
 func handleControl(ptmx *os.File, msg *controlMsg) {
-	if msg.Type != "resize" {
+	if msg.Type != "resize" && msg.Type != "claim_resize" {
 		return
 	}
 	if msg.Cols <= 0 || msg.Rows <= 0 {

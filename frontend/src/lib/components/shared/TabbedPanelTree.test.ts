@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import TabbedPanelTreeTestHarness from "./TabbedPanelTreeTestHarness.svelte";
-import { hasTerminalGeometryIntent } from "../terminal/terminalGeometryIntent.js";
+import { currentTerminalGeometryIntent, hasTerminalGeometryIntent } from "../terminal/terminalGeometryIntent.js";
 import {
   appendTabbedPanelTabToLeaf,
   moveTabbedPanelTabBefore,
@@ -324,12 +324,16 @@ describe("TabbedPanelTree", () => {
     await fireEvent.pointerDown(divider, { clientX: 400, pointerId: 1, button: 0 });
     await fireEvent.pointerMove(divider, { clientX: 424, pointerId: 1 });
     expect(hasTerminalGeometryIntent()).toBe(true);
+    const pointerGeneration = currentTerminalGeometryIntent();
+    await fireEvent.pointerMove(divider, { clientX: 448, pointerId: 1 });
+    expect(currentTerminalGeometryIntent()).toBe(pointerGeneration);
     await fireEvent.pointerUp(divider, { clientX: 424, pointerId: 1 });
 
     vi.runOnlyPendingTimers();
     expect(hasTerminalGeometryIntent()).toBe(false);
     await fireEvent.keyDown(divider, { key: "ArrowRight" });
     expect(hasTerminalGeometryIntent()).toBe(true);
+    expect(currentTerminalGeometryIntent()).not.toBe(pointerGeneration);
   });
 
   it("uses the vertical axis for stacked split resizing", async () => {

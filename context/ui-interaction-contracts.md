@@ -480,11 +480,15 @@ Keyboard handlers must have one clear owner for each key press.
   deliberate terminal action wins within a priority; activating a higher-priority
   local attachment may preempt an HTTP Fleet attachment. Effective pointer or
   arrow-key split/dock divider changes are deliberate for terminals whose fitted
-  cells change; zero-motion and passive reflow are not. Claims apply fitted
-  dimensions and direct/HTTP Fleet streams close rather than forward following
-  input when tmux settlement fails. Ordinary resizes apply for the current owner,
-  only retain fallback dimensions for non-owners, and owner loss restores the
-  most-recent eligible claimant. The preflight measurement establishes eligibility only:
+  cells change; each affected session claims only its first cell change per gesture,
+  while later changes remain ordinary live resizes. Zero-motion and passive reflow
+  are not deliberate. Claims apply fitted dimensions and
+  direct/HTTP Fleet streams close rather than forward following input when tmux
+  settlement fails. Single-attachment workspace terminals apply claims as resizes
+  because they have no competing attachment. Ordinary
+  resizes apply for the current owner, only retain fallback dimensions for
+  non-owners, and owner loss restores the most-recent eligible claimant. The
+  preflight measurement establishes eligibility only:
   send xterm's dimensions after
   `fit()`, which measures again and may cross a cell boundary
   (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte::terminal-leaf-body`,

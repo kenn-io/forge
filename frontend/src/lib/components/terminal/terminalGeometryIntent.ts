@@ -1,9 +1,10 @@
 const terminalGeometryIntentWindowMs = 250;
 
 let geometryIntentActive = false;
+let geometryIntentGeneration = 0;
 let geometryIntentTimer: ReturnType<typeof setTimeout> | undefined;
 
-export function markTerminalGeometryIntent(): void {
+function keepTerminalGeometryIntentAlive(): void {
   geometryIntentActive = true;
   if (geometryIntentTimer !== undefined) {
     clearTimeout(geometryIntentTimer);
@@ -14,6 +15,20 @@ export function markTerminalGeometryIntent(): void {
   }, terminalGeometryIntentWindowMs);
 }
 
+export function beginTerminalGeometryIntent(): number {
+  geometryIntentGeneration += 1;
+  keepTerminalGeometryIntentAlive();
+  return geometryIntentGeneration;
+}
+
+export function extendTerminalGeometryIntent(): void {
+  keepTerminalGeometryIntentAlive();
+}
+
+export function currentTerminalGeometryIntent(): number | null {
+  return geometryIntentActive ? geometryIntentGeneration : null;
+}
+
 export function hasTerminalGeometryIntent(): boolean {
-  return geometryIntentActive;
+  return currentTerminalGeometryIntent() !== null;
 }

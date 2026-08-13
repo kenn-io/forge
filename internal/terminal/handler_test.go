@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/creack/pty/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -176,7 +177,7 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 			Root:    ownerRoot,
 			Session: ws.TmuxSession,
 			Cwd:     ws.WorktreePath,
-			Command: []string{"sh", "-c", "printf ready; while IFS= read -r line; do echo got:$line; done"},
+			Command: []string{"sh", "-c", "printf ready; exec sh"},
 		})
 	}()
 	require.Eventually(func() bool {
@@ -212,9 +213,29 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 
 	require.Contains(readWebSocketUntil(t, conn, "ready"), "ready")
 	require.NoError(conn.Write(
-		t.Context(), websocket.MessageBinary, []byte("hello\n"),
+		t.Context(), websocket.MessageText,
+		[]byte(`{"type":"claim_resize","cols":101,"rows":33}`),
 	))
-	require.Contains(readWebSocketUntil(t, conn, "got:hello"), "got:hello")
+	require.NoError(conn.Write(
+		t.Context(), websocket.MessageBinary,
+		[]byte("printf 'got:hello size:'; stty size\n"),
+	))
+	require.Contains(readWebSocketUntil(t, conn, "got:hello size:33 101"), "got:hello size:33 101")
+}
+
+func TestHandleControlAppliesResizeClaim(t *testing.T) {
+	ptmx, tty, err := pty.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = ptmx.Close()
+		_ = tty.Close()
+	})
+
+	handleControl(ptmx, &controlMsg{Type: "claim_resize", Cols: 103, Rows: 35})
+
+	size, err := pty.GetsizeFull(ptmx)
+	require.NoError(t, err)
+	require.Equal(t, &pty.Winsize{Cols: 103, Rows: 35}, size)
 }
 
 func TestProcessExitCode(t *testing.T) {

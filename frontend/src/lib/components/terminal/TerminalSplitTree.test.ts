@@ -7,7 +7,7 @@ import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import TerminalSplitTree from "./TerminalSplitTree.svelte";
 import type { PaneNode } from "./terminal-layout";
 import { clearActiveTerminalDrag, readRuntimeSessionDrag } from "./terminal-drag";
-import { hasTerminalGeometryIntent } from "./terminalGeometryIntent.js";
+import { currentTerminalGeometryIntent, hasTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 import { isSessionSlotVisible, resetSessionHostForTest, sessionHostKey } from "../../stores/session-host.svelte.ts";
 
 vi.mock("./TerminalPane.svelte", async () => ({
@@ -220,12 +220,16 @@ describe("TerminalSplitTree", () => {
     await fireEvent.pointerDown(handle, { clientX: 400, pointerId: 2, button: 0 });
     await fireEvent.pointerMove(handle, { clientX: 424, pointerId: 2 });
     expect(hasTerminalGeometryIntent()).toBe(true);
+    const pointerGeneration = currentTerminalGeometryIntent();
+    await fireEvent.pointerMove(handle, { clientX: 448, pointerId: 2 });
+    expect(currentTerminalGeometryIntent()).toBe(pointerGeneration);
     await fireEvent.pointerUp(handle, { clientX: 424, pointerId: 2 });
 
     vi.runOnlyPendingTimers();
     expect(hasTerminalGeometryIntent()).toBe(false);
     await fireEvent.keyDown(handle, { key: "ArrowRight" });
     expect(hasTerminalGeometryIntent()).toBe(true);
+    expect(currentTerminalGeometryIntent()).not.toBe(pointerGeneration);
   });
 
   it("uses the vertical extent and clamps split ratios", async () => {

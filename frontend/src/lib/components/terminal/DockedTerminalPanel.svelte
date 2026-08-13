@@ -36,7 +36,10 @@
     collectSessionKeys,
     countLeaves,
   } from "./terminal-layout";
-  import { markTerminalGeometryIntent } from "./terminalGeometryIntent.js";
+  import {
+    beginTerminalGeometryIntent,
+    extendTerminalGeometryIntent,
+  } from "./terminalGeometryIntent.js";
 
   interface Props {
     workspaceId: string;
@@ -130,6 +133,7 @@
   let focusRecordExecution: AppExecution<void, never> | null = null;
   let inputOwned = false;
   let resizeStartHeight = 0;
+  let resizeIntentStarted = false;
 
   const visibleKeys = $derived(collectSessionKeys(tree));
   const canSplit = $derived(
@@ -198,13 +202,19 @@
   }
 
   function startPanelResize(): void {
+    resizeIntentStarted = false;
     resizeStartHeight = height;
   }
 
   function resizePanel(event: SplitResizeEvent): void {
     const nextHeight = clampTerminalHeight(resizeStartHeight - event.delta);
     if (nextHeight !== height) {
-      markTerminalGeometryIntent();
+      if (resizeIntentStarted) {
+        extendTerminalGeometryIntent();
+      } else {
+        beginTerminalGeometryIntent();
+        resizeIntentStarted = true;
+      }
     }
     onResize?.(nextHeight);
   }

@@ -688,15 +688,15 @@ test.describe("inline workspace pane continuity", () => {
       await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
       const terminal = await openTerminalPanel(page);
       await expect
-        .poll(() => controlFrames.filter((frame) => frame.type === "resize" || frame.type === "refresh").length)
+        .poll(() => controlFrames.filter((frame) => frame.type !== "resize_active").length)
         .toBeGreaterThan(0);
-      const initialFrame = controlFrames.filter((frame) => frame.type === "resize" || frame.type === "refresh").at(-1)!;
+      const initialFrame = controlFrames.filter((frame) => frame.type !== "resize_active").at(-1)!;
       expect(initialFrame.cols).toBeGreaterThan(0);
       expect(initialFrame.rows).toBeGreaterThan(0);
       const before = await readTerminalScreenSize(terminal);
       const cellWidth = before.width / initialFrame.cols!;
       const cellHeight = before.height / initialFrame.rows!;
-      const resizeFramesBeforeBoundary = controlFrames.filter((frame) => frame.type === "resize").length;
+      const geometryFramesBeforeBoundary = controlFrames.filter((frame) => frame.type !== "resize_active").length;
 
       // Reproduce the real race deterministically: the preflight sees the old
       // container height while FitAddon.fit() sees the new height after it has
@@ -704,13 +704,15 @@ test.describe("inline workspace pane continuity", () => {
       await crossTerminalCellBoundary(terminal);
       await expect(terminal).toHaveAttribute("data-fit-boundary-crossed", "true");
       await expect
-        .poll(() => controlFrames.filter((frame) => frame.type === "resize").length)
-        .toBeGreaterThan(resizeFramesBeforeBoundary);
+        .poll(() => controlFrames.filter((frame) => frame.type !== "resize_active").length)
+        .toBeGreaterThan(geometryFramesBeforeBoundary);
 
       const after = await readTerminalScreenSize(terminal);
       const renderedRows = Math.round(after.height / cellHeight);
       const renderedCols = Math.round(after.width / cellWidth);
-      const fittedFrame = controlFrames.filter((frame) => frame.type === "resize")[resizeFramesBeforeBoundary]!;
+      const fittedFrame = controlFrames.filter((frame) => frame.type !== "resize_active")[
+        geometryFramesBeforeBoundary
+      ]!;
 
       expect(renderedRows).toBeGreaterThan(initialFrame.rows!);
       expect(renderedCols).toBe(initialFrame.cols);
@@ -745,7 +747,7 @@ test.describe("inline workspace pane continuity", () => {
       const workspace = await createIssueWorkspace(api, 10);
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
-      await openTerminalPanel(page);
+      const desktopTerminal = await openTerminalPanel(page);
       await phonePage.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
       const phoneTerminal = await ensureTerminalPanelOpen(phonePage);
 
@@ -774,7 +776,29 @@ test.describe("inline workspace pane continuity", () => {
         .poll(() => tmuxClientPtyGeometries(isolatedServer!))
         .toContainEqual({ cols: phoneClaim.cols, rows: phoneClaim.rows });
 
+      const desktopClaimsBeforeClick = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
+      await desktopTerminal.click({ position: { x: 12, y: 12 } });
+      await expect
+        .poll(() => desktopFrames.filter((frame) => frame.type === "claim_resize").length)
+        .toBe(desktopClaimsBeforeClick + 1);
+      const desktopClickClaim = desktopFrames.filter((frame) => frame.type === "claim_resize").at(-1)!;
+      await expect
+        .poll(() => tmuxClientPtyGeometries(isolatedServer!))
+        .toContainEqual({ cols: desktopClickClaim.cols, rows: desktopClickClaim.rows });
+
+      const phoneClaimsBeforeReclaim = phoneFrames.filter((frame) => frame.type === "claim_resize").length;
+      await phoneTerminal.click({ position: { x: 12, y: 12 } });
+      await expect
+        .poll(() => phoneFrames.filter((frame) => frame.type === "claim_resize").length)
+        .toBe(phoneClaimsBeforeReclaim + 1);
+      const phoneReclaim = phoneFrames.filter((frame) => frame.type === "claim_resize").at(-1)!;
+      await expect
+        .poll(() => tmuxClientPtyGeometries(isolatedServer!))
+        .toContainEqual({ cols: phoneReclaim.cols, rows: phoneReclaim.rows });
+
       const resizeHandle = page.getByRole("separator", { name: "Resize terminal panel" });
+      const desktopFramesBeforeDrag = desktopFrames.length;
+      const desktopClaimsBeforeDrag = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
       const resizeHandleBox = await resizeHandle.boundingBox();
       expect(resizeHandleBox).not.toBeNull();
       await page.mouse.move(
@@ -786,27 +810,36 @@ test.describe("inline workspace pane continuity", () => {
       await page.mouse.up();
       await expect
         .poll(() => desktopFrames.filter((frame) => frame.type === "claim_resize").length)
-        .toBeGreaterThan(desktopClaimsBeforeResize);
-      let settledClaimCount = -1;
-      let lastClaimAt = Date.now();
+        .toBeGreaterThan(desktopClaimsBeforeDrag);
+      await expect
+        .poll(() => desktopFrames.slice(desktopFramesBeforeDrag).filter((frame) => frame.type === "resize").length)
+        .toBeGreaterThan(0);
+      let settledGeometryCount = -1;
+      let lastGeometryAt = Date.now();
       await expect
         .poll(
           () => {
-            const claimCount = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
-            if (claimCount !== settledClaimCount) {
-              settledClaimCount = claimCount;
-              lastClaimAt = Date.now();
+            const geometryCount = desktopFrames
+              .slice(desktopFramesBeforeDrag)
+              .filter((frame) => frame.type === "claim_resize" || frame.type === "resize").length;
+            if (geometryCount !== settledGeometryCount) {
+              settledGeometryCount = geometryCount;
+              lastGeometryAt = Date.now();
             }
-            return Date.now() - lastClaimAt;
+            return Date.now() - lastGeometryAt;
           },
           { timeout: 5_000, intervals: [50] },
         )
         .toBeGreaterThanOrEqual(300);
-      const desktopClaim = desktopFrames.filter((frame) => frame.type === "claim_resize").at(-1)!;
-      expect(desktopClaim.cols).toBeGreaterThan(phoneClaim.cols!);
+      expect(desktopFrames.filter((frame) => frame.type === "claim_resize")).toHaveLength(desktopClaimsBeforeDrag + 1);
+      const dragGeometryFrames = desktopFrames
+        .slice(desktopFramesBeforeDrag)
+        .filter((frame) => frame.type === "claim_resize" || frame.type === "resize");
+      const finalDragGeometry = dragGeometryFrames.at(-1)!;
+      expect(finalDragGeometry.cols).toBeGreaterThan(phoneReclaim.cols!);
       await expect
         .poll(() => tmuxClientPtyGeometries(isolatedServer!))
-        .toContainEqual({ cols: desktopClaim.cols, rows: desktopClaim.rows });
+        .toContainEqual({ cols: finalDragGeometry.cols, rows: finalDragGeometry.rows });
     } finally {
       await phonePage.close();
       await api?.dispose();

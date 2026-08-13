@@ -43,7 +43,7 @@
     type TerminalSessionController,
   } from "./terminal-session.js";
   import { terminalAttachment } from "./terminal-attachment.js";
-  import { hasTerminalGeometryIntent } from "./terminalGeometryIntent.js";
+  import { currentTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
@@ -101,6 +101,7 @@
   let sentCols = 0;
   let sentRows = 0;
   let sentResizeActive: boolean | null = null;
+  let claimedGeometryIntentGeneration = 0;
   let resizeReady = true;
   let appliedTerminalFontFamily = "";
   let appliedFontSize = 0;
@@ -667,7 +668,15 @@
     if (!authorityChanged && !dimensionsChanged) return;
     // Recorded only once the socket carried it — a resize computed before the
     // socket opened would otherwise be suppressed forever as already sent.
-    if (sendResize(fittedSize.cols, fittedSize.rows, dimensionsChanged && hasTerminalGeometryIntent())) {
+    const geometryIntentGeneration = dimensionsChanged
+      ? currentTerminalGeometryIntent()
+      : null;
+    const claim = geometryIntentGeneration !== null &&
+      geometryIntentGeneration !== claimedGeometryIntentGeneration;
+    if (sendResize(fittedSize.cols, fittedSize.rows, claim)) {
+      if (claim) {
+        claimedGeometryIntentGeneration = geometryIntentGeneration;
+      }
       sentCols = fittedSize.cols;
       sentRows = fittedSize.rows;
     }

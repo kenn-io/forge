@@ -181,6 +181,8 @@ func TestStartFullArchiveCompletesEmptyFinishedInventory(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(states[0].InitialCompletedAt)
 	assert.Equal(now.Add(time.Minute), *states[0].InitialCompletedAt)
+	require.NotNil(states[0].InitialStartedAt)
+	assert.Equal(now, *states[0].InitialStartedAt)
 }
 
 func archiveInventoryItemForTest(number int, updatedAt time.Time) ArchiveInventoryItem {
@@ -406,7 +408,7 @@ func TestArchiveStartFullPromotesDiscoveryAndPreservesResumedProgress(t *testing
 	state := states[0]
 	assert.Equal(ArchiveCollectionModeFull, state.CollectionMode)
 	assert.Equal(ArchiveOperatorStateActive, state.OperatorState)
-	assert.Equal(now.Add(2*time.Hour), *state.InitialStartedAt)
+	assert.Equal(now, *state.InitialStartedAt)
 	assert.Equal("issues-next", *state.IssueInventory.NextCursor)
 	assert.Equal("mrs-next", *state.MergeRequestInventory.NextCursor)
 	assert.Nil(state.LastErrorCode)
@@ -436,7 +438,7 @@ func TestArchiveStartFullPromotesDiscoveryAndPreservesResumedProgress(t *testing
 	assert.Equal(ArchiveOperatorStateActive, resumed[0].OperatorState)
 	assert.True(resumed[0].IssueInventory.Complete())
 	assert.Equal(now.Add(3*time.Hour), *resumed[0].MaintenanceSucceededAt)
-	assert.Equal(now.Add(2*time.Hour), *resumed[0].InitialStartedAt)
+	assert.Equal(now, *resumed[0].InitialStartedAt)
 	assert.Nil(resumed[0].LastErrorCode)
 	assert.Nil(resumed[0].LastErrorDetail)
 	assert.Nil(resumed[0].NextRetryAt)
@@ -497,8 +499,8 @@ func TestArchiveStartAndPauseAreAtomicAndIdempotent(t *testing.T) {
 	assert.Equal(secondRepoID, states[1].RepoID)
 	assert.Equal(ArchiveOperatorStatePaused, states[0].OperatorState)
 	assert.Equal(ArchiveOperatorStatePaused, states[1].OperatorState)
-	assert.Equal(now.Add(time.Hour), *states[0].InitialStartedAt)
-	assert.Equal(now.Add(time.Hour), *states[1].InitialStartedAt)
+	assert.Equal(now, *states[0].InitialStartedAt)
+	assert.Equal(now, *states[1].InitialStartedAt)
 }
 
 func TestArchiveClaimItemUsesEligibleDueWorkAndStableOrder(t *testing.T) {
@@ -1333,7 +1335,7 @@ func TestArchiveDBBoundariesNormalizeTimestampsToUTC(t *testing.T) {
 	states, err = d.ListArchiveRepoStates(ctx, []int64{repoID})
 	require.NoError(err)
 	require.NotNil(states[0].InitialStartedAt)
-	assert.Equal(startAt.UTC(), *states[0].InitialStartedAt)
+	assert.Equal(now.UTC(), *states[0].InitialStartedAt)
 	assert.Equal(time.UTC, states[0].InitialStartedAt.Location())
 
 	pauseAt := now.Add(2 * time.Minute)

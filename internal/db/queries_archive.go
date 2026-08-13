@@ -148,11 +148,11 @@ func (d *DB) StartFullArchives(ctx context.Context, repoIDs []int64, now time.Ti
 			  )`, nextEvenScanGenerationSQL, sqlPlaceholders(len(repoIDs))), promoteArgs...); err != nil {
 			return fmt.Errorf("queue promoted archive dataset progress: %w", err)
 		}
-		updateArgs := append([]any{now, now}, args...)
+		updateArgs := append([]any{now}, args...)
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
 			UPDATE forge_archive_repos
 			SET collection_mode = 'full', operator_state = 'active',
-				initial_started_at = COALESCE(initial_started_at, ?),
+				initial_started_at = COALESCE(initial_started_at, created_at),
 				last_error_code = CASE WHEN last_error_code IN ('budget_exhausted', 'authentication_failed', 'repository_blocked') THEN last_error_code ELSE NULL END,
 				last_error_detail = CASE WHEN last_error_code IN ('budget_exhausted', 'authentication_failed', 'repository_blocked') THEN last_error_detail ELSE NULL END,
 				next_retry_at = CASE WHEN last_error_code IN ('budget_exhausted', 'authentication_failed', 'repository_blocked') THEN next_retry_at ELSE NULL END,

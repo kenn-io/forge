@@ -228,6 +228,30 @@ export function completeAcceptedWorkspaceLaunch(
   return true;
 }
 
+export function expireAcceptedWorkspaceLaunch(
+  workspaceId: string,
+  workspaceHostKey: string | undefined,
+  sessionKey: string,
+  acceptedAt: number,
+): boolean {
+  const matched = pendingWorkspaceLaunches.some(
+    (entry) =>
+      workspaceLaunchMatches(entry, workspaceId, workspaceHostKey) &&
+      entry.phase === "awaiting_session" &&
+      entry.sessionKey === sessionKey &&
+      entry.acceptedAt === acceptedAt,
+  );
+  if (!matched) return false;
+  pendingWorkspaceLaunches = pendingWorkspaceLaunches.filter(
+    (entry) =>
+      !workspaceLaunchMatches(entry, workspaceId, workspaceHostKey) ||
+      entry.phase !== "awaiting_session" ||
+      entry.sessionKey !== sessionKey ||
+      entry.acceptedAt !== acceptedAt,
+  );
+  return true;
+}
+
 export function beginWorkspaceCreate(identity: WorkspaceItemIdentity, launchTargetKey?: string): void {
   if (isWorkspaceCreatePending(identity)) return;
   const normalizedTargetKey = launchTargetKey?.trim() ?? "";

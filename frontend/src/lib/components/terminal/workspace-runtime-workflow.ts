@@ -25,6 +25,7 @@ import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
 import {
   completeAcceptedWorkspaceLaunch,
+  expireAcceptedWorkspaceLaunch,
   pendingWorkspaceLaunch,
 } from "../../stores/workspace-create-pending.svelte.js";
 import type { WorkflowPreset } from "./workflow-presets.js";
@@ -1185,7 +1186,14 @@ export function makeWorkspaceRuntimeWorkflow(
         return false;
       }).pipe(Effect.timeoutOption(Duration.millis(remaining)), Effect.ensuring(release(owner)));
       if (Option.isSome(observed) && observed.value) return;
-      if (completeAcceptedWorkspaceLaunch(request.target.workspaceId, request.target.hostKey, request.sessionKey)) {
+      if (
+        expireAcceptedWorkspaceLaunch(
+          request.target.workspaceId,
+          request.target.hostKey,
+          request.sessionKey,
+          request.acceptedAt,
+        )
+      ) {
         yield* request.onExpired;
       }
     });

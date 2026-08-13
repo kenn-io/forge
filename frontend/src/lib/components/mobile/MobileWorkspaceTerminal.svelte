@@ -24,6 +24,7 @@
     pendingWorkspaceLaunch,
     type WorkspaceLaunchClaim,
   } from "../../stores/workspace-create-pending.svelte.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import {
     noteSessionDiscarded,
     noteSessionMounted,
@@ -404,7 +405,7 @@
           acceptedAt,
           onExpired: Effect.sync(() => {
             if (workspaceId === launchClaim.workspaceId && hostKey === launchClaim.workspaceHostKey) {
-              runtimeError = `${label} launched, but its session did not become available`;
+              showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
             }
           }),
         });

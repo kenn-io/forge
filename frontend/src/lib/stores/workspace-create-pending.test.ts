@@ -8,6 +8,7 @@ import {
   discardWorkspaceLaunch,
   endWorkspaceCreate,
   endWorkspaceDeletion,
+  expireAcceptedWorkspaceLaunch,
   failWorkspaceLaunch,
   isWorkspaceCreatePending,
   isWorkspaceDeletionPending,
@@ -136,6 +137,23 @@ describe("workspace-create-pending launch intent", () => {
     const nextClaim = claimWorkspaceLaunch("ws-1", undefined);
     expect(failWorkspaceLaunch(nextClaim!)).toBe(true);
     expect(pendingWorkspaceLaunch("ws-1", undefined)).toBeNull();
+  });
+
+  it("does not let an expired reconciliation clear a newer accepted launch", () => {
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    const oldClaim = claimWorkspaceLaunch("ws-1", undefined);
+    expect(acceptWorkspaceLaunch(oldClaim!, "ws-1:codex", 1_000)).toBe(true);
+
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    const newClaim = claimWorkspaceLaunch("ws-1", undefined);
+    expect(acceptWorkspaceLaunch(newClaim!, "ws-1:codex", 2_000)).toBe(true);
+
+    expect(expireAcceptedWorkspaceLaunch("ws-1", undefined, "ws-1:codex", 1_000)).toBe(false);
+    expect(pendingWorkspaceLaunch("ws-1", undefined)).toMatchObject({
+      phase: "awaiting_session",
+      sessionKey: "ws-1:codex",
+      acceptedAt: 2_000,
+    });
   });
 
   it("clears explicit launch intent in the shared test reset", () => {

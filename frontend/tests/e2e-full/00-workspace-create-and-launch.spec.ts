@@ -533,6 +533,81 @@ test.describe("workspace create-and-launch full stack", () => {
     }
   });
 
+  test("phone accepted launch expiry reports the missing session and permits relaunch", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
+      "git, tmux, and sh are required for the real workspace runtime flow",
+    );
+
+    let server: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    let launchRequests = 0;
+    try {
+      server = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: server.info.base_url,
+      });
+      await configureAgent(page, server.info.base_url);
+      await page.route("**/api/v1/workspaces/*/runtime/sessions", async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        launchRequests += 1;
+        const pathname = new URL(route.request().url()).pathname;
+        const workspaceID = decodeURIComponent(pathname.split("/").at(-3) ?? "");
+        expect(workspaceID).not.toBe("");
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            key: `${workspaceID}:missing-agent`,
+            workspace_id: workspaceID,
+            target_key: agentKey,
+            label: agentLabel,
+            kind: "agent",
+            status: "starting",
+            created_at: "2026-08-13T00:00:00Z",
+            display_region: "workflow",
+          }),
+        });
+      });
+
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          /\/api\/v1\/repo\/github\/acme\/widgets\/workspaces$/.test(response.url()),
+      );
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`${server.info.base_url}/m/workspaces`);
+      await page.getByRole("button", { name: "New workspace" }).click();
+      const dialog = page.getByRole("dialog", { name: "New workspace" });
+      await dialog.getByRole("button", { name: "Filter repositories" }).click();
+      await dialog.getByRole("option", { name: /acme\/widgets/ }).click();
+      await dialog.getByRole("button", { name: "Create workspace options" }).click();
+      await dialog.getByRole("menuitem", { name: agentLabel }).click();
+
+      const createResponse = await createResponsePromise;
+      expect(createResponse.status(), await createResponse.text()).toBe(202);
+      const created = (await createResponse.json()) as WorkspaceResponse;
+      await expect(page).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
+      await waitForWorkspaceReady(api, created.id);
+      await expect.poll(() => launchRequests).toBe(1);
+      await expect.poll(() => runtimeTargets(api!, created.id)).toEqual([]);
+
+      const expiryMessage = `${agentLabel} launched, but its session did not become available`;
+      await expect(page.getByText(expiryMessage)).toBeVisible({ timeout: 20_000 });
+      const relaunch = page.getByRole("button", { name: agentLabel, exact: true });
+      await expect(relaunch).toBeEnabled();
+      await relaunch.click();
+      await expect.poll(() => launchRequests).toBe(2);
+    } finally {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await api?.dispose();
+      await server?.stop();
+    }
+  });
+
   test("phone linked-item navigation preserves a zero-retention terminal session", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),

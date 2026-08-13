@@ -96,8 +96,12 @@ describe("workspace settings persistence", () => {
     vi.unstubAllGlobals();
   });
 
-  function runSave(store: ReturnType<typeof createSettingsStore>, changes: Partial<WorkspaceSettings>) {
-    const execution = runtime.runCommand(saveWorkspaceSettings({ store, changes }), {
+  function runSave(
+    store: ReturnType<typeof createSettingsStore>,
+    changes: Partial<WorkspaceSettings>,
+    baseline = store.getWorkspaceSettings(),
+  ) {
+    const execution = runtime.runCommand(saveWorkspaceSettings({ store, changes, baseline }), {
       operation: "test workspace settings persistence",
       safeContext: {},
       onFailure: () => undefined,
@@ -153,5 +157,10 @@ describe("workspace settings persistence", () => {
       auto_assign_on_create: true,
       default_sidebar_view: "item",
     });
+    expect(persisted).toEqual({
+      auto_assign_on_create: true,
+      default_sidebar_view: "item",
+    });
+    expect(requests).toHaveLength(2);
   });
 });

@@ -84,7 +84,7 @@ describe("WorkspaceSettings", () => {
   });
 
   it("restores the prior setting when saving fails", async () => {
-    const onUpdate = vi.fn();
+    const onUpdate = vi.fn((workspaces: typeof initial) => workspaceStore.setWorkspaceSettings(workspaces));
     mockPersistSettings.mockReturnValue(
       Effect.fail({ _tag: "TransientTransportError", operation: "save settings", cause: new Error("save failed") }),
     );

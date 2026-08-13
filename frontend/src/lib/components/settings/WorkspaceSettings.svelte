@@ -26,6 +26,7 @@
 
   function toggleAutoAssign(): void {
     if (embedded || saving) return;
+    const baseline = workspaces;
     const pending = {
       ...workspaces,
       auto_assign_on_create: !workspaces.auto_assign_on_create,
@@ -35,6 +36,7 @@
     runtime.runCommand(
       Effect.gen(function* () {
         return yield* saveWorkspaceSettings({
+          baseline,
           changes: { auto_assign_on_create: pending.auto_assign_on_create },
           store: settingsStore,
         });
@@ -62,12 +64,14 @@
   function setDefaultSidebarView(value: string): void {
     const defaultSidebarView = value as Settings["workspaces"]["default_sidebar_view"];
     if (embedded || saving || defaultSidebarView === workspaces.default_sidebar_view) return;
+    const baseline = workspaces;
     const pending = { ...workspaces, default_sidebar_view: defaultSidebarView };
     onUpdate(pending);
     saving = true;
     runtime.runCommand(
       Effect.gen(function* () {
         return yield* saveWorkspaceSettings({
+          baseline,
           changes: { default_sidebar_view: pending.default_sidebar_view },
           store: settingsStore,
         });

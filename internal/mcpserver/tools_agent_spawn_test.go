@@ -257,7 +257,7 @@ func TestSpawnWorkspaceWithAgentMutationTimeoutPreservesAmbiguity(t *testing.T) 
 			})
 			mux.HandleFunc("/api/v1/workspaces", func(w http.ResponseWriter, _ *http.Request) {
 				if !tc.failRuntime {
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(time.Second)
 					return
 				}
 				writeJSONResponse(w, `{"id":"ws-timeout","status":"ready","created":true}`)
@@ -267,13 +267,13 @@ func TestSpawnWorkspaceWithAgentMutationTimeoutPreservesAmbiguity(t *testing.T) 
 					writeJSONResponse(w, `{"id":"ws-timeout","status":"ready"}`)
 				})
 				mux.HandleFunc("/api/v1/workspaces/ws-timeout/runtime/sessions", func(_ http.ResponseWriter, _ *http.Request) {
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(time.Second)
 				})
 			}
 			s := newMCPTestServer(t, mux)
 
 			input := prSpawnInput("start")
-			input.Timeout = "30ms"
+			input.Timeout = "300ms"
 			_, err := s.spawnWorkspaceWithAgent(t.Context(), input)
 			var daemonErr *daemonError
 			require.ErrorAs(err, &daemonErr)

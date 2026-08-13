@@ -163,31 +163,34 @@ describe("RepoTypeahead", () => {
       ] as Repo[],
       error: undefined,
     });
-    setWorkspaceRepoCatalog([
-      {
-        id: "archive-workspace",
-        created_at: "2026-08-13T00:00:00Z",
-        git_head_ref: "main",
-        item_number: 1,
-        item_type: "pull",
-        platform_host: "github.com",
-        repo_name: "archive",
-        repo_owner: "acme",
-        status: "active",
-        tmux_activity_source: "none",
-        tmux_last_output_at: null,
-        tmux_working: false,
-        worktree_path: "/tmp/archive",
-        repo: {
-          provider: "github",
+    setWorkspaceRepoCatalog(
+      [
+        {
+          id: "archive-workspace",
+          created_at: "2026-08-13T00:00:00Z",
+          git_head_ref: "main",
+          item_number: 1,
+          item_type: "pull",
           platform_host: "github.com",
-          platform_repo_id: "R_archive",
-          owner: "acme",
-          name: "archive",
-          repo_path: "acme/archive",
+          repo_name: "archive",
+          repo_owner: "acme",
+          status: "active",
+          tmux_activity_source: "none",
+          tmux_last_output_at: null,
+          tmux_working: false,
+          worktree_path: "/tmp/archive",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            platform_repo_id: "R_archive",
+            owner: "acme",
+            name: "archive",
+            repo_path: "acme/archive",
+          },
         },
-      },
-    ], true);
+      ],
+      true,
+    );
 
     render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
     await fireEvent.click(screen.getByRole("button", { name: /global/i }));

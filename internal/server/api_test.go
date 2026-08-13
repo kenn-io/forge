@@ -25680,7 +25680,9 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 		}
 	}
 	srv := New(database, syncer, nil, basePath, cfg, options)
-	t.Cleanup(func() { cleanupWorkspaceServerFixtureTmuxSessions(t, dir) })
+	t.Cleanup(func() {
+		cleanupWorkspaceServerFixtureTmuxSessions(t, cfg.Tmux.Command, dir)
+	})
 	// Cleanup callbacks run LIFO. Drain the server first so async
 	// workspace setup cannot create a tmux session after fixture
 	// artifact cleanup has listed workspaces. The DB cleanup was
@@ -25763,25 +25765,29 @@ func cleanupWorkspaceServerFixtureArtifactsWithContext(
 	return errors.Join(errs...)
 }
 
-func cleanupWorkspaceServerFixtureTmuxSessions(t *testing.T, root string) {
+func cleanupWorkspaceServerFixtureTmuxSessions(
+	t *testing.T,
+	tmuxCommand []string,
+	root string,
+) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
-		ctx, root,
+		ctx, tmuxCommand, root,
 	))
 }
 
 func cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
 	ctx context.Context,
+	tmuxCommand []string,
 	root string,
 ) error {
-	tmuxPath, err := exec.LookPath("tmux")
-	if err != nil {
+	if len(tmuxCommand) == 0 {
 		return nil
 	}
-	sessions, err := forgeTmuxSessions(ctx, tmuxPath, func(path string) bool {
+	sessions, err := forgeTmuxSessions(ctx, tmuxCommand, func(path string) bool {
 		return pathIsWithin(root, path)
 	})
 	if err != nil {
@@ -25789,8 +25795,8 @@ func cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
 	}
 	var errs []error
 	for _, session := range sessions {
-		cmd := procutil.CommandContext(
-			ctx, tmuxPath, "kill-session", "-t", session,
+		cmd := configuredTmuxCommandContext(
+			ctx, tmuxCommand, "kill-session", "-t", session,
 		)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
@@ -25804,7 +25810,7 @@ func cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
 			)
 		}
 	}
-	remaining, err := forgeTmuxSessions(ctx, tmuxPath, func(path string) bool {
+	remaining, err := forgeTmuxSessions(ctx, tmuxCommand, func(path string) bool {
 		return pathIsWithin(root, path)
 	})
 	if err != nil {
@@ -25828,21 +25834,25 @@ func cleanupServerTestTmux(owner *testtmux.Owner) error {
 
 func forgeTmuxSessions(
 	ctx context.Context,
-	tmuxPath string,
+	tmuxCommand []string,
 	includePath func(string) bool,
 ) ([]string, error) {
 	// Colon-separated because tmux 3.6+ sanitizes control characters in
 	// -F output (a tab prints as "_"). Session names cannot contain ":"
 	// (tmux replaces it with "_"), so cutting at the first colon is
 	// unambiguous even when the session path contains colons.
-	cmd := procutil.CommandContext(
-		ctx, tmuxPath, "list-sessions", "-F", "#{session_name}:#{session_path}",
+	cmd := configuredTmuxCommandContext(
+		ctx, tmuxCommand,
+		"list-sessions", "-F", "#{session_name}:#{session_path}",
 	)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := procutil.Run(ctx, cmd, "test tmux cleanup list"); err != nil {
+		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if isTmuxServerAbsentMessage(msg) {
 			return nil, nil
@@ -25863,6 +25873,15 @@ func forgeTmuxSessions(
 	}
 	slices.Sort(sessions)
 	return sessions, nil
+}
+
+func configuredTmuxCommandContext(
+	ctx context.Context,
+	tmuxCommand []string,
+	args ...string,
+) *exec.Cmd {
+	commandArgs := append(slices.Clone(tmuxCommand[1:]), args...)
+	return procutil.CommandContext(ctx, tmuxCommand[0], commandArgs...)
 }
 
 func isTmuxServerAbsentMessage(msg string) bool {
@@ -26259,11 +26278,81 @@ func TestForgeTmuxSessionsTreatsMissingTmuxSocketAsEmpty(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	sessions, err := forgeTmuxSessions(
-		context.Background(), script, pathIsGoTestTempPath,
+		context.Background(), []string{script}, pathIsGoTestTempPath,
 	)
 
 	require.NoError(err)
 	require.Empty(sessions)
+}
+
+func TestForgeTmuxSessionsTreatsMissingConfiguredCommandAsEmpty(t *testing.T) {
+	require := require.New(t)
+	sessions, err := forgeTmuxSessions(
+		context.Background(),
+		[]string{filepath.Join(t.TempDir(), "missing-tmux")},
+		pathIsGoTestTempPath,
+	)
+
+	require.NoError(err)
+	require.Empty(sessions)
+}
+
+func TestWorkspaceFixtureTmuxCleanupUsesConfiguredCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake tmux fixture uses Unix shell semantics")
+	}
+	require := require.New(t)
+	dir := t.TempDir()
+	defaultCalled := filepath.Join(dir, "default-called")
+	defaultTmux := filepath.Join(dir, "tmux")
+	require.NoError(os.WriteFile(
+		defaultTmux,
+		[]byte("#!/bin/sh\n: > \"$DEFAULT_TMUX_CALLED\"\nexit 99\n"),
+		0o755,
+	))
+	t.Setenv("DEFAULT_TMUX_CALLED", defaultCalled)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	privateRecord := filepath.Join(dir, "private-record")
+	privateKilled := filepath.Join(dir, "private-killed")
+	privateTmux := filepath.Join(dir, "private-tmux")
+	privateRoot := filepath.Join(dir, "fixture")
+	privateSocket := filepath.Join(dir, "private.sock")
+	privateBody := `#!/bin/sh
+printf '%s\n' "$*" >> "$PRIVATE_TMUX_RECORD"
+case "$*" in
+  *list-sessions*)
+    if [ ! -f "$PRIVATE_TMUX_KILLED" ]; then
+      printf 'kenn-forge-fixture:%s\n' "$PRIVATE_TMUX_ROOT"
+    fi
+    ;;
+  *kill-session*)
+    : > "$PRIVATE_TMUX_KILLED"
+    ;;
+esac
+`
+	require.NoError(os.WriteFile(privateTmux, []byte(privateBody), 0o755))
+	t.Setenv("PRIVATE_TMUX_RECORD", privateRecord)
+	t.Setenv("PRIVATE_TMUX_KILLED", privateKilled)
+	t.Setenv("PRIVATE_TMUX_ROOT", privateRoot)
+
+	err := cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
+		context.Background(),
+		[]string{privateTmux, "-S", privateSocket},
+		privateRoot,
+	)
+	require.NoError(err)
+	_, err = os.Stat(defaultCalled)
+	require.ErrorIs(err, os.ErrNotExist)
+	require.FileExists(privateKilled)
+	record, err := os.ReadFile(privateRecord)
+	require.NoError(err)
+	for line := range strings.SplitSeq(strings.TrimSpace(string(record)), "\n") {
+		require.True(
+			strings.HasPrefix(line, "-S "+privateSocket+" "),
+			"fixture cleanup lost private tmux prefix: %s", line,
+		)
+	}
 }
 
 func TestServerTestCleanupDoesNotInvokeDefaultTmux(t *testing.T) {

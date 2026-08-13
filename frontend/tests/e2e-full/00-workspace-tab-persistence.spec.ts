@@ -275,6 +275,69 @@ test.describe("workspace tab persistence", () => {
     }
   });
 
+  test("uses the saved source-item default unless the workspace has a saved details tab", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+
+      const settingsResponse = await api.put("/api/v1/settings", {
+        data: {
+          workspaces: {
+            auto_assign_on_create: false,
+            default_sidebar_view: "item",
+          },
+        },
+      });
+      expect(settingsResponse.ok()).toBe(true);
+
+      const defaultWorkspace = await createPullWorkspace(api, 1);
+      const overriddenWorkspace = await createIssueWorkspace(api, 10);
+      const detailsToggle = (label: "Diff" | "PR") =>
+        page.locator(".terminal-view .panel-toggle-group .panel-toggle-btn", { hasText: label });
+
+      await page.addInitScript(() => localStorage.setItem("kenn-forge-workspace-sidebar-open", "true"));
+      await page.goto(`${isolatedServer.info.base_url}/settings`);
+      await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+      await page
+        .getByRole("navigation", { name: "Settings" })
+        .getByRole("button", { name: /^Workspaces Behavior when/ })
+        .click();
+      await expect(page.getByRole("combobox", { name: "Default sidebar view: PR/Issue" })).toBeVisible();
+      expect(
+        await page.evaluate(
+          (workspaceID) => localStorage.getItem(`kenn-forge-workspace-sidebar-tab:${workspaceID}`),
+          defaultWorkspace.id,
+        ),
+      ).toBeNull();
+      await page.getByRole("navigation", { name: "Page" }).getByRole("button", { name: "Workspaces" }).click();
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: "Add widget caching layer" }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${defaultWorkspace.id}$`));
+      expect(
+        await page.evaluate(
+          (workspaceID) => localStorage.getItem(`kenn-forge-workspace-sidebar-tab:${workspaceID}`),
+          defaultWorkspace.id,
+        ),
+      ).toBeNull();
+      await expect(detailsToggle("PR")).toHaveClass(/active/);
+
+      await page.evaluate((workspaceID) => {
+        localStorage.setItem(`kenn-forge-workspace-sidebar-tab:${workspaceID}`, "diff");
+      }, overriddenWorkspace.id);
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${overriddenWorkspace.id}`);
+      await expect(detailsToggle("Diff")).toHaveClass(/active/);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("shows workspace diff in the right sidebar without adding a stage pane", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

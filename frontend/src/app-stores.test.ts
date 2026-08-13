@@ -159,6 +159,7 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
         prefer_github_native_stacks: false,
       }),
       setPullRequestSettings: vi.fn(),
+      getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setWorkspaceSettings: vi.fn(),
       getModeVisibility: () => ({
         activity: true,

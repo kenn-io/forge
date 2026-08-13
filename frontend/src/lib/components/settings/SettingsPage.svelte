@@ -21,6 +21,10 @@
     beginTerminalSettingsHydration,
     hydrateTerminalSettings,
   } from "../../stores/terminal-settings-persistence.js";
+  import {
+    beginWorkspaceSettingsHydration,
+    hydrateWorkspaceSettings,
+  } from "../../stores/workspace-settings-persistence.js";
   import { SETTINGS_PANELS } from "./settingsPanels.js";
 
   // Switched-panel model on kit SettingsLayout: this list is the single
@@ -54,6 +58,7 @@
 
   onMount(() => {
     const terminalHydration = beginTerminalSettingsHydration(settingsStore);
+    const workspaceHydration = beginWorkspaceSettingsHydration(settingsStore);
     loading = true;
     error = null;
     const execution = runtime.runCommand(
@@ -76,7 +81,7 @@
               hydrateTerminalSettings(terminalHydration, loaded.terminal);
               settingsStore.setPullRequestSettings(loaded.pull_requests);
               settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
-              settingsStore.setWorkspaceSettings(loaded.workspaces);
+              hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
               loading = false;
             }),
         }),

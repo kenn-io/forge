@@ -17,6 +17,7 @@ vi.mock("../../context.js", async (importOriginal) => ({
       setConfiguredRepos: vi.fn(),
       setModeVisibility: vi.fn(),
       setPullRequestSettings: vi.fn(),
+      getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setWorkspaceSettings: vi.fn(),
       setLaunchTargets,
     },

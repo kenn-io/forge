@@ -5,6 +5,7 @@ import type { StartupSnapshot } from "../app/startup-workflow.js";
 import { applySettingsHydration } from "./settings-hydration.js";
 import { createSettingsStore } from "./settings.svelte.js";
 import { beginTerminalSettingsHydration } from "./terminal-settings-persistence.js";
+import { beginWorkspaceSettingsHydration } from "./workspace-settings-persistence.js";
 
 const activitySettings: ActivitySettings = {
   view_mode: "threaded",
@@ -54,10 +55,12 @@ function hydrate(
 ) {
   const settingsStore = createSettingsStore();
   const terminalHydration = beginTerminalSettingsHydration(settingsStore);
+  const workspaceHydration = beginWorkspaceSettingsHydration(settingsStore);
   applySettingsHydration(
     { settings: settingsStore, activity, issues },
     { ...settingsPayload, launch_targets: launchTargets },
     terminalHydration,
+    workspaceHydration,
   );
   return { settingsStore, activity, issues };
 }
@@ -77,10 +80,12 @@ describe("applySettingsHydration", () => {
     const settingsStore = createSettingsStore();
     settingsStore.setLaunchTargets([codexTarget]);
     const terminalHydration = beginTerminalSettingsHydration(settingsStore);
+    const workspaceHydration = beginWorkspaceSettingsHydration(settingsStore);
     applySettingsHydration(
       { settings: settingsStore, activity: { hydrateDefaults: vi.fn() }, issues: { hydrateDefaults: vi.fn() } },
       { ...settingsPayload, launch_targets: [] },
       terminalHydration,
+      workspaceHydration,
     );
     expect(settingsStore.getLaunchTargets()).toEqual([]);
   });

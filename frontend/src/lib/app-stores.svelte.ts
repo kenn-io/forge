@@ -30,6 +30,7 @@ import { createDetailActivityViewStore } from "./stores/detail-activity-view.sve
 import { createCollapsedReposStore } from "./stores/collapsedRepos.svelte.js";
 import { createSettingsStore } from "./stores/settings.svelte.js";
 import { beginTerminalSettingsHydration } from "./stores/terminal-settings-persistence.js";
+import { beginWorkspaceSettingsHydration } from "./stores/workspace-settings-persistence.js";
 import { applySettingsHydration } from "./stores/settings-hydration.js";
 import { createEventsStore } from "./stores/events.svelte.js";
 import type { RoutedItemRef } from "./routes.js";
@@ -159,6 +160,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     if (!event.valid) return Effect.void;
     return Effect.gen(function* () {
       const terminalHydration = yield* Effect.sync(() => beginTerminalSettingsHydration(settingsStore));
+      const workspaceHydration = yield* Effect.sync(() => beginWorkspaceSettingsHydration(settingsStore));
       const settings = yield* executeGeneratedApiRequest("GET settings after config change", (client, signal) =>
         client.GET("/settings", { signal }),
       ).pipe(retryIdempotentRead);
@@ -167,6 +169,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           { settings: settingsStore, activity: activityStore, issues: issuesStore },
           settings,
           terminalHydration,
+          workspaceHydration,
         );
       });
       yield* Effect.all(

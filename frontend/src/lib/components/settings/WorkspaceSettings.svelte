@@ -4,8 +4,10 @@
   import type { Settings } from "../../api/types.js";
 
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { getStores } from "../../context.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
-  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
+  import { settingsErrorMessage } from "../../stores/settings-workflow.js";
+  import { saveWorkspaceSettings } from "../../stores/workspace-settings-persistence.js";
 
   interface Props {
     workspaces: Settings["workspaces"];
@@ -14,6 +16,7 @@
 
   let { workspaces, onUpdate }: Props = $props();
   const runtime = getAppRuntime();
+  const { settings: settingsStore } = getStores();
   const embedded = isEmbedded();
   let saving = $state(false);
   const defaultSidebarViewOptions: SelectDropdownOption[] = [
@@ -23,7 +26,6 @@
 
   function toggleAutoAssign(): void {
     if (embedded || saving) return;
-    const previous = workspaces;
     const pending = {
       ...workspaces,
       auto_assign_on_create: !workspaces.auto_assign_on_create,
@@ -32,16 +34,18 @@
     saving = true;
     runtime.runCommand(
       Effect.gen(function* () {
-        const workflow = yield* SettingsWorkflow;
-        return yield* workflow.persist(() => ({ workspaces: pending }));
+        return yield* saveWorkspaceSettings({
+          changes: { auto_assign_on_create: pending.auto_assign_on_create },
+          store: settingsStore,
+        });
       }).pipe(
         Effect.matchEffect({
           onFailure: (failure) =>
             Effect.sync(() => {
-              onUpdate(previous);
+              onUpdate(settingsStore.getWorkspaceSettings());
               console.warn("Failed to save workspace settings:", settingsErrorMessage(failure));
             }),
-          onSuccess: (settings) => Effect.sync(() => onUpdate(settings.workspaces)),
+          onSuccess: (saved) => Effect.sync(() => onUpdate(saved)),
         }),
         Effect.ensuring(Effect.sync(() => {
           saving = false;
@@ -58,21 +62,22 @@
   function setDefaultSidebarView(value: string): void {
     const defaultSidebarView = value as Settings["workspaces"]["default_sidebar_view"];
     if (embedded || saving || defaultSidebarView === workspaces.default_sidebar_view) return;
-    const previous = workspaces;
     const pending = { ...workspaces, default_sidebar_view: defaultSidebarView };
     onUpdate(pending);
     saving = true;
     runtime.runCommand(
       Effect.gen(function* () {
-        const workflow = yield* SettingsWorkflow;
-        return yield* workflow.persist(() => ({ workspaces: pending }));
+        return yield* saveWorkspaceSettings({
+          changes: { default_sidebar_view: pending.default_sidebar_view },
+          store: settingsStore,
+        });
       }).pipe(
         Effect.matchEffect({
           onFailure: (failure) => Effect.sync(() => {
-            onUpdate(previous);
+            onUpdate(settingsStore.getWorkspaceSettings());
             console.warn("Failed to save workspace settings:", settingsErrorMessage(failure));
           }),
-          onSuccess: (settings) => Effect.sync(() => onUpdate(settings.workspaces)),
+          onSuccess: (saved) => Effect.sync(() => onUpdate(saved)),
         }),
         Effect.ensuring(Effect.sync(() => { saving = false; })),
       ),

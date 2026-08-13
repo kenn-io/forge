@@ -2,7 +2,26 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-const mockPersistSettings = vi.hoisted(() => vi.fn());
+const { mockPersistSettings, workspaceStore } = vi.hoisted(() => {
+  let current = { auto_assign_on_create: false, default_sidebar_view: "diff" as "diff" | "item" };
+  return {
+    mockPersistSettings: vi.fn(),
+    workspaceStore: {
+      getWorkspaceSettings: () => current,
+      setWorkspaceSettings: (settings: typeof current) => {
+        current = settings;
+      },
+      reset: () => {
+        current = { auto_assign_on_create: false, default_sidebar_view: "diff" };
+      },
+    },
+  };
+});
+
+vi.mock("../../context.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../context.js")>()),
+  getStores: () => ({ settings: workspaceStore }),
+}));
 
 vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
@@ -28,6 +47,7 @@ describe("WorkspaceSettings", () => {
   afterEach(() => {
     cleanup();
     mockPersistSettings.mockReset();
+    workspaceStore.reset();
   });
 
   it("saves automatic assignment for new workspace items", async () => {

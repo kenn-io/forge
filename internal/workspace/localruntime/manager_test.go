@@ -25,7 +25,11 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/processjob"
+	"go.kenn.io/forge/internal/testutil/testsignal"
+	"go.kenn.io/forge/internal/testutil/testtmux"
 )
+
+var privateTmuxOwner *testtmux.Owner
 
 func TestMain(m *testing.M) {
 	if os.Getenv("KENN_FORGE_LOCALRUNTIME_HELPER") == "1" {
@@ -35,11 +39,30 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "contain local runtime test process tree: %v\n", err)
 		os.Exit(1)
 	}
+	var ownerErr error
+	privateTmuxOwner, ownerErr = testtmux.New()
+	if ownerErr != nil {
+		fmt.Fprintf(os.Stderr, "initialize private test tmux owner: %v\n", ownerErr)
+		os.Exit(1)
+	}
 	envDir, err := os.MkdirTemp("", "kenn-forge-localruntime-tmux-env-*")
 	if err == nil {
 		_ = os.Setenv("KENN_FORGE_TMUX_ENV_DIR", envDir)
 	}
+	runCleanup, stopSignalCleanup := testsignal.Install(
+		privateTmuxOwner.Cleanup,
+		func(cleanupErr error) {
+			fmt.Fprintf(os.Stderr, "cleanup private test tmux servers: %v\n", cleanupErr)
+		},
+	)
 	code := m.Run()
+	if cleanupErr := runCleanup(); cleanupErr != nil {
+		fmt.Fprintf(os.Stderr, "cleanup private test tmux servers: %v\n", cleanupErr)
+		if code == 0 {
+			code = 1
+		}
+	}
+	stopSignalCleanup()
 	if err == nil {
 		_ = os.RemoveAll(envDir)
 	}
@@ -1018,24 +1041,17 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "client-secret")
 	t.Setenv("KENN_FORGE_STRIPPED_ENV", "client-stripped")
 
-	dir, err := os.MkdirTemp("/tmp", "kenn-forge-tmux-env-*")
-	require.NoError(err)
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
-	socket := filepath.Join(dir, "tmux.sock")
+	tmuxCommand := privateTmuxOwner.Command(t, tmuxPath)
+	socket := tmuxCommand[len(tmuxCommand)-1]
+	dir := filepath.Dir(socket)
 	output := filepath.Join(dir, "env-output")
 	seed := "kenn-forge-seed-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	sessionName := "kenn-forge-test-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	t.Cleanup(func() {
-		_ = procutil.Command(
-			tmuxPath, "-f", "/dev/null", "-S", socket, "kill-server",
-		).Run()
-	})
-
 	seedCmd := procutil.Command(
-		tmuxPath, "-f", "/dev/null", "-S", socket,
-		"new-session", "-d", "-s", seed, "sleep 10",
+		tmuxCommand[0], append(
+			append([]string(nil), tmuxCommand[1:]...),
+			"new-session", "-d", "-s", seed, "sleep 10",
+		)...,
 	)
 	seedCmd.Env = append(
 		sessionEnvironment(os.Environ(), []string{"KENN_FORGE_STRIPPED_ENV"}),
@@ -1067,7 +1083,6 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 	require.NotContains(paneCommand, "server-secret")
 	require.NotContains(paneCommand, "server-stripped")
 
-	tmuxCommand := []string{tmuxPath, "-f", "/dev/null", "-S", socket}
 	_, err = tmuxLauncher{
 		TmuxCommand: tmuxCommand,
 		Session:     sessionName,

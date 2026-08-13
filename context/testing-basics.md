@@ -23,6 +23,9 @@ fixtures, or changing shell-script coverage.
 - Shell-script tests must execute the script against controlled inputs and
   assert observable output, side effects, or exit status. Do not grep scripts,
   workflows, config, or docs for expected implementation text.
+- Real private tmux tests must use `testtmux` with PID-plus-start ownership and
+  an explicit private socket; never address the user's default server.
+  (`internal/testutil/testtmux/owner.go::Owner`)
 - Use provider live or container fixtures only when fake transports cannot
   catch endpoint or authentication drift. GitHub GraphQL validation is gated by
   `KENN_FORGE_LIVE_GITHUB_TESTS=1`.

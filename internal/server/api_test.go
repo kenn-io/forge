@@ -62,6 +62,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/processjob"
 	"go.kenn.io/forge/internal/testutil/testsignal"
+	"go.kenn.io/forge/internal/testutil/testtmux"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -72,7 +73,8 @@ import (
 const serverRuntimeHelperMarker = "kenn-forge-runtime-helper"
 
 var (
-	ptyE2ESemaphore = semaphore.NewWeighted(1)
+	privateTmuxOwner *testtmux.Owner
+	ptyE2ESemaphore  = semaphore.NewWeighted(1)
 	// Root keeps only Workspace tests that cross provider, config, Kata,
 	// runtime, terminal, Fleet, or agent-context composition boundaries.
 	// Bound their Git setup independently from the workspacetest binary.
@@ -87,6 +89,12 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "contain server test process tree: %v\n", err)
 		os.Exit(1)
 	}
+	var ownerErr error
+	privateTmuxOwner, ownerErr = testtmux.New()
+	if ownerErr != nil {
+		fmt.Fprintf(os.Stderr, "initialize private test tmux owner: %v\n", ownerErr)
+		os.Exit(1)
+	}
 	envDir, envDirErr := os.MkdirTemp("", "kenn-forge-server-tmux-env-*")
 	if envDirErr == nil {
 		_ = os.Setenv("KENN_FORGE_TMUX_ENV_DIR", envDir)
@@ -94,7 +102,10 @@ func TestMain(m *testing.M) {
 	runCleanup, stopSignalCleanup := testsignal.Install(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return cleanupForgeTestTmuxSessionsWithContext(ctx)
+		return errors.Join(
+			cleanupForgeTestTmuxSessionsWithContext(ctx),
+			privateTmuxOwner.Cleanup(),
+		)
 	}, func(err error) {
 		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
 	})
@@ -30349,17 +30360,7 @@ func isolatedRealTmuxCommandIfAvailable(t *testing.T) []string {
 
 func isolatedRealTmuxCommand(t *testing.T, tmuxPath string) []string {
 	t.Helper()
-	require := require.New(t)
-	tmuxDir, err := os.MkdirTemp("/tmp", "kenn-forge-test-tmux-*")
-	require.NoError(err)
-	socket := filepath.Join(tmuxDir, "tmux.sock")
-	t.Cleanup(func() {
-		_ = procutil.Command(
-			tmuxPath, "-f", "/dev/null", "-S", socket, "kill-server",
-		).Run()
-		_ = os.RemoveAll(tmuxDir)
-	})
-	return []string{tmuxPath, "-f", "/dev/null", "-S", socket}
+	return privateTmuxOwner.Command(t, tmuxPath)
 }
 
 func serverRuntimeHelperCommand(mode string) []string {

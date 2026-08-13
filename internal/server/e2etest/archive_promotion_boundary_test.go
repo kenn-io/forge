@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -36,6 +37,7 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 	promotedAt := discoveredAt.Add(24 * time.Hour)
 	clock := &archivePromotionClock{now: discoveredAt}
 	var gapItemAvailable atomic.Bool
+	var baselineContentChanged atomic.Bool
 	var maintenanceSince atomic.Pointer[time.Time]
 	var baselineDetailCalls atomic.Int64
 	var gapDetailCalls atomic.Int64
@@ -104,8 +106,12 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 			}`))
 		case "/api/v3/repos/acme/widget/issues/1":
 			baselineDetailCalls.Add(1)
+			title := "baseline issue"
+			if baselineContentChanged.Load() {
+				title = "same-second baseline update"
+			}
 			_, _ = w.Write([]byte(`{
-				"id":1,"node_id":"I_1","number":1,"title":"baseline issue","state":"closed",
+				"id":1,"node_id":"I_1","number":1,"title":` + strconv.Quote(title) + `,"state":"closed",
 				"body":"","html_url":"https://github.com/acme/widget/issues/1",
 				"user":{"login":"author"},"created_at":"2025-01-01T00:15:00Z",
 				"updated_at":"2025-01-01T01:00:00Z","closed_at":"2025-01-01T01:00:00Z",
@@ -188,8 +194,11 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(started.JSON200)
 
-	// Promotion first hydrates the discovery item. Maintenance then enumerates
-	// both streams, and the final pass hydrates only the newly discovered gap.
+	// Promotion first hydrates the discovery item. Its provider content then
+	// changes without advancing the second-granularity timestamp. Maintenance
+	// must refresh that equal-timestamp item as well as discover the gap.
+	require.NoError(archiveService.RunEligible(ctx))
+	baselineContentChanged.Store(true)
 	require.NoError(archiveService.RunEligible(ctx))
 	require.NoError(archiveService.RunEligible(ctx))
 	require.NoError(archiveService.RunEligible(ctx))
@@ -205,13 +214,13 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 	requestedSince := maintenanceSince.Load()
 	require.NotNil(requestedSince)
 	assert.Equal(discoveredAt.Add(-time.Second), *requestedSince)
-	assert.Equal(int64(1), baselineDetailCalls.Load())
+	assert.Equal(int64(2), baselineDetailCalls.Load())
 	assert.Equal(int64(1), gapDetailCalls.Load())
 
 	baseline, err := database.GetIssueByRepoIDAndNumber(ctx, repo.ID, 1)
 	require.NoError(err)
 	require.NotNil(baseline)
-	assert.Equal("baseline issue", baseline.Title)
+	assert.Equal("same-second baseline update", baseline.Title)
 	baselineProgress, err := database.GetDatasetProgress(
 		ctx, repo.ID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
 	)

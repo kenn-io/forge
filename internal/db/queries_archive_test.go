@@ -660,8 +660,7 @@ func TestArchivePromptRediscoveryMakesTerminalItemClaimable(t *testing.T) {
 	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
 		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
 		RefreshReason: ArchiveRefreshReasonPrompt, ScanGeneration: state.MaintenanceIssues.Generation,
-		PromptSince: &now, Exhausted: true,
-		Items: []ArchiveInventoryItem{item}, Now: now.Add(3 * time.Minute),
+		Exhausted: true, Items: []ArchiveInventoryItem{item}, Now: now.Add(3 * time.Minute),
 	}))
 	refreshed, err := database.GetDatasetProgress(
 		ctx, repoID, ArchiveItemTypeIssue, item.Number, ArchiveDatasetLookup,
@@ -677,7 +676,7 @@ func TestArchivePromptRediscoveryMakesTerminalItemClaimable(t *testing.T) {
 	assert.Equal(item.Number, claim.ItemNumber)
 }
 
-func TestArchivePromptReopensOnlyChangedOrBoundaryItems(t *testing.T) {
+func TestArchivePromptReopensEqualOrNewerObservations(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -688,14 +687,14 @@ func TestArchivePromptReopensOnlyChangedOrBoundaryItems(t *testing.T) {
 	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, discoveredAt))
 	require.NoError(database.StartFullArchives(ctx, []int64{repoID}, discoveredAt))
 
-	unchanged := archiveInventoryItemForTest(1, promptSince.Add(time.Hour))
+	equal := archiveInventoryItemForTest(1, promptSince.Add(time.Hour))
 	changed := archiveInventoryItemForTest(2, promptSince.Add(2*time.Hour))
-	boundary := archiveInventoryItemForTest(3, promptSince)
+	stale := archiveInventoryItemForTest(3, promptSince.Add(3*time.Hour))
 	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
 		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
 		RefreshReason: ArchiveRefreshReasonInitial, ScanGeneration: 1,
 		Exhausted: true,
-		Items:     []ArchiveInventoryItem{unchanged, changed, boundary},
+		Items:     []ArchiveInventoryItem{equal, changed, stale},
 		Now:       discoveredAt,
 	}))
 	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
@@ -717,27 +716,27 @@ func TestArchivePromptReopensOnlyChangedOrBoundaryItems(t *testing.T) {
 	)
 	require.NoError(err)
 	changed.ProviderUpdatedAt = changed.ProviderUpdatedAt.Add(time.Minute)
+	stale.ProviderUpdatedAt = stale.ProviderUpdatedAt.Add(-time.Minute)
 	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
 		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
 		RefreshReason:  ArchiveRefreshReasonPrompt,
-		PromptSince:    &promptSince,
 		ScanGeneration: state.MaintenanceIssues.Generation,
 		Exhausted:      true,
-		Items:          []ArchiveInventoryItem{unchanged, changed, boundary},
+		Items:          []ArchiveInventoryItem{equal, changed, stale},
 		Now:            promptSince.Add(2 * time.Minute),
 	}))
 
 	assert.Equal(
-		ArchiveDatasetProgressComplete,
-		archiveProgressStatusForTest(t, database, repoID, ArchiveItemTypeIssue, unchanged.Number, ArchiveDatasetLookup),
+		ArchiveDatasetProgressPending,
+		archiveProgressStatusForTest(t, database, repoID, ArchiveItemTypeIssue, equal.Number, ArchiveDatasetLookup),
 	)
 	assert.Equal(
 		ArchiveDatasetProgressPending,
 		archiveProgressStatusForTest(t, database, repoID, ArchiveItemTypeIssue, changed.Number, ArchiveDatasetLookup),
 	)
 	assert.Equal(
-		ArchiveDatasetProgressPending,
-		archiveProgressStatusForTest(t, database, repoID, ArchiveItemTypeIssue, boundary.Number, ArchiveDatasetLookup),
+		ArchiveDatasetProgressComplete,
+		archiveProgressStatusForTest(t, database, repoID, ArchiveItemTypeIssue, stale.Number, ArchiveDatasetLookup),
 	)
 }
 

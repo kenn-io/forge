@@ -453,11 +453,7 @@ type ArchiveInventoryCommit struct {
 	RepoID        int64
 	ItemType      ArchiveItemType
 	RefreshReason ArchiveRefreshReason
-	// PromptSince is the durable inclusive watermark for a prompt refresh.
-	// It lets inventory commits distinguish unchanged overlap rows from work
-	// that is new relative to the scan boundary.
-	PromptSince *time.Time
-	Items       []ArchiveInventoryItem
+	Items         []ArchiveInventoryItem
 	// ScanGeneration and InputCursor bind the page to the durable scan row
 	// with compare-and-swap semantics: a response from before an explicit
 	// reset cannot advance the new generation, and a duplicate delivery of

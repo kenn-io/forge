@@ -106,7 +106,6 @@ func (s *Service) promptPages(
 		commit := db.ArchiveInventoryCommit{
 			RepoID: repo.ID, ItemType: itemType,
 			RefreshReason:  db.ArchiveRefreshReasonPrompt,
-			PromptSince:    &since,
 			ScanGeneration: scan.Generation, InputCursor: cursor,
 			Now: s.now(),
 		}

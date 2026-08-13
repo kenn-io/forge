@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/procutil"
 )
@@ -28,11 +29,14 @@ import (
 const (
 	startTokenLength = 12
 	cleanupTimeout   = 2 * time.Second
+	rootLockName     = ".owner.lock"
 )
 
 var runNamePattern = regexp.MustCompile(
 	`^run\.([1-9][0-9]*)\.([0-9a-f]{12})\.([A-Za-z0-9]{6,32})$`,
 )
+
+var rootLockMu sync.Mutex
 
 type processIdentity struct {
 	pid        int
@@ -82,41 +86,71 @@ func newAt(root string) (*Owner, error) {
 		return nil, fmt.Errorf("tmux test root must be absolute: %s", root)
 	}
 	root = filepath.Clean(root)
+	// Bootstrap the directory so it can contain its stable lock file. The
+	// validated initialization is repeated while holding the lock below.
 	if err := prepareRoot(root); err != nil {
 		return nil, err
 	}
-	if err := reapStale(root); err != nil {
-		return nil, err
+	var owner *Owner
+	err := withRootLock(root, func() error {
+		if err := prepareRoot(root); err != nil {
+			return err
+		}
+		if err := reapStale(root); err != nil {
+			return err
+		}
+		start, err := processStart(os.Getpid())
+		if err != nil {
+			return fmt.Errorf("identify tmux test owner: %w", err)
+		}
+		identity := processIdentity{
+			pid:        os.Getpid(),
+			startToken: tokenForStart(start),
+		}
+		nonce, err := randomToken(6)
+		if err != nil {
+			return fmt.Errorf("create tmux test run nonce: %w", err)
+		}
+		runName := fmt.Sprintf(
+			"run.%d.%s.%s", identity.pid, identity.startToken, nonce,
+		)
+		marker := ownerMarker{
+			PID:          identity.pid,
+			ProcessStart: start,
+			StartToken:   identity.startToken,
+		}
+		runDir, err := publishRun(root, runName, marker, os.Rename)
+		if err != nil {
+			return err
+		}
+		owner = &Owner{
+			root:    root,
+			runDir:  runDir,
+			servers: make(map[string]registeredServer),
+		}
+		return nil
+	})
+	return owner, err
+}
+
+func withRootLock(root string, fn func() error) (err error) {
+	// flock does not serialize fresh lock handles within every supported Unix
+	// process, so pair it with a package mutex for goroutines in this binary.
+	rootLockMu.Lock()
+	defer rootLockMu.Unlock()
+
+	lock := flock.New(filepath.Join(root, rootLockName))
+	if err := lock.Lock(); err != nil {
+		return fmt.Errorf("acquire tmux test root lock: %w", err)
 	}
-	start, err := processStart(os.Getpid())
-	if err != nil {
-		return nil, fmt.Errorf("identify tmux test owner: %w", err)
-	}
-	identity := processIdentity{
-		pid:        os.Getpid(),
-		startToken: tokenForStart(start),
-	}
-	nonce, err := randomToken(6)
-	if err != nil {
-		return nil, fmt.Errorf("create tmux test run nonce: %w", err)
-	}
-	runName := fmt.Sprintf(
-		"run.%d.%s.%s", identity.pid, identity.startToken, nonce,
-	)
-	marker := ownerMarker{
-		PID:          identity.pid,
-		ProcessStart: start,
-		StartToken:   identity.startToken,
-	}
-	runDir, err := publishRun(root, runName, marker, os.Rename)
-	if err != nil {
-		return nil, err
-	}
-	return &Owner{
-		root:    root,
-		runDir:  runDir,
-		servers: make(map[string]registeredServer),
-	}, nil
+	defer func() {
+		if unlockErr := lock.Unlock(); unlockErr != nil {
+			err = errors.Join(err, fmt.Errorf(
+				"release tmux test root lock: %w", unlockErr,
+			))
+		}
+	}()
+	return fn()
 }
 
 func publishRun(
@@ -190,7 +224,6 @@ func (o *Owner) Cleanup() error {
 		} else if err := os.RemoveAll(o.runDir); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
 		}
-		_ = os.Remove(o.root)
 		o.cleanupErr = errors.Join(cleanupErrors...)
 	})
 	return o.cleanupErr

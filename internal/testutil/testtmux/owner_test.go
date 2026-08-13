@@ -140,6 +140,81 @@ func TestPublishRunDoesNotExposeUnmarkedFinalDirectory(t *testing.T) {
 	require.ErrorIs(err, os.ErrNotExist)
 }
 
+func TestRootLockSerializesAcrossProcesses(t *testing.T) {
+	require := require.New(t)
+	root := os.Getenv("KENN_FORGE_TEST_TMUX_LOCK_ROOT")
+	if root != "" {
+		ready := os.Getenv("KENN_FORGE_TEST_TMUX_LOCK_READY")
+		release := os.Getenv("KENN_FORGE_TEST_TMUX_LOCK_RELEASE")
+		require.NoError(withRootLock(root, func() error {
+			require.NoError(os.WriteFile(ready, []byte("ready\n"), 0o600))
+			require.Eventually(func() bool {
+				_, err := os.Stat(release)
+				return err == nil
+			}, 5*time.Second, 10*time.Millisecond)
+			return nil
+		}))
+		return
+	}
+
+	directory := t.TempDir()
+	root = filepath.Join(directory, "root")
+	require.NoError(prepareRoot(root))
+	ready := filepath.Join(directory, "ready")
+	release := filepath.Join(directory, "release")
+	command := procutil.Command(
+		os.Args[0], "-test.run=^TestRootLockSerializesAcrossProcesses$",
+	)
+	command.Env = append(os.Environ(),
+		"KENN_FORGE_TEST_TMUX_LOCK_ROOT="+root,
+		"KENN_FORGE_TEST_TMUX_LOCK_READY="+ready,
+		"KENN_FORGE_TEST_TMUX_LOCK_RELEASE="+release,
+	)
+	require.NoError(command.Start())
+	t.Cleanup(func() {
+		if command.ProcessState == nil {
+			_ = command.Process.Kill()
+			_, _ = command.Process.Wait()
+		}
+	})
+	require.Eventually(func() bool {
+		_, err := os.Stat(ready)
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond)
+
+	acquired := make(chan error, 1)
+	go func() {
+		acquired <- withRootLock(root, func() error { return nil })
+	}()
+	select {
+	case err := <-acquired:
+		require.NoError(err)
+		require.Fail("second process entered the root critical section")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
+	select {
+	case err := <-acquired:
+		require.NoError(err)
+	case <-time.After(5 * time.Second):
+		require.Fail("second process did not acquire the released root lock")
+	}
+	require.NoError(command.Wait())
+}
+
+func TestOwnerCleanupRetainsSharedRoot(t *testing.T) {
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), "root")
+	owner, err := newAt(root)
+	require.NoError(err)
+
+	require.NoError(owner.Cleanup())
+	info, err := os.Stat(root)
+	require.NoError(err)
+	require.True(info.IsDir())
+}
+
 func TestRunIsLiveRequiresMatchingProcessStart(t *testing.T) {
 	t.Parallel()
 

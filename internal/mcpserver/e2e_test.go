@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/runtimelock"
 	forgeserver "go.kenn.io/forge/internal/server"
@@ -75,6 +76,9 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 	require.NoError(err)
 	disableTmuxAgentSessions := false
 	cfg := &config.Config{
+		Repos: []config.Repo{{
+			Owner: "acme", Name: "widgets", Platform: "github", PlatformHost: "github.com",
+		}},
 		Agents: []config.Agent{{
 			Key: "codex", Label: "Codex",
 			Command: []string{"/bin/sh", "-c", "while :; do sleep 1; done"},
@@ -89,7 +93,10 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 		nil,
 		database,
 		nil,
-		[]ghclient.RepoRef{{Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widgets"}},
+		[]ghclient.RepoRef{{
+			Platform: "github", RepoID: repoID, PlatformHost: "github.com",
+			Owner: "acme", Name: "widgets", RepoPath: "acme/widgets",
+		}},
 		time.Minute,
 		nil,
 		nil,
@@ -271,9 +278,15 @@ esac
 	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, longRepoID, longNumber, diffRepo.HeadSHA, diffRepo.BaseSHA, diffRepo.BaseSHA))
 	require.NoError(database.UpdatePlatformSHAs(ctx, longRepoID, longNumber, diffRepo.HeadSHA, diffRepo.BaseSHA))
-	sourceClone, err := diffRepo.Manager.ClonePath("github", "github.com", "acme", "widgets")
+	sourceClone, err := diffRepo.Manager.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(ctx, diffRepo.PlatformRepoID),
+		"github", "github.com", "acme", "widgets",
+	)
 	require.NoError(err)
-	longClone, err := diffRepo.Manager.ClonePath("github", longHost, longOwner, longName)
+	longClone, err := diffRepo.Manager.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(ctx, "repo-long"),
+		"github", longHost, longOwner, longName,
+	)
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(longClone), 0o755))
 	require.NoError(os.Rename(sourceClone, longClone))
@@ -667,7 +680,7 @@ func seedMCPPR(t *testing.T, database *db.DB, number int, title string) (int64, 
 	t.Helper()
 	ctx := t.Context()
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widgets")
-	identity.PlatformRepoID = "repo-widgets"
+	identity.PlatformRepoID = "repo-acme-widgets"
 	repoID, err := database.UpsertRepo(ctx, identity)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -699,7 +712,7 @@ func seedMCPIssue(t *testing.T, database *db.DB, number int, title string) int64
 	t.Helper()
 	ctx := t.Context()
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widgets")
-	identity.PlatformRepoID = "repo-widgets"
+	identity.PlatformRepoID = "repo-acme-widgets"
 	repoID, err := database.UpsertRepo(ctx, identity)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)

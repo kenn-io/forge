@@ -14635,6 +14635,41 @@ func TestScopedRunDrainsDetailsOnlyForSelectedRepos(t *testing.T) {
 	assert.Equal(t, []string{"selected"}, detailRepos)
 }
 
+// If queued repo intents follow only a mutable route, a rename drops the
+// intended repository and route reuse can select an unrelated successor.
+func TestRepoIntentMatchingUsesStableProviderIdentity(t *testing.T) {
+	renamed := RepoRef{
+		Platform:           platform.KindGitHub,
+		Owner:              "new-owner",
+		Name:               "new-name",
+		PlatformHost:       "github.com",
+		PlatformExternalID: "stable-repo-id",
+	}
+	successor := RepoRef{
+		Platform:           platform.KindGitHub,
+		Owner:              "old-owner",
+		Name:               "old-name",
+		PlatformHost:       "github.com",
+		PlatformExternalID: "successor-repo-id",
+	}
+	requestedBeforeRename := RepoRef{
+		Platform:           platform.KindGitHub,
+		Owner:              "old-owner",
+		Name:               "old-name",
+		PlatformHost:       "github.com",
+		PlatformExternalID: "stable-repo-id",
+	}
+
+	assert.Equal(t,
+		[]RepoRef{renamed},
+		selectRepos([]RepoRef{successor, renamed}, []RepoRef{requestedBeforeRename}),
+	)
+	assert.Equal(t,
+		[]RepoRef{renamed, successor},
+		prioritizeRepos([]RepoRef{successor, renamed}, []RepoRef{requestedBeforeRename}),
+	)
+}
+
 func TestScopedRunDoesNotDelayNextFullRunOnSameHost(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)

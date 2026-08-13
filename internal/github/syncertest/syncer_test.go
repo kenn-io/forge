@@ -803,6 +803,127 @@ func TestSyncerTriggerRunForReposSyncsOnlySelectedRepos(t *testing.T) {
 	assert.Equal([]string{"o/third"}, got)
 }
 
+// If an accepted trigger is dropped behind an in-flight provider snapshot,
+// data changed after that snapshot stays stale until an unrelated later run.
+func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
+	tests := []struct {
+		name    string
+		trigger func(*ghclient.Syncer, context.Context, []ghclient.RepoRef)
+	}{
+		{
+			name: "full",
+			trigger: func(syncer *ghclient.Syncer, ctx context.Context, _ []ghclient.RepoRef) {
+				syncer.TriggerRun(ctx)
+			},
+		},
+		{
+			name: "priority",
+			trigger: func(syncer *ghclient.Syncer, ctx context.Context, repos []ghclient.RepoRef) {
+				syncer.TriggerRunWithPriority(ctx, repos)
+			},
+		},
+		{
+			name: "scoped",
+			trigger: func(syncer *ghclient.Syncer, ctx context.Context, repos []ghclient.RepoRef) {
+				syncer.TriggerRunForRepos(ctx, repos)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			database := openTestDB(t)
+			ctx := t.Context()
+			repos := []ghclient.RepoRef{{
+				Owner:              "o",
+				Name:               "r",
+				PlatformHost:       "github.com",
+				PlatformExternalID: "repo-o-r",
+			}}
+			repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+				Platform:       "github",
+				PlatformHost:   "github.com",
+				PlatformRepoID: "repo-o-r",
+				Owner:          "o",
+				Name:           "r",
+			})
+			require.NoError(err)
+
+			firstSnapshot := make(chan struct{})
+			releaseFirst := make(chan struct{})
+			var releaseOnce sync.Once
+			var listCalls atomic.Int32
+			var providerFresh atomic.Bool
+			mock := &mockClient{
+				listOpenPRsFn: func(
+					ctx context.Context, _, _ string,
+				) ([]*gh.PullRequest, error) {
+					if listCalls.Add(1) == 1 {
+						close(firstSnapshot)
+						select {
+						case <-releaseFirst:
+						case <-ctx.Done():
+							return nil, ctx.Err()
+						}
+					}
+					return []*gh.PullRequest{}, nil
+				},
+				getRepositoryFn: func(
+					_ context.Context, owner, repo string,
+				) (*gh.Repository, error) {
+					id := int64(1)
+					nodeID := "repo-o-r"
+					defaultBranch := "stale"
+					if providerFresh.Load() {
+						defaultBranch = "fresh"
+					}
+					return &gh.Repository{
+						ID:            &id,
+						NodeID:        &nodeID,
+						Name:          &repo,
+						Owner:         &gh.User{Login: &owner},
+						Archived:      new(bool),
+						DefaultBranch: &defaultBranch,
+					}, nil
+				},
+			}
+			syncer := ghclient.NewSyncer(
+				map[string]ghclient.Client{"github.com": mock},
+				database, nil, repos, time.Hour, nil, nil,
+			)
+			t.Cleanup(func() {
+				releaseOnce.Do(func() { close(releaseFirst) })
+				syncer.Stop()
+			})
+
+			syncer.TriggerRun(ctx)
+			select {
+			case <-firstSnapshot:
+			case <-time.After(5 * time.Second):
+				require.FailNow("initial sync did not reach the provider snapshot")
+			}
+
+			providerFresh.Store(true)
+			tt.trigger(syncer, ctx, repos)
+			releaseOnce.Do(func() { close(releaseFirst) })
+
+			require.Eventually(
+				func() bool { return listCalls.Load() == 2 },
+				5*time.Second,
+				10*time.Millisecond,
+				"accepted trigger did not run after the active sync",
+			)
+			syncer.Stop()
+
+			stored, err := database.GetRepoByID(ctx, repoID)
+			require.NoError(err)
+			require.NotNil(stored)
+			require.Equal("fresh", stored.DefaultBranch)
+		})
+	}
+}
+
 type blockingCtxMockClient struct {
 	mockClient
 	entered chan struct{}

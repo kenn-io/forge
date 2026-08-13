@@ -655,6 +655,13 @@ const (
 	displayNameFailureTTL = 15 * time.Minute
 )
 
+type pendingSyncRun struct {
+	bypassNextSyncAfter bool
+	full                bool
+	priorityRepos       []RepoRef
+	onlyRepos           []RepoRef
+}
+
 const syncProgressLogInterval = 100
 const largeRepoBulkGraphQLThreshold = syncProgressLogInterval
 const (
@@ -832,8 +839,8 @@ type Syncer struct {
 	parallelism              atomic.Int32
 	runMu                    sync.Mutex
 	running                  atomic.Bool
-	exclusiveRun             bool // guarded by runMu
-	scheduledFullPending     bool // guarded by runMu
+	exclusiveRun             bool            // guarded by runMu
+	pendingRun               *pendingSyncRun // guarded by runMu
 	providerWorkMu           sync.Mutex
 	providerWork             map[string]map[archive.WorkPriority]int
 	archiveProviderRequests  map[string]archiveProviderRequest
@@ -3702,8 +3709,9 @@ func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
 // cadence gate, but still respect hard rate-limit pauses and the
 // syncer's lifecycle: Stop cancels the merged context so any
 // in-flight GitHub call unblocks, then waits for the goroutine to
-// exit. The caller's ctx is honored too, so per-request deadlines
-// still apply.
+// exit. The caller's ctx is honored by a run that starts immediately.
+// Once an accepted trigger is coalesced behind an active run, the follow-up
+// is owned by the syncer's lifecycle so caller completion cannot retract it.
 func (s *Syncer) TriggerRun(ctx context.Context) {
 	s.TriggerRunWithPriority(ctx, nil)
 }
@@ -5816,8 +5824,10 @@ func (s *Syncer) runOnce(
 	}
 	s.runMu.Lock()
 	if s.running.Load() {
-		if !bypassNextSyncAfter && onlyRepos == nil && s.exclusiveRun {
-			s.scheduledFullPending = true
+		if bypassNextSyncAfter || onlyRepos == nil && s.exclusiveRun {
+			s.coalescePendingRunLocked(
+				bypassNextSyncAfter, priorityRepos, onlyRepos,
+			)
 		}
 		s.runMu.Unlock()
 		return
@@ -5830,13 +5840,20 @@ func (s *Syncer) runOnce(
 		s.runMu.Lock()
 		s.running.Store(false)
 		s.exclusiveRun = false
-		retryScheduledFull := exclusive && s.scheduledFullPending
-		if retryScheduledFull {
-			s.scheduledFullPending = false
-		}
+		pending := s.pendingRun
+		s.pendingRun = nil
 		s.runMu.Unlock()
-		if retryScheduledFull {
-			s.triggerRunWithCadence(context.Background(), false, nil, nil)
+		if pending != nil {
+			only := pending.onlyRepos
+			if pending.full {
+				only = nil
+			}
+			s.triggerRunWithCadence(
+				context.Background(),
+				pending.bypassNextSyncAfter,
+				pending.priorityRepos,
+				only,
+			)
 		}
 	}()
 
@@ -6044,29 +6061,87 @@ dispatch:
 	})
 }
 
+// coalescePendingRunLocked records work accepted while another pass owns the
+// single-flight slot. A full pass subsumes scoped work; the scoped repositories
+// become priorities so the stronger request still reaches them first.
+func (s *Syncer) coalescePendingRunLocked(
+	bypassNextSyncAfter bool,
+	priorityRepos []RepoRef,
+	onlyRepos []RepoRef,
+) {
+	full := onlyRepos == nil
+	if s.pendingRun == nil {
+		s.pendingRun = &pendingSyncRun{
+			bypassNextSyncAfter: bypassNextSyncAfter,
+			full:                full,
+			priorityRepos:       appendUniqueRepoRefs(nil, priorityRepos),
+			onlyRepos:           appendUniqueRepoRefs(nil, onlyRepos),
+		}
+		return
+	}
+
+	pending := s.pendingRun
+	pending.bypassNextSyncAfter = pending.bypassNextSyncAfter || bypassNextSyncAfter
+	if full {
+		if !pending.full {
+			pending.priorityRepos = appendUniqueRepoRefs(
+				pending.priorityRepos, pending.onlyRepos,
+			)
+			pending.onlyRepos = nil
+			pending.full = true
+		}
+		pending.priorityRepos = appendUniqueRepoRefs(
+			pending.priorityRepos, priorityRepos,
+		)
+		return
+	}
+
+	if pending.full {
+		pending.priorityRepos = appendUniqueRepoRefs(
+			pending.priorityRepos, onlyRepos,
+		)
+	} else {
+		pending.onlyRepos = appendUniqueRepoRefs(pending.onlyRepos, onlyRepos)
+	}
+	pending.priorityRepos = appendUniqueRepoRefs(
+		pending.priorityRepos, priorityRepos,
+	)
+}
+
+func appendUniqueRepoRefs(dst []RepoRef, repos []RepoRef) []RepoRef {
+	for _, repo := range repos {
+		if slices.ContainsFunc(dst, func(existing RepoRef) bool {
+			return sameRepoIntent(existing, repo)
+		}) {
+			continue
+		}
+		dst = append(dst, repo)
+	}
+	return dst
+}
+
 func prioritizeRepos(repos, priorityRepos []RepoRef) []RepoRef {
 	if len(repos) == 0 || len(priorityRepos) == 0 {
 		return repos
 	}
 
-	priorityKeys := make(map[string]int, len(priorityRepos))
-	for i, repo := range priorityRepos {
-		key := repoPriorityKey(repo)
-		if key == "" {
-			continue
-		}
-		if _, exists := priorityKeys[key]; !exists {
-			priorityKeys[key] = i
+	priorityOrder := make(map[RepoRef]int, len(repos))
+	for _, repo := range repos {
+		for i, priority := range priorityRepos {
+			if sameRepoIntent(repo, priority) {
+				priorityOrder[repo] = i
+				break
+			}
 		}
 	}
-	if len(priorityKeys) == 0 {
+	if len(priorityOrder) == 0 {
 		return repos
 	}
 
 	out := slices.Clone(repos)
 	slices.SortStableFunc(out, func(a, b RepoRef) int {
-		ai, aOK := priorityKeys[repoPriorityKey(a)]
-		bi, bOK := priorityKeys[repoPriorityKey(b)]
+		ai, aOK := priorityOrder[a]
+		bi, bOK := priorityOrder[b]
 		switch {
 		case aOK && bOK:
 			return ai - bi
@@ -6159,20 +6234,31 @@ func excludeArchivedRepos(repos []RepoRef) []RepoRef {
 }
 
 func selectRepos(repos, selectedRepos []RepoRef) []RepoRef {
-	selectedKeys := make(map[string]struct{}, len(selectedRepos))
-	for _, repo := range selectedRepos {
-		if key := repoPriorityKey(repo); key != "" {
-			selectedKeys[key] = struct{}{}
-		}
-	}
-
-	out := make([]RepoRef, 0, len(selectedKeys))
+	out := make([]RepoRef, 0, len(selectedRepos))
 	for _, repo := range repos {
-		if _, ok := selectedKeys[repoPriorityKey(repo)]; ok {
+		if slices.ContainsFunc(selectedRepos, func(selected RepoRef) bool {
+			return sameRepoIntent(repo, selected)
+		}) {
 			out = append(out, repo)
 		}
 	}
 	return out
+}
+
+// sameRepoIntent matches stable provider identity whenever both refs have one.
+// Route fallback is reserved for refs that have not yet been provider-verified.
+func sameRepoIntent(a, b RepoRef) bool {
+	if repoPlatform(a) != repoPlatform(b) ||
+		!strings.EqualFold(repoHost(a), repoHost(b)) {
+		return false
+	}
+	aID := strings.TrimSpace(a.PlatformExternalID)
+	bID := strings.TrimSpace(b.PlatformExternalID)
+	if aID != "" && bID != "" {
+		return aID == bID
+	}
+	aRoute := repoPriorityKey(a)
+	return aRoute != "" && aRoute == repoPriorityKey(b)
 }
 
 func repoPriorityKey(repo RepoRef) string {

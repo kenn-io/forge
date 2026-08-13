@@ -18,6 +18,12 @@ import (
 
 func TestKataEffectiveLinkHydrationBatchesAndLimitsPerDaemonConcurrency(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
+	started := make(chan struct{}, 3)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseAll()
 	var mu sync.Mutex
 	active := 0
 	maxActive := 0
@@ -42,7 +48,8 @@ func TestKataEffectiveLinkHydrationBatchesAndLimitsPerDaemonConcurrency(t *testi
 		calls++
 		maxActive = max(maxActive, active)
 		mu.Unlock()
-		time.Sleep(25 * time.Millisecond)
+		started <- struct{}{}
+		<-release
 		issues := make([]kataIssueReference, 0, len(uids))
 		for _, uid := range uids {
 			issues = append(issues, kataIssueReference{
@@ -64,7 +71,24 @@ func TestKataEffectiveLinkHydrationBatchesAndLimitsPerDaemonConcurrency(t *testi
 		mergeKataLinkCandidate(candidates, "primary", "project-a", uid, kataLinkDirect)
 	}
 
-	response := srv.hydrateKataLinkCandidates(t.Context(), candidates)
+	responseReady := make(chan kataEffectiveLinksResponse, 1)
+	go func() {
+		responseReady <- srv.hydrateKataLinkCandidates(t.Context(), candidates)
+	}()
+	for range kataLinkHydrationPerDaemonConcurrency {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			require.FailNow("hydration did not fill the per-daemon slots")
+		}
+	}
+	select {
+	case <-started:
+		require.Fail("hydration exceeded the per-daemon limit")
+	case <-time.After(100 * time.Millisecond):
+	}
+	releaseAll()
+	response := <-responseReady
 	mu.Lock()
 	observedCalls := calls
 	observedMaxActive := maxActive

@@ -200,7 +200,10 @@ function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSetting
     (request.modes === undefined || sameValue(settings.modes, request.modes)) &&
     (request.pull_requests === undefined || sameValue(settings.pull_requests, request.pull_requests)) &&
     (request.terminal === undefined || sameValue(settings.terminal, request.terminal)) &&
-    (request.workspaces === undefined || sameValue(settings.workspaces, request.workspaces))
+    (request.workspaces === undefined ||
+      Object.entries(request.workspaces).every(
+        ([key, value]) => settings.workspaces[key as keyof typeof settings.workspaces] === value,
+      ))
   );
 }
 

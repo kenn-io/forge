@@ -41,12 +41,17 @@ type notificationsSettingsResponse struct {
 type updateSettingsRequest struct {
 	Activity     *config.Activity                 `json:"activity,omitempty"`
 	PullRequests *config.PullRequests             `json:"pull_requests,omitempty"`
-	Workspaces   *config.Workspaces               `json:"workspaces,omitempty"`
+	Workspaces   *workspaceSettingsUpdate         `json:"workspaces,omitempty"`
 	Issues       *config.Issues                   `json:"issues,omitempty"`
 	Terminal     *config.Terminal                 `json:"terminal,omitempty"`
 	Modes        *config.ModeVisibility           `json:"modes,omitempty"`
 	Agents       *[]config.Agent                  `json:"agents,omitempty"`
 	KataProjects *[]config.KataProjectRepoMapping `json:"kata_projects,omitempty"`
+}
+
+type workspaceSettingsUpdate struct {
+	AutoAssignOnCreate *bool   `json:"auto_assign_on_create,omitempty"`
+	DefaultSidebarView *string `json:"default_sidebar_view,omitempty" enum:"diff,item"`
 }
 
 func (s *Server) configuredClients(
@@ -747,7 +752,12 @@ func (s *Server) updateSettings(
 		s.cfg.PullRequests = *input.Body.PullRequests
 	}
 	if input.Body.Workspaces != nil {
-		s.cfg.Workspaces = *input.Body.Workspaces
+		if input.Body.Workspaces.AutoAssignOnCreate != nil {
+			s.cfg.Workspaces.AutoAssignOnCreate = *input.Body.Workspaces.AutoAssignOnCreate
+		}
+		if input.Body.Workspaces.DefaultSidebarView != nil {
+			s.cfg.Workspaces.DefaultSidebarView = *input.Body.Workspaces.DefaultSidebarView
+		}
 	}
 	if input.Body.Issues != nil {
 		s.cfg.Issues = *input.Body.Issues

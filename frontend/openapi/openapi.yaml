@@ -7331,7 +7331,7 @@ components:
         terminal:
           $ref: "#/components/schemas/Terminal"
         workspaces:
-          $ref: "#/components/schemas/Workspaces"
+          $ref: "#/components/schemas/WorkspaceSettingsUpdate"
       type: object
     UserRepository:
       additionalProperties: false
@@ -7660,6 +7660,17 @@ components:
       required:
         - launch_targets
         - sessions
+      type: object
+    WorkspaceSettingsUpdate:
+      additionalProperties: false
+      properties:
+        auto_assign_on_create:
+          type: boolean
+        default_sidebar_view:
+          enum:
+            - diff
+            - item
+          type: string
       type: object
     Workspaces:
       additionalProperties: false

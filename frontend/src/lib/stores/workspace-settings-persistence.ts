@@ -118,56 +118,50 @@ export const saveWorkspaceSettings = Effect.fn("WorkspaceSettings.save")(functio
       queue.fieldOptimisticGenerations[key] = generation;
     }
     store.setWorkspaceSettings({ ...store.getWorkspaceSettings(), ...changes });
-    return { generation, hydrationGeneration: queue.hydrationGeneration, queue };
+    return { generation, queue };
   });
 
-  const save = workflow
-    .persist(() => ({ workspaces: { ...state.queue.confirmed, ...changes } }))
-    .pipe(Effect.map((settings) => settings.workspaces));
-
-  return yield* save.pipe(
-    Effect.flatMap((saved) => {
-      if (state.queue.hydrationGeneration === state.hydrationGeneration) return Effect.succeed(saved);
-      const rebased = { ...state.queue.confirmed, ...changes };
-      return workflow.persist(() => ({ workspaces: rebased })).pipe(Effect.map((settings) => settings.workspaces));
-    }),
-    Effect.onExit((exit) =>
-      Effect.sync(() => {
-        const current = store.getWorkspaceSettings();
-        if (Exit.isSuccess(exit)) {
-          const saved = exit.value;
-          const confirmed = { ...state.queue.confirmed };
-          for (const key of changedKeys(changes)) {
-            Object.assign(confirmed, { [key]: saved[key] });
-            state.queue.fieldConfirmedGenerations[key] = state.generation;
+  return yield* workflow
+    .persist(() => ({ workspaces: changes }))
+    .pipe(
+      Effect.map((settings) => settings.workspaces),
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          const current = store.getWorkspaceSettings();
+          if (Exit.isSuccess(exit)) {
+            const saved = exit.value;
+            const confirmed = { ...state.queue.confirmed };
+            for (const key of changedKeys(changes)) {
+              Object.assign(confirmed, { [key]: saved[key] });
+              state.queue.fieldConfirmedGenerations[key] = state.generation;
+            }
+            state.queue.confirmed = confirmed;
+            const reconciled = { ...current };
+            for (const key of changedKeys(changes)) {
+              if (state.queue.fieldOptimisticGenerations[key] === state.generation) {
+                Object.assign(reconciled, { [key]: saved[key] });
+              }
+            }
+            store.setWorkspaceSettings(reconciled);
+          } else {
+            const rollback = { ...current };
+            for (const key of changedKeys(changes)) {
+              if (state.queue.fieldOptimisticGenerations[key] === state.generation) {
+                Object.assign(rollback, { [key]: state.queue.confirmed[key] });
+              }
+            }
+            store.setWorkspaceSettings(rollback);
           }
-          state.queue.confirmed = confirmed;
-          const reconciled = { ...current };
+
           for (const key of changedKeys(changes)) {
+            settlePending(state.queue, key, state.generation);
             if (state.queue.fieldOptimisticGenerations[key] === state.generation) {
-              Object.assign(reconciled, { [key]: saved[key] });
+              delete state.queue.fieldOptimisticGenerations[key];
             }
           }
-          store.setWorkspaceSettings(reconciled);
-        } else {
-          const rollback = { ...current };
-          for (const key of changedKeys(changes)) {
-            if (state.queue.fieldOptimisticGenerations[key] === state.generation) {
-              Object.assign(rollback, { [key]: state.queue.confirmed[key] });
-            }
-          }
-          store.setWorkspaceSettings(rollback);
-        }
-
-        for (const key of changedKeys(changes)) {
-          settlePending(state.queue, key, state.generation);
-          if (state.queue.fieldOptimisticGenerations[key] === state.generation) {
-            delete state.queue.fieldOptimisticGenerations[key];
-          }
-        }
-      }),
-    ),
-  );
+        }),
+      ),
+    );
 }) satisfies (
   options: SaveWorkspaceSettingsOptions,
 ) => Effect.Effect<WorkspaceSettings, SettingsError, SettingsWorkflow>;

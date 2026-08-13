@@ -72,7 +72,7 @@ function deferred<T>() {
 describe("workspace settings persistence", () => {
   let runtime: OwnedAppRuntime;
   let persisted: WorkspaceSettings;
-  let requests: WorkspaceSettings[];
+  let requests: Partial<WorkspaceSettings>[];
   let holdFirstSave: ReturnType<typeof deferred<void>> | null;
 
   beforeEach(() => {
@@ -83,10 +83,10 @@ describe("workspace settings persistence", () => {
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init);
       if (request.method === "GET") return Response.json(settingsResponse(persisted));
-      const body = (await request.clone().json()) as { workspaces: WorkspaceSettings };
+      const body = (await request.clone().json()) as { workspaces: Partial<WorkspaceSettings> };
       requests.push(body.workspaces);
       if (requests.length === 1 && holdFirstSave) await holdFirstSave.promise;
-      persisted = { ...body.workspaces };
+      persisted = { ...persisted, ...body.workspaces };
       return Response.json(settingsResponse(persisted));
     });
   });
@@ -129,10 +129,7 @@ describe("workspace settings persistence", () => {
     holdFirstSave.resolve();
     await Promise.all([sidebarSave, assignmentSave]);
 
-    expect(requests).toEqual([
-      { auto_assign_on_create: false, default_sidebar_view: "item" },
-      { auto_assign_on_create: true, default_sidebar_view: "item" },
-    ]);
+    expect(requests).toEqual([{ default_sidebar_view: "item" }, { auto_assign_on_create: true }]);
     expect(store.getWorkspaceSettings()).toEqual({
       auto_assign_on_create: true,
       default_sidebar_view: "item",
@@ -161,6 +158,6 @@ describe("workspace settings persistence", () => {
       auto_assign_on_create: true,
       default_sidebar_view: "item",
     });
-    expect(requests).toHaveLength(2);
+    expect(requests).toEqual([{ default_sidebar_view: "item" }]);
   });
 });

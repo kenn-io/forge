@@ -61,7 +61,7 @@ describe("WorkspaceSettings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Assign new workspace items to me" }));
 
     await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
-    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: saved });
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: { auto_assign_on_create: true } });
     expect(onUpdate).toHaveBeenNthCalledWith(1, saved);
     expect(onUpdate).toHaveBeenLastCalledWith(saved);
   });
@@ -78,7 +78,7 @@ describe("WorkspaceSettings", () => {
     await fireEvent.click(screen.getByRole("option", { name: "PR/Issue" }));
 
     await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
-    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: saved });
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: { default_sidebar_view: "item" } });
     expect(onUpdate).toHaveBeenNthCalledWith(1, saved);
     expect(onUpdate).toHaveBeenLastCalledWith(saved);
   });

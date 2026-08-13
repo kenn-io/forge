@@ -107,9 +107,9 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 		t, ts.Client(), http.MethodPut,
 		ts.URL+"/api/v1/settings",
 		generated.UpdateSettingsRequest{
-			Workspaces: &generated.Workspaces{
-				AutoAssignOnCreate: true,
-				DefaultSidebarView: generated.Item,
+			Workspaces: &generated.WorkspaceSettingsUpdate{
+				AutoAssignOnCreate: new(true),
+				DefaultSidebarView: new(generated.WorkspaceSettingsUpdateDefaultSidebarViewItem),
 			},
 			Activity: &generated.Activity{
 				ViewMode:        "flat",
@@ -136,7 +136,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	require.NoError(json.NewDecoder(updateResp.Body).Decode(&updated))
 	assert.True(updated.Activity.CollapseThreads)
 	assert.True(updated.Workspaces.AutoAssignOnCreate)
-	assert.Equal(generated.Item, updated.Workspaces.DefaultSidebarView)
+	assert.Equal(generated.WorkspacesDefaultSidebarViewItem, updated.Workspaces.DefaultSidebarView)
 
 	cfgAfterUpdate, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -167,7 +167,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	require.NoError(json.NewDecoder(reGetResp.Body).Decode(&reGet))
 	assert.True(reGet.Activity.CollapseThreads)
 	assert.True(reGet.Workspaces.AutoAssignOnCreate)
-	assert.Equal(generated.Item, reGet.Workspaces.DefaultSidebarView)
+	assert.Equal(generated.WorkspacesDefaultSidebarViewItem, reGet.Workspaces.DefaultSidebarView)
 	assert.True(reGet.Terminal.HideTmuxStatus)
 }
 

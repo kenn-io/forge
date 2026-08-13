@@ -134,4 +134,24 @@ describe("workspace settings persistence", () => {
       default_sidebar_view: "item",
     });
   });
+
+  it("keeps a hydrated sibling field when an older save response finishes later", async () => {
+    const store = createSettingsStore();
+    holdFirstSave = deferred<void>();
+
+    const sidebarSave = runSave(store, { default_sidebar_view: "item" });
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+
+    persisted = { auto_assign_on_create: true, default_sidebar_view: "diff" };
+    const hydration = beginWorkspaceSettingsHydration(store);
+    hydrateWorkspaceSettings(hydration, persisted);
+
+    holdFirstSave.resolve();
+    await sidebarSave;
+
+    expect(store.getWorkspaceSettings()).toEqual({
+      auto_assign_on_create: true,
+      default_sidebar_view: "item",
+    });
+  });
 });

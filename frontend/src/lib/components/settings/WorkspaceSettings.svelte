@@ -45,7 +45,7 @@
               onUpdate(settingsStore.getWorkspaceSettings());
               console.warn("Failed to save workspace settings:", settingsErrorMessage(failure));
             }),
-          onSuccess: (saved) => Effect.sync(() => onUpdate(saved)),
+          onSuccess: () => Effect.sync(() => onUpdate(settingsStore.getWorkspaceSettings())),
         }),
         Effect.ensuring(Effect.sync(() => {
           saving = false;
@@ -77,7 +77,7 @@
             onUpdate(settingsStore.getWorkspaceSettings());
             console.warn("Failed to save workspace settings:", settingsErrorMessage(failure));
           }),
-          onSuccess: (saved) => Effect.sync(() => onUpdate(saved)),
+          onSuccess: () => Effect.sync(() => onUpdate(settingsStore.getWorkspaceSettings())),
         }),
         Effect.ensuring(Effect.sync(() => { saving = false; })),
       ),

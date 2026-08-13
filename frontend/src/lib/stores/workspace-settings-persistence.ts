@@ -106,6 +106,9 @@ export const saveWorkspaceSettings = Effect.fn("WorkspaceSettings.save")(functio
   const workflow = yield* SettingsWorkflow;
   const state = yield* Effect.sync(() => {
     const queue = getQueue(store);
+    if (Object.keys(queue.fieldPendingGenerations).length === 0) {
+      queue.confirmed = { ...store.getWorkspaceSettings() };
+    }
     queue.mutationGeneration += 1;
     const generation = queue.mutationGeneration;
     for (const key of changedKeys(changes)) {
@@ -125,14 +128,16 @@ export const saveWorkspaceSettings = Effect.fn("WorkspaceSettings.save")(functio
           const current = store.getWorkspaceSettings();
           if (Exit.isSuccess(exit)) {
             const saved = exit.value;
-            state.queue.confirmed = { ...saved };
+            const confirmed = { ...state.queue.confirmed };
             for (const key of changedKeys(changes)) {
+              Object.assign(confirmed, { [key]: saved[key] });
               state.queue.fieldConfirmedGenerations[key] = state.generation;
             }
-            const reconciled = { ...saved };
-            for (const key of WORKSPACE_SETTINGS_KEYS) {
-              if ((state.queue.fieldOptimisticGenerations[key] ?? 0) > state.generation) {
-                Object.assign(reconciled, { [key]: current[key] });
+            state.queue.confirmed = confirmed;
+            const reconciled = { ...current };
+            for (const key of changedKeys(changes)) {
+              if (state.queue.fieldOptimisticGenerations[key] === state.generation) {
+                Object.assign(reconciled, { [key]: saved[key] });
               }
             }
             store.setWorkspaceSettings(reconciled);

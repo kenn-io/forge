@@ -435,6 +435,42 @@ test.describe("PR detail merge modal route reset", () => {
     await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
   });
 
+  test("hides merge actions when every repository merge method is disabled", async ({ page }) => {
+    await mockApi(page);
+    await mockSettings(page);
+    await mockPullDetail(page, prA);
+
+    await page.route(repoSettingsApiPath(prA), async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ID: prA.RepoID,
+            Owner: prA.repo_owner,
+            Name: prA.repo_name,
+            AllowSquashMerge: false,
+            AllowMergeCommit: false,
+            AllowRebaseMerge: false,
+            ViewerCanMerge: true,
+            LastSyncStartedAt: "2026-04-01T12:00:00Z",
+            LastSyncCompletedAt: "2026-04-01T12:00:30Z",
+            LastSyncError: "",
+            CreatedAt: "2026-03-01T00:00:00Z",
+          }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await gotoPullDetail(page, prA);
+
+    await expect(page.locator(".detail-title")).toContainText(prA.Title);
+    await expect(page.locator(".btn--merge")).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
+  });
+
   test("merge actions wait for settings that match the selected repo", async ({ page }) => {
     await mockApi(page);
     await mockSettings(page);

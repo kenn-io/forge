@@ -14796,6 +14796,207 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 	}
 }
 
+// If a queued pass loses the single-flight handoff to another run, the
+// accepted work is dropped and provider data can remain stale.
+func TestQueuedRunSurvivesSingleFlightHandoff(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	repos := []RepoRef{{
+		Owner: "owner", Name: "repo", PlatformHost: "github.com",
+	}}
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstCompleted := make(chan struct{})
+	releaseFirstCompletion := make(chan struct{})
+	secondEntered := make(chan struct{})
+	releaseSecond := make(chan struct{})
+	thirdEntered := make(chan struct{})
+	var (
+		listCalls                  atomic.Int32
+		completionCalls            atomic.Int32
+		releaseFirstOnce           sync.Once
+		releaseFirstCompletionOnce sync.Once
+		releaseSecondOnce          sync.Once
+		unlockLifecycleOnce        sync.Once
+	)
+	mc := &mockClient{
+		listOpenPRsFn: func(ctx context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			switch listCalls.Add(1) {
+			case 1:
+				close(firstEntered)
+				select {
+				case <-releaseFirst:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			case 2:
+				close(secondEntered)
+				select {
+				case <-releaseSecond:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			case 3:
+				close(thirdEntered)
+			}
+			return []*gh.PullRequest{}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, openTestDB(t), nil, repos,
+		time.Hour, nil, nil,
+	)
+	syncer.SetParallelism(1)
+	syncer.SetOnSyncCompleted(func([]RepoSyncResult) {
+		if completionCalls.Add(1) != 1 {
+			return
+		}
+		close(firstCompleted)
+		select {
+		case <-releaseFirstCompletion:
+		case <-ctx.Done():
+		}
+	})
+	t.Cleanup(func() {
+		releaseFirstOnce.Do(func() { close(releaseFirst) })
+		releaseFirstCompletionOnce.Do(func() { close(releaseFirstCompletion) })
+		releaseSecondOnce.Do(func() { close(releaseSecond) })
+		syncer.Stop()
+	})
+
+	initialDone := make(chan struct{})
+	go func() {
+		defer close(initialDone)
+		syncer.runOnce(ctx, true, nil, repos)
+	}()
+	select {
+	case <-firstEntered:
+	case <-time.After(5 * time.Second):
+		require.FailNow("initial scoped run did not start within 5s")
+	}
+
+	// Queue a cadence-respecting full pass while the scoped pass owns the slot.
+	syncer.RunOnce(ctx)
+	releaseFirstOnce.Do(func() { close(releaseFirst) })
+	select {
+	case <-firstCompleted:
+	case <-time.After(5 * time.Second):
+		require.FailNow("initial scoped run did not reach completion within 5s")
+	}
+
+	competingDone := make(chan struct{})
+	// Once the first run drops the single-flight slot, hold its asynchronous
+	// replay registration long enough for the competing run to claim the slot.
+	syncer.lifecycleMu.Lock()
+	t.Cleanup(func() { unlockLifecycleOnce.Do(syncer.lifecycleMu.Unlock) })
+	releaseFirstCompletionOnce.Do(func() { close(releaseFirstCompletion) })
+	require.Eventually(func() bool {
+		syncer.runMu.Lock()
+		defer syncer.runMu.Unlock()
+		return !syncer.exclusiveRun
+	}, 5*time.Second, time.Millisecond, "initial run did not reach the handoff")
+	go func() {
+		defer close(competingDone)
+		// This user-triggered run can claim the slot during the old handoff gap.
+		syncer.runOnce(ctx, true, nil, nil)
+	}()
+	select {
+	case <-competingDone:
+		// The atomic handoff kept the slot, so this run coalesced behind it.
+	case <-secondEntered:
+		// The old handoff exposed the slot and this run claimed it.
+	case <-time.After(5 * time.Second):
+		require.FailNow("competing run did not reach the single-flight slot")
+	}
+	unlockLifecycleOnce.Do(syncer.lifecycleMu.Unlock)
+
+	select {
+	case <-secondEntered:
+	case <-time.After(5 * time.Second):
+		require.FailNow("second run did not start within 5s")
+	}
+	releaseSecondOnce.Do(func() { close(releaseSecond) })
+	select {
+	case <-thirdEntered:
+	case <-time.After(5 * time.Second):
+		require.FailNow("queued run was dropped during the single-flight handoff")
+	}
+	<-initialDone
+	<-competingDone
+	assert.Equal(t, int32(3), listCalls.Load())
+}
+
+// If an explicit empty scope is widened to a full pass while queued, every
+// configured provider repository is fetched unexpectedly.
+func TestQueuedEmptyRepoScopeRemainsEmpty(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	repos := []RepoRef{{
+		Owner: "owner", Name: "repo", PlatformHost: "github.com",
+	}}
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	completions := make(chan []RepoSyncResult, 2)
+	var (
+		listCalls        atomic.Int32
+		releaseFirstOnce sync.Once
+	)
+	mc := &mockClient{
+		listOpenPRsFn: func(ctx context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			if listCalls.Add(1) == 1 {
+				close(firstEntered)
+				select {
+				case <-releaseFirst:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return []*gh.PullRequest{}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, openTestDB(t), nil, repos,
+		time.Hour, nil, nil,
+	)
+	syncer.SetParallelism(1)
+	syncer.SetOnSyncCompleted(func(results []RepoSyncResult) {
+		completions <- slices.Clone(results)
+	})
+	t.Cleanup(func() {
+		releaseFirstOnce.Do(func() { close(releaseFirst) })
+		syncer.Stop()
+	})
+
+	initialDone := make(chan struct{})
+	go func() {
+		defer close(initialDone)
+		syncer.runOnce(ctx, true, nil, repos)
+	}()
+	select {
+	case <-firstEntered:
+	case <-time.After(5 * time.Second):
+		require.FailNow("initial scoped run did not start within 5s")
+	}
+
+	// An empty non-nil scope means there is intentionally no provider work.
+	syncer.runOnce(ctx, true, nil, []RepoRef{})
+	releaseFirstOnce.Do(func() { close(releaseFirst) })
+
+	var got [][]RepoSyncResult
+	for range 2 {
+		select {
+		case results := <-completions:
+			got = append(got, results)
+		case <-time.After(5 * time.Second):
+			require.FailNow("queued empty-scope run did not complete within 5s")
+		}
+	}
+	<-initialDone
+	require.Len(got[0], 1)
+	assert.Empty(t, got[1])
+	assert.Equal(t, int32(1), listCalls.Load())
+}
+
 func TestBudgetResetOnRateWindowReset(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)

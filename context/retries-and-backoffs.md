@@ -68,6 +68,10 @@ Steady background cadence is scheduling policy, not transient retry. Do not
 migrate ticker-driven sync or refresh loops into `backoff/v5`
 (`internal/github/sync.go::Syncer.Start`).
 
+- Provider-index sync keeps at most one coalesced follow-up, atomically transfers
+  its single-flight slot, and preserves nil-versus-empty scope; bursts neither
+  drop accepted work nor create an unbounded queue. (`internal/github/sync.go::runOnceWithSlot`)
+
 Repository-disabled issue and merge-request scopes use a 24-hour in-memory
 background probe gate. Expiry admits one reserved background probe across all
 lanes; any pre-provider exit abandons only the reservation, while completed provider

@@ -3745,13 +3745,25 @@ func (s *Syncer) triggerRunWithCadence(
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 ) {
+	s.launchRunWithCadence(
+		ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, false,
+	)
+}
+
+func (s *Syncer) launchRunWithCadence(
+	ctx context.Context,
+	bypassNextSyncAfter bool,
+	priorityRepos []RepoRef,
+	onlyRepos []RepoRef,
+	slotClaimed bool,
+) bool {
 	if !s.SyncEnabled() {
-		return
+		return false
 	}
 	s.lifecycleMu.Lock()
 	if s.stopped {
 		s.lifecycleMu.Unlock()
-		return
+		return false
 	}
 	merged, cancel := s.mergeWithRunCtx(ctx)
 	s.wg.Add(1)
@@ -3760,8 +3772,15 @@ func (s *Syncer) triggerRunWithCadence(
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
-		s.runOnce(merged, bypassNextSyncAfter, priorityRepos, onlyRepos)
+		s.runOnceWithSlot(
+			merged,
+			bypassNextSyncAfter,
+			priorityRepos,
+			onlyRepos,
+			slotClaimed,
+		)
 	}()
+	return true
 }
 
 func repoPlatform(repo RepoRef) platform.Kind {
@@ -5819,41 +5838,65 @@ func (s *Syncer) runOnce(
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 ) {
+	s.runOnceWithSlot(ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, false)
+}
+
+func (s *Syncer) runOnceWithSlot(
+	ctx context.Context,
+	bypassNextSyncAfter bool,
+	priorityRepos []RepoRef,
+	onlyRepos []RepoRef,
+	slotClaimed bool,
+) {
 	if !s.SyncEnabled() {
-		return
-	}
-	s.runMu.Lock()
-	if s.running.Load() {
-		if bypassNextSyncAfter || onlyRepos == nil && s.exclusiveRun {
-			s.coalescePendingRunLocked(
-				bypassNextSyncAfter, priorityRepos, onlyRepos,
-			)
+		if slotClaimed {
+			s.releaseRunSlot()
 		}
-		s.runMu.Unlock()
 		return
 	}
-	s.running.Store(true)
-	exclusive := onlyRepos != nil
-	s.exclusiveRun = exclusive
-	s.runMu.Unlock()
+	if !slotClaimed {
+		s.runMu.Lock()
+		if s.running.Load() {
+			if bypassNextSyncAfter || onlyRepos == nil && s.exclusiveRun {
+				s.coalescePendingRunLocked(
+					bypassNextSyncAfter, priorityRepos, onlyRepos,
+				)
+			}
+			s.runMu.Unlock()
+			return
+		}
+		s.running.Store(true)
+		s.exclusiveRun = onlyRepos != nil
+		s.runMu.Unlock()
+	}
 	defer func() {
 		s.runMu.Lock()
-		s.running.Store(false)
-		s.exclusiveRun = false
 		pending := s.pendingRun
 		s.pendingRun = nil
+		if pending == nil {
+			s.running.Store(false)
+			s.exclusiveRun = false
+		} else {
+			// Keep ownership of the single-flight slot while the accepted
+			// follow-up is registered. New arrivals coalesce behind it.
+			s.exclusiveRun = !pending.full
+		}
 		s.runMu.Unlock()
 		if pending != nil {
 			only := pending.onlyRepos
 			if pending.full {
 				only = nil
 			}
-			s.triggerRunWithCadence(
+			launched := s.launchRunWithCadence(
 				context.Background(),
 				pending.bypassNextSyncAfter,
 				pending.priorityRepos,
 				only,
+				true,
 			)
+			if !launched {
+				s.releaseRunSlot()
+			}
 		}
 	}()
 
@@ -6061,6 +6104,14 @@ dispatch:
 	})
 }
 
+func (s *Syncer) releaseRunSlot() {
+	s.runMu.Lock()
+	s.running.Store(false)
+	s.exclusiveRun = false
+	s.pendingRun = nil
+	s.runMu.Unlock()
+}
+
 // coalescePendingRunLocked records work accepted while another pass owns the
 // single-flight slot. A full pass subsumes scoped work; the scoped repositories
 // become priorities so the stronger request still reaches them first.
@@ -6075,7 +6126,7 @@ func (s *Syncer) coalescePendingRunLocked(
 			bypassNextSyncAfter: bypassNextSyncAfter,
 			full:                full,
 			priorityRepos:       appendUniqueRepoRefs(nil, priorityRepos),
-			onlyRepos:           appendUniqueRepoRefs(nil, onlyRepos),
+			onlyRepos:           uniqueRepoRefsPreservingNil(onlyRepos),
 		}
 		return
 	}
@@ -6106,6 +6157,13 @@ func (s *Syncer) coalescePendingRunLocked(
 	pending.priorityRepos = appendUniqueRepoRefs(
 		pending.priorityRepos, priorityRepos,
 	)
+}
+
+func uniqueRepoRefsPreservingNil(repos []RepoRef) []RepoRef {
+	if repos == nil {
+		return nil
+	}
+	return appendUniqueRepoRefs(make([]RepoRef, 0, len(repos)), repos)
 }
 
 func appendUniqueRepoRefs(dst []RepoRef, repos []RepoRef) []RepoRef {

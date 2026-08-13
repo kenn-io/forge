@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
-import type { ComponentProps } from "svelte";
+import { tick, type ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffResult, Label, PullDetail } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
@@ -1462,6 +1462,30 @@ describe("PullDetail approvals", () => {
 
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+  });
+
+  it("does not offer a merge action when no merge method is enabled", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.repo.operations = {
+      merge_pr: { available: true },
+    } as unknown as PullDetail["repo"]["operations"];
+
+    const settings = {
+      AllowSquashMerge: false,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    };
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: settings })),
+      POST: vi.fn(async () => ({ data: {} })),
+    };
+    renderPullDetail(detail, settings, apiClient);
+
+    await waitFor(() => expect(apiClient.GET).toHaveBeenCalled());
+    await tick();
+    expect(screen.queryByRole("button", { name: /^merge$/i })).toBeNull();
   });
 
   it("warns after a successful merge when workspace cleanup fails", async () => {

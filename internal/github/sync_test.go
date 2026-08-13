@@ -4072,6 +4072,7 @@ func TestSyncNotificationsReportsReconciledRepoSettingsPersistenceFailure(t *tes
 			return &gh.Repository{
 				NodeID: new("R_new"), Name: &name, Owner: &gh.User{Login: &owner},
 				DefaultBranch: new("main"), AllowSquashMerge: new(true),
+				AllowMergeCommit: new(false), AllowRebaseMerge: new(false),
 			}, nil
 		},
 		listNotificationsFn: func(context.Context, NotificationListOptions) ([]NotificationThread, bool, error) {
@@ -4088,6 +4089,85 @@ func TestSyncNotificationsReportsReconciledRepoSettingsPersistenceFailure(t *tes
 	err = syncer.SyncNotifications(ctx)
 	require.ErrorContains(err, "reject settings")
 	require.Zero(listCalls.Load(), "notification listing must not run with stale repository settings")
+}
+
+func TestGitHubPlatformRepositoryTreatsIncompleteMergeSettingsAsUnknown(t *testing.T) {
+	repo := gitHubPlatformRepository("github.com", "acme", &gh.Repository{
+		NodeID: new("repo-1"), Name: new("widget"),
+		Owner:            &gh.User{Login: new("acme")},
+		AllowSquashMerge: new(true),
+	})
+
+	require.Nil(t, repo.MergeSettings)
+}
+
+func TestGitHubPlatformRepositoryPreservesExplicitAllDisabledMergeSettings(t *testing.T) {
+	assert := assert.New(t)
+	repo := gitHubPlatformRepository("github.com", "acme", &gh.Repository{
+		NodeID: new("repo-1"), Name: new("widget"),
+		Owner:            &gh.User{Login: new("acme")},
+		AllowSquashMerge: new(false), AllowMergeCommit: new(false),
+		AllowRebaseMerge: new(false),
+	})
+
+	require.NotNil(t, repo.MergeSettings)
+	assert.False(repo.MergeSettings.AllowSquashMerge)
+	assert.False(repo.MergeSettings.AllowMergeCommit)
+	assert.False(repo.MergeSettings.AllowRebaseMerge)
+}
+
+func TestRepoProviderObservationRetainsUnknownSettingsAndRepairsFromCompleteSnapshot(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	identity := db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-1",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+	firstObservedAt := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	entry, accepted, err := database.ReconcileRepositoryObservation(ctx, identity, firstObservedAt)
+	require.NoError(err)
+	require.True(accepted)
+	require.NoError(database.UpdateRepoMergeSettings(ctx, entry.Repository.ID, false, false, false))
+	syncer := &Syncer{db: database}
+
+	unknownObservedAt := firstObservedAt.Add(time.Minute)
+	_, accepted, err = database.ReconcileRepositoryObservation(ctx, identity, unknownObservedAt)
+	require.NoError(err)
+	require.True(accepted)
+	applied, err := syncer.updateRepoSettingsFromProviderObservation(
+		ctx, entry.Repository.ID, unknownObservedAt,
+		platform.Repository{PlatformExternalID: "repo-1"},
+	)
+	require.NoError(err)
+	require.True(applied)
+	stored, err := database.GetRepoByID(ctx, entry.Repository.ID)
+	require.NoError(err)
+	assert.False(stored.AllowSquashMerge)
+	assert.False(stored.AllowMergeCommit)
+	assert.False(stored.AllowRebaseMerge)
+
+	repairObservedAt := unknownObservedAt.Add(time.Minute)
+	_, accepted, err = database.ReconcileRepositoryObservation(ctx, identity, repairObservedAt)
+	require.NoError(err)
+	require.True(accepted)
+	applied, err = syncer.updateRepoSettingsFromProviderObservation(
+		ctx, entry.Repository.ID, repairObservedAt,
+		platform.Repository{
+			PlatformExternalID: "repo-1",
+			MergeSettings: &platform.RepositoryMergeSettings{
+				AllowSquashMerge: true,
+			},
+		},
+	)
+	require.NoError(err)
+	require.True(applied)
+	stored, err = database.GetRepoByID(ctx, entry.Repository.ID)
+	require.NoError(err)
+	assert.True(stored.AllowSquashMerge)
+	assert.False(stored.AllowMergeCommit)
+	assert.False(stored.AllowRebaseMerge)
 }
 
 func TestSyncNotificationsRetriesSettingsAfterABARouteReuse(t *testing.T) {

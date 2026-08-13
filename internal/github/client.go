@@ -2569,7 +2569,19 @@ func (c *liveClient) GetRepository(
 		return r, nil
 	}
 	r.Permissions = viewerRepo.Permissions
+	if gitHubMergeSettingsComplete(viewerRepo) {
+		r.AllowSquashMerge = viewerRepo.AllowSquashMerge
+		r.AllowMergeCommit = viewerRepo.AllowMergeCommit
+		r.AllowRebaseMerge = viewerRepo.AllowRebaseMerge
+	}
 	return r, nil
+}
+
+func gitHubMergeSettingsComplete(repo *gh.Repository) bool {
+	return repo != nil &&
+		repo.AllowSquashMerge != nil &&
+		repo.AllowMergeCommit != nil &&
+		repo.AllowRebaseMerge != nil
 }
 
 func (c *liveClient) CreateReview(

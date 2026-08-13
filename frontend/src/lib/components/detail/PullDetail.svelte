@@ -1052,6 +1052,10 @@
       .filter(Boolean).length > 1;
   }
 
+  function hasEnabledMergeMethod(settings: RepoSettings): boolean {
+    return settings.allowSquash || settings.allowMerge || settings.allowRebase;
+  }
+
   function mergeActionShortLabel(settings: RepoSettings): string {
     if (settings.allowSquash && !settings.allowMerge && !settings.allowRebase) {
       return "Squash";
@@ -2331,7 +2335,7 @@
           {@const mergeOp = repoOperations?.merge_pr}
           {@const mergeGate = operationGate(mergeOp)}
           {@const mergeOpUnavailable = mergeGate.unavailable}
-          {#if repoSettings && (mergeOp !== undefined
+          {#if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
               || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
             {@const mergeSettings = repoSettings}
             {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
@@ -2769,7 +2773,7 @@
         </div>
       {/if}
 
-      {#if showMergeModal && repoSettings && capabilities.merge_mutation && repoSettings.viewerCanMerge && !stalePR && !hasMergeConflicts(pr)}
+      {#if showMergeModal && repoSettings && hasEnabledMergeMethod(repoSettings) && capabilities.merge_mutation && repoSettings.viewerCanMerge && !stalePR && !hasMergeConflicts(pr)}
         {@const d = detailStore.getDetail()!}
         {@const p = d.merge_request}
         <MergeModal

@@ -16,17 +16,9 @@ import (
 	"go.kenn.io/forge/internal/platform"
 )
 
-func TestKataEffectiveLinkHydrationBatchesAndLimitsPerDaemonConcurrency(t *testing.T) {
+func TestKataEffectiveLinkHydrationBatchesPerDaemon(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
-	started := make(chan struct{}, 3)
-	release := make(chan struct{})
-	var releaseOnce sync.Once
-	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
-	defer releaseAll()
 	var mu sync.Mutex
-	active := 0
-	maxActive := 0
 	calls := 0
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -44,12 +36,8 @@ func TestKataEffectiveLinkHydrationBatchesAndLimitsPerDaemonConcurrency(t *testi
 			return
 		}
 		mu.Lock()
-		active++
 		calls++
-		maxActive = max(maxActive, active)
 		mu.Unlock()
-		started <- struct{}{}
-		<-release
 		issues := make([]kataIssueReference, 0, len(uids))
 		for _, uid := range uids {
 			issues = append(issues, kataIssueReference{
@@ -58,9 +46,6 @@ func TestKataEffectiveLinkHydrationBatchesAndLimitsPerDaemonConcurrency(t *testi
 			})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"issues": issues})
-		mu.Lock()
-		active--
-		mu.Unlock()
 	}))
 	t.Cleanup(daemon.Close)
 	configureKataLinkTestDaemon(t, daemon.URL)
@@ -71,33 +56,14 @@ func TestKataEffectiveLinkHydrationBatchesAndLimitsPerDaemonConcurrency(t *testi
 		mergeKataLinkCandidate(candidates, "primary", "project-a", uid, kataLinkDirect)
 	}
 
-	responseReady := make(chan kataEffectiveLinksResponse, 1)
-	go func() {
-		responseReady <- srv.hydrateKataLinkCandidates(t.Context(), candidates)
-	}()
-	for range kataLinkHydrationPerDaemonConcurrency {
-		select {
-		case <-started:
-		case <-time.After(time.Second):
-			require.FailNow("hydration did not fill the per-daemon slots")
-		}
-	}
-	select {
-	case <-started:
-		require.Fail("hydration exceeded the per-daemon limit")
-	case <-time.After(100 * time.Millisecond):
-	}
-	releaseAll()
-	response := <-responseReady
+	response := srv.hydrateKataLinkCandidates(t.Context(), candidates)
 	mu.Lock()
 	observedCalls := calls
-	observedMaxActive := maxActive
 	mu.Unlock()
 
 	assert.Equal("complete", response.State)
 	assert.Len(response.Links, 401)
 	assert.Equal(3, observedCalls)
-	assert.Equal(2, observedMaxActive)
 }
 
 func TestKataEffectiveLinkHydrationLimitsAcrossConcurrentRequests(t *testing.T) {

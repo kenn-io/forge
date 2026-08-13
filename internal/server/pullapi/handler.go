@@ -35,7 +35,7 @@ type Deps struct {
 	DeferredMergeMaxWait time.Duration
 	DeleteWorkspace      func(context.Context, string) error
 	WorkspaceSubjects    func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
-	ViewerLogins         func(context.Context) ([]db.RepoViewerLogin, error)
+	ViewerLogins         func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 
 	FleetSelfKey                  func(string) string
 	FilterRepos                   func([]db.Repo) []db.Repo
@@ -58,7 +58,7 @@ type Handler struct {
 	deleteWorkspace   func(context.Context, string) error
 	now               func() time.Time
 	workspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
-	viewerLogins      func(context.Context) ([]db.RepoViewerLogin, error)
+	viewerLogins      func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 
 	fleetSelfKey                  func(string) string
 	filterRepos                   func([]db.Repo) []db.Repo

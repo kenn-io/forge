@@ -4,18 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
-
-const viewerLoginCacheTTL = time.Minute
-
-type viewerLoginCacheEntry struct {
-	login     string
-	expiresAt time.Time
-}
 
 type viewerLoginCall struct {
 	done  chan struct{}
@@ -24,7 +17,7 @@ type viewerLoginCall struct {
 }
 
 func (s *Server) resolveAuthenticatedViewerLogins(
-	ctx context.Context,
+	ctx context.Context, filters []db.RepoFilter,
 ) ([]db.RepoViewerLogin, error) {
 	if s.syncer == nil {
 		return nil, httpapi.Internal("authenticated viewer lookup unavailable")
@@ -36,10 +29,18 @@ func (s *Server) resolveAuthenticatedViewerLogins(
 	if s.cfg != nil {
 		repos = s.filterConfiguredRepos(repos)
 	}
+	repos = filterViewerLoginRepos(repos, filters)
 
 	viewers := make([]db.RepoViewerLogin, 0, len(repos))
 	for _, repo := range repos {
-		login, err := s.authenticatedViewerLogin(ctx, repo)
+		kind := httpapi.ProviderKind(repo)
+		host := httpapi.ProviderHost(repo)
+		resolver, err := s.syncer.Registry().AuthenticatedUserResolver(kind, host)
+		if err != nil {
+			return nil, httpapi.ProviderCallProblem(err, string(kind), host)
+		}
+		cacheKey := authenticatedViewerCacheKey(kind, host, repo, resolver)
+		login, err := s.authenticatedViewerLogin(ctx, cacheKey, repo, resolver)
 		if err != nil {
 			return nil, err
 		}
@@ -48,22 +49,80 @@ func (s *Server) resolveAuthenticatedViewerLogins(
 	return viewers, nil
 }
 
-func (s *Server) authenticatedViewerLogin(ctx context.Context, repo db.Repo) (string, error) {
-	now := s.now().UTC()
-	s.viewerLoginMu.Lock()
-	if s.viewerLoginCache == nil {
-		s.viewerLoginCache = make(map[int64]viewerLoginCacheEntry)
+func filterViewerLoginRepos(repos []db.Repo, filters []db.RepoFilter) []db.Repo {
+	if len(filters) == 0 {
+		return repos
 	}
-	for repoID, entry := range s.viewerLoginCache {
-		if !entry.expiresAt.After(now) {
-			delete(s.viewerLoginCache, repoID)
+	filtered := make([]db.Repo, 0, len(repos))
+	for _, repo := range repos {
+		for _, filter := range filters {
+			if viewerRepoMatchesFilter(repo, filter) {
+				filtered = append(filtered, repo)
+				break
+			}
 		}
 	}
-	if entry, ok := s.viewerLoginCache[repo.ID]; ok {
-		s.viewerLoginMu.Unlock()
-		return entry.login, nil
+	return filtered
+}
+
+func viewerRepoMatchesFilter(repo db.Repo, filter db.RepoFilter) bool {
+	if filter.Platform != "" && !strings.EqualFold(repo.Platform, filter.Platform) {
+		return false
 	}
-	if call, ok := s.viewerLoginInFlight[repo.ID]; ok {
+	if filter.PlatformHost != "" && !strings.EqualFold(repo.PlatformHost, filter.PlatformHost) {
+		return false
+	}
+	if filter.RepoPath != "" {
+		return canonicalViewerRepoPath(repo.RepoPath) == canonicalViewerRepoPath(filter.RepoPath)
+	}
+	return filter.RepoOwner != "" && filter.RepoName != "" &&
+		strings.EqualFold(repo.Owner, filter.RepoOwner) &&
+		strings.EqualFold(repo.Name, filter.RepoName)
+}
+
+func canonicalViewerRepoPath(value string) string {
+	parts := strings.Split(strings.Trim(value, "/ "), "/")
+	for i := range parts {
+		parts[i] = strings.ToLower(strings.TrimSpace(parts[i]))
+	}
+	return strings.Join(parts, "/")
+}
+
+func authenticatedViewerCacheKey(
+	kind platform.Kind,
+	host string,
+	repo db.Repo,
+	resolver platform.AuthenticatedUserResolver,
+) string {
+	credentialKey := ""
+	if keyed, ok := resolver.(platform.AuthenticatedUserCacheKeyResolver); ok {
+		credentialKey = strings.TrimSpace(keyed.AuthenticatedUserCacheKey(httpapi.PlatformRepoRef(repo)))
+	}
+	if credentialKey == "" {
+		if kind == platform.KindGitHub {
+			credentialKey = fmt.Sprintf("repository:%d", repo.ID)
+		} else {
+			credentialKey = "provider-host"
+		}
+	}
+	return strings.Join([]string{string(kind), strings.ToLower(host), credentialKey}, "\x00")
+}
+
+func (s *Server) authenticatedViewerLogin(
+	ctx context.Context,
+	cacheKey string,
+	repo db.Repo,
+	resolver platform.AuthenticatedUserResolver,
+) (string, error) {
+	s.viewerLoginMu.Lock()
+	if s.viewerLoginCache == nil {
+		s.viewerLoginCache = make(map[string]string)
+	}
+	if login := s.viewerLoginCache[cacheKey]; login != "" {
+		s.viewerLoginMu.Unlock()
+		return login, nil
+	}
+	if call, ok := s.viewerLoginInFlight[cacheKey]; ok {
 		s.viewerLoginMu.Unlock()
 		select {
 		case <-call.done:
@@ -73,32 +132,28 @@ func (s *Server) authenticatedViewerLogin(ctx context.Context, repo db.Repo) (st
 		}
 	}
 	if s.viewerLoginInFlight == nil {
-		s.viewerLoginInFlight = make(map[int64]*viewerLoginCall)
+		s.viewerLoginInFlight = make(map[string]*viewerLoginCall)
 	}
 	call := &viewerLoginCall{done: make(chan struct{})}
-	s.viewerLoginInFlight[repo.ID] = call
+	s.viewerLoginInFlight[cacheKey] = call
 	s.viewerLoginMu.Unlock()
 
 	kind := httpapi.ProviderKind(repo)
 	host := httpapi.ProviderHost(repo)
-	resolver, err := s.syncer.Registry().AuthenticatedUserResolver(kind, host)
-	if err == nil {
-		call.login, err = resolver.AuthenticatedUser(ctx, httpapi.PlatformRepoRef(repo))
-		call.login = strings.TrimSpace(call.login)
-		if err == nil && call.login == "" {
-			err = fmt.Errorf("provider returned an empty authenticated login")
-		}
+	var err error
+	call.login, err = resolver.AuthenticatedUser(ctx, httpapi.PlatformRepoRef(repo))
+	call.login = strings.TrimSpace(call.login)
+	if err == nil && call.login == "" {
+		err = fmt.Errorf("provider returned an empty authenticated login")
 	}
 	if err != nil {
 		call.err = httpapi.ProviderCallProblem(err, string(kind), host)
 	}
 
 	s.viewerLoginMu.Lock()
-	delete(s.viewerLoginInFlight, repo.ID)
+	delete(s.viewerLoginInFlight, cacheKey)
 	if call.err == nil {
-		s.viewerLoginCache[repo.ID] = viewerLoginCacheEntry{
-			login: call.login, expiresAt: s.now().UTC().Add(viewerLoginCacheTTL),
-		}
+		s.viewerLoginCache[cacheKey] = call.login
 	}
 	close(call.done)
 	s.viewerLoginMu.Unlock()

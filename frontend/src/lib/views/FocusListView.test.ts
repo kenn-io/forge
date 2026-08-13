@@ -3,10 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import FocusListView from "./FocusListViewRuntimeHarness.svelte";
 import {
+  getIssueInvolvesMe,
   getIssueSearch,
+  getPullInvolvesMe,
   getPullSearch,
   resetFocusListViewState,
+  setIssueInvolvesMe,
   setIssueSearch,
+  setPullInvolvesMe,
   setPullSearch,
 } from "../../test/focusListViewState.svelte.js";
 
@@ -14,6 +18,8 @@ const pullSearch = vi.hoisted(() => vi.fn());
 const issueSearch = vi.hoisted(() => vi.fn());
 const loadPulls = vi.hoisted(() => vi.fn());
 const loadIssues = vi.hoisted(() => vi.fn());
+const setPullsInvolvesMe = vi.hoisted(() => vi.fn());
+const setIssuesInvolvesMe = vi.hoisted(() => vi.fn());
 const unsubscribeSync = vi.hoisted(() => vi.fn());
 const subscribeSyncComplete = vi.hoisted(() => vi.fn(() => unsubscribeSync));
 vi.mock("../context.js", () => ({
@@ -26,6 +32,7 @@ vi.mock("../context.js", () => ({
       setGroupingMode: vi.fn(),
     },
     issues: {
+      getInvolvesMe: getIssueInvolvesMe,
       getIssueSearchQuery: getIssueSearch,
       getHideBots: () => false,
       getIssueFilterState: () => "open",
@@ -34,6 +41,10 @@ vi.mock("../context.js", () => ({
       isIssuesLoading: () => false,
       loadIssues,
       setHideBots: vi.fn(),
+      setInvolvesMe: (value: boolean) => {
+        setIssuesInvolvesMe(value);
+        setIssueInvolvesMe(value);
+      },
       setIssueFilterState: vi.fn(),
       setIssueSearchQuery: (value: string | undefined) => {
         issueSearch(value);
@@ -41,6 +52,7 @@ vi.mock("../context.js", () => ({
       },
     },
     pulls: {
+      getInvolvesMe: getPullInvolvesMe,
       getSearchQuery: getPullSearch,
       getError: () => null,
       getFilterState: () => "open",
@@ -48,6 +60,10 @@ vi.mock("../context.js", () => ({
       isLoading: () => false,
       loadPulls,
       setFilterState: vi.fn(),
+      setInvolvesMe: (value: boolean) => {
+        setPullsInvolvesMe(value);
+        setPullInvolvesMe(value);
+      },
       setSearchQuery: (value: string | undefined) => {
         pullSearch(value);
         setPullSearch(value);
@@ -71,6 +87,8 @@ describe("FocusListView search", () => {
     issueSearch.mockClear();
     loadPulls.mockClear();
     loadIssues.mockClear();
+    setPullsInvolvesMe.mockClear();
+    setIssuesInvolvesMe.mockClear();
     unsubscribeSync.mockClear();
     subscribeSyncComplete.mockClear();
     resetFocusListViewState();
@@ -120,5 +138,21 @@ describe("FocusListView search", () => {
     expect(subscribeSyncComplete).toHaveBeenCalledTimes(1);
     expect(unsubscribeSync).not.toHaveBeenCalled();
     view.unmount();
+  });
+
+  it.each([
+    ["mrs" as const, setPullsInvolvesMe, loadPulls],
+    ["issues" as const, setIssuesInvolvesMe, loadIssues],
+  ])("uses the shared Involves me control for %s", async (listType, setInvolvesMe, loadList) => {
+    render(FocusListView, { props: { listType, repo: "acme/one" } });
+    loadList.mockClear();
+
+    const control = screen.getByRole("button", { name: "Involves me" });
+    expect(control.getAttribute("aria-pressed")).toBe("false");
+    await fireEvent.click(control);
+
+    expect(setInvolvesMe).toHaveBeenCalledWith(true);
+    expect(loadList).toHaveBeenCalledTimes(1);
+    expect(control.getAttribute("aria-pressed")).toBe("true");
   });
 });

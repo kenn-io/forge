@@ -63,4 +63,23 @@ test.describe("Involves me standard filters", () => {
       await page.evaluate((keys) => keys.map((key) => localStorage.getItem(key)), Object.values(storageKeys)),
     ).toEqual(["1", "1", "1"]);
   });
+
+  test("uses the same pull and issue filter from the phone list presentation", async ({ page }) => {
+    const baseURL = server!.info.base_url;
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    await page.goto(`${baseURL}/focus/mrs?repo=github%7Cgithub.com%2Facme%2Fwidgets`);
+    await expect(page.locator(".focus-list .pull-item").first()).toBeVisible();
+    const pullsResponse = waitForInvolvesMeRequest(page, "/api/v1/pulls");
+    await page.getByRole("button", { name: "Involves me" }).click();
+    expect((await pullsResponse).ok()).toBe(true);
+    await expect(page.getByRole("button", { name: "Involves me" })).toHaveAttribute("aria-pressed", "true");
+
+    await page.goto(`${baseURL}/focus/issues?repo=github%7Cgithub.com%2Facme%2Fwidgets`);
+    await expect(page.locator(".focus-list .issue-item").first()).toBeVisible();
+    const issuesResponse = waitForInvolvesMeRequest(page, "/api/v1/issues");
+    await page.getByRole("button", { name: "Involves me" }).click();
+    expect((await issuesResponse).ok()).toBe(true);
+    await expect(page.getByRole("button", { name: "Involves me" })).toHaveAttribute("aria-pressed", "true");
+  });
 });

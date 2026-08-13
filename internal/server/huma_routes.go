@@ -1268,7 +1268,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 
 	opts.Limit = activitySafetyCap + 1
 	if input.InvolvesMe {
-		viewerLogins, err := s.resolveAuthenticatedViewerLogins(ctx)
+		viewerLogins, err := s.resolveAuthenticatedViewerLogins(ctx, opts.RepoFilters)
 		if err != nil {
 			return nil, err
 		}

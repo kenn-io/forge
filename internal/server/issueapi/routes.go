@@ -48,7 +48,7 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 		if s.viewerLogins == nil {
 			return nil, httpapi.Internal("authenticated viewer lookup unavailable")
 		}
-		opts.ViewerLogins, err = s.viewerLogins(ctx)
+		opts.ViewerLogins, err = s.viewerLogins(ctx, opts.RepoFilters)
 		if err != nil {
 			return nil, err
 		}

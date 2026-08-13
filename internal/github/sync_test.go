@@ -1703,7 +1703,7 @@ func TestGitHubProviderPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) 
 	assert.Equal("inline note", mock.createdReviewComments[0].GetBody())
 }
 
-func TestGitHubProviderViewerAuthoredMergeRequestCacheExpires(t *testing.T) {
+func TestGitHubProviderViewerAuthoredMergeRequestCachesForProcessLifetime(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	logins := []string{"marius", "octocat"}
@@ -1726,14 +1726,10 @@ func TestGitHubProviderViewerAuthoredMergeRequestCacheExpires(t *testing.T) {
 	assert.True(authored)
 	assert.EqualValues(1, mock.authenticatedViewerCalls.Load())
 
-	provider.viewerMu.Lock()
-	provider.viewerCacheAt = time.Now().Add(-authenticatedViewerLoginTTL - time.Second)
-	provider.viewerMu.Unlock()
-
 	authored, err = provider.ViewerAuthoredMergeRequest(t.Context(), mr)
 	require.NoError(err)
-	assert.False(authored)
-	assert.EqualValues(2, mock.authenticatedViewerCalls.Load())
+	assert.True(authored)
+	assert.EqualValues(1, mock.authenticatedViewerCalls.Load())
 }
 
 func TestGitHubProviderApplyReviewSuggestionsDelegatesToClient(t *testing.T) {

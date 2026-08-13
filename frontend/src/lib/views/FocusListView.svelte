@@ -52,6 +52,15 @@
     else issues.loadIssues(repoParams);
   }
 
+  function toggleInvolvesMe(): void {
+    if (listType === "mrs") {
+      pulls.setInvolvesMe(!pulls.getInvolvesMe());
+    } else {
+      issues.setInvolvesMe(!issues.getInvolvesMe());
+    }
+    loadList();
+  }
+
   const repoLabel = $derived(repo ?? "All repositories");
 
   const repoParams = $derived(
@@ -187,6 +196,9 @@
   const itemLabel = $derived(
     listType === "mrs" ? "PRs" : "issues",
   );
+  const involvesMe = $derived(
+    listType === "mrs" ? pulls.getInvolvesMe() : issues.getInvolvesMe(),
+  );
 </script>
 
 <div class="focus-list">
@@ -232,29 +244,38 @@
         {/each}
       {/if}
     </div>
-    {#if listType === "mrs"}
-      <div class="group-toggle">
-        <button
-          class="group-btn"
-          class:group-btn--active={groupingMode === "byWorkflow"}
-          onclick={() => grouping.setGroupingMode("byWorkflow")}
-        >Status</button>
-        <button
-          class="group-btn"
-          class:group-btn--active={groupingMode === "flat"}
-          onclick={() => grouping.setGroupingMode("flat")}
-        >All</button>
-      </div>
-    {:else}
+    <div class="visibility-controls">
       <button
         type="button"
         class="visibility-btn"
-        class:visibility-btn--active={issues.getHideBots()}
-        aria-label="Hide bot-authored issues"
-        aria-pressed={issues.getHideBots()}
-        onclick={() => void issues.setHideBots(!issues.getHideBots())}
-      >Hide bots</button>
-    {/if}
+        class:visibility-btn--active={involvesMe}
+        aria-pressed={involvesMe}
+        onclick={toggleInvolvesMe}
+      >Involves me</button>
+      {#if listType === "mrs"}
+        <div class="group-toggle">
+          <button
+            class="group-btn"
+            class:group-btn--active={groupingMode === "byWorkflow"}
+            onclick={() => grouping.setGroupingMode("byWorkflow")}
+          >Status</button>
+          <button
+            class="group-btn"
+            class:group-btn--active={groupingMode === "flat"}
+            onclick={() => grouping.setGroupingMode("flat")}
+          >All</button>
+        </div>
+      {:else}
+        <button
+          type="button"
+          class="visibility-btn"
+          class:visibility-btn--active={issues.getHideBots()}
+          aria-label="Hide bot-authored issues"
+          aria-pressed={issues.getHideBots()}
+          onclick={() => void issues.setHideBots(!issues.getHideBots())}
+        >Hide bots</button>
+      {/if}
+    </div>
   </div>
   <div class="search-bar">
     <div class="search-wrap">
@@ -434,6 +455,12 @@
     background: var(--bg-inset);
     border-radius: 6px;
     padding: 2px;
+  }
+
+  .visibility-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-left: auto;
   }
 
@@ -450,7 +477,6 @@
   }
 
   .visibility-btn {
-    margin-left: auto;
     border: 1px solid var(--border-default);
     background: var(--bg-inset);
     font-weight: 600;
@@ -602,6 +628,13 @@
   }
 
   :global(.mobile-main) .group-toggle {
+    margin-left: 0;
+  }
+
+  :global(.mobile-main) .visibility-controls {
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: var(--focus-mobile-space-sm);
     margin-left: 0;
   }
 

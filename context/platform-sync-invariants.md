@@ -129,6 +129,10 @@ builds clone routes, GitHub GraphQL fetchers where applicable, and a
 `platform.Registry`. A third provider should add metadata, a factory, and an
 implementation; it should not masquerade as another provider.
 
+- Authenticated-viewer lookups run only for repositories selected by the request.
+  Cache successes for the process by effective credential, retry failures, and keep
+  unkeyed GitHub routes repository-scoped (`internal/server/viewer_identity.go::Server.resolveAuthenticatedViewerLogins`).
+
 Fallback token lookup is scoped by `(provider, platform_host)`. GitHub
 authorization routes may be exact-repository, owner, or host fallback. Lookup
 checks repo `token_file`, repo `token_env`, a covered App installation for

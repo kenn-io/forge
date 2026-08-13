@@ -271,7 +271,21 @@ name = "widget"
 [[repos]]
 owner = "acme"
 name = "wid*"
-`, &mockGH{})
+`, &mockGH{
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			return []*gh.Repository{{
+				NodeID:   new("R_widget"),
+				Name:     new("widget"),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(false),
+			}}, nil
+		},
+	})
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
 
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
@@ -302,6 +316,8 @@ name = "wid*"
 		"/api/v1/repo/github/acme/widget", nil,
 	)
 	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
+	event := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(event.Valid, event.Error)
 
 	hidden, err := database.HiddenRepos(t.Context())
 	require.NoError(err)

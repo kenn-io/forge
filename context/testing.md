@@ -9,6 +9,11 @@ Test server constructors that create a Workspace manager must apply their
 isolated test tmux command; they must never fall back to the host tmux server
 (`internal/server/kata/test_helpers_test.go::newKataTestServer`).
 
+Persistent-config server fixtures start the real config watcher. When a request
+saves config, provider fakes must resolve the post-save repository set and tests
+must await the config event before asserting converged state
+(`internal/server/settings_test.go::setupTestServerWithConfigContent`).
+
 ## Live GraphQL validation
 
 GraphQL query shape changes must be validated against GitHub's live GraphQL API before they are merged. The local test suite includes a gated live test:

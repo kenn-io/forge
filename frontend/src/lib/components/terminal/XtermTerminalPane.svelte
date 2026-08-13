@@ -200,7 +200,17 @@
   };
 
   function handleTerminalPointerDown(event: PointerEvent): void {
-    if (disposed || disabled || event.button !== 0) return;
+    if (disposed || disabled) return;
+    if (event.button !== 0) {
+      if (
+        (event.button === 1 || event.button === 2) &&
+        event.isTrusted &&
+        terminal?.modes.mouseTrackingMode !== "none"
+      ) {
+        claimTerminalResize();
+      }
+      return;
+    }
     // xterm focuses its hidden textarea from mousedown, but its touch gesture
     // path only handles scrolling. Focus synchronously while the touch/pen
     // activation is live so mobile browsers can open their software keyboard.
@@ -308,6 +318,11 @@
     if (disposed || disabled || event.isComposing || !event.isTrusted) return;
     claimTerminalResize();
     clipboardWriter?.authorizeKeyboardGesture();
+  }
+
+  function handleTerminalCompositionStart(event: CompositionEvent): void {
+    if (disposed || disabled || !event.isTrusted) return;
+    claimTerminalResize();
   }
 
   function isBrowserPasteShortcut(event: KeyboardEvent): boolean {
@@ -1120,6 +1135,7 @@
   onpointerdowncapture={handleTerminalPointerDown}
   onlostpointercapture={handleTerminalLostPointerCapture}
   onkeydowncapture={handleTerminalKeyDown}
+  oncompositionstartcapture={handleTerminalCompositionStart}
   onmousedowncapture={handleInsecureTerminalRightMouse}
   onmouseupcapture={handleInsecureTerminalRightMouse}
   onwheelcapture={handleTerminalWheel}

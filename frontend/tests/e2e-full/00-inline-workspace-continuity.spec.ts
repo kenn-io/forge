@@ -727,6 +727,7 @@ test.describe("inline workspace pane continuity", () => {
   });
 
   test("deliberate terminal use transfers resize ownership between desktop and phone-sized browsers", async ({
+    browserName,
     page,
   }) => {
     test.skip(
@@ -805,6 +806,42 @@ test.describe("inline workspace pane continuity", () => {
       await expect
         .poll(() => tmuxClientPtyGeometries(isolatedServer!))
         .toContainEqual({ cols: desktopWheelClaim.cols, rows: desktopWheelClaim.rows });
+
+      const phoneClaimsBeforeMiddleClick = phoneFrames.filter((frame) => frame.type === "claim_resize").length;
+      const phoneTerminalBox = await phoneTerminal.boundingBox();
+      expect(phoneTerminalBox).not.toBeNull();
+      await phonePage.mouse.click(
+        phoneTerminalBox!.x + phoneTerminalBox!.width / 2,
+        phoneTerminalBox!.y + phoneTerminalBox!.height / 2,
+        { button: "middle" },
+      );
+      await expect
+        .poll(() => phoneFrames.filter((frame) => frame.type === "claim_resize").length)
+        .toBe(phoneClaimsBeforeMiddleClick + 1);
+      const phoneMiddleClickClaim = phoneFrames.filter((frame) => frame.type === "claim_resize").at(-1)!;
+      await expect
+        .poll(() => tmuxClientPtyGeometries(isolatedServer!))
+        .toContainEqual({ cols: phoneMiddleClickClaim.cols, rows: phoneMiddleClickClaim.rows });
+
+      if (browserName === "chromium") {
+        const desktopClaimsBeforeComposition = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
+        const cdp = await page.context().newCDPSession(page);
+        await desktopTerminal.locator(".xterm-helper-textarea").focus();
+        await cdp.send("Input.imeSetComposition", {
+          text: "に",
+          selectionStart: 1,
+          selectionEnd: 1,
+        });
+        await expect
+          .poll(() => desktopFrames.filter((frame) => frame.type === "claim_resize").length)
+          .toBe(desktopClaimsBeforeComposition + 1);
+        await cdp.send("Input.imeSetComposition", {
+          text: "",
+          selectionStart: 0,
+          selectionEnd: 0,
+        });
+        await cdp.detach();
+      }
       runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "off"]);
 
       const phoneClaimsAfterMouseWheel = phoneFrames.filter((frame) => frame.type === "claim_resize").length;

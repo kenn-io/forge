@@ -23,9 +23,9 @@ fixtures, or changing shell-script coverage.
 - Shell-script tests must execute the script against controlled inputs and
   assert observable output, side effects, or exit status. Do not grep scripts,
   workflows, config, or docs for expected implementation text.
-- Real private tmux tests use `testtmux`: publish admission gates before runs and
-  remove paired gates only after runs; retain PID-plus-start state on gate errors,
-  share one stale-owner drain deadline, and never address the default server. (`internal/testutil/testtmux/owner.go::Owner`)
+- Real private tmux tests use `testtmux`: publish gates before runs, remove them only
+  after their runs, and retain startup markers on gate, read, validation, or identity
+  errors; share one stale-owner deadline and never address the default server. (`internal/testutil/testtmux/owner.go::Owner`)
 - Tmux recovery reaps only definitely absent identities and preserves state when
   lookup is indeterminate; real tmux ownership is supported only on Darwin and
   Linux, which provide high-resolution process starts. (`internal/testutil/testtmux/process_identity.go::processIdentityStatus`)

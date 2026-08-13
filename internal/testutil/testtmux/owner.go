@@ -434,14 +434,30 @@ func admittedCreationsWithLookup(
 			name := filepath.Base(marker)
 			parts := strings.Split(name, ".")
 			if len(parts) != 3 || parts[0] != "starting" {
-				continue
+				return nil, fmt.Errorf(
+					"invalid admitted private tmux startup marker %s", marker,
+				)
 			}
 			pid, parseErr := strconv.Atoi(parts[1])
 			start, readErr := os.ReadFile(marker)
-			if parseErr != nil || readErr != nil ||
+			if readErr != nil {
+				_, statErr := os.Lstat(marker)
+				if errors.Is(statErr, os.ErrNotExist) {
+					continue
+				}
+				if statErr != nil {
+					readErr = errors.Join(readErr, statErr)
+				}
+				return nil, fmt.Errorf(
+					"read admitted private tmux startup marker %s: %w",
+					marker, readErr,
+				)
+			}
+			if parseErr != nil || pid <= 0 || len(start) == 0 ||
 				tokenForStart(string(start)) != parts[2] {
-				_ = os.Remove(marker)
-				continue
+				return nil, fmt.Errorf(
+					"invalid admitted private tmux startup marker %s", marker,
+				)
 			}
 			status, statusErr := exactProcessIdentityState(
 				pid, string(start), lookupStart,

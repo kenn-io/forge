@@ -316,6 +316,41 @@ func TestAdmittedCreationsPreservesMarkerWhenLookupIsIndeterminate(t *testing.T)
 	require.FileExists(marker)
 }
 
+func TestAdmittedCreationsPreservesInvalidMarker(t *testing.T) {
+	require := require.New(t)
+	admissionDir := t.TempDir()
+	marker := filepath.Join(admissionDir, "starting.invalid.token")
+	require.NoError(os.WriteFile(marker, []byte("startup-identity"), 0o600))
+
+	_, err := admittedCreationsWithLookup(
+		[]string{admissionDir},
+		func(int) (string, error) {
+			return "", errProcessAbsent
+		},
+	)
+	require.Error(err)
+	require.FileExists(marker)
+}
+
+func TestAdmittedCreationsPreservesUnreadableMarker(t *testing.T) {
+	require := require.New(t)
+	admissionDir := t.TempDir()
+	marker := filepath.Join(admissionDir, "starting.31415.token")
+	require.NoError(os.Symlink(
+		filepath.Join(admissionDir, "missing-target"), marker,
+	))
+
+	_, err := admittedCreationsWithLookup(
+		[]string{admissionDir},
+		func(int) (string, error) {
+			return "", errProcessAbsent
+		},
+	)
+	require.Error(err)
+	_, statErr := os.Lstat(marker)
+	require.NoError(statErr)
+}
+
 func TestRunProcessIdentityStateRequiresMatchingStart(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

@@ -4,11 +4,22 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
+
+const (
+	authenticatedViewerLoginTTL            = time.Hour
+	authenticatedViewerLoginRefreshTimeout = 30 * time.Second
+)
+
+type viewerLoginCacheEntry struct {
+	login     string
+	fetchedAt time.Time
+}
 
 type viewerLoginCall struct {
 	done  chan struct{}
@@ -37,12 +48,12 @@ func (s *Server) resolveAuthenticatedViewerLogins(
 		host := httpapi.ProviderHost(repo)
 		resolver, err := s.syncer.Registry().AuthenticatedUserResolver(kind, host)
 		if err != nil {
-			return nil, httpapi.ProviderCallProblem(err, string(kind), host)
+			continue
 		}
 		cacheKey := authenticatedViewerCacheKey(kind, host, repo, resolver)
 		login, err := s.authenticatedViewerLogin(ctx, cacheKey, repo, resolver)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		viewers = append(viewers, db.RepoViewerLogin{RepoID: repo.ID, Login: login})
 	}
@@ -116,11 +127,14 @@ func (s *Server) authenticatedViewerLogin(
 ) (string, error) {
 	s.viewerLoginMu.Lock()
 	if s.viewerLoginCache == nil {
-		s.viewerLoginCache = make(map[string]string)
+		s.viewerLoginCache = make(map[string]viewerLoginCacheEntry)
 	}
-	if login := s.viewerLoginCache[cacheKey]; login != "" {
+	if entry, ok := s.viewerLoginCache[cacheKey]; ok {
+		if time.Since(entry.fetchedAt) >= authenticatedViewerLoginTTL {
+			s.refreshAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver)
+		}
 		s.viewerLoginMu.Unlock()
-		return login, nil
+		return entry.login, nil
 	}
 	if call, ok := s.viewerLoginInFlight[cacheKey]; ok {
 		s.viewerLoginMu.Unlock()
@@ -137,6 +151,40 @@ func (s *Server) authenticatedViewerLogin(
 	call := &viewerLoginCall{done: make(chan struct{})}
 	s.viewerLoginInFlight[cacheKey] = call
 	s.viewerLoginMu.Unlock()
+	s.resolveAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver, call)
+	return call.login, call.err
+}
+
+func (s *Server) refreshAuthenticatedViewerLogin(
+	ctx context.Context,
+	cacheKey string,
+	repo db.Repo,
+	resolver platform.AuthenticatedUserResolver,
+) {
+	if _, ok := s.viewerLoginInFlight[cacheKey]; ok {
+		return
+	}
+	if s.viewerLoginInFlight == nil {
+		s.viewerLoginInFlight = make(map[string]*viewerLoginCall)
+	}
+	call := &viewerLoginCall{done: make(chan struct{})}
+	s.viewerLoginInFlight[cacheKey] = call
+	refreshCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), authenticatedViewerLoginRefreshTimeout,
+	)
+	go func() {
+		defer cancel()
+		s.resolveAuthenticatedViewerLogin(refreshCtx, cacheKey, repo, resolver, call)
+	}()
+}
+
+func (s *Server) resolveAuthenticatedViewerLogin(
+	ctx context.Context,
+	cacheKey string,
+	repo db.Repo,
+	resolver platform.AuthenticatedUserResolver,
+	call *viewerLoginCall,
+) {
 
 	kind := httpapi.ProviderKind(repo)
 	host := httpapi.ProviderHost(repo)
@@ -153,9 +201,10 @@ func (s *Server) authenticatedViewerLogin(
 	s.viewerLoginMu.Lock()
 	delete(s.viewerLoginInFlight, cacheKey)
 	if call.err == nil {
-		s.viewerLoginCache[cacheKey] = call.login
+		s.viewerLoginCache[cacheKey] = viewerLoginCacheEntry{
+			login: call.login, fetchedAt: time.Now(),
+		}
 	}
 	close(call.done)
 	s.viewerLoginMu.Unlock()
-	return call.login, call.err
 }

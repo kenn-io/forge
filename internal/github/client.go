@@ -624,6 +624,7 @@ type liveClient struct {
 	quotaRegistry           *QuotaRegistry
 	viewerMu                sync.Mutex
 	viewerLogin             string
+	viewerLoginAt           time.Time
 	viewerLoginCacheKey     string
 }
 
@@ -1676,7 +1677,9 @@ func (c *liveClient) authenticatedLogin(ctx context.Context) (string, error) {
 	cacheKey := c.authenticatedViewerCacheKey()
 	c.viewerMu.Lock()
 	defer c.viewerMu.Unlock()
-	if c.viewerLogin != "" && c.viewerLoginCacheKey == cacheKey {
+	if c.viewerLogin != "" &&
+		c.viewerLoginCacheKey == cacheKey &&
+		time.Since(c.viewerLoginAt) < authenticatedViewerLoginTTL {
 		return c.viewerLogin, nil
 	}
 	user, resp, err := c.writeGH().Users.Get(ctx, "")
@@ -1689,6 +1692,7 @@ func (c *liveClient) authenticatedLogin(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("authenticated user login is empty")
 	}
 	c.viewerLogin = login
+	c.viewerLoginAt = time.Now()
 	c.viewerLoginCacheKey = cacheKey
 	return login, nil
 }

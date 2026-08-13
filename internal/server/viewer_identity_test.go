@@ -49,6 +49,12 @@ func (p *viewerIdentityProvider) callCount() int {
 	return len(p.calls)
 }
 
+func (p *viewerIdentityProvider) setLogin(repoPath, login string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.logins[repoPath] = login
+}
+
 func newViewerIdentityTestServer(
 	t *testing.T,
 	providers []*viewerIdentityProvider,
@@ -104,7 +110,7 @@ func TestResolveAuthenticatedViewerLoginsRestrictsProviderCallsToRepoFilters(t *
 	assert.Zero(t, unrelated.callCount())
 }
 
-func TestResolveAuthenticatedViewerLoginsCachesByEffectiveCredentialForProcessLifetime(t *testing.T) {
+func TestResolveAuthenticatedViewerLoginsRefreshesExpiredCredentialCacheInBackground(t *testing.T) {
 	provider := &viewerIdentityProvider{
 		kind: platform.KindGitHub, host: "github.com",
 		cacheKeys: map[string]string{
@@ -124,10 +130,26 @@ func TestResolveAuthenticatedViewerLoginsCachesByEffectiveCredentialForProcessLi
 	first, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(t, err)
 	require.Len(t, first, 2)
+	provider.setLogin("acme/widget", "bob")
+	provider.setLogin("acme/gadget", "bob")
+	srv.viewerLoginMu.Lock()
+	for key, entry := range srv.viewerLoginCache {
+		entry.fetchedAt = time.Now().Add(-authenticatedViewerLoginTTL - time.Minute)
+		srv.viewerLoginCache[key] = entry
+	}
+	srv.viewerLoginMu.Unlock()
+
 	second, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(t, err)
 	assert.Equal(t, first, second)
-	assert.Equal(t, 1, provider.callCount())
+	require.Eventually(t, func() bool { return provider.callCount() == 2 }, time.Second, 10*time.Millisecond)
+
+	third, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, []db.RepoViewerLogin{
+		{RepoID: first[0].RepoID, Login: "bob"},
+		{RepoID: first[1].RepoID, Login: "bob"},
+	}, third)
 }
 
 func TestResolveAuthenticatedViewerLoginsDoesNotCacheFailures(t *testing.T) {
@@ -141,13 +163,34 @@ func TestResolveAuthenticatedViewerLoginsDoesNotCacheFailures(t *testing.T) {
 		Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformExternalID: "repo-widget",
 	}})
 
-	_, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
-	require.Error(t, err)
-	delete(provider.errs, "acme/widget")
 	got, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+	delete(provider.errs, "acme/widget")
+	got, err = srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(t, err)
 	assert.Len(t, got, 1)
 	assert.Equal(t, 2, provider.callCount())
+}
+
+func TestResolveAuthenticatedViewerLoginsKeepsAvailableRepositories(t *testing.T) {
+	provider := &viewerIdentityProvider{
+		kind: platform.KindGitHub, host: "github.com",
+		cacheKeys: map[string]string{
+			"acme/widget": "available-credential",
+			"other/tool":  "unavailable-credential",
+		},
+		logins: map[string]string{"acme/widget": "alice"},
+		errs:   map[string]error{"other/tool": errors.New("unavailable credential")},
+	}
+	srv, repoIDs := newViewerIdentityTestServer(t, []*viewerIdentityProvider{provider}, []platform.RepoRef{
+		{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformExternalID: "repo-widget"},
+		{Platform: platform.KindGitHub, Host: "github.com", Owner: "other", Name: "tool", RepoPath: "other/tool", PlatformExternalID: "repo-tool"},
+	})
+
+	got, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, []db.RepoViewerLogin{{RepoID: repoIDs["acme/widget"], Login: "alice"}}, got)
 }
 
 type unkeyedViewerIdentityProvider struct {

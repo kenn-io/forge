@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -63,6 +64,32 @@ func TestNewClientEmptyHost(t *testing.T) {
 	c, err := NewClient(testTokenSource("test-token"), "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
+}
+
+func TestAuthenticatedViewerLoginRefreshesExpiredCache(t *testing.T) {
+	var login atomic.Value
+	login.Store("alice")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v3/user", r.URL.Path)
+		_, _ = fmt.Fprintf(w, `{"login":%q}`, login.Load().(string))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(server.URL))
+	require.NoError(t, err)
+	live := client.(*liveClient)
+
+	first, err := live.AuthenticatedViewerLogin(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "alice", first)
+	login.Store("bob")
+	live.viewerMu.Lock()
+	live.viewerLoginAt = time.Now().Add(-authenticatedViewerLoginTTL - time.Minute)
+	live.viewerMu.Unlock()
+
+	second, err := live.AuthenticatedViewerLogin(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "bob", second)
 }
 
 func TestNativeStackClientDecodesPullHintsAndStackPages(t *testing.T) {

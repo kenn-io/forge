@@ -130,8 +130,9 @@ builds clone routes, GitHub GraphQL fetchers where applicable, and a
 implementation; it should not masquerade as another provider.
 
 - Authenticated-viewer lookups run only for repositories selected by the request.
-  Cache successes for the process by effective credential, retry failures, and keep
-  unkeyed GitHub routes repository-scoped (`internal/server/viewer_identity.go::Server.resolveAuthenticatedViewerLogins`).
+  Include only repositories with a resolved identity, cache successes for one hour by
+  effective credential with stale-while-refresh, retry failures, and keep unkeyed GitHub routes repository-scoped
+  (`internal/server/viewer_identity.go::Server.resolveAuthenticatedViewerLogins`).
 
 Fallback token lookup is scoped by `(provider, platform_host)`. GitHub
 authorization routes may be exact-repository, owner, or host fallback. Lookup

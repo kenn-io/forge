@@ -1900,7 +1900,12 @@ type gitHubClientProvider struct {
 	host         string
 	client       Client
 	viewerMu     sync.Mutex
-	viewerLogins map[string]string
+	viewerLogins map[string]authenticatedViewerLoginCacheEntry
+}
+
+type authenticatedViewerLoginCacheEntry struct {
+	login     string
+	fetchedAt time.Time
 }
 
 type authenticatedViewerLoginClient interface {
@@ -1912,6 +1917,8 @@ type authenticatedViewerCacheKeyClient interface {
 }
 
 var errParentSnapshotAdvanced = errors.New("provider parent snapshot advanced during child refresh")
+
+const authenticatedViewerLoginTTL = time.Hour
 
 type githubLabelClient interface {
 	ListRepoLabels(ctx context.Context, owner, repo string) ([]*gh.Label, error)
@@ -2078,8 +2085,8 @@ func (p *gitHubClientProvider) authenticatedViewerLoginForRepo(
 	cacheKey := p.authenticatedViewerLookupKeyForRepo(owner, name)
 	p.viewerMu.Lock()
 	defer p.viewerMu.Unlock()
-	if login := p.viewerLogins[cacheKey]; login != "" {
-		return login, nil
+	if entry, ok := p.viewerLogins[cacheKey]; ok && time.Since(entry.fetchedAt) < authenticatedViewerLoginTTL {
+		return entry.login, nil
 	}
 
 	var login string
@@ -2103,9 +2110,9 @@ func (p *gitHubClientProvider) authenticatedViewerLoginForRepo(
 		return "", fmt.Errorf("authenticated viewer login is empty")
 	}
 	if p.viewerLogins == nil {
-		p.viewerLogins = make(map[string]string)
+		p.viewerLogins = make(map[string]authenticatedViewerLoginCacheEntry)
 	}
-	p.viewerLogins[cacheKey] = login
+	p.viewerLogins[cacheKey] = authenticatedViewerLoginCacheEntry{login: login, fetchedAt: time.Now()}
 	return login, nil
 }
 

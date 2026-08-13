@@ -206,7 +206,7 @@ type Server struct {
 	writeCredProbes        map[string]writeCredentialProbe
 	writeCredProbeInFlight map[string]chan struct{}
 	viewerLoginMu          sync.Mutex
-	viewerLoginCache       map[string]string
+	viewerLoginCache       map[string]viewerLoginCacheEntry
 	viewerLoginInFlight    map[string]*viewerLoginCall
 	docsAPI                *docsapi.Handler
 	kataAPI                *kata.Handler

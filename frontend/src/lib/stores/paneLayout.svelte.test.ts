@@ -160,7 +160,7 @@ describe("pane layout store", () => {
     expect(s.lastFocusedTabKey()).toBe("workspace");
   });
 
-  it("does not treat remembered focus as a live focus change", () => {
+  it("preserves live external focus while resetting remembered layout", () => {
     const s = store();
     s.setExternalInputActive(true);
     expect(s.externalInputActive()).toBe(true);
@@ -169,7 +169,7 @@ describe("pane layout store", () => {
     expect(s.externalInputActive()).toBe(true);
 
     s.reset();
-    expect(s.externalInputActive()).toBe(false);
+    expect(s.externalInputActive()).toBe(true);
   });
 
   it("ignores a focus note for a tab it does not know", () => {

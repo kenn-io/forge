@@ -680,6 +680,7 @@
   let workspaceRoot = $state<HTMLElement | null>(null);
   let workspaceInputRegion = $state<WorkspaceInputRegion | null>(null);
   let focusedWorkflowTabKey = $state<WorkflowTabKey | null>(null);
+  let focusedWorkflowInputElement: HTMLElement | null = null;
   const workspaceContainerInputActive = $derived(
     surfaceLayout === null || surfaceLayout.paneRender()?.activeInputTabKey === "workspace",
   );
@@ -734,7 +735,10 @@
 
   $effect(() => {
     if (workspaceInputRegion !== null && renderedWorkspaceInputRegion === null) {
-      if (workspaceInputRegion === "workflow") focusedWorkflowTabKey = null;
+      if (workspaceInputRegion === "workflow") {
+        focusedWorkflowTabKey = null;
+        focusedWorkflowInputElement = null;
+      }
       workspaceInputRegion = null;
     }
   });
@@ -750,7 +754,10 @@
     const next = event.relatedTarget;
     if (next instanceof Node && event.currentTarget.contains(next)) return;
     if (workspaceInputRegion === region) {
-      if (region === "workflow") focusedWorkflowTabKey = null;
+      if (region === "workflow") {
+        focusedWorkflowTabKey = null;
+        focusedWorkflowInputElement = null;
+      }
       workspaceInputRegion = null;
     }
   }
@@ -1274,8 +1281,10 @@
     lastWorkflowInputContentKey = contentKey;
     const shouldRestore = untrack(() => workspaceInputRegion === "workflow" && hostVisible);
     if (!contentChanged || !shouldRestore) return;
+    const focusedInput = untrack(() => focusedWorkflowInputElement);
     // A focused session can disappear without focusout. Inspect the updated DOM
-    // before clearing ownership or moving focus; a live destination always wins.
+    // before clearing ownership or moving focus. Connected pooled terminals own
+    // their reparenting handoff; only disconnected content falls back to the root.
     const execution = appRuntime.runCommand(
       Effect.promise(() => tick()).pipe(
         Effect.andThen(Effect.sync(() => {
@@ -1283,7 +1292,9 @@
           const focused = document.activeElement;
           if (focused !== null && focused !== document.body) return;
           focusedWorkflowTabKey = null;
+          focusedWorkflowInputElement = null;
           workspaceInputRegion = null;
+          if (focusedInput?.isConnected) return;
           workspaceRoot?.focus();
         })),
       ),
@@ -4275,7 +4286,11 @@
                 class="workspace-stage"
                 role="region"
                 aria-label="Workflow panes"
-                onfocusin={() => activateWorkspaceInputRegion("workflow")}
+                onfocusin={(event) => {
+                  activateWorkspaceInputRegion("workflow");
+                  focusedWorkflowInputElement =
+                    event.target instanceof HTMLElement ? event.target : null;
+                }}
                 onfocusout={(event) => deactivateWorkspaceInputRegion("workflow", event)}
                 ondragover={handleWorkflowDragOver}
                 ondrop={handleWorkflowDrop}

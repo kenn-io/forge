@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest, type PaneLayoutStore } from "../paneLayout.svelte.js";
 import { sessionPaneKey } from "../session-pane-key.js";
+import { pendingSessionFocus } from "../session-host.svelte.js";
 
 import { defaultActions, setStoreInstances } from "./actions.js";
 import { navigate } from "../router.svelte.ts";
@@ -637,6 +638,7 @@ describe("session pane commands", () => {
     // Its own leaf, not stacked behind the workspace pane: a promotion the user
     // cannot see reads as a command that did nothing.
     expect(layout.leafIDForTab(paneKey)).not.toBe(layout.leafIDForTab("workspace"));
+    expect(pendingSessionFocus(hosted.hostKey)).toBe("explicit");
     // Offered once. Repeating it would move the tab the user just placed.
     expect(action.when(context)).toBe(false);
   });

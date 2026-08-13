@@ -195,32 +195,34 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
       baseURL: isolatedServer.info.base_url,
     });
     const workspace = await createIssueWorkspace(api);
-    // Two real tmux shells in the bottom dock: with two sessions each dock leaf
-    // keeps its own "Move ... to a pane" control, so the promotion below runs
-    // through the real handler without focusing a palette or button first.
-    await launchDockedShell(api, workspace.id);
-    await launchDockedShell(api, workspace.id);
+    await launchShell(api, workspace.id, "workflow");
 
     await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
     await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
-    const panel = await openTerminalPanel(page);
-    const chosenLeaf = panel.locator('.terminal-leaf:has(button[aria-label$=" to a pane"])').first();
-    const inlineTerminal = chosenLeaf.locator(".terminal-container");
+    const inlineTerminal = page.locator(".workspace-stage .terminal-container");
     await expect(inlineTerminal).toBeVisible();
     await expect(inlineTerminal.locator("canvas, .xterm-screen").first()).toBeVisible();
-    const promote = chosenLeaf.getByRole("button", { name: /^Move .+ to a pane$/ });
-    await expect(promote).toBeVisible();
 
-    // Promotion is setup for the pane-move scenario. Stamp the exact live
-    // xterm node first, so the assertions below prove the pane move carried,
-    // rather than rebuilt, the same real tmux terminal.
+    // Start promotion with xterm holding DOM focus. The command palette restores
+    // that saved focus before the handler reparents the terminal through parking,
+    // so the workspace and pool recovery paths overlap exactly as they do in use.
     await inlineTerminal.evaluate((element) => {
       element.setAttribute("data-focus-reparent-witness", "live-terminal");
     });
-    await promote.click();
+    await inlineTerminal.click({ position: { x: 10, y: 10 } });
+    await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
+    await page.keyboard.press("Meta+Shift+k");
+    const promotionPalette = page.getByRole("dialog", { name: "Command palette" });
+    await expect(promotionPalette).toBeVisible();
+    await page.getByRole("textbox", { name: "Search command palette" }).fill("Move terminal session to a pane");
+    await expect(promotionPalette.getByRole("button", { name: /Move terminal session to a pane/ })).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(promotionPalette).not.toBeVisible();
+
     const movedTerminal = page.locator('.session-terminal-slot [data-focus-reparent-witness="live-terminal"]');
-    await expect(page.locator('.terminal-panel [data-focus-reparent-witness="live-terminal"]')).toHaveCount(0);
+    await expect(page.locator('.workspace-stage [data-focus-reparent-witness="live-terminal"]')).toHaveCount(0);
     await expect(movedTerminal).toBeVisible();
+    await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
 
     await movedTerminal.evaluate((element) => {
       element
@@ -266,7 +268,7 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
       element.closest(".session-terminal-slot")?.setAttribute("data-focus-source-slot", "true");
     });
 
-    // The only terminal click in the scenario under test.
+    // Refocus after drag setup so the split below starts from the same contract.
     await movedTerminal.click({ position: { x: 10, y: 10 } });
     await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
     const sourceOwner = page.locator('.tabbed-panel-leaf:has([data-pane-key="conversation"])');

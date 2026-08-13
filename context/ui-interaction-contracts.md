@@ -330,6 +330,9 @@ Keyboard handlers must have one clear owner for each key press.
   command memory only; it never represents current focus. Workspace window
   shortcuts run only while the validated workspace container has DOM focus
   (`frontend/src/lib/stores/paneLayout.svelte.ts::PaneRenderReport`).
+- Resetting pane arrangement preserves a live external dock claim; only dock focusout,
+  unmount, or renderer teardown releases DOM input ownership
+  (`frontend/src/lib/stores/paneLayout.svelte.ts::reset`).
 - Pane keyboard ownership follows the exact rendered leaf and tab containing DOM focus;
   nested tab identity never bubbles into an outer tree
   (`frontend/src/lib/components/shared/TabbedPanelTree.svelte::handleLeafFocusIn`).

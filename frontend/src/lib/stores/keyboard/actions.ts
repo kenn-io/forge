@@ -20,7 +20,8 @@ import {
   type PaneSurfaceKey,
 } from "../paneLayout.svelte.js";
 import { isSessionPaneKey } from "../session-pane-key.js";
-import { activeHostedSession, hostedWorkspaceLauncher } from "../workspace-host.svelte.js";
+import { requestSessionFocus } from "../session-host.svelte.js";
+import { activeHostedSession, hostedSessionRegistryKey, hostedWorkspaceLauncher } from "../workspace-host.svelte.js";
 import type { ConfigRepo } from "../../api/types.js";
 import type { StoreInstances } from "../../types.js";
 import type { Action, Context, PreviewBlock } from "./types.js";
@@ -700,7 +701,9 @@ export const defaultActions: Action[] = [
     when: (ctx) => sessionPromotionTarget(ctx) !== null,
     handler: (ctx) => {
       const target = sessionPromotionTarget(ctx);
-      if (target !== null) promoteSessionBesideWorkspace(target.layout, target.paneKey);
+      if (target === null || !promoteSessionBesideWorkspace(target.layout, target.paneKey)) return;
+      const hostKey = hostedSessionRegistryKey(target.paneKey);
+      if (hostKey !== null) requestSessionFocus(hostKey);
     },
   },
   {

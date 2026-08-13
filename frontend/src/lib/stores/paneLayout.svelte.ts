@@ -377,7 +377,6 @@ export function createPaneLayoutStore(
     },
 
     reset: () => {
-      externalInputActive = false;
       commit(parseTabbedPanelLayout(null, knownTabs, defaultTree, keepIfStored));
     },
   };

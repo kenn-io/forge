@@ -6,7 +6,11 @@ import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
 import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
-import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../../stores/paneLayout.svelte.js";
+import {
+  getPaneLayoutStore,
+  promoteSessionBesideWorkspace,
+  resetPaneLayoutStoresForTest,
+} from "../../stores/paneLayout.svelte.js";
 import { sessionPaneKey } from "../../stores/session-pane-key.js";
 import {
   beginWorkspaceCreate,
@@ -4425,6 +4429,48 @@ describe("WorkspaceTerminalView", () => {
   });
 
   describe("promoted sessions", () => {
+    it("leaves a connected focused workflow terminal to the pool during promotion", async () => {
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+      localStorage.setItem(
+        "kenn-forge-workspace-terminal-layout:ws-1",
+        persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      const terminal = await waitFor(() => {
+        const element = document.querySelector<HTMLElement>(
+          '[data-pane-key="session:ws-1:helper"] .terminal-container',
+        );
+        expect(element).not.toBeNull();
+        return element!;
+      });
+      const focusTarget = document.createElement("textarea");
+      terminal.append(focusTarget);
+      focusTarget.focus();
+      await waitFor(() =>
+        expect(document.querySelector(".workspace-stage .tabbed-panel-leaf.input-active")).not.toBeNull(),
+      );
+
+      const layout = getPaneLayoutStore("prs");
+      const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+      expect(promoteSessionBesideWorkspace(layout, paneKey)).toBe(true);
+
+      await waitFor(() => expect(layout.hasTab(paneKey)).toBe(true));
+      await waitFor(() => expect(terminal.closest(".workspace-stage")).toBeNull());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(document.activeElement).not.toBe(document.querySelector(".terminal-view"));
+      expect(focusTarget.isConnected).toBe(true);
+    });
+
     it("gives a parked row-only dock the sole workspace actions and live dialogs", async () => {
       localStorage.setItem(
         "kenn-forge-workspace-terminal-layout:ws-1",

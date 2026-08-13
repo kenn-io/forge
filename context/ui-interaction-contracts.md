@@ -781,8 +781,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   was opened for) must never silently fall back to a last-used or first option
   when the seed cannot be resolved — leave the selection empty and require a
   choice (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte`).
-- Repository selectors consume server-filtered catalogs; configured-entry
-  consumers gate on the server's `hidden_from_ui` flag and must not reimplement
+- Repository selectors treat the server's `hidden_from_ui` flag as authoritative:
+  once a configured repository is hidden, every matching configured, fetched, or
+  workspace-catalog entry stays out of the selector. Consumers must not reimplement
   visibility matching client-side. Selection normalization must drop hidden
   selections explicitly — general normalization preserves unknown values for
   glob-resolved repositories, so a hidden repo would otherwise keep filtering —

@@ -193,7 +193,22 @@
     workspace: readonly RepoPresetCatalogEntry[],
   ): RepoOption[] {
     const merged: RepoOption[] = [];
+    const hiddenRepos = configured.filter((repo) => !repo.is_glob && repo.hidden_from_ui);
+    const isHidden = (option: RepoOption) => hiddenRepos.some((repo) => {
+      if (
+        canonicalProvider(repo.provider) !== option.provider
+        || repo.platform_host !== option.platformHost
+      ) return false;
+
+      if (repo.platform_repo_id && option.platform_repo_id) {
+        return repo.platform_repo_id === option.platform_repo_id;
+      }
+
+      return [repo.tracked_repo_path, repo.repo_path, `${repo.owner}/${repo.name}`]
+        .some((path) => path === option.repoPath);
+    });
     const addOption = (option: RepoOption) => {
+      if (isHidden(option)) return;
       const identity = `${option.provider}|${option.platformHost}/${option.repoPath}`;
       const existingIndex = merged.findIndex(
         (candidate) => `${candidate.provider}|${candidate.platformHost}/${candidate.repoPath}` === identity,

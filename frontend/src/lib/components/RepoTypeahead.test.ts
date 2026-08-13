@@ -5,6 +5,7 @@ import type { Repo, RepoPreset } from "../api/types.js";
 import { createSettingsStore } from "../stores/settings.svelte.js";
 import { getGlobalRepo, setGlobalRepoPresetSelection } from "../stores/filter.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "../stores/flash.svelte.js";
+import { setWorkspaceRepoCatalog } from "../stores/workspace-repo-catalog.svelte.js";
 import { client } from "../api/runtime.js";
 import RepoTypeahead from "./RepoTypeaheadRuntimeHarness.svelte";
 
@@ -55,6 +56,7 @@ describe("RepoTypeahead", () => {
     settingsStore = createSettingsStore();
     settingsStore.setConfiguredRepos([]);
     settingsStore.setRepoPresets([]);
+    setWorkspaceRepoCatalog(undefined, false);
     setGlobalRepoPresetSelection(undefined, undefined);
     getRepos.mockReset();
     getRepos.mockResolvedValue({ data: [], error: undefined });
@@ -132,6 +134,65 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(screen.getByRole("option", { name: /acme\/api/i })).toBeTruthy();
     });
+    expect(screen.queryByRole("option", { name: /acme\/archive/i })).toBeNull();
+  });
+
+  it("omits hidden repositories returned by every catalog source", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "archive",
+        repo_path: "acme/archive",
+        platform_repo_id: "R_archive",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: true,
+      },
+    ]);
+    getRepos.mockResolvedValue({
+      data: [
+        {
+          Platform: "github",
+          PlatformHost: "github.com",
+          PlatformRepoID: "R_archive",
+          Owner: "acme",
+          Name: "archive",
+        },
+      ] as Repo[],
+      error: undefined,
+    });
+    setWorkspaceRepoCatalog([
+      {
+        id: "archive-workspace",
+        created_at: "2026-08-13T00:00:00Z",
+        git_head_ref: "main",
+        item_number: 1,
+        item_type: "pull",
+        platform_host: "github.com",
+        repo_name: "archive",
+        repo_owner: "acme",
+        status: "active",
+        tmux_activity_source: "none",
+        tmux_last_output_at: null,
+        tmux_working: false,
+        worktree_path: "/tmp/archive",
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          platform_repo_id: "R_archive",
+          owner: "acme",
+          name: "archive",
+          repo_path: "acme/archive",
+        },
+      },
+    ], true);
+
+    render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
+    await waitFor(() => expect(getRepos).toHaveBeenCalled());
+
     expect(screen.queryByRole("option", { name: /acme\/archive/i })).toBeNull();
   });
 

@@ -1062,4 +1062,41 @@ describe("RepoTypeahead", () => {
     expect(localStorage.getItem("kenn-forge-filter-repo-preset")).toBeNull();
     expect(onchange).not.toHaveBeenCalled();
   });
+
+  it("keeps the delete dialog open and reports settings failures", async () => {
+    const selected = "github|github.com/acme/api";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    deleteSettings.mockResolvedValue({
+      error: {
+        type: "about:blank",
+        title: "Delete failed",
+        status: 500,
+        detail: "Preset deletion failed",
+        code: "internalError",
+      },
+      response: new Response(undefined, { status: 500 }),
+    });
+    render(RepoTypeahead, { props: { selected, onchange: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Select repository: Backend" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Delete preset Backend" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Delete preset" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Preset deletion failed");
+    expect(screen.getByRole("dialog", { name: "Delete repository preset?" })).toBeTruthy();
+    expect(settingsStore.getRepoPresets()).toHaveLength(1);
+  });
 });

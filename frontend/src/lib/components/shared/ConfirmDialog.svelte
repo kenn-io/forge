@@ -10,6 +10,7 @@
     title: string;
     message: string;
     hint?: string | undefined;
+    error?: string | undefined;
     confirmLabel: string;
     pendingLabel?: string | undefined;
     busy?: boolean;
@@ -25,6 +26,7 @@
     title,
     message,
     hint = undefined,
+    error = undefined,
     confirmLabel,
     pendingLabel = undefined,
     busy = false,
@@ -46,6 +48,9 @@
     <p class="confirm-message">{message}</p>
     {#if hint}
       <p class="confirm-hint">{hint}</p>
+    {/if}
+    {#if error}
+      <p class="confirm-error" role="alert">{error}</p>
     {/if}
   </div>
 
@@ -79,6 +84,13 @@
   .confirm-hint {
     margin: 0;
     color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+  }
+
+  .confirm-error {
+    margin: 0;
+    color: var(--accent-red);
     font-size: var(--font-size-sm);
     line-height: 1.45;
   }

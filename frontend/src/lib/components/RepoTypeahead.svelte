@@ -650,6 +650,7 @@
   title="Delete repository preset?"
   message={`Delete the preset ‘${deletePreset?.name ?? ""}’?`}
   hint="The repositories remain selected as a custom filter."
+  error={mutationError}
   confirmLabel="Delete preset"
   pendingLabel="Deleting…"
   busy={mutationBusy}

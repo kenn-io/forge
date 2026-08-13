@@ -62,7 +62,7 @@ func TestNormalizeInitialAgentMessage(t *testing.T) {
 	}
 }
 
-func TestInitialMessageRoutesDeliverOnceAndKeepReceiptAfterRuntimeExit(t *testing.T) {
+func TestInitialMessageRoutesDeliverOnceAndKeepStatusAfterRuntimeExit(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -130,24 +130,28 @@ func TestInitialMessageRoutesDeliverOnceAndKeepReceiptAfterRuntimeExit(t *testin
 	response := postContext(requestContext, endpoint, "CoDeX", "coding-session", "review this")
 	owner.pty.setOnWrite(nil)
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	var receipt struct {
+	var messageStatus struct {
 		Agent        string     `json:"agent"`
 		SessionID    string     `json:"session_id"`
 		State        string     `json:"state"`
 		MessageBytes int        `json:"message_bytes"`
 		DeliveredAt  *time.Time `json:"delivered_at"`
 	}
-	require.NoError(json.NewDecoder(response.Body).Decode(&receipt))
-	assert.Equal("codex", receipt.Agent)
-	assert.Equal("coding-session", receipt.SessionID)
-	assert.Equal(db.AgentInitialMessageDelivered, receipt.State)
-	assert.Equal(11, receipt.MessageBytes)
-	require.NotNil(receipt.DeliveredAt)
-	assert.Equal(time.UTC, receipt.DeliveredAt.Location())
+	require.NoError(json.NewDecoder(response.Body).Decode(&messageStatus))
+	assert.Equal("codex", messageStatus.Agent)
+	assert.Equal("coding-session", messageStatus.SessionID)
+	assert.Equal(initialMessageDelivered, messageStatus.State)
+	assert.Equal(11, messageStatus.MessageBytes)
+	require.NotNil(messageStatus.DeliveredAt)
+	assert.Equal(time.UTC, messageStatus.DeliveredAt.Location())
 	assert.Equal("review this\r", string(owner.pty.written()))
 
 	response = post(endpoint, "codex", "coding-session", "review this")
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	assert.Equal("review this\r", string(owner.pty.written()))
+
+	response = post(endpoint, "codex", "coding-session", "review that")
+	require.Equal(http.StatusConflict, response.Code, response.Body.String())
 	assert.Equal("review this\r", string(owner.pty.written()))
 
 	launchSession := func(codingSession string, report bool) localruntime.SessionInfo {
@@ -176,10 +180,9 @@ func TestInitialMessageRoutesDeliverOnceAndKeepReceiptAfterRuntimeExit(t *testin
 	owner.pty.setWriteError(errors.New("write failed"))
 	response = post(endpointFor(failingSession.Key), "codex", "coding-failure", "try once")
 	require.Equal(http.StatusInternalServerError, response.Code, response.Body.String())
-	failedReceipt, err := database.GetAgentInitialMessageReceipt(ctx, workspaceID, failingSession.Key)
-	require.NoError(err)
-	require.NotNil(failedReceipt)
-	assert.Equal(db.AgentInitialMessageUncertain, failedReceipt.State)
+	failedAttempt, found := handler.initialMessageAttempt(workspaceID, failingSession.Key)
+	require.True(found)
+	assert.Equal(initialMessageUncertain, failedAttempt.State)
 	owner.pty.setWriteError(nil)
 
 	inactivePasteSession := launchSession("coding-multiline", true)
@@ -189,22 +192,16 @@ func TestInitialMessageRoutesDeliverOnceAndKeepReceiptAfterRuntimeExit(t *testin
 	)
 	require.Equal(http.StatusBadRequest, response.Code, response.Body.String())
 	assert.Equal(writtenBefore, owner.pty.written())
-	inactiveReceipt, err := database.GetAgentInitialMessageReceipt(
-		ctx, workspaceID, inactivePasteSession.Key,
-	)
-	require.NoError(err)
-	assert.Nil(inactiveReceipt)
+	_, found = handler.initialMessageAttempt(workspaceID, inactivePasteSession.Key)
+	assert.False(found)
 
 	unreportedSession := launchSession("coding-unreported", false)
 	response = post(
 		endpointFor(unreportedSession.Key), "codex", "coding-unreported", "do not send",
 	)
 	require.Equal(http.StatusConflict, response.Code, response.Body.String())
-	unreportedReceipt, err := database.GetAgentInitialMessageReceipt(
-		ctx, workspaceID, unreportedSession.Key,
-	)
-	require.NoError(err)
-	assert.Nil(unreportedReceipt)
+	_, found = handler.initialMessageAttempt(workspaceID, unreportedSession.Key)
+	assert.False(found)
 
 	require.NoError(runtime.Stop(ctx, workspaceID, session.Key))
 	require.NoError(database.DeleteWorkspaceRuntimeSession(ctx, workspaceID, session.Key))
@@ -214,17 +211,17 @@ func TestInitialMessageRoutesDeliverOnceAndKeepReceiptAfterRuntimeExit(t *testin
 	getRecorder := httptest.NewRecorder()
 	mux.ServeHTTP(getRecorder, httptest.NewRequest(http.MethodGet, endpoint, nil))
 	require.Equal(http.StatusOK, getRecorder.Code, getRecorder.Body.String())
-	receipt = struct {
+	messageStatus = struct {
 		Agent        string     `json:"agent"`
 		SessionID    string     `json:"session_id"`
 		State        string     `json:"state"`
 		MessageBytes int        `json:"message_bytes"`
 		DeliveredAt  *time.Time `json:"delivered_at"`
 	}{}
-	require.NoError(json.NewDecoder(getRecorder.Body).Decode(&receipt))
-	assert.Equal("codex", receipt.Agent)
-	assert.Equal("coding-session", receipt.SessionID)
-	assert.Equal(db.AgentInitialMessageDelivered, receipt.State)
+	require.NoError(json.NewDecoder(getRecorder.Body).Decode(&messageStatus))
+	assert.Equal("codex", messageStatus.Agent)
+	assert.Equal("coding-session", messageStatus.SessionID)
+	assert.Equal(initialMessageDelivered, messageStatus.State)
 }
 
 type initialMessagePTYOwner struct {

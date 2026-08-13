@@ -449,11 +449,21 @@ esac
 	require.NotNil(spawn.InitialMessage)
 	assert.Equal("delivered", spawn.InitialMessage.State)
 
-	receipt, err := database.GetAgentInitialMessageReceipt(ctx, handoffWorkspace.ID, runtimeSession.SessionKey)
+	statusReq, err := http.NewRequestWithContext(
+		ctx, http.MethodGet,
+		httpServer.URL+"/api/v1/workspaces/"+handoffWorkspace.ID+
+			"/runtime/sessions/"+runtimeSession.SessionKey+"/initial-message", nil,
+	)
 	require.NoError(err)
-	require.NotNil(receipt)
-	assert.Equal(db.AgentInitialMessageDelivered, receipt.State)
-	assert.Equal(len("review cache change"), receipt.MessageBytes)
+	statusReq.Header.Set("Authorization", "Bearer "+token)
+	statusResp, err := http.DefaultClient.Do(statusReq)
+	require.NoError(err)
+	defer statusResp.Body.Close()
+	require.Equal(http.StatusOK, statusResp.StatusCode)
+	var messageStatus daemonAgentInitialMessage
+	require.NoError(json.NewDecoder(statusResp.Body).Decode(&messageStatus))
+	assert.Equal("delivered", messageStatus.State)
+	assert.Equal(len("review cache change"), messageStatus.MessageBytes)
 
 	claim := callMCPTool[setWorkflowOutput](t, session, "kenn_forge_set_item_workflow_state", map[string]any{
 		"item":            item,

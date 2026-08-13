@@ -342,13 +342,13 @@ components:
         - hookEventName
         - additionalContext
       type: object
-    AgentInitialMessageReceiptResponse:
+    AgentInitialMessageStatusResponse:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - /api/v1/schemas/AgentInitialMessageReceiptResponse.json
+            - /api/v1/schemas/AgentInitialMessageStatusResponse.json
           format: uri
           readOnly: true
           type: string
@@ -7933,7 +7933,7 @@ components:
         agent:
           type: string
         initial_message:
-          $ref: "#/components/schemas/AgentInitialMessageReceiptResponse"
+          $ref: "#/components/schemas/AgentInitialMessageStatusResponse"
         runtime_session_key:
           type: string
         session_id:
@@ -21115,7 +21115,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AgentInitialMessageReceiptResponse"
+                $ref: "#/components/schemas/AgentInitialMessageStatusResponse"
           description: OK
         default:
           content:
@@ -21123,7 +21123,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: Get initial agent message receipt
+      summary: Get initial agent message status
       tags:
         - Workspaces
     post:
@@ -21150,7 +21150,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AgentInitialMessageReceiptResponse"
+                $ref: "#/components/schemas/AgentInitialMessageStatusResponse"
           description: OK
         default:
           content:

@@ -518,15 +518,6 @@ func run(opts serve.Options) error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	// The runtime lock is held before the database opens, so every pending
-	// receipt belongs to an interrupted prior daemon rather than an active
-	// delivery in another process.
-	if _, err := database.RecoverPendingAgentInitialMessages(
-		context.WithoutCancel(ctx),
-	); err != nil {
-		return fmt.Errorf("recover pending agent initial messages: %w", err)
-	}
-
 	tokenSources := tokenauth.NewSourceSet(tokenauth.Options{
 		GitHubCLI: config.GitHubCLITokenForHost,
 		GitHubApp: func(

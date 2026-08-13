@@ -18,7 +18,7 @@ const (
 	defaultAgentHandoffTimeout      = 5 * time.Minute
 	maxAgentHandoffTimeout          = 15 * time.Minute
 	defaultAgentHandoffPollInterval = 250 * time.Millisecond
-	receiptRecoveryTimeout          = 6 * time.Second
+	messageStatusRecoveryTimeout    = 6 * time.Second
 	maxAgentInitialMessage          = 64 << 10
 )
 
@@ -160,17 +160,17 @@ func (s *Server) spawnWorkspaceWithAgent(
 	out.Stage = "coding_session_observed"
 	out.CodingSession = codingSession
 
-	receipt, err := s.submitInitialAgentMessage(
+	messageStatus, err := s.submitInitialAgentMessage(
 		ctx, workspace.ID, runtime.Key, codingSession, in.InitialMessage,
 	)
 	if err != nil {
 		return out, handoffFailure(ctx, err, out, "coding_session_observed", "message_delivered")
 	}
-	out.InitialMessage = &receipt
-	if receipt.State != "delivered" {
+	out.InitialMessage = &messageStatus
+	if messageStatus.State != "delivered" {
 		return out, handoffFailure(
 			ctx,
-			fmt.Errorf("initial message receipt state is %s", receipt.State), out,
+			fmt.Errorf("initial message state is %s", messageStatus.State), out,
 			"coding_session_observed", "message_delivered",
 		)
 	}
@@ -548,39 +548,39 @@ func (s *Server) submitInitialAgentMessage(
 ) (agentInitialMessageRow, error) {
 	path := "/api/v1/workspaces/" + seg(workspaceID) +
 		"/runtime/sessions/" + seg(runtimeSessionKey) + "/initial-message"
-	var receipt daemonAgentInitialMessage
+	var messageStatus daemonAgentInitialMessage
 	err := s.daemon.postJSON(ctx, path, map[string]any{
 		"agent":      session.Agent,
 		"session_id": session.SessionID,
 		"message":    message,
-	}, &receipt)
+	}, &messageStatus)
 	if err != nil {
 		var daemonErr *daemonError
 		if !errors.As(err, &daemonErr) || !daemonErr.Ambiguous {
 			return agentInitialMessageRow{}, err
 		}
-		if recoveryErr := s.recoverInitialMessageReceipt(
-			ctx, path, daemonErr, &receipt,
+		if recoveryErr := s.recoverInitialMessageStatus(
+			ctx, path, daemonErr, &messageStatus,
 		); recoveryErr != nil {
 			return agentInitialMessageRow{}, recoveryErr
 		}
 	}
 	row := agentInitialMessageRow{
-		State: receipt.State, MessageBytes: receipt.MessageBytes,
+		State: messageStatus.State, MessageBytes: messageStatus.MessageBytes,
 	}
-	if receipt.DeliveredAt != nil {
-		row.DeliveredAt = formatMCPTime(*receipt.DeliveredAt)
+	if messageStatus.DeliveredAt != nil {
+		row.DeliveredAt = formatMCPTime(*messageStatus.DeliveredAt)
 	}
 	return row, nil
 }
 
-func (s *Server) recoverInitialMessageReceipt(
+func (s *Server) recoverInitialMessageStatus(
 	ctx context.Context,
 	path string,
 	original *daemonError,
-	receipt *daemonAgentInitialMessage,
+	messageStatus *daemonAgentInitialMessage,
 ) error {
-	timeout := receiptRecoveryTimeout
+	timeout := messageStatusRecoveryTimeout
 	if deadline, ok := ctx.Deadline(); ok {
 		if remaining := time.Until(deadline); remaining > 0 && remaining < timeout {
 			timeout = remaining
@@ -594,7 +594,7 @@ func (s *Server) recoverInitialMessageReceipt(
 		if err := s.daemon.getJSON(recoveryCtx, path, nil, &recovered); err != nil {
 			return original
 		}
-		*receipt = recovered
+		*messageStatus = recovered
 		if recovered.State == "delivered" {
 			return nil
 		}

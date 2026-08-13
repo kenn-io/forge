@@ -414,11 +414,11 @@ func TestSpawnWorkspaceWithAgentForwardsExplicitAdHocBranch(t *testing.T) {
 	assert.Equal("work/explicit", out.Source.AdHoc.Branch)
 }
 
-func TestSpawnWorkspaceWithAgentRecoversOnlyReceiptAfterAmbiguousMessageResponse(t *testing.T) {
+func TestSpawnWorkspaceWithAgentRecoversStatusAfterAmbiguousMessageResponse(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	messagePosts := 0
-	receiptReads := 0
+	statusReads := 0
 	mux := successfulPRHandoffMuxWithoutMessage(t, "ws-recovery", "runtime-recovery", "coding-recovery")
 	mux.HandleFunc("/api/v1/workspaces/ws-recovery/runtime/sessions/runtime-recovery/initial-message", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -426,7 +426,7 @@ func TestSpawnWorkspaceWithAgentRecoversOnlyReceiptAfterAmbiguousMessageResponse
 			messagePosts++
 			writeJSONResponse(w, `{"agent":"codex","session_id":"coding-recovery","state":"delivered","message_bytes":5} {}`)
 		case http.MethodGet:
-			receiptReads++
+			statusReads++
 			writeJSONResponse(w, `{"agent":"codex","session_id":"coding-recovery","state":"delivered","message_bytes":5,"delivered_at":"2026-08-07T15:00:02Z"}`)
 		}
 	})
@@ -436,14 +436,14 @@ func TestSpawnWorkspaceWithAgentRecoversOnlyReceiptAfterAmbiguousMessageResponse
 	require.NoError(err)
 	assert.True(out.MessageDelivered)
 	assert.Equal(1, messagePosts)
-	assert.Equal(1, receiptReads)
+	assert.Equal(1, statusReads)
 }
 
-func TestSpawnWorkspaceWithAgentReceiptRecoverySurvivesOuterTimeout(t *testing.T) {
+func TestSpawnWorkspaceWithAgentStatusRecoverySurvivesOuterTimeout(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	messagePosts := 0
-	receiptReads := 0
+	statusReads := 0
 	mux := successfulPRHandoffMuxWithoutMessage(t, "ws-recovery", "runtime-recovery", "coding-recovery")
 	mux.HandleFunc("/api/v1/workspaces/ws-recovery/runtime/sessions/runtime-recovery/initial-message", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -451,7 +451,7 @@ func TestSpawnWorkspaceWithAgentReceiptRecoverySurvivesOuterTimeout(t *testing.T
 			messagePosts++
 			time.Sleep(100 * time.Millisecond)
 		case http.MethodGet:
-			receiptReads++
+			statusReads++
 			writeJSONResponse(w, `{"agent":"codex","session_id":"coding-recovery","state":"delivered","message_bytes":5,"delivered_at":"2026-08-07T15:00:02Z"}`)
 		}
 	})
@@ -463,25 +463,25 @@ func TestSpawnWorkspaceWithAgentReceiptRecoverySurvivesOuterTimeout(t *testing.T
 	require.NoError(err)
 	assert.True(out.MessageDelivered)
 	assert.Equal(1, messagePosts)
-	assert.Equal(1, receiptReads)
+	assert.Equal(1, statusReads)
 }
 
-func TestSpawnWorkspaceWithAgentReceiptRecoveryClassifiesStates(t *testing.T) {
+func TestSpawnWorkspaceWithAgentStatusRecoveryClassifiesStates(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
-		receiptStates []string
+		statusStates  []string
 		wantDelivered bool
 		wantState     string
 	}{
-		{name: "pending then delivered", receiptStates: []string{"pending", "delivered"}, wantDelivered: true},
-		{name: "uncertain", receiptStates: []string{"uncertain"}, wantState: "uncertain"},
-		{name: "unresolved pending", receiptStates: []string{"pending"}, wantState: "pending"},
+		{name: "pending then delivered", statusStates: []string{"pending", "delivered"}, wantDelivered: true},
+		{name: "uncertain", statusStates: []string{"uncertain"}, wantState: "uncertain"},
+		{name: "unresolved pending", statusStates: []string{"pending"}, wantState: "pending"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			messagePosts := 0
-			receiptReads := 0
+			statusReads := 0
 			mux := successfulPRHandoffMuxWithoutMessage(t, "ws-recovery", "runtime-recovery", "coding-recovery")
 			mux.HandleFunc("/api/v1/workspaces/ws-recovery/runtime/sessions/runtime-recovery/initial-message", func(w http.ResponseWriter, r *http.Request) {
 				switch r.Method {
@@ -489,8 +489,8 @@ func TestSpawnWorkspaceWithAgentReceiptRecoveryClassifiesStates(t *testing.T) {
 					messagePosts++
 					writeJSONResponse(w, `{"agent":"codex","session_id":"coding-recovery","state":"delivered","message_bytes":5} {}`)
 				case http.MethodGet:
-					state := tc.receiptStates[min(receiptReads, len(tc.receiptStates)-1)]
-					receiptReads++
+					state := tc.statusStates[min(statusReads, len(tc.statusStates)-1)]
+					statusReads++
 					writeJSONResponse(w, `{"agent":"codex","session_id":"coding-recovery","state":"`+state+`","message_bytes":5}`)
 				}
 			})
@@ -500,7 +500,7 @@ func TestSpawnWorkspaceWithAgentReceiptRecoveryClassifiesStates(t *testing.T) {
 			input.Timeout = "40ms"
 			out, err := s.spawnWorkspaceWithAgent(t.Context(), input)
 			assert.Equal(1, messagePosts)
-			assert.Positive(receiptReads)
+			assert.Positive(statusReads)
 			if tc.wantDelivered {
 				require.NoError(err)
 				assert.True(out.MessageDelivered)

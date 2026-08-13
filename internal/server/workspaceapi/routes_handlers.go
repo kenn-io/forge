@@ -2599,6 +2599,7 @@ func (s *Handler) DeleteWorkspace(
 
 	deleted = true
 	s.publishWorkspaceDeleted(ws)
+	s.clearInitialMessageAttempts(input.ID)
 	return nil, nil
 }
 

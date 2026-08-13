@@ -140,6 +140,8 @@ type Handler struct {
 	workspaceSetupMu               sync.Mutex
 	workspaceSetupDone             map[string]chan struct{}
 	workspaceDeleting              map[string]*workspaceDeletion
+	initialMessagesMu              sync.Mutex
+	initialMessages                map[initialMessageKey]initialMessageAttempt
 	worktreeShellTransactions      sync.Map
 	workspaceTmuxPrunedAt          time.Time
 	workspaceTmuxPrunePending      bool
@@ -193,6 +195,7 @@ func New(deps Deps) *Handler {
 		workspaceEnrichmentDisabled:    deps.EnrichmentDisabled,
 		workspaceSetupDone:             make(map[string]chan struct{}),
 		workspaceDeleting:              make(map[string]*workspaceDeletion),
+		initialMessages:                make(map[initialMessageKey]initialMessageAttempt),
 		tmuxActivity:                   newTmuxActivityTracker(now),
 		lifecycleCtx:                   lifecycleCtx,
 		lifecycleCancel:                lifecycleCancel,
@@ -340,8 +343,8 @@ func (s *Handler) Register(api huma.API) {
 		Tags:        []string{"Workspaces"},
 	}, s.getWorkspaceRuntimeSessionAttachSpec)
 	huma.Get(api, "/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
-		s.getInitialMessageReceipt,
-		httpapi.DocumentOperation("get-workspace-runtime-session-initial-message", "Get initial agent message receipt", "Workspaces"))
+		s.getInitialMessageStatus,
+		httpapi.DocumentOperation("get-workspace-runtime-session-initial-message", "Get initial agent message status", "Workspaces"))
 	huma.Register(api, huma.Operation{
 		OperationID: "submit-workspace-runtime-session-initial-message",
 		Method:      http.MethodPost,

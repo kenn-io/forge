@@ -104,19 +104,16 @@ func TestListWorkspaceAgentSessionsProjectsOnlySupportedLiveAgentReports(t *test
 		TargetKey: "codex", Label: "Codex", Kind: "agent", Scope: "session",
 		CreatedAt: agentRuntime.CreatedAt,
 	}))
-	_, reserved, err := database.ReserveAgentInitialMessage(ctx, db.AgentInitialMessageReceipt{
-		WorkspaceID: workspaceID, RuntimeSessionKey: agentRuntime.Key,
-		Agent: "codex", CodingSessionID: "shared-session", MessageBytes: 12,
-	})
-	require.NoError(err)
-	require.True(reserved)
-	_, err = database.MarkAgentInitialMessageDelivered(ctx, workspaceID, agentRuntime.Key)
-	require.NoError(err)
-
 	handler := New(Deps{
 		DB: database, Workspaces: workspace.NewManager(database, t.TempDir()),
 		Runtime: runtime, AgentActivity: activity,
 	})
+	_, reserved := handler.reserveInitialMessageAttempt(
+		workspaceID, agentRuntime.Key,
+		initialMessageAttempt{Agent: "codex", SessionID: "shared-session", Message: "review this!"},
+	)
+	require.True(reserved)
+	handler.finishInitialMessageAttempt(workspaceID, agentRuntime.Key, initialMessageDelivered)
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(
 		mux, "/api/v1", huma.DefaultConfig("workspace agent session test", "1"),
@@ -154,7 +151,7 @@ func TestListWorkspaceAgentSessionsProjectsOnlySupportedLiveAgentReports(t *test
 	assert.Equal(agentactivity.StateWorking, response.Sessions[1].State)
 	assert.Equal(time.UTC, response.Sessions[1].UpdatedAt.Location())
 	require.NotNil(response.Sessions[1].InitialMessage)
-	assert.Equal(db.AgentInitialMessageDelivered, response.Sessions[1].InitialMessage.State)
+	assert.Equal(initialMessageDelivered, response.Sessions[1].InitialMessage.State)
 	assert.Equal(12, response.Sessions[1].InitialMessage.MessageBytes)
 	require.NotNil(response.Sessions[1].InitialMessage.DeliveredAt)
 	assert.Equal(time.UTC, response.Sessions[1].InitialMessage.DeliveredAt.Location())

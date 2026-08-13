@@ -15,11 +15,10 @@
 - Confirm a mutation only from exactly one complete JSON response value;
   malformed or trailing response data is ambiguous and non-retryable
   (`internal/mcpserver/daemon.go::daemonClient.do`).
-- Initial-message receipts store no prompt or digest and survive runtime-row
-  cleanup; only workspace deletion cascades them (`internal/db/migrations/000050_agent_initial_message_receipts.up.sql`).
-- Receipt reuse requires matching agent, coding session, and normalized byte
-  count; recover pending rows only after the daemon runtime lock is held, never
-  during generic DB open (`internal/db/queries_agent_message.go::DB.ReserveAgentInitialMessage`, `cmd/kenn-forge/main.go::run`).
+- Initial-message attempts are process-local and retain the exact normalized
+  prompt only in daemon memory. Same-daemon retries must match agent, coding
+  session, and prompt; daemon restart intentionally permits a fresh attempt
+  (`internal/server/workspaceapi/initial_message.go::initialMessageAttempt`).
 - Initial input requires exact live hook identity, LF or printable Unicode, and
   tracked bracketed paste for multiline text. Proven no-write rejection releases
   its reservation; possible writes finalize without client cancellation (`internal/server/workspaceapi/initial_message.go::Handler.submitInitialMessage`).
@@ -28,4 +27,5 @@
 - MCP can create/reuse PR, issue, or ad-hoc workspaces and launch one new agent
   runtime with one initial message. Ambiguous mutations are never retried or
   cleaned up; lost message responses permit only bounded cancellation-independent
-  receipt reads, and unresolved `pending` or `uncertain` evidence remains ambiguous (`internal/mcpserver/tools_agent_spawn.go::Server.recoverInitialMessageReceipt`).
+  status reads from the same daemon, and unresolved `pending` or `uncertain`
+  evidence remains ambiguous (`internal/mcpserver/tools_agent_spawn.go::Server.recoverInitialMessageStatus`).

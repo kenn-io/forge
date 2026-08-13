@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/agentactivity"
-	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/kit/agenthook"
@@ -17,7 +16,7 @@ type listWorkspaceAgentSessionsInput struct {
 	ID string `path:"id"`
 }
 
-type agentInitialMessageReceiptResponse struct {
+type agentInitialMessageStatusResponse struct {
 	Agent        string     `json:"agent"`
 	SessionID    string     `json:"session_id"`
 	State        string     `json:"state"`
@@ -27,13 +26,13 @@ type agentInitialMessageReceiptResponse struct {
 }
 
 type workspaceAgentSessionResponse struct {
-	Agent             string                              `json:"agent"`
-	SessionID         string                              `json:"session_id"`
-	RuntimeSessionKey string                              `json:"runtime_session_key"`
-	TargetKey         string                              `json:"target_key"`
-	State             agentactivity.State                 `json:"state"`
-	UpdatedAt         time.Time                           `json:"updated_at"`
-	InitialMessage    *agentInitialMessageReceiptResponse `json:"initial_message,omitempty"`
+	Agent             string                             `json:"agent"`
+	SessionID         string                             `json:"session_id"`
+	RuntimeSessionKey string                             `json:"runtime_session_key"`
+	TargetKey         string                             `json:"target_key"`
+	State             agentactivity.State                `json:"state"`
+	UpdatedAt         time.Time                          `json:"updated_at"`
+	InitialMessage    *agentInitialMessageStatusResponse `json:"initial_message,omitempty"`
 }
 
 type listWorkspaceAgentSessionsOutput struct {
@@ -95,15 +94,10 @@ func (s *Handler) listWorkspaceAgentSessions(
 			State:             report.State,
 			UpdatedAt:         report.UpdatedAt.UTC(),
 		}
-		receipt, receiptErr := s.db.GetAgentInitialMessageReceipt(
-			ctx, summary.ID, report.RuntimeSessionKey,
-		)
-		if receiptErr != nil {
-			return nil, httpapi.Internal("get initial message receipt failed")
-		}
-		if receipt != nil && receipt.Agent == string(agent) &&
-			receipt.CodingSessionID == report.SessionID {
-			response.InitialMessage = receiptResponse(*receipt)
+		if attempt, found := s.initialMessageAttempt(
+			summary.ID, report.RuntimeSessionKey,
+		); found && attempt.Agent == string(agent) && attempt.SessionID == report.SessionID {
+			response.InitialMessage = initialMessageStatusResponse(attempt)
 		}
 		output.Body.Sessions = append(output.Body.Sessions, response)
 	}
@@ -123,16 +117,16 @@ func (s *Handler) listWorkspaceAgentSessions(
 	return output, nil
 }
 
-func receiptResponse(receipt db.AgentInitialMessageReceipt) *agentInitialMessageReceiptResponse {
-	response := &agentInitialMessageReceiptResponse{
-		Agent:        receipt.Agent,
-		SessionID:    receipt.CodingSessionID,
-		State:        receipt.State,
-		MessageBytes: receipt.MessageBytes,
-		ReservedAt:   receipt.ReservedAt.UTC(),
+func initialMessageStatusResponse(attempt initialMessageAttempt) *agentInitialMessageStatusResponse {
+	response := &agentInitialMessageStatusResponse{
+		Agent:        attempt.Agent,
+		SessionID:    attempt.SessionID,
+		State:        attempt.State,
+		MessageBytes: len(attempt.Message),
+		ReservedAt:   attempt.ReservedAt.UTC(),
 	}
-	if receipt.DeliveredAt != nil {
-		deliveredAt := receipt.DeliveredAt.UTC()
+	if attempt.DeliveredAt != nil {
+		deliveredAt := attempt.DeliveredAt.UTC()
 		response.DeliveredAt = &deliveredAt
 	}
 	return response

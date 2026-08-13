@@ -1,1 +1,0 @@
-DROP TABLE IF EXISTS forge_agent_initial_message_receipts;

@@ -117,8 +117,8 @@ automatic provider assignment. Existing workspaces still receive a new runtime.
 The response reports the last completed stage plus every workspace, runtime,
 and coding-session identifier learned so far. Created resources remain running
 after a later failure. Do not retry an ambiguous create, launch, or message
-mutation; the companion performs only receipt lookup after a lost initial-message
-response.
+mutation; the companion performs only a same-daemon status lookup after a lost
+initial-message response.
 
 Use `kenn_forge_list_workspace_agent_sessions` to list fresh, live coding
 session IDs reported by hooks for a workspace. It intentionally omits expired

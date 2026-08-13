@@ -52,6 +52,6 @@ Handoff flow:
 2. Call kenn_forge_spawn_workspace_with_agent once with the selected source,
    target, and initial message.
 3. Do not retry an ambiguous workspace, runtime, or message mutation. The tool
-   performs receipt-only recovery when an initial-message response is lost.
+   performs same-daemon status lookup when an initial-message response is lost.
 4. Report every returned workspace, runtime, and coding-session identifier.
 ```

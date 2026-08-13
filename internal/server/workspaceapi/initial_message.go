@@ -9,13 +9,35 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/kit/agenthook"
 )
 
 const maxInitialAgentMessageBytes = 64 << 10
+
+const (
+	initialMessagePending   = "pending"
+	initialMessageDelivered = "delivered"
+	initialMessageUncertain = "uncertain"
+)
+
+type initialMessageKey struct {
+	workspaceID       string
+	runtimeSessionKey string
+}
+
+// initialMessageAttempt is deliberately process-local. The normalized prompt
+// is retained only so retries against this daemon can be compared without
+// exposing prompt content through the API. Daemon restart clears all attempts.
+type initialMessageAttempt struct {
+	Agent       string
+	SessionID   string
+	Message     string
+	State       string
+	ReservedAt  time.Time
+	DeliveredAt *time.Time
+}
 
 type initialMessagePathInput struct {
 	ID         string `path:"id"`
@@ -33,7 +55,7 @@ type submitInitialMessageInput struct {
 }
 
 type initialMessageOutput struct {
-	Body agentInitialMessageReceiptResponse
+	Body agentInitialMessageStatusResponse
 }
 
 func normalizeInitialAgentMessage(message string) (string, int, error) {
@@ -57,30 +79,24 @@ func normalizeInitialAgentMessage(message string) (string, int, error) {
 	return message, messageBytes, nil
 }
 
-func (s *Handler) getInitialMessageReceipt(
-	ctx context.Context,
+func (s *Handler) getInitialMessageStatus(
+	_ context.Context,
 	input *initialMessagePathInput,
 ) (*initialMessageOutput, error) {
-	if s.db == nil {
-		return nil, httpapi.ServiceUnavailable("database not configured")
-	}
-	receipt, err := s.db.GetAgentInitialMessageReceipt(ctx, input.ID, input.SessionKey)
-	if err != nil {
-		return nil, httpapi.Internal("get initial message receipt failed")
-	}
-	if receipt == nil {
+	attempt, ok := s.initialMessageAttempt(input.ID, input.SessionKey)
+	if !ok {
 		return nil, httpapi.NotFound(
-			httpapi.CodeNotFound, "initial message receipt not found", nil,
+			httpapi.CodeNotFound, "initial message status not found", nil,
 		)
 	}
-	return &initialMessageOutput{Body: *receiptResponse(*receipt)}, nil
+	return &initialMessageOutput{Body: *initialMessageStatusResponse(attempt)}, nil
 }
 
 func (s *Handler) submitInitialMessage(
 	ctx context.Context,
 	input *submitInitialMessageInput,
 ) (*initialMessageOutput, error) {
-	if s.db == nil || s.workspaces == nil || s.runtime == nil || s.agentActivity == nil {
+	if s.workspaces == nil || s.runtime == nil || s.agentActivity == nil {
 		return nil, httpapi.ServiceUnavailable("initial message delivery not configured")
 	}
 	agent, err := agenthook.ParseAgent(input.Body.Agent)
@@ -91,21 +107,16 @@ func (s *Handler) submitInitialMessage(
 	if sessionID == "" {
 		return nil, httpapi.Validation("body.session_id", "session_id is required")
 	}
-	message, messageBytes, err := normalizeInitialAgentMessage(input.Body.Message)
+	message, _, err := normalizeInitialAgentMessage(input.Body.Message)
 	if err != nil {
 		return nil, httpapi.Validation("body.message", err.Error())
 	}
-	proposed := db.AgentInitialMessageReceipt{
-		WorkspaceID: input.ID, RuntimeSessionKey: input.SessionKey,
-		Agent: string(agent), CodingSessionID: sessionID, MessageBytes: messageBytes,
+	proposed := initialMessageAttempt{
+		Agent: string(agent), SessionID: sessionID, Message: message,
 	}
 
-	existing, err := s.db.GetAgentInitialMessageReceipt(ctx, input.ID, input.SessionKey)
-	if err != nil {
-		return nil, httpapi.Internal("get initial message receipt failed")
-	}
-	if existing != nil {
-		return existingInitialMessageReceipt(*existing, proposed)
+	if existing, ok := s.initialMessageAttempt(input.ID, input.SessionKey); ok {
+		return existingInitialMessageAttempt(existing, proposed)
 	}
 
 	summary, err := s.workspaces.GetSummary(ctx, input.ID)
@@ -147,74 +158,129 @@ func (s *Handler) submitInitialMessage(
 		)
 	}
 
-	receipt, reserved, err := s.db.ReserveAgentInitialMessage(ctx, proposed)
-	if err != nil {
-		if errors.Is(err, db.ErrAgentInitialMessageReceiptConflict) {
-			var conflict *db.AgentInitialMessageReceiptConflictError
-			if errors.As(err, &conflict) {
-				return initialMessageReceiptConflict(conflict.Existing)
-			}
-		}
-		if errors.Is(err, db.ErrAgentInitialMessageRuntimeNotFound) {
-			return nil, httpapi.Conflict(
-				httpapi.CodeConflict, "agent runtime session is no longer recorded", nil,
-			)
-		}
-		return nil, httpapi.Internal("reserve initial message receipt failed")
-	}
+	attempt, reserved := s.reserveInitialMessageAttempt(input.ID, input.SessionKey, proposed)
 	if !reserved {
-		return &initialMessageOutput{Body: *receiptResponse(receipt)}, nil
+		return existingInitialMessageAttempt(attempt, proposed)
 	}
-	finalizeCtx, cancelFinalize := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancelFinalize()
-
 	if err := s.runtime.SubmitInitialMessage(input.ID, input.SessionKey, message); err != nil {
 		if errors.Is(err, localruntime.ErrBracketedPasteInactive) {
-			released, releaseErr := s.db.ReleasePendingAgentInitialMessage(finalizeCtx, proposed)
-			if releaseErr != nil || !released {
-				return nil, httpapi.Internal("submit initial message and release unused receipt failed")
-			}
+			s.releaseInitialMessageAttempt(input.ID, input.SessionKey, proposed)
 			return nil, httpapi.Validation("body.message", err.Error())
 		}
-		if _, markErr := s.db.MarkAgentInitialMessageUncertain(
-			finalizeCtx, input.ID, input.SessionKey,
-		); markErr != nil {
-			return nil, httpapi.Internal("submit initial message and record uncertain receipt failed")
-		}
+		s.finishInitialMessageAttempt(input.ID, input.SessionKey, initialMessageUncertain)
 		return nil, httpapi.Internal("submit initial message failed")
 	}
-	delivered, err := s.db.MarkAgentInitialMessageDelivered(
-		finalizeCtx, input.ID, input.SessionKey,
+	delivered := s.finishInitialMessageAttempt(
+		input.ID, input.SessionKey, initialMessageDelivered,
 	)
-	if err != nil {
-		return nil, httpapi.Internal("mark initial message delivered failed")
-	}
-	return &initialMessageOutput{Body: *receiptResponse(delivered)}, nil
+	return &initialMessageOutput{Body: *initialMessageStatusResponse(delivered)}, nil
 }
 
-func existingInitialMessageReceipt(
-	existing db.AgentInitialMessageReceipt,
-	proposed db.AgentInitialMessageReceipt,
+func existingInitialMessageAttempt(
+	existing initialMessageAttempt,
+	proposed initialMessageAttempt,
 ) (*initialMessageOutput, error) {
 	if existing.Agent != proposed.Agent ||
-		existing.CodingSessionID != proposed.CodingSessionID ||
-		existing.MessageBytes != proposed.MessageBytes {
-		return initialMessageReceiptConflict(existing)
+		existing.SessionID != proposed.SessionID ||
+		existing.Message != proposed.Message {
+		return initialMessageAttemptConflict(existing)
 	}
-	return &initialMessageOutput{Body: *receiptResponse(existing)}, nil
+	return &initialMessageOutput{Body: *initialMessageStatusResponse(existing)}, nil
 }
 
-func initialMessageReceiptConflict(
-	existing db.AgentInitialMessageReceipt,
+func initialMessageAttemptConflict(
+	existing initialMessageAttempt,
 ) (*initialMessageOutput, error) {
 	return nil, httpapi.Conflict(
 		httpapi.CodeConflict,
 		"an initial message attempt already exists for this runtime session",
 		map[string]any{
 			"agent":         existing.Agent,
-			"session_id":    existing.CodingSessionID,
-			"message_bytes": existing.MessageBytes,
+			"session_id":    existing.SessionID,
+			"message_bytes": len(existing.Message),
 			"state":         existing.State,
 		},
 	)
+}
+
+func (s *Handler) initialMessageAttempt(
+	workspaceID string,
+	runtimeSessionKey string,
+) (initialMessageAttempt, bool) {
+	s.initialMessagesMu.Lock()
+	defer s.initialMessagesMu.Unlock()
+	attempt, ok := s.initialMessages[initialMessageKey{
+		workspaceID: workspaceID, runtimeSessionKey: runtimeSessionKey,
+	}]
+	return attempt, ok
+}
+
+func (s *Handler) reserveInitialMessageAttempt(
+	workspaceID string,
+	runtimeSessionKey string,
+	proposed initialMessageAttempt,
+) (initialMessageAttempt, bool) {
+	s.initialMessagesMu.Lock()
+	defer s.initialMessagesMu.Unlock()
+	if s.initialMessages == nil {
+		s.initialMessages = make(map[initialMessageKey]initialMessageAttempt)
+	}
+	key := initialMessageKey{
+		workspaceID: workspaceID, runtimeSessionKey: runtimeSessionKey,
+	}
+	if existing, ok := s.initialMessages[key]; ok {
+		return existing, false
+	}
+	proposed.State = initialMessagePending
+	proposed.ReservedAt = s.now().UTC()
+	s.initialMessages[key] = proposed
+	return proposed, true
+}
+
+func (s *Handler) releaseInitialMessageAttempt(
+	workspaceID string,
+	runtimeSessionKey string,
+	proposed initialMessageAttempt,
+) {
+	s.initialMessagesMu.Lock()
+	defer s.initialMessagesMu.Unlock()
+	key := initialMessageKey{
+		workspaceID: workspaceID, runtimeSessionKey: runtimeSessionKey,
+	}
+	existing, ok := s.initialMessages[key]
+	if ok && existing.State == initialMessagePending &&
+		existing.Agent == proposed.Agent && existing.SessionID == proposed.SessionID &&
+		existing.Message == proposed.Message {
+		delete(s.initialMessages, key)
+	}
+}
+
+func (s *Handler) finishInitialMessageAttempt(
+	workspaceID string,
+	runtimeSessionKey string,
+	state string,
+) initialMessageAttempt {
+	s.initialMessagesMu.Lock()
+	defer s.initialMessagesMu.Unlock()
+	key := initialMessageKey{
+		workspaceID: workspaceID, runtimeSessionKey: runtimeSessionKey,
+	}
+	attempt := s.initialMessages[key]
+	attempt.State = state
+	if state == initialMessageDelivered {
+		deliveredAt := s.now().UTC()
+		attempt.DeliveredAt = &deliveredAt
+	}
+	s.initialMessages[key] = attempt
+	return attempt
+}
+
+func (s *Handler) clearInitialMessageAttempts(workspaceID string) {
+	s.initialMessagesMu.Lock()
+	defer s.initialMessagesMu.Unlock()
+	for key := range s.initialMessages {
+		if key.workspaceID == workspaceID {
+			delete(s.initialMessages, key)
+		}
+	}
 }

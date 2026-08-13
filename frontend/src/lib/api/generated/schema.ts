@@ -4685,7 +4685,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get initial agent message receipt */
+        /** Get initial agent message status */
         get: operations["get-workspace-runtime-session-initial-message"];
         put?: never;
         /** Submit initial agent message */
@@ -4860,11 +4860,11 @@ export interface components {
             additionalContext: string;
             hookEventName: string;
         };
-        AgentInitialMessageReceiptResponse: {
+        AgentInitialMessageStatusResponse: {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/AgentInitialMessageReceiptResponse.json
+             * @example /api/v1/schemas/AgentInitialMessageStatusResponse.json
              */
             readonly $schema?: string;
             agent: string;
@@ -8276,7 +8276,7 @@ export interface components {
         };
         WorkspaceAgentSessionResponse: {
             agent: string;
-            initial_message?: components["schemas"]["AgentInitialMessageReceiptResponse"];
+            initial_message?: components["schemas"]["AgentInitialMessageStatusResponse"];
             runtime_session_key: string;
             session_id: string;
             state: string;
@@ -19361,7 +19361,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentInitialMessageReceiptResponse"];
+                    "application/json": components["schemas"]["AgentInitialMessageStatusResponse"];
                 };
             };
             /** @description Error */
@@ -19397,7 +19397,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentInitialMessageReceiptResponse"];
+                    "application/json": components["schemas"]["AgentInitialMessageStatusResponse"];
                 };
             };
             /** @description Error */

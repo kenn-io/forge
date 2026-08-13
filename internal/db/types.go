@@ -1328,25 +1328,6 @@ type WorkspaceRuntimeSession struct {
 	CreatedAt     time.Time
 }
 
-const (
-	AgentInitialMessagePending   = "pending"
-	AgentInitialMessageDelivered = "delivered"
-	AgentInitialMessageUncertain = "uncertain"
-)
-
-// AgentInitialMessageReceipt records one initial-message delivery attempt
-// without retaining the message or a content-derived fingerprint.
-type AgentInitialMessageReceipt struct {
-	WorkspaceID       string
-	RuntimeSessionKey string
-	Agent             string
-	CodingSessionID   string
-	MessageBytes      int
-	State             string
-	ReservedAt        time.Time
-	DeliveredAt       *time.Time
-}
-
 // ListActivityOpts holds filters and pagination for the activity feed.
 type ListActivityOpts struct {
 	Repo           string       // "owner/name" filter

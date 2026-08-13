@@ -94,7 +94,7 @@ func (c *FixtureClient) MarkNotificationThreadRead(
 }
 
 func (c *FixtureClient) AuthenticatedViewerLogin(context.Context) (string, error) {
-	return "alice", nil
+	return "fixture-viewer", nil
 }
 
 func (c *FixtureClient) SetMergePullRequestError(err error) {

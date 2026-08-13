@@ -152,7 +152,7 @@ func (p e2eStaticProvider) Capabilities() platform.Capabilities {
 func (p e2eStaticProvider) AuthenticatedUser(
 	context.Context, platform.RepoRef,
 ) (string, error) {
-	return "alice", nil
+	return "fixture-viewer", nil
 }
 
 func (p e2eStaticProvider) GetRepository(

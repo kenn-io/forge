@@ -46,9 +46,11 @@
     node: WorkflowNode;
     tabs: WorkflowTabDescriptor[];
     activeTabKey: WorkflowTabKey;
+    inputActive?: boolean;
     renderTab: Snippet<[WorkflowTabKey, boolean]>;
     disabled?: boolean;
     onSelectTab?: ((tabKey: WorkflowTabKey) => void) | undefined;
+    onFocusPane?: ((tabKey: WorkflowTabKey) => void) | undefined;
     onMoveTabBefore?:
       | ((sourceTabKey: WorkflowTabKey, targetTabKey: WorkflowTabKey) => void)
       | undefined;
@@ -74,9 +76,11 @@
     node,
     tabs,
     activeTabKey,
+    inputActive = true,
     renderTab: renderWorkflowTab,
     disabled = false,
     onSelectTab,
+    onFocusPane,
     onMoveTabBefore,
     onAppendTabToLeaf,
     onSplitTab,
@@ -148,6 +152,7 @@
   {node}
   {tabs}
   {activeTabKey}
+  {inputActive}
   {disabled}
   tablistLabel="Workflow group tabs"
   leafLabel="Workflow group"
@@ -156,6 +161,9 @@
   onSelectTab={(tabKey) => {
     if (disabled) return;
     onSelectTab?.(workflowTabFrom(tabKey));
+  }}
+  onFocusPane={(tabKey) => {
+    onFocusPane?.(workflowTabFrom(tabKey));
   }}
   onMoveTabBefore={(source, target) =>
     !disabled && onMoveTabBefore?.(workflowTabFrom(source), workflowTabFrom(target))}

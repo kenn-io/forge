@@ -864,6 +864,7 @@ describe("promotable sessions", () => {
     publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, [{ ...sessions[0]!, label: "codex (proxy)" }]);
     const layout = getPaneLayoutStore("prs");
     layout.notePaneRender({
+      activeInputTabKey: "workspace",
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation", "workspace"],
       flattened: false,
@@ -878,6 +879,7 @@ describe("promotable sessions", () => {
     prs.claim(identityA, refA);
     publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, [{ ...sessions[0]!, label: "codex (proxy)" }]);
     getPaneLayoutStore("prs").notePaneRender({
+      activeInputTabKey: "workspace",
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation", "workspace"],
       flattened: true,
@@ -916,6 +918,7 @@ describe("a workspace spread across several panes", () => {
     publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, sessions);
     const layout = getPaneLayoutStore("prs");
     layout.notePaneRender({
+      activeInputTabKey: "workspace",
       editableTabs: ["conversation", "files", "workspace"],
       onScreenTabs: ["conversation", "files", "workspace"],
       flattened: false,
@@ -1192,6 +1195,7 @@ describe("a workspace spread across several panes", () => {
     // touch, and one for the doomed workspace, which it must.
     const issuesLayout = getPaneLayoutStore("issues");
     issuesLayout.notePaneRender({
+      activeInputTabKey: "workspace",
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation", "workspace"],
       flattened: false,

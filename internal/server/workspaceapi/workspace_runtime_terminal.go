@@ -367,9 +367,12 @@ func bridgeRuntimeAttachment(
 		// Write the frame BEFORE cancel: coder/websocket tears down
 		// the underlying connection when the input goroutine's
 		// Read context is canceled, which races our Write.
-		writeRuntimeExit(conn, attachment.Info())
+		detachedForRestart := attachment.DetachedForServerRestart()
+		if !detachedForRestart {
+			writeRuntimeExit(conn, attachment.Info())
+		}
 		cancel()
-		return true
+		return !detachedForRestart
 	case <-inputDone:
 		cancel()
 		return false
@@ -401,11 +404,12 @@ func bridgeRuntimeAttachment(
 		// against socket teardown — the Write loses ~25 % of the
 		// time and the frame never reaches the client.
 		closed := attachment.SessionOutputClosed()
-		if closed {
+		exited := closed && !attachment.DetachedForServerRestart()
+		if exited {
 			writeRuntimeExit(conn, attachment.Info())
 		}
 		cancel()
-		return closed
+		return exited
 	case <-ctx.Done():
 		return false
 	}

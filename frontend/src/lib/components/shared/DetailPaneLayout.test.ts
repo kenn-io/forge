@@ -169,6 +169,18 @@ describe("detail pane layout", () => {
     expect(layout.paneRender()?.onScreenTabs).toHaveLength(1);
   });
 
+  it("assigns narrow-layout input ownership to the rendered synthetic leaf", () => {
+    mockWidth(600);
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const conversation = screen.getByTestId("pane-conversation");
+
+    fireEvent.focusIn(conversation);
+
+    expect(conversation.getAttribute("data-input-active")).toBe("true");
+    expect(layout.paneRender()?.activeInputTabKey).toBe("conversation");
+  });
+
   it("publishes no report until the host has been measured", () => {
     // Width decides whether structural edits are allowed at all; defaulting an
     // unmeasured host to "not flattened" offers those commands for a frame on a
@@ -387,6 +399,193 @@ describe("detail pane layout", () => {
     expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
   });
 
+  it("does not invent a focused pane when the focused pane stops rendering", async () => {
+    const layout = store(splitTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, { layout, routeTabKey: "conversation" });
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    expect(activePaneKey()).toBe("workspace");
+    expect(layout.paneRender()?.activeInputTabKey).toBe("workspace");
+
+    layout.setHidden("workspace", true);
+    flushSync();
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+
+    layout.setHidden("workspace", false);
+    flushSync();
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    await rerender({ layout, routeTabKey: "conversation", workspaceAvailable: false });
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+
+    await rerender({ layout, routeTabKey: "conversation", workspaceAvailable: true });
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    layout.toggleZoom("leaf-detail");
+    flushSync();
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+  });
+
+  it("moves keyboard ownership only when DOM focus moves", () => {
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout, routeTabKey: "conversation" });
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    expect(activePaneKey()).toBe("workspace");
+    expect(screen.getByTestId("pane-workspace").getAttribute("data-input-active")).toBe("true");
+
+    fireEvent.pointerDown(screen.getByTestId("pane-conversation"));
+    fireEvent.wheel(screen.getByTestId("pane-conversation"));
+    expect(activePaneKey()).toBe("workspace");
+    expect(screen.getByTestId("pane-conversation").getAttribute("data-input-active")).toBe("false");
+
+    layout.setExternalInputActive(true);
+    flushSync();
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+
+    layout.noteFocused("conversation");
+    expect(layout.externalInputActive()).toBe(true);
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    expect(layout.externalInputActive()).toBe(false);
+    expect(activePaneKey()).toBe("workspace");
+    expect(layout.paneRender()?.activeInputTabKey).toBe("workspace");
+
+    fireEvent.focusOut(screen.getByTestId("pane-workspace"), { relatedTarget: document.body });
+    expect(activePaneKey()).toBeUndefined();
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+  });
+
+  it("keeps the focused leaf active when its selected tab changes", () => {
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout, routeTabKey: "conversation" });
+    const filesTab = screen.getByRole("tab", { name: "Files" });
+    const detailLeaf = filesTab.closest(".tabbed-panel-leaf");
+
+    fireEvent.focusIn(filesTab);
+    expect(detailLeaf?.classList.contains("input-active")).toBe(true);
+
+    fireEvent.click(filesTab);
+    expect(filesTab.getAttribute("aria-selected")).toBe("true");
+    expect(detailLeaf?.classList.contains("input-active")).toBe(true);
+    expect(layout.paneRender()?.activeInputTabKey).toBe("files");
+  });
+
+  it("reclaims focus when same-leaf tab replacement unmounts the focused body", async () => {
+    const layout = store(mergedTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const conversationFocusTarget = screen.getByTestId("pane-focus-target-conversation");
+
+    conversationFocusTarget.focus();
+    fireEvent.focusIn(conversationFocusTarget);
+    expect(layout.paneRender()?.activeInputTabKey).toBe("conversation");
+
+    flushSync(() => layout.activateTab("files"));
+
+    await vi.waitFor(() => {
+      expect(document.activeElement?.classList.contains("detail-pane-layout")).toBe(true);
+      expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+    });
+  });
+
+  it("reclaims focus when same-tab content identity replaces the focused body", async () => {
+    const layout = store(mergedTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, { layout, paneIdentity: "first" });
+    const conversationFocusTarget = screen.getByTestId("pane-focus-target-conversation");
+
+    conversationFocusTarget.focus();
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBe("conversation"));
+
+    fireEvent.focusOut(conversationFocusTarget, { relatedTarget: null });
+    await rerender({ layout, paneIdentity: "second" });
+
+    await vi.waitFor(() => {
+      expect(document.activeElement?.classList.contains("detail-pane-layout")).toBe(true);
+      expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+    });
+  });
+
+  it("forgets a connected focus target after a no-destination blur", async () => {
+    const layout = store(mergedTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, { layout, paneIdentity: "first" });
+    const conversationFocusTarget = screen.getByTestId("pane-focus-target-conversation");
+
+    conversationFocusTarget.focus();
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBe("conversation"));
+
+    conversationFocusTarget.blur();
+    expect(document.activeElement).toBe(document.body);
+    await new Promise(requestAnimationFrame);
+
+    await rerender({ layout, paneIdentity: "second" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.activeElement).toBe(document.body);
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+  });
+
+  it("forgets a connected focus target when the document hides before the next frame", async () => {
+    const layout = store(mergedTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, { layout, paneIdentity: "first" });
+    const conversationFocusTarget = screen.getByTestId("pane-focus-target-conversation");
+    vi.spyOn(window, "requestAnimationFrame").mockReturnValue(1);
+    const visibilityState = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+
+    conversationFocusTarget.focus();
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBe("conversation"));
+
+    conversationFocusTarget.blur();
+    expect(document.activeElement).toBe(document.body);
+    visibilityState.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await rerender({ layout, paneIdentity: "second" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.activeElement).toBe(document.body);
+    expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+  });
+
+  it("releases layout ownership when focused content is reparented outside it", async () => {
+    const layout = store(mergedTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const conversationFocusTarget = screen.getByTestId("pane-focus-target-conversation");
+
+    conversationFocusTarget.focus();
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBe("conversation"));
+
+    document.body.append(conversationFocusTarget);
+
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBeNull());
+    expect(document.activeElement).not.toBe(document.querySelector(".detail-pane-layout"));
+  });
+
+  it("drops stale ownership when a focused inactive tab moves to another leaf", async () => {
+    const layout = store(mergedTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const filesTab = screen.getByRole("tab", { name: "Files" });
+
+    filesTab.focus();
+    expect(filesTab).toBe(document.activeElement);
+    await vi.waitFor(() => expect(layout.paneRender()?.activeInputTabKey).toBe("conversation"));
+
+    flushSync(() => layout.splitTab("files", "leaf-all", "horizontal", "after"));
+
+    await vi.waitFor(() => {
+      expect(document.activeElement?.classList.contains("detail-pane-layout")).toBe(true);
+      expect(layout.paneRender()?.activeInputTabKey).toBeNull();
+    });
+  });
+
   it("keeps a zoom on a non-route leaf when the tab list re-derives", async () => {
     // Route authority is a transition, not an invariant. The deep-link effect
     // also tracks `tabs`, whose identity changes on unrelated store state — the
@@ -438,6 +637,27 @@ describe("detail pane layout", () => {
     fireEvent.focusIn(screen.getByTestId("pane-workspace"));
 
     expect(onFocusPane).toHaveBeenCalledWith("workspace");
+  });
+
+  it("reports focus after an external route transition changes the owner", async () => {
+    const layout = store(splitTree());
+    const onFocusPane = vi.fn();
+    const { rerender } = render(DetailPaneLayoutTestHarness, {
+      layout,
+      routeTabKey: "conversation",
+      onFocusPane,
+    });
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    expect(onFocusPane).toHaveBeenLastCalledWith("workspace");
+
+    await rerender({ layout, routeTabKey: "files", onFocusPane });
+    expect(layout.lastFocusedTabKey()).toBe("files");
+    onFocusPane.mockClear();
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    expect(onFocusPane).toHaveBeenCalledWith("workspace");
+    expect(layout.lastFocusedTabKey()).toBe("workspace");
   });
 
   it("records the focused pane for a surface that wants no notification", () => {

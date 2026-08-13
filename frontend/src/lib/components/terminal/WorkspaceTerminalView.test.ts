@@ -1,11 +1,17 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
+import { flushSync } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { RuntimeSession } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
-import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../../stores/paneLayout.svelte.js";
+import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
+import {
+  getPaneLayoutStore,
+  promoteSessionBesideWorkspace,
+  resetPaneLayoutStoresForTest,
+} from "../../stores/paneLayout.svelte.js";
 import { sessionPaneKey } from "../../stores/session-pane-key.js";
 import {
   beginWorkspaceCreate,
@@ -577,6 +583,7 @@ function persistedTwoSessionWorkflowLayout(firstKey: string, secondKey: string) 
  */
 function noteWorkspacePaneRendered(surface: "prs" | "issues" | "activity"): void {
   getPaneLayoutStore(surface).notePaneRender({
+    activeInputTabKey: "workspace",
     editableTabs: ["conversation", "workspace"],
     onScreenTabs: ["conversation", "workspace"],
     flattened: false,
@@ -950,7 +957,7 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    await screen.findByRole("tab", { name: /Helper/ });
+    await screen.findByRole("region", { name: "Workflow panes" });
     await waitFor(() => expect(sockets).toHaveLength(1));
 
     sockets[0]!.onmessage?.(
@@ -962,6 +969,75 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull());
     expect(screen.getByRole("tab", { name: /Home/ }).getAttribute("aria-selected")).toBe("true");
     expect(localStorage.getItem("kenn-forge-workspace-active-tab:ws-1")).toBe("home");
+  });
+
+  it("restores workspace focus when the focused workflow content exits", async () => {
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      JSON.stringify({
+        version: 1,
+        open: false,
+        dock: "bottom",
+        height: 300,
+        activeSessionKey: null,
+        tree: null,
+        sessionRegions: { "ws-1:helper": "workflow", "ws-1:reviewer": "workflow" },
+        workflowMode: "tabs",
+        workflowTree: {
+          type: "leaf",
+          id: "wf-sessions",
+          tabs: ["session:ws-1:helper", "session:ws-1:reviewer"],
+          activeTabKey: "session:ws-1:helper",
+        },
+        customSessionLabels: {},
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    const runCommand = mocks.runtime.runCommand.bind(mocks.runtime);
+    const recoveryStarted = deferred<void>();
+    const releaseRecovery = deferred<void>();
+    vi.spyOn(mocks.runtime, "runCommand").mockImplementation((program, options) =>
+      runCommand(
+        options.operation === "workspace.restore.focus"
+          ? Effect.sync(() => recoveryStarted.resolve()).pipe(
+              Effect.andThen(Effect.promise(() => releaseRecovery.promise)),
+              Effect.andThen(program),
+            )
+          : program,
+        options,
+      ),
+    );
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    const focusTarget = await screen.findByRole("button", { name: "Move Helper to terminal" });
+    focusTarget.focus();
+    expect(document.activeElement).toBe(focusTarget);
+    const workflowStage = screen.getByRole("region", { name: "Workflow panes" });
+    await waitFor(() =>
+      expect(document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveLength(1),
+    );
+    await waitFor(() => expect(sockets).toHaveLength(1));
+
+    sockets[0]!.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "exited", code: 0 }),
+      }),
+    );
+    await recoveryStarted.promise;
+    workflowStage.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: document.body }));
+    flushSync();
+    releaseRecovery.resolve();
+
+    await waitFor(() => expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull());
+    expect(focusTarget.isConnected).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".terminal-view")));
   });
 
   it("starts the runtime request before workspace metadata resolves without fetching it twice", async () => {
@@ -1400,81 +1476,107 @@ describe("WorkspaceTerminalView", () => {
     });
   });
 
-  it("removes the old sidebar and waits for matching runtime before loading the new diff", async () => {
-    window.__BASE_PATH__ = window.location.origin;
-    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
-    localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "diff");
-    const workspaceB = { ...workspaceResponse, id: "ws-2", git_head_ref: "feature/two" };
-    const workspaceBGate = deferred<typeof workspaceB>();
-    const runtimeBGate = deferred<ReturnType<typeof runtimeWithStaleSession>>();
-    const eventListeners: Array<Record<string, (event: MessageEvent) => void>> = [];
-    const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
+  it.each(["details", "workflow"] as const)(
+    "releases %s focus while waiting for matching workspace state",
+    async (focusedRegion) => {
+      window.__BASE_PATH__ = window.location.origin;
+      localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+      localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "diff");
+      const workspaceB = { ...workspaceResponse, id: "ws-2", git_head_ref: "feature/two" };
+      const workspaceBGate = deferred<typeof workspaceB>();
+      const runtimeBGate = deferred<ReturnType<typeof runtimeWithStaleSession>>();
+      const eventListeners: Array<Record<string, (event: MessageEvent) => void>> = [];
+      const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: Request | URL | string) => {
-        const path = fetchPath(input);
-        if (path.endsWith("/workspaces/ws-1")) return Promise.resolve(Response.json(workspaceResponse));
-        if (path.endsWith("/workspaces/ws-2")) {
-          return workspaceBGate.promise.then((workspace) => Response.json(workspace));
-        }
-        if (path.endsWith("/api/v1/workspaces")) {
-          return Promise.resolve(Response.json({ workspaces: [workspaceResponse, workspaceB] }));
-        }
-        return Promise.resolve(Response.json({}));
-      }),
-    );
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        private listeners: Record<string, (event: MessageEvent) => void> = {};
-        constructor() {
-          eventListeners.push(this.listeners);
-        }
-        addEventListener(type: string, callback: (event: MessageEvent) => void): void {
-          this.listeners[type] = callback;
-        }
-        close(): void {}
-      },
-    );
-    mocks.getWorkspaceRuntime
-      .mockResolvedValueOnce(runtimeWithStaleSession())
-      .mockReturnValueOnce(runtimeBGate.promise);
-
-    const { rerender } = render(WorkspaceTerminalView, {
-      props: { workspaceId: "ws-1" },
-      context: new Map([[STORES_KEY, { diff: mocks.diffStore }]]),
-    });
-    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "head", false, expect.anything()));
-
-    await rerender({ workspaceId: "ws-2" });
-
-    // Liveness gating unmounts the stale ws-1 view entirely while ws-2
-    // loads: the old toolbar and sidebar are gone, not lingering behind
-    // action guards.
-    expect(await screen.findByText("Setting up workspace...")).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
-    expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
-
-    eventListeners
-      .findLast((listeners) => listeners.workspace_diff_ready !== undefined)
-      ?.workspace_diff_ready?.(
-        new MessageEvent("workspace_diff_ready", {
-          data: JSON.stringify({ workspace_id: "ws-2", version: "generation:2" }),
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation((input: Request | URL | string) => {
+          const path = fetchPath(input);
+          if (path.endsWith("/workspaces/ws-1")) return Promise.resolve(Response.json(workspaceResponse));
+          if (path.endsWith("/workspaces/ws-2")) {
+            return workspaceBGate.promise.then((workspace) => Response.json(workspace));
+          }
+          if (path.endsWith("/api/v1/workspaces")) {
+            return Promise.resolve(Response.json({ workspaces: [workspaceResponse, workspaceB] }));
+          }
+          return Promise.resolve(Response.json({}));
         }),
       );
-    workspaceBGate.resolve(workspaceB);
-    // ws-2's payload landed but its runtime is still pending: the ready
-    // view mounts with the details-loading sub-state and the diff still
-    // waits for the matching runtime.
-    expect(await screen.findByText("Loading workspace details...")).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
-    expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
+      vi.stubGlobal(
+        "EventSource",
+        class {
+          private listeners: Record<string, (event: MessageEvent) => void> = {};
+          constructor() {
+            eventListeners.push(this.listeners);
+          }
+          addEventListener(type: string, callback: (event: MessageEvent) => void): void {
+            this.listeners[type] = callback;
+          }
+          close(): void {}
+        },
+      );
+      mocks.getWorkspaceRuntime
+        .mockResolvedValueOnce(runtimeWithStaleSession())
+        .mockReturnValueOnce(runtimeBGate.promise);
 
-    runtimeBGate.resolve(runtimeWithStaleSession());
-    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-2", "head", false, expect.anything()));
-    expect(screen.queryByText("Loading workspace details...")).toBeNull();
-  });
+      const { rerender } = render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1" },
+        context: new Map([[STORES_KEY, { diff: mocks.diffStore }]]),
+      });
+      await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "head", false, expect.anything()));
+
+      const inputOwner =
+        focusedRegion === "details"
+          ? await screen.findByRole("region", { name: "Workspace details pane" })
+          : await waitFor(() => {
+              const pane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:helper"]');
+              expect(pane).not.toBeNull();
+              return pane!;
+            });
+      const focusTarget = document.createElement("button");
+      inputOwner.append(focusTarget);
+      focusTarget.focus();
+      expect(document.activeElement).toBe(focusTarget);
+      if (focusedRegion === "details") {
+        await waitFor(() => expect(inputOwner.classList.contains("input-active")).toBe(true));
+      } else {
+        await waitFor(() =>
+          expect(document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveLength(1),
+        );
+      }
+
+      await rerender({ workspaceId: "ws-2" });
+
+      // Liveness gating unmounts the stale ws-1 view entirely while ws-2
+      // loads: the old toolbar and sidebar are gone, not lingering behind
+      // action guards.
+      expect(await screen.findByText("Setting up workspace...")).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
+      expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".terminal-view")));
+      expect(document.querySelector(".right-sidebar.input-active")).toBeNull();
+      expect(document.querySelector(".workspace-stage .tabbed-panel-leaf.input-active")).toBeNull();
+
+      eventListeners
+        .findLast((listeners) => listeners.workspace_diff_ready !== undefined)
+        ?.workspace_diff_ready?.(
+          new MessageEvent("workspace_diff_ready", {
+            data: JSON.stringify({ workspace_id: "ws-2", version: "generation:2" }),
+          }),
+        );
+      workspaceBGate.resolve(workspaceB);
+      // ws-2's payload landed but its runtime is still pending: the ready
+      // view mounts with the details-loading sub-state and the diff still
+      // waits for the matching runtime.
+      expect(await screen.findByText("Loading workspace details...")).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
+      expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
+
+      runtimeBGate.resolve(runtimeWithStaleSession());
+      await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-2", "head", false, expect.anything()));
+      expect(screen.queryByText("Loading workspace details...")).toBeNull();
+    },
+  );
 
   it("renders matching workspace details when runtime loading fails", async () => {
     window.__BASE_PATH__ = window.location.origin;
@@ -3362,6 +3464,7 @@ describe("WorkspaceTerminalView", () => {
     // here leaves nothing on screen naming it - the inner strip is the one bar
     // that pane has.
     getPaneLayoutStore("prs").notePaneRender({
+      activeInputTabKey: "workspace",
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation", "workspace"],
       flattened: false,
@@ -3396,6 +3499,198 @@ describe("WorkspaceTerminalView", () => {
     });
 
     expect(await screen.findAllByRole("tablist", { name: "Workflow group tabs" })).not.toHaveLength(0);
+  });
+
+  it("moves active input ownership only when standalone workflow focus moves", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("tab", { name: /Reviewer/ });
+    const helperPane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:helper"]')!;
+    const reviewerPane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]')!;
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+    expect(activePaneKey()).toBeUndefined();
+
+    await fireEvent.pointerDown(reviewerPane);
+    await fireEvent.wheel(reviewerPane);
+    expect(activePaneKey()).toBeUndefined();
+
+    await fireEvent.focusIn(reviewerPane);
+    expect(activePaneKey()).toBe("session:ws-1:reviewer");
+
+    await fireEvent.wheel(helperPane);
+    await fireEvent.pointerDown(helperPane);
+    expect(activePaneKey()).toBe("session:ws-1:reviewer");
+
+    await fireEvent.focusIn(helperPane);
+    expect(activePaneKey()).toBe("session:ws-1:helper");
+
+    await fireEvent.focusOut(helperPane, { relatedTarget: document.body });
+    expect(activePaneKey()).toBeUndefined();
+  });
+
+  it("moves workflow focus ownership while workspace actions are blocked", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    const reviewerPane = await waitFor(() => {
+      const pane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]');
+      expect(pane).not.toBeNull();
+      return pane!;
+    });
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+
+    beginWorkspaceDeletion("ws-1", undefined);
+    await fireEvent.focusIn(reviewerPane);
+
+    expect(activePaneKey()).toBe("session:ws-1:reviewer");
+    endWorkspaceDeletion("ws-1", undefined);
+  });
+
+  it("clears workflow focus ownership when the host is parked", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hostVisible: true } });
+    const reviewerPane = await waitFor(() => {
+      const pane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]');
+      expect(pane).not.toBeNull();
+      return pane!;
+    });
+
+    await fireEvent.focusIn(reviewerPane);
+    expect(document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveLength(1);
+
+    await view.rerender({ workspaceId: "ws-1", hostVisible: false });
+
+    expect(document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveLength(0);
+  });
+
+  it("keeps a focused bottom dock active while its header opens the panel", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    const toggle = await screen.findByRole("button", { name: "Open terminal panel" });
+    const panel = toggle.closest(".terminal-panel");
+    expect(panel).not.toBeNull();
+
+    await fireEvent.focusIn(toggle);
+    expect(panel?.classList.contains("input-active")).toBe(true);
+
+    await fireEvent.click(toggle);
+    expect(panel?.classList.contains("open")).toBe(true);
+    expect(panel?.classList.contains("input-active")).toBe(true);
+  });
+
+  it("uses the renderer-validated outer owner for nested workflow chrome", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+    const surfaceLayout = getPaneLayoutStore("prs");
+    surfaceLayout.noteFocused("conversation");
+    surfaceLayout.notePaneRender({
+      activeInputTabKey: "conversation",
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation", "workspace"],
+      flattened: false,
+      soloChromeTabs: [],
+    });
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    await screen.findByRole("tab", { name: /Reviewer/ });
+    const activeWorkflowLeaves = () => document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active");
+    expect(activeWorkflowLeaves()).toHaveLength(0);
+
+    // The renderer can select workspace as a fallback while persisted focus still
+    // names a hidden or zoom-covered pane. Nested ownership follows this report,
+    // not the stale focus history.
+    surfaceLayout.notePaneRender({
+      activeInputTabKey: "workspace",
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["workspace"],
+      flattened: false,
+      soloChromeTabs: ["workspace"],
+    });
+    await waitFor(() => expect(activeWorkflowLeaves()).toHaveLength(1));
+  });
+
+  it("gates the workspace sidebar shortcut on the renderer-validated owner", async () => {
+    claimForPrs();
+    const surfaceLayout = getPaneLayoutStore("prs");
+    surfaceLayout.notePaneRender({
+      activeInputTabKey: "conversation",
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation", "workspace"],
+      flattened: false,
+      soloChromeTabs: [],
+    });
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+    await screen.findByRole("region", { name: "Workflow panes" });
+
+    await fireEvent.keyDown(window, { key: "]", ctrlKey: true });
+    expect(document.querySelector(".right-sidebar")).toBeNull();
+
+    surfaceLayout.notePaneRender({
+      activeInputTabKey: "workspace",
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation", "workspace"],
+      flattened: false,
+      soloChromeTabs: ["workspace"],
+    });
+    await waitFor(() =>
+      expect(document.querySelector(".workspace-stage .tabbed-panel-leaf.input-active")).not.toBeNull(),
+    );
+    await fireEvent.keyDown(window, { key: "]", ctrlKey: true });
+    expect(document.querySelector(".right-sidebar")).not.toBeNull();
+
+    await fireEvent.keyDown(window, { key: "]", ctrlKey: true });
+    expect(document.querySelector(".right-sidebar")).toBeNull();
+
+    const releaseModal = pushModalFrame("workspace-sidebar-shortcut-test", []);
+    try {
+      await fireEvent.keyDown(window, { key: "]", ctrlKey: true });
+      expect(document.querySelector(".right-sidebar")).toBeNull();
+    } finally {
+      releaseModal();
+    }
   });
 
   it("keeps the workspace header for a sole standalone session", async () => {
@@ -4187,6 +4482,7 @@ describe("WorkspaceTerminalView", () => {
     // chrome suppressed, so the pane has nowhere to hang a controls button and no
     // tab of its own to name the session.
     getPaneLayoutStore("prs").notePaneRender({
+      activeInputTabKey: "workspace",
       flattened: true,
       editableTabs: [],
       onScreenTabs: ["workspace"],
@@ -4348,7 +4644,62 @@ describe("WorkspaceTerminalView", () => {
     expect(activeHostedSession("prs")?.label).toBe("Helper");
   });
 
+  it("releases external input ownership when the hosted view leaves a surface", async () => {
+    const layout = getPaneLayoutStore("prs");
+    const { rerender } = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+    layout.setExternalInputActive(true);
+    expect(layout.externalInputActive()).toBe(true);
+
+    await rerender({ workspaceId: "ws-1", paneSurface: undefined });
+
+    expect(layout.externalInputActive()).toBe(false);
+  });
+
   describe("promoted sessions", () => {
+    it("leaves a connected focused workflow terminal to the pool during promotion", async () => {
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+      localStorage.setItem(
+        "kenn-forge-workspace-terminal-layout:ws-1",
+        persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      const terminal = await waitFor(() => {
+        const element = document.querySelector<HTMLElement>(
+          '[data-pane-key="session:ws-1:helper"] .terminal-container',
+        );
+        expect(element).not.toBeNull();
+        return element!;
+      });
+      const focusTarget = document.createElement("textarea");
+      terminal.append(focusTarget);
+      focusTarget.focus();
+      await waitFor(() =>
+        expect(document.querySelector(".workspace-stage .tabbed-panel-leaf.input-active")).not.toBeNull(),
+      );
+
+      const layout = getPaneLayoutStore("prs");
+      const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+      expect(promoteSessionBesideWorkspace(layout, paneKey)).toBe(true);
+
+      await waitFor(() => expect(layout.hasTab(paneKey)).toBe(true));
+      await waitFor(() => expect(terminal.closest(".workspace-stage")).toBeNull());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(document.activeElement).not.toBe(document.querySelector(".terminal-view"));
+      expect(focusTarget.isConnected).toBe(true);
+    });
+
     it("gives a parked row-only dock the sole workspace actions and live dialogs", async () => {
       localStorage.setItem(
         "kenn-forge-workspace-terminal-layout:ws-1",
@@ -4394,6 +4745,24 @@ describe("WorkspaceTerminalView", () => {
       expect(controller.dockRow()).not.toBeNull();
 
       const externalDock = await screen.findByRole("region", { name: "Terminal panel" });
+      const layout = getPaneLayoutStore("prs");
+      expect(layout.externalInputActive()).toBe(false);
+      await fireEvent.wheel(externalDock);
+      await fireEvent.pointerDown(externalDock);
+      expect(layout.externalInputActive()).toBe(false);
+      expect(externalDock.classList.contains("input-active")).toBe(false);
+
+      await fireEvent.focusIn(externalDock);
+      expect(layout.externalInputActive()).toBe(true);
+      expect(externalDock.classList.contains("input-active")).toBe(true);
+
+      layout.noteFocused(paneKey);
+      expect(layout.externalInputActive()).toBe(true);
+
+      await fireEvent.focusOut(externalDock, { relatedTarget: document.body });
+      expect(layout.externalInputActive()).toBe(false);
+      expect(externalDock.classList.contains("input-active")).toBe(false);
+
       render(WorkspacePaneControls, { props: { showStripActions: false } });
       expect(screen.getAllByRole("button", { name: /^Delete workspace / })).toHaveLength(1);
       expect(screen.getAllByRole("button", { name: "Workspace controls" })).toHaveLength(2);
@@ -4410,7 +4779,6 @@ describe("WorkspaceTerminalView", () => {
 
       await fireEvent.click(within(externalDock).getByRole("button", { name: "Move Shell to a pane" }));
       const shellPaneKey = sessionPaneKey("ws-1", undefined, "ws-1_shell_a");
-      const layout = getPaneLayoutStore("prs");
       await waitFor(() => expect(layout.hasTab(shellPaneKey)).toBe(true));
 
       layout.demoteTab(shellPaneKey);

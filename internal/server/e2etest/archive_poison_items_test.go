@@ -34,6 +34,7 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 		now: time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC),
 	}
 	var prShapedCalls atomic.Int32
+	var deletedCalls atomic.Int32
 	var transientCalls atomic.Int32
 	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -52,7 +53,8 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[
 				{"id":"I_11","databaseId":11,"number":11,"title":"stale issue identity","state":"CLOSED","body":"","url":"https://github.com/acme/widget/issues/11","author":{"login":"author"},"createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-02T00:00:00Z","closedAt":"2025-01-02T00:00:00Z","comments":{"totalCount":0},"labels":{"nodes":[]},"assignees":{"nodes":[]}},
-				{"id":"I_12","databaseId":12,"number":12,"title":"transient issue","state":"CLOSED","body":"","url":"https://github.com/acme/widget/issues/12","author":{"login":"author"},"createdAt":"2025-01-03T00:00:00Z","updatedAt":"2025-01-04T00:00:00Z","closedAt":"2025-01-04T00:00:00Z","comments":{"totalCount":0},"labels":{"nodes":[]},"assignees":{"nodes":[]}}
+				{"id":"I_12","databaseId":12,"number":12,"title":"transient issue","state":"CLOSED","body":"","url":"https://github.com/acme/widget/issues/12","author":{"login":"author"},"createdAt":"2025-01-03T00:00:00Z","updatedAt":"2025-01-04T00:00:00Z","closedAt":"2025-01-04T00:00:00Z","comments":{"totalCount":0},"labels":{"nodes":[]},"assignees":{"nodes":[]}},
+				{"id":"I_13","databaseId":13,"number":13,"title":"deleted issue","state":"CLOSED","body":"","url":"https://github.com/acme/widget/issues/13","author":{"login":"author"},"createdAt":"2025-01-05T00:00:00Z","updatedAt":"2025-01-06T00:00:00Z","closedAt":"2025-01-06T00:00:00Z","comments":{"totalCount":0},"labels":{"nodes":[]},"assignees":{"nodes":[]}}
 			],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
 		case "/api/v3/repos/acme/widget/pulls":
 			_, _ = w.Write([]byte(`[]`))
@@ -65,6 +67,10 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 			transientCalls.Add(1)
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(`{"message":"temporary outage"}`))
+		case "/api/v3/repos/acme/widget/issues/13":
+			deletedCalls.Add(1)
+			w.WriteHeader(http.StatusGone)
+			_, _ = w.Write([]byte(`{"message":"This issue was deleted"}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -127,6 +133,7 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 	require.NoError(archiveService.RunEligible(t.Context())) // merge-request inventory
 	require.NoError(archiveService.RunEligible(t.Context())) // PR-shaped issue hydration
 	require.Error(archiveService.RunEligible(t.Context()))   // first transient failure
+	require.NoError(archiveService.RunEligible(t.Context())) // deleted issue hydration
 
 	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
 	require.NoError(err)
@@ -148,6 +155,22 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 		repo.ID, db.ArchiveItemTypeIssue, 11,
 	).Scan(&lifecycle))
 	assert.Equal(db.ArchiveLifecycleStateRemovedUpstream, lifecycle)
+	deleted, err := database.GetDatasetProgress(
+		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 13, db.ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressTerminal, deleted.Status)
+	assert.Zero(deleted.AttemptCount)
+	assert.Nil(deleted.NextRetryAt)
+	require.NotNil(deleted.LastErrorCode)
+	assert.Equal(string(platform.ErrCodeNotFound), *deleted.LastErrorCode)
+
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT lifecycle_state FROM forge_archive_items
+		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
+		repo.ID, db.ArchiveItemTypeIssue, 13,
+	).Scan(&lifecycle))
+	assert.Equal(db.ArchiveLifecycleStateRemovedUpstream, lifecycle)
 
 	failed, err := database.GetDatasetProgress(
 		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 12, db.ArchiveDatasetLookup,
@@ -162,16 +185,18 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(status.JSON200)
 	require.Len(*status.JSON200, 1)
-	assert.Equal(int64(2), (*status.JSON200)[0].Counts.Items)
-	assert.Equal(int64(1), (*status.JSON200)[0].Counts.CompleteItems)
+	assert.Equal(int64(3), (*status.JSON200)[0].Counts.Items)
+	assert.Equal(int64(2), (*status.JSON200)[0].Counts.CompleteItems)
 	assert.Equal(int64(1), (*status.JSON200)[0].Counts.FailedItems)
 	assert.Equal(int32(1), prShapedCalls.Load())
+	assert.Equal(int32(1), deletedCalls.Load())
 	assert.Equal(int32(1), transientCalls.Load())
 
 	// Neither terminal work nor a failed item whose retry is in the future may
 	// spend another provider call.
 	require.NoError(archiveService.RunEligible(t.Context()))
 	assert.Equal(int32(1), prShapedCalls.Load())
+	assert.Equal(int32(1), deletedCalls.Load())
 	assert.Equal(int32(1), transientCalls.Load())
 
 	clock.now = clock.now.Add(time.Minute)
@@ -201,14 +226,16 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 	clock.now = clock.now.Add(3 * time.Minute)
 	require.NoError(archiveService.RunEligible(t.Context()))
 	assert.Equal(int32(1), prShapedCalls.Load(), "terminal issue must never be fetched again")
+	assert.Equal(int32(1), deletedCalls.Load(), "deleted issue must never be fetched again")
 	assert.Equal(int32(3), transientCalls.Load(), "retry before next_retry_at must stay provider-free")
 
 	status, err = api.HTTP.ListArchiveStatusWithResponse(t.Context(), nil)
 	require.NoError(err)
 	require.NotNil(status.JSON200)
 	require.Len(*status.JSON200, 1)
-	assert.Equal(int64(1), (*status.JSON200)[0].Counts.CompleteItems)
+	assert.Equal(int64(2), (*status.JSON200)[0].Counts.CompleteItems)
 	assert.Equal(int64(1), (*status.JSON200)[0].Counts.FailedItems)
 	assert.Equal(int32(1), prShapedCalls.Load(), "status reads must not call the provider")
+	assert.Equal(int32(1), deletedCalls.Load(), "status reads must not call the provider")
 	assert.Equal(int32(3), transientCalls.Load(), "status reads must not call the provider")
 }

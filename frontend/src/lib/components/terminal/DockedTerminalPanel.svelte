@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
+  import { Effect } from "effect";
+  import { tick, untrack, type Snippet } from "svelte";
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
   import type { RuntimeSession } from "../../api/types.js";
@@ -13,6 +14,10 @@
   import Rows2Icon from "@lucide/svelte/icons/rows-2";
   import MoveIcon from "@lucide/svelte/icons/move";
   import TerminalSplitTree from "./TerminalSplitTree.svelte";
+  import type { AppExecution } from "../../app/runtime.js";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { nextAnimationFrameOrDocumentHidden } from "../../browser/animation-frame.js";
+  import { observeMutation } from "../../browser/observers.js";
   import {
     clearActiveTerminalDrag,
     readRuntimeSessionDrag,
@@ -49,6 +54,9 @@
     // workflow-tab placement while another tab is selected. Forwarded to
     // TerminalSplitTree, which makes it every leaf's visibility.
     hostVisible?: boolean;
+    inputActive?: boolean;
+    onInputActivate?: (() => void) | undefined;
+    onInputDeactivate?: (() => void) | undefined;
     /** Shared detail-surface scope when terminal sessions may become top-level panes. */
     dragScope?: string | undefined;
     /** Maps a runtime session to its top-level detail-pane key. */
@@ -92,6 +100,9 @@
     loading = false,
     disabled = false,
     hostVisible = true,
+    inputActive = false,
+    onInputActivate = undefined,
+    onInputDeactivate = undefined,
     dragScope = undefined,
     paneKeyForSession = undefined,
     headerActions = undefined,
@@ -110,7 +121,13 @@
     onRatioChange,
     onSplitSession,
   }: Props = $props();
+  const runtime = getAppRuntime();
 
+  let panel = $state<HTMLElement | null>(null);
+  let focusedInputElement: HTMLElement | null = null;
+  let focusExecution: AppExecution<void, never> | null = null;
+  let focusRecordExecution: AppExecution<void, never> | null = null;
+  let inputOwned = false;
   let resizeStartHeight = 0;
 
   const visibleKeys = $derived(collectSessionKeys(tree));
@@ -186,12 +203,102 @@
   function resizePanel(event: SplitResizeEvent): void {
     onResize?.(clampTerminalHeight(resizeStartHeight - event.delta));
   }
+
+  function handleFocusIn(event: FocusEvent): void {
+    focusExecution?.interrupt();
+    focusExecution = null;
+    focusRecordExecution?.interrupt();
+    focusRecordExecution = null;
+    focusedInputElement = event.target instanceof HTMLElement ? event.target : null;
+    inputOwned = true;
+    onInputActivate?.();
+  }
+
+  function handleFocusOut(event: FocusEvent & { currentTarget: HTMLElement }): void {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    if (inputOwned) {
+      inputOwned = false;
+      onInputDeactivate?.();
+    }
+    if (next !== null) {
+      focusRecordExecution?.interrupt();
+      focusRecordExecution = null;
+      focusedInputElement = null;
+      return;
+    }
+    const blurred = focusedInputElement;
+    focusRecordExecution?.interrupt();
+    focusRecordExecution = runtime.runCommand(
+      nextAnimationFrameOrDocumentHidden.pipe(
+        Effect.andThen(Effect.sync(() => {
+          if (focusedInputElement === blurred && panel?.contains(blurred) === true) {
+            focusedInputElement = null;
+          }
+          focusRecordExecution = null;
+        })),
+      ),
+      {
+        operation: "release terminal dock focus record",
+        safeContext: { workspaceId },
+        onFailure: () => {},
+      },
+    );
+  }
+
+  function reclaimPanelFocus(): void {
+    focusExecution?.interrupt();
+    focusExecution = runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => {
+          focusExecution = null;
+          if (document.activeElement === document.body) panel?.focus();
+        })),
+      ),
+      {
+        operation: "restore terminal dock focus",
+        safeContext: { workspaceId },
+        onFailure: () => {},
+      },
+    );
+  }
+
+  $effect(() => {
+    const el = panel;
+    if (!el || typeof MutationObserver === "undefined") return;
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.scoped(
+          observeMutation(
+            el,
+            () => {
+              const focused = focusedInputElement;
+              if (focused === null || el.contains(focused)) return;
+              focusedInputElement = null;
+              if (inputOwned) {
+                inputOwned = false;
+                onInputDeactivate?.();
+              }
+              if (!focused.isConnected) reclaimPanelFocus();
+            },
+            { childList: true, subtree: true },
+          ).pipe(Effect.andThen(Effect.never)),
+        ),
+        { operation: "observe terminal dock focus", safeContext: { workspaceId }, onFailure: () => {} },
+      ),
+    );
+    return execution.interrupt;
+  });
 </script>
 
 <section
-  class={["terminal-panel", dock, { open }]}
+  bind:this={panel}
+  tabindex="-1"
+  class={["terminal-panel", dock, { open, "input-active": inputActive }]}
   style={dock === "bottom" && open ? `height: ${height}px` : undefined}
   aria-label="Terminal panel"
+  onfocusin={handleFocusIn}
+  onfocusout={handleFocusOut}
   ondragover={handleDragOver}
   ondrop={handleDrop}
 >
@@ -362,11 +469,22 @@
 
 <style>
   .terminal-panel {
+    position: relative;
     flex-shrink: 0;
     min-height: 30px;
     border-top: var(--chrome-border-width) solid var(--border-default);
     background: var(--bg-surface);
     color: var(--text-primary);
+  }
+
+  .terminal-panel.input-active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    border: var(--chrome-border-width) solid
+      color-mix(in srgb, var(--accent-blue) 48%, var(--border-default));
+    pointer-events: none;
   }
 
   .terminal-panel.top {

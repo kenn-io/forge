@@ -28,6 +28,8 @@
     reviewThreads?: ReviewThread[];
     initialScrollTop?: number;
     onScrollTopChange?: ((scrollTop: number) => void) | undefined;
+    keyboardActive?: boolean;
+    pageKeyboardActive?: boolean;
   }
 
   const {
@@ -43,6 +45,8 @@
     reviewThreads = [],
     initialScrollTop = 0,
     onScrollTopChange,
+    keyboardActive = true,
+    pageKeyboardActive = keyboardActive,
   }: Props = $props();
 
   const reviewDraftGate = $derived(operationGate(operations?.review_draft));
@@ -204,6 +208,8 @@
         canReplyToThreads={(capabilities?.thread_reply ?? false)
           && !replyThreadGate.unavailable}
         {reviewUnavailableReason}
+        {keyboardActive}
+        {pageKeyboardActive}
         supportedReviewActions={capabilities?.supported_review_actions ?? []}
         nativeMultilineRanges={capabilities?.native_multiline_ranges ?? false}
         {initialScrollTop}

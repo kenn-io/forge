@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,6 +43,7 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 
 	var mu sync.Mutex
 	authByCall := map[string]string{}
+	var userMergeSettingsComplete atomic.Bool
 	record := func(name string, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -61,9 +63,16 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 			// push), so viewer_can_merge in the DB proves the overlay
 			// happened.
 			permissions := `"permissions": {"push": false}`
+			mergeSettings := ""
 			if r.Header.Get("Authorization") == "Bearer user-pat-e2e" {
 				record("write:repo-viewer-overlay", r)
 				permissions = `"permissions": {"push": true}`
+				if userMergeSettingsComplete.Load() {
+					mergeSettings = `,
+					"allow_squash_merge": true,
+					"allow_merge_commit": false,
+					"allow_rebase_merge": false`
+				}
 			} else {
 				record("read:repo-metadata", r)
 			}
@@ -77,7 +86,7 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 				"default_branch": "main",
 				"html_url": "https://github.com/kenn-io/kenn-forge",
 				"clone_url": "https://github.com/kenn-io/forge.git",
-				`+permissions+`
+				`+permissions+mergeSettings+`
 			}`)
 		})
 	mux.HandleFunc("GET /api/v3/repos/kenn-io/kenn-forge/pulls",
@@ -251,6 +260,16 @@ repository_selection = "all"
 		DefaultBranch:      "main",
 	}))
 	require.NoError(err)
+	// Reproduce a row damaged by an older App-only refresh. The first sync's
+	// incomplete App and PAT payloads must retain these values; a later complete
+	// PAT overlay must repair them through the same SQLite and HTTP API path.
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE forge_repos
+		SET allow_squash_merge = 0,
+		    allow_merge_commit = 0,
+		    allow_rebase_merge = 0
+		WHERE id = ?`, repoID)
+	require.NoError(err)
 	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID:         repoID,
 		PlatformID:     7001,
@@ -288,6 +307,43 @@ repository_selection = "all"
 	status, body := postJSON(t, httpServer.Client(), httpServer.URL+"/api/v1/sync", nil)
 	require.Equal(http.StatusAccepted, status, body)
 	waitForRepoSynced(t, database, "kenn-io", "kenn-forge", nil)
+
+	assertRepoMergeSettings := func(squash, mergeCommit, rebase bool) {
+		t.Helper()
+		resp := doServerJSON(
+			t, httpServer.Client(), http.MethodGet,
+			httpServer.URL+"/api/v1/repo/github/kenn-io/kenn-forge", nil,
+		)
+		defer resp.Body.Close()
+		require.Equal(http.StatusOK, resp.StatusCode)
+		var repo struct {
+			AllowSquashMerge bool
+			AllowMergeCommit bool
+			AllowRebaseMerge bool
+		}
+		require.NoError(json.NewDecoder(resp.Body).Decode(&repo))
+		assert.Equal(squash, repo.AllowSquashMerge)
+		assert.Equal(mergeCommit, repo.AllowMergeCommit)
+		assert.Equal(rebase, repo.AllowRebaseMerge)
+	}
+
+	// Neither credential reported a complete field group, so omission retains
+	// the stored all-false row rather than inventing an authoritative snapshot.
+	assertRepoMergeSettings(false, false, false)
+
+	beforeRepair, err := database.GetRepoByIdentity(
+		t.Context(), db.GitHubRepoIdentity("github.com", "kenn-io", "kenn-forge"),
+	)
+	require.NoError(err)
+	require.NotNil(beforeRepair.LastSyncCompletedAt)
+	userMergeSettingsComplete.Store(true)
+	status, body = postJSON(t, httpServer.Client(), httpServer.URL+"/api/v1/sync", nil)
+	require.Equal(http.StatusAccepted, status, body)
+	waitForRepoSynced(t, database, "kenn-io", "kenn-forge", beforeRepair.LastSyncCompletedAt)
+
+	// A complete PAT overlay repairs SQLite, and the repository API exposes the
+	// squash-only configuration consumed by the detail UI.
+	assertRepoMergeSettings(true, false, false)
 
 	// Write half: posting a PR comment through the API must reach
 	// upstream with the user's PAT.

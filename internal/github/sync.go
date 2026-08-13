@@ -2190,6 +2190,14 @@ func gitHubPlatformRepository(
 		owner = repo.GetOwner().GetLogin()
 	}
 	viewerCanMerge := gitHubViewerCanMerge(repo)
+	var mergeSettings *platform.RepositoryMergeSettings
+	if gitHubMergeSettingsComplete(repo) {
+		mergeSettings = &platform.RepositoryMergeSettings{
+			AllowSquashMerge: repo.GetAllowSquashMerge(),
+			AllowMergeCommit: repo.GetAllowMergeCommit(),
+			AllowRebaseMerge: repo.GetAllowRebaseMerge(),
+		}
+	}
 	return platform.Repository{
 		Ref: platform.RepoRef{
 			Platform:           platform.KindGitHub,
@@ -2208,15 +2216,11 @@ func gitHubPlatformRepository(
 		Description:        repo.GetDescription(),
 		Private:            repo.GetPrivate(),
 		Archived:           repo.GetArchived(),
-		MergeSettings: &platform.RepositoryMergeSettings{
-			AllowSquashMerge: repo.GetAllowSquashMerge(),
-			AllowMergeCommit: repo.GetAllowMergeCommit(),
-			AllowRebaseMerge: repo.GetAllowRebaseMerge(),
-		},
-		ViewerCanMerge: viewerCanMerge,
-		DefaultBranch:  repo.GetDefaultBranch(),
-		WebURL:         repo.GetHTMLURL(),
-		CloneURL:       repo.GetCloneURL(),
+		MergeSettings:      mergeSettings,
+		ViewerCanMerge:     viewerCanMerge,
+		DefaultBranch:      repo.GetDefaultBranch(),
+		WebURL:             repo.GetHTMLURL(),
+		CloneURL:           repo.GetCloneURL(),
 	}
 }
 

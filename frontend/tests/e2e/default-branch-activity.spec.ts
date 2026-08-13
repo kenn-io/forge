@@ -516,6 +516,19 @@ test.describe("default branch activity", () => {
     await expect.poll(() => pierreDiffCount(diffFile, "[data-expand-button]")).toBe(0);
     await expect.poll(() => filePreviewRequests).toBe(0);
     await expect.poll(() => page.evaluate(() => window.__kenn_forgeOpenedURL)).toBe("");
+
+    const dispatchPageDown = () =>
+      page.evaluate(() => {
+        const event = new KeyboardEvent("keydown", { key: "PageDown", bubbles: true, cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+    await expect(dispatchPageDown()).resolves.toBe(false);
+
+    const activityLeaf = page.locator(".activity-detail .tabbed-panel-leaf");
+    await page.getByRole("region", { name: "Changed file diffs" }).focus();
+    await expect(activityLeaf).toHaveClass(/input-active/);
+    await expect(dispatchPageDown()).resolves.toBe(true);
   });
 });
 

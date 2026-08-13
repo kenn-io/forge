@@ -15,6 +15,7 @@
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
   import { isSessionPaneKey } from "../stores/session-pane-key.js";
+  import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
   import {
     buildFocusPullRequestRoute,
@@ -130,6 +131,14 @@
     // panes are already visible.
     if (!routePanesSplitApart) return;
     selectDetailTab(tabKey);
+  }
+
+  function diffKeyboardActive(tabKey: string, inputActive: boolean): boolean {
+    if (inputActive) return true;
+    if (tabKey !== "files" || detailTab !== "files") return false;
+    if (getStackDepth() > 0) return false;
+    const render = paneLayout.paneRender();
+    return render !== null && render.activeInputTabKey === null && !paneLayout.externalInputActive();
   }
 
   function handleStackMemberNavigate(ref: PullRequestRouteRef): boolean | void {
@@ -248,7 +257,7 @@
         onFocusPane={handlePaneFocus}
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
       >
-        {#snippet renderPane(tabKey, visible)}
+        {#snippet renderPane(tabKey, visible, inputActive)}
           {#if tabKey === "workspace" && inlineWorkspace && visible}
             <!-- Portal target for the single live terminal subtree, which the
                  frontend host reparents in here. Mounted only while visible: a slot
@@ -281,6 +290,7 @@
             <PullDetailPane
               {tabKey}
               {visible}
+              keyboardActive={diffKeyboardActive(tabKey, inputActive)}
               pr={selectedPR}
               detail={selectedDetail}
               autoSync={autoSyncDetail}

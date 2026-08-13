@@ -102,6 +102,14 @@ func (p *gitHubClientProvider) classifyIssueLookup(
 	); disabledErr != nil {
 		return "", nil, disabledErr
 	}
+	// GitHub documents 410 from the single-issue endpoint as a deleted
+	// issue. Repository-wide issue disablement uses the same status but is
+	// classified above, so every remaining 410 here is a definitive parent
+	// removal rather than a transient transport failure. Keep this mapping at
+	// the issue lookup boundary; 410 has different meanings on other endpoints.
+	if githubStatusCode(err) == http.StatusGone {
+		return lookupRemoved, nil, nil
+	}
 	mapped := p.archiveTransportError(platform.ArchiveCapabilityHistoricalIssues, err)
 	if errors.Is(mapped, platform.ErrRateLimited) {
 		return "", nil, mapped

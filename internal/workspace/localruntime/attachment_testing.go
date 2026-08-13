@@ -9,12 +9,13 @@ import "context"
 // fields default to no-ops; tests that exercise resize / refresh /
 // write callbacks should set them explicitly.
 type AttachmentForTestingOptions struct {
-	Output              <-chan []byte
-	Done                <-chan struct{}
-	Info                func() SessionInfo
-	Resize              func(cols, rows int) error
-	Refresh             func(context.Context) error
-	SessionOutputClosed func() bool
+	Output                   <-chan []byte
+	Done                     <-chan struct{}
+	Info                     func() SessionInfo
+	Resize                   func(cols, rows int) error
+	Refresh                  func(context.Context) error
+	SessionOutputClosed      func() bool
+	DetachedForServerRestart func() bool
 }
 
 // NewAttachmentForTesting constructs an Attachment with caller-
@@ -32,6 +33,10 @@ func NewAttachmentForTesting(opts AttachmentForTestingOptions) *Attachment {
 	if sessionOutputClosed == nil {
 		sessionOutputClosed = func() bool { return false }
 	}
+	detachedForRestart := opts.DetachedForServerRestart
+	if detachedForRestart == nil {
+		detachedForRestart = func() bool { return false }
+	}
 	return &Attachment{
 		Output:              opts.Output,
 		Done:                opts.Done,
@@ -39,5 +44,6 @@ func NewAttachmentForTesting(opts AttachmentForTestingOptions) *Attachment {
 		resize:              opts.Resize,
 		refresh:             opts.Refresh,
 		sessionOutputClosed: sessionOutputClosed,
+		detachedForRestart:  detachedForRestart,
 	}
 }

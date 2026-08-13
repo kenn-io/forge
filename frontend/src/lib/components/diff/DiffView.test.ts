@@ -371,6 +371,25 @@ describe("DiffView", () => {
     }
   });
 
+  it("prevents native PageDown scrolling while the focused diff is inactive", () => {
+    const diff = makeDiffStore();
+    const { container } = renderDiffView(diff, {
+      keyboardActive: false,
+      pageKeyboardActive: false,
+    });
+    const diffArea = container.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
+    diffArea.focus();
+    const pageDown = new KeyboardEvent("keydown", {
+      key: "PageDown",
+      bubbles: true,
+      cancelable: true,
+    });
+
+    diffArea.dispatchEvent(pageDown);
+
+    expect(pageDown.defaultPrevented).toBe(true);
+  });
+
   it("cancels pending programmatic scroll when the user wheels the diff pane", async () => {
     let scrollTarget: DiffScrollTarget | null = { path: "b.ts" };
     const consumeScrollTarget = vi.fn(() => {

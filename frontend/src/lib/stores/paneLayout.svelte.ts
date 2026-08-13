@@ -38,6 +38,8 @@ export const PANE_LAYOUT_STORAGE_PREFIX = "kenn-forge-pane-layout-v1:";
 
 /** The state only the renderer knows, published for consumers outside the tree. */
 export interface PaneRenderReport {
+  /** The rendered tab containing DOM focus, or null while focus is elsewhere. */
+  activeInputTabKey: string | null;
   /**
    * Tabs a structural edit may target: present in the rendered tree and not
    * masked out of it.
@@ -113,6 +115,10 @@ export interface PaneLayoutStore {
   paneRender(): PaneRenderReport | null;
   /** Called by the rendering host; null on teardown. */
   notePaneRender(report: PaneRenderReport | null): void;
+  /** True while DOM focus is inside a surface dock outside the pane tree. */
+  externalInputActive(): boolean;
+  /** Report DOM focus entering or leaving a surface dock outside the pane tree. */
+  setExternalInputActive(active: boolean): void;
   /**
    * Whether splitting this tab out would change anything — it shares its leaf.
    * Callers that offer a split control need this to avoid a dead affordance,
@@ -178,6 +184,7 @@ export function createPaneLayoutStore(
     parseTabbedPanelLayout(readStored(surface), knownTabs, defaultTree, keepIfStored),
   );
   let render = $state<PaneRenderReport | null>(null);
+  let externalInputActive = $state(false);
 
   function commit(next: TabbedPanelLayoutState): void {
     state = next;
@@ -229,11 +236,13 @@ export function createPaneLayoutStore(
     notePaneRender: (report) => {
       if (report === null) {
         render = null;
+        externalInputActive = false;
         return;
       }
       const current = render;
       if (
         current !== null &&
+        current.activeInputTabKey === report.activeInputTabKey &&
         current.flattened === report.flattened &&
         sameTabList(current.editableTabs, report.editableTabs) &&
         sameTabList(current.onScreenTabs, report.onScreenTabs) &&
@@ -242,11 +251,19 @@ export function createPaneLayoutStore(
         return;
       }
       render = {
+        activeInputTabKey: report.activeInputTabKey,
         editableTabs: [...report.editableTabs],
         onScreenTabs: [...report.onScreenTabs],
         flattened: report.flattened,
         soloChromeTabs: [...report.soloChromeTabs],
       };
+    },
+
+    externalInputActive: () => externalInputActive,
+
+    setExternalInputActive: (active) => {
+      if (externalInputActive === active) return;
+      externalInputActive = active;
     },
 
     canSplitTab: (tabKey) => (findTabbedPanelLeafByTab(state.tree, tabKey)?.tabs.length ?? 0) > 1,
@@ -359,7 +376,9 @@ export function createPaneLayoutStore(
       });
     },
 
-    reset: () => commit(parseTabbedPanelLayout(null, knownTabs, defaultTree, keepIfStored)),
+    reset: () => {
+      commit(parseTabbedPanelLayout(null, knownTabs, defaultTree, keepIfStored));
+    },
   };
 
   return store;

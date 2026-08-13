@@ -322,6 +322,62 @@ Keyboard handlers must have one clear owner for each key press.
   command listeners: a command that opens detail UI must un-maximize first so it
   cannot build an invisible overlay
   (`frontend/src/lib/components/detail/PullDetail.svelte::onOpenLabelPickerCommand`).
+- A simultaneous pane is active exactly while DOM focus is inside it. Only that
+  focused pane consumes pane-scoped window keys. Pointer interaction changes the
+  active pane only when normal browser behavior moves focus; wheel input never
+  moves focus or changes the active pane. Mark actual focus with a subtle inset
+  border without replacing control focus styling
+  (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
+  A dedicated Files route keeps global diff shortcuts only while no pane or
+  external dock has live focus; this fallback never paints active-pane styling
+  (`frontend/src/lib/views/PRListView.svelte::diffKeyboardActive`).
+- Focus callbacks carry the exact rendered leaf ID; never infer it from the
+  persisted tree because narrow layouts render one synthetic leaf
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::focusPane`).
+- A focused tab header reports that exact tab, including an inactive one;
+  reporting only the leaf's selected tab misroutes ownership after dragging the
+  focused header (`frontend/src/lib/components/shared/TabbedPanelTree.svelte::handleLeafFocusIn`).
+- When a focused tab moves between rendered leaves, move live pane ownership
+  with that tab even if its old leaf still renders; pooled focus restoration
+  must not race a layout-host fallback (`frontend/src/lib/components/shared/DetailPaneLayout.svelte`).
+- If a same-leaf tab change removes focused content without `focusout`, reclaim
+  the layout only when focus fell to `document.body`
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::reclaimFocus`).
+- Same-tab content identity replacement must also release disconnected focus;
+  renderer DOM removal is the signal because pane layout state does not change
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::observeMutation`).
+- Activity commit diffs use live pane `inputActive` for global shortcuts, not
+  pane visibility (`frontend/src/lib/components/CommitDiffPanel.svelte::Props`).
+- Nested pane trees paint focus only while DOM focus is inside both the nested
+  pane and its containing pane, and only the deepest focused pane paints;
+  workspace Workflow, Details, and bottom Terminal regions are siblings
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::renderedWorkspaceInputRegion`).
+- If focused Workspace Workflow, Details, or bottom Terminal becomes unready or disappears while its host stays visible,
+  reclaim the Workspace root only when focus fell to `document.body`; parking never reclaims focus
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceRoot`).
+- Standalone Workspace shortcuts accept unclaimed `document.body` focus, but a
+  concrete focus owner outside the Workspace root (including app chrome) blocks
+  them (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::onKeydown`).
+- A focused surface-hosted dock outside the pane tree becomes the live focused
+  surface until focus leaves it. Persisted last-focused state is restoration and
+  command memory only; it never represents current focus. Workspace window
+  shortcuts run only while the validated workspace container has DOM focus
+  (`frontend/src/lib/stores/paneLayout.svelte.ts::PaneRenderReport`).
+- Resetting pane arrangement preserves a live external dock claim; only dock focusout,
+  unmount, or renderer teardown releases DOM input ownership
+  (`frontend/src/lib/stores/paneLayout.svelte.ts::reset`).
+- Pane keyboard ownership follows the exact rendered leaf and tab containing DOM focus;
+  nested tab identity never bubbles into an outer tree
+  (`frontend/src/lib/components/shared/TabbedPanelTree.svelte::handleLeafFocusIn`).
+- Preserve a focused node through no-destination `focusout` only for the immediate Effect-managed replacement window;
+  keyed replacement restores focus, while an ordinary blur or document hiding cannot affect later DOM removal
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::handleLayoutFocusOut`).
+- When focused content leaves a detail layout without `focusout`, release that layout's ownership. Reclaim layout focus
+  only for disconnected content; connected pooled terminals keep their own restoration path
+  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::observeMutation`).
+- A terminal dock tracks the exact focused descendant across silent session removal; it releases ownership when that
+  node leaves the dock, restores a surviving dock only for disconnected content, and leaves connected pooled moves alone
+  (`frontend/src/lib/components/terminal/DockedTerminalPanel.svelte::handleFocusOut`).
 - Focus Terminal reveals, it never maximizes: a closed workspace pane reopens
   alongside the detail and a visible one keeps its arrangement. Maximizing over
   the detail is only ever an explicit user action. Reopening also has to clear a

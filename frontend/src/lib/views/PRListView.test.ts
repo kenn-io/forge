@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { createRawSnippet, flushSync, tick, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../context.js";
-import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
+import { pushModalFrame, resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import { sessionPaneKey } from "../stores/session-pane-key.js";
 import type { PullRequestRouteRef } from "../routes.js";
@@ -221,6 +221,79 @@ describe("PRListView detail panes", () => {
     // Replace, not push: walking between two panes on screen at once must not
     // fill the Back stack.
     expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: true });
+  });
+
+  it("keeps dedicated files shortcuts until live focus chooses another pane", async () => {
+    renderPRListView({ detailTab: "conversation" });
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+    await tick();
+
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
+
+    cleanup();
+    resetPaneLayoutStoresForTest();
+
+    renderPRListView({ detailTab: "files" });
+    const filesLayout = getPaneLayoutStore("prs");
+    filesLayout.splitTab("files", filesLayout.leafIDForTab("files")!, "horizontal", "after");
+    await tick();
+
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
+
+    await fireEvent.focusIn(screen.getByTestId("pull-detail"));
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
+
+    await fireEvent.focusIn(screen.getByTestId("diff-files"));
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
+  });
+
+  it("suspends dedicated files shortcuts while a modal owns the keyboard", async () => {
+    renderPRListView({ detailTab: "files" });
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+    await tick();
+
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
+
+    const popModal = pushModalFrame("test-dialog", []);
+    await tick();
+
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
+    popModal();
+  });
+
+  it("moves visible keyboard routing only when focus moves", async () => {
+    renderPRListView({ detailTab: "conversation" });
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+    await tick();
+
+    const activePaneKey = () =>
+      document.querySelector(".tabbed-panel-leaf.input-active [data-pane-key]")?.getAttribute("data-pane-key");
+    expect(activePaneKey()).toBeUndefined();
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+
+    await fireEvent.pointerDown(screen.getByTestId("diff-files"));
+    await fireEvent.wheel(screen.getByTestId("pull-detail"));
+    expect(activePaneKey()).toBeUndefined();
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
+
+    await fireEvent.focusIn(screen.getByTestId("diff-files"));
+    expect(activePaneKey()).toBe("files");
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("true");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("true");
+
+    await fireEvent.focusIn(screen.getByTestId("pull-detail"));
+    expect(activePaneKey()).toBe("conversation");
+    expect(screen.getByTestId("diff-files").dataset.keyboardActive).toBe("false");
+    expect(screen.getByTestId("diff-files").dataset.pageKeyboardActive).toBe("false");
   });
 
   it("pushes history when the other route pane is covered by a zoom", async () => {

@@ -217,6 +217,62 @@ func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
 	}
 }
 
+func TestServeRuntimeTerminalRestartDetachDoesNotReportSessionExit(t *testing.T) {
+	tests := []struct {
+		name   string
+		output func() <-chan []byte
+		done   func() <-chan struct{}
+	}{
+		{
+			name: "pty eof arrives first",
+			output: func() <-chan []byte {
+				output := make(chan []byte)
+				close(output)
+				return output
+			},
+			done: func() <-chan struct{} { return make(chan struct{}) },
+		},
+		{
+			name:   "process done arrives first",
+			output: func() <-chan []byte { return make(chan []byte) },
+			done: func() <-chan struct{} {
+				done := make(chan struct{})
+				close(done)
+				return done
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			attachment := localruntime.NewAttachmentForTesting(
+				localruntime.AttachmentForTestingOptions{
+					Output:                   tt.output(),
+					Done:                     tt.done(),
+					SessionOutputClosed:      func() bool { return true },
+					DetachedForServerRestart: func() bool { return true },
+				},
+			)
+			wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			conn, _, err := websocket.Dial(ctx, wsURL, nil)
+			require.NoError(err)
+			defer conn.Close(websocket.StatusNormalClosure, "done")
+
+			_, _, err = conn.Read(ctx)
+			require.Error(err)
+			select {
+			case <-handlerDone:
+			case <-ctx.Done():
+				require.Fail("terminal handler did not return after restart detach")
+			}
+		})
+	}
+}
+
 func TestServeRuntimeTerminalDrainsDelayedFinalOutputBeforeSessionExit(t *testing.T) {
 	require := require.New(t)
 	output := make(chan []byte, 1)

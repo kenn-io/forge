@@ -160,6 +160,18 @@ describe("pane layout store", () => {
     expect(s.lastFocusedTabKey()).toBe("workspace");
   });
 
+  it("preserves live external focus while resetting remembered layout", () => {
+    const s = store();
+    s.setExternalInputActive(true);
+    expect(s.externalInputActive()).toBe(true);
+
+    s.noteFocused("files");
+    expect(s.externalInputActive()).toBe(true);
+
+    s.reset();
+    expect(s.externalInputActive()).toBe(true);
+  });
+
   it("ignores a focus note for a tab it does not know", () => {
     const s = store();
     s.noteFocused("nonsense");
@@ -260,7 +272,13 @@ describe("promoted session panes", () => {
 
   it("promotes beside the workspace pane when it is on screen", () => {
     const layout = store();
-    const onScreen = { editableTabs: TABS, onScreenTabs: TABS, flattened: false, soloChromeTabs: [] };
+    const onScreen = {
+      activeInputTabKey: "conversation",
+      editableTabs: TABS,
+      onScreenTabs: TABS,
+      flattened: false,
+      soloChromeTabs: [],
+    };
 
     // Nothing rendered yet, so there is no evidence the split would land anywhere
     // the user can see it.
@@ -290,6 +308,7 @@ describe("promoted session panes", () => {
       }),
     ).toBe(true);
     layout.notePaneRender({
+      activeInputTabKey: "conversation",
       editableTabs: ["conversation", reviewerPane],
       onScreenTabs: ["conversation", reviewerPane],
       flattened: false,
@@ -305,6 +324,7 @@ describe("promoted session panes", () => {
     const layout = store();
     layout.noteFocused("conversation");
     layout.notePaneRender({
+      activeInputTabKey: "conversation",
       editableTabs: ["conversation", "files"],
       onScreenTabs: ["conversation", "files"],
       flattened: false,

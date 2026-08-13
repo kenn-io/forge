@@ -82,6 +82,57 @@ describe("TabbedPanelTree", () => {
     expect(screen.getByLabelText("Feed updating").classList.contains("kit-status-dot--working")).toBe(true);
   });
 
+  it("reports focus while pointer and wheel leave the active pane unchanged", async () => {
+    const onFocusPane = vi.fn();
+    const view = render(TabbedPanelTreeTestHarness, {
+      props: {
+        node: splitNode(),
+        activeTabKey: "detail",
+        onFocusPane,
+      },
+    });
+
+    const activeLeaves = () => Array.from(document.querySelectorAll<HTMLElement>(".tabbed-panel-leaf.input-active"));
+    expect(activeLeaves()).toHaveLength(1);
+    expect(activeLeaves()[0]?.contains(screen.getByTestId("panel-detail"))).toBe(true);
+
+    await fireEvent.pointerDown(screen.getByTestId("panel-files"));
+    await fireEvent.wheel(screen.getByTestId("panel-detail"));
+    expect(onFocusPane).not.toHaveBeenCalled();
+
+    await fireEvent.focusIn(screen.getByTestId("panel-files"));
+    await fireEvent.focusIn(screen.getByTestId("panel-detail"));
+    expect(onFocusPane).toHaveBeenNthCalledWith(1, "files", "leaf-2");
+    expect(onFocusPane).toHaveBeenNthCalledWith(2, "detail", "leaf-1");
+
+    await view.rerender({
+      node: splitNode(),
+      activeTabKey: "files",
+      onFocusPane,
+    });
+
+    expect(activeLeaves()).toHaveLength(1);
+    expect(activeLeaves()[0]?.contains(screen.getByTestId("panel-files"))).toBe(true);
+  });
+
+  it("keeps nested tab focus scoped to the outer leaf", async () => {
+    const onFocusPane = vi.fn();
+    render(TabbedPanelTreeTestHarness, {
+      props: { node: leafNode(), onFocusPane },
+    });
+    const outerPanel = screen.getByTestId("panel-detail");
+    const nestedLeaf = document.createElement("section");
+    nestedLeaf.className = "tabbed-panel-leaf";
+    const nestedTab = document.createElement("button");
+    nestedTab.dataset.tabbedPanelTabKey = "nested-session";
+    nestedLeaf.append(nestedTab);
+    outerPanel.append(nestedLeaf);
+
+    await fireEvent.focusIn(nestedTab);
+
+    expect(onFocusPane).toHaveBeenCalledWith("detail", "leaf-1");
+  });
+
   it("shows a moving insertion slot while sorting tabs", async () => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       callback(0);

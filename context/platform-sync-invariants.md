@@ -35,7 +35,10 @@ combining repository-owned history
   syncs persist their verified snapshot so a replacement repository row never
   serves permissive schema defaults. Snapshot fields a provider omits must not
   erase stored metadata — clone URLs seeded outside the provider resolve
-  clones — and a failed settings write stops the item sync instead of
+  clones — and permission-sensitive merge settings are authoritative only when
+  the provider returns the complete settings group; omission retains stored
+  values, while a later complete observation repairs them. A failed settings
+  write stops the item sync instead of
   populating a row that still advertises default merge availability
   (`internal/db/repository_catalog.go::UpdateRepoProviderObservation`).
   Newly verified or legacy-adopted rows fail closed when viewer merge permission

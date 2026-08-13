@@ -1351,6 +1351,113 @@ func TestListRepositoriesByOwnerUsesInstallationReposWithAppToken(t *testing.T) 
 	}, paths)
 }
 
+func TestGetRepositoryOverlaysMergeSettingsFromUserCredential(t *testing.T) {
+	require := require.New(t)
+
+	readSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":1,"node_id":"repo-1","name":"widget","owner":{"login":"acme"}}`))
+	}))
+	defer readSrv.Close()
+	writeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":1,"node_id":"repo-1","name":"widget","owner":{"login":"acme"},"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false,"permissions":{"push":true}}`))
+	}))
+	defer writeSrv.Close()
+
+	readGH, err := newEnterpriseGHClient(readSrv.Client(), readSrv.URL+"/", readSrv.URL+"/")
+	require.NoError(err)
+	writeGH, err := newEnterpriseGHClient(writeSrv.Client(), writeSrv.URL+"/", writeSrv.URL+"/")
+	require.NoError(err)
+	client := &liveClient{
+		gh: readGH, ghWrite: writeGH,
+		source: tokenauth.NewManagedSource(tokenauth.Descriptor{
+			Candidates: []tokenauth.Candidate{{
+				Kind: tokenauth.SourceKindGitHubApp, AppID: 1, InstallationID: 2,
+			}},
+		}, tokenauth.Options{}),
+	}
+
+	repo, err := client.GetRepository(t.Context(), "acme", "widget")
+	require.NoError(err)
+	require.NotNil(repo.AllowSquashMerge)
+	require.NotNil(repo.AllowMergeCommit)
+	require.NotNil(repo.AllowRebaseMerge)
+	require.True(*repo.AllowSquashMerge)
+	require.False(*repo.AllowMergeCommit)
+	require.False(*repo.AllowRebaseMerge)
+	require.True(repo.Permissions.GetPush())
+}
+
+func TestGetRepositoryRetainsCompleteAppMergeSettingsWhenUserOverlayFails(t *testing.T) {
+	require := require.New(t)
+
+	readSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":1,"node_id":"repo-1","name":"widget","owner":{"login":"acme"},"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false}`))
+	}))
+	defer readSrv.Close()
+	writeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "user credential unavailable", http.StatusUnauthorized)
+	}))
+	defer writeSrv.Close()
+
+	readGH, err := newEnterpriseGHClient(readSrv.Client(), readSrv.URL+"/", readSrv.URL+"/")
+	require.NoError(err)
+	writeGH, err := newEnterpriseGHClient(writeSrv.Client(), writeSrv.URL+"/", writeSrv.URL+"/")
+	require.NoError(err)
+	client := &liveClient{
+		gh: readGH, ghWrite: writeGH,
+		source: tokenauth.NewManagedSource(tokenauth.Descriptor{
+			Candidates: []tokenauth.Candidate{{
+				Kind: tokenauth.SourceKindGitHubApp, AppID: 1, InstallationID: 2,
+			}},
+		}, tokenauth.Options{}),
+	}
+
+	repo, err := client.GetRepository(t.Context(), "acme", "widget")
+	require.NoError(err)
+	require.True(repo.GetAllowSquashMerge())
+	require.False(repo.GetAllowMergeCommit())
+	require.False(repo.GetAllowRebaseMerge())
+	require.Nil(repo.Permissions)
+}
+
+func TestGetRepositoryKeepsCompleteAppMergeSettingsWhenUserFieldsAreIncomplete(t *testing.T) {
+	require := require.New(t)
+
+	readSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":1,"node_id":"repo-1","name":"widget","owner":{"login":"acme"},"allow_squash_merge":false,"allow_merge_commit":true,"allow_rebase_merge":false}`))
+	}))
+	defer readSrv.Close()
+	writeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":1,"node_id":"repo-1","name":"widget","owner":{"login":"acme"},"allow_squash_merge":true,"permissions":{"push":true}}`))
+	}))
+	defer writeSrv.Close()
+
+	readGH, err := newEnterpriseGHClient(readSrv.Client(), readSrv.URL+"/", readSrv.URL+"/")
+	require.NoError(err)
+	writeGH, err := newEnterpriseGHClient(writeSrv.Client(), writeSrv.URL+"/", writeSrv.URL+"/")
+	require.NoError(err)
+	client := &liveClient{
+		gh: readGH, ghWrite: writeGH,
+		source: tokenauth.NewManagedSource(tokenauth.Descriptor{
+			Candidates: []tokenauth.Candidate{{
+				Kind: tokenauth.SourceKindGitHubApp, AppID: 1, InstallationID: 2,
+			}},
+		}, tokenauth.Options{}),
+	}
+
+	repo, err := client.GetRepository(t.Context(), "acme", "widget")
+	require.NoError(err)
+	require.False(repo.GetAllowSquashMerge())
+	require.True(repo.GetAllowMergeCommit())
+	require.False(repo.GetAllowRebaseMerge())
+	require.True(repo.Permissions.GetPush())
+}
+
 // A host can carry an app installation for one owner while other owners
 // on the same host stay on the PAT/gh chain. Listing repos for such an
 // owner must not route to the installation-token-only endpoint: an app

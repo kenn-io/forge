@@ -65,6 +65,7 @@
     createTerminalGroup,
     defaultTerminalLayout,
     findLeafBySession,
+    findWorkflowLeafByTab,
     firstLeaf,
     moveWorkflowTabBefore,
     normalizeTerminalLayout,
@@ -674,6 +675,91 @@
   // The surface this view is embedded in, whose stored pane tree is the sole
   // record of which sessions have been promoted out of this container.
   const surfaceLayout = $derived(paneSurface ? getPaneLayoutStore(paneSurface) : null);
+  type WorkspaceInputRegion = "workflow" | "details" | "terminal";
+  let workspaceRoot = $state<HTMLElement | null>(null);
+  let workspaceInputRegion = $state<WorkspaceInputRegion | null>(null);
+  let focusedWorkflowTabKey = $state<WorkflowTabKey | null>(null);
+  let focusedWorkflowInputElement: HTMLElement | null = null;
+  const workspaceContainerInputActive = $derived(
+    surfaceLayout === null || surfaceLayout.paneRender()?.activeInputTabKey === "workspace",
+  );
+  const renderedWorkspaceInputRegion = $derived.by<WorkspaceInputRegion | null>(() => {
+    if (!hostVisible) return null;
+    if (workspaceInputRegion === "workflow" && !runtimeLive) return null;
+    if (
+      workspaceInputRegion === "details" &&
+      (!workspaceDetailsReady || hideRightSidebar || !sidebarOpen)
+    ) {
+      return null;
+    }
+    if (workspaceInputRegion === "terminal" && terminalLayout.dock !== "bottom") {
+      return null;
+    }
+    return workspaceInputRegion;
+  });
+
+  $effect.pre(() => {
+    const workflowVisible = hostVisible && runtimeLive;
+    const detailsVisible =
+      hostVisible && workspaceDetailsReady && !hideRightSidebar && sidebarOpen;
+    const terminalVisible = hostVisible && terminalLayout.dock === "bottom";
+    const focusedRegion = untrack(() => workspaceInputRegion);
+    const focusedRegionDisappears =
+      (focusedRegion === "workflow" && !workflowVisible) ||
+      (focusedRegion === "details" && !detailsVisible) ||
+      (focusedRegion === "terminal" && !terminalVisible);
+    if (!focusedRegionDisappears || !hostVisible) return;
+
+    // Capture disappearance before Svelte removes the focused region. Chromium
+    // then reports focusout after the DOM update, which is too late to know which
+    // workspace sibling owned focus. Reclaim only when the browser has nowhere
+    // better to put it; a replacement control or modal always keeps ownership.
+    // Readiness settles in phases during a workspace switch. Keep this bounded
+    // one-tick command independent of effect reruns so the next phase cannot
+    // interrupt the recovery before it observes the updated DOM.
+    appRuntime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => {
+          if (!hostVisible || document.activeElement !== document.body) return;
+          workspaceRoot?.focus();
+        })),
+      ),
+      {
+        operation: "workspace.restore.focus",
+        safeContext: { surface: "workspace", region: focusedRegion },
+        onFailure: () => undefined,
+      },
+    );
+  });
+
+  $effect(() => {
+    if (workspaceInputRegion !== null && renderedWorkspaceInputRegion === null) {
+      if (workspaceInputRegion === "workflow") {
+        focusedWorkflowTabKey = null;
+        focusedWorkflowInputElement = null;
+      }
+      workspaceInputRegion = null;
+    }
+  });
+
+  function activateWorkspaceInputRegion(region: WorkspaceInputRegion): void {
+    workspaceInputRegion = region;
+  }
+
+  function deactivateWorkspaceInputRegion(
+    region: WorkspaceInputRegion,
+    event: FocusEvent & { currentTarget: HTMLElement },
+  ): void {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    if (workspaceInputRegion === region) {
+      if (region === "workflow") {
+        focusedWorkflowTabKey = null;
+        focusedWorkflowInputElement = null;
+      }
+      workspaceInputRegion = null;
+    }
+  }
 
   function sessionPaneKeyFor(session: RuntimeSession): string {
     return sessionPaneKey(workspaceId, workspaceHostKey, session.key);
@@ -1179,6 +1265,48 @@
           workflowTabDescriptors.map((tab) => tab.key),
       ),
   );
+  function workflowContentKeyFor(tabKey: WorkflowTabKey | null): string | null {
+    if (tabKey === null) return soleEmbeddedSessionHostKey;
+    const leaf = findWorkflowLeafByTab(renderedWorkflowTree, tabKey);
+    return leaf === null ? null : `${leaf.id}|${leaf.activeTabKey}`;
+  }
+
+  const workflowInputContentKey = $derived(workflowContentKeyFor(focusedWorkflowTabKey));
+  let lastWorkflowInputContentKey = untrack(() => workflowInputContentKey);
+
+  $effect.pre(() => {
+    const contentKey = workflowInputContentKey;
+    const contentChanged = contentKey !== lastWorkflowInputContentKey;
+    lastWorkflowInputContentKey = contentKey;
+    const shouldRestore = untrack(() => workspaceInputRegion === "workflow" && hostVisible);
+    if (!contentChanged || !shouldRestore) return;
+    const focusedInput = untrack(() => focusedWorkflowInputElement);
+    // A focused session can disappear without focusout. Inspect the updated DOM
+    // before clearing ownership or moving focus. Connected pooled terminals own
+    // their reparenting handoff; only disconnected content falls back to the root.
+    // Focusout can clear the recorded tab while the DOM update is settling.
+    // Keep this bounded recovery independent of that effect rerun so it still
+    // gets to inspect the updated DOM and restore a disconnected descendant.
+    appRuntime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => {
+          if (!hostVisible) return;
+          const focused = document.activeElement;
+          if (focused !== null && focused !== document.body) return;
+          focusedWorkflowTabKey = null;
+          focusedWorkflowInputElement = null;
+          workspaceInputRegion = null;
+          if (focusedInput?.isConnected) return;
+          workspaceRoot?.focus();
+        })),
+      ),
+      {
+        operation: "workspace.restore.focus",
+        safeContext: { surface: "workspace", region: "workflow" },
+        onFailure: () => undefined,
+      },
+    );
+  });
   const workspacePaneEmpty = $derived(
     controlsInPane &&
       runtimeSessions.length > 0 &&
@@ -1192,6 +1320,14 @@
       terminalLayout.dock === "bottom" &&
       terminalSessions.length > 0,
   );
+  const externalDockVisible = $derived(workspacePaneEmpty || workspacePaneRowOnly);
+
+  $effect(() => {
+    const layout = surfaceLayout;
+    if (layout === null) return;
+    if (!externalDockVisible) untrack(() => layout.setExternalInputActive(false));
+    return () => untrack(() => layout.setExternalInputActive(false));
+  });
   const externalControlsVisible = $derived(
     workspacePaneEmpty ||
       workspacePaneRowOnly ||
@@ -1459,12 +1595,21 @@
   // is parked in a hidden host (it would swallow Cmd/Ctrl+] on unrelated
   // pages) or while the right sidebar isn't rendered at all.
   $effect(() => {
-    if (!hostVisible || hideRightSidebar) return;
+    if (!hostVisible || hideRightSidebar || !workspaceContainerInputActive) return;
     function onKeydown(e: KeyboardEvent): void {
+      const focusTarget = e.target instanceof Node ? e.target : document.activeElement;
+      if (
+        focusTarget !== null &&
+        focusTarget !== document.body &&
+        workspaceRoot?.contains(focusTarget) !== true
+      ) {
+        return;
+      }
       if (
         e.key === "]" &&
         (e.metaKey || e.ctrlKey) &&
-        !e.defaultPrevented
+        !e.defaultPrevented &&
+        getStackDepth() === 0
       ) {
         e.preventDefault();
         toggleRightSidebar();
@@ -1875,6 +2020,22 @@
     };
     activeTabKey = key;
     rememberActiveTab(key);
+  }
+
+  function handleWorkflowTabActivation(key: WorkflowTabKey): void {
+    if (key === "terminal") {
+      terminalLayout = { ...terminalLayout, open: true };
+    }
+    if (key === activeTabKey) return;
+    const sessionKey = sessionKeyFromWorkflowTab(key);
+    if (sessionKey) mountSessionTerminal(sessionKey);
+    selectWorkspaceTab(key);
+  }
+
+  function handleWorkflowPaneFocus(key: WorkflowTabKey): void {
+    focusedWorkflowTabKey = key;
+    lastWorkflowInputContentKey = workflowContentKeyFor(key);
+    handleWorkflowTabActivation(key);
   }
 
   function restoreWorkspaceTabSelection(key: WorkflowTabKey): void {
@@ -3810,6 +3971,8 @@
 
 <div
   class="terminal-view"
+  bind:this={workspaceRoot}
+  tabindex="-1"
   inert={modalOpen}
 >
   {#snippet inlineCollapseControl()}
@@ -4134,6 +4297,12 @@
                 class="workspace-stage"
                 role="region"
                 aria-label="Workflow panes"
+                onfocusin={(event) => {
+                  activateWorkspaceInputRegion("workflow");
+                  focusedWorkflowInputElement =
+                    event.target instanceof HTMLElement ? event.target : null;
+                }}
+                onfocusout={(event) => deactivateWorkspaceInputRegion("workflow", event)}
                 ondragover={handleWorkflowDragOver}
                 ondrop={handleWorkflowDrop}
               >
@@ -4158,15 +4327,10 @@
                       node={renderedWorkflowTree}
                       tabs={workflowTabDescriptors}
                       {activeTabKey}
+                      inputActive={workspaceContainerInputActive && renderedWorkspaceInputRegion === "workflow"}
                       disabled={actionsBlocked}
-                      onSelectTab={(tabKey) => {
-                        if (tabKey === "terminal") {
-                          terminalLayout = { ...terminalLayout, open: true };
-                        }
-                        const sessionKey = sessionKeyFromWorkflowTab(tabKey);
-                        if (sessionKey) mountSessionTerminal(sessionKey);
-                        selectWorkspaceTab(tabKey);
-                      }}
+                      onSelectTab={handleWorkflowTabActivation}
+                      onFocusPane={handleWorkflowPaneFocus}
                       onMoveTabBefore={moveWorkflowTabBeforeTarget}
                       onAppendTabToLeaf={appendWorkflowTabToGroup}
                       onSplitTab={splitWorkflowTabIntoGroup}
@@ -4280,8 +4444,17 @@
               onResize={handleSidebarResize}
             />
             <div
-              class="right-sidebar"
+              class={[
+                "right-sidebar",
+                {
+                  "input-active": workspaceContainerInputActive && renderedWorkspaceInputRegion === "details",
+                },
+              ]}
               style="width: {renderedRightSidebarWidth}px"
+              role="region"
+              aria-label="Workspace details pane"
+              onfocusin={() => activateWorkspaceInputRegion("details")}
+              onfocusout={(event) => deactivateWorkspaceInputRegion("details", event)}
             >
               {#if workspaceDetailsReady && workspace}
                 <WorkspaceRightSidebar
@@ -4482,6 +4655,17 @@
                 loading={terminalLaunching}
                 disabled={actionsBlocked}
                 hostVisible={dockHostVisible}
+                inputActive={external
+                  ? (surfaceLayout?.externalInputActive() ?? false)
+                  : workspaceContainerInputActive && renderedWorkspaceInputRegion === "terminal"}
+                onInputActivate={() => {
+                  activateWorkspaceInputRegion("terminal");
+                  if (external) surfaceLayout?.setExternalInputActive(true);
+                }}
+                onInputDeactivate={() => {
+                  if (workspaceInputRegion === "terminal") workspaceInputRegion = null;
+                  if (external) surfaceLayout?.setExternalInputActive(false);
+                }}
                 onToggle={() => void toggleTerminalPanel()}
                 onNewTerminal={() => void launchTerminalSession()}
                 onSplit={(direction) => void splitTerminal(direction)}
@@ -5098,6 +5282,16 @@
     z-index: 2;
     flex-shrink: 0;
     overflow: hidden;
+  }
+
+  .right-sidebar.input-active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 90;
+    border: var(--chrome-border-width) solid
+      color-mix(in srgb, var(--accent-blue) 48%, var(--border-default));
+    pointer-events: none;
   }
 
   .right-sidebar:has(:global(.kit-modal-overlay)) {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest, type PaneLayoutStore } from "../paneLayout.svelte.js";
 import { sessionPaneKey } from "../session-pane-key.js";
+import { pendingSessionFocus } from "../session-host.svelte.js";
 
 import { defaultActions, setStoreInstances } from "./actions.js";
 import { navigate } from "../router.svelte.ts";
@@ -617,7 +618,13 @@ describe("session pane commands", () => {
 
   /** Stand in for a mounted, unflattened DetailPaneLayout on the PRs surface. */
   function noteRendered(layout: PaneLayoutStore, tabs: readonly string[]): void {
-    layout.notePaneRender({ flattened: false, editableTabs: [...tabs], onScreenTabs: [...tabs], soloChromeTabs: [] });
+    layout.notePaneRender({
+      activeInputTabKey: tabs[0] ?? null,
+      flattened: false,
+      editableTabs: [...tabs],
+      onScreenTabs: [...tabs],
+      soloChromeTabs: [],
+    });
   }
 
   it("promotes the shown session beside the workspace pane", () => {
@@ -633,6 +640,7 @@ describe("session pane commands", () => {
     // Its own leaf, not stacked behind the workspace pane: a promotion the user
     // cannot see reads as a command that did nothing.
     expect(layout.leafIDForTab(paneKey)).not.toBe(layout.leafIDForTab("workspace"));
+    expect(pendingSessionFocus(hosted.hostKey)).toBe("explicit");
     // Offered once. Repeating it would move the tab the user just placed.
     expect(action.when(context)).toBe(false);
   });
@@ -644,6 +652,7 @@ describe("session pane commands", () => {
     // the render report can say the terminal is not visible.
     noteRendered(layout, ["conversation", "workspace"]);
     layout.notePaneRender({
+      activeInputTabKey: "conversation",
       flattened: false,
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation"],

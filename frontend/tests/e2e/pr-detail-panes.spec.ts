@@ -71,6 +71,7 @@ async function fulfillJson(route: Route, body: unknown): Promise<void> {
 
 async function mockSplitViewPR(page: Page): Promise<void> {
   const detailPath = "**/api/v1/pulls/github/acme/widgets/42";
+  const replacementDetailPath = "**/api/v1/pulls/github/acme/widgets/55";
 
   await page.route(detailPath, async (route) => {
     if (route.request().method() !== "GET") {
@@ -143,6 +144,12 @@ async function mockSplitViewPR(page: Page): Promise<void> {
     await fulfillJson(route, diffResponse);
   });
   await page.route(`${detailPath}/diff**`, async (route) => {
+    await fulfillJson(route, diffResponse);
+  });
+  await page.route(`${replacementDetailPath}/files`, async (route) => {
+    await fulfillJson(route, diffResponse);
+  });
+  await page.route(`${replacementDetailPath}/diff**`, async (route) => {
     await fulfillJson(route, diffResponse);
   });
 }
@@ -231,6 +238,116 @@ test("splits the PR detail panes apart and remembers the dragged ratio", async (
   await expect.poll(async () => firstPaneWidth(page)).toBeLessThan(before - 150);
 });
 
+test("routes page keys by focus while wheel input remains focus-neutral", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto("/pulls/github/acme/widgets/42");
+  await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
+
+  await splitFocusedPane(page, "right");
+  await expect(page.locator(".files-layout")).toBeVisible();
+
+  const conversationPane = page.locator('[data-pane-key="conversation"]');
+  const filesPane = page.locator('[data-pane-key="files"]');
+  const conversationLeaf = conversationPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+  const filesLeaf = filesPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+  const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
+
+  await page.locator(".diff-content").evaluate((content) => {
+    const spacer = document.createElement("div");
+    spacer.style.height = "2000px";
+    spacer.dataset.testScrollSpacer = "true";
+    content.append(spacer);
+  });
+  await expect.poll(async () => diffArea.evaluate((area) => area.scrollHeight > area.clientHeight)).toBe(true);
+
+  await conversationLeaf.getByRole("tab").focus();
+  await expect(page.locator(".tabbed-panel-leaf.input-active")).toHaveCount(1);
+  await expect(conversationLeaf).toHaveClass(/input-active/);
+  await expect(filesLeaf).not.toHaveClass(/input-active/);
+  const activeBorder = await conversationLeaf.evaluate((leaf) => {
+    const style = getComputedStyle(leaf, "::after");
+    return { color: style.borderTopColor, width: style.borderTopWidth };
+  });
+  expect(activeBorder.color).not.toBe("rgba(0, 0, 0, 0)");
+  expect(activeBorder.width).toBe("1px");
+
+  await diffArea.evaluate((area) => {
+    area.scrollTop = 0;
+  });
+  await page.keyboard.press("PageDown");
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBe(0);
+
+  await diffArea.hover();
+  await page.mouse.wheel(0, 360);
+  await expect(page.locator(".tabbed-panel-leaf.input-active")).toHaveCount(1);
+  await expect(conversationLeaf).toHaveClass(/input-active/);
+  await expect(filesLeaf).not.toHaveClass(/input-active/);
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(0);
+
+  const afterWheel = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+  await page.keyboard.press("PageDown");
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBe(afterWheel);
+
+  await filesLeaf.getByRole("tab", { name: "Files changed" }).focus();
+  await expect(filesLeaf).toHaveClass(/input-active/);
+  await expect(conversationLeaf).not.toHaveClass(/input-active/);
+
+  const filesPaneChrome = await filesLeaf.evaluate((leaf) => {
+    const outline = getComputedStyle(leaf, "::after");
+    const toolbar = leaf.querySelector<HTMLElement>(".diff-toolbar");
+    const activeTab = leaf.querySelector<HTMLElement>(".tabbed-panel-tab.active");
+    if (!toolbar || !activeTab) throw new Error("Files pane chrome is missing");
+    const tabAccent = getComputedStyle(activeTab, "::before");
+    return {
+      outlineColors: [
+        outline.borderTopColor,
+        outline.borderRightColor,
+        outline.borderBottomColor,
+        outline.borderLeftColor,
+      ],
+      outlineWidths: [
+        outline.borderTopWidth,
+        outline.borderRightWidth,
+        outline.borderBottomWidth,
+        outline.borderLeftWidth,
+      ],
+      tabAccentContent: tabAccent.content,
+      toolbarZIndex: getComputedStyle(toolbar).zIndex,
+    };
+  });
+  expect(new Set(filesPaneChrome.outlineColors).size).toBe(1);
+  expect(filesPaneChrome.outlineWidths).toEqual(["1px", "1px", "1px", "1px"]);
+  expect(filesPaneChrome.tabAccentContent).toBe("none");
+  expect(filesPaneChrome.toolbarZIndex).toBe("auto");
+
+  const afterFocus = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+  await page.keyboard.press("PageDown");
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(afterFocus);
+});
+
+test("keeps page keys out of the files diff while a modal owns focus", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
+  await page.locator(".diff-content").evaluate((content) => {
+    const spacer = document.createElement("div");
+    spacer.style.height = "2000px";
+    content.append(spacer);
+  });
+  await diffArea.evaluate((area) => {
+    area.scrollTop = 0;
+  });
+
+  await page.keyboard.press("Meta+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await expect(palette).toBeVisible();
+  await expect(palette.getByRole("textbox", { name: "Search command palette" })).toBeFocused();
+
+  await page.keyboard.press("PageDown");
+
+  await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBe(0);
+});
+
 async function detailPaneHostWidth(page: Page): Promise<number> {
   return Math.round(await page.locator(".detail-pane-layout").evaluate((el) => el.getBoundingClientRect().width));
 }
@@ -264,4 +381,43 @@ test("keeps the arrangement at an ordinary window width and flattens below 720px
   // Back above the threshold the split the user made is still there.
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+});
+
+test("restores layout focus when a focused pane is replaced across the flatten threshold", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/pulls/github/acme/widgets/42");
+  await splitFocusedPane(page, "right");
+
+  const layout = page.locator(".detail-pane-layout");
+  const filesTab = page.getByRole("tab", { name: "Files changed" });
+  await filesTab.focus();
+  await expect(filesTab).toBeFocused();
+
+  await page.setViewportSize({ width: 700, height: 900 });
+  await expect.poll(async () => detailPaneHostWidth(page)).toBeLessThan(720);
+  await expect(layout).toBeFocused();
+
+  await filesTab.focus();
+  await expect(filesTab).toBeFocused();
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+  await expect(layout).toBeFocused();
+});
+
+test("restores layout focus when history replaces focused same-tab content", async ({ page }) => {
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  const layout = page.locator(".detail-pane-layout");
+  const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
+  await diffArea.focus();
+  await expect(diffArea).toBeFocused();
+
+  await page.evaluate(() => {
+    window.history.pushState(null, "", "/pulls/github/acme/widgets/55/files");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+
+  await expect(page.locator(".detail-title")).toContainText("Refactor theme system");
+  await expect(layout).toBeFocused();
+  await expect(page.locator(".tabbed-panel-leaf.input-active")).toHaveCount(0);
 });

@@ -544,7 +544,7 @@
         onFocusPane={handlePaneFocus}
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
       >
-        {#snippet renderPane(tabKey, visible)}
+        {#snippet renderPane(tabKey, visible, inputActive)}
           {#if tabKey === "commit" && commitDrawer && visible}
             {#key commitDrawer.commitSha}
               <CommitDiffPanel
@@ -554,6 +554,7 @@
                 name={commitDrawer.name}
                 repoPath={commitDrawer.repoPath}
                 commitSha={commitDrawer.commitSha}
+                {inputActive}
               />
             {/key}
           {:else if tabKey === "workspace" && inlineWorkspace && visible}
@@ -573,6 +574,7 @@
             <PullDetailPane
               {tabKey}
               {visible}
+              keyboardActive={inputActive}
               pr={drawerPRSelection}
               detail={selectedPullDetail}
               autoSync="background"

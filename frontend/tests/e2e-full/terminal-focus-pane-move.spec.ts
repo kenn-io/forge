@@ -22,6 +22,10 @@ type WorkspaceStatusResponse = {
   error_message?: string | null;
 };
 
+type WorkspaceRuntimeResponse = {
+  sessions?: Array<{ key: string; status: string }>;
+};
+
 const preMarker = "TERM_FOCUS_PRE_MOVE";
 const postMarker = "TERM_FOCUS_POST_MOVE";
 const clipboardMarker = "TERM_FOCUS_TMUX_CLIP";
@@ -74,6 +78,13 @@ async function launchShell(
 
 async function launchDockedShell(api: APIRequestContext, workspaceId: string): Promise<void> {
   await launchShell(api, workspaceId, "terminal");
+}
+
+async function runningSessionKeys(api: APIRequestContext, workspaceId: string): Promise<string[]> {
+  const response = await api.get(`/api/v1/workspaces/${workspaceId}/runtime`);
+  expect(response.ok()).toBe(true);
+  const runtime = (await response.json()) as WorkspaceRuntimeResponse;
+  return (runtime.sessions ?? []).filter((session) => session.status === "running").map((session) => session.key);
 }
 
 async function focusedSessionHost(page: Page): Promise<string | null> {
@@ -179,32 +190,34 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
       baseURL: isolatedServer.info.base_url,
     });
     const workspace = await createIssueWorkspace(api);
-    // Two real tmux shells in the bottom dock: with two sessions each dock leaf
-    // keeps its own "Move ... to a pane" control, so the promotion below runs
-    // through the real handler without focusing a palette or button first.
-    await launchDockedShell(api, workspace.id);
-    await launchDockedShell(api, workspace.id);
+    await launchShell(api, workspace.id, "workflow");
 
     await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
     await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
-    const panel = await openTerminalPanel(page);
-    const chosenLeaf = panel.locator('.terminal-leaf:has(button[aria-label$=" to a pane"])').first();
-    const inlineTerminal = chosenLeaf.locator(".terminal-container");
+    const inlineTerminal = page.locator(".workspace-stage .terminal-container");
     await expect(inlineTerminal).toBeVisible();
     await expect(inlineTerminal.locator("canvas, .xterm-screen").first()).toBeVisible();
-    const promote = chosenLeaf.getByRole("button", { name: /^Move .+ to a pane$/ });
-    await expect(promote).toBeVisible();
 
-    // Promotion is setup for the pane-move scenario. Stamp the exact live
-    // xterm node first, so the assertions below prove the pane move carried,
-    // rather than rebuilt, the same real tmux terminal.
+    // Start promotion with xterm holding DOM focus. The command palette restores
+    // that saved focus before the handler reparents the terminal through parking,
+    // so the workspace and pool recovery paths overlap exactly as they do in use.
     await inlineTerminal.evaluate((element) => {
       element.setAttribute("data-focus-reparent-witness", "live-terminal");
     });
-    await promote.click();
+    await inlineTerminal.click({ position: { x: 10, y: 10 } });
+    await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
+    await page.keyboard.press("Meta+Shift+k");
+    const promotionPalette = page.getByRole("dialog", { name: "Command palette" });
+    await expect(promotionPalette).toBeVisible();
+    await page.getByRole("textbox", { name: "Search command palette" }).fill("Move terminal session to a pane");
+    await expect(promotionPalette.getByRole("button", { name: /Move terminal session to a pane/ })).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(promotionPalette).not.toBeVisible();
+
     const movedTerminal = page.locator('.session-terminal-slot [data-focus-reparent-witness="live-terminal"]');
-    await expect(page.locator('.terminal-panel [data-focus-reparent-witness="live-terminal"]')).toHaveCount(0);
+    await expect(page.locator('.workspace-stage [data-focus-reparent-witness="live-terminal"]')).toHaveCount(0);
     await expect(movedTerminal).toBeVisible();
+    await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
 
     await movedTerminal.evaluate((element) => {
       element
@@ -250,9 +263,11 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
       element.closest(".session-terminal-slot")?.setAttribute("data-focus-source-slot", "true");
     });
 
-    // The only terminal click in the scenario under test.
+    // Refocus after drag setup so the split below starts from the same contract.
     await movedTerminal.click({ position: { x: 10, y: 10 } });
     await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
+    const sourceOwner = page.locator('.tabbed-panel-leaf:has([data-pane-key="conversation"])');
+    await expect(sourceOwner).toHaveClass(/input-active/);
     await typeMarker(page, preMarker);
     await expect.poll(() => terminal.sent(preMarker), { timeout: 15_000 }).toBe(true);
     await expect.poll(() => terminal.received(preMarker), { timeout: 15_000 }).toBe(true);
@@ -271,9 +286,18 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     await expect(page.locator('[data-focus-source-slot="true"]')).toHaveCount(0);
     await expect(movedTerminal).toBeVisible();
 
-    // The regression: focus must come back to xterm on its own, and keystrokes
-    // must reach the live tmux session with no further click.
+    // The source leaf must release its keyboard claim while the focused terminal
+    // passes through parking. The pool restores focus in the destination, which
+    // becomes the layout's only owner; the old source border must not survive.
     await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
+    const destinationOwner = page.locator(
+      '.tabbed-panel-leaf:has(.session-terminal-slot [data-focus-reparent-witness="live-terminal"])',
+    );
+    await expect(sourceOwner).not.toHaveClass(/input-active/);
+    await expect(destinationOwner).toHaveClass(/input-active/);
+    await expect(page.locator(".detail-pane-layout .tabbed-panel-leaf.input-active")).toHaveCount(1);
+
+    // Keystrokes must still reach the live tmux session with no further click.
     await typeMarker(page, postMarker);
     await expect.poll(() => terminal.sent(postMarker), { timeout: 15_000 }).toBe(true);
     await expect.poll(() => terminal.received(postMarker), { timeout: 15_000 }).toBe(true);
@@ -329,6 +353,51 @@ test("terminal acquires keyboard focus on every item switch, not just the first"
     await page.locator("aside button", { hasText: "#10" }).first().click();
     await expect.poll(() => focusedSessionHost(page), { timeout: 15_000 }).toContain(first.id);
     await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
+  } finally {
+    await api?.dispose();
+    await isolatedServer?.stop();
+  }
+});
+
+test("dock reclaims focus when its focused session stops", async ({ page }) => {
+  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  let isolatedServer: IsolatedE2EServer | null = null;
+  let api: APIRequestContext | null = null;
+  try {
+    isolatedServer = await startIsolatedWorkspaceE2EServer();
+    api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+    const workspace = await createIssueWorkspace(api);
+    await launchDockedShell(api, workspace.id);
+    await launchDockedShell(api, workspace.id);
+    await launchDockedShell(api, workspace.id);
+    const sessionKeys = await runningSessionKeys(api, workspace.id);
+    expect(sessionKeys).toHaveLength(3);
+
+    await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+    const panel = await openTerminalPanel(page);
+    const focusedTerminal = panel.locator(".terminal-container").first();
+    await focusedTerminal.click({ position: { x: 10, y: 10 } });
+    const focusedHostKey = await focusedSessionHost(page);
+    if (focusedHostKey === null) {
+      throw new Error("Expected the focused dock terminal to expose its session host key");
+    }
+    const focusedSessionKey = sessionKeys.find((key) => focusedHostKey?.includes(key));
+    if (focusedSessionKey === undefined) {
+      throw new Error(`Focused terminal ${focusedHostKey} did not match a running session`);
+    }
+
+    const response = await api.delete(
+      `/api/v1/workspaces/${workspace.id}/runtime/sessions/${encodeURIComponent(focusedSessionKey)}`,
+      { data: {} },
+    );
+    expect(response.status(), await response.text()).toBe(204);
+
+    await expect(page.locator(`[data-session-host="${focusedHostKey}"]`)).toHaveCount(0);
+    await expect(panel).toBeFocused();
+    await expect(panel).toHaveClass(/input-active/);
+    await expect(panel.locator(".terminal-container")).toBeVisible();
   } finally {
     await api?.dispose();
     await isolatedServer?.stop();

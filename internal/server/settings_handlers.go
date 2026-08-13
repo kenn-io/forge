@@ -729,6 +729,8 @@ func (s *Server) updateSettings(
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
 	s.cfgMu.Lock()
 	prevActivity := s.cfg.Activity
 	prevPullRequests := s.cfg.PullRequests

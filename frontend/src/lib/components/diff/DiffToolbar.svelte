@@ -238,8 +238,6 @@
 
 <style>
   .diff-toolbar {
-    position: relative;
-    z-index: 60;
     display: flex;
     align-items: center;
     gap: 16px;

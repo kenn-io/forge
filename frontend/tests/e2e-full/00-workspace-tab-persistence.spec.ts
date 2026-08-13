@@ -600,13 +600,24 @@ test.describe("workspace tab persistence", () => {
       await page.locator(".panel-toggle-group .panel-toggle-btn", { hasText: "Diff" }).click();
       await expect(page.getByRole("region", { name: "Workspace Diff" })).toBeVisible();
 
-      await page.locator(".workspace-list-sidebar .ws-row", { hasText: "Add dark mode support" }).click();
+      const detailsFocusTarget = page.locator(".right-sidebar button").first();
+      await detailsFocusTarget.focus();
+      await expect(page.locator(".right-sidebar")).toHaveClass(/input-active/);
+
+      // DOM activation preserves the focused details control through the
+      // in-place route change, exercising the path where removed content does
+      // not deliver a usable focusout before the loading placeholder renders.
+      await page
+        .locator(".workspace-list-sidebar .ws-row", { hasText: "Add dark mode support" })
+        .evaluate((row) => (row as HTMLElement).click());
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceB.id}$`));
       // While B's detail payload is still gated, liveness rendering
       // replaces A's entire ready view with the loading state rather
       // than leaving a stale toolbar and sidebar mounted.
       await expect(page.getByText("Setting up workspace...")).toBeVisible();
       await expect(page.getByRole("region", { name: "Workspace Diff" })).toHaveCount(0);
+      await expect(page.locator(".terminal-view")).toBeFocused();
+      await expect(page.locator(".right-sidebar.input-active")).toHaveCount(0);
 
       await page.waitForFunction(
         (workspaceID) =>

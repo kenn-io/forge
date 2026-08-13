@@ -1350,7 +1350,10 @@ func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 		0o755,
 	))
 	t.Setenv("TMUX_RECORD", record)
-	mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
+	mgr := NewManager(Options{
+		TmuxCommand:                    []string{tmuxPath},
+		DetachSessionsForServerRestart: true,
+	})
 	info := SessionInfo{
 		Key:         "ws-1_codex",
 		WorkspaceID: "ws-1",
@@ -1376,9 +1379,13 @@ func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 	mgr.mu.Lock()
 	mgr.sessions[info.Key] = s
 	mgr.mu.Unlock()
+	attachment, err := mgr.AttachSession(info.WorkspaceID, info.Key)
+	require.NoError(err)
+	defer attachment.Close()
 
 	mgr.Shutdown()
 
+	assert.True(attachment.DetachedForServerRestart())
 	_, statErr := os.Stat(record)
 	assert.True(os.IsNotExist(statErr), "shutdown should not invoke tmux cleanup")
 	assert.Eventually(func() bool {

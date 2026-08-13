@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
-import { createRawSnippet, type Snippet } from "svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { createRawSnippet, tick, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
@@ -136,6 +136,10 @@ describe("ActivityFeedView detail panes", () => {
     expect(bodies.find((el) => el.getAttribute("data-visible") === "true")?.getAttribute("data-tab-key")).toBe(
       "conversation",
     );
+    expect(bodies.find((el) => el.getAttribute("data-tab-key") === "conversation")?.dataset.keyboardActive).toBe(
+      "false",
+    );
+    expect(bodies.find((el) => el.getAttribute("data-tab-key") === "files")?.dataset.keyboardActive).toBe("false");
   });
 
   it("offers no diff pane for an issue selection", () => {
@@ -149,6 +153,32 @@ describe("ActivityFeedView detail panes", () => {
     expect(screen.queryByTestId("pull-detail-pane")).toBeNull();
   });
 
+  it("moves diff keyboard routing only with live activity focus", async () => {
+    renderActivity({ drawerItem: prDrawer(), pullDetail: pullDetailFixture(12) });
+    const layout = getPaneLayoutStore("activity");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+    await tick();
+
+    const bodies = screen.getAllByTestId("pull-detail-pane");
+    const conversation = bodies.find((body) => body.dataset.tabKey === "conversation")!;
+    const files = bodies.find((body) => body.dataset.tabKey === "files")!;
+    expect(conversation.dataset.keyboardActive).toBe("false");
+    expect(files.dataset.keyboardActive).toBe("false");
+
+    await fireEvent.pointerDown(files);
+    await fireEvent.wheel(conversation);
+    expect(conversation.dataset.keyboardActive).toBe("false");
+    expect(files.dataset.keyboardActive).toBe("false");
+
+    await fireEvent.focusIn(files);
+    expect(conversation.dataset.keyboardActive).toBe("false");
+    expect(files.dataset.keyboardActive).toBe("true");
+
+    await fireEvent.focusIn(conversation);
+    expect(conversation.dataset.keyboardActive).toBe("true");
+    expect(files.dataset.keyboardActive).toBe("false");
+  });
+
   it("offers the commit pane for a branch commit selection", async () => {
     const { component } = renderActivity({ drawerItem: null });
     // The feed double exposes the branch-commit callback the real feed fires.
@@ -158,7 +188,11 @@ describe("ActivityFeedView detail panes", () => {
 
     expect(screen.getByRole("tab", { name: "Commit" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "Conversation" })).toBeNull();
-    expect(screen.getByTestId("commit-diff-panel")).toBeTruthy();
+    const commitPanel = screen.getByTestId("commit-diff-panel");
+    expect(commitPanel.dataset.inputActive).toBe("false");
+
+    await fireEvent.focusIn(commitPanel);
+    expect(commitPanel.dataset.inputActive).toBe("true");
   });
 
   it("renders a promoted session's pane in the activity drawer", () => {

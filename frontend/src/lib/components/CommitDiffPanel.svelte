@@ -14,6 +14,7 @@
     name: string;
     repoPath: string;
     commitSha: string;
+    inputActive?: boolean;
   }
 
   const {
@@ -23,6 +24,7 @@
     name,
     repoPath,
     commitSha,
+    inputActive = true,
   }: Props = $props();
 
   onMount(() => {
@@ -50,6 +52,7 @@
         {repoPath}
         number={0}
         loadOnMount={false}
+        keyboardActive={inputActive}
         richPreviewEnabled={false}
         contextExpansionEnabled={false}
       />

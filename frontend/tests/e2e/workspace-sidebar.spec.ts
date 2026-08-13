@@ -1745,6 +1745,55 @@ test.describe("workspace launch home", () => {
     expect(Math.abs(metrics.delta.bottom)).toBeLessThanOrEqual(0.5);
   });
 
+  test("moves active focus between standalone workflow panes", async ({ page }) => {
+    await setupTerminalMocks(page, {
+      runtime: workflowDragRuntime(),
+    });
+    await page.addInitScript((layout) => {
+      localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-123", JSON.stringify(layout));
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-123", "session:ws-123:codex");
+    }, workflowDragLayout());
+
+    await page.goto("/terminal/ws-123");
+    const codexPane = page.locator('[data-pane-key="session:ws-123:codex"]');
+    const reviewerPane = page.locator('[data-pane-key="session:ws-123:reviewer"]');
+    const codexLeaf = codexPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+    const reviewerLeaf = reviewerPane.locator("xpath=ancestor::*[contains(@class, 'tabbed-panel-leaf')][1]");
+
+    await expect(page.locator(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveCount(0);
+    await codexLeaf.getByRole("tab", { name: /^Codex/ }).focus();
+    await expect(codexLeaf).toHaveClass(/input-active/);
+    const activeBorder = await codexLeaf.evaluate((leaf) => {
+      const style = getComputedStyle(leaf, "::after");
+      return {
+        colors: [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor],
+        widths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
+      };
+    });
+    expect(activeBorder.colors.every((color) => color !== "rgba(0, 0, 0, 0)")).toBe(true);
+    expect(activeBorder.widths).toEqual(["1px", "1px", "1px", "1px"]);
+
+    await reviewerLeaf.getByRole("tab", { name: /^Reviewer/ }).focus();
+    await expect(reviewerLeaf).toHaveClass(/input-active/);
+    await expect(codexLeaf).not.toHaveClass(/input-active/);
+
+    await codexPane.hover();
+    await page.mouse.wheel(0, 120);
+    await expect(reviewerLeaf).toHaveClass(/input-active/);
+    await expect(codexLeaf).not.toHaveClass(/input-active/);
+
+    await page.locator(".panel-toggle-btn", { hasText: "Diff" }).click();
+    const rightSidebar = page.locator(".right-sidebar");
+    await expect(rightSidebar).toBeVisible();
+    await rightSidebar.locator(".kit-scrollbox__viewport").focus();
+    await expect(rightSidebar).toHaveClass(/input-active/);
+    await expect(page.locator(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveCount(0);
+
+    await codexLeaf.getByRole("tab", { name: /^Codex/ }).focus();
+    await expect(codexLeaf).toHaveClass(/input-active/);
+    await expect(rightSidebar).not.toHaveClass(/input-active/);
+  });
+
   test("shows one Workspaces option in the compact page menu on terminal routes", async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 720 });
     await setupTerminalMocks(page, {
@@ -2915,6 +2964,61 @@ test.describe("sidebar toggle behavior", () => {
     // Close via keyboard
     await page.keyboard.press("Meta+]");
     await expect(page.locator(".right-sidebar")).toHaveCount(0);
+  });
+
+  test("Cmd+] leaves the workspace sidebar closed while the command palette owns focus", async ({ page }) => {
+    await page.goto("/terminal/ws-123");
+
+    await page.keyboard.press("Meta+K");
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    await expect(palette).toBeVisible();
+    await expect(palette.getByRole("textbox", { name: "Search command palette" })).toBeFocused();
+
+    await page.keyboard.press("Meta+]");
+
+    await expect(page.locator(".right-sidebar")).toHaveCount(0);
+    await expect(palette.getByRole("textbox", { name: "Search command palette" })).toBeFocused();
+  });
+
+  test("Cmd+] leaves the workspace sidebar closed while application chrome owns focus", async ({ page }) => {
+    await page.goto("/terminal/ws-123");
+    const settings = page.getByRole("button", { name: "Settings" });
+    await settings.focus();
+    await expect(settings).toBeFocused();
+
+    await page.keyboard.press("Meta+]");
+
+    await expect(page.locator(".right-sidebar")).toHaveCount(0);
+    await expect(settings).toBeFocused();
+  });
+
+  test("closing focused workspace details returns focus to the workspace", async ({ page }) => {
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();
+
+    const details = page.getByRole("region", { name: "Workspace details pane" });
+    const detailsViewport = details.locator(".kit-scrollbox__viewport").first();
+    await detailsViewport.focus();
+    await expect(detailsViewport).toBeFocused();
+
+    await page.keyboard.press("Meta+]");
+
+    await expect(details).toHaveCount(0);
+    await expect(page.locator(".terminal-view")).toBeFocused();
+  });
+
+  test("moving the focused bottom terminal into Workflow returns focus to the workspace", async ({ page }) => {
+    await page.goto("/terminal/ws-123");
+    await page.getByRole("button", { name: "Open terminal panel" }).click();
+
+    const moveToWorkflow = page.getByRole("button", { name: "Move terminal panel to workflow" });
+    await moveToWorkflow.focus();
+    await expect(moveToWorkflow).toBeFocused();
+    await moveToWorkflow.click();
+
+    await expect(page.locator(".terminal-panel.bottom")).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Terminal" })).toBeVisible();
+    await expect(page.locator(".terminal-view")).toBeFocused();
   });
 });
 

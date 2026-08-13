@@ -618,12 +618,13 @@ func run(opts serve.Options) error {
 	srv = server.NewWithConfig(
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
-			DaemonAccess:        daemonAccess,
-			WorktreeDir:         filepath.Join(cfg.DataDir, "worktrees"),
-			PtyOwnerManagerPath: os.Getenv("KENN_FORGE_PTY_MANAGER"),
-			Telemetry:           telemetryReporter,
-			TokenSources:        tokenSources,
-			Archive:             archiveService,
+			DaemonAccess:                    daemonAccess,
+			WorktreeDir:                     filepath.Join(cfg.DataDir, "worktrees"),
+			PtyOwnerManagerPath:             os.Getenv("KENN_FORGE_PTY_MANAGER"),
+			Telemetry:                       telemetryReporter,
+			TokenSources:                    tokenSources,
+			Archive:                         archiveService,
+			DetachRuntimeSessionsForRestart: os.Getenv("KENN_FORGE_DEV_RESTART") == "1",
 		},
 	)
 	srv.AttachHTTPServer(httpSrv, ln)

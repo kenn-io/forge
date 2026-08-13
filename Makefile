@@ -265,11 +265,13 @@ dev: ensure-embed-dir check-air
 	@echo "backend console log level: $${KENN_FORGE_LOG_STDERR_LEVEL:-info}"
 	@echo "tail with: tail -F $${KENN_FORGE_LOG_FILE:-$(DEV_BACKEND_LOG)}"
 	@if [ -n "$(KENN_FORGE_CONFIG)" ]; then \
+		KENN_FORGE_DEV_RESTART=1 \
 		KENN_FORGE_LOG_LEVEL="$${KENN_FORGE_LOG_LEVEL:-debug}" \
 		KENN_FORGE_LOG_FILE="$${KENN_FORGE_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
 		KENN_FORGE_LOG_STDERR_LEVEL="$${KENN_FORGE_LOG_STDERR_LEVEL:-info}" \
 		"$(AIR_BIN)" -c .air.toml -- serve -config "$(KENN_FORGE_CONFIG)" $(ARGS); \
 	else \
+		KENN_FORGE_DEV_RESTART=1 \
 		KENN_FORGE_LOG_LEVEL="$${KENN_FORGE_LOG_LEVEL:-debug}" \
 		KENN_FORGE_LOG_FILE="$${KENN_FORGE_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
 		KENN_FORGE_LOG_STDERR_LEVEL="$${KENN_FORGE_LOG_STDERR_LEVEL:-info}" \

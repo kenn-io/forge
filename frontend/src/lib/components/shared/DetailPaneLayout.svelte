@@ -16,12 +16,13 @@
   import type { PaneLayoutStore, PaneTabSpec } from "../../stores/paneLayout.svelte.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { observeResize } from "../../browser/observers.js";
+  import { nextAnimationFrameOrDocumentHidden } from "../../browser/animation-frame.js";
+  import { observeMutation, observeResize } from "../../browser/observers.js";
 
   interface Props {
     layout: PaneLayoutStore;
     tabs: PaneTabSpec[];
-    renderPane: Snippet<[string, boolean]>;
+    renderPane: Snippet<[string, boolean, boolean]>;
     paneIcon?: Snippet<[TabbedPanelDescriptor]> | undefined;
     tablistLabel?: string;
     leafLabel?: string;
@@ -70,6 +71,7 @@
   }: Props = $props();
   const runtime = getAppRuntime();
   let focusExecution: AppExecution<void, never> | null = null;
+  let focusRecordExecution: AppExecution<void, never> | null = null;
 
   /**
    * The workspace pane draws its own tab strip: one tab per session, plus the dock.
@@ -84,6 +86,9 @@
 
   let host = $state<HTMLElement | null>(null);
   let hostWidth = $state(0);
+  let focusedInputLeafID = $state<string | null>(null);
+  let focusedInputTabKey = $state<string | null>(null);
+  let focusedInputElement: HTMLElement | null = null;
 
   const availableTabs = $derived(tabs.filter((tab) => tab.available).map((tab) => tab.key));
   const hideableTabKeys = $derived(tabs.filter((tab) => tab.hideable === true).map((tab) => tab.key));
@@ -140,6 +145,28 @@
       .map((leaf) => leaf.activeTabKey)
       .filter((key): key is string => key !== null && key !== undefined),
   );
+  const activeInputTabKey = $derived.by(() => {
+    if (layout.externalInputActive()) return "";
+    if (focusedInputLeafID === null) return "";
+    return renderedLeaves.find((leaf) => leaf.id === focusedInputLeafID)?.activeTabKey ?? "";
+  });
+
+  // A focused pane can disappear or move to another rendered leaf without
+  // dispatching focusout (for example when hidden, covered by a zoom, or split).
+  // Follow the exact rendered tab when it moved; otherwise forget live focus so
+  // revealing removed content later cannot resurrect a stale ownership border.
+  $effect.pre(() => {
+    if (focusedInputLeafID === null) return;
+    const focusedLeaf = renderedLeaves.find((leaf) => leaf.id === focusedInputLeafID);
+    if (focusedLeaf?.activeTabKey === focusedInputTabKey) return;
+    const replacement = renderedLeaves.find((leaf) => leaf.activeTabKey === focusedInputTabKey);
+    // The leaf still exists and no other rendered leaf took its focused tab: this
+    // is an ordinary same-leaf selection change, handled by the effect below.
+    if (focusedLeaf && !replacement) return;
+    const focusedDescendant = focusedInputElement;
+    focusedInputLeafID = replacement?.id ?? null;
+    if (replacement) reclaimFocus(focusedDescendant);
+  });
 
   // Publish the renderer-only facts the command layer needs: that a layout is
   // mounted here at all, which panes it offers, which are on screen, and whether
@@ -150,7 +177,15 @@
     // Null until the host has been measured. Width decides whether structural
     // edits are allowed at all, and an unmeasured host defaulting to "not
     // flattened" exposes those commands for a frame on a narrow layout.
-    const report = measured ? { editableTabs, onScreenTabs, flattened, soloChromeTabs } : null;
+    const report = measured
+      ? {
+          activeInputTabKey: activeInputTabKey || null,
+          editableTabs,
+          onScreenTabs,
+          flattened,
+          soloChromeTabs,
+        }
+      : null;
     // Untracked because the store compares against the previous report before
     // writing: reading it here would make this effect both a reader and a writer
     // of the same state and it would re-run itself forever.
@@ -184,13 +219,18 @@
    * a pane declined restoration and stranded focus. Focus already elsewhere is
    * never stolen, so a background close leaves the user's control alone.
    */
-  function reclaimFocus(): void {
+  function reclaimFocus(preferredTarget: HTMLElement | null = null): void {
     focusExecution?.interrupt();
     focusExecution = runtime.runCommand(
       Effect.promise(() => tick()).pipe(
         Effect.andThen(Effect.sync(() => {
           const focused = document.activeElement;
-          if (focused === null || focused === document.body) host?.focus();
+          if (focused !== null && focused !== document.body) return;
+          if (preferredTarget?.isConnected) {
+            if (host?.contains(preferredTarget)) preferredTarget.focus();
+            return;
+          }
+          host?.focus();
         })),
       ),
       {
@@ -200,6 +240,19 @@
       },
     );
   }
+
+  // A tab change can remove the focused pane body without a focusout event.
+  // Check after the DOM update through reclaimFocus(): a clicked tab or any
+  // other deliberate destination keeps focus, while a stranded <body> focus
+  // moves to the layout host and clears pane keyboard ownership.
+  let lastFocusedLeafSelection: { leafID: string; tabKey: string } | null = null;
+  $effect(() => {
+    const leafID = focusedInputLeafID;
+    const tabKey = leafID === null ? null : renderedLeaves.find((leaf) => leaf.id === leafID)?.activeTabKey ?? null;
+    const previous = lastFocusedLeafSelection;
+    lastFocusedLeafSelection = leafID !== null && tabKey !== null ? { leafID, tabKey } : null;
+    if (previous?.leafID === leafID && tabKey !== null && previous.tabKey !== tabKey) reclaimFocus();
+  });
 
   /**
    * Closing a pane unmounts its body. Focus that lived inside it — the terminal,
@@ -235,12 +288,92 @@
   // since a surface that rewrites the URL on focus must not do so on every click.
   let lastReportedFocus: string | null = null;
 
-  function focusPane(tabKey: string): void {
+  function focusPane(tabKey: string, leafID: string): void {
+    focusedInputLeafID = leafID;
+    focusedInputTabKey = tabKey;
+    layout.setExternalInputActive(false);
+    layout.noteFocused(tabKey);
     if (lastReportedFocus === tabKey) return;
     lastReportedFocus = tabKey;
-    layout.noteFocused(tabKey);
     onFocusPane?.(tabKey);
   }
+
+  function handleLayoutFocusIn(event: FocusEvent & { currentTarget: HTMLElement }): void {
+    focusRecordExecution?.interrupt();
+    focusRecordExecution = null;
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest(".tabbed-panel-leaf") !== null) {
+      focusedInputElement = target;
+      return;
+    }
+    focusedInputLeafID = null;
+    focusedInputTabKey = null;
+    focusedInputElement = null;
+  }
+
+  function handleLayoutFocusOut(event: FocusEvent & { currentTarget: HTMLElement }): void {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    focusedInputLeafID = null;
+    focusedInputTabKey = null;
+    // Chromium reports no next target while a keyed subtree removes the
+    // focused node. Keep that exact node until the mutation observer can test
+    // whether it disconnected; a real destination outside the layout no
+    // longer needs the record.
+    if (next !== null) {
+      focusRecordExecution?.interrupt();
+      focusRecordExecution = null;
+      focusedInputElement = null;
+      return;
+    }
+    const blurred = focusedInputElement;
+    focusRecordExecution?.interrupt();
+    focusRecordExecution = runtime.runCommand(
+      nextAnimationFrameOrDocumentHidden.pipe(
+        Effect.andThen(Effect.sync(() => {
+          if (focusedInputElement === blurred && blurred?.isConnected) {
+            focusedInputElement = null;
+          }
+          focusRecordExecution = null;
+        })),
+      ),
+      {
+        operation: "release detail pane focus record",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
+  }
+
+  // Pane identity can replace focused content without changing the pane tree,
+  // selected tab, or emitting focusout. Observe the renderer boundary itself:
+  // any node that leaves this layout releases its ownership. Only disconnected
+  // content needs layout focus recovery; a connected pooled terminal owns its
+  // own restoration while it moves through parking.
+  $effect(() => {
+    const el = host;
+    if (!el || typeof MutationObserver === "undefined") return;
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.scoped(
+          observeMutation(
+            el,
+            () => {
+              const focused = focusedInputElement;
+              if (focused === null || el.contains(focused)) return;
+              focusedInputLeafID = null;
+              focusedInputTabKey = null;
+              focusedInputElement = null;
+              if (!focused.isConnected) reclaimFocus();
+            },
+            { childList: true, subtree: true },
+          ).pipe(Effect.andThen(Effect.never)),
+        ),
+        { operation: "observe detail pane focus", safeContext: {}, onFailure: () => {} },
+      ),
+    );
+    return execution.interrupt;
+  });
 
   // A zoom must not survive the disappearance of what was zoomed. The store
   // cannot see availability, so masking it at render time is not enough: a
@@ -271,6 +404,7 @@
     }
     if (appliedRouteTabKey === key) return;
     appliedRouteTabKey = key;
+    lastReportedFocus = key;
     untrack(() => {
       layout.activateTab(key);
       layout.noteFocused(key);
@@ -306,14 +440,20 @@
      stored pane tree is the only record that the session moved. Every ordinary
      mutation refuses such a source, so the branch has to be here. -->
 <!-- tabindex so the layout can hold focus itself after a pane closes under it. -->
-<div class="detail-pane-layout" bind:this={host} tabindex="-1">
+<div
+  class="detail-pane-layout"
+  bind:this={host}
+  tabindex="-1"
+  onfocusin={handleLayoutFocusIn}
+  onfocusout={handleLayoutFocusOut}
+>
   {#if activeTree}
     <div class="detail-pane-tree">
       <TabbedPanelTree
         dragScope={layout.dragScope}
         node={activeTree}
         tabs={descriptors}
-        activeTabKey={routeTabKey ?? layout.lastFocusedTabKey() ?? ""}
+        activeTabKey={activeInputTabKey}
         {tablistLabel}
         {leafLabel}
         resizeLabel="Resize detail panes"
@@ -346,7 +486,7 @@
         soloChromeTabKeys={flattened ? [] : SOLO_CHROME_TAB_KEYS}
       >
         {#snippet renderTab(tabKey, visible)}
-          {@render renderPane(tabKey, visible)}
+          {@render renderPane(tabKey, visible, tabKey === activeInputTabKey)}
         {/snippet}
       </TabbedPanelTree>
     </div>

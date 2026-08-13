@@ -464,6 +464,41 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	)
 }
 
+func TestHandleUpdateSettingsSerializesWithConfigReload(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+
+	srv.configReloadMu.Lock()
+	done := make(chan error, 1)
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		_, err := srv.updateSettings(context.Background(), &updateSettingsInput{
+			Body: updateSettingsRequest{
+				Activity: &config.Activity{TimeRange: "30d", ViewMode: "threaded"},
+			},
+		})
+		done <- err
+	}()
+	<-started
+
+	select {
+	case err := <-done:
+		srv.configReloadMu.Unlock()
+		require.NoError(err)
+		require.Fail("settings update completed while config reload lock was held")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	srv.configReloadMu.Unlock()
+	select {
+	case err := <-done:
+		require.NoError(err)
+	case <-time.After(5 * time.Second):
+		require.Fail("settings update did not complete after config reload lock was released")
+	}
+}
+
 func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

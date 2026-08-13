@@ -566,9 +566,9 @@ func TestArchivePromotionBoundaryMigrationReopensMaintenanceGap(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	dbPath := filepath.Join(t.TempDir(), "archive-promotion-gap-v49.db")
-	discoveredAt := "2026-07-20T21:35:22Z"
-	promotedAt := "2026-07-27T02:28:59Z"
-	maintainedAt := "2026-08-13T16:35:52Z"
+	discoveredAt := time.Date(2026, time.July, 20, 21, 35, 22, 827186000, time.UTC)
+	promotedAt := time.Date(2026, time.July, 27, 2, 28, 59, 0, time.UTC)
+	maintainedAt := time.Date(2026, time.August, 13, 16, 35, 52, 0, time.UTC)
 
 	openAtVersionForTest(t, dbPath, 49, func(raw *sql.DB) {
 		_, err := raw.Exec(`
@@ -604,11 +604,10 @@ func TestArchivePromotionBoundaryMigrationReopensMaintenanceGap(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(database.Close()) })
 
-	var initialStarted, watermark string
-	var maintenanceSucceeded sql.NullString
+	var initialStarted, watermark time.Time
+	var maintenanceSucceeded sql.NullTime
 	err = database.ReadDB().QueryRow(`
-		SELECT CAST(initial_started_at AS TEXT), CAST(maintenance_watermark AS TEXT),
-			CAST(maintenance_succeeded_at AS TEXT)
+		SELECT initial_started_at, maintenance_watermark, maintenance_succeeded_at
 		FROM forge_archive_repos WHERE repo_id = 1
 	`).Scan(&initialStarted, &watermark, &maintenanceSucceeded)
 	require.NoError(err)

@@ -1260,6 +1260,7 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 		return err
 	}
 	commit.Now = canonicalUTCTime(commit.Now)
+	commit.PromptSince = canonicalUTCTimePtr(commit.PromptSince)
 	var typedErr error
 	err = d.Tx(ctx, func(tx *sql.Tx) error {
 		typedErr = nil
@@ -1276,8 +1277,11 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 			return nil
 		}
 		for _, item := range commit.Items {
+			item.ProviderCreatedAt = canonicalUTCTime(item.ProviderCreatedAt)
+			item.ProviderUpdatedAt = canonicalUTCTime(item.ProviderUpdatedAt)
 			if err := commitArchiveInventoryItemTx(
-				ctx, tx, commit.RepoID, commit.ItemType, item, commit.RefreshReason,
+				ctx, tx, commit.RepoID, commit.ItemType, item,
+				commit.RefreshReason, commit.PromptSince,
 			); err != nil {
 				return err
 			}
@@ -1315,7 +1319,14 @@ func commitArchiveInventoryItemTx(
 	itemType ArchiveItemType,
 	item ArchiveInventoryItem,
 	refreshReason ArchiveRefreshReason,
+	promptSince *time.Time,
 ) error {
+	shouldReopen, err := archiveInventoryItemNeedsRefreshTx(
+		ctx, tx, repoID, itemType, item, refreshReason, promptSince,
+	)
+	if err != nil {
+		return err
+	}
 	if err := reactivateTerminalArchiveWorkTx(
 		ctx, tx, repoID, itemType, item.Number,
 	); err != nil {
@@ -1330,10 +1341,51 @@ func commitArchiveInventoryItemTx(
 	if err := seedArchiveItemProgressTx(ctx, tx, repoID, itemType, item.Number); err != nil {
 		return err
 	}
-	if refreshReason == ArchiveRefreshReasonPrompt {
+	if shouldReopen {
 		return reopenArchiveItemProgressTx(ctx, tx, repoID, itemType, item.Number)
 	}
 	return nil
+}
+
+// archiveInventoryItemNeedsRefreshTx compares a prompt observation with the
+// transaction-current inventory evidence. New items are seeded pending by the
+// caller. Existing items are reopened when the provider reports newer data,
+// when a terminal item reappears, or when the observation falls in the
+// inclusive watermark overlap where equal timestamps cannot prove stasis.
+func archiveInventoryItemNeedsRefreshTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	itemType ArchiveItemType,
+	item ArchiveInventoryItem,
+	refreshReason ArchiveRefreshReason,
+	promptSince *time.Time,
+) (bool, error) {
+	if refreshReason != ArchiveRefreshReasonPrompt {
+		return false, nil
+	}
+	var storedUpdatedAt time.Time
+	var lifecycle ArchiveLifecycleState
+	err := tx.QueryRowContext(ctx, `
+		SELECT provider_updated_at, lifecycle_state
+		FROM forge_archive_items
+		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
+		repoID, itemType, item.Number,
+	).Scan(&storedUpdatedAt, &lifecycle)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read archive inventory refresh evidence: %w", err)
+	}
+	if lifecycle == ArchiveLifecycleStateRemovedUpstream ||
+		lifecycle == ArchiveLifecycleStateInaccessible {
+		return true, nil
+	}
+	if item.ProviderUpdatedAt.After(storedUpdatedAt) {
+		return true, nil
+	}
+	return promptSince != nil && !item.ProviderUpdatedAt.After(*promptSince), nil
 }
 
 // seedArchiveItemProgressTx creates the one progress row for an archive item.
@@ -1376,7 +1428,14 @@ func validateInventoryCommit(commit ArchiveInventoryCommit) error {
 		}
 	}
 	switch commit.RefreshReason {
-	case ArchiveRefreshReasonInitial, ArchiveRefreshReasonPrompt:
+	case ArchiveRefreshReasonInitial:
+		if commit.PromptSince != nil {
+			return errors.New("commit archive inventory: initial inventory cannot carry a prompt boundary")
+		}
+	case ArchiveRefreshReasonPrompt:
+		if commit.PromptSince == nil {
+			return errors.New("commit archive inventory: prompt boundary is required")
+		}
 	default:
 		return fmt.Errorf("commit archive inventory: invalid refresh reason %q", commit.RefreshReason)
 	}

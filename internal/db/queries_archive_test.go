@@ -660,7 +660,8 @@ func TestArchivePromptRediscoveryMakesTerminalItemClaimable(t *testing.T) {
 	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
 		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
 		RefreshReason: ArchiveRefreshReasonPrompt, ScanGeneration: state.MaintenanceIssues.Generation,
-		Exhausted: true, Items: []ArchiveInventoryItem{item}, Now: now.Add(3 * time.Minute),
+		PromptSince: &now, Exhausted: true,
+		Items: []ArchiveInventoryItem{item}, Now: now.Add(3 * time.Minute),
 	}))
 	refreshed, err := database.GetDatasetProgress(
 		ctx, repoID, ArchiveItemTypeIssue, item.Number, ArchiveDatasetLookup,
@@ -674,6 +675,70 @@ func TestArchivePromptRediscoveryMakesTerminalItemClaimable(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(claim)
 	assert.Equal(item.Number, claim.ItemNumber)
+}
+
+func TestArchivePromptReopensOnlyChangedOrBoundaryItems(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	discoveredAt := archiveTestTime()
+	promptSince := discoveredAt.Add(time.Hour)
+	repoID := insertTestRepo(t, database, "acme", "selective-refresh")
+	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, discoveredAt))
+	require.NoError(database.StartFullArchives(ctx, []int64{repoID}, discoveredAt))
+
+	unchanged := archiveInventoryItemForTest(1, promptSince.Add(time.Hour))
+	changed := archiveInventoryItemForTest(2, promptSince.Add(2*time.Hour))
+	boundary := archiveInventoryItemForTest(3, promptSince)
+	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		RefreshReason: ArchiveRefreshReasonInitial, ScanGeneration: 1,
+		Exhausted: true,
+		Items:     []ArchiveInventoryItem{unchanged, changed, boundary},
+		Now:       discoveredAt,
+	}))
+	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest,
+		RefreshReason: ArchiveRefreshReasonInitial, ScanGeneration: 1,
+		Exhausted: true, Now: discoveredAt,
+	}))
+	_, err := database.WriteDB().ExecContext(ctx, `
+		UPDATE forge_archive_dataset_progress SET status = 'complete'
+		WHERE repo_id = ?`, repoID)
+	require.NoError(err)
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE forge_archive_repos SET initial_completed_at = ? WHERE repo_id = ?`,
+		discoveredAt, repoID)
+	require.NoError(err)
+
+	state, err := database.BeginArchivePromptMaintenance(
+		ctx, repoID, promptSince, promptSince.Add(time.Minute),
+	)
+	require.NoError(err)
+	changed.ProviderUpdatedAt = changed.ProviderUpdatedAt.Add(time.Minute)
+	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		RefreshReason:  ArchiveRefreshReasonPrompt,
+		PromptSince:    &promptSince,
+		ScanGeneration: state.MaintenanceIssues.Generation,
+		Exhausted:      true,
+		Items:          []ArchiveInventoryItem{unchanged, changed, boundary},
+		Now:            promptSince.Add(2 * time.Minute),
+	}))
+
+	assert.Equal(
+		ArchiveDatasetProgressComplete,
+		archiveProgressStatusForTest(t, database, repoID, ArchiveItemTypeIssue, unchanged.Number, ArchiveDatasetLookup),
+	)
+	assert.Equal(
+		ArchiveDatasetProgressPending,
+		archiveProgressStatusForTest(t, database, repoID, ArchiveItemTypeIssue, changed.Number, ArchiveDatasetLookup),
+	)
+	assert.Equal(
+		ArchiveDatasetProgressPending,
+		archiveProgressStatusForTest(t, database, repoID, ArchiveItemTypeIssue, boundary.Number, ArchiveDatasetLookup),
+	)
 }
 
 func TestCommitArchiveItemSyncRejectsMismatchedMergeEvidence(t *testing.T) {

@@ -10,4 +10,7 @@ SET initial_started_at = created_at,
     prompt_since = NULL
 WHERE collection_mode = 'full'
   AND initial_started_at IS NOT NULL
-  AND julianday(initial_started_at) > julianday(created_at);
+  -- Forge writes UTC time.Time values in Go's SQLite text representation.
+  -- Comparing those canonical values directly preserves subsecond precision;
+  -- SQLite's date functions return NULL for the trailing " +0000 UTC" form.
+  AND initial_started_at > created_at;

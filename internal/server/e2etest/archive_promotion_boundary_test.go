@@ -37,6 +37,8 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 	clock := &archivePromotionClock{now: discoveredAt}
 	var gapItemAvailable atomic.Bool
 	var maintenanceSince atomic.Pointer[time.Time]
+	var baselineDetailCalls atomic.Int64
+	var gapDetailCalls atomic.Int64
 
 	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -56,7 +58,13 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 			}
 			order, _ := request.Variables["orderField"].(string)
 			if order == "CREATED_AT" {
-				_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
+				_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[{
+					"id":"I_1","databaseId":1,"number":1,"title":"baseline issue",
+					"state":"CLOSED","body":"","url":"https://github.com/acme/widget/issues/1",
+					"author":{"login":"author"},"createdAt":"2025-01-01T00:15:00Z",
+					"updatedAt":"2025-01-01T01:00:00Z","closedAt":"2025-01-01T01:00:00Z",
+					"comments":{"totalCount":0},"labels":{"nodes":[]},"assignees":{"nodes":[]}
+				}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
 				return
 			}
 			if !assert.Equal("UPDATED_AT", order) {
@@ -72,6 +80,12 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 			maintenanceSince.Store(&parsedSince)
 			if gapItemAvailable.Load() && !parsedSince.After(gapUpdatedAt) {
 				_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[{
+					"id":"I_1","databaseId":1,"number":1,"title":"baseline issue",
+					"state":"CLOSED","body":"","url":"https://github.com/acme/widget/issues/1",
+					"author":{"login":"author"},"createdAt":"2025-01-01T00:15:00Z",
+					"updatedAt":"2025-01-01T01:00:00Z","closedAt":"2025-01-01T01:00:00Z",
+					"comments":{"totalCount":0},"labels":{"nodes":[]},"assignees":{"nodes":[]}
+				},{
 					"id":"I_17","databaseId":17,"number":17,"title":"gap issue",
 					"state":"CLOSED","body":"","url":"https://github.com/acme/widget/issues/17",
 					"author":{"login":"author"},"createdAt":"2025-01-01T00:30:00Z",
@@ -88,7 +102,19 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 				"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget",
 				"owner":{"login":"acme"}
 			}`))
+		case "/api/v3/repos/acme/widget/issues/1":
+			baselineDetailCalls.Add(1)
+			_, _ = w.Write([]byte(`{
+				"id":1,"node_id":"I_1","number":1,"title":"baseline issue","state":"closed",
+				"body":"","html_url":"https://github.com/acme/widget/issues/1",
+				"user":{"login":"author"},"created_at":"2025-01-01T00:15:00Z",
+				"updated_at":"2025-01-01T01:00:00Z","closed_at":"2025-01-01T01:00:00Z",
+				"comments":0
+			}`))
+		case "/api/v3/repos/acme/widget/issues/1/comments":
+			_, _ = w.Write([]byte(`[]`))
 		case "/api/v3/repos/acme/widget/issues/17":
+			gapDetailCalls.Add(1)
 			_, _ = w.Write([]byte(`{
 				"id":17,"node_id":"I_17","number":17,"title":"gap issue","state":"closed",
 				"body":"","html_url":"https://github.com/acme/widget/issues/17",
@@ -162,7 +188,9 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(started.JSON200)
 
-	// Maintenance enumerates both streams, then the next pass hydrates the issue.
+	// Promotion first hydrates the discovery item. Maintenance then enumerates
+	// both streams, and the final pass hydrates only the newly discovered gap.
+	require.NoError(archiveService.RunEligible(ctx))
 	require.NoError(archiveService.RunEligible(ctx))
 	require.NoError(archiveService.RunEligible(ctx))
 
@@ -177,6 +205,18 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 	requestedSince := maintenanceSince.Load()
 	require.NotNil(requestedSince)
 	assert.Equal(discoveredAt.Add(-time.Second), *requestedSince)
+	assert.Equal(int64(1), baselineDetailCalls.Load())
+	assert.Equal(int64(1), gapDetailCalls.Load())
+
+	baseline, err := database.GetIssueByRepoIDAndNumber(ctx, repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(baseline)
+	assert.Equal("baseline issue", baseline.Title)
+	baselineProgress, err := database.GetDatasetProgress(
+		ctx, repo.ID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressComplete, baselineProgress.Status)
 
 	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repo.ID, 17)
 	require.NoError(err)

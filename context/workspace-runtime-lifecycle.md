@@ -124,7 +124,8 @@ still exists.
   `KENN_FORGE_DEV_RESTART`; terminal bridges close without an `exited` frame so
   the browser reconnects to the surviving tmux or ptyowner session. Genuine
   process exits and non-development shutdown behavior remain unchanged
-  (`scripts/dev-stack-backend.sh`, `docker/backend-dev-entrypoint.sh`,
+  (`Makefile::dev`, `scripts/dev-stack-backend.sh`,
+  `docker/backend-dev-entrypoint.sh`,
   `internal/workspace/localruntime/manager.go::Manager.Shutdown`).
 - New tmux sessions use the `forge-` prefix; persisted `middleman-` session
   names remain valid and must not be rewritten (`internal/workspace/`).

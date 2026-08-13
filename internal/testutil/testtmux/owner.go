@@ -15,6 +15,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,9 +28,14 @@ import (
 )
 
 const (
-	startTokenLength = 12
-	cleanupTimeout   = 2 * time.Second
-	rootLockName     = ".owner.lock"
+	startTokenLength      = 12
+	cleanupTimeout        = 2 * time.Second
+	rootLockName          = ".owner.lock"
+	admissionPrefix       = "admission."
+	admissionLockName     = "lock"
+	admissionClosedName   = "closed"
+	wrapperExecutableName = "tmux-wrapper"
+	wrapperMetadataName   = "wrapper.json"
 )
 
 var runNamePattern = regexp.MustCompile(
@@ -50,18 +56,25 @@ type registeredServer struct {
 
 // Owner tracks private tmux servers for one test binary.
 type Owner struct {
-	root       string
-	runDir     string
-	mu         sync.Mutex
-	servers    map[string]registeredServer
-	cleanup    sync.Once
-	cleanupErr error
+	root         string
+	runDir       string
+	admissionDir string
+	mu           sync.Mutex
+	servers      map[string]registeredServer
+	closed       bool
+	cleanup      sync.Once
+	cleanupErr   error
 }
 
 type ownerMarker struct {
 	PID          int    `json:"pid"`
 	ProcessStart string `json:"process_start"`
 	StartToken   string `json:"start_token"`
+}
+
+type wrapperMetadata struct {
+	TmuxPath     string `json:"tmux_path"`
+	AdmissionDir string `json:"admission_dir"`
 }
 
 // New creates an owner beneath a stable, per-user temporary root. It reaps
@@ -123,10 +136,16 @@ func newAt(root string) (*Owner, error) {
 		if err != nil {
 			return err
 		}
+		admissionDir := filepath.Join(root, admissionPrefix+runName)
+		if err := os.Mkdir(admissionDir, 0o700); err != nil {
+			_ = os.RemoveAll(runDir)
+			return fmt.Errorf("create private tmux admission directory: %w", err)
+		}
 		owner = &Owner{
-			root:    root,
-			runDir:  runDir,
-			servers: make(map[string]registeredServer),
+			root:         root,
+			runDir:       runDir,
+			admissionDir: admissionDir,
+			servers:      make(map[string]registeredServer),
 		}
 		return nil
 	})
@@ -187,24 +206,118 @@ func publishRun(
 // Command registers a private socket before returning a tmux command prefix.
 func (o *Owner) Command(t testing.TB, tmuxPath string) []string {
 	t.Helper()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	require.False(t, o.closed, "private tmux owner is cleaning up")
+
 	nonce, err := randomToken(6)
 	require.NoError(t, err)
 	serverDir := filepath.Join(o.runDir, "server-"+nonce)
 	require.NoError(t, os.Mkdir(serverDir, 0o700))
 	socket := filepath.Join(serverDir, "tmux.sock")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	metadata, err := json.Marshal(wrapperMetadata{
+		TmuxPath:     tmuxPath,
+		AdmissionDir: o.admissionDir,
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serverDir, wrapperMetadataName), metadata, 0o600,
+	))
+	wrapperPath := filepath.Join(serverDir, wrapperExecutableName)
+	require.NoError(t, os.Symlink(executable, wrapperPath))
 	server := registeredServer{tmuxPath: tmuxPath, socket: socket}
-	o.mu.Lock()
 	o.servers[socket] = server
-	o.mu.Unlock()
 	t.Cleanup(func() {
 		require.NoError(t, o.release(server))
 	})
-	return []string{tmuxPath, "-f", "/dev/null", "-S", socket}
+	return []string{wrapperPath, "-f", "/dev/null", "-S", socket}
+}
+
+// CommandWrapperExitCode runs a private tmux command when the current test
+// binary was invoked through an Owner command wrapper.
+func CommandWrapperExitCode() (int, bool) {
+	if filepath.Base(os.Args[0]) != wrapperExecutableName {
+		return 0, false
+	}
+	metadataPath := filepath.Join(filepath.Dir(os.Args[0]), wrapperMetadataName)
+	content, err := os.ReadFile(metadataPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "read private tmux wrapper metadata: %v\n", err)
+		return 1, true
+	}
+	var metadata wrapperMetadata
+	if err := json.Unmarshal(content, &metadata); err != nil {
+		fmt.Fprintf(os.Stderr, "decode private tmux wrapper metadata: %v\n", err)
+		return 1, true
+	}
+	return runWrappedTmux(metadata, os.Args[1:]), true
+}
+
+func runWrappedTmux(metadata wrapperMetadata, args []string) int {
+	var activePath string
+	if slices.Contains(args, "new-session") {
+		lock := flock.New(filepath.Join(metadata.AdmissionDir, admissionLockName))
+		if err := lock.Lock(); err != nil {
+			fmt.Fprintf(os.Stderr, "acquire private tmux admission lock: %v\n", err)
+			return 1
+		}
+		if _, err := os.Stat(filepath.Join(metadata.AdmissionDir, admissionClosedName)); err == nil {
+			_ = lock.Unlock()
+			fmt.Fprintln(os.Stderr, "private tmux owner is cleaning up")
+			return 1
+		} else if !errors.Is(err, os.ErrNotExist) {
+			_ = lock.Unlock()
+			fmt.Fprintf(os.Stderr, "inspect private tmux admission gate: %v\n", err)
+			return 1
+		}
+		start, err := processStart(os.Getpid())
+		if err != nil {
+			_ = lock.Unlock()
+			fmt.Fprintf(os.Stderr, "identify private tmux wrapper: %v\n", err)
+			return 1
+		}
+		activePath = filepath.Join(metadata.AdmissionDir, fmt.Sprintf(
+			"starting.%d.%s", os.Getpid(), tokenForStart(start),
+		))
+		if err := os.WriteFile(activePath, []byte(start), 0o600); err != nil {
+			_ = lock.Unlock()
+			fmt.Fprintf(os.Stderr, "record private tmux startup: %v\n", err)
+			return 1
+		}
+		if err := lock.Unlock(); err != nil {
+			_ = os.Remove(activePath)
+			fmt.Fprintf(os.Stderr, "release private tmux admission lock: %v\n", err)
+			return 1
+		}
+		defer func() { _ = os.Remove(activePath) }()
+	}
+
+	if err := replaceWithTmux(metadata.TmuxPath, args); err != nil {
+		if activePath != "" {
+			_ = os.Remove(activePath)
+		}
+		fmt.Fprintf(os.Stderr, "run private tmux command: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 // Cleanup stops every registered server and removes this owner's run.
 func (o *Owner) Cleanup() error {
 	o.cleanup.Do(func() {
+		o.mu.Lock()
+		o.closed = true
+		o.mu.Unlock()
+
+		var cleanupErrors []error
+		if err := closeAdmission(o.admissionDir); err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+		} else if err := waitForAdmittedCreations(o.admissionDir); err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+		}
+
 		o.mu.Lock()
 		servers := make([]registeredServer, 0, len(o.servers))
 		for _, server := range o.servers {
@@ -212,7 +325,6 @@ func (o *Owner) Cleanup() error {
 		}
 		o.mu.Unlock()
 
-		var cleanupErrors []error
 		for _, server := range servers {
 			if err := o.release(server); err != nil {
 				cleanupErrors = append(cleanupErrors, err)
@@ -224,9 +336,62 @@ func (o *Owner) Cleanup() error {
 		} else if err := os.RemoveAll(o.runDir); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
 		}
+		if err := os.RemoveAll(o.admissionDir); err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+		}
 		o.cleanupErr = errors.Join(cleanupErrors...)
 	})
 	return o.cleanupErr
+}
+
+func closeAdmission(admissionDir string) (err error) {
+	lock := flock.New(filepath.Join(admissionDir, admissionLockName))
+	if err := lock.Lock(); err != nil {
+		return fmt.Errorf("close private tmux admission gate: %w", err)
+	}
+	defer func() {
+		if unlockErr := lock.Unlock(); unlockErr != nil {
+			err = errors.Join(err, fmt.Errorf(
+				"release private tmux admission gate: %w", unlockErr,
+			))
+		}
+	}()
+	if err := os.WriteFile(
+		filepath.Join(admissionDir, admissionClosedName), []byte("closed\n"), 0o600,
+	); err != nil {
+		return fmt.Errorf("close private tmux admission gate: %w", err)
+	}
+	return nil
+}
+
+func waitForAdmittedCreations(admissionDir string) error {
+	for {
+		markers, err := filepath.Glob(filepath.Join(admissionDir, "starting.*"))
+		if err != nil {
+			return fmt.Errorf("list admitted private tmux startups: %w", err)
+		}
+		live := false
+		for _, marker := range markers {
+			name := filepath.Base(marker)
+			parts := strings.Split(name, ".")
+			if len(parts) != 3 || parts[0] != "starting" {
+				continue
+			}
+			pid, parseErr := strconv.Atoi(parts[1])
+			start, readErr := os.ReadFile(marker)
+			if parseErr != nil || readErr != nil ||
+				tokenForStart(string(start)) != parts[2] ||
+				!processStillMatches(pid, string(start), processStart) {
+				_ = os.Remove(marker)
+				continue
+			}
+			live = true
+		}
+		if !live {
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func (o *Owner) release(server registeredServer) error {
@@ -278,6 +443,38 @@ func reapStale(root string) error {
 		return fmt.Errorf("list tmux test root: %w", err)
 	}
 	var cleanupErrors []error
+	staleAdmissions := make(map[string]bool)
+	for _, entry := range entries {
+		identity, ok := parseAdmissionName(entry.Name())
+		if !ok || runIsLive(identity, processStart) {
+			continue
+		}
+		admissionDir := filepath.Join(root, entry.Name())
+		info, statErr := os.Lstat(admissionDir)
+		if statErr != nil {
+			if !errors.Is(statErr, fs.ErrNotExist) {
+				cleanupErrors = append(cleanupErrors, statErr)
+			}
+			continue
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
+			info.Mode().Perm() != 0o700 || validateDirectoryOwner(info) != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf(
+				"refusing insecure stale tmux admission directory: %s",
+				admissionDir,
+			))
+			continue
+		}
+		if err := closeAdmission(admissionDir); err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+			continue
+		}
+		if err := waitForAdmittedCreations(admissionDir); err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+			continue
+		}
+		staleAdmissions[admissionDir] = true
+	}
 	for _, entry := range entries {
 		identity, ok := parseRunName(entry.Name())
 		if !ok || runIsLive(identity, processStart) {
@@ -316,6 +513,11 @@ func reapStale(root string) error {
 	}
 	if err := reapStaleProcesses(root); err != nil {
 		cleanupErrors = append(cleanupErrors, err)
+	}
+	for admissionDir := range staleAdmissions {
+		if err := os.RemoveAll(admissionDir); err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+		}
 	}
 	return errors.Join(cleanupErrors...)
 }
@@ -449,6 +651,13 @@ func parseRunName(name string) (processIdentity, bool) {
 		return processIdentity{}, false
 	}
 	return processIdentity{pid: pid, startToken: match[2]}, true
+}
+
+func parseAdmissionName(name string) (processIdentity, bool) {
+	if !strings.HasPrefix(name, admissionPrefix) {
+		return processIdentity{}, false
+	}
+	return parseRunName(strings.TrimPrefix(name, admissionPrefix))
 }
 
 func runIsLive(

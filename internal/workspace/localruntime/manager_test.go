@@ -32,6 +32,9 @@ import (
 var privateTmuxOwner *testtmux.Owner
 
 func TestMain(m *testing.M) {
+	if code, ok := testtmux.CommandWrapperExitCode(); ok {
+		os.Exit(code)
+	}
 	if os.Getenv("KENN_FORGE_LOCALRUNTIME_HELPER") == "1" {
 		os.Exit(m.Run())
 	}

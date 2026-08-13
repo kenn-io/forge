@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,6 +20,13 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/testsignal"
 )
+
+func TestMain(m *testing.M) {
+	if code, ok := CommandWrapperExitCode(); ok {
+		os.Exit(code)
+	}
+	os.Exit(m.Run())
+}
 
 func requireTmux(t *testing.T) string {
 	t.Helper()
@@ -339,6 +347,67 @@ func TestOwnerCleanupStopsRegisteredServerAfterDirectoryDisappears(t *testing.T)
 
 	require.NoError(t, owner.Cleanup())
 	requireProcessGone(t, serverPID)
+}
+
+func TestOwnerCleanupWaitsForAdmittedStartup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake tmux fixture uses Unix shell semantics")
+	}
+	require := require.New(t)
+	directory := t.TempDir()
+	root := filepath.Join(directory, "root")
+	owner, err := newAt(root)
+	require.NoError(err)
+	t.Cleanup(func() { _ = owner.Cleanup() })
+
+	entered := filepath.Join(directory, "entered")
+	release := filepath.Join(directory, "release")
+	record := filepath.Join(directory, "record")
+	tmuxPath := filepath.Join(directory, "fake-tmux")
+	body := `#!/bin/sh
+case "$*" in
+  *new-session*)
+    : > "$TEST_TMUX_ENTERED"
+    while [ ! -f "$TEST_TMUX_RELEASE" ]; do sleep 0.01; done
+    printf 'created\n' >> "$TEST_TMUX_RECORD"
+    ;;
+  *kill-server*)
+    printf 'killed\n' >> "$TEST_TMUX_RECORD"
+    ;;
+esac
+`
+	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
+	t.Setenv("TEST_TMUX_ENTERED", entered)
+	t.Setenv("TEST_TMUX_RELEASE", release)
+	t.Setenv("TEST_TMUX_RECORD", record)
+
+	tmuxCommand := owner.Command(t, tmuxPath)
+	startupDone := make(chan error, 1)
+	go func() {
+		args := append(slices.Clone(tmuxCommand[1:]), "new-session", "-d")
+		startupDone <- procutil.Command(tmuxCommand[0], args...).Run()
+	}()
+	require.Eventually(func() bool {
+		_, statErr := os.Stat(entered)
+		return statErr == nil
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(os.RemoveAll(owner.runDir))
+
+	cleanupDone := make(chan error, 1)
+	go func() { cleanupDone <- owner.Cleanup() }()
+	select {
+	case cleanupErr := <-cleanupDone:
+		require.NoError(cleanupErr)
+		require.Fail("cleanup returned while admitted tmux startup was blocked")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
+	require.NoError(<-startupDone)
+	require.NoError(<-cleanupDone)
+	content, err := os.ReadFile(record)
+	require.NoError(err)
+	require.Equal("created\nkilled\n", string(content))
 }
 
 func TestNewAtReapsServerAfterRunDirectoryDisappears(t *testing.T) {

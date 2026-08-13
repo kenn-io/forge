@@ -12,6 +12,9 @@ import (
 var privateTmuxOwner *testtmux.Owner
 
 func TestMain(m *testing.M) {
+	if code, ok := testtmux.CommandWrapperExitCode(); ok {
+		os.Exit(code)
+	}
 	var err error
 	if testtmux.Supported() {
 		privateTmuxOwner, err = testtmux.New()

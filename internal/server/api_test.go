@@ -82,6 +82,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	if code, ok := testtmux.CommandWrapperExitCode(); ok {
+		os.Exit(code)
+	}
 	if isServerHelperProcess() {
 		os.Exit(m.Run())
 	}

@@ -199,6 +199,7 @@ Persisted controls must state their scope clearly.
   repository selection and preset affinity remain browser-local; `Global` clears both
   (`frontend/src/lib/stores/filter.svelte.ts::setGlobalRepoPresetSelection`).
 - Editing a preset-derived selection retains its overwrite target; an exact saved-set match supplies the label, and deleting the active preset keeps its repositories selected as an ad hoc scope (`frontend/src/lib/stores/repo-presets.ts::findMatchingRepoPreset`).
+- Exact-set matching prefers browser-local preset affinity when multiple immutable preset names contain the same repositories. The selector catalog includes repositories from reachable fleet workspace responses, waits for that catalog before pruning a Workspaces-route selection, and never activates an unavailable preset by pointer or keyboard (`frontend/src/lib/stores/workspace-repo-catalog.svelte.ts`, `frontend/src/lib/components/RepoTypeahead.svelte`).
 - The workspace details tab is keyed by host-aware workspace identity; an unsupported
   tab may fall back only for the current live workspace, never rewrite another
   workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).

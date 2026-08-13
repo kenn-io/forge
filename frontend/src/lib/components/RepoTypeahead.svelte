@@ -37,9 +37,17 @@
     findMatchingRepoPreset,
     preferredRepoPreset,
     projectRepoPresetSelection,
+    repoPresetRepositoriesForSelection,
+    type RepoPresetCatalogEntry,
   } from "../stores/repo-presets.js";
   import {
+    getWorkspaceRepoCatalog,
+    isWorkspaceRepoCatalogReady,
+  } from "../stores/workspace-repo-catalog.svelte.js";
+  import {
     SettingsWorkflow,
+    type SettingsError,
+    type SettingsSnapshot,
     settingsErrorMessage,
   } from "../stores/settings-workflow.js";
   import { registerCheatsheetEntries } from "../stores/keyboard/registry.svelte.js";
@@ -105,7 +113,7 @@
     mutationExecution?.interrupt();
   });
 
-  type RepoOption = RepoTreeOption & { repoPath: string };
+  type RepoOption = RepoTreeOption & RepoPresetCatalogEntry & { repoPath: string };
 
   $effect(() => {
     const configuredRepoCount = configuredRepos.length;
@@ -154,7 +162,10 @@
       name: repo.Name,
       provider: canonicalProvider(repo.Platform),
       platformHost: repo.PlatformHost,
+      platform_host: repo.PlatformHost,
+      platform_repo_id: repo.PlatformRepoID,
       repoPath,
+      repo_path: repoPath,
     };
   }
 
@@ -168,20 +179,29 @@
       name: repo.name,
       provider: canonicalProvider(repo.provider),
       platformHost: repo.platform_host,
+      platform_host: repo.platform_host,
+      platform_repo_id: repo.platform_repo_id ?? "",
       repoPath: path,
+      repo_path: path,
     };
   }
 
   function mergeOptions(
     configured: ConfigRepo[],
     fetched: Repo[],
+    workspace: readonly RepoPresetCatalogEntry[],
   ): RepoOption[] {
     const merged: RepoOption[] = [];
-    const seen: string[] = [];
     const addOption = (option: RepoOption) => {
       const identity = `${option.provider}|${option.platformHost}/${option.repoPath}`;
-      if (seen.includes(identity)) return;
-      seen.push(identity);
+      const existingIndex = merged.findIndex(
+        (candidate) => `${candidate.provider}|${candidate.platformHost}/${candidate.repoPath}` === identity,
+      );
+      if (existingIndex >= 0) {
+        const existing = merged[existingIndex]!;
+        if (!existing.platform_repo_id && option.platform_repo_id) merged[existingIndex] = option;
+        return;
+      }
       merged.push(option);
     };
 
@@ -192,6 +212,16 @@
 
     for (const repo of fetched) {
       addOption(optionFromRepo(repo));
+    }
+    for (const repo of workspace) {
+      const [owner = "", ...nameParts] = repo.repo_path.split("/");
+      addOption({
+        ...repo,
+        owner,
+        name: nameParts.join("/"),
+        platformHost: repo.platform_host,
+        repoPath: repo.repo_path,
+      });
     }
 
     const identities = merged.map((option) => ({
@@ -207,18 +237,18 @@
   }
 
   const options = $derived.by(() => {
-    if (settingsLoaded || configuredRepos.length > 0) {
-      return mergeOptions(configuredRepos, fetchedRepos);
-    }
-    return fetchedRepos.map(optionFromRepo);
+    return mergeOptions(configuredRepos, fetchedRepos, getWorkspaceRepoCatalog());
   });
 
   const selectedValues = $derived(parseRepoFilterValue(selected));
   const selectedSet = $derived(new Set(selectedValues));
-  const matchingPreset = $derived(findMatchingRepoPreset(repoPresets, selected));
-  const preferredPreset = $derived(
-    preferredRepoPreset(repoPresets, selected, getGlobalRepoPresetAffinity()),
+  const matchingPreset = $derived(
+    findMatchingRepoPreset(repoPresets, selected, options, getGlobalRepoPresetAffinity()),
   );
+  const preferredPreset = $derived(
+    preferredRepoPreset(repoPresets, selected, getGlobalRepoPresetAffinity(), options),
+  );
+  const selectedPresetRepos = $derived(repoPresetRepositoriesForSelection(selected, options));
   const displayValue = $derived.by(() => {
     if (selectedValues.length === 0) return "Global";
     if (matchingPreset) return matchingPreset.name;
@@ -245,7 +275,7 @@
   function selectPreset(preset: RepoPreset): void {
     const next = projectRepoPresetSelection(
       preset,
-      options.map((option) => option.value),
+      options,
     );
     setGlobalRepoPresetSelection(preset.name, next);
     onchange(next);
@@ -257,6 +287,7 @@
 
   $effect(() => {
     if (selectedValues.length === 0 || reposLoading) return;
+    if (globalThis.location?.pathname.startsWith("/workspaces") && !isWorkspaceRepoCatalogReady()) return;
     const normalized = normalizeRepoFilterSelection(
       selected,
       options.map((option) => ({
@@ -311,8 +342,10 @@
     saveDialogOpen = true;
   }
 
-  function persistRepoPresets(
-    next: RepoPreset[],
+  function persistRepoPresetMutation(
+    mutate: (
+      workflow: (typeof SettingsWorkflow)["Service"],
+    ) => Effect.Effect<SettingsSnapshot, SettingsError>,
     onSuccess: (saved: RepoPreset[]) => void,
   ): void {
     mutationExecution?.interrupt();
@@ -321,7 +354,7 @@
     mutationExecution = runtime.runCommand(
       Effect.gen(function* () {
         const workflow = yield* SettingsWorkflow;
-        return yield* workflow.persist(() => ({ repo_presets: next }));
+        return yield* mutate(workflow);
       }).pipe(
         Effect.match({
           onFailure: (failure) => {
@@ -338,31 +371,31 @@
       ),
       {
         operation: "save repository presets",
-        safeContext: { presetCount: next.length },
+        safeContext: { presetCount: repoPresets.length },
         onFailure: () => {},
       },
     );
   }
 
   function savePreset(target: RepoPresetSaveTarget): void {
-    const repos = [...selectedValues];
-    const next = target.kind === "overwrite"
-      ? repoPresets.map((preset) =>
-          preset.name === target.name ? { ...preset, repos } : preset,
-        )
-      : [...repoPresets, { name: target.name, repos }];
-    persistRepoPresets(next, () => {
+    const repos = selectedPresetRepos;
+    if (!repos) return;
+    persistRepoPresetMutation(
+      (workflow) => target.kind === "overwrite"
+        ? workflow.updateRepoPreset(target.name, repos)
+        : workflow.createRepoPreset({ name: target.name, repos }),
+      () => {
       setGlobalRepoPresetSelection(target.name, selected);
       saveDialogOpen = false;
       mutationError = undefined;
-    });
+      },
+    );
   }
 
   function confirmDeletePreset(): void {
     const preset = deletePreset;
     if (!preset) return;
-    const next = repoPresets.filter((candidate) => candidate.name !== preset.name);
-    persistRepoPresets(next, () => {
+    persistRepoPresetMutation((workflow) => workflow.deleteRepoPreset(preset.name), () => {
       clearGlobalRepoPresetAffinity(preset.name);
       deletePreset = undefined;
       mutationError = undefined;
@@ -407,7 +440,7 @@
       }
       const preset = repoPresets[highlightIndex - 1];
       if (preset) {
-        selectPreset(preset);
+        if (projectRepoPresetSelection(preset, options) !== undefined) selectPreset(preset);
         return;
       }
       const row = rows[highlightIndex - fixedRowCount];
@@ -422,7 +455,7 @@
       }
       const preset = repoPresets[highlightIndex - 1];
       if (preset) {
-        selectPreset(preset);
+        if (projectRepoPresetSelection(preset, options) !== undefined) selectPreset(preset);
         return;
       }
       const row = rows[highlightIndex - fixedRowCount];
@@ -501,7 +534,7 @@
           <span>Global</span>
         </li>
         {#each repoPresets as preset, i (preset.name)}
-          {@const projected = projectRepoPresetSelection(preset, options.map((option) => option.value))}
+          {@const projected = projectRepoPresetSelection(preset, options)}
           <li class="preset-row">
             <div
               class="typeahead-option preset-option preset-select-option"
@@ -571,7 +604,7 @@
         <Button
           class="save-preset-button"
           size="sm"
-          disabled={selectedValues.length === 0 || mutationBusy}
+          disabled={selectedValues.length === 0 || selectedPresetRepos === undefined || mutationBusy}
           onclick={openSaveDialog}
         >
           Save preset

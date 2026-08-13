@@ -28,7 +28,14 @@ const codexTarget = {
 
 const settingsPayload = {
   repos: [],
-  repo_presets: [{ name: "Review queue", repos: ["github|github.com/acme/widgets"] }],
+  repo_presets: [
+    {
+      name: "Review queue",
+      repos: [
+        { provider: "github", platform_host: "github.com", platform_repo_id: "R_widgets", repo_path: "acme/widgets" },
+      ],
+    },
+  ],
   activity: activitySettings,
   issues: { hide_bots: true },
   terminal: DEFAULT_TERMINAL_SETTINGS,

@@ -1106,6 +1106,8 @@ components:
           type: string
         platform_host:
           type: string
+        platform_repo_id:
+          type: string
         provider:
           type: string
         repo_path:
@@ -5992,15 +5994,39 @@ components:
     RepoPreset:
       additionalProperties: false
       properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepoPreset.json
+          format: uri
+          readOnly: true
+          type: string
         name:
           type: string
         repos:
           items:
-            type: string
+            $ref: "#/components/schemas/RepoPresetRepository"
           type: array
       required:
         - name
         - repos
+      type: object
+    RepoPresetRepository:
+      additionalProperties: false
+      properties:
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - platform_repo_id
+        - repo_path
       type: object
     RepoPreviewRequest:
       additionalProperties: false
@@ -6108,6 +6134,8 @@ components:
           type: string
         platform_host:
           type: string
+        platform_repo_id:
+          type: string
         provider:
           type: string
         repo_path:
@@ -6162,6 +6190,8 @@ components:
           type: string
         PlatformHost:
           type: string
+        PlatformRepoID:
+          type: string
         ViewerCanMerge:
           type: boolean
         capabilities:
@@ -6172,6 +6202,7 @@ components:
         - ID
         - Platform
         - PlatformHost
+        - PlatformRepoID
         - Owner
         - Name
         - LastSyncStartedAt
@@ -7320,6 +7351,23 @@ components:
         - peers
         - ssh_peers
       type: object
+    UpdateRepoPresetInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/UpdateRepoPresetInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        repos:
+          items:
+            $ref: "#/components/schemas/RepoPresetRepository"
+          type: array
+      required:
+        - repos
+      type: object
     UpdateSettingsRequest:
       additionalProperties: false
       properties:
@@ -7346,10 +7394,6 @@ components:
           $ref: "#/components/schemas/ModeVisibility"
         pull_requests:
           $ref: "#/components/schemas/PullRequests"
-        repo_presets:
-          items:
-            $ref: "#/components/schemas/RepoPreset"
-          type: array
         terminal:
           $ref: "#/components/schemas/Terminal"
         workspaces:
@@ -19058,6 +19102,86 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Replace SSH fleet peers
+      tags:
+        - Settings
+  /settings/repo-presets:
+    post:
+      operationId: create-repo-preset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoPreset"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create repository preset
+      tags:
+        - Settings
+  /settings/repo-presets/{name}:
+    delete:
+      operationId: delete-repo-preset
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete repository preset
+      tags:
+        - Settings
+    put:
+      operationId: update-repo-preset
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRepoPresetInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update repository preset
       tags:
         - Settings
   /snapshot:

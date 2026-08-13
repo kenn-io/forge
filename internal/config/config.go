@@ -82,8 +82,17 @@ type KataProjectRepoMapping struct {
 // RepoPreset is a named repository scope shown by the global repository
 // selector. Global is a built-in UI scope and is never persisted here.
 type RepoPreset struct {
-	Name  string   `toml:"name" json:"name"`
-	Repos []string `toml:"repos" json:"repos" nullable:"false"`
+	Name  string                 `toml:"name" json:"name"`
+	Repos []RepoPresetRepository `toml:"repos" json:"repos" nullable:"false"`
+}
+
+// RepoPresetRepository stores provider-verified identity alongside the
+// last-known route used for display.
+type RepoPresetRepository struct {
+	Provider       string `toml:"provider" json:"provider"`
+	PlatformHost   string `toml:"platform_host" json:"platform_host"`
+	PlatformRepoID string `toml:"platform_repo_id" json:"platform_repo_id"`
+	RepoPath       string `toml:"repo_path" json:"repo_path"`
 }
 
 func cloneRepoPresets(presets []RepoPreset) []RepoPreset {
@@ -114,12 +123,11 @@ func normalizeRepoPresets(presets []RepoPreset) error {
 		}
 		seenNames[nameKey] = struct{}{}
 
-		repos := make([]string, 0, len(preset.Repos))
+		repos := make([]RepoPresetRepository, 0, len(preset.Repos))
 		seenRepos := make(map[string]struct{}, len(preset.Repos))
 		for j, raw := range preset.Repos {
-			value := strings.TrimSpace(raw)
-			providerPart, hostedPath, ok := strings.Cut(value, "|")
-			if !ok || providerPart == "" || providerPart != strings.ToLower(providerPart) {
+			providerPart := strings.TrimSpace(raw.Provider)
+			if providerPart == "" || providerPart != strings.ToLower(providerPart) {
 				return fmt.Errorf(
 					"repo_presets[%d].repos[%d]: repository identity must use a canonical provider", i, j,
 				)
@@ -133,10 +141,12 @@ func normalizeRepoPresets(presets []RepoPreset) error {
 					"repo_presets[%d].repos[%d]: unsupported provider %q", i, j, provider,
 				)
 			}
-			host, repoPath, ok := strings.Cut(strings.Trim(hostedPath, "/"), "/")
-			if !ok || strings.TrimSpace(host) == "" || strings.TrimSpace(repoPath) == "" {
+			host := strings.TrimSpace(raw.PlatformHost)
+			repoPath := cleanPath(strings.TrimSpace(raw.RepoPath))
+			platformRepoID := strings.TrimSpace(raw.PlatformRepoID)
+			if platformRepoID == "" {
 				return fmt.Errorf(
-					"repo_presets[%d].repos[%d]: repository identity must be provider|platform_host/repo_path", i, j,
+					"repo_presets[%d].repos[%d]: platform_repo_id is required", i, j,
 				)
 			}
 			host, err = normalizePlatformHost(provider, host)
@@ -145,21 +155,24 @@ func normalizeRepoPresets(presets []RepoPreset) error {
 			}
 			repoPath = cleanPath(strings.TrimSpace(repoPath))
 			if platformpkg.AllowsNestedOwner(platformpkg.Kind(provider)) {
-				_, _, err = splitGitLabPath(value, repoPath)
+				_, _, err = splitGitLabPath(repoPath, repoPath)
 			} else {
-				_, _, err = splitGitHubPath(value, repoPath)
+				_, _, err = splitGitHubPath(repoPath, repoPath)
 			}
 			if err != nil {
 				return fmt.Errorf(
 					"repo_presets[%d].repos[%d]: repository identity must be provider|platform_host/repo_path", i, j,
 				)
 			}
-			canonical := provider + "|" + host + "/" + repoPath
+			canonical := provider + "|" + host + "|" + platformRepoID
 			if _, exists := seenRepos[canonical]; exists {
 				continue
 			}
 			seenRepos[canonical] = struct{}{}
-			repos = append(repos, canonical)
+			repos = append(repos, RepoPresetRepository{
+				Provider: provider, PlatformHost: host,
+				PlatformRepoID: platformRepoID, RepoPath: repoPath,
+			})
 		}
 		if len(repos) == 0 {
 			return fmt.Errorf("repo_presets[%d]: at least one repository is required", i)

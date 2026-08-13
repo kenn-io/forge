@@ -13,6 +13,8 @@ mutable routes; route reuse must create a distinct catalog entry rather than
 combining repository-owned history
 (`internal/db/repository_catalog.go::ReconcileRepositoryObservation`).
 
+- Saved repository-filter presets resolve by stable identity and use `repo_path` only for display; reject unverified members and never fall back to a new occupant of the stored route (`internal/config/config.go::RepoPresetRepository`, `frontend/src/lib/stores/repo-presets.ts`).
+
 - `platform` is the provider kind named in the canonical provider list in
   `CLAUDE.md`.
 - `platform_host` is the normalized host for that provider. Preserve ports.

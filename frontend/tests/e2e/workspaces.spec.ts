@@ -85,6 +85,7 @@ test("repository selector filters Workspaces and keeps preset actions fixed", as
     Name: name,
     Platform: "github",
     PlatformHost: "github.com",
+    PlatformRepoID: `R_${name}`,
   }));
   const configuredRepos = repoNames.map((name) => ({
     provider: "github",
@@ -92,6 +93,7 @@ test("repository selector filters Workspaces and keeps preset actions fixed", as
     owner: "acme",
     name,
     repo_path: `acme/${name}`,
+    platform_repo_id: `R_${name}`,
     is_glob: false,
     matched_repo_count: 1,
     hidden_from_ui: false,
@@ -104,6 +106,7 @@ test("repository selector filters Workspaces and keeps preset actions fixed", as
       ...contextMenuWorkspace.repo,
       name,
       repo_path: `acme/${name}`,
+      platform_repo_id: `R_${name}`,
     },
     item_number: number,
     mr_title: title,
@@ -137,6 +140,37 @@ test("repository selector filters Workspaces and keeps preset actions fixed", as
       }),
     });
   });
+  await page.route("**/api/v1/snapshot**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hosts: [
+          {
+            configKey: "peer-one",
+            diagnostics: [],
+            id: "peer-one",
+            kind: "peer",
+            name: "Peer One",
+            operationAvailability: {},
+            platform: "linux",
+            preferredTransport: "http",
+            reachable: true,
+            tmuxSessions: [],
+          },
+        ],
+      }),
+    });
+  });
+  await page.route("**/api/v1/fleet/hosts/peer-one/workspaces", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        workspaces: [workspace("fleet-only", "Fleet workspace", 3)],
+      }),
+    });
+  });
 
   await page.goto("/workspaces");
   const selector = page.getByRole("button", { name: "Select repository: Global" });
@@ -156,6 +190,13 @@ test("repository selector filters Workspaces and keeps preset actions fixed", as
     node.scrollTop = node.scrollHeight;
   });
   expect((await footer.boundingBox())?.y).toBe(footerTop);
+
+  const fleetOption = repoList.getByRole("option", { name: "github/github.com/acme/fleet-only" });
+  await expect(fleetOption).toBeVisible();
+  await fleetOption.click();
+  await expect(page.getByText("Fleet workspace")).toBeVisible();
+  await expect(page.getByText("API workspace")).toHaveCount(0);
+  await fleetOption.click();
 
   await repoList.getByRole("option", { name: "github/github.com/acme/api" }).click();
   await expect(page.getByText("API workspace")).toBeVisible();

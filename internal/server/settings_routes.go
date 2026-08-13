@@ -16,6 +16,21 @@ type updateSettingsInput struct {
 	Body updateSettingsRequest
 }
 
+type createRepoPresetInput struct {
+	Body config.RepoPreset
+}
+
+type updateRepoPresetInput struct {
+	Name string `path:"name"`
+	Body struct {
+		Repos []config.RepoPresetRepository `json:"repos" nullable:"false"`
+	}
+}
+
+type deleteRepoPresetInput struct {
+	Name string `path:"name"`
+}
+
 type addRepoInput struct {
 	Body struct {
 		Provider     string `json:"provider"`
@@ -338,6 +353,22 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 		Summary:     "Update settings",
 		Tags:        []string{"Settings"},
 	}, s.updateSettings)
+	huma.Register(api, huma.Operation{
+		OperationID: "create-repo-preset",
+		Method:      http.MethodPost, Path: "/settings/repo-presets",
+		DefaultStatus: http.StatusCreated,
+		Summary:       "Create repository preset", Tags: []string{"Settings"},
+	}, s.createRepoPreset)
+	huma.Register(api, huma.Operation{
+		OperationID: "update-repo-preset",
+		Method:      http.MethodPut, Path: "/settings/repo-presets/{name}",
+		Summary: "Update repository preset", Tags: []string{"Settings"},
+	}, s.updateRepoPreset)
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-repo-preset",
+		Method:      http.MethodDelete, Path: "/settings/repo-presets/{name}",
+		Summary: "Delete repository preset", Tags: []string{"Settings"},
+	}, s.deleteRepoPreset)
 	huma.Register(api, huma.Operation{
 		OperationID:   "add-repo",
 		Method:        http.MethodPost,

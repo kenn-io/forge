@@ -21,9 +21,14 @@ export type RepoInput = components["schemas"]["BulkAddRepoRequest"];
 export type RepoPromotionInput = RepoInput & Required<Pick<RepoInput, "owner" | "name">>;
 export type RepoPreviewResponse = components["schemas"]["RepoPreviewResponse"];
 export type RepoPreviewRow = components["schemas"]["RepoPreviewRow"];
+export type RepoPreset = components["schemas"]["RepoPreset"];
+export type RepoPresetRepository = components["schemas"]["RepoPresetRepository"];
 type SettingsCommand =
   | { readonly _tag: "Partial"; readonly request: () => UpdateSettingsRequest }
   | { readonly _tag: "Fleet"; readonly request: FleetSettingsUpdate }
+  | { readonly _tag: "CreateRepoPreset"; readonly preset: RepoPreset }
+  | { readonly _tag: "UpdateRepoPreset"; readonly name: string; readonly repos: readonly RepoPresetRepository[] }
+  | { readonly _tag: "DeleteRepoPreset"; readonly name: string }
   | { readonly _tag: "AddRepo"; readonly owner: string; readonly name: string; readonly options: RepoRequestOptions }
   | { readonly _tag: "RemoveRepo"; readonly owner: string; readonly name: string; readonly options: RepoRequestOptions }
   | {
@@ -107,6 +112,12 @@ export class SettingsWorkflow extends Context.Service<
   {
     readonly persist: (request: () => UpdateSettingsRequest) => Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly updateFleet: (request: FleetSettingsUpdate) => Effect.Effect<FleetSettingsSnapshot, SettingsError>;
+    readonly createRepoPreset: (preset: RepoPreset) => Effect.Effect<SettingsSnapshot, SettingsError>;
+    readonly updateRepoPreset: (
+      name: string,
+      repos: readonly RepoPresetRepository[],
+    ) => Effect.Effect<SettingsSnapshot, SettingsError>;
+    readonly deleteRepoPreset: (name: string) => Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly addRepo: (
       owner: string,
       name: string,
@@ -199,7 +210,6 @@ function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSetting
     (request.kata_projects === undefined || sameValue(settings.kata_projects, request.kata_projects)) &&
     (request.modes === undefined || sameValue(settings.modes, request.modes)) &&
     (request.pull_requests === undefined || sameValue(settings.pull_requests, request.pull_requests)) &&
-    (request.repo_presets === undefined || sameValue(settings.repo_presets, request.repo_presets)) &&
     (request.terminal === undefined || sameValue(settings.terminal, request.terminal)) &&
     (request.workspaces === undefined || sameValue(settings.workspaces, request.workspaces))
   );
@@ -389,6 +399,55 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
               (settings) => settings.fleet,
             );
             return fleetCommandResult(fleet);
+          }
+          case "CreateRepoPreset": {
+            const settings = yield* runRecoverableSettingsMutation(
+              "repository preset create",
+              ["settings:repo_presets"],
+              api.execute("POST /settings/repo-presets", (signal) =>
+                api.client.POST("/settings/repo-presets", { body: command.preset, signal }),
+              ),
+              (snapshot) =>
+                snapshot.repo_presets.some(
+                  (preset) => preset.name === command.preset.name && sameValue(preset.repos, command.preset.repos),
+                ),
+              (snapshot) => snapshot,
+            );
+            return settingsCommandResult(settings);
+          }
+          case "UpdateRepoPreset": {
+            const settings = yield* runRecoverableSettingsMutation(
+              "repository preset update",
+              ["settings:repo_presets"],
+              api.execute("PUT /settings/repo-presets/{name}", (signal) =>
+                api.client.PUT("/settings/repo-presets/{name}", {
+                  params: { path: { name: command.name } },
+                  body: { repos: [...command.repos] },
+                  signal,
+                }),
+              ),
+              (snapshot) =>
+                snapshot.repo_presets.some(
+                  (preset) => preset.name === command.name && sameValue(preset.repos, command.repos),
+                ),
+              (snapshot) => snapshot,
+            );
+            return settingsCommandResult(settings);
+          }
+          case "DeleteRepoPreset": {
+            const settings = yield* runRecoverableSettingsMutation(
+              "repository preset delete",
+              ["settings:repo_presets"],
+              api.execute("DELETE /settings/repo-presets/{name}", (signal) =>
+                api.client.DELETE("/settings/repo-presets/{name}", {
+                  params: { path: { name: command.name } },
+                  signal,
+                }),
+              ),
+              (snapshot) => !snapshot.repo_presets.some((preset) => preset.name === command.name),
+              (snapshot) => snapshot,
+            );
+            return settingsCommandResult(settings);
           }
           case "AddRepo": {
             const settings = yield* runRecoverableSettingsMutation(
@@ -604,6 +663,9 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
                 : Effect.die(new Error(`Fleet command returned ${result._tag}`)),
             ),
           ),
+      createRepoPreset: (preset) => submitSettings({ _tag: "CreateRepoPreset", preset }),
+      updateRepoPreset: (name, repos) => submitSettings({ _tag: "UpdateRepoPreset", name, repos }),
+      deleteRepoPreset: (name) => submitSettings({ _tag: "DeleteRepoPreset", name }),
       addRepo: (owner, name, options) => submitSettings({ _tag: "AddRepo", owner, name, options }),
       removeRepo: (owner, name, options) =>
         queue

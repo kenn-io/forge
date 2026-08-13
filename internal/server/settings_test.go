@@ -352,6 +352,7 @@ command = ["codex", "--full-auto"]
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("acme", resp.Repos[0].Owner)
+	assert.Equal("repo-acme-widget", resp.Repos[0].PlatformRepoID)
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
 	assert.Equal("threaded", resp.Activity.ViewMode)
 	assert.True(resp.Notifications.Enabled)
@@ -414,35 +415,46 @@ func TestHandleGetSettingsEncodesEmptyRepoPresetsAsArray(t *testing.T) {
 	assert.JSONEq("[]", string(raw["repo_presets"]))
 }
 
-func TestHandleUpdateSettingsPersistsRepoPresets(t *testing.T) {
+func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
-	presets := []config.RepoPreset{
-		{
-			Name: "Review queue",
-			Repos: []string{
-				"github|github.com/acme/widgets",
-				"gitlab|git.example.com/group/project",
-			},
-		},
-	}
+	first := config.RepoPreset{Name: "Review queue", Repos: []config.RepoPresetRepository{{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_widgets", RepoPath: "acme/widgets",
+	}}}
+	second := config.RepoPreset{Name: "Docs", Repos: []config.RepoPresetRepository{{
+		Provider: "gitlab", PlatformHost: "git.example.com", PlatformRepoID: "42", RepoPath: "group/docs",
+	}}}
 
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
-		RepoPresets: &presets,
-	})
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", first)
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+	rr = doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", second)
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+
+	updatedRepos := []config.RepoPresetRepository{{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_tools", RepoPath: "acme/tools",
+	}}
+	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings/repo-presets/Review%20queue", struct {
+		Repos []config.RepoPresetRepository `json:"repos"`
+	}{Repos: updatedRepos})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	rr = doJSON(t, srv, http.MethodDelete, "/api/v1/settings/repo-presets/Review%20queue", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	assert.Equal(presets, resp.RepoPresets)
+	assert.Equal([]config.RepoPreset{second}, resp.RepoPresets)
 
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(err)
-	assert.Equal(presets, reloaded.RepoPresets)
+	assert.Equal([]config.RepoPreset{second}, reloaded.RepoPresets)
+
+	rr = doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", second)
+	assert.Equal(http.StatusConflict, rr.Code)
 }
 
-func TestHandleUpdateSettingsRestoresRepoPresetsAfterSaveFailure(t *testing.T) {
+func TestCreateRepoPresetRejectsSaveFailureWithoutPublishing(t *testing.T) {
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -456,24 +468,20 @@ name = "widget"
 
 [[repo_presets]]
 name = "Existing"
-repos = ["github|github.com/acme/widget"]
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_widget", repo_path = "acme/widget" }]
 `, &mockGH{})
 
 	srv.configReloadMu.Lock()
 	srv.cfgPath = t.TempDir()
 	srv.configReloadMu.Unlock()
-	replacement := []config.RepoPreset{{
-		Name:  "Replacement",
-		Repos: []string{"github|github.com/acme/other"},
-	}}
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
-		RepoPresets: &replacement,
-	})
+	replacement := config.RepoPreset{Name: "Replacement", Repos: []config.RepoPresetRepository{{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_other", RepoPath: "acme/other",
+	}}}
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", replacement)
 	require.Equal(http.StatusInternalServerError, rr.Code, rr.Body.String())
-	require.Equal([]config.RepoPreset{{
-		Name:  "Existing",
-		Repos: []string{"github|github.com/acme/widget"},
-	}}, srv.cfg.RepoPresets)
+	require.Equal([]config.RepoPreset{{Name: "Existing", Repos: []config.RepoPresetRepository{{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_widget", RepoPath: "acme/widget",
+	}}}}, srv.cfg.RepoPresets)
 }
 
 func TestHandleUpdateSettingsPersistsModes(t *testing.T) {

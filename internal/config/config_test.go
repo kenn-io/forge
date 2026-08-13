@@ -2451,17 +2451,17 @@ name = "b"
 [[repo_presets]]
 name = "  Review queue  "
 repos = [
-  " github|github.com/acme/widgets ",
-  "gitlab|git.example.com/group/project",
-  "github|github.com/acme/widgets",
+  { provider = "github", platform_host = " github.com ", platform_repo_id = " R_widgets ", repo_path = " acme/widgets " },
+  { provider = "gitlab", platform_host = "git.example.com", platform_repo_id = "42", repo_path = "group/project" },
+  { provider = "github", platform_host = "github.com", platform_repo_id = "R_widgets", repo_path = "acme/old-widgets" },
 ]
 `)
 
 	want := []RepoPreset{{
 		Name: "Review queue",
-		Repos: []string{
-			"github|github.com/acme/widgets",
-			"gitlab|git.example.com/group/project",
+		Repos: []RepoPresetRepository{
+			{Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_widgets", RepoPath: "acme/widgets"},
+			{Provider: "gitlab", PlatformHost: "git.example.com", PlatformRepoID: "42", RepoPath: "group/project"},
 		},
 	}}
 	assert.Equal(want, cfg.RepoPresets)
@@ -2480,7 +2480,7 @@ func TestRepoPresetValidation(t *testing.T) {
 			presets: `
 [[repo_presets]]
 name = "GLOBAL"
-repos = ["github|github.com/acme/widgets"]
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_widgets", repo_path = "acme/widgets" }]
 `,
 			wantErr: `repo_presets[0]: name "GLOBAL" is reserved`,
 		},
@@ -2489,11 +2489,11 @@ repos = ["github|github.com/acme/widgets"]
 			presets: `
 [[repo_presets]]
 name = "Review Queue"
-repos = ["github|github.com/acme/widgets"]
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_widgets", repo_path = "acme/widgets" }]
 
 [[repo_presets]]
 name = "review queue"
-repos = ["github|github.com/acme/docs"]
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_docs", repo_path = "acme/docs" }]
 `,
 			wantErr: `duplicate repo preset name "review queue"`,
 		},
@@ -2502,7 +2502,7 @@ repos = ["github|github.com/acme/docs"]
 			presets: `
 [[repo_presets]]
 name = "   "
-repos = ["github|github.com/acme/widgets"]
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_widgets", repo_path = "acme/widgets" }]
 `,
 			wantErr: "repo_presets[0]: name is required",
 		},
@@ -2520,7 +2520,7 @@ repos = []
 			presets: `
 [[repo_presets]]
 name = "Review queue"
-repos = ["GitHub|github.com/acme/widgets"]
+repos = [{ provider = "GitHub", platform_host = "github.com", platform_repo_id = "R_widgets", repo_path = "acme/widgets" }]
 `,
 			wantErr: `repo_presets[0].repos[0]: repository identity must use a canonical provider`,
 		},
@@ -2529,18 +2529,18 @@ repos = ["GitHub|github.com/acme/widgets"]
 			presets: `
 [[repo_presets]]
 name = "Review queue"
-repos = ["bitbucket|bitbucket.org/acme/widgets"]
+repos = [{ provider = "bitbucket", platform_host = "bitbucket.org", platform_repo_id = "R_widgets", repo_path = "acme/widgets" }]
 `,
 			wantErr: `repo_presets[0].repos[0]: unsupported provider "bitbucket"`,
 		},
 		{
-			name: "host and repository path are required",
+			name: "stable repository id is required",
 			presets: `
 [[repo_presets]]
 name = "Review queue"
-repos = ["github|github.com/widgets"]
+repos = [{ provider = "github", platform_host = "github.com", repo_path = "acme/widgets" }]
 `,
-			wantErr: `repo_presets[0].repos[0]: repository identity must be provider|platform_host/repo_path`,
+			wantErr: `repo_presets[0].repos[0]: platform_repo_id is required`,
 		},
 	}
 

@@ -61,6 +61,7 @@
     canonicalRepoFilterValue,
     type RepoFilterIdentity,
   } from "../../utils/repo-filter-values.js";
+  import { setWorkspaceRepoCatalog } from "../../stores/workspace-repo-catalog.svelte.js";
 
   type Workspace = WorkspaceListItem;
 
@@ -124,6 +125,10 @@
     "kenn-forge:workspace-agent-done-acknowledgements/v1";
 
   let workspaces = $state.raw<Workspace[]>([]);
+
+  $effect(() => {
+    setWorkspaceRepoCatalog(workspaceListStatus === "loaded" ? workspaces : undefined);
+  });
   let fleetHosts = $state.raw<HostSummary[]>([]);
   let fleetError = $state<string | null>(null);
   let fleetPeerErrors = $state.raw<Record<string, string>>({});

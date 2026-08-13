@@ -81,7 +81,14 @@ const codexTarget = {
 function makeSettings(): Settings {
   return {
     repos: [],
-    repo_presets: [{ name: "Review queue", repos: ["github|github.com/acme/widgets"] }],
+    repo_presets: [
+      {
+        name: "Review queue",
+        repos: [
+          { provider: "github", platform_host: "github.com", platform_repo_id: "R_widgets", repo_path: "acme/widgets" },
+        ],
+      },
+    ],
     pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
     workspaces: { auto_assign_on_create: false },
     issues: { hide_bots: true },

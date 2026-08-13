@@ -1302,6 +1302,7 @@ type Workspace struct {
 type WorkspaceSummary struct {
 	Workspace
 	RepoID           int64
+	RepoPlatformID   string
 	SourceTitle      *string
 	SourceState      *string
 	SourceURL        *string

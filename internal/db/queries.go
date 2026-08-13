@@ -5329,7 +5329,7 @@ const workspaceSummaryColumns = `
 	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
 	w.error_message, w.created_at, w.kata_metadata,
-	r.id,
+	r.id, r.platform_repo_id,
 	CASE
 	    WHEN w.item_type = 'issue' THEN i.title
 	    ELSE m.title
@@ -5386,13 +5386,14 @@ func scanWorkspaceSummary(
 	var kataMetadataJSON string
 	var itemLastActivityAt sql.NullString
 	var repoID sql.NullInt64
+	var repoPlatformID sql.NullString
 	err := scanner.Scan(
 		&s.ID, &s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
 		&s.ItemType, &s.ItemNumber, &s.ItemKey, &s.AssociatedPRNumber,
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,
 		&s.ErrorMessage, &s.CreatedAt, &kataMetadataJSON,
-		&repoID,
+		&repoID, &repoPlatformID,
 		&s.SourceTitle, &s.SourceState, &s.SourceURL,
 		&s.MRIsDraft, &s.MRCIStatus,
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
@@ -5405,6 +5406,9 @@ func scanWorkspaceSummary(
 	}
 	if repoID.Valid {
 		s.RepoID = repoID.Int64
+	}
+	if repoPlatformID.Valid {
+		s.RepoPlatformID = repoPlatformID.String
 	}
 	s.CreatedAt = s.CreatedAt.UTC()
 	s.MRTitle = s.SourceTitle

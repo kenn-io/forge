@@ -1521,6 +1521,7 @@ type ConfiguredRepoStatus struct {
 	Name             string  `json:"name"`
 	Owner            string  `json:"owner"`
 	PlatformHost     string  `json:"platform_host"`
+	PlatformRepoId   *string `json:"platform_repo_id,omitempty"`
 	Provider         string  `json:"provider"`
 	RepoPath         string  `json:"repo_path"`
 	TrackedRepoPath  *string `json:"tracked_repo_path,omitempty"`
@@ -3747,8 +3748,20 @@ type RepoOperations struct {
 
 // RepoPreset defines model for RepoPreset.
 type RepoPreset struct {
-	Name  string   `json:"name"`
-	Repos []string `json:"repos"`
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/RepoPreset.json
+	Schema *string                `json:"$schema,omitempty"`
+	Name   string                 `json:"name"`
+	Repos  []RepoPresetRepository `json:"repos"`
+}
+
+// RepoPresetRepository defines model for RepoPresetRepository.
+type RepoPresetRepository struct {
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoId string `json:"platform_repo_id"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
 }
 
 // RepoPreviewRequest defines model for RepoPreviewRequest.
@@ -3793,13 +3806,14 @@ type RepoPreviewRow struct {
 
 // RepoRefResponse defines model for RepoRefResponse.
 type RepoRefResponse struct {
-	Capabilities ProviderCapabilitiesResponse `json:"capabilities"`
-	Name         string                       `json:"name"`
-	Operations   *RepoOperations              `json:"operations,omitempty"`
-	Owner        string                       `json:"owner"`
-	PlatformHost string                       `json:"platform_host"`
-	Provider     string                       `json:"provider"`
-	RepoPath     string                       `json:"repo_path"`
+	Capabilities   ProviderCapabilitiesResponse `json:"capabilities"`
+	Name           string                       `json:"name"`
+	Operations     *RepoOperations              `json:"operations,omitempty"`
+	Owner          string                       `json:"owner"`
+	PlatformHost   string                       `json:"platform_host"`
+	PlatformRepoId *string                      `json:"platform_repo_id,omitempty"`
+	Provider       string                       `json:"provider"`
+	RepoPath       string                       `json:"repo_path"`
 }
 
 // RepoResponse defines model for RepoResponse.
@@ -3820,6 +3834,7 @@ type RepoResponse struct {
 	Owner               string                       `json:"Owner"`
 	Platform            string                       `json:"Platform"`
 	PlatformHost        string                       `json:"PlatformHost"`
+	PlatformRepoID      string                       `json:"PlatformRepoID"`
 	ViewerCanMerge      bool                         `json:"ViewerCanMerge"`
 	Capabilities        ProviderCapabilitiesResponse `json:"capabilities"`
 	Operations          RepoOperations               `json:"operations"`
@@ -4339,6 +4354,15 @@ type UpdateFleetSettingsInputBody struct {
 	SshPeers    []FleetSSHPeer `json:"ssh_peers"`
 }
 
+// UpdateRepoPresetInputBody defines model for UpdateRepoPresetInputBody.
+type UpdateRepoPresetInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/UpdateRepoPresetInputBody.json
+	Schema *string                `json:"$schema,omitempty"`
+	Repos  []RepoPresetRepository `json:"repos"`
+}
+
 // UpdateSettingsRequest defines model for UpdateSettingsRequest.
 type UpdateSettingsRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -4351,7 +4375,6 @@ type UpdateSettingsRequest struct {
 	KataProjects *[]KataProjectRepoMapping `json:"kata_projects,omitempty"`
 	Modes        *ModeVisibility           `json:"modes,omitempty"`
 	PullRequests *PullRequests             `json:"pull_requests,omitempty"`
-	RepoPresets  *[]RepoPreset             `json:"repo_presets,omitempty"`
 	Terminal     *Terminal                 `json:"terminal,omitempty"`
 	Workspaces   *Workspaces               `json:"workspaces,omitempty"`
 }
@@ -5575,6 +5598,12 @@ type UpdateFleetSettingsJSONRequestBody = UpdateFleetSettingsInputBody
 
 // UpdateFleetSshPeersJSONRequestBody defines body for UpdateFleetSshPeers for application/json ContentType.
 type UpdateFleetSshPeersJSONRequestBody = UpdateFleetSSHPeersInputBody
+
+// CreateRepoPresetJSONRequestBody defines body for CreateRepoPreset for application/json ContentType.
+type CreateRepoPresetJSONRequestBody = RepoPreset
+
+// UpdateRepoPresetJSONRequestBody defines body for UpdateRepoPreset for application/json ContentType.
+type UpdateRepoPresetJSONRequestBody = UpdateRepoPresetInputBody
 
 // UnsetStarredJSONRequestBody defines body for UnsetStarred for application/json ContentType.
 type UnsetStarredJSONRequestBody = StarredRequest
@@ -8137,6 +8166,39 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /settings/fleet/ssh-peers (the `UpdateFleetSshPeers` operationId).
 	UpdateFleetSshPeers(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateRepoPresetWithBody Create repository preset
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /settings/repo-presets (the `CreateRepoPreset` operationId).
+	CreateRepoPresetWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateRepoPreset Create repository preset
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /settings/repo-presets (the `CreateRepoPreset` operationId).
+	CreateRepoPreset(ctx context.Context, body CreateRepoPresetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteRepoPreset Delete repository preset
+	//
+	// Corresponds with DELETE /settings/repo-presets/{name} (the `DeleteRepoPreset` operationId).
+	DeleteRepoPreset(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateRepoPresetWithBody Update repository preset
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /settings/repo-presets/{name} (the `UpdateRepoPreset` operationId).
+	UpdateRepoPresetWithBody(ctx context.Context, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateRepoPreset Update repository preset
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /settings/repo-presets/{name} (the `UpdateRepoPreset` operationId).
+	UpdateRepoPreset(ctx context.Context, name string, body UpdateRepoPresetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSnapshot Read the workspace snapshot
 	//
@@ -14464,6 +14526,89 @@ func (c *Client) UpdateFleetSshPeersWithBody(ctx context.Context, contentType st
 // Corresponds with PUT /settings/fleet/ssh-peers (the `UpdateFleetSshPeers` operationId).
 func (c *Client) UpdateFleetSshPeers(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateFleetSshPeersRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateRepoPresetWithBody Create repository preset
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /settings/repo-presets (the `CreateRepoPreset` operationId).
+func (c *Client) CreateRepoPresetWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateRepoPresetRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateRepoPreset Create repository preset
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /settings/repo-presets (the `CreateRepoPreset` operationId).
+func (c *Client) CreateRepoPreset(ctx context.Context, body CreateRepoPresetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateRepoPresetRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteRepoPreset Delete repository preset
+//
+// Corresponds with DELETE /settings/repo-presets/{name} (the `DeleteRepoPreset` operationId).
+func (c *Client) DeleteRepoPreset(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteRepoPresetRequest(c.Server, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateRepoPresetWithBody Update repository preset
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /settings/repo-presets/{name} (the `UpdateRepoPreset` operationId).
+func (c *Client) UpdateRepoPresetWithBody(ctx context.Context, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateRepoPresetRequestWithBody(c.Server, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateRepoPreset Update repository preset
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /settings/repo-presets/{name} (the `UpdateRepoPreset` operationId).
+func (c *Client) UpdateRepoPreset(ctx context.Context, name string, body UpdateRepoPresetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateRepoPresetRequest(c.Server, name, body)
 	if err != nil {
 		return nil, err
 	}
@@ -32382,6 +32527,127 @@ func NewUpdateFleetSshPeersRequestWithBody(server string, contentType string, bo
 	return req, nil
 }
 
+// NewCreateRepoPresetRequest calls the generic CreateRepoPreset builder with application/json body
+func NewCreateRepoPresetRequest(server string, body CreateRepoPresetJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateRepoPresetRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateRepoPresetRequestWithBody constructs an http.Request for the CreateRepoPreset method, with any body, and a specified content type
+func NewCreateRepoPresetRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/repo-presets")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteRepoPresetRequest constructs an http.Request for the DeleteRepoPreset method
+func NewDeleteRepoPresetRequest(server string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/repo-presets/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateRepoPresetRequest calls the generic UpdateRepoPreset builder with application/json body
+func NewUpdateRepoPresetRequest(server string, name string, body UpdateRepoPresetJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateRepoPresetRequestWithBody(server, name, "application/json", bodyReader)
+}
+
+// NewUpdateRepoPresetRequestWithBody constructs an http.Request for the UpdateRepoPreset method, with any body, and a specified content type
+func NewUpdateRepoPresetRequestWithBody(server string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/repo-presets/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetSnapshotRequest constructs an http.Request for the GetSnapshot method
 func NewGetSnapshotRequest(server string, params *GetSnapshotParams) (*http.Request, error) {
 	var err error
@@ -35109,6 +35375,19 @@ type ClientWithResponsesInterface interface {
 	UpdateFleetSshPeersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFleetSshPeersResponse, error)
 
 	UpdateFleetSshPeersWithResponse(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFleetSshPeersResponse, error)
+
+	// CreateRepoPresetWithBodyWithResponse request with any body
+	CreateRepoPresetWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateRepoPresetResponse, error)
+
+	CreateRepoPresetWithResponse(ctx context.Context, body CreateRepoPresetJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateRepoPresetResponse, error)
+
+	// DeleteRepoPresetWithResponse request
+	DeleteRepoPresetWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*DeleteRepoPresetResponse, error)
+
+	// UpdateRepoPresetWithBodyWithResponse request with any body
+	UpdateRepoPresetWithBodyWithResponse(ctx context.Context, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateRepoPresetResponse, error)
+
+	UpdateRepoPresetWithResponse(ctx context.Context, name string, body UpdateRepoPresetJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoPresetResponse, error)
 
 	// GetSnapshotWithResponse request
 	GetSnapshotWithResponse(ctx context.Context, params *GetSnapshotParams, reqEditors ...RequestEditorFn) (*GetSnapshotResponse, error)
@@ -41428,6 +41707,75 @@ func (r UpdateFleetSshPeersResponse) StatusCode() int {
 	return 0
 }
 
+type CreateRepoPresetResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *SettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateRepoPresetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateRepoPresetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteRepoPresetResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteRepoPresetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteRepoPresetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateRepoPresetResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateRepoPresetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateRepoPresetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetSnapshotResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -45502,6 +45850,49 @@ func (c *ClientWithResponses) UpdateFleetSshPeersWithResponse(ctx context.Contex
 		return nil, err
 	}
 	return ParseUpdateFleetSshPeersResponse(rsp)
+}
+
+// CreateRepoPresetWithBodyWithResponse request with arbitrary body returning *CreateRepoPresetResponse
+func (c *ClientWithResponses) CreateRepoPresetWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateRepoPresetResponse, error) {
+	rsp, err := c.CreateRepoPresetWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateRepoPresetResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateRepoPresetWithResponse(ctx context.Context, body CreateRepoPresetJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateRepoPresetResponse, error) {
+	rsp, err := c.CreateRepoPreset(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateRepoPresetResponse(rsp)
+}
+
+// DeleteRepoPresetWithResponse request returning *DeleteRepoPresetResponse
+func (c *ClientWithResponses) DeleteRepoPresetWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*DeleteRepoPresetResponse, error) {
+	rsp, err := c.DeleteRepoPreset(ctx, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteRepoPresetResponse(rsp)
+}
+
+// UpdateRepoPresetWithBodyWithResponse request with arbitrary body returning *UpdateRepoPresetResponse
+func (c *ClientWithResponses) UpdateRepoPresetWithBodyWithResponse(ctx context.Context, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateRepoPresetResponse, error) {
+	rsp, err := c.UpdateRepoPresetWithBody(ctx, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateRepoPresetResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateRepoPresetWithResponse(ctx context.Context, name string, body UpdateRepoPresetJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoPresetResponse, error) {
+	rsp, err := c.UpdateRepoPreset(ctx, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateRepoPresetResponse(rsp)
 }
 
 // GetSnapshotWithResponse request returning *GetSnapshotResponse
@@ -54646,6 +55037,105 @@ func ParseUpdateFleetSshPeersResponse(rsp *http.Response) (*UpdateFleetSshPeersR
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest FleetSSHPeersBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateRepoPresetResponse parses an HTTP response from a CreateRepoPresetWithResponse call
+func ParseCreateRepoPresetResponse(rsp *http.Response) (*CreateRepoPresetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateRepoPresetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteRepoPresetResponse parses an HTTP response from a DeleteRepoPresetWithResponse call
+func ParseDeleteRepoPresetResponse(rsp *http.Response) (*DeleteRepoPresetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteRepoPresetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateRepoPresetResponse parses an HTTP response from a UpdateRepoPresetWithResponse call
+func ParseUpdateRepoPresetResponse(rsp *http.Response) (*UpdateRepoPresetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateRepoPresetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

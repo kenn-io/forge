@@ -40,7 +40,6 @@ type notificationsSettingsResponse struct {
 }
 
 type updateSettingsRequest struct {
-	RepoPresets  *[]config.RepoPreset             `json:"repo_presets,omitempty"`
 	Activity     *config.Activity                 `json:"activity,omitempty"`
 	PullRequests *config.PullRequests             `json:"pull_requests,omitempty"`
 	Workspaces   *config.Workspaces               `json:"workspaces,omitempty"`
@@ -122,6 +121,7 @@ func (s *Server) buildLocalSettingsResponse(
 		configured[i] = ghclient.ConfiguredRepoStatus{
 			Provider:         raw.PlatformOrDefault(),
 			PlatformHost:     raw.PlatformHostOrDefault(),
+			PlatformRepoID:   trackedPlatformRepoIDForConfig(raw, tracked),
 			Owner:            raw.Owner,
 			Name:             raw.Name,
 			RepoPath:         configRepoPath(raw),
@@ -250,6 +250,20 @@ func trackedPathForConfig(
 	for _, repo := range tracked {
 		if repoMatchesConfig(repo, raw) {
 			return trackedRepoPath(repo)
+		}
+	}
+	return ""
+}
+
+func trackedPlatformRepoIDForConfig(
+	raw config.Repo, tracked []ghclient.RepoRef,
+) string {
+	if raw.HasNameGlob() {
+		return ""
+	}
+	for _, repo := range tracked {
+		if repoMatchesConfig(repo, raw) {
+			return strings.TrimSpace(repo.PlatformExternalID)
 		}
 	}
 	return ""
@@ -712,6 +726,76 @@ func (s *Server) getSettings(
 	return s.settingsOutputResponse(ctx)
 }
 
+func (s *Server) mutateRepoPresets(
+	ctx context.Context,
+	mutate func([]config.RepoPreset) ([]config.RepoPreset, error),
+) (*settingsOutput, error) {
+	if s.cfgPath == "" {
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+	}
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
+	s.cfgMu.Lock()
+	candidate := cloneReloadedConfig(s.cfg)
+	next, err := mutate(cloneRepoPresets(candidate.RepoPresets))
+	if err != nil {
+		s.cfgMu.Unlock()
+		return nil, err
+	}
+	candidate.RepoPresets = next
+	if err := candidate.Validate(); err != nil {
+		s.cfgMu.Unlock()
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+	}
+	if err := candidate.Save(s.cfgPath); err != nil {
+		s.cfgMu.Unlock()
+		return nil, httpapi.Internal("save config: " + err.Error())
+	}
+	s.cfg.RepoPresets = cloneRepoPresets(candidate.RepoPresets)
+	s.cfgMu.Unlock()
+	return s.settingsOutputResponse(ctx)
+}
+
+func (s *Server) createRepoPreset(
+	ctx context.Context, input *createRepoPresetInput,
+) (*settingsOutput, error) {
+	return s.mutateRepoPresets(ctx, func(presets []config.RepoPreset) ([]config.RepoPreset, error) {
+		for _, preset := range presets {
+			if strings.EqualFold(preset.Name, input.Body.Name) {
+				return nil, httpapi.Conflict(httpapi.CodeConflict, "repository preset already exists", nil)
+			}
+		}
+		return append(presets, input.Body), nil
+	})
+}
+
+func (s *Server) updateRepoPreset(
+	ctx context.Context, input *updateRepoPresetInput,
+) (*settingsOutput, error) {
+	return s.mutateRepoPresets(ctx, func(presets []config.RepoPreset) ([]config.RepoPreset, error) {
+		for i := range presets {
+			if strings.EqualFold(presets[i].Name, input.Name) {
+				presets[i].Repos = slices.Clone(input.Body.Repos)
+				return presets, nil
+			}
+		}
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "repository preset not found", nil)
+	})
+}
+
+func (s *Server) deleteRepoPreset(
+	ctx context.Context, input *deleteRepoPresetInput,
+) (*settingsOutput, error) {
+	return s.mutateRepoPresets(ctx, func(presets []config.RepoPreset) ([]config.RepoPreset, error) {
+		for i := range presets {
+			if strings.EqualFold(presets[i].Name, input.Name) {
+				return append(presets[:i], presets[i+1:]...), nil
+			}
+		}
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "repository preset not found", nil)
+	})
+}
+
 // settingsOutputResponse wraps buildLocalSettingsResponse for handlers that
 // answer with the full settings payload.
 func (s *Server) settingsOutputResponse(
@@ -733,7 +817,6 @@ func (s *Server) updateSettings(
 
 	s.cfgMu.Lock()
 	prevActivity := s.cfg.Activity
-	prevRepoPresets := cloneRepoPresets(s.cfg.RepoPresets)
 	prevPullRequests := s.cfg.PullRequests
 	prevWorkspaces := s.cfg.Workspaces
 	prevIssues := s.cfg.Issues
@@ -741,9 +824,6 @@ func (s *Server) updateSettings(
 	prevModes := cloneModeVisibility(s.cfg.Modes)
 	prevAgents := cloneConfigAgents(s.cfg.Agents)
 	prevKataProjects := slices.Clone(s.cfg.KataProjects)
-	if input.Body.RepoPresets != nil {
-		s.cfg.RepoPresets = cloneRepoPresets(*input.Body.RepoPresets)
-	}
 	if input.Body.Activity != nil {
 		candidate := *input.Body.Activity
 		if candidate.ViewMode == "" {
@@ -776,7 +856,6 @@ func (s *Server) updateSettings(
 		s.cfg.KataProjects = slices.Clone(*input.Body.KataProjects)
 	}
 	if err := s.cfg.Validate(); err != nil {
-		s.cfg.RepoPresets = prevRepoPresets
 		s.cfg.Activity = prevActivity
 		s.cfg.PullRequests = prevPullRequests
 		s.cfg.Workspaces = prevWorkspaces
@@ -789,7 +868,6 @@ func (s *Server) updateSettings(
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.RepoPresets = prevRepoPresets
 		s.cfg.Activity = prevActivity
 		s.cfg.PullRequests = prevPullRequests
 		s.cfg.Workspaces = prevWorkspaces

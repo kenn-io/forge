@@ -23,7 +23,9 @@ vi.mock("../api/runtime.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/runtime.js")>()),
   client: {
     GET: vi.fn(() => Promise.resolve({ data: [], error: undefined })),
+    POST: vi.fn(),
     PUT: vi.fn(),
+    DELETE: vi.fn(),
   },
 }));
 
@@ -31,6 +33,17 @@ const getRepos = client.GET as unknown as Mock<
   (path: string, options?: { signal?: AbortSignal }) => Promise<{ data: Repo[]; error: undefined }>
 >;
 const putSettings = client.PUT as unknown as Mock;
+const postSettings = client.POST as unknown as Mock;
+const deleteSettings = client.DELETE as unknown as Mock;
+
+function presetRepo(repoPath: string, platformRepoId: string) {
+  return {
+    provider: "github",
+    platform_host: "github.com",
+    platform_repo_id: platformRepoId,
+    repo_path: repoPath,
+  };
+}
 
 describe("RepoTypeahead", () => {
   beforeEach(() => {
@@ -44,6 +57,8 @@ describe("RepoTypeahead", () => {
     getRepos.mockReset();
     getRepos.mockResolvedValue({ data: [], error: undefined });
     putSettings.mockReset();
+    postSettings.mockReset();
+    deleteSettings.mockReset();
   });
 
   afterEach(() => {
@@ -70,6 +85,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -93,6 +109,7 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
+        platform_repo_id: "R_api",
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
@@ -150,6 +167,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/one",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
     render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
@@ -164,6 +182,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/two",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -207,6 +226,7 @@ describe("RepoTypeahead", () => {
         repo_path: "roborev-dev/*",
         is_glob: true,
         matched_repo_count: 2,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -236,6 +256,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -245,6 +266,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -286,6 +308,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -295,6 +318,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -319,6 +343,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -328,6 +353,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -367,6 +393,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -376,6 +403,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
@@ -408,6 +436,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -417,6 +446,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
@@ -459,6 +489,7 @@ describe("RepoTypeahead", () => {
         repo_path: "roborev-dev/*",
         is_glob: true,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -503,6 +534,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -512,6 +544,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -560,6 +593,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -569,6 +603,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -611,6 +646,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -620,6 +656,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -646,6 +683,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/widgets",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "gitea",
@@ -655,6 +693,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/widgets",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -689,6 +728,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/widgets",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "gitea",
@@ -698,6 +738,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/widgets",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -725,6 +766,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/widgets",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -749,11 +791,13 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
+        platform_repo_id: "R_api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [selected] }] as RepoPreset[]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }] as RepoPreset[]);
 
     const view = render(RepoTypeahead, {
       props: { selected, onchange: vi.fn() },
@@ -781,11 +825,13 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
+        platform_repo_id: "R_api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [selected] }]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
 
     await fireEvent.click(screen.getByRole("button", { name: /global/i }));
@@ -793,6 +839,33 @@ describe("RepoTypeahead", () => {
 
     expect(onchange).toHaveBeenLastCalledWith(selected);
     expect(localStorage.getItem("kenn-forge-filter-repo-preset")).toBe("Backend");
+  });
+
+  it("does not activate an unavailable preset from the keyboard", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Missing", repos: [presetRepo("acme/missing", "R_missing")] }]);
+    render(RepoTypeahead, { props: { selected: "github|github.com/acme/api", onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /acme\/api/i }));
+    const input = screen.getByRole("textbox", { name: "Filter repos" });
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(screen.getByRole("option", { name: "Missing" }).getAttribute("aria-disabled")).toBe("true");
+    expect(onchange).not.toHaveBeenCalled();
   });
 
   it("defaults an edited preset to overwriting its prior name", async () => {
@@ -805,8 +878,10 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
+        platform_repo_id: "R_api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -814,11 +889,13 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "web",
         repo_path: "acme/web",
+        platform_repo_id: "R_web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [api] }]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
     setGlobalRepoPresetSelection("Backend", `${api},${web}`);
     render(RepoTypeahead, {
       props: { selected: `${api},${web}`, onchange: vi.fn() },
@@ -840,12 +917,15 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
+        platform_repo_id: "R_api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
-    putSettings.mockResolvedValue({
-      data: { repo_presets: [{ name: "Review", repos: [selected] }], repos: [] },
+    const repos = [presetRepo("acme/api", "R_api")];
+    postSettings.mockResolvedValue({
+      data: { repo_presets: [{ name: "Review", repos }], repos: [] },
       response: new Response(),
     });
     render(RepoTypeahead, { props: { selected, onchange: vi.fn() } });
@@ -858,13 +938,13 @@ describe("RepoTypeahead", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(putSettings).toHaveBeenCalledWith(
-        "/settings",
+      expect(postSettings).toHaveBeenCalledWith(
+        "/settings/repo-presets",
         expect.objectContaining({
-          body: { repo_presets: [{ name: "Review", repos: [selected] }] },
+          body: { name: "Review", repos },
         }),
       );
-      expect(settingsStore.getRepoPresets()).toEqual([{ name: "Review", repos: [selected] }]);
+      expect(settingsStore.getRepoPresets()).toEqual([{ name: "Review", repos }]);
     });
   });
 
@@ -877,11 +957,22 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
+        platform_repo_id: "R_api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
-    putSettings.mockRejectedValue(new Error("offline"));
+    postSettings.mockResolvedValue({
+      error: {
+        type: "about:blank",
+        title: "Save failed",
+        status: 500,
+        detail: "Preset save failed",
+        code: "internalError",
+      },
+      response: new Response(undefined, { status: 500 }),
+    });
     render(RepoTypeahead, { props: { selected, onchange: vi.fn() } });
 
     await fireEvent.click(screen.getByRole("button", { name: /acme\/api/i }));
@@ -891,7 +982,7 @@ describe("RepoTypeahead", () => {
     });
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByText("Could not reach Kenn Forge")).toBeTruthy();
+    expect(await screen.findByText("Preset save failed")).toBeTruthy();
     expect(screen.getByRole("dialog", { name: "Save repository preset" })).toBeTruthy();
     expect(settingsStore.getRepoPresets()).toEqual([]);
   });
@@ -906,13 +997,15 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
+        platform_repo_id: "R_api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [selected] }]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
     setGlobalRepoPresetSelection("Backend", selected);
-    putSettings.mockResolvedValue({
+    deleteSettings.mockResolvedValue({
       data: { repo_presets: [], repos: [] },
       response: new Response(),
     });

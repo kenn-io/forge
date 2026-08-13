@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SelectDropdown, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import type { Settings } from "../../api/types.js";
 
@@ -15,6 +16,10 @@
   const runtime = getAppRuntime();
   const embedded = isEmbedded();
   let saving = $state(false);
+  const defaultSidebarViewOptions: SelectDropdownOption[] = [
+    { value: "diff", label: "Diff" },
+    { value: "item", label: "PR/Issue" },
+  ];
 
   function toggleAutoAssign(): void {
     if (embedded || saving) return;
@@ -50,11 +55,11 @@
     );
   }
 
-  function setDefaultSidebarView(event: Event): void {
-    const value = (event.currentTarget as HTMLSelectElement).value as Settings["workspaces"]["default_sidebar_view"];
-    if (embedded || saving || value === workspaces.default_sidebar_view) return;
+  function setDefaultSidebarView(value: string): void {
+    const defaultSidebarView = value as Settings["workspaces"]["default_sidebar_view"];
+    if (embedded || saving || defaultSidebarView === workspaces.default_sidebar_view) return;
     const previous = workspaces;
-    const pending = { ...workspaces, default_sidebar_view: value };
+    const pending = { ...workspaces, default_sidebar_view: defaultSidebarView };
     onUpdate(pending);
     saving = true;
     runtime.runCommand(
@@ -97,13 +102,17 @@
   </div>
   <div class="setting-row">
     <div class="setting-copy">
-      <label class="setting-label" for="default-sidebar-view">Default sidebar view</label>
+      <span class="setting-label">Default sidebar view</span>
       <span class="setting-description">Choose the initial details view for workspaces created from a pull request or issue.</span>
     </div>
-    <select id="default-sidebar-view" value={workspaces.default_sidebar_view} disabled={embedded || saving} onchange={setDefaultSidebarView}>
-      <option value="diff">Diff</option>
-      <option value="item">PR/Issue</option>
-    </select>
+    <SelectDropdown
+      class="sidebar-view-select"
+      title="Default sidebar view"
+      value={workspaces.default_sidebar_view}
+      options={defaultSidebarViewOptions}
+      disabled={embedded || saving}
+      onchange={setDefaultSidebarView}
+    />
   </div>
 </div>
 
@@ -119,5 +128,5 @@
   .toggle-on .toggle-track { background: var(--accent-blue); border-color: var(--accent-blue); }
   .toggle-thumb { display: block; width: 14px; height: 14px; border-radius: 50%; background: white; position: absolute; top: 2px; left: 2px; transition: transform 0.15s; box-shadow: var(--shadow-sm); }
   .toggle-on .toggle-thumb { transform: translateX(16px); }
-  select { min-width: 120px; }
+  :global(.sidebar-view-select) { min-width: 120px; }
 </style>

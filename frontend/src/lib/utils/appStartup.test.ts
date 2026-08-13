@@ -35,6 +35,7 @@ function makeStores(
         terminalSettings = settings;
       }),
       setPullRequestSettings: vi.fn(),
+      setWorkspaceSettings: vi.fn(),
       setTerminalFontFamily: vi.fn(),
       getLaunchTargets: () => launchTargets,
       setLaunchTargets: vi.fn((targets: LaunchTargets) => {

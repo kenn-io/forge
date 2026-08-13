@@ -54,9 +54,8 @@ describe("WorkspaceSettings", () => {
       props: { component: WorkspaceSettings, componentProps: { workspaces: initial, onUpdate } },
     });
 
-    await fireEvent.change(screen.getByRole("combobox", { name: "Default sidebar view" }), {
-      target: { value: "item" },
-    });
+    await fireEvent.click(screen.getByRole("combobox", { name: "Default sidebar view: Diff" }));
+    await fireEvent.click(screen.getByRole("option", { name: "PR/Issue" }));
 
     await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: saved });

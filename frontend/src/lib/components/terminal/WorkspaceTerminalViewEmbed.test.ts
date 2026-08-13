@@ -128,6 +128,10 @@ vi.mock("../../context.js", async (importOriginal) => {
         getTerminalLetterSpacing: () => 0,
         getTerminalCursorBlink: () => true,
         getTerminalFontLigatures: () => false,
+        getWorkspaceSettings: () => ({
+          auto_assign_on_create: false,
+          default_sidebar_view: "diff",
+        }),
       },
     }),
   };

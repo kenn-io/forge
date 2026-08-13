@@ -108,6 +108,7 @@ function waitForReparent(): Promise<void> {
 const settingsStore = {
   getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
   getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+  getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
 };
 
 describe("WorkspaceHost", () => {

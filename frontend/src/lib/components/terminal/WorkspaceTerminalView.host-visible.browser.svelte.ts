@@ -223,6 +223,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+      getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
     };
 
     // Mounted with Svelte's own `mount()` (rather than vitest-browser-svelte's
@@ -295,6 +296,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+      getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
     };
     // Opening the right sidebar mounts the diff panel, which reads the
     // diff store from context. Created after the fetch swap so its API
@@ -387,6 +389,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+      getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
     };
     const diffStore = createDiffStore({ runtime });
 
@@ -456,6 +459,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+      getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setTerminalSettings: () => {},
     };
 
@@ -544,6 +548,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const settingsStore = {
       getTerminalFontSize: () => terminalSettings.font_size,
       getTerminalSettings: () => terminalSettings,
+      getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setTerminalSettings: (settings: typeof DEFAULT_TERMINAL_SETTINGS) => {
         terminalSettings = settings;
       },
@@ -610,6 +615,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const settingsStore = {
       getTerminalFontSize: () => terminalSettings.font_size,
       getTerminalSettings: () => terminalSettings,
+      getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setTerminalSettings: (settings: typeof DEFAULT_TERMINAL_SETTINGS) => {
         terminalSettings = settings;
       },
@@ -661,6 +667,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+      getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
     };
 
     // Same getter-backed prop + flushSync() rationale as the test above:

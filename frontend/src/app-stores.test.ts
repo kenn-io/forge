@@ -159,6 +159,7 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
         prefer_github_native_stacks: false,
       }),
       setPullRequestSettings: vi.fn(),
+      setWorkspaceSettings: vi.fn(),
       getModeVisibility: () => ({
         activity: true,
         repos: true,

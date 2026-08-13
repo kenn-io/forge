@@ -47,6 +47,9 @@ Natural process exit should collapse stale runtime state quickly.
 - PTY-owner process exit may precede final output; keep subscribers alive for a
   bounded drain or loaded runners lose the last repaint
   (`internal/workspace/localruntime/manager.go::watchPtyOwner`).
+- PTY output EOF may precede process wait; give wait a bounded chance to publish
+  the real exit code without marking the owner fully exited before replay drains
+  (`internal/ptyowner/owner.go::exitCodeAfterOutputClose`).
 
 The base workspace `tmux` tab is the exception:
 

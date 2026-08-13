@@ -67,29 +67,31 @@ func TestNewClientEmptyHost(t *testing.T) {
 }
 
 func TestAuthenticatedViewerLoginRefreshesExpiredCache(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var login atomic.Value
 	login.Store("alice")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v3/user", r.URL.Path)
+		assert.Equal("/api/v3/user", r.URL.Path)
 		_, _ = fmt.Fprintf(w, `{"login":%q}`, login.Load().(string))
 	}))
 	defer server.Close()
 
 	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(server.URL))
-	require.NoError(t, err)
+	require.NoError(err)
 	live := client.(*liveClient)
 
 	first, err := live.AuthenticatedViewerLogin(t.Context())
-	require.NoError(t, err)
-	assert.Equal(t, "alice", first)
+	require.NoError(err)
+	assert.Equal("alice", first)
 	login.Store("bob")
 	live.viewerMu.Lock()
 	live.viewerLoginAt = time.Now().Add(-authenticatedViewerLoginTTL - time.Minute)
 	live.viewerMu.Unlock()
 
 	second, err := live.AuthenticatedViewerLogin(t.Context())
-	require.NoError(t, err)
-	assert.Equal(t, "bob", second)
+	require.NoError(err)
+	assert.Equal("bob", second)
 }
 
 func TestNativeStackClientDecodesPullHintsAndStackPages(t *testing.T) {

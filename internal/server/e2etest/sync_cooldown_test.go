@@ -187,6 +187,9 @@ name = "third"
 }
 
 func TestTriggerSyncE2EPrioritizesNonDefaultHostFilter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sync prioritization e2e runs in the full Go test lane")
+	}
 	require := require.New(t)
 
 	var mu sync.Mutex

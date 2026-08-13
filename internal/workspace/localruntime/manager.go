@@ -1940,6 +1940,17 @@ func (s *session) drainOutput() {
 				s.broadcast(chunk)
 			}
 		}
+		// The PTY-owner client records the process exit code before closing
+		// Output. Publish that code before closing runtime subscribers so an
+		// HTTP terminal bridge that observes output EOF first does not emit -1
+		// while watchPtyOwner is still waiting to update the session snapshot.
+		if exitCode := s.pty.ExitCode(); exitCode != -1 {
+			s.mu.Lock()
+			if s.info.ExitCode == nil {
+				s.info.ExitCode = &exitCode
+			}
+			s.mu.Unlock()
+		}
 		s.closeSubscribers()
 		return
 	}

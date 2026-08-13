@@ -29473,12 +29473,11 @@ func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
 	require.Contains(got.String(), "echo:ping")
 }
 
-// TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E pins the
+// TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E pins the
 // websocket "exited" text frame contract through the real runtime stack. The
-// frontend's ShellDrawer only fires onExit when this frame arrives; without it
-// the drawer doesn't auto-close on shell exit and the user is stranded on a
-// dead session.
-func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
+// helper closes its PTY shortly before exiting so this exercises the window
+// where PTY EOF can arrive before process wait publishes the exit code.
+func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
 	}
@@ -29492,7 +29491,7 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
 			Command: []string{filepath.Join(dir, "missing-tmux")},
 		},
 		Shell: config.Shell{
-			Command: serverRuntimeHelperCommand("pty-close-on-input-then-sleep"),
+			Command: serverRuntimeHelperCommand("pty-close-on-input-then-exit"),
 		},
 	}
 	fixture := setupWorkspaceServerFixtureWithOptions(
@@ -29505,6 +29504,11 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
 
 	shell := launchPlainShellRuntimeSession(t, ctx, client, ws.Id)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, shell.Key)
+	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 1)
+	require.Equal(shell.Key, stored[0].SessionKey)
+	require.Empty(stored[0].TmuxSession)
 
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
@@ -29514,10 +29518,9 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
 	conn := dialWebSocketForTest(t, ctx, wsURL, "shell")
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	// Trigger after attach so the session cannot naturally exit before the
-	// websocket connects. The focused bridge test below covers the fast
-	// outputDone-before-Done race directly; this e2e keeps the real runtime
-	// contract pinned without depending on backend-specific PTY EOF timing.
+	// Trigger after attach so the session cannot exit before the websocket
+	// connects. The helper's short delay makes PTY EOF reliably precede process
+	// exit while remaining inside the owner's bounded exit-code grace period.
 	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("close\n")))
 	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -29538,15 +29541,28 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
 		}
 		require.NoError(json.Unmarshal(data, &msg))
 		require.Equal("exited", msg.Type)
-		// ExitCode may be 7 (cmd.Wait completed before writeRuntimeExit
-		// reads the snapshot) or -1 (writeRuntimeExit read snapshot
-		// before watchSession populated ExitCode). Both are "the
-		// session ended" signals the frontend treats identically;
-		// pinning a specific value would be timing-dependent.
-		require.NotEqual(0, msg.Code,
-			"non-success exit must report non-zero (or -1)")
-		return
+		require.Equal(7, msg.Code)
+		break
 	}
+
+	require.Eventually(func() bool {
+		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
+			ctx, ws.Id,
+		)
+		if runtimeErr != nil || runtimeResp.StatusCode() != http.StatusOK ||
+			runtimeResp.JSON200 == nil {
+			return false
+		}
+		if runtimeResp.JSON200.Sessions != nil {
+			for _, session := range *runtimeResp.JSON200.Sessions {
+				if session.Key == shell.Key {
+					return false
+				}
+			}
+		}
+		rows, rowsErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+		return rowsErr == nil && len(rows) == 0
+	}, 5*time.Second, 20*time.Millisecond)
 }
 
 // TestBridgeRuntimeAttachmentOutputClosedEmitsExitFrameBeforeDone pins the
@@ -30565,6 +30581,17 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 		_ = os.Stdout.Close()
 		_ = os.Stderr.Close()
 		time.Sleep(2 * time.Second)
+		os.Exit(7)
+	case "pty-close-on-input-then-exit":
+		_, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil {
+			os.Exit(2)
+		}
+		signal.Ignore(syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
+		_ = os.Stdin.Close()
+		_ = os.Stdout.Close()
+		_ = os.Stderr.Close()
+		time.Sleep(50 * time.Millisecond)
 		os.Exit(7)
 	default:
 		os.Exit(2)

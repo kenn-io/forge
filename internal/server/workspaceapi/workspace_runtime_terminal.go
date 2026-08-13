@@ -389,9 +389,9 @@ func bridgeRuntimeAttachment(
 		//      onExit fires. attachment.Done follows in a separate
 		//      goroutine and can lag noticeably for wrapped sessions
 		//      (systemd-run --wait collecting the transient unit),
-		//      so we do NOT gate the frame on attachment.Done —
-		//      ExitCode may be nil and writeRuntimeExit emits -1,
-		//      which the frontend treats identically.
+		//      so we do NOT gate the frame on attachment.Done. PTY-owner
+		//      sessions publish their exit code before closing subscribers;
+		//      other backends may still emit -1 when process wait lags EOF.
 		//
 		//   2. broadcast dropped this subscriber because its 64-slot
 		//      buffer filled (slow client, congested writer, etc.).

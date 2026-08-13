@@ -410,6 +410,64 @@ esac
 	require.Equal("created\nkilled\n", string(content))
 }
 
+func TestOwnerCleanupTerminatesStalledAdmittedStartup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake tmux fixture uses Unix shell semantics")
+	}
+	require := require.New(t)
+	directory := t.TempDir()
+	owner, err := newAt(filepath.Join(directory, "root"))
+	require.NoError(err)
+	t.Cleanup(func() { _ = owner.Cleanup() })
+
+	entered := filepath.Join(directory, "entered")
+	tmuxPath := filepath.Join(directory, "fake-tmux")
+	body := `#!/bin/sh
+case "$*" in
+  *new-session*)
+	trap '' TERM
+	: > "$TEST_TMUX_ENTERED"
+	while :; do sleep 1; done
+	;;
+esac
+`
+	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
+	t.Setenv("TEST_TMUX_ENTERED", entered)
+
+	tmuxCommand := owner.Command(t, tmuxPath)
+	args := append(slices.Clone(tmuxCommand[1:]), "new-session", "-d")
+	startup := procutil.Command(tmuxCommand[0], args...)
+	require.NoError(startup.Start())
+	startupDone := make(chan error, 1)
+	go func() { startupDone <- startup.Wait() }()
+	t.Cleanup(func() {
+		if !processGone(startup.Process.Pid) {
+			_ = startup.Process.Kill()
+		}
+		select {
+		case <-startupDone:
+		default:
+		}
+	})
+	require.Eventually(func() bool {
+		_, statErr := os.Stat(entered)
+		return statErr == nil
+	}, 5*time.Second, 10*time.Millisecond)
+
+	cleanupDone := make(chan error, 1)
+	go func() { cleanupDone <- owner.Cleanup() }()
+	select {
+	case cleanupErr := <-cleanupDone:
+		require.NoError(cleanupErr)
+	case <-time.After(cleanupTimeout + 2*time.Second):
+		require.Fail("cleanup did not terminate a stalled admitted tmux startup")
+		_ = startup.Process.Kill()
+		require.NoError(<-cleanupDone)
+	}
+	require.Error(<-startupDone)
+	requireProcessGone(t, startup.Process.Pid)
+}
+
 func TestNewAtReapsServerAfterRunDirectoryDisappears(t *testing.T) {
 	require := require.New(t)
 	tmuxPath := requireTmux(t)

@@ -24,8 +24,8 @@ fixtures, or changing shell-script coverage.
   assert observable output, side effects, or exit status. Do not grep scripts,
   workflows, config, or docs for expected implementation text.
 - Real private tmux tests use `testtmux`: gate server creation under stable
-  PID-plus-start ownership and drain admitted startups before cleanup; never
-  address the default server. (`internal/testutil/testtmux/owner.go::Owner`)
+  PID-plus-start ownership, bound draining, and terminate matching stalls;
+  never address the default server. (`internal/testutil/testtmux/owner.go::Owner`)
 - Use provider live or container fixtures only when fake transports cannot
   catch endpoint or authentication drift. GitHub GraphQL validation is gated by
   `KENN_FORGE_LIVE_GITHUB_TESTS=1`.

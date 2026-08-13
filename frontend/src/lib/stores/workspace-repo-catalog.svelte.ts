@@ -13,7 +13,7 @@ export function isWorkspaceRepoCatalogReady(): boolean {
   return ready;
 }
 
-export function setWorkspaceRepoCatalog(workspaces: readonly WorkspaceListItem[] | undefined): void {
+export function setWorkspaceRepoCatalog(workspaces: readonly WorkspaceListItem[] | undefined, complete: boolean): void {
   if (!workspaces) {
     entries = [];
     ready = false;
@@ -48,5 +48,5 @@ export function setWorkspaceRepoCatalog(workspaces: readonly WorkspaceListItem[]
     else next.push(entry);
   }
   entries = next;
-  ready = true;
+  ready = complete;
 }

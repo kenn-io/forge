@@ -8,6 +8,11 @@ import {
   isNewWorkspaceDialogOpen,
   resetNewWorkspaceDialogState,
 } from "../../stores/new-workspace.svelte.js";
+import {
+  getWorkspaceRepoCatalog,
+  isWorkspaceRepoCatalogReady,
+  setWorkspaceRepoCatalog,
+} from "../../stores/workspace-repo-catalog.svelte.js";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -210,6 +215,7 @@ describe("WorkspaceListSidebar", () => {
     mockNavigate.mockReset();
     MockEventSource.instances.length = 0;
     resetNewWorkspaceDialogState();
+    setWorkspaceRepoCatalog(undefined, false);
     localStorage.clear();
     sessionStorage.clear();
     vi.stubGlobal("EventSource", MockEventSource);
@@ -533,6 +539,85 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.queryByText("Remote Web")).toBeNull();
   });
 
+  it("keeps the repository catalog incomplete until fleet discovery and reachable peers load", async () => {
+    const fleet = deferred<{
+      data: { hosts: Array<Record<string, unknown>> };
+    }>();
+    const peer = deferred<{ data: { workspaces: unknown[] } }>();
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") return fleet.promise;
+      if (path === "/fleet/hosts/{host_key}/workspaces") return peer.promise;
+      return Promise.resolve({
+        data: {
+          workspaces: [
+            workspaceFixture({
+              id: "local-ws",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "local",
+              name: "service",
+              number: 1,
+            }),
+          ],
+        },
+      });
+    });
+
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await waitFor(() => expect(getWorkspaceRepoCatalog()).toHaveLength(1));
+    expect(isWorkspaceRepoCatalogReady()).toBe(false);
+
+    fleet.resolve({
+      data: {
+        hosts: [
+          {
+            configKey: "hub",
+            diagnostics: [],
+            id: "hub",
+            kind: "self",
+            name: "hub",
+            operationAvailability: {},
+            platform: "darwin",
+            preferredTransport: "local",
+            reachable: true,
+            tmuxSessions: [],
+          },
+          {
+            configKey: "member",
+            diagnostics: [],
+            id: "member",
+            kind: "remote",
+            name: "member",
+            operationAvailability: {},
+            platform: "linux",
+            preferredTransport: "http",
+            reachable: true,
+            tmuxSessions: [],
+          },
+        ],
+      },
+    });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/fleet/hosts/{host_key}/workspaces", expect.anything()));
+    expect(isWorkspaceRepoCatalogReady()).toBe(false);
+
+    peer.resolve({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "remote-ws",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "remote",
+            name: "service",
+            number: 2,
+          }),
+        ],
+      },
+    });
+    await waitFor(() => expect(isWorkspaceRepoCatalogReady()).toBe(true));
+    expect(getWorkspaceRepoCatalog().map((repo) => repo.repo_path)).toEqual(["local/service", "remote/service"]);
+  });
+
   it("loads workspaces from reachable ssh fleet hosts", async () => {
     mockGet.mockImplementation((path: string, options?: { params?: { path?: { host_key?: string } } }) => {
       if (path === "/snapshot") {
@@ -746,6 +831,7 @@ describe("WorkspaceListSidebar", () => {
     await waitFor(() => expect(peerLoads).toBe(2));
     expect(screen.getByText("Last known remote workspace")).toBeTruthy();
     expect(await screen.findByText("member degraded")).toBeTruthy();
+    expect(isWorkspaceRepoCatalogReady()).toBe(false);
   });
 
   it("removes remote workspaces when the fleet snapshot becomes local-only", async () => {

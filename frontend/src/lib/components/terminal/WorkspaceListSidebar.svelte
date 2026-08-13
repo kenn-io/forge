@@ -66,6 +66,7 @@
   type Workspace = WorkspaceListItem;
 
   type HostSummary = components["schemas"]["HostSummary"];
+  type CatalogLoadStatus = "loading" | "loaded" | "failed";
 
   interface Props {
     selectedId: string;
@@ -125,9 +126,20 @@
     "kenn-forge:workspace-agent-done-acknowledgements/v1";
 
   let workspaces = $state.raw<Workspace[]>([]);
+  let localCatalogStatus = $state<CatalogLoadStatus>("loading");
+  let fleetCatalogStatus = $state<CatalogLoadStatus>("loading");
+  let peerCatalogStatus = $state<CatalogLoadStatus>("loading");
+  const workspaceRepoCatalogComplete = $derived(
+    localCatalogStatus === "loaded" &&
+      fleetCatalogStatus === "loaded" &&
+      peerCatalogStatus === "loaded",
+  );
 
   $effect(() => {
-    setWorkspaceRepoCatalog(workspaceListStatus === "loaded" ? workspaces : undefined);
+    setWorkspaceRepoCatalog(
+      workspaceListStatus === "loaded" ? workspaces : undefined,
+      workspaceRepoCatalogComplete,
+    );
   });
   let fleetHosts = $state.raw<HostSummary[]>([]);
   let fleetError = $state<string | null>(null);
@@ -163,6 +175,7 @@
     Effect.suspend(loadWorkspaces).pipe(
       Effect.catch(() =>
         Effect.sync(() => {
+          localCatalogStatus = "failed";
           if (workspaces.length === 0) workspaceListStatus = "retrying";
         }),
       ),
@@ -174,6 +187,7 @@
         Effect.sync(() => {
           fleetError = failureMessage(failure, "Fleet unavailable");
           fleetLoaded = true;
+          fleetCatalogStatus = "failed";
         }),
       ),
     ),
@@ -422,51 +436,64 @@
       .flatMap((host) => peerWorkspaceCache.get(host.configKey) ?? []);
   }
 
-  function fetchPeerWorkspaces(): Effect.Effect<Workspace[], never, GeneratedApi> {
+  function fetchPeerWorkspaces(): Effect.Effect<
+    { workspaces: Workspace[]; complete: boolean; peerKeys: Set<string> },
+    never,
+    GeneratedApi
+  > {
     const peers = fleetHosts.filter(
       (host) =>
         host.reachable &&
         host.kind !== "self",
     );
-    return Effect.forEach(
-      peers,
-      (host) =>
-        executeOpaqueGeneratedApiRequest("load peer workspaces", (generatedClient, signal) =>
-          generatedClient.GET("/fleet/hosts/{host_key}/workspaces", {
-            params: { path: { host_key: host.configKey } },
-            signal,
-          }),
-        ).pipe(
-          Effect.flatMap(decodeWorkspaceList),
-          Effect.map((workspaces) =>
-            workspaces.map(
-              (workspace): Workspace => ({
-                ...workspace,
-                fleet_host_key: host.configKey,
-                fleet_host_name: host.name,
-              }),
+    const requestedPeerKeys = new Set(peers.map((host) => host.configKey));
+    return Effect.sync(() => {
+      peerCatalogStatus = "loading";
+    }).pipe(
+      Effect.andThen(Effect.forEach(
+        peers,
+        (host) =>
+          executeOpaqueGeneratedApiRequest("load peer workspaces", (generatedClient, signal) =>
+            generatedClient.GET("/fleet/hosts/{host_key}/workspaces", {
+              params: { path: { host_key: host.configKey } },
+              signal,
+            }),
+          ).pipe(
+            Effect.flatMap(decodeWorkspaceList),
+            Effect.map((workspaces) =>
+              workspaces.map(
+                (workspace): Workspace => ({
+                  ...workspace,
+                  fleet_host_key: host.configKey,
+                  fleet_host_name: host.name,
+                }),
+              ),
             ),
+            Effect.timeout(`${workspaceListLoadTimeoutMs} millis`),
+            Effect.match({
+              onFailure: (failure) => ({
+                hostKey: host.configKey,
+                failure,
+                workspaces: undefined,
+              }),
+              onSuccess: (workspaces) => ({
+                hostKey: host.configKey,
+                failure: undefined,
+                workspaces,
+              }),
+            }),
           ),
-          Effect.timeout(`${workspaceListLoadTimeoutMs} millis`),
-          Effect.match({
-            onFailure: (failure) => ({
-              hostKey: host.configKey,
-              failure,
-              workspaces: undefined,
-            }),
-            onSuccess: (workspaces) => ({
-              hostKey: host.configKey,
-              failure: undefined,
-              workspaces,
-            }),
-          }),
-        ),
-      { concurrency: 4 },
-    ).pipe(
+        { concurrency: 4 },
+      )),
       Effect.flatMap((results) =>
         Effect.sync(() => {
           const currentPeerKeys = new Set(
             fleetHosts.filter((host) => host.kind !== "self").map((host) => host.configKey),
+          );
+          const currentReachablePeerKeys = new Set(
+            fleetHosts
+              .filter((host) => host.reachable && host.kind !== "self")
+              .map((host) => host.configKey),
           );
           const nextErrors: Record<string, string> = {};
           for (const result of results) {
@@ -478,43 +505,67 @@
             }
           }
           fleetPeerErrors = nextErrors;
-          return cachedPeerWorkspaces();
+          return {
+            workspaces: cachedPeerWorkspaces(),
+            complete:
+              Object.keys(nextErrors).length === 0 &&
+              currentReachablePeerKeys.size === requestedPeerKeys.size &&
+              [...requestedPeerKeys].every((hostKey) => currentReachablePeerKeys.has(hostKey)),
+            peerKeys: requestedPeerKeys,
+          };
         }),
       ),
     );
   }
 
   function loadWorkspaces() {
-    return Effect.gen(function* () {
-      const data = yield* executeGeneratedApiRequest("load workspaces", (generatedClient, signal) =>
-        generatedClient.GET("/workspaces", { signal }),
-      ).pipe(Effect.timeout(`${workspaceListLoadTimeoutMs} millis`));
-      const local: Workspace[] = data.workspaces ?? [];
-      yield* Effect.sync(() => {
-        const nextWorkspaces = [...local, ...cachedPeerWorkspaces()];
-        reconcileDoneAcknowledgements(nextWorkspaces);
-        workspaces = nextWorkspaces;
-        workspaceListStatus = "loaded";
-      });
-      const remote = fleetLoaded && !fleetError && hasRemoteFleetHosts
-        ? yield* fetchPeerWorkspaces()
-        : cachedPeerWorkspaces();
-      const nextWorkspaces = [...local, ...remote];
-      yield* Effect.sync(() => {
-        reconcileDoneAcknowledgements(nextWorkspaces);
-        workspaces = nextWorkspaces;
-        workspaceListStatus = "loaded";
-      });
-    });
+    return Effect.sync(() => {
+      localCatalogStatus = "loading";
+    }).pipe(
+      Effect.andThen(Effect.gen(function* () {
+        const data = yield* executeGeneratedApiRequest("load workspaces", (generatedClient, signal) =>
+          generatedClient.GET("/workspaces", { signal }),
+        ).pipe(Effect.timeout(`${workspaceListLoadTimeoutMs} millis`));
+        const local: Workspace[] = data.workspaces ?? [];
+        yield* Effect.sync(() => {
+          const nextWorkspaces = [...local, ...cachedPeerWorkspaces()];
+          reconcileDoneAcknowledgements(nextWorkspaces);
+          workspaces = nextWorkspaces;
+          workspaceListStatus = "loaded";
+        });
+        const remoteResult = fleetLoaded && !fleetError && hasRemoteFleetHosts
+          ? yield* fetchPeerWorkspaces()
+          : {
+              workspaces: cachedPeerWorkspaces(),
+              complete: fleetCatalogStatus === "loaded",
+              peerKeys: new Set<string>(),
+            };
+        const nextWorkspaces = [...local, ...remoteResult.workspaces];
+        yield* Effect.sync(() => {
+          reconcileDoneAcknowledgements(nextWorkspaces);
+          workspaces = nextWorkspaces;
+          workspaceListStatus = "loaded";
+          localCatalogStatus = "loaded";
+          if (remoteResult.complete) {
+            peerCatalogStatus = "loaded";
+          } else if (peerCatalogStatus !== "loading" || remoteResult.peerKeys.size > 0) {
+            peerCatalogStatus = "failed";
+          }
+        });
+      })),
+    );
   }
 
   function loadFleetStatus() {
-    return executeGeneratedApiRequest("load fleet status", (generatedClient, signal) =>
-      generatedClient.GET("/snapshot", {
-        params: { query: { include_peers: true } },
-        signal,
-      }),
-    ).pipe(
+    return Effect.sync(() => {
+      fleetCatalogStatus = "loading";
+    }).pipe(
+      Effect.andThen(executeGeneratedApiRequest("load fleet status", (generatedClient, signal) =>
+        generatedClient.GET("/snapshot", {
+          params: { query: { include_peers: true } },
+          signal,
+        }),
+      )),
       Effect.flatMap((data) =>
         Effect.sync(() => {
           const nextHosts: HostSummary[] = data.hosts ?? [];
@@ -530,6 +581,12 @@
           fleetHosts = nextHosts;
           fleetError = null;
           fleetLoaded = true;
+          fleetCatalogStatus = "loaded";
+          peerCatalogStatus = nextHosts.some(
+            (host) => host.reachable && host.kind !== "self",
+          )
+            ? "loading"
+            : "loaded";
           if (!hasNonSelfFleetHost(nextHosts)) {
             workspaces = localWorkspacesOnly(workspaces);
           }

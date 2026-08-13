@@ -171,7 +171,7 @@
 
   function optionFromConfigRepo(repo: ConfigRepo): RepoOption | null {
     if (repo.is_glob || repo.hidden_from_ui) return null;
-    const path = repo.repo_path || `${repo.owner}/${repo.name}`;
+    const path = repo.tracked_repo_path || repo.repo_path || `${repo.owner}/${repo.name}`;
     if (!repo.platform_host || !path) return null;
     return {
       value: `${repo.platform_host}/${path}`,

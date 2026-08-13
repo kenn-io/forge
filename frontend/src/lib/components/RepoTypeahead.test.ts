@@ -841,6 +841,47 @@ describe("RepoTypeahead", () => {
     expect(localStorage.getItem("kenn-forge-filter-repo-preset")).toBe("Backend");
   });
 
+  it("resolves a renamed configured repository without selecting a replacement at its old route", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        tracked_repo_path: "acme/backend",
+        platform_repo_id: "R_original",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_original")] }]);
+    getRepos.mockResolvedValue({
+      data: [
+        {
+          Platform: "github",
+          PlatformHost: "github.com",
+          PlatformRepoID: "R_replacement",
+          Owner: "acme",
+          Name: "api",
+        },
+      ] as Repo[],
+      error: undefined,
+    });
+
+    render(RepoTypeahead, { props: { selected: undefined, onchange } });
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "github/github.com/acme/backend" })).toBeTruthy();
+      expect(screen.getByRole("option", { name: "github/github.com/acme/api" })).toBeTruthy();
+    });
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Backend" }));
+
+    expect(onchange).toHaveBeenLastCalledWith("github|github.com/acme/backend");
+  });
+
   it("does not activate an unavailable preset from the keyboard", async () => {
     const onchange = vi.fn();
     settingsStore.setConfiguredRepos([

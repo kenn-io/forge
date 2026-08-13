@@ -88,6 +88,10 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v3/repos/acme/widget/issues/9", "/api/v3/repos/acme/widget/pulls/9":
 			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+		case "/api/v3/repos/acme/widget/issues/12":
+			http.Error(w, `{"message":"This issue was deleted"}`, http.StatusGone)
+		case "/api/v3/repos/acme/widget/issues/13":
+			http.Error(w, `{"message":"Issues are disabled for this repo"}`, http.StatusGone)
 		case "/api/v3/repos/acme/widget/issues/8", "/api/v3/repos/acme/widget/pulls/8":
 			http.Error(w, `{"message":"Forbidden"}`, http.StatusForbidden)
 		case "/api/v3/repos/acme/widget/issues/10":
@@ -109,6 +113,12 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 	_, removedIssueErr := provider.GetIssue(t.Context(), ref, 9)
 	require.ErrorIs(removedIssueErr, platform.ErrNotFound)
 	require.ErrorIs(removedIssueErr, platform.ErrLookupNotPresent)
+	_, deletedIssueErr := provider.GetIssue(t.Context(), ref, 12)
+	require.ErrorIs(deletedIssueErr, platform.ErrNotFound)
+	require.ErrorIs(deletedIssueErr, platform.ErrLookupNotPresent)
+	_, disabledIssueErr := provider.GetIssue(t.Context(), ref, 13)
+	require.ErrorIs(disabledIssueErr, platform.ErrRepositoryFeatureDisabled)
+	require.NotErrorIs(disabledIssueErr, platform.ErrLookupNotPresent)
 	_, removedMRErr := provider.GetMergeRequest(t.Context(), ref, 9)
 	require.ErrorIs(removedMRErr, platform.ErrNotFound)
 	require.ErrorIs(removedMRErr, platform.ErrLookupNotPresent)

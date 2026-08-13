@@ -235,6 +235,30 @@ func (p *preemptibleArchiveProvider) GetIssue(
 }
 
 func TestArchiveHydrationPRShapedIssueBecomesTerminalInSQLite(t *testing.T) {
+	testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
+		t,
+		http.StatusOK,
+		`{"id":11,"node_id":"PR_11","number":11,"repository_url":"https://api.github.com/repos/acme/widget","html_url":"https://github.com/acme/widget/pull/11","title":"actually a pull request","state":"closed","user":{"login":"author"},"pull_request":{"url":"https://api.github.com/repos/acme/widget/pulls/11"},"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","closed_at":"2025-01-02T00:00:00Z"}`,
+		"terminal archive lookup must not hydrate the PR-shaped issue again",
+	)
+}
+
+func TestArchiveHydrationDeletedGitHubIssueBecomesTerminalInSQLite(t *testing.T) {
+	testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
+		t,
+		http.StatusGone,
+		`{"message":"This issue was deleted"}`,
+		"terminal archive lookup must not hydrate the deleted issue again",
+	)
+}
+
+func testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
+	t *testing.T,
+	hydrationCode int,
+	hydrationBody string,
+	retryAssertion string,
+) {
+	t.Helper()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -270,7 +294,8 @@ func TestArchiveHydrationPRShapedIssueBecomesTerminalInSQLite(t *testing.T) {
 			_, _ = w.Write([]byte(`[]`))
 		case "/api/v3/repos/acme/widget/issues/11":
 			hydrationCalls.Add(1)
-			_, _ = w.Write([]byte(`{"id":11,"node_id":"PR_11","number":11,"repository_url":"https://api.github.com/repos/acme/widget","html_url":"https://github.com/acme/widget/pull/11","title":"actually a pull request","state":"closed","user":{"login":"author"},"pull_request":{"url":"https://api.github.com/repos/acme/widget/pulls/11"},"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","closed_at":"2025-01-02T00:00:00Z"}`))
+			w.WriteHeader(hydrationCode)
+			_, _ = w.Write([]byte(hydrationBody))
 		default:
 			http.NotFound(w, r)
 		}
@@ -327,8 +352,7 @@ func TestArchiveHydrationPRShapedIssueBecomesTerminalInSQLite(t *testing.T) {
 	assert.Equal(int32(1), hydrationCalls.Load())
 
 	require.NoError(service.RunEligible(t.Context()))
-	assert.Equal(int32(1), hydrationCalls.Load(),
-		"terminal archive lookup must not hydrate the PR-shaped issue again")
+	assert.Equal(int32(1), hydrationCalls.Load(), retryAssertion)
 }
 
 func TestArchiveHydrationKeepsIncompleteMergedGitHubPRFailed(t *testing.T) {

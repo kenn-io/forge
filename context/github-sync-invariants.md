@@ -441,6 +441,10 @@ fallback repository listing.
 - Updated issue scans query one second before the durable watermark while keeping cursor identity bound to the original boundary. Updated pull-request scans run newest-first across the same overlap. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - Durable pull-request inventory bypasses the process-local list ETag cache. Archive cursors require response bodies, so a bodyless `304 Not Modified` must not turn an unchanged maintenance scan into a retryable failure. (`internal/github/pages.go::liveClient.ListInventoryPullRequestsPage`)
 - Repository probes classify only authentication/access/not-found responses; transient probe failures remain retryable and non-destructive. Issue and pull-request lookups compare the response repository with the requested source identity so transfers become moved outcomes instead of source-owned snapshots. (`internal/github/pages.go::archiveRepositoryProbeError`, `internal/github/pages.go::githubArchiveDestination`)
+- After repository-wide issue disablement is classified, a 410 from GitHub's
+  single-issue endpoint means deleted; map it to `removed_upstream` only at
+  that lookup boundary, never across GitHub endpoints.
+  (`internal/github/pages.go::gitHubClientProvider.classifyIssueLookup`)
 - A previously-open issue whose GitHub-classified lookup is a true removal
   (not_found, no destination) is tombstoned closed locally; otherwise it would
   fail every cycle forever. Transfers and provider-neutral bare 404s (GitLab

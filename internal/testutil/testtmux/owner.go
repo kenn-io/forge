@@ -132,14 +132,11 @@ func newAt(root string) (*Owner, error) {
 			ProcessStart: start,
 			StartToken:   identity.startToken,
 		}
-		runDir, err := publishRun(root, runName, marker, os.Rename)
+		runDir, admissionDir, err := publishOwnerState(
+			root, runName, marker, os.Rename,
+		)
 		if err != nil {
 			return err
-		}
-		admissionDir := filepath.Join(root, admissionPrefix+runName)
-		if err := os.Mkdir(admissionDir, 0o700); err != nil {
-			_ = os.RemoveAll(runDir)
-			return fmt.Errorf("create private tmux admission directory: %w", err)
 		}
 		owner = &Owner{
 			root:         root,
@@ -201,6 +198,28 @@ func publishRun(
 	}
 	removeStaging = false
 	return finalDir, nil
+}
+
+func publishOwnerState(
+	root string,
+	runName string,
+	marker ownerMarker,
+	rename func(string, string) error,
+) (string, string, error) {
+	admissionDir := filepath.Join(root, admissionPrefix+runName)
+	if err := os.Mkdir(admissionDir, 0o700); err != nil {
+		return "", "", fmt.Errorf("create private tmux admission directory: %w", err)
+	}
+	runDir, err := publishRun(root, runName, marker, rename)
+	if err != nil {
+		if removeErr := os.RemoveAll(admissionDir); removeErr != nil {
+			err = errors.Join(err, fmt.Errorf(
+				"remove private tmux admission directory: %w", removeErr,
+			))
+		}
+		return "", "", err
+	}
+	return runDir, admissionDir, nil
 }
 
 // Command registers a private socket before returning a tmux command prefix.
@@ -334,13 +353,18 @@ func (o *Owner) Cleanup() error {
 			}
 		}
 		processErr := killRunProcesses(o.runDir)
+		runRemoved := false
 		if processErr != nil {
 			cleanupErrors = append(cleanupErrors, processErr)
 		} else if err := os.RemoveAll(o.runDir); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
+		} else {
+			runRemoved = true
 		}
-		if err := os.RemoveAll(o.admissionDir); err != nil {
-			cleanupErrors = append(cleanupErrors, err)
+		if runRemoved {
+			if err := os.RemoveAll(o.admissionDir); err != nil {
+				cleanupErrors = append(cleanupErrors, err)
+			}
 		}
 		o.cleanupErr = errors.Join(cleanupErrors...)
 	})
@@ -613,12 +637,21 @@ func reapStaleWithLookup(
 		}
 		if err := os.RemoveAll(runDir); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
+			continue
 		}
 	}
 	if err := reapStaleProcesses(root); err != nil {
 		cleanupErrors = append(cleanupErrors, err)
 	}
 	for _, admission := range staleAdmissions {
+		_, statErr := os.Lstat(filepath.Join(root, admission.runName))
+		if statErr == nil {
+			continue
+		}
+		if !errors.Is(statErr, fs.ErrNotExist) {
+			cleanupErrors = append(cleanupErrors, statErr)
+			continue
+		}
 		if err := os.RemoveAll(admission.dir); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
 		}

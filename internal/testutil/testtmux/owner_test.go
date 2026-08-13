@@ -149,6 +149,30 @@ func TestPublishRunDoesNotExposeUnmarkedFinalDirectory(t *testing.T) {
 	require.ErrorIs(err, os.ErrNotExist)
 }
 
+func TestPublishOwnerStateCreatesAdmissionBeforeRun(t *testing.T) {
+	require := require.New(t)
+	root := t.TempDir()
+	runName := "run.31415.0123456789ab.abcdef"
+	marker := ownerMarker{
+		PID:          31415,
+		ProcessStart: "start",
+		StartToken:   "0123456789ab",
+	}
+
+	runDir, admissionDir, err := publishOwnerState(
+		root,
+		runName,
+		marker,
+		func(staging, final string) error {
+			require.DirExists(filepath.Join(root, admissionPrefix+runName))
+			return os.Rename(staging, final)
+		},
+	)
+	require.NoError(err)
+	require.DirExists(runDir)
+	require.DirExists(admissionDir)
+}
+
 func TestRootLockSerializesAcrossProcesses(t *testing.T) {
 	require := require.New(t)
 	root := os.Getenv("KENN_FORGE_TEST_TMUX_LOCK_ROOT")
@@ -254,6 +278,22 @@ func TestOwnerCleanupPreservesStateWhenAdmissionDrainFails(t *testing.T) {
 
 	require.Error(owner.Cleanup())
 	require.DirExists(runDir)
+	require.DirExists(admissionDir)
+}
+
+func TestOwnerCleanupPreservesAdmissionWhenRunRemovalFails(t *testing.T) {
+	require := require.New(t)
+	root := t.TempDir()
+	admissionDir := filepath.Join(root, "admission")
+	require.NoError(os.Mkdir(admissionDir, 0o700))
+	owner := &Owner{
+		root:         root,
+		runDir:       filepath.Join(root, "invalid\x00run"),
+		admissionDir: admissionDir,
+		servers:      make(map[string]registeredServer),
+	}
+
+	require.Error(owner.Cleanup())
 	require.DirExists(admissionDir)
 }
 
@@ -645,6 +685,53 @@ func TestReapStalePreservesRunWhenAdmissionCannotClose(t *testing.T) {
 	))
 
 	require.Error(reapStale(root))
+	require.DirExists(runDir)
+	require.DirExists(admissionDir)
+}
+
+func TestReapStaleRemovesAdmissionWithoutRun(t *testing.T) {
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), "root")
+	require.NoError(prepareRoot(root))
+	identity := processIdentity{
+		pid:        999_999,
+		startToken: tokenForStart("dead-owner"),
+	}
+	runName := fmt.Sprintf(
+		"run.%d.%s.abcdef", identity.pid, identity.startToken,
+	)
+	admissionDir := filepath.Join(root, admissionPrefix+runName)
+	require.NoError(os.Mkdir(admissionDir, 0o700))
+
+	require.NoError(reapStaleWithLookup(root, func(int) (string, error) {
+		return "", errors.New("owner exited")
+	}))
+	require.NoDirExists(admissionDir)
+}
+
+func TestReapStalePreservesAdmissionWhenRunValidationFails(t *testing.T) {
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), "root")
+	require.NoError(prepareRoot(root))
+	identity := processIdentity{
+		pid:        999_999,
+		startToken: tokenForStart("dead-owner"),
+	}
+	runName := fmt.Sprintf(
+		"run.%d.%s.abcdef", identity.pid, identity.startToken,
+	)
+	runDir, err := publishRun(root, runName, ownerMarker{
+		PID:          identity.pid,
+		ProcessStart: "different-owner",
+		StartToken:   identity.startToken,
+	}, os.Rename)
+	require.NoError(err)
+	admissionDir := filepath.Join(root, admissionPrefix+runName)
+	require.NoError(os.Mkdir(admissionDir, 0o700))
+
+	require.Error(reapStaleWithLookup(root, func(int) (string, error) {
+		return "", errors.New("owner exited")
+	}))
 	require.DirExists(runDir)
 	require.DirExists(admissionDir)
 }

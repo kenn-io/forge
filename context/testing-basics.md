@@ -23,9 +23,9 @@ fixtures, or changing shell-script coverage.
 - Shell-script tests must execute the script against controlled inputs and
   assert observable output, side effects, or exit status. Do not grep scripts,
   workflows, config, or docs for expected implementation text.
-- Real private tmux tests use `testtmux`: retain PID-plus-start ownership state
-  on gate errors and share one drain deadline across stale owners; never address
-  the default server. (`internal/testutil/testtmux/owner.go::Owner`)
+- Real private tmux tests use `testtmux`: publish admission gates before runs and
+  remove paired gates only after runs; retain PID-plus-start state on gate errors,
+  share one stale-owner drain deadline, and never address the default server. (`internal/testutil/testtmux/owner.go::Owner`)
 - Orphan recovery accepts explicit or exact server-title socket paths only when
   contained by the dedicated root. (`internal/testutil/testtmux/owner.go::reapStaleProcesses`)
 - Use provider live or container fixtures only when fake transports cannot

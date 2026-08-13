@@ -51,6 +51,7 @@
     settingsErrorMessage,
   } from "../stores/settings-workflow.js";
   import { registerCheatsheetEntries } from "../stores/keyboard/registry.svelte.js";
+  import { showFlash } from "../stores/flash.svelte.js";
 
   interface Props {
     selected: string | undefined;
@@ -359,7 +360,9 @@
         Effect.match({
           onFailure: (failure) => {
             mutationBusy = false;
-            mutationError = settingsErrorMessage(failure);
+            const message = settingsErrorMessage(failure);
+            mutationError = message;
+            if (deletePreset) showFlash(message, { tone: "danger" });
           },
           onSuccess: (settings) => {
             mutationBusy = false;
@@ -650,7 +653,6 @@
   title="Delete repository preset?"
   message={`Delete the preset ‘${deletePreset?.name ?? ""}’?`}
   hint="The repositories remain selected as a custom filter."
-  error={mutationError}
   confirmLabel="Delete preset"
   pendingLabel="Deleting…"
   busy={mutationBusy}

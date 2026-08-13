@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import type { Repo, RepoPreset } from "../api/types.js";
 import { createSettingsStore } from "../stores/settings.svelte.js";
 import { getGlobalRepo, setGlobalRepoPresetSelection } from "../stores/filter.svelte.js";
+import { dismissFlash, getFlash, getFlashes } from "../stores/flash.svelte.js";
 import { client } from "../api/runtime.js";
 import RepoTypeahead from "./RepoTypeaheadRuntimeHarness.svelte";
 
@@ -50,6 +51,7 @@ describe("RepoTypeahead", () => {
     // The expansion store persists collapsed nodes to localStorage, so clear
     // it between tests to keep each case from inheriting another's tree state.
     localStorage.clear();
+    for (const flash of getFlashes()) dismissFlash(flash.id);
     settingsStore = createSettingsStore();
     settingsStore.setConfiguredRepos([]);
     settingsStore.setRepoPresets([]);
@@ -1063,7 +1065,7 @@ describe("RepoTypeahead", () => {
     expect(onchange).not.toHaveBeenCalled();
   });
 
-  it("keeps the delete dialog open and reports settings failures", async () => {
+  it("keeps the delete dialog open and flashes settings failures", async () => {
     const selected = "github|github.com/acme/api";
     settingsStore.setConfiguredRepos([
       {
@@ -1095,7 +1097,9 @@ describe("RepoTypeahead", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Delete preset Backend" }));
     await fireEvent.click(screen.getByRole("button", { name: "Delete preset" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain("Preset deletion failed");
+    await waitFor(() => {
+      expect(getFlash()).toMatchObject({ message: "Preset deletion failed", tone: "danger" });
+    });
     expect(screen.getByRole("dialog", { name: "Delete repository preset?" })).toBeTruthy();
     expect(settingsStore.getRepoPresets()).toHaveLength(1);
   });

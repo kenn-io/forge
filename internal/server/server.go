@@ -205,6 +205,9 @@ type Server struct {
 	writeCredProbeMu       sync.Mutex
 	writeCredProbes        map[string]writeCredentialProbe
 	writeCredProbeInFlight map[string]chan struct{}
+	viewerLoginMu          sync.Mutex
+	viewerLoginCache       map[int64]viewerLoginCacheEntry
+	viewerLoginInFlight    map[int64]*viewerLoginCall
 	docsAPI                *docsapi.Handler
 	kataAPI                *kata.Handler
 	repoBrowserAPI         *repobrowserapi.Handler
@@ -988,6 +991,7 @@ func newServer(
 			return err
 		},
 		WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
+		ViewerLogins:      s.resolveAuthenticatedViewerLogins,
 		FleetSelfKey:      s.fleetAPI.SelfKey,
 		FilterRepos: func(repos []db.Repo) []db.Repo {
 			if s.cfg == nil {
@@ -1009,6 +1013,7 @@ func newServer(
 		Syncer:            syncer,
 		Now:               func() time.Time { return s.now() },
 		WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
+		ViewerLogins:      s.resolveAuthenticatedViewerLogins,
 		FilterRepos: func(repos []db.Repo) []db.Repo {
 			if s.cfg == nil {
 				return repos

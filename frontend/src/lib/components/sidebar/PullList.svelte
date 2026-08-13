@@ -166,12 +166,14 @@
     grouping.setGroupingMode("byRepo");
     grouping.setHideOrgName(false);
     if (pulls.getFilterState() !== "open") {
-      setPullState("open");
+      pulls.setFilterState("open");
     }
+    pulls.loadPulls();
   }
 
   function clearLocalViewFilters(): void {
     pulls.clearLocalFilters();
+    pulls.loadPulls();
     grouping.setHideOrgName(false);
   }
 
@@ -199,12 +201,23 @@
   const localFilterSections = $derived.by(() => [
     {
       title: "PR",
-      items: attributeFilterOptions.map((option) => ({
-        id: `pr-${option.value}`,
-        label: option.label,
-        active: pulls.getAttributeFilters().includes(option.value),
-        onSelect: () => pulls.toggleAttributeFilter(option.value),
-      })),
+      items: [
+        {
+          id: "involves-me",
+          label: "Involves me",
+          active: pulls.getInvolvesMe(),
+          onSelect: () => {
+            pulls.setInvolvesMe(!pulls.getInvolvesMe());
+            pulls.loadPulls();
+          },
+        },
+        ...attributeFilterOptions.map((option) => ({
+          id: `pr-${option.value}`,
+          label: option.label,
+          active: pulls.getAttributeFilters().includes(option.value),
+          onSelect: () => pulls.toggleAttributeFilter(option.value),
+        })),
+      ],
     },
     {
       title: "Status",

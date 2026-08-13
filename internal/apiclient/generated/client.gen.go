@@ -4607,8 +4607,11 @@ type ListActivityParams struct {
 
 	// Author Exact, case-insensitive pull request or issue author filter.
 	Author *string `form:"author,omitempty" json:"author,omitempty"`
-	After  *string `form:"after,omitempty" json:"after,omitempty"`
-	Since  *string `form:"since,omitempty" json:"since,omitempty"`
+
+	// InvolvesMe Only include activity for pull requests and issues involving the authenticated viewer.
+	InvolvesMe *bool   `form:"involves_me,omitempty" json:"involves_me,omitempty"`
+	After      *string `form:"after,omitempty" json:"after,omitempty"`
+	Since      *string `form:"since,omitempty" json:"since,omitempty"`
 }
 
 // ListActivityAuthorsParams defines parameters for ListActivityAuthors.
@@ -4955,13 +4958,16 @@ type ResolveRepoItemOnHostParamsItemType string
 // ListIssuesParams defines parameters for ListIssues.
 type ListIssuesParams struct {
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
-	Repo     *string `form:"repo,omitempty" json:"repo,omitempty"`
-	State    *string `form:"state,omitempty" json:"state,omitempty"`
-	Starred  *bool   `form:"starred,omitempty" json:"starred,omitempty"`
-	Q        *string `form:"q,omitempty" json:"q,omitempty"`
-	Assignee *string `form:"assignee,omitempty" json:"assignee,omitempty"`
-	Limit    *int64  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset   *int64  `form:"offset,omitempty" json:"offset,omitempty"`
+	Repo    *string `form:"repo,omitempty" json:"repo,omitempty"`
+	State   *string `form:"state,omitempty" json:"state,omitempty"`
+	Starred *bool   `form:"starred,omitempty" json:"starred,omitempty"`
+
+	// InvolvesMe Only include issues involving the authenticated viewer.
+	InvolvesMe *bool   `form:"involves_me,omitempty" json:"involves_me,omitempty"`
+	Q          *string `form:"q,omitempty" json:"q,omitempty"`
+	Assignee   *string `form:"assignee,omitempty" json:"assignee,omitempty"`
+	Limit      *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset     *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ResolveKataIssueReferenceParams defines parameters for ResolveKataIssueReference.
@@ -5010,9 +5016,12 @@ type ListPullsParams struct {
 	State   *string `form:"state,omitempty" json:"state,omitempty"`
 	Kanban  *string `form:"kanban,omitempty" json:"kanban,omitempty"`
 	Starred *bool   `form:"starred,omitempty" json:"starred,omitempty"`
-	Q       *string `form:"q,omitempty" json:"q,omitempty"`
-	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset  *int64  `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// InvolvesMe Only include pull requests involving the authenticated viewer.
+	InvolvesMe *bool   `form:"involves_me,omitempty" json:"involves_me,omitempty"`
+	Q          *string `form:"q,omitempty" json:"q,omitempty"`
+	Limit      *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset     *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // GetPullDiffParams defines parameters for GetPullDiff.
@@ -15241,6 +15250,18 @@ func NewListActivityRequest(server string, params *ListActivityParams) (*http.Re
 
 		}
 
+		if params.InvolvesMe != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "involves_me", *params.InvolvesMe, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.After != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "after", *params.After, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -24813,6 +24834,18 @@ func NewListIssuesRequest(server string, params *ListIssuesParams) (*http.Reques
 
 		}
 
+		if params.InvolvesMe != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "involves_me", *params.InvolvesMe, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Q != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -27560,6 +27593,18 @@ func NewListPullsRequest(server string, params *ListPullsParams) (*http.Request,
 		if params.Starred != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "starred", *params.Starred, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.InvolvesMe != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "involves_me", *params.InvolvesMe, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

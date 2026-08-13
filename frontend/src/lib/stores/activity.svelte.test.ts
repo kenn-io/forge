@@ -15,6 +15,7 @@ import {
   notificationDbId,
 } from "./activity.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
+import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -67,6 +68,7 @@ function workspaceActivity(itemNumber: number): WorkspaceActivitySubject {
 
 beforeEach(() => {
   runtime = undefined;
+  localStorage.clear();
   window.history.replaceState(null, "", "/");
 });
 
@@ -76,6 +78,23 @@ afterEach(async () => {
 });
 
 describe("activity store workspace activity", () => {
+  it("persists and sends the Involves me filter", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    store.setInvolvesMe(true);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(localStorage.getItem(involvesMeFilterStorageKey("activity"))).toBe("1");
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ involves_me: true }) },
+      }),
+    );
+  });
+
   it("retains the complete workspace snapshot returned with an activity read", async () => {
     const snapshot = [workspaceActivity(7)];
     const client = {

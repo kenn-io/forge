@@ -29,6 +29,7 @@ type Deps struct {
 	Syncer            *ghclient.Syncer
 	Now               func() time.Time
 	WorkspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
+	ViewerLogins      func(context.Context) ([]db.RepoViewerLogin, error)
 
 	FilterRepos                       func([]db.Repo) []db.Repo
 	RepoOperations                    func(db.Repo) httpapi.RepoOperations
@@ -41,6 +42,7 @@ type Handler struct {
 	syncer            *ghclient.Syncer
 	now               func() time.Time
 	workspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
+	viewerLogins      func(context.Context) ([]db.RepoViewerLogin, error)
 
 	filterRepos             func([]db.Repo) []db.Repo
 	repoOperations          func(db.Repo) httpapi.RepoOperations
@@ -58,6 +60,7 @@ func New(deps Deps) *Handler {
 		syncer:                  deps.Syncer,
 		now:                     now,
 		workspaceSubjects:       deps.WorkspaceSubjects,
+		viewerLogins:            deps.ViewerLogins,
 		filterRepos:             deps.FilterRepos,
 		repoOperations:          deps.RepoOperations,
 		markClosedNotifications: deps.MarkClosedLinkedNotificationsDone,

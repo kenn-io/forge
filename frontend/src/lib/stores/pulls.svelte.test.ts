@@ -10,6 +10,7 @@ import {
   type PullsStoreOptions,
 } from "./pulls.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
+import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -28,6 +29,7 @@ async function loadPulls(store: PullsStore): Promise<void> {
 
 beforeEach(() => {
   runtime = undefined;
+  localStorage.clear();
 });
 
 afterEach(async () => {
@@ -74,6 +76,22 @@ function clientWithPulls(data: PullRequest[]): GeneratedClient {
 }
 
 describe("pulls store display order", () => {
+  it("persists and sends the Involves me filter", async () => {
+    const get = vi.fn(async () => ({ data: [], error: undefined }));
+    const store = createPullsStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    store.setInvolvesMe(true);
+    await loadPulls(store);
+
+    expect(localStorage.getItem(involvesMeFilterStorageKey("pulls"))).toBe("1");
+    expect(get).toHaveBeenCalledWith(
+      "/pulls",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ involves_me: true }) },
+      }),
+    );
+  });
+
   it("aborts a superseded list request", async () => {
     let firstSignal: AbortSignal | undefined;
     const get = vi

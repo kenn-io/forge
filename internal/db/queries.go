@@ -2004,6 +2004,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			args = append(args, condArgs...)
 		}
 	}
+	if opts.ViewerLogins != nil {
+		conds = append(conds, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &args))
+	}
 
 	where := ""
 	if len(conds) > 0 {
@@ -3258,6 +3261,9 @@ func (d *DB) ListIssues(
 		// raise "malformed JSON" and fail the whole query.
 		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(COALESCE(NULLIF(i.assignees_json, ''), '[]')) WHERE value = ?)`)
 		args = append(args, opts.Assignee)
+	}
+	if opts.ViewerLogins != nil {
+		conds = append(conds, issueInvolvementCondition("i", opts.ViewerLogins, &args))
 	}
 
 	where := ""

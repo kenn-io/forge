@@ -192,6 +192,9 @@ Persisted controls must state their scope clearly.
 
 - Browser-local preferences belong in `localStorage` only when the behavior is
   intentionally per-browser and not worth server settings.
+- `Involves me` is three independent browser-local preferences for Pulls, Issues, and
+  Activity; each enabled view sends the server query so filtering happens before limits,
+  never through URL or config state (`frontend/src/lib/stores/involves-me-filter.ts`, `internal/db/queries_involvement.go`).
 - The workspace details tab is keyed by host-aware workspace identity; an unsupported
   tab may fall back only for the current live workspace, never rewrite another
   workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).

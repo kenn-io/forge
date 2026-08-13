@@ -1883,6 +1883,60 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
 }
 
+func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mock := &mockGH{
+		authenticatedViewerLoginFn: func(context.Context) (string, error) {
+			return "TestUser", nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRAuthor("testuser"), withSeedPRTimes(now, now, now))
+	seedPR(t, database, "acme", "widget", 2,
+		withSeedPRAuthor("someone-else"), withSeedPRTimes(now, now, now))
+	seedIssue(t, database, "acme", "widget", 3, "open")
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repo.ID, PlatformID: 4000, Number: 4,
+		URL: "https://github.com/acme/widget/issues/4", Title: "Unrelated issue",
+		Author: "someone-else", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	pullsRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?state=all&involves_me=true", nil)
+	require.Equal(http.StatusOK, pullsRR.Code, pullsRR.Body.String())
+	var pulls []pullapi.MergeRequestResponse
+	require.NoError(json.Unmarshal(pullsRR.Body.Bytes(), &pulls))
+	require.Len(pulls, 1)
+	assert.Equal(1, pulls[0].Number)
+
+	issuesRR := doJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&involves_me=true", nil)
+	require.Equal(http.StatusOK, issuesRR.Code, issuesRR.Body.String())
+	var issues []issueapi.IssueResponse
+	require.NoError(json.Unmarshal(issuesRR.Body.Bytes(), &issues))
+	require.Len(issues, 1)
+	assert.Equal(3, issues[0].Number)
+
+	activityRR := doJSON(t, srv, http.MethodGet, "/api/v1/activity?involves_me=true", nil)
+	require.Equal(http.StatusOK, activityRR.Code, activityRR.Body.String())
+	var activity activityResponse
+	require.NoError(json.Unmarshal(activityRR.Body.Bytes(), &activity))
+	require.Len(activity.Items, 2)
+	for _, item := range activity.Items {
+		assert.Contains([]int{1, 3}, item.ItemNumber)
+	}
+	assert.Equal(1, mock.authenticatedViewerCalls,
+		"viewer identity should be shared by concurrent view requests during the cache TTL")
+}
+
 func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

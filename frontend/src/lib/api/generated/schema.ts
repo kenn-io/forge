@@ -8149,6 +8149,8 @@ export interface operations {
                 search?: string;
                 /** @description Exact, case-insensitive pull request or issue author filter. */
                 author?: string;
+                /** @description Only include activity for pull requests and issues involving the authenticated viewer. */
+                involves_me?: boolean;
                 after?: string;
                 since?: string;
             };
@@ -13113,6 +13115,8 @@ export interface operations {
                 repo?: string;
                 state?: string;
                 starred?: boolean;
+                /** @description Only include issues involving the authenticated viewer. */
+                involves_me?: boolean;
                 q?: string;
                 assignee?: string;
                 limit?: number;
@@ -14838,6 +14842,8 @@ export interface operations {
                 state?: string;
                 kanban?: string;
                 starred?: boolean;
+                /** @description Only include pull requests involving the authenticated viewer. */
+                involves_me?: boolean;
                 q?: string;
                 limit?: number;
                 offset?: number;

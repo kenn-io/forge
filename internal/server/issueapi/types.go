@@ -40,13 +40,14 @@ type IssueDetailResponse struct {
 }
 
 type listIssuesInput struct {
-	Repo     string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	State    string `query:"state"`
-	Starred  bool   `query:"starred"`
-	Q        string `query:"q"`
-	Assignee string `query:"assignee"`
-	Limit    int    `query:"limit"`
-	Offset   int    `query:"offset"`
+	Repo       string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	State      string `query:"state"`
+	Starred    bool   `query:"starred"`
+	InvolvesMe bool   `query:"involves_me" doc:"Only include issues involving the authenticated viewer."`
+	Q          string `query:"q"`
+	Assignee   string `query:"assignee"`
+	Limit      int    `query:"limit"`
+	Offset     int    `query:"offset"`
 }
 
 type listIssuesOutput = httpapi.BodyOutput[[]IssueResponse]

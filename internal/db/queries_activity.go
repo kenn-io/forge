@@ -91,6 +91,9 @@ func (d *DB) ListActivity(
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
 	}
+	if opts.ViewerLogins != nil {
+		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))
+	}
 
 	// Time window filter.
 	if opts.Since != nil {

@@ -149,6 +149,12 @@ func (p e2eStaticProvider) Capabilities() platform.Capabilities {
 	return p.caps
 }
 
+func (p e2eStaticProvider) AuthenticatedUser(
+	context.Context, platform.RepoRef,
+) (string, error) {
+	return "alice", nil
+}
+
 func (p e2eStaticProvider) GetRepository(
 	_ context.Context,
 	ref platform.RepoRef,
@@ -1440,8 +1446,9 @@ func buildAppState(
 			issue:       gitLabIssue,
 			issueEvents: gitLabIssueEvents,
 			caps: platform.Capabilities{
-				ReadIssues:   true,
-				ReadComments: true,
+				ReadIssues:            true,
+				ReadComments:          true,
+				ReadAuthenticatedUser: true,
 			},
 		},
 	}
@@ -1451,9 +1458,10 @@ func buildAppState(
 			host:  "github.com",
 			issue: giteaCollisionIssue,
 			caps: platform.Capabilities{
-				ReadRepositories: true,
-				ReadIssues:       true,
-				AssigneeMutation: true,
+				ReadRepositories:      true,
+				ReadIssues:            true,
+				ReadAuthenticatedUser: true,
+				AssigneeMutation:      true,
 			},
 			repos: []platform.Repository{{
 				Ref: platform.RepoRef{

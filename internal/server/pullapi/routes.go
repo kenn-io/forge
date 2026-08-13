@@ -34,13 +34,14 @@ const (
 )
 
 type listPullsInput struct {
-	Repo    string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	State   string `query:"state"`
-	Kanban  string `query:"kanban"`
-	Starred bool   `query:"starred"`
-	Q       string `query:"q"`
-	Limit   int    `query:"limit"`
-	Offset  int    `query:"offset"`
+	Repo       string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	State      string `query:"state"`
+	Kanban     string `query:"kanban"`
+	Starred    bool   `query:"starred"`
+	InvolvesMe bool   `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
+	Q          string `query:"q"`
+	Limit      int    `query:"limit"`
+	Offset     int    `query:"offset"`
 }
 
 type listPullsOutput = httpapi.BodyOutput[[]MergeRequestResponse]
@@ -395,6 +396,15 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 		Offset:            input.Offset,
 		RepoFilters:       parseRepoFilters(input.Repo),
 		WorkspaceActivity: overrides,
+	}
+	if input.InvolvesMe {
+		if s.viewerLogins == nil {
+			return nil, httpapi.Internal("authenticated viewer lookup unavailable")
+		}
+		opts.ViewerLogins, err = s.viewerLogins(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	mrs, err := s.db.ListMergeRequests(ctx, opts)

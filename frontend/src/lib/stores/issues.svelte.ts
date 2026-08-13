@@ -35,6 +35,7 @@ import {
 import { providerItemKey } from "./provider-key.js";
 import { SettingsWorkflow, settingsErrorMessage } from "./settings-workflow.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
+import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 
 export type { IssueDetailSyncMode } from "./issues-workflow.js";
 
@@ -122,6 +123,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let loading = $state(false);
   let storeError = $state<string | null>(null);
   let filterStarred = $state(false);
+  let involvesMe = $state(readInvolvesMeFilter("issues"));
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
   let selectedIssue = $state<IssueSelection | null>(null);
@@ -183,6 +185,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
   function getIssueFilterStarred(): boolean {
     return filterStarred;
+  }
+  function getInvolvesMe(): boolean {
+    return involvesMe;
   }
   function getIssueSearchQuery(): string | undefined {
     return searchQuery;
@@ -289,6 +294,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function setIssueFilterStarred(v: boolean): void {
     filterStarred = v;
   }
+  function setInvolvesMe(value: boolean): void {
+    involvesMe = value;
+    writeInvolvesMeFilter("issues", value);
+  }
   function setIssueSearchQuery(q: string | undefined): void {
     searchQuery = q;
   }
@@ -353,6 +362,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       state: filterState,
       ...(globalRepo !== undefined && { repo: globalRepo }),
       ...(filterStarred && { starred: true }),
+      ...(involvesMe && { involves_me: true }),
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
@@ -394,6 +404,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         state: filterState,
         ...(globalRepo !== undefined && { repo: globalRepo }),
         ...(filterStarred && { starred: true }),
+        ...(involvesMe && { involves_me: true }),
         ...(searchQuery !== undefined && { q: searchQuery }),
         ...params,
       };
@@ -1786,6 +1797,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     getSelectedIssue,
     getIssueFilterStarred,
     setIssueFilterStarred,
+    getInvolvesMe,
+    setInvolvesMe,
     getIssueSearchQuery,
     setIssueSearchQuery,
     getIssueFilterState,

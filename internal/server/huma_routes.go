@@ -123,13 +123,14 @@ type streamEventsInput struct {
 }
 
 type listActivityInput struct {
-	Repo      string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	Types     []string `query:"types"`
-	ItemTypes []string `query:"item_types" doc:"Item scopes included before limiting activity results: pr, issue, or repo."`
-	Search    string   `query:"search"`
-	Author    string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
-	After     string   `query:"after"`
-	Since     string   `query:"since"`
+	Repo       string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	Types      []string `query:"types"`
+	ItemTypes  []string `query:"item_types" doc:"Item scopes included before limiting activity results: pr, issue, or repo."`
+	Search     string   `query:"search"`
+	Author     string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
+	InvolvesMe bool     `query:"involves_me" doc:"Only include activity for pull requests and issues involving the authenticated viewer."`
+	After      string   `query:"after"`
+	Since      string   `query:"since"`
 }
 
 type listActivityAuthorsInput struct {
@@ -1266,6 +1267,13 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	}
 
 	opts.Limit = activitySafetyCap + 1
+	if input.InvolvesMe {
+		viewerLogins, err := s.resolveAuthenticatedViewerLogins(ctx)
+		if err != nil {
+			return nil, err
+		}
+		opts.ViewerLogins = viewerLogins
+	}
 
 	if input.Since != "" {
 		t, err := time.Parse(time.RFC3339, input.Since)
@@ -1326,6 +1334,33 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	if err != nil {
 		slog.Error("list workspace activity failed", "err", err)
 		return nil, httpapi.Internal("list workspace activity failed")
+	}
+	if opts.ViewerLogins != nil {
+		workspaceSubjectKeys := make([]db.WorkspaceSubjectKey, 0,
+			len(workspaceSnapshot.Subjects)+len(workspaceSnapshot.OwnReferences))
+		for key := range workspaceSnapshot.Subjects {
+			workspaceSubjectKeys = append(workspaceSubjectKeys, key)
+		}
+		for key := range workspaceSnapshot.OwnReferences {
+			workspaceSubjectKeys = append(workspaceSubjectKeys, key)
+		}
+		involvedSubjects, err := s.db.ListInvolvedWorkspaceSubjectKeys(
+			ctx, opts.ViewerLogins, workspaceSubjectKeys,
+		)
+		if err != nil {
+			slog.Error("list involved workspace subjects failed", "err", err)
+			return nil, httpapi.Internal("list workspace activity failed")
+		}
+		for key := range workspaceSnapshot.Subjects {
+			if _, ok := involvedSubjects[key]; !ok {
+				delete(workspaceSnapshot.Subjects, key)
+			}
+		}
+		for key := range workspaceSnapshot.OwnReferences {
+			if _, ok := involvedSubjects[key]; !ok {
+				delete(workspaceSnapshot.OwnReferences, key)
+			}
+		}
 	}
 
 	capped := len(items) > activitySafetyCap

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -466,6 +467,103 @@ esac
 	}
 	require.Error(<-startupDone)
 	requireProcessGone(t, startup.Process.Pid)
+}
+
+func TestNewAtDrainsMultipleStaleAdmissionsWithinOneDeadline(t *testing.T) {
+	if os.Getenv("KENN_FORGE_TEST_TMUX_STALLED_STARTUP") == "1" {
+		term := make(chan os.Signal, 1)
+		signal.Notify(term, syscall.SIGTERM)
+		require.NoError(t, os.WriteFile(
+			os.Getenv("KENN_FORGE_TEST_TMUX_STALLED_READY"),
+			[]byte("ready\n"),
+			0o600,
+		))
+		for range term {
+		}
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("stale startup recovery requires Unix signals")
+	}
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), "root")
+	require.NoError(prepareRoot(root))
+
+	type startupProcess struct {
+		command *exec.Cmd
+		done    chan error
+	}
+	startups := make([]startupProcess, 0, 2)
+	for index := range 2 {
+		ready := filepath.Join(root, fmt.Sprintf("ready-%d", index))
+		command := procutil.Command(
+			os.Args[0],
+			"-test.run=^TestNewAtDrainsMultipleStaleAdmissionsWithinOneDeadline$",
+		)
+		command.Env = append(os.Environ(),
+			"KENN_FORGE_TEST_TMUX_STALLED_STARTUP=1",
+			"KENN_FORGE_TEST_TMUX_STALLED_READY="+ready,
+		)
+		require.NoError(command.Start())
+		done := make(chan error, 1)
+		go func() { done <- command.Wait() }()
+		startups = append(startups, startupProcess{command: command, done: done})
+		t.Cleanup(func() {
+			if !processGone(command.Process.Pid) {
+				_ = command.Process.Kill()
+			}
+			select {
+			case <-done:
+			default:
+			}
+		})
+		require.Eventually(func() bool {
+			_, statErr := os.Stat(ready)
+			return statErr == nil
+		}, 5*time.Second, 10*time.Millisecond)
+
+		start, err := processStart(command.Process.Pid)
+		require.NoError(err)
+		runName := fmt.Sprintf(
+			"run.%d.%s.%06d",
+			999_999-index,
+			tokenForStart(fmt.Sprintf("dead-owner-%d", index)),
+			index,
+		)
+		admissionDir := filepath.Join(root, admissionPrefix+runName)
+		require.NoError(os.Mkdir(admissionDir, 0o700))
+		marker := filepath.Join(admissionDir, fmt.Sprintf(
+			"starting.%d.%s", command.Process.Pid, tokenForStart(start),
+		))
+		require.NoError(os.WriteFile(marker, []byte(start), 0o600))
+	}
+
+	type newResult struct {
+		owner *Owner
+		err   error
+	}
+	result := make(chan newResult, 1)
+	go func() {
+		owner, err := newAt(root)
+		result <- newResult{owner: owner, err: err}
+	}()
+	select {
+	case created := <-result:
+		require.NoError(created.err)
+		t.Cleanup(func() { _ = created.owner.Cleanup() })
+	case <-time.After(2*cleanupTimeout + time.Second):
+		for _, startup := range startups {
+			_ = startup.command.Process.Kill()
+		}
+		created := <-result
+		if created.owner != nil {
+			t.Cleanup(func() { _ = created.owner.Cleanup() })
+		}
+		require.Fail("stale admissions did not share one cleanup deadline")
+	}
+	for _, startup := range startups {
+		require.Error(<-startup.done)
+		requireProcessGone(t, startup.command.Process.Pid)
+	}
 }
 
 func TestNewAtReapsServerAfterRunDirectoryDisappears(t *testing.T) {

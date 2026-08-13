@@ -364,17 +364,17 @@ func closeAdmission(admissionDir string) (err error) {
 	return nil
 }
 
-func drainAdmittedCreations(admissionDir string) error {
+func drainAdmittedCreations(admissionDirs ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
-	return waitForAdmittedCreations(ctx, admissionDir)
+	return waitForAdmittedCreations(ctx, admissionDirs)
 }
 
-func waitForAdmittedCreations(ctx context.Context, admissionDir string) error {
+func waitForAdmittedCreations(ctx context.Context, admissionDirs []string) error {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		startups, err := admittedCreations(admissionDir)
+		startups, err := admittedCreations(admissionDirs)
 		if err != nil {
 			return err
 		}
@@ -389,27 +389,33 @@ func waitForAdmittedCreations(ctx context.Context, admissionDir string) error {
 	}
 }
 
-func admittedCreations(admissionDir string) ([]tmuxProcess, error) {
-	markers, err := filepath.Glob(filepath.Join(admissionDir, "starting.*"))
-	if err != nil {
-		return nil, fmt.Errorf("list admitted private tmux startups: %w", err)
+func admittedCreations(admissionDirs []string) ([]tmuxProcess, error) {
+	seen := make(map[tmuxProcess]bool)
+	for _, admissionDir := range admissionDirs {
+		markers, err := filepath.Glob(filepath.Join(admissionDir, "starting.*"))
+		if err != nil {
+			return nil, fmt.Errorf("list admitted private tmux startups: %w", err)
+		}
+		for _, marker := range markers {
+			name := filepath.Base(marker)
+			parts := strings.Split(name, ".")
+			if len(parts) != 3 || parts[0] != "starting" {
+				continue
+			}
+			pid, parseErr := strconv.Atoi(parts[1])
+			start, readErr := os.ReadFile(marker)
+			if parseErr != nil || readErr != nil ||
+				tokenForStart(string(start)) != parts[2] ||
+				!processStillMatches(pid, string(start), processStart) {
+				_ = os.Remove(marker)
+				continue
+			}
+			seen[tmuxProcess{pid: pid, start: string(start)}] = true
+		}
 	}
-	startups := make([]tmuxProcess, 0, len(markers))
-	for _, marker := range markers {
-		name := filepath.Base(marker)
-		parts := strings.Split(name, ".")
-		if len(parts) != 3 || parts[0] != "starting" {
-			continue
-		}
-		pid, parseErr := strconv.Atoi(parts[1])
-		start, readErr := os.ReadFile(marker)
-		if parseErr != nil || readErr != nil ||
-			tokenForStart(string(start)) != parts[2] ||
-			!processStillMatches(pid, string(start), processStart) {
-			_ = os.Remove(marker)
-			continue
-		}
-		startups = append(startups, tmuxProcess{pid: pid, start: string(start)})
+	startups := make([]tmuxProcess, 0, len(seen))
+	for startup := range seen {
+		startups = append(startups, startup)
 	}
 	return startups, nil
 }
@@ -482,7 +488,7 @@ func reapStale(root string) error {
 		return fmt.Errorf("list tmux test root: %w", err)
 	}
 	var cleanupErrors []error
-	staleAdmissions := make(map[string]bool)
+	var staleAdmissions []string
 	for _, entry := range entries {
 		identity, ok := parseAdmissionName(entry.Name())
 		if !ok || runIsLive(identity, processStart) {
@@ -508,11 +514,13 @@ func reapStale(root string) error {
 			cleanupErrors = append(cleanupErrors, err)
 			continue
 		}
-		if err := drainAdmittedCreations(admissionDir); err != nil {
+		staleAdmissions = append(staleAdmissions, admissionDir)
+	}
+	if len(staleAdmissions) > 0 {
+		if err := drainAdmittedCreations(staleAdmissions...); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
-			continue
+			staleAdmissions = nil
 		}
-		staleAdmissions[admissionDir] = true
 	}
 	for _, entry := range entries {
 		identity, ok := parseRunName(entry.Name())
@@ -553,7 +561,7 @@ func reapStale(root string) error {
 	if err := reapStaleProcesses(root); err != nil {
 		cleanupErrors = append(cleanupErrors, err)
 	}
-	for admissionDir := range staleAdmissions {
+	for _, admissionDir := range staleAdmissions {
 		if err := os.RemoveAll(admissionDir); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
 		}

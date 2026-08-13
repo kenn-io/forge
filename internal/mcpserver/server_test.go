@@ -112,9 +112,9 @@ func TestKennForgeMCPDocsCoverClientSetupAndSafety(t *testing.T) {
 		`--transport http --addr 127.0.0.1:8092 --http-token-env KENN_FORGE_MCP_TOKEN`,
 		`Authorization: Bearer`,
 		`openssl rand -hex 32`,
-		`cached Kenn Forge data`,
+		`cached kenn-forge data`,
 		`does not force provider refreshes`,
-		`writes only Kenn Forge-local workflow state`,
+		`writes only kenn-forge-local workflow state`,
 		`kenn_forge_list_repos`,
 		`kenn_forge_find_review_candidates`,
 		`kenn_forge_search_items`,
@@ -124,7 +124,7 @@ func TestKennForgeMCPDocsCoverClientSetupAndSafety(t *testing.T) {
 		`expected_status`,
 		`reviewing/waiting`,
 		`stale cache`,
-		`no Kenn Forge daemon is running on`,
+		`no kenn-forge daemon is running on`,
 		`auth_token`,
 	}
 	for _, want := range required {

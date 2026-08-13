@@ -1,9 +1,9 @@
-# Kenn Forge MCP
+# kenn-forge MCP
 
 `kenn-forge mcp` starts a companion MCP server for local agents. It exposes
-cached Kenn Forge data, local workflow state, and an explicit local coding-agent
+cached kenn-forge data, local workflow state, and an explicit local coding-agent
 handoff. It does not force provider refreshes or perform provider writes. When
-not explicitly handing off work, it writes only Kenn Forge-local workflow state.
+not explicitly handing off work, it writes only kenn-forge-local workflow state.
 
 ## Stdio Client Configuration
 
@@ -20,7 +20,7 @@ Configure stdio clients to launch the companion command:
 }
 ```
 
-The companion discovers the running daemon from the configured Kenn Forge data
+The companion discovers the running daemon from the configured kenn-forge data
 directory. Start it with `kenn-forge daemon start` before using tools that read
 or write daemon data.
 
@@ -70,7 +70,7 @@ For periodic review triage:
 Safe prompt shape:
 
 ```text
-Find recent review candidates from cached Kenn Forge data. Call
+Find recent review candidates from cached kenn-forge data. Call
 kenn_forge_list_repos first, then kenn_forge_find_review_candidates. Inspect only
 plausible items. Do not perform provider writes. If claiming work, set local
 workflow state to reviewing with expected_status and a short reason. Report
@@ -78,7 +78,7 @@ stale cache fields and uncertainty.
 ```
 
 Use `kenn_forge_search_items` for quiet items that may not have recent
-activity-based candidates. Search is backed by Kenn Forge's cached PR/issue list
+activity-based candidates. Search is backed by kenn-forge's cached PR/issue list
 query fields; it is not full body or comment search unless the daemon list
 endpoint supports that field.
 
@@ -127,7 +127,7 @@ session is outside the current MCP surface.
 
 ## Troubleshooting
 
-`no Kenn Forge daemon is running on <data_dir>` means the companion could not find
+`no kenn-forge daemon is running on <data_dir>` means the companion could not find
 a running daemon for that config. Start `kenn-forge daemon start --config
 <config_path>` with the same config path.
 
@@ -135,5 +135,5 @@ Auth errors usually mean the daemon runtime `auth_token` file is missing,
 unreadable, or does not match the running daemon. Check the data directory and
 file permissions.
 
-Run the companion and daemon from the same Kenn Forge installation. Endpoint
+Run the companion and daemon from the same kenn-forge installation. Endpoint
 capability errors mean the daemon must be upgraded before that tool can run.

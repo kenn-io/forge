@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -442,16 +443,16 @@ func TestSpawnWorkspaceWithAgentRecoversStatusAfterAmbiguousMessageResponse(t *t
 func TestSpawnWorkspaceWithAgentStatusRecoverySurvivesOuterTimeout(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	messagePosts := 0
-	statusReads := 0
+	var messagePosts atomic.Int64
+	var statusReads atomic.Int64
 	mux := successfulPRHandoffMuxWithoutMessage(t, "ws-recovery", "runtime-recovery", "coding-recovery")
 	mux.HandleFunc("/api/v1/workspaces/ws-recovery/runtime/sessions/runtime-recovery/initial-message", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			messagePosts++
+			messagePosts.Add(1)
 			time.Sleep(100 * time.Millisecond)
 		case http.MethodGet:
-			statusReads++
+			statusReads.Add(1)
 			writeJSONResponse(w, `{"agent":"codex","session_id":"coding-recovery","state":"delivered","message_bytes":5,"delivered_at":"2026-08-07T15:00:02Z"}`)
 		}
 	})
@@ -462,8 +463,8 @@ func TestSpawnWorkspaceWithAgentStatusRecoverySurvivesOuterTimeout(t *testing.T)
 	out, err := s.spawnWorkspaceWithAgent(t.Context(), input)
 	require.NoError(err)
 	assert.True(out.MessageDelivered)
-	assert.Equal(1, messagePosts)
-	assert.Equal(1, statusReads)
+	assert.Equal(int64(1), messagePosts.Load())
+	assert.Equal(int64(1), statusReads.Load())
 }
 
 func TestSpawnWorkspaceWithAgentStatusRecoveryClassifiesStates(t *testing.T) {

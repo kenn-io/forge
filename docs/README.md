@@ -20,7 +20,8 @@ The Vercel project serves production deployments at `forge.kenn.io`. A
 successful tagged release starts a default-branch workflow that verifies the
 released commit belongs to `main` and still backs GitHub's latest release. It
 builds that exact checkout on Vercel without changing the production alias,
-then rechecks the latest release tag and commit before promotion.
+then rechecks the latest release tag and commit before promoting it through
+Vercel's project API.
 The workflow checks again after promotion; if a newer release was published
 during that interval, it dispatches a trusted workflow that resolves and
 deploys the actual latest release. Promotion attempts are not placed in a

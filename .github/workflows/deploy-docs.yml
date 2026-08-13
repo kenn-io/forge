@@ -53,7 +53,7 @@ jobs:
     needs: validate-release
     runs-on: ubuntu-latest
     outputs:
-      deployment-url: ${{ steps.deploy.outputs.url }}
+      deployment-id: ${{ steps.deploy.outputs.id }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -72,8 +72,9 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
-          deployment_url="$(bunx --bun vercel@58.0.0 deploy --prod --skip-domain --yes --token "$VERCEL_TOKEN")"
-          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
+          deployment="$(bunx --bun vercel@58.0.0 deploy --prod --skip-domain --yes --format=json --token "$VERCEL_TOKEN")"
+          deployment_id="$(jq -er '.deployment.id // .id' <<< "$deployment")"
+          echo "id=$deployment_id" >> "$GITHUB_OUTPUT"
 
   promote:
     needs: [validate-release, build]
@@ -87,10 +88,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.validate-release.outputs.release-sha }}
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: "1.3.14"
 
       - name: Verify the release is still latest
         env:
@@ -115,11 +112,16 @@ jobs:
 
       - name: Promote documentation
         env:
-          DEPLOYMENT_URL: ${{ needs.build.outputs.deployment-url }}
+          DEPLOYMENT_ID: ${{ needs.build.outputs.deployment-id }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: bunx --bun vercel@58.0.0 promote "$DEPLOYMENT_URL" --yes --token "$VERCEL_TOKEN"
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data '{}' \
+            "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/promote/$DEPLOYMENT_ID"
 
       - name: Verify promoted release remains latest
         env:

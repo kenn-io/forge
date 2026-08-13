@@ -45,7 +45,9 @@ screenshots, or the Zensical site.
   and WebKit. (`scripts/vercel-build-docs.sh`, `.github/workflows/ci.yml::docs`)
 - Production docs use a default-branch `workflow_run`; the released SHA must be
   on `main` and latest before build and before/after promotion. A stale attempt
-  dispatches trusted latest-release reconciliation. No Vercel Git app or GitHub environment. (`.github/workflows/deploy-docs.yml`)
+  dispatches trusted latest-release reconciliation. Promotion uses Vercel's
+  project endpoint so project-scoped tokens avoid the CLI's user lookup. No
+  Vercel Git app or GitHub environment. (`.github/workflows/deploy-docs.yml`)
 - Download links retain a static GitHub Releases fallback and enhance to the
   matching `browser_download_url` returned by the latest-release API because a
   release or the API may be unavailable. Automatic platform selection occurs

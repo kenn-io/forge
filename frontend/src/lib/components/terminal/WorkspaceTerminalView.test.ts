@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
+import { flushSync } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { RuntimeSession } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
@@ -947,6 +948,75 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull());
     expect(screen.getByRole("tab", { name: /Home/ }).getAttribute("aria-selected")).toBe("true");
     expect(localStorage.getItem("kenn-forge-workspace-active-tab:ws-1")).toBe("home");
+  });
+
+  it("restores workspace focus when the focused workflow content exits", async () => {
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      JSON.stringify({
+        version: 1,
+        open: false,
+        dock: "bottom",
+        height: 300,
+        activeSessionKey: null,
+        tree: null,
+        sessionRegions: { "ws-1:helper": "workflow", "ws-1:reviewer": "workflow" },
+        workflowMode: "tabs",
+        workflowTree: {
+          type: "leaf",
+          id: "wf-sessions",
+          tabs: ["session:ws-1:helper", "session:ws-1:reviewer"],
+          activeTabKey: "session:ws-1:helper",
+        },
+        customSessionLabels: {},
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    const runCommand = mocks.runtime.runCommand.bind(mocks.runtime);
+    const recoveryStarted = deferred<void>();
+    const releaseRecovery = deferred<void>();
+    vi.spyOn(mocks.runtime, "runCommand").mockImplementation((program, options) =>
+      runCommand(
+        options.operation === "workspace.restore.focus"
+          ? Effect.sync(() => recoveryStarted.resolve()).pipe(
+              Effect.andThen(Effect.promise(() => releaseRecovery.promise)),
+              Effect.andThen(program),
+            )
+          : program,
+        options,
+      ),
+    );
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    const focusTarget = await screen.findByRole("button", { name: "Move Helper to terminal" });
+    focusTarget.focus();
+    expect(document.activeElement).toBe(focusTarget);
+    const workflowStage = screen.getByRole("region", { name: "Workflow panes" });
+    await waitFor(() =>
+      expect(document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveLength(1),
+    );
+    await waitFor(() => expect(sockets).toHaveLength(1));
+
+    sockets[0]!.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "exited", code: 0 }),
+      }),
+    );
+    await recoveryStarted.promise;
+    workflowStage.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: document.body }));
+    flushSync();
+    releaseRecovery.resolve();
+
+    await waitFor(() => expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull());
+    expect(focusTarget.isConnected).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".terminal-view")));
   });
 
   it("starts the runtime request before workspace metadata resolves without fetching it twice", async () => {

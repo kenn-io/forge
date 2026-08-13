@@ -1285,7 +1285,10 @@
     // A focused session can disappear without focusout. Inspect the updated DOM
     // before clearing ownership or moving focus. Connected pooled terminals own
     // their reparenting handoff; only disconnected content falls back to the root.
-    const execution = appRuntime.runCommand(
+    // Focusout can clear the recorded tab while the DOM update is settling.
+    // Keep this bounded recovery independent of that effect rerun so it still
+    // gets to inspect the updated DOM and restore a disconnected descendant.
+    appRuntime.runCommand(
       Effect.promise(() => tick()).pipe(
         Effect.andThen(Effect.sync(() => {
           if (!hostVisible) return;
@@ -1304,7 +1307,6 @@
         onFailure: () => undefined,
       },
     );
-    return execution.interrupt;
   });
   const workspacePaneEmpty = $derived(
     controlsInPane &&

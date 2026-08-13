@@ -494,6 +494,9 @@ Keyboard handlers must have one clear owner for each key press.
   (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte::terminal-leaf-body`,
   `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`,
   `internal/workspace/localruntime/manager.go::session.resizeAttachment`).
+- Terminal input stays immediate during reconnect replay: resize readiness must
+  never queue or suppress keystrokes, because trapped input is worse than the
+  brief stale-geometry window (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalMessage`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never
   prune their own stored trees, so demoting restores the tab order, split, and

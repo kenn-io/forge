@@ -241,6 +241,9 @@ Persisted controls must state their scope clearly.
   preserve pending or newly confirmed fields and rebase active previews while
   retaining only generation-owned drafts
   (`frontend/src/lib/stores/terminal-settings-persistence.ts::hydrateTerminalSettings`).
+- Server-backed settings forms must render and build mutations from the reactive
+  authoritative store; a page-load snapshot can republish stale sibling fields
+  after hydration (`frontend/src/lib/components/settings/WorkspaceSettings.svelte::workspaces`).
 - Settings that select a runtime must hydrate before that runtime starts, but
   the gate must abort timed-out or superseded reads and expose retry rather than strand the surface
   (`frontend/src/lib/components/terminal/WorkspaceEmbedShell.svelte::loadTerminalSettings`).

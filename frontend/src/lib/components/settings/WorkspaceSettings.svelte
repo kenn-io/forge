@@ -10,13 +10,13 @@
   import { saveWorkspaceSettings } from "../../stores/workspace-settings-persistence.js";
 
   interface Props {
-    workspaces: Settings["workspaces"];
     onUpdate: (settings: Settings["workspaces"]) => void;
   }
 
-  let { workspaces, onUpdate }: Props = $props();
+  let { onUpdate }: Props = $props();
   const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
+  const workspaces = $derived(settingsStore.getWorkspaceSettings());
   const embedded = isEmbedded();
   let saving = $state(false);
   const defaultSidebarViewOptions: SelectDropdownOption[] = [

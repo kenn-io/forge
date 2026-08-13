@@ -164,7 +164,6 @@
             />
           {:else if meta.id === "settings-workspaces"}
             <WorkspaceSettings
-              workspaces={loaded.workspaces}
               onUpdate={(workspaces) => {
                 settings = { ...settings!, workspaces };
                 settingsStore.setWorkspaceSettings(workspaces);

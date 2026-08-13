@@ -1178,6 +1178,27 @@ describe("TerminalPane", () => {
     ]);
   });
 
+  it("claims terminal size before xterm handles mouse-tracking wheel input", async () => {
+    const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitFor(() => expect(xtermInstances).toHaveLength(1));
+    const socket = mockSockets[0]!;
+    const terminal = xtermInstances[0]!;
+    terminal.modes.mouseTrackingMode = "any";
+    socket.sent = [];
+    const terminalContainer = container.querySelector(".terminal-container");
+    expect(terminalContainer).not.toBeNull();
+
+    const defaultAllowed = terminalContainer!.dispatchEvent(
+      new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120 }),
+    );
+
+    expect(defaultAllowed).toBe(true);
+    await waitFor(() => expect(socket.sent).toHaveLength(1));
+    expect(sentText(socket, 0)).toBe(JSON.stringify({ type: "claim_resize", cols: 80, rows: 24 }));
+  });
+
   it("leaves Ctrl-wheel gestures with the browser", async () => {
     const { container } = render(TerminalPane, {
       props: { workspaceId: "ws-123", cursorWheelInput: true },

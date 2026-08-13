@@ -324,7 +324,6 @@
     if (
       disposed ||
       disabled ||
-      !cursorWheelInput ||
       event.deltaY === 0 ||
       event.ctrlKey ||
       event.shiftKey ||
@@ -333,10 +332,14 @@
     ) return;
 
     const activeBuffer = terminal.buffer.active;
+    if (terminal.modes.mouseTrackingMode !== "none") {
+      claimTerminalResize();
+      return;
+    }
+    if (!cursorWheelInput) return;
     if (
       activeBuffer.type !== "normal" ||
-      activeBuffer.baseY > 0 ||
-      terminal.modes.mouseTrackingMode !== "none"
+      activeBuffer.baseY > 0
     ) return;
 
     event.preventDefault();
@@ -1119,7 +1122,7 @@
   onkeydowncapture={handleTerminalKeyDown}
   onmousedowncapture={handleInsecureTerminalRightMouse}
   onmouseupcapture={handleInsecureTerminalRightMouse}
-  onwheel={handleTerminalWheel}
+  onwheelcapture={handleTerminalWheel}
   onfocusout={handleTerminalFocusOut}
 >
   {#if hoveredTerminalLink}

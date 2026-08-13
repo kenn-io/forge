@@ -788,6 +788,35 @@ test.describe("inline workspace pane continuity", () => {
         .toContainEqual({ cols: phoneClaim.cols, rows: phoneClaim.rows });
       runE2ETmuxCommand(isolatedServer, ["send-keys", "-t", tmuxSession, "C-c"]);
 
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
+      await expect(desktopTerminal.locator(".xterm.enable-mouse-events")).toBeVisible();
+      const desktopClaimsBeforeMouseWheel = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
+      const desktopTerminalBox = await desktopTerminal.boundingBox();
+      expect(desktopTerminalBox).not.toBeNull();
+      await page.mouse.move(
+        desktopTerminalBox!.x + desktopTerminalBox!.width / 2,
+        desktopTerminalBox!.y + desktopTerminalBox!.height / 2,
+      );
+      await page.mouse.wheel(0, -120);
+      await expect
+        .poll(() => desktopFrames.filter((frame) => frame.type === "claim_resize").length)
+        .toBe(desktopClaimsBeforeMouseWheel + 1);
+      const desktopWheelClaim = desktopFrames.filter((frame) => frame.type === "claim_resize").at(-1)!;
+      await expect
+        .poll(() => tmuxClientPtyGeometries(isolatedServer!))
+        .toContainEqual({ cols: desktopWheelClaim.cols, rows: desktopWheelClaim.rows });
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "off"]);
+
+      const phoneClaimsAfterMouseWheel = phoneFrames.filter((frame) => frame.type === "claim_resize").length;
+      await phoneTerminal.click({ position: { x: 12, y: 12 } });
+      await expect
+        .poll(() => phoneFrames.filter((frame) => frame.type === "claim_resize").length)
+        .toBe(phoneClaimsAfterMouseWheel + 1);
+      const phoneAfterMouseWheel = phoneFrames.filter((frame) => frame.type === "claim_resize").at(-1)!;
+      await expect
+        .poll(() => tmuxClientPtyGeometries(isolatedServer!))
+        .toContainEqual({ cols: phoneAfterMouseWheel.cols, rows: phoneAfterMouseWheel.rows });
+
       const desktopClaimsBeforeResize = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
       const desktopGeometryBeforeResize = desktopFrames.filter(
         (frame) => frame.type === "resize" || frame.type === "refresh",
@@ -799,7 +828,7 @@ test.describe("inline workspace pane continuity", () => {
       expect(desktopFrames.filter((frame) => frame.type === "claim_resize")).toHaveLength(desktopClaimsBeforeResize);
       await expect
         .poll(() => tmuxClientPtyGeometries(isolatedServer!))
-        .toContainEqual({ cols: phoneClaim.cols, rows: phoneClaim.rows });
+        .toContainEqual({ cols: phoneAfterMouseWheel.cols, rows: phoneAfterMouseWheel.rows });
 
       const desktopClaimsBeforeClick = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
       await desktopTerminal.click({ position: { x: 12, y: 12 } });

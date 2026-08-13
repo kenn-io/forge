@@ -497,9 +497,10 @@ Keyboard handlers must have one clear owner for each key press.
 - Terminal input stays immediate during reconnect replay: resize readiness must
   never queue or suppress keystrokes, because trapped input is worse than the
   brief stale-geometry window (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalMessage`).
-- Only trusted user gestures transfer terminal resize ownership; automatic
-  protocol replies are transport traffic and must not claim for passive views
-  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalKeyDown`).
+- Only trusted user gestures, including xterm mouse-tracking wheel events,
+  transfer terminal resize ownership; automatic protocol replies are transport
+  traffic and must not claim for passive views
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalWheel`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never
   prune their own stored trees, so demoting restores the tab order, split, and

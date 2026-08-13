@@ -39,18 +39,25 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "contain local runtime test process tree: %v\n", err)
 		os.Exit(1)
 	}
-	var ownerErr error
-	privateTmuxOwner, ownerErr = testtmux.New()
-	if ownerErr != nil {
-		fmt.Fprintf(os.Stderr, "initialize private test tmux owner: %v\n", ownerErr)
-		os.Exit(1)
+	if testtmux.Supported() {
+		var ownerErr error
+		privateTmuxOwner, ownerErr = testtmux.New()
+		if ownerErr != nil {
+			fmt.Fprintf(os.Stderr, "initialize private test tmux owner: %v\n", ownerErr)
+			os.Exit(1)
+		}
 	}
 	envDir, err := os.MkdirTemp("", "kenn-forge-localruntime-tmux-env-*")
 	if err == nil {
 		_ = os.Setenv("KENN_FORGE_TMUX_ENV_DIR", envDir)
 	}
 	runCleanup, stopSignalCleanup := testsignal.Install(
-		privateTmuxOwner.Cleanup,
+		func() error {
+			if privateTmuxOwner == nil {
+				return nil
+			}
+			return privateTmuxOwner.Cleanup()
+		},
 		func(cleanupErr error) {
 			fmt.Fprintf(os.Stderr, "cleanup private test tmux servers: %v\n", cleanupErr)
 		},

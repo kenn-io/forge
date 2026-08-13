@@ -13,13 +13,20 @@ var privateTmuxOwner *testtmux.Owner
 
 func TestMain(m *testing.M) {
 	var err error
-	privateTmuxOwner, err = testtmux.New()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "initialize private test tmux owner: %v\n", err)
-		os.Exit(1)
+	if testtmux.Supported() {
+		privateTmuxOwner, err = testtmux.New()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "initialize private test tmux owner: %v\n", err)
+			os.Exit(1)
+		}
 	}
 	runCleanup, stopSignalCleanup := testsignal.Install(
-		privateTmuxOwner.Cleanup,
+		func() error {
+			if privateTmuxOwner == nil {
+				return nil
+			}
+			return privateTmuxOwner.Cleanup()
+		},
 		func(cleanupErr error) {
 			fmt.Fprintf(os.Stderr, "cleanup private test tmux servers: %v\n", cleanupErr)
 		},

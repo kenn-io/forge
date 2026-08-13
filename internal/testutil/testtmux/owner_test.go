@@ -107,6 +107,39 @@ func TestParseRunName(t *testing.T) {
 	}
 }
 
+func TestSupportedMatchesPlatform(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, runtime.GOOS != "windows", Supported())
+}
+
+func TestPublishRunDoesNotExposeUnmarkedFinalDirectory(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	root := t.TempDir()
+	runName := "run.31415.0123456789ab.abcdef"
+	marker := ownerMarker{
+		PID:          31415,
+		ProcessStart: "start",
+		StartToken:   "0123456789ab",
+	}
+	renameErr := errors.New("injected rename failure")
+	_, err := publishRun(root, runName, marker, func(staging, final string) error {
+		_, matchesFinalPattern := parseRunName(filepath.Base(staging))
+		assert.False(matchesFinalPattern)
+		_, markerErr := os.Stat(filepath.Join(staging, "owner.json"))
+		require.NoError(markerErr)
+		_, finalErr := os.Stat(final)
+		require.ErrorIs(finalErr, os.ErrNotExist)
+		return renameErr
+	})
+	require.ErrorIs(err, renameErr)
+	_, err = os.Stat(filepath.Join(root, runName))
+	require.ErrorIs(err, os.ErrNotExist)
+}
+
 func TestRunIsLiveRequiresMatchingProcessStart(t *testing.T) {
 	t.Parallel()
 

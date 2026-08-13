@@ -63,6 +63,9 @@ type ownerMarker struct {
 // New creates an owner beneath a stable, per-user temporary root. It reaps
 // stale owners before publishing the new run.
 func New() (*Owner, error) {
+	if !Supported() {
+		return nil, errors.New("private test tmux servers are unsupported on Windows")
+	}
 	current, err := user.Current()
 	if err != nil {
 		return nil, fmt.Errorf("resolve current user: %w", err)
@@ -97,31 +100,54 @@ func newAt(root string) (*Owner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create tmux test run nonce: %w", err)
 	}
-	runDir := filepath.Join(root, fmt.Sprintf(
+	runName := fmt.Sprintf(
 		"run.%d.%s.%s", identity.pid, identity.startToken, nonce,
-	))
-	if err := os.Mkdir(runDir, 0o700); err != nil {
-		return nil, fmt.Errorf("create tmux test run: %w", err)
-	}
+	)
 	marker := ownerMarker{
 		PID:          identity.pid,
 		ProcessStart: start,
 		StartToken:   identity.startToken,
 	}
-	content, err := json.Marshal(marker)
+	runDir, err := publishRun(root, runName, marker, os.Rename)
 	if err != nil {
-		_ = os.Remove(runDir)
-		return nil, fmt.Errorf("encode tmux test owner: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(runDir, "owner.json"), content, 0o600); err != nil {
-		_ = os.Remove(runDir)
-		return nil, fmt.Errorf("write tmux test owner: %w", err)
+		return nil, err
 	}
 	return &Owner{
 		root:    root,
 		runDir:  runDir,
 		servers: make(map[string]registeredServer),
 	}, nil
+}
+
+func publishRun(
+	root string,
+	runName string,
+	marker ownerMarker,
+	rename func(string, string) error,
+) (string, error) {
+	stagingDir := filepath.Join(root, "stage."+runName)
+	finalDir := filepath.Join(root, runName)
+	if err := os.Mkdir(stagingDir, 0o700); err != nil {
+		return "", fmt.Errorf("create staged tmux test run: %w", err)
+	}
+	removeStaging := true
+	defer func() {
+		if removeStaging {
+			_ = os.RemoveAll(stagingDir)
+		}
+	}()
+	content, err := json.Marshal(marker)
+	if err != nil {
+		return "", fmt.Errorf("encode tmux test owner: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingDir, "owner.json"), content, 0o600); err != nil {
+		return "", fmt.Errorf("write tmux test owner: %w", err)
+	}
+	if err := rename(stagingDir, finalDir); err != nil {
+		return "", fmt.Errorf("publish tmux test run: %w", err)
+	}
+	removeStaging = false
+	return finalDir, nil
 }
 
 // Command registers a private socket before returning a tmux command prefix.

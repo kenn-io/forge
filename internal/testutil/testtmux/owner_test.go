@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/procutil"
@@ -246,6 +247,135 @@ func TestOwnerCleanupRetainsSharedRoot(t *testing.T) {
 	info, err := os.Stat(root)
 	require.NoError(err)
 	require.True(info.IsDir())
+}
+
+func TestHeldAdmissionLockHelperProcess(t *testing.T) {
+	require := require.New(t)
+	admissionDir := os.Getenv("KENN_FORGE_TEST_TMUX_HELD_ADMISSION")
+	if admissionDir == "" {
+		return
+	}
+	lock := flock.New(filepath.Join(admissionDir, admissionLockName))
+	require.NoError(lock.Lock())
+	defer func() { require.NoError(lock.Unlock()) }()
+	require.NoError(os.WriteFile(
+		os.Getenv("KENN_FORGE_TEST_TMUX_HELD_ADMISSION_READY"),
+		[]byte("ready\n"),
+		0o600,
+	))
+	require.Eventually(func() bool {
+		_, err := os.Stat(os.Getenv(
+			"KENN_FORGE_TEST_TMUX_HELD_ADMISSION_RELEASE",
+		))
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
+func startHeldAdmissionLockHelper(t *testing.T, admissionDir string) func() {
+	t.Helper()
+	require := require.New(t)
+	directory := t.TempDir()
+	ready := filepath.Join(directory, "ready")
+	release := filepath.Join(directory, "release")
+	command := procutil.Command(
+		os.Args[0],
+		"-test.run=^TestHeldAdmissionLockHelperProcess$",
+	)
+	command.Env = append(os.Environ(),
+		"KENN_FORGE_TEST_TMUX_HELD_ADMISSION="+admissionDir,
+		"KENN_FORGE_TEST_TMUX_HELD_ADMISSION_READY="+ready,
+		"KENN_FORGE_TEST_TMUX_HELD_ADMISSION_RELEASE="+release,
+	)
+	require.NoError(command.Start())
+	t.Cleanup(func() {
+		if command.ProcessState == nil {
+			_ = command.Process.Kill()
+			_, _ = command.Process.Wait()
+		}
+	})
+	require.Eventually(func() bool {
+		_, statErr := os.Stat(ready)
+		return statErr == nil
+	}, 5*time.Second, 10*time.Millisecond)
+	markers, err := filepath.Glob(filepath.Join(admissionDir, "starting.*"))
+	require.NoError(err)
+	require.Empty(markers)
+	return func() {
+		require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
+		require.NoError(command.Wait())
+	}
+}
+
+func runWithHeldAdmissionLock(
+	t *testing.T,
+	admissionDir string,
+	operation func() error,
+) error {
+	t.Helper()
+	require := require.New(t)
+	releaseLock := startHeldAdmissionLockHelper(t, admissionDir)
+	done := make(chan error, 1)
+	go func() { done <- operation() }()
+	var operationErr error
+	timedOut := false
+	select {
+	case operationErr = <-done:
+	case <-time.After(cleanupTimeout + 2*time.Second):
+		timedOut = true
+	}
+	releaseLock()
+	if timedOut {
+		operationErr = <-done
+		require.Fail("operation did not time out while the admission lock was held")
+	}
+	return operationErr
+}
+
+func TestOwnerCleanupTimesOutWhenAdmissionLockIsHeld(t *testing.T) {
+	require := require.New(t)
+	directory := t.TempDir()
+	owner, err := newAt(filepath.Join(directory, "root"))
+	require.NoError(err)
+
+	cleanupErr := runWithHeldAdmissionLock(
+		t, owner.admissionDir, owner.Cleanup,
+	)
+	require.ErrorIs(cleanupErr, context.DeadlineExceeded)
+	require.DirExists(owner.runDir)
+	require.DirExists(owner.admissionDir)
+}
+
+func TestReapStaleTimesOutWhenAdmissionLockIsHeld(t *testing.T) {
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), "root")
+	require.NoError(prepareRoot(root))
+	start := "dead-owner"
+	identity := processIdentity{
+		pid:        999_999,
+		startToken: tokenForStart(start),
+	}
+	runName := fmt.Sprintf(
+		"run.%d.%s.abcdef", identity.pid, identity.startToken,
+	)
+	runDir, admissionDir, err := publishOwnerState(
+		root,
+		runName,
+		ownerMarker{
+			PID:          identity.pid,
+			ProcessStart: start,
+			StartToken:   identity.startToken,
+		},
+		os.Rename,
+	)
+	require.NoError(err)
+	reapErr := runWithHeldAdmissionLock(t, admissionDir, func() error {
+		return reapStaleWithLookup(root, func(int) (string, error) {
+			return "", errProcessAbsent
+		})
+	})
+	require.ErrorIs(reapErr, context.DeadlineExceeded)
+	require.DirExists(runDir)
+	require.DirExists(admissionDir)
 }
 
 func TestOwnerCleanupPreservesStateWhenAdmissionCannotClose(t *testing.T) {

@@ -331,9 +331,11 @@ func (o *Owner) Cleanup() error {
 		o.mu.Unlock()
 
 		var cleanupErrors []error
-		gateErr := closeAdmission(o.admissionDir)
+		ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cancel()
+		gateErr := closeAdmission(ctx, o.admissionDir)
 		if gateErr == nil {
-			gateErr = drainAdmittedCreations(o.admissionDir)
+			gateErr = waitForAdmittedCreations(ctx, []string{o.admissionDir})
 		}
 		if gateErr != nil {
 			o.cleanupErr = gateErr
@@ -371,10 +373,14 @@ func (o *Owner) Cleanup() error {
 	return o.cleanupErr
 }
 
-func closeAdmission(admissionDir string) (err error) {
+func closeAdmission(ctx context.Context, admissionDir string) (err error) {
 	lock := flock.New(filepath.Join(admissionDir, admissionLockName))
-	if err := lock.Lock(); err != nil {
-		return fmt.Errorf("close private tmux admission gate: %w", err)
+	locked, lockErr := lock.TryLockContext(ctx, 10*time.Millisecond)
+	if lockErr != nil {
+		return fmt.Errorf("close private tmux admission gate: %w", lockErr)
+	}
+	if !locked {
+		return errors.New("close private tmux admission gate: lock unavailable")
 	}
 	defer func() {
 		if unlockErr := lock.Unlock(); unlockErr != nil {
@@ -389,12 +395,6 @@ func closeAdmission(admissionDir string) (err error) {
 		return fmt.Errorf("close private tmux admission gate: %w", err)
 	}
 	return nil
-}
-
-func drainAdmittedCreations(admissionDirs ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
-	defer cancel()
-	return waitForAdmittedCreations(ctx, admissionDirs)
 }
 
 func waitForAdmittedCreations(ctx context.Context, admissionDirs []string) error {
@@ -555,6 +555,8 @@ func reapStaleWithLookup(
 	if err != nil {
 		return fmt.Errorf("list tmux test root: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancel()
 	var cleanupErrors []error
 	type staleAdmission struct {
 		runName string
@@ -601,7 +603,7 @@ func reapStaleWithLookup(
 			))
 			continue
 		}
-		if err := closeAdmission(admissionDir); err != nil {
+		if err := closeAdmission(ctx, admissionDir); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
 			continue
 		}
@@ -615,7 +617,7 @@ func reapStaleWithLookup(
 		for _, admission := range staleAdmissions {
 			admissionDirs = append(admissionDirs, admission.dir)
 		}
-		if err := drainAdmittedCreations(admissionDirs...); err != nil {
+		if err := waitForAdmittedCreations(ctx, admissionDirs); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
 			staleAdmissions = nil
 		} else {

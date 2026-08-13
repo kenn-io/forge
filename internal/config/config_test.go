@@ -26,6 +26,26 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
+func TestWorkspaceDefaultSidebarView(t *testing.T) {
+	t.Run("defaults to diff", func(t *testing.T) {
+		cfg, err := Load(writeConfig(t, ""))
+		require.NoError(t, err)
+		assert.Equal(t, "diff", cfg.Workspaces.DefaultSidebarView)
+	})
+
+	t.Run("round trips item", func(t *testing.T) {
+		cfg, saved := roundTripConfigString(t, "[workspaces]\ndefault_sidebar_view = \"item\"\n")
+		assert.Equal(t, "item", cfg.Workspaces.DefaultSidebarView)
+		assert.Equal(t, "item", saved.Workspaces.DefaultSidebarView)
+	})
+
+	t.Run("rejects invalid value", func(t *testing.T) {
+		_, err := Load(writeConfig(t, "[workspaces]\ndefault_sidebar_view = \"pr\"\n"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "workspaces.default_sidebar_view")
+	})
+}
+
 func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
 	t.Helper()
 	cfg, err := Load(writeConfig(t, content))

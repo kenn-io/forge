@@ -292,6 +292,7 @@ export const mockSettings = {
   },
   workspaces: {
     auto_assign_on_create: false,
+    default_sidebar_view: "diff",
   },
   modes: {
     activity: true,

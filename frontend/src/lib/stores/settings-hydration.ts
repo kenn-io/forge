@@ -11,6 +11,7 @@ export interface SettingsHydrationStore {
   setModeVisibility: (modes: SettingsResponse["modes"]) => void;
   setPullRequestSettings: (pullRequests: SettingsResponse["pull_requests"]) => void;
   setLaunchTargets: (targets: NonNullable<SettingsResponse["launch_targets"]>) => void;
+  setWorkspaceSettings: (workspaces: SettingsResponse["workspaces"]) => void;
 }
 
 export interface ActivityHydrationStore {
@@ -43,6 +44,7 @@ export function applySettingsHydration(
   stores.settings.setModeVisibility(payload.modes);
   stores.settings.setPullRequestSettings(payload.pull_requests);
   stores.settings.setLaunchTargets(payload.launch_targets ?? []);
+  stores.settings.setWorkspaceSettings(payload.workspaces);
   stores.activity.hydrateDefaults(payload.activity);
   stores.issues.hydrateDefaults(payload.issues);
 }

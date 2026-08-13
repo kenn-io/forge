@@ -7666,8 +7666,14 @@ components:
       properties:
         auto_assign_on_create:
           type: boolean
+        default_sidebar_view:
+          enum:
+            - diff
+            - item
+          type: string
       required:
         - auto_assign_on_create
+        - default_sidebar_view
       type: object
     WorktreeFromMergeRequestResponse:
       additionalProperties: false

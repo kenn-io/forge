@@ -72,7 +72,7 @@ const settings = {
     ...DEFAULT_TERMINAL_SETTINGS,
     font_size: 14,
   },
-  workspaces: { auto_assign_on_create: false },
+  workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
 } satisfies StartupSnapshot;
 
 describe("WorkspaceEmbedShell settings requests", () => {

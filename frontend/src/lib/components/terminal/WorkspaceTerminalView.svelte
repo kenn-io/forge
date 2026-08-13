@@ -108,6 +108,7 @@
   import { parseSessionPaneKey, sessionPaneKey, sessionPaneKeyMatchesWorkspace } from "../../stores/session-pane-key.js";
   import WorkspaceRightSidebar from "../workspace/WorkspaceRightSidebar.svelte";
   import type { InlineDockMode, WorkspaceItemIdentity } from "../../workspace-inline.js";
+  import { defaultWorkspaceSidebarTab, type WorkspaceSidebarTab } from "./workspace-sidebar-default.js";
   import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
   import ChevronsDownIcon from "@lucide/svelte/icons/chevrons-down";
   import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
@@ -480,7 +481,7 @@
   let applyingWorkflowPresetFor = $state<string[]>([]);
   const applyingWorkflowPreset = $derived(applyingWorkflowPresetFor.includes(viewWorkspaceKey));
 
-  type SidebarTab = "diff" | "pr" | "issue" | "reviews" | "kata";
+  type SidebarTab = WorkspaceSidebarTab;
 
   const MIN_WORKSPACE_LIST_WIDTH = 220;
   const DEFAULT_WORKSPACE_LIST_WIDTH = 260;
@@ -568,16 +569,6 @@
     return `${SIDEBAR_TAB_KEY_PREFIX}${storageId}`;
   }
 
-  function loadSidebarTab(storageId: string): SidebarTab {
-    const v = readLocalStorage(sidebarTabStorageKey(storageId));
-    if (v === "diff") return "diff";
-    if (v === "pr") return "pr";
-    if (v === "issue") return "issue";
-    if (v === "reviews") return "reviews";
-    if (v === "kata") return "kata";
-    return "diff";
-  }
-
   function loadSidebarOpen(): boolean {
     return readLocalStorage(SIDEBAR_OPEN_KEY) === "true";
   }
@@ -600,7 +591,15 @@
   let selectedSidebarTabs = $state.raw<Record<string, SidebarTab>>({});
   const sidebarTab = $derived.by(() => {
     const storageId = workspaceStorageId(workspaceId, workspaceHostKey);
-    return selectedSidebarTabs[storageId] ?? loadSidebarTab(storageId);
+    const selected = selectedSidebarTabs[storageId];
+    if (selected !== undefined) return selected;
+    const saved = readLocalStorage(sidebarTabStorageKey(storageId));
+    if (saved === "diff" || saved === "pr" || saved === "issue" || saved === "reviews" || saved === "kata") {
+      return saved;
+    }
+    return workspace?.id === workspaceId && selectedWorkspaceHostKey(workspace) === workspaceHostKey
+      ? defaultWorkspaceSidebarTab(settingsStore.getWorkspaceSettings().default_sidebar_view, workspace.item_type)
+      : "diff";
   });
   let sidebarOpen = $state(loadSidebarOpen());
   let preferredRightSidebarWidth = $state(loadSidebarWidth());
@@ -1898,8 +1897,8 @@
     return "home";
   }
 
-  function defaultSidebarTab(): SidebarTab {
-    return "diff";
+  function defaultSidebarTab(ws: Workspace): SidebarTab {
+    return defaultWorkspaceSidebarTab(settingsStore.getWorkspaceSettings().default_sidebar_view, ws.item_type);
   }
 
   function isSidebarTabSupported(
@@ -1919,7 +1918,7 @@
 
   function syncSidebarTabForWorkspace(ws: Workspace): void {
     if (!isSidebarTabSupported(ws, sidebarTab)) {
-      setSidebarTab(defaultSidebarTab());
+      setSidebarTab(defaultSidebarTab(ws));
     }
   }
 
@@ -3536,7 +3535,7 @@
   $effect(() => {
     if (!workspaceLive || !workspace) return;
     if (!isSidebarTabSupported(workspace, sidebarTab)) {
-      setSidebarTab(defaultSidebarTab());
+      setSidebarTab(defaultSidebarTab(workspace));
     }
   });
 

@@ -44,7 +44,7 @@ const settingsPayload = {
   },
   kata_projects: [],
   notifications: { enabled: true },
-  workspaces: { auto_assign_on_create: false },
+  workspaces: { auto_assign_on_create: false, default_sidebar_view: "item" },
 } satisfies StartupSnapshot;
 
 function hydrate(
@@ -66,6 +66,11 @@ describe("applySettingsHydration", () => {
   it("hydrates launch targets into the settings store", () => {
     const { settingsStore } = hydrate();
     expect(settingsStore.getLaunchTargets()).toEqual([codexTarget]);
+  });
+
+  it("hydrates workspace preferences into the settings store", () => {
+    const { settingsStore } = hydrate();
+    expect(settingsStore.getWorkspaceSettings()).toEqual(settingsPayload.workspaces);
   });
 
   it("clears stale launch targets when settings reports an empty inventory", () => {

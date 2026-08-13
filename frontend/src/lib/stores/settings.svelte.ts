@@ -6,6 +6,7 @@ import {
   type LaunchTarget,
   type ModeVisibility,
   type PullRequestSettings,
+  type Settings,
   type TerminalSettings,
 } from "../api/types.js";
 
@@ -21,6 +22,10 @@ export function createSettingsStore() {
     ...DEFAULT_PULL_REQUEST_SETTINGS,
   });
   let launchTargets = $state.raw<LaunchTarget[]>([]);
+  let workspaceSettings = $state.raw<Settings["workspaces"]>({
+    auto_assign_on_create: false,
+    default_sidebar_view: "diff",
+  });
   let loaded = $state(false);
 
   function getConfiguredRepos(): ConfigRepo[] {
@@ -72,6 +77,17 @@ export function createSettingsStore() {
 
   function setLaunchTargets(targets: LaunchTarget[] | null | undefined): void {
     launchTargets = [...(targets ?? [])];
+  }
+
+  function getWorkspaceSettings(): Settings["workspaces"] {
+    return workspaceSettings;
+  }
+
+  function setWorkspaceSettings(value: Settings["workspaces"] | null | undefined): void {
+    workspaceSettings = {
+      auto_assign_on_create: value?.auto_assign_on_create ?? false,
+      default_sidebar_view: value?.default_sidebar_view ?? "diff",
+    };
   }
 
   function getTerminalFontFamily(): string {
@@ -133,6 +149,8 @@ export function createSettingsStore() {
     setPullRequestSettings,
     getLaunchTargets,
     setLaunchTargets,
+    getWorkspaceSettings,
+    setWorkspaceSettings,
     getTerminalFontFamily,
     setTerminalFontFamily,
     getTerminalFontSize,

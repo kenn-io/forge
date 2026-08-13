@@ -579,6 +579,16 @@ type Workspaces struct {
 	// AutoAssignOnCreate adds the authenticated provider user to the source
 	// PR or issue when kenn-forge creates its workspace.
 	AutoAssignOnCreate bool `toml:"auto_assign_on_create,omitempty" json:"auto_assign_on_create"`
+	// DefaultSidebarView selects the initial right-sidebar tab for a workspace
+	// created from a pull request or issue. A saved per-workspace choice wins.
+	DefaultSidebarView string `toml:"default_sidebar_view,omitempty" json:"default_sidebar_view" enum:"diff,item"`
+}
+
+func (w Workspaces) withDefaults() Workspaces {
+	if w.DefaultSidebarView == "" {
+		w.DefaultSidebarView = "diff"
+	}
+	return w
 }
 
 // Issues configures issue-list presentation preferences.
@@ -1140,6 +1150,7 @@ func load(path string) (*Config, error) {
 		cfg.Agents = []Agent{}
 	}
 	cfg.Modes = cfg.Modes.WithDefaults()
+	cfg.Workspaces = cfg.Workspaces.withDefaults()
 
 	if cfg.DataDir == "" {
 		cfg.DataDir = DefaultDataDir()
@@ -1273,6 +1284,12 @@ func (c *Config) validate() error {
 		return err
 	}
 	c.Modes = c.Modes.WithDefaults()
+	c.Workspaces = c.Workspaces.withDefaults()
+	if c.Workspaces.DefaultSidebarView != "diff" && c.Workspaces.DefaultSidebarView != "item" {
+		return fmt.Errorf(
+			"config: workspaces.default_sidebar_view must be one of diff or item",
+		)
+	}
 
 	for i := range c.Repos {
 		if c.Repos[i].ownerHasGlob() {

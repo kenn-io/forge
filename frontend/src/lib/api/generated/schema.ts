@@ -8041,6 +8041,8 @@ export interface components {
         };
         Workspaces: {
             auto_assign_on_create: boolean;
+            /** @enum {string} */
+            default_sidebar_view: "diff" | "item";
         };
         WorktreeFromMergeRequestResponse: {
             /**
@@ -18693,3 +18695,4 @@ export const workflowStateMetaResponseStatusValues: ReadonlyArray<FlattenedDeepR
 export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval", "done"];
 export const workspaceResponseEnrichment_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["enrichment_status"]> = ["not_applicable", "pending", "fresh", "stale", "failed"];
 export const workspaceResponseMr_head_repo_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["mr_head_repo_kind"]> = ["same_repo", "fork", "unknown"];
+export const workspacesDefault_sidebar_viewValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Workspaces"]["default_sidebar_view"]> = ["diff", "item"];

@@ -518,7 +518,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 		HideBots:   true,
 	}
 	issues := config.Issues{HideBots: true}
-	workspaces := config.Workspaces{AutoAssignOnCreate: true}
+	workspaces := config.Workspaces{AutoAssignOnCreate: true, DefaultSidebarView: "item"}
 	terminal := config.Terminal{
 		FontFamily:       "\"Fira Code\", monospace",
 		FontSize:         16,
@@ -547,6 +547,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.Equal("30d", cfg2.Activity.TimeRange)
 	assert.True(cfg2.Issues.HideBots)
 	assert.True(cfg2.Workspaces.AutoAssignOnCreate)
+	assert.Equal("item", cfg2.Workspaces.DefaultSidebarView)
 	assert.Equal("\"Fira Code\", monospace", cfg2.Terminal.FontFamily)
 	assert.Equal(16, cfg2.Terminal.FontSize)
 	assert.Equal(5000, cfg2.Terminal.Scrollback)

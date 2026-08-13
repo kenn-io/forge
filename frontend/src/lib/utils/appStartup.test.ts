@@ -64,7 +64,7 @@ function makeStores(
 const settings = {
   repos: [],
   pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-  workspaces: { auto_assign_on_create: false },
+  workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
   issues: { hide_bots: true },
   kata_projects: [],
   fleet: {

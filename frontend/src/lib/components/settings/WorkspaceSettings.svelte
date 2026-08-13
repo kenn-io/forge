@@ -49,6 +49,31 @@
       },
     );
   }
+
+  function setDefaultSidebarView(event: Event): void {
+    const value = (event.currentTarget as HTMLSelectElement).value as Settings["workspaces"]["default_sidebar_view"];
+    if (embedded || saving || value === workspaces.default_sidebar_view) return;
+    const previous = workspaces;
+    const pending = { ...workspaces, default_sidebar_view: value };
+    onUpdate(pending);
+    saving = true;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.persist(() => ({ workspaces: pending }));
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) => Effect.sync(() => {
+            onUpdate(previous);
+            console.warn("Failed to save workspace settings:", settingsErrorMessage(failure));
+          }),
+          onSuccess: (settings) => Effect.sync(() => onUpdate(settings.workspaces)),
+        }),
+        Effect.ensuring(Effect.sync(() => { saving = false; })),
+      ),
+      { operation: "save workspace settings", safeContext: {}, onFailure: () => {} },
+    );
+  }
 </script>
 
 <div class="settings-list">
@@ -70,6 +95,16 @@
       <span class="toggle-track"><span class="toggle-thumb"></span></span>
     </button>
   </div>
+  <div class="setting-row">
+    <div class="setting-copy">
+      <label class="setting-label" for="default-sidebar-view">Default sidebar view</label>
+      <span class="setting-description">Choose the initial details view for workspaces created from a pull request or issue.</span>
+    </div>
+    <select id="default-sidebar-view" value={workspaces.default_sidebar_view} disabled={embedded || saving} onchange={setDefaultSidebarView}>
+      <option value="diff">Diff</option>
+      <option value="item">PR/Issue</option>
+    </select>
+  </div>
 </div>
 
 <style>
@@ -84,4 +119,5 @@
   .toggle-on .toggle-track { background: var(--accent-blue); border-color: var(--accent-blue); }
   .toggle-thumb { display: block; width: 14px; height: 14px; border-radius: 50%; background: white; position: absolute; top: 2px; left: 2px; transition: transform 0.15s; box-shadow: var(--shadow-sm); }
   .toggle-on .toggle-thumb { transform: translateX(16px); }
+  select { min-width: 120px; }
 </style>

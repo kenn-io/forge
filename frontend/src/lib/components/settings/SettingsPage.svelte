@@ -76,6 +76,7 @@
               hydrateTerminalSettings(terminalHydration, loaded.terminal);
               settingsStore.setPullRequestSettings(loaded.pull_requests);
               settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
+              settingsStore.setWorkspaceSettings(loaded.workspaces);
               loading = false;
             }),
         }),
@@ -161,6 +162,7 @@
               workspaces={loaded.workspaces}
               onUpdate={(workspaces) => {
                 settings = { ...settings!, workspaces };
+                settingsStore.setWorkspaceSettings(workspaces);
               }}
             />
           {:else if meta.id === "settings-terminal"}

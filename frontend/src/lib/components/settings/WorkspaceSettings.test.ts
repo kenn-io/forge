@@ -22,7 +22,7 @@ vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
 import WorkspaceSettings from "./WorkspaceSettings.svelte";
 import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 
-const initial = { auto_assign_on_create: false };
+const initial = { auto_assign_on_create: false, default_sidebar_view: "diff" as const };
 
 describe("WorkspaceSettings", () => {
   afterEach(() => {
@@ -32,13 +32,31 @@ describe("WorkspaceSettings", () => {
 
   it("saves automatic assignment for new workspace items", async () => {
     const onUpdate = vi.fn();
-    const saved = { auto_assign_on_create: true };
+    const saved = { ...initial, auto_assign_on_create: true };
     mockPersistSettings.mockReturnValue(Effect.succeed({ workspaces: saved }));
     render(SettingsRuntimeHarness, {
       props: { component: WorkspaceSettings, componentProps: { workspaces: initial, onUpdate } },
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Assign new workspace items to me" }));
+
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: saved });
+    expect(onUpdate).toHaveBeenNthCalledWith(1, saved);
+    expect(onUpdate).toHaveBeenLastCalledWith(saved);
+  });
+
+  it("saves the default sidebar view without changing automatic assignment", async () => {
+    const onUpdate = vi.fn();
+    const saved = { ...initial, default_sidebar_view: "item" as const };
+    mockPersistSettings.mockReturnValue(Effect.succeed({ workspaces: saved }));
+    render(SettingsRuntimeHarness, {
+      props: { component: WorkspaceSettings, componentProps: { workspaces: initial, onUpdate } },
+    });
+
+    await fireEvent.change(screen.getByRole("combobox", { name: "Default sidebar view" }), {
+      target: { value: "item" },
+    });
 
     await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: saved });

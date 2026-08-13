@@ -63,7 +63,7 @@ function settingsResponse(terminal: TerminalSettings): StartupSnapshot {
     },
     repos: [],
     terminal,
-    workspaces: { auto_assign_on_create: false },
+    workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
   };
 }
 

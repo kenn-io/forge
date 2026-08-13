@@ -875,6 +875,24 @@ func (e WorkspaceResponseMrHeadRepoKind) Valid() bool {
 	}
 }
 
+// Defines values for WorkspacesDefaultSidebarView.
+const (
+	Diff WorkspacesDefaultSidebarView = "diff"
+	Item WorkspacesDefaultSidebarView = "item"
+)
+
+// Valid indicates whether the value is a known member of the WorkspacesDefaultSidebarView enum.
+func (e WorkspacesDefaultSidebarView) Valid() bool {
+	switch e {
+	case Diff:
+		return true
+	case Item:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetPullFilePreviewOnHostParamsSide.
 const (
 	GetPullFilePreviewOnHostParamsSideNew GetPullFilePreviewOnHostParamsSide = "new"
@@ -4513,8 +4531,12 @@ type WorkspaceRuntimeResponse struct {
 
 // Workspaces defines model for Workspaces.
 type Workspaces struct {
-	AutoAssignOnCreate bool `json:"auto_assign_on_create"`
+	AutoAssignOnCreate bool                         `json:"auto_assign_on_create"`
+	DefaultSidebarView WorkspacesDefaultSidebarView `json:"default_sidebar_view"`
 }
+
+// WorkspacesDefaultSidebarView defines model for Workspaces.DefaultSidebarView.
+type WorkspacesDefaultSidebarView string
 
 // WorktreeFromMergeRequestResponse defines model for WorktreeFromMergeRequestResponse.
 type WorktreeFromMergeRequestResponse struct {

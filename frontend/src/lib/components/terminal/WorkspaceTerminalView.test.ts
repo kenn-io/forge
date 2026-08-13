@@ -46,6 +46,7 @@ const mocks = vi.hoisted(() => ({
   stopWorkspaceSession: vi.fn(),
   terminalWrite: vi.fn(),
   diffStore: null as unknown as ReturnType<typeof createDiffStore>,
+  workspaceSidebarPreference: "diff" as "diff" | "item",
 }));
 
 let sockets: MockWebSocket[] = [];
@@ -156,6 +157,10 @@ vi.mock("../../context.js", async (importOriginal) => {
         getTerminalLetterSpacing: () => 0,
         getTerminalCursorBlink: () => true,
         getTerminalFontLigatures: () => false,
+        getWorkspaceSettings: () => ({
+          auto_assign_on_create: false,
+          default_sidebar_view: mocks.workspaceSidebarPreference,
+        }),
       },
       diff: mocks.diffStore,
     }),
@@ -243,6 +248,10 @@ vi.mock("../../stores/flash.svelte.js", () => ({
 
 vi.mock("../detail/PullDetail.svelte", async () => ({
   default: (await import("../../views/PRListViewTestPullDetail.svelte")).default,
+}));
+
+vi.mock("../detail/IssueDetail.svelte", async () => ({
+  default: (await import("../../views/IssueListViewTestIssueDetail.svelte")).default,
 }));
 
 vi.mock("../kata/KataLinksPanel.svelte", async () => ({
@@ -695,6 +704,7 @@ describe("WorkspaceTerminalView", () => {
     sockets = [];
     resetWorkspaceCreatePendingForTest();
     mocks.diffStore = createDiffStore({ runtime: mocks.runtime });
+    mocks.workspaceSidebarPreference = "diff";
     mocks.getWorkspaceRuntime.mockReset();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
     mocks.launchWorkspaceSession.mockReset();
@@ -2364,6 +2374,39 @@ describe("WorkspaceTerminalView", () => {
 
     await view.rerender({ workspaceId: "ws-1" });
     await waitFor(() => expect(screen.getByRole("button", { name: "PR" }).classList.contains("active")).toBe(true));
+  });
+
+  it.each([
+    ["pull_request", "PR"],
+    ["issue", "Issue"],
+  ] as const)("defaults a source-backed %s workspace to its item", async (itemType, label) => {
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    mocks.workspaceSidebarPreference = "item";
+    const sourceWorkspace = { ...workspaceResponse, item_type: itemType };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const pathname = new URL(input instanceof Request ? input.url : String(input), "http://localhost").pathname;
+        if (pathname.endsWith("/workspaces/ws-1")) return Promise.resolve(Response.json(sourceWorkspace));
+        if (pathname.endsWith("/api/v1/workspaces"))
+          return Promise.resolve(Response.json({ workspaces: [sourceWorkspace] }));
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: label }).classList.contains("active")).toBe(true));
+  });
+
+  it("keeps a saved workspace tab ahead of the configured item default", async () => {
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "diff");
+    mocks.workspaceSidebarPreference = "item";
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Diff" }).classList.contains("active")).toBe(true));
   });
 
   it("disables middle-pane workspace controls while the selected workspace is deleting", async () => {

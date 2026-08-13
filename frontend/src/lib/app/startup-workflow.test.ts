@@ -64,7 +64,7 @@ it.layer(StartupTestLayer)("shares startup settings demand", (it) => {
           font_ligatures: false,
           hide_tmux_status: false,
         },
-        workspaces: { auto_assign_on_create: false },
+        workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
       } satisfies SettingsResponse;
       const observedPaths: string[] = [];
       const fetch: typeof globalThis.fetch = (input, init) => {
@@ -135,7 +135,7 @@ it.layer(StartupTestLayer)("startup invalidation", (it) => {
           font_ligatures: false,
           hide_tmux_status: false,
         },
-        workspaces: { auto_assign_on_create: false },
+        workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
       } satisfies SettingsResponse;
       const second = { ...first, activity: { ...first.activity, hide_bots: true } };
       let releaseFirst = () => {};
@@ -219,7 +219,7 @@ it.layer(StartupTestLayer)("startup retry after failure", (it) => {
           font_ligatures: false,
           hide_tmux_status: false,
         },
-        workspaces: { auto_assign_on_create: false },
+        workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
       } satisfies SettingsResponse;
       const fetch: typeof globalThis.fetch = (input, init) => {
         const request = input instanceof Request ? input : new Request(input, init);

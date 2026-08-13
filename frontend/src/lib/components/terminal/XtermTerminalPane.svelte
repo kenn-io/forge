@@ -1007,7 +1007,6 @@
       term.onData((data: string) => {
         if (disabled) return;
         if (terminalSession?.isConnected()) {
-          claimTerminalResize();
           terminalSession.send(encoder.encode(data));
           mouseDragAutoscroll?.observeTerminalData(data);
         }
@@ -1016,7 +1015,6 @@
       term.onBinary((data: string) => {
         if (disabled) return;
         if (terminalSession?.isConnected()) {
-          claimTerminalResize();
           const buf = new Uint8Array(data.length);
           for (let i = 0; i < data.length; i++) {
             buf[i] = data.charCodeAt(i) & 0xff;

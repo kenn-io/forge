@@ -1123,7 +1123,7 @@ describe("TerminalPane", () => {
     expect(socketFramesOfType(socket, "resize")).toHaveLength(0);
   });
 
-  it("claims the fitted terminal size before forwarding xterm input", async () => {
+  it("forwards xterm protocol replies without claiming terminal size", async () => {
     fitDimensions = { cols: 101, rows: 33 };
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
@@ -1134,13 +1134,11 @@ describe("TerminalPane", () => {
     await waitForInitialGeometry(socket);
     socket.sent = [];
 
-    xtermOnDataHandlers[0]!("input");
+    xtermOnDataHandlers[0]!("\x1b[24;80R");
 
-    await waitFor(() => expect(socket.sent).toHaveLength(2));
-    expect(socket.sent.map((_, index) => sentText(socket, index))).toEqual([
-      JSON.stringify({ type: "claim_resize", cols: 101, rows: 33 }),
-      "input",
-    ]);
+    await waitFor(() => expect(socket.sent).toHaveLength(1));
+    expect(socketFramesOfType(socket, "claim_resize")).toHaveLength(0);
+    expect(sentText(socket, 0)).toBe("\x1b[24;80R");
   });
 
   it("forwards complete tmux mouse drags without a local threshold", async () => {

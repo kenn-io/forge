@@ -742,6 +742,8 @@ test.describe("inline workspace pane continuity", () => {
     try {
       const desktopFrames = observeTerminalControlFrames(page);
       const phoneFrames = observeTerminalControlFrames(phonePage);
+      const desktopOutput = observeTerminalOutput(page);
+      const phoneOutput = observeTerminalOutput(phonePage);
       isolatedServer = await startIsolatedWorkspaceE2EServer();
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
       const workspace = await createIssueWorkspace(api, 10);
@@ -762,6 +764,29 @@ test.describe("inline workspace pane continuity", () => {
       await expect
         .poll(() => tmuxClientPtyGeometries(isolatedServer!))
         .toContainEqual({ cols: phoneClaim.cols, rows: phoneClaim.rows });
+
+      const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
+      const desktopRepliesBefore = desktopOutput.cursorReports().length;
+      const phoneRepliesBefore = phoneOutput.cursorReports().length;
+      const desktopClaimsBeforeQuery = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
+      const phoneClaimsBeforeQuery = phoneFrames.filter((frame) => frame.type === "claim_resize").length;
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-p", "-t", tmuxSession, "allow-passthrough", "on"]);
+      runE2ETmuxCommand(isolatedServer, [
+        "send-keys",
+        "-t",
+        tmuxSession,
+        "-l",
+        `printf '${tmuxPassthroughFormat("\\033\\033[6n")}'`,
+      ]);
+      runE2ETmuxCommand(isolatedServer, ["send-keys", "-t", tmuxSession, "Enter"]);
+      await expect.poll(() => desktopOutput.cursorReports().length).toBeGreaterThan(desktopRepliesBefore);
+      await expect.poll(() => phoneOutput.cursorReports().length).toBeGreaterThan(phoneRepliesBefore);
+      expect(desktopFrames.filter((frame) => frame.type === "claim_resize")).toHaveLength(desktopClaimsBeforeQuery);
+      expect(phoneFrames.filter((frame) => frame.type === "claim_resize")).toHaveLength(phoneClaimsBeforeQuery);
+      await expect
+        .poll(() => tmuxClientPtyGeometries(isolatedServer!))
+        .toContainEqual({ cols: phoneClaim.cols, rows: phoneClaim.rows });
+      runE2ETmuxCommand(isolatedServer, ["send-keys", "-t", tmuxSession, "C-c"]);
 
       const desktopClaimsBeforeResize = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
       const desktopGeometryBeforeResize = desktopFrames.filter(

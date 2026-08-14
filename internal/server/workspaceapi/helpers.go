@@ -157,6 +157,10 @@ func toWorkspaceResponse(summary *db.WorkspaceSummary) workspaceResponse {
 		formatted := summary.ItemLastActivityAt.UTC().Format(time.RFC3339)
 		itemLastActivityAt = &formatted
 	}
+	associatedPRNumber := summary.AssociatedPRNumber
+	if !summary.AssociatedPRVisible {
+		associatedPRNumber = nil
+	}
 	return workspaceResponse{
 		ID: summary.ID,
 		Repo: httpapi.RepoRefResponse{
@@ -187,7 +191,7 @@ func toWorkspaceResponse(summary *db.WorkspaceSummary) workspaceResponse {
 		MRReviewDecision:   summary.MRReviewDecision,
 		MRAdditions:        summary.MRAdditions,
 		MRDeletions:        summary.MRDeletions,
-		AssociatedPRNumber: summary.AssociatedPRNumber,
+		AssociatedPRNumber: associatedPRNumber,
 		Kata:               summary.KataMetadata,
 		MRHeadRepoKind:     mrHeadRepoKind(summary.ItemType, summary.MRHeadRepo),
 	}

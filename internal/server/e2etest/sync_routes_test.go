@@ -178,6 +178,168 @@ func TestAcceptedFullSyncQueuesBehindInFlightProviderFetchE2E(t *testing.T) {
 		"accepted full sync did not persist the fresh provider snapshot")
 }
 
+// If an HTTP-scoped refresh loses its repository binding while coalescing
+// with background work, unrelated repositories bypass their cadence gate.
+func TestQueuedScopedHTTPRefreshKeepsBypassRepositoryBoundE2E(t *testing.T) {
+	require := require.New(t)
+
+	selectedEntered := make(chan struct{})
+	releaseSelected := make(chan struct{})
+	completions := make(chan struct{}, 2)
+	var (
+		phase               atomic.Int32
+		selectedCalls       atomic.Int32
+		unrelatedCalls      atomic.Int32
+		releaseSelectedOnce sync.Once
+	)
+	mock := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			id := int64(1)
+			if repo == "unrelated" {
+				id = 2
+			}
+			nodeID := "repo-acme-" + repo
+			defaultBranch := "seed"
+			if repo == "selected" {
+				switch phase.Load() {
+				case 1:
+					defaultBranch = "active"
+				case 2:
+					defaultBranch = "queued"
+				}
+			}
+			return &gh.Repository{
+				ID:            &id,
+				NodeID:        &nodeID,
+				Name:          &repo,
+				Owner:         &gh.User{Login: &owner},
+				Archived:      new(bool),
+				DefaultBranch: &defaultBranch,
+			}, nil
+		},
+		listOpenPullRequestsFn: func(
+			ctx context.Context, _, repo string,
+		) ([]*gh.PullRequest, error) {
+			switch repo {
+			case "selected":
+				if selectedCalls.Add(1) == 2 {
+					close(selectedEntered)
+					select {
+					case <-releaseSelected:
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
+				}
+			case "unrelated":
+				unrelatedCalls.Add(1)
+			}
+			return []*gh.PullRequest{}, nil
+		},
+	}
+
+	database := dbtest.Open(t)
+	bucket := ghclient.RateBucketKey("github", "github.com", "host")
+	repos := []ghclient.RepoRef{
+		{
+			Platform:           platform.KindGitHub,
+			Owner:              "acme",
+			Name:               "selected",
+			PlatformHost:       "github.com",
+			PlatformExternalID: "repo-acme-selected",
+		},
+		{
+			Platform:           platform.KindGitHub,
+			Owner:              "acme",
+			Name:               "unrelated",
+			PlatformHost:       "github.com",
+			PlatformExternalID: "repo-acme-unrelated",
+		},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		repos,
+		time.Hour,
+		map[string]*ghclient.RateTracker{
+			bucket: ghclient.NewRateTracker(database, "github.com", "host", "rest"),
+		},
+		nil,
+	)
+	syncer.SetParallelism(1)
+	t.Cleanup(func() {
+		releaseSelectedOnce.Do(func() { close(releaseSelected) })
+		syncer.Stop()
+	})
+
+	// A completed background pass seeds the shared host cadence window.
+	syncer.RunOnce(t.Context())
+	require.Equal(int32(1), selectedCalls.Load())
+	require.Equal(int32(1), unrelatedCalls.Load())
+	syncer.SetOnSyncCompleted(func([]ghclient.RepoSyncResult) {
+		completions <- struct{}{}
+	})
+
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+	})
+	forge := httptest.NewServer(srv)
+	t.Cleanup(forge.Close)
+	api, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
+	require.NoError(err)
+	onlySelected := []string{"github|github.com/acme/selected"}
+	triggerSelected := func() {
+		t.Helper()
+		response, err := api.HTTP.TriggerSyncWithResponse(
+			t.Context(),
+			&generated.TriggerSyncParams{OnlyRepo: &onlySelected},
+			func(_ context.Context, req *http.Request) error {
+				req.Header.Set("Content-Type", "application/json")
+				return nil
+			},
+		)
+		require.NoError(err)
+		require.Equal(http.StatusAccepted, response.StatusCode(), string(response.Body))
+	}
+
+	phase.Store(1)
+	triggerSelected()
+	select {
+	case <-selectedEntered:
+	case <-time.After(5 * time.Second):
+		require.FailNow("HTTP-scoped refresh did not reach the provider")
+	}
+
+	// Queue normal background work, then merge another HTTP-scoped refresh
+	// while the first one still owns the single-flight slot.
+	syncer.RunOnce(t.Context())
+	triggerSelected()
+	phase.Store(2)
+	releaseSelectedOnce.Do(func() { close(releaseSelected) })
+
+	for range 2 {
+		select {
+		case <-completions:
+		case <-time.After(5 * time.Second):
+			require.FailNow("coalesced sync passes did not complete")
+		}
+	}
+
+	require.Equal(int32(3), selectedCalls.Load())
+	require.Equal(int32(1), unrelatedCalls.Load())
+	dbRepos, err := database.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(dbRepos, 2)
+	branches := make(map[string]string, len(dbRepos))
+	for _, repo := range dbRepos {
+		branches[repo.Name] = repo.DefaultBranch
+	}
+	require.Equal("queued", branches["selected"])
+	require.Equal("seed", branches["unrelated"])
+}
+
 func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

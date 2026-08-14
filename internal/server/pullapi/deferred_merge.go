@@ -60,21 +60,21 @@ type deferredMergeTargetSnapshot struct {
 }
 
 type DeferredMergeCompletedPayload struct {
-	Provider           string `json:"provider"`
-	PlatformHost       string `json:"platform_host"`
-	RepoPath           string `json:"repo_path"`
-	Owner              string `json:"owner"`
-	Name               string `json:"name"`
-	Number             int    `json:"number"`
-	HeadSHA            string `json:"head_sha"`
-	Status             string `json:"status"`
-	Merged             bool   `json:"merged,omitempty"`
-	SHA                string `json:"sha,omitempty"`
-	Message            string `json:"message,omitempty"`
-	Error              string `json:"error,omitempty"`
-	CompletedAt        string `json:"completed_at"`
-	Warning            string `json:"workspace_cleanup_warning,omitempty"`
-	DeletedWorkspaceID string `json:"deleted_workspace_id,omitempty"`
+	Provider                string `json:"provider"`
+	PlatformHost            string `json:"platform_host"`
+	RepoPath                string `json:"repo_path"`
+	Owner                   string `json:"owner"`
+	Name                    string `json:"name"`
+	Number                  int    `json:"number"`
+	HeadSHA                 string `json:"head_sha"`
+	Status                  string `json:"status"`
+	Merged                  bool   `json:"merged,omitempty"`
+	SHA                     string `json:"sha,omitempty"`
+	Message                 string `json:"message,omitempty"`
+	Error                   string `json:"error,omitempty"`
+	CompletedAt             string `json:"completed_at"`
+	Warning                 string `json:"workspace_cleanup_warning,omitempty"`
+	WorkspaceCleanupPending bool   `json:"workspace_cleanup_pending,omitempty"`
 }
 
 func (s *Handler) deferMergePR(
@@ -420,33 +420,22 @@ func (s *Handler) completeDeferredMerge(
 	s.publish(Event{
 		Type: "deferred_merge_completed",
 		Data: DeferredMergeCompletedPayload{
-			Provider:     string(repoProviderKind(repo)),
-			PlatformHost: repoProviderHost(repo),
-			RepoPath:     repo.RepoPath,
-			Owner:        repo.Owner,
-			Name:         repo.Name,
-			Number:       number,
-			HeadSHA:      deferredMergeHeadSHA(body, queuedTarget.HeadSHA),
-			Status:       "merged",
-			Merged:       result.Merged,
-			SHA:          result.SHA,
-			Message:      result.Message,
-			CompletedAt:  formatUTCRFC3339(s.now().UTC()),
-			Warning:      result.WorkspaceCleanupWarning,
-			DeletedWorkspaceID: deferredMergeDeletedWorkspaceID(
-				result.Merged,
-				body.DeleteWorkspaceID,
-				result.WorkspaceCleanupWarning,
-			),
+			Provider:                string(repoProviderKind(repo)),
+			PlatformHost:            repoProviderHost(repo),
+			RepoPath:                repo.RepoPath,
+			Owner:                   repo.Owner,
+			Name:                    repo.Name,
+			Number:                  number,
+			HeadSHA:                 deferredMergeHeadSHA(body, queuedTarget.HeadSHA),
+			Status:                  "merged",
+			Merged:                  result.Merged,
+			SHA:                     result.SHA,
+			Message:                 result.Message,
+			CompletedAt:             formatUTCRFC3339(s.now().UTC()),
+			Warning:                 result.WorkspaceCleanupWarning,
+			WorkspaceCleanupPending: result.WorkspaceCleanupPending,
 		},
 	})
-}
-
-func deferredMergeDeletedWorkspaceID(merged bool, requestedID, cleanupWarning string) string {
-	if !merged || requestedID == "" || cleanupWarning != "" {
-		return ""
-	}
-	return requestedID
 }
 
 func (s *Handler) ensureDeferredMergeTargetUnchanged(ctx context.Context, repo db.Repo, number int, queuedTarget deferredMergeTargetSnapshot) error {

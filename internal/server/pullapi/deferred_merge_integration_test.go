@@ -207,8 +207,8 @@ func (p *deferredMergeTestProvider) MergeMergeRequest(
 }
 
 type deferredMergeTestOptions struct {
-	deferredMergeMaxWait time.Duration
-	deleteWorkspace      func(context.Context, string) error
+	deferredMergeMaxWait   time.Duration
+	queueWorkspaceDeletion func(string) error
 }
 
 type deferredMergeTestRecordedEvent struct {
@@ -260,12 +260,12 @@ func newDeferredMergeHTTPFixture(
 		},
 	})
 	handler := New(Deps{
-		DB:                   database,
-		Resolver:             resolver,
-		Syncer:               syncer,
-		DeleteWorkspace:      opts.deleteWorkspace,
-		Now:                  func() time.Time { return now },
-		DeferredMergeMaxWait: opts.deferredMergeMaxWait,
+		DB:                     database,
+		Resolver:               resolver,
+		Syncer:                 syncer,
+		QueueWorkspaceDeletion: opts.queueWorkspaceDeletion,
+		Now:                    func() time.Time { return now },
+		DeferredMergeMaxWait:   opts.deferredMergeMaxWait,
 		Broadcast: func(event Event) uint64 {
 			events <- deferredMergeTestRecordedEvent{Event: event}
 			return 0
@@ -460,9 +460,9 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 		now,
 		0,
 		deferredMergeTestOptions{
-			deleteWorkspace: func(_ context.Context, id string) error {
+			queueWorkspaceDeletion: func(id string) error {
 				deletedID = id
-				return errors.New("workspace has uncommitted changes: notes.txt")
+				return nil
 			},
 		},
 	)
@@ -522,8 +522,8 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	require.True(completed.Merged)
 	require.Equal("merge-sha", completed.SHA)
 	require.Equal("2026-06-15T12:00:00Z", completed.CompletedAt)
-	require.Equal("workspace has uncommitted changes: notes.txt", completed.Warning)
-	require.Empty(completed.DeletedWorkspaceID)
+	require.Empty(completed.Warning)
+	require.True(completed.WorkspaceCleanupPending)
 	require.Equal("ws-1", deletedID)
 
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)

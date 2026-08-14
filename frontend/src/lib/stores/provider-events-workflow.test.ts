@@ -120,7 +120,7 @@ it.layer(ProviderEventsTest)("provider event checkpoint resume", (it) => {
 });
 
 it.layer(ProviderEventsTest)("workspace lifecycle events", (it) => {
-  it.effect("decodes workspace creation and status events", () =>
+  it.effect("decodes workspace creation, status, and confirmed deletion events", () =>
     Effect.gen(function* () {
       const probe = yield* ProviderEventsProbe;
       const events = yield* Queue.unbounded<ProviderEvent>();
@@ -135,6 +135,21 @@ it.layer(ProviderEventsTest)("workspace lifecycle events", (it) => {
 
       emitFrame(source, "workspace_created", { id: "ws-1", created: false }, "1");
       emitFrame(source, "workspace_status", { id: "ws-1", status: "ready" }, "2");
+      emitFrame(
+        source,
+        "workspace_deleted",
+        {
+          workspace_id: "ws-1",
+          provider: "github",
+          platform_host: "github.com",
+          repo_path: "acme/widget",
+          owner: "acme",
+          name: "widget",
+          number: 42,
+          item_type: "pull_request",
+        },
+        "3",
+      );
 
       const created = yield* Queue.take(events);
       assert.strictEqual(created.type, "workspace_created");
@@ -147,6 +162,13 @@ it.layer(ProviderEventsTest)("workspace lifecycle events", (it) => {
       if (status.type === "workspace_status") {
         assert.strictEqual(status.payload.id, "ws-1");
         assert.strictEqual(status.payload.status, "ready");
+      }
+      const deleted = yield* Queue.take(events);
+      assert.strictEqual(deleted.type, "workspace_deleted");
+      if (deleted.type === "workspace_deleted") {
+        assert.strictEqual(deleted.payload.workspace_id, "ws-1");
+        assert.strictEqual(deleted.payload.repo_path, "acme/widget");
+        assert.strictEqual(deleted.payload.item_type, "pull_request");
       }
       yield* Fiber.interrupt(fiber);
     }),

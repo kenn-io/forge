@@ -27,6 +27,7 @@ export type WorkspaceListItem = Pick<
     readonly associated_pr_number?: Exclude<GeneratedWorkspace["associated_pr_number"], undefined> | null;
     readonly commits_ahead?: number | null;
     readonly commits_behind?: number | null;
+    readonly error_message?: GeneratedWorkspace["error_message"] | null;
     readonly item_last_activity_at?: string | null;
     readonly mr_additions?: number | null;
     readonly mr_deletions?: number | null;
@@ -68,6 +69,7 @@ const Workspace = Schema.Struct({
   commits_ahead: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   commits_behind: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   created_at: Schema.String,
+  error_message: Schema.optionalKey(Schema.NullOr(Schema.String)),
   git_head_ref: Schema.String,
   id: Schema.String,
   item_key: Schema.optionalKey(Schema.String),

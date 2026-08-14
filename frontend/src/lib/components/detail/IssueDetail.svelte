@@ -610,6 +610,9 @@
         // "Open Workspace" for a workspace that no longer exists.
         resolveControllerlessWorkspaceRef(itemIdentity, issues.getIssueDetail()?.workspace ?? null),
   );
+  const workspaceDeletionLifecycle = $derived(
+    workspace?.status === "deleting" || workspace?.status === "deletion_failed",
+  );
 
   // Once a detail load lands for the identity this component is currently
   // showing, let the inline controller drop its override if the envelope
@@ -1268,9 +1271,9 @@
           {#if inlineWorkspace}
             <Button
               class="btn--workspace"
-              disabled={staleIssue}
+              disabled={staleIssue || workspaceDeletionLifecycle}
               onclick={() => {
-                if (staleIssue) return;
+                if (staleIssue || workspaceDeletionLifecycle) return;
                 inlineWorkspace.focusTerminal();
               }}
               tone="info"
@@ -1286,12 +1289,16 @@
               disabled={staleIssue}
               onclick={() => {
                 if (staleIssue) return;
-                inlineWorkspace.openInWorkspaces(workspace);
+                if (workspaceDeletionLifecycle) {
+                  navigate("/workspaces");
+                } else {
+                  inlineWorkspace.openInWorkspaces(workspace);
+                }
               }}
               tone="neutral"
               surface="soft"
               size="sm"
-              label="Open in Workspaces"
+              label={workspaceDeletionLifecycle ? "View in Workspaces" : "Open in Workspaces"}
               shortLabel="Workspaces"
             >
               <ExternalLinkIcon size="14" strokeWidth="2.2" aria-hidden="true" />
@@ -1302,13 +1309,13 @@
               disabled={staleIssue}
               onclick={() => {
                 if (staleIssue) return;
-                navigate(`/terminal/${workspace.id}`);
+                navigate(workspaceDeletionLifecycle ? "/workspaces" : `/terminal/${workspace.id}`);
               }}
               tone="info"
               surface="soft"
               size="sm"
-              label="Open Workspace"
-              shortLabel="Workspace"
+              label={workspaceDeletionLifecycle ? "View in Workspaces" : "Open Workspace"}
+              shortLabel={workspaceDeletionLifecycle ? "Workspaces" : "Workspace"}
             >
               <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>

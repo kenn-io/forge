@@ -2634,6 +2634,150 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));
   });
 
+  it("renders persisted workspace deletion as progress instead of an interactive terminal", async () => {
+    const deletingWorkspace = {
+      ...workspaceResponse,
+      status: "deleting",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const request = input instanceof Request ? input : new Request(input);
+        const { pathname } = new URL(request.url);
+        if (pathname.endsWith("/workspaces/ws-1")) {
+          return Promise.resolve(Response.json(deletingWorkspace));
+        }
+        if (pathname.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [deletingWorkspace] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    expect(await screen.findByText("Deleting workspace...")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Launch" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Refresh workspace details" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("offers confirmed force-delete recovery for a persisted deletion failure", async () => {
+    const failedWorkspace = {
+      ...workspaceResponse,
+      status: "deletion_failed",
+      error_message: "Workspace deletion failed after stopping its runtime.",
+    };
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const { pathname, searchParams } = new URL(request.url);
+      if (request.method === "DELETE" && pathname.endsWith("/workspaces/ws-1")) {
+        expect(searchParams.get("force")).toBe("true");
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(Response.json(failedWorkspace));
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [failedWorkspace] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState({}, "", "/terminal/ws-1");
+    const onWorkspaceDeleted = vi.fn();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        workspaceHostKey: "member",
+        onWorkspaceDeleted,
+      },
+    });
+
+    expect(await screen.findByText(failedWorkspace.error_message)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Launch" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Force delete workspace" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Force delete" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input, init]) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          const { pathname, searchParams } = new URL(request.url);
+          return (
+            request.method === "DELETE" &&
+            pathname === "/api/v1/fleet/hosts/member/workspaces/ws-1" &&
+            searchParams.get("force") === "true"
+          );
+        }),
+      ).toBe(true);
+    });
+    await waitFor(() => expect(onWorkspaceDeleted).toHaveBeenCalledWith("ws-1", "member", workspaceItemIdentity));
+  });
+
+  it.each([
+    ["workspaceSetupInProgress", "creating", "Setting up workspace..."],
+    ["workspaceDeletionInProgress", "deleting", "Deleting workspace..."],
+  ])("refreshes lifecycle state instead of offering force delete for %s", async (code, status, lifecycleMessage) => {
+    let deletionAttempted = false;
+    const lifecycleWorkspace = {
+      ...workspaceResponse,
+      status,
+    };
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const { pathname } = new URL(request.url);
+      if (request.method === "DELETE" && pathname.endsWith("/workspaces/ws-1")) {
+        deletionAttempted = true;
+        return Promise.resolve(
+          Response.json(
+            {
+              code,
+              detail:
+                status === "creating"
+                  ? "workspace setup is still in progress"
+                  : "workspace deletion is already in progress",
+              status: 409,
+            },
+            { status: 409 },
+          ),
+        );
+      }
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(Response.json(deletionAttempted ? lifecycleWorkspace : workspaceResponse));
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(
+          Response.json({
+            workspaces: [deletionAttempted ? lifecycleWorkspace : workspaceResponse],
+          }),
+        );
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("button", { name: "Delete" });
+    await clickDeleteAndConfirm();
+
+    expect(await screen.findByText(lifecycleMessage)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Force delete" })).toBeNull();
+    expect(screen.queryByText("Workspace has uncommitted changes.")).toBeNull();
+  });
+
   it("issues no delete until the confirmation is accepted, and none on cancel", async () => {
     // Delete removes a worktree whose unpushed commits go with it, from a
     // one-click strip button — so every entry point confirms first.
@@ -2913,7 +3057,16 @@ describe("WorkspaceTerminalView", () => {
         if (searchParams.get("force") === "true") {
           return forceDeleteRequest.promise;
         }
-        return Promise.resolve(Response.json({ detail: "Workspace has uncommitted changes." }, { status: 409 }));
+        return Promise.resolve(
+          Response.json(
+            {
+              code: "worktreeDirty",
+              detail: "Workspace has uncommitted changes.",
+              status: 409,
+            },
+            { status: 409 },
+          ),
+        );
       }
       if (pathname.endsWith("/workspaces/ws-1")) {
         return Promise.resolve(Response.json(workspaceResponse));

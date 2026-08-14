@@ -156,6 +156,7 @@
     y: number;
   } | null>(null);
   let deleteConfirmWorkspace = $state<Workspace | null>(null);
+  let deleteConfirmForce = $state(false);
   let workspaceAction = $state<{
     workspaceKey: string;
     action: "push" | "pull" | "reveal" | "delete";
@@ -717,8 +718,8 @@
 
   function workspaceStatus(ws: Workspace): StatusDotStatus {
     if (ws.status === "ready") return "idle";
-    if (ws.status === "creating") return "working";
-    if (ws.status === "error") return "unclean";
+    if (ws.status === "creating" || ws.status === "deleting") return "working";
+    if (ws.status === "error" || ws.status === "deletion_failed") return "unclean";
     return "stale";
   }
 
@@ -726,6 +727,8 @@
     if (ws.status === "ready") return "Workspace ready";
     if (ws.status === "creating") return "Creating workspace";
     if (ws.status === "error") return "Workspace error";
+    if (ws.status === "deleting") return "Deleting workspace";
+    if (ws.status === "deletion_failed") return "Deletion failed";
     return `Workspace ${ws.status}`;
   }
 
@@ -817,6 +820,7 @@
   }
 
   function openWorkspace(ws: Workspace): void {
+    if (ws.status === "deleting" || ws.status === "deletion_failed") return;
     const doneVersion = doneStateVersion(ws);
     if (doneVersion !== null) {
       acknowledgedDoneStates = {
@@ -1042,7 +1046,8 @@
   }
 
   function workspaceActionsDisabled(ws: Workspace): boolean {
-    return isWorkspaceActionDisabled?.(ws.id, ws.fleet_host_key) ?? false;
+    return ws.status === "deleting" || ws.status === "deletion_failed" ||
+      (isWorkspaceActionDisabled?.(ws.id, ws.fleet_host_key) ?? false);
   }
 
   function workspaceBusyLabel(ws: Workspace): string {
@@ -1058,7 +1063,9 @@
     ws: Workspace,
     action: "push" | "pull" | "reveal" | "delete",
   ): boolean {
-    if (workspaceAction !== null || workspaceActionsDisabled(ws)) return false;
+    const externallyDisabled = isWorkspaceActionDisabled?.(ws.id, ws.fleet_host_key) ?? false;
+    const deletionDisabled = ws.status === "deleting" || externallyDisabled;
+    if (workspaceAction !== null || (action === "delete" ? deletionDisabled : workspaceActionsDisabled(ws))) return false;
     workspaceAction = { workspaceKey: workspaceRowKey(ws), action };
     return true;
   }
@@ -1148,31 +1155,39 @@
     );
   }
 
-  function openDeleteWorkspaceDialog(ws: Workspace): void {
+  function openDeleteWorkspaceDialog(ws: Workspace, force = false): void {
     deleteConfirmWorkspace = ws;
+    deleteConfirmForce = force;
     closeContextMenu();
   }
 
   function closeDeleteWorkspaceDialog(): void {
     if (deleteConfirmWorkspace && workspaceActionMatches(deleteConfirmWorkspace, "delete")) return;
     deleteConfirmWorkspace = null;
+    deleteConfirmForce = false;
   }
 
   function confirmDeleteWorkspaceFromList(): void {
     const ws = deleteConfirmWorkspace;
-    if (!ws || workspaceActionsDisabled(ws) || !startWorkspaceAction(ws, "delete")) return;
+    if (!ws || !startWorkspaceAction(ws, "delete")) return;
     onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
     const hostKey = ws.fleet_host_key;
     const command = hostKey
       ? executeOpaqueGeneratedApiRequest("delete remote workspace", (generatedClient, signal) =>
           generatedClient.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
-            params: { path: { host_key: hostKey, id: ws.id } },
+            params: {
+              path: { host_key: hostKey, id: ws.id },
+              ...(deleteConfirmForce ? { query: { force: true } } : {}),
+            },
             signal,
           }),
         ).pipe(Effect.asVoid)
       : executeGeneratedApiRequest("delete workspace", (generatedClient, signal) =>
           generatedClient.DELETE("/workspaces/{id}", {
-            params: { path: { id: ws.id } },
+            params: {
+              path: { id: ws.id },
+              ...(deleteConfirmForce ? { query: { force: true } } : {}),
+            },
             signal,
           }),
         ).pipe(Effect.asVoid);
@@ -1207,6 +1222,7 @@
             onWorkspaceDeletePendingChange?.(ws.id, hostKey, false);
             finishWorkspaceAction(ws);
             deleteConfirmWorkspace = null;
+            deleteConfirmForce = false;
           }),
         ),
       ),
@@ -1493,6 +1509,12 @@
                   size={6}
                 />
                 <span class="ws-name">{displayName(ws)}</span>
+                {#if ws.status === "deleting" || ws.status === "deletion_failed"}
+                  <span
+                    class={["workspace-lifecycle-state", `workspace-lifecycle-state--${ws.status}`]}
+                    title={ws.error_message ?? workspaceStatusLabel(ws)}
+                  >{workspaceStatusLabel(ws)}</span>
+                {/if}
                 {#if agentState}
                   <span
                     class={["agent-state", `agent-state--${agentState.tone}`]}
@@ -1763,25 +1785,39 @@
       class="kit-filter-dropdown__item active workspace-context-danger"
       role="menuitem"
       type="button"
-      disabled={actionDisabled}
+      disabled={actionBusy || menuWorkspace.status === "deleting" || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
       onclick={() => {
         openDeleteWorkspaceDialog(menuWorkspace);
       }}
     >
       <span class="kit-filter-dropdown__dot filter-dot--danger"></span>
-      <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "delete") ? "Deleting..." : "Delete workspace..."}</span>
+      <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "delete") ? "Deleting..." : menuWorkspace.status === "deletion_failed" ? "Retry deletion..." : "Delete workspace..."}</span>
     </button>
+    {#if menuWorkspace.status === "deletion_failed"}
+      <button
+        class="kit-filter-dropdown__item active workspace-context-danger"
+        role="menuitem"
+        type="button"
+        disabled={actionBusy || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
+        onclick={() => openDeleteWorkspaceDialog(menuWorkspace, true)}
+      >
+        <span class="kit-filter-dropdown__dot filter-dot--danger"></span>
+        <span class="kit-filter-dropdown__label">Force delete workspace...</span>
+      </button>
+    {/if}
   </div>
 {/if}
 
 <ConfirmDialog
   open={deleteConfirmWorkspace !== null && hostVisible}
-  title="Delete workspace?"
+  title={deleteConfirmForce ? "Force delete workspace?" : deleteConfirmWorkspace?.status === "deletion_failed" ? "Retry workspace deletion?" : "Delete workspace?"}
   message={deleteConfirmWorkspace
     ? `Delete workspace "${displayName(deleteConfirmWorkspace)}"?`
     : ""}
-  hint="This removes its managed worktree and runtime sessions."
-  confirmLabel="Delete workspace"
+  hint={deleteConfirmForce
+    ? "This discards uncommitted changes and removes the managed worktree and runtime sessions."
+    : deleteConfirmWorkspace?.error_message ?? "This removes its managed worktree and runtime sessions."}
+  confirmLabel={deleteConfirmForce ? "Force delete workspace" : deleteConfirmWorkspace?.status === "deletion_failed" ? "Retry deletion" : "Delete workspace"}
   pendingLabel="Deleting…"
   busy={deleteConfirmBusy}
   tone="danger"
@@ -2067,6 +2103,21 @@
 
   .ws-row.selected .ws-name {
     font-weight: 600;
+  }
+
+  .workspace-lifecycle-state {
+    flex-shrink: 0;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .workspace-lifecycle-state--deleting {
+    color: var(--accent-blue);
+  }
+
+  .workspace-lifecycle-state--deletion_failed {
+    color: var(--accent-red);
   }
 
   .agent-state {

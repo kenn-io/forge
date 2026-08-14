@@ -2627,11 +2627,12 @@ func validateLocalBranchName(
 // cleanup. It exists so callers can stop background processes
 // that might still write to the worktree — e.g. agent shells
 // launched into the workspace — without that cleanup running on
-// a 409 dirty rejection. Pass nil if you have nothing to do
-// between the preflight and the destructive part.
+// a 409 dirty rejection. Returning an error stops deletion before
+// cleanup starts. Pass nil if you have nothing to do between the
+// preflight and the destructive part.
 func (m *Manager) Delete(
 	ctx context.Context, id string, force bool,
-	beforeDestructive func(context.Context),
+	beforeDestructive func(context.Context) error,
 ) (dirty []string, err error) {
 	ws, err := m.db.GetWorkspace(ctx, id)
 	if err != nil {
@@ -2656,7 +2657,9 @@ func (m *Manager) Delete(
 	}
 
 	if beforeDestructive != nil {
-		beforeDestructive(ctx)
+		if err := beforeDestructive(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := m.cleanupWorkspaceArtifactsForDelete(ctx, ws); err != nil {
@@ -3880,12 +3883,11 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) (bool, error) {
 			"workspace_id", ws.ID,
 			"tmux_session", ws.TmuxSession,
 		)
-		if err := m.db.UpdateWorkspaceStatus(
-			ctx, ws.ID, "error", &msg,
-		); err != nil {
+		updated, err := m.db.MarkReadyWorkspaceError(ctx, ws.ID, msg)
+		if err != nil {
 			return changed, err
 		}
-		changed = true
+		changed = changed || updated
 	}
 	return changed, nil
 }

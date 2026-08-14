@@ -27,6 +27,21 @@ func (h *Handler) Start(parent context.Context, disableMonitors bool) {
 	h.lifecycleStarted = true
 	h.lifecycleMu.Unlock()
 
+	if h.db != nil {
+		recoveryCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := h.db.FailInterruptedWorkspaceSetups(
+			recoveryCtx, interruptedWorkspaceSetupMessage,
+		); err != nil {
+			slog.Error("recover interrupted workspace setups", "err", err)
+		}
+		if err := h.db.FailInterruptedWorkspaceDeletions(
+			recoveryCtx, interruptedWorkspaceDeletionMessage,
+		); err != nil {
+			slog.Error("recover interrupted workspace deletions", "err", err)
+		}
+		cancel()
+	}
+
 	h.runBackground(func(ctx context.Context) {
 		select {
 		case <-parent.Done():

@@ -14,11 +14,6 @@
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
-  import {
-    beginWorkspaceDeletion,
-    endWorkspaceDeletion,
-    markWorkspaceIdDeleted,
-  } from "../../stores/workspace-create-pending.svelte.js";
 
   const { detail } = getStores();
 
@@ -56,7 +51,7 @@
     /** Warning shown when the configured override permits a mid-stack merge. */
     midStackWarning?: string | undefined;
     onclose: () => void;
-    onmerged: (cleanupWarning?: string, deletedWorkspaceId?: string) => void;
+    onmerged: (cleanupWarning?: string) => void;
     /** Called when a deferred merge was accepted and now waits on CI. */
     onqueued: () => void;
     onstateconflict?: ((
@@ -177,8 +172,6 @@
     error = null;
     let problemHandled = false;
     const params = mergeParams();
-    const cleanupWorkspaceId = deferred ? undefined : params.delete_workspace_id;
-    if (cleanupWorkspaceId) beginWorkspaceDeletion(cleanupWorkspaceId, undefined);
     detail.mergePull({ provider, platformHost, owner, name, repoPath }, number, params, deferred, {
       onProblem: (problem) => {
         problemHandled = handleMergeProblem(problem);
@@ -191,14 +184,9 @@
           onqueued();
           return;
         }
-        const deletedWorkspaceId = cleanupWorkspaceId && outcome.cleanupWarning === undefined
-          ? cleanupWorkspaceId
-          : undefined;
-        if (deletedWorkspaceId) markWorkspaceIdDeleted(deletedWorkspaceId);
-        onmerged(outcome.cleanupWarning, deletedWorkspaceId);
+        onmerged(outcome.cleanupWarning);
       },
       onSettled: () => {
-        if (cleanupWorkspaceId) endWorkspaceDeletion(cleanupWorkspaceId, undefined);
         activeMergeSubmission = null;
       },
     });

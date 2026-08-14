@@ -62,6 +62,16 @@ The base workspace `tmux` tab is the exception:
 Workspace deletion is intentionally conservative.
 
 - First decide whether deletion is allowed, including dirty-worktree checks.
+- Persist deletion intent before destructive work; failures remain visible and
+  retryable, while interrupted attempts become explicit failures after restart
+  (`internal/server/workspaceapi/workspace_deletion.go::Handler.runWorkspaceDeletion`).
+- Setup generations are process-local, so startup must change persisted
+  `creating` rows to `error` and `deleting` rows to `deletion_failed`
+  (`internal/server/workspaceapi/lifecycle.go::Handler.Start`).
+- Lifecycle writers that act on a previously observed status must use a
+  conditional transition. In particular, tmux pruning cannot replace an
+  admitted `deleting` state with a stale `ready` to `error` write
+  (`internal/db/queries.go::DB.MarkReadyWorkspaceError`).
 - Only after a clean preflight may runtime sessions and shells be stopped.
 - Only after runtime shutdown succeeds should destructive worktree and DB
   teardown continue.

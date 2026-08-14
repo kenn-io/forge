@@ -26,16 +26,16 @@ type ConfigSnapshot struct {
 }
 
 type Deps struct {
-	DB                   *db.DB
-	Resolver             *httpapi.RepositoryResolver
-	Syncer               *ghclient.Syncer
-	Clones               *gitclone.Manager
-	Config               ConfigSnapshot
-	Now                  func() time.Time
-	DeferredMergeMaxWait time.Duration
-	DeleteWorkspace      func(context.Context, string) error
-	WorkspaceSubjects    func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
-	ViewerLogins         func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
+	DB                     *db.DB
+	Resolver               *httpapi.RepositoryResolver
+	Syncer                 *ghclient.Syncer
+	Clones                 *gitclone.Manager
+	Config                 ConfigSnapshot
+	Now                    func() time.Time
+	DeferredMergeMaxWait   time.Duration
+	QueueWorkspaceDeletion func(string) error
+	WorkspaceSubjects      func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
+	ViewerLogins           func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 
 	FleetSelfKey                  func(string) string
 	FilterRepos                   func([]db.Repo) []db.Repo
@@ -51,14 +51,14 @@ type Deps struct {
 }
 
 type Handler struct {
-	db                *db.DB
-	resolver          *httpapi.RepositoryResolver
-	syncer            *ghclient.Syncer
-	clones            *gitclone.Manager
-	deleteWorkspace   func(context.Context, string) error
-	now               func() time.Time
-	workspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
-	viewerLogins      func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
+	db                     *db.DB
+	resolver               *httpapi.RepositoryResolver
+	syncer                 *ghclient.Syncer
+	clones                 *gitclone.Manager
+	queueWorkspaceDeletion func(string) error
+	now                    func() time.Time
+	workspaceSubjects      func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
+	viewerLogins           func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 
 	fleetSelfKey                  func(string) string
 	filterRepos                   func([]db.Repo) []db.Repo
@@ -102,7 +102,7 @@ func New(deps Deps) *Handler {
 		resolver:                      deps.Resolver,
 		syncer:                        deps.Syncer,
 		clones:                        deps.Clones,
-		deleteWorkspace:               deps.DeleteWorkspace,
+		queueWorkspaceDeletion:        deps.QueueWorkspaceDeletion,
 		now:                           now,
 		workspaceSubjects:             deps.WorkspaceSubjects,
 		viewerLogins:                  deps.ViewerLogins,

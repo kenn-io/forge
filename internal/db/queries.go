@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+var ErrWorkspaceSetupInProgress = errors.New("workspace setup is still in progress")
+
 // listSearchCondition returns a SQL condition and args for a free-text search.
 // Unquoted whitespace-separated terms are ANDed. Within each term, the title
 // is searched as "#{number} {title}" so substring queries can match the
@@ -4801,6 +4803,113 @@ func (d *DB) UpdateWorkspaceStatus(
 	)
 	if err != nil {
 		return fmt.Errorf("update workspace status: %w", err)
+	}
+	return nil
+}
+
+// MarkReadyWorkspaceError records a runtime failure only while the workspace
+// is still ready. A false result means another lifecycle transition won the
+// race and must not be overwritten by the stale failure observation.
+func (d *DB) MarkReadyWorkspaceError(
+	ctx context.Context, id, message string,
+) (bool, error) {
+	result, err := d.execContext(ctx, `
+		UPDATE forge_workspaces
+		SET status = 'error', error_message = ?
+		WHERE id = ? AND status = 'ready'`,
+		message, id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("mark ready workspace error: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read ready workspace error result: %w", err)
+	}
+	return rowsAffected == 1, nil
+}
+
+// BeginWorkspaceDeletion atomically admits one deletion attempt from a stable
+// workspace state and clears any error left by an earlier attempt. A false
+// result means another deletion is already responsible for the workspace.
+func (d *DB) BeginWorkspaceDeletion(ctx context.Context, id string) (bool, error) {
+	result, err := d.execContext(ctx, `
+		UPDATE forge_workspaces
+		SET status = 'deleting', error_message = NULL
+		WHERE id = ? AND status IN ('ready', 'error', 'deletion_failed')`,
+		id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("begin workspace deletion: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read workspace deletion result: %w", err)
+	}
+	if rowsAffected == 1 {
+		return true, nil
+	}
+	var status string
+	err = d.ro.QueryRowContext(ctx, `SELECT status FROM forge_workspaces WHERE id = ?`, id).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) || status == "deleting" {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read workspace status after deletion admission: %w", err)
+	}
+	if status == "creating" {
+		return false, ErrWorkspaceSetupInProgress
+	}
+	return false, fmt.Errorf("workspace status %q does not permit deletion", status)
+}
+
+// FailWorkspaceDeletion preserves a failed teardown as a recoverable row.
+func (d *DB) FailWorkspaceDeletion(ctx context.Context, id, message string) error {
+	result, err := d.execContext(ctx, `
+		UPDATE forge_workspaces
+		SET status = 'deletion_failed', error_message = ?
+		WHERE id = ? AND status = 'deleting'`,
+		message, id,
+	)
+	if err != nil {
+		return fmt.Errorf("fail workspace deletion: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read workspace deletion failure result: %w", err)
+	}
+	if rowsAffected != 1 {
+		return fmt.Errorf("fail workspace deletion: workspace is not deleting")
+	}
+	return nil
+}
+
+// FailInterruptedWorkspaceDeletions makes daemon-interrupted destructive work
+// explicit. Retrying it always requires another user action.
+func (d *DB) FailInterruptedWorkspaceDeletions(ctx context.Context, message string) error {
+	_, err := d.execContext(ctx, `
+		UPDATE forge_workspaces
+		SET status = 'deletion_failed', error_message = ?
+		WHERE status = 'deleting'`,
+		message,
+	)
+	if err != nil {
+		return fmt.Errorf("fail interrupted workspace deletions: %w", err)
+	}
+	return nil
+}
+
+// FailInterruptedWorkspaceSetups makes process-local setup work that could not
+// survive a daemon restart explicit and retryable.
+func (d *DB) FailInterruptedWorkspaceSetups(ctx context.Context, message string) error {
+	_, err := d.execContext(ctx, `
+		UPDATE forge_workspaces
+		SET status = 'error', error_message = ?
+		WHERE status = 'creating'`,
+		message,
+	)
+	if err != nil {
+		return fmt.Errorf("fail interrupted workspace setups: %w", err)
 	}
 	return nil
 }

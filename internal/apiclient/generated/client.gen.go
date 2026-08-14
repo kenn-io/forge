@@ -688,8 +688,10 @@ const (
 	UnsupportedCapability         ProblemErrorCode = "unsupportedCapability"
 	UpstreamError                 ProblemErrorCode = "upstreamError"
 	ValidationError               ProblemErrorCode = "validationError"
+	WorkspaceDeletionInProgress   ProblemErrorCode = "workspaceDeletionInProgress"
 	WorkspaceDirectoryNotReusable ProblemErrorCode = "workspaceDirectoryNotReusable"
 	WorkspaceNotFound             ProblemErrorCode = "workspaceNotFound"
+	WorkspaceSetupInProgress      ProblemErrorCode = "workspaceSetupInProgress"
 	WorktreeDirty                 ProblemErrorCode = "worktreeDirty"
 )
 
@@ -750,9 +752,13 @@ func (e ProblemErrorCode) Valid() bool {
 		return true
 	case ValidationError:
 		return true
+	case WorkspaceDeletionInProgress:
+		return true
 	case WorkspaceDirectoryNotReusable:
 		return true
 	case WorkspaceNotFound:
+		return true
+	case WorkspaceSetupInProgress:
 		return true
 	case WorktreeDirty:
 		return true
@@ -2808,6 +2814,7 @@ type MergePRBody struct {
 	Merged                  bool    `json:"merged"`
 	Message                 string  `json:"message"`
 	Sha                     string  `json:"sha"`
+	WorkspaceCleanupPending *bool   `json:"workspace_cleanup_pending,omitempty"`
 	WorkspaceCleanupWarning *string `json:"workspace_cleanup_warning,omitempty"`
 }
 

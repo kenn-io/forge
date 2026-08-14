@@ -29,11 +29,11 @@ supersession, completion events, or pending-state presentation.
   merge; queueing a second one returns 409 `already_pending`, so the UI must
   not offer deferred actions while `deferred_merge_pending` is true.
 - Deferred merge requests retain the selected workspace ID; only a successful
-  provider merge reaches non-force deletion
+  provider merge reaches durable background-deletion admission
   (`internal/server/pullapi/deferred_merge.go::completeDeferredMerge`).
-- A successful completion event carries `deleted_workspace_id` only when cleanup removed the requested workspace.
-  Cleanup warnings preserve the workspace and omit that field; clients publish confirmed deletion before view refreshes
-  (`internal/server/pullapi/deferred_merge.go::DeferredMergeCompletedPayload`).
+- Successful completion can carry `workspace_cleanup_pending`; cleanup completion
+  is reported independently by workspace lifecycle events, so the merge event
+  never infers deletion (`internal/server/pullapi/deferred_merge.go::DeferredMergeCompletedPayload`).
 - Frontend callbacks distinguish queue acknowledgement from provider merge
   completion. A queued outcome closes the modal and refreshes pending state; it
   never publishes workspace deletion (`frontend/src/lib/stores/detail.svelte.ts::MergePullOutcome`).

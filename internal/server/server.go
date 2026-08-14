@@ -984,20 +984,17 @@ func newServer(
 		ConfigRepoPath:   configRepoPath,
 	})
 	s.pullAPI = pullapi.New(pullapi.Deps{
-		DB:                   database,
-		Resolver:             repoResolver,
-		Syncer:               syncer,
-		Clones:               clones,
-		Config:               pullConfigSnapshot(cfg),
-		Now:                  func() time.Time { return s.now() },
-		DeferredMergeMaxWait: deferredMergeMaxWait,
-		DeleteWorkspace: func(ctx context.Context, id string) error {
-			_, err := s.workspaceAPI.DeleteWorkspace(ctx, &workspaceapi.DeleteWorkspaceInput{ID: id})
-			return err
-		},
-		WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
-		ViewerLogins:      s.resolveAuthenticatedViewerLogins,
-		FleetSelfKey:      s.fleetAPI.SelfKey,
+		DB:                     database,
+		Resolver:               repoResolver,
+		Syncer:                 syncer,
+		Clones:                 clones,
+		Config:                 pullConfigSnapshot(cfg),
+		Now:                    func() time.Time { return s.now() },
+		DeferredMergeMaxWait:   deferredMergeMaxWait,
+		QueueWorkspaceDeletion: s.workspaceAPI.QueueWorkspaceDeletion,
+		WorkspaceSubjects:      s.workspaceAPI.WorkspaceSubjectSnapshot,
+		ViewerLogins:           s.resolveAuthenticatedViewerLogins,
+		FleetSelfKey:           s.fleetAPI.SelfKey,
 		FilterRepos: func(repos []db.Repo) []db.Repo {
 			if s.cfg == nil {
 				return repos

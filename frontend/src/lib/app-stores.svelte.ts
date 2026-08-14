@@ -227,6 +227,21 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     onDataChanged: refreshVisibleData,
     onSyncStatus: (status) => Effect.sync(() => syncStore.setSyncStatus(status)),
     onConfigChanged: handleConfigChanged,
+    onWorkspaceDeleted: (event) =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() =>
+          notifyWorkspaceDeleted(event.workspace_id, undefined, {
+            provider: event.provider,
+            platformHost: event.platform_host,
+            owner: event.owner,
+            name: event.name,
+            repoPath: event.repo_path,
+            number: event.number,
+            itemType: event.item_type,
+          }),
+        );
+        yield* refreshVisibleData();
+      }),
     ...(errorCb !== undefined && { onTerminalFailure: errorCb, onRecoverableFailure: errorCb }),
     onPRDetailRefreshed: (ref) => {
       const detail = detailStore.getDetail();
@@ -266,10 +281,6 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     },
     onDeferredMergeCompleted: (event) =>
       Effect.gen(function* () {
-        const deletedWorkspaceID = event.deleted_workspace_id;
-        if (deletedWorkspaceID) {
-          yield* Effect.sync(() => notifyWorkspaceDeleted(deletedWorkspaceID));
-        }
         const refreshes: Array<Effect.Effect<void, ProviderEventsError, AppServices>> = [
           pullsStore.reconcilePullsEffect(),
           activityStore.reconcileActivityEffect(),

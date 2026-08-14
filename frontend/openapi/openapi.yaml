@@ -3718,6 +3718,8 @@ components:
           type: string
         sha:
           type: string
+        workspace_cleanup_pending:
+          type: boolean
         workspace_cleanup_warning:
           type: string
       required:
@@ -4710,8 +4712,10 @@ components:
             - unsupportedCapability
             - upstreamError
             - validationError
+            - workspaceDeletionInProgress
             - workspaceDirectoryNotReusable
             - workspaceNotFound
+            - workspaceSetupInProgress
             - worktreeDirty
           examples:
             - badRequest

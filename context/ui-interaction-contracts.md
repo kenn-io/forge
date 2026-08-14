@@ -129,13 +129,21 @@ Interactive surfaces must agree on which item is selected.
   Deleting the exact `(hostKey, workspaceId)` named by the active terminal route
   must replace that history entry with the Workspaces list; pushing a redirect lets
   Back rehost the dead workspace (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
-- Automatic launchers and workspace mutations stay blocked during inline or merge-triggered deletion and explicit
-  startup; merge cleanup uses local host identity and the full host deletion notification before pending state clears
-  (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
-- Immediate and deferred merge cleanup is optional partial success, represented by the generated
-  `delete_workspace_id` request field and `workspace_cleanup_warning` result. A warning keeps the workspace live and
-  is presented as a warning, while only `merged: true` with no warning publishes the deleted workspace ID
-  (`frontend/src/lib/components/detail/MergeModal.svelte`, `frontend/src/lib/stores/detail.svelte.ts::mergePull`).
+- Merge success closes the modal after the cleanup-admission attempt, not teardown:
+  `deleting`/`deletion_failed` remain workspace states, and only the provider-aware
+  `workspace_deleted` event tombstones the row and reconciles visible item data
+  (`frontend/src/lib/app-stores.svelte.ts::createAppStores`).
+- Pull and issue detail actions route `deleting`/`deletion_failed` workspaces to
+  Workspaces recovery; inline hosts must not reopen their terminals
+  (`frontend/src/lib/components/detail/PullDetail.svelte::workspaceActionButton`).
+- A `deletion_failed` workspace exposes the same confirmed force-delete recovery
+  on local and fleet rows; fleet requests forward `force=true` to the owning host
+  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::confirmDeleteWorkspaceFromList`).
+- A terminal view whose loaded workspace is `deleting` or `deletion_failed`
+  blocks its normal runtime and workspace actions. It renders deletion progress
+  or confirmed force-delete recovery instead, retaining the exact workspace and
+  fleet-host target through confirmation
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::openForceDeleteRecovery`).
 - Catalog-backed routes must normalize missing selections even when the catalog
   is empty: select the first available item or `null`, and clear dependent route
   identity (`frontend/src/lib/components/docs/DocsWorkspace.svelte::loadFolders`).

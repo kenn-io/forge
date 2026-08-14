@@ -136,12 +136,24 @@ embedder protocol for arbitrary host state.
   (`frontend/src/lib/stores/detail.svelte.ts::applyRefreshedDetail`).
 - `DELETE /workspaces/{id}`: tear down a kenn-forge-managed workspace and its
   local resources.
-  - Force-delete blocks new setup generations before joining the current worker,
-    so creation or retry cannot materialize resources after cleanup and row removal.
-    Deletions are reference-counted per workspace ID; setup dispatched during
-    deletion queues and replays only if every concurrent deletion fails — one
-    success closes admission permanently, and a dropped replay would strand an
-    accepted retry in "creating"
+  - Every admitted deletion persists `deleting` before destructive work and
+    `deletion_failed` on failure. Synchronous safe-delete rejection occurs
+    before admission so a dirty workspace remains usable (`internal/server/workspaceapi/workspace_deletion.go::Handler.runWorkspaceDeletion`, `internal/server/workspaceapi/routes_handlers.go::Handler.DeleteWorkspace`).
+  - Confirmed removal emits full provider/repository/item identity; merge and
+    ordinary deletion share this lifecycle (`internal/server/workspaceapi/workspace_deletion.go::Handler.publishWorkspaceDeleted`).
+  - Deletion admission is a compare-and-swap from stable `ready`, `error`, or
+    `deletion_failed` state. A concurrent setup that wins the race and moves the
+    row to `creating` receives a conflict instead of being overwritten; once
+    deletion is admitted, retry requests also conflict until teardown succeeds
+    or leaves an explicit `deletion_failed` row. Deletions remain
+    reference-counted per workspace ID so one failed concurrent request cannot
+    reopen setup while another owns teardown
+    (`internal/db/queries.go::DB.BeginWorkspaceDeletion`, `internal/server/workspaceapi/routes_handlers.go::Handler.DeleteWorkspace`).
+  - Delete conflicts use stable `worktreeDirty`,
+    `workspaceSetupInProgress`, and `workspaceDeletionInProgress` problem
+    codes. The server checks lifecycle state before and after dirty preflight;
+    clients offer force deletion only for a dirty worktree and refresh into
+    the authoritative lifecycle state for setup/deletion races
     (`internal/server/workspaceapi/routes_handlers.go::Handler.DeleteWorkspace`).
   - Setup rejects occupied destinations before clone/fetch and again under the
     repo lock before mutation. Branch creation and failed-add cleanup use ref

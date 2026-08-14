@@ -918,6 +918,22 @@ describe("IssueDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it.each(["deleting", "deletion_failed"])(
+    "routes an inline %s workspace to recovery instead of opening its runtime",
+    async (status) => {
+      const detail = issueDetail();
+      detail.workspace = { id: "ws-1", status };
+      const controller = createTestController("split");
+      controller.effectiveWorkspaceRef = vi.fn((_identity, envelopeRef) => envelopeRef ?? null);
+
+      const { navigate } = renderIssueDetail(detail, undefined, { inlineWorkspace: controller });
+
+      await fireEvent.click(screen.getByRole("button", { name: "View in Workspaces" }));
+      expect(navigate).toHaveBeenCalledWith("/workspaces");
+      expect(controller.openInWorkspaces).not.toHaveBeenCalled();
+    },
+  );
+
   it("without a controller open renders a single Open Workspace button that navigates", async () => {
     const detail = issueDetail();
     detail.workspace = { id: "ws-1", status: "ready" };
@@ -928,6 +944,20 @@ describe("IssueDetail inline workspace handoff", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Open Workspace" }));
     expect(navigate).toHaveBeenCalledWith("/terminal/ws-1");
   });
+
+  it.each(["deleting", "deletion_failed"])(
+    "routes a %s workspace to recovery instead of opening its runtime",
+    async (status) => {
+      const detail = issueDetail();
+      detail.workspace = { id: "ws-1", status };
+
+      const { navigate } = renderIssueDetail(detail);
+
+      expect(screen.queryByRole("button", { name: "Create Workspace" })).toBeNull();
+      await fireEvent.click(screen.getByRole("button", { name: "View in Workspaces" }));
+      expect(navigate).toHaveBeenCalledWith("/workspaces");
+    },
+  );
 
   it("without a controller a session-deleted envelope workspace is masked", async () => {
     // Controller-less views subscribe to no invalidation: after a deletion

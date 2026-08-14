@@ -25798,10 +25798,11 @@ func cleanupWorkspaceServerFixtureArtifactsWithContext(
 	var errs []error
 	for _, ws := range workspaces {
 		_, err := func() ([]string, error) {
-			beforeDestructive := func(stopCtx context.Context) {
+			beforeDestructive := func(stopCtx context.Context) error {
 				if srv.runtime != nil {
 					srv.runtime.StopWorkspace(stopCtx, ws.ID)
 				}
+				return nil
 			}
 			if srv.runtime != nil {
 				srv.runtime.BeginStopping(ws.ID)
@@ -28575,6 +28576,70 @@ exit 0
 	assert.Equal("⠴ claude-activity", *listed.TmuxPaneTitle)
 }
 
+func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
+	t.Parallel()
+	acquireRootWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+
+	// Persist the same admission transition performed by DELETE immediately
+	// before destructive teardown. This is the durable state a process crash
+	// can leave behind.
+	started, err := fixture.database.BeginWorkspaceDeletion(ctx, ws.Id)
+	require.NoError(err)
+	require.True(started)
+	gracefulShutdown(t, fixture.server)
+	var databasePath string
+	require.NoError(fixture.database.ReadDB().QueryRowContext(
+		ctx, "SELECT file FROM pragma_database_list WHERE name = 'main'",
+	).Scan(&databasePath))
+	restartedDatabase, err := db.OpenPreparedForTest(databasePath)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(restartedDatabase.Close()) })
+
+	restarted := New(
+		restartedDatabase, fixture.server.syncer, nil, "/", nil,
+		ServerOptions{
+			Clones:                     fixture.clones,
+			WorktreeDir:                fixture.worktrees,
+			PtyOwnerInProcess:          true,
+			DisableWorkspaceEnrichment: true,
+		},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	restartedClient := setupTestClient(t, restarted)
+
+	getResp, err := restartedClient.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode(), string(getResp.Body))
+	require.NotNil(getResp.JSON200)
+	assert.Equal("deletion_failed", getResp.JSON200.Status)
+	require.NotNil(getResp.JSON200.ErrorMessage)
+	assert.Equal(
+		"workspace deletion was interrupted by a server restart; retry deletion to continue",
+		*getResp.JSON200.ErrorMessage,
+	)
+
+	force := true
+	deleteResp, err := restartedClient.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+	)
+
+	getResp, err = restartedClient.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	assert.Equal(http.StatusNotFound, getResp.StatusCode())
+	_, err = os.Stat(ws.WorktreePath)
+	assert.True(os.IsNotExist(err))
+}
+
 func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 	runParallelPTYE2E(t)
 
@@ -28713,15 +28778,18 @@ func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var response struct {
 		Merged                  bool   `json:"merged"`
+		WorkspaceCleanupPending bool   `json:"workspace_cleanup_pending"`
 		WorkspaceCleanupWarning string `json:"workspace_cleanup_warning"`
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
 	assert.True(response.Merged)
+	assert.True(response.WorkspaceCleanupPending)
 	assert.Empty(response.WorkspaceCleanupWarning)
-	stored, err := database.GetWorkspace(ctx, ws.Id)
-	require.NoError(err)
-	assert.Nil(stored)
-	_, err = os.Stat(ws.WorktreePath)
+	require.Eventually(func() bool {
+		stored, getErr := database.GetWorkspace(ctx, ws.Id)
+		return getErr == nil && stored == nil
+	}, 5*time.Second, 10*time.Millisecond)
+	_, err := os.Stat(ws.WorktreePath)
 	assert.ErrorIs(err, os.ErrNotExist)
 }
 

@@ -118,7 +118,6 @@
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
   } from "../../stores/workspace-create-pending.svelte.js";
-  import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
 
   type ChipTrailing = ComponentProps<typeof Chip>["trailing"];
 
@@ -808,6 +807,7 @@
 
   let repoSettings = $state<RepoSettings | null>(null);
   let showMergeModal = $state(false);
+  let mergeModalSettings = $state<RepoSettings | null>(null);
 
   // Head-pinning conflict state (context/provider-architecture.md
   // "Head binding"). Merge echoes the rendered reviewed head, while
@@ -1101,7 +1101,13 @@
       stores: { detail: detailStore },
       requireHeadPin: capabilities.mutation_head_binding,
       ...(detailHeadSha !== "" && { expectedHeadSha: detailHeadSha }),
-      setMergeModalOpen: (open: boolean) => { showMergeModal = open; },
+      setMergeModalOpen: (open: boolean) => {
+        if (open) {
+          if (repoSettings === null) return;
+          mergeModalSettings = { ...repoSettings };
+        }
+        showMergeModal = open;
+      },
       onAfterOpenMerge: closeActionMenu,
     };
   }
@@ -1156,6 +1162,9 @@
         // session-deleted workspace ID is masked instead of re-offering
         // "Open Workspace" for a workspace that no longer exists.
         resolveControllerlessWorkspaceRef(itemIdentity, detailStore.getDetail()?.workspace ?? null),
+  );
+  const workspaceDeletionLifecycle = $derived(
+    workspace?.status === "deleting" || workspace?.status === "deletion_failed",
   );
 
   // Once a detail load lands for the identity this component is currently
@@ -2435,9 +2444,9 @@
           {#if inlineWorkspace}
             <Button
               class="btn--workspace"
-              disabled={stalePR}
+              disabled={stalePR || workspaceDeletionLifecycle}
               onclick={() => {
-                if (stalePR) return;
+                if (stalePR || workspaceDeletionLifecycle) return;
                 closeActionMenu();
                 inlineWorkspace.focusTerminal();
               }}
@@ -2455,13 +2464,21 @@
               onclick={() => {
                 if (stalePR) return;
                 closeActionMenu();
-                inlineWorkspace.openInWorkspaces(workspace);
+                if (workspaceDeletionLifecycle) {
+                  navigate("/workspaces");
+                } else {
+                  inlineWorkspace.openInWorkspaces(workspace);
+                }
               }}
               tone="neutral"
               surface="soft"
               size="sm"
-              ariaLabel={compactLabels ? "Open in Workspaces" : undefined}
-              label={compactLabels ? "Workspaces" : "Open in Workspaces"}
+              ariaLabel={compactLabels
+                ? workspaceDeletionLifecycle ? "View in Workspaces" : "Open in Workspaces"
+                : undefined}
+              label={workspaceDeletionLifecycle
+                ? compactLabels ? "Workspaces" : "View in Workspaces"
+                : compactLabels ? "Workspaces" : "Open in Workspaces"}
             >
               <ExternalLinkIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
@@ -2472,13 +2489,17 @@
               onclick={() => {
                 if (stalePR) return;
                 closeActionMenu();
-                navigate(`/terminal/${workspace.id}`);
+                navigate(workspaceDeletionLifecycle ? "/workspaces" : `/terminal/${workspace.id}`);
               }}
               tone="info"
               surface="soft"
               size="sm"
-              ariaLabel={compactLabels ? "Open Workspace" : undefined}
-              label={compactLabels ? "Workspace" : "Open Workspace"}
+              ariaLabel={compactLabels
+                ? workspaceDeletionLifecycle ? "View in Workspaces" : "Open Workspace"
+                : undefined}
+              label={workspaceDeletionLifecycle
+                ? compactLabels ? "Workspaces" : "View in Workspaces"
+                : compactLabels ? "Workspace" : "Open Workspace"}
             >
               <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
@@ -2773,9 +2794,10 @@
         </div>
       {/if}
 
-      {#if showMergeModal && repoSettings && hasEnabledMergeMethod(repoSettings) && capabilities.merge_mutation && repoSettings.viewerCanMerge && !stalePR && !hasMergeConflicts(pr)}
+      {#if showMergeModal && mergeModalSettings}
         {@const d = detailStore.getDetail()!}
         {@const p = d.merge_request}
+        {@const settings = mergeModalSettings}
         <MergeModal
           {owner}
           {name}
@@ -2787,9 +2809,9 @@
           prBody={p.Body}
           prAuthor={p.Author}
           prAuthorDisplayName={p.AuthorDisplayName}
-          allowSquash={repoSettings.allowSquash}
-          allowMerge={repoSettings.allowMerge}
-          allowRebase={repoSettings.allowRebase}
+          allowSquash={settings.allowSquash}
+          allowMerge={settings.allowMerge}
+          allowRebase={settings.allowRebase}
           expectedHeadSha={detailHeadSha}
           requireHeadPin={capabilities.mutation_head_binding}
           routeGeneration={mutationRouteGeneration}
@@ -2811,10 +2833,7 @@
               repoPath,
             });
           }}
-          onmerged={(_cleanupWarning, deletedWorkspaceId) => {
-            if (deletedWorkspaceId) {
-              notifyWorkspaceDeleted(deletedWorkspaceId, undefined, itemIdentity);
-            }
+          onmerged={() => {
             showMergeModal = false;
             detailStore.loadDetail(owner, name, number, {
               provider,

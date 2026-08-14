@@ -304,6 +304,7 @@ type mergePRBody struct {
 	Merged                  bool   `json:"merged"`
 	SHA                     string `json:"sha"`
 	Message                 string `json:"message"`
+	WorkspaceCleanupPending bool   `json:"workspace_cleanup_pending,omitempty"`
 	WorkspaceCleanupWarning string `json:"workspace_cleanup_warning,omitempty"`
 }
 
@@ -1756,7 +1757,7 @@ func (s *Handler) mergePRWithBody(
 		)
 	}
 
-	workspaceCleanupWarning := ""
+	workspaceCleanup := workspaceCleanupResult{}
 	if result.Merged {
 		// Record the transition through the same close-detection flow the
 		// periodic sync uses rather than an eager local state write. The sync
@@ -1783,14 +1784,15 @@ func (s *Handler) mergePRWithBody(
 		// (A deferred worker completing through this same path supersedes its
 		// own handle, which is a no-op by the time it broadcasts completion.)
 		s.supersedeDeferredMerge(deferredMergeKey(*repo, number))
-		workspaceCleanupWarning = s.cleanupMergedWorkspace(ctx, body.DeleteWorkspaceID)
+		workspaceCleanup = s.queueMergedWorkspaceCleanup(body.DeleteWorkspaceID)
 	}
 
 	return mergePRBody{
 		Merged:                  result.Merged,
 		SHA:                     result.SHA,
 		Message:                 result.Message,
-		WorkspaceCleanupWarning: workspaceCleanupWarning,
+		WorkspaceCleanupPending: workspaceCleanup.Pending,
+		WorkspaceCleanupWarning: workspaceCleanup.Warning,
 	}, nil
 }
 

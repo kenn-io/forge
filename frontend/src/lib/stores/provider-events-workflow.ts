@@ -57,6 +57,12 @@ export class WorkspaceStatusEvent extends Schema.Class<WorkspaceStatusEvent>("Wo
   status: Schema.optionalKey(Schema.String),
 }) {}
 
+export class WorkspaceDeletedEvent extends Schema.Class<WorkspaceDeletedEvent>("WorkspaceDeletedEvent")({
+  workspace_id: Schema.String,
+  ...providerItemFields,
+  item_type: Schema.String,
+}) {}
+
 export class WorkspacePRRefreshQueuedEvent extends Schema.Class<WorkspacePRRefreshQueuedEvent>(
   "WorkspacePRRefreshQueuedEvent",
 )({
@@ -99,7 +105,7 @@ export class DeferredMergeCompletedEvent extends Schema.Class<DeferredMergeCompl
   message: Schema.optionalKey(Schema.String),
   error: Schema.optionalKey(Schema.String),
   workspace_cleanup_warning: Schema.optionalKey(Schema.String),
-  deleted_workspace_id: Schema.optionalKey(Schema.String),
+  workspace_cleanup_pending: Schema.optionalKey(Schema.Boolean),
   completed_at: Schema.String,
 }) {}
 
@@ -118,6 +124,7 @@ export type ProviderEvent =
   | { readonly type: "reconnect.stale" }
   | { readonly type: "workspace_created"; readonly payload: WorkspaceCreatedEvent }
   | { readonly type: "workspace_status"; readonly payload: WorkspaceStatusEvent }
+  | { readonly type: "workspace_deleted"; readonly payload: WorkspaceDeletedEvent }
   | { readonly type: "workspace_pushed_head_changed"; readonly payload: WorkspacePushedHeadChangedEvent }
   | { readonly type: "workspace_pr_associated"; readonly payload: WorkspacePRAssociatedEvent }
   | { readonly type: "workspace_pr_refresh_queued"; readonly payload: WorkspacePRRefreshQueuedEvent }
@@ -221,6 +228,7 @@ const providerEventTypes: ReadonlyArray<ProviderEventType> = [
   "reconnect.stale",
   "workspace_created",
   "workspace_status",
+  "workspace_deleted",
   "workspace_pushed_head_changed",
   "workspace_pr_associated",
   "workspace_pr_refresh_queued",
@@ -308,6 +316,13 @@ const decodeProviderEvent = Effect.fn("ProviderEvents.decodeFrame")(function* (f
       return {
         type: "workspace_status",
         payload: yield* Schema.decodeUnknownEffect(WorkspaceStatusEvent)(payload).pipe(
+          Effect.mapError((cause) => invalidFrame(frame, cause)),
+        ),
+      } satisfies ProviderEvent;
+    case "workspace_deleted":
+      return {
+        type: "workspace_deleted",
+        payload: yield* Schema.decodeUnknownEffect(WorkspaceDeletedEvent)(payload).pipe(
           Effect.mapError((cause) => invalidFrame(frame, cause)),
         ),
       } satisfies ProviderEvent;

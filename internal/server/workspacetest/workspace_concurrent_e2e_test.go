@@ -185,12 +185,9 @@ exec "$@"
 
 	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, retryResp.StatusCode())
-	require.Never(func() bool {
-		_, statErr := os.Lstat(ws.WorktreePath)
-		return statErr == nil
-	}, time.Second, 10*time.Millisecond,
-		"retry recreated the worktree while deletion was paused")
+	require.Equal(http.StatusConflict, retryResp.StatusCode())
+	_, err = os.Lstat(ws.WorktreePath)
+	require.NoError(err, "rejected retry must not alter the worktree")
 
 	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
 	var result deleteResult
@@ -210,12 +207,11 @@ exec "$@"
 	assert.Equal(1, listBareWorktrees(t, fixture.bare))
 }
 
-// TestWorkspaceRetryDuringFailedDeleteReplaysSetupE2E covers a retry accepted
-// while a DELETE is in flight and the DELETE then fails. The retry has already
-// moved the row to "creating", so its queued setup must replay once deletion
-// admission reopens; dropping it would leave the workspace stuck in
-// "creating" with no worker attached.
-func TestWorkspaceRetryDuringFailedDeleteReplaysSetupE2E(t *testing.T) {
+// TestWorkspaceRetryDuringFailedDeleteIsRejectedE2E covers a retry attempted
+// while an admitted DELETE is in flight and the DELETE then fails. The retry
+// must not move the durable row back to creating or attach a setup worker to
+// resources that teardown already owns.
+func TestWorkspaceRetryDuringFailedDeleteIsRejectedE2E(t *testing.T) {
 	t.Parallel()
 	acquireWorkspaceGitSlot(t)
 
@@ -308,12 +304,9 @@ exec "$@"
 
 	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, retryResp.StatusCode())
-	require.Never(func() bool {
-		_, statErr := os.Lstat(ws.WorktreePath)
-		return statErr == nil
-	}, time.Second, 10*time.Millisecond,
-		"retry recreated the worktree while deletion was in flight")
+	require.Equal(http.StatusConflict, retryResp.StatusCode())
+	_, err = os.Lstat(ws.WorktreePath)
+	require.NoError(err, "rejected retry must not alter the worktree")
 
 	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
 	var result deleteResult
@@ -325,9 +318,11 @@ exec "$@"
 	require.NoError(result.err)
 	require.Equal(http.StatusInternalServerError, result.status)
 
-	recovered := waitForWorkspaceReady(t, ctx, fixture.client, ws.Id)
-	assert.Equal("ready", recovered.Status)
-	_, err = os.Lstat(recovered.WorktreePath)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("deletion_failed", stored.Status)
+	_, err = os.Lstat(stored.WorktreePath)
 	require.NoError(err)
 	assert.Equal(2, listBareWorktrees(t, fixture.bare))
 }
@@ -335,8 +330,8 @@ exec "$@"
 // TestWorkspaceFailedConcurrentDeleteKeepsSetupBlockedE2E covers two DELETEs
 // racing on one workspace: one fails fast on the dirty preflight while the
 // other is still inside destructive cleanup. The failed request must not
-// reopen setup admission, so a retry accepted during the overlap cannot
-// materialize a worktree for the row the surviving DELETE removes.
+// reopen setup admission, and a retry during the overlap must remain rejected
+// until the surviving DELETE finishes.
 func TestWorkspaceFailedConcurrentDeleteKeepsSetupBlockedE2E(t *testing.T) {
 	t.Parallel()
 	acquireWorkspaceGitSlot(t)
@@ -401,8 +396,9 @@ exec "$@"
 	require.NoError(fixture.database.UpdateWorkspaceStatus(
 		ctx, ws.Id, "error", &msg,
 	))
-	// An untracked file makes the second, non-force DELETE fail its dirty
-	// preflight while the first DELETE is paused in destructive cleanup.
+	// Keep the worktree dirty while the first DELETE is paused in destructive
+	// cleanup. The second, non-force DELETE must still report the authoritative
+	// deleting lifecycle instead of offering force recovery for the dirty tree.
 	require.NoError(os.WriteFile(
 		ws.WorktreePath+"/untracked.txt", []byte("dirty\n"), 0o600,
 	))
@@ -430,20 +426,22 @@ exec "$@"
 	}, 5*time.Second, 10*time.Millisecond)
 
 	noForce := false
-	dirtyResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+	conflictResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
 		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &noForce},
 	)
 	require.NoError(err)
-	require.Equal(http.StatusConflict, dirtyResp.StatusCode())
+	require.Equal(http.StatusConflict, conflictResp.StatusCode())
+	require.NotNil(conflictResp.ApplicationproblemJSONDefault)
+	assert.Equal(
+		generated.WorkspaceDeletionInProgress,
+		conflictResp.ApplicationproblemJSONDefault.Code,
+	)
 
 	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, retryResp.StatusCode())
-	require.Never(func() bool {
-		_, statErr := os.Lstat(ws.WorktreePath)
-		return statErr == nil
-	}, time.Second, 10*time.Millisecond,
-		"retry recreated the worktree after the failed delete unblocked setup")
+	require.Equal(http.StatusConflict, retryResp.StatusCode())
+	_, err = os.Lstat(ws.WorktreePath)
+	require.NoError(err, "rejected retry must not alter the worktree")
 
 	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
 	var result deleteResult

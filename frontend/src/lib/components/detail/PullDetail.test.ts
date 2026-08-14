@@ -1545,7 +1545,7 @@ describe("PullDetail approvals", () => {
     notifyWorkspaceDeleted.mockRestore();
   });
 
-  it("publishes confirmed merge cleanup with the full pull identity", async () => {
+  it("waits for the workspace deletion event instead of treating merge success as deletion", async () => {
     const notifyWorkspaceDeleted = vi.spyOn(workspaceHost, "notifyWorkspaceDeleted");
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
@@ -1586,18 +1586,57 @@ describe("PullDetail approvals", () => {
       }),
     );
 
-    await waitFor(() => {
-      expect(notifyWorkspaceDeleted).toHaveBeenCalledWith("ws-1", undefined, {
-        provider: "github",
-        platformHost: "github.com",
-        owner: "acme",
-        name: "widget",
-        repoPath: "acme/widget",
-        number: 1,
-        itemType: "pull",
-      });
-    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull());
+    expect(notifyWorkspaceDeleted).not.toHaveBeenCalled();
     notifyWorkspaceDeleted.mockRestore();
+  });
+
+  it("keeps an in-flight merge modal mounted across transient eligibility refreshes", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    let resolveMerge!: (value: unknown) => void;
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          AllowSquashMerge: true,
+          AllowMergeCommit: false,
+          AllowRebaseMerge: false,
+          ViewerCanMerge: true,
+        },
+      })),
+      POST: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveMerge = resolve;
+          }),
+      ),
+    };
+    const { rerender } = renderPullDetail(
+      detail,
+      {
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: false,
+        ViewerCanMerge: true,
+      },
+      apiClient,
+    );
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
+        name: "Squash and merge",
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Merging..." })).toBeTruthy();
+
+    detail.repo.capabilities.merge_mutation = false;
+    await rerender({ hideWorkspaceAction: false });
+    expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Merging..." })).toBeTruthy();
+
+    resolveMerge({ data: { merged: true, sha: "merge-sha", message: "merged" } });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull());
   });
 
   it("opens the merge modal in deferred mode when aggregate CI is pending without check rows", async () => {
@@ -2243,6 +2282,25 @@ describe("PullDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it.each(["deleting", "deletion_failed"])(
+    "routes an inline %s workspace to recovery instead of opening its runtime",
+    async (status) => {
+      const detail = pullDetail();
+      detail.workspace = { id: "ws-1", status };
+      const controller = createTestController("split");
+      controller.effectiveWorkspaceRef = vi.fn((_identity, envelopeRef) => envelopeRef ?? null);
+
+      const { navigate } = renderPullDetail(detail, undefined, undefined, {
+        hideWorkspaceAction: false,
+        inlineWorkspace: controller,
+      });
+
+      await fireEvent.click(screen.getAllByRole("button", { name: "View in Workspaces" })[0]!);
+      expect(navigate).toHaveBeenCalledWith("/workspaces");
+      expect(controller.openInWorkspaces).not.toHaveBeenCalled();
+    },
+  );
+
   it("without a controller open renders a single Open Workspace button that navigates", async () => {
     const detail = pullDetail();
     detail.workspace = { id: "ws-1", status: "ready" };
@@ -2255,6 +2313,22 @@ describe("PullDetail inline workspace handoff", () => {
     await fireEvent.click(screen.getAllByRole("button", { name: "Open Workspace" })[0]!);
     expect(navigate).toHaveBeenCalledWith("/terminal/ws-1");
   });
+
+  it.each(["deleting", "deletion_failed"])(
+    "routes a %s workspace to recovery instead of opening its runtime",
+    async (status) => {
+      const detail = pullDetail();
+      detail.workspace = { id: "ws-1", status };
+
+      const { navigate } = renderPullDetail(detail, undefined, undefined, {
+        hideWorkspaceAction: false,
+      });
+
+      expect(screen.queryByRole("button", { name: "Create Workspace" })).toBeNull();
+      await fireEvent.click(screen.getAllByRole("button", { name: "View in Workspaces" })[0]!);
+      expect(navigate).toHaveBeenCalledWith("/workspaces");
+    },
+  );
 
   it("without a controller a session-deleted envelope workspace is masked", async () => {
     // Controller-less views subscribe to no invalidation: after a deletion

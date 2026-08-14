@@ -2488,7 +2488,7 @@ func workspaceRuntimeLaunchError(err error) error {
 func (s *Handler) DeleteWorkspace(
 	ctx context.Context, input *DeleteWorkspaceInput,
 ) (*struct{}, error) {
-	if s.workspaces == nil {
+	if s.workspaces == nil || s.db == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 
@@ -2499,32 +2499,56 @@ func (s *Handler) DeleteWorkspace(
 	// reopens admission only after every concurrent deletion has finished.
 	defer func() { s.finishWorkspaceDeleting(input.ID, deleted) }()
 
-	if s.runtime != nil {
-		// Block new launches before the dirty preflight; existing
-		// sessions are stopped only after the preflight passes.
-		s.runtime.BeginStopping(input.ID)
-	}
-	defer func() {
-		if s.runtime != nil {
-			s.runtime.EndStopping(input.ID)
-		}
-	}()
 	if err := waitForWorkspaceSetup(ctx, setupDone); err != nil {
 		return nil, httpapi.Internal("wait for workspace setup: " + err.Error())
 	}
-	dirty, err := s.workspaces.Delete(
-		ctx, input.ID, input.Force,
-		func(stopCtx context.Context) {
-			if s.runtime != nil {
-				sessions := s.runtime.ListSessions(input.ID)
-				s.runtime.StopWorkspace(stopCtx, input.ID)
-				for _, session := range sessions {
-					s.removeAgentActivityRuntimeSession(session.Key)
-				}
-			}
-		},
-	)
+	ws, err := s.db.GetWorkspace(ctx, input.ID)
 	if err != nil {
+		return nil, httpapi.Internal("get workspace: " + err.Error())
+	}
+	if ws == nil {
+		return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
+	}
+	if problem := workspaceDeletionLifecycleProblem(ws.Status); problem != nil {
+		return nil, problem
+	}
+	admitted := false
+	err = s.runWorkspaceDeletion(ctx, input.ID, nil, input.Force, func(admitCtx context.Context) error {
+		started, err := s.db.BeginWorkspaceDeletion(admitCtx, input.ID)
+		if err != nil {
+			return err
+		}
+		if !started {
+			return errWorkspaceDeletionInProgress
+		}
+		admitted = true
+		s.broadcastWorkspaceStatus(input.ID)
+		return nil
+	})
+	if err != nil {
+		if admitted {
+			s.persistWorkspaceDeletionFailure(input.ID, err.Error())
+		}
+		var dirty *workspaceDirtyDeletionError
+		if errors.As(err, &dirty) {
+			current, getErr := s.db.GetWorkspace(ctx, input.ID)
+			if getErr != nil {
+				return nil, httpapi.Internal("recheck workspace before dirty response: " + getErr.Error())
+			}
+			if current == nil {
+				return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
+			}
+			if problem := workspaceDeletionLifecycleProblem(current.Status); problem != nil {
+				return nil, problem
+			}
+			return nil, httpapi.Conflict(httpapi.CodeWorktreeDirty, err.Error(), nil)
+		}
+		if errors.Is(err, errWorkspaceDeletionInProgress) {
+			return nil, httpapi.Conflict(httpapi.CodeWorkspaceDeletionInProgress, err.Error(), nil)
+		}
+		if errors.Is(err, db.ErrWorkspaceSetupInProgress) {
+			return nil, httpapi.Conflict(httpapi.CodeWorkspaceSetupInProgress, err.Error(), nil)
+		}
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, err.Error(), nil)
 		}
@@ -2533,11 +2557,27 @@ func (s *Handler) DeleteWorkspace(
 		}
 		return nil, httpapi.Internal("delete workspace: " + err.Error())
 	}
-	if len(dirty) > 0 {
-		return nil, httpapi.Conflict(httpapi.CodeConflict,
-			"workspace has uncommitted changes: "+strings.Join(dirty, ", "), nil)
-	}
 
 	deleted = true
+	s.publishWorkspaceDeleted(ws)
 	return nil, nil
+}
+
+func workspaceDeletionLifecycleProblem(status string) error {
+	switch status {
+	case "creating":
+		return httpapi.Conflict(
+			httpapi.CodeWorkspaceSetupInProgress,
+			"workspace setup is still in progress",
+			nil,
+		)
+	case "deleting":
+		return httpapi.Conflict(
+			httpapi.CodeWorkspaceDeletionInProgress,
+			errWorkspaceDeletionInProgress.Error(),
+			nil,
+		)
+	default:
+		return nil
+	}
 }

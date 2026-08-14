@@ -120,6 +120,7 @@
     RefreshIcon,
   } from "../../icons.ts";
   import { apiErrorMessage } from "../../api/runtime.js";
+  import { ProblemCodes } from "../../api/problems.js";
   import { configuredAPIPath } from "../../api/runtime-base.js";
   import {
     executeGeneratedApiRequest,
@@ -400,6 +401,7 @@
   let lastDiffSnapshotVersion = "";
   let forcePromptMessage = $state<string | null>(null);
   let forcePromptForId = $state<string | null>(null);
+  let forcePromptHostKey = $state<string | undefined>(undefined);
   // Identity snapshot captured when the 409 arrived, while the loaded
   // envelope still described the delete target: the user can switch
   // workspaces before confirming the force delete, after which the live
@@ -1428,7 +1430,16 @@
       isDeletingWorkspaceTarget(target, workspaceId, workspaceHostKey),
     ) || isWorkspaceDeletionPending(workspaceId, workspaceHostKey),
   );
-  const actionsBlocked = $derived(transitioning || deletingSelectedWorkspace || forceDeleting);
+  const workspaceDeletionLifecycleActive = $derived(
+    workspaceLive &&
+      (workspace?.status === "deleting" || workspace?.status === "deletion_failed"),
+  );
+  const actionsBlocked = $derived(
+    transitioning ||
+      deletingSelectedWorkspace ||
+      workspaceDeletionLifecycleActive ||
+      forceDeleting,
+  );
   const inlineDockMode = $derived(inlineDock?.getMode() ?? null);
   const inlineDockExpandBlocked = $derived(getStackDepth() > 0);
   const modalOpen = $derived(
@@ -2578,10 +2589,22 @@
             return true;
           }
           if (!force && response.status === 409) {
-            previouslyFocusedEl = deleteTriggerElements.get(runtimeMutationTargetKey(state.request.target)) ?? null;
-            forcePromptForId = id;
-            forcePromptIdentity = state.request.options.identity;
-            forcePromptMessage = apiErrorMessage(error, "Workspace has uncommitted changes.");
+            if (error?.code === ProblemCodes.worktreeDirty) {
+              previouslyFocusedEl = deleteTriggerElements.get(runtimeMutationTargetKey(state.request.target)) ?? null;
+              forcePromptForId = id;
+              forcePromptHostKey = hostKey;
+              forcePromptIdentity = state.request.options.identity;
+              forcePromptMessage = apiErrorMessage(error, "Workspace has uncommitted changes.");
+            } else if (
+              error?.code === ProblemCodes.workspaceSetupInProgress ||
+              error?.code === ProblemCodes.workspaceDeletionInProgress
+            ) {
+              requestWorkspace();
+            } else {
+              showFlash(apiErrorMessage(error, "Workspace deletion could not start."), {
+                tone: "danger",
+              });
+            }
             clearRuntimeMutationPending(state);
             return true;
           }
@@ -2593,6 +2616,7 @@
           if (force) {
             forcePromptMessage = null;
             forcePromptForId = null;
+            forcePromptHostKey = undefined;
             forcePromptIdentity = undefined;
           }
           clearRuntimeMutationPending(state);
@@ -3508,6 +3532,28 @@
     };
   }
 
+  function openForceDeleteRecovery(triggerEl: HTMLElement | null = null): void {
+    if (
+      !workspaceLive ||
+      !workspace ||
+      workspace.status !== "deletion_failed" ||
+      forceDeleting
+    ) {
+      return;
+    }
+    previouslyFocusedEl =
+      triggerEl ??
+      (document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null);
+    forcePromptForId = workspace.id;
+    forcePromptHostKey = workspaceHostKey;
+    forcePromptIdentity = workspaceIdentitySnapshot(workspace.id);
+    forcePromptMessage =
+      workspace.error_message ??
+      "Workspace deletion failed. Force deletion can remove the remaining workspace artifacts.";
+  }
+
   /**
    * Every workspace Delete confirms first. The strip's trash is a 13px icon beside
    * the controls trigger, one slip from firing, and the backend refuses only a
@@ -3629,7 +3675,7 @@
     if (forceDeleting) return;
     const targetId = forcePromptForId;
     if (targetId === null) return;
-    const targetHostKey = workspaceHostKey;
+    const targetHostKey = forcePromptHostKey;
     // Prefer the snapshot taken at 409 time; the live envelope may belong
     // to a different workspace after an A -> B switch.
     const targetIdentity = forcePromptIdentity ?? workspaceIdentitySnapshot(targetId);
@@ -3665,6 +3711,7 @@
     if (forceDeleting) return;
     forcePromptMessage = null;
     forcePromptForId = null;
+    forcePromptHostKey = undefined;
     forcePromptIdentity = undefined;
   }
 
@@ -3773,6 +3820,7 @@
     // they're no longer looking at.
     forcePromptMessage = null;
     forcePromptForId = null;
+    forcePromptHostKey = undefined;
     forcePromptIdentity = undefined;
     stopPromptSession = null;
     stopSessionStopping = false;
@@ -4139,6 +4187,40 @@
               void handleDelete(event.currentTarget)}
           >
             Delete
+          </button>
+          {@render inlineCollapseControl()}
+        </div>
+      {:else if workspace.status === "deleting"}
+        <div class="state-message">
+          <Spinner size={18} />
+          <span>Deleting workspace...</span>
+          {@render inlineCollapseControl()}
+        </div>
+      {:else if workspace.status === "deletion_failed"}
+        <div class="state-message error">
+          <span
+            class="error-icon-badge"
+            role="img"
+            aria-label="Workspace deletion failed"
+          >
+            <AlertIcon
+              class="error-icon"
+              size="14"
+              strokeWidth="2.4"
+              aria-hidden="true"
+            />
+          </span>
+          <span>
+            {workspace.error_message ??
+              "Workspace deletion failed."}
+          </span>
+          <button
+            class="retry-btn danger"
+            disabled={forceDeleting}
+            onclick={(event) =>
+              openForceDeleteRecovery(event.currentTarget)}
+          >
+            Force delete workspace
           </button>
           {@render inlineCollapseControl()}
         </div>

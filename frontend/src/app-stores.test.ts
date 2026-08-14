@@ -598,25 +598,32 @@ describe("app store event wiring", () => {
     expect(onNotification).not.toHaveBeenCalled();
   });
 
-  it("publishes the workspace ID carried by deferred merge completion", async () => {
-    compose();
+  it("publishes confirmed workspace deletion with its item identity", async () => {
+    compose({ getPage: () => "pulls" });
 
     await acceptEvent(
-      captured.store?.options.onDeferredMergeCompleted?.({
+      captured.store?.options.onWorkspaceDeleted?.({
+        workspace_id: "ws-1",
         provider: "github",
         platform_host: "github.com",
         repo_path: "acme/widget",
         owner: "acme",
         name: "widget",
         number: 42,
-        head_sha: "2222222",
-        status: "merged",
-        merged: true,
-        completed_at: "2026-07-10T15:00:00Z",
-        deleted_workspace_id: "ws-1",
+        item_type: "pull_request",
       }),
     );
 
-    expect(notifyWorkspaceDeleted).toHaveBeenCalledWith("ws-1");
+    expect(notifyWorkspaceDeleted).toHaveBeenCalledWith("ws-1", undefined, {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: 42,
+      itemType: "pull_request",
+    });
+    expect(reconcilePullsEffect).toHaveBeenCalledOnce();
+    expect(loadPulls).toHaveBeenCalledOnce();
   });
 });

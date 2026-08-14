@@ -82,6 +82,7 @@ interface WorkspaceFixtureOptions {
   agentState?: "idle" | "working" | "input" | "approval" | "done" | null;
   agentStateUpdatedAt?: string | null;
   status?: string;
+  errorMessage?: string | null;
   associatedPRNumber?: number | null;
 }
 
@@ -111,6 +112,7 @@ function workspaceFixture({
   agentState = null,
   agentStateUpdatedAt = null,
   status = "ready",
+  errorMessage = null,
   associatedPRNumber = null,
 }: WorkspaceFixtureOptions) {
   // Kata and ad-hoc workspaces carry no joined provider item metadata.
@@ -140,6 +142,7 @@ function workspaceFixture({
     agent_state: agentState,
     agent_state_updated_at: agentStateUpdatedAt,
     status,
+    error_message: errorMessage,
     created_at: createdAt,
     tmux_last_output_at: tmuxLastOutputAt,
     item_last_activity_at: itemLastActivityAt,
@@ -1760,6 +1763,8 @@ describe("WorkspaceListSidebar", () => {
     ["ready", "Workspace ready", "kit-status-dot--idle"],
     ["creating", "Creating workspace", "kit-status-dot--working"],
     ["error", "Workspace error", "kit-status-dot--unclean"],
+    ["deleting", "Deleting workspace", "kit-status-dot--working"],
+    ["deletion_failed", "Deletion failed", "kit-status-dot--unclean"],
     ["pending", "Workspace pending", "kit-status-dot--stale"],
   ] as const)("maps %s workspace state to the shared semantic status", async (status, label, className) => {
     mockGet.mockResolvedValue({
@@ -1783,6 +1788,55 @@ describe("WorkspaceListSidebar", () => {
     });
 
     expect((await screen.findByLabelText(label)).classList.contains(className)).toBe(true);
+  });
+
+  it("keeps failed deletion visible with retry and confirmed force-delete recovery", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-delete-failed",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 9,
+            status: "deletion_failed",
+            errorMessage: "workspace has uncommitted changes: notes.txt",
+          }),
+        ],
+      },
+    });
+    mockDelete.mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { ok: true, status: 204 },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-delete-failed" },
+    });
+
+    expect((await screen.findByText("Deletion failed")).getAttribute("title")).toBe(
+      "workspace has uncommitted changes: notes.txt",
+    );
+    await fireEvent.click(container.querySelector(".ws-row")!);
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+    expect((screen.getByRole("menuitem", { name: "Retry deletion..." }) as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Force delete workspace..." }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Force delete workspace?" });
+    expect(dialog.textContent).toContain("This discards uncommitted changes");
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Force delete workspace" }));
+
+    await waitFor(() => {
+      expect(mockDelete).toHaveBeenCalledWith("/workspaces/{id}", {
+        params: { path: { id: "ws-delete-failed" }, query: { force: true } },
+        signal: expect.any(AbortSignal),
+      });
+    });
   });
 
   it("does not describe an externally disabled workspace as active work", async () => {
@@ -2235,7 +2289,7 @@ describe("WorkspaceListSidebar", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("omits local filesystem actions for remote workspace context menus", async () => {
+  it("omits local filesystem actions and offers force-delete recovery for remote workspaces", async () => {
     mockGet.mockImplementation((path: string, options?: { params?: { path?: { host_key?: string } } }) => {
       if (path === "/snapshot") {
         return Promise.resolve({
@@ -2282,12 +2336,19 @@ describe("WorkspaceListSidebar", () => {
                 name: "service",
                 number: 12,
                 title: "Remote workspace",
+                status: "deletion_failed",
+                errorMessage: "workspace has uncommitted changes: notes.txt",
               }),
             ],
           },
         });
       }
       return Promise.resolve({ data: { workspaces: [] } });
+    });
+    mockDelete.mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { ok: true, status: 204 },
     });
 
     const { container } = render(WorkspaceListSidebar, {
@@ -2301,6 +2362,20 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.queryByRole("menuitem", { name: "Copy worktree path" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Reveal in Finder" })).toBeNull();
     expect(screen.getByRole("menuitem", { name: "Refresh git status" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Force delete workspace..." }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Force delete workspace?" });
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Force delete workspace" }));
+
+    await waitFor(() => {
+      expect(mockDelete).toHaveBeenCalledWith("/fleet/hosts/{host_key}/workspaces/{id}", {
+        params: {
+          path: { host_key: "epyc", id: "ws-remote" },
+          query: { force: true },
+        },
+        signal: expect.any(AbortSignal),
+      });
+    });
   });
 
   it("does not show push or pull commands for diverged workspace branches", async () => {

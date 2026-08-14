@@ -101,7 +101,14 @@ function workspaceRoutes(): MockRouteOverride {
     // the force-delete confirmation dialog under test — there is no
     // separate "are you sure" step before the first delete attempt.
     if (req.url.pathname === "/api/v1/workspaces/ws-1" && req.method === "DELETE") {
-      return jsonResponse({ detail: "Workspace has uncommitted changes." }, 409);
+      return jsonResponse(
+        {
+          code: "worktreeDirty",
+          detail: "Workspace has uncommitted changes.",
+          status: 409,
+        },
+        409,
+      );
     }
     return null;
   };

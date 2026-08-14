@@ -15,6 +15,7 @@ import {
   type WorkspacePRRefreshQueuedEvent,
   type WorkspacePushedHeadChangedEvent,
   type WorkspaceCreatedEvent,
+  type WorkspaceDeletedEvent,
   type WorkspaceStatusEvent,
 } from "./provider-events-workflow.js";
 
@@ -27,6 +28,7 @@ export interface EventsStoreOptions {
   readonly onReconnectStale?: () => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onWorkspaceCreated?: (event: WorkspaceCreatedEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onWorkspaceStatus?: (event: WorkspaceStatusEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onWorkspaceDeleted?: (event: WorkspaceDeletedEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onWorkspacePushedHeadChanged?: (
     event: WorkspacePushedHeadChangedEvent,
   ) => Effect.Effect<void, ProviderEventsError, AppServices>;
@@ -75,6 +77,8 @@ export function createEventsStore(opts: EventsStoreOptions) {
         return opts.onWorkspaceCreated?.(event.payload) ?? Effect.void;
       case "workspace_status":
         return opts.onWorkspaceStatus?.(event.payload) ?? Effect.void;
+      case "workspace_deleted":
+        return opts.onWorkspaceDeleted?.(event.payload) ?? Effect.void;
       case "workspace_pushed_head_changed":
         return opts.onWorkspacePushedHeadChanged?.(event.payload) ?? Effect.void;
       case "workspace_pr_associated":

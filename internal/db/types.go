@@ -1292,7 +1292,7 @@ type Workspace struct {
 	WorktreePath    string
 	TmuxSession     string
 	TerminalBackend string
-	Status          string // "creating", "ready", "error"
+	Status          string // "creating", "ready", "error", "deleting", "deletion_failed"
 	ErrorMessage    *string
 	CreatedAt       time.Time
 	KataMetadata    *WorkspaceKataMetadata

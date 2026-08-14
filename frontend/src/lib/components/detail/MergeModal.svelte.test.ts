@@ -133,7 +133,7 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ delete_workspace_id: "ws-1" });
   });
 
-  it("keeps immediate workspace cleanup pending until the merge settles", async () => {
+  it("closes after merge acknowledgement without claiming cleanup finished", async () => {
     let succeed = () => {};
     let settle = () => {};
     const onmerged = vi.fn();
@@ -148,12 +148,12 @@ describe("MergeModal acknowledged merge commands", () => {
     renderModal({ workspaceId: "ws-1", onmerged });
 
     await confirmMerge();
-    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(true);
+    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false);
 
     succeed();
-    expect(isWorkspaceIdDeleted("ws-1")).toBe(true);
-    expect(onmerged).toHaveBeenCalledWith(undefined, "ws-1");
-    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(true);
+    expect(isWorkspaceIdDeleted("ws-1")).toBe(false);
+    expect(onmerged).toHaveBeenCalledWith(undefined);
+    expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false);
 
     settle();
     expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false);
@@ -174,7 +174,7 @@ describe("MergeModal acknowledged merge commands", () => {
     await confirmMerge();
 
     expect(isWorkspaceIdDeleted("ws-1")).toBe(false);
-    expect(onmerged).toHaveBeenCalledWith("workspace has uncommitted changes", undefined);
+    expect(onmerged).toHaveBeenCalledWith("workspace has uncommitted changes");
   });
 
   it("omits the head pin when the rendered head is unknown", async () => {

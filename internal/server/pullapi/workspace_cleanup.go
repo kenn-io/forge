@@ -1,20 +1,21 @@
 package pullapi
 
-import (
-	"context"
-)
+type workspaceCleanupResult struct {
+	Pending bool
+	Warning string
+}
 
-func (s *Handler) cleanupMergedWorkspace(ctx context.Context, workspaceID string) string {
+func (s *Handler) queueMergedWorkspaceCleanup(workspaceID string) workspaceCleanupResult {
 	if workspaceID == "" {
-		return ""
+		return workspaceCleanupResult{}
 	}
-	if s.deleteWorkspace == nil {
-		return "workspace cleanup is unavailable"
+	if s.queueWorkspaceDeletion == nil {
+		return workspaceCleanupResult{Warning: "workspace cleanup is unavailable"}
 	}
 
-	err := s.deleteWorkspace(ctx, workspaceID)
+	err := s.queueWorkspaceDeletion(workspaceID)
 	if err != nil {
-		return err.Error()
+		return workspaceCleanupResult{Warning: err.Error()}
 	}
-	return ""
+	return workspaceCleanupResult{Pending: true}
 }

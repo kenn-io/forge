@@ -4945,6 +4945,38 @@ func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 	)
 }
 
+func TestManagerDeleteStopsBeforeTeardownWhenAdmissionFails(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	script, record := writeRecorderScript(t)
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+
+	ctx := context.Background()
+	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
+	require.NoError(err)
+
+	admissionErr := errors.New("admission failed")
+	dirty, err := mgr.Delete(ctx, ws.ID, true, func(context.Context) error {
+		return admissionErr
+	})
+	assert.Nil(dirty)
+	require.ErrorIs(err, admissionErr)
+
+	got, getErr := mgr.Get(ctx, ws.ID)
+	require.NoError(getErr)
+	require.NotNil(got)
+	assert.Equal(ws.ID, got.ID)
+	_, statErr := os.Stat(record)
+	assert.ErrorIs(statErr, os.ErrNotExist)
+}
+
 func TestManagerDeleteTreatsTmuxServerExitDuringKillAsGone(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

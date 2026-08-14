@@ -4025,6 +4025,202 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert.Nil(noSuch)
 }
 
+func TestWorkspaceDeletionLifecycle(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	insert := func(id, status string) {
+		require.NoError(d.InsertWorkspace(ctx, &Workspace{
+			ID:              id,
+			PlatformHost:    "github.com",
+			RepoOwner:       "acme",
+			RepoName:        id,
+			ItemType:        WorkspaceItemTypePullRequest,
+			ItemNumber:      42,
+			GitHeadRef:      "feature/delete",
+			WorkspaceBranch: "kenn-forge/pr-42",
+			WorktreePath:    "/tmp/" + id,
+			TmuxSession:     "kenn-forge-" + id,
+			Status:          status,
+		}))
+	}
+
+	insert("ws-delete", "ready")
+	started, err := d.BeginWorkspaceDeletion(ctx, "ws-delete")
+	require.NoError(err)
+	assert.True(started)
+	started, err = d.BeginWorkspaceDeletion(ctx, "ws-delete")
+	require.NoError(err)
+	assert.False(started)
+
+	got, err := d.GetWorkspace(ctx, "ws-delete")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("deleting", got.Status)
+	assert.Nil(got.ErrorMessage)
+
+	require.NoError(d.FailWorkspaceDeletion(ctx, "ws-delete", "worktree is dirty"))
+	got, err = d.GetWorkspace(ctx, "ws-delete")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("deletion_failed", got.Status)
+	require.NotNil(got.ErrorMessage)
+	assert.Equal("worktree is dirty", *got.ErrorMessage)
+
+	started, err = d.BeginWorkspaceDeletion(ctx, "ws-delete")
+	require.NoError(err)
+	assert.True(started)
+
+	insert("ws-interrupted", "deleting")
+	require.NoError(d.FailInterruptedWorkspaceDeletions(
+		ctx, "deletion interrupted by server restart",
+	))
+	for _, id := range []string{"ws-delete", "ws-interrupted"} {
+		got, err = d.GetWorkspace(ctx, id)
+		require.NoError(err)
+		require.NotNil(got)
+		assert.Equal("deletion_failed", got.Status)
+		require.NotNil(got.ErrorMessage)
+		assert.Equal("deletion interrupted by server restart", *got.ErrorMessage)
+	}
+}
+
+func TestFailInterruptedWorkspaceSetups(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	insert := func(id, status string) {
+		require.NoError(d.InsertWorkspace(ctx, &Workspace{
+			ID:           id,
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     id,
+			ItemType:     WorkspaceItemTypePullRequest,
+			ItemNumber:   42,
+			GitHeadRef:   "feature/setup",
+			WorktreePath: "/tmp/" + id,
+			TmuxSession:  "kenn-forge-" + id,
+			Status:       status,
+		}))
+	}
+	insert("ws-creating", "creating")
+	insert("ws-ready", "ready")
+
+	require.NoError(d.FailInterruptedWorkspaceSetups(
+		ctx, "setup interrupted by server restart",
+	))
+
+	creating, err := d.GetWorkspace(ctx, "ws-creating")
+	require.NoError(err)
+	require.NotNil(creating)
+	assert.Equal("error", creating.Status)
+	require.NotNil(creating.ErrorMessage)
+	assert.Equal("setup interrupted by server restart", *creating.ErrorMessage)
+
+	ready, err := d.GetWorkspace(ctx, "ws-ready")
+	require.NoError(err)
+	require.NotNil(ready)
+	assert.Equal("ready", ready.Status)
+	assert.Nil(ready.ErrorMessage)
+}
+
+func TestReadyWorkspaceErrorDoesNotOverwriteAdmittedDeletion(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:              "ws-prune-delete-race",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/delete",
+		WorkspaceBranch: "kenn-forge/pr-42",
+		WorktreePath:    "/tmp/ws-prune-delete-race",
+		TmuxSession:     "kenn-forge-ws-prune-delete-race",
+		Status:          "ready",
+	}))
+
+	// Simulate pruning reading a ready workspace before deletion wins the
+	// durable transition. Its stale error write must not replace deleting.
+	stale, err := d.GetWorkspace(ctx, "ws-prune-delete-race")
+	require.NoError(err)
+	require.Equal("ready", stale.Status)
+	started, err := d.BeginWorkspaceDeletion(ctx, stale.ID)
+	require.NoError(err)
+	require.True(started)
+
+	updated, err := d.MarkReadyWorkspaceError(
+		ctx, stale.ID, "tmux session is no longer running",
+	)
+	require.NoError(err)
+	assert.False(updated)
+
+	got, err := d.GetWorkspace(ctx, stale.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("deleting", got.Status)
+}
+
+func TestFailWorkspaceDeletionRequiresDeletingState(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "ws-ready",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feature/delete",
+		WorktreePath: "/tmp/ws-ready",
+		TmuxSession:  "kenn-forge-ws-ready",
+		Status:       "ready",
+	}))
+
+	err := d.FailWorkspaceDeletion(ctx, "ws-ready", "teardown failed")
+	require.ErrorContains(err, "workspace is not deleting")
+}
+
+func TestBeginWorkspaceDeletionRejectsCreatingWorkspace(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:              "ws-creating",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/setup",
+		WorkspaceBranch: "kenn-forge/pr-42",
+		WorktreePath:    "/tmp/ws-creating",
+		TmuxSession:     "kenn-forge-ws-creating",
+		Status:          "creating",
+	}))
+
+	started, err := d.BeginWorkspaceDeletion(ctx, "ws-creating")
+	require.ErrorIs(err, ErrWorkspaceSetupInProgress)
+	assert.False(started)
+
+	got, err := d.GetWorkspace(ctx, "ws-creating")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("creating", got.Status)
+}
+
 func TestUpdateWorkspaceBranchRejectsMissingWorkspace(t *testing.T) {
 	d := openTestDB(t)
 

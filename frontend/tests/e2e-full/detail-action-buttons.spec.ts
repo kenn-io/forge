@@ -389,7 +389,7 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("a merge cleanup warning keeps the linked workspace and reports partial success", async ({ page }) => {
+  test("a merge cleanup failure remains visible and supports force-delete recovery", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -432,10 +432,53 @@ test.describe("detail action buttons", () => {
       const mergeResponse = await mergeResponsePromise;
       expect(mergeResponse.status()).toBe(200);
       expect(await mergeResponse.json()).toMatchObject({
-        workspace_cleanup_warning: expect.stringMatching(/uncommitted changes/i),
+        workspace_cleanup_pending: true,
       });
-      await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("workspace was not pruned");
-      expect((await apiContext.get(`/api/v1/workspaces/${createdWorkspace.id}`)).status()).toBe(200);
+      await expect(modal).toBeHidden();
+      await expect
+        .poll(async () => {
+          const response = await apiContext.get(`/api/v1/workspaces/${createdWorkspace.id}`);
+          if (!response.ok()) return null;
+          return ((await response.json()) as WorkspaceStatusResponse).status;
+        })
+        .toBe("deletion_failed");
+
+      await page.goto(`${server.info.base_url}/workspaces`);
+      await expect(page.locator(".workspace-lifecycle-state--deletion_failed")).toHaveText("Deletion failed");
+
+      const failedWorkspaceRow = page.locator(".ws-row").filter({
+        has: page.locator(".workspace-lifecycle-state--deletion_failed"),
+      });
+      await failedWorkspaceRow.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Force delete workspace..." }).click();
+
+      const forceDeleteDialog = page.getByRole("dialog", { name: "Force delete workspace?" });
+      await expect(forceDeleteDialog).toBeVisible();
+      const forceDeleteResponsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === "DELETE" &&
+          url.pathname === `/api/v1/workspaces/${createdWorkspace.id}` &&
+          url.searchParams.get("force") === "true"
+        );
+      });
+      await forceDeleteDialog.getByRole("button", { name: "Force delete workspace" }).click();
+      expect((await forceDeleteResponsePromise).status()).toBe(204);
+
+      await expect
+        .poll(async () => (await apiContext.get(`/api/v1/workspaces/${createdWorkspace.id}`)).status())
+        .toBe(404);
+      await expect
+        .poll(async () => {
+          try {
+            await access(readyWorkspace.worktree_path);
+            return true;
+          } catch {
+            return false;
+          }
+        })
+        .toBe(false);
+      await expect(failedWorkspaceRow).toHaveCount(0);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

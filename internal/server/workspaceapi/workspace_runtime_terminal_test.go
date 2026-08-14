@@ -294,6 +294,73 @@ func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
 	}
 }
 
+func TestServeRuntimeTerminalWaitsForWorkspaceDeletionResult(t *testing.T) {
+	tests := []struct {
+		name        string
+		reason      localruntime.TerminationReason
+		messageType string
+	}{
+		{name: "deleted", reason: localruntime.TerminationWorkspaceDeleted, messageType: "workspace_deleted"},
+		{name: "delete failed", reason: localruntime.TerminationExited, messageType: "exited"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require := require.New(t)
+			output := make(chan []byte)
+			close(output)
+			termination := localruntime.NewTerminationSignal()
+			attachment := localruntime.NewAttachmentForTesting(
+				localruntime.AttachmentForTestingOptions{
+					Output:              output,
+					Done:                make(chan struct{}),
+					SessionOutputClosed: func() bool { return true },
+					TerminationReason:   termination.Wait,
+				},
+			)
+			wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			conn, _, err := websocket.Dial(ctx, wsURL, nil)
+			require.NoError(err)
+			defer conn.Close(websocket.StatusNormalClosure, "done")
+
+			type readResult struct {
+				typ  websocket.MessageType
+				data []byte
+				err  error
+			}
+			readDone := make(chan readResult, 1)
+			go func() {
+				typ, data, readErr := conn.Read(ctx)
+				readDone <- readResult{typ: typ, data: data, err: readErr}
+			}()
+			select {
+			case <-readDone:
+				require.Fail("terminal reported closure before workspace deletion finished")
+			case <-time.After(25 * time.Millisecond):
+			}
+
+			termination.Resolve(test.reason)
+			result := <-readDone
+			require.NoError(result.err)
+			require.Equal(websocket.MessageText, result.typ)
+			var msg struct {
+				Type string `json:"type"`
+			}
+			require.NoError(json.Unmarshal(result.data, &msg))
+			require.Equal(test.messageType, msg.Type)
+			require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
+
+			select {
+			case <-handlerDone:
+			case <-ctx.Done():
+				require.Fail("terminal handler did not return after deletion result")
+			}
+		})
+	}
+}
+
 func TestServeRuntimeTerminalRestartDetachDoesNotReportSessionExit(t *testing.T) {
 	tests := []struct {
 		name   string

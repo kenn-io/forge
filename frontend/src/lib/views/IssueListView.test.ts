@@ -54,6 +54,7 @@ function issueDetailFixture(workspace: { id: string; status: string } | undefine
 
 interface RenderIssueListViewOptions {
   selectedIssue?: IssueRouteRef | null;
+  detailPresentation?: "panes" | "focused";
   inlineWorkspace?: InlineWorkspaceController | null;
   detail?: unknown;
   workspacePaneControls?: Snippet | undefined;
@@ -77,6 +78,7 @@ function renderIssueListView(options: RenderIssueListViewOptions = {}) {
     ...render(IssueListView, {
       props: {
         selectedIssue: options.selectedIssue === undefined ? selectedIssue : options.selectedIssue,
+        detailPresentation: options.detailPresentation ?? "panes",
         hideSidebar: true,
         ...(options.inlineWorkspace !== undefined ? { inlineWorkspace: options.inlineWorkspace } : {}),
         ...(options.workspacePaneControls !== undefined
@@ -140,6 +142,29 @@ describe("IssueListView inline workspace", () => {
 
     expect(document.querySelector(`[data-session-pane="${paneKey}"]`)).not.toBeNull();
     expect(screen.getByRole("tab", { name: "Helper" })).toBeTruthy();
+  });
+
+  it("renders a focused detail without consulting the persisted desktop pane tree", () => {
+    const storedLayout = JSON.stringify({
+      tree: {
+        kind: "split",
+        id: "desktop-split",
+        direction: "horizontal",
+        ratio: 0.5,
+        first: { kind: "leaf", id: "conversation-leaf", tabs: ["conversation"], activeTabKey: "conversation" },
+        second: { kind: "leaf", id: "workspace-leaf", tabs: ["workspace"], activeTabKey: "workspace" },
+      },
+      hiddenTabKeys: ["conversation"],
+      zoomedLeafID: "workspace-leaf",
+      lastFocusedTabKey: "workspace",
+    });
+    localStorage.setItem("kenn-forge-pane-layout-v1:issues", storedLayout);
+
+    renderIssueListView({ detailPresentation: "focused" });
+
+    expect(screen.getByTestId("issue-detail").textContent).toContain("Issue acme/widgets#7");
+    expect(screen.queryByRole("tab")).toBeNull();
+    expect(localStorage.getItem("kenn-forge-pane-layout-v1:issues")).toBe(storedLayout);
   });
 
   it("reports a focused pane to the workspace host", () => {

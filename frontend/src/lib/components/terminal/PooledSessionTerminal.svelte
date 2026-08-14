@@ -20,10 +20,11 @@
     active: boolean;
     retained: boolean;
     onExit: (code: number) => void;
+    onWorkspaceDeleted: () => void;
     onConnectionChange: (connected: boolean) => void;
   }
 
-  let { session, parking, slotEl, active, retained, onExit, onConnectionChange }: Props = $props();
+  let { session, parking, slotEl, active, retained, onExit, onWorkspaceDeleted, onConnectionChange }: Props = $props();
   const appRuntime = getAppRuntime();
 
   let wrapper = $state<HTMLElement | null>(null);
@@ -220,6 +221,7 @@
     cursorWheelInput={session.cursorWheelInput ?? false}
     initialStatus={session.status}
     onExit={(code) => onExit(code)}
+    {onWorkspaceDeleted}
     onConnectionChange={(connected) => onConnectionChange(connected)}
   />
 </div>

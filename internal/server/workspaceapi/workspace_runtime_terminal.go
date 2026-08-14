@@ -372,7 +372,7 @@ func bridgeRuntimeAttachment(
 		// Read context is canceled, which races our Write.
 		detachedForRestart := attachment.DetachedForServerRestart()
 		if !detachedForRestart {
-			writeRuntimeExit(conn, attachment.Info())
+			writeRuntimeTermination(conn, attachment.Info(), attachment.TerminationReason())
 		}
 		cancel()
 		return !detachedForRestart
@@ -409,7 +409,7 @@ func bridgeRuntimeAttachment(
 		closed := attachment.SessionOutputClosed()
 		exited := closed && !attachment.DetachedForServerRestart()
 		if exited {
-			writeRuntimeExit(conn, attachment.Info())
+			writeRuntimeTermination(conn, attachment.Info(), attachment.TerminationReason())
 		}
 		cancel()
 		return exited
@@ -509,4 +509,18 @@ func writeRuntimeExit(
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_ = conn.Write(ctx, websocket.MessageText, exitMsg)
+}
+
+func writeRuntimeTermination(
+	conn *websocket.Conn,
+	info localruntime.SessionInfo,
+	reason localruntime.TerminationReason,
+) {
+	if reason == localruntime.TerminationWorkspaceDeleted {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = conn.Write(ctx, websocket.MessageText, []byte(`{"type":"workspace_deleted"}`))
+		return
+	}
+	writeRuntimeExit(conn, info)
 }

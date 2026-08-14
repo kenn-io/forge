@@ -13,7 +13,7 @@
   import { pullDetailMatchesRef } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
-  import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
+  import { getPaneLayoutStore, type PaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
   import { isSessionPaneKey } from "../stores/session-pane-key.js";
   import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
@@ -31,11 +31,10 @@
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
   const { detail: detailStore } = getStores();
-  const paneLayout = getPaneLayoutStore("prs");
-
   interface Props {
     selectedPR?: PullRequestRouteRef | null;
     detailTab?: DetailTab;
+    detailPresentation?: "panes" | "focused";
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
     sidebarWidth?: number;
@@ -60,6 +59,7 @@
   let {
     selectedPR = null,
     detailTab = "conversation",
+    detailPresentation = "panes",
     isSidebarCollapsed = false,
     hideSidebar = false,
     sidebarWidth = 340,
@@ -74,6 +74,8 @@
     inlineWorkspace = null,
     workspacePaneControls = undefined,
   }: Props = $props();
+  const paneLayoutStore = getPaneLayoutStore("prs");
+  const paneLayout = $derived<PaneLayoutStore | null>(detailPresentation === "panes" ? paneLayoutStore : null);
 
   function detailTabRoute(tab: DetailTab, ref: PullRequestRouteRef): string {
     return tab === "files" ? buildPullRequestFilesRoute(ref) : buildPullRequestRoute(ref);
@@ -89,6 +91,7 @@
    * panes different Back-stack behavior depending on where the pointer landed.
    */
   const routePanesSplitApart = $derived.by(() => {
+    if (paneLayout === null) return false;
     // Straight from the renderer, never inferred from the stored tree. Flattened
     // shows one strip whatever the tree says; a zoom covers every other leaf;
     // and a pane tabbed behind a sibling is not on screen either. All three
@@ -137,6 +140,7 @@
     if (inputActive) return true;
     if (tabKey !== "files" || detailTab !== "files") return false;
     if (getStackDepth() > 0) return false;
+    if (paneLayout === null) return true;
     const render = paneLayout.paneRender();
     return render !== null && render.activeInputTabKey === null && !paneLayout.externalInputActive();
   }
@@ -207,7 +211,7 @@
     (inlineWorkspace?.promotableSessions() ?? []).map((session) => ({
       key: session.paneKey,
       label: session.label,
-      available: paneLayout.hasTab(session.paneKey),
+      available: paneLayout?.hasTab(session.paneKey) ?? false,
       hideable: true,
     })),
   );
@@ -247,6 +251,20 @@
 
   {#if selectedPR !== null}
     <div class="detail-host">
+      {#if detailPresentation === "focused"}
+        <PullDetailPane
+          tabKey={detailTab}
+          visible={true}
+          keyboardActive={diffKeyboardActive(detailTab, false)}
+          pr={selectedPR}
+          detail={selectedDetail}
+          autoSync={autoSyncDetail}
+          hideStaleWhileLoading={hideStaleDetailWhileLoading}
+          {workflowApprovalSync}
+          onStackMemberNavigate={handleStackMemberNavigate}
+          {inlineWorkspace}
+        />
+      {:else if paneLayout !== null}
       <DetailPaneLayout
         layout={paneLayout}
         tabs={paneTabs}
@@ -302,10 +320,11 @@
           {/if}
         {/snippet}
       </DetailPaneLayout>
+      {/if}
       <!-- The terminal dock, anchored at this surface's bottom edge while the
            container pane has retired because it is empty or row-only. The dock
            normally lives inside that pane, and must remain reachable outside it. -->
-      {@render inlineWorkspace?.dockRow()?.()}
+      {#if detailPresentation === "panes"}{@render inlineWorkspace?.dockRow()?.()}{/if}
     </div>
   {:else}
     <div class="placeholder-content">

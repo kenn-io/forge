@@ -1043,6 +1043,122 @@ test("phone workspace list opens a linked item and returns to the list", async (
   await expect(page).toHaveURL(/\/m\/workspaces$/);
 });
 
+test("direct phone workspace item tabs return to the workspace terminal", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page);
+
+  await page.goto("/m/workspaces/local/ws-123/item");
+  await page.getByRole("tab", { name: "Files changed" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123\/item\/files$/);
+
+  await page.getByRole("button", { name: "Back to workspace terminal" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123$/);
+});
+
+test("phone workspace setup failure retries through the shared workflow", async ({ page }) => {
+  let retryCalls = 0;
+  let releaseRetry: () => void = () => {};
+  const retryPending = new Promise<void>((resolve) => {
+    releaseRetry = resolve;
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page, {
+    workspace: {
+      ...testWorkspace,
+      status: "error",
+      error_message: "tmux bootstrap failed",
+    },
+    workspaceRetryResponse: {
+      status: 202,
+      body: { ...testWorkspace, status: "creating" },
+    },
+  });
+  await page.route("**/api/v1/workspaces/ws-123/retry", async (route) => {
+    retryCalls += 1;
+    await retryPending;
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ ...testWorkspace, status: "creating" }),
+    });
+  });
+
+  await page.goto("/m/workspaces/local/ws-123");
+  const state = page.locator(".mobile-workspace-terminal__state");
+  await expect(state).toContainText("tmux bootstrap failed");
+  await state.getByRole("button", { name: "Retry" }).click();
+
+  await expect.poll(() => retryCalls).toBe(1);
+  await expect(state.getByRole("button", { name: "Retry" })).toBeDisabled();
+  releaseRetry();
+  await expect(state).toContainText("Setting up workspace…");
+});
+
+test("typed terminal deletion returns the phone workflow to the workspace list", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    class DeletingTerminalWebSocket extends EventTarget {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+
+      binaryType = "arraybuffer";
+      extensions = "";
+      onclose: ((event: CloseEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onopen: ((event: Event) => void) | null = null;
+      protocol = "";
+      readyState = DeletingTerminalWebSocket.OPEN;
+      readonly url: string;
+
+      constructor(url: string | URL) {
+        super();
+        this.url = String(url);
+        queueMicrotask(() => {
+          const opened = new Event("open");
+          this.dispatchEvent(opened);
+          this.onopen?.(opened);
+          const deleted = new MessageEvent("message", {
+            data: JSON.stringify({ type: "workspace_deleted" }),
+          });
+          this.dispatchEvent(deleted);
+          this.onmessage?.(deleted);
+        });
+      }
+
+      close(): void {
+        this.readyState = DeletingTerminalWebSocket.CLOSED;
+      }
+
+      send(): void {}
+    }
+
+    window.WebSocket = DeletingTerminalWebSocket as unknown as typeof WebSocket;
+  });
+  await setupTerminalMocks(page, {
+    runtime: {
+      ...workspaceRuntime,
+      sessions: [
+        {
+          key: "ws-123:codex",
+          workspace_id: "ws-123",
+          target_key: "codex",
+          label: "Codex",
+          kind: "agent",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        },
+      ],
+    },
+  });
+
+  await page.goto("/m/workspaces/local/ws-123");
+
+  await expect(page).toHaveURL(/\/m\/workspaces$/);
+});
+
 test.describe("terminal state icons", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(clearWorkspaceSidebarTabStorage);

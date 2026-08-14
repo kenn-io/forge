@@ -30,6 +30,7 @@
     noteSessionMounted,
     noteSessionReleased,
     onSessionExited,
+    onSessionWorkspaceDeleted,
     requestSessionFocus,
     sendSessionInput,
     sessionHostKey,
@@ -80,6 +81,7 @@
   let runtimeError = $state<string | null>(null);
   let launchingTarget = $state<string | null>(null);
   let stoppingSession = $state<string | null>(null);
+  let retryingSetup = $state(false);
   let stopSession = $state.raw<RuntimeSession | null>(null);
   let launchSheetOpen = $state(false);
   let terminalOptionsOpen = $state(false);
@@ -252,6 +254,19 @@
           showMutationFailure(state, "Stop failed");
         }
       }
+      if (state.operation === "RetrySetup") {
+        if (state.kind === "pending") {
+          retryingSetup = true;
+          runtimeError = null;
+        } else if (state.kind === "succeeded") {
+          retryingSetup = false;
+          workspace = state.workspace;
+          if (state.workspace.status === "ready") requestRuntimeRefresh();
+        } else if (state.kind === "failed" || state.kind === "uncertain") {
+          retryingSetup = false;
+          showMutationFailure(state, "Retry failed");
+        }
+      }
       return true;
     });
   }
@@ -274,6 +289,26 @@
   function refreshWorkspaceState() {
     return Effect.suspend(() =>
       workspace?.status === "ready" ? readRuntime(true) : loadWorkspaceAndRuntime(),
+    );
+  }
+
+  function retryWorkspaceSetup(): void {
+    if (!workspace || workspace.status !== "error" || retryingSetup) return;
+    retryingSetup = true;
+    runtimeError = null;
+    appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkspaceRuntimeWorkflow;
+        yield* workflow.retrySetup(target());
+      }),
+      {
+        operation: "retry mobile workspace setup",
+        safeContext: { workspaceId, remote: Boolean(hostKey) },
+        onFailure: (failure) => {
+          retryingSetup = false;
+          runtimeError = failureMessage(failure, "Retry failed");
+        },
+      },
     );
   }
 
@@ -483,6 +518,7 @@
     terminalOptionsOpen = false;
     terminalOptionsSaving = false;
     terminalSettingsDialogOpen = false;
+    retryingSetup = false;
     releaseOwnedSessions();
 
     const execution = untrack(() =>
@@ -521,9 +557,13 @@
       applyRuntime({ ...current, sessions: nextSessions });
       requestRuntimeRefresh();
     });
+    const stopWorkspaceDeletedListener = onSessionWorkspaceDeleted((deletedHostKey) => {
+      if (ownedHostKeys.includes(deletedHostKey)) onMissing();
+    });
 
     return () => {
       stopExitListener();
+      stopWorkspaceDeletedListener();
       execution.interrupt();
       releaseOwnedSessions();
     };
@@ -583,9 +623,16 @@
   {:else if !workspace}
     <div class="mobile-workspace-terminal__state"><Spinner size={18} /><span>Loading workspace…</span></div>
   {:else if workspace.status !== "ready"}
-    <div class="mobile-workspace-terminal__state">
+    <div class="mobile-workspace-terminal__state" class:error={workspace.status === "error"}>
       <strong>{workspace.status === "creating" ? "Setting up workspace…" : "Workspace setup failed"}</strong>
       {#if workspace.error_message}<span>{workspace.error_message}</span>{/if}
+      {#if runtimeError}<span>{runtimeError}</span>{/if}
+      {#if workspace.status === "error"}
+        <button type="button" disabled={retryingSetup} onclick={retryWorkspaceSetup}>
+          {#if retryingSetup}<Spinner size={16} />{:else}<RefreshCwIcon size="18" aria-hidden="true" />{/if}
+          Retry
+        </button>
+      {/if}
     </div>
   {:else if !runtime && !runtimeError}
     <div class="mobile-workspace-terminal__state"><Spinner size={18} /><span>Loading terminal sessions…</span></div>

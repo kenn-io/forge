@@ -345,6 +345,15 @@
               number: workspace.item_number,
               itemType: workspace.item_type,
             });
+            if (hostKey) {
+              const cached = peerWorkspaceCache.get(hostKey);
+              if (cached) {
+                peerWorkspaceCache.set(
+                  hostKey,
+                  cached.filter((candidate) => candidate.id !== workspace.id),
+                );
+              }
+            }
             workspaces = workspaces.filter(
               (candidate) => candidate.id !== workspace.id || candidate.fleet_host_key !== hostKey,
             );

@@ -10,9 +10,11 @@ import {
   noteSessionConnection,
   noteSessionDiscarded,
   noteSessionExited,
+  noteSessionWorkspaceDeleted,
   noteSessionMounted,
   noteSessionReleased,
   onSessionExited,
+  onSessionWorkspaceDeleted,
   registerSessionSlot,
   registerSessionInput,
   requestSessionFocus,
@@ -309,6 +311,21 @@ describe("session host registry", () => {
     });
 
     noteSessionExited(session.hostKey, 0);
+    stopListening();
+
+    expect(mountedWhenRouted).toBe(false);
+    expect(isSessionMounted(session.hostKey)).toBe(false);
+  });
+
+  it("discards a session before routing authoritative workspace deletion", () => {
+    const session = mountedSession("ws-1", "agent");
+    mountConnected(session);
+    let mountedWhenRouted = true;
+    const stopListening = onSessionWorkspaceDeleted((hostKey) => {
+      if (hostKey === session.hostKey) mountedWhenRouted = isSessionMounted(hostKey);
+    });
+
+    noteSessionWorkspaceDeleted(session.hostKey);
     stopListening();
 
     expect(mountedWhenRouted).toBe(false);

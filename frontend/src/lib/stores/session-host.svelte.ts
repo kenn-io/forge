@@ -275,6 +275,7 @@ export function discardSessionsWithPrefix(prefix: string): void {
 }
 
 const exitListeners = new Set<(key: SessionHostKey, code: number) => void>();
+const workspaceDeletedListeners = new Set<(key: SessionHostKey) => void>();
 
 /**
  * A pooled terminal's exit, routed back to whoever mounted the session.
@@ -295,6 +296,17 @@ export function noteSessionExited(key: SessionHostKey, code: number): void {
   noteSessionDiscarded(key);
   const listeners = Array.from(exitListeners);
   for (const listener of listeners) listener(key, code);
+}
+
+export function onSessionWorkspaceDeleted(cb: (key: SessionHostKey) => void): () => void {
+  workspaceDeletedListeners.add(cb);
+  return () => workspaceDeletedListeners.delete(cb);
+}
+
+export function noteSessionWorkspaceDeleted(key: SessionHostKey): void {
+  noteSessionDiscarded(key);
+  const listeners = Array.from(workspaceDeletedListeners);
+  for (const listener of listeners) listener(key);
 }
 
 // A Focus Terminal aimed at a promoted session whose terminal is not on screen
@@ -355,4 +367,5 @@ export function resetSessionHostForTest(): void {
   pendingFocusKey = null;
   pendingFocusSoft = false;
   exitListeners.clear();
+  workspaceDeletedListeners.clear();
 }

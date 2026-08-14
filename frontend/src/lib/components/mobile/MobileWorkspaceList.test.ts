@@ -193,4 +193,78 @@ describe("MobileWorkspaceList", () => {
     });
     notifyWorkspaceDeleted.mockRestore();
   });
+
+  it("does not restore a deleted Fleet workspace from a failed refresh cache", async () => {
+    const fleetWorkspace = {
+      ...fixture,
+      id: "fleet-ws-1",
+      mr_title: "Fleet workspace",
+      fleet_host_key: "peer-a",
+      fleet_host_name: "Peer A",
+    };
+    let peerReads = 0;
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "self",
+                diagnostics: [],
+                id: "self",
+                kind: "self",
+                name: "This device",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "peer-a",
+                diagnostics: [],
+                id: "peer-a",
+                kind: "remote",
+                name: "Peer A",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      if (path === "/workspaces") return Promise.resolve({ data: { workspaces: [] } });
+      if (path === "/fleet/hosts/{host_key}/workspaces") {
+        peerReads += 1;
+        if (peerReads === 1) return Promise.resolve({ data: { workspaces: [fleetWorkspace] } });
+        return Promise.resolve({ error: { status: 503, detail: "Peer unavailable" } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockDelete.mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { ok: true, status: 204 },
+    });
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+
+    await screen.findByText("Fleet workspace");
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Fleet workspace" }));
+    await fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Workspace actions" })).getByRole("button", {
+        name: "Delete workspace…",
+      }),
+    );
+    await fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Delete workspace?" })).getByRole("button", {
+        name: "Delete workspace",
+      }),
+    );
+
+    await waitFor(() => expect(peerReads).toBeGreaterThan(1));
+    expect(screen.queryByText("Fleet workspace")).toBeNull();
+  });
 });

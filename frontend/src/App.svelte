@@ -659,7 +659,7 @@
     navigate(path === "/m/workspaces" ? path : `${path}${window.location.search}`);
   }
 
-  type MobileWorkspaceOrigin = "list" | "terminal";
+  type MobileWorkspaceOrigin = "list" | "terminal" | "direct";
   const mobileWorkspaceOriginKey = "kennForgeMobileWorkspaceOrigin";
   const mobileWorkspaceBackDepthKey = "kennForgeMobileWorkspaceBackDepth";
 
@@ -668,14 +668,17 @@
     if (typeof state !== "object" || state === null) return undefined;
     const origin = Reflect.get(state, mobileWorkspaceOriginKey);
     const backDepth = Reflect.get(state, mobileWorkspaceBackDepthKey);
-    if (origin !== "list" && origin !== "terminal") return undefined;
+    if (origin !== "list" && origin !== "terminal" && origin !== "direct") return undefined;
     return {
       origin,
-      backDepth: typeof backDepth === "number" && backDepth > 0 ? backDepth : 1,
+      backDepth: origin === "direct" ? 0 : typeof backDepth === "number" && backDepth > 0 ? backDepth : 1,
     };
   }
 
-  function mobileWorkspaceHistoryState(origin: MobileWorkspaceOrigin, backDepth = 1): Record<string, unknown> {
+  function mobileWorkspaceHistoryState(
+    origin: MobileWorkspaceOrigin,
+    backDepth = origin === "direct" ? 0 : 1,
+  ): Record<string, unknown> {
     return {
       [mobileWorkspaceOriginKey]: origin,
       [mobileWorkspaceBackDepthKey]: backDepth,
@@ -705,7 +708,8 @@
 
   function leaveMobileWorkspaceItem(workspaceId: string, hostKey?: string): void {
     const mobileHistory = mobileWorkspaceHistory();
-    if (mobileHistory) history.go(-mobileHistory.backDepth);
+    if (mobileHistory?.origin === "direct") replaceUrl(buildMobileWorkspaceRoute(workspaceId, hostKey));
+    else if (mobileHistory) history.go(-mobileHistory.backDepth);
     else replaceUrl(buildMobileWorkspaceRoute(workspaceId, hostKey));
   }
 
@@ -1179,7 +1183,7 @@
         {:else if getPage() === "mobile-workspace-terminal" || getPage() === "mobile-workspace-item"}
           {@const route = getRoute()}
           {#if route.page === "mobile-workspace-terminal" || route.page === "mobile-workspace-item"}
-            <div class="mobile-workspace-route">
+            <div class="mobile-workspace-route focus-layout--phone">
               <div class="mobile-workspace-route__terminal" hidden={route.page === "mobile-workspace-item"}>
                 <MobileWorkspaceTerminal
                   workspaceId={route.workspaceId}
@@ -1203,7 +1207,7 @@
                       route.hostKey,
                       tab === "files" ? "files" : undefined,
                     );
-                    const mobileHistory = mobileWorkspaceHistory() ?? { origin: "terminal" as const, backDepth: 1 };
+                    const mobileHistory = mobileWorkspaceHistory() ?? { origin: "direct" as const, backDepth: 0 };
                     if (options?.replace) {
                       replaceUrl(path, mobileWorkspaceHistoryState(mobileHistory.origin, mobileHistory.backDepth));
                     } else {

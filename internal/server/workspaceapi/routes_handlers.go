@@ -392,10 +392,11 @@ func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 // once one succeeds; done is closed when the last active deletion finishes so
 // setup dispatchers queued behind a failed deletion can replay.
 type workspaceDeletion struct {
-	active    int
-	succeeded bool
-	closed    bool
-	done      chan struct{}
+	active      int
+	succeeded   bool
+	closed      bool
+	done        chan struct{}
+	termination *localruntime.TerminationSignal
 }
 
 func (s *Handler) beginWorkspaceSetup(workspaceID string) (chan struct{}, bool) {
@@ -424,16 +425,21 @@ func (s *Handler) finishWorkspaceSetup(workspaceID string, done chan struct{}) {
 	s.workspaceSetupMu.Unlock()
 }
 
-func (s *Handler) markWorkspaceDeleting(workspaceID string) <-chan struct{} {
+func (s *Handler) markWorkspaceDeleting(
+	workspaceID string,
+) (<-chan struct{}, *localruntime.TerminationSignal) {
 	s.workspaceSetupMu.Lock()
 	defer s.workspaceSetupMu.Unlock()
 	deletion := s.workspaceDeleting[workspaceID]
 	if deletion == nil {
-		deletion = &workspaceDeletion{done: make(chan struct{})}
+		deletion = &workspaceDeletion{
+			done:        make(chan struct{}),
+			termination: localruntime.NewTerminationSignal(),
+		}
 		s.workspaceDeleting[workspaceID] = deletion
 	}
 	deletion.active++
-	return s.workspaceSetupDone[workspaceID]
+	return s.workspaceSetupDone[workspaceID], deletion.termination
 }
 
 func (s *Handler) finishWorkspaceDeleting(workspaceID string, succeeded bool) {
@@ -451,6 +457,11 @@ func (s *Handler) finishWorkspaceDeleting(workspaceID string, succeeded bool) {
 		return
 	}
 	if !deletion.closed {
+		reason := localruntime.TerminationExited
+		if deletion.succeeded {
+			reason = localruntime.TerminationWorkspaceDeleted
+		}
+		deletion.termination.Resolve(reason)
 		close(deletion.done)
 		deletion.closed = true
 	}
@@ -2492,7 +2503,7 @@ func (s *Handler) DeleteWorkspace(
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 
-	setupDone := s.markWorkspaceDeleting(input.ID)
+	setupDone, termination := s.markWorkspaceDeleting(input.ID)
 	deleted := false
 	// A successful deletion keeps admission closed permanently so queued setup
 	// dispatchers cannot recreate resources for the removed row; a failed one

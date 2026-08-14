@@ -137,11 +137,30 @@
       <button type="button" onclick={onBack}>Return to {backDestination === "list" ? "workspaces" : "terminal"}</button>
     </div>
   {:else}
+    {#if linkedItem.itemType === "pr"}
+      <div class="mobile-workspace-item__tabs" role="tablist" aria-label="Pull request detail">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab !== "files"}
+          class:active={tab !== "files"}
+          onclick={() => onTabChange("conversation")}
+        >Conversation</button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "files"}
+          class:active={tab === "files"}
+          onclick={() => onTabChange("files")}
+        >Files changed</button>
+      </div>
+    {/if}
     <div class="mobile-workspace-item__content">
       {#if linkedItem.itemType === "pr"}
         <PRListView
           selectedPR={itemRef}
           detailTab={tab === "files" ? "files" : "conversation"}
+          detailPresentation="focused"
           isSidebarCollapsed={true}
           hideSidebar={true}
           autoSyncDetail="background"
@@ -151,6 +170,7 @@
       {:else}
         <IssueListView
           selectedIssue={itemRef}
+          detailPresentation="focused"
           isSidebarCollapsed={true}
           hideSidebar={true}
           autoSyncDetail="background"
@@ -171,7 +191,11 @@
   .mobile-workspace-item__back small { color: var(--text-muted); font-family: var(--font-mono); font-size: var(--font-size-sm); }
   .mobile-workspace-item__badge { flex: 0 0 auto; padding: 0.25rem 0.625rem; border-radius: 999px; color: var(--text-on-accent); background: var(--accent-green); font-family: var(--font-mono); font-size: var(--font-size-sm); font-weight: 700; }
   .mobile-workspace-item__badge.issue { background: var(--accent-amber); }
-  .mobile-workspace-item__back:focus-visible, .mobile-workspace-item__state button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+  .mobile-workspace-item__back:focus-visible, .mobile-workspace-item__tabs button:focus-visible, .mobile-workspace-item__state button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+  .mobile-workspace-item__tabs { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 0.625rem; border-bottom: thin solid var(--border-default); background: var(--bg-surface); }
+  .mobile-workspace-item__tabs button { min-height: 2.75rem; position: relative; padding: 0 0.5rem; border: 0; color: var(--text-muted); background: transparent; font: inherit; font-size: var(--font-size-sm); font-weight: 650; }
+  .mobile-workspace-item__tabs button.active { color: var(--text-primary); }
+  .mobile-workspace-item__tabs button.active::after { content: ""; position: absolute; right: 0.5rem; bottom: 0; left: 0.5rem; height: 2px; border-radius: 999px 999px 0 0; background: var(--accent-blue); }
   .mobile-workspace-item__content { flex: 1; min-height: 0; display: flex; }
   .mobile-workspace-item__content :global(.collapsible-sidebar) { flex: 1; min-width: 0; }
   .mobile-workspace-item__state { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 2rem 1rem; color: var(--text-muted); text-align: center; font-size: var(--font-size-md); }

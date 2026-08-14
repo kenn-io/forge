@@ -79,6 +79,7 @@ function mockElementRect(): DOMRect {
 
 interface RenderPRListViewOptions {
   detailTab?: "conversation" | "files";
+  detailPresentation?: "panes" | "focused";
   selectedPR?: PullRequestRouteRef | null;
   inlineWorkspace?: InlineWorkspaceController | null;
   detail?: unknown;
@@ -105,6 +106,7 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
       props: {
         selectedPR: options.selectedPR === undefined ? selectedPR : options.selectedPR,
         detailTab: options.detailTab ?? "conversation",
+        detailPresentation: options.detailPresentation ?? "panes",
         hideSidebar: true,
         ...(options.inlineWorkspace !== undefined ? { inlineWorkspace: options.inlineWorkspace } : {}),
         ...(options.workspacePaneControls !== undefined
@@ -157,6 +159,30 @@ describe("PRListView detail panes", () => {
     expect(screen.getByRole("tab", { name: "Conversation" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Files changed" })).toBeTruthy();
     expect(screen.getByTestId("pull-detail").textContent).toContain("Conversation acme/widgets#12");
+  });
+
+  it("renders a focused detail without consulting the persisted desktop pane tree", async () => {
+    const storedLayout = JSON.stringify({
+      tree: {
+        kind: "split",
+        id: "desktop-split",
+        direction: "horizontal",
+        ratio: 0.5,
+        first: { kind: "leaf", id: "conversation-leaf", tabs: ["conversation"], activeTabKey: "conversation" },
+        second: { kind: "leaf", id: "files-leaf", tabs: ["files"], activeTabKey: "files" },
+      },
+      hiddenTabKeys: ["conversation"],
+      zoomedLeafID: "files-leaf",
+      lastFocusedTabKey: "files",
+    });
+    localStorage.setItem("kenn-forge-pane-layout-v1:prs", storedLayout);
+
+    renderPRListView({ detailPresentation: "focused", detailTab: "conversation" });
+    await tick();
+
+    expect(screen.getByTestId("pull-detail").textContent).toContain("Conversation acme/widgets#12");
+    expect(screen.queryByRole("tab", { name: "Files changed" })).toBeNull();
+    expect(localStorage.getItem("kenn-forge-pane-layout-v1:prs")).toBe(storedLayout);
   });
 
   it("pushes history on a pane tab click while the panes share a leaf", async () => {

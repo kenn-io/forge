@@ -44,6 +44,7 @@
   } from "./terminal-session.js";
   import { terminalAttachment } from "./terminal-attachment.js";
   import { currentTerminalGeometryIntent } from "./terminalGeometryIntent.js";
+  import { decodeTerminalControlMessage } from "./terminal-control-message.js";
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
@@ -55,6 +56,7 @@
     cursorWheelInput?: boolean;
     disabled?: boolean;
     onExit?: ((code: number) => void) | undefined;
+    onWorkspaceDeleted?: (() => void) | undefined;
     onConnectionChange?: ((connected: boolean) => void) | undefined;
     // When the session is not attachable at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404
@@ -72,6 +74,7 @@
     cursorWheelInput = false,
     disabled = false,
     onExit,
+    onWorkspaceDeleted,
     onConnectionChange,
     initialStatus,
   }: TerminalPaneProps = $props();
@@ -734,21 +737,6 @@
     );
   }
 
-  function decodeTerminalControlMessage(data: string): { type: string; code?: number } | null {
-    try {
-      const value: unknown = JSON.parse(data);
-      if (typeof value !== "object" || value === null || !("type" in value) || typeof value.type !== "string") {
-        return null;
-      }
-      if ("code" in value && typeof value.code === "number") {
-        return { type: value.type, code: value.code };
-      }
-      return { type: value.type };
-    } catch {
-      return null;
-    }
-  }
-
   function handleTerminalMessage(data: string | Uint8Array): TerminalMessageDecision {
     if (!terminal) return "continue";
     if (data instanceof Uint8Array) {
@@ -777,6 +765,11 @@
         scheduleTerminalRefresh();
       });
       return "continue";
+    }
+    if (message.type === "workspace_deleted") {
+      cancelPendingTerminalSequence();
+      onWorkspaceDeleted?.();
+      return "stop";
     }
     if (message.type !== "exited") return "continue";
 

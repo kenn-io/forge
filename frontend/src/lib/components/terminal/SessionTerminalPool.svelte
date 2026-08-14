@@ -7,7 +7,6 @@
     mountedSessions,
     noteSessionConnection,
     noteSessionExited,
-    noteSessionWorkspaceDeleted,
     registerSessionParking,
     setRetainedSessionLimit,
     type MountedSession,
@@ -48,10 +47,6 @@
     noteSessionExited(session.hostKey, code);
   }
 
-  function handleWorkspaceDeleted(session: MountedSession): void {
-    noteSessionWorkspaceDeleted(session.hostKey);
-  }
-
   function handleConnectionChange(session: MountedSession, connected: boolean): void {
     noteSessionConnection(session.hostKey, connected);
   }
@@ -67,7 +62,6 @@
     active={activeFor(session.hostKey)}
     retained={!isSessionClaimed(session.hostKey)}
     onExit={(code) => handleExit(session, code)}
-    onWorkspaceDeleted={() => handleWorkspaceDeleted(session)}
     onConnectionChange={(connected) => handleConnectionChange(session, connected)}
   />
 {/each}

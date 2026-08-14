@@ -12,6 +12,7 @@
   import type { RuntimeSession, TerminalSettings as TerminalSettingsType } from "../../api/types.js";
   import { apiErrorMessage } from "../../api/runtime.js";
   import { ApiProblemError } from "../../api/effect-errors.js";
+  import { ProblemCodes } from "../../api/problems.js";
   import { workspaceSessionWebSocketPath, type WorkspaceRuntimeState } from "../../api/workspace-runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
@@ -30,12 +31,12 @@
     noteSessionMounted,
     noteSessionReleased,
     onSessionExited,
-    onSessionWorkspaceDeleted,
     requestSessionFocus,
-    sendSessionInput,
+    sendSessionPastedInput,
     sessionHostKey,
     type SessionHostKey,
   } from "../../stores/session-host.svelte.js";
+  import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
   import SessionTerminalSlot from "../terminal/SessionTerminalSlot.svelte";
   import TerminalSettings from "../settings/TerminalSettings.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
@@ -127,6 +128,27 @@
     return failure instanceof Error ? failure.message : fallback;
   }
 
+  function handleWorkspaceMissing(): void {
+    const detail = workspace;
+    const item = detail ? mobileWorkspaceLinkedItem(detail) : null;
+    notifyWorkspaceDeleted(
+      workspaceId,
+      hostKey,
+      detail && item
+        ? {
+            provider: detail.repo.provider,
+            platformHost: detail.repo.platform_host,
+            owner: detail.repo.owner,
+            name: detail.repo.name,
+            repoPath: detail.repo.repo_path,
+            number: item.number,
+            itemType: item.itemType === "pr" ? "pull_request" : "issue",
+          }
+        : undefined,
+    );
+    onMissing();
+  }
+
   function releaseOwnedSessions(): void {
     for (const key of ownedHostKeys) noteSessionReleased(key);
     ownedHostKeys = [];
@@ -156,9 +178,14 @@
     if (stopSession && !next.sessions.some((session) => session.key === stopSession?.key)) {
       stopSession = null;
     }
-    const preferred =
-      selectedSessionKey ?? loadMobileWorkspaceSession(workspaceId, hostKey);
-    selectedSessionKey = selectMobileWorkspaceSession(next.sessions, preferred);
+    const preferred = selectedSessionKey ?? loadMobileWorkspaceSession(workspaceId, hostKey);
+    const nextSelectedSessionKey = selectMobileWorkspaceSession(next.sessions, preferred);
+    if (selectedSessionKey !== null && nextSelectedSessionKey !== selectedSessionKey) {
+      composedInput = "";
+      inputError = null;
+      composerOpen = false;
+    }
+    selectedSessionKey = nextSelectedSessionKey;
     saveMobileWorkspaceSession(workspaceId, hostKey, selectedSessionKey);
     runtimeError = null;
     for (const session of next.sessions) {
@@ -200,8 +227,8 @@
     }).pipe(
       Effect.catch((failure) =>
         Effect.sync(() => {
-          if (failure instanceof ApiProblemError && failure.problem.status === 404) {
-            onMissing();
+          if (failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.workspaceNotFound) {
+            handleWorkspaceMissing();
             return;
           }
           runtimeError = failureMessage(failure, "Runtime unavailable");
@@ -221,8 +248,8 @@
     }).pipe(
       Effect.catch((failure) =>
         Effect.sync(() => {
-          if (failure instanceof ApiProblemError && failure.problem.status === 404) {
-            onMissing();
+          if (failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.workspaceNotFound) {
+            handleWorkspaceMissing();
             return;
           }
           loadError = failureMessage(failure, hostKey ? "Fleet workspace unavailable" : "Workspace unavailable");
@@ -329,7 +356,7 @@
   function sendComposedInput(): void {
     const key = selectedHostKey;
     if (!key) return;
-    if (!sendSessionInput(key, `${composedInput}\r`)) {
+    if (!sendSessionPastedInput(key, composedInput, "\r")) {
       inputError = "Terminal is reconnecting. Try again in a moment.";
       return;
     }
@@ -561,13 +588,8 @@
       applyRuntime({ ...current, sessions: nextSessions });
       requestRuntimeRefresh();
     });
-    const stopWorkspaceDeletedListener = onSessionWorkspaceDeleted((deletedHostKey) => {
-      if (ownedHostKeys.includes(deletedHostKey)) onMissing();
-    });
-
     return () => {
       stopExitListener();
-      stopWorkspaceDeletedListener();
       execution.interrupt();
       releaseOwnedSessions();
     };

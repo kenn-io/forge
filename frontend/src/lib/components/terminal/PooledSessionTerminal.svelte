@@ -20,11 +20,10 @@
     active: boolean;
     retained: boolean;
     onExit: (code: number) => void;
-    onWorkspaceDeleted: () => void;
     onConnectionChange: (connected: boolean) => void;
   }
 
-  let { session, parking, slotEl, active, retained, onExit, onWorkspaceDeleted, onConnectionChange }: Props = $props();
+  let { session, parking, slotEl, active, retained, onExit, onConnectionChange }: Props = $props();
   const appRuntime = getAppRuntime();
 
   let wrapper = $state<HTMLElement | null>(null);
@@ -189,7 +188,10 @@
   $effect(() => {
     const pane = terminalPane;
     if (!pane) return;
-    return registerSessionInput(session.hostKey, (data) => pane.sendInput(data));
+    return registerSessionInput(session.hostKey, {
+      send: (data) => pane.sendInput(data),
+      sendPasted: (data, suffix) => pane.sendPastedInput(data, suffix),
+    });
   });
 
   // The wrapper is reparented out of this component's own fragment, so Svelte
@@ -221,7 +223,6 @@
     cursorWheelInput={session.cursorWheelInput ?? false}
     initialStatus={session.status}
     onExit={(code) => onExit(code)}
-    {onWorkspaceDeleted}
     onConnectionChange={(connected) => onConnectionChange(connected)}
   />
 </div>

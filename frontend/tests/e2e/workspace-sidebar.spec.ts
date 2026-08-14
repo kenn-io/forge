@@ -573,6 +573,86 @@ async function setupTerminalMocks(
   return { runtime };
 }
 
+async function installControllableTerminalWebSockets(page: import("@playwright/test").Page): Promise<void> {
+  await page.addInitScript(() => {
+    class ControllableTerminalWebSocket extends EventTarget {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+
+      binaryType = "arraybuffer";
+      extensions = "";
+      onclose: ((event: CloseEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onopen: ((event: Event) => void) | null = null;
+      protocol = "";
+      readyState = ControllableTerminalWebSocket.OPEN;
+      readonly url: string;
+
+      constructor(url: string | URL) {
+        super();
+        this.url = String(url);
+        const sockets = (
+          window as unknown as { __kenn_forgeControllableTerminalSockets: ControllableTerminalWebSocket[] }
+        ).__kenn_forgeControllableTerminalSockets;
+        sockets.push(this);
+        queueMicrotask(() => {
+          const opened = new Event("open");
+          this.dispatchEvent(opened);
+          this.onopen?.(opened);
+          this.emitControl({ type: "replay_ready" });
+        });
+      }
+
+      emitControl(message: Record<string, unknown>): void {
+        const event = new MessageEvent("message", { data: JSON.stringify(message) });
+        this.dispatchEvent(event);
+        this.onmessage?.(event);
+      }
+
+      close(): void {
+        this.readyState = ControllableTerminalWebSocket.CLOSED;
+        const closed = new CloseEvent("close");
+        this.dispatchEvent(closed);
+        this.onclose?.(closed);
+      }
+
+      send(): void {}
+    }
+
+    Object.defineProperty(window, "__kenn_forgeControllableTerminalSockets", {
+      configurable: true,
+      value: [] as ControllableTerminalWebSocket[],
+    });
+    window.WebSocket = ControllableTerminalWebSocket as unknown as typeof WebSocket;
+  });
+}
+
+async function emitTerminalControl(
+  page: import("@playwright/test").Page,
+  sessionKey: string,
+  message: Record<string, unknown>,
+): Promise<void> {
+  await page.evaluate(
+    ({ sessionKey, message }) => {
+      const sockets = (
+        window as unknown as {
+          __kenn_forgeControllableTerminalSockets: Array<{
+            url: string;
+            emitControl: (message: Record<string, unknown>) => void;
+          }>;
+        }
+      ).__kenn_forgeControllableTerminalSockets;
+      const socket = sockets.find(({ url }) => url.includes(encodeURIComponent(sessionKey)));
+      if (!socket) throw new Error(`Missing terminal socket for ${sessionKey}`);
+      socket.emitControl(message);
+    },
+    { sessionKey, message },
+  );
+}
+
 async function dragWorkflowTabToGroup(
   page: import("@playwright/test").Page,
   tabLabel: string,
@@ -1030,6 +1110,49 @@ test("phone workspace terminal opens its linked issue and returns", async ({ pag
   await expect(page.getByText("No terminal sessions")).toBeVisible();
 });
 
+test("phone terminal clears a draft before falling back to another session", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installControllableTerminalWebSockets(page);
+  const mocked = await setupTerminalMocks(page, {
+    runtime: {
+      ...workspaceRuntime,
+      sessions: [
+        {
+          key: "ws-123:codex",
+          workspace_id: "ws-123",
+          target_key: "codex",
+          label: "Codex",
+          kind: "agent",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        },
+        {
+          key: "ws-123:plain_shell",
+          workspace_id: "ws-123",
+          target_key: "plain_shell",
+          label: "Shell",
+          kind: "shell",
+          status: "running",
+          created_at: "2026-04-10T12:01:00Z",
+        },
+      ],
+    },
+  });
+
+  await page.goto("/m/workspaces/local/ws-123");
+  await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Codex");
+  await page.getByRole("button", { name: "Open terminal composer" }).click();
+  await page.getByRole("textbox", { name: "Terminal command" }).fill("do not send elsewhere");
+
+  mocked.runtime.sessions = mocked.runtime.sessions.filter(({ key }) => key !== "ws-123:codex");
+  await emitTerminalControl(page, "ws-123:codex", { type: "exited", code: 0 });
+
+  await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Shell");
+  await expect(page.getByRole("textbox", { name: "Terminal command" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open terminal composer" }).click();
+  await expect(page.getByRole("textbox", { name: "Terminal command" })).toHaveValue("");
+});
+
 test("phone workspace list opens a linked item and returns to the list", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await setupTerminalMocks(page);
@@ -1055,7 +1178,7 @@ test("direct phone workspace item tabs return to the workspace terminal", async 
   await page.getByRole("button", { name: "Back to workspace terminal" }).click();
   await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123$/);
 
-  await page.goBack();
+  await page.evaluate(() => history.back());
   await expect(page).toHaveURL(/\/m\/workspaces$/);
 });
 
@@ -1123,48 +1246,42 @@ test("phone workspace setup failure retries through the shared workflow", async 
   await expect(state).toContainText("Setting up workspace…");
 });
 
-test("typed terminal deletion returns the phone workflow to the workspace list", async ({ page }) => {
+test("typed workspace deletion returns the phone workflow to the workspace list", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await installControllableTerminalWebSockets(page);
   await page.addInitScript(() => {
-    class DeletingTerminalWebSocket extends EventTarget {
-      static CONNECTING = 0;
-      static OPEN = 1;
-      static CLOSING = 2;
-      static CLOSED = 3;
+    const instances: Array<{
+      listeners: Map<string, Set<(event: MessageEvent) => void>>;
+    }> = [];
 
-      binaryType = "arraybuffer";
-      extensions = "";
-      onclose: ((event: CloseEvent) => void) | null = null;
-      onerror: ((event: Event) => void) | null = null;
-      onmessage: ((event: MessageEvent) => void) | null = null;
-      onopen: ((event: Event) => void) | null = null;
-      protocol = "";
-      readyState = DeletingTerminalWebSocket.OPEN;
-      readonly url: string;
+    class FakeEventSource {
+      listeners = new Map<string, Set<(event: MessageEvent) => void>>();
 
-      constructor(url: string | URL) {
-        super();
-        this.url = String(url);
-        queueMicrotask(() => {
-          const opened = new Event("open");
-          this.dispatchEvent(opened);
-          this.onopen?.(opened);
-          const deleted = new MessageEvent("message", {
-            data: JSON.stringify({ type: "workspace_deleted" }),
-          });
-          this.dispatchEvent(deleted);
-          this.onmessage?.(deleted);
-        });
+      constructor() {
+        instances.push(this);
       }
 
-      close(): void {
-        this.readyState = DeletingTerminalWebSocket.CLOSED;
+      addEventListener(type: string, callback: (event: MessageEvent) => void): void {
+        const bucket = this.listeners.get(type) ?? new Set();
+        bucket.add(callback);
+        this.listeners.set(type, bucket);
       }
 
-      send(): void {}
+      close(): void {}
     }
 
-    window.WebSocket = DeletingTerminalWebSocket as unknown as typeof WebSocket;
+    (window as typeof window & { EventSource: typeof EventSource }).EventSource =
+      FakeEventSource as unknown as typeof EventSource;
+    (
+      window as typeof window & {
+        __emitWorkspaceDeleted: (payload: Record<string, unknown>) => void;
+      }
+    ).__emitWorkspaceDeleted = (payload) => {
+      const event = new MessageEvent("workspace_deleted", { data: JSON.stringify(payload) });
+      for (const instance of instances) {
+        for (const listener of instance.listeners.get("workspace_deleted") ?? []) listener(event);
+      }
+    };
   });
   await setupTerminalMocks(page, {
     runtime: {
@@ -1179,13 +1296,40 @@ test("typed terminal deletion returns the phone workflow to the workspace list",
           status: "running",
           created_at: "2026-04-10T12:00:00Z",
         },
+        {
+          key: "ws-123:plain_shell",
+          workspace_id: "ws-123",
+          target_key: "plain_shell",
+          label: "Shell",
+          kind: "shell",
+          status: "running",
+          created_at: "2026-04-10T12:01:00Z",
+        },
       ],
     },
   });
 
   await page.goto("/m/workspaces/local/ws-123");
+  await expect(page.locator(".session-host-wrapper")).toHaveCount(2);
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __emitWorkspaceDeleted: (payload: Record<string, unknown>) => void;
+      }
+    ).__emitWorkspaceDeleted({
+      workspace_id: "ws-123",
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+      number: 42,
+      item_type: "pull_request",
+    });
+  });
 
   await expect(page).toHaveURL(/\/m\/workspaces$/);
+  await expect(page.locator(".session-host-wrapper")).toHaveCount(0);
 });
 
 test("missing phone workspace runtime returns to the workspace list", async ({ page }) => {
@@ -1195,13 +1339,57 @@ test("missing phone workspace runtime returns to the workspace list", async ({ p
     await route.fulfill({
       status: 404,
       contentType: "application/problem+json",
-      body: JSON.stringify({ status: 404, detail: "workspace not found" }),
+      body: JSON.stringify({ status: 404, code: "workspaceNotFound", detail: "workspace not found" }),
     });
   });
 
   await page.goto("/m/workspaces/local/ws-123");
 
   await expect(page).toHaveURL(/\/m\/workspaces$/);
+});
+
+test("missing phone workspace item returns to the workspace list", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page);
+  await page.route(
+    (url) => url.pathname === "/api/v1/workspaces/ws-123",
+    async (route) => {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ status: 404, code: "workspaceNotFound", detail: "workspace not found" }),
+      });
+    },
+  );
+
+  await page.goto("/m/workspaces/local/ws-123/item");
+
+  await expect(page).toHaveURL(/\/m\/workspaces$/);
+});
+
+test("unavailable Fleet runtime stays in context with Reconnect", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page);
+  await page.route("**/api/v1/fleet/hosts/member/workspaces/ws-123", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(testWorkspace),
+    });
+  });
+  await page.route("**/api/v1/fleet/hosts/member/workspaces/ws-123/runtime", async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: "application/problem+json",
+      body: JSON.stringify({ status: 404, code: "notFound", detail: "Fleet host unavailable" }),
+    });
+  });
+
+  await page.goto("/m/workspaces/fleet/member/ws-123");
+
+  await expect(page).toHaveURL(/\/m\/workspaces\/fleet\/member\/ws-123$/);
+  await expect(page.getByText("Terminal runtime unavailable")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reconnect" })).toBeVisible();
 });
 
 test.describe("terminal state icons", () => {

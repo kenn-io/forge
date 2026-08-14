@@ -82,8 +82,6 @@ Workspace deletion is intentionally conservative.
 - A confirmed delete publishes workspace absence from the application workflow before presenter-specific navigation
   or failure UI; releasing the initiating presenter must not suppress tombstones, hosted-session cleanup, or route invalidation
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::executeMutation`).
-- Attached terminals must wait for the authoritative delete result: emit a typed `workspace_deleted` frame only after
-  storage and DB deletion succeed, and report an ordinary exit if deletion fails (`internal/workspace/localruntime/manager.go::TerminationSignal`).
 
 This ordering prevents a rejected delete from silently killing the user's live
 workspace sessions.

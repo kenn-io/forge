@@ -56,7 +56,6 @@
     cursorWheelInput?: boolean;
     disabled?: boolean;
     onExit?: ((code: number) => void) | undefined;
-    onWorkspaceDeleted?: (() => void) | undefined;
     onConnectionChange?: ((connected: boolean) => void) | undefined;
     // When the session is not attachable at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404
@@ -74,7 +73,6 @@
     cursorWheelInput = false,
     disabled = false,
     onExit,
-    onWorkspaceDeleted,
     onConnectionChange,
     initialStatus,
   }: TerminalPaneProps = $props();
@@ -141,6 +139,15 @@
   export function sendInput(data: string): boolean {
     if (disabled || !terminal || !terminalSession?.isConnected()) return false;
     terminal.input(data, true);
+    return true;
+  }
+
+  export function sendPastedInput(data: string, suffix = ""): boolean {
+    if (disabled || !terminal || !terminalSession?.isConnected()) return false;
+    claimTerminalResize();
+    terminalSession.send(
+      encoder.encode(`${createTerminalPastePayload(data, terminal.modes.bracketedPasteMode)}${suffix}`),
+    );
     return true;
   }
 
@@ -724,17 +731,9 @@
       "";
     if (pastedText === "") return;
 
+    if (!sendPastedInput(pastedText)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    claimTerminalResize();
-    terminalSession.send(
-      encoder.encode(
-        createTerminalPastePayload(
-          pastedText,
-          terminal?.modes.bracketedPasteMode ?? false,
-        ),
-      ),
-    );
   }
 
   function handleTerminalMessage(data: string | Uint8Array): TerminalMessageDecision {
@@ -765,11 +764,6 @@
         scheduleTerminalRefresh();
       });
       return "continue";
-    }
-    if (message.type === "workspace_deleted") {
-      cancelPendingTerminalSequence();
-      onWorkspaceDeleted?.();
-      return "stop";
     }
     if (message.type !== "exited") return "continue";
 

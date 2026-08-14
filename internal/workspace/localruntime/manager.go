@@ -200,7 +200,6 @@ type session struct {
 	lifecycleClosed           bool
 	stopRequested             bool
 	detachedForServerRestart  bool
-	terminationSignal         *TerminationSignal
 	nextAttachmentID          uint64
 	nextResizeClaim           uint64
 	resizeOwnerID             uint64
@@ -253,45 +252,6 @@ type Attachment struct {
 	// and bridges must not propagate it as one.
 	sessionOutputClosed func() bool
 	detachedForRestart  func() bool
-	terminationReason   func() TerminationReason
-}
-
-// TerminationReason describes why an attached runtime terminal ended.
-type TerminationReason int
-
-const (
-	TerminationExited TerminationReason = iota
-	TerminationWorkspaceDeleted
-)
-
-// TerminationSignal lets workspace deletion resolve terminal closure only
-// after the authoritative workspace delete result is known.
-type TerminationSignal struct {
-	done   chan struct{}
-	once   sync.Once
-	reason TerminationReason
-}
-
-func NewTerminationSignal() *TerminationSignal {
-	return &TerminationSignal{done: make(chan struct{})}
-}
-
-func (s *TerminationSignal) Resolve(reason TerminationReason) {
-	if s == nil {
-		return
-	}
-	s.once.Do(func() {
-		s.reason = reason
-		close(s.done)
-	})
-}
-
-func (s *TerminationSignal) Wait() TerminationReason {
-	if s == nil {
-		return TerminationExited
-	}
-	<-s.done
-	return s.reason
 }
 
 func NewManager(options Options) *Manager {
@@ -915,25 +875,6 @@ func (m *Manager) StopWorkspace(
 	ctx context.Context,
 	workspaceID string,
 ) {
-	m.stopWorkspace(ctx, workspaceID, nil)
-}
-
-// StopWorkspaceForDeletion stops every runtime session for workspaceID and
-// makes attached terminals wait for the authoritative deletion result before
-// reporting why they closed.
-func (m *Manager) StopWorkspaceForDeletion(
-	ctx context.Context,
-	workspaceID string,
-	termination *TerminationSignal,
-) {
-	m.stopWorkspace(ctx, workspaceID, termination)
-}
-
-func (m *Manager) stopWorkspace(
-	ctx context.Context,
-	workspaceID string,
-	termination *TerminationSignal,
-) {
 	// 1. Mark the workspace as stopping under the manager mutex.
 	//    New Launch calls that observe this marker bail
 	//    out via claimInflight before spawning a process.
@@ -956,9 +897,6 @@ func (m *Manager) stopWorkspace(
 	for key, s := range m.sessions {
 		if s.snapshot().WorkspaceID == workspaceID {
 			delete(m.sessions, key)
-			s.mu.Lock()
-			s.terminationSignal = termination
-			s.mu.Unlock()
 			stopping = append(stopping, s)
 		}
 	}
@@ -1443,15 +1381,6 @@ func (a *Attachment) DetachedForServerRestart() bool {
 		return false
 	}
 	return a.detachedForRestart()
-}
-
-// TerminationReason waits for any authoritative workspace-deletion outcome
-// and otherwise reports an ordinary session exit.
-func (a *Attachment) TerminationReason() TerminationReason {
-	if a == nil || a.terminationReason == nil {
-		return TerminationExited
-	}
-	return a.terminationReason()
 }
 
 func fallbackSessionLabel(label string, fallback string) string {
@@ -2798,12 +2727,6 @@ func attachToSession(
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			return s.detachedForServerRestart
-		},
-		terminationReason: func() TerminationReason {
-			s.mu.Lock()
-			signal := s.terminationSignal
-			s.mu.Unlock()
-			return signal.Wait()
 		},
 	}, nil
 }

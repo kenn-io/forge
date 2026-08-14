@@ -20,7 +20,7 @@ import {
   resetWorkspaceCreatePendingForTest,
   resolveControllerlessWorkspaceRef,
 } from "./workspace-create-pending.svelte.js";
-import { getLastWorkspaceRoute, navigate } from "./router.svelte.ts";
+import { getLastWorkspaceRoute, getRoute, navigate } from "./router.svelte.ts";
 import {
   activeHostedSession,
   desiredKey,
@@ -496,6 +496,19 @@ describe("workspace host store", () => {
     expect(history.length).toBe(historyLength);
     expect(desiredKey()).toEqual({ workspaceId: "", hostKey: undefined });
   });
+
+  it.each(["/m/workspaces/local/ws-a", "/m/workspaces/local/ws-a/item"])(
+    "leaves a deleted active mobile workspace route for the mobile list from %s",
+    (path) => {
+      navigate(path);
+      const historyLength = history.length;
+
+      notifyWorkspaceDeleted("ws-a");
+
+      expect(history.length).toBe(historyLength);
+      expect(getRoute()).toEqual({ page: "mobile-workspaces" });
+    },
+  );
 
   it("keeps an unrelated active workspace route after deletion", () => {
     navigate("/terminal/ws-b");

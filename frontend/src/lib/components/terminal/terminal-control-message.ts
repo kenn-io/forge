@@ -9,22 +9,9 @@ class TerminalReplayReadyMessage extends Schema.Class<TerminalReplayReadyMessage
   type: Schema.Literal("replay_ready"),
 }) {}
 
-class TerminalWorkspaceDeletedMessage extends Schema.Class<TerminalWorkspaceDeletedMessage>(
-  "TerminalWorkspaceDeletedMessage",
-)({
-  type: Schema.Literal("workspace_deleted"),
-}) {}
+export type TerminalControlMessage = TerminalExitedMessage | TerminalReplayReadyMessage;
 
-export type TerminalControlMessage =
-  | TerminalExitedMessage
-  | TerminalReplayReadyMessage
-  | TerminalWorkspaceDeletedMessage;
-
-const TerminalControlMessageSchema = Schema.Union([
-  TerminalExitedMessage,
-  TerminalReplayReadyMessage,
-  TerminalWorkspaceDeletedMessage,
-]);
+const TerminalControlMessageSchema = Schema.Union([TerminalExitedMessage, TerminalReplayReadyMessage]);
 
 export function decodeTerminalControlMessage(data: string): TerminalControlMessage | null {
   const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(TerminalControlMessageSchema))(data);

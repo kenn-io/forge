@@ -11,7 +11,6 @@
     cursorWheelInput?: boolean;
     disabled?: boolean;
     onExit?: ((code: number) => void) | undefined;
-    onWorkspaceDeleted?: (() => void) | undefined;
     onConnectionChange?: ((connected: boolean) => void) | undefined;
     // When the session is already exited at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404
@@ -29,7 +28,6 @@
     cursorWheelInput = false,
     disabled = false,
     onExit = undefined,
-    onWorkspaceDeleted = undefined,
     onConnectionChange = undefined,
     initialStatus = undefined,
   }: TerminalPaneProps = $props();
@@ -42,6 +40,10 @@
 
   export function sendInput(data: string): boolean {
     return xtermPane?.sendInput(data) ?? false;
+  }
+
+  export function sendPastedInput(data: string, suffix = ""): boolean {
+    return xtermPane?.sendPastedInput(data, suffix) ?? false;
   }
 </script>
 
@@ -56,7 +58,6 @@
   {cursorWheelInput}
   {disabled}
   {onExit}
-  {onWorkspaceDeleted}
   {onConnectionChange}
   {initialStatus}
 />

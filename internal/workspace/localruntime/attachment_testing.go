@@ -19,7 +19,6 @@ type AttachmentForTestingOptions struct {
 	Refresh                  func(context.Context) error
 	SessionOutputClosed      func() bool
 	DetachedForServerRestart func() bool
-	TerminationReason        func() TerminationReason
 }
 
 // NewAttachmentForTesting constructs an Attachment with caller-
@@ -41,10 +40,6 @@ func NewAttachmentForTesting(opts AttachmentForTestingOptions) *Attachment {
 	if detachedForRestart == nil {
 		detachedForRestart = func() bool { return false }
 	}
-	terminationReason := opts.TerminationReason
-	if terminationReason == nil {
-		terminationReason = func() TerminationReason { return TerminationExited }
-	}
 	return &Attachment{
 		Output:              opts.Output,
 		Done:                opts.Done,
@@ -56,6 +51,5 @@ func NewAttachmentForTesting(opts AttachmentForTestingOptions) *Attachment {
 		refresh:             opts.Refresh,
 		sessionOutputClosed: sessionOutputClosed,
 		detachedForRestart:  detachedForRestart,
-		terminationReason:   terminationReason,
 	}
 }

@@ -1,7 +1,8 @@
-import { cleanup, render, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { beginTerminalGeometryIntent, extendTerminalGeometryIntent } from "./terminalGeometryIntent.js";
+import TerminalPaneInputHarness from "./TerminalPaneInputHarness.svelte";
 
 const {
   clipboardWriteText,
@@ -1526,6 +1527,30 @@ describe("TerminalPane", () => {
         "\x1b[200~first[201~\rsecond\rthird\x1b[201~",
       ),
     );
+  });
+
+  it.each([
+    [true, "\x1b[200~first[201~\rsecond\x1b[201~\r"],
+    [false, "first[201~\rsecond\r"],
+  ])("sends composed input through the sanitized paste path with bracketed mode %s", async (bracketed, expected) => {
+    const onSend = vi.fn();
+    const { getByRole } = render(TerminalPaneInputHarness, {
+      props: { data: "first\x1b[201~\r\nsecond\x07", suffix: "\r", onSend },
+    });
+
+    await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    xtermInstances[0]!.modes.bracketedPasteMode = bracketed;
+    mockSockets[0]!.sent = [];
+
+    await fireEvent.click(getByRole("button", { name: "Send pasted input" }));
+
+    expect(onSend).toHaveBeenCalledWith(true);
+    await waitFor(() => expect(mockSockets[0]!.sent).toHaveLength(2));
+    expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toEqual([
+      JSON.stringify({ type: "claim_resize", cols: 80, rows: 24 }),
+      expected,
+    ]);
   });
 
   it("sends browser multiline paste raw when bracketed paste is disabled", async () => {

@@ -10,11 +10,9 @@ import {
   noteSessionConnection,
   noteSessionDiscarded,
   noteSessionExited,
-  noteSessionWorkspaceDeleted,
   noteSessionMounted,
   noteSessionReleased,
   onSessionExited,
-  onSessionWorkspaceDeleted,
   registerSessionSlot,
   registerSessionInput,
   requestSessionFocus,
@@ -23,6 +21,7 @@ import {
   sessionHostKey,
   sessionHostPrefix,
   sendSessionInput,
+  sendSessionPastedInput,
   setRetainedSessionLimit,
   setSessionSlotVisible,
 } from "./session-host.svelte.ts";
@@ -54,20 +53,29 @@ describe("session host registry", () => {
   });
 
   it("routes composed input to the current pooled terminal", () => {
-    const first = vi.fn(() => true);
+    const first = {
+      send: vi.fn(() => true),
+      sendPasted: vi.fn(() => true),
+    };
     const unregisterFirst = registerSessionInput(agentOnA, first);
 
     expect(sendSessionInput(agentOnA, "status\r")).toBe(true);
-    expect(first).toHaveBeenCalledWith("status\r");
+    expect(first.send).toHaveBeenCalledWith("status\r");
+    expect(sendSessionPastedInput(agentOnA, "one\ntwo", "\r")).toBe(true);
+    expect(first.sendPasted).toHaveBeenCalledWith("one\ntwo", "\r");
 
-    const second = vi.fn(() => true);
+    const second = {
+      send: vi.fn(() => true),
+      sendPasted: vi.fn(() => true),
+    };
     const unregisterSecond = registerSessionInput(agentOnA, second);
     unregisterFirst();
     expect(sendSessionInput(agentOnA, "next\r")).toBe(true);
-    expect(second).toHaveBeenCalledWith("next\r");
+    expect(second.send).toHaveBeenCalledWith("next\r");
 
     unregisterSecond();
     expect(sendSessionInput(agentOnA, "ignored\r")).toBe(false);
+    expect(sendSessionPastedInput(agentOnA, "ignored", "\r")).toBe(false);
   });
 
   it("keeps parts that contain the separator distinct", () => {
@@ -311,21 +319,6 @@ describe("session host registry", () => {
     });
 
     noteSessionExited(session.hostKey, 0);
-    stopListening();
-
-    expect(mountedWhenRouted).toBe(false);
-    expect(isSessionMounted(session.hostKey)).toBe(false);
-  });
-
-  it("discards a session before routing authoritative workspace deletion", () => {
-    const session = mountedSession("ws-1", "agent");
-    mountConnected(session);
-    let mountedWhenRouted = true;
-    const stopListening = onSessionWorkspaceDeleted((hostKey) => {
-      if (hostKey === session.hostKey) mountedWhenRouted = isSessionMounted(hostKey);
-    });
-
-    noteSessionWorkspaceDeleted(session.hostKey);
     stopListening();
 
     expect(mountedWhenRouted).toBe(false);

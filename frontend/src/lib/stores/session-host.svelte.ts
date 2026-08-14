@@ -57,7 +57,11 @@ const slotVisible = $state<Record<SessionHostKey, boolean>>({});
 let mounted = $state<readonly MountedSession[]>([]);
 const claimed = $state<Record<SessionHostKey, boolean>>({});
 const connected = new Map<SessionHostKey, boolean>();
-const inputSenders = new Map<SessionHostKey, (data: string) => boolean>();
+interface SessionInputSender {
+  send: (data: string) => boolean;
+  sendPasted: (data: string, suffix?: string) => boolean;
+}
+const inputSenders = new Map<SessionHostKey, SessionInputSender>();
 let releasedKeys: SessionHostKey[] = [];
 let retainedSessionLimit = 10;
 
@@ -210,16 +214,21 @@ export function noteSessionDiscarded(key: SessionHostKey): void {
  * Publish the input path owned by a pooled terminal. Phone surfaces use this to
  * show a real text composer while keeping one WebSocket and one PTY authority.
  */
-export function registerSessionInput(key: SessionHostKey, send: (data: string) => boolean): () => void {
-  inputSenders.set(key, send);
+export function registerSessionInput(key: SessionHostKey, sender: SessionInputSender): () => void {
+  inputSenders.set(key, sender);
   return () => {
-    if (inputSenders.get(key) === send) inputSenders.delete(key);
+    if (inputSenders.get(key) === sender) inputSenders.delete(key);
   };
 }
 
 /** Send text through the pooled terminal's existing connection. */
 export function sendSessionInput(key: SessionHostKey, data: string): boolean {
-  return inputSenders.get(key)?.(data) ?? false;
+  return inputSenders.get(key)?.send(data) ?? false;
+}
+
+/** Send text through the pooled terminal's sanitized paste path. */
+export function sendSessionPastedInput(key: SessionHostKey, data: string, suffix = ""): boolean {
+  return inputSenders.get(key)?.sendPasted(data, suffix) ?? false;
 }
 
 function trimReleasedSessions(protectedPrefix?: string): void {
@@ -275,7 +284,6 @@ export function discardSessionsWithPrefix(prefix: string): void {
 }
 
 const exitListeners = new Set<(key: SessionHostKey, code: number) => void>();
-const workspaceDeletedListeners = new Set<(key: SessionHostKey) => void>();
 
 /**
  * A pooled terminal's exit, routed back to whoever mounted the session.
@@ -296,17 +304,6 @@ export function noteSessionExited(key: SessionHostKey, code: number): void {
   noteSessionDiscarded(key);
   const listeners = Array.from(exitListeners);
   for (const listener of listeners) listener(key, code);
-}
-
-export function onSessionWorkspaceDeleted(cb: (key: SessionHostKey) => void): () => void {
-  workspaceDeletedListeners.add(cb);
-  return () => workspaceDeletedListeners.delete(cb);
-}
-
-export function noteSessionWorkspaceDeleted(key: SessionHostKey): void {
-  noteSessionDiscarded(key);
-  const listeners = Array.from(workspaceDeletedListeners);
-  for (const listener of listeners) listener(key);
 }
 
 // A Focus Terminal aimed at a promoted session whose terminal is not on screen
@@ -367,5 +364,4 @@ export function resetSessionHostForTest(): void {
   pendingFocusKey = null;
   pendingFocusSoft = false;
   exitListeners.clear();
-  workspaceDeletedListeners.clear();
 }

@@ -487,6 +487,12 @@ export function notifyWorkspaceDeleted(workspaceId: string, hostKey?: string, id
   const route = getRoute();
   if (route.page === "terminal" && route.workspaceId === workspaceId && route.hostKey === hostKey) {
     replaceUrl("/workspaces");
+  } else if (
+    (route.page === "mobile-workspace-terminal" || route.page === "mobile-workspace-item") &&
+    route.workspaceId === workspaceId &&
+    route.hostKey === hostKey
+  ) {
+    replaceUrl("/m/workspaces");
   }
 }
 

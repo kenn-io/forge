@@ -1,19 +1,5 @@
-import { Cause, Effect, Option, Queue, Schema, Stream } from "effect";
-import { TransientTransportError } from "../../api/effect-errors.js";
-import { openEventSource, type EventSourceFactory } from "../../browser/event-source.js";
-
-class WorkspaceStatusPayload extends Schema.Class<WorkspaceStatusPayload>("WorkspaceStatusPayload")({
-  id: Schema.optionalKey(Schema.String),
-}) {}
-
-class WorkspaceAssociatedPayload extends Schema.Class<WorkspaceAssociatedPayload>("WorkspaceAssociatedPayload")({
-  workspace_id: Schema.optionalKey(Schema.String),
-}) {}
-
-class WorkspaceDiffPayload extends Schema.Class<WorkspaceDiffPayload>("WorkspaceDiffPayload")({
-  workspace_id: Schema.optionalKey(Schema.String),
-  version: Schema.optionalKey(Schema.String),
-}) {}
+import { Effect, Queue, Stream } from "effect";
+import type { WorkspaceEventsNotification } from "../../stores/events.svelte.js";
 
 export type WorkspaceEventSignal =
   | { readonly _tag: "Open" }
@@ -21,70 +7,60 @@ export type WorkspaceEventSignal =
   | { readonly _tag: "Associated"; readonly workspaceId?: string | undefined }
   | { readonly _tag: "ReconnectStale" }
   | {
-      readonly _tag: "DiffChanged";
+      readonly _tag: "DiffReady" | "DiffChanged";
       readonly workspaceId?: string | undefined;
       readonly version?: string | undefined;
     };
 
-export const workspaceEventStream = (
-  url: string,
-): Stream.Stream<WorkspaceEventSignal, TransientTransportError, EventSourceFactory> =>
-  Stream.callback<WorkspaceEventSignal, TransientTransportError, EventSourceFactory>(
-    (queue) =>
-      Effect.gen(function* () {
-        const source = yield* openEventSource(url);
-        const offer = (signal: WorkspaceEventSignal): void => {
-          if (Queue.offerUnsafe(queue, signal)) return;
-          Queue.failCauseUnsafe(
-            queue,
-            Cause.fail(
-              TransientTransportError.make({
-                operation: `buffer workspace events ${url}`,
-                cause: new Error("Workspace event buffer overflow"),
-              }),
-            ),
-          );
-        };
-        const onOpen = (): void => offer({ _tag: "Open" });
-        const onStatus = (event: Event): void => {
-          if (!(event instanceof MessageEvent) || typeof event.data !== "string") return;
-          const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(WorkspaceStatusPayload))(event.data);
-          if (Option.isSome(decoded)) offer({ _tag: "Status", workspaceId: decoded.value.id });
-        };
-        const onAssociated = (event: Event): void => {
-          if (!(event instanceof MessageEvent) || typeof event.data !== "string") return;
-          const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(WorkspaceAssociatedPayload))(event.data);
-          if (Option.isSome(decoded)) offer({ _tag: "Associated", workspaceId: decoded.value.workspace_id });
-        };
-        const onReconnectStale = (): void => offer({ _tag: "ReconnectStale" });
-        const onDiffChanged = (event: Event): void => {
-          if (!(event instanceof MessageEvent) || typeof event.data !== "string") return;
-          const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(WorkspaceDiffPayload))(event.data);
-          if (Option.isSome(decoded)) {
-            offer({
-              _tag: "DiffChanged",
-              workspaceId: decoded.value.workspace_id,
-              version: decoded.value.version,
-            });
-          }
-        };
+type WorkspaceEventsSubscription = (subscriber: (event: WorkspaceEventsNotification) => void) => () => void;
+type WorkspaceSelection = () => () => void;
 
-        source.addEventListener("open", onOpen);
-        source.addEventListener("workspace_status", onStatus);
-        source.addEventListener("workspace_pr_associated", onAssociated);
-        source.addEventListener("reconnect.stale", onReconnectStale);
-        source.addEventListener("workspace_diff_ready", onDiffChanged);
-        source.addEventListener("workspace_diff_changed", onDiffChanged);
-        yield* Effect.addFinalizer(() =>
-          Effect.sync(() => {
-            source.removeEventListener("open", onOpen);
-            source.removeEventListener("workspace_status", onStatus);
-            source.removeEventListener("workspace_pr_associated", onAssociated);
-            source.removeEventListener("reconnect.stale", onReconnectStale);
-            source.removeEventListener("workspace_diff_ready", onDiffChanged);
-            source.removeEventListener("workspace_diff_changed", onDiffChanged);
-          }),
-        );
-      }),
-    { bufferSize: 64, strategy: "dropping" },
+function workspaceEventSignal(event: WorkspaceEventsNotification): WorkspaceEventSignal | undefined {
+  switch (event.type) {
+    case "open":
+      return { _tag: "Open" };
+    case "workspace_status":
+      return { _tag: "Status", workspaceId: event.payload.id };
+    case "workspace_pr_associated":
+      return { _tag: "Associated", workspaceId: event.payload.workspace_id };
+    case "reconnect.stale":
+      return { _tag: "ReconnectStale" };
+    case "workspace_diff_ready":
+      return {
+        _tag: "DiffReady",
+        workspaceId: event.payload.workspace_id,
+        version: event.payload.version,
+      };
+    case "workspace_diff_changed":
+      return {
+        _tag: "DiffChanged",
+        workspaceId: event.payload.workspace_id,
+        version: event.payload.version,
+      };
+    default:
+      return undefined;
+  }
+}
+
+export const workspaceEventStream = (
+  subscribe: WorkspaceEventsSubscription,
+  selectWorkspace?: WorkspaceSelection,
+): Stream.Stream<WorkspaceEventSignal> =>
+  Stream.callback<WorkspaceEventSignal>((queue) =>
+    Effect.gen(function* () {
+      const offer = (signal: WorkspaceEventSignal): void => {
+        Queue.offerUnsafe(queue, signal);
+      };
+      const unsubscribe = yield* Effect.sync(() =>
+        subscribe((event) => {
+          const signal = workspaceEventSignal(event);
+          if (signal !== undefined) offer(signal);
+        }),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      if (selectWorkspace !== undefined) {
+        const releaseSelection = yield* Effect.sync(selectWorkspace);
+        yield* Effect.addFinalizer(() => Effect.sync(releaseSelection));
+      }
+    }),
   );

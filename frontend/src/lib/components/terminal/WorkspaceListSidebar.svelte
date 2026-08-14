@@ -12,13 +12,12 @@
     type NewWorkspaceRepoSeed,
   } from "../../stores/new-workspace.svelte.js";
   import { onMount, tick } from "svelte";
-  import { Effect, Schedule, Stream } from "effect";
+  import { Effect, Stream } from "effect";
   import { navigate } from "../../stores/router.svelte.ts";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import { apiErrorMessage } from "../../api/runtime.js";
-  import { configuredAPIPath } from "../../api/runtime-base.js";
   import { ApiProblemError } from "../../api/effect-errors.js";
   import {
     executeGeneratedApiRequest,
@@ -26,7 +25,7 @@
     type GeneratedApi,
   } from "../../api/generated-api.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { eventSourceStream } from "../../browser/event-source.js";
+  import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { components } from "../../api/generated/schema.js";
   import { DiffStats, FilterDropdown, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
@@ -55,6 +54,7 @@
     makeWorkspaceRefreshCoordinator,
     workspaceListLifecycle,
   } from "./workspace-list-workflow.js";
+  import { workspaceEventStream } from "./workspace-event-stream.js";
   import { decodeWorkspaceList, type WorkspaceListItem } from "./workspace-list-schema.js";
   import { parseRepoFilterValue } from "../../stores/filter.svelte.js";
   import {
@@ -121,6 +121,7 @@
   }: Props = $props();
 
   const runtime = getAppRuntime();
+  const { events: eventsStore } = getStores();
 
   const doneAcknowledgementsStorageKey =
     "kenn-forge:workspace-agent-done-acknowledgements/v1";
@@ -1313,10 +1314,8 @@
   }
 
   onMount(() => {
-    const evtUrl = configuredAPIPath("/events");
-    const workspaceEvents = eventSourceStream(evtUrl, "workspace_status").pipe(
-      Stream.retry(Schedule.exponential("1 second").pipe(Schedule.jittered)),
-      Stream.catch(() => Stream.empty),
+    const workspaceEvents = workspaceEventStream(eventsStore.subscribeWorkspaceEvents).pipe(
+      Stream.filter((signal) => signal._tag === "Status"),
     );
     const execution = runtime.runCommand(
       Effect.scoped(

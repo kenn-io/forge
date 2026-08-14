@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
-import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
+import {
+  getBrowserEventSourceCount,
+  mountBrowserApp,
+  resetKeyboardModuleState,
+  type MountedBrowserApp,
+} from "./test/browserAppHarness.js";
 import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const workspace = {
@@ -122,6 +127,7 @@ describe("workspace launch targets (browser)", () => {
     await vi.waitFor(
       () => {
         expect(page.getByRole("region", { name: "Worktree Home" }).element()).toBeTruthy();
+        expect(getBrowserEventSourceCount()).toBe(1);
       },
       { timeout: 10_000, interval: 50 },
     );

@@ -18,6 +18,14 @@ const mockGet = vi.fn();
 const mockPost = vi.fn();
 const mockDelete = vi.fn();
 const mockNavigate = vi.fn();
+const subscribeWorkspaceEvents = vi.fn();
+let workspaceEventsSubscriber: ((event: unknown) => void) | undefined;
+
+vi.mock("../../context.js", () => ({
+  getStores: () => ({
+    events: { subscribeWorkspaceEvents },
+  }),
+}));
 
 vi.mock("../../api/runtime.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/runtime.js")>();
@@ -37,15 +45,8 @@ vi.mock("../../stores/router.svelte.ts", () => ({
   navigate: (path: string) => mockNavigate(path),
 }));
 
-class MockEventSource {
-  static instances: MockEventSource[] = [];
-  addEventListener = vi.fn();
-  removeEventListener = vi.fn();
-  close = vi.fn();
-
-  constructor(readonly url: string) {
-    MockEventSource.instances.push(this);
-  }
+function emitWorkspaceStatus(): void {
+  workspaceEventsSubscriber?.({ type: "workspace_status", payload: {} });
 }
 
 interface WorkspaceFixtureOptions {
@@ -216,12 +217,18 @@ describe("WorkspaceListSidebar", () => {
     mockPost.mockReset();
     mockDelete.mockReset();
     mockNavigate.mockReset();
-    MockEventSource.instances.length = 0;
+    workspaceEventsSubscriber = undefined;
+    subscribeWorkspaceEvents.mockReset();
+    subscribeWorkspaceEvents.mockImplementation((subscriber: (event: unknown) => void) => {
+      workspaceEventsSubscriber = subscriber;
+      return () => {
+        if (workspaceEventsSubscriber === subscriber) workspaceEventsSubscriber = undefined;
+      };
+    });
     resetNewWorkspaceDialogState();
     setWorkspaceRepoCatalog(undefined, false);
     localStorage.clear();
     sessionStorage.clear();
-    vi.stubGlobal("EventSource", MockEventSource);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -302,13 +309,9 @@ describe("WorkspaceListSidebar", () => {
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/workspaces", expect.anything()));
     mockGet.mockClear();
 
-    const source = MockEventSource.instances[0];
-    const listener = source?.addEventListener.mock.calls.find(([type]) => type === "workspace_status")?.[1] as
-      | ((event: MessageEvent) => void)
-      | undefined;
-    listener?.(new MessageEvent("workspace_status"));
-    listener?.(new MessageEvent("workspace_status"));
-    listener?.(new MessageEvent("workspace_status"));
+    emitWorkspaceStatus();
+    emitWorkspaceStatus();
+    emitWorkspaceStatus();
     const workspaceRequestCount = () => mockGet.mock.calls.filter(([path]) => path === "/workspaces").length;
 
     await new Promise((resolve) => setTimeout(resolve, 15));
@@ -754,11 +757,7 @@ describe("WorkspaceListSidebar", () => {
     expect(await screen.findByText("Initial local workspace")).toBeTruthy();
     await waitFor(() => expect(peerLoads).toBe(1));
 
-    const source = MockEventSource.instances[0];
-    const listener = source?.addEventListener.mock.calls.find(([type]) => type === "workspace_status")?.[1] as
-      | ((event: MessageEvent) => void)
-      | undefined;
-    listener?.(new MessageEvent("workspace_status"));
+    emitWorkspaceStatus();
 
     expect(await screen.findByText("Updated local workspace")).toBeTruthy();
   });
@@ -825,11 +824,7 @@ describe("WorkspaceListSidebar", () => {
     render(WorkspaceListSidebar, { props: { selectedId: "" } });
     expect(await screen.findByText("Last known remote workspace")).toBeTruthy();
 
-    const source = MockEventSource.instances[0];
-    const listener = source?.addEventListener.mock.calls.find(([type]) => type === "workspace_status")?.[1] as
-      | ((event: MessageEvent) => void)
-      | undefined;
-    listener?.(new MessageEvent("workspace_status"));
+    emitWorkspaceStatus();
 
     await waitFor(() => expect(peerLoads).toBe(2));
     expect(screen.getByText("Last known remote workspace")).toBeTruthy();

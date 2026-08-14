@@ -52,65 +52,101 @@ export interface EventsStoreOptions {
   readonly onRecoverableFailure?: (message: string) => void;
 }
 
+export type WorkspaceEventsNotification = { readonly type: "open" } | ProviderEvent;
+
 export function createEventsStore(opts: EventsStoreOptions) {
   const getBasePath = opts.getBasePath ?? (() => "/");
   let connectionState = $state<ProviderEventsConnectionState>("disconnected");
   let lastError = $state<string | null>(null);
   let reconnectSignal: Deferred.Deferred<void> | null = null;
+  let streamRestartSignal: Deferred.Deferred<void> | null = null;
+  let workspaceSelectionSequence = 0;
+  const workspaceSelections = new Map<number, string>();
+  const workspaceEventSubscribers = new Set<(event: WorkspaceEventsNotification) => void>();
+
+  function notifyWorkspaceEventSubscribers(event: WorkspaceEventsNotification): void {
+    for (const subscriber of workspaceEventSubscribers) subscriber(event);
+  }
+
+  function selectedWorkspaceId(): string | undefined {
+    return Array.from(workspaceSelections.values()).at(-1);
+  }
 
   function buildURL(): string {
     const base = getBasePath().replace(/\/$/, "");
-    return `${base}/api/v1/events`;
+    const url = `${base}/api/v1/events`;
+    const workspaceId = selectedWorkspaceId();
+    return workspaceId === undefined ? url : `${url}?workspace_id=${encodeURIComponent(workspaceId)}`;
   }
 
   function dispatch(event: ProviderEvent): Effect.Effect<void, ProviderEventsError, AppServices> {
-    switch (event.type) {
-      case "data_changed":
-        return opts.onDataChanged?.() ?? Effect.void;
-      case "sync_status":
-        return opts.onSyncStatus?.(event.payload) ?? Effect.void;
-      case "config.changed":
-        return opts.onConfigChanged?.(event.payload) ?? Effect.void;
-      case "reconnect.stale":
-        return opts.onReconnectStale?.() ?? Effect.void;
-      case "workspace_created":
-        return opts.onWorkspaceCreated?.(event.payload) ?? Effect.void;
-      case "workspace_status":
-        return opts.onWorkspaceStatus?.(event.payload) ?? Effect.void;
-      case "workspace_deleted":
-        return opts.onWorkspaceDeleted?.(event.payload) ?? Effect.void;
-      case "workspace_pushed_head_changed":
-        return opts.onWorkspacePushedHeadChanged?.(event.payload) ?? Effect.void;
-      case "workspace_pr_associated":
-        return opts.onWorkspacePRAssociated?.(event.payload) ?? Effect.void;
-      case "workspace_pr_refresh_queued":
-        return opts.onWorkspacePRRefreshQueued?.(event.payload) ?? Effect.void;
-      case "pr_detail_refreshed":
-        return opts.onPRDetailRefreshed?.(event.payload) ?? Effect.void;
-      case "pr_ci_refresh_queued":
-        return opts.onPRCIRefreshQueued?.(event.payload) ?? Effect.void;
-      case "pr_ci_refreshed":
-        return opts.onPRCIRefreshed?.(event.payload) ?? Effect.void;
-      case "deferred_merge_completed":
-        return opts.onDeferredMergeCompleted?.(event.payload) ?? Effect.void;
-    }
+    const consequence = (() => {
+      switch (event.type) {
+        case "data_changed":
+          return opts.onDataChanged?.() ?? Effect.void;
+        case "sync_status":
+          return opts.onSyncStatus?.(event.payload) ?? Effect.void;
+        case "config.changed":
+          return opts.onConfigChanged?.(event.payload) ?? Effect.void;
+        case "reconnect.stale":
+          return opts.onReconnectStale?.() ?? Effect.void;
+        case "workspace_created":
+          return opts.onWorkspaceCreated?.(event.payload) ?? Effect.void;
+        case "workspace_status":
+          return opts.onWorkspaceStatus?.(event.payload) ?? Effect.void;
+        case "workspace_deleted":
+          return opts.onWorkspaceDeleted?.(event.payload) ?? Effect.void;
+        case "workspace_pushed_head_changed":
+          return opts.onWorkspacePushedHeadChanged?.(event.payload) ?? Effect.void;
+        case "workspace_pr_associated":
+          return opts.onWorkspacePRAssociated?.(event.payload) ?? Effect.void;
+        case "workspace_pr_refresh_queued":
+          return opts.onWorkspacePRRefreshQueued?.(event.payload) ?? Effect.void;
+        case "pr_detail_refreshed":
+          return opts.onPRDetailRefreshed?.(event.payload) ?? Effect.void;
+        case "pr_ci_refresh_queued":
+          return opts.onPRCIRefreshQueued?.(event.payload) ?? Effect.void;
+        case "pr_ci_refreshed":
+          return opts.onPRCIRefreshed?.(event.payload) ?? Effect.void;
+        case "deferred_merge_completed":
+          return opts.onDeferredMergeCompleted?.(event.payload) ?? Effect.void;
+        case "workspace_diff_ready":
+        case "workspace_diff_changed":
+          return Effect.void;
+      }
+    })();
+    return Effect.sync(() => notifyWorkspaceEventSubscribers(event)).pipe(Effect.andThen(consequence));
   }
 
-  const streamAttempt = Effect.suspend(() => {
+  const streamAttempt = Effect.gen(function* () {
     lastError = null;
-    const url = buildURL();
-    return providerEventsProgram({
-      url,
-      onState: (state) => {
-        connectionState = state;
-      },
-      onEvent: dispatch,
-      onConsequenceFailure: (failure) => {
-        const message = `A live update could not refresh ${failure.operation}; later updates will continue.`;
-        lastError = message;
-        opts.onRecoverableFailure?.(message);
-      },
+    const restart = yield* Deferred.make<void>();
+    yield* Effect.sync(() => {
+      streamRestartSignal = restart;
     });
+    const url = buildURL();
+    yield* Effect.raceFirst(
+      providerEventsProgram({
+        url,
+        onState: (state) => {
+          connectionState = state;
+          if (state === "connected") notifyWorkspaceEventSubscribers({ type: "open" });
+        },
+        onEvent: dispatch,
+        onConsequenceFailure: (failure) => {
+          const message = `A live update could not refresh ${failure.operation}; later updates will continue.`;
+          lastError = message;
+          opts.onRecoverableFailure?.(message);
+        },
+      }),
+      Deferred.await(restart),
+    ).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (streamRestartSignal === restart) streamRestartSignal = null;
+        }),
+      ),
+    );
   });
 
   const waitForReconnect = Effect.gen(function* () {
@@ -153,6 +189,35 @@ export function createEventsStore(opts: EventsStoreOptions) {
     });
   }
 
+  function restartForWorkspaceSelection(): void {
+    const signal = streamRestartSignal;
+    if (signal === null) return;
+    opts.runtime.runCommand(Deferred.succeed(signal, undefined), {
+      operation: "reconnect provider events for workspace selection",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
+  function selectWorkspace(workspaceId: string): () => void {
+    const previous = selectedWorkspaceId();
+    workspaceSelectionSequence += 1;
+    const selection = workspaceSelectionSequence;
+    workspaceSelections.set(selection, workspaceId);
+    if (selectedWorkspaceId() !== previous) restartForWorkspaceSelection();
+    return () => {
+      const beforeRelease = selectedWorkspaceId();
+      workspaceSelections.delete(selection);
+      if (selectedWorkspaceId() !== beforeRelease) restartForWorkspaceSelection();
+    };
+  }
+
+  function subscribeWorkspaceEvents(subscriber: (event: WorkspaceEventsNotification) => void): () => void {
+    workspaceEventSubscribers.add(subscriber);
+    if (connectionState === "connected") subscriber({ type: "open" });
+    return () => workspaceEventSubscribers.delete(subscriber);
+  }
+
   function getConnectionState(): ProviderEventsConnectionState {
     return connectionState;
   }
@@ -161,7 +226,14 @@ export function createEventsStore(opts: EventsStoreOptions) {
     return lastError;
   }
 
-  return { streamEffect, reconnect, getConnectionState, getLastError };
+  return {
+    streamEffect,
+    reconnect,
+    getConnectionState,
+    getLastError,
+    selectWorkspace,
+    subscribeWorkspaceEvents,
+  };
 }
 
 export type EventsStore = ReturnType<typeof createEventsStore>;

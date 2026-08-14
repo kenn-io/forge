@@ -48,8 +48,10 @@ const mocks = vi.hoisted(() => ({
   mockUpdateSettings: vi.fn(),
   renameWorkspaceSession: vi.fn(),
   runtime: undefined as unknown as OwnedAppRuntime,
+  selectWorkspace: vi.fn(),
   showFlash: vi.fn(),
   stopWorkspaceSession: vi.fn(),
+  subscribeWorkspaceEvents: vi.fn(),
   terminalWrite: vi.fn(),
   diffStore: null as unknown as ReturnType<typeof createDiffStore>,
   workspaceSidebarPreference: "diff" as "diff" | "item",
@@ -169,6 +171,10 @@ vi.mock("../../context.js", async (importOriginal) => {
         }),
       },
       diff: mocks.diffStore,
+      events: {
+        selectWorkspace: mocks.selectWorkspace,
+        subscribeWorkspaceEvents: mocks.subscribeWorkspaceEvents,
+      },
     }),
   };
 });
@@ -632,27 +638,26 @@ type RecordedEventSource = {
 
 function installEventSourceRecorder(): RecordedEventSource[] {
   const sources: RecordedEventSource[] = [];
-  vi.stubGlobal(
-    "EventSource",
-    class {
-      readonly record: RecordedEventSource;
-
-      constructor(url: string) {
-        this.record = { url, listeners: {} };
-        sources.push(this.record);
-      }
-
-      addEventListener(type: string, callback: RecordedEventListener): void {
-        this.record.listeners[type] = callback;
-      }
-
-      removeEventListener(type: string, callback: RecordedEventListener): void {
-        if (this.record.listeners[type] === callback) delete this.record.listeners[type];
-      }
-
-      close(): void {}
-    },
-  );
+  mocks.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: unknown) => void) => {
+    const record: RecordedEventSource = {
+      url: "shared-provider-events",
+      listeners: {
+        open: () => subscriber({ type: "open" }),
+        "reconnect.stale": () => subscriber({ type: "reconnect.stale" }),
+        workspace_status: (event) => subscriber({ type: "workspace_status", payload: JSON.parse(event?.data ?? "{}") }),
+        workspace_pr_associated: (event) =>
+          subscriber({ type: "workspace_pr_associated", payload: JSON.parse(event?.data ?? "{}") }),
+        workspace_diff_ready: (event) =>
+          subscriber({ type: "workspace_diff_ready", payload: JSON.parse(event?.data ?? "{}") }),
+        workspace_diff_changed: (event) =>
+          subscriber({ type: "workspace_diff_changed", payload: JSON.parse(event?.data ?? "{}") }),
+      },
+    };
+    sources.push(record);
+    return () => {
+      for (const type of Object.keys(record.listeners)) delete record.listeners[type];
+    };
+  });
   return sources;
 }
 
@@ -716,6 +721,8 @@ describe("WorkspaceTerminalView", () => {
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
     mocks.launchWorkspaceSession.mockReset();
     mocks.renameWorkspaceSession.mockReset();
+    mocks.selectWorkspace.mockReset();
+    mocks.selectWorkspace.mockReturnValue(() => undefined);
     mocks.showFlash.mockReset();
     mocks.renameWorkspaceSession.mockImplementation(
       async (_workspaceId: string, sessionKey: string, label: string) => ({
@@ -725,6 +732,8 @@ describe("WorkspaceTerminalView", () => {
       }),
     );
     mocks.stopWorkspaceSession.mockReset();
+    mocks.subscribeWorkspaceEvents.mockReset();
+    mocks.subscribeWorkspaceEvents.mockReturnValue(() => undefined);
     mocks.terminalWrite.mockReset();
     mocks.mockTerminalInstances.length = 0;
     mocks.mockSetTerminalSettings.mockReset();
@@ -1357,23 +1366,67 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("scopes only local workspace event streams for diff prewarming", async () => {
-    const urls: string[] = [];
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        constructor(url: string) {
-          urls.push(url);
-        }
-        addEventListener(): void {}
-        close(): void {}
-      },
-    );
-
+    const releaseSelection = vi.fn();
+    mocks.selectWorkspace.mockReturnValue(releaseSelection);
     const { rerender } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
-    await waitFor(() => expect(urls).toContain("/api/v1/events?workspace_id=ws-1"));
+    await waitFor(() => expect(mocks.selectWorkspace).toHaveBeenCalledWith("ws-1"));
 
     await rerender({ workspaceId: "ws-1", workspaceHostKey: "member" });
-    await waitFor(() => expect(urls.at(-1)).toBe("/api/v1/events"));
+    await waitFor(() => expect(releaseSelection).toHaveBeenCalledOnce());
+    expect(mocks.selectWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an active diff load when selected prewarming becomes ready", async () => {
+    window.__BASE_PATH__ = window.location.origin;
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "diff");
+    const eventSources = installEventSourceRecorder();
+    const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
+    const cancelWorkspaceDiff = vi.spyOn(mocks.diffStore, "cancelWorkspaceDiff");
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1" },
+      context: new Map([[STORES_KEY, { diff: mocks.diffStore }]]),
+    });
+
+    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(latestWorkspaceEventListeners(eventSources).workspace_diff_ready).toBeTypeOf("function"),
+    );
+    const listeners = latestWorkspaceEventListeners(eventSources);
+    listeners.workspace_diff_ready?.(
+      new MessageEvent("workspace_diff_ready", {
+        data: JSON.stringify({ workspace_id: "ws-1", version: "generation:ready" }),
+      }),
+    );
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockClear();
+    listeners.workspace_status?.(
+      new MessageEvent("workspace_status", {
+        data: JSON.stringify({ id: "ws-1" }),
+      }),
+    );
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([input]) => fetchPath(input).endsWith("/workspaces/ws-1"))).toBe(true),
+    );
+    expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
+    expect(cancelWorkspaceDiff).not.toHaveBeenCalled();
+
+    listeners.workspace_diff_changed?.(
+      new MessageEvent("workspace_diff_changed", {
+        data: JSON.stringify({ workspace_id: "ws-1", version: "generation:changed" }),
+      }),
+    );
+
+    await waitFor(() => expect(loadWorkspaceDiff.mock.calls.length).toBeGreaterThan(1));
+    expect(loadWorkspaceDiff).toHaveBeenCalledTimes(2);
+    expect(cancelWorkspaceDiff).toHaveBeenCalledTimes(1);
+    expect(loadWorkspaceDiff).toHaveBeenLastCalledWith(
+      "ws-1",
+      "head",
+      false,
+      expect.objectContaining({ preserveVisible: true }),
+    );
   });
 
   it("prewarms a selected fleet diff and reloads it when the remote watch advances", async () => {

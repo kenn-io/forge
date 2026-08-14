@@ -13,6 +13,10 @@ import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../
 import WorkspaceTerminalView from "./WorkspaceTerminalViewTestHarness.svelte";
 
 const WAIT = 10_000;
+const eventsStore = {
+  selectWorkspace: () => () => undefined,
+  subscribeWorkspaceEvents: () => () => undefined,
+};
 
 const workspace = {
   id: "ws-1",
@@ -178,7 +182,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
         hideWorkspaceList: true,
         hideRightSidebar: true,
       },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     try {
@@ -247,7 +251,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
           return hostVisible;
         },
       },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     try {
@@ -313,7 +317,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
           return hostVisible;
         },
       },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     try {
@@ -387,7 +391,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
           return hostVisible;
         },
       },
-      context: new Map([[STORES_KEY, { settings: settingsStore, diff: diffStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore, diff: diffStore }]]),
     });
 
     const pressSidebarToggle = () => {
@@ -471,7 +475,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
         hideWorkspaceList: true,
         hideRightSidebar: false,
       },
-      context: new Map([[STORES_KEY, { settings: settingsStore, diff: diffStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore, diff: diffStore }]]),
     });
 
     const resizeWindow = () => {
@@ -540,7 +544,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
           return hostVisible;
         },
       },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     try {
@@ -625,7 +629,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
         hideWorkspaceList: true,
         hideRightSidebar: true,
       },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     try {
@@ -692,7 +696,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
         hideWorkspaceList: true,
         hideRightSidebar: true,
       },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     try {
@@ -752,7 +756,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
           return hostVisible;
         },
       },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     try {

@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
     DELETE: vi.fn(),
   },
   showFlash: vi.fn(),
+  workspaceEventsSubscriber: undefined as ((event: unknown) => void) | undefined,
 }));
 const runtimeState = vi.hoisted<{ appRuntime?: OwnedAppRuntime }>(() => ({}));
 
@@ -100,6 +101,15 @@ vi.mock("../../context.js", async (importOriginal) => {
   return {
     ...actual,
     getStores: () => ({
+      events: {
+        selectWorkspace: () => () => undefined,
+        subscribeWorkspaceEvents: (subscriber: (event: unknown) => void) => {
+          mocks.workspaceEventsSubscriber = subscriber;
+          return () => {
+            if (mocks.workspaceEventsSubscriber === subscriber) mocks.workspaceEventsSubscriber = undefined;
+          };
+        },
+      },
       settings: {
         getTerminalSettings: () => ({
           font_family: "",
@@ -180,6 +190,7 @@ describe("WorkspaceTerminalView embed props", () => {
     mocks.runtimeClient.POST.mockReset();
     mocks.runtimeClient.DELETE.mockReset();
     mocks.showFlash.mockReset();
+    mocks.workspaceEventsSubscriber = undefined;
     mocks.runtimeClient.GET.mockResolvedValue({
       data: readyWorkspaceData,
       error: undefined,
@@ -376,19 +387,6 @@ describe("WorkspaceTerminalView embed props", () => {
       }
       return { data: workspaceWithRepo, error: undefined, response: { status: 200 } };
     });
-    const listeners = new Map<string, (event?: MessageEvent) => void>();
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        addEventListener(type: string, cb: (event?: MessageEvent) => void): void {
-          listeners.set(type, cb);
-        }
-        removeEventListener(type: string, cb: (event?: MessageEvent) => void): void {
-          if (listeners.get(type) === cb) listeners.delete(type);
-        }
-        close(): void {}
-      },
-    );
     const onWorkspaceDeleted = vi.fn();
 
     render(WorkspaceTerminalView, {
@@ -397,8 +395,8 @@ describe("WorkspaceTerminalView embed props", () => {
     await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
 
     gone = true;
-    await waitFor(() => expect(listeners.get("workspace_status")).toBeTypeOf("function"));
-    listeners.get("workspace_status")?.(new MessageEvent("workspace_status", { data: JSON.stringify({ id: "ws-1" }) }));
+    await waitFor(() => expect(mocks.workspaceEventsSubscriber).toBeTypeOf("function"));
+    mocks.workspaceEventsSubscriber?.({ type: "workspace_status", payload: { id: "ws-1" } });
 
     await waitFor(() => {
       expect(onWorkspaceDeleted).toHaveBeenCalledWith(

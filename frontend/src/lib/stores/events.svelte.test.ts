@@ -137,6 +137,30 @@ describe("createEventsStore URL building", () => {
 });
 
 describe("createEventsStore event dispatch", () => {
+  it("fans workspace diff events out from the shared provider stream", async () => {
+    const received: unknown[] = [];
+    const store = createEventsStore();
+    const unsubscribe = store.subscribeWorkspaceEvents((event) => {
+      received.push(event);
+    });
+    start(store);
+    const source = await awaitSource();
+
+    emit(source, "workspace_diff_ready", {
+      data: JSON.stringify({ workspace_id: "ws-1", version: "generation:ready" }),
+    });
+
+    await vi.waitFor(() =>
+      expect(received).toEqual([
+        {
+          type: "workspace_diff_ready",
+          payload: { workspace_id: "ws-1", version: "generation:ready" },
+        },
+      ]),
+    );
+    unsubscribe();
+  });
+
   it("fires onDataChanged for data_changed frames", async () => {
     const onDataChanged = vi.fn(() => Effect.void);
     const store = createEventsStore({ onDataChanged });
@@ -342,6 +366,35 @@ describe("createEventsStore event dispatch", () => {
 });
 
 describe("createEventsStore connection lifecycle", () => {
+  it("replays the open signal to a subscriber that mounts after connection", async () => {
+    const store = createEventsStore();
+    start(store);
+    emit(await awaitSource(), "open", {});
+    await vi.waitFor(() => expect(store.getConnectionState()).toBe("connected"));
+
+    const received: unknown[] = [];
+    store.subscribeWorkspaceEvents((event) => received.push(event));
+
+    expect(received).toEqual([{ type: "open" }]);
+  });
+
+  it("moves workspace selection onto the singleton provider stream", async () => {
+    const store = createEventsStore();
+    start(store);
+    const initial = await awaitSource();
+
+    const releaseSelection = store.selectWorkspace("ws-1");
+    const selected = await awaitSource(1);
+
+    expect(initial.closed).toBe(true);
+    expect(selected.url).toBe("/api/v1/events?workspace_id=ws-1");
+
+    releaseSelection();
+    const released = await awaitSource(2);
+    expect(selected.closed).toBe(true);
+    expect(released.url).toBe("/api/v1/events");
+  });
+
   it("connection state reflects open and error events", async () => {
     const store = createEventsStore();
     start(store);

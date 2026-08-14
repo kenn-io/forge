@@ -57,6 +57,11 @@ export class WorkspaceStatusEvent extends Schema.Class<WorkspaceStatusEvent>("Wo
   status: Schema.optionalKey(Schema.String),
 }) {}
 
+export class WorkspaceDiffEvent extends Schema.Class<WorkspaceDiffEvent>("WorkspaceDiffEvent")({
+  workspace_id: Schema.String,
+  version: Schema.String,
+}) {}
+
 export class WorkspaceDeletedEvent extends Schema.Class<WorkspaceDeletedEvent>("WorkspaceDeletedEvent")({
   workspace_id: Schema.String,
   ...providerItemFields,
@@ -124,6 +129,8 @@ export type ProviderEvent =
   | { readonly type: "reconnect.stale" }
   | { readonly type: "workspace_created"; readonly payload: WorkspaceCreatedEvent }
   | { readonly type: "workspace_status"; readonly payload: WorkspaceStatusEvent }
+  | { readonly type: "workspace_diff_ready"; readonly payload: WorkspaceDiffEvent }
+  | { readonly type: "workspace_diff_changed"; readonly payload: WorkspaceDiffEvent }
   | { readonly type: "workspace_deleted"; readonly payload: WorkspaceDeletedEvent }
   | { readonly type: "workspace_pushed_head_changed"; readonly payload: WorkspacePushedHeadChangedEvent }
   | { readonly type: "workspace_pr_associated"; readonly payload: WorkspacePRAssociatedEvent }
@@ -228,6 +235,8 @@ const providerEventTypes: ReadonlyArray<ProviderEventType> = [
   "reconnect.stale",
   "workspace_created",
   "workspace_status",
+  "workspace_diff_ready",
+  "workspace_diff_changed",
   "workspace_deleted",
   "workspace_pushed_head_changed",
   "workspace_pr_associated",
@@ -316,6 +325,14 @@ const decodeProviderEvent = Effect.fn("ProviderEvents.decodeFrame")(function* (f
       return {
         type: "workspace_status",
         payload: yield* Schema.decodeUnknownEffect(WorkspaceStatusEvent)(payload).pipe(
+          Effect.mapError((cause) => invalidFrame(frame, cause)),
+        ),
+      } satisfies ProviderEvent;
+    case "workspace_diff_ready":
+    case "workspace_diff_changed":
+      return {
+        type: frame.type,
+        payload: yield* Schema.decodeUnknownEffect(WorkspaceDiffEvent)(payload).pipe(
           Effect.mapError((cause) => invalidFrame(frame, cause)),
         ),
       } satisfies ProviderEvent;

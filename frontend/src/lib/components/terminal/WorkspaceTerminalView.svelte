@@ -121,7 +121,6 @@
   } from "../../icons.ts";
   import { apiErrorMessage } from "../../api/runtime.js";
   import { ProblemCodes } from "../../api/problems.js";
-  import { configuredAPIPath } from "../../api/runtime-base.js";
   import {
     executeGeneratedApiRequest,
     executeOpaqueGeneratedApiRequest,
@@ -229,7 +228,7 @@
   const basePath = (
     window.__BASE_PATH__ ?? "/"
   ).replace(/\/$/, "");
-  const { settings: settingsStore } = getStores();
+  const { events: eventsStore, settings: settingsStore } = getStores();
   const appRuntime = getAppRuntime();
   const runtimeOwner = makeWorkspaceRuntimeOwner("workspace-view");
   const runtimePresenterID = makeWorkspaceRuntimePresenterID();
@@ -3884,15 +3883,14 @@
         )
       : null;
 
-    const evtUrl = new URL(configuredAPIPath("/events"), window.location.origin);
-    if (!hostKey) {
-      evtUrl.searchParams.set("workspace_id", id);
-    }
     const workspaceLifecycle = appRuntime.runCommand(
       Effect.gen(function* () {
         const initialWorkspace = yield* Deferred.make<Workspace | null>();
         const events = Stream.runForEach(
-          workspaceEventStream(`${evtUrl.pathname}${evtUrl.search}`),
+          workspaceEventStream(
+            eventsStore.subscribeWorkspaceEvents,
+            hostKey ? undefined : () => eventsStore.selectWorkspace(id),
+          ),
           (signal) => {
             switch (signal._tag) {
               case "Open":
@@ -3925,6 +3923,17 @@
                     }),
                   ),
                 );
+              case "DiffReady":
+                return Effect.sync(() => {
+                  if (
+                    signal.workspaceId !== id ||
+                    signal.version === undefined ||
+                    signal.version === ""
+                  ) {
+                    return;
+                  }
+                  lastDiffSnapshotVersion = signal.version;
+                });
               case "DiffChanged":
                 return Effect.sync(() => {
                   if (

@@ -1143,6 +1143,9 @@ func (s *Handler) getWorkspaceFiles(
 		ctx, s.workspaceDiffCacheKey(req, hideWhitespace),
 	)
 	if diffErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if errors.Is(diffErr, errWorkspaceDiffBaseUnavailable) {
 			return nil, workspaceDiffBaseUnavailable(req.Base)
 		}
@@ -1184,6 +1187,9 @@ func (s *Handler) watchWorkspaceDiff(
 
 	snapshot, _, err := s.workspaceDiffCache.Get(ctx, key)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if errors.Is(err, errWorkspaceDiffBaseUnavailable) {
 			return nil, workspaceDiffBaseUnavailable(req.Base)
 		}
@@ -1225,6 +1231,9 @@ func (s *Handler) watchWorkspaceDiff(
 			}
 			current, _, getErr := s.workspaceDiffCache.Get(ctx, key)
 			if getErr != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return nil, ctxErr
+				}
 				return nil, httpapi.Upstream("failed to read selected workspace diff", "", "")
 			}
 			if current.Version == input.Version {
@@ -1256,6 +1265,9 @@ func (s *Handler) getWorkspaceDiff(
 		ctx, s.workspaceDiffCacheKey(req, hideWhitespace),
 	)
 	if diffErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if errors.Is(diffErr, errWorkspaceDiffBaseUnavailable) {
 			return nil, workspaceDiffBaseUnavailable(req.Base)
 		}
@@ -1331,6 +1343,9 @@ func (s *Handler) getWorkspaceFilePreview(
 		}
 	}
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if errors.Is(err, errWorkspaceDiffBaseUnavailable) {
 			return nil, workspaceDiffBaseUnavailable(req.Base)
 		}

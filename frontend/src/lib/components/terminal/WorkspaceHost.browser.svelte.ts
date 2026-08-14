@@ -20,6 +20,10 @@ import InlineWorkspacePaneHarness from "./InlineWorkspacePaneHarness.svelte";
 import { createPaneLayoutStore } from "../../stores/paneLayout.svelte.js";
 
 const WAIT = 10_000;
+const eventsStore = {
+  selectWorkspace: () => () => undefined,
+  subscribeWorkspaceEvents: () => () => undefined,
+};
 
 const identityA = {
   provider: "github",
@@ -163,7 +167,7 @@ describe("WorkspaceHost", () => {
     instance = mount(WorkspaceHost, {
       target: hostContainer,
       props: { runtime },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     navigate("/terminal/ws-1");
@@ -218,7 +222,7 @@ describe("WorkspaceHost", () => {
     instance = mount(WorkspaceHost, {
       target: hostContainer,
       props: { runtime },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     const prs = getInlineWorkspaceController("prs");
@@ -264,7 +268,7 @@ describe("WorkspaceHost", () => {
     instance = mount(WorkspaceHost, {
       target: hostContainer,
       props: { runtime },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     const prs = getInlineWorkspaceController("prs");
@@ -314,7 +318,7 @@ describe("WorkspaceHost", () => {
     instance = mount(WorkspaceHost, {
       target: hostContainer,
       props: { runtime },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     navigate("/terminal/ws-1");
@@ -401,7 +405,7 @@ describe("WorkspaceHost", () => {
       instance = mount(WorkspaceHost, {
         target: hostContainer,
         props: { runtime },
-        context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+        context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
       });
 
       prs.claim(identityA, { id: "ws-1", status: "ready" });
@@ -449,7 +453,7 @@ describe("WorkspaceHost", () => {
       instance = mount(WorkspaceHost, {
         target: hostContainer,
         props: { runtime },
-        context: new Map([[STORES_KEY, { settings: settingsStore, diff: diffStore }]]),
+        context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore, diff: diffStore }]]),
       });
 
       navigate("/terminal/ws-1");

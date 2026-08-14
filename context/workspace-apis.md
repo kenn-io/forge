@@ -399,11 +399,20 @@ server check exactly.
 - A workspace response is user-visibly stale only when a bounded, coalesced
   head-only probe confirms cached/current Git HEAD mismatch and queues refresh;
   cache age, probe timeout, and resolution failure do not warn (`internal/server/workspaceapi/workspace_diff_cache.go::workspaceDiffCache.Get`).
-- A local workspace becomes selected through its scoped SSE stream. The server
-  subscribes that stream before acquiring the selection lease, then emits
+- Local workspace selection reuses the singleton provider SSE connection;
+  workspace subscribers attach before `workspace_id` selection and release
+  with it (`frontend/src/lib/stores/events.svelte.ts::createEventsStore`).
+- Late workspace subscribers receive current connected state, so route mount
+  does not depend on a future reconnect (`frontend/src/lib/stores/events.svelte.ts::subscribeWorkspaceEvents`).
+- Workspace event fan-out is lossless while subscribed; an event burst must not
+  terminate refresh lifecycles (`frontend/src/lib/components/terminal/workspace-event-stream.ts::workspaceEventStream`).
+- The server subscribes that stream before acquiring the selection lease, then emits
   `workspace_diff_ready` only when cold/coalesced default-HEAD preparation
   completes; a warm cache hit needs no readiness event. This ordering prevents
   fast preparation from racing ahead of the selecting browser.
+  `workspace_diff_ready` belongs to selection lifetime and never cancels an
+  active read; only `workspace_diff_changed` advances the visible refresh token
+  (`frontend/src/lib/components/terminal/workspace-event-stream.ts::WorkspaceEventSignal`).
 - Fleet selection uses `/workspaces/{id}/diff/watch` through the fleet proxy to
   hold the remote lease, prewarm HEAD, and relay opaque versions. Switching
   aborts and replaces the watch, so only the selected remote workspace refreshes

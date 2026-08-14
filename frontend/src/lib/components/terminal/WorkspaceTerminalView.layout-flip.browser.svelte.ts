@@ -10,6 +10,10 @@ import type { WorkspaceRuntimeState } from "../../api/workspace-runtime.ts";
 import WorkspaceTerminalView from "./WorkspaceTerminalViewTestHarness.svelte";
 
 const WAIT = 10_000;
+const eventsStore = {
+  selectWorkspace: () => () => undefined,
+  subscribeWorkspaceEvents: () => () => undefined,
+};
 
 const workspace = {
   id: "ws-1",
@@ -94,7 +98,7 @@ describe("WorkspaceTerminalView layout flip", () => {
 
     const screen = render(WorkspaceTerminalView, {
       props: { runtime, workspaceId: "ws-1", hideWorkspaceList: false, hideRightSidebar: true },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });
 
     try {

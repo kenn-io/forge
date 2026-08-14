@@ -3713,8 +3713,9 @@ func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
 // exit. The caller's ctx is honored by a run that starts immediately.
 // Once an accepted trigger is coalesced behind an active run, the follow-up
 // is owned by the syncer's lifecycle so caller completion cannot retract it.
-func (s *Syncer) TriggerRun(ctx context.Context) {
-	s.TriggerRunWithPriority(ctx, nil)
+// It returns true only after the request is retained as active or pending work.
+func (s *Syncer) TriggerRun(ctx context.Context) bool {
+	return s.TriggerRunWithPriority(ctx, nil)
 }
 
 // TriggerRunWithPriority kicks off a non-blocking ad-hoc sync and dispatches
@@ -3722,22 +3723,22 @@ func (s *Syncer) TriggerRun(ctx context.Context) {
 func (s *Syncer) TriggerRunWithPriority(
 	ctx context.Context,
 	priorityRepos []RepoRef,
-) {
-	s.triggerRun(ctx, slices.Clone(priorityRepos), nil)
+) bool {
+	return s.triggerRun(ctx, slices.Clone(priorityRepos), nil)
 }
 
 // TriggerRunForRepos kicks off a non-blocking ad-hoc sync restricted to the
 // matching configured repositories.
-func (s *Syncer) TriggerRunForRepos(ctx context.Context, repos []RepoRef) {
-	s.triggerRun(ctx, nil, slices.Clone(repos))
+func (s *Syncer) TriggerRunForRepos(ctx context.Context, repos []RepoRef) bool {
+	return s.triggerRun(ctx, nil, slices.Clone(repos))
 }
 
 func (s *Syncer) triggerRun(
 	ctx context.Context,
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
-) {
-	s.triggerRunWithCadence(ctx, true, priorityRepos, onlyRepos)
+) bool {
+	return s.triggerRunWithCadence(ctx, true, priorityRepos, onlyRepos)
 }
 
 func (s *Syncer) triggerRunWithCadence(
@@ -3745,19 +3746,71 @@ func (s *Syncer) triggerRunWithCadence(
 	bypassNextSyncAfter bool,
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
-) {
-	s.launchRunWithCadence(
-		ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, nil, false,
+) bool {
+	if !s.SyncEnabled() {
+		return false
+	}
+
+	// Admission and lifecycle registration are one operation from the
+	// caller's perspective: a successful return means Stop cannot miss the
+	// work and an active run has already retained the request.
+	s.lifecycleMu.Lock()
+	if s.stopped {
+		s.lifecycleMu.Unlock()
+		return false
+	}
+	s.runMu.Lock()
+	if s.running.Load() {
+		accepted := bypassNextSyncAfter || onlyRepos == nil && s.exclusiveRun
+		if accepted {
+			s.coalescePendingRunLocked(
+				bypassNextSyncAfter, priorityRepos, onlyRepos,
+			)
+		}
+		s.runMu.Unlock()
+		s.lifecycleMu.Unlock()
+		return accepted
+	}
+	s.running.Store(true)
+	s.exclusiveRun = onlyRepos != nil
+	s.runMu.Unlock()
+
+	s.startClaimedRunLocked(
+		ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, nil,
 	)
+	s.lifecycleMu.Unlock()
+	return true
 }
 
-func (s *Syncer) launchRunWithCadence(
+// startClaimedRunLocked registers and starts work whose single-flight slot is
+// already owned. The caller must hold lifecycleMu and must have checked stopped.
+func (s *Syncer) startClaimedRunLocked(
 	ctx context.Context,
 	bypassNextSyncAfter bool,
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 	bypassRepos []RepoRef,
-	slotClaimed bool,
+) {
+	merged, cancel := s.mergeWithRunCtx(ctx)
+	s.wg.Go(func() {
+		defer cancel()
+		s.runOnceWithSlot(
+			merged,
+			bypassNextSyncAfter,
+			priorityRepos,
+			onlyRepos,
+			bypassRepos,
+			true,
+		)
+	})
+}
+
+func (s *Syncer) launchClaimedRun(
+	ctx context.Context,
+	bypassNextSyncAfter bool,
+	priorityRepos []RepoRef,
+	onlyRepos []RepoRef,
+	bypassRepos []RepoRef,
 ) bool {
 	if !s.SyncEnabled() {
 		return false
@@ -3767,22 +3820,10 @@ func (s *Syncer) launchRunWithCadence(
 		s.lifecycleMu.Unlock()
 		return false
 	}
-	merged, cancel := s.mergeWithRunCtx(ctx)
-	s.wg.Add(1)
+	s.startClaimedRunLocked(
+		ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, bypassRepos,
+	)
 	s.lifecycleMu.Unlock()
-
-	go func() {
-		defer s.wg.Done()
-		defer cancel()
-		s.runOnceWithSlot(
-			merged,
-			bypassNextSyncAfter,
-			priorityRepos,
-			onlyRepos,
-			bypassRepos,
-			slotClaimed,
-		)
-	}()
 	return true
 }
 
@@ -5891,13 +5932,12 @@ func (s *Syncer) runOnceWithSlot(
 			if pending.full {
 				only = nil
 			}
-			launched := s.launchRunWithCadence(
+			launched := s.launchClaimedRun(
 				context.Background(),
 				pending.bypassNextSyncAfter,
 				pending.priorityRepos,
 				only,
 				pending.bypassRepos,
-				true,
 			)
 			if !launched {
 				s.releaseRunSlot()

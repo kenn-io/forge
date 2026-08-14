@@ -8202,6 +8202,20 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	assert.Equal(t, "widget", repos[0].Name)
 }
 
+// If the route returns 202 after admission is refused, the client believes a
+// sync was retained even though no worker can execute it.
+func TestAPITriggerSyncRejectsAfterSyncerStops(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	syncer.Stop()
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
+	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())
+}
+
 func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -71,8 +71,9 @@ migrate ticker-driven sync or refresh loops into `backoff/v5`
 - Provider-index sync keeps at most one coalesced follow-up, atomically transfers
   its single-flight slot, and preserves nil-versus-empty scope; bursts neither
   drop accepted work nor create an unbounded queue. Scoped user bypasses stay
-  bound to stable repository identity when coalesced with full work.
-  (`internal/github/sync.go::runOnceWithSlot`)
+  bound to stable repository identity when coalesced with full work. Ad-hoc
+  triggers return only after admission; provider execution stays asynchronous.
+  (`internal/github/sync.go::triggerRunWithCadence`)
 
 Repository-disabled issue and merge-request scopes use a 24-hour in-memory
 background probe gate. Expiry admits one reserved background probe across all

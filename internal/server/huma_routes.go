@@ -727,13 +727,17 @@ func (s *Server) triggerSync(
 		if err != nil {
 			return nil, httpapi.Validation("query.only_repo", err.Error())
 		}
-		s.syncer.TriggerRunForRepos(context.WithoutCancel(ctx), repos)
+		if !s.syncer.TriggerRunForRepos(context.WithoutCancel(ctx), repos) {
+			return nil, httpapi.ServiceUnavailable("syncer is stopping")
+		}
 		return &acceptedOutput{Status: http.StatusAccepted}, nil
 	}
-	s.syncer.TriggerRunWithPriority(
+	if !s.syncer.TriggerRunWithPriority(
 		context.WithoutCancel(ctx),
 		s.priorityReposFromFilter(input.PriorityRepos),
-	)
+	) {
+		return nil, httpapi.ServiceUnavailable("syncer is stopping")
+	}
 	if s.notificationsEnabled() {
 		s.runBackground(func(bgCtx context.Context) {
 			if err := s.syncer.RunNotificationSync(bgCtx); err != nil {

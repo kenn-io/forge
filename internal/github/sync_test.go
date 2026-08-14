@@ -14796,6 +14796,35 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 	}
 }
 
+// If an asynchronous trigger returns before taking the admission lock, the
+// server can return 202 before the request is retained by the active run.
+func TestTriggerRunForReposReturnsOnlyAfterAdmission(t *testing.T) {
+	require := require.New(t)
+	repo := RepoRef{
+		Owner: "owner", Name: "selected", PlatformHost: "github.com",
+	}
+	syncer := NewSyncer(
+		nil, openTestDB(t), nil, []RepoRef{repo}, time.Hour, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	// Model an active scoped pass with cadence-respecting full work
+	// already retained behind it.
+	syncer.runMu.Lock()
+	syncer.running.Store(true)
+	syncer.exclusiveRun = true
+	syncer.pendingRun = &pendingSyncRun{full: true}
+	syncer.runMu.Unlock()
+
+	accepted := syncer.TriggerRunForRepos(context.Background(), []RepoRef{repo})
+	require.True(accepted)
+
+	syncer.runMu.Lock()
+	bypassRepos := slices.Clone(syncer.pendingRun.bypassRepos)
+	syncer.runMu.Unlock()
+	require.Equal([]RepoRef{repo}, bypassRepos)
+}
+
 // If a scoped refresh turns a queued cadence-respecting full pass into a
 // global bypass, the provider is called for unrelated repositories too.
 func TestQueuedScopedRefreshDoesNotBypassFullRunCadence(t *testing.T) {

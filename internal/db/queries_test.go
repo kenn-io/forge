@@ -4416,6 +4416,7 @@ func TestUpdateWorkspaceMRHeadRepoForSnapshotRejectsStaleRevision(t *testing.T) 
 		repoID,
 		mr.Number,
 		stale.SnapshotRevision,
+		false,
 		nil,
 	)
 	require.NoError(err)
@@ -4433,6 +4434,7 @@ func TestUpdateWorkspaceMRHeadRepoForSnapshotRejectsStaleRevision(t *testing.T) 
 		repoID,
 		mr.Number,
 		updated.SnapshotRevision,
+		false,
 		nil,
 	)
 	require.Error(err)
@@ -5273,6 +5275,8 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Nil(noMR.MRDeletions)
 	assert.Nil(noMR.AssociatedPRNumber)
 	assert.Nil(noMR.ItemLastActivityAt)
+	assert.True(noMR.SourceItemVisible)
+	assert.False(noMR.AssociatedPRVisible)
 
 	// Issue workspace keeps issue-owned header metadata and the linked PR number.
 	require.NotNil(issueWithPR.MRTitle)
@@ -5288,6 +5292,8 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Equal(42, *issueWithPR.AssociatedPRNumber)
 	require.NotNil(issueWithPR.ItemLastActivityAt)
 	assert.Equal(issueActivity.UTC(), issueWithPR.ItemLastActivityAt.UTC())
+	assert.True(issueWithPR.SourceItemVisible)
+	assert.True(issueWithPR.AssociatedPRVisible)
 
 	// PR workspace exposes PR metadata in the owner slots.
 	require.NotNil(withMR.MRTitle)
@@ -5307,6 +5313,8 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Nil(withMR.AssociatedPRNumber)
 	require.NotNil(withMR.ItemLastActivityAt)
 	assert.Equal(prActivity.UTC(), withMR.ItemLastActivityAt.UTC())
+	assert.True(withMR.SourceItemVisible)
+	assert.False(withMR.AssociatedPRVisible)
 
 	// GetWorkspaceSummary by ID
 	single, err := d.GetWorkspaceSummary(ctx, "ws-issue-with-pr")
@@ -5319,6 +5327,47 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Equal(42, *single.AssociatedPRNumber)
 	require.NotNil(single.ItemLastActivityAt)
 	assert.Equal(issueActivity.UTC(), single.ItemLastActivityAt.UTC())
+	assert.True(single.SourceItemVisible)
+	assert.True(single.AssociatedPRVisible)
+
+	_, err = d.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, 'merge_request', 42, 'pull-42', ?, ?, 'removed_upstream')`,
+		repoID, base, base,
+	)
+	require.NoError(err)
+	single, err = d.GetWorkspaceSummary(ctx, "ws-issue-with-pr")
+	require.NoError(err)
+	require.NotNil(single)
+	assert.True(single.SourceItemVisible)
+	assert.False(single.AssociatedPRVisible)
+	_, err = d.WriteDB().ExecContext(ctx, `
+		UPDATE forge_archive_items
+		SET lifecycle_state = 'inaccessible'
+		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = 42`,
+		repoID,
+	)
+	require.NoError(err)
+	single, err = d.GetWorkspaceSummary(ctx, "ws-issue-with-pr")
+	require.NoError(err)
+	require.NotNil(single)
+	assert.True(single.SourceItemVisible)
+	assert.True(single.AssociatedPRVisible)
+	_, err = d.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, 'issue', 7, 'issue-7', ?, ?, 'removed_upstream')`,
+		repoID, base, base,
+	)
+	require.NoError(err)
+	single, err = d.GetWorkspaceSummary(ctx, "ws-issue-with-pr")
+	require.NoError(err)
+	require.NotNil(single)
+	assert.False(single.SourceItemVisible)
+	assert.True(single.AssociatedPRVisible)
 
 	// GetWorkspaceSummary miss
 	missSum, err := d.GetWorkspaceSummary(ctx, "nonexistent")
@@ -5375,6 +5424,8 @@ func TestWorkspaceSummariesRetainWorkspaceWithoutRemovedPullMetadata(t *testing.
 	require.Nil(summary.MRMergeableState)
 	require.Nil(summary.MRHeadBranch)
 	require.Nil(summary.ItemLastActivityAt)
+	require.False(summary.SourceItemVisible)
+	require.False(summary.AssociatedPRVisible)
 
 	summaries, err := d.ListWorkspaceSummaries(ctx)
 	require.NoError(err)

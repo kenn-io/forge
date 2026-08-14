@@ -1290,10 +1290,20 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 		}
 		cloneURL := ""
 		var snapshotRevision int64
+		removed, visibilityErr := m.db.IsArchiveItemRemovedUpstream(
+			ctx, repo.ID, db.ArchiveItemTypeMergeRequest, ws.ItemNumber,
+		)
+		if visibilityErr != nil {
+			return nil, fmt.Errorf(
+				"check workspace merge request visibility: %w", visibilityErr,
+			)
+		}
 		if mr != nil {
-			cloneURL = mr.HeadRepoCloneURL
 			snapshotRevision = mr.SnapshotRevision
-			if mr.HeadRepoIdentityStale {
+			if !removed {
+				cloneURL = mr.HeadRepoCloneURL
+			}
+			if !removed && mr.HeadRepoIdentityStale {
 				return &WorkspaceHeadRepoSnapshot{
 					SnapshotRevision: snapshotRevision,
 					MRHeadRepo:       ws.MRHeadRepo,
@@ -1319,6 +1329,7 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 			repo.ID,
 			ws.ItemNumber,
 			snapshotRevision,
+			removed,
 			refreshed,
 		)
 		if updateErr != nil {

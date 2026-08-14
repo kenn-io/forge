@@ -8507,10 +8507,22 @@ func (s *Syncer) reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRe
 		}
 		cloneURL := ""
 		var snapshotRevision int64
+		removed, visibilityErr := s.db.IsArchiveItemRemovedUpstream(
+			ctx, repoID, db.ArchiveItemTypeMergeRequest, mrNumber,
+		)
+		if visibilityErr != nil {
+			slog.Error("check workspace merge request visibility for head-repo trust reclassification failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", mrNumber, "err", visibilityErr,
+			)
+			return
+		}
 		if stored != nil {
-			cloneURL = stored.HeadRepoCloneURL
 			snapshotRevision = stored.SnapshotRevision
-			if stored.HeadRepoIdentityStale {
+			if !removed {
+				cloneURL = stored.HeadRepoCloneURL
+			}
+			if !removed && stored.HeadRepoIdentityStale {
 				return
 			}
 		}
@@ -8527,6 +8539,7 @@ func (s *Syncer) reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRe
 			repoID,
 			mrNumber,
 			snapshotRevision,
+			removed,
 			refreshed,
 		)
 		if updateErr != nil {

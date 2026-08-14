@@ -1618,7 +1618,7 @@ func (s *Handler) workspaceMergeTargetBranch(
 		return "", false, nil
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(
+	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(
 		ctx, repo.ID, prNumber,
 	)
 	if err != nil {

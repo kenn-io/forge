@@ -15,6 +15,9 @@ peer transports, or remote workspace and session operations.
   Workspace managers or root mutable config
   (`internal/server/workspaceapi/fleet_snapshot.go::FleetSnapshot`,
   `internal/server/fleetapi/handler.go::ConfigSnapshot`).
+- Workspace overlays keep the local shell but omit links and metadata for
+  removed source or associated items; inaccessible items remain visible
+  (`internal/server/fleetapi/fleet_adapter.go::worktreeFromWorkspace`).
 
 ## Snapshot And Routing Contracts
 

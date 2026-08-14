@@ -291,11 +291,15 @@ func worktreeFromWorkspace(sum db.WorkspaceSummary, wtKey, projKey string) fleet
 		SessionBackend: sessionBackendForWorkspace(sum),
 	}
 	if sum.ItemType == db.WorkspaceItemTypeIssue {
-		wt.LinkedIssueNumbers = []int{sum.ItemNumber}
+		if sum.SourceItemVisible {
+			wt.LinkedIssueNumbers = []int{sum.ItemNumber}
+		}
 		// AssociatedPRNumber is the PR linked to the issue, if any. The
 		// summary does not carry that PR's title/state/checks, so only the
 		// number is surfaced, never PR display fields built from issue data.
-		wt.LinkedPRNumber = sum.AssociatedPRNumber
+		if sum.AssociatedPRVisible {
+			wt.LinkedPRNumber = sum.AssociatedPRNumber
+		}
 		return wt
 	}
 	if sum.ItemType == db.WorkspaceItemTypeKataTask {
@@ -304,7 +308,12 @@ func worktreeFromWorkspace(sum db.WorkspaceSummary, wtKey, projKey string) fleet
 	if sum.ItemType == db.WorkspaceItemTypeAdHoc {
 		// Ad-hoc workspaces have no provider item; only a PR later detected
 		// for the pushed branch can be linked.
-		wt.LinkedPRNumber = sum.AssociatedPRNumber
+		if sum.AssociatedPRVisible {
+			wt.LinkedPRNumber = sum.AssociatedPRNumber
+		}
+		return wt
+	}
+	if sum.ItemType == db.WorkspaceItemTypePullRequest && !sum.SourceItemVisible {
 		return wt
 	}
 	// Pull-request workspaces: the PR number is the item itself, and the

@@ -1305,20 +1305,25 @@ type Workspace struct {
 // WorkspaceSummary extends Workspace with joined source-item metadata.
 type WorkspaceSummary struct {
 	Workspace
-	RepoID           int64
-	RepoPlatformID   string
-	SourceTitle      *string
-	SourceState      *string
-	SourceURL        *string
-	MRTitle          *string
-	MRState          *string
-	MRIsDraft        *bool
-	MRCIStatus       *string
-	MRReviewDecision *string
-	MRAdditions      *int
-	MRDeletions      *int
-	MRCommentCount   *int
-	MRMergeableState *string
+	RepoID         int64
+	RepoPlatformID string
+	// SourceItemVisible and AssociatedPRVisible are false only at the public
+	// removed-upstream boundary. Inaccessible and not-yet-synced items remain
+	// visible by number, matching the rest of the public read contract.
+	SourceItemVisible   bool
+	AssociatedPRVisible bool
+	SourceTitle         *string
+	SourceState         *string
+	SourceURL           *string
+	MRTitle             *string
+	MRState             *string
+	MRIsDraft           *bool
+	MRCIStatus          *string
+	MRReviewDecision    *string
+	MRAdditions         *int
+	MRDeletions         *int
+	MRCommentCount      *int
+	MRMergeableState    *string
 	// MRHeadBranch is the currently synced PR head branch, which can move
 	// after workspace creation (branch rename); prefer it over the
 	// creation-time GitHeadRef snapshot for push-target context.

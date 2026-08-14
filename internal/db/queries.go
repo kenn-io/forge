@@ -5209,14 +5209,15 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForMissingRepo(
 }
 
 // UpdateWorkspaceMRHeadRepoForSnapshot persists a classification only while
-// the merge-request revision that produced it remains current. A false result
-// tells the caller to reread and retry against the newer snapshot.
+// the merge-request revision and removed-upstream visibility that produced it
+// remain current. A false result tells the caller to reread and retry.
 func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 	ctx context.Context,
 	id string,
 	repoID int64,
 	mrNumber int,
 	expectedRevision int64,
+	expectedRemoved bool,
 	mrHeadRepo *string,
 ) (bool, error) {
 	result, err := d.execContext(ctx, `
@@ -5227,12 +5228,23 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 		      SELECT snapshot_revision
 		      FROM forge_merge_requests
 		      WHERE repo_id = ? AND number = ?
-		  ), 0) = ?`,
+		  ), 0) = ?
+		  AND EXISTS (
+		      SELECT 1
+		      FROM forge_archive_items
+		      WHERE repo_id = ?
+		        AND item_type = 'merge_request'
+		        AND item_number = ?
+		        AND lifecycle_state = 'removed_upstream'
+		  ) = ?`,
 		mrHeadRepo,
 		id,
 		repoID,
 		mrNumber,
 		expectedRevision,
+		repoID,
+		mrNumber,
+		expectedRemoved,
 	)
 	if err != nil {
 		return false, fmt.Errorf(
@@ -5608,6 +5620,36 @@ const workspaceSummaryColumns = `
 	w.error_message, w.created_at, w.kata_metadata,
 	r.id, r.platform_repo_id,
 	CASE
+	    WHEN w.item_type = 'pull_request' THEN NOT EXISTS (
+	        SELECT 1
+	        FROM forge_archive_items source_a
+	        WHERE source_a.repo_id = r.id
+	          AND source_a.item_type = 'merge_request'
+	          AND source_a.item_number = w.item_number
+	          AND source_a.lifecycle_state = 'removed_upstream'
+	    )
+	    WHEN w.item_type = 'issue' THEN NOT EXISTS (
+	        SELECT 1
+	        FROM forge_archive_items source_a
+	        WHERE source_a.repo_id = r.id
+	          AND source_a.item_type = 'issue'
+	          AND source_a.item_number = w.item_number
+	          AND source_a.lifecycle_state = 'removed_upstream'
+	    )
+	    ELSE 1
+	END,
+	CASE
+	    WHEN w.associated_pr_number IS NULL THEN 0
+	    ELSE NOT EXISTS (
+	        SELECT 1
+	        FROM forge_archive_items associated_a
+	        WHERE associated_a.repo_id = r.id
+	          AND associated_a.item_type = 'merge_request'
+	          AND associated_a.item_number = w.associated_pr_number
+	          AND associated_a.lifecycle_state = 'removed_upstream'
+	    )
+	END,
+	CASE
 	    WHEN w.item_type = 'issue' THEN i.title
 	    ELSE m.title
 	END,
@@ -5687,6 +5729,7 @@ func scanWorkspaceSummary(
 		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,
 		&s.ErrorMessage, &s.CreatedAt, &kataMetadataJSON,
 		&repoID, &repoPlatformID,
+		&s.SourceItemVisible, &s.AssociatedPRVisible,
 		&s.SourceTitle, &s.SourceState, &s.SourceURL,
 		&s.MRIsDraft, &s.MRCIStatus,
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,

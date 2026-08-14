@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -426,6 +427,48 @@ func TestPrepareAgentLaunchContextUsesSyncedHeadBranchForPushTarget(t *testing.T
 	require.NoError(err)
 	assert.Contains(string(content), "Push branch: feature/widgets-renamed on origin (updates this PR)")
 	assert.NotContains(string(content), "Working branch")
+}
+
+func TestPrepareAgentLaunchContextSuppressesRemovedPullPushTarget(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/widgets")
+	mgr := NewManager(d, t.TempDir())
+	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	worktree := ws.WorktreePath
+	initWorkspaceGitRepoAt(t, worktree)
+	require.NoError(d.UpdateWorkspaceBranch(ctx, ws.ID, "feature/widgets"))
+	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+	_, err = d.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, 'merge_request', 42, 'pull-42', ?, ?, 'removed_upstream')`,
+		repoID, now, now,
+	)
+	require.NoError(err)
+
+	require.NoError(mgr.PrepareAgentLaunchContext(ctx, PrepareAgentLaunchContextOptions{
+		WorkspaceID: ws.ID,
+		TargetKey:   "codex",
+	}))
+
+	content, err := os.ReadFile(filepath.Join(worktree, "AGENTS.override.md"))
+	require.NoError(err)
+	assert.NotContains(string(content), "updates this PR")
+	assert.Contains(string(content), "repository identity unavailable; no push upstream configured")
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.MRHeadRepo)
+	assert.Empty(*stored.MRHeadRepo)
 }
 
 func TestPrepareAgentLaunchContextRefreshesLegacyUnknownHeadRepo(t *testing.T) {

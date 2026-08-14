@@ -696,6 +696,65 @@ func TestRefreshWorkspaceHeadRepoSnapshotRetriesAfterRevisionChange(t *testing.T
 	assert.Equal("https://github.com/forker/widget.git", *stored.MRHeadRepo)
 }
 
+func TestRefreshWorkspaceHeadRepoSnapshotRetriesAfterRemoval(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithHeadRepo(
+		t,
+		d,
+		repoID,
+		42,
+		"feature/thing",
+		"https://github.com/acme/widget.git",
+	)
+	ws := &Workspace{
+		ID:           "ws-refresh-head-repo-removal-race",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feature/thing",
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	mgr := NewManager(d, t.TempDir())
+	var removed bool
+	mgr.afterHeadRepoSnapshotRead = func() {
+		if removed {
+			return
+		}
+		removed = true
+		now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+		_, err := d.WriteDB().ExecContext(ctx, `
+			INSERT INTO forge_archive_items (
+				repo_id, item_type, item_number, provider_item_id,
+				provider_created_at, provider_updated_at, lifecycle_state
+			) VALUES (?, 'merge_request', 42, 'pull-42', ?, ?, 'removed_upstream')`,
+			repoID, now, now,
+		)
+		require.NoError(err)
+	}
+
+	snapshot, err := mgr.RefreshWorkspaceHeadRepoSnapshot(ctx, ws)
+
+	require.NoError(err)
+	require.NotNil(snapshot)
+	require.NotNil(snapshot.MRHeadRepo)
+	assert.Empty(*snapshot.MRHeadRepo)
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.MRHeadRepo)
+	assert.Empty(*stored.MRHeadRepo)
+}
+
 func TestCreateIssueDefaultBranchSluggified(t *testing.T) {
 	tests := []struct {
 		name      string

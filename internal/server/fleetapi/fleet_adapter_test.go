@@ -585,8 +585,10 @@ func TestWorktreeFromWorkspaceIssueExposesIssueLink(t *testing.T) {
 			ItemNumber:         42,
 			AssociatedPRNumber: &associatedPR,
 		},
-		MRTitle: &issueTitle,
-		MRState: &issueState,
+		MRTitle:             &issueTitle,
+		MRState:             &issueState,
+		SourceItemVisible:   true,
+		AssociatedPRVisible: true,
 	}
 	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-issue", "repo:/tmp")
 	require.Equal([]int{42}, wt.LinkedIssueNumbers, "issue number must surface as the issue link")
@@ -613,13 +615,14 @@ func TestWorktreeFromWorkspacePRPopulatesPRFields(t *testing.T) {
 			ItemType:     db.WorkspaceItemTypePullRequest,
 			ItemNumber:   7,
 		},
-		MRTitle:          &title,
-		MRState:          &state,
-		MRReviewDecision: &reviewDecision,
-		MRMergeableState: &mergeable,
-		MRAdditions:      &additions,
-		MRDeletions:      &deletions,
-		MRCommentCount:   &comments,
+		MRTitle:           &title,
+		MRState:           &state,
+		MRReviewDecision:  &reviewDecision,
+		MRMergeableState:  &mergeable,
+		MRAdditions:       &additions,
+		MRDeletions:       &deletions,
+		MRCommentCount:    &comments,
+		SourceItemVisible: true,
 	}
 	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-pr", "repo:/tmp")
 	require.Empty(wt.LinkedIssueNumbers, "PR workspaces carry no issue link")
@@ -639,6 +642,64 @@ func TestWorktreeFromWorkspacePRPopulatesPRFields(t *testing.T) {
 	require.Equal(9, *wt.PRDeletions)
 	require.NotNil(wt.PRCommentCount)
 	require.Equal(4, *wt.PRCommentCount)
+}
+
+func TestWorktreeFromWorkspaceHidesRemovedSourceAndAssociatedItems(t *testing.T) {
+	require := require.New(t)
+	associatedPR := 99
+	title := "Retained title"
+	state := "open"
+
+	tests := []struct {
+		name    string
+		summary db.WorkspaceSummary
+	}{
+		{
+			name: "pull request source",
+			summary: db.WorkspaceSummary{
+				Workspace: db.Workspace{
+					WorktreePath: "/tmp/wt-removed-pr",
+					ItemType:     db.WorkspaceItemTypePullRequest,
+					ItemNumber:   7,
+				},
+				MRTitle: &title,
+				MRState: &state,
+			},
+		},
+		{
+			name: "issue source and associated pull request",
+			summary: db.WorkspaceSummary{
+				Workspace: db.Workspace{
+					WorktreePath:       "/tmp/wt-removed-issue",
+					ItemType:           db.WorkspaceItemTypeIssue,
+					ItemNumber:         42,
+					AssociatedPRNumber: &associatedPR,
+				},
+			},
+		},
+		{
+			name: "ad hoc associated pull request",
+			summary: db.WorkspaceSummary{
+				Workspace: db.Workspace{
+					WorktreePath:       "/tmp/wt-removed-associated-pr",
+					ItemType:           db.WorkspaceItemTypeAdHoc,
+					AssociatedPRNumber: &associatedPR,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wt := worktreeFromWorkspace(
+				tt.summary, "worktree:"+tt.summary.WorktreePath, "repo:/tmp",
+			)
+			require.Empty(wt.LinkedIssueNumbers)
+			require.Nil(wt.LinkedPRNumber)
+			require.Nil(wt.PRTitle)
+			require.Nil(wt.PRState)
+		})
+	}
 }
 
 // TestWorktreeFromWorkspacePREnrichmentOmitsZeroAndEmpty guards the

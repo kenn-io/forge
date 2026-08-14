@@ -1099,6 +1099,17 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repo.ID, db.ArchiveItemTypeMergeRequest, input.Number,
+	)
+	if err != nil {
+		return nil, httpapi.Internal("check pull request visibility: " + err.Error())
+	}
+	if removed {
+		return nil, httpapi.NotFound(
+			httpapi.CodePullNotFound, "pull request not found", nil,
+		)
+	}
 	// SyncMR distinguishes a non-fatal diff failure from a hard sync failure
 	// via DiffSyncError. The PR row, timeline, and CI status are all current
 	// in either case, so degrade gracefully: keep the response, but report
@@ -1120,7 +1131,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		)
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request: " + err.Error())
 	}
@@ -1187,6 +1198,17 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repo.ID, db.ArchiveItemTypeIssue, input.Number,
+	)
+	if err != nil {
+		return nil, httpapi.Internal("check issue visibility: " + err.Error())
+	}
+	if removed {
+		return nil, httpapi.NotFound(
+			httpapi.CodeIssueNotFound, "issue not found", nil,
+		)
+	}
 	err = s.syncer.SyncIssueOnProvider(
 		ctx, httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
 		repo.Owner, repo.Name, input.Number,
@@ -1202,7 +1224,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		)
 	}
 
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	issue, err := s.db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get issue: " + err.Error())
 	}

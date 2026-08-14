@@ -8,6 +8,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type repoNumberPathRef struct {
@@ -44,6 +45,29 @@ func (s *Handler) visibleMergeRequest(
 	ctx context.Context, repoID int64, number int,
 ) (*db.MergeRequest, error) {
 	return s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+}
+
+// requireVisibleMergeRequest is the public pull mutation boundary. It must run
+// before provider access so a retained removed-upstream row cannot cause an
+// external side effect.
+func (s *Handler) requireVisibleMergeRequest(
+	ctx context.Context, repo *db.Repo, number int,
+) (*db.MergeRequest, error) {
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
+	if err != nil {
+		return nil, httpapi.Internal("get pull request failed: " + err.Error())
+	}
+	if mr == nil {
+		return nil, httpapi.NotFound(
+			httpapi.CodePullNotFound,
+			fmt.Sprintf(
+				"pull request %s/%s#%d on %s not found",
+				repo.Owner, repo.Name, number, repo.PlatformHost,
+			),
+			nil,
+		)
+	}
+	return mr, nil
 }
 
 func (s *Handler) visibleDiffSHAs(

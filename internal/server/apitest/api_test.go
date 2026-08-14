@@ -411,6 +411,124 @@ func TestAPIRefreshPullCIHidesOnlyRemovedUpstreamItems(t *testing.T) {
 	)
 }
 
+func TestAPIRemovedPullMutationsReturnNotFoundWithoutProviderWrites(t *testing.T) {
+	req := require.New(t)
+	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 7)
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	req.NoError(err)
+	req.NotNil(repo)
+	markArchiveItemLifecycle(
+		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 7,
+		db.ArchiveLifecycleStateRemovedUpstream,
+	)
+
+	now := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	providerPR := &gh.PullRequest{
+		ID: new(int64(7007)), Number: new(7), Title: new("removed pull"),
+		State: new("open"), Draft: new(true), CreatedAt: &now, UpdatedAt: &now,
+	}
+	providerClient.PRs["acme/widget"] = []*gh.PullRequest{providerPR}
+	providerClient.OpenPRs["acme/widget"] = []*gh.PullRequest{providerPR}
+	client := setupTestClient(t, srv)
+
+	t.Run("post comment", func(t *testing.T) {
+		require := require.New(t)
+		resp, requestErr := client.HTTP.PostPrCommentWithResponse(
+			ctx, "github", "acme", "widget", 7,
+			generated.PostPrCommentJSONRequestBody{Body: "must not post"},
+		)
+		require.NoError(requestErr)
+		require.Equal(http.StatusNotFound, resp.StatusCode(), string(resp.Body))
+		require.NotNil(resp.ApplicationproblemJSONDefault)
+		require.Equal(
+			generated.ProblemErrorCode("pullNotFound"),
+			resp.ApplicationproblemJSONDefault.Code,
+		)
+	})
+
+	t.Run("ready for review", func(t *testing.T) {
+		require := require.New(t)
+		resp, requestErr := client.HTTP.MarkPullReadyForReviewWithResponse(
+			ctx, "github", "acme", "widget", 7,
+		)
+		require.NoError(requestErr)
+		require.Equal(http.StatusNotFound, resp.StatusCode(), string(resp.Body))
+		require.NotNil(resp.ApplicationproblemJSONDefault)
+		require.Equal(
+			generated.ProblemErrorCode("pullNotFound"),
+			resp.ApplicationproblemJSONDefault.Code,
+		)
+	})
+
+	req.Empty(providerClient.Comments["acme/widget#7"])
+	req.True(providerPR.GetDraft())
+}
+
+func TestAPISynchronousSyncRejectsRemovedUpstreamTombstones(t *testing.T) {
+	require := require.New(t)
+	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 9)
+	seedIssue(t, database, "acme", "widget", 10, "open")
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	markArchiveItemLifecycle(
+		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 9,
+		db.ArchiveLifecycleStateRemovedUpstream,
+	)
+	markArchiveItemLifecycle(
+		t, database, repo.ID, db.ArchiveItemTypeIssue, 10,
+		db.ArchiveLifecycleStateRemovedUpstream,
+	)
+
+	now := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	providerClient.PRs["acme/widget"] = []*gh.PullRequest{{
+		ID: new(int64(9009)), Number: new(9), Title: new("reappeared pull"),
+		State: new("open"), CreatedAt: &now, UpdatedAt: &now,
+		User: &gh.User{Login: new("provider-user")},
+		Head: &gh.PullRequestBranch{
+			Ref: new("feature"), SHA: new("head-sha"),
+			Repo: &gh.Repository{FullName: new("acme/widget")},
+		},
+		Base: &gh.PullRequestBranch{Ref: new("main"), SHA: new("base-sha")},
+	}}
+	providerClient.Issues["acme/widget"] = []*gh.Issue{{
+		ID: new(int64(1010)), Number: new(10), Title: new("reappeared issue"),
+		State: new("open"), CreatedAt: &now, UpdatedAt: &now,
+		User: &gh.User{Login: new("provider-user")},
+	}}
+	client := setupTestClient(t, srv)
+
+	pull, err := client.HTTP.SyncPullWithResponse(
+		ctx, "github", "acme", "widget", 9,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, pull.StatusCode(), string(pull.Body))
+	require.NotNil(pull.ApplicationproblemJSONDefault)
+	require.Equal(
+		generated.ProblemErrorCode("pullNotFound"),
+		pull.ApplicationproblemJSONDefault.Code,
+	)
+
+	issue, err := client.HTTP.SyncIssueWithResponse(
+		ctx, "github", "acme", "widget", 10,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, issue.StatusCode(), string(issue.Body))
+	require.NotNil(issue.ApplicationproblemJSONDefault)
+	require.Equal(
+		generated.ProblemErrorCode("issueNotFound"),
+		issue.ApplicationproblemJSONDefault.Code,
+	)
+}
+
 func TestAPIIssuesHideRemovedUpstreamArchiveRows(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)

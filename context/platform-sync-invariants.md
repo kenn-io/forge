@@ -425,7 +425,9 @@ Repository import requests and route/query shapes should carry
 - Archive items marked `removed_upstream` remain stored for sync repair but are
   hidden from public item reads, resolution, autocomplete, stacks, activity,
   workspace subject metadata, repository summaries, archive reports, and
-  provider mutations; `inaccessible` items remain visible.
+  provider mutations; synchronous public item sync rejects known tombstones
+  before provider access and uses visibility-filtered response reads.
+  `inaccessible` items remain visible.
   (`internal/server/pullapi/helpers.go::visibleMergeRequest`,
   `internal/server/issueapi/mutation_handlers.go::requireVisibleIssue`)
 - Embedded navigation events for repo-bound routes must publish identity from

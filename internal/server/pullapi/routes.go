@@ -952,6 +952,10 @@ func (s *Handler) postComment(ctx context.Context, input *postCommentInput) (*po
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
+	mr, err := s.requireVisibleMergeRequest(ctx, repo, input.Number)
+	if err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.CommentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -971,19 +975,7 @@ func (s *Handler) postComment(ctx context.Context, input *postCommentInput) (*po
 		)
 	}
 
-	ref := repoNumberPathRef{
-		repoID:       repo.ID,
-		owner:        repo.Owner,
-		name:         repo.Name,
-		number:       input.Number,
-		platformHost: repo.PlatformHost,
-	}
-	mrID, err := s.lookupMRID(ctx, ref)
-	if err != nil {
-		return nil, httpapi.NotFound(httpapi.CodePullNotFound, err.Error(), nil)
-	}
-
-	event := platform.DBMREvent(mrID, platformEvent)
+	event := platform.DBMREvent(mr.ID, platformEvent)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		_ = err
 	}
@@ -1575,6 +1567,9 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 		return nil, err
 	}
 	if err := s.requireSyncerCapability(*repo, capabilityReadyForReview); err != nil {
+		return nil, err
+	}
+	if _, err := s.requireVisibleMergeRequest(ctx, repo, input.Number); err != nil {
 		return nil, err
 	}
 	mutator, err := s.syncer.ReadyForReviewMutator(

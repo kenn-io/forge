@@ -9,6 +9,7 @@ type SettingsResponse = components["schemas"]["SettingsResponse"];
 // without constructing a whole Provider store graph.
 export interface SettingsHydrationStore {
   setConfiguredRepos: (repos: SettingsResponse["repos"]) => void;
+  setRepoPresets: (presets: SettingsResponse["repo_presets"]) => void;
   setModeVisibility: (modes: SettingsResponse["modes"]) => void;
   setPullRequestSettings: (pullRequests: SettingsResponse["pull_requests"]) => void;
   setLaunchTargets: (targets: NonNullable<SettingsResponse["launch_targets"]>) => void;
@@ -43,6 +44,7 @@ export function applySettingsHydration(
   workspaceHydration: WorkspaceSettingsHydration,
 ): void {
   stores.settings.setConfiguredRepos(payload.repos);
+  stores.settings.setRepoPresets(payload.repo_presets);
   hydrateTerminalSettings(terminalHydration, payload.terminal);
   stores.settings.setModeVisibility(payload.modes);
   stores.settings.setPullRequestSettings(payload.pull_requests);

@@ -91,5 +91,5 @@ test("keyboard navigation survives a real checkbox click", async ({ page }) => {
   // Escape closes the dropdown.
   await expect(input).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(page.locator(".typeahead-list")).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Filter repos" })).not.toBeAttached();
 });

@@ -177,6 +177,83 @@ func TestServeRuntimeTerminalReplayBoundaryDefersInitialResize(t *testing.T) {
 	}
 }
 
+func TestHandleRuntimeTerminalControlAcknowledgesResizeClaimBeforeReturning(t *testing.T) {
+	require := require.New(t)
+	events := make([]string, 0, 4)
+	attachment := localruntime.NewAttachmentForTesting(
+		localruntime.AttachmentForTestingOptions{
+			ClaimResize: func(cols, rows int) (bool, error) {
+				require.Equal(132, cols)
+				require.Equal(43, rows)
+				events = append(events, "claim")
+				return true, nil
+			},
+			Refresh: func(context.Context) error {
+				events = append(events, "refresh")
+				return nil
+			},
+			ResizeSettled: func() {
+				events = append(events, "settled")
+			},
+		},
+	)
+
+	require.NoError(handleRuntimeTerminalControl(
+		context.Background(),
+		attachment,
+		[]byte(`{"type":"claim_resize","cols":132,"rows":43}`),
+	))
+	events = append(events, "next input")
+
+	require.Equal([]string{"claim", "refresh", "settled", "next input"}, events)
+}
+
+func TestRuntimeTerminalStopsBeforeInputWhenResizeClaimSettlementFails(t *testing.T) {
+	require := require.New(t)
+	input := make(chan []byte, 1)
+	attachment := localruntime.NewAttachmentForTesting(
+		localruntime.AttachmentForTestingOptions{
+			Output: make(chan []byte),
+			Done:   make(chan struct{}),
+			Write: func(data []byte) error {
+				input <- data
+				return nil
+			},
+			ClaimResize: func(_, _ int) (bool, error) {
+				return true, nil
+			},
+			Refresh: func(context.Context) error {
+				return errors.New("tmux refresh failed")
+			},
+		},
+	)
+	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+	require.NoError(conn.Write(
+		ctx, websocket.MessageText,
+		[]byte(`{"type":"claim_resize","cols":132,"rows":43}`),
+	))
+	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("input")))
+	_, _, err = conn.Read(ctx)
+	require.Equal(websocket.StatusNormalClosure, websocket.CloseStatus(err))
+
+	select {
+	case <-handlerDone:
+	case <-ctx.Done():
+		require.Fail("terminal handler did not stop after settlement failure")
+	}
+	select {
+	case data := <-input:
+		require.Failf("input reached PTY", "unexpected input %q", data)
+	default:
+	}
+}
+
 func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
 	require := require.New(t)
 	output := make(chan []byte)

@@ -27,6 +27,10 @@
   import { sessionHostKey } from "../../stores/session-host.svelte.ts";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { observeResize } from "../../browser/observers.js";
+  import {
+    beginTerminalGeometryIntent,
+    extendTerminalGeometryIntent,
+  } from "./terminalGeometryIntent.js";
 
   const runtime = getAppRuntime();
 
@@ -108,6 +112,7 @@
   let splitSize = $state(0);
   let resizeStartRatio = 0.5;
   let resizeStartSize = 0;
+  let resizeIntentStarted = false;
   let dropTargetsVisible = $state(false);
   let activeSplitEdge = $state<SplitEdge | null>(null);
 
@@ -238,6 +243,7 @@
 
   function startResize(): void {
     if (node.type !== "split") return;
+    resizeIntentStarted = false;
     resizeStartRatio = node.ratio;
     splitSize = measureSplit();
     resizeStartSize = splitSize;
@@ -246,7 +252,16 @@
   function handleResize(event: SplitResizeEvent): void {
     if (node.type !== "split") return;
     const ratio = resizeStartRatio + event.delta / Math.max(1, resizeStartSize);
-    onRatioChange?.(node.id, clampRatio(ratio));
+    const nextRatio = clampRatio(ratio);
+    if (nextRatio !== node.ratio) {
+      if (resizeIntentStarted) {
+        extendTerminalGeometryIntent();
+      } else {
+        beginTerminalGeometryIntent();
+        resizeIntentStarted = true;
+      }
+    }
+    onRatioChange?.(node.id, nextRatio);
   }
 
   function inheritTrim(target: BorderTrim, edge: BorderEdge): void {

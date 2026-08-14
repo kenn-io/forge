@@ -5423,22 +5423,12 @@ func TestManagerListTmuxSessionInfosRealTmux(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	dir, err := os.MkdirTemp("/tmp", "kenn-forge-tmux-list-*")
-	require.NoError(err)
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
-	socket := filepath.Join(dir, "tmux.sock")
-	t.Cleanup(func() {
-		_ = procutil.Command(
-			tmuxPath, "-f", "/dev/null", "-S", socket, "kill-server",
-		).Run()
-	})
+	tmuxCommand := privateTmuxOwner.Command(t, tmuxPath)
 	run := func(args ...string) {
 		t.Helper()
 		cmd := procutil.Command(
-			tmuxPath,
-			append([]string{"-f", "/dev/null", "-S", socket}, args...)...,
+			tmuxCommand[0],
+			append(append([]string(nil), tmuxCommand[1:]...), args...)...,
 		)
 		cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 		out, err := cmd.CombinedOutput()
@@ -5452,7 +5442,7 @@ func TestManagerListTmuxSessionInfosRealTmux(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
-	mgr.SetTmuxCommand([]string{tmuxPath, "-f", "/dev/null", "-S", socket})
+	mgr.SetTmuxCommand(tmuxCommand)
 	run("set-option", "-t", owned, "@forge_owner", mgr.tmuxOwnerMarker())
 
 	infos, err := mgr.listTmuxSessionInfos(context.Background())

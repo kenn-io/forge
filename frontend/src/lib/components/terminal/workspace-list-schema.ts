@@ -33,7 +33,10 @@ export type WorkspaceListItem = Pick<
     readonly mr_is_draft?: boolean | null;
     readonly mr_state?: string | null;
     readonly mr_title?: string | null;
-    readonly repo?: Pick<GeneratedRepo, "name" | "owner" | "platform_host" | "provider" | "repo_path">;
+    readonly repo?: Pick<
+      GeneratedRepo,
+      "name" | "owner" | "platform_host" | "platform_repo_id" | "provider" | "repo_path"
+    >;
     readonly tmux_pane_title?: string | null;
     readonly fleet_host_key?: string;
     readonly fleet_host_name?: string;
@@ -43,6 +46,7 @@ const Repo = Schema.Struct({
   name: Schema.String,
   owner: Schema.String,
   platform_host: Schema.String,
+  platform_repo_id: Schema.optionalKey(Schema.String),
   provider: Schema.String,
   repo_path: Schema.String,
 });

@@ -46,6 +46,9 @@ func buildForgeVersion(t *testing.T, runtimeVersion string) string {
 
 func buildForgeWithLDFlags(t *testing.T, ldflags string) string {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("test builds and launches a real kenn-forge daemon")
+	}
 	binDir := t.TempDir()
 	binPath := filepath.Join(binDir, "kenn-forge")
 	if runtime.GOOS == "windows" {

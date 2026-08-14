@@ -110,6 +110,7 @@ const enabledEvents = vi.hoisted(() => ({
   value: new Set(["comment", "review", "commit", "force_push"]),
 }));
 const showNotifications = vi.hoisted(() => ({ value: true }));
+const involvesMe = vi.hoisted(() => ({ value: false }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 const selectedAuthor = vi.hoisted(() => ({ value: undefined as string | undefined }));
 const setActivityAuthor = vi.hoisted(() =>
@@ -134,6 +135,7 @@ vi.mock("../context.js", () => ({
       getActivityAuthorsError: () => null,
       getEnabledEvents: () => enabledEvents.value,
       getShowNotifications: () => showNotifications.value,
+      getInvolvesMe: () => involvesMe.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
@@ -163,6 +165,9 @@ vi.mock("../context.js", () => ({
       }),
       setShowNotifications: vi.fn((value: boolean) => {
         showNotifications.value = value;
+      }),
+      setInvolvesMe: vi.fn((value: boolean) => {
+        involvesMe.value = value;
       }),
       markNotificationSeen,
       setHideClosedMerged: vi.fn(),

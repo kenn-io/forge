@@ -17,6 +17,7 @@ import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 import { providerItemKey, providerMutationKey } from "./provider-key.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
+import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 
 export type { FetchPullResult } from "./pulls-workflow.js";
 
@@ -65,6 +66,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let attributeFilters = $state<PullAttributeFilter[]>([]);
   let kanbanStatusFilters = $state<KanbanStatus[]>([]);
   let filterStarred = $state(false);
+  let involvesMe = $state(readInvolvesMeFilter("pulls"));
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
   let selectedPR = $state<PullSelection | null>(null);
@@ -154,7 +156,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function getLocalFilterCount(): number {
-    return attributeFilters.length + kanbanStatusFilters.length;
+    return attributeFilters.length + kanbanStatusFilters.length + Number(involvesMe);
   }
 
   function getFilterStarred(): boolean {
@@ -163,6 +165,15 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function setFilterStarred(v: boolean): void {
     filterStarred = v;
+  }
+
+  function getInvolvesMe(): boolean {
+    return involvesMe;
+  }
+
+  function setInvolvesMe(value: boolean): void {
+    involvesMe = value;
+    writeInvolvesMeFilter("pulls", value);
   }
 
   function getFilterState(): string {
@@ -241,6 +252,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   function clearLocalFilters(): void {
     attributeFilters = [];
     kanbanStatusFilters = [];
+    setInvolvesMe(false);
   }
 
   function getSearchQuery(): string | undefined {
@@ -451,6 +463,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(globalRepo !== undefined && { repo: globalRepo }),
       ...(filterKanban !== undefined && { kanban: filterKanban }),
       ...(filterStarred && { starred: true }),
+      ...(involvesMe && { involves_me: true }),
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
@@ -493,6 +506,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         ...(globalRepo !== undefined && { repo: globalRepo }),
         ...(filterKanban !== undefined && { kanban: filterKanban }),
         ...(filterStarred && { starred: true }),
+        ...(involvesMe && { involves_me: true }),
         ...(searchQuery !== undefined && { q: searchQuery }),
         ...params,
       };
@@ -582,6 +596,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
     getLocalFilterCount,
     getFilterStarred,
     setFilterStarred,
+    getInvolvesMe,
+    setInvolvesMe,
     getFilterState,
     setFilterState,
     getDisplayOrderPRs,

@@ -69,6 +69,8 @@ type Handler struct {
 	fleetWorktreeStatsSampler *fleetWorktreeStatsSampler
 	fleetPlatformAuthMonitor  *fleetPlatformAuthMonitor
 	sshFleet                  *sshFleetTransport
+	sshResizeMu               sync.Mutex
+	sshResizeGroups           map[string]*fleetSSHResizeGroup
 
 	lifecycleMu       sync.Mutex
 	lifecycleCtx      context.Context

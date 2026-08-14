@@ -41,6 +41,7 @@ const onSelectItem = vi.hoisted(() => vi.fn());
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const showNotifications = vi.hoisted(() => ({ value: true }));
+const involvesMe = vi.hoisted(() => ({ value: false }));
 const enabledItemTypes = vi.hoisted(() => ({
   value: new Set<"pr" | "issue">(["pr", "issue"]),
 }));
@@ -86,6 +87,7 @@ vi.mock("../context.js", () => ({
       getEnabledItemTypes: () => enabledItemTypes.value,
       getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push"]),
       getShowNotifications: () => showNotifications.value,
+      getInvolvesMe: () => involvesMe.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => false,
@@ -97,6 +99,9 @@ vi.mock("../context.js", () => ({
       setTimeRange: vi.fn(),
       setEnabledItemTypes,
       setShowNotifications,
+      setInvolvesMe: vi.fn((value: boolean) => {
+        involvesMe.value = value;
+      }),
       markNotificationSeen,
       setHideBots: vi.fn(),
       setHideDefaultBranchActivity: vi.fn(),

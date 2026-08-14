@@ -328,6 +328,12 @@ Intent:
 
 Do not add native `<select>` controls for visible app UI; use `SelectDropdown` instead. This is enforced by `frontend/src/no-native-select.test.ts`, which scans the component source trees and fails when a native `<select>` element is reintroduced. There is no allowlist or per-component exemption: if `SelectDropdown` cannot express a case, extend the primitive rather than reaching for a native `<select>`.
 
+### Repository selector
+
+The shared repository selector presents `Global` first and named presets above the repository tree. Keep its search and preset regions fixed, make only the repository tree scroll, and keep the save footer visible at every scroll position (`frontend/src/lib/components/RepoTypeahead.svelte`).
+
+Custom preset rows place their destructive action at the far right. Saving opens the create-or-overwrite dialog; preset names have no separate rename interaction (`frontend/src/lib/components/RepoPresetSaveDialog.svelte`).
+
 ### KataLinksPanel
 
 Use `KataLinksPanel` for read-only linked Kata context in provider-item and

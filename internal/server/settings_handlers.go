@@ -21,6 +21,7 @@ import (
 
 type settingsResponse struct {
 	Repos         []ghclient.ConfiguredRepoStatus `json:"repos" nullable:"false"`
+	RepoPresets   []config.RepoPreset             `json:"repo_presets" nullable:"false"`
 	Activity      config.Activity                 `json:"activity"`
 	PullRequests  config.PullRequests             `json:"pull_requests"`
 	Workspaces    config.Workspaces               `json:"workspaces"`
@@ -80,6 +81,10 @@ func (s *Server) buildLocalSettingsResponse(
 ) (settingsResponse, error) {
 	s.cfgMu.Lock()
 	repos := slices.Clone(s.cfg.Repos)
+	repoPresets := cloneRepoPresets(s.cfg.RepoPresets)
+	if repoPresets == nil {
+		repoPresets = []config.RepoPreset{}
+	}
 	activity := s.cfg.Activity
 	pullRequests := s.cfg.PullRequests
 	workspaces := s.cfg.Workspaces
@@ -121,6 +126,7 @@ func (s *Server) buildLocalSettingsResponse(
 		configured[i] = ghclient.ConfiguredRepoStatus{
 			Provider:         raw.PlatformOrDefault(),
 			PlatformHost:     raw.PlatformHostOrDefault(),
+			PlatformRepoID:   trackedPlatformRepoIDForConfig(raw, tracked),
 			Owner:            raw.Owner,
 			Name:             raw.Name,
 			RepoPath:         configRepoPath(raw),
@@ -133,6 +139,7 @@ func (s *Server) buildLocalSettingsResponse(
 	}
 	return settingsResponse{
 		Repos:        configured,
+		RepoPresets:  repoPresets,
 		Activity:     activity,
 		PullRequests: pullRequests,
 		Workspaces:   workspaces,
@@ -248,6 +255,20 @@ func trackedPathForConfig(
 	for _, repo := range tracked {
 		if repoMatchesConfig(repo, raw) {
 			return trackedRepoPath(repo)
+		}
+	}
+	return ""
+}
+
+func trackedPlatformRepoIDForConfig(
+	raw config.Repo, tracked []ghclient.RepoRef,
+) string {
+	if raw.HasNameGlob() {
+		return ""
+	}
+	for _, repo := range tracked {
+		if repoMatchesConfig(repo, raw) {
+			return strings.TrimSpace(repo.PlatformExternalID)
 		}
 	}
 	return ""
@@ -710,6 +731,76 @@ func (s *Server) getSettings(
 	return s.settingsOutputResponse(ctx)
 }
 
+func (s *Server) mutateRepoPresets(
+	ctx context.Context,
+	mutate func([]config.RepoPreset) ([]config.RepoPreset, error),
+) (*settingsOutput, error) {
+	if s.cfgPath == "" {
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+	}
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
+	s.cfgMu.Lock()
+	candidate := cloneReloadedConfig(s.cfg)
+	next, err := mutate(cloneRepoPresets(candidate.RepoPresets))
+	if err != nil {
+		s.cfgMu.Unlock()
+		return nil, err
+	}
+	candidate.RepoPresets = next
+	if err := candidate.Validate(); err != nil {
+		s.cfgMu.Unlock()
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+	}
+	if err := candidate.Save(s.cfgPath); err != nil {
+		s.cfgMu.Unlock()
+		return nil, httpapi.Internal("save config: " + err.Error())
+	}
+	s.cfg.RepoPresets = cloneRepoPresets(candidate.RepoPresets)
+	s.cfgMu.Unlock()
+	return s.settingsOutputResponse(ctx)
+}
+
+func (s *Server) createRepoPreset(
+	ctx context.Context, input *createRepoPresetInput,
+) (*settingsOutput, error) {
+	return s.mutateRepoPresets(ctx, func(presets []config.RepoPreset) ([]config.RepoPreset, error) {
+		for _, preset := range presets {
+			if strings.EqualFold(preset.Name, input.Body.Name) {
+				return nil, httpapi.Conflict(httpapi.CodeConflict, "repository preset already exists", nil)
+			}
+		}
+		return append(presets, input.Body), nil
+	})
+}
+
+func (s *Server) updateRepoPreset(
+	ctx context.Context, input *updateRepoPresetInput,
+) (*settingsOutput, error) {
+	return s.mutateRepoPresets(ctx, func(presets []config.RepoPreset) ([]config.RepoPreset, error) {
+		for i := range presets {
+			if strings.EqualFold(presets[i].Name, input.Name) {
+				presets[i].Repos = slices.Clone(input.Body.Repos)
+				return presets, nil
+			}
+		}
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "repository preset not found", nil)
+	})
+}
+
+func (s *Server) deleteRepoPreset(
+	ctx context.Context, input *deleteRepoPresetInput,
+) (*settingsOutput, error) {
+	return s.mutateRepoPresets(ctx, func(presets []config.RepoPreset) ([]config.RepoPreset, error) {
+		for i := range presets {
+			if strings.EqualFold(presets[i].Name, input.Name) {
+				return append(presets[:i], presets[i+1:]...), nil
+			}
+		}
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "repository preset not found", nil)
+	})
+}
+
 // settingsOutputResponse wraps buildLocalSettingsResponse for handlers that
 // answer with the full settings payload.
 func (s *Server) settingsOutputResponse(
@@ -815,6 +906,17 @@ func (s *Server) updateSettings(
 	s.reconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
 
 	return s.settingsOutputResponse(ctx)
+}
+
+func cloneRepoPresets(presets []config.RepoPreset) []config.RepoPreset {
+	if presets == nil {
+		return nil
+	}
+	out := slices.Clone(presets)
+	for i := range out {
+		out[i].Repos = slices.Clone(out[i].Repos)
+	}
+	return out
 }
 
 func cloneModeVisibility(modes config.ModeVisibility) config.ModeVisibility {

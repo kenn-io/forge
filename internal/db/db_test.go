@@ -562,6 +562,61 @@ func TestOpenCreatesSchemaMigrationsTable(t *testing.T) {
 	require.False(dirty)
 }
 
+func TestArchivePromotionBoundaryMigrationReopensMaintenanceGap(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dbPath := filepath.Join(t.TempDir(), "archive-promotion-gap-v49.db")
+	discoveredAt := time.Date(2026, time.July, 20, 21, 35, 22, 827186000, time.UTC)
+	promotedAt := time.Date(2026, time.July, 27, 2, 28, 59, 0, time.UTC)
+	maintainedAt := time.Date(2026, time.August, 13, 16, 35, 52, 0, time.UTC)
+
+	openAtVersionForTest(t, dbPath, 49, func(raw *sql.DB) {
+		_, err := raw.Exec(`
+			INSERT INTO forge_repos (
+				id, platform, platform_host, platform_repo_id,
+				owner, name, repo_path, owner_key, name_key, repo_path_key,
+				created_at
+			) VALUES (
+				1, 'github', 'github.com', 'provider-1',
+				'acme', 'widget', 'acme/widget', 'acme', 'widget', 'acme/widget',
+				'2026-07-20T21:35:00Z'
+			);
+			INSERT INTO forge_archive_repos (
+				repo_id, collection_mode, operator_state,
+				initial_started_at, initial_completed_at,
+				maintenance_watermark, maintenance_succeeded_at,
+				created_at, updated_at
+			) VALUES (
+				1, 'full', 'active', ?, '2026-07-27T19:22:51Z', ?, ?, ?, ?
+			);
+			INSERT INTO forge_archive_repo_scans (repo_id, scan, status, updated_at)
+			VALUES
+				(1, 'issue_inventory', 'complete', ?),
+				(1, 'merge_request_inventory', 'complete', ?),
+				(1, 'maintenance_issues', 'pending', ?),
+				(1, 'maintenance_merge_requests', 'pending', ?)
+		`, promotedAt, maintainedAt, maintainedAt, discoveredAt, maintainedAt,
+			discoveredAt, discoveredAt, maintainedAt, maintainedAt)
+		require.NoError(err)
+	})
+
+	database, err := Open(dbPath)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	var initialStarted, watermark time.Time
+	var maintenanceSucceeded sql.NullTime
+	err = database.ReadDB().QueryRow(`
+		SELECT initial_started_at, maintenance_watermark, maintenance_succeeded_at
+		FROM forge_archive_repos WHERE repo_id = 1
+	`).Scan(&initialStarted, &watermark, &maintenanceSucceeded)
+	require.NoError(err)
+	assert.Equal(discoveredAt, initialStarted)
+	assert.Equal(discoveredAt, watermark)
+	assert.False(maintenanceSucceeded.Valid)
+	assertDatabaseIntegrityForTest(t, database.ReadDB())
+}
+
 func TestOpenMigratesLegacyDatabase(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

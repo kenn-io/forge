@@ -3,6 +3,7 @@ package workspacetest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,12 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -69,6 +72,80 @@ func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
 		t, *resp.JSON200.LaunchTargets, "plain_shell",
 	)
 	assertWorkspaceRuntimeTargetAbsent(t, *resp.JSON200.LaunchTargets, "shell")
+}
+
+func TestWorkspaceRuntimeClaimFailureClosesBeforeFollowingInputE2E(t *testing.T) {
+	if len(workspaceTestTmuxCommand) == 0 {
+		t.Skip("tmux is required")
+	}
+	require := require.New(t)
+	dir := t.TempDir()
+	failMarker := filepath.Join(dir, "fail-refresh")
+	inputMarker := filepath.Join(dir, "input-reached")
+	wrapper := filepath.Join(dir, "tmux-wrapper")
+	require.NoError(os.WriteFile(wrapper, []byte(`#!/bin/sh
+fail_marker=$1
+shift
+for arg in "$@"; do
+  if [ "$arg" = "refresh-client" ] && [ -f "$fail_marker" ]; then
+    echo "forced refresh failure" >&2
+    exit 42
+  fi
+done
+exec "$@"
+`), 0o755))
+	tmuxCommand := append([]string{wrapper, failMarker}, workspaceTestTmuxCommand...)
+	fixture := setupWorkspaceServerFixture(t, &config.Config{
+		Tmux: config.Tmux{Command: tmuxCommand},
+	}, server.ServerOptions{
+		DisableWorkspaceBackgroundMonitors: true,
+		HostCheckAllowLoopbackAnyPort:      true,
+	})
+	ctx := t.Context()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+
+	launch, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "plain_shell"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launch.StatusCode(), string(launch.Body))
+	require.NotNil(launch.JSON200)
+
+	ts := httptest.NewServer(fixture.server)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/ws/v1/workspaces/" + ws.Id +
+		"/runtime/sessions/" + launch.JSON200.Key +
+		"/terminal?cols=80&rows=24"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+	workspaceTerminalConnWriteRead(
+		t, ctx, conn, "printf 'ready-for-claim\\n'\r", "ready-for-claim",
+	)
+	require.NoError(os.WriteFile(failMarker, []byte("fail\n"), 0o644))
+	require.NoError(conn.Write(
+		ctx, websocket.MessageText,
+		[]byte(`{"type":"claim_resize","cols":132,"rows":43}`),
+	))
+	require.NoError(conn.Write(
+		ctx, websocket.MessageBinary,
+		fmt.Appendf(nil, "printf reached > %q\r", inputMarker),
+	))
+
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	for {
+		_, _, readErr := conn.Read(readCtx)
+		if readErr == nil {
+			continue
+		}
+		require.Equal(websocket.StatusNormalClosure, websocket.CloseStatus(readErr))
+		break
+	}
+	_, err = os.Stat(inputMarker)
+	require.ErrorIs(err, os.ErrNotExist)
 }
 
 func TestWorkspaceRuntimeTargetsHideInternalShellTargetE2E(t *testing.T) {

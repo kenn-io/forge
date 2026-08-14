@@ -348,7 +348,7 @@ func bridgePtyOwnerAttachment(
 					slog.Warn("bad pty owner terminal control message", "err", err)
 					continue
 				}
-				if msg.Type == "resize" {
+				if msg.Type == "resize" || msg.Type == "claim_resize" {
 					_ = attachment.Resize(msg.Cols, msg.Rows)
 				}
 			}

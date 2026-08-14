@@ -38,12 +38,22 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 			})
 		}
 	}
-	issues, err := s.db.ListIssues(ctx, db.ListIssuesOpts{
+	opts := db.ListIssuesOpts{
 		State: input.State, Search: input.Q, Starred: input.Starred,
 		Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 		RepoFilters:       parseRepoFilters(input.Repo),
 		WorkspaceActivity: overrides,
-	})
+	}
+	if input.InvolvesMe {
+		if s.viewerLogins == nil {
+			return nil, httpapi.Internal("authenticated viewer lookup unavailable")
+		}
+		opts.ViewerLogins, err = s.viewerLogins(ctx, opts.RepoFilters)
+		if err != nil {
+			return nil, err
+		}
+	}
+	issues, err := s.db.ListIssues(ctx, opts)
 	if err != nil {
 		return nil, httpapi.Internal("list issues failed")
 	}

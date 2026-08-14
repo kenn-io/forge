@@ -125,7 +125,8 @@
     + (activity.getHideClosedMerged() ? 1 : 0)
     + (activity.getHideBots() ? 1 : 0)
     + (activity.getHideDefaultBranchActivity() ? 1 : 0)
-    + (grouping.getHideOrgName() ? 1 : 0),
+    + (grouping.getHideOrgName() ? 1 : 0)
+    + (activity.getInvolvesMe() ? 1 : 0),
   );
 
   let unsubSync: (() => void) | undefined;
@@ -351,6 +352,7 @@
     activity.setHideBots(false);
     activity.setHideDefaultBranchActivity(false);
     grouping.setHideOrgName(false);
+    activity.setInvolvesMe(false);
     applyFilters();
   }
 
@@ -380,6 +382,16 @@
     {
       title: "Visibility",
       items: [
+        {
+          id: "involves-me",
+          label: "Involves me",
+          active: activity.getInvolvesMe(),
+          color: "var(--accent-blue)",
+          onSelect: () => {
+            activity.setInvolvesMe(!activity.getInvolvesMe());
+            activity.loadActivity();
+          },
+        },
         {
           id: "hide-default-branch",
           label: "Hide default-branch activity",

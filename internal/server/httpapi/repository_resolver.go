@@ -292,12 +292,13 @@ func (r *RepositoryResolver) Ref(repo db.Repo) RepoRefResponse {
 		repoPath = repo.Owner + "/" + repo.Name
 	}
 	return RepoRefResponse{
-		Provider:     provider,
-		PlatformHost: host,
-		RepoPath:     repoPath,
-		Owner:        repo.Owner,
-		Name:         repo.Name,
-		Capabilities: r.Capabilities(platform.Kind(provider), host),
+		Provider:       provider,
+		PlatformHost:   host,
+		PlatformRepoID: repo.PlatformRepoID,
+		RepoPath:       repoPath,
+		Owner:          repo.Owner,
+		Name:           repo.Name,
+		Capabilities:   r.Capabilities(platform.Kind(provider), host),
 	}
 }
 

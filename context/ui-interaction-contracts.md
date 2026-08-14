@@ -192,6 +192,14 @@ Persisted controls must state their scope clearly.
 
 - Browser-local preferences belong in `localStorage` only when the behavior is
   intentionally per-browser and not worth server settings.
+- `Involves me` is three independent browser-local preferences for Pulls, Issues, and
+  Activity; each enabled view sends the server query so filtering happens before limits,
+  never through URL or config state (`frontend/src/lib/stores/involves-me-filter.ts`, `internal/db/queries_involvement.go`).
+- Named repository preset definitions follow server settings, while the active
+  repository selection and preset affinity remain browser-local; `Global` clears both
+  (`frontend/src/lib/stores/filter.svelte.ts::setGlobalRepoPresetSelection`).
+- Editing a preset-derived selection retains its overwrite target; an exact saved-set match supplies the label, and deleting the active preset keeps its repositories selected as an ad hoc scope (`frontend/src/lib/stores/repo-presets.ts::findMatchingRepoPreset`).
+- Exact-set matching prefers browser-local preset affinity when multiple immutable preset names contain the same repositories. The selector catalog includes repositories from reachable fleet workspace responses and may prune a Workspaces-route selection only after local, fleet-discovery, and reachable-peer loads all succeed; failures preserve the selection (`frontend/src/lib/stores/workspace-repo-catalog.svelte.ts`, `frontend/src/lib/components/RepoTypeahead.svelte`).
 - The workspace details tab is keyed by host-aware workspace identity; an unsupported
   tab may fall back only for the current live workspace, never rewrite another
   workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).
@@ -478,12 +486,32 @@ Keyboard handlers must have one clear owner for each key press.
   tmux pane to one row — the measurement IS the check. Record a size as sent
   only once the socket carried it, or a resize computed before the socket opened
   is suppressed forever and the PTY keeps its launch default. Synchronize
-  authority on every measurement because geometry changes independently of
-  painted state; reclaiming authority must push even an unchanged size. The
-  preflight measurement establishes authority only: send xterm's dimensions
-  after `fit()`, which measures again and may cross a cell boundary
+  resize eligibility on every measurement, but passive lifecycle or geometry
+  changes never transfer ownership among equal-priority attachments. The latest
+  deliberate terminal action wins within a priority; activating a higher-priority
+  local attachment may preempt an HTTP Fleet attachment. Effective pointer or
+  arrow-key split/dock divider changes are deliberate for terminals whose fitted
+  cells change; each affected session claims only its first cell change per gesture,
+  while later changes remain ordinary live resizes. Zero-motion and passive reflow
+  are not deliberate. Claims apply fitted dimensions and
+  direct/HTTP Fleet streams close rather than forward following input when tmux
+  settlement fails. Single-attachment workspace terminals apply claims as resizes
+  because they have no competing attachment. Ordinary
+  resizes apply for the current owner, only retain fallback dimensions for
+  non-owners, and owner loss restores the most-recent eligible claimant. The
+  preflight measurement establishes eligibility only:
+  send xterm's dimensions after
+  `fit()`, which measures again and may cross a cell boundary
   (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte::terminal-leaf-body`,
-  `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
+  `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`,
+  `internal/workspace/localruntime/manager.go::session.resizeAttachment`).
+- Terminal input stays immediate during reconnect replay: resize readiness must
+  never queue or suppress keystrokes, because trapped input is worse than the
+  brief stale-geometry window (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalMessage`).
+- Only trusted user gestures, including xterm mouse-tracking button/wheel input
+  and input-method composition, transfer terminal resize ownership; automatic
+  protocol replies are transport traffic and must not claim for passive views
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalWheel`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never
   prune their own stored trees, so demoting restores the tab order, split, and
@@ -756,8 +784,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   was opened for) must never silently fall back to a last-used or first option
   when the seed cannot be resolved — leave the selection empty and require a
   choice (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte`).
-- Repository selectors consume server-filtered catalogs; configured-entry
-  consumers gate on the server's `hidden_from_ui` flag and must not reimplement
+- Repository selectors treat the server's `hidden_from_ui` flag as authoritative:
+  once a configured repository is hidden, every matching configured, fetched, or
+  workspace-catalog entry stays out of the selector. Consumers must not reimplement
   visibility matching client-side. Selection normalization must drop hidden
   selections explicitly — general normalization preserves unknown values for
   glob-resolved repositories, so a hidden repo would otherwise keep filtering —
@@ -856,6 +885,7 @@ Not every visibility control means "remove this entity entirely."
   refresh that began before the trigger (`frontend/src/lib/stores/sync.svelte.ts::runTriggeredSync`).
 - Empty states should make it clear when filters, not missing data, are hiding
   results.
+- Workspaces applies the shared repository scope to local and fleet rows by full provider/host/path identity before its text search (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::visibleWorkspaces`).
 
 ## Threaded Comments
 

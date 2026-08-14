@@ -1675,12 +1675,11 @@ func (c *liveClient) ListRepositoriesByOwner(
 
 func (c *liveClient) authenticatedLogin(ctx context.Context) (string, error) {
 	cacheKey := c.authenticatedViewerCacheKey()
-	now := time.Now()
 	c.viewerMu.Lock()
 	defer c.viewerMu.Unlock()
 	if c.viewerLogin != "" &&
 		c.viewerLoginCacheKey == cacheKey &&
-		now.Sub(c.viewerLoginAt) < authenticatedViewerLoginTTL {
+		time.Since(c.viewerLoginAt) < authenticatedViewerLoginTTL {
 		return c.viewerLogin, nil
 	}
 	user, resp, err := c.writeGH().Users.Get(ctx, "")
@@ -1693,7 +1692,7 @@ func (c *liveClient) authenticatedLogin(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("authenticated user login is empty")
 	}
 	c.viewerLogin = login
-	c.viewerLoginAt = now
+	c.viewerLoginAt = time.Now()
 	c.viewerLoginCacheKey = cacheKey
 	return login, nil
 }

@@ -1,6 +1,7 @@
 import { cleanup, render, waitFor } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { beginTerminalGeometryIntent, extendTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 
 const {
   clipboardWriteText,
@@ -290,6 +291,10 @@ async function waitForSocketConnected(socket: MockWebSocket): Promise<void> {
   await waitFor(() =>
     expect(socket.sent.map(String)).toContainEqual(expect.stringContaining('"type":"resize_active"')),
   );
+}
+
+async function waitForInitialGeometry(socket: MockWebSocket): Promise<void> {
+  await waitFor(() => expect(socketFramesOfType(socket, "refresh").length).toBeGreaterThan(0));
 }
 
 describe("TerminalPane", () => {
@@ -948,6 +953,7 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     await waitForSocketConnected(mockSockets[0]!);
+    await waitForInitialGeometry(mockSockets[0]!);
 
     mockSockets[0]!.sent = [];
     fitDimensions = { cols: 120, rows: 50 };
@@ -1070,6 +1076,69 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(fitAddon.fit).toHaveBeenCalled());
     expect(terminal.clearTextureAtlas).not.toHaveBeenCalled();
     expect(terminal.refresh).toHaveBeenCalledWith(0, 23);
+    expect(socketFramesOfType(mockSockets[0]!, "claim_resize")).toHaveLength(0);
+  });
+
+  it("claims a changed fitted size during deliberate layout resizing", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
+    await waitForInitialGeometry(mockSockets[0]!);
+    const socket = mockSockets[0]!;
+    socket.sent = [];
+    beginTerminalGeometryIntent();
+    fitDimensions = { cols: 101, rows: 33 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    await waitFor(() => expect(socket.sent).toHaveLength(1));
+
+    expect(socketFramesOfType(socket, "claim_resize")).toEqual([
+      JSON.stringify({ type: "claim_resize", cols: 101, rows: 33 }),
+    ]);
+    expect(socketFramesOfType(socket, "resize")).toHaveLength(0);
+    extendTerminalGeometryIntent();
+    fitDimensions = { cols: 102, rows: 34 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    await waitFor(() => expect(socket.sent).toHaveLength(2));
+
+    expect(socketFramesOfType(socket, "claim_resize")).toHaveLength(1);
+    expect(socketFramesOfType(socket, "resize")).toEqual([JSON.stringify({ type: "resize", cols: 102, rows: 34 })]);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  });
+
+  it("does not claim when deliberate layout movement crosses no terminal cell boundary", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
+    await waitForInitialGeometry(mockSockets[0]!);
+    const socket = mockSockets[0]!;
+    socket.sent = [];
+    beginTerminalGeometryIntent();
+    fitDimensions = { cols: 80, rows: 24 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(socketFramesOfType(socket, "claim_resize")).toHaveLength(0);
+    expect(socketFramesOfType(socket, "resize")).toHaveLength(0);
+  });
+
+  it("forwards xterm protocol replies without claiming terminal size", async () => {
+    fitDimensions = { cols: 101, rows: 33 };
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    const socket = mockSockets[0]!;
+    await waitForSocketConnected(socket);
+    await waitForInitialGeometry(socket);
+    socket.sent = [];
+
+    xtermOnDataHandlers[0]!("\x1b[24;80R");
+
+    await waitFor(() => expect(socket.sent).toHaveLength(1));
+    expect(socketFramesOfType(socket, "claim_resize")).toHaveLength(0);
+    expect(sentText(socket, 0)).toBe("\x1b[24;80R");
   });
 
   it("forwards complete tmux mouse drags without a local threshold", async () => {
@@ -1102,7 +1171,32 @@ describe("TerminalPane", () => {
     );
 
     expect(defaultAllowed).toBe(false);
-    await waitFor(() => expect(socket.sent.map((_, index) => sentText(socket, index))).toContain("\x1b[A"));
+    await waitFor(() => expect(socket.sent).toHaveLength(2));
+    expect(socket.sent.map((_, index) => sentText(socket, index))).toEqual([
+      JSON.stringify({ type: "claim_resize", cols: 80, rows: 24 }),
+      "\x1b[A",
+    ]);
+  });
+
+  it("claims terminal size before xterm handles mouse-tracking wheel input", async () => {
+    const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitFor(() => expect(xtermInstances).toHaveLength(1));
+    const socket = mockSockets[0]!;
+    const terminal = xtermInstances[0]!;
+    terminal.modes.mouseTrackingMode = "any";
+    socket.sent = [];
+    const terminalContainer = container.querySelector(".terminal-container");
+    expect(terminalContainer).not.toBeNull();
+
+    const defaultAllowed = terminalContainer!.dispatchEvent(
+      new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120 }),
+    );
+
+    expect(defaultAllowed).toBe(true);
+    await waitFor(() => expect(socket.sent).toHaveLength(1));
+    expect(sentText(socket, 0)).toBe(JSON.stringify({ type: "claim_resize", cols: 80, rows: 24 }));
   });
 
   it("leaves Ctrl-wheel gestures with the browser", async () => {
@@ -1481,16 +1575,26 @@ describe("TerminalPane", () => {
 
     expect(defaultAllowed).toBe(false);
     expect(laterPasteListener).not.toHaveBeenCalled();
-    await waitFor(() =>
-      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain("single[201~ line"),
-    );
-    expect(
-      mockSockets[0]!.sent
-        .map((_, index) => sentText(mockSockets[0]!, index))
-        .filter((text) => text === "single[201~ line"),
-    ).toHaveLength(1);
+    await waitFor(() => expect(mockSockets[0]!.sent).toHaveLength(2));
+    expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toEqual([
+      JSON.stringify({ type: "claim_resize", cols: 80, rows: 24 }),
+      "single[201~ line",
+    ]);
   });
 });
+
+function socketFramesOfType(socket: MockWebSocket, type: string): string[] {
+  return socket.sent
+    .map((_, index) => sentText(socket, index))
+    .filter((frame) => {
+      try {
+        const decoded: unknown = JSON.parse(frame);
+        return typeof decoded === "object" && decoded !== null && "type" in decoded && decoded.type === type;
+      } catch {
+        return false;
+      }
+    });
+}
 
 function sentText(socket: MockWebSocket, index: number): string {
   const value = socket.sent[index];

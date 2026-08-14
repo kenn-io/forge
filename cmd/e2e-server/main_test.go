@@ -606,10 +606,11 @@ func waitForServerInfo(
 ) e2eServerInfo {
 	t.Helper()
 	r := require.New(t)
-	// 30s headroom: run() does SeedFixtures + SetupDiffRepo + stack
-	// detection before it starts listening, and `go test ./...` can
-	// run this test under parallel load.
-	deadline := time.Now().Add(30 * time.Second)
+	// run() does SeedFixtures + SetupDiffRepo + stack detection before it
+	// starts listening. Cold race-enabled startup can take over 30 seconds
+	// when packages run concurrently in CI, so leave enough headroom for
+	// resource contention while retaining a bounded readiness failure.
+	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-done:

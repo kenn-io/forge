@@ -1897,12 +1897,15 @@ func livenessHeadForRound(normalized, existing *db.MergeRequest) string {
 }
 
 type gitHubClientProvider struct {
-	host           string
-	client         Client
-	viewerMu       sync.Mutex
-	viewerLogin    string
-	viewerCacheAt  time.Time
-	viewerCacheKey string
+	host         string
+	client       Client
+	viewerMu     sync.Mutex
+	viewerLogins map[string]authenticatedViewerLoginCacheEntry
+}
+
+type authenticatedViewerLoginCacheEntry struct {
+	login     string
+	fetchedAt time.Time
 }
 
 type authenticatedViewerLoginClient interface {
@@ -1913,9 +1916,9 @@ type authenticatedViewerCacheKeyClient interface {
 	AuthenticatedViewerCacheKey() string
 }
 
-const authenticatedViewerLoginTTL = time.Minute
-
 var errParentSnapshotAdvanced = errors.New("provider parent snapshot advanced during child refresh")
+
+const authenticatedViewerLoginTTL = time.Hour
 
 type githubLabelClient interface {
 	ListRepoLabels(ctx context.Context, owner, repo string) ([]*gh.Label, error)
@@ -2079,14 +2082,11 @@ func (p *gitHubClientProvider) ViewerAuthoredMergeRequest(
 func (p *gitHubClientProvider) authenticatedViewerLoginForRepo(
 	ctx context.Context, owner, name string,
 ) (string, error) {
-	cacheKey := p.authenticatedViewerCacheKeyForRepo(owner, name)
-	now := time.Now()
+	cacheKey := p.authenticatedViewerLookupKeyForRepo(owner, name)
 	p.viewerMu.Lock()
 	defer p.viewerMu.Unlock()
-	if p.viewerLogin != "" &&
-		p.viewerCacheKey == cacheKey &&
-		now.Sub(p.viewerCacheAt) < authenticatedViewerLoginTTL {
-		return p.viewerLogin, nil
+	if entry, ok := p.viewerLogins[cacheKey]; ok && time.Since(entry.fetchedAt) < authenticatedViewerLoginTTL {
+		return entry.login, nil
 	}
 
 	var login string
@@ -2109,10 +2109,23 @@ func (p *gitHubClientProvider) authenticatedViewerLoginForRepo(
 	if login == "" {
 		return "", fmt.Errorf("authenticated viewer login is empty")
 	}
-	p.viewerLogin = login
-	p.viewerCacheAt = now
-	p.viewerCacheKey = cacheKey
+	if p.viewerLogins == nil {
+		p.viewerLogins = make(map[string]authenticatedViewerLoginCacheEntry)
+	}
+	p.viewerLogins[cacheKey] = authenticatedViewerLoginCacheEntry{login: login, fetchedAt: time.Now()}
 	return login, nil
+}
+
+func (p *gitHubClientProvider) AuthenticatedUserCacheKey(ref platform.RepoRef) string {
+	return p.authenticatedViewerLookupKeyForRepo(ref.Owner, ref.Name)
+}
+
+func (p *gitHubClientProvider) authenticatedViewerLookupKeyForRepo(owner, name string) string {
+	if cacheKey := p.authenticatedViewerCacheKeyForRepo(owner, name); cacheKey != "" {
+		return cacheKey
+	}
+	return "repository:" + strings.ToLower(strings.TrimSpace(owner)) + "/" +
+		strings.ToLower(strings.TrimSpace(name))
 }
 
 func (p *gitHubClientProvider) authenticatedViewerCacheKeyForRepo(owner, name string) string {

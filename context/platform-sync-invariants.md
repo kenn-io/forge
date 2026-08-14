@@ -13,6 +13,8 @@ mutable routes; route reuse must create a distinct catalog entry rather than
 combining repository-owned history
 (`internal/db/repository_catalog.go::ReconcileRepositoryObservation`).
 
+- Saved repository-filter presets resolve by stable identity and use `repo_path` only for display; reject unverified members and never fall back to a new occupant of the stored route (`internal/config/config.go::RepoPresetRepository`, `frontend/src/lib/stores/repo-presets.ts`).
+
 - `platform` is the provider kind named in the canonical provider list in
   `CLAUDE.md`.
 - `platform_host` is the normalized host for that provider. Preserve ports.
@@ -131,6 +133,11 @@ host-scoped unless their provider model later proves otherwise. Startup also
 builds clone routes, GitHub GraphQL fetchers where applicable, and a
 `platform.Registry`. A third provider should add metadata, a factory, and an
 implementation; it should not masquerade as another provider.
+
+- Authenticated-viewer lookups run only for repositories selected by the request.
+  Include only repositories with a resolved identity, cache successes for one hour by
+  effective credential with stale-while-refresh, retry failures, and keep unkeyed GitHub routes repository-scoped
+  (`internal/server/viewer_identity.go::Server.resolveAuthenticatedViewerLogins`).
 
 Fallback token lookup is scoped by `(provider, platform_host)`. GitHub
 authorization routes may be exact-repository, owner, or host fallback. Lookup
@@ -282,6 +289,9 @@ registry helpers return typed errors for missing providers or capabilities.
   the provider advertises that stream again. (`internal/db/queries_archive.go::ReconcileArchiveCoverage`)
 - A bare optional `DiffSyncError` does not block archive historical-activity completion; wrapped or joined hard failures still retry. (`internal/github/sync.go::SyncArchiveItem`)
 - Every configured repository starts provider-neutral discovery; do not restore provider-specific closed-item cursors or translate legacy formats. (`internal/archive/service.go::EnsureConfigured`)
+- Full-archive promotion keeps the discovery creation time as the first maintenance
+  boundary; using the later promotion time can skip items updated after inventory
+  completed. (`internal/db/queries_archive.go::StartFullArchives`)
 - Configuration reconciliation pauses omitted repositories with a durable `configuration_removed` reason while retaining archive content and progress. Re-adding the same full identity clears only that automatic pause; an operator pause stays paused. (`internal/db/queries_archive.go::ReconcileDiscoveryArchives`, `internal/db/queries_archive.go::EnsureDiscoveryArchives`)
 - Reconcile configured repositories only at startup or configuration reload; idle scheduler polls must remain read-only unless they claim actual work. (`internal/github/sync.go::SetReposWithContext`, `internal/archive/scheduler.go::RunEligible`)
 - Startup reconciliation reopens completed legacy known-item lookups once when

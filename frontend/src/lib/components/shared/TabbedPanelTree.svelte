@@ -6,6 +6,10 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { observeResize } from "../../browser/observers.js";
+  import {
+    beginTerminalGeometryIntent,
+    extendTerminalGeometryIntent,
+  } from "../terminal/terminalGeometryIntent.js";
   import Self from "./TabbedPanelTree.svelte";
   import {
     assertNamespacedDragScope,
@@ -141,6 +145,7 @@
   let splitSize = $state(0);
   let resizeStartRatio = 0.5;
   let resizeStartSize = 0;
+  let resizeIntentStarted = false;
   let dropTargetsVisible = $state(false);
   let activeSplitEdge = $state<TabbedPanelSplitEdge | null>(null);
   let draggedTabKey = $state<string | null>(null);
@@ -524,6 +529,7 @@
 
   function startResize(): void {
     if (node?.type !== "split") return;
+    resizeIntentStarted = false;
     resizeStartRatio = node.ratio;
     splitSize = measureSplit();
     resizeStartSize = splitSize;
@@ -532,7 +538,16 @@
   function handleResize(event: SplitResizeEvent): void {
     if (node?.type !== "split") return;
     const ratio = resizeStartRatio + event.delta / Math.max(1, resizeStartSize);
-    onRatioChange?.(node.id, clampTabbedPanelRatio(ratio));
+    const nextRatio = clampTabbedPanelRatio(ratio);
+    if (nextRatio !== node.ratio) {
+      if (resizeIntentStarted) {
+        extendTerminalGeometryIntent();
+      } else {
+        beginTerminalGeometryIntent();
+        resizeIntentStarted = true;
+      }
+    }
+    onRatioChange?.(node.id, nextRatio);
   }
 
   function tabDragEnabled(): boolean {

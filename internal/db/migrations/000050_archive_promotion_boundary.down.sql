@@ -1,0 +1,2 @@
+-- One-way data repair: the prior unsafe maintenance boundary cannot be
+-- reconstructed without reintroducing the archive coverage gap.

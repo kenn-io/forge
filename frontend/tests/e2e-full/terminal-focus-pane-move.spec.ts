@@ -113,11 +113,13 @@ function observeTerminal(page: Page): {
     const receivedDecoder = new TextDecoder();
     const sentDecoder = new TextDecoder();
     socket.on("framereceived", ({ payload }) => {
-      const chunk = typeof payload === "string" ? payload : receivedDecoder.decode(payload, { stream: true });
+      if (typeof payload === "string") return;
+      const chunk = receivedDecoder.decode(payload, { stream: true });
       stream.received = (stream.received + chunk).slice(-64 * 1024);
     });
     socket.on("framesent", ({ payload }) => {
-      const chunk = typeof payload === "string" ? payload : sentDecoder.decode(payload, { stream: true });
+      if (typeof payload === "string") return;
+      const chunk = sentDecoder.decode(payload, { stream: true });
       stream.sent = (stream.sent + chunk).slice(-64 * 1024);
     });
   });

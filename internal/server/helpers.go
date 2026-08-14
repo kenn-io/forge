@@ -167,6 +167,7 @@ func (s *Server) repoResponse(repo db.Repo) repoResponse {
 		ID:                  repo.ID,
 		Platform:            repo.Platform,
 		PlatformHost:        repo.PlatformHost,
+		PlatformRepoID:      repo.PlatformRepoID,
 		Owner:               repo.Owner,
 		Name:                repo.Name,
 		LastSyncStartedAt:   repo.LastSyncStartedAt,

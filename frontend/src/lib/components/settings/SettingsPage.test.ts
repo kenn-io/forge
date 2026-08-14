@@ -3,9 +3,10 @@ import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS, type Settings } from "../../api/types.js";
 
-const { loadSettings, setLaunchTargets } = vi.hoisted(() => ({
+const { loadSettings, setLaunchTargets, setRepoPresets } = vi.hoisted(() => ({
   loadSettings: vi.fn(),
   setLaunchTargets: vi.fn(),
+  setRepoPresets: vi.fn(),
 }));
 
 vi.mock("../../context.js", async (importOriginal) => ({
@@ -15,6 +16,7 @@ vi.mock("../../context.js", async (importOriginal) => ({
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
       setTerminalSettings: vi.fn(),
       setConfiguredRepos: vi.fn(),
+      setRepoPresets,
       setModeVisibility: vi.fn(),
       setPullRequestSettings: vi.fn(),
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
@@ -81,6 +83,14 @@ const codexTarget = {
 function makeSettings(): Settings {
   return {
     repos: [],
+    repo_presets: [
+      {
+        name: "Review queue",
+        repos: [
+          { provider: "github", platform_host: "github.com", platform_repo_id: "R_widgets", repo_path: "acme/widgets" },
+        ],
+      },
+    ],
     pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
     workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
     issues: { hide_bots: true },
@@ -122,6 +132,7 @@ describe("SettingsPage", () => {
     cleanup();
     loadSettings.mockReset();
     setLaunchTargets.mockReset();
+    setRepoPresets.mockReset();
   });
 
   it("hydrates launch targets into the shared settings store on initial load", async () => {
@@ -134,6 +145,19 @@ describe("SettingsPage", () => {
 
     await waitFor(() => {
       expect(setLaunchTargets).toHaveBeenCalledWith(settings.launch_targets);
+    });
+  });
+
+  it("hydrates repository presets into the shared settings store on initial load", async () => {
+    const settings = makeSettings();
+    loadSettings.mockReturnValue(Effect.succeed(settings));
+
+    render(SettingsRuntimeHarness, {
+      props: { component: SettingsPage, componentProps: {} },
+    });
+
+    await waitFor(() => {
+      expect(setRepoPresets).toHaveBeenCalledWith(settings.repo_presets);
     });
   });
 });

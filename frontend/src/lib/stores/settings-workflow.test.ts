@@ -34,7 +34,6 @@ function makeSettings(repos: SettingsResponse["repos"] = []): SettingsResponse {
     modes: {
       activity: true,
       repos: true,
-      kata: false,
       docs: false,
       pulls: true,
       issues: true,
@@ -46,6 +45,7 @@ function makeSettings(repos: SettingsResponse["repos"] = []): SettingsResponse {
       allow_mid_stack_merges: false,
       prefer_github_native_stacks: false,
     },
+    repo_presets: [],
     repos,
     terminal: {
       font_family: "",
@@ -56,6 +56,7 @@ function makeSettings(repos: SettingsResponse["repos"] = []): SettingsResponse {
       cursor_blink: true,
       font_ligatures: false,
       hide_tmux_status: false,
+      retained_sessions: 0,
     },
     workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
   };
@@ -254,6 +255,7 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
                   repo_path: "acme/api",
                   is_glob: false,
                   matched_repo_count: 0,
+                  hidden_from_ui: false,
                 },
               ]),
             ),
@@ -392,6 +394,7 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
         repo_path: "acme/api",
         is_glob: false,
         matched_repo_count: 0,
+        hidden_from_ui: false,
       };
       const configured = makeSettings([repo]);
       const saved = makeSettings([{ ...repo, worktree_base_path: "/worktrees/api" }]);
@@ -474,6 +477,7 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
           repo_path: "acme/api",
           is_glob: false,
           matched_repo_count: 0,
+          hidden_from_ui: false,
         },
       ]);
       const saved = {
@@ -523,6 +527,7 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
                   repo_path: "acme/api",
                   is_glob: false,
                   matched_repo_count: 0,
+                  hidden_from_ui: false,
                 },
               ]),
             ),
@@ -568,6 +573,72 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
     }),
   );
 
+  it.effect("reconciles repository preset saves after a response is lost", () =>
+    Effect.gen(function* () {
+      const original = makeSettings();
+      const repoPresets = [
+        {
+          name: "Review queue",
+          repos: [
+            {
+              provider: "github",
+              platform_host: "github.com",
+              platform_repo_id: "R_widgets",
+              repo_path: "acme/widgets",
+            },
+          ],
+        },
+      ];
+      const saved = { ...original, repo_presets: repoPresets };
+      let committed = false;
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (request.method === "POST") {
+          committed = true;
+          return Promise.reject(new TypeError("response lost after commit"));
+        }
+        return Promise.resolve(Response.json(committed ? saved : original));
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const workflow = yield* SettingsWorkflow;
+      const result = yield* workflow.createRepoPreset(repoPresets[0]!);
+
+      assert.deepStrictEqual(result.repo_presets, repoPresets);
+    }),
+  );
+
+  it.effect("does not report repository presets committed when reconciliation returns the old collection", () =>
+    Effect.gen(function* () {
+      const original = makeSettings();
+      const repoPresets = [
+        {
+          name: "Review queue",
+          repos: [
+            {
+              provider: "github",
+              platform_host: "github.com",
+              platform_repo_id: "R_widgets",
+              repo_path: "acme/widgets",
+            },
+          ],
+        },
+      ];
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return request.method === "POST"
+          ? Promise.reject(new TypeError("response lost before commit"))
+          : Promise.resolve(Response.json(original));
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const workflow = yield* SettingsWorkflow;
+      const failure = yield* Effect.flip(workflow.createRepoPreset(repoPresets[0]!));
+
+      assert.strictEqual(failure._tag, "TransientTransportError");
+    }),
+  );
+
   it.effect("returns the authoritative repository list after a bulk-add response is lost", () =>
     Effect.gen(function* () {
       const configured = makeSettings([
@@ -579,6 +650,7 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
           repo_path: "acme/api",
           is_glob: false,
           matched_repo_count: 0,
+          hidden_from_ui: false,
         },
       ]);
       const fetch: typeof globalThis.fetch = (input, init) => {
@@ -653,6 +725,7 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
           repo_path: "acme/api",
           is_glob: false,
           matched_repo_count: 0,
+          hidden_from_ui: false,
         },
       ]);
       let bulkRequests = 0;

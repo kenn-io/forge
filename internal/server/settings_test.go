@@ -352,6 +352,7 @@ command = ["codex", "--full-auto"]
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("acme", resp.Repos[0].Owner)
+	assert.Equal("repo-acme-widget", resp.Repos[0].PlatformRepoID)
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
 	assert.Equal("threaded", resp.Activity.ViewMode)
 	assert.True(resp.Notifications.Enabled)
@@ -398,6 +399,89 @@ name = "widget"
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &raw))
 	require.Contains(raw, "kata_projects")
 	assert.JSONEq("[]", string(raw["kata_projects"]))
+}
+
+func TestHandleGetSettingsEncodesEmptyRepoPresetsAsArray(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var raw map[string]json.RawMessage
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &raw))
+	require.Contains(raw, "repo_presets")
+	assert.JSONEq("[]", string(raw["repo_presets"]))
+}
+
+func TestRepoPresetMutationsAreAtomic(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+	first := config.RepoPreset{Name: "Review queue", Repos: []config.RepoPresetRepository{{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_widgets", RepoPath: "acme/widgets",
+	}}}
+	second := config.RepoPreset{Name: "Docs", Repos: []config.RepoPresetRepository{{
+		Provider: "gitlab", PlatformHost: "git.example.com", PlatformRepoID: "42", RepoPath: "group/docs",
+	}}}
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", first)
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+	rr = doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", second)
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+
+	updatedRepos := []config.RepoPresetRepository{{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_tools", RepoPath: "acme/tools",
+	}}
+	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings/repo-presets/Review%20queue", struct {
+		Repos []config.RepoPresetRepository `json:"repos"`
+	}{Repos: updatedRepos})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	rr = doJSON(t, srv, http.MethodDelete, "/api/v1/settings/repo-presets/Review%20queue", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.Equal([]config.RepoPreset{second}, resp.RepoPresets)
+
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal([]config.RepoPreset{second}, reloaded.RepoPresets)
+
+	rr = doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", second)
+	assert.Equal(http.StatusConflict, rr.Code)
+}
+
+func TestCreateRepoPresetRejectsSaveFailureWithoutPublishing(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repo_presets]]
+name = "Existing"
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_widget", repo_path = "acme/widget" }]
+`, &mockGH{})
+
+	srv.configReloadMu.Lock()
+	srv.cfgPath = t.TempDir()
+	srv.configReloadMu.Unlock()
+	replacement := config.RepoPreset{Name: "Replacement", Repos: []config.RepoPresetRepository{{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_other", RepoPath: "acme/other",
+	}}}
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", replacement)
+	require.Equal(http.StatusInternalServerError, rr.Code, rr.Body.String())
+	require.Equal([]config.RepoPreset{{Name: "Existing", Repos: []config.RepoPresetRepository{{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_widget", RepoPath: "acme/widget",
+	}}}}, srv.cfg.RepoPresets)
 }
 
 func TestHandleUpdateSettingsPersistsModes(t *testing.T) {

@@ -148,11 +148,11 @@ func (d *DB) StartFullArchives(ctx context.Context, repoIDs []int64, now time.Ti
 			  )`, nextEvenScanGenerationSQL, sqlPlaceholders(len(repoIDs))), promoteArgs...); err != nil {
 			return fmt.Errorf("queue promoted archive dataset progress: %w", err)
 		}
-		updateArgs := append([]any{now, now}, args...)
+		updateArgs := append([]any{now}, args...)
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
 			UPDATE forge_archive_repos
 			SET collection_mode = 'full', operator_state = 'active',
-				initial_started_at = COALESCE(initial_started_at, ?),
+				initial_started_at = COALESCE(initial_started_at, created_at),
 				last_error_code = CASE WHEN last_error_code IN ('budget_exhausted', 'authentication_failed', 'repository_blocked') THEN last_error_code ELSE NULL END,
 				last_error_detail = CASE WHEN last_error_code IN ('budget_exhausted', 'authentication_failed', 'repository_blocked') THEN last_error_detail ELSE NULL END,
 				next_retry_at = CASE WHEN last_error_code IN ('budget_exhausted', 'authentication_failed', 'repository_blocked') THEN next_retry_at ELSE NULL END,
@@ -1276,8 +1276,11 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 			return nil
 		}
 		for _, item := range commit.Items {
+			item.ProviderCreatedAt = canonicalUTCTime(item.ProviderCreatedAt)
+			item.ProviderUpdatedAt = canonicalUTCTime(item.ProviderUpdatedAt)
 			if err := commitArchiveInventoryItemTx(
-				ctx, tx, commit.RepoID, commit.ItemType, item, commit.RefreshReason,
+				ctx, tx, commit.RepoID, commit.ItemType, item,
+				commit.RefreshReason,
 			); err != nil {
 				return err
 			}
@@ -1316,6 +1319,12 @@ func commitArchiveInventoryItemTx(
 	item ArchiveInventoryItem,
 	refreshReason ArchiveRefreshReason,
 ) error {
+	shouldReopen, err := archiveInventoryItemNeedsRefreshTx(
+		ctx, tx, repoID, itemType, item, refreshReason,
+	)
+	if err != nil {
+		return err
+	}
 	if err := reactivateTerminalArchiveWorkTx(
 		ctx, tx, repoID, itemType, item.Number,
 	); err != nil {
@@ -1330,10 +1339,47 @@ func commitArchiveInventoryItemTx(
 	if err := seedArchiveItemProgressTx(ctx, tx, repoID, itemType, item.Number); err != nil {
 		return err
 	}
-	if refreshReason == ArchiveRefreshReasonPrompt {
+	if shouldReopen {
 		return reopenArchiveItemProgressTx(ctx, tx, repoID, itemType, item.Number)
 	}
 	return nil
+}
+
+// archiveInventoryItemNeedsRefreshTx compares a prompt observation with the
+// transaction-current inventory evidence. New items are seeded pending by the
+// caller. Existing items are reopened when a terminal item reappears or the
+// provider reports equal or newer evidence. Equal timestamps cannot prove
+// stasis because provider timestamps may have second-level granularity.
+func archiveInventoryItemNeedsRefreshTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	itemType ArchiveItemType,
+	item ArchiveInventoryItem,
+	refreshReason ArchiveRefreshReason,
+) (bool, error) {
+	if refreshReason != ArchiveRefreshReasonPrompt {
+		return false, nil
+	}
+	var storedUpdatedAt time.Time
+	var lifecycle ArchiveLifecycleState
+	err := tx.QueryRowContext(ctx, `
+		SELECT provider_updated_at, lifecycle_state
+		FROM forge_archive_items
+		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
+		repoID, itemType, item.Number,
+	).Scan(&storedUpdatedAt, &lifecycle)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read archive inventory refresh evidence: %w", err)
+	}
+	if lifecycle == ArchiveLifecycleStateRemovedUpstream ||
+		lifecycle == ArchiveLifecycleStateInaccessible {
+		return true, nil
+	}
+	return !item.ProviderUpdatedAt.Before(storedUpdatedAt), nil
 }
 
 // seedArchiveItemProgressTx creates the one progress row for an archive item.

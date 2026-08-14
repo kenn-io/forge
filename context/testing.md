@@ -9,6 +9,11 @@ Test server constructors that create a Workspace manager must apply their
 isolated test tmux command; they must never fall back to the host tmux server
 (`internal/server/kata/test_helpers_test.go::newKataTestServer`).
 
+Persistent-config server fixtures start the real config watcher. When a request
+saves config, provider fakes must resolve the post-save repository set and tests
+must await the config event before asserting converged state
+(`internal/server/settings_test.go::setupTestServerWithConfigContent`).
+
 ## Live GraphQL validation
 
 GraphQL query shape changes must be validated against GitHub's live GraphQL API before they are merged. The local test suite includes a gated live test:
@@ -423,7 +428,9 @@ migration state, dirty database handling, or other internal invariants.
 ### Boundary-value contracts
 
 - Exercise persistence at exact advertised record ceilings, including repeated replacement; small fixtures do not expose SQLite bind or batch-size failures. (`internal/db/queries_archive_test.go::TestArchiveIssuePublicationSupportsMaximumDatasetSize`)
-- Inclusive-watermark tests need equal-timestamp rows and stale-stage assertions; strictly newer fixtures miss coarse provider timestamp behavior. (`internal/db/queries_archive_test.go::TestArchivePromptObservationRefreshesEqualTimestampDatasetsOnce`)
+- Inclusive-watermark refreshes must reopen every equal-timestamp observation;
+  without a provider revision or complete fingerprint, later-than-watermark
+  equality cannot prove stasis. (`internal/db/queries_archive_test.go::TestArchivePromptReopensEqualOrNewerObservations`)
 - Snapshot race coverage must include equal provider timestamps through a real sync workflow and generated HTTP client; helper-only tests miss ordering gaps where child I/O begins before the parent revision is committed. (`internal/server/e2etest/archive_snapshot_race_test.go::TestIssueSyncCannotReplaceEqualTimestampArchiveSnapshotE2E`)
 - Seeded full-stack provider fakes must return every child family represented as provider-owned seed data. Complete mirroring legitimately deletes absent comments/reviews, so a DB-only synthetic child row is not stable across background or explicit sync. (`internal/testutil/fixtures.go::SeedFixtures`)
 

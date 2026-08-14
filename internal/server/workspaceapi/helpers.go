@@ -161,8 +161,9 @@ func toWorkspaceResponse(summary *db.WorkspaceSummary) workspaceResponse {
 		ID: summary.ID,
 		Repo: httpapi.RepoRefResponse{
 			Provider: summary.Platform, PlatformHost: summary.PlatformHost,
-			RepoPath: summary.RepoOwner + "/" + summary.RepoName,
-			Owner:    summary.RepoOwner, Name: summary.RepoName,
+			PlatformRepoID: summary.RepoPlatformID,
+			RepoPath:       summary.RepoOwner + "/" + summary.RepoName,
+			Owner:          summary.RepoOwner, Name: summary.RepoName,
 		},
 		PlatformHost:       summary.PlatformHost,
 		RepoOwner:          summary.RepoOwner,

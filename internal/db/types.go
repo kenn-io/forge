@@ -883,6 +883,10 @@ type ListMergeRequestsOpts struct {
 	Limit             int
 	Offset            int
 	WorkspaceActivity []ItemActivityOverride
+	// ViewerLogins limits results to subjects involving the authenticated
+	// viewer in each repository. nil disables the filter; an empty non-nil
+	// slice matches no subjects.
+	ViewerLogins []RepoViewerLogin
 }
 
 type ItemActivityOverride struct {
@@ -908,6 +912,13 @@ type WorkspaceSubjectMetadata struct {
 	State        string
 	URL          string
 	Author       string
+}
+
+// RepoViewerLogin binds a provider-authenticated login to the stable local
+// repository identity whose credentials produced it.
+type RepoViewerLogin struct {
+	RepoID int64
+	Login  string
 }
 
 type RepoFilter struct {
@@ -982,6 +993,7 @@ type ListIssuesOpts struct {
 	Limit             int
 	Offset            int
 	WorkspaceActivity []ItemActivityOverride
+	ViewerLogins      []RepoViewerLogin
 }
 
 type StarredItem struct {
@@ -1290,6 +1302,7 @@ type Workspace struct {
 type WorkspaceSummary struct {
 	Workspace
 	RepoID           int64
+	RepoPlatformID   string
 	SourceTitle      *string
 	SourceState      *string
 	SourceURL        *string
@@ -1341,6 +1354,9 @@ type ListActivityOpts struct {
 	ItemTypes []string
 	Search    string // title/body search
 	Author    string // exact, case-insensitive PR or issue author filter
+	// ViewerLogins limits rows to PR and issue subjects involving the
+	// authenticated viewer. Repository-only rows never match.
+	ViewerLogins []RepoViewerLogin
 	// ExcludeNotifications drops notification rows from the union before
 	// ordering/limit. Notifications are always enabled in normal operation;
 	// the server only sets this when no config is loaded (nil-config

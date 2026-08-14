@@ -98,20 +98,36 @@
   }
 
   function resetCompactView(): void {
-    if (issues.getIssueFilterState() !== "open") setIssueState("open");
+    const reloadIssues = issues.getIssueFilterState() !== "open" || issues.getInvolvesMe();
+    if (issues.getIssueFilterState() !== "open") issues.setIssueFilterState("open");
     grouping.setGroupByRepo(true);
     grouping.setHideOrgName(false);
     if (issues.getHideBots()) void issues.setHideBots(false);
+    issues.setInvolvesMe(false);
+    if (reloadIssues) issues.loadIssues();
   }
 
   function resetVisibility(): void {
     grouping.setHideOrgName(false);
     if (issues.getHideBots()) void issues.setHideBots(false);
+    if (issues.getInvolvesMe()) {
+      issues.setInvolvesMe(false);
+      issues.loadIssues();
+    }
   }
 
   const visibilityFilterSection = $derived({
     title: "Visibility",
     items: [
+      {
+        id: "involves-me",
+        label: "Involves me",
+        active: issues.getInvolvesMe(),
+        onSelect: () => {
+          issues.setInvolvesMe(!issues.getInvolvesMe());
+          issues.loadIssues();
+        },
+      },
       {
         id: "hide-org-name",
         label: "Hide org name",
@@ -153,7 +169,8 @@
     issues.getIssueFilterState() !== "open"
       || !grouping.getGroupByRepo()
       || grouping.getHideOrgName()
-      || issues.getHideBots(),
+      || issues.getHideBots()
+      || issues.getInvolvesMe(),
   );
   const useCompactFilters = $derived(
     sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
@@ -233,7 +250,7 @@
       <FilterDropdown
         label="Visibility"
         title="Issue visibility"
-        active={grouping.getHideOrgName() || issues.getHideBots()}
+        active={grouping.getHideOrgName() || issues.getHideBots() || issues.getInvolvesMe()}
         showBadge={false}
         sections={[visibilityFilterSection]}
         resetLabel="Reset visibility"

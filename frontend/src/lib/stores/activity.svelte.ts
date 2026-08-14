@@ -15,6 +15,7 @@ import type {
 import { ActivityWorkflow } from "./activity-workflow.js";
 import { showFlash } from "./flash.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
+import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
@@ -163,6 +164,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
   let enabledEvents = $state<Set<string>>(new Set(DEFAULT_EVENT_TYPES));
   let showNotifications = $state(true);
+  let involvesMe = $state(readInvolvesMeFilter("activity"));
   let initialized = false;
 
   // --- reads ---
@@ -240,6 +242,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function getShowNotifications(): boolean {
     return showNotifications;
   }
+  function getInvolvesMe(): boolean {
+    return involvesMe;
+  }
   function isInitialized(): boolean {
     return initialized;
   }
@@ -300,6 +305,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function setShowNotifications(v: boolean): void {
     showNotifications = v;
   }
+  function setInvolvesMe(value: boolean): void {
+    involvesMe = value;
+    writeInvolvesMeFilter("activity", value);
+  }
   // --- hydration ---
 
   function hydrateDefaults(activity: ActivitySettings): void {
@@ -344,6 +353,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     }
     if (searchQuery) p.search = searchQuery;
     if (authorFilter) p.author = authorFilter;
+    if (involvesMe) p.involves_me = true;
     return p;
   }
 
@@ -782,6 +792,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getEnabledItemTypes,
     getEnabledEvents,
     getShowNotifications,
+    getInvolvesMe,
     isInitialized,
     setActivityFilterTypes,
     setActivitySearch,
@@ -798,6 +809,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     setEnabledItemTypes,
     setEnabledEvents,
     setShowNotifications,
+    setInvolvesMe,
     hydrateDefaults,
     initializeFromMount,
     loadActivityAuthors,

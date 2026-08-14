@@ -251,7 +251,8 @@
     + (activity.getHideBots() ? 1 : 0)
     + (activity.getHideDefaultBranchActivity() ? 1 : 0)
     + (grouping.getHideOrgName() ? 1 : 0)
-    + (activity.getShowNotifications() ? 0 : 1),
+    + (activity.getShowNotifications() ? 0 : 1)
+    + (activity.getInvolvesMe() ? 1 : 0),
   );
 
   const repoLabelFormatter = $derived.by(() =>
@@ -312,6 +313,11 @@
   function toggleHideNotifications(): void {
     activity.setShowNotifications(!activity.getShowNotifications());
     applyFilters();
+  }
+
+  function toggleInvolvesMe(): void {
+    activity.setInvolvesMe(!activity.getInvolvesMe());
+    activity.loadActivity();
   }
 
   function toggleHideDefaultBranchActivity(): void {
@@ -602,6 +608,14 @@
           onchange={handleRepoChange}
         />
       </div>
+
+      <button
+        type="button"
+        class="mobile-filter-toggle"
+        class:active={activity.getInvolvesMe()}
+        aria-pressed={activity.getInvolvesMe()}
+        onclick={toggleInvolvesMe}
+      >Involves me</button>
 
       <button
         type="button"

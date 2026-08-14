@@ -973,7 +973,19 @@ func (s *Handler) serveSSHFleetWebSocketTerminal(
 	}
 	defer clientConn.Close(websocket.StatusNormalClosure, "hub detached")
 	endAttachSpan()
-	bridgeFleetSSHAttachPTY(r.Context(), clientConn, attach)
+	cols, rows, sizeOK := workspaceapi.ParseRuntimeTerminalSize(r)
+	if !sizeOK {
+		cols, rows = 120, 30
+	}
+	resizeMember := s.registerFleetSSHResizeMember(
+		peer.Key+"\x00"+targetPath,
+		attach,
+		workspaceapi.ParseRuntimeTerminalResizeActive(r),
+		cols,
+		rows,
+	)
+	defer resizeMember.close()
+	bridgeFleetSSHAttachPTY(r.Context(), clientConn, attach, resizeMember)
 }
 
 func attachSpecPathForFleetTerminalTarget(targetPath string) (string, bool) {
@@ -989,11 +1001,9 @@ func attachSpecPathForFleetTerminalTarget(targetPath string) (string, bool) {
 }
 
 type fleetSSHPTYAttachment struct {
-	cmd    *os.Process
-	ptmx   *os.File
-	done   <-chan int
-	mu     sync.Mutex
-	active bool
+	cmd  *os.Process
+	ptmx *os.File
+	done <-chan int
 }
 
 func startFleetSSHAttachPTY(
@@ -1038,10 +1048,9 @@ func startFleetSSHAttachPTY(
 		close(done)
 	}()
 	return &fleetSSHPTYAttachment{
-		cmd:    cmd.Process,
-		ptmx:   ptmx,
-		done:   done,
-		active: active,
+		cmd:  cmd.Process,
+		ptmx: ptmx,
+		done: done,
 	}, nil
 }
 
@@ -1057,23 +1066,8 @@ func (a *fleetSSHPTYAttachment) close() {
 	}
 }
 
-func (a *fleetSSHPTYAttachment) setActive(active bool) {
-	if a == nil {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.active = active
-}
-
-func (a *fleetSSHPTYAttachment) resizeIfActive(cols, rows int) {
+func (a *fleetSSHPTYAttachment) resize(cols, rows int) {
 	if a == nil || cols <= 0 || rows <= 0 {
-		return
-	}
-	a.mu.Lock()
-	active := a.active
-	a.mu.Unlock()
-	if !active {
 		return
 	}
 	_ = pty.Setsize(a.ptmx, &pty.Winsize{
@@ -1082,10 +1076,196 @@ func (a *fleetSSHPTYAttachment) resizeIfActive(cols, rows int) {
 	})
 }
 
+type fleetSSHResizeGroup struct {
+	mu        sync.Mutex
+	nextID    uint64
+	nextClaim uint64
+	ownerID   uint64
+	members   map[uint64]*fleetSSHResizeMember
+}
+
+type fleetSSHResizeMember struct {
+	group      *fleetSSHResizeGroup
+	id         uint64
+	attachment *fleetSSHPTYAttachment
+	active     bool
+	claim      uint64
+	cols       int
+	rows       int
+	hasSize    bool
+	unregister func() bool
+}
+
+func (s *Handler) registerFleetSSHResizeMember(
+	key string,
+	attachment *fleetSSHPTYAttachment,
+	active bool,
+	cols int,
+	rows int,
+) *fleetSSHResizeMember {
+	s.sshResizeMu.Lock()
+	defer s.sshResizeMu.Unlock()
+	if s.sshResizeGroups == nil {
+		s.sshResizeGroups = make(map[string]*fleetSSHResizeGroup)
+	}
+	group := s.sshResizeGroups[key]
+	if group == nil {
+		group = &fleetSSHResizeGroup{}
+		s.sshResizeGroups[key] = group
+	}
+	member := group.register(attachment, active, cols, rows)
+	member.unregister = func() bool {
+		s.sshResizeMu.Lock()
+		defer s.sshResizeMu.Unlock()
+		empty := group.unregisterMember(member.id)
+		if empty && s.sshResizeGroups[key] == group {
+			delete(s.sshResizeGroups, key)
+		}
+		return empty
+	}
+	return member
+}
+
+func (g *fleetSSHResizeGroup) register(
+	attachment *fleetSSHPTYAttachment,
+	active bool,
+	cols int,
+	rows int,
+) *fleetSSHResizeMember {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.nextID++
+	member := &fleetSSHResizeMember{
+		group:      g,
+		id:         g.nextID,
+		attachment: attachment,
+		active:     active,
+		cols:       cols,
+		rows:       rows,
+		hasSize:    cols > 0 && rows > 0,
+	}
+	if g.members == nil {
+		g.members = make(map[uint64]*fleetSSHResizeMember)
+	}
+	g.members[member.id] = member
+	if active && g.ownerID == 0 {
+		g.ownerID = member.id
+	}
+	owner := g.members[g.ownerID]
+	if owner != nil && owner.hasSize {
+		attachment.resize(owner.cols, owner.rows)
+	}
+	return member
+}
+
+func (m *fleetSSHResizeMember) close() {
+	if m == nil || m.unregister == nil {
+		return
+	}
+	m.unregister()
+	m.unregister = nil
+}
+
+func (g *fleetSSHResizeGroup) unregisterMember(id uint64) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.members, id)
+	if g.ownerID == id {
+		g.ownerID = 0
+		g.selectOwnerLocked()
+		g.applyOwnerSizeLocked()
+	}
+	return len(g.members) == 0
+}
+
+func (m *fleetSSHResizeMember) setActive(active bool) {
+	if m == nil || m.group == nil {
+		return
+	}
+	g := m.group
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.members[m.id] != m {
+		return
+	}
+	m.active = active
+	if active {
+		if g.ownerID == 0 {
+			g.ownerID = m.id
+			g.applyOwnerSizeLocked()
+		}
+		return
+	}
+	if g.ownerID == m.id {
+		g.ownerID = 0
+		g.selectOwnerLocked()
+		g.applyOwnerSizeLocked()
+	}
+}
+
+func (m *fleetSSHResizeMember) resize(cols, rows int, claim bool) {
+	if m == nil || m.group == nil || cols <= 0 || rows <= 0 {
+		return
+	}
+	g := m.group
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.members[m.id] != m || !m.active {
+		return
+	}
+	clampedCols := int(workspaceapi.ClampTerminalDim(cols))
+	clampedRows := int(workspaceapi.ClampTerminalDim(rows))
+	sizeChanged := !m.hasSize || m.cols != clampedCols || m.rows != clampedRows
+	m.cols = clampedCols
+	m.rows = clampedRows
+	m.hasSize = true
+	ownerChanged := false
+	if claim {
+		g.nextClaim++
+		m.claim = g.nextClaim
+		ownerChanged = g.ownerID != m.id
+		g.ownerID = m.id
+	}
+	if g.ownerID == m.id && (!claim || ownerChanged || sizeChanged) {
+		g.applySizeLocked(m.cols, m.rows)
+	}
+}
+
+func (g *fleetSSHResizeGroup) selectOwnerLocked() {
+	for id, member := range g.members {
+		if !member.active {
+			continue
+		}
+		if g.ownerID == 0 {
+			g.ownerID = id
+			continue
+		}
+		owner := g.members[g.ownerID]
+		if owner == nil || member.claim > owner.claim ||
+			(member.claim == owner.claim && id < g.ownerID) {
+			g.ownerID = id
+		}
+	}
+}
+
+func (g *fleetSSHResizeGroup) applyOwnerSizeLocked() {
+	owner := g.members[g.ownerID]
+	if owner != nil && owner.hasSize {
+		g.applySizeLocked(owner.cols, owner.rows)
+	}
+}
+
+func (g *fleetSSHResizeGroup) applySizeLocked(cols, rows int) {
+	for _, member := range g.members {
+		member.attachment.resize(cols, rows)
+	}
+}
+
 func bridgeFleetSSHAttachPTY(
 	ctx context.Context,
 	conn *websocket.Conn,
 	attach *fleetSSHPTYAttachment,
+	resizeMember *fleetSSHResizeMember,
 ) {
 	defer attach.close()
 
@@ -1106,7 +1286,7 @@ func bridgeFleetSSHAttachPTY(
 					return
 				}
 			case websocket.MessageText:
-				handleFleetSSHAttachControl(attach, data)
+				handleFleetSSHAttachControl(resizeMember, data)
 			}
 		}
 	}()
@@ -1155,7 +1335,7 @@ func bridgeFleetSSHAttachPTY(
 	}
 }
 
-func handleFleetSSHAttachControl(attach *fleetSSHPTYAttachment, data []byte) {
+func handleFleetSSHAttachControl(member *fleetSSHResizeMember, data []byte) {
 	var msg workspaceapi.RuntimeTerminalControlMsg
 	if err := json.Unmarshal(data, &msg); err != nil {
 		slog.Warn("bad fleet ssh terminal control message", "err", err)
@@ -1163,10 +1343,12 @@ func handleFleetSSHAttachControl(attach *fleetSSHPTYAttachment, data []byte) {
 	}
 	switch msg.Type {
 	case "refresh", "resize":
-		attach.resizeIfActive(msg.Cols, msg.Rows)
+		member.resize(msg.Cols, msg.Rows, false)
+	case "claim_resize":
+		member.resize(msg.Cols, msg.Rows, true)
 	case "resize_active":
 		if msg.Active != nil {
-			attach.setActive(*msg.Active)
+			member.setActive(*msg.Active)
 		}
 	}
 }

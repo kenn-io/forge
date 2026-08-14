@@ -101,6 +101,7 @@ export const DEFAULT_PULL_REQUEST_SETTINGS: PullRequestSettings = {
 
 export type AgentSettings = components["schemas"]["Agent"];
 export type ConfigRepo = components["schemas"]["ConfiguredRepoStatus"];
+export type RepoPreset = components["schemas"]["RepoPreset"];
 export type KataProjectRepoMapping = components["schemas"]["KataProjectRepoMapping"];
 export type WorkspaceKataMetadata = components["schemas"]["WorkspaceKataMetadata"];
 type SettingsResponse = components["schemas"]["SettingsResponse"];

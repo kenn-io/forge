@@ -178,7 +178,7 @@ test("settings imports a selected subset from a repository glob", async ({ page 
     .toBe("");
 
   await page.goto(`${isolatedServer!.info.base_url}/pulls`);
-  await expect(page.getByRole("button", { name: /^Select repository:/ })).toContainText("All repos");
+  await expect(page.getByRole("button", { name: "Select repository: Global" })).toBeVisible();
 });
 
 test("repository import reconciles a bulk add when the committed response is lost", async ({ page }) => {

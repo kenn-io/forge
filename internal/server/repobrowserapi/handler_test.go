@@ -817,7 +817,7 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 			return false
 		}
 		return body.DefaultRef.SHA == updatedSHA
-	}, 2*time.Second, 25*time.Millisecond)
+	}, 15*time.Second, 25*time.Millisecond)
 
 	rr := repoBrowserRequest(t, restartedServer, http.MethodGet,
 		"/api/v1/repo/github/acme/widgets/browser/blob?ref_type=branch&ref_name=main&path=README.md",

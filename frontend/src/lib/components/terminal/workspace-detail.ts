@@ -27,7 +27,10 @@ export type WorkspaceDetail = Pick<
     readonly mr_is_draft?: Exclude<GeneratedWorkspace["mr_is_draft"], undefined> | null;
     readonly mr_state?: Exclude<GeneratedWorkspace["mr_state"], undefined> | null;
     readonly mr_title?: Exclude<GeneratedWorkspace["mr_title"], undefined> | null;
-    readonly repo: Pick<GeneratedRepo, "name" | "owner" | "platform_host" | "provider" | "repo_path">;
+    readonly repo: Pick<
+      GeneratedRepo,
+      "name" | "owner" | "platform_host" | "platform_repo_id" | "provider" | "repo_path"
+    >;
     readonly fleet_host_key?: string | undefined;
   };
 
@@ -35,6 +38,7 @@ const Repo = Schema.Struct({
   name: Schema.String,
   owner: Schema.String,
   platform_host: Schema.String,
+  platform_repo_id: Schema.optionalKey(Schema.String),
   provider: Schema.String,
   repo_path: Schema.String,
 });

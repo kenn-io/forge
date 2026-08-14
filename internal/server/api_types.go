@@ -12,6 +12,7 @@ type repoResponse struct {
 	ID                  int64
 	Platform            string
 	PlatformHost        string
+	PlatformRepoID      string
 	Owner               string
 	Name                string
 	LastSyncStartedAt   *time.Time

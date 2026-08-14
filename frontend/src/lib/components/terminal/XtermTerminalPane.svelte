@@ -43,6 +43,7 @@
     type TerminalSessionController,
   } from "./terminal-session.js";
   import { terminalAttachment } from "./terminal-attachment.js";
+  import { currentTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
@@ -100,6 +101,7 @@
   let sentCols = 0;
   let sentRows = 0;
   let sentResizeActive: boolean | null = null;
+  let claimedGeometryIntentGeneration = 0;
   let resizeReady = true;
   let appliedTerminalFontFamily = "";
   let appliedFontSize = 0;
@@ -198,7 +200,17 @@
   };
 
   function handleTerminalPointerDown(event: PointerEvent): void {
-    if (disposed || disabled || event.button !== 0) return;
+    if (disposed || disabled) return;
+    if (event.button !== 0) {
+      if (
+        (event.button === 1 || event.button === 2) &&
+        event.isTrusted &&
+        terminal?.modes.mouseTrackingMode !== "none"
+      ) {
+        claimTerminalResize();
+      }
+      return;
+    }
     // xterm focuses its hidden textarea from mousedown, but its touch gesture
     // path only handles scrolling. Focus synchronously while the touch/pen
     // activation is live so mobile browsers can open their software keyboard.
@@ -206,6 +218,7 @@
       terminal?.focus();
     }
     if (!event.isTrusted) return;
+    claimTerminalResize();
     if (activePointerId !== null) {
       cancelTerminalPointerGesture();
     }
@@ -303,7 +316,13 @@
 
   function handleTerminalKeyDown(event: KeyboardEvent): void {
     if (disposed || disabled || event.isComposing || !event.isTrusted) return;
+    claimTerminalResize();
     clipboardWriter?.authorizeKeyboardGesture();
+  }
+
+  function handleTerminalCompositionStart(event: CompositionEvent): void {
+    if (disposed || disabled || !event.isTrusted) return;
+    claimTerminalResize();
   }
 
   function isBrowserPasteShortcut(event: KeyboardEvent): boolean {
@@ -320,7 +339,6 @@
     if (
       disposed ||
       disabled ||
-      !cursorWheelInput ||
       event.deltaY === 0 ||
       event.ctrlKey ||
       event.shiftKey ||
@@ -329,14 +347,19 @@
     ) return;
 
     const activeBuffer = terminal.buffer.active;
+    if (terminal.modes.mouseTrackingMode !== "none") {
+      claimTerminalResize();
+      return;
+    }
+    if (!cursorWheelInput) return;
     if (
       activeBuffer.type !== "normal" ||
-      activeBuffer.baseY > 0 ||
-      terminal.modes.mouseTrackingMode !== "none"
+      activeBuffer.baseY > 0
     ) return;
 
     event.preventDefault();
     event.stopPropagation();
+    claimTerminalResize();
     const cursorPrefix = terminal.modes.applicationCursorKeysMode ? "O" : "[";
     const cursorDirection = event.deltaY < 0 ? "A" : "B";
     terminalSession.send(encoder.encode(`\x1b${cursorPrefix}${cursorDirection}`));
@@ -483,12 +506,30 @@
     }
   }
 
-  function sendResize(cols: number, rows: number): boolean {
-    return sendControl("resize", cols, rows);
+  function sendResize(cols: number, rows: number, claim: boolean = false): boolean {
+    return sendControl(claim ? "claim_resize" : "resize", cols, rows);
   }
 
   function sendRefresh(cols: number, rows: number): boolean {
     return sendControl("refresh", cols, rows);
+  }
+
+  function claimTerminalResize(): boolean {
+    const size = resizeAuthorityRegionSize();
+    if (!resizeReady || !size || !terminal || !terminalSession?.isConnected()) return false;
+
+    if (terminal.cols !== size.cols || terminal.rows !== size.rows) {
+      fitAddon?.fit();
+      terminal.refresh(0, Math.max(0, terminal.rows - 1));
+    }
+    terminalSession.send(JSON.stringify({
+      type: "claim_resize",
+      cols: terminal.cols,
+      rows: terminal.rows,
+    }));
+    sentCols = terminal.cols;
+    sentRows = terminal.rows;
+    return true;
   }
 
   function sendResizeActive(nextActive: boolean): boolean {
@@ -502,7 +543,7 @@
   }
 
   function sendControl(
-    type: "resize" | "refresh",
+    type: "claim_resize" | "resize" | "refresh",
     cols: number,
     rows: number,
   ): boolean {
@@ -635,16 +676,25 @@
 
     fitAddon?.fit();
     const fittedSize = { cols: terminal.cols, rows: terminal.rows };
+    const dimensionsChanged = fittedSize.cols !== sentCols || fittedSize.rows !== sentRows;
     terminal.refresh(0, Math.max(0, fittedSize.rows - 1));
     // Report the dimensions fit() actually applied. It takes its own fresh
     // measurement, so the region can cross a row or column boundary after the
     // authority preflight above but before xterm is resized.
     // Re-send unchanged dimensions when reclaiming authority because another
     // attachment may have resized the PTY while this region had no geometry.
-    if (!authorityChanged && fittedSize.cols === sentCols && fittedSize.rows === sentRows) return;
+    if (!authorityChanged && !dimensionsChanged) return;
     // Recorded only once the socket carried it — a resize computed before the
     // socket opened would otherwise be suppressed forever as already sent.
-    if (sendResize(fittedSize.cols, fittedSize.rows)) {
+    const geometryIntentGeneration = dimensionsChanged
+      ? currentTerminalGeometryIntent()
+      : null;
+    const claim = geometryIntentGeneration !== null &&
+      geometryIntentGeneration !== claimedGeometryIntentGeneration;
+    if (sendResize(fittedSize.cols, fittedSize.rows, claim)) {
+      if (claim) {
+        claimedGeometryIntentGeneration = geometryIntentGeneration;
+      }
       sentCols = fittedSize.cols;
       sentRows = fittedSize.rows;
     }
@@ -666,6 +716,7 @@
 
     event.preventDefault();
     event.stopImmediatePropagation();
+    claimTerminalResize();
     terminalSession.send(
       encoder.encode(
         createTerminalPastePayload(
@@ -1084,9 +1135,10 @@
   onpointerdowncapture={handleTerminalPointerDown}
   onlostpointercapture={handleTerminalLostPointerCapture}
   onkeydowncapture={handleTerminalKeyDown}
+  oncompositionstartcapture={handleTerminalCompositionStart}
   onmousedowncapture={handleInsecureTerminalRightMouse}
   onmouseupcapture={handleInsecureTerminalRightMouse}
-  onwheel={handleTerminalWheel}
+  onwheelcapture={handleTerminalWheel}
   onfocusout={handleTerminalFocusOut}
 >
   {#if hoveredTerminalLink}

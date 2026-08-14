@@ -223,7 +223,9 @@
     getPage() === "activity" ||
       getPage() === "repos" ||
       getPage() === "pulls" ||
-      getPage() === "issues",
+      getPage() === "issues" ||
+      getPage() === "workspaces" ||
+      getPage() === "terminal",
   );
   const showProviderRepoSelector = $derived(!hideProviderRepoSelector && isProviderRepoSelectorPage);
   const reserveProviderRepoSelectorSlot = $derived(!hideProviderRepoSelector && !isProviderRepoSelectorPage);

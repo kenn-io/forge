@@ -174,6 +174,7 @@
   interface Props {
     workspaceId: string;
     workspaceHostKey?: string | undefined;
+    selectedRepos?: string | undefined;
     isSidebarCollapsed?: boolean;
     sidebarWidth?: number | undefined;
     onSidebarResize?: ((width: number) => void) | undefined;
@@ -209,6 +210,7 @@
   const {
     workspaceId,
     workspaceHostKey = undefined,
+    selectedRepos = undefined,
     isSidebarCollapsed = false,
     sidebarWidth: externalWorkspaceListWidth = undefined,
     onSidebarResize = undefined,
@@ -4504,6 +4506,7 @@
       <WorkspaceListSidebar
         selectedId={workspaceId}
         selectedHostKey={workspaceHostKey}
+        {selectedRepos}
         {isSidebarToggleEnabled}
         {hostVisible}
         onCollapseSidebar={onToggleSidebar}

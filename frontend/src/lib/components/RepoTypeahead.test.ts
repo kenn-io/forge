@@ -1,8 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
 
-import type { Repo } from "../api/types.js";
+import type { Repo, RepoPreset } from "../api/types.js";
 import { createSettingsStore } from "../stores/settings.svelte.js";
+import { getGlobalRepo, setGlobalRepoPresetSelection } from "../stores/filter.svelte.js";
+import { dismissFlash, getFlash, getFlashes } from "../stores/flash.svelte.js";
+import { setWorkspaceRepoCatalog } from "../stores/workspace-repo-catalog.svelte.js";
 import { client } from "../api/runtime.js";
 import RepoTypeahead from "./RepoTypeaheadRuntimeHarness.svelte";
 
@@ -22,22 +25,44 @@ vi.mock("../api/runtime.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/runtime.js")>()),
   client: {
     GET: vi.fn(() => Promise.resolve({ data: [], error: undefined })),
+    POST: vi.fn(),
+    PUT: vi.fn(),
+    DELETE: vi.fn(),
   },
 }));
 
 const getRepos = client.GET as unknown as Mock<
   (path: string, options?: { signal?: AbortSignal }) => Promise<{ data: Repo[]; error: undefined }>
 >;
+const putSettings = client.PUT as unknown as Mock;
+const postSettings = client.POST as unknown as Mock;
+const deleteSettings = client.DELETE as unknown as Mock;
+
+function presetRepo(repoPath: string, platformRepoId: string) {
+  return {
+    provider: "github",
+    platform_host: "github.com",
+    platform_repo_id: platformRepoId,
+    repo_path: repoPath,
+  };
+}
 
 describe("RepoTypeahead", () => {
   beforeEach(() => {
     // The expansion store persists collapsed nodes to localStorage, so clear
     // it between tests to keep each case from inheriting another's tree state.
     localStorage.clear();
+    for (const flash of getFlashes()) dismissFlash(flash.id);
     settingsStore = createSettingsStore();
     settingsStore.setConfiguredRepos([]);
+    settingsStore.setRepoPresets([]);
+    setWorkspaceRepoCatalog(undefined, false);
+    setGlobalRepoPresetSelection(undefined, undefined);
     getRepos.mockReset();
     getRepos.mockResolvedValue({ data: [], error: undefined });
+    putSettings.mockReset();
+    postSettings.mockReset();
+    deleteSettings.mockReset();
   });
 
   afterEach(() => {
@@ -52,7 +77,7 @@ describe("RepoTypeahead", () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     expect(screen.queryByRole("option", { name: /import-lab\/api/i })).toBeNull();
 
     settingsStore.setConfiguredRepos([
@@ -64,6 +89,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -87,6 +113,7 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
+        platform_repo_id: "R_api",
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
@@ -103,10 +130,72 @@ describe("RepoTypeahead", () => {
       },
     ]);
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     await waitFor(() => {
       expect(screen.getByRole("option", { name: /acme\/api/i })).toBeTruthy();
     });
+    expect(screen.queryByRole("option", { name: /acme\/archive/i })).toBeNull();
+  });
+
+  it("omits hidden repositories returned by every catalog source", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "archive",
+        repo_path: "acme/archive",
+        platform_repo_id: "R_archive",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: true,
+      },
+    ]);
+    getRepos.mockResolvedValue({
+      data: [
+        {
+          Platform: "github",
+          PlatformHost: "github.com",
+          PlatformRepoID: "R_archive",
+          Owner: "acme",
+          Name: "archive",
+        },
+      ] as Repo[],
+      error: undefined,
+    });
+    setWorkspaceRepoCatalog(
+      [
+        {
+          id: "archive-workspace",
+          created_at: "2026-08-13T00:00:00Z",
+          git_head_ref: "main",
+          item_number: 1,
+          item_type: "pull",
+          platform_host: "github.com",
+          repo_name: "archive",
+          repo_owner: "acme",
+          status: "active",
+          tmux_activity_source: "none",
+          tmux_last_output_at: null,
+          tmux_working: false,
+          worktree_path: "/tmp/archive",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            platform_repo_id: "R_archive",
+            owner: "acme",
+            name: "archive",
+            repo_path: "acme/archive",
+          },
+        },
+      ],
+      true,
+    );
+
+    render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
+    await waitFor(() => expect(getRepos).toHaveBeenCalled());
+
     expect(screen.queryByRole("option", { name: /acme\/archive/i })).toBeNull();
   });
 
@@ -144,6 +233,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/one",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
     render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
@@ -158,6 +248,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/two",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -166,7 +257,7 @@ describe("RepoTypeahead", () => {
       data: [{ Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "one" }] as unknown as Repo[],
       error: undefined,
     });
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     await waitFor(() => expect(screen.getByRole("option", { name: /acme\/two/i })).toBeTruthy());
     expect(screen.queryByRole("option", { name: /acme\/one/i })).toBeNull();
   });
@@ -201,6 +292,7 @@ describe("RepoTypeahead", () => {
         repo_path: "roborev-dev/*",
         is_glob: true,
         matched_repo_count: 2,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -211,7 +303,7 @@ describe("RepoTypeahead", () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("option", { name: /roborev-dev\/kenn-forge/i })).toBeTruthy();
@@ -230,6 +322,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -239,6 +332,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -249,7 +343,7 @@ describe("RepoTypeahead", () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     await fireEvent.mouseDown(
       screen.getByRole("option", {
         name: /github.com\/import-lab\/api/i,
@@ -280,6 +374,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -289,12 +384,13 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     const ownerCheckbox = screen
       .getByRole("option", { name: "github.com/import-lab" })
       .querySelector("input[type='checkbox']") as HTMLInputElement;
@@ -313,6 +409,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -322,6 +419,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -329,7 +427,7 @@ describe("RepoTypeahead", () => {
       props: { selected: undefined, onchange: vi.fn() },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     await fireEvent.input(screen.getByPlaceholderText("Filter repos..."), {
       target: { value: "web" },
     });
@@ -361,6 +459,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -370,10 +469,11 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
 
     // leaves visible initially
     expect(screen.getByRole("option", { name: "github/github.com/import-lab/api" })).toBeTruthy();
@@ -402,6 +502,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -411,10 +512,11 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     const leaf = screen.getByRole("option", {
       name: "github/github.com/import-lab/api",
     });
@@ -453,6 +555,7 @@ describe("RepoTypeahead", () => {
         repo_path: "roborev-dev/*",
         is_glob: true,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -497,6 +600,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -506,6 +610,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -513,7 +618,7 @@ describe("RepoTypeahead", () => {
       props: { selected: undefined, onchange: vi.fn() },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     const input = screen.getByPlaceholderText("Filter repos...");
 
     // leaves visible by default
@@ -542,7 +647,7 @@ describe("RepoTypeahead", () => {
   });
 
   it("moves focus from a leaf to its parent owner on ArrowLeft", async () => {
-    // Single host auto-flattens, so rows are: [All repos], import-lab (owner,
+    // Single host auto-flattens, so rows are: [Global], import-lab (owner,
     // depth 0), api (leaf, depth 1), web (leaf, depth 1). ArrowLeft on a leaf
     // should jump focus up to the owner row, per the keyboard contract.
     settingsStore.setConfiguredRepos([
@@ -554,6 +659,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -563,6 +669,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -570,7 +677,7 @@ describe("RepoTypeahead", () => {
       props: { selected: undefined, onchange: vi.fn() },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     const input = screen.getByPlaceholderText("Filter repos...");
 
     // ArrowDown onto the owner row, then onto the first leaf (api).
@@ -605,6 +712,7 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/api",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "github",
@@ -614,12 +722,13 @@ describe("RepoTypeahead", () => {
         repo_path: "import-lab/web",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     const input = screen.getByPlaceholderText("Filter repos...");
 
     // highlight the owner row and select its subtree
@@ -640,6 +749,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/widgets",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "gitea",
@@ -649,12 +759,13 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/widgets",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
     await fireEvent.input(screen.getByPlaceholderText("Filter repos..."), {
       target: { value: "gitea/widgets" },
     });
@@ -683,6 +794,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/widgets",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
       {
         provider: "gitea",
@@ -692,6 +804,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/widgets",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -719,6 +832,7 @@ describe("RepoTypeahead", () => {
         repo_path: "acme/widgets",
         is_glob: false,
         matched_repo_count: 1,
+        hidden_from_ui: false,
       },
     ]);
 
@@ -732,5 +846,325 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(onchange).toHaveBeenCalledWith("github|github.com/acme/missing");
     });
+  });
+
+  it("shows Global and saved presets above the scrollable repository tree", async () => {
+    const selected = "github|github.com/acme/api";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }] as RepoPreset[]);
+
+    const view = render(RepoTypeahead, {
+      props: { selected, onchange: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Select repository: Backend" }));
+
+    expect(screen.getByRole("option", { name: "Global" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Backend" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete preset Backend" })).toBeTruthy();
+    expect(view.container.querySelector(".typeahead-repo-list")).toBeTruthy();
+    expect(view.container.querySelector(".typeahead-footer")).toBeTruthy();
+    expect(view.container.querySelector(".typeahead-footer")?.parentElement).toBe(
+      view.container.querySelector(".typeahead-repo-list")?.parentElement,
+    );
+  });
+
+  it("applies a saved preset and records it as the browser-local source", async () => {
+    const onchange = vi.fn();
+    const selected = "github|github.com/acme/api";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    render(RepoTypeahead, { props: { selected: undefined, onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Backend" }));
+
+    expect(onchange).toHaveBeenLastCalledWith(selected);
+    expect(localStorage.getItem("kenn-forge-filter-repo-preset")).toBe("Backend");
+  });
+
+  it("resolves a renamed configured repository without selecting a replacement at its old route", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        tracked_repo_path: "acme/backend",
+        platform_repo_id: "R_original",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_original")] }]);
+    getRepos.mockResolvedValue({
+      data: [
+        {
+          Platform: "github",
+          PlatformHost: "github.com",
+          PlatformRepoID: "R_replacement",
+          Owner: "acme",
+          Name: "api",
+        },
+      ] as Repo[],
+      error: undefined,
+    });
+
+    render(RepoTypeahead, { props: { selected: undefined, onchange } });
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "github/github.com/acme/backend" })).toBeTruthy();
+      expect(screen.getByRole("option", { name: "github/github.com/acme/api" })).toBeTruthy();
+    });
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Backend" }));
+
+    expect(onchange).toHaveBeenLastCalledWith("github|github.com/acme/backend");
+  });
+
+  it("does not activate an unavailable preset from the keyboard", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Missing", repos: [presetRepo("acme/missing", "R_missing")] }]);
+    render(RepoTypeahead, { props: { selected: "github|github.com/acme/api", onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /acme\/api/i }));
+    const input = screen.getByRole("textbox", { name: "Filter repos" });
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(screen.getByRole("option", { name: "Missing" }).getAttribute("aria-disabled")).toBe("true");
+    expect(onchange).not.toHaveBeenCalled();
+  });
+
+  it("defaults an edited preset to overwriting its prior name", async () => {
+    const api = "github|github.com/acme/api";
+    const web = "github|github.com/acme/web";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "web",
+        repo_path: "acme/web",
+        platform_repo_id: "R_web",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    setGlobalRepoPresetSelection("Backend", `${api},${web}`);
+    render(RepoTypeahead, {
+      props: { selected: `${api},${web}`, onchange: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /2 repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save preset" }));
+
+    expect((screen.getByRole("radio", { name: "Overwrite preset" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole("combobox", { name: "Preset to overwrite: Backend" })).toBeTruthy();
+  });
+
+  it("saves a newly named preset through settings", async () => {
+    const selected = "github|github.com/acme/api";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    const repos = [presetRepo("acme/api", "R_api")];
+    postSettings.mockResolvedValue({
+      data: { repo_presets: [{ name: "Review", repos }], repos: [] },
+      response: new Response(),
+    });
+    render(RepoTypeahead, { props: { selected, onchange: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /acme\/api/i }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save preset" }));
+    await fireEvent.input(screen.getByRole("textbox", { name: "Preset name" }), {
+      target: { value: "Review" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(postSettings).toHaveBeenCalledWith(
+        "/settings/repo-presets",
+        expect.objectContaining({
+          body: { name: "Review", repos },
+        }),
+      );
+      expect(settingsStore.getRepoPresets()).toEqual([{ name: "Review", repos }]);
+    });
+  });
+
+  it("keeps the save dialog open and reports settings failures", async () => {
+    const selected = "github|github.com/acme/api";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    postSettings.mockResolvedValue({
+      error: {
+        type: "about:blank",
+        title: "Save failed",
+        status: 500,
+        detail: "Preset save failed",
+        code: "internalError",
+      },
+      response: new Response(undefined, { status: 500 }),
+    });
+    render(RepoTypeahead, { props: { selected, onchange: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /acme\/api/i }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save preset" }));
+    await fireEvent.input(screen.getByRole("textbox", { name: "Preset name" }), {
+      target: { value: "Review" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Preset save failed")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Save repository preset" })).toBeTruthy();
+    expect(settingsStore.getRepoPresets()).toEqual([]);
+  });
+
+  it("confirms preset deletion while retaining the active repository selection", async () => {
+    const selected = "github|github.com/acme/api";
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    setGlobalRepoPresetSelection("Backend", selected);
+    deleteSettings.mockResolvedValue({
+      data: { repo_presets: [], repos: [] },
+      response: new Response(),
+    });
+    render(RepoTypeahead, { props: { selected, onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Select repository: Backend" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Delete preset Backend" }));
+    expect(screen.getByText("Delete the preset ‘Backend’?")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Delete preset" }));
+
+    await waitFor(() => expect(settingsStore.getRepoPresets()).toEqual([]));
+    expect(getGlobalRepo()).toBe(selected);
+    expect(localStorage.getItem("kenn-forge-filter-repo-preset")).toBeNull();
+    expect(onchange).not.toHaveBeenCalled();
+  });
+
+  it("keeps the delete dialog open and flashes settings failures", async () => {
+    const selected = "github|github.com/acme/api";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    deleteSettings.mockResolvedValue({
+      error: {
+        type: "about:blank",
+        title: "Delete failed",
+        status: 500,
+        detail: "Preset deletion failed",
+        code: "internalError",
+      },
+      response: new Response(undefined, { status: 500 }),
+    });
+    render(RepoTypeahead, { props: { selected, onchange: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Select repository: Backend" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Delete preset Backend" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Delete preset" }));
+
+    await waitFor(() => {
+      expect(getFlash()).toMatchObject({ message: "Preset deletion failed", tone: "danger" });
+    });
+    expect(screen.getByRole("dialog", { name: "Delete repository preset?" })).toBeTruthy();
+    expect(settingsStore.getRepoPresets()).toHaveLength(1);
   });
 });

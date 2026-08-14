@@ -83,14 +83,14 @@ test.describe("container-aware layout", () => {
     await expect(page.locator(".sync-btn .sync-label")).not.toBeVisible();
 
     await page.locator(".typeahead-trigger").click();
-    await expect(page.locator(".typeahead-list")).toBeVisible();
-    const repoMenuStyle = await page.evaluate(() => {
-      const list = document.querySelector(".typeahead-list");
-      const style = list ? getComputedStyle(list) : null;
+    const repoMenu = page.getByRole("listbox", { name: "Repositories" }).locator("..");
+    await expect(repoMenu).toBeVisible();
+    const repoMenuStyle = await repoMenu.evaluate((menu) => {
+      const style = getComputedStyle(menu);
       return {
-        background: style?.backgroundColor ?? "",
-        borderColor: style?.borderColor ?? "",
-        borderRadius: style?.borderRadius ?? "",
+        background: style.backgroundColor,
+        borderColor: style.borderColor,
+        borderRadius: style.borderRadius,
       };
     });
 

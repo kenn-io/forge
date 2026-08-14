@@ -23,6 +23,7 @@ const maxOutputReplay = 64 * 1024
 const (
 	maxOwnerConnections      = 32
 	ownerFirstRequestTimeout = 5 * time.Second
+	ownerExitCodeGracePeriod = 200 * time.Millisecond
 	maxOwnerFirstRequestSize = 8 * 1024
 	maxOwnerRequestSize      = 96 * 1024
 	maxOwnerInputSize        = 64 * 1024
@@ -54,6 +55,7 @@ type owner struct {
 	exitCode                int
 	exited                  bool
 	done                    chan struct{}
+	processExited           chan struct{}
 	drainDone               chan struct{}
 	stopRequested           chan struct{}
 	activeAttachmentsDone   chan struct{}
@@ -131,6 +133,7 @@ func RunOwner(ctx context.Context, opts Options) error {
 		subscribers:            make(map[chan []byte]struct{}),
 		exitCode:               -1,
 		done:                   make(chan struct{}),
+		processExited:          make(chan struct{}),
 		drainDone:              make(chan struct{}),
 		stopRequested:          make(chan struct{}),
 		activeAttachmentsDone:  make(chan struct{}),
@@ -332,7 +335,7 @@ func (o *owner) handleAttach(
 				return
 			}
 		}
-		code := o.currentExitCode()
+		code := o.exitCodeAfterOutputClose()
 		writeMu.Lock()
 		_ = enc.Encode(Response{
 			Type: ResponseExit, OK: true, ExitCode: &code,
@@ -471,12 +474,15 @@ func (o *owner) drainOutput() {
 
 func (o *owner) wait() {
 	code := waitExitCode(o.cmd.Wait())
+	o.mu.Lock()
+	o.exitCode = code
+	o.mu.Unlock()
+	close(o.processExited)
 	select {
 	case <-o.drainDone:
 	case <-time.After(500 * time.Millisecond):
 	}
 	o.mu.Lock()
-	o.exitCode = code
 	o.exited = true
 	o.activeAttachmentsAtExit = o.activeAttachments > 0
 	o.mu.Unlock()
@@ -567,6 +573,14 @@ func (o *owner) currentExitCode() int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.exitCode
+}
+
+func (o *owner) exitCodeAfterOutputClose() int {
+	select {
+	case <-o.processExited:
+	case <-time.After(ownerExitCodeGracePeriod):
+	}
+	return o.currentExitCode()
 }
 
 func resolveExecutable(name string) (string, error) {

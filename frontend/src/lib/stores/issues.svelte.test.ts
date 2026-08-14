@@ -8,6 +8,7 @@ import { mockSettings } from "../../test/mockApiFetch.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 import { createIssuesStore as createRuntimeIssuesStore, type IssuesStoreOptions } from "./issues.svelte.js";
+import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -30,6 +31,7 @@ async function loadIssueDetail(
 
 beforeEach(() => {
   runtime = undefined;
+  localStorage.clear();
 });
 
 afterEach(async () => {
@@ -207,6 +209,23 @@ function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
 }
 
 describe("createIssuesStore", () => {
+  it("persists and sends the Involves me filter", async () => {
+    const get = vi.fn(async () => ({ data: [], error: undefined }));
+    const store = createIssuesStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    store.setInvolvesMe(true);
+    store.loadIssues();
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+
+    expect(localStorage.getItem(involvesMeFilterStorageKey("issues"))).toBe("1");
+    expect(get).toHaveBeenCalledWith(
+      "/issues",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ involves_me: true }) },
+      }),
+    );
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });

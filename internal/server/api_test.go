@@ -62,6 +62,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/processjob"
 	"go.kenn.io/forge/internal/testutil/testsignal"
+	"go.kenn.io/forge/internal/testutil/testtmux"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -72,7 +73,8 @@ import (
 const serverRuntimeHelperMarker = "kenn-forge-runtime-helper"
 
 var (
-	ptyE2ESemaphore = semaphore.NewWeighted(1)
+	privateTmuxOwner *testtmux.Owner
+	ptyE2ESemaphore  = semaphore.NewWeighted(1)
 	// Root keeps only Workspace tests that cross provider, config, Kata,
 	// runtime, terminal, Fleet, or agent-context composition boundaries.
 	// Bound their Git setup independently from the workspacetest binary.
@@ -80,6 +82,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	if code, ok := testtmux.CommandWrapperExitCode(); ok {
+		os.Exit(code)
+	}
 	if isServerHelperProcess() {
 		os.Exit(m.Run())
 	}
@@ -87,14 +92,20 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "contain server test process tree: %v\n", err)
 		os.Exit(1)
 	}
+	if testtmux.Supported() {
+		var ownerErr error
+		privateTmuxOwner, ownerErr = testtmux.New()
+		if ownerErr != nil {
+			fmt.Fprintf(os.Stderr, "initialize private test tmux owner: %v\n", ownerErr)
+			os.Exit(1)
+		}
+	}
 	envDir, envDirErr := os.MkdirTemp("", "kenn-forge-server-tmux-env-*")
 	if envDirErr == nil {
 		_ = os.Setenv("KENN_FORGE_TMUX_ENV_DIR", envDir)
 	}
 	runCleanup, stopSignalCleanup := testsignal.Install(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return cleanupForgeTestTmuxSessionsWithContext(ctx)
+		return cleanupServerTestTmux(privateTmuxOwner)
 	}, func(err error) {
 		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
 	})
@@ -1881,6 +1892,60 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("github", body[0].Repo.Provider)
 	assert.Equal("github.com", body[0].Repo.PlatformHost)
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
+}
+
+func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mock := &mockGH{
+		authenticatedViewerLoginFn: func(context.Context) (string, error) {
+			return "TestUser", nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRAuthor("testuser"), withSeedPRTimes(now, now, now))
+	seedPR(t, database, "acme", "widget", 2,
+		withSeedPRAuthor("someone-else"), withSeedPRTimes(now, now, now))
+	seedIssue(t, database, "acme", "widget", 3, "open")
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repo.ID, PlatformID: 4000, Number: 4,
+		URL: "https://github.com/acme/widget/issues/4", Title: "Unrelated issue",
+		Author: "someone-else", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	pullsRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?state=all&involves_me=true", nil)
+	require.Equal(http.StatusOK, pullsRR.Code, pullsRR.Body.String())
+	var pulls []pullapi.MergeRequestResponse
+	require.NoError(json.Unmarshal(pullsRR.Body.Bytes(), &pulls))
+	require.Len(pulls, 1)
+	assert.Equal(1, pulls[0].Number)
+
+	issuesRR := doJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&involves_me=true", nil)
+	require.Equal(http.StatusOK, issuesRR.Code, issuesRR.Body.String())
+	var issues []issueapi.IssueResponse
+	require.NoError(json.Unmarshal(issuesRR.Body.Bytes(), &issues))
+	require.Len(issues, 1)
+	assert.Equal(3, issues[0].Number)
+
+	activityRR := doJSON(t, srv, http.MethodGet, "/api/v1/activity?involves_me=true", nil)
+	require.Equal(http.StatusOK, activityRR.Code, activityRR.Body.String())
+	var activity activityResponse
+	require.NoError(json.Unmarshal(activityRR.Body.Bytes(), &activity))
+	require.Len(activity.Items, 2)
+	for _, item := range activity.Items {
+		assert.Contains([]int{1, 3}, item.ItemNumber)
+	}
+	assert.Equal(1, mock.authenticatedViewerCalls,
+		"viewer identity should be shared by concurrent view requests during the cache TTL")
 }
 
 func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
@@ -25672,7 +25737,9 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 		}
 	}
 	srv := New(database, syncer, nil, basePath, cfg, options)
-	t.Cleanup(func() { cleanupWorkspaceServerFixtureTmuxSessions(t, dir) })
+	t.Cleanup(func() {
+		cleanupWorkspaceServerFixtureTmuxSessions(t, cfg.Tmux.Command, dir)
+	})
 	// Cleanup callbacks run LIFO. Drain the server first so async
 	// workspace setup cannot create a tmux session after fixture
 	// artifact cleanup has listed workspaces. The DB cleanup was
@@ -25755,25 +25822,29 @@ func cleanupWorkspaceServerFixtureArtifactsWithContext(
 	return errors.Join(errs...)
 }
 
-func cleanupWorkspaceServerFixtureTmuxSessions(t *testing.T, root string) {
+func cleanupWorkspaceServerFixtureTmuxSessions(
+	t *testing.T,
+	tmuxCommand []string,
+	root string,
+) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
-		ctx, root,
+		ctx, tmuxCommand, root,
 	))
 }
 
 func cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
 	ctx context.Context,
+	tmuxCommand []string,
 	root string,
 ) error {
-	tmuxPath, err := exec.LookPath("tmux")
-	if err != nil {
+	if len(tmuxCommand) == 0 {
 		return nil
 	}
-	sessions, err := forgeTmuxSessions(ctx, tmuxPath, func(path string) bool {
+	sessions, err := forgeTmuxSessions(ctx, tmuxCommand, func(path string) bool {
 		return pathIsWithin(root, path)
 	})
 	if err != nil {
@@ -25781,8 +25852,8 @@ func cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
 	}
 	var errs []error
 	for _, session := range sessions {
-		cmd := procutil.CommandContext(
-			ctx, tmuxPath, "kill-session", "-t", session,
+		cmd := configuredTmuxCommandContext(
+			ctx, tmuxCommand, "kill-session", "-t", session,
 		)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
@@ -25796,7 +25867,7 @@ func cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
 			)
 		}
 	}
-	remaining, err := forgeTmuxSessions(ctx, tmuxPath, func(path string) bool {
+	remaining, err := forgeTmuxSessions(ctx, tmuxCommand, func(path string) bool {
 		return pathIsWithin(root, path)
 	})
 	if err != nil {
@@ -25811,71 +25882,34 @@ func cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
 	return errors.Join(errs...)
 }
 
-func cleanupForgeTestTmuxSessionsWithContext(ctx context.Context) error {
-	tmuxPath, err := exec.LookPath("tmux")
-	if err != nil {
+func cleanupServerTestTmux(owner *testtmux.Owner) error {
+	if owner == nil {
 		return nil
 	}
-	sessions, err := forgeTmuxSessions(
-		ctx, tmuxPath, pathIsGoTestTempPath,
-	)
-	if err != nil {
-		return err
-	}
-	var errs []error
-	for _, session := range sessions {
-		cmd := procutil.CommandContext(
-			ctx, tmuxPath, "kill-session", "-t", session,
-		)
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		if err := procutil.Run(ctx, cmd, "test tmux cleanup"); err != nil {
-			msg := strings.TrimSpace(stderr.String())
-			if strings.Contains(msg, "can't find session") ||
-				isTmuxServerAbsentMessage(msg) {
-				continue
-			}
-			errs = append(
-				errs,
-				fmt.Errorf(
-					"kill leaked tmux session %s: %w: %s",
-					session, err, msg,
-				),
-			)
-		}
-	}
-	remaining, err := forgeTmuxSessions(
-		ctx, tmuxPath, pathIsGoTestTempPath,
-	)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	if len(remaining) > 0 {
-		errs = append(errs, fmt.Errorf(
-			"server tests leaked tmux sessions: %s",
-			strings.Join(remaining, ", "),
-		))
-	}
-	return errors.Join(errs...)
+	return owner.Cleanup()
 }
 
 func forgeTmuxSessions(
 	ctx context.Context,
-	tmuxPath string,
+	tmuxCommand []string,
 	includePath func(string) bool,
 ) ([]string, error) {
 	// Colon-separated because tmux 3.6+ sanitizes control characters in
 	// -F output (a tab prints as "_"). Session names cannot contain ":"
 	// (tmux replaces it with "_"), so cutting at the first colon is
 	// unambiguous even when the session path contains colons.
-	cmd := procutil.CommandContext(
-		ctx, tmuxPath, "list-sessions", "-F", "#{session_name}:#{session_path}",
+	cmd := configuredTmuxCommandContext(
+		ctx, tmuxCommand,
+		"list-sessions", "-F", "#{session_name}:#{session_path}",
 	)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := procutil.Run(ctx, cmd, "test tmux cleanup list"); err != nil {
+		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if isTmuxServerAbsentMessage(msg) {
 			return nil, nil
@@ -25896,6 +25930,15 @@ func forgeTmuxSessions(
 	}
 	slices.Sort(sessions)
 	return sessions, nil
+}
+
+func configuredTmuxCommandContext(
+	ctx context.Context,
+	tmuxCommand []string,
+	args ...string,
+) *exec.Cmd {
+	commandArgs := append(slices.Clone(tmuxCommand[1:]), args...)
+	return procutil.CommandContext(ctx, tmuxCommand[0], commandArgs...)
 }
 
 func isTmuxServerAbsentMessage(msg string) bool {
@@ -26292,42 +26335,107 @@ func TestForgeTmuxSessionsTreatsMissingTmuxSocketAsEmpty(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	sessions, err := forgeTmuxSessions(
-		context.Background(), script, pathIsGoTestTempPath,
+		context.Background(), []string{script}, pathIsGoTestTempPath,
 	)
 
 	require.NoError(err)
 	require.Empty(sessions)
 }
 
-func TestCleanupForgeTestTmuxSessionsIgnoresConcurrentRemoval(t *testing.T) {
+func TestForgeTmuxSessionsTreatsMissingConfiguredCommandAsEmpty(t *testing.T) {
 	require := require.New(t)
-	dir := t.TempDir()
-	statePath := filepath.Join(dir, "removed")
-	tmuxPath := filepath.Join(dir, "tmux")
-	body := `#!/bin/sh
-if [ "$1" = "list-sessions" ]; then
-  if [ ! -f "$TMUX_REMOVED_STATE" ]; then
-    echo "kenn-forge-concurrent:$TMUX_SESSION_PATH"
-  fi
-  exit 0
-fi
-if [ "$1" = "kill-session" ]; then
-  : > "$TMUX_REMOVED_STATE"
-  echo "can't find session: $3" >&2
-  exit 1
-fi
-exit 2
-`
-	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
-	t.Setenv("PATH", dir)
-	t.Setenv("TMUX_REMOVED_STATE", statePath)
-	t.Setenv("TMUX_SESSION_PATH", dir)
-
-	err := cleanupForgeTestTmuxSessionsWithContext(
+	sessions, err := forgeTmuxSessions(
 		context.Background(),
+		[]string{filepath.Join(t.TempDir(), "missing-tmux")},
+		pathIsGoTestTempPath,
 	)
 
 	require.NoError(err)
+	require.Empty(sessions)
+}
+
+func TestWorkspaceFixtureTmuxCleanupUsesConfiguredCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake tmux fixture uses Unix shell semantics")
+	}
+	require := require.New(t)
+	dir := t.TempDir()
+	defaultCalled := filepath.Join(dir, "default-called")
+	defaultTmux := filepath.Join(dir, "tmux")
+	require.NoError(os.WriteFile(
+		defaultTmux,
+		[]byte("#!/bin/sh\n: > \"$DEFAULT_TMUX_CALLED\"\nexit 99\n"),
+		0o755,
+	))
+	t.Setenv("DEFAULT_TMUX_CALLED", defaultCalled)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	privateRecord := filepath.Join(dir, "private-record")
+	privateKilled := filepath.Join(dir, "private-killed")
+	privateTmux := filepath.Join(dir, "private-tmux")
+	privateRoot := filepath.Join(dir, "fixture")
+	privateSocket := filepath.Join(dir, "private.sock")
+	privateBody := `#!/bin/sh
+printf '%s\n' "$*" >> "$PRIVATE_TMUX_RECORD"
+case "$*" in
+  *list-sessions*)
+    if [ ! -f "$PRIVATE_TMUX_KILLED" ]; then
+      printf 'kenn-forge-fixture:%s\n' "$PRIVATE_TMUX_ROOT"
+    fi
+    ;;
+  *kill-session*)
+    : > "$PRIVATE_TMUX_KILLED"
+    ;;
+esac
+`
+	require.NoError(os.WriteFile(privateTmux, []byte(privateBody), 0o755))
+	t.Setenv("PRIVATE_TMUX_RECORD", privateRecord)
+	t.Setenv("PRIVATE_TMUX_KILLED", privateKilled)
+	t.Setenv("PRIVATE_TMUX_ROOT", privateRoot)
+
+	err := cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
+		context.Background(),
+		[]string{privateTmux, "-S", privateSocket},
+		privateRoot,
+	)
+	require.NoError(err)
+	_, err = os.Stat(defaultCalled)
+	require.ErrorIs(err, os.ErrNotExist)
+	require.FileExists(privateKilled)
+	record, err := os.ReadFile(privateRecord)
+	require.NoError(err)
+	for line := range strings.SplitSeq(strings.TrimSpace(string(record)), "\n") {
+		require.True(
+			strings.HasPrefix(line, "-S "+privateSocket+" "),
+			"fixture cleanup lost private tmux prefix: %s", line,
+		)
+	}
+}
+
+func TestServerTestCleanupDoesNotInvokeDefaultTmux(t *testing.T) {
+	require := require.New(t)
+	var owner *testtmux.Owner
+	if testtmux.Supported() {
+		var err error
+		owner, err = testtmux.New()
+		require.NoError(err)
+		t.Cleanup(func() { _ = owner.Cleanup() })
+	}
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "tmux-called")
+	tmuxPath := filepath.Join(dir, "tmux")
+	require.NoError(os.WriteFile(
+		tmuxPath,
+		[]byte("#!/bin/sh\n: > \"$TMUX_CALLED\"\nexit 1\n"),
+		0o755,
+	))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TMUX_CALLED", logPath)
+
+	require.NoError(cleanupServerTestTmux(owner))
+	_, err := os.Stat(logPath)
+	require.ErrorIs(err, os.ErrNotExist)
 }
 
 func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
@@ -29365,12 +29473,11 @@ func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
 	require.Contains(got.String(), "echo:ping")
 }
 
-// TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E pins the
+// TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E pins the
 // websocket "exited" text frame contract through the real runtime stack. The
-// frontend's ShellDrawer only fires onExit when this frame arrives; without it
-// the drawer doesn't auto-close on shell exit and the user is stranded on a
-// dead session.
-func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
+// helper closes its PTY shortly before exiting so this exercises the window
+// where PTY EOF can arrive before process wait publishes the exit code.
+func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
 	}
@@ -29384,7 +29491,7 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
 			Command: []string{filepath.Join(dir, "missing-tmux")},
 		},
 		Shell: config.Shell{
-			Command: serverRuntimeHelperCommand("pty-close-on-input-then-sleep"),
+			Command: serverRuntimeHelperCommand("pty-close-on-input-then-exit"),
 		},
 	}
 	fixture := setupWorkspaceServerFixtureWithOptions(
@@ -29397,6 +29504,11 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
 
 	shell := launchPlainShellRuntimeSession(t, ctx, client, ws.Id)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, shell.Key)
+	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 1)
+	require.Equal(shell.Key, stored[0].SessionKey)
+	require.Empty(stored[0].TmuxSession)
 
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
@@ -29406,10 +29518,9 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
 	conn := dialWebSocketForTest(t, ctx, wsURL, "shell")
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	// Trigger after attach so the session cannot naturally exit before the
-	// websocket connects. The focused bridge test below covers the fast
-	// outputDone-before-Done race directly; this e2e keeps the real runtime
-	// contract pinned without depending on backend-specific PTY EOF timing.
+	// Trigger after attach so the session cannot exit before the websocket
+	// connects. The helper's short delay makes PTY EOF reliably precede process
+	// exit while remaining inside the owner's bounded exit-code grace period.
 	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("close\n")))
 	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -29430,15 +29541,28 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
 		}
 		require.NoError(json.Unmarshal(data, &msg))
 		require.Equal("exited", msg.Type)
-		// ExitCode may be 7 (cmd.Wait completed before writeRuntimeExit
-		// reads the snapshot) or -1 (writeRuntimeExit read snapshot
-		// before watchSession populated ExitCode). Both are "the
-		// session ended" signals the frontend treats identically;
-		// pinning a specific value would be timing-dependent.
-		require.NotEqual(0, msg.Code,
-			"non-success exit must report non-zero (or -1)")
-		return
+		require.Equal(7, msg.Code)
+		break
 	}
+
+	require.Eventually(func() bool {
+		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
+			ctx, ws.Id,
+		)
+		if runtimeErr != nil || runtimeResp.StatusCode() != http.StatusOK ||
+			runtimeResp.JSON200 == nil {
+			return false
+		}
+		if runtimeResp.JSON200.Sessions != nil {
+			for _, session := range *runtimeResp.JSON200.Sessions {
+				if session.Key == shell.Key {
+					return false
+				}
+			}
+		}
+		rows, rowsErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+		return rowsErr == nil && len(rows) == 0
+	}, 5*time.Second, 20*time.Millisecond)
 }
 
 // TestBridgeRuntimeAttachmentOutputClosedEmitsExitFrameBeforeDone pins the
@@ -30340,6 +30464,9 @@ esac
 
 func isolatedRealTmuxCommandIfAvailable(t *testing.T) []string {
 	t.Helper()
+	if !testtmux.Supported() {
+		return nil
+	}
 	tmuxPath, err := exec.LookPath("tmux")
 	if err != nil {
 		return nil
@@ -30349,17 +30476,10 @@ func isolatedRealTmuxCommandIfAvailable(t *testing.T) []string {
 
 func isolatedRealTmuxCommand(t *testing.T, tmuxPath string) []string {
 	t.Helper()
-	require := require.New(t)
-	tmuxDir, err := os.MkdirTemp("/tmp", "kenn-forge-test-tmux-*")
-	require.NoError(err)
-	socket := filepath.Join(tmuxDir, "tmux.sock")
-	t.Cleanup(func() {
-		_ = procutil.Command(
-			tmuxPath, "-f", "/dev/null", "-S", socket, "kill-server",
-		).Run()
-		_ = os.RemoveAll(tmuxDir)
-	})
-	return []string{tmuxPath, "-f", "/dev/null", "-S", socket}
+	if !testtmux.Supported() {
+		t.Skip("real tmux tests require Unix")
+	}
+	return privateTmuxOwner.Command(t, tmuxPath)
 }
 
 func serverRuntimeHelperCommand(mode string) []string {
@@ -30461,6 +30581,17 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 		_ = os.Stdout.Close()
 		_ = os.Stderr.Close()
 		time.Sleep(2 * time.Second)
+		os.Exit(7)
+	case "pty-close-on-input-then-exit":
+		_, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil {
+			os.Exit(2)
+		}
+		signal.Ignore(syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
+		_ = os.Stdin.Close()
+		_ = os.Stdout.Close()
+		_ = os.Stderr.Close()
+		time.Sleep(50 * time.Millisecond)
 		os.Exit(7)
 	default:
 		os.Exit(2)

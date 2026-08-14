@@ -1,4 +1,5 @@
 const STORAGE_KEY = "kenn-forge-filter-repo";
+const PRESET_STORAGE_KEY = "kenn-forge-filter-repo-preset";
 
 export function parseRepoFilterValue(repo: string | undefined): string[] {
   return (repo ?? "")
@@ -21,6 +22,26 @@ function loadPersistedRepo(): string | undefined {
 }
 
 let filterRepo = $state<string | undefined>(loadPersistedRepo());
+let filterRepoPresetAffinity = $state<string | undefined>(loadPersistedPresetAffinity());
+
+function loadPersistedPresetAffinity(): string | undefined {
+  try {
+    return localStorage.getItem(PRESET_STORAGE_KEY)?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function setPresetAffinity(name: string | undefined): void {
+  const normalized = name?.trim() || undefined;
+  filterRepoPresetAffinity = normalized;
+  try {
+    if (normalized) localStorage.setItem(PRESET_STORAGE_KEY, normalized);
+    else localStorage.removeItem(PRESET_STORAGE_KEY);
+  } catch {
+    // Storage blocked — affinity still works for this session.
+  }
+}
 
 export function getGlobalRepo(): string | undefined {
   return filterRepo;
@@ -40,6 +61,20 @@ export function setGlobalRepo(repo: string | undefined): void {
   }
 }
 
+export function getGlobalRepoPresetAffinity(): string | undefined {
+  return filterRepoPresetAffinity;
+}
+
+export function setGlobalRepoPresetSelection(name: string | undefined, repo: string | undefined): void {
+  setPresetAffinity(name);
+  setGlobalRepo(repo);
+}
+
+export function clearGlobalRepoPresetAffinity(name?: string): void {
+  if (name !== undefined && filterRepoPresetAffinity?.toLowerCase() !== name.trim().toLowerCase()) return;
+  setPresetAffinity(undefined);
+}
+
 export function applyConfigRepo(
   repo:
     | {
@@ -54,6 +89,7 @@ export function applyConfigRepo(
   hideSelector: boolean,
 ): void {
   if (hideSelector) {
+    setPresetAffinity(undefined);
     const provider = repo?.provider?.trim();
     const host = (repo?.platform_host ?? repo?.host)?.trim();
     const repoPath = (repo?.repo_path ?? (repo?.owner && repo.name ? `${repo.owner}/${repo.name}` : "")).trim();

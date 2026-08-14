@@ -274,6 +274,7 @@ export const mockSettings = {
       hidden_from_ui: false,
     },
   ],
+  repo_presets: [],
   activity: {
     collapse_threads: false,
     default_branch_max_commits: 5000,

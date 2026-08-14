@@ -73,6 +73,13 @@ type AuthenticatedUserResolver interface {
 	AuthenticatedUser(ctx context.Context, ref RepoRef) (string, error)
 }
 
+// AuthenticatedUserCacheKeyResolver identifies the effective credential used
+// for a repository without exposing credential material. Repositories with the
+// same non-empty key share one authenticated-user lookup for the process.
+type AuthenticatedUserCacheKeyResolver interface {
+	AuthenticatedUserCacheKey(ref RepoRef) string
+}
+
 type IssueReader interface {
 	ListOpenIssues(ctx context.Context, ref RepoRef) ([]Issue, error)
 	GetIssue(ctx context.Context, ref RepoRef, number int) (Issue, error)

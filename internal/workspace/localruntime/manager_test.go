@@ -25,9 +25,16 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/processjob"
+	"go.kenn.io/forge/internal/testutil/testsignal"
+	"go.kenn.io/forge/internal/testutil/testtmux"
 )
 
+var privateTmuxOwner *testtmux.Owner
+
 func TestMain(m *testing.M) {
+	if code, ok := testtmux.CommandWrapperExitCode(); ok {
+		os.Exit(code)
+	}
 	if os.Getenv("KENN_FORGE_LOCALRUNTIME_HELPER") == "1" {
 		os.Exit(m.Run())
 	}
@@ -35,11 +42,37 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "contain local runtime test process tree: %v\n", err)
 		os.Exit(1)
 	}
+	if testtmux.Supported() {
+		var ownerErr error
+		privateTmuxOwner, ownerErr = testtmux.New()
+		if ownerErr != nil {
+			fmt.Fprintf(os.Stderr, "initialize private test tmux owner: %v\n", ownerErr)
+			os.Exit(1)
+		}
+	}
 	envDir, err := os.MkdirTemp("", "kenn-forge-localruntime-tmux-env-*")
 	if err == nil {
 		_ = os.Setenv("KENN_FORGE_TMUX_ENV_DIR", envDir)
 	}
+	runCleanup, stopSignalCleanup := testsignal.Install(
+		func() error {
+			if privateTmuxOwner == nil {
+				return nil
+			}
+			return privateTmuxOwner.Cleanup()
+		},
+		func(cleanupErr error) {
+			fmt.Fprintf(os.Stderr, "cleanup private test tmux servers: %v\n", cleanupErr)
+		},
+	)
 	code := m.Run()
+	if cleanupErr := runCleanup(); cleanupErr != nil {
+		fmt.Fprintf(os.Stderr, "cleanup private test tmux servers: %v\n", cleanupErr)
+		if code == 0 {
+			code = 1
+		}
+	}
+	stopSignalCleanup()
 	if err == nil {
 		_ = os.RemoveAll(envDir)
 	}
@@ -1018,24 +1051,17 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "client-secret")
 	t.Setenv("KENN_FORGE_STRIPPED_ENV", "client-stripped")
 
-	dir, err := os.MkdirTemp("/tmp", "kenn-forge-tmux-env-*")
-	require.NoError(err)
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
-	socket := filepath.Join(dir, "tmux.sock")
+	tmuxCommand := privateTmuxOwner.Command(t, tmuxPath)
+	socket := tmuxCommand[len(tmuxCommand)-1]
+	dir := filepath.Dir(socket)
 	output := filepath.Join(dir, "env-output")
 	seed := "kenn-forge-seed-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	sessionName := "kenn-forge-test-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	t.Cleanup(func() {
-		_ = procutil.Command(
-			tmuxPath, "-f", "/dev/null", "-S", socket, "kill-server",
-		).Run()
-	})
-
 	seedCmd := procutil.Command(
-		tmuxPath, "-f", "/dev/null", "-S", socket,
-		"new-session", "-d", "-s", seed, "sleep 10",
+		tmuxCommand[0], append(
+			append([]string(nil), tmuxCommand[1:]...),
+			"new-session", "-d", "-s", seed, "sleep 10",
+		)...,
 	)
 	seedCmd.Env = append(
 		sessionEnvironment(os.Environ(), []string{"KENN_FORGE_STRIPPED_ENV"}),
@@ -1067,7 +1093,6 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 	require.NotContains(paneCommand, "server-secret")
 	require.NotContains(paneCommand, "server-stripped")
 
-	tmuxCommand := []string{tmuxPath, "-f", "/dev/null", "-S", socket}
 	_, err = tmuxLauncher{
 		TmuxCommand: tmuxCommand,
 		Session:     sessionName,
@@ -2089,7 +2114,145 @@ func TestAttachmentResizeOwnerPrefersActiveLocalUntilInactive(t *testing.T) {
 		{cols: 80, rows: 24},
 		{cols: 90, rows: 25},
 		{cols: 100, rows: 30},
+		{cols: 95, rows: 26},
 		{cols: 120, rows: 40},
+	}, pty.resizes())
+}
+
+func TestAttachmentResizeOwnerFollowsLatestDeliberateLocalClaim(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	pty := &fakeRuntimePTY{
+		output: make(chan []byte),
+		done:   make(chan struct{}),
+	}
+	s := &session{
+		info: SessionInfo{
+			Key:         "session-1",
+			WorkspaceID: "ws-1",
+			Status:      SessionStatusRunning,
+		},
+		pty:         pty,
+		done:        make(chan struct{}),
+		outputDone:  make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+
+	first, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityLocal,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	defer first.Close()
+	second, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityLocal,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	defer second.Close()
+
+	settle, err := first.ClaimResize(100, 30)
+	require.NoError(err)
+	require.True(settle)
+	settle, err = first.ClaimResize(100, 30)
+	require.NoError(err)
+	require.True(settle, "an unacknowledged claim must keep requesting settlement")
+	first.ResizeSettled()
+	settle, err = first.ClaimResize(100, 30)
+	require.NoError(err)
+	require.False(settle)
+	secondNeedsSettle, err := second.ClaimResize(120, 40)
+	require.NoError(err)
+	require.True(secondNeedsSettle)
+	require.NoError(first.Resize(101, 31))
+	firstNeedsSettle, err := first.ClaimResize(101, 31)
+	require.NoError(err)
+	require.True(firstNeedsSettle)
+	second.ResizeSettled()
+	firstNeedsSettle, err = first.ClaimResize(101, 31)
+	require.NoError(err)
+	require.True(firstNeedsSettle, "an older acknowledgement must not settle a newer claim")
+	first.ResizeSettled()
+	firstNeedsSettle, err = first.ClaimResize(101, 31)
+	require.NoError(err)
+	require.False(firstNeedsSettle)
+
+	assert.Equal([]terminalResize{
+		{cols: 100, rows: 30},
+		{cols: 120, rows: 40},
+		{cols: 101, rows: 31},
+	}, pty.resizes())
+}
+
+func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	pty := &fakeRuntimePTY{
+		output: make(chan []byte),
+		done:   make(chan struct{}),
+	}
+	s := &session{
+		info: SessionInfo{
+			Key:         "session-1",
+			WorkspaceID: "ws-1",
+			Status:      SessionStatusRunning,
+		},
+		pty:         pty,
+		done:        make(chan struct{}),
+		outputDone:  make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+
+	first, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityLocal,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	defer first.Close()
+	_, err = first.ClaimResize(80, 24)
+	require.NoError(err)
+
+	second, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityLocal,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	defer second.Close()
+	_, err = second.ClaimResize(90, 25)
+	require.NoError(err)
+
+	third, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityLocal,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	_, err = third.ClaimResize(100, 30)
+	require.NoError(err)
+	require.NoError(first.Resize(81, 24))
+	third.Close()
+
+	assert.Equal([]terminalResize{
+		{cols: 80, rows: 24},
+		{cols: 90, rows: 25},
+		{cols: 100, rows: 30},
+		{cols: 90, rows: 25},
 	}, pty.resizes())
 }
 

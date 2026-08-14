@@ -61,7 +61,7 @@ test("hiding a repository empties interactive catalogs and its filter until show
   // The persisted filter selection normalizes away instead of silently
   // keeping lists scoped to the hidden repository.
   await page.goto(`${server!.info.base_url}/issues`);
-  await expect(page.getByRole("button", { name: /^Select repository:/ })).toContainText("All repos");
+  await expect(page.getByRole("button", { name: /^Select repository:/ })).toContainText("Global");
 
   // The preference survives a reload and reverses through the same menu.
   await page.goto(`${server!.info.base_url}/settings`);

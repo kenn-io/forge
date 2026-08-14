@@ -77,6 +77,7 @@
             Effect.sync(() => {
               settings = loaded;
               settingsStore.setConfiguredRepos(loaded.repos);
+              settingsStore.setRepoPresets(loaded.repo_presets);
               settingsStore.setModeVisibility(loaded.modes);
               hydrateTerminalSettings(terminalHydration, loaded.terminal);
               settingsStore.setPullRequestSettings(loaded.pull_requests);

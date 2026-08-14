@@ -7,6 +7,7 @@ import {
   type ModeVisibility,
   type PullRequestSettings,
   type Settings,
+  type RepoPreset,
   type TerminalSettings,
 } from "../api/types.js";
 
@@ -26,6 +27,7 @@ export function createSettingsStore() {
     auto_assign_on_create: false,
     default_sidebar_view: "diff",
   });
+  let repoPresets = $state.raw<RepoPreset[]>([]);
   let loaded = $state(false);
 
   function getConfiguredRepos(): ConfigRepo[] {
@@ -35,6 +37,17 @@ export function createSettingsStore() {
   function setConfiguredRepos(r: ConfigRepo[]): void {
     repos = r ?? [];
     loaded = true;
+  }
+
+  function getRepoPresets(): RepoPreset[] {
+    return repoPresets;
+  }
+
+  function setRepoPresets(presets: RepoPreset[] | null | undefined): void {
+    repoPresets = (presets ?? []).map((preset) => ({
+      ...preset,
+      repos: [...preset.repos],
+    }));
   }
 
   function getTerminalSettings(): TerminalSettings {
@@ -140,6 +153,8 @@ export function createSettingsStore() {
   return {
     getConfiguredRepos,
     setConfiguredRepos,
+    getRepoPresets,
+    setRepoPresets,
     getTerminalSettings,
     setTerminalSettings,
     getModeVisibility,

@@ -9,8 +9,8 @@ default_stages = ["pre-commit"]
 #   4   frontend-deps (bun install mutates node_modules, which every
 #       Node-based hook below reads; it must finish before they start)
 #   5   api-generate (rewrites generated Go/TS consumed by later groups)
-#   10  independent lanes: Go lint (sole Go mutator), frontend, rust, scripts
-#   20  read-only Go consumers that must see fixed and regenerated code
+#   10  independent lanes: bounded Go lint, frontend core, rust, scripts
+#   20+ bounded Go consumers, serialized to avoid multiplying host load
 
 [[repos]]
 repo = "builtin"
@@ -40,21 +40,21 @@ hooks = [
   { id = "cargo-fmt", name = "cargo fmt", language = "system", entry = "cargo fmt --all", files = "^(Cargo\\.toml|Cargo\\.lock|rust/.*\\.rs|rust/.*/Cargo\\.toml)$", pass_filenames = false, priority = 3 },
   { id = "frontend-deps", name = "install workspace dependencies", language = "system", entry = "make frontend-deps", always_run = true, pass_filenames = false, priority = 4 },
   { id = "api-generate", name = "regenerate api clients", language = "system", entry = "make api-generate", files = "^(go\\.mod|go\\.sum|cmd/kenn-forge-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|internal/apiclient/.*|frontend/package\\.json|frontend/bun\\.lock)$", exclude = "^(internal/apiclient/generated/client\\.gen\\.go|internal/apiclient/spec/openapi\\.json)$", pass_filenames = false, priority = 5 },
-  { id = "golangci-lint", name = "golangci-lint --fix", language = "system", entry = "make lint", files = "^(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false, priority = 10 },
-  { id = "golangci-lint-check", name = "golangci-lint check", language = "system", entry = "make lint-check", stages = [
+  { id = "golangci-lint", name = "golangci-lint --fix", language = "system", entry = "./scripts/run-hook-go.sh make lint", files = "^(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false, priority = 10 },
+  { id = "golangci-lint-check", name = "golangci-lint check", language = "system", entry = "./scripts/run-hook-go.sh make lint-check", stages = [
     "pre-push",
   ], always_run = true, pass_filenames = false, priority = 10 },
-  { id = "frontend-check", name = "vite-plus frontend check", language = "system", entry = "make frontend-check-no-deps", files = "^(vite\\.config\\.ts|package\\.json|bun\\.lock|frontend/((src|tests)/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json|vite\\.config\\.ts|playwright(-e2e)?\\.config\\.ts)|packages/(ui|github-app-ui)/(src/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json))$", pass_filenames = false, priority = 10 },
+  { id = "frontend-check", name = "vite-plus frontend core check", language = "system", entry = "make frontend-check-core-no-deps", files = "^(vite\\.config\\.ts|package\\.json|bun\\.lock|frontend/((src|tests)/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json|vite\\.config\\.ts|playwright(-e2e)?\\.config\\.ts)|packages/(ui|github-app-ui)/(src/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json))$", pass_filenames = false, priority = 10 },
   { id = "cargo-clippy", name = "cargo clippy", language = "system", entry = "cargo clippy --workspace --all-targets -- -D warnings", files = "^(Cargo\\.toml|Cargo\\.lock|rust/.*\\.(rs|toml)|rust/.*/Cargo\\.toml)$", pass_filenames = false, priority = 10 },
   { id = "frontend-api-client-check", name = "prevent manual frontend /api/v1 calls", language = "system", entry = "make frontend-api-client-check", files = "^(scripts/lint-api-urls\\.(mjs|test\\.mjs)|frontend/src/.*\\.(svelte|ts|js|tsx|jsx))$", pass_filenames = false, priority = 10 },
   { id = "font-size-token-check", name = "enforce font-size design tokens", language = "system", entry = "make font-size-token-check", files = "^(scripts/check-font-size-tokens\\.(ts|test\\.ts)|frontend/src/.*\\.(svelte|css|ts))$", pass_filenames = false, priority = 10 },
   { id = "script-tests", name = "script regression tests", language = "system", entry = "make script-tests", files = "^(scripts/.*\\.(mjs|ts|sh|py)|frontend/scripts/.*\\.ts|docs/screenshots/.*\\.(md|ts)|package\\.json|bun\\.lock)$", pass_filenames = false, priority = 10 },
   { id = "playwright-version-check", name = "browser CI image matches pinned toolchain", language = "system", entry = "make playwright-version-check", files = "^(scripts/check-playwright-version\\.mjs|\\.github/docker/playwright/Dockerfile|\\.github/workflows/ci\\.yml|package\\.json|frontend/package\\.json|packages/github-app-ui/package\\.json)$", pass_filenames = false, priority = 10 },
-  { id = "go-test-short", name = "go test (short)", language = "system", entry = "make test-short-precommit", files = "^(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false, priority = 20 },
-  { id = "testify-helper-check", name = "testify helper check", language = "system", entry = "make testify-helper-check", files = "^(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false, priority = 20 },
-  { id = "huma-route-check", name = "prevent non-Huma Go routes", language = "system", entry = "make huma-route-check", files = "^(tools/nohttpmux/.*\\.go|cmd/.*\\.go|internal/.*\\.go|kenn-forge\\.go)$", pass_filenames = false, priority = 20 },
-  { id = "migration-history-check", name = "enforce immutable history and one migration per PR", language = "system", entry = "go run ./tools/migrationhistorycheck", files = "^internal/db/migrations/.*$", pass_filenames = false, priority = 20 },
-  { id = "nilaway", name = "nilaway", language = "system", entry = "make nilaway", stages = [
+  { id = "go-test-short", name = "go test (short)", language = "system", entry = "./scripts/run-hook-go.sh make test-short-precommit", files = "^(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false, priority = 20 },
+  { id = "testify-helper-check", name = "testify helper check", language = "system", entry = "./scripts/run-hook-go.sh make testify-helper-check", files = "^(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false, priority = 21 },
+  { id = "huma-route-check", name = "prevent non-Huma Go routes", language = "system", entry = "./scripts/run-hook-go.sh make huma-route-check", files = "^(tools/nohttpmux/.*\\.go|cmd/.*\\.go|internal/.*\\.go|kenn-forge\\.go)$", pass_filenames = false, priority = 22 },
+  { id = "migration-history-check", name = "enforce immutable history and one migration per PR", language = "system", entry = "./scripts/run-hook-go.sh make migration-history-check", files = "^internal/db/migrations/.*$", pass_filenames = false, priority = 23 },
+  { id = "nilaway", name = "nilaway", language = "system", entry = "./scripts/run-hook-go.sh make nilaway", stages = [
     "pre-push",
   ], types_or = [
     "go",

@@ -322,7 +322,7 @@ function observeTerminalOutput(page: Page): {
             cols?: number;
             rows?: number;
           };
-          if (control.type === "resize" || control.type === "refresh") {
+          if (control.type === "claim_resize" || control.type === "resize" || control.type === "refresh") {
             recognizedControl = true;
             if (typeof control.cols === "number" && control.cols > 0) {
               stream.columns = control.cols;

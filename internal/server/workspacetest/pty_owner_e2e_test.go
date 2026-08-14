@@ -163,6 +163,105 @@ func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
 	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.Id)
 }
 
+func TestWorkspaceRuntimeResizeOwnerFollowsLatestDeliberateClientE2E(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stty-based terminal size probe requires a Unix PTY")
+	}
+	requirePTYAvailable(t)
+	require := require.New(t)
+
+	managerPath := buildRustPtyManagerForTest(t)
+	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
+	setLongUnixTempDirForTest(t)
+	disableTmuxAgentSessions := false
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key:     "shell-size",
+			Label:   "Shell size",
+			Command: []string{"/bin/sh"},
+		}},
+		Tmux: config.Tmux{
+			Command:       []string{filepath.Join(t.TempDir(), "missing-tmux")},
+			AgentSessions: &disableTmuxAgentSessions,
+		},
+	}
+	fixture := setupWorkspaceServerFixture(t, cfg, server.ServerOptions{
+		DisableWorkspaceBackgroundMonitors: true,
+		HostCheckAllowLoopbackAnyPort:      true,
+		PtyOwnerDir:                        ptyOwnerDir,
+		PtyOwnerManagerPath:                managerPath,
+	})
+	ctx := t.Context()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
+
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "shell-size"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.NotNil(launchResp.JSON200)
+	session := launchResp.JSON200
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
+
+	ts := httptest.NewServer(fixture.server)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/ws/v1/workspaces/" + ws.Id +
+		"/runtime/sessions/" + session.Key + "/terminal"
+	first, _, err := websocket.Dial(
+		ctx, wsURL+"?cols=80&rows=24&resize_active=1", nil,
+	)
+	require.NoError(err)
+	defer first.Close(websocket.StatusNormalClosure, "done")
+	second, _, err := websocket.Dial(
+		ctx, wsURL+"?cols=100&rows=30&resize_active=1", nil,
+	)
+	require.NoError(err)
+	defer second.Close(websocket.StatusNormalClosure, "done")
+
+	require.NoError(second.Write(
+		ctx,
+		websocket.MessageText,
+		[]byte(`{"type":"claim_resize","cols":100,"rows":30}`),
+	))
+	workspaceTerminalConnWriteRead(
+		t, ctx, second,
+		"printf 'second-size:'; stty size\r",
+		"second-size:30 100",
+	)
+
+	require.NoError(first.Write(
+		ctx,
+		websocket.MessageText,
+		[]byte(`{"type":"resize","cols":120,"rows":40}`),
+	))
+	workspaceTerminalConnWriteRead(
+		t, ctx, second,
+		"printf 'still-second:'; stty size\r",
+		"still-second:30 100",
+	)
+
+	require.NoError(first.Write(
+		ctx,
+		websocket.MessageText,
+		[]byte(`{"type":"claim_resize","cols":120,"rows":40}`),
+	))
+	workspaceTerminalConnWriteRead(
+		t, ctx, first,
+		"printf 'first-size:'; stty size\r",
+		"first-size:40 120",
+	)
+
+	stopResp, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id, session.Key,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.Id)
+}
+
 func deleteWorkspaceForPtyOwnerTest(
 	t *testing.T,
 	ctx context.Context,

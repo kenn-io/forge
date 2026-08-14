@@ -52,7 +52,7 @@ func (s *Handler) setPullAssignees(
 		return nil, err
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull failed")
 	}
@@ -94,7 +94,7 @@ func (s *Handler) setPullReviewers(
 		return nil, err
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull failed")
 	}

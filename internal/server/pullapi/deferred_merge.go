@@ -116,7 +116,7 @@ func (s *Handler) enqueueDeferredMerge(
 	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
 		return deferMergePRBody{}, err
 	}
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
 	if err != nil {
 		return deferMergePRBody{}, httpapi.Internal("get pull request failed")
 	}
@@ -266,7 +266,7 @@ func (s *Handler) refreshDeferredMergeCI(
 	pendingKeys []deferredMergeCheckKey,
 	queuedTarget deferredMergeTargetSnapshot,
 ) (string, error) {
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
 	if err != nil {
 		return "", err
 	}
@@ -292,7 +292,7 @@ func (s *Handler) refreshDeferredMergeCI(
 	if len(warnings) > 0 {
 		return "", errors.New("could not refresh CI checks; deferred merge was not performed: " + strings.Join(warnings, "; "))
 	}
-	refreshed, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	refreshed, err := s.visibleMergeRequest(ctx, repo.ID, number)
 	if err != nil {
 		return "", err
 	}
@@ -349,7 +349,7 @@ func (s *Handler) refreshPendingDeferredMergeCheckKeys(
 			map[string]any{"reason": "ci_refresh_unavailable", "warnings": warnings},
 		)
 	}
-	refreshed, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	refreshed, err := s.visibleMergeRequest(ctx, repo.ID, number)
 	if err != nil {
 		return nil, nil, httpapi.Internal("get pull request after CI refresh failed")
 	}
@@ -439,7 +439,7 @@ func (s *Handler) completeDeferredMerge(
 }
 
 func (s *Handler) ensureDeferredMergeTargetUnchanged(ctx context.Context, repo db.Repo, number int, queuedTarget deferredMergeTargetSnapshot) error {
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
 	if err != nil {
 		return err
 	}

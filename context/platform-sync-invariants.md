@@ -422,6 +422,9 @@ Repository import requests and route/query shapes should carry
   characters exactly once, via shared provider route helpers.
 - New provider-aware routes should not require ad hoc URL construction in
   stores/components.
+- Archive items marked `removed_upstream` remain stored for sync repair but are
+  hidden from public item reads, stacks, activity, repository summaries, and
+  archive reports; `inaccessible` items remain visible. (`internal/server/pullapi/helpers.go::visibleMergeRequest`)
 - Embedded navigation events for repo-bound routes must publish identity from
   parsed route state, not from global embed config. When a route carries repo
   identity, event payloads should include `provider`, `platform_host`, and

@@ -51,6 +51,13 @@ func (d *DB) loadRepoSummaryStats(
 			       SUM(CASE WHEN state = 'open' AND is_draft THEN 1 ELSE 0 END) AS draft_pr_count,
 			       MAX(last_activity_at) AS last_pr_activity_at
 			FROM forge_merge_requests
+			WHERE NOT EXISTS (
+			    SELECT 1 FROM forge_archive_items ai
+			    WHERE ai.repo_id = forge_merge_requests.repo_id
+			      AND ai.item_type = 'merge_request'
+			      AND ai.item_number = forge_merge_requests.number
+			      AND ai.lifecycle_state = 'removed_upstream'
+			)
 			GROUP BY repo_id
 		),
 		issue_stats AS (
@@ -59,6 +66,13 @@ func (d *DB) loadRepoSummaryStats(
 			       SUM(CASE WHEN state = 'open' THEN 1 ELSE 0 END) AS open_issue_count,
 			       MAX(last_activity_at) AS last_issue_activity_at
 			FROM forge_issues
+			WHERE NOT EXISTS (
+			    SELECT 1 FROM forge_archive_items ai
+			    WHERE ai.repo_id = forge_issues.repo_id
+			      AND ai.item_type = 'issue'
+			      AND ai.item_number = forge_issues.number
+			      AND ai.lifecycle_state = 'removed_upstream'
+			)
 			GROUP BY repo_id
 		)
 		SELECT r.id,
@@ -422,10 +436,24 @@ func (d *DB) loadRepoSummaryAuthors(
 			SELECT repo_id, author, last_activity_at
 			FROM forge_merge_requests
 			WHERE author <> ''
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = forge_merge_requests.repo_id
+			        AND ai.item_type = 'merge_request'
+			        AND ai.item_number = forge_merge_requests.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT repo_id, author, last_activity_at
 			FROM forge_issues
 			WHERE author <> ''
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = forge_issues.repo_id
+			        AND ai.item_type = 'issue'
+			        AND ai.item_number = forge_issues.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
 		),
 		author_totals AS (
 			SELECT repo_id,
@@ -497,6 +525,13 @@ func (d *DB) loadRepoSummaryIssues(
 			       ) AS rank
 			FROM forge_issues
 			WHERE state = 'open'
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = forge_issues.repo_id
+			        AND ai.item_type = 'issue'
+			        AND ai.item_number = forge_issues.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
 		)
 		SELECT repo_id, number, title, author, state, url, last_activity_at
 		FROM ranked

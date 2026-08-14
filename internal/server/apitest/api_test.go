@@ -39,17 +39,17 @@ func TestAPIListPullsIncludesLabels(t *testing.T) {
 }
 
 func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
-	require := require.New(t)
+	req := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	seedPR(t, database, "acme", "widget", 1)
-	seedPR(t, database, "acme", "widget", 2)
+	inaccessiblePRID := seedPR(t, database, "acme", "widget", 1)
+	removedPRID := seedPR(t, database, "acme", "widget", 2)
 	repo, err := database.GetRepoByIdentity(
 		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
 	)
-	require.NoError(err)
-	require.NotNil(repo)
+	req.NoError(err)
+	req.NotNil(repo)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.WriteDB().ExecContext(ctx, `
 		INSERT INTO forge_archive_items (
@@ -60,24 +60,207 @@ func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
 			(?, 'merge_request', 2, 'removed-pr-2', ?, ?, 'removed_upstream')`,
 		repo.ID, now, now, repo.ID, now, now,
 	)
-	require.NoError(err)
+	req.NoError(err)
 
 	client := setupTestClient(t, srv)
 	state := "all"
 	listed, err := client.HTTP.ListPullsWithResponse(
 		ctx, &generated.ListPullsParams{State: &state},
 	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, listed.StatusCode())
-	require.NotNil(listed.JSON200)
-	require.Len(*listed.JSON200, 1)
-	require.EqualValues(1, (*listed.JSON200)[0].Number)
+	req.NoError(err)
+	req.Equal(http.StatusOK, listed.StatusCode())
+	req.NotNil(listed.JSON200)
+	req.Len(*listed.JSON200, 1)
+	req.EqualValues(1, (*listed.JSON200)[0].Number)
 
 	detail, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", 2,
 	)
+	req.NoError(err)
+	req.Equal(http.StatusNotFound, detail.StatusCode())
+
+	stackID, err := database.UpsertStack(ctx, repo.ID, 1, "Synthetic stack")
+	req.NoError(err)
+	req.NoError(database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
+		{MergeRequestID: inaccessiblePRID, Position: 1},
+		{MergeRequestID: removedPRID, Position: 2},
+	}))
+
+	previewPath := "README.md"
+	readPaths := map[string]func() (int, error){
+		"commits": func() (int, error) {
+			resp, requestErr := client.HTTP.GetPullCommitsWithResponse(
+				ctx, "gh", "acme", "widget", 2,
+			)
+			return resp.StatusCode(), requestErr
+		},
+		"diff": func() (int, error) {
+			resp, requestErr := client.HTTP.GetPullDiffWithResponse(
+				ctx, "gh", "acme", "widget", 2, &generated.GetPullDiffParams{},
+			)
+			return resp.StatusCode(), requestErr
+		},
+		"file preview": func() (int, error) {
+			resp, requestErr := client.HTTP.GetPullFilePreviewWithResponse(
+				ctx, "gh", "acme", "widget", 2,
+				&generated.GetPullFilePreviewParams{Path: &previewPath},
+			)
+			return resp.StatusCode(), requestErr
+		},
+		"files": func() (int, error) {
+			resp, requestErr := client.HTTP.GetPullFilesWithResponse(
+				ctx, "gh", "acme", "widget", 2,
+			)
+			return resp.StatusCode(), requestErr
+		},
+		"import metadata": func() (int, error) {
+			resp, requestErr := client.HTTP.GetPullImportMetadataWithResponse(
+				ctx, "gh", "acme", "widget", 2,
+			)
+			return resp.StatusCode(), requestErr
+		},
+		"review draft": func() (int, error) {
+			resp, requestErr := client.HTTP.GetPrReviewDraftWithResponse(
+				ctx, "gh", "acme", "widget", 2,
+			)
+			return resp.StatusCode(), requestErr
+		},
+		"stack": func() (int, error) {
+			resp, requestErr := client.HTTP.GetPullStackWithResponse(
+				ctx, "gh", "acme", "widget", 2,
+			)
+			return resp.StatusCode(), requestErr
+		},
+	}
+	for name, readPath := range readPaths {
+		t.Run(name, func(t *testing.T) {
+			status, requestErr := readPath()
+			require.NoError(t, requestErr)
+			assert.Equal(t, http.StatusNotFound, status)
+		})
+	}
+
+	repoFilter := "acme/widget"
+	stacks, err := client.HTTP.ListStacksWithResponse(
+		ctx, &generated.ListStacksParams{Repo: &repoFilter},
+	)
+	req.NoError(err)
+	req.Equal(http.StatusOK, stacks.StatusCode())
+	req.NotNil(stacks.JSON200)
+	req.Len(*stacks.JSON200, 1)
+	req.NotNil((*stacks.JSON200)[0].Members)
+	req.Len(*(*stacks.JSON200)[0].Members, 1)
+	req.EqualValues(1, (*(*stacks.JSON200)[0].Members)[0].Number)
+}
+
+func TestAPIActivityAndRepoSummariesHideRemovedUpstreamArchiveRows(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	inaccessiblePRID := seedPR(t, database, "acme", "widget", 1)
+	removedPRID := seedPR(t, database, "acme", "widget", 2)
+	inaccessibleIssueID := seedIssue(t, database, "acme", "widget", 3, "open")
+	removedIssueID := seedIssue(t, database, "acme", "widget", 4, "open")
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
 	require.NoError(err)
-	require.Equal(http.StatusNotFound, detail.StatusCode())
+	require.NotNil(repo)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE forge_merge_requests
+		SET author = CASE number WHEN 1 THEN 'visible-pr-author' ELSE 'removed-pr-author' END,
+		    is_draft = 1,
+		    created_at = CASE number WHEN 1 THEN ? ELSE ? END,
+		    updated_at = CASE number WHEN 1 THEN ? ELSE ? END,
+		    last_activity_at = CASE number WHEN 1 THEN ? ELSE ? END
+		WHERE repo_id = ? AND number IN (1, 2)`,
+		now.Add(-4*time.Minute), now.Add(-time.Minute),
+		now.Add(-4*time.Minute), now.Add(-time.Minute),
+		now.Add(-4*time.Minute), now.Add(-time.Minute), repo.ID,
+	)
+	require.NoError(err)
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE forge_issues
+		SET author = CASE number WHEN 3 THEN 'visible-issue-author' ELSE 'removed-issue-author' END,
+		    title = CASE number WHEN 3 THEN 'Visible issue' ELSE 'Removed issue' END,
+		    created_at = CASE number WHEN 3 THEN ? ELSE ? END,
+		    updated_at = CASE number WHEN 3 THEN ? ELSE ? END,
+		    last_activity_at = CASE number WHEN 3 THEN ? ELSE ? END
+		WHERE repo_id = ? AND number IN (3, 4)`,
+		now.Add(-3*time.Minute), now,
+		now.Add(-3*time.Minute), now,
+		now.Add(-3*time.Minute), now, repo.ID,
+	)
+	require.NoError(err)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+		{MergeRequestID: inaccessiblePRID, PlatformExternalID: "visible-pr-comment", EventType: "issue_comment", Author: "visible-commenter", CreatedAt: now.Add(-2 * time.Minute), DedupeKey: "visible-pr-comment"},
+		{MergeRequestID: removedPRID, PlatformExternalID: "removed-pr-comment", EventType: "issue_comment", Author: "removed-commenter", CreatedAt: now, DedupeKey: "removed-pr-comment"},
+	}))
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{
+		{IssueID: inaccessibleIssueID, PlatformExternalID: "visible-issue-comment", EventType: "issue_comment", Author: "visible-commenter", CreatedAt: now.Add(-2 * time.Minute), DedupeKey: "visible-issue-comment"},
+		{IssueID: removedIssueID, PlatformExternalID: "removed-issue-comment", EventType: "issue_comment", Author: "removed-commenter", CreatedAt: now, DedupeKey: "removed-issue-comment"},
+	}))
+	_, err = database.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES
+			(?, 'merge_request', 1, 'inaccessible-pr-1', ?, ?, 'inaccessible'),
+			(?, 'merge_request', 2, 'removed-pr-2', ?, ?, 'removed_upstream'),
+			(?, 'issue', 3, 'inaccessible-issue-3', ?, ?, 'inaccessible'),
+			(?, 'issue', 4, 'removed-issue-4', ?, ?, 'removed_upstream')`,
+		repo.ID, now, now, repo.ID, now, now,
+		repo.ID, now, now, repo.ID, now, now,
+	)
+	require.NoError(err)
+
+	client := setupTestClient(t, srv)
+	since := now.Add(-time.Hour).Format(time.RFC3339)
+	activity, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, activity.StatusCode())
+	require.NotNil(activity.JSON200)
+	require.NotNil(activity.JSON200.Items)
+	require.Len(*activity.JSON200.Items, 4)
+	for _, item := range *activity.JSON200.Items {
+		require.NotEqualValues(2, item.ItemNumber)
+		require.NotEqualValues(4, item.ItemNumber)
+	}
+	authors, err := client.HTTP.ListActivityAuthorsWithResponse(
+		ctx, &generated.ListActivityAuthorsParams{Since: &since},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, authors.StatusCode())
+	require.NotNil(authors.JSON200)
+	require.NotNil(authors.JSON200.Authors)
+	require.NotContains(*authors.JSON200.Authors, "removed-pr-author")
+	require.NotContains(*authors.JSON200.Authors, "removed-issue-author")
+
+	summaries, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, summaries.StatusCode())
+	require.NotNil(summaries.JSON200)
+	require.Len(*summaries.JSON200, 1)
+	summary := (*summaries.JSON200)[0]
+	require.EqualValues(1, summary.CachedPrCount)
+	require.EqualValues(1, summary.OpenPrCount)
+	require.EqualValues(1, summary.DraftPrCount)
+	require.EqualValues(1, summary.CachedIssueCount)
+	require.EqualValues(1, summary.OpenIssueCount)
+	require.NotNil(summary.ActiveAuthors)
+	require.Len(*summary.ActiveAuthors, 2)
+	require.ElementsMatch(
+		[]string{"visible-pr-author", "visible-issue-author"},
+		[]string{(*summary.ActiveAuthors)[0].Login, (*summary.ActiveAuthors)[1].Login},
+	)
+	require.NotNil(summary.RecentIssues)
+	require.Len(*summary.RecentIssues, 1)
+	require.EqualValues(3, (*summary.RecentIssues)[0].Number)
+	require.Equal("Visible issue", (*summary.RecentIssues)[0].Title)
 }
 
 func TestAPIIssuesHideRemovedUpstreamArchiveRows(t *testing.T) {

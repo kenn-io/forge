@@ -25,7 +25,14 @@ func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, stateFilter str
 		SELECT id, number, title, head_branch, base_branch, state, ci_status, review_decision,
 		       head_repo_clone_url
 		FROM forge_merge_requests
-		WHERE repo_id = ? `+stateFilter+`
+		WHERE repo_id = ?
+		  AND NOT EXISTS (
+		      SELECT 1 FROM forge_archive_items ai
+		      WHERE ai.repo_id = forge_merge_requests.repo_id
+		        AND ai.item_type = 'merge_request'
+		        AND ai.item_number = forge_merge_requests.number
+		        AND ai.lifecycle_state = 'removed_upstream'
+		  ) `+stateFilter+`
 		ORDER BY number`,
 		repoID,
 	)
@@ -143,7 +150,14 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 	conds = append(conds, `EXISTS (
 		SELECT 1 FROM forge_stack_members sm2
 		JOIN forge_merge_requests p2 ON p2.id = sm2.merge_request_id
-		WHERE sm2.stack_id = s.id AND p2.state = 'open')`)
+		WHERE sm2.stack_id = s.id AND p2.state = 'open'
+		  AND NOT EXISTS (
+		      SELECT 1 FROM forge_archive_items ai
+		      WHERE ai.repo_id = p2.repo_id
+		        AND ai.item_type = 'merge_request'
+		        AND ai.item_number = p2.number
+		        AND ai.lifecycle_state = 'removed_upstream'
+		  ))`)
 	conds = append(conds, "r.lifecycle_state = 'active'")
 
 	where := "WHERE " + strings.Join(conds, " AND ")
@@ -193,6 +207,13 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		FROM forge_stack_members sm
 		JOIN forge_merge_requests p ON p.id = sm.merge_request_id
 		WHERE sm.stack_id IN (` + sqlPlaceholders(len(stackIDs)) + `)
+		  AND NOT EXISTS (
+		      SELECT 1 FROM forge_archive_items ai
+		      WHERE ai.repo_id = p.repo_id
+		        AND ai.item_type = 'merge_request'
+		        AND ai.item_number = p.number
+		        AND ai.lifecycle_state = 'removed_upstream'
+		  )
 		ORDER BY sm.stack_id, sm.position`
 
 	mRows, err := d.ro.QueryContext(ctx, memberQuery, memberArgs...)
@@ -254,7 +275,14 @@ func (d *DB) GetStackForPR(
 		ctx,
 		`WHERE r.platform = ? AND r.platform_host = ?
 		    AND r.owner_key = ? AND r.name_key = ?
-		    AND p.number = ?`,
+		    AND p.number = ?
+		    AND NOT EXISTS (
+		        SELECT 1 FROM forge_archive_items ai
+		        WHERE ai.repo_id = p.repo_id
+		          AND ai.item_type = 'merge_request'
+		          AND ai.item_number = p.number
+		          AND ai.lifecycle_state = 'removed_upstream'
+		    )`,
 		platform, platformHost, owner, name, number,
 	)
 }
@@ -264,7 +292,14 @@ func (d *DB) GetStackForPR(
 func (d *DB) GetStackForPRByRepoID(ctx context.Context, repoID int64, number int) (*Stack, []StackMemberWithPR, error) {
 	return d.getStackForPRWhere(
 		ctx,
-		`WHERE p.repo_id = ? AND p.number = ?`,
+		`WHERE p.repo_id = ? AND p.number = ?
+		    AND NOT EXISTS (
+		        SELECT 1 FROM forge_archive_items ai
+		        WHERE ai.repo_id = p.repo_id
+		          AND ai.item_type = 'merge_request'
+		          AND ai.item_number = p.number
+		          AND ai.lifecycle_state = 'removed_upstream'
+		    )`,
 		repoID, number,
 	)
 }
@@ -294,6 +329,13 @@ func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) 
 		FROM forge_stack_members sm
 		JOIN forge_merge_requests p ON p.id = sm.merge_request_id
 		WHERE sm.stack_id = ?
+		  AND NOT EXISTS (
+		      SELECT 1 FROM forge_archive_items ai
+		      WHERE ai.repo_id = p.repo_id
+		        AND ai.item_type = 'merge_request'
+		        AND ai.item_number = p.number
+		        AND ai.lifecycle_state = 'removed_upstream'
+		  )
 		ORDER BY sm.position`, stack.ID,
 	)
 	if err != nil {
@@ -341,7 +383,21 @@ func (d *DB) ListMRsBlockedByStackConflicts(ctx context.Context, mrIDs []int64) 
 		WHERE target.merge_request_id IN (`+sqlPlaceholders(len(mrIDs))+`)
 		  AND target_pr.state = 'open'
 		  AND blocker_pr.state != 'merged'
-		  AND blocker_pr.mergeable_state = 'dirty'`,
+		  AND blocker_pr.mergeable_state = 'dirty'
+		  AND NOT EXISTS (
+		      SELECT 1 FROM forge_archive_items ai
+		      WHERE ai.repo_id = target_pr.repo_id
+		        AND ai.item_type = 'merge_request'
+		        AND ai.item_number = target_pr.number
+		        AND ai.lifecycle_state = 'removed_upstream'
+		  )
+		  AND NOT EXISTS (
+		      SELECT 1 FROM forge_archive_items ai
+		      WHERE ai.repo_id = blocker_pr.repo_id
+		        AND ai.item_type = 'merge_request'
+		        AND ai.item_number = blocker_pr.number
+		        AND ai.lifecycle_state = 'removed_upstream'
+		  )`,
 		args...,
 	)
 	if err != nil {

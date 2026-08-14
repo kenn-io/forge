@@ -481,7 +481,7 @@ func (s *Handler) getPull(ctx context.Context, input *repoNumberInput) (*getPull
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request failed")
 	}
@@ -791,7 +791,7 @@ func (s *Handler) getMRImportMetadata(
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("failed to query merge request")
 	}
@@ -875,7 +875,7 @@ func (s *Handler) editPRContent(
 		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request failed")
 	}
@@ -923,7 +923,7 @@ func (s *Handler) editPRContent(
 		return nil, httpapi.Internal("update title/body failed")
 	}
 
-	mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err = s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil || mr == nil {
 		return nil, httpapi.Internal("re-read pull request failed")
 	}
@@ -1129,7 +1129,7 @@ func (s *Handler) replyToDiscussion(ctx context.Context, input *replyToDiscussio
 
 	// Verify the MR exists locally before calling the provider to avoid
 	// creating upstream replies for untracked or non-existent PRs.
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request failed")
 	}
@@ -1254,7 +1254,7 @@ func (s *Handler) resolveDiscussion(ctx context.Context, input *resolveDiscussio
 
 	// Verify the MR exists locally before calling the provider to avoid
 	// resolving discussions on untracked or non-existent PRs.
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request failed")
 	}
@@ -1316,7 +1316,7 @@ func (s *Handler) approvePR(ctx context.Context, input *approvePRInput) (*action
 		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewMutation)
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request failed")
 	}
@@ -1389,7 +1389,7 @@ func (s *Handler) requestChangesPR(ctx context.Context, input *requestChangesPRI
 		return nil, huma.Error400BadRequest("request changes review body is required")
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request failed")
 	}
@@ -1468,7 +1468,7 @@ func (s *Handler) approveWorkflows(ctx context.Context, input *repoNumberInput) 
 	if err := s.requireSyncerCapability(*repo, capabilityWorkflowApproval); err != nil {
 		return nil, err
 	}
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request failed")
 	}
@@ -1678,7 +1678,7 @@ func (s *Handler) mergePRWithBody(
 		return mergePRBody{}, unsupportedCapabilityProblem(*repo, capabilityMergeMutation)
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
 	if err != nil {
 		return mergePRBody{}, httpapi.Internal("get pull request failed")
 	}
@@ -2049,7 +2049,7 @@ func (s *Handler) setPRGitHubState(
 		return nil, err
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request: " + err.Error())
 	}
@@ -2202,22 +2202,21 @@ func (s *Handler) setPRGitHubState(
 type getCommitsOutput = httpapi.BodyOutput[commitsResponse]
 
 func (s *Handler) getCommits(ctx context.Context, input *repoNumberInput) (*getCommitsOutput, error) {
-	if s.clones == nil {
-		return nil, httpapi.ServiceUnavailable("commits not available: clone manager not configured")
-	}
-
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
+	shas, err := s.visibleDiffSHAs(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("failed to look up PR")
 	}
 	if shas == nil {
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
+	}
+	if s.clones == nil {
+		return nil, httpapi.ServiceUnavailable("commits not available: clone manager not configured")
 	}
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "commits not available for this pull request", nil)
@@ -2288,12 +2287,15 @@ func (s *Handler) resolveDiffRange(
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
+	shas, err := s.visibleDiffSHAs(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("failed to look up PR")
 	}
 	if shas == nil {
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
+	}
+	if s.clones == nil {
+		return nil, httpapi.ServiceUnavailable("diff view not available: clone manager not configured")
 	}
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available for this pull request", nil)
@@ -2365,10 +2367,6 @@ func (s *Handler) resolveDiffRange(
 }
 
 func (s *Handler) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutput, error) {
-	if s.clones == nil {
-		return nil, httpapi.ServiceUnavailable("diff view not available: clone manager not configured")
-	}
-
 	resolved, err := s.resolveDiffRange(ctx, input)
 	if err != nil {
 		return nil, err
@@ -2416,9 +2414,6 @@ type getFilePreviewInput struct {
 type getFilePreviewOutput = httpapi.BodyOutput[filePreviewResponse]
 
 func (s *Handler) getFilePreview(ctx context.Context, input *getFilePreviewInput) (*getFilePreviewOutput, error) {
-	if s.clones == nil {
-		return nil, httpapi.ServiceUnavailable("file preview not available: clone manager not configured")
-	}
 	if strings.TrimSpace(input.Path) == "" {
 		return nil, httpapi.Validation("query.path", "path is required")
 	}
@@ -2558,22 +2553,21 @@ type getFilesInput struct {
 type getFilesOutput = httpapi.BodyOutput[filesResponse]
 
 func (s *Handler) getFiles(ctx context.Context, input *getFilesInput) (*getFilesOutput, error) {
-	if s.clones == nil {
-		return nil, httpapi.ServiceUnavailable("files view not available: clone manager not configured")
-	}
-
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
+	shas, err := s.visibleDiffSHAs(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("failed to look up PR")
 	}
 	if shas == nil {
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
+	}
+	if s.clones == nil {
+		return nil, httpapi.ServiceUnavailable("files view not available: clone manager not configured")
 	}
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "file list not available for this pull request", nil)

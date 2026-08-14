@@ -3,6 +3,7 @@ package apitest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -190,6 +191,107 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	require.Len(*startedAll.JSON200, 1)
 	assert.Equal(generated.ArchiveStatusResponseStatusWaitingForBudget, (*startedAll.JSON200)[0].Status,
 		"idempotent start preserves an active provider budget wait")
+}
+
+func TestAPIArchiveReportExcludesOnlyRemovedUpstreamParents(t *testing.T) {
+	require := require.New(t)
+	srv, database, provider, _, ref := setupArchiveTestServer(t, nil)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	repo, err := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+
+	insertIssue := func(number int, externalID, lifecycle string) int64 {
+		result, insertErr := database.WriteDB().ExecContext(ctx, `
+			INSERT INTO forge_issues (
+				repo_id, platform_id, platform_external_id, number, url, title, author,
+				state, body, created_at, updated_at, last_activity_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 'body', ?, ?, ?)`,
+			repo.ID, number, externalID, number,
+			"https://github.test/owner/repo/issues/"+fmt.Sprint(number),
+			"Synthetic issue "+fmt.Sprint(number), "issue-author", now, now, now,
+		)
+		require.NoError(insertErr)
+		id, insertErr := result.LastInsertId()
+		require.NoError(insertErr)
+		_, insertErr = database.WriteDB().ExecContext(ctx, `
+			INSERT INTO forge_archive_items (
+				repo_id, item_type, item_number, provider_item_id,
+				provider_created_at, provider_updated_at, lifecycle_state
+			) VALUES (?, 'issue', ?, ?, ?, ?, ?)`,
+			repo.ID, number, externalID, now, now, lifecycle,
+		)
+		require.NoError(insertErr)
+		return id
+	}
+	insertMR := func(number int, externalID, lifecycle string) int64 {
+		id, insertErr := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repo.ID, PlatformID: int64(number), PlatformExternalID: externalID,
+			Number: number, URL: "https://github.test/owner/repo/pull/" + fmt.Sprint(number),
+			Title: "Synthetic merge request " + fmt.Sprint(number), Author: "pr-author",
+			State: db.MergeRequestStateOpen, Body: "body",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(insertErr)
+		_, insertErr = database.WriteDB().ExecContext(ctx, `
+			INSERT INTO forge_archive_items (
+				repo_id, item_type, item_number, provider_item_id,
+				provider_created_at, provider_updated_at, lifecycle_state
+			) VALUES (?, 'merge_request', ?, ?, ?, ?, ?)`,
+			repo.ID, number, externalID, now, now, lifecycle,
+		)
+		require.NoError(insertErr)
+		return id
+	}
+
+	inaccessibleIssueID := insertIssue(1, "inaccessible-issue-1", "inaccessible")
+	removedIssueID := insertIssue(2, "removed-issue-2", "removed_upstream")
+	inaccessibleMRID := insertMR(3, "inaccessible-pr-3", "inaccessible")
+	removedMRID := insertMR(4, "removed-pr-4", "removed_upstream")
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{
+		{IssueID: inaccessibleIssueID, PlatformExternalID: "inaccessible-issue-comment", EventType: "issue_comment", Author: "commenter", CreatedAt: now.Add(time.Minute), DedupeKey: "inaccessible-issue-comment"},
+		{IssueID: removedIssueID, PlatformExternalID: "removed-issue-comment", EventType: "issue_comment", Author: "commenter", CreatedAt: now.Add(time.Minute), DedupeKey: "removed-issue-comment"},
+	}))
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+		{MergeRequestID: inaccessibleMRID, PlatformExternalID: "inaccessible-pr-review", EventType: "review", Author: "reviewer", CreatedAt: now.Add(2 * time.Minute), DedupeKey: "inaccessible-pr-review"},
+		{MergeRequestID: removedMRID, PlatformExternalID: "removed-pr-review", EventType: "review", Author: "reviewer", CreatedAt: now.Add(2 * time.Minute), DedupeKey: "removed-pr-review"},
+	}))
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE forge_archive_repos
+		SET issues_coverage = 'supported', merge_requests_coverage = 'supported'
+		WHERE repo_id = ?`, repo.ID)
+	require.NoError(err)
+
+	var removedCount int
+	require.NoError(database.ReadDB().QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM forge_archive_items
+		WHERE repo_id = ? AND lifecycle_state = 'removed_upstream'`, repo.ID,
+	).Scan(&removedCount))
+	require.Equal(2, removedCount)
+
+	verbose := true
+	response, err := client.HTTP.GetArchiveReportWithResponse(ctx, &generated.GetArchiveReportParams{
+		Start:   now.Add(-time.Hour).Format(time.RFC3339),
+		End:     now.Add(time.Hour).Format(time.RFC3339),
+		Verbose: &verbose,
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode())
+	require.NotNil(response.JSON200)
+	require.EqualValues(1, response.JSON200.Totals.IssuesOpened)
+	require.EqualValues(1, response.JSON200.Totals.MergeRequestsOpened)
+	require.EqualValues(1, response.JSON200.Totals.OrdinaryComments)
+	require.EqualValues(1, response.JSON200.Totals.ReviewsSubmitted)
+	require.NotNil(response.JSON200.Activity)
+	require.Len(*response.JSON200.Activity, 4)
+	for _, activity := range *response.JSON200.Activity {
+		require.NotEqualValues(2, activity.ItemNumber)
+		require.NotEqualValues(4, activity.ItemNumber)
+	}
+	require.Zero(provider.calls.Load(), "reports must read SQLite only")
 }
 
 func TestAPIArchiveValidationAndLimitProblemDetails(t *testing.T) {

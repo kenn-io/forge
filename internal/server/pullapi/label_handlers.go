@@ -39,7 +39,7 @@ func (s *Handler) setPullLabels(
 		return nil, err
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull failed")
 	}
@@ -71,7 +71,7 @@ func (s *Handler) setPullLabels(
 	// Re-read the stored rows: the label store merges provider responses
 	// with the repo label catalog, so providers that return bare names
 	// (GitLab) still yield color and description here.
-	stored, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	stored, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil || stored == nil {
 		return nil, httpapi.Internal("get pull failed")
 	}

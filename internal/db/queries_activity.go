@@ -174,7 +174,15 @@ func (d *DB) ListActivity(
 			LEFT JOIN forge_issues iss
 			       ON n.item_type = 'issue' AND iss.repo_id = r.id AND iss.number = n.item_number
 			WHERE n.item_type IN ('pr', 'issue') AND n.item_number IS NOT NULL
-			      AND n.reason != 'author'` + notificationScope
+			      AND n.reason != 'author'
+			      AND NOT EXISTS (
+			          SELECT 1 FROM forge_archive_items ai
+			          WHERE ai.repo_id = r.id
+			            AND ai.item_type = CASE n.item_type
+			                WHEN 'pr' THEN 'merge_request' ELSE 'issue' END
+			            AND ai.item_number = n.item_number
+			            AND ai.lifecycle_state = 'removed_upstream'
+			      )` + notificationScope
 	}
 
 	query := fmt.Sprintf(`
@@ -206,6 +214,13 @@ func (d *DB) ListActivity(
 			       '' AS subject_state
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
+			WHERE NOT EXISTS (
+			    SELECT 1 FROM forge_archive_items ai
+			    WHERE ai.repo_id = p.repo_id
+			      AND ai.item_type = 'merge_request'
+			      AND ai.item_number = p.number
+			      AND ai.lifecycle_state = 'removed_upstream'
+			)
 			UNION ALL
 			SELECT 'new_issue', 'issue', i.id, r.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -221,6 +236,13 @@ func (d *DB) ListActivity(
 			       ''
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
+			WHERE NOT EXISTS (
+			    SELECT 1 FROM forge_archive_items ai
+			    WHERE ai.repo_id = i.repo_id
+			      AND ai.item_type = 'issue'
+			      AND ai.item_number = i.number
+			      AND ai.lifecycle_state = 'removed_upstream'
+			)
 			UNION ALL
 			SELECT CASE e.event_type
 			           WHEN 'issue_comment' THEN 'comment'
@@ -244,6 +266,13 @@ func (d *DB) ListActivity(
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE e.event_type IN (
 				'issue_comment', 'review', 'commit', 'force_push')
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = p.repo_id
+			        AND ai.item_type = 'merge_request'
+			        AND ai.item_number = p.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT 'comment', 'ise', e.id, r.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -261,6 +290,13 @@ func (d *DB) ListActivity(
 			JOIN forge_issues i ON e.issue_id = i.id
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE e.event_type = 'issue_comment'
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = i.repo_id
+			        AND ai.item_type = 'issue'
+			        AND ai.item_number = i.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT 'default_branch_commit', 'bc', bc.id, r.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -423,7 +459,15 @@ func (d *DB) ListActivityAuthors(
 			LEFT JOIN forge_issues iss
 			       ON n.item_type = 'issue' AND iss.repo_id = r.id AND iss.number = n.item_number
 			WHERE n.item_type IN ('pr', 'issue') AND n.item_number IS NOT NULL
-			      AND n.reason != 'author'` + notificationScope
+			      AND n.reason != 'author'
+			      AND NOT EXISTS (
+			          SELECT 1 FROM forge_archive_items ai
+			          WHERE ai.repo_id = r.id
+			            AND ai.item_type = CASE n.item_type
+			                WHEN 'pr' THEN 'merge_request' ELSE 'issue' END
+			            AND ai.item_number = n.item_number
+			            AND ai.lifecycle_state = 'removed_upstream'
+			      )` + notificationScope
 	}
 
 	query := fmt.Sprintf(`
@@ -433,11 +477,25 @@ func (d *DB) ListActivityAuthors(
 			       p.author, p.created_at
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
+			WHERE NOT EXISTS (
+			    SELECT 1 FROM forge_archive_items ai
+			    WHERE ai.repo_id = p.repo_id
+			      AND ai.item_type = 'merge_request'
+			      AND ai.item_number = p.number
+			      AND ai.lifecycle_state = 'removed_upstream'
+			)
 			UNION ALL
 			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       i.author, i.created_at
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
+			WHERE NOT EXISTS (
+			    SELECT 1 FROM forge_archive_items ai
+			    WHERE ai.repo_id = i.repo_id
+			      AND ai.item_type = 'issue'
+			      AND ai.item_number = i.number
+			      AND ai.lifecycle_state = 'removed_upstream'
+			)
 			UNION ALL
 			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       p.author, e.created_at
@@ -445,6 +503,13 @@ func (d *DB) ListActivityAuthors(
 			JOIN forge_merge_requests p ON e.merge_request_id = p.id
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE e.event_type IN ('issue_comment', 'review', 'commit', 'force_push')
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = p.repo_id
+			        AND ai.item_type = 'merge_request'
+			        AND ai.item_number = p.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       i.author, e.created_at
@@ -452,6 +517,13 @@ func (d *DB) ListActivityAuthors(
 			JOIN forge_issues i ON e.issue_id = i.id
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE e.event_type = 'issue_comment'
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = i.repo_id
+			        AND ai.item_type = 'issue'
+			        AND ai.item_number = i.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			%[1]s
 		), scoped AS (
 			SELECT author, created_at

@@ -132,6 +132,10 @@ owner:
 - Real-tmux websocket tests retry asynchronous resize probes on a bounded timer, never per repaint; repaint-coupled
   input creates a feedback loop that can overflow subscriber buffers
   (`internal/server/api_test.go::TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E`).
+- PTY-owner quick-exit coverage must assert the exact nonzero status through the
+  HTTP-launched runtime WebSocket and confirm SQLite session cleanup. Order process
+  exit before PTY EOF in the fixture; accepting unknown `-1` does not cover the handoff
+  (`internal/server/api_test.go::TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E`).
 - Retiring or shutting down e2e state must stop its private tmux server before slower
   asynchronous cleanup; interrupted runners otherwise leave test-owned daemons behind
   (`cmd/e2e-server/main.go::run`).

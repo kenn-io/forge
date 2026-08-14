@@ -77,6 +77,7 @@ interface PullCommentMutationState {
 export interface DetailStoreOptions {
   runtime: AppRuntime;
   getPage?: () => string;
+  onDetailSynchronized?: () => void;
   pulls?: {
     loadPulls: () => void;
     optimisticKanbanUpdate?: (ref: ProviderRouteRef, number: number, status: KanbanStatus) => void;
@@ -203,6 +204,7 @@ function needsWorkflowApprovalSync(detail: PullDetail | null, enabled: boolean):
 export function createDetailStore(opts: DetailStoreOptions) {
   const runtime = opts.runtime;
   const getPage = opts.getPage ?? (() => "");
+  const onDetailSynchronized = opts.onDetailSynchronized ?? (() => {});
   const pullsDep = opts.pulls;
   const syncDep = opts.sync;
 
@@ -593,9 +595,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function refreshPullsIfActive(): void {
-    if (getPage() === "pulls" && pullsDep) {
+    if (["pulls", "mobile-pulls", "focus"].includes(getPage()) && pullsDep) {
       pullsDep.loadPulls();
     }
+  }
+
+  function reconcileListsAfterDetailSync(): void {
+    refreshPullsIfActive();
+    onDetailSynchronized();
   }
 
   function runPullAction(
@@ -1062,13 +1069,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return Effect.gen(function* () {
       for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
         yield* Effect.sleep(ms);
-        if (gen !== syncGeneration) return;
         // Convergence is judged on the response's fetch timestamp, not the
         // store's: content-identical refreshes intentionally leave the
         // store timestamp untouched while the server has advanced.
-        const result = yield* Effect.result(refreshDetailOnlyEffect(owner, name, number, identity));
-        if (gen !== syncGeneration) return;
+        const result = yield* Effect.result(refreshDetailOnlyEffect(owner, name, number, identity, gen, true));
         if (Result.isSuccess(result) && result.success.fetchedAt && result.success.fetchedAt !== previousFetchedAt) {
+          reconcileListsAfterDetailSync();
           return;
         }
       }
@@ -1113,11 +1119,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
     name: string,
     number: number,
     identity: DetailRequestOptions,
+    expectedGeneration = syncGeneration,
+    observeStaleSuccess = false,
   ): Effect.Effect<DetailRefreshResult, ApiProblemError | TransientTransportError, GeneratedApi | ProviderMutations> {
     return Effect.suspend(() => {
       const ref = detailRequestRef(owner, name, number, identity);
       const key = prKey(ref);
-      const expectedGeneration = syncGeneration;
       const requestSequence = ++detailRequestSequence;
       const envelopeTick = nextWorkspaceLifecycleTick();
       const ownership = (): "current" | "irrelevant" | "superseded" => {
@@ -1156,7 +1163,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
           onSuccess: (data) =>
             Effect.gen(function* () {
               const status = ownership();
-              if (status === "irrelevant") return { applied: false };
+              const observed = {
+                applied: false,
+                ...(data.detail_fetched_at != null && { fetchedAt: data.detail_fetched_at }),
+              };
+              if (status === "irrelevant" || (status === "superseded" && observeStaleSuccess)) return observed;
               if (status === "superseded") return yield* Effect.fail(superseded());
               latestSuccessfulDetailRequestSequenceBySelection.set(key, requestSequence);
               const next: PullDetail = { ...data, events: data.events ?? [] };
@@ -1218,7 +1229,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
               if (didApply) noteObservedFetchedAt(next.detail_fetched_at);
               return didApply;
             });
-            if (applied && expectedGeneration === syncGeneration) refreshPullsIfActive();
+            if (applied && expectedGeneration === syncGeneration) {
+              reconcileListsAfterDetailSync();
+            }
             return applied;
           }),
         ),

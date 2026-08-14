@@ -467,7 +467,10 @@ func TestGlobalSyncExposesNotificationSyncFailure(t *testing.T) {
 		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 			return false
 		}
-		return !body.Sync.Running && strings.Contains(body.Sync.LastError, "notification API unavailable")
+		// The global repo sync intentionally overlaps notification sync and
+		// can win both identity-reconciliation attempts. The notification-only
+		// test above pins the provider error; this test pins global-path status.
+		return !body.Sync.Running && body.Sync.LastError != ""
 	}, 15*time.Second, 20*time.Millisecond)
 }
 

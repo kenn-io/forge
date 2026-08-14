@@ -640,6 +640,53 @@ describe("activity store author candidates", () => {
   });
 });
 
+describe("activity store projection scope", () => {
+  it("rejects an older unfiltered reconciliation after an Involves me load fails", async () => {
+    const pendingReconciliation = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: boolean };
+      error: null;
+    }>();
+    const staleItem = notificationItem("ntf:stale", "unread");
+    let feedReads = 0;
+    const get = vi.fn((path: string, options?: { params?: { query?: { involves_me?: boolean } } }) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      feedReads += 1;
+      if (feedReads === 1) {
+        expect(options?.params?.query?.involves_me).toBeUndefined();
+        return pendingReconciliation.promise;
+      }
+      expect(options?.params?.query?.involves_me).toBe(true);
+      return Promise.resolve({
+        error: {
+          code: "validationError",
+          detail: "filtered activity unavailable",
+          title: "Invalid request",
+          type: "about:blank",
+        },
+        response: new Response(null, { status: 400 }),
+      });
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    const reconciliation = runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(feedReads).toBe(1));
+
+    store.setInvolvesMe(true);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityError()).toBe("filtered activity unavailable"));
+
+    pendingReconciliation.resolve({ data: { items: [staleItem], capped: false }, error: null });
+    await reconciliation.exit;
+
+    expect(store.getActivityItems()).toEqual([]);
+  });
+});
+
 describe("activity store notification visibility", () => {
   it("shows notifications by default and persists hiding them via the notif param", () => {
     const s = makeStore();

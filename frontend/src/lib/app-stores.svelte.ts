@@ -100,9 +100,29 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     getPriorityRepos: hs.getGlobalRepo,
   });
 
+  const activityOpts: ActivityStoreOptions = { runtime: appRuntime };
+  if (hs.getGlobalRepo) {
+    activityOpts.getGlobalRepo = hs.getGlobalRepo;
+  }
+  if (cfg.basePath != null) {
+    const bp = cfg.basePath;
+    activityOpts.getBasePath = () => bp;
+  }
+  const activityStore = createActivityStore(activityOpts);
+
+  function reconcileActivityAfterDetailSync(): void {
+    if (gp() !== "activity" && gp() !== "mobile-activity") return;
+    appRuntime.runCommand(activityStore.reconcileActivityEffect(), {
+      operation: "reconcile activity after detail sync",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
   const detailOpts: DetailStoreOptions = {
     runtime: appRuntime,
     getPage: gp,
+    onDetailSynchronized: reconcileActivityAfterDetailSync,
     pulls: {
       loadPulls: pullsStore.loadPulls,
       optimisticKanbanUpdate: pullsStore.optimisticKanbanUpdate,
@@ -117,6 +137,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const issuesOpts: IssuesStoreOptions = {
     runtime: appRuntime,
     getPage: gp,
+    onDetailSynchronized: reconcileActivityAfterDetailSync,
     sync: {
       refreshSyncStatus: syncStore.refreshSyncStatus,
     },
@@ -126,16 +147,6 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   }
   issuesOpts.getGroupByRepo = hs.getGroupByRepo ?? grouping.getGroupByRepo;
   const issuesStore = createIssuesStore(issuesOpts);
-
-  const activityOpts: ActivityStoreOptions = { runtime: appRuntime };
-  if (hs.getGlobalRepo) {
-    activityOpts.getGlobalRepo = hs.getGlobalRepo;
-  }
-  if (cfg.basePath != null) {
-    const bp = cfg.basePath;
-    activityOpts.getBasePath = () => bp;
-  }
-  const activityStore = createActivityStore(activityOpts);
 
   const diffOpts: DiffStoreOptions = { runtime: appRuntime };
   const diffStore = createDiffStore(diffOpts);

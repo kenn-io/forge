@@ -230,6 +230,78 @@ describe("createIssuesStore", () => {
     vi.useRealTimers();
   });
 
+  it("reconciles visible activity and issue lists after a background detail sync converges", async () => {
+    vi.useFakeTimers();
+    const cached = issueDetail();
+    cached.detail_fetched_at = "2026-08-12T21:00:00Z";
+    const fresh = issueDetail();
+    fresh.detail_fetched_at = "2026-08-12T21:03:00Z";
+    fresh.issue.Title = "Fresh issue detail";
+    const detailResponses = [cached, fresh];
+    const get = vi.fn(async (path: string) =>
+      path === "/issues"
+        ? { data: [], error: undefined }
+        : { data: detailResponses.shift() ?? fresh, error: undefined },
+    );
+    const onDetailSynchronized = vi.fn();
+    const store = createIssuesStore({
+      client: mockClient({
+        GET: get,
+        POST: vi.fn().mockResolvedValue({ data: undefined, error: undefined }),
+      }),
+      getPage: () => "issues",
+      onDetailSynchronized,
+    });
+
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: "background",
+    });
+    await vi.advanceTimersByTimeAsync(300);
+
+    await vi.waitFor(() => expect(store.getIssueDetail()?.issue.Title).toBe("Fresh issue detail"));
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(1);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+  });
+
+  it("reconciles visible lists when selection closes during a background detail sync", async () => {
+    vi.useFakeTimers();
+    const cached = issueDetail();
+    cached.detail_fetched_at = "2026-08-12T21:00:00Z";
+    const fresh = issueDetail();
+    fresh.detail_fetched_at = "2026-08-12T21:03:00Z";
+    const detailResponses = [cached, fresh];
+    const syncPost = Promise.withResolvers<{ data: undefined; error: undefined }>();
+    const get = vi.fn(async (path: string) =>
+      path === "/issues"
+        ? { data: [], error: undefined }
+        : { data: detailResponses.shift() ?? fresh, error: undefined },
+    );
+    const onDetailSynchronized = vi.fn();
+    const store = createIssuesStore({
+      client: mockClient({ GET: get, POST: vi.fn(() => syncPost.promise) }),
+      getPage: () => "issues",
+      onDetailSynchronized,
+    });
+
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: "background",
+    });
+    store.clearIssueDetail();
+
+    syncPost.resolve({ data: undefined, error: undefined });
+    await vi.advanceTimersByTimeAsync(300);
+
+    await vi.waitFor(() => expect(onDetailSynchronized).toHaveBeenCalledOnce());
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(1);
+    expect(store.getIssueDetail()).toBeNull();
+  });
+
   it("applies a local body edit addressed through a provider alias and omitted host", async () => {
     const get = vi.fn().mockResolvedValueOnce({ data: issueDetail() });
     const store = createIssuesStore({ client: mockClient({ GET: get }) });

@@ -357,6 +357,18 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return p;
   }
 
+  function activityProjectionScope(params: ActivityParams): string {
+    return JSON.stringify([
+      timeRange,
+      params.repo ?? "",
+      params.types ?? [],
+      params.item_types ?? [],
+      params.search ?? "",
+      params.author ?? "",
+      params.involves_me ?? false,
+    ]);
+  }
+
   function loadActivityAuthorsEffect(force = false) {
     return Effect.suspend(() => {
       const repo = getGlobalRepo();
@@ -442,6 +454,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function loadActivityProgram(params: ActivityParams, owner: "foreground" | "poll" = "foreground") {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
+      const scope = activityProjectionScope(params);
       const read = activityRead(params);
       const project = (result: OwnedActivityResponse) =>
         Effect.sync(() => {
@@ -454,8 +467,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         loading = false;
       });
       yield* owner === "foreground"
-        ? workflow.load(read, project, clearLoading)
-        : workflow.pollRead(read, project, clearLoading);
+        ? workflow.load(scope, read, project, clearLoading)
+        : workflow.pollSnapshotRead(scope, read, project, clearLoading);
     });
   }
 
@@ -477,6 +490,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function reconcileActivityEffect() {
     return Effect.suspend(() => {
       const params = buildParams();
+      const scope = activityProjectionScope(params);
       const read = activityRead(params);
       const project = (result: OwnedActivityResponse) =>
         Effect.sync(() => {
@@ -487,7 +501,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         });
       return Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;
-        yield* Effect.all([workflow.reconcileRead(read, project), loadActivityAuthorsEffect(true)], {
+        yield* Effect.all([workflow.reconcileRead(scope, read, project), loadActivityAuthorsEffect(true)], {
           concurrency: "unbounded",
           discard: true,
         });
@@ -510,7 +524,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function refreshActivityProgram(params: ActivityParams) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
-      yield* workflow.pollRead(activityRead(params), (result) => {
+      yield* workflow.pollRead(activityProjectionScope(params), activityRead(params), (result) => {
         const fresh = projectOwnedNotificationStates(result);
         return Effect.sync(() => {
           workspaceActivity = result.response.workspace_activity ?? [];
@@ -599,40 +613,41 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     params.after = newestItem.cursor;
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
-      const pollRead = Effect.gen(function* () {
-        const result = yield* activityRead(params);
-        if (!result.response.capped) {
-          return { mode: "append", result } satisfies ActivityPollProjection;
-        }
-        const replacement = yield* activityRead(buildParams());
-        return { mode: "replace", result: replacement } satisfies ActivityPollProjection;
-      });
-      yield* workflow.pollRead(
-        pollRead,
-        ({ mode, result }) =>
-          Effect.gen(function* () {
-            const activityChanged = yield* Effect.sync(() => {
-              if (mode === "replace") {
-                items = projectOwnedNotificationStates(result);
-                workspaceActivity = result.response.workspace_activity ?? [];
-                capped = result.response.capped;
-                loading = false;
-                return true;
-              }
+      const scope = activityProjectionScope(params);
+      const projectPoll = ({ mode, result }: ActivityPollProjection) =>
+        Effect.gen(function* () {
+          const activityChanged = yield* Effect.sync(() => {
+            if (mode === "replace") {
+              items = projectOwnedNotificationStates(result);
               workspaceActivity = result.response.workspace_activity ?? [];
-              const existingIds = new Set(items.map((item) => item.id));
-              const newItems = projectOwnedNotificationStates(result, false).filter(
-                (item) => !existingIds.has(item.id),
-              );
-              if (newItems.length > 0) {
-                items = [...newItems, ...items];
-              }
-              const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
-              items = items.filter((item) => new Date(item.created_at) >= cutoff);
-              return newItems.length > 0;
-            });
-            if (activityChanged) yield* loadActivityAuthorsEffect(true);
-          }),
+              capped = result.response.capped;
+              loading = false;
+              return true;
+            }
+            workspaceActivity = result.response.workspace_activity ?? [];
+            const existingIds = new Set(items.map((item) => item.id));
+            const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
+            if (newItems.length > 0) {
+              items = [...newItems, ...items];
+            }
+            const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
+            items = items.filter((item) => new Date(item.created_at) >= cutoff);
+            return newItems.length > 0;
+          });
+          if (activityChanged) yield* loadActivityAuthorsEffect(true);
+        });
+      yield* workflow.pollRead(
+        scope,
+        activityRead(params),
+        (result) => {
+          if (!result.response.capped) return projectPoll({ mode: "append", result });
+          const replacementParams = buildParams();
+          return workflow.pollSnapshotRead(
+            activityProjectionScope(replacementParams),
+            activityRead(replacementParams),
+            (replacement) => projectPoll({ mode: "replace", result: replacement }),
+          );
+        },
         Effect.sync(() => {
           loading = false;
         }),

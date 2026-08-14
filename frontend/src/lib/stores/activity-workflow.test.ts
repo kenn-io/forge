@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Ref } from "effect";
+import { Deferred, Effect, Exit, Fiber, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import { ActivityWorkflow, ActivityWorkflowLive } from "./activity-workflow.js";
 
@@ -34,6 +34,7 @@ it.layer(ActivityWorkflowLive)("activity polling", (it) => {
       const pollStarts = yield* Ref.make(0);
       const pollOnce = workflow
         .pollRead(
+          "activity",
           Ref.update(pollStarts, (count) => count + 1).pipe(
             Effect.andThen(Deferred.succeed(pollStarted, undefined)),
             Effect.andThen(Deferred.await(releasePoll)),
@@ -45,7 +46,7 @@ it.layer(ActivityWorkflowLive)("activity polling", (it) => {
 
       const polling = yield* Effect.forkChild(workflow.poll(pollOnce, "1 second"));
       yield* Deferred.await(pollStarted);
-      yield* workflow.load(Effect.succeed({ items: [], capped: false }), () => Effect.void);
+      yield* workflow.load("activity", Effect.succeed({ items: [], capped: false }), () => Effect.void);
       yield* Deferred.succeed(releasePoll, undefined);
       yield* TestClock.adjust("2 seconds");
 
@@ -61,6 +62,7 @@ it.layer(ActivityWorkflowLive)("activity polling", (it) => {
       const releaseReconciliation = yield* Deferred.make<void>();
       const reconciliation = yield* Effect.forkChild(
         workflow.reconcileRead(
+          "activity",
           Deferred.succeed(reconciliationStarted, undefined).pipe(
             Effect.andThen(Deferred.await(releaseReconciliation)),
             Effect.as("event"),
@@ -69,11 +71,394 @@ it.layer(ActivityWorkflowLive)("activity polling", (it) => {
         ),
       );
       yield* Deferred.await(reconciliationStarted);
-      yield* workflow.load(Effect.succeed("foreground"), () => Effect.void);
+      yield* workflow.load("activity", Effect.succeed("foreground"), () => Effect.void);
       yield* Deferred.succeed(releaseReconciliation, undefined);
 
       const failure = yield* Fiber.join(reconciliation).pipe(Effect.flip);
       assert.strictEqual(failure._tag, "TransientTransportError");
+    }),
+  );
+
+  it.effect("projects reconciliation started after an older foreground read", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const foregroundStarted = yield* Deferred.make<void>();
+      const releaseForeground = yield* Deferred.make<void>();
+      const reconciliationStarted = yield* Deferred.make<void>();
+      const releaseReconciliation = yield* Deferred.make<void>();
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const foreground = yield* Effect.forkChild(
+        workflow.load(
+          "activity",
+          Deferred.succeed(foregroundStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseForeground)),
+            Effect.as("foreground"),
+          ),
+          project,
+        ),
+      );
+      yield* Deferred.await(foregroundStarted);
+
+      const reconciliation = yield* Effect.forkChild(
+        workflow.reconcileRead(
+          "activity",
+          Deferred.succeed(reconciliationStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseReconciliation)),
+            Effect.as("reconciliation"),
+          ),
+          project,
+        ),
+      );
+      yield* Deferred.await(reconciliationStarted);
+
+      yield* Deferred.succeed(releaseForeground, undefined);
+      yield* Fiber.join(foreground);
+      yield* Deferred.succeed(releaseReconciliation, undefined);
+      yield* Fiber.join(reconciliation);
+
+      assert.deepStrictEqual(yield* Ref.get(projected), ["foreground", "reconciliation"]);
+    }),
+  );
+
+  it.effect("projects foreground started after an older reconciliation", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const reconciliationStarted = yield* Deferred.make<void>();
+      const releaseReconciliation = yield* Deferred.make<void>();
+      const foregroundStarted = yield* Deferred.make<void>();
+      const releaseForeground = yield* Deferred.make<void>();
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const reconciliation = yield* Effect.forkChild(
+        workflow.reconcileRead(
+          "activity",
+          Deferred.succeed(reconciliationStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseReconciliation)),
+            Effect.as("reconciliation"),
+          ),
+          project,
+        ),
+      );
+      yield* Deferred.await(reconciliationStarted);
+
+      const foreground = yield* Effect.forkChild(
+        workflow.load(
+          "activity",
+          Deferred.succeed(foregroundStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseForeground)),
+            Effect.as("foreground"),
+          ),
+          project,
+        ),
+      );
+      yield* Deferred.await(foregroundStarted);
+
+      yield* Deferred.succeed(releaseReconciliation, undefined);
+      yield* Fiber.join(reconciliation);
+      yield* Deferred.succeed(releaseForeground, undefined);
+      yield* Fiber.join(foreground);
+
+      assert.deepStrictEqual(yield* Ref.get(projected), ["reconciliation", "foreground"]);
+    }),
+  );
+
+  it.effect("projects poll started after an older reconciliation", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const reconciliationStarted = yield* Deferred.make<void>();
+      const releaseReconciliation = yield* Deferred.make<void>();
+      const pollStarted = yield* Deferred.make<void>();
+      const releasePoll = yield* Deferred.make<void>();
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const reconciliation = yield* Effect.forkChild(
+        workflow.reconcileRead(
+          "activity",
+          Deferred.succeed(reconciliationStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseReconciliation)),
+            Effect.as("reconciliation"),
+          ),
+          project,
+        ),
+      );
+      yield* Deferred.await(reconciliationStarted);
+
+      const poll = yield* Effect.forkChild(
+        workflow.pollRead(
+          "activity",
+          Deferred.succeed(pollStarted, undefined).pipe(Effect.andThen(Deferred.await(releasePoll)), Effect.as("poll")),
+          project,
+        ),
+      );
+      yield* Deferred.await(pollStarted);
+
+      yield* Deferred.succeed(releaseReconciliation, undefined);
+      yield* Fiber.join(reconciliation);
+      yield* Deferred.succeed(releasePoll, undefined);
+      yield* Fiber.join(poll);
+
+      assert.deepStrictEqual(yield* Ref.get(projected), ["reconciliation", "poll"]);
+    }),
+  );
+
+  it.effect("projects reconciliation after a newer incremental poll completes", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const reconciliationStarted = yield* Deferred.make<void>();
+      const releaseReconciliation = yield* Deferred.make<void>();
+      const pollStarted = yield* Deferred.make<void>();
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const reconciliation = yield* Effect.forkChild(
+        workflow.reconcileRead(
+          "activity",
+          Deferred.succeed(reconciliationStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseReconciliation)),
+            Effect.as("reconciliation"),
+          ),
+          project,
+        ),
+      );
+      yield* Deferred.await(reconciliationStarted);
+
+      yield* workflow.pollRead("activity", Deferred.succeed(pollStarted, undefined).pipe(Effect.as("poll")), project);
+      yield* Deferred.await(pollStarted);
+      yield* Deferred.succeed(releaseReconciliation, undefined);
+      yield* Fiber.join(reconciliation);
+
+      assert.deepStrictEqual(yield* Ref.get(projected), ["poll", "reconciliation"]);
+    }),
+  );
+
+  it.effect("rejects an older reconciliation after a newer replacement poll completes", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const reconciliationStarted = yield* Deferred.make<void>();
+      const releaseReconciliation = yield* Deferred.make<void>();
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const reconciliation = yield* Effect.forkChild(
+        Effect.exit(
+          workflow.reconcileRead(
+            "activity",
+            Deferred.succeed(reconciliationStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseReconciliation)),
+              Effect.as("reconciliation"),
+            ),
+            project,
+          ),
+        ),
+      );
+      yield* Deferred.await(reconciliationStarted);
+
+      yield* workflow.pollSnapshotRead("activity", Effect.succeed("replacement"), project);
+      yield* Deferred.succeed(releaseReconciliation, undefined);
+
+      const reconciliationExit = yield* Fiber.join(reconciliation);
+      assert.isTrue(Exit.isFailure(reconciliationExit));
+      assert.deepStrictEqual(yield* Ref.get(projected), ["replacement"]);
+    }),
+  );
+
+  it.effect("projects reconciliation when a newer same-scope foreground read fails", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const reconciliationStarted = yield* Deferred.make<void>();
+      const releaseReconciliation = yield* Deferred.make<void>();
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const reconciliation = yield* Effect.forkChild(
+        Effect.exit(
+          workflow.reconcileRead(
+            "activity",
+            Deferred.succeed(reconciliationStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseReconciliation)),
+              Effect.as("reconciliation"),
+            ),
+            project,
+          ),
+        ),
+      );
+      yield* Deferred.await(reconciliationStarted);
+
+      const foregroundExit = yield* Effect.exit(workflow.load("activity", Effect.fail("foreground failed"), project));
+      assert.isTrue(Exit.isFailure(foregroundExit));
+      yield* Deferred.succeed(releaseReconciliation, undefined);
+
+      const reconciliationExit = yield* Fiber.join(reconciliation);
+      assert.isTrue(Exit.isSuccess(reconciliationExit));
+      assert.deepStrictEqual(yield* Ref.get(projected), ["reconciliation"]);
+    }),
+  );
+
+  it.effect("rejects reconciliation after a failed foreground read changes scope", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const reconciliationStarted = yield* Deferred.make<void>();
+      const releaseReconciliation = yield* Deferred.make<void>();
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const reconciliation = yield* Effect.forkChild(
+        Effect.exit(
+          workflow.reconcileRead(
+            "old-scope",
+            Deferred.succeed(reconciliationStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseReconciliation)),
+              Effect.as("reconciliation"),
+            ),
+            project,
+          ),
+        ),
+      );
+      yield* Deferred.await(reconciliationStarted);
+
+      const foregroundExit = yield* Effect.exit(workflow.load("new-scope", Effect.fail("foreground failed"), project));
+      assert.isTrue(Exit.isFailure(foregroundExit));
+      yield* Deferred.succeed(releaseReconciliation, undefined);
+
+      const reconciliationExit = yield* Fiber.join(reconciliation);
+      assert.isTrue(Exit.isFailure(reconciliationExit));
+      assert.deepStrictEqual(yield* Ref.get(projected), []);
+    }),
+  );
+
+  it.effect("prevents an older reconciliation from replacing the latest snapshot", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const olderStarted = yield* Deferred.make<void>();
+      const releaseOlder = yield* Deferred.make<void>();
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const older = yield* Effect.forkChild(
+        Effect.exit(
+          workflow.reconcileRead(
+            "activity",
+            Deferred.succeed(olderStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseOlder)),
+              Effect.as("older"),
+            ),
+            project,
+          ),
+        ),
+      );
+      yield* Deferred.await(olderStarted);
+      yield* workflow.reconcileRead("activity", Effect.succeed("latest"), project);
+      yield* Deferred.succeed(releaseOlder, undefined);
+
+      const olderExit = yield* Fiber.join(older);
+      assert.isTrue(Exit.isFailure(olderExit));
+      assert.deepStrictEqual(yield* Ref.get(projected), ["latest"]);
+    }),
+  );
+
+  it.effect("projects an older successful reconciliation when a newer read fails", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const olderStarted = yield* Deferred.make<void>();
+      const releaseOlder = yield* Deferred.make<void>();
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const older = yield* Effect.forkChild(
+        Effect.exit(
+          workflow.reconcileRead(
+            "activity",
+            Deferred.succeed(olderStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseOlder)),
+              Effect.as("older"),
+            ),
+            project,
+          ),
+        ),
+      );
+      yield* Deferred.await(olderStarted);
+
+      const newerExit = yield* Effect.exit(workflow.reconcileRead("activity", Effect.fail("newer failed"), project));
+      assert.isTrue(Exit.isFailure(newerExit));
+      yield* Deferred.succeed(releaseOlder, undefined);
+
+      const olderExit = yield* Fiber.join(older);
+      assert.isTrue(Exit.isSuccess(olderExit));
+      assert.deepStrictEqual(yield* Ref.get(projected), ["older"]);
+    }),
+  );
+
+  it.effect("settles loading without projecting an old scope after reconciliation fails", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const foregroundStarted = yield* Deferred.make<void>();
+      const releaseForeground = yield* Deferred.make<void>();
+      const loading = yield* Ref.make(true);
+      const projected = yield* Ref.make<string[]>([]);
+      const clearLoading = Ref.set(loading, false);
+      const project = (value: string) =>
+        Ref.update(projected, (values) => [...values, value]).pipe(Effect.andThen(clearLoading));
+
+      const foreground = yield* Effect.forkChild(
+        workflow.load(
+          "old-scope",
+          Deferred.succeed(foregroundStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseForeground)),
+            Effect.as("foreground"),
+          ),
+          project,
+          clearLoading,
+        ),
+      );
+      yield* Deferred.await(foregroundStarted);
+
+      const reconciliation = yield* Effect.exit(
+        workflow.reconcileRead("new-scope", Effect.fail("reconciliation failed"), project),
+      );
+      assert.isTrue(Exit.isFailure(reconciliation));
+      yield* Deferred.succeed(releaseForeground, undefined);
+      yield* Fiber.join(foreground);
+
+      assert.isFalse(yield* Ref.get(loading));
+      assert.deepStrictEqual(yield* Ref.get(projected), []);
+    }),
+  );
+
+  it.effect("suppresses a foreground failure after successful reconciliation replaces it", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const foregroundStarted = yield* Deferred.make<void>();
+      const releaseForeground = yield* Deferred.make<void>();
+      const failurePublished = yield* Ref.make(false);
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const foreground = yield* Effect.forkChild(
+        Effect.exit(
+          workflow.load(
+            "activity",
+            Deferred.succeed(foregroundStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseForeground)),
+              Effect.andThen(Effect.fail("stale foreground failure")),
+            ),
+            project,
+            Ref.set(failurePublished, true),
+          ),
+        ),
+      );
+      yield* Deferred.await(foregroundStarted);
+
+      yield* workflow.reconcileRead("activity", Effect.succeed("reconciliation"), project);
+      yield* Deferred.succeed(releaseForeground, undefined);
+
+      const foregroundExit = yield* Fiber.join(foreground);
+      assert.isTrue(Exit.isSuccess(foregroundExit));
+      assert.isFalse(yield* Ref.get(failurePublished));
+      assert.deepStrictEqual(yield* Ref.get(projected), ["reconciliation"]);
     }),
   );
 });

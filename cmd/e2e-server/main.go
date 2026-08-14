@@ -1779,6 +1779,92 @@ func buildAppState(
 			}
 			return
 		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/activity/stage-older-detail-event" {
+			itemType := r.URL.Query().Get("item_type")
+			number := 1
+			body := "Pull request detail activity older than the feed cursor"
+			commitSuffix := "1"
+			parentID := int64(0)
+			mr, err := database.GetMergeRequest(
+				r.Context(), "github", "github.com", "acme", "widgets", number,
+			)
+			if err != nil || mr == nil {
+				http.Error(w, "pull request not found", http.StatusNotFound)
+				return
+			}
+			parentID = mr.ID
+			if itemType == "issue" {
+				number = 10
+				body = "Issue detail activity older than the feed cursor"
+				commitSuffix = "2"
+				issue, issueErr := database.GetIssue(
+					r.Context(), "github", "github.com", "acme", "widgets", number,
+				)
+				if issueErr != nil || issue == nil {
+					http.Error(w, "issue not found", http.StatusNotFound)
+					return
+				}
+				parentID = issue.ID
+			} else if itemType != "pr" {
+				http.Error(w, "item_type must be pr or issue", http.StatusBadRequest)
+				return
+			}
+
+			repo, err := database.GetRepoByIdentity(
+				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repository not found", http.StatusNotFound)
+				return
+			}
+			now := time.Now().UTC()
+			if r.URL.Query().Get("hold_sync") == "true" {
+				fc.HoldIssueComments()
+			}
+			fc.SeedIssueComment(
+				"acme", "widgets", number, body, now.Add(-3*time.Minute),
+			)
+			if err := database.UpsertBranchCommits(r.Context(), []db.BranchCommit{{
+				RepoID:         repo.ID,
+				BranchName:     "main",
+				CommitSHA:      strings.Repeat("a", 39) + commitSuffix,
+				AuthorName:     "Fixture Maintainer",
+				AuthorEmail:    "maintainer@example.invalid",
+				AuthoredAt:     now.Add(-2 * time.Minute),
+				CommitterName:  "Fixture Maintainer",
+				CommitterEmail: "maintainer@example.invalid",
+				CommittedAt:    now.Add(-time.Minute),
+				Subject:        "Activity cursor leader",
+			}}); err != nil {
+				http.Error(w, "persist leading activity", http.StatusInternalServerError)
+				return
+			}
+			var staleErr error
+			if itemType == "pr" {
+				_, staleErr = database.WriteDB().ExecContext(r.Context(), `
+					UPDATE forge_merge_requests SET detail_fetched_at = ? WHERE id = ?`,
+					now.Add(-time.Hour), parentID,
+				)
+			} else {
+				_, staleErr = database.WriteDB().ExecContext(r.Context(), `
+					UPDATE forge_issues SET detail_fetched_at = ? WHERE id = ?`,
+					now.Add(-time.Hour), parentID,
+				)
+			}
+			if staleErr != nil {
+				http.Error(w, "make detail stale", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/activity/release-older-detail-event-sync" {
+			fc.ReleaseIssueComments()
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/activity/pr-comment" {
 			if r.URL.Query().Get("require_subscriber") != "false" && srv.SubscriberCount() == 0 {
 				http.Error(w, "event stream not connected", http.StatusConflict)

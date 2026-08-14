@@ -2,6 +2,8 @@ import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { EventsStoreOptions } from "./lib/stores/events.svelte.js";
+import type { DetailStoreOptions } from "./lib/stores/detail.svelte.js";
+import type { IssuesStoreOptions } from "./lib/stores/issues.svelte.js";
 import type { Settings, SyncStatus } from "./lib/api/types.js";
 import type { AppServices, OwnedAppRuntime } from "./lib/app/runtime.js";
 import { createAppStores, type AppStoreOptions } from "./lib/app-stores.svelte.js";
@@ -25,9 +27,13 @@ interface CapturedSettingsStore {
 const captured: {
   store: CapturedEventsStore | null;
   settings: CapturedSettingsStore | null;
+  detailOptions: DetailStoreOptions | null;
+  issuesOptions: IssuesStoreOptions | null;
 } = {
   store: null,
   settings: null,
+  detailOptions: null,
+  issuesOptions: null,
 };
 
 const { notifyWorkspaceDeleted } = vi.hoisted(() => ({
@@ -88,14 +94,17 @@ vi.mock("./lib/stores/pulls.svelte.js", () => ({
 }));
 
 vi.mock("./lib/stores/issues.svelte.js", () => ({
-  createIssuesStore: () => ({
-    loadIssues,
-    loadIssuesEffect,
-    reconcileIssuesEffect,
-    hydrateDefaults: vi.fn(),
-    getIssues: () => [],
-    isLoading: () => false,
-  }),
+  createIssuesStore: (options: IssuesStoreOptions) => {
+    captured.issuesOptions = options;
+    return {
+      loadIssues,
+      loadIssuesEffect,
+      reconcileIssuesEffect,
+      hydrateDefaults: vi.fn(),
+      getIssues: () => [],
+      isLoading: () => false,
+    };
+  },
 }));
 
 vi.mock("./lib/stores/activity.svelte.js", () => ({
@@ -125,13 +134,16 @@ vi.mock("./lib/stores/sync.svelte.js", () => ({
 }));
 
 vi.mock("./lib/stores/detail.svelte.js", () => ({
-  createDetailStore: () => ({
-    loadDetail: vi.fn(),
-    refreshDetailOnly,
-    refreshDetailOnlyEffect,
-    isDetailLoading: () => false,
-    getDetail: () => currentDetail,
-  }),
+  createDetailStore: (options: DetailStoreOptions) => {
+    captured.detailOptions = options;
+    return {
+      loadDetail: vi.fn(),
+      refreshDetailOnly,
+      refreshDetailOnlyEffect,
+      isDetailLoading: () => false,
+      getDetail: () => currentDetail,
+    };
+  },
 }));
 
 vi.mock("./lib/stores/diff.svelte.js", () => ({
@@ -206,6 +218,8 @@ beforeEach(() => {
   runtime = makeTestAppRuntime(client);
   captured.store = null;
   captured.settings = null;
+  captured.detailOptions = null;
+  captured.issuesOptions = null;
   getSettings.mockReset();
   vi.spyOn(client, "GET").mockImplementation(getSettings);
   loadPulls.mockClear();
@@ -343,6 +357,19 @@ describe("app store event wiring", () => {
     expect(loadIssuesEffect).not.toHaveBeenCalled();
     expect(loadActivityEffect).not.toHaveBeenCalled();
   });
+
+  it.each(["activity", "mobile-activity"])(
+    "reconciles the Activity list when a background detail sync converges on %s",
+    async (route) => {
+      compose({ getPage: () => route });
+
+      captured.detailOptions?.onDetailSynchronized?.();
+      captured.issuesOptions?.onDetailSynchronized?.();
+
+      await vi.waitFor(() => expect(reconcileActivityEffect).toHaveBeenCalledTimes(2));
+      expect(loadActivity).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("refreshes the Activity drawer selection instead of stale displayed detail", async () => {
     currentDetail = {

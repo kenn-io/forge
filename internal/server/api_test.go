@@ -29565,6 +29565,100 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.
 	}, 5*time.Second, 20*time.Millisecond)
 }
 
+func TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test fixture uses Unix PTY exit semantics")
+	}
+	runParallelPTYE2E(t)
+
+	require := require.New(t)
+	dir := t.TempDir()
+	ptyOwnerDir := filepath.Join(dir, "pty-owner")
+	disableTmuxAgentSessions := false
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key:   "helper",
+			Label: "Helper",
+			// Keep the PTY open briefly after the shell exits so the owner can
+			// publish the exact status before output EOF reaches the bridge.
+			// Without this ordering, a loaded race runner can legitimately hit
+			// the owner's bounded unknown-status fallback instead.
+			Command: []string{
+				"sh", "-c", "IFS= read -r line; sleep 1 & exit 9",
+			},
+		}},
+		Tmux: config.Tmux{
+			Command:       []string{filepath.Join(dir, "missing-tmux")},
+			AgentSessions: &disableTmuxAgentSessions,
+		},
+	}
+	fixture := setupWorkspaceServerFixtureWithOptions(
+		t, cfg, ptyOwnerServerOptions(ptyOwnerDir),
+	)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.NotNil(launchResp.JSON200)
+	session := launchResp.JSON200
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
+
+	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 1)
+	require.Equal(session.Key, stored[0].SessionKey)
+
+	ts := httptest.NewServer(fixture.server)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/ws/v1/workspaces/" + ws.Id +
+		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
+	conn := dialWebSocketForTest(t, ctx, wsURL, "quick-exit helper")
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("exit\n")))
+
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for {
+		typ, data, readErr := conn.Read(readCtx)
+		if readErr != nil {
+			require.Failf(
+				"never received exact exit frame",
+				"read err before exit frame: %v", readErr,
+			)
+		}
+		if typ != websocket.MessageText {
+			continue
+		}
+		var msg struct {
+			Type string `json:"type"`
+			Code int    `json:"code"`
+		}
+		require.NoError(json.Unmarshal(data, &msg))
+		require.Equal("exited", msg.Type)
+		require.Equal(9, msg.Code)
+		break
+	}
+
+	require.Eventually(func() bool {
+		runtimeResp, runtimeErr := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(
+			ctx, ws.Id,
+		)
+		if runtimeErr != nil || runtimeResp.StatusCode() != http.StatusOK ||
+			runtimeResp.JSON200 == nil || runtimeResp.JSON200.Sessions == nil ||
+			len(*runtimeResp.JSON200.Sessions) != 0 {
+			return false
+		}
+		stored, storedErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+		return storedErr == nil && len(stored) == 0
+	}, 2*time.Second, 20*time.Millisecond)
+}
+
 // TestBridgeRuntimeAttachmentOutputClosedEmitsExitFrameBeforeDone pins the
 // bridge branch for wrappers where PTY EOF reaches the subscriber before
 // cmd.Wait marks the session done. That is the race the real ShellDrawer cares

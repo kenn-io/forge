@@ -54,6 +54,8 @@ type FixtureClient struct {
 	mergePullRequestResult    *gh.PullRequestMergeResult
 	reviewSuggestionResult    *platform.AppliedReviewSuggestions
 	reviewSuggestionBaseSHA   string
+	issueCommentsGateMu       sync.Mutex
+	issueCommentsGate         chan struct{}
 }
 
 // NewFixtureClient returns a FixtureClient with empty fixture maps.
@@ -508,10 +510,48 @@ func (c *FixtureClient) CreateIssue(
 	return issue, nil
 }
 
-// ListIssueComments returns nil (read-only stub).
+// HoldIssueComments pauses comment reads until ReleaseIssueComments is called.
+// Full-stack tests use the gate to control accepted background sync completion.
+func (c *FixtureClient) HoldIssueComments() {
+	c.issueCommentsGateMu.Lock()
+	defer c.issueCommentsGateMu.Unlock()
+	if c.issueCommentsGate == nil {
+		c.issueCommentsGate = make(chan struct{})
+	}
+}
+
+// ReleaseIssueComments resumes comment reads paused by HoldIssueComments.
+func (c *FixtureClient) ReleaseIssueComments() {
+	c.issueCommentsGateMu.Lock()
+	defer c.issueCommentsGateMu.Unlock()
+	if c.issueCommentsGate != nil {
+		close(c.issueCommentsGate)
+		c.issueCommentsGate = nil
+	}
+}
+
+func (c *FixtureClient) waitForIssueComments(ctx context.Context) error {
+	c.issueCommentsGateMu.Lock()
+	gate := c.issueCommentsGate
+	c.issueCommentsGateMu.Unlock()
+	if gate == nil {
+		return nil
+	}
+	select {
+	case <-gate:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// ListIssueComments returns the seeded comments for an issue or pull request.
 func (c *FixtureClient) ListIssueComments(
-	_ context.Context, owner, repo string, number int,
+	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
+	if err := c.waitForIssueComments(ctx); err != nil {
+		return nil, err
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	comments := c.Comments[issueKey(owner, repo, number)]
@@ -835,23 +875,52 @@ func (c *FixtureClient) ApproveWorkflowRun(
 func (c *FixtureClient) CreateIssueComment(
 	_ context.Context, owner, repo string, number int, body string,
 ) (*gh.IssueComment, error) {
+	return c.SeedIssueComment(owner, repo, number, body, time.Now().UTC()), nil
+}
+
+// SeedIssueComment adds a provider-side comment at a controlled timestamp.
+// E2E fixtures use it to exercise sync ordering that CreateIssueComment's
+// current-time timestamp cannot represent.
+func (c *FixtureClient) SeedIssueComment(
+	owner, repo string, number int, body string, createdAt time.Time,
+) *gh.IssueComment {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	login := "fixture-bot"
-	now := time.Now().UTC()
 	id := c.nextID
 	c.nextID++
 
 	comment := &gh.IssueComment{
 		ID:        &id,
 		Body:      &body,
-		CreatedAt: &gh.Timestamp{Time: now},
+		CreatedAt: &gh.Timestamp{Time: createdAt.UTC()},
 		User:      &gh.User{Login: &login},
 	}
 	key := issueKey(owner, repo, number)
 	c.Comments[key] = append(c.Comments[key], comment)
-	return comment, nil
+	updatedAt := gh.Timestamp{Time: createdAt.UTC()}
+	for _, prs := range []map[string][]*gh.PullRequest{c.OpenPRs, c.PRs} {
+		for _, pr := range prs[repoKey(owner, repo)] {
+			if pr.GetNumber() != number {
+				continue
+			}
+			pr.UpdatedAt = &updatedAt
+			commentCount := pr.GetComments() + 1
+			pr.Comments = &commentCount
+		}
+	}
+	for _, issues := range []map[string][]*gh.Issue{c.OpenIssues, c.Issues} {
+		for _, issue := range issues[repoKey(owner, repo)] {
+			if issue.GetNumber() != number {
+				continue
+			}
+			issue.UpdatedAt = &updatedAt
+			commentCount := issue.GetComments() + 1
+			issue.Comments = &commentCount
+		}
+	}
+	return comment
 }
 
 func (c *FixtureClient) EditIssueComment(

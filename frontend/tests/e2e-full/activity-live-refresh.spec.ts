@@ -1,9 +1,26 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
 const detailPath = "/api/v1/pulls/github/acme/widgets/1";
 const selectedActivityRoute = "/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets";
+
+const olderDetailSyncCases = [
+  {
+    itemType: "pr",
+    number: 1,
+    title: "Add widget caching layer",
+    body: "Pull request detail activity older than the feed cursor",
+    detailPath: "/api/v1/pulls/github/acme/widgets/1",
+  },
+  {
+    itemType: "issue",
+    number: 10,
+    title: "Widget rendering broken on Safari",
+    body: "Issue detail activity older than the feed cursor",
+    detailPath: "/api/v1/issues/github/acme/widgets/10",
+  },
+] as const;
 
 async function persistActivityComment(
   page: Page,
@@ -19,6 +36,167 @@ async function persistActivityComment(
   expect(eventID).toBeGreaterThan(0);
   return eventID;
 }
+
+for (const item of olderDetailSyncCases) {
+  test(`${item.itemType} detail sync immediately reconciles Activity older than its leading cursor`, async ({
+    page,
+  }, testInfo) => {
+    testInfo.setTimeout(60_000);
+    const server = await startIsolatedE2EServer();
+    try {
+      const staged = await page.request.post(
+        `${server.info.base_url}/__e2e/activity/stage-older-detail-event?item_type=${item.itemType}`,
+      );
+      expect(staged.status(), await staged.text()).toBe(204);
+
+      await page.route("**/api/v1/events**", async (route) => {
+        await route.abort("connectionfailed");
+      });
+
+      let releaseDetailSync: (() => void) | undefined;
+      const initialActivityLoaded = new Promise<void>((resolve) => {
+        releaseDetailSync = resolve;
+      });
+      await page.route(`**${item.detailPath}/sync/async`, async (route) => {
+        await initialActivityLoaded;
+        await route.continue();
+      });
+
+      const isFullActivityRead = (request: Request) => {
+        const url = new URL(request.url());
+        return request.method() === "GET" && url.pathname === "/api/v1/activity" && !url.searchParams.has("after");
+      };
+      let activityReadsInFlight = 0;
+      page.on("request", (request) => {
+        if (isFullActivityRead(request)) activityReadsInFlight++;
+      });
+      page.on("requestfinished", (request) => {
+        if (isFullActivityRead(request)) activityReadsInFlight--;
+      });
+      page.on("requestfailed", (request) => {
+        if (isFullActivityRead(request)) activityReadsInFlight--;
+      });
+
+      const initialActivity = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === "GET" && url.pathname === "/api/v1/activity" && !url.searchParams.has("after")
+        );
+      });
+      const detailSyncAccepted = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" && url.pathname === `${item.detailPath}/sync/async`;
+      });
+      await page.goto(
+        `${server.info.base_url}/?view=threaded&selected=${item.itemType}:${item.number}&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets`,
+      );
+
+      const initialResponse = await initialActivity;
+      const initialSnapshot = (await initialResponse.json()) as {
+        items: Array<{ activity_type: string; body_preview: string }>;
+      };
+      expect(initialSnapshot.items[0]?.activity_type).toBe("default_branch_commit");
+      expect(initialSnapshot.items.some((event) => event.body_preview === item.body)).toBe(false);
+
+      const feed = page.locator(".activity-feed");
+      const itemRow = feed.locator(".threaded-view .item-row", { hasText: item.title });
+      await expect(itemRow).toBeVisible();
+      await expect.poll(() => activityReadsInFlight).toBe(0);
+      await page.waitForTimeout(250);
+      await expect.poll(() => activityReadsInFlight).toBe(0);
+      const reconciledActivity = page.waitForResponse(async (response) => {
+        const url = new URL(response.url());
+        if (
+          response.request().method() !== "GET" ||
+          url.pathname !== "/api/v1/activity" ||
+          url.searchParams.has("after")
+        ) {
+          return false;
+        }
+        const snapshot = (await response.json()) as {
+          items: Array<{ body_preview: string }>;
+        };
+        return snapshot.items.some((event) => event.body_preview === item.body);
+      });
+      releaseDetailSync?.();
+      await detailSyncAccepted;
+
+      await expect
+        .poll(async () => {
+          const response = await page.request.get(`${server.info.base_url}/api/v1/activity?since=2026-08-01T00:00:00Z`);
+          const snapshot = (await response.json()) as {
+            items: Array<{ body_preview: string }>;
+          };
+          return snapshot.items.some((event) => event.body_preview === item.body);
+        })
+        .toBe(true);
+      await reconciledActivity;
+
+      await expect(feed.getByText("fixture-bot", { exact: true })).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await server.stop();
+    }
+  });
+}
+
+test("accepted detail sync reconciles Activity after its selection closes", async ({ page }, testInfo) => {
+  testInfo.setTimeout(60_000);
+  const server = await startIsolatedE2EServer();
+  const releaseSync = () => page.request.post(`${server.info.base_url}/__e2e/activity/release-older-detail-event-sync`);
+  try {
+    const item = olderDetailSyncCases[0];
+    const staged = await page.request.post(
+      `${server.info.base_url}/__e2e/activity/stage-older-detail-event?item_type=pr&hold_sync=true`,
+    );
+    expect(staged.status(), await staged.text()).toBe(204);
+
+    await page.route("**/api/v1/events**", async (route) => {
+      await route.abort("connectionfailed");
+    });
+
+    const initialActivity = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        response.request().method() === "GET" && url.pathname === "/api/v1/activity" && !url.searchParams.has("after")
+      );
+    });
+    const detailSyncAccepted = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === "POST" && url.pathname === `${item.detailPath}/sync/async`;
+    });
+    await page.goto(
+      `${server.info.base_url}/?view=threaded&selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets`,
+    );
+    await initialActivity;
+    expect((await detailSyncAccepted).status()).toBe(202);
+
+    await page.getByRole("button", { name: "Close Activity selection" }).click();
+    await expect(page.locator(".activity-detail")).toHaveCount(0);
+
+    const reconciledActivity = page.waitForResponse(async (response) => {
+      const url = new URL(response.url());
+      if (
+        response.request().method() !== "GET" ||
+        url.pathname !== "/api/v1/activity" ||
+        url.searchParams.has("after")
+      ) {
+        return false;
+      }
+      const snapshot = (await response.json()) as {
+        items: Array<{ body_preview: string }>;
+      };
+      return snapshot.items.some((event) => event.body_preview === item.body);
+    });
+    const released = await releaseSync();
+    expect(released.status(), await released.text()).toBe(204);
+    await reconciledActivity;
+
+    await expect(page.locator(".activity-feed").getByText("fixture-bot", { exact: true })).toBeVisible();
+  } finally {
+    await releaseSync().catch(() => {});
+    await server.stop();
+  }
+});
 
 test("persisted Activity events appear in the open PR timeline after SSE invalidation", async ({ page }) => {
   const server = await startIsolatedE2EServer();

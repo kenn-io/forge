@@ -100,7 +100,7 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 	switch ws.ItemType {
 	case db.WorkspaceItemTypeIssue:
 		ctx.SourceKind = AgentSourceKindProviderIssue
-		if ws.AssociatedPRNumber != nil {
+		if ws.AssociatedPRVisible && ws.AssociatedPRNumber != nil {
 			ctx.AssociatedPR = &AgentAssociatedPRContext{Number: *ws.AssociatedPRNumber}
 		}
 	case db.WorkspaceItemTypeAdHoc:
@@ -108,7 +108,7 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 		// The materialized branch is authoritative once setup finished; the
 		// requested ref is all that exists before then.
 		ctx.WorkingBranch = adHocWorkingBranch(ws)
-		if ws.AssociatedPRNumber != nil {
+		if ws.AssociatedPRVisible && ws.AssociatedPRNumber != nil {
 			ctx.AssociatedPR = &AgentAssociatedPRContext{Number: *ws.AssociatedPRNumber}
 		}
 	case db.WorkspaceItemTypeKataTask:

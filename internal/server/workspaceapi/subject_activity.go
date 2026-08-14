@@ -142,7 +142,8 @@ func ownWorkspaceSubjectKey(summary db.WorkspaceSummary) (db.WorkspaceSubjectKey
 }
 
 func resolvedWorkspaceSubjectKey(summary db.WorkspaceSummary) (db.WorkspaceSubjectKey, bool) {
-	if summary.AssociatedPRNumber != nil && *summary.AssociatedPRNumber > 0 {
+	if summary.AssociatedPRVisible &&
+		summary.AssociatedPRNumber != nil && *summary.AssociatedPRNumber > 0 {
 		return db.WorkspaceSubjectKey{
 			RepoID: summary.RepoID, ItemType: db.WorkspaceItemTypePullRequest,
 			ItemNumber: *summary.AssociatedPRNumber,

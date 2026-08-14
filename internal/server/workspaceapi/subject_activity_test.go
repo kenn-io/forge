@@ -139,6 +139,57 @@ func TestWorkspaceSubjectSnapshotResolvesAdHocAssociationAsPullReference(t *test
 	assert.Equal(WorkspaceRef{ID: "ws-adhoc", Status: "ready"}, snapshot.Subjects[key].Workspace)
 }
 
+func TestWorkspaceSubjectSnapshotFallsBackFromRemovedAssociatedPullRequest(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	h := newEnrichmentTestHandler(t, "")
+	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
+	repoID, err := h.db.UpsertRepo(t.Context(), identity)
+	require.NoError(err)
+	_, err = h.db.UpsertIssue(t.Context(), &db.Issue{
+		RepoID: repoID, PlatformID: 7, Number: 7,
+		URL: "https://github.com/acme/widget/issues/7", Title: "Visible issue",
+		Author: "alice", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	_, err = h.db.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 42, Number: 42,
+		URL: "https://github.com/acme/widget/pull/42", Title: "Removed pull",
+		Author: "alice", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	associatedPR := 42
+	require.NoError(h.db.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-issue", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
+		ItemNumber: 7, AssociatedPRNumber: &associatedPR,
+		GitHeadRef: "issue-7", WorktreePath: t.TempDir(), Status: "ready",
+	}))
+	_, err = h.db.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, 'merge_request', 42, 'pull-42', ?, ?, 'removed_upstream')`,
+		repoID, now, now,
+	)
+	require.NoError(err)
+
+	snapshot, err := h.WorkspaceSubjectSnapshot(t.Context())
+	require.NoError(err)
+	issueKey := db.WorkspaceSubjectKey{
+		RepoID: repoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
+	}
+	removedPRKey := db.WorkspaceSubjectKey{
+		RepoID: repoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+	}
+	require.Contains(snapshot.Subjects, issueKey)
+	assert.Equal("Visible issue", snapshot.Subjects[issueKey].Subject.Title)
+	assert.Equal(WorkspaceRef{ID: "ws-issue", Status: "ready"}, snapshot.Subjects[issueKey].Workspace)
+	assert.NotContains(snapshot.Subjects, removedPRKey)
+}
+
 func TestWorkspaceSubjectSnapshotUsesStableRepositoryIdentityAfterRename(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

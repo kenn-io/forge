@@ -96,7 +96,8 @@ func TestBuildAgentContext(t *testing.T) {
 					RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
 					ItemNumber: 7, AssociatedPRNumber: ptrInt(42),
 				},
-				SourceTitle: ptr("Add retry controls"),
+				SourceTitle:         ptr("Add retry controls"),
+				AssociatedPRVisible: true,
 			},
 			want: []string{"Source kind: provider issue", "Issue: #7", "Associated PR: #42", "Add retry controls"},
 		},
@@ -123,6 +124,23 @@ func TestBuildAgentContext(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildAgentContextOmitsRemovedAssociatedPullRequest(t *testing.T) {
+	t.Parallel()
+	associatedPR := 42
+
+	rendered := RenderAgentContext(BuildAgentContext(WorkspaceSummary{
+		Workspace: db.Workspace{
+			ID: "ws-issue-pr", Platform: "github", PlatformHost: "github.com",
+			RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
+			ItemNumber: 7, AssociatedPRNumber: &associatedPR,
+		},
+		SourceItemVisible:   true,
+		AssociatedPRVisible: false,
+	}))
+
+	assert.NotContains(t, rendered, "Associated PR: #42")
 }
 
 func TestRenderAgentContextUsesConciseSourceIdentity(t *testing.T) {

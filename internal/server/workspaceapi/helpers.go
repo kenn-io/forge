@@ -161,6 +161,10 @@ func toWorkspaceResponse(summary *db.WorkspaceSummary) workspaceResponse {
 	if !summary.AssociatedPRVisible {
 		associatedPRNumber = nil
 	}
+	headRepoKind := ""
+	if summary.SourceItemVisible {
+		headRepoKind = mrHeadRepoKind(summary.ItemType, summary.MRHeadRepo)
+	}
 	return workspaceResponse{
 		ID: summary.ID,
 		Repo: httpapi.RepoRefResponse{
@@ -193,7 +197,7 @@ func toWorkspaceResponse(summary *db.WorkspaceSummary) workspaceResponse {
 		MRDeletions:        summary.MRDeletions,
 		AssociatedPRNumber: associatedPRNumber,
 		Kata:               summary.KataMetadata,
-		MRHeadRepoKind:     mrHeadRepoKind(summary.ItemType, summary.MRHeadRepo),
+		MRHeadRepoKind:     headRepoKind,
 	}
 }
 

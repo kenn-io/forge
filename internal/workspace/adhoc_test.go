@@ -254,6 +254,7 @@ func TestAgentContextForAdHocWorkspaceWithDetectedPR(t *testing.T) {
 	summary.GitHeadRef = "spike/thing"
 	summary.WorkspaceBranch = "spike/thing"
 	summary.AssociatedPRNumber = &prNumber
+	summary.AssociatedPRVisible = true
 
 	rendered := RenderAgentContext(BuildAgentContext(summary))
 

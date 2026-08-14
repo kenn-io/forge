@@ -56,22 +56,32 @@ func TestToWorkspaceResponseSetsMRHeadRepoKind(t *testing.T) {
 	fork := "https://example.com/attacker/repo.git"
 
 	tests := []struct {
-		name       string
-		itemType   string
-		mrHeadRepo *string
-		want       string
+		name              string
+		itemType          string
+		mrHeadRepo        *string
+		sourceItemVisible bool
+		want              string
 	}{
 		{
-			name:       "same repo pull request",
-			itemType:   db.WorkspaceItemTypePullRequest,
-			mrHeadRepo: nil,
-			want:       mrHeadRepoKindSameRepo,
+			name:              "same repo pull request",
+			itemType:          db.WorkspaceItemTypePullRequest,
+			mrHeadRepo:        nil,
+			sourceItemVisible: true,
+			want:              mrHeadRepoKindSameRepo,
 		},
 		{
-			name:       "fork pull request",
-			itemType:   db.WorkspaceItemTypePullRequest,
-			mrHeadRepo: &fork,
-			want:       mrHeadRepoKindFork,
+			name:              "fork pull request",
+			itemType:          db.WorkspaceItemTypePullRequest,
+			mrHeadRepo:        &fork,
+			sourceItemVisible: true,
+			want:              mrHeadRepoKindFork,
+		},
+		{
+			name:              "removed pull request",
+			itemType:          db.WorkspaceItemTypePullRequest,
+			mrHeadRepo:        &fork,
+			sourceItemVisible: false,
+			want:              "",
 		},
 	}
 	for _, tt := range tests {
@@ -83,6 +93,7 @@ func TestToWorkspaceResponseSetsMRHeadRepoKind(t *testing.T) {
 					ItemType:   tt.itemType,
 					MRHeadRepo: tt.mrHeadRepo,
 				},
+				SourceItemVisible: tt.sourceItemVisible,
 			}
 			got := toWorkspaceResponse(summary)
 			assert.Equal(t, tt.want, got.MRHeadRepoKind)

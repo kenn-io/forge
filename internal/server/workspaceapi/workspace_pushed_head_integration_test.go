@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
@@ -24,12 +25,20 @@ import (
 type pushedHeadProviderClient struct {
 	ghclient.Client
 	getPullRequest func(context.Context, string, string, int) (*gh.PullRequest, error)
+	ciCalls        atomic.Int64
 }
 
-func (c pushedHeadProviderClient) GetPullRequest(
+func (c *pushedHeadProviderClient) GetPullRequest(
 	ctx context.Context, owner, name string, number int,
 ) (*gh.PullRequest, error) {
 	return c.getPullRequest(ctx, owner, name, number)
+}
+
+func (c *pushedHeadProviderClient) GetCombinedStatus(
+	ctx context.Context, owner, name, ref string,
+) (*gh.CombinedStatus, error) {
+	c.ciCalls.Add(1)
+	return c.Client.GetCombinedStatus(ctx, owner, name, ref)
 }
 
 type pushedHeadIntegrationFixture struct {
@@ -212,6 +221,84 @@ func TestWorkspacePushedHeadPassStopsAfterNonConvergingRefresh(t *testing.T) {
 	assert.Equal(int64(2), detailSyncCalls.Load())
 }
 
+func TestWorkspacePushedHeadPassIgnoresRemovedPullRequest(t *testing.T) {
+	require := require.New(t)
+	var detailSyncCalls atomic.Int64
+	provider := newPushedHeadProvider(func(
+		context.Context, string, string, int,
+	) (*gh.PullRequest, error) {
+		detailSyncCalls.Add(1)
+		return nil, nil
+	})
+	fixture := newPushedHeadIntegrationFixture(t, provider)
+	worktreePath, oldHead := setupPushedHeadIntegrationWorktree(t)
+	repoID := seedPushedHeadIntegrationPR(t, fixture.database, oldHead)
+	insertPushedHeadIntegrationWorkspace(t, fixture.database, worktreePath)
+	pushPushedHeadIntegrationCommit(t, worktreePath)
+	markPushedHeadIntegrationPRRemoved(t, fixture.database, repoID)
+
+	fixture.handler.runWorkspacePushedHeadObserverPass(t.Context())
+
+	require.Empty(fixture.events)
+	require.Empty(fixture.jobs)
+	require.Zero(detailSyncCalls.Load())
+	require.Zero(provider.ciCalls.Load())
+}
+
+func TestWorkspacePushedHeadQueuedRefreshRechecksRemovedPullRequest(t *testing.T) {
+	require := require.New(t)
+	var detailSyncCalls atomic.Int64
+	provider := newPushedHeadProvider(func(
+		context.Context, string, string, int,
+	) (*gh.PullRequest, error) {
+		detailSyncCalls.Add(1)
+		return nil, nil
+	})
+	fixture := newPushedHeadIntegrationFixture(t, provider)
+	worktreePath, oldHead := setupPushedHeadIntegrationWorktree(t)
+	repoID := seedPushedHeadIntegrationPR(t, fixture.database, oldHead)
+	insertPushedHeadIntegrationWorkspace(t, fixture.database, worktreePath)
+	pushPushedHeadIntegrationCommit(t, worktreePath)
+
+	fixture.handler.runWorkspacePushedHeadObserverPass(t.Context())
+	require.Len(fixture.jobs, 1)
+	markPushedHeadIntegrationPRRemoved(t, fixture.database, repoID)
+	fixture.jobs[0]()
+
+	require.Zero(detailSyncCalls.Load())
+	require.Zero(provider.ciCalls.Load())
+	require.Len(fixture.events, 2, "removed pull must not publish refresh success")
+}
+
+func TestWorkspacePushedHeadQueuedCIRefreshRechecksRemovedPullRequest(t *testing.T) {
+	require := require.New(t)
+	provider := newPushedHeadProvider(func(
+		context.Context, string, string, int,
+	) (*gh.PullRequest, error) {
+		return nil, nil
+	})
+	fixture := newPushedHeadIntegrationFixture(t, provider)
+	worktreePath, headSHA := setupPushedHeadIntegrationWorktree(t)
+	repoID := seedPushedHeadIntegrationPR(t, fixture.database, headSHA)
+	insertPushedHeadIntegrationWorkspace(t, fixture.database, worktreePath)
+	require.NoError(fixture.database.UpdateMRCIStatusForHead(
+		t.Context(), repoID, 1, headSHA, "pending", `[]`, true,
+	))
+	change := workspace.PushedHeadUpdate{
+		WorkspaceID: "ws-pr", Provider: platform.KindGitHub,
+		PlatformHost: "github.com", RepoPath: "acme/widget",
+		Owner: "acme", Name: "widget", Number: 1, NewSHA: headSHA,
+	}
+
+	fixture.handler.maybeEnqueuePushedHeadCIRefresh(t.Context(), change)
+	require.Len(fixture.jobs, 1)
+	markPushedHeadIntegrationPRRemoved(t, fixture.database, repoID)
+	fixture.jobs[0]()
+
+	require.Zero(provider.ciCalls.Load())
+	require.Len(fixture.events, 1, "removed pull must not publish CI refresh success")
+}
+
 func pushedHeadPullRequest(title, headSHA string) *gh.PullRequest {
 	state := "open"
 	body := "updated body"
@@ -311,4 +398,19 @@ func insertPushedHeadIntegrationWorkspace(
 		GitHeadRef: "feature", WorkspaceBranch: "feature",
 		WorktreePath: worktreePath, TmuxSession: "kenn-forge-ws-pr", Status: "ready",
 	}))
+}
+
+func markPushedHeadIntegrationPRRemoved(
+	t *testing.T, database *db.DB, repoID int64,
+) {
+	t.Helper()
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err := database.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, 'merge_request', 1, 'pull-1', ?, ?, 'removed_upstream')`,
+		repoID, now, now,
+	)
+	require.NoError(t, err)
 }

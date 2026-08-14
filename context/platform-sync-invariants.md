@@ -428,8 +428,9 @@ Repository import requests and route/query shapes should carry
   links, repository summaries, archive reports, and provider mutations;
   synchronous public item sync rejects known tombstones before provider access
   and uses visibility-filtered response reads. Secondary workflows such as
-  label validation, automatic assignment, and on-demand worktree sync must
-  check item visibility before provider access.
+  label validation, automatic assignment, pushed-head refresh, and on-demand
+  worktree sync must check item visibility before provider access. Workspace
+  and Fleet projections retain local records but omit removed parent metadata.
   `inaccessible` items remain visible.
   (`internal/server/pullapi/helpers.go::visibleMergeRequest`,
   `internal/server/issueapi/mutation_handlers.go::requireVisibleIssue`)

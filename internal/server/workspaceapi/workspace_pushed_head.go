@@ -114,6 +114,10 @@ func (s *Handler) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadU
 		key,
 		attrs,
 		func(ctx context.Context) error {
+			_, mr := s.lookupPushedHeadMR(ctx, change)
+			if mr == nil {
+				return nil
+			}
 			return s.syncer.SyncMROnProvider(
 				ctx,
 				change.Provider,
@@ -124,6 +128,10 @@ func (s *Handler) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadU
 			)
 		},
 		func(ctx context.Context) {
+			_, mr := s.lookupPushedHeadMR(ctx, change)
+			if mr == nil {
+				return
+			}
 			if s.workspacePushedHeadObserver != nil {
 				s.workspacePushedHeadObserver.MarkRefreshSucceeded(change, s.now().UTC())
 			}
@@ -200,36 +208,52 @@ func (s *Handler) maybeEnqueuePushedHeadCIRefresh(ctx context.Context, change wo
 		key,
 		[]any{"type", "pr-ci", "provider", string(change.Provider), "platform_host", change.PlatformHost, "repo_path", change.RepoPath, "number", change.Number},
 		func(ctx context.Context) error {
+			currentRepo, currentMR := s.lookupPushedHeadMR(ctx, change)
+			if currentRepo == nil || currentMR == nil {
+				return nil
+			}
+			currentHeadSHA := currentMR.PlatformHeadSHA
+			if currentHeadSHA == "" {
+				currentHeadSHA = change.NewSHA
+			}
 			_, err := s.syncer.RefreshMRCIStatusOnProvider(
 				ctx,
 				ghclient.RepoRef{
-					Platform:           repoProviderKind(*repo),
-					Owner:              repo.Owner,
-					Name:               repo.Name,
-					PlatformHost:       repoProviderHost(*repo),
-					RepoPath:           repo.RepoPath,
-					PlatformExternalID: repo.PlatformRepoID,
-					WebURL:             repo.WebURL,
-					CloneURL:           repo.CloneURL,
-					DefaultBranch:      repo.DefaultBranch,
+					Platform:           repoProviderKind(*currentRepo),
+					Owner:              currentRepo.Owner,
+					Name:               currentRepo.Name,
+					PlatformHost:       repoProviderHost(*currentRepo),
+					RepoPath:           currentRepo.RepoPath,
+					PlatformExternalID: currentRepo.PlatformRepoID,
+					WebURL:             currentRepo.WebURL,
+					CloneURL:           currentRepo.CloneURL,
+					DefaultBranch:      currentRepo.DefaultBranch,
 				},
-				repo.ID,
+				currentRepo.ID,
 				change.Number,
-				headSHA,
+				currentHeadSHA,
 			)
 			return err
 		},
-		func(context.Context) {
+		func(ctx context.Context) {
+			currentRepo, currentMR := s.lookupPushedHeadMR(ctx, change)
+			if currentRepo == nil || currentMR == nil {
+				return
+			}
+			currentHeadSHA := currentMR.PlatformHeadSHA
+			if currentHeadSHA == "" {
+				currentHeadSHA = change.NewSHA
+			}
 			s.hub.Broadcast(Event{
 				Type: "pr_ci_refreshed",
 				Data: prCIRefreshedPayload{
-					Provider:     string(repoProviderKind(*repo)),
-					PlatformHost: repoProviderHost(*repo),
-					RepoPath:     repo.RepoPath,
-					Owner:        repo.Owner,
-					Name:         repo.Name,
+					Provider:     string(repoProviderKind(*currentRepo)),
+					PlatformHost: repoProviderHost(*currentRepo),
+					RepoPath:     currentRepo.RepoPath,
+					Owner:        currentRepo.Owner,
+					Name:         currentRepo.Name,
 					Number:       change.Number,
-					HeadSHA:      headSHA,
+					HeadSHA:      currentHeadSHA,
 					RefreshedAt:  formatUTCRFC3339(s.now().UTC()),
 					Warnings:     []string{},
 				},
@@ -264,7 +288,7 @@ func (s *Handler) lookupPushedHeadMR(ctx context.Context, change workspace.Pushe
 	if err != nil || repo == nil {
 		return nil, nil
 	}
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, change.Number)
+	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, change.Number)
 	if err != nil {
 		return repo, nil
 	}

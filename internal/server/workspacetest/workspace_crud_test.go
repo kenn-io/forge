@@ -413,6 +413,54 @@ func TestWorkspaceCreateHidesRemovedUpstreamItems(t *testing.T) {
 	require.Empty(*listed.JSON200.Workspaces)
 }
 
+func TestWorkspaceListRetainsWorkspaceWithoutRemovedPullMetadata(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+	repo, err := fixture.database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(fixture.database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-removed-pr", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1,
+		GitHeadRef: "feature", WorktreePath: fixture.worktreeDir + "/removed-pr",
+		TmuxSession: "forge-ws-removed-pr", Status: "creating",
+	}))
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = fixture.database.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, 'merge_request', 1, 'pull-1', ?, ?, 'removed_upstream')`,
+		repo.ID, now, now,
+	)
+	require.NoError(err)
+
+	listed, err := fixture.client.HTTP.ListWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listed.StatusCode(), string(listed.Body))
+	require.NotNil(listed.JSON200)
+	require.NotNil(listed.JSON200.Workspaces)
+	require.Len(*listed.JSON200.Workspaces, 1)
+	workspace := (*listed.JSON200.Workspaces)[0]
+	require.Equal("ws-removed-pr", workspace.Id)
+	require.Equal(int64(1), workspace.ItemNumber)
+	require.Nil(workspace.MrTitle)
+	require.Nil(workspace.MrState)
+	require.Nil(workspace.MrIsDraft)
+	require.Nil(workspace.MrCiStatus)
+	require.Nil(workspace.MrReviewDecision)
+	require.Nil(workspace.MrAdditions)
+	require.Nil(workspace.MrDeletions)
+	require.Nil(workspace.ItemLastActivityAt)
+}
+
 func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 	t.Parallel()
 	acquireWorkspaceGitSlot(t)

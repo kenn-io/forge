@@ -98,6 +98,14 @@ func (d *DB) ListWorktreeLinkPRs(ctx context.Context) ([]WorktreeLinkPR, error) 
 		       m.review_decision, m.mergeable_state, m.additions, m.deletions, m.comment_count
 		FROM forge_mr_worktree_links l
 		JOIN forge_merge_requests m ON m.id = l.merge_request_id
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM forge_archive_items a
+			WHERE a.repo_id = m.repo_id
+			  AND a.item_type = 'merge_request'
+			  AND a.item_number = m.number
+			  AND a.lifecycle_state = 'removed_upstream'
+		)
 		ORDER BY l.worktree_key`)
 	if err != nil {
 		return nil, fmt.Errorf("list worktree link PRs: %w", err)

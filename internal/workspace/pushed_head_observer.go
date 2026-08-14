@@ -289,7 +289,7 @@ func (o *PushedHeadObserver) resolveWorkspacePR(ctx context.Context, ws *Workspa
 		return assoc, repo, nil, false, nil
 	}
 
-	mr, err := o.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, prNumber)
+	mr, err := o.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, prNumber)
 	if err != nil {
 		return assoc, repo, nil, false, fmt.Errorf("get merge request: %w", err)
 	}

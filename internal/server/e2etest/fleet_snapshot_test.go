@@ -3,6 +3,7 @@ package e2etest
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -171,6 +172,65 @@ func TestFleetSnapshotLocalE2E(t *testing.T) {
 	}
 	require.Len(prWorktrees, 1, "exactly one seeded PR workspace worktree")
 	require.Equal(7, *prWorktrees[0].LinkedPRNumber, "PR workspace must surface linkedPRNumber=7")
+}
+
+func TestFleetSnapshotRetainsWorktreeWithoutRemovedPullMetadataE2E(t *testing.T) {
+	require := require.New(t)
+	ts, database := bootFleetServer(t, nil)
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(
+		ctx, dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	mrID, err := database.UpsertMergeRequest(ctx, &dbpkg.MergeRequest{
+		RepoID: repoID, PlatformID: 7001, Number: 7,
+		URL: "https://github.com/acme/widget/pull/7", Title: "Removed pull",
+		Author: "dev", State: "open", IsDraft: true,
+		HeadBranch: "feature", BaseBranch: "main", CIStatus: "failure",
+		ReviewDecision: "changes_requested", MergeableState: "dirty",
+		Additions: 12, Deletions: 3, CommentCount: 5,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	project, err := database.CreateProject(ctx, dbpkg.CreateProjectInput{
+		DisplayName: "widget", LocalPath: filepath.Join(t.TempDir(), "widget"),
+		DefaultBranch: "main", RepoID: sql.NullInt64{Int64: repoID, Valid: true},
+	})
+	require.NoError(err)
+	worktreePath := filepath.Join(t.TempDir(), "feature")
+	_, err = database.CreateProjectWorktree(ctx, dbpkg.CreateProjectWorktreeInput{
+		ProjectID: project.ID, Branch: "feature", Path: worktreePath,
+	})
+	require.NoError(err)
+	worktreeKey := "worktree:" + filepath.Clean(worktreePath)
+	require.NoError(database.SetWorktreeLinks(ctx, []dbpkg.WorktreeLink{{
+		MergeRequestID: mrID, WorktreeKey: worktreeKey,
+		WorktreePath: worktreePath, WorktreeBranch: "feature", LinkedAt: now,
+	}}))
+	_, err = database.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, 'merge_request', 7, 'pull-7', ?, ?, 'removed_upstream')`,
+		repoID, now, now,
+	)
+	require.NoError(err)
+
+	var snap fleet.Snapshot
+	getJSON(t, ts, "/api/v1/snapshot", &snap)
+	worktree := worktreeByScopedKey(snap.Worktrees, worktreeKey)
+	require.NotNil(worktree, "local project worktree remains in the fleet snapshot")
+	require.Equal("feature", worktree.Branch)
+	require.Nil(worktree.LinkedPRNumber)
+	require.Nil(worktree.PRTitle)
+	require.Nil(worktree.PRState)
+	require.Nil(worktree.ChecksStatus)
+	require.Nil(worktree.PRReviewDecision)
+	require.Nil(worktree.PRMergeable)
+	require.Nil(worktree.PRAdditions)
+	require.Nil(worktree.PRDeletions)
+	require.Nil(worktree.PRCommentCount)
 }
 
 func TestFleetSnapshotIssueWorkspaceLinksIssueOnlyE2E(t *testing.T) {

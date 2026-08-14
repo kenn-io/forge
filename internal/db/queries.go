@@ -5630,10 +5630,26 @@ const workspaceSummaryJoins = `
 	    ON m.repo_id = r.id
 	   AND m.number = w.item_number
 	   AND w.item_type = 'pull_request'
+	   AND NOT EXISTS (
+	       SELECT 1
+	       FROM forge_archive_items a
+	       WHERE a.repo_id = m.repo_id
+	         AND a.item_type = 'merge_request'
+	         AND a.item_number = m.number
+	         AND a.lifecycle_state = 'removed_upstream'
+	   )
 	LEFT JOIN forge_issues i
 	    ON i.repo_id = r.id
 	   AND i.number = w.item_number
-	   AND w.item_type = 'issue'`
+	   AND w.item_type = 'issue'
+	   AND NOT EXISTS (
+	       SELECT 1
+	       FROM forge_archive_items a
+	       WHERE a.repo_id = i.repo_id
+	         AND a.item_type = 'issue'
+	         AND a.item_number = i.number
+	         AND a.lifecycle_state = 'removed_upstream'
+	   )`
 
 func scanWorkspaceSummary(
 	scanner interface{ Scan(...any) error },

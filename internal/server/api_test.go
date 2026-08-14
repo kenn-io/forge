@@ -70,11 +70,19 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
-const serverRuntimeHelperMarker = "kenn-forge-runtime-helper"
+const (
+	serverRuntimeHelperMarker        = "kenn-forge-runtime-helper"
+	serverPtyOwnerParentHelperMarker = "kenn-forge-pty-owner-parent-helper"
+)
 
 var (
-	privateTmuxOwner *testtmux.Owner
-	ptyE2ESemaphore  = semaphore.NewWeighted(1)
+	privateTmuxOwner        *testtmux.Owner
+	ptyE2ESemaphore         = semaphore.NewWeighted(1)
+	serverPtyOwnerParentPID = flag.Int(
+		"server-pty-owner-parent-pid",
+		0,
+		"PID of the test process that launched the PTY owner helper",
+	)
 	// Root keeps only Workspace tests that cross provider, config, Kata,
 	// runtime, terminal, Fleet, or agent-context composition boundaries.
 	// Bound their Git setup independently from the workspacetest binary.
@@ -133,7 +141,9 @@ func isServerHelperProcess() bool {
 		args = args[sep+1:]
 	}
 	return len(args) > 0 &&
-		(args[0] == serverRuntimeHelperMarker || args[0] == "pty-owner")
+		(args[0] == serverRuntimeHelperMarker ||
+			args[0] == serverPtyOwnerParentHelperMarker ||
+			args[0] == "pty-owner")
 }
 
 func runParallelPTYE2E(t *testing.T) {
@@ -27210,11 +27220,16 @@ func ptyOwnerServerOptions(ptyOwnerDir string) ServerOptions {
 	return ServerOptions{
 		PtyOwnerDir:     ptyOwnerDir,
 		PtyOwnerExePath: os.Args[0],
-		PtyOwnerExeArgs: []string{
-			"-test.run=TestServerPtyOwnerHelperProcess",
-			"--",
-		},
+		PtyOwnerExeArgs: ptyOwnerHelperExeArgs(os.Getpid()),
 		PtyOwnerCommand: []string{"/bin/sh"},
+	}
+}
+
+func ptyOwnerHelperExeArgs(parentPID int) []string {
+	return []string{
+		"-test.run=TestServerPtyOwnerHelperProcess",
+		fmt.Sprintf("-server-pty-owner-parent-pid=%d", parentPID),
+		"--",
 	}
 }
 
@@ -30794,12 +30809,17 @@ func TestServerPtyOwnerHelperProcess(t *testing.T) {
 			os.Exit(2)
 		}
 	}
-	if err := ptyowner.RunOwner(context.Background(), ptyowner.Options{
+	ownerCtx, cancel := testPtyOwnerParentContext(*serverPtyOwnerParentPID)
+	defer cancel()
+	if ownerCtx.Err() != nil {
+		os.Exit(0)
+	}
+	if err := ptyowner.RunOwner(ownerCtx, ptyowner.Options{
 		Root:    *root,
 		Session: *session,
 		Cwd:     *cwd,
 		Command: command,
-	}); err != nil {
+	}); err != nil && !errors.Is(err, context.Canceled) {
 		os.Exit(1)
 	}
 	os.Exit(0)

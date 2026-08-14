@@ -10,6 +10,6 @@ case "$hook_concurrency" in
 esac
 
 export GOMAXPROCS=${GOMAXPROCS:-$hook_concurrency}
-export GO_TEST_P=${GO_TEST_P:-$hook_concurrency}
+export GO_TEST_P=${GO_TEST_P-$hook_concurrency}
 
 exec "$@"

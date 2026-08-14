@@ -47,7 +47,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
 # gotestsum prints package names on success and full output on failure,
 # while persisting raw `go test -json` events for downstream reporters.
 GOTESTSUM := go tool gotestsum --format pkgname-and-test-fails --jsonfile
-GO_TEST_P ?=
+GO_TEST_P ?= 4
 GO_TEST_P_FLAG := $(if $(GO_TEST_P),-p $(GO_TEST_P),)
 
 # Ensure go:embed has at least one file (no-op if frontend is built)

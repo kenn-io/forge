@@ -6,8 +6,9 @@ fixtures, or changing shell-script coverage.
 - Pass `-shuffle=on` when invoking `go test` directly; `make test` and
   `make test-short` already include it. Do not pass redundant `-count=1`; use
   `-count=N` only when `N > 1` for repeated runs.
-- Local Go hooks must use bounded concurrency and separate heavy consumers into
-  ordered priority groups; keep the shared Go cache across worktrees (`scripts/run-hook-go.sh`, `prek.toml:53`).
+- Routine local Go lanes and hooks bound package/processor concurrency and share
+  Go caches; `GO_TEST_P=` intentionally restores native package concurrency.
+  Reduce scanner pressure at source, not by redirecting `GOTMPDIR`. (`Makefile:50`, `scripts/run-hook-go.sh:12`, `prek.toml:53`)
 - `-short` must skip tests that build and launch real kenn-forge daemons or run
   load-sensitive sync E2Es; those flows belong in full Go lanes (`cmd/kenn-forge/lock_e2e_test.go::buildForgeWithLDFlags`, `internal/server/e2etest/sync_cooldown_test.go::TestTriggerSyncE2EPrioritizesNonDefaultHostFilter`).
 - Pre-commit runs frontend core checks without full-project Effect diagnostics;
@@ -37,6 +38,9 @@ fixtures, or changing shell-script coverage.
   Linux, which provide high-resolution process starts. (`internal/testutil/testtmux/process_identity.go::processIdentityStatus`)
 - Orphan recovery accepts explicit or exact server-title socket paths only when
   contained by the dedicated root. (`internal/testutil/testtmux/owner.go::reapStaleProcesses`)
+- Detached `internal/server` PTY-owner test helpers receive their launching test
+  PID explicitly and cancel on Unix reparenting; production PTY owners remain
+  durable across daemon restarts. (`internal/server/api_test.go::ptyOwnerHelperExeArgs`)
 - Use provider live or container fixtures only when fake transports cannot
   catch endpoint or authentication drift. GitHub GraphQL validation is gated by
   `KENN_FORGE_LIVE_GITHUB_TESTS=1`.

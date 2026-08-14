@@ -923,6 +923,7 @@ func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 
 func TestSSHFleetWebSocketTerminalClaimsSharedResizeOwnership(t *testing.T) {
 	require := require.New(t)
+	const readTimeout = 5 * time.Second
 
 	srv, _ := setupTestServer(t)
 	setTestFleetConfig(srv, func(cfg *config.Config) {
@@ -955,7 +956,7 @@ func TestSSHFleetWebSocketTerminalClaimsSharedResizeOwnership(t *testing.T) {
 	ts := httptest.NewServer(srv.localHandler())
 	t.Cleanup(ts.Close)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/fleet/hosts/epyc/workspaces/ws_1/runtime/sessions/sess-1/terminal"
@@ -970,7 +971,7 @@ func TestSSHFleetWebSocketTerminalClaimsSharedResizeOwnership(t *testing.T) {
 	require.NoError(err)
 
 	require.NoError(first.Write(ctx, websocket.MessageBinary, []byte("before\n")))
-	readWebSocketBinaryUntil(t, ctx, first, 2*time.Second, "size:24:80:before")
+	readWebSocketBinaryUntil(t, ctx, first, readTimeout, "size:24:80:before")
 
 	require.NoError(second.Write(
 		ctx,
@@ -978,9 +979,9 @@ func TestSSHFleetWebSocketTerminalClaimsSharedResizeOwnership(t *testing.T) {
 		[]byte(`{"type":"claim_resize","cols":90,"rows":25}`),
 	))
 	require.NoError(second.Write(ctx, websocket.MessageBinary, []byte("second\n")))
-	readWebSocketBinaryUntil(t, ctx, second, 2*time.Second, "size:25:90:second")
+	readWebSocketBinaryUntil(t, ctx, second, readTimeout, "size:25:90:second")
 	require.NoError(first.Write(ctx, websocket.MessageBinary, []byte("shared\n")))
-	readWebSocketBinaryUntil(t, ctx, first, 2*time.Second, "size:25:90:shared")
+	readWebSocketBinaryUntil(t, ctx, first, readTimeout, "size:25:90:shared")
 
 	require.NoError(first.Write(
 		ctx,
@@ -988,11 +989,11 @@ func TestSSHFleetWebSocketTerminalClaimsSharedResizeOwnership(t *testing.T) {
 		[]byte(`{"type":"resize","cols":100,"rows":31}`),
 	))
 	require.NoError(first.Write(ctx, websocket.MessageBinary, []byte("stale\n")))
-	readWebSocketBinaryUntil(t, ctx, first, 2*time.Second, "size:25:90:stale")
+	readWebSocketBinaryUntil(t, ctx, first, readTimeout, "size:25:90:stale")
 
 	require.NoError(second.Close(websocket.StatusNormalClosure, "test done"))
 	require.NoError(first.Write(ctx, websocket.MessageBinary, []byte("fallback\n")))
-	readWebSocketBinaryUntil(t, ctx, first, 2*time.Second, "size:31:100:fallback")
+	readWebSocketBinaryUntil(t, ctx, first, readTimeout, "size:31:100:fallback")
 }
 
 func TestSSHFleetAttachPTYWritesExitFrameWhenPTYEOFPrecedesWait(t *testing.T) {

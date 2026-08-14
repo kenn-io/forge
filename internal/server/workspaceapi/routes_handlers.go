@@ -913,7 +913,7 @@ func (s *Handler) refreshWorkspace(
 	switch summary.ItemType {
 	case db.WorkspaceItemTypeIssue:
 		if err := s.refreshWorkspaceIssue(
-			ctx, kind, host, repo.Owner, repo.Name, summary.ItemNumber,
+			ctx, repo.ID, kind, host, repo.Owner, repo.Name, summary.ItemNumber,
 		); err != nil {
 			return nil, err
 		}
@@ -960,7 +960,7 @@ func (s *Handler) refreshWorkspace(
 	}
 	if prNumber, ok := workspaceAssociatedPRNumber(refreshed); ok {
 		if err := s.refreshWorkspacePullRequest(
-			ctx, kind, host, repo.Owner, repo.Name, prNumber,
+			ctx, repo.ID, kind, host, repo.Owner, repo.Name, prNumber,
 		); err != nil {
 			return nil, err
 		}
@@ -1024,11 +1024,21 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 
 func (s *Handler) refreshWorkspaceIssue(
 	ctx context.Context,
+	repoID int64,
 	kind platform.Kind,
 	host, owner, name string,
 	number int,
 ) error {
-	err := s.syncer.SyncIssueOnProvider(ctx, kind, host, owner, name, number)
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repoID, db.ArchiveItemTypeIssue, number,
+	)
+	if err != nil {
+		return httpapi.Internal("check issue visibility: " + err.Error())
+	}
+	if removed {
+		return nil
+	}
+	err = s.syncer.SyncIssueOnProvider(ctx, kind, host, owner, name, number)
 	if err == nil {
 		return nil
 	}
@@ -1042,12 +1052,22 @@ func (s *Handler) refreshWorkspaceIssue(
 
 func (s *Handler) refreshWorkspacePullRequest(
 	ctx context.Context,
+	repoID int64,
 	kind platform.Kind,
 	host, owner, name string,
 	number int,
 ) error {
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
+	)
+	if err != nil {
+		return httpapi.Internal("check pull request visibility: " + err.Error())
+	}
+	if removed {
+		return nil
+	}
 	var diffErr *ghclient.DiffSyncError
-	err := s.syncer.SyncMROnProvider(ctx, kind, host, owner, name, number)
+	err = s.syncer.SyncMROnProvider(ctx, kind, host, owner, name, number)
 	if err != nil && !errors.As(err, &diffErr) {
 		if strings.Contains(err.Error(), "is not tracked") {
 			return httpapi.Forbidden(err.Error(), nil)

@@ -232,6 +232,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan stack member: %w", err)
 		}
+		m.Position = len(memberMap[m.StackID]) + 1
 		memberMap[m.StackID] = append(memberMap[m.StackID], m)
 	}
 	return stacks, memberMap, mRows.Err()
@@ -353,6 +354,7 @@ func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) 
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan stack member: %w", err)
 		}
+		m.Position = len(members) + 1
 		members = append(members, m)
 	}
 	return &stack, members, rows.Err()

@@ -1,7 +1,9 @@
 package db
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,6 +81,71 @@ func TestUpsertStackAndReplaceMembers(t *testing.T) {
 	assert.Len(memberMap[stackID], 2)
 	assert.Equal(1, memberMap[stackID][0].Position)
 	assert.Equal(2, memberMap[stackID][1].Position)
+}
+
+func TestStackMembersRenumberAfterRemovedMembersAreFiltered(t *testing.T) {
+	tests := []struct {
+		name          string
+		removedNumber int
+		wantNumbers   []int
+	}{
+		{name: "first member", removedNumber: 1, wantNumbers: []int{2, 3}},
+		{name: "middle member", removedNumber: 2, wantNumbers: []int{1, 3}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			d := openTestDB(t)
+			ctx := t.Context()
+			repoID := insertTestRepo(t, d, "org", "repo")
+
+			memberIDs := make([]int64, 0, 3)
+			for number := 1; number <= 3; number++ {
+				memberIDs = append(memberIDs, insertTestMRWithBranches(
+					t, d, repoID, number,
+					fmt.Sprintf("feature/%d", number), "main", MergeRequestStateOpen,
+				))
+			}
+			stackID, err := d.UpsertStack(ctx, repoID, 1, "feature")
+			require.NoError(err)
+			require.NoError(d.ReplaceStackMembers(ctx, stackID, []StackMember{
+				{MergeRequestID: memberIDs[0], Position: 1},
+				{MergeRequestID: memberIDs[1], Position: 2},
+				{MergeRequestID: memberIDs[2], Position: 3},
+			}))
+
+			now := time.Now().UTC().Truncate(time.Second)
+			_, err = d.WriteDB().ExecContext(ctx, `
+				INSERT INTO forge_archive_items (
+					repo_id, item_type, item_number, provider_item_id,
+					provider_created_at, provider_updated_at, lifecycle_state
+				) VALUES (?, 'merge_request', ?, ?, ?, ?, 'removed_upstream')`,
+				repoID, tt.removedNumber,
+				fmt.Sprintf("pull-%d", tt.removedNumber), now, now,
+			)
+			require.NoError(err)
+
+			_, memberMap, err := d.ListStacksWithMembers(ctx, "")
+			require.NoError(err)
+			require.Len(memberMap[stackID], 2)
+			for i, member := range memberMap[stackID] {
+				require.Equal(tt.wantNumbers[i], member.Number)
+				require.Equal(i+1, member.Position)
+			}
+
+			stack, members, err := d.GetStackForPRByRepoID(
+				ctx, repoID, tt.wantNumbers[1],
+			)
+			require.NoError(err)
+			require.NotNil(stack)
+			require.Len(members, 2)
+			for i, member := range members {
+				require.Equal(tt.wantNumbers[i], member.Number)
+				require.Equal(i+1, member.Position)
+			}
+		})
+	}
 }
 
 func TestStackMembersIncludeMergeableState(t *testing.T) {

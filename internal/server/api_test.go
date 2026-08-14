@@ -1114,6 +1114,25 @@ func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 	return identity
 }
 
+func markArchiveItemRemovedUpstreamForServerTest(
+	t *testing.T,
+	database *db.DB,
+	repoID int64,
+	itemType db.ArchiveItemType,
+	number int,
+) {
+	t.Helper()
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err := database.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, ?, ?, ?, ?, ?, 'removed_upstream')`,
+		repoID, itemType, number, fmt.Sprintf("%s-%d", itemType, number), now, now,
+	)
+	require.NoError(t, err)
+}
+
 func setupTestServerWithRepos(
 	t *testing.T, mock *mockGH, repos []ghclient.RepoRef,
 ) (*Server, *db.DB) {
@@ -3150,6 +3169,121 @@ func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
 		time.Millisecond,
 		"duplicate async sync requests must collapse to one pending rerun",
 	)
+}
+
+func TestAPIEnqueueItemSyncRejectsRemovedUpstreamWithoutProviderCalls(t *testing.T) {
+	require := require.New(t)
+	var pullCalls atomic.Int64
+	var issueCalls atomic.Int64
+	mock := &mockGH{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			pullCalls.Add(1)
+			return nil, errors.New("removed pull must not be fetched")
+		},
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			issueCalls.Add(1)
+			return nil, errors.New("removed issue must not be fetched")
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 1)
+	seedIssue(t, database, "acme", "widget", 2, "open")
+	repo, err := database.GetRepoByIdentity(
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	markArchiveItemRemovedUpstreamForServerTest(
+		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 1,
+	)
+	markArchiveItemRemovedUpstreamForServerTest(
+		t, database, repo.ID, db.ArchiveItemTypeIssue, 2,
+	)
+	client := setupTestClient(t, srv)
+
+	pullResp, err := client.HTTP.EnqueuePrSyncWithResponse(
+		ctx, "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, pullResp.StatusCode(), string(pullResp.Body))
+	require.NotNil(pullResp.ApplicationproblemJSONDefault)
+	require.Equal(
+		generated.ProblemErrorCode("pullNotFound"),
+		pullResp.ApplicationproblemJSONDefault.Code,
+	)
+
+	issueResp, err := client.HTTP.EnqueueIssueSyncWithResponse(
+		ctx, "gh", "acme", "widget", 2,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, issueResp.StatusCode(), string(issueResp.Body))
+	require.NotNil(issueResp.ApplicationproblemJSONDefault)
+	require.Equal(
+		generated.ProblemErrorCode("issueNotFound"),
+		issueResp.ApplicationproblemJSONDefault.Code,
+	)
+	require.Zero(pullCalls.Load())
+	require.Zero(issueCalls.Load())
+}
+
+func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) {
+	require := require.New(t)
+	var providerCalls atomic.Int64
+	mock := &mockGH{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			providerCalls.Add(1)
+			return nil, errors.New("removed pull must not be fetched")
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 1)
+	repo, err := database.GetRepoByIdentity(
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	client := setupTestClient(t, srv)
+
+	key := "pr:github:github.com:acme/widget#1"
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	require.True(srv.enqueueDetailSyncOrRerun(
+		key, nil, func(context.Context) error {
+			close(firstStarted)
+			<-releaseFirst
+			return nil
+		},
+	))
+	require.Eventually(func() bool {
+		select {
+		case <-firstStarted:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+
+	resp, err := client.HTTP.EnqueuePrSyncWithResponse(
+		ctx, "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	markArchiveItemRemovedUpstreamForServerTest(
+		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 1,
+	)
+	close(releaseFirst)
+
+	require.Eventually(func() bool {
+		srv.detailSyncMu.Lock()
+		defer srv.detailSyncMu.Unlock()
+		_, inFlight := srv.detailSyncInFlight[key]
+		return !inFlight
+	}, 10*time.Second, time.Millisecond)
+	require.Zero(providerCalls.Load())
 }
 
 // TestAPIEnqueuePRSyncPersistsWorkflowApproval verifies that the
@@ -31157,6 +31291,88 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	require.NotNil(pr)
 	assert.Equal(prTitleFromDetail, pr.Title)
 	assert.Equal(headSHA, pr.PlatformHeadSHA)
+}
+
+func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
+	t.Parallel()
+	acquireRootWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	issueNumber := 7
+	issueID := int64(7001)
+	issueTitle := "Removed issue"
+	issueState := "open"
+	issueURL := "https://github.com/acme/widget/issues/7"
+	prNumber := 1
+	prID := int64(1001)
+	prTitle := "Seeded pull"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/1"
+	author := "alice"
+	headRef := "feature"
+	baseRef := "main"
+	var issueDetailCalls atomic.Int64
+	mock := &mockGH{
+		listOpenIssuesFn: func(context.Context, string, string) ([]*gh.Issue, error) {
+			return []*gh.Issue{{
+				ID: &issueID, Number: &issueNumber, Title: &issueTitle,
+				State: &issueState, HTMLURL: &issueURL,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+			}}, nil
+		},
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			issueDetailCalls.Add(1)
+			return nil, errors.New("removed issue must not be fetched")
+		},
+		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{{
+				ID: &prID, Number: &prNumber, Title: &prTitle,
+				State: &prState, HTMLURL: &prURL,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{Ref: &headRef},
+				Base: &gh.PullRequestBranch{Ref: &baseRef},
+			}}, nil
+		},
+	}
+	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
+		t, nil, mock, "github.com",
+		ServerOptions{
+			PtyOwnerInProcess:                  true,
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	seedIssue(t, fixture.database, "acme", "widget", issueNumber, "open")
+
+	createRR := doJSON(
+		t, fixture.server, http.MethodPost,
+		"/api/v1/issues/gh/acme/widget/7/workspace", map[string]string{},
+	)
+	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
+	var created rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
+	waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
+
+	repo, err := fixture.database.GetRepoByIdentity(
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	markArchiveItemRemovedUpstreamForServerTest(
+		t, fixture.database, repo.ID, db.ArchiveItemTypeIssue, issueNumber,
+	)
+	before := issueDetailCalls.Load()
+
+	refreshRR := doJSON(
+		t, fixture.server, http.MethodPost,
+		"/api/v1/workspaces/"+created.ID+"/refresh", nil,
+	)
+	require.Equal(http.StatusOK, refreshRR.Code, refreshRR.Body.String())
+	require.Equal(before, issueDetailCalls.Load(),
+		"manual refresh must not fetch a tombstoned issue")
 }
 
 // TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure drives

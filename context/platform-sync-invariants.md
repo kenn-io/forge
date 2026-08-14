@@ -426,11 +426,13 @@ Repository import requests and route/query shapes should carry
   hidden from public item reads, resolution, autocomplete, stacks, activity,
   workspace creation and subject metadata, project worktree imports, Kata
   links, repository summaries, archive reports, and provider mutations;
-  synchronous public item sync rejects known tombstones before provider access
-  and uses visibility-filtered response reads. Secondary workflows such as
-  label validation, automatic assignment, pushed-head refresh, and on-demand
-  worktree sync must check item visibility before provider access. Workspace
-  and Fleet projections retain local records but omit removed parent metadata.
+  synchronous and queued public item sync rejects known tombstones before
+  provider access, with queued work rechecking visibility when it executes.
+  Secondary workflows such as label validation, automatic assignment,
+  pushed-head refresh, manual workspace refresh, and on-demand worktree sync
+  must check item visibility before item-specific provider access. Workspace and
+  Fleet projections retain local records but omit removed parent metadata;
+  visible stack members are renumbered contiguously after filtering.
   `inaccessible` items remain visible.
   (`internal/server/pullapi/helpers.go::visibleMergeRequest`,
   `internal/server/issueapi/mutation_handlers.go::requireVisibleIssue`)

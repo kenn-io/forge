@@ -1167,6 +1167,17 @@ func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*ac
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repo.ID, db.ArchiveItemTypeMergeRequest, input.Number,
+	)
+	if err != nil {
+		return nil, httpapi.Internal("check pull request visibility: " + err.Error())
+	}
+	if removed {
+		return nil, httpapi.NotFound(
+			httpapi.CodePullNotFound, "pull request not found", nil,
+		)
+	}
 	kind := httpapi.ProviderKind(*repo)
 	host := httpapi.ProviderHost(*repo)
 	key := "pr:" + string(kind) + ":" + host + ":" + repo.RepoPath +
@@ -1183,6 +1194,15 @@ func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*ac
 			"number", input.Number,
 		},
 		func(ctx context.Context) error {
+			removed, err := s.db.IsArchiveItemRemovedUpstream(
+				ctx, repo.ID, db.ArchiveItemTypeMergeRequest, input.Number,
+			)
+			if err != nil {
+				return fmt.Errorf("check pull request visibility: %w", err)
+			}
+			if removed {
+				return nil
+			}
 			return s.syncer.SyncMROnProvider(
 				ctx, kind, host, repo.Owner, repo.Name, input.Number,
 			)
@@ -1246,6 +1266,17 @@ func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInp
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repo.ID, db.ArchiveItemTypeIssue, input.Number,
+	)
+	if err != nil {
+		return nil, httpapi.Internal("check issue visibility: " + err.Error())
+	}
+	if removed {
+		return nil, httpapi.NotFound(
+			httpapi.CodeIssueNotFound, "issue not found", nil,
+		)
+	}
 	kind := httpapi.ProviderKind(*repo)
 	host := httpapi.ProviderHost(*repo)
 	key := "issue:" + string(kind) + ":" + host + ":" + repo.RepoPath +
@@ -1262,6 +1293,15 @@ func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInp
 			"number", input.Number,
 		},
 		func(ctx context.Context) error {
+			removed, err := s.db.IsArchiveItemRemovedUpstream(
+				ctx, repo.ID, db.ArchiveItemTypeIssue, input.Number,
+			)
+			if err != nil {
+				return fmt.Errorf("check issue visibility: %w", err)
+			}
+			if removed {
+				return nil
+			}
 			return s.syncer.SyncIssueOnProvider(
 				ctx, kind, host, repo.Owner, repo.Name, input.Number,
 			)

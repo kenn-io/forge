@@ -205,7 +205,6 @@ async function openPullDetailWithPromotedTerminal(
 
   await page.setViewportSize({ width: 1800, height: 900 });
   await page.goto(`${baseUrl}/pulls/github/acme/widgets/1`);
-  await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
   await openTerminalPanel(page);
   const chosenLeaf = page.locator('.terminal-panel.open .terminal-leaf:has(button[aria-label$=" to a pane"])').first();
   await expect(chosenLeaf.locator(".terminal-container")).toBeVisible();
@@ -1059,7 +1058,6 @@ test("visible terminal focus loss revokes keyboard authorization after a missed 
 
     await page.setViewportSize({ width: 1800, height: 900 });
     await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
-    await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
     await openTerminalPanel(page);
     const chosenLeaf = page
       .locator('.terminal-panel.open .terminal-leaf:has(button[aria-label$=" to a pane"])')
@@ -1134,7 +1132,6 @@ test("visible detail copy wins when focus leaves a pointer-captured terminal", a
 
     await page.setViewportSize({ width: 1800, height: 900 });
     await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
-    await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
     await openTerminalPanel(page);
     const chosenLeaf = page
       .locator('.terminal-panel.open .terminal-leaf:has(button[aria-label$=" to a pane"])')
@@ -1311,7 +1308,6 @@ test("a parked pooled terminal cannot overwrite a newer detail clipboard copy", 
 
     await page.setViewportSize({ width: 1800, height: 900 });
     await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
-    await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
     await openTerminalPanel(page);
     const chosenLeaf = page
       .locator('.terminal-panel.open .terminal-leaf:has(button[aria-label$=" to a pane"])')

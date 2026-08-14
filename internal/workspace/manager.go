@@ -337,7 +337,7 @@ func (m *Manager) Create(
 		return nil, fmt.Errorf("%w: repository not tracked", ErrWorkspaceNotFound)
 	}
 
-	mr, err := m.db.GetMergeRequestByRepoIDAndNumber(
+	mr, err := m.db.GetVisibleMergeRequestByRepoIDAndNumber(
 		ctx, repo.ID, mrNumber,
 	)
 	if err != nil {
@@ -405,7 +405,7 @@ func (m *Manager) CreateIssue(
 		return nil, fmt.Errorf("repository not tracked")
 	}
 
-	issue, err := m.db.GetIssueByRepoIDAndNumber(
+	issue, err := m.db.GetVisibleIssueByRepoIDAndNumber(
 		ctx, repo.ID, issueNumber,
 	)
 	if err != nil {

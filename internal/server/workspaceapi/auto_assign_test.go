@@ -149,4 +149,24 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 			assert.Equal([]string{"reviewer", "maintainer"}, tt.stored())
 		})
 	}
+
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES
+			(?, 'merge_request', 7, 'pull-7', ?, ?, 'removed_upstream'),
+			(?, 'issue', 8, 'issue-8', ?, ?, 'removed_upstream')`,
+		repoID, now, now, repoID, now, now,
+	)
+	require.NoError(err)
+	provider.pullAssigned = nil
+	provider.issueAssigned = nil
+
+	err = handler.autoAssignWorkspaceItem(t.Context(), *repo, 7, false)
+	require.ErrorContains(err, "not visible")
+	err = handler.autoAssignWorkspaceItem(t.Context(), *repo, 8, true)
+	require.ErrorContains(err, "not visible")
+	assert.Empty(provider.pullAssigned)
+	assert.Empty(provider.issueAssigned)
 }

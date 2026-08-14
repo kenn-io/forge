@@ -420,7 +420,7 @@ func (h *Handler) resolveProviderKataLinkSubject(
 	var externalID string
 	switch kind {
 	case db.KataLinkSubjectIssue:
-		issue, err := h.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, number)
+		issue, err := h.db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, number)
 		if err != nil {
 			return db.KataLinkSubject{}, httpapi.Internal("get issue failed")
 		}
@@ -429,7 +429,7 @@ func (h *Handler) resolveProviderKataLinkSubject(
 		}
 		externalID = strings.TrimSpace(issue.PlatformExternalID)
 	case db.KataLinkSubjectPullRequest:
-		pull, err := h.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+		pull, err := h.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 		if err != nil {
 			return db.KataLinkSubject{}, httpapi.Internal("get pull request failed")
 		}

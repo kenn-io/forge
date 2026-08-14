@@ -243,6 +243,32 @@ func TestAPISetPullLabelsReplacesAssignedLabelsFromCatalog(t *testing.T) {
 	require.Equal("triage", resynced.Labels[0].Name)
 }
 
+func TestAPISetPullLabelsChecksVisibilityBeforeCatalogRefresh(t *testing.T) {
+	require := require.New(t)
+	srv, database, _, _ := setupLabelTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	markArchiveItemLifecycle(
+		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 1,
+		db.ArchiveLifecycleStateRemovedUpstream,
+	)
+
+	rr := doLabelAPIRequest(
+		t, srv, http.MethodPut, "/api/v1/pulls/github/acme/widget/1/labels",
+		map[string][]string{"labels": {"bug"}},
+	)
+	require.Equal(http.StatusNotFound, rr.Code, rr.Body.String())
+
+	catalog, freshness, err := database.ListRepoLabelCatalog(t.Context(), repo.ID)
+	require.NoError(err)
+	require.Empty(catalog)
+	require.Nil(freshness.CheckedAt)
+}
+
 func TestAPISetIssueLabelsReplacesAssignedLabelsViaProvider(t *testing.T) {
 	require := require.New(t)
 	srv, database, providerClient, _ := setupLabelTestServer(t)

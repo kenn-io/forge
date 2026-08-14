@@ -709,7 +709,18 @@ func (s *Handler) createProjectWorktreeFromMergeRequest(
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repo.ID, db.ArchiveItemTypeMergeRequest, input.Body.Number,
+	)
+	if err != nil {
+		return nil, httpapi.Internal("failed to check merge request visibility")
+	}
+	if removed {
+		return nil, httpapi.NotFound(
+			httpapi.CodePullNotFound, "merge request not found", nil,
+		)
+	}
+	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(
 		ctx, repo.ID, input.Body.Number,
 	)
 	if err != nil {
@@ -725,7 +736,7 @@ func (s *Handler) createProjectWorktreeFromMergeRequest(
 			repo.Owner, repo.Name, input.Body.Number,
 		)
 		if syncErr == nil || errors.As(syncErr, &diffErr) {
-			mr, err = s.db.GetMergeRequestByRepoIDAndNumber(
+			mr, err = s.db.GetVisibleMergeRequestByRepoIDAndNumber(
 				ctx, repo.ID, input.Body.Number,
 			)
 			if err != nil {

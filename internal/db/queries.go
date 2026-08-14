@@ -3959,20 +3959,48 @@ func (d *DB) ListCommentAutocompleteUsers(
 			SELECT mr.author AS login, mr.last_activity_at AS last_seen
 			FROM forge_merge_requests mr
 			WHERE mr.repo_id = (SELECT id FROM repo)
+			  AND NOT EXISTS (
+				SELECT 1 FROM forge_archive_items a
+				WHERE a.repo_id = mr.repo_id
+				  AND a.item_type = 'merge_request'
+				  AND a.item_number = mr.number
+				  AND a.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT i.author AS login, i.last_activity_at AS last_seen
 			FROM forge_issues i
 			WHERE i.repo_id = (SELECT id FROM repo)
+			  AND NOT EXISTS (
+				SELECT 1 FROM forge_archive_items a
+				WHERE a.repo_id = i.repo_id
+				  AND a.item_type = 'issue'
+				  AND a.item_number = i.number
+				  AND a.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT e.author AS login, e.created_at AS last_seen
 			FROM forge_mr_events e
 			JOIN forge_merge_requests mr ON mr.id = e.merge_request_id
 			WHERE mr.repo_id = (SELECT id FROM repo)
+			  AND NOT EXISTS (
+				SELECT 1 FROM forge_archive_items a
+				WHERE a.repo_id = mr.repo_id
+				  AND a.item_type = 'merge_request'
+				  AND a.item_number = mr.number
+				  AND a.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT e.author AS login, e.created_at AS last_seen
 			FROM forge_issue_events e
 			JOIN forge_issues i ON i.id = e.issue_id
 			WHERE i.repo_id = (SELECT id FROM repo)
+			  AND NOT EXISTS (
+				SELECT 1 FROM forge_archive_items a
+				WHERE a.repo_id = i.repo_id
+				  AND a.item_type = 'issue'
+				  AND a.item_number = i.number
+				  AND a.lifecycle_state = 'removed_upstream'
+			  )
 		), ranked AS (
 			SELECT login, MAX(last_seen) AS last_seen
 			FROM candidates

@@ -364,6 +364,55 @@ func TestWorkspaceCreateNotFound(t *testing.T) {
 	require.Equal(http.StatusNotFound, resp2.StatusCode())
 }
 
+func TestWorkspaceCreateHidesRemovedUpstreamItems(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+	seedIssueOnHost(t, fixture.database, "github.com", "acme", "widget", 1, "open", "Test Issue")
+	repo, err := fixture.database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = fixture.database.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES
+			(?, 'merge_request', 1, 'pr-1', ?, ?, 'removed_upstream'),
+			(?, 'issue', 1, 'issue-1', ?, ?, 'removed_upstream')`,
+		repo.ID, now, now, repo.ID, now, now,
+	)
+	require.NoError(err)
+
+	prResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx, generated.CreateWorkspaceInputBody{
+			Provider: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", MrNumber: 1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, prResp.StatusCode(), string(prResp.Body))
+
+	issueResp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
+		ctx, "gh", "acme", "widget", 1,
+		generated.CreateIssueWorkspaceInputBody{},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, issueResp.StatusCode(), string(issueResp.Body))
+
+	listed, err := fixture.client.HTTP.ListWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listed.StatusCode())
+	require.NotNil(listed.JSON200)
+	require.NotNil(listed.JSON200.Workspaces)
+	require.Empty(*listed.JSON200.Workspaces)
+}
+
 func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 	t.Parallel()
 	acquireWorkspaceGitSlot(t)

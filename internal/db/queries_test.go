@@ -3678,6 +3678,52 @@ func TestListCommentAutocompleteUsersScopesByProvider(t *testing.T) {
 	assert.Equal([]string{"alice"}, users)
 }
 
+func TestListCommentAutocompleteUsersHidesOnlyRemovedUpstreamItems(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	inaccessibleMRID := insertTestMR(t, d, repoID, 1, "inaccessible pull", now)
+	removedMRID := insertTestMR(t, d, repoID, 2, "removed pull", now)
+	inaccessibleIssueID := insertTestIssue(t, d, repoID, 3, "inaccessible issue", now)
+	removedIssueID := insertTestIssue(t, d, repoID, 4, "removed issue", now)
+	_, err := d.WriteDB().ExecContext(ctx, `
+		UPDATE forge_merge_requests SET author = CASE number
+			WHEN 1 THEN 'visible-pull-author' ELSE 'removed-pull-author' END;
+		UPDATE forge_issues SET author = CASE number
+			WHEN 3 THEN 'visible-issue-author' ELSE 'removed-issue-author' END;
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES
+			(?, 'merge_request', 1, 'pr-1', ?, ?, 'inaccessible'),
+			(?, 'merge_request', 2, 'pr-2', ?, ?, 'removed_upstream'),
+			(?, 'issue', 3, 'issue-3', ?, ?, 'inaccessible'),
+			(?, 'issue', 4, 'issue-4', ?, ?, 'removed_upstream')`,
+		repoID, now, now, repoID, now, now,
+		repoID, now, now, repoID, now, now,
+	)
+	require.NoError(err)
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{MergeRequestID: inaccessibleMRID, EventType: "comment", Author: "visible-pull-event", CreatedAt: now, DedupeKey: "visible-pull-event"},
+		{MergeRequestID: removedMRID, EventType: "comment", Author: "removed-pull-event", CreatedAt: now, DedupeKey: "removed-pull-event"},
+	}))
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{
+		{IssueID: inaccessibleIssueID, EventType: "comment", Author: "visible-issue-event", CreatedAt: now, DedupeKey: "visible-issue-event"},
+		{IssueID: removedIssueID, EventType: "comment", Author: "removed-issue-event", CreatedAt: now, DedupeKey: "removed-issue-event"},
+	}))
+
+	users, err := d.ListCommentAutocompleteUsers(
+		ctx, "github", "github.com", "acme", "widget", "", 20,
+	)
+	require.NoError(err)
+	require.ElementsMatch([]string{
+		"visible-pull-author", "visible-pull-event",
+		"visible-issue-author", "visible-issue-event",
+	}, users)
+}
+
 func TestListCommentAutocompleteReferences(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

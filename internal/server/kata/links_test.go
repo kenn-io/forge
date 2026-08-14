@@ -208,6 +208,70 @@ func TestKataLinkRouteRequiresProviderExternalID(t *testing.T) {
 	assert.Zero(count)
 }
 
+func TestKataLinkRoutesHideRemovedProviderSubjects(t *testing.T) {
+	kataDaemon := newKataLinkTestDaemon(t)
+	configureKataLinkTestDaemon(t, kataDaemon.URL)
+	srv, database := setupTestServer(t)
+
+	for _, kind := range []db.KataLinkSubjectKind{
+		db.KataLinkSubjectIssue,
+		db.KataLinkSubjectPullRequest,
+	} {
+		t.Run(string(kind), func(t *testing.T) {
+			require := require.New(t)
+			number := 42
+			externalID := "removed-item"
+			repoID := insertKataProviderSubject(
+				t, database, platform.KindGitHub, platform.DefaultGitHubHost,
+				"widget-"+string(kind), number, kind, externalID,
+			)
+			created, err := database.CreateKataIssueLink(t.Context(), db.KataIssueLink{
+				Subject: db.KataLinkSubject{
+					Kind: kind, RepoID: repoID, ProviderItemExternalID: externalID,
+				},
+				DaemonID: "primary", ProjectUID: "project-a", IssueUID: "issue-a",
+			})
+			require.NoError(err)
+			now := time.Now().UTC().Truncate(time.Second)
+			itemType := db.ArchiveItemTypeIssue
+			if kind == db.KataLinkSubjectPullRequest {
+				itemType = db.ArchiveItemTypeMergeRequest
+			}
+			_, err = database.WriteDB().ExecContext(t.Context(), `
+				INSERT INTO forge_archive_items (
+					repo_id, item_type, item_number, provider_item_id,
+					provider_created_at, provider_updated_at, lifecycle_state
+				) VALUES (?, ?, ?, ?, ?, ?, 'removed_upstream')`,
+				repoID, itemType, number, externalID, now, now,
+			)
+			require.NoError(err)
+
+			base := kataProviderLinkRoute(
+				platform.KindGitHub, platform.DefaultGitHubHost,
+				"widget-"+string(kind), number, kind, false,
+			)
+			for _, request := range []struct {
+				method string
+				path   string
+				body   any
+			}{
+				{method: http.MethodGet, path: base},
+				{method: http.MethodPost, path: base, body: map[string]any{
+					"daemon_id": "primary", "project_uid": "project-a", "issue_uid": "issue-a",
+				}},
+				{method: http.MethodDelete, path: fmt.Sprintf("%s/%d", base, created.ID)},
+			} {
+				rr := doJSON(t, srv, request.method, request.path, request.body)
+				require.Equal(http.StatusNotFound, rr.Code, rr.Body.String())
+			}
+			links, err := database.ListKataIssueLinks(t.Context(), created.Subject)
+			require.NoError(err)
+			require.Len(links, 1)
+			require.Equal(created.ID, links[0].ID)
+		})
+	}
+}
+
 func newKataLinkTestDaemon(t *testing.T) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -459,3 +459,76 @@ func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 		lifecycleRouteGit(t, dest, "rev-parse", "HEAD"),
 		"worktree starts at the merge request head")
 }
+
+func TestCreateWorktreeFromMergeRequestRouteDoesNotSyncRemovedItem(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
+	require := Require.New(t)
+
+	repoPath := initLifecycleRouteRepo(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	number := 43
+	providerID := int64(9043)
+	nodeID := "PR_kwDO9043"
+	title := "removed pull"
+	state := "open"
+	url := "https://github.com/acme/widget/pull/43"
+	author := "ada"
+	headRef := "feature-y"
+	baseRef := "main"
+	cloneURL := "https://github.com/acme/widget.git"
+	fullName := "acme/widget"
+	mock := testutil.NewFixtureClient().(*testutil.FixtureClient)
+	mock.PRs["acme/widget"] = []*gh.PullRequest{{
+		ID: &providerID, NodeID: &nodeID, Number: &number,
+		HTMLURL: &url, Title: &title, State: &state,
+		User:      &gh.User{Login: &author},
+		CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+		Head: &gh.PullRequestBranch{
+			Ref: &headRef, SHA: new(string),
+			Repo: &gh.Repository{CloneURL: &cloneURL, FullName: &fullName},
+		},
+		Base: &gh.PullRequestBranch{Ref: &baseRef},
+	}}
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, 'merge_request', ?, ?, ?, ?, 'removed_upstream')`,
+		repoID, number, nodeID, now, now,
+	)
+	require.NoError(err)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock}, database, nil,
+		[]ghclient.RepoRef{{
+			Platform: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", PlatformExternalID: "repo-acme-widget",
+		}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+	})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+	projectID := registerIdentifiedProject(t, ts, repoPath)
+
+	body := mustMarshal(t, map[string]any{
+		"number": number, "branch": "pr-43", "path": filepath.Join(t.TempDir(), "wt"),
+	})
+	resp := httpDo(t, ts, http.MethodPost,
+		"/api/v1/projects/"+projectID+"/worktrees/from-merge-request", body)
+	logUnexpectedResponse(t, resp, http.StatusNotFound)
+	require.Equal(http.StatusNotFound, resp.StatusCode)
+	require.Equal("pullNotFound", decodeProblemCode(t, resp))
+	resp.Body.Close()
+
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
+	require.NoError(err)
+	require.Nil(stored, "removed item must be rejected before on-demand provider sync")
+}

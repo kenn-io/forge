@@ -19,6 +19,23 @@ func (s *Handler) autoAssignWorkspaceItem(
 	if !s.configSnapshot().AutoAssignOnCreate || s.syncer == nil {
 		return nil
 	}
+	if issue {
+		stored, err := s.db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, number)
+		if err != nil {
+			return fmt.Errorf("check issue visibility: %w", err)
+		}
+		if stored == nil {
+			return fmt.Errorf("issue %d is not visible", number)
+		}
+	} else {
+		stored, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+		if err != nil {
+			return fmt.Errorf("check pull request visibility: %w", err)
+		}
+		if stored == nil {
+			return fmt.Errorf("pull request %d is not visible", number)
+		}
+	}
 
 	kind := httpapi.ProviderKind(repo)
 	host := httpapi.ProviderHost(repo)

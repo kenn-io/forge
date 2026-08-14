@@ -291,6 +291,12 @@ func TestAPIResolveAndAutocompleteHideOnlyRemovedUpstreamItems(t *testing.T) {
 	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveLifecycleStateRemovedUpstream)
 	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeIssue, 3, db.ArchiveLifecycleStateInaccessible)
 	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeIssue, 4, db.ArchiveLifecycleStateRemovedUpstream)
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE forge_merge_requests SET author = CASE number
+			WHEN 1 THEN 'visible-pull-author' ELSE 'removed-pull-author' END;
+		UPDATE forge_issues SET author = CASE number
+			WHEN 3 THEN 'visible-issue-author' ELSE 'removed-issue-author' END`)
+	require.NoError(err)
 
 	now := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
 	providerClient.PRs["acme/widget"] = []*gh.PullRequest{{
@@ -332,6 +338,20 @@ func TestAPIResolveAndAutocompleteHideOnlyRemovedUpstreamItems(t *testing.T) {
 		{Kind: "pull", Number: 1, Title: "Test PR #1", State: "open"},
 		{Kind: "issue", Number: 3, Title: "Test Issue", State: "open"},
 	}, *autocomplete.JSON200.References)
+
+	trigger = "@"
+	autocomplete, err = client.HTTP.GetCommentAutocompleteWithResponse(
+		ctx, "github", "acme", "widget",
+		&generated.GetCommentAutocompleteParams{Trigger: &trigger, Q: &query},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, autocomplete.StatusCode(), string(autocomplete.Body))
+	require.NotNil(autocomplete.JSON200)
+	require.NotNil(autocomplete.JSON200.Users)
+	require.ElementsMatch(
+		[]string{"visible-pull-author", "visible-issue-author"},
+		*autocomplete.JSON200.Users,
+	)
 }
 
 func TestAPIRemovedIssueMutationsReturnNotFoundWithoutProviderWrites(t *testing.T) {

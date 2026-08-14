@@ -190,6 +190,57 @@ func TestPromptMaintenanceCompletesDisabledRepositoryFeature(t *testing.T) {
 	assert.Equal(db.ArchiveCoverageSupported, states[0].IssuesCoverage)
 }
 
+func TestPromptMaintenancePauseRejectsInFlightAvailabilityReconciliation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	provider.issueInventoryErr = platform.RepositoryFeatureDisabled(
+		ref.Platform, ref.Host, platform.RepositoryFeatureIssues,
+		errors.New("issues disabled"),
+	)
+	service := archiveMaintenanceService(t, database, provider, ref, now)
+	for range 8 {
+		require.NoError(service.RunEligible(t.Context()))
+	}
+
+	before, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.Len(before, 1)
+	require.NotNil(before[0].InitialCompletedAt)
+	assert.True(before[0].IssueInventory.Complete())
+	assert.Equal(db.ArchiveCoverageUnsupported, before[0].IssuesCoverage)
+
+	provider.issueInventoryErr = nil
+	provider.updatedIssueStarted = make(chan struct{})
+	provider.updatedIssueRelease = make(chan struct{})
+	maintenanceAt := now.Add(time.Hour)
+	service.clock = fixedClock{value: maintenanceAt}
+	service.SetMaintenanceInterval(time.Minute)
+
+	runDone := make(chan error, 1)
+	go func() { runDone <- service.RunEligible(t.Context()) }()
+	<-provider.updatedIssueStarted
+	paused, err := service.Pause(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+	require.Len(paused, 1)
+	assert.Equal(db.ArchiveStatusPaused, paused[0].Progress.Status)
+	close(provider.updatedIssueRelease)
+	require.NoError(<-runDone)
+
+	after, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.Len(after, 1)
+	assert.Equal(db.ArchiveCoverageUnsupported, after[0].IssuesCoverage)
+	assert.True(after[0].IssueInventory.Complete())
+	assert.Equal(before[0].IssueInventory.Generation, after[0].IssueInventory.Generation)
+	assert.Equal(before[0].InitialCompletedAt, after[0].InitialCompletedAt)
+	assert.False(after[0].MaintenanceIssues.Complete())
+}
+
 func archiveMaintenanceService(
 	t *testing.T,
 	database *db.DB,

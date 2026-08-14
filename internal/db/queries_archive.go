@@ -198,40 +198,6 @@ func (d *DB) PauseArchives(ctx context.Context, repoIDs []int64, now time.Time) 
 	})
 }
 
-// ReconcileArchiveInventoryAvailable reopens historical inventory after a
-// live maintenance read proves that a previously unsupported provider stream
-// is available. The active prompt boundary stays in place so the successful
-// maintenance response and the historical replay cover both sides of the
-// feature transition.
-func (d *DB) ReconcileArchiveInventoryAvailable(
-	ctx context.Context,
-	repoID int64,
-	itemType ArchiveItemType,
-	now time.Time,
-) error {
-	if repoID <= 0 {
-		return errors.New("reconcile archive inventory availability: repository is required")
-	}
-	if itemType != ArchiveItemTypeIssue && itemType != ArchiveItemTypeMergeRequest {
-		return fmt.Errorf(
-			"reconcile archive inventory availability: invalid item type %q",
-			itemType,
-		)
-	}
-	now = now.UTC()
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		if err := requireArchiveRepoIDs(
-			ctx, tx, "forge_archive_repos", []int64{repoID},
-		); err != nil {
-			return err
-		}
-		_, err := reconcileArchiveInventoryAvailableTx(
-			ctx, tx, repoID, itemType, now,
-		)
-		return err
-	})
-}
-
 // ReconcileArchiveCoverage records current provider capabilities and reopens
 // inventory that can now replace a previously unsupported result.
 func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverage ArchiveCoverageSet, now time.Time) error {
@@ -1324,6 +1290,13 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 			typedErr = outcome.typedErr
 			return nil
 		}
+		if commit.InventoryAvailable {
+			if _, err := reconcileArchiveInventoryAvailableTx(
+				ctx, tx, commit.RepoID, commit.ItemType, commit.Now,
+			); err != nil {
+				return err
+			}
+		}
 		for _, item := range commit.Items {
 			item.ProviderCreatedAt = canonicalUTCTime(item.ProviderCreatedAt)
 			item.ProviderUpdatedAt = canonicalUTCTime(item.ProviderUpdatedAt)
@@ -1483,6 +1456,9 @@ func validateInventoryCommit(commit ArchiveInventoryCommit) error {
 	if commit.Coverage != ArchiveCoverageUnknown &&
 		(commit.RefreshReason != ArchiveRefreshReasonInitial || !commit.Exhausted) {
 		return errors.New("commit archive inventory: coverage requires exhausted initial inventory")
+	}
+	if commit.InventoryAvailable && commit.RefreshReason != ArchiveRefreshReasonPrompt {
+		return errors.New("commit archive inventory: availability proof requires prompt maintenance")
 	}
 	return nil
 }

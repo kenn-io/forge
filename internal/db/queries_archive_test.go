@@ -1089,9 +1089,13 @@ func TestReconcileArchiveInventoryAvailablePreservesPromptBoundary(t *testing.T)
 	require.NoError(err)
 	require.NotNil(before.PromptScanStartedAt)
 
-	require.NoError(database.ReconcileArchiveInventoryAvailable(
-		ctx, repoID, ArchiveItemTypeIssue, promptAt,
-	))
+	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		RefreshReason:  ArchiveRefreshReasonPrompt,
+		ScanGeneration: before.MaintenanceIssues.Generation,
+		InputCursor:    before.MaintenanceIssues.Cursor(), Exhausted: true,
+		InventoryAvailable: true, Now: promptAt,
+	}))
 
 	states, err := database.ListArchiveRepoStates(ctx, []int64{repoID})
 	require.NoError(err)

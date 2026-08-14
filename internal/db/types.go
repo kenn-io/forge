@@ -463,7 +463,11 @@ type ArchiveInventoryCommit struct {
 	NextCursor     string
 	Exhausted      bool
 	Coverage       ArchiveCoverage
-	Now            time.Time
+	// InventoryAvailable records that a successful prompt-maintenance read
+	// proved a previously unsupported historical stream is available. The
+	// page commit reconciles that state under the same operator and scan fence.
+	InventoryAvailable bool
+	Now                time.Time
 }
 
 // ArchiveItemWork is one claimable archive hydration operation.

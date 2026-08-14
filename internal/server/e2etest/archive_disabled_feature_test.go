@@ -49,15 +49,26 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 		now: time.Now().UTC().Truncate(time.Second),
 	}
 	issueTimestamp := clock.Now().Add(30 * time.Second).Format(time.RFC3339)
-	var issueListCalls atomic.Int32
+	var historicalIssueListCalls atomic.Int32
+	var updatedIssueListCalls atomic.Int32
 	var issueDetailCalls atomic.Int32
+	updatedIssueStarted := make(chan struct{})
+	releaseUpdatedIssue := make(chan struct{})
+	updatedIssueSucceeded := make(chan struct{})
+	var releaseUpdatedIssueOnce sync.Once
+	var updatedIssueStartedOnce sync.Once
+	var updatedIssueSucceededOnce sync.Once
+	t.Cleanup(func() {
+		releaseUpdatedIssueOnce.Do(func() { close(releaseUpdatedIssue) })
+	})
 
 	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/graphql":
 			var request struct {
-				Query string `json:"query"`
+				Query     string         `json:"query"`
+				Variables map[string]any `json:"variables"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				http.Error(w, `{"message":"invalid GraphQL request"}`, http.StatusBadRequest)
@@ -71,18 +82,32 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 				http.Error(w, `{"message":"unexpected GraphQL query"}`, http.StatusBadRequest)
 				return
 			}
-			if issueListCalls.Add(1) == 1 {
-				w.WriteHeader(http.StatusGone)
-				_, _ = w.Write([]byte(`{"message":"Issues are disabled for this repo"}`))
+			orderField, _ := request.Variables["orderField"].(string)
+			switch orderField {
+			case "CREATED_AT":
+				if historicalIssueListCalls.Add(1) == 1 {
+					w.WriteHeader(http.StatusGone)
+					_, _ = w.Write([]byte(`{"message":"Issues are disabled for this repo"}`))
+					return
+				}
+			case "UPDATED_AT":
+				updatedIssueListCalls.Add(1)
+				updatedIssueStartedOnce.Do(func() { close(updatedIssueStarted) })
+				<-releaseUpdatedIssue
+			default:
+				http.Error(w, `{"message":"unexpected issue order"}`, http.StatusBadRequest)
 				return
 			}
-			_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[{
+			_, writeErr := w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[{
 				"id":"I_17","databaseId":17,"number":17,"title":"enabled issue",
 				"state":"CLOSED","body":"","url":"https://github.com/acme/widget/issues/17",
 				"author":{"login":"author"},"createdAt":"` + issueTimestamp + `",
 				"updatedAt":"` + issueTimestamp + `","closedAt":"` + issueTimestamp + `",
 				"comments":{"totalCount":0},"labels":{"nodes":[]},"assignees":{"nodes":[]}
 			}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
+			if orderField == "UPDATED_AT" && writeErr == nil {
+				updatedIssueSucceededOnce.Do(func() { close(updatedIssueSucceeded) })
+			}
 		case "/api/v3/repos/acme/widget/pulls":
 			_, _ = w.Write([]byte(`[]`))
 		case "/api/v3/rate_limit":
@@ -156,23 +181,6 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	syncer.SetArchiveService(archiveService)
 	syncer.SetArchivePollIntervalForTesting(time.Millisecond)
 
-	initialSyncDone := make(chan struct{}, 1)
-	syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
-		if !status.Running {
-			select {
-			case initialSyncDone <- struct{}{}:
-			default:
-			}
-		}
-	})
-	syncer.Start(ctx)
-	t.Cleanup(syncer.Stop)
-	select {
-	case <-initialSyncDone:
-	case <-time.After(time.Second):
-		require.Fail("empty initial sync did not finish")
-	}
-
 	repo := ghclient.RepoRef{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
@@ -199,9 +207,33 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(started.JSON200)
 
+	// Start the worker only after the API has promoted the repository to full
+	// archive mode. This makes the first CREATED_AT request unambiguously part
+	// of the full initial scan rather than discovery work woken by SetRepos.
+	syncer.Start(ctx)
+	t.Cleanup(syncer.Stop)
+
+	storedRepo, err := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(storedRepo)
+
+	select {
+	case <-updatedIssueStarted:
+	case <-time.After(3 * time.Second):
+		require.Fail("maintenance did not issue an UPDATED_AT request")
+	}
+	var unsupportedGeneration int64
 	require.Eventually(func() bool {
-		return issueListCalls.Load() >= 1
-	}, time.Second, 5*time.Millisecond)
+		states, stateErr := database.ListArchiveRepoStates(ctx, []int64{storedRepo.ID})
+		ready := stateErr == nil && len(states) == 1 &&
+			historicalIssueListCalls.Load() >= 1 &&
+			states[0].IssuesCoverage == db.ArchiveCoverageUnsupported &&
+			states[0].IssueInventory.Complete() && states[0].InitialCompletedAt != nil
+		if ready {
+			unsupportedGeneration = states[0].IssueInventory.Generation
+		}
+		return ready
+	}, 3*time.Second, 5*time.Millisecond)
 	clock.Advance(time.Minute)
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceREST, ghclient.Rate{
 		Limit: 5000, Remaining: 4999, Reset: clock.Now().Add(time.Hour),
@@ -209,11 +241,14 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceGraphQL, ghclient.Rate{
 		Limit: 5000, Remaining: 4999, Reset: clock.Now().Add(time.Hour),
 	})
+	releaseUpdatedIssueOnce.Do(func() { close(releaseUpdatedIssue) })
 	syncer.WakeArchive()
+	select {
+	case <-updatedIssueSucceeded:
+	case <-time.After(3 * time.Second):
+		require.Fail("UPDATED_AT maintenance request did not succeed")
+	}
 
-	storedRepo, err := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
-	require.NoError(err)
-	require.NotNil(storedRepo)
 	require.Eventually(func() bool {
 		stored, getErr := database.GetIssueByRepoIDAndNumber(ctx, storedRepo.ID, 17)
 		return getErr == nil && stored != nil && stored.Title == "enabled issue"
@@ -224,10 +259,11 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	require.Len(states, 1)
 	assert.Equal(db.ArchiveCoverageSupported, states[0].IssuesCoverage)
 	assert.True(states[0].IssueInventory.Complete())
-	assert.Greater(states[0].IssueInventory.Generation, int64(1),
+	assert.Greater(states[0].IssueInventory.Generation, unsupportedGeneration,
 		"successful maintenance must reopen the unsupported historical inventory")
-	assert.GreaterOrEqual(issueListCalls.Load(), int32(2),
-		"recovery must make a provider read despite the disabled-feature cooldown")
+	assert.GreaterOrEqual(historicalIssueListCalls.Load(), int32(2),
+		"maintenance recovery must replay the historical inventory")
+	assert.GreaterOrEqual(updatedIssueListCalls.Load(), int32(1))
 	assert.GreaterOrEqual(issueDetailCalls.Load(), int32(1))
 
 	require.Eventually(func() bool {

@@ -1004,6 +1004,8 @@ type archiveServiceProvider struct {
 	issueInventoryRelease chan struct{}
 	updatedIssuePages     map[string]platform.Page[platform.Issue]
 	updatedIssueErrors    map[string]error
+	updatedIssueStarted   chan struct{}
+	updatedIssueRelease   chan struct{}
 	updatedMRPages        map[string]platform.Page[platform.MergeRequest]
 	updatedMRErrors       map[string]error
 	updatedIssueSince     []time.Time
@@ -1035,6 +1037,18 @@ func (p *archiveServiceProvider) ListIssuesPage(ctx context.Context, ref platfor
 	if query.UpdatedSince != nil {
 		p.record("updated_issues:" + query.Cursor)
 		p.updatedIssueSince = append(p.updatedIssueSince, *query.UpdatedSince)
+		if p.updatedIssueStarted != nil {
+			select {
+			case <-p.updatedIssueStarted:
+			default:
+				close(p.updatedIssueStarted)
+			}
+			select {
+			case <-p.updatedIssueRelease:
+			case <-ctx.Done():
+				return platform.Page[platform.Issue]{}, ctx.Err()
+			}
+		}
 		if err := p.updatedIssueErrors[query.Cursor]; err != nil {
 			return platform.Page[platform.Issue]{}, err
 		}

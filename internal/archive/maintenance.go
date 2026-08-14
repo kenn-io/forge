@@ -169,13 +169,8 @@ func (s *Service) promptPages(
 			complete(invalidErr, false)
 			return invalidErr
 		}
-		if featureAvailable && archiveInventorySupported(repo, itemType) {
-			if err := s.db.ReconcileArchiveInventoryAvailable(
-				ctx, repo.ID, itemType, s.now(),
-			); err != nil {
-				return err
-			}
-		}
+		commit.InventoryAvailable = featureAvailable &&
+			archiveInventorySupported(repo, itemType)
 		halted, err := s.commitInventoryPage(ctx, commit)
 		if err != nil {
 			return err

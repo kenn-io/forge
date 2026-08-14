@@ -15428,6 +15428,89 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 	assert.Equal(issueTitle, issue.Title)
 }
 
+func TestSyncRepoSkipsRemovedUpstreamPeriodicCandidates(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "owner", Name: "repo", RepoPath: "owner/repo",
+		PlatformExternalID: "repo-owner-repo",
+	}
+	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity(
+		"github.com", "owner", "repo",
+	))
+	require.NoError(err)
+
+	openPR := buildOpenPR(7, now)
+	normalizedPR, err := NormalizePR(repoID, openPR)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+	require.NoError(err)
+	openIssue := buildOpenIssue(8, now)
+	normalizedIssue, err := NormalizeIssue(repoID, openIssue)
+	require.NoError(err)
+	_, err = d.UpsertIssue(ctx, normalizedIssue)
+	require.NoError(err)
+	mergedPR := buildOpenPR(9, now)
+	normalizedMerged, err := NormalizePR(repoID, mergedPR)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedMerged)
+	require.NoError(err)
+	mergedAt := now.Add(time.Minute)
+	require.NoError(d.UpdateMRState(
+		ctx, repoID, 9, "merged", &mergedAt, &mergedAt,
+	))
+
+	for _, item := range []struct {
+		itemType db.ArchiveItemType
+		number   int
+	}{
+		{itemType: db.ArchiveItemTypeMergeRequest, number: 7},
+		{itemType: db.ArchiveItemTypeIssue, number: 8},
+		{itemType: db.ArchiveItemTypeMergeRequest, number: 9},
+	} {
+		_, err = d.WriteDB().ExecContext(ctx, `
+			INSERT INTO forge_archive_items (
+				repo_id, item_type, item_number, provider_item_id,
+				provider_created_at, provider_updated_at, lifecycle_state
+			) VALUES (?, ?, ?, ?, ?, ?, 'removed_upstream')`,
+			repoID, item.itemType, item.number,
+			fmt.Sprintf("%s-%d", item.itemType, item.number), now, now,
+		)
+		require.NoError(err)
+	}
+
+	var pullCalls atomic.Int32
+	var issueCalls atomic.Int32
+	client := &mockClient{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			pullCalls.Add(1)
+			return nil, errors.New("removed pull must not be fetched")
+		},
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			issueCalls.Add(1)
+			return nil, errors.New("removed issue must not be fetched")
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, d, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.SetClock(func() time.Time { return now.Add(time.Hour) })
+
+	require.NoError(syncer.fetchAndUpdateClosed(ctx, repo, repoID, 7, false))
+	require.NoError(syncer.fetchAndUpdateClosedIssue(ctx, repo, repoID, 8))
+	changed, err := syncer.backfillMergedActorEvent(ctx, repo, repoID, 9)
+	require.NoError(err)
+	require.False(changed)
+	require.NoError(syncer.syncRepo(ctx, repo))
+	require.Zero(pullCalls.Load())
+	require.Zero(issueCalls.Load())
+}
+
 func TestSyncStoresIssueLabels(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

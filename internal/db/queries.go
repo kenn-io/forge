@@ -2576,8 +2576,15 @@ func (d *DB) GetPreviouslyOpenMRNumbers(
 	stillOpen map[int]bool,
 ) ([]int, error) {
 	rows, err := d.ro.QueryContext(ctx,
-		`SELECT number FROM forge_merge_requests
-		 WHERE repo_id = ? AND state = 'open'`,
+		`SELECT mr.number FROM forge_merge_requests mr
+		 WHERE mr.repo_id = ? AND mr.state = 'open'
+		   AND NOT EXISTS (
+		     SELECT 1 FROM forge_archive_items ai
+		     WHERE ai.repo_id = mr.repo_id
+		       AND ai.item_type = 'merge_request'
+		       AND ai.item_number = mr.number
+		       AND ai.lifecycle_state = 'removed_upstream'
+		   )`,
 		repoID,
 	)
 	if err != nil {
@@ -2636,6 +2643,13 @@ func (d *DB) GetMergedMRNumbersMissingMergedActor(
 		 WHERE mr.repo_id = ? AND mr.state = 'merged'
 		   AND mr.merged_at >= ?
 		   AND (mr.merged_at < ? OR (mr.merged_at = ? AND mr.id < ?))
+		   AND NOT EXISTS (
+		     SELECT 1 FROM forge_archive_items ai
+		     WHERE ai.repo_id = mr.repo_id
+		       AND ai.item_type = 'merge_request'
+		       AND ai.item_number = mr.number
+		       AND ai.lifecycle_state = 'removed_upstream'
+		   )
 		   AND NOT EXISTS (
 		     SELECT 1 FROM forge_mr_events e
 		     WHERE e.merge_request_id = mr.id
@@ -3533,8 +3547,15 @@ func (d *DB) GetPreviouslyOpenIssueNumbers(
 	stillOpen map[int]bool,
 ) ([]int, error) {
 	rows, err := d.ro.QueryContext(ctx,
-		`SELECT number FROM forge_issues
-		 WHERE repo_id = ? AND state = 'open'`,
+		`SELECT i.number FROM forge_issues i
+		 WHERE i.repo_id = ? AND i.state = 'open'
+		   AND NOT EXISTS (
+		     SELECT 1 FROM forge_archive_items ai
+		     WHERE ai.repo_id = i.repo_id
+		       AND ai.item_type = 'issue'
+		       AND ai.item_number = i.number
+		       AND ai.lifecycle_state = 'removed_upstream'
+		   )`,
 		repoID,
 	)
 	if err != nil {

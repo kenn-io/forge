@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -5845,6 +5846,64 @@ func TestUpsertIssue_NormalizesEmptyAssigneesJSON(t *testing.T) {
 	issues, err := d.ListIssues(ctx, ListIssuesOpts{Assignee: "anyone", State: "all"})
 	require.NoError(err)
 	assert.Empty(issues)
+}
+
+func TestPeriodicSyncCandidatesExcludeRemovedUpstream(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	base := baseTime()
+
+	insertTestMR(t, d, repoID, 1, "visible pull", base)
+	insertTestMR(t, d, repoID, 2, "removed pull", base)
+	insertTestIssue(t, d, repoID, 3, "visible issue", base)
+	insertTestIssue(t, d, repoID, 4, "removed issue", base)
+	mergedAt := base.Add(time.Hour)
+	insertTestMRWithOptions(t, d, testMR(repoID, 5, func(mr *MergeRequest) {
+		mr.State = MergeRequestStateMerged
+		mr.MergedAt = &mergedAt
+	}))
+	insertTestMRWithOptions(t, d, testMR(repoID, 6, func(mr *MergeRequest) {
+		mr.State = MergeRequestStateMerged
+		mr.MergedAt = &mergedAt
+	}))
+
+	for _, item := range []struct {
+		itemType ArchiveItemType
+		number   int
+	}{
+		{itemType: ArchiveItemTypeMergeRequest, number: 2},
+		{itemType: ArchiveItemTypeIssue, number: 4},
+		{itemType: ArchiveItemTypeMergeRequest, number: 6},
+	} {
+		_, err := d.WriteDB().ExecContext(ctx, `
+			INSERT INTO forge_archive_items (
+				repo_id, item_type, item_number, provider_item_id,
+				provider_created_at, provider_updated_at, lifecycle_state
+			) VALUES (?, ?, ?, ?, ?, ?, 'removed_upstream')`,
+			repoID, item.itemType, item.number,
+			fmt.Sprintf("%s-%d", item.itemType, item.number), base, base,
+		)
+		require.NoError(err)
+	}
+
+	closedMRs, err := d.GetPreviouslyOpenMRNumbers(ctx, repoID, map[int]bool{})
+	require.NoError(err)
+	require.Equal([]int{1}, closedMRs)
+	closedIssues, err := d.GetPreviouslyOpenIssueNumbers(ctx, repoID, map[int]bool{})
+	require.NoError(err)
+	require.Equal([]int{3}, closedIssues)
+	missingActors, err := d.GetMergedMRNumbersMissingMergedActor(
+		ctx, repoID, base,
+		MergedMRMissingActorCursor{
+			MergedAt: mergedAt.Add(time.Hour), MergeRequestID: 1<<63 - 1,
+		},
+		10,
+	)
+	require.NoError(err)
+	require.Len(missingActors, 1)
+	require.Equal(5, missingActors[0].Number)
 }
 
 func TestGetMergedMRNumbersMissingMergedActor(t *testing.T) {

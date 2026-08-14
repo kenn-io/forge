@@ -8186,6 +8186,17 @@ func (s *Syncer) backfillMergedActorEvent(
 	repoID int64,
 	number int,
 ) (bool, error) {
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"check MR #%d for merged-actor backfill: %w", number, err,
+		)
+	}
+	if removed {
+		return false, nil
+	}
 	stored, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 	if err != nil {
 		return false, fmt.Errorf("get MR #%d for merged-actor backfill: %w", number, err)
@@ -11700,6 +11711,15 @@ func (s *Syncer) persistIssueComments(
 func (s *Syncer) fetchAndUpdateClosedIssue(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 ) error {
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repoID, db.ArchiveItemTypeIssue, number,
+	)
+	if err != nil {
+		return fmt.Errorf("check closed issue #%d visibility: %w", number, err)
+	}
+	if removed {
+		return nil
+	}
 	client, err := s.clientFor(repo)
 	if err != nil {
 		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -11800,6 +11820,15 @@ func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 	repoID int64,
 	number int,
 ) error {
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repoID, db.ArchiveItemTypeIssue, number,
+	)
+	if err != nil {
+		return fmt.Errorf("check closed issue #%d visibility: %w", number, err)
+	}
+	if removed {
+		return nil
+	}
 	issueReader, err := s.issueReaderFor(repo)
 	if err != nil {
 		return fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -13385,6 +13414,15 @@ func CarryMergeRequestDerivedFields(normalized, existing *db.MergeRequest) {
 
 // fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.
 func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID int64, number int, cloneFetchOK bool) error {
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
+	)
+	if err != nil {
+		return fmt.Errorf("check closed PR #%d visibility: %w", number, err)
+	}
+	if removed {
+		return nil
+	}
 	client, err := s.clientFor(repo)
 	if err != nil {
 		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -13566,6 +13604,15 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 	number int,
 	cloneFetchOK bool,
 ) error {
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
+	)
+	if err != nil {
+		return fmt.Errorf("check closed MR #%d visibility: %w", number, err)
+	}
+	if removed {
+		return nil
+	}
 	if _, ok := reader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); ok {

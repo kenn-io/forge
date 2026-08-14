@@ -428,6 +428,8 @@ Repository import requests and route/query shapes should carry
   links, repository summaries, archive reports, and provider mutations;
   synchronous and queued public item sync rejects known tombstones before
   provider access, with queued work rechecking visibility when it executes.
+  Periodic repository sync excludes tombstones from closed-item and
+  merged-actor repair candidates, then rechecks before each provider fetch.
   Secondary workflows such as label validation, automatic assignment,
   pushed-head refresh, manual workspace refresh, and on-demand worktree sync
   must check item visibility before item-specific provider access. Workspace and

@@ -1,5 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from "@playwright/test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  devices,
+  expect,
+  request as playwrightRequest,
+  test,
+  type APIRequestContext,
+  type BrowserContext,
+  type Page,
+} from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 import { openSettingsPanel } from "./support/settingsPanel";
 
@@ -400,7 +410,10 @@ test.describe("workspace create-and-launch full stack", () => {
     }
   });
 
-  test("phone workspace creation opens the terminal and confirms before stopping its session", async ({ page }) => {
+  test("phone workspace creation uses touch, stops, and force-deletes an active dirty workspace", async ({
+    browser,
+    page,
+  }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
       "git, tmux, and sh are required for the real workspace runtime flow",
@@ -408,42 +421,44 @@ test.describe("workspace create-and-launch full stack", () => {
 
     let server: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
+    let phoneContext: BrowserContext | null = null;
     try {
       server = await startIsolatedWorkspaceE2EServer();
       api = await playwrightRequest.newContext({
         baseURL: server.info.base_url,
       });
       await configureAgent(page, server.info.base_url);
-      await trackSessionWebSockets(page);
+      phoneContext = await browser.newContext({ ...devices["Pixel 7"] });
+      const phonePage = await phoneContext.newPage();
+      await trackSessionWebSockets(phonePage);
 
-      const createResponsePromise = page.waitForResponse(
+      const createResponsePromise = phonePage.waitForResponse(
         (response) =>
           response.request().method() === "POST" &&
           /\/api\/v1\/repo\/github\/acme\/widgets\/workspaces$/.test(response.url()),
       );
-      const launchResponsePromise = page.waitForResponse(
+      const launchResponsePromise = phonePage.waitForResponse(
         (response) =>
           response.request().method() === "POST" &&
           /\/api\/v1\/workspaces\/[^/]+\/runtime\/sessions$/.test(response.url()),
       );
 
-      await page.setViewportSize({ width: 390, height: 844 });
-      await page.goto(`${server.info.base_url}/m/workspaces`);
-      await page.getByRole("button", { name: "New workspace" }).click();
-      const dialog = page.getByRole("dialog", { name: "New workspace" });
+      await phonePage.goto(`${server.info.base_url}/m/workspaces`);
+      await phonePage.getByRole("button", { name: "New workspace" }).tap();
+      const dialog = phonePage.getByRole("dialog", { name: "New workspace" });
       await expect(dialog).toBeVisible();
-      await dialog.getByRole("button", { name: "Filter repositories" }).click();
-      await dialog.getByRole("option", { name: /acme\/widgets/ }).click();
+      await dialog.getByRole("button", { name: "Filter repositories" }).tap();
+      await dialog.getByRole("option", { name: /acme\/widgets/ }).tap();
       await expect(dialog.getByRole("button", { name: "Filter repositories" })).toContainText("acme/widgets");
-      await dialog.getByRole("button", { name: "Create workspace options" }).click();
-      const agent = page.getByRole("menuitem", { name: agentLabel });
+      await dialog.getByRole("button", { name: "Create workspace options" }).tap();
+      const agent = phonePage.getByRole("menuitem", { name: agentLabel });
       await expect(agent).toBeVisible();
-      await agent.click();
+      await agent.tap();
 
       const createResponse = await createResponsePromise;
       expect(createResponse.status(), await createResponse.text()).toBe(202);
       const created = (await createResponse.json()) as WorkspaceResponse;
-      await expect(page).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
+      await expect(phonePage).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
       const ready = await waitForWorkspaceReady(api, created.id);
       const launchResponse = await launchResponsePromise;
       expect(launchResponse.status(), await launchResponse.text()).toBe(200);
@@ -451,26 +466,21 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect.poll(() => runtimeTargets(api!, created.id)).toContain(agentKey);
       await expect.poll(() => persistedRuntimeTargets(api!, created.id)).toEqual([agentKey]);
 
-      const input = page.getByRole("textbox", { name: "Terminal command" });
+      const input = phonePage.getByRole("textbox", { name: "Terminal command" });
       await expect(input).not.toBeVisible();
-      const composerToggle = page.getByRole("button", { name: "Open terminal composer" });
+      const composerToggle = phonePage.getByRole("button", { name: "Open terminal composer" });
       await expect(composerToggle).toBeVisible();
-      const toggleBox = await composerToggle.boundingBox();
-      expect(toggleBox).not.toBeNull();
-      await page.mouse.move(toggleBox!.x + toggleBox!.width / 2, toggleBox!.y + toggleBox!.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(toggleBox!.x + toggleBox!.width / 2, toggleBox!.y - 32);
-      await page.mouse.up();
+      await composerToggle.tap();
       await expect(input).toBeVisible();
       const initialInputHeight = (await input.boundingBox())?.height ?? 0;
       await input.fill("printf 'mobile-input-ok\\n'\nprintf 'second-line\\n'");
       await expect(input).toHaveValue("printf 'mobile-input-ok\\n'\nprintf 'second-line\\n'");
       await expect.poll(async () => (await input.boundingBox())?.height ?? 0).toBeGreaterThan(initialInputHeight);
-      await page.getByRole("button", { name: "Send terminal input" }).click();
+      await phonePage.getByRole("button", { name: "Send terminal input" }).tap();
       await expect(input).toHaveValue("");
       await expect.poll(async () => (await input.boundingBox())?.height ?? 0).toBeLessThanOrEqual(initialInputHeight);
       await expect
-        .poll(async () => (await sessionWebSockets(page, created.id)).flatMap((socket) => socket.sent))
+        .poll(async () => (await sessionWebSockets(phonePage, created.id)).flatMap((socket) => socket.sent))
         .toContain("\x1b[200~printf 'mobile-input-ok\\n'\rprintf 'second-line\\n'\x1b[201~\r");
 
       expect(ready.worktree_path).toBeTruthy();
@@ -483,51 +493,62 @@ test.describe("workspace create-and-launch full stack", () => {
         },
       });
       expect(hookResponse.ok(), await hookResponse.text()).toBe(true);
-      await page.goto(`${server.info.base_url}/m/workspaces`);
-      await expect(page.getByRole("button", { name: /agent working/ })).toContainText("Working");
-      await page.goto(`${server.info.base_url}/m/workspaces/local/${created.id}`);
+      await phonePage.goto(`${server.info.base_url}/m/workspaces`);
+      await expect(phonePage.getByRole("button", { name: /agent working/ })).toContainText("Working");
+      await phonePage.goto(`${server.info.base_url}/m/workspaces/local/${created.id}`);
 
-      await expect(page.getByRole("button", { name: "Launch session" })).toHaveCount(0);
-      await expect(page.getByRole("button", { name: `Stop terminal ${agentLabel}` })).toHaveCount(0);
-      const terminalOptionsButton = page.getByRole("button", { name: "Terminal options" });
-      await terminalOptionsButton.click();
-      const terminalOptions = page.getByRole("dialog", { name: "Terminal options" });
+      await expect(phonePage.getByRole("button", { name: "Launch session" })).toHaveCount(0);
+      await expect(phonePage.getByRole("button", { name: `Stop terminal ${agentLabel}` })).toHaveCount(0);
+      const terminalOptionsButton = phonePage.getByRole("button", { name: "Terminal options" });
+      await terminalOptionsButton.tap();
+      const terminalOptions = phonePage.getByRole("dialog", { name: "Terminal options" });
       await expect(terminalOptions.getByRole("spinbutton", { name: "Font size", exact: true })).toBeVisible();
-      await terminalOptions.getByRole("button", { name: "Choose" }).click();
-      const fontDialog = page.getByRole("dialog", { name: "Choose monospace font" });
+      await terminalOptions.getByRole("button", { name: "Choose" }).tap();
+      const fontDialog = phonePage.getByRole("dialog", { name: "Choose monospace font" });
       await expect(fontDialog).toBeVisible();
-      await page.keyboard.press("Escape");
+      await phonePage.keyboard.press("Escape");
       await expect(fontDialog).not.toBeVisible();
       await expect(terminalOptions).toBeVisible();
-      await terminalOptions.getByRole("button", { name: "New terminal" }).click();
-      const launchSheet = page.getByRole("dialog", { name: "Launch workspace session" });
+      await terminalOptions.getByRole("button", { name: "New terminal" }).tap();
+      const launchSheet = phonePage.getByRole("dialog", { name: "Launch workspace session" });
       await expect(launchSheet).toBeVisible();
-      await launchSheet.getByRole("button", { name: "Close launch session" }).click();
+      await launchSheet.getByRole("button", { name: "Close launch session" }).tap();
 
-      await terminalOptionsButton.click();
-      await terminalOptions.getByRole("button", { name: `Stop terminal ${agentLabel}` }).click();
-      const confirmation = page.getByRole("dialog", { name: "Stop terminal?" });
+      await terminalOptionsButton.tap();
+      await terminalOptions.getByRole("button", { name: `Stop terminal ${agentLabel}` }).tap();
+      const confirmation = phonePage.getByRole("dialog", { name: "Stop terminal?" });
       await expect(confirmation).toBeVisible();
       expect(await runtimeTargets(api, created.id)).toContain(agentKey);
-      await confirmation.getByRole("button", { name: "Stop terminal" }).click();
+      await confirmation.getByRole("button", { name: "Stop terminal" }).tap();
       await expect(confirmation).not.toBeVisible();
       await expect.poll(() => runtimeTargets(api!, created.id)).not.toContain(agentKey);
 
-      await page.getByRole("button", { name: "Back to workspaces" }).click();
-      await expect(page).toHaveURL(/\/m\/workspaces$/);
-      const workspaceName = ready.git_head_ref ?? created.git_head_ref ?? created.id;
-      await page.getByRole("button", { name: `Workspace actions for ${workspaceName}` }).click();
-      await page.getByRole("button", { name: "Delete workspace…" }).click();
-      const deleteConfirmation = page.getByRole("dialog", { name: "Delete workspace?" });
-      await expect(deleteConfirmation).toBeVisible();
-      const deleteResponsePromise = page.waitForResponse(
+      const relaunchResponsePromise = phonePage.waitForResponse(
         (response) =>
-          response.request().method() === "DELETE" && response.url().endsWith(`/api/v1/workspaces/${created.id}`),
+          response.request().method() === "POST" &&
+          response.url().endsWith(`/api/v1/workspaces/${created.id}/runtime/sessions`),
       );
-      await deleteConfirmation.getByRole("button", { name: "Delete workspace" }).click();
-      expect((await deleteResponsePromise).status()).toBe(204);
+      await phonePage.getByRole("button", { name: agentLabel, exact: true }).tap();
+      const relaunchResponse = await relaunchResponsePromise;
+      expect(relaunchResponse.status(), await relaunchResponse.text()).toBe(200);
+      await expect.poll(() => runtimeTargets(api!, created.id)).toContain(agentKey);
+
+      if (!ready.worktree_path) throw new Error(`workspace ${created.id} has no worktree path`);
+      writeFileSync(join(ready.worktree_path, "mobile-force-delete.txt"), "dirty workspace\n");
+      const rejectedDelete = await api.delete(`/api/v1/workspaces/${created.id}`, { data: {} });
+      expect(rejectedDelete.status()).toBe(409);
+      expect(await rejectedDelete.json()).toMatchObject({ code: "worktreeDirty" });
+      await expect(phonePage).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
+      expect(await runtimeTargets(api, created.id)).toContain(agentKey);
+      await expect.poll(() => liveSessionWebSockets(phonePage, created.id)).toHaveLength(1);
+
+      const forcedDelete = await api.delete(`/api/v1/workspaces/${created.id}?force=true`, { data: {} });
+      expect(forcedDelete.status(), await forcedDelete.text()).toBe(204);
+      await expect(phonePage).toHaveURL(/\/m\/workspaces$/);
+      await expect.poll(() => liveSessionWebSockets(phonePage, created.id)).toHaveLength(0);
       await expect.poll(async () => (await api!.get(`/api/v1/workspaces/${created.id}`)).status()).toBe(404);
     } finally {
+      await phoneContext?.close();
       await api?.dispose();
       await server?.stop();
     }

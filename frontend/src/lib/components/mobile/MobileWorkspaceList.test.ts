@@ -241,6 +241,116 @@ describe("MobileWorkspaceList", () => {
     notifyWorkspaceDeleted.mockRestore();
   });
 
+  it("requires separate confirmation before forcing a dirty workspace deletion", async () => {
+    mockDelete
+      .mockResolvedValueOnce({
+        error: {
+          type: "about:blank",
+          title: "Conflict",
+          status: 409,
+          detail: "worktree has uncommitted changes; retry with force",
+          code: "worktreeDirty",
+        },
+        response: new Response(null, { status: 409 }),
+      })
+      .mockResolvedValueOnce({
+        data: undefined,
+        error: undefined,
+        response: new Response(null, { status: 204 }),
+      });
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Build mobile workspaces" }));
+    await fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Workspace actions" })).getByRole("button", {
+        name: "Delete workspace…",
+      }),
+    );
+    await fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Delete workspace?" })).getByRole("button", {
+        name: "Delete workspace",
+      }),
+    );
+
+    const forceConfirmation = await screen.findByRole("dialog", { name: "Force delete workspace?" });
+    expect(forceConfirmation.textContent).toContain("discards uncommitted changes");
+    expect(mockDelete).toHaveBeenNthCalledWith(1, "/workspaces/{id}", {
+      params: { path: { id: "ws-1" } },
+      signal: expect.any(AbortSignal),
+    });
+
+    await fireEvent.click(within(forceConfirmation).getByRole("button", { name: "Force delete workspace" }));
+    await waitFor(() => {
+      expect(mockDelete).toHaveBeenNthCalledWith(2, "/workspaces/{id}", {
+        params: { path: { id: "ws-1" }, query: { force: true } },
+        signal: expect.any(AbortSignal),
+      });
+    });
+  });
+
+  it("offers explicit force-delete recovery for a failed Fleet deletion", async () => {
+    const fleetWorkspace = {
+      ...fixture,
+      id: "fleet-ws-failed",
+      mr_title: "Failed Fleet deletion",
+      status: "deletion_failed",
+      error_message: "workspace has uncommitted changes: notes.txt",
+      fleet_host_key: "peer-a",
+      fleet_host_name: "Peer A",
+    };
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "peer-a",
+                diagnostics: [],
+                id: "peer-a",
+                kind: "remote",
+                name: "Peer A",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      if (path === "/workspaces") return Promise.resolve({ data: { workspaces: [] } });
+      if (path === "/fleet/hosts/{host_key}/workspaces") {
+        return Promise.resolve({ data: { workspaces: [fleetWorkspace] } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockDelete.mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: new Response(null, { status: 204 }),
+    });
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Failed Fleet deletion");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Failed Fleet deletion" }));
+    const actions = await screen.findByRole("dialog", { name: "Workspace actions" });
+    await fireEvent.click(within(actions).getByRole("button", { name: "Force delete workspace…" }));
+    const confirmation = await screen.findByRole("dialog", { name: "Force delete workspace?" });
+    await fireEvent.click(within(confirmation).getByRole("button", { name: "Force delete workspace" }));
+
+    await waitFor(() => {
+      expect(mockDelete).toHaveBeenCalledWith("/fleet/hosts/{host_key}/workspaces/{id}", {
+        params: {
+          path: { host_key: "peer-a", id: "fleet-ws-failed" },
+          query: { force: true },
+        },
+        signal: expect.any(AbortSignal),
+      });
+    });
+  });
+
   it("does not restore a deleted Fleet workspace from a failed refresh cache", async () => {
     const fleetWorkspace = {
       ...fixture,

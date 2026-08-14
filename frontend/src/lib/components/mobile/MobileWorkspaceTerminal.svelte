@@ -173,6 +173,7 @@
   }
 
   function applyRuntime(next: WorkspaceRuntimeState): void {
+    const previousSelectedHostKey = selectedHostKey;
     runtime = next;
     reconcilePooledSessions(next.sessions);
     if (stopSession && !next.sessions.some((session) => session.key === stopSession?.key)) {
@@ -180,7 +181,9 @@
     }
     const preferred = selectedSessionKey ?? loadMobileWorkspaceSession(workspaceId, hostKey);
     const nextSelectedSessionKey = selectMobileWorkspaceSession(next.sessions, preferred);
-    if (selectedSessionKey !== null && nextSelectedSessionKey !== selectedSessionKey) {
+    const nextSelectedSession = next.sessions.find((session) => session.key === nextSelectedSessionKey);
+    const nextSelectedHostKey = nextSelectedSession ? pooledHostKey(nextSelectedSession) : null;
+    if (previousSelectedHostKey !== null && nextSelectedHostKey !== previousSelectedHostKey) {
       composedInput = "";
       inputError = null;
       composerOpen = false;

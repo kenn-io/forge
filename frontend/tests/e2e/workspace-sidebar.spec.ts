@@ -1153,6 +1153,42 @@ test("phone terminal clears a draft before falling back to another session", asy
   await expect(page.getByRole("textbox", { name: "Terminal command" })).toHaveValue("");
 });
 
+test("phone terminal clears a draft when the selected session is relaunched with the same key", async ({ page }) => {
+  await page.clock.install();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installControllableTerminalWebSockets(page);
+  const mocked = await setupTerminalMocks(page, {
+    runtime: {
+      ...workspaceRuntime,
+      sessions: [
+        {
+          key: "ws-123:codex",
+          workspace_id: "ws-123",
+          target_key: "codex",
+          label: "Codex",
+          kind: "agent",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        },
+      ],
+    },
+  });
+
+  await page.goto("/m/workspaces/local/ws-123");
+  await page.getByRole("button", { name: "Open terminal composer" }).click();
+  await page.getByRole("textbox", { name: "Terminal command" }).fill("belongs to the old session");
+
+  mocked.runtime.sessions = mocked.runtime.sessions.map((session) => ({
+    ...session,
+    created_at: "2026-04-10T12:05:00Z",
+  }));
+  await page.clock.fastForward(5_100);
+
+  await expect(page.getByRole("textbox", { name: "Terminal command" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open terminal composer" }).click();
+  await expect(page.getByRole("textbox", { name: "Terminal command" })).toHaveValue("");
+});
+
 test("phone workspace list opens a linked item and returns to the list", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await setupTerminalMocks(page);

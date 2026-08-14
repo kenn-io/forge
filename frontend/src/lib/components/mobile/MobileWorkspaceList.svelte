@@ -7,6 +7,7 @@
   import { apiErrorMessage } from "../../api/runtime.js";
   import { configuredAPIPath } from "../../api/runtime-base.js";
   import { ApiProblemError } from "../../api/effect-errors.js";
+  import { ProblemCodes } from "../../api/problems.js";
   import {
     executeGeneratedApiRequest,
     executeOpaqueGeneratedApiRequest,
@@ -69,6 +70,7 @@
   let viewOpen = $state(false);
   let actionsWorkspace = $state<WorkspaceListItem | null>(null);
   let deleteWorkspace = $state<WorkspaceListItem | null>(null);
+  let deleteForce = $state(false);
   let actionBusy = $state<string | null>(null);
 
   const filtered = $derived(
@@ -317,18 +319,25 @@
   function confirmDelete(): void {
     const workspace = deleteWorkspace;
     if (!workspace || actionBusy) return;
+    const force = deleteForce;
     actionBusy = `${workspace.fleet_host_key ?? "local"}:${workspace.id}:delete`;
     const hostKey = workspace.fleet_host_key;
     const command = hostKey
       ? executeOpaqueGeneratedApiRequest("delete mobile Fleet workspace", (client, signal) =>
           client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
-            params: { path: { host_key: hostKey, id: workspace.id } },
+            params: {
+              path: { host_key: hostKey, id: workspace.id },
+              ...(force ? { query: { force: true } } : {}),
+            },
             signal,
           }),
         ).pipe(Effect.asVoid)
       : executeGeneratedApiRequest("delete mobile workspace", (client, signal) =>
           client.DELETE("/workspaces/{id}", {
-            params: { path: { id: workspace.id } },
+            params: {
+              path: { id: workspace.id },
+              ...(force ? { query: { force: true } } : {}),
+            },
             signal,
           }),
         ).pipe(Effect.asVoid);
@@ -357,20 +366,31 @@
             workspaces = workspaces.filter(
               (candidate) => candidate.id !== workspace.id || candidate.fleet_host_key !== hostKey,
             );
+            deleteWorkspace = null;
+            deleteForce = false;
             refreshWorkspaces.request();
           }),
         ),
         Effect.ensuring(
           Effect.sync(() => {
             actionBusy = null;
-            deleteWorkspace = null;
           }),
         ),
       ),
       {
         operation: "delete mobile workspace",
         safeContext: { workspaceId: workspace.id, remote: Boolean(hostKey) },
-        onFailure: (failure) => showFlash(failureMessage(failure, "Delete failed."), { tone: "danger" }),
+        onFailure: (failure) => {
+          const problem = failure instanceof ApiProblemError ? failure.problem : undefined;
+          if (!force && problem?.code === ProblemCodes.worktreeDirty) {
+            deleteWorkspace = workspace;
+            deleteForce = true;
+            return;
+          }
+          deleteWorkspace = null;
+          deleteForce = false;
+          showFlash(failureMessage(failure, "Delete failed."), { tone: "danger" });
+        },
       },
     );
   }
@@ -399,9 +419,16 @@
     actionsWorkspace = null;
   }
 
-  function promptSheetDelete(): void {
+  function promptSheetDelete(force = false): void {
     deleteWorkspace = actionsWorkspace;
+    deleteForce = force;
     actionsWorkspace = null;
+  }
+
+  function closeDeleteConfirmation(): void {
+    if (actionBusy?.endsWith(":delete")) return;
+    deleteWorkspace = null;
+    deleteForce = false;
   }
 
   onMount(() => {
@@ -607,7 +634,10 @@
           <button type="button" onclick={() => openSheetProviderItem(itemURL)}>Open item on provider</button>
           <button type="button" onclick={() => copyText(itemURL, "Copied item URL.")}>Copy item URL</button>
         {/if}
-        <button class="danger" type="button" disabled={actionBusy !== null} onclick={promptSheetDelete}>Delete workspace…</button>
+        <button class="danger" type="button" disabled={actionBusy !== null} onclick={() => promptSheetDelete(false)}>{actionsWorkspace.status === "deletion_failed" ? "Retry deletion…" : "Delete workspace…"}</button>
+        {#if actionsWorkspace.status === "deletion_failed"}
+          <button class="danger" type="button" disabled={actionBusy !== null} onclick={() => promptSheetDelete(true)}>Force delete workspace…</button>
+        {/if}
       </div>
     </div>
   </Modal>
@@ -615,15 +645,17 @@
 
 <ConfirmDialog
   open={deleteWorkspace !== null}
-  title="Delete workspace?"
+  title={deleteForce ? "Force delete workspace?" : deleteWorkspace?.status === "deletion_failed" ? "Retry workspace deletion?" : "Delete workspace?"}
   message={deleteWorkspace ? `Delete workspace "${mobileWorkspaceDisplayName(deleteWorkspace)}"?` : ""}
-  hint="This removes its managed worktree and runtime sessions."
-  confirmLabel="Delete workspace"
+  hint={deleteForce
+    ? "This discards uncommitted changes and removes the managed worktree and runtime sessions."
+    : deleteWorkspace?.error_message ?? "This removes its managed worktree and runtime sessions."}
+  confirmLabel={deleteForce ? "Force delete workspace" : deleteWorkspace?.status === "deletion_failed" ? "Retry deletion" : "Delete workspace"}
   pendingLabel="Deleting…"
   busy={actionBusy?.endsWith(":delete") ?? false}
   tone="danger"
   frameId="mobile-workspace-delete"
-  onCancel={() => (deleteWorkspace = null)}
+  onCancel={closeDeleteConfirmation}
   onConfirm={confirmDelete}
 />
 

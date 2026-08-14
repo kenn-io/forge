@@ -243,19 +243,12 @@ function parseRoute(fullPath: string): Route {
   if (path === "/m/workspaces") {
     return { page: "mobile-workspaces" };
   }
-  const mobileFleetWorkspaceMatch = path.match(/^\/m\/workspaces\/fleet\/([^/]+)\/([^/]+)(?:\/(item)(?:\/(files))?)?$/);
+  const mobileFleetWorkspaceMatch = path.match(/^\/m\/workspaces\/fleet\/([^/]+)\/([^/]+)$/);
   if (mobileFleetWorkspaceMatch) {
     const hostKey = decodeRouteSegment(mobileFleetWorkspaceMatch[1] ?? "");
     const workspaceId = decodeRouteSegment(mobileFleetWorkspaceMatch[2] ?? "");
     if (hostKey && workspaceId) {
-      return mobileFleetWorkspaceMatch[3] === "item"
-        ? {
-            page: "mobile-workspace-item",
-            workspaceId,
-            hostKey,
-            ...(mobileFleetWorkspaceMatch[4] === "files" && { tab: "files" as const }),
-          }
-        : { page: "mobile-workspace-terminal", workspaceId, hostKey };
+      return { page: "mobile-workspace-terminal", workspaceId, hostKey };
     }
   }
   const mobileLocalWorkspaceMatch = path.match(/^\/m\/workspaces\/local\/([^/]+)(?:\/(item)(?:\/(files))?)?$/);

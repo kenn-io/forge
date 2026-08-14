@@ -50,6 +50,23 @@ type FeatureDeferral struct {
 	Detail  string
 }
 
+type inventoryProbeContextKey struct{}
+
+// withInventoryProbe marks enumeration reads that must verify current provider
+// state instead of consuming a cached repository-feature cooldown. Hydration
+// deliberately does not carry this marker.
+func withInventoryProbe(ctx context.Context) context.Context {
+	return context.WithValue(ctx, inventoryProbeContextKey{}, true)
+}
+
+// InventoryProbeRequested reports whether archive enumeration needs a live
+// feature probe. Admission implementations use this to bypass cached feature
+// cooldowns without weakening hydration suppression.
+func InventoryProbeRequested(ctx context.Context) bool {
+	requested, _ := ctx.Value(inventoryProbeContextKey{}).(bool)
+	return requested
+}
+
 type Admission interface {
 	Admit(context.Context, platform.RepoRef, db.ArchiveItemType, int) (AdmissionResult, error)
 }

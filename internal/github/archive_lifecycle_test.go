@@ -574,8 +574,9 @@ func TestArchiveDisabledIssueInventoryCompletesUnsupportedWithoutBlockingMergeRe
 	require.NoError(service.RunEligible(t.Context()))
 	require.NoError(service.RunEligible(t.Context()))
 
-	assert.Equal(int32(1), issueCalls.Load())
 	assert.Equal(int32(1), issueInventoryCalls.Load())
+	assert.Greater(issueCalls.Load(), issueInventoryCalls.Load(),
+		"maintenance must verify the provider stream despite the inventory cooldown")
 	assert.GreaterOrEqual(mergeRequestCalls.Load(), int32(1))
 	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
 	require.NoError(err)

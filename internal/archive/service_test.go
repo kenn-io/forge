@@ -673,6 +673,55 @@ func TestArchiveDiscoverySkipsUnsupportedInventoryStream(t *testing.T) {
 	assert.Equal([]string{"issues"}, provider.calls)
 }
 
+func TestArchiveMaintenanceDoesNotReopenStaticallyUnsupportedInventoryStream(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ref := archiveServiceRef(platform.KindGitLab, "gitlab.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	provider.caps.Archive.HistoricalMergeRequests = false
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+
+	require.NoError(service.RunEligible(t.Context()))
+	require.NoError(service.RunEligible(t.Context()))
+	initialStartedAt := now.Add(-2 * time.Hour)
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE forge_archive_repos
+		SET initial_started_at = ?, initial_completed_at = ?,
+			maintenance_watermark = NULL, maintenance_succeeded_at = NULL
+		WHERE repo_id = ?`, initialStartedAt, now, repoID)
+	require.NoError(err)
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	require.NotNil(states[0].InitialCompletedAt)
+	assert.True(states[0].MergeRequestInventory.Complete())
+	assert.Equal(db.ArchiveCoverageUnsupported, states[0].MergeRequestsCoverage)
+	unsupportedGeneration := states[0].MergeRequestInventory.Generation
+
+	service.clock = fixedClock{value: now.Add(5 * time.Minute)}
+	resolved, err := service.resolveRepositories(t.Context(), []platform.RepoRef{ref}, true)
+	require.NoError(err)
+	require.Len(resolved, 1)
+	require.NoError(service.promptMaintenance(t.Context(), resolved[0], states[0]))
+
+	states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Contains(provider.calls, "updated_mrs:", "maintenance must still read updated merge requests")
+	assert.Equal(unsupportedGeneration, states[0].MergeRequestInventory.Generation)
+	assert.True(states[0].MergeRequestInventory.Complete())
+	assert.Equal(db.ArchiveCoverageUnsupported, states[0].MergeRequestsCoverage)
+	assert.NotNil(states[0].InitialCompletedAt)
+}
+
 func TestArchiveInventoryReopensRepositoryFeatureAfterReenable(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

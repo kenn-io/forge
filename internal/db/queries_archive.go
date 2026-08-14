@@ -198,6 +198,40 @@ func (d *DB) PauseArchives(ctx context.Context, repoIDs []int64, now time.Time) 
 	})
 }
 
+// ReconcileArchiveInventoryAvailable reopens historical inventory after a
+// live maintenance read proves that a previously unsupported provider stream
+// is available. The active prompt boundary stays in place so the successful
+// maintenance response and the historical replay cover both sides of the
+// feature transition.
+func (d *DB) ReconcileArchiveInventoryAvailable(
+	ctx context.Context,
+	repoID int64,
+	itemType ArchiveItemType,
+	now time.Time,
+) error {
+	if repoID <= 0 {
+		return errors.New("reconcile archive inventory availability: repository is required")
+	}
+	if itemType != ArchiveItemTypeIssue && itemType != ArchiveItemTypeMergeRequest {
+		return fmt.Errorf(
+			"reconcile archive inventory availability: invalid item type %q",
+			itemType,
+		)
+	}
+	now = now.UTC()
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		if err := requireArchiveRepoIDs(
+			ctx, tx, "forge_archive_repos", []int64{repoID},
+		); err != nil {
+			return err
+		}
+		_, err := reconcileArchiveInventoryAvailableTx(
+			ctx, tx, repoID, itemType, now,
+		)
+		return err
+	})
+}
+
 // ReconcileArchiveCoverage records current provider capabilities and reopens
 // inventory that can now replace a previously unsupported result.
 func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverage ArchiveCoverageSet, now time.Time) error {
@@ -219,54 +253,19 @@ func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverag
 			return err
 		}
 		for _, inventory := range []struct {
-			desired ArchiveCoverage
-			scan    ArchiveScanKind
-			column  string
+			desired  ArchiveCoverage
+			itemType ArchiveItemType
 		}{
-			{desired: coverage.Issues, scan: ArchiveScanIssueInventory, column: "issues_coverage"},
-			{desired: coverage.MergeRequests, scan: ArchiveScanMergeRequestInventory, column: "merge_requests_coverage"},
+			{desired: coverage.Issues, itemType: ArchiveItemTypeIssue},
+			{desired: coverage.MergeRequests, itemType: ArchiveItemTypeMergeRequest},
 		} {
 			if inventory.desired != ArchiveCoverageSupported {
 				continue
 			}
-			result, err := tx.ExecContext(ctx, `
-				UPDATE forge_archive_repo_scans
-				SET scan_generation = `+nextEvenScanGenerationSQL+`,
-					next_cursor = NULL, last_input_cursor = NULL,
-					page_count = 0, status = 'pending',
-					last_error_code = NULL, last_error_detail = NULL,
-					updated_at = ?
-				WHERE repo_id = ? AND scan = ? AND status = 'complete'
-				  AND EXISTS (
-					SELECT 1 FROM forge_archive_repos
-					WHERE repo_id = ? AND `+inventory.column+` = 'unsupported'
-				  )`, now, repoID, inventory.scan, repoID)
-			if err != nil {
-				return fmt.Errorf("reopen %s archive inventory: %w", inventory.scan, err)
-			}
-			reopened, err := result.RowsAffected()
-			if err != nil {
-				return fmt.Errorf("reopen %s archive inventory rows affected: %w", inventory.scan, err)
-			}
-			if reopened == 0 {
-				continue
-			}
-			itemType := ArchiveItemTypeIssue
-			if inventory.scan == ArchiveScanMergeRequestInventory {
-				itemType = ArchiveItemTypeMergeRequest
-			}
-			if err := requeueArchiveKnownItemLookupsTx(
-				ctx, tx, repoID, itemType, now,
+			if _, err := reconcileArchiveInventoryAvailableTx(
+				ctx, tx, repoID, inventory.itemType, now,
 			); err != nil {
 				return err
-			}
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE forge_archive_repos
-				SET `+inventory.column+` = 'unknown',
-					initial_completed_at = NULL,
-					updated_at = MAX(updated_at, ?)
-				WHERE repo_id = ?`, now, repoID); err != nil {
-				return fmt.Errorf("reset %s archive coverage: %w", inventory.scan, err)
 			}
 		}
 		_, err := tx.ExecContext(ctx, `
@@ -295,6 +294,56 @@ func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverag
 		}
 		return nil
 	})
+}
+
+func reconcileArchiveInventoryAvailableTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	itemType ArchiveItemType,
+	now time.Time,
+) (bool, error) {
+	scan := ArchiveScanIssueInventory
+	column := "issues_coverage"
+	if itemType == ArchiveItemTypeMergeRequest {
+		scan = ArchiveScanMergeRequestInventory
+		column = "merge_requests_coverage"
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE forge_archive_repo_scans
+		SET scan_generation = `+nextEvenScanGenerationSQL+`,
+			next_cursor = NULL, last_input_cursor = NULL,
+			page_count = 0, status = 'pending',
+			last_error_code = NULL, last_error_detail = NULL,
+			updated_at = ?
+		WHERE repo_id = ? AND scan = ? AND status = 'complete'
+		  AND EXISTS (
+			SELECT 1 FROM forge_archive_repos
+			WHERE repo_id = ? AND `+column+` = 'unsupported'
+		  )`, now, repoID, scan, repoID)
+	if err != nil {
+		return false, fmt.Errorf("reopen %s archive inventory: %w", scan, err)
+	}
+	reopened, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("reopen %s archive inventory rows affected: %w", scan, err)
+	}
+	if reopened == 0 {
+		return false, nil
+	}
+	if err := requeueArchiveKnownItemLookupsTx(
+		ctx, tx, repoID, itemType, now,
+	); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE forge_archive_repos
+		SET `+column+` = 'unknown', initial_completed_at = NULL,
+			updated_at = MAX(updated_at, ?)
+		WHERE repo_id = ?`, now, repoID); err != nil {
+		return false, fmt.Errorf("reset %s archive coverage: %w", scan, err)
+	}
+	return true, nil
 }
 
 func requeueArchiveKnownItemLookupsTx(

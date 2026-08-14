@@ -1060,6 +1060,58 @@ func TestReconcileArchiveCoverageRequeuesKnownItemsWhenInventoryReturns(t *testi
 	require.Greater(progress.ScanGeneration, archiveLifecycleDetailsGeneration)
 }
 
+func TestReconcileArchiveInventoryAvailablePreservesPromptBoundary(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, database, "acme", "reenabled-issues")
+	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(database.StartFullArchives(ctx, []int64{repoID}, now))
+	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		RefreshReason: ArchiveRefreshReasonInitial, ScanGeneration: 1,
+		Exhausted: true, Coverage: ArchiveCoverageUnsupported, Now: now,
+	}))
+	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest,
+		RefreshReason: ArchiveRefreshReasonInitial, ScanGeneration: 1,
+		Exhausted: true, Coverage: ArchiveCoverageSupported, Now: now,
+	}))
+	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 7, now)
+	insertArchiveProgressForTest(
+		t, database, repoID, ArchiveItemTypeIssue, 7,
+		ArchiveDatasetLookup, ArchiveDatasetProgressComplete,
+	)
+	promptAt := now.Add(time.Hour)
+	before, err := database.BeginArchivePromptMaintenance(ctx, repoID, now, promptAt)
+	require.NoError(err)
+	require.NotNil(before.PromptScanStartedAt)
+
+	require.NoError(database.ReconcileArchiveInventoryAvailable(
+		ctx, repoID, ArchiveItemTypeIssue, promptAt,
+	))
+
+	states, err := database.ListArchiveRepoStates(ctx, []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	state := states[0]
+	assert.False(state.IssueInventory.Complete())
+	assert.Greater(state.IssueInventory.Generation, before.IssueInventory.Generation)
+	assert.Equal(ArchiveCoverageUnknown, state.IssuesCoverage)
+	assert.Nil(state.InitialCompletedAt)
+	require.NotNil(state.PromptScanStartedAt)
+	assert.Equal(promptAt, *state.PromptScanStartedAt)
+	assert.Equal(before.MaintenanceIssues.Generation, state.MaintenanceIssues.Generation)
+	assert.Equal(
+		ArchiveDatasetProgressPending,
+		archiveProgressStatusForTest(
+			t, database, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup,
+		),
+	)
+}
+
 func prepareLifecycleArchiveCoverage(
 	t *testing.T,
 	database *DB,

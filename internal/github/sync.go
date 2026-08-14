@@ -1295,6 +1295,11 @@ func (s *Syncer) Admit(
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 		PlatformExternalID: ref.PlatformExternalID,
 	}
+	if archive.InventoryProbeRequested(ctx) {
+		ctx = withRepositoryFeatureCooldownBypass(
+			ctx, s.featureCooldowns.currentGeneration(),
+		)
+	}
 	probe, due, featureRetryAt := s.beginRepositoryFeatureProbeWithRetry(ctx, repo, feature)
 	if !due {
 		return archive.AdmissionResult{FeatureDeferred: &archive.FeatureDeferral{

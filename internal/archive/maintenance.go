@@ -90,8 +90,15 @@ func (s *Service) promptPages(
 	}
 	cursor := scan.Cursor()
 	for {
+		commit := db.ArchiveInventoryCommit{
+			RepoID: repo.ID, ItemType: itemType,
+			RefreshReason:  db.ArchiveRefreshReasonPrompt,
+			ScanGeneration: scan.Generation, InputCursor: cursor,
+			Now: s.now(),
+		}
 		requestCtx, complete, err := s.admit(
-			ctx, repo, itemType, archiveFeatureReadAttemptCost(repo.Ref.Platform),
+			withInventoryProbe(ctx), repo, itemType,
+			archiveFeatureReadAttemptCost(repo.Ref.Platform),
 		)
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
@@ -103,12 +110,7 @@ func (s *Service) promptPages(
 			Order:        platform.ItemOrderUpdated,
 			UpdatedSince: &since, Cursor: cursor,
 		}
-		commit := db.ArchiveInventoryCommit{
-			RepoID: repo.ID, ItemType: itemType,
-			RefreshReason:  db.ArchiveRefreshReasonPrompt,
-			ScanGeneration: scan.Generation, InputCursor: cursor,
-			Now: s.now(),
-		}
+		featureAvailable := false
 		switch itemType {
 		case db.ArchiveItemTypeIssue:
 			page, err := repo.Issues.ListIssuesPage(requestCtx, repo.Ref, query)
@@ -130,6 +132,7 @@ func (s *Service) promptPages(
 					"list updated issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))
 			}
+			featureAvailable = true
 			commit.NextCursor, commit.Exhausted = page.NextCursor, page.Exhausted
 			commit.Items = make([]db.ArchiveInventoryItem, 0, len(page.Items))
 			for _, item := range page.Items {
@@ -155,6 +158,7 @@ func (s *Service) promptPages(
 					"list updated merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))
 			}
+			featureAvailable = true
 			commit.NextCursor, commit.Exhausted = page.NextCursor, page.Exhausted
 			commit.Items = make([]db.ArchiveInventoryItem, 0, len(page.Items))
 			for _, item := range page.Items {
@@ -164,6 +168,13 @@ func (s *Service) promptPages(
 			invalidErr := fmt.Errorf("archive maintenance: invalid item type %q", itemType)
 			complete(invalidErr, false)
 			return invalidErr
+		}
+		if featureAvailable && archiveInventorySupported(repo, itemType) {
+			if err := s.db.ReconcileArchiveInventoryAvailable(
+				ctx, repo.ID, itemType, s.now(),
+			); err != nil {
+				return err
+			}
 		}
 		halted, err := s.commitInventoryPage(ctx, commit)
 		if err != nil {

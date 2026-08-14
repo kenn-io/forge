@@ -30,7 +30,8 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 		commit.Coverage = db.ArchiveCoverageUnsupported
 	} else {
 		requestCtx, complete, err := s.admit(
-			ctx, repo, itemType, archiveFeatureReadAttemptCost(repo.Ref.Platform),
+			withInventoryProbe(ctx), repo, itemType,
+			archiveFeatureReadAttemptCost(repo.Ref.Platform),
 		)
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {

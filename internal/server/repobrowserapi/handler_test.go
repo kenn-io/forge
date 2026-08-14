@@ -1047,7 +1047,10 @@ func setupServerRepoBrowserGitRepo(t *testing.T) (remote string, work string) {
 
 func serverRepoBrowserGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	runner := gitcmd.New().WithConfig("init.defaultBranch", "main")
+	runner := gitcmd.New().
+		WithConfig("init.defaultBranch", "main").
+		WithConfig("gc.auto", "0").
+		WithConfig("maintenance.auto", "false")
 	out, stderr, err := runner.Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }

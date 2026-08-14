@@ -91,14 +91,10 @@ Recording a disabled result must preserve any earlier same-scope item failure so
 and ETag invalidation state survives the cooldown. (`internal/github/sync.go::indexSyncRepo`)
 Apply the gate before shared budget exhaustion so suppressed work cannot starve
 unaffected scopes. (`internal/github/sync.go::drainDetailQueue`)
-Archive inventory, maintenance, and hydration share this in-memory gate; pre-provider
-deferral skips only that repo/type so unaffected streams and later same-host repositories
-remain eligible. (`internal/archive/scheduler.go::runProviderHostWork`)
-Feature deferral preserves scan cursors and pending lookup state and is never persisted as
-provider-budget or item-retry state. (`internal/github/sync.go::Admit`)
-Hydration excludes the cooled repository feature only while selecting work in the current
-pass, so unaffected due items remain eligible and restart or manual recovery can resume
-immediately. (`internal/archive/scheduler.go::runNextHydrationWork`)
+Archive inventory and maintenance bypass cached feature cooldowns and commit empty streams only
+after a live disabled response; a live recovery reopens an unsupported historical stream only when
+the provider declares that inventory capability, while hydration keeps honoring the cooldown.
+(`internal/github/sync.go::Admit`, `internal/archive/`)
 
 ## Shared clone slot: `Manager.EnsureClone`
 

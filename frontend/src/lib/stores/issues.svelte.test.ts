@@ -266,6 +266,35 @@ describe("createIssuesStore", () => {
     expect(onDetailSynchronized).toHaveBeenCalledOnce();
   });
 
+  it("reconciles visible lists when selection closes during a synchronous detail sync", async () => {
+    const syncPost = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const post = vi.fn(() => syncPost.promise);
+    const get = vi.fn(async (path: string) =>
+      path === "/issues" ? { data: [], error: undefined } : { data: issueDetail(), error: undefined },
+    );
+    const onDetailSynchronized = vi.fn();
+    const store = createIssuesStore({
+      client: mockClient({ GET: get, POST: post }),
+      getPage: () => "issues",
+      onDetailSynchronized,
+    });
+
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: true,
+    });
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+    store.clearIssueDetail();
+
+    syncPost.resolve({ data: issueDetail(), error: undefined });
+
+    await vi.waitFor(() => expect(onDetailSynchronized).toHaveBeenCalledOnce());
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(1);
+    expect(store.getIssueDetail()).toBeNull();
+  });
+
   it("reconciles visible lists when selection closes during a background detail sync", async () => {
     vi.useFakeTimers();
     const cached = issueDetail();

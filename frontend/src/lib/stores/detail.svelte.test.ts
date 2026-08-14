@@ -717,6 +717,34 @@ describe("createDetailStore", () => {
     expect(pulls.loadPulls).toHaveBeenCalledTimes(1);
   });
 
+  it("reconciles visible lists when selection closes during an explicit detail sync", async () => {
+    const syncPost = Promise.withResolvers<{ data: PullDetail; error: undefined }>();
+    const post = vi.fn(() => syncPost.promise);
+    const loadPulls = vi.fn();
+    const onDetailSynchronized = vi.fn();
+    const store = createDetailStore({
+      client: mockClient({ POST: post }),
+      getPage: () => "pulls",
+      pulls: { loadPulls },
+      onDetailSynchronized,
+    });
+
+    const syncing = syncDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+    store.clearDetail();
+
+    syncPost.resolve({ data: pullDetail("fresh-head"), error: undefined });
+
+    await expect(syncing).resolves.toBe(false);
+    expect(loadPulls).toHaveBeenCalledOnce();
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    expect(store.getDetail()).toBeNull();
+  });
+
   it("reports when an explicit detail sync cannot refresh state", async () => {
     const store = createDetailStore({
       client: mockClient({

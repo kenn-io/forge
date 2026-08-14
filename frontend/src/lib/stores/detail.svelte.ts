@@ -1217,6 +1217,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         }),
       ).pipe(
         Effect.map((data): PullDetail => ({ ...data, events: data.events ?? [] })),
+        Effect.tap(() => Effect.sync(reconcileListsAfterDetailSync)),
         Effect.flatMap((next) =>
           Effect.gen(function* () {
             const applied = yield* rebasePullMutations(ref, next, () => {
@@ -1229,9 +1230,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
               if (didApply) noteObservedFetchedAt(next.detail_fetched_at);
               return didApply;
             });
-            if (applied && expectedGeneration === syncGeneration) {
-              reconcileListsAfterDetailSync();
-            }
             return applied;
           }),
         ),

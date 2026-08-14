@@ -498,6 +498,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           workspaceActivity = result.response.workspace_activity ?? [];
           capped = result.response.capped;
           loading = false;
+          storeError = null;
         });
       return Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;

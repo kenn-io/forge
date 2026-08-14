@@ -786,6 +786,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       }),
     ).pipe(
       Effect.map((data): IssueDetail => ({ ...data, events: data.events ?? [] })),
+      Effect.tap(() => Effect.sync(reconcileListsAfterDetailSync)),
       Effect.flatMap((authoritative) =>
         installIssueDetail(ref, authoritative, envelopeTick, expectedGeneration, false),
       ),
@@ -793,7 +794,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           if (applied) {
             detailError = null;
-            onDetailSynchronized();
           }
         }),
       ),
@@ -807,7 +807,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           if (expectedGeneration === issueSyncGeneration) {
             detailSyncing = false;
-            refreshIssuesIfActive();
           }
           syncDep?.refreshSyncStatus?.();
         }),

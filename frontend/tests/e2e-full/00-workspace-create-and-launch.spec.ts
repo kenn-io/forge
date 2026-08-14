@@ -471,7 +471,7 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect.poll(async () => (await input.boundingBox())?.height ?? 0).toBeLessThanOrEqual(initialInputHeight);
       await expect
         .poll(async () => (await sessionWebSockets(page, created.id)).flatMap((socket) => socket.sent))
-        .toContain("printf 'mobile-input-ok\\n'\nprintf 'second-line\\n'\r");
+        .toContain("\x1b[200~printf 'mobile-input-ok\\n'\rprintf 'second-line\\n'\x1b[201~\r");
 
       expect(ready.worktree_path).toBeTruthy();
       const hookResponse = await api.post("/api/v1/agent-hooks/claude", {

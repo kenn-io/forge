@@ -5914,6 +5914,7 @@ func (s *Syncer) runOnceWithSlot(
 		s.exclusiveRun = onlyRepos != nil
 		s.runMu.Unlock()
 	}
+	var terminalStatus *SyncStatus
 	defer func() {
 		s.runMu.Lock()
 		pending := s.pendingRun
@@ -5941,7 +5942,12 @@ func (s *Syncer) runOnceWithSlot(
 			)
 			if !launched {
 				s.releaseRunSlot()
+			} else {
+				return
 			}
+		}
+		if terminalStatus != nil {
+			s.publishStatus(terminalStatus)
 		}
 	}()
 
@@ -6133,11 +6139,11 @@ dispatch:
 			err = context.Canceled
 		}
 		slog.Info("sync canceled", "repos", total, "err", err)
-		s.publishStatus(&SyncStatus{
+		terminalStatus = &SyncStatus{
 			Running:   false,
 			LastRunAt: time.Now().UTC(),
 			LastError: err.Error(),
-		})
+		}
 		return
 	}
 
@@ -6170,14 +6176,14 @@ dispatch:
 		})
 	}
 
-	s.publishStatus(&SyncStatus{
+	terminalStatus = &SyncStatus{
 		Running:                 false,
 		LastRunAt:               time.Now().UTC(),
 		LastError:               lastErr,
 		LastErrorCode:           lastErrorCode,
 		LastErrorCeilingKey:     lastErrorCeilingKey,
 		LastErrorCeilingResetAt: lastErrorCeilingResetAt,
-	})
+	}
 }
 
 func (s *Syncer) releaseRunSlot() {

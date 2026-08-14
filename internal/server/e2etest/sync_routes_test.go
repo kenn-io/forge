@@ -70,9 +70,9 @@ func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
 	assert.Equal("syncer not configured", *trigger.ApplicationproblemJSONDefault.Detail)
 }
 
-// If the HTTP route drops a sync accepted during an active provider fetch,
-// users receive 202 while SQLite keeps the provider snapshot stale.
-func TestAcceptedFullSyncQueuesBehindInFlightProviderFetchE2E(t *testing.T) {
+// If an accepted queued sync reports completion before its provider pass,
+// clients stop waiting while SQLite still holds the earlier snapshot.
+func TestAcceptedFullSyncStaysRunningUntilQueuedProviderDataPersistsE2E(t *testing.T) {
 	require := require.New(t)
 
 	firstSnapshot := make(chan struct{})
@@ -80,6 +80,8 @@ func TestAcceptedFullSyncQueuesBehindInFlightProviderFetchE2E(t *testing.T) {
 	var releaseOnce sync.Once
 	var providerFresh atomic.Bool
 	var listCalls atomic.Int32
+	var statusMu sync.Mutex
+	var runningStates []bool
 	mock := &mockGH{
 		getRepositoryFn: func(
 			_ context.Context, owner, repo string,
@@ -134,6 +136,11 @@ func TestAcceptedFullSyncQueuesBehindInFlightProviderFetchE2E(t *testing.T) {
 		releaseOnce.Do(func() { close(releaseFirst) })
 		syncer.Stop()
 	})
+	syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
+		statusMu.Lock()
+		runningStates = append(runningStates, status.Running)
+		statusMu.Unlock()
+	})
 
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
@@ -172,10 +179,30 @@ func TestAcceptedFullSyncQueuesBehindInFlightProviderFetchE2E(t *testing.T) {
 		if listCalls.Load() != 2 {
 			return false
 		}
+		status, err := api.HTTP.GetSyncStatusWithResponse(t.Context())
+		if err != nil || status.StatusCode() != http.StatusOK ||
+			status.JSON200 == nil || status.JSON200.Running {
+			return false
+		}
 		repos, err := database.ListRepos(t.Context())
 		return err == nil && len(repos) == 1 && repos[0].DefaultBranch == "fresh"
 	}, 5*time.Second, 10*time.Millisecond,
 		"accepted full sync did not persist the fresh provider snapshot")
+
+	statusMu.Lock()
+	states := append([]bool(nil), runningStates...)
+	statusMu.Unlock()
+	require.NotEmpty(states)
+	terminalSeen := false
+	for _, running := range states {
+		if !running {
+			terminalSeen = true
+			continue
+		}
+		require.False(terminalSeen,
+			"sync status returned to running after reporting completion")
+	}
+	require.False(states[len(states)-1])
 }
 
 // If an HTTP-scoped refresh loses its repository binding while coalescing

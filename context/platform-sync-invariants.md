@@ -431,7 +431,8 @@ Repository import requests and route/query shapes should carry
   Watched fast-sync and priority detail-drain work perform that recheck after
   stable repository resolution; archive-budget hydration bypasses it so a
   terminal item can be repaired when it reappears upstream. Deferred PR and
-  issue workspace setup rechecks its source before any Git or provider access.
+  issue comment drains recheck their parent before provider access, and
+  workspace setup rechecks its source before any Git or provider access.
   Periodic repository sync excludes tombstones from closed-item and
   merged-actor repair candidates, then rechecks before each provider fetch.
   Secondary workflows such as label validation, automatic assignment,

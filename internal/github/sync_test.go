@@ -17737,6 +17737,93 @@ func TestDeferredCommentRefreshRejectsABARoutePayload(t *testing.T) {
 	})
 }
 
+func TestDeferredCommentRefreshSkipsRemovedUpstreamItems(t *testing.T) {
+	for _, itemType := range []db.ArchiveItemType{
+		db.ArchiveItemTypeMergeRequest,
+		db.ArchiveItemTypeIssue,
+	} {
+		t.Run(string(itemType), func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+			repo := RepoRef{
+				Platform: platform.KindGitHub, PlatformHost: "github.com",
+				Owner: "acme", Name: "widget",
+			}
+			repoID, err := database.UpsertRepo(
+				ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name),
+			)
+			require.NoError(err)
+			detailFetchedAt := now
+			var parentID int64
+			if itemType == db.ArchiveItemTypeMergeRequest {
+				parentID, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+					RepoID: repoID, PlatformID: 7007, Number: 7,
+					URL: "https://github.com/acme/widget/pull/7", Title: "queued PR",
+					Author: "ada", State: db.MergeRequestStateOpen,
+					CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+					DetailFetchedAt: &detailFetchedAt,
+				})
+			} else {
+				parentID, err = database.UpsertIssue(ctx, &db.Issue{
+					RepoID: repoID, PlatformID: 8007, Number: 7,
+					URL: "https://github.com/acme/widget/issues/7", Title: "queued issue",
+					Author: "ada", State: "open",
+					CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+					DetailFetchedAt: &detailFetchedAt,
+				})
+			}
+			require.NoError(err)
+
+			var providerCalls atomic.Int32
+			commentID, body := int64(91), "must not persist"
+			client := &mockClient{listIssueCommentsIfChangedFn: func(
+				context.Context, string, string, int,
+			) ([]*gh.IssueComment, error) {
+				providerCalls.Add(1)
+				return []*gh.IssueComment{{
+					ID: &commentID, Body: &body,
+					CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now),
+				}}, nil
+			}}
+			syncer := NewSyncer(
+				map[string]Client{"github.com": client}, database, nil,
+				[]RepoRef{repo}, time.Minute, nil, nil,
+			)
+			if itemType == db.ArchiveItemTypeMergeRequest {
+				syncer.queuePRCommentSync(repo, repoID, 7)
+			} else {
+				syncer.queueIssueCommentSync(repo, repoID, 7)
+			}
+			_, err = database.WriteDB().ExecContext(ctx, `
+				INSERT INTO forge_archive_items (
+					repo_id, item_type, item_number, provider_item_id,
+					provider_created_at, provider_updated_at, lifecycle_state
+				) VALUES (?, ?, ?, ?, ?, ?, 'removed_upstream')`,
+				repoID, itemType, 7, string(itemType)+"-7", now, now,
+			)
+			require.NoError(err)
+
+			syncer.drainPendingCommentSyncs(
+				ctx, map[string]bool{"github.com": true},
+			)
+
+			require.Zero(providerCalls.Load(),
+				"a queued comment refresh must recheck parent visibility")
+			if itemType == db.ArchiveItemTypeMergeRequest {
+				events, listErr := database.ListMREvents(ctx, parentID)
+				require.NoError(listErr)
+				require.Empty(events)
+			} else {
+				events, listErr := database.ListIssueEvents(ctx, parentID)
+				require.NoError(listErr)
+				require.Empty(events)
+			}
+		})
+	}
+}
+
 func TestFetchMRDetailRejectsABAOnNotModified(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

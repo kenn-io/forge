@@ -8825,7 +8825,7 @@ func (s *Syncer) drainPendingCommentSyncs(
 			)
 			continue
 		}
-		pr, err := s.db.GetMergeRequestByRepoIDAndNumber(
+		pr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(
 			refreshCtx, item.repoID, item.number,
 		)
 		if err != nil {
@@ -8834,6 +8834,9 @@ func (s *Syncer) drainPendingCommentSyncs(
 				"number", item.number,
 				"err", err,
 			)
+			continue
+		}
+		if pr == nil {
 			continue
 		}
 		probe, due := s.beginRepositoryFeatureProbe(
@@ -8890,7 +8893,7 @@ func (s *Syncer) drainPendingCommentSyncs(
 			)
 			continue
 		}
-		issue, err := s.db.GetIssueByRepoIDAndNumber(
+		issue, err := s.db.GetVisibleIssueByRepoIDAndNumber(
 			refreshCtx, item.repoID, item.number,
 		)
 		if err != nil {
@@ -8899,6 +8902,9 @@ func (s *Syncer) drainPendingCommentSyncs(
 				"number", item.number,
 				"err", err,
 			)
+			continue
+		}
+		if issue == nil {
 			continue
 		}
 		probe, due := s.beginRepositoryFeatureProbe(

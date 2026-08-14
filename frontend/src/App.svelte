@@ -1208,7 +1208,7 @@
                       tab === "files" ? "files" : undefined,
                     );
                     const mobileHistory = mobileWorkspaceHistory() ?? { origin: "direct" as const, backDepth: 0 };
-                    if (options?.replace) {
+                    if (options?.replace || mobileHistory.origin === "direct") {
                       replaceUrl(path, mobileWorkspaceHistoryState(mobileHistory.origin, mobileHistory.backDepth));
                     } else {
                       navigate(path, mobileWorkspaceHistoryState(mobileHistory.origin, mobileHistory.backDepth + 1));

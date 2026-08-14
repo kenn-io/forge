@@ -143,6 +143,53 @@ describe("MobileWorkspaceList", () => {
     expect(screen.queryByRole("button", { name: /Open linked item/ })).toBeNull();
   });
 
+  it("keeps Fleet linked items as passive metadata", async () => {
+    const fleetWorkspace = {
+      ...fixture,
+      id: "fleet-ws-1",
+      mr_title: "Fleet workspace",
+      fleet_host_key: "peer-a",
+      fleet_host_name: "Peer A",
+    };
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "peer-a",
+                diagnostics: [],
+                id: "peer-a",
+                kind: "remote",
+                name: "Peer A",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      if (path === "/workspaces") return Promise.resolve({ data: { workspaces: [] } });
+      if (path === "/fleet/hosts/{host_key}/workspaces") {
+        return Promise.resolve({ data: { workspaces: [fleetWorkspace] } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+
+    await screen.findByText("Fleet workspace");
+    expect(screen.getByText("#42")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open linked item #42" })).toBeNull();
+    const fleetItem = screen.getByRole("button", {
+      name: "Linked item #42 unavailable for Fleet workspace",
+    }) as HTMLButtonElement;
+    expect(fleetItem.disabled).toBe(true);
+  });
+
   it("exposes the View sheet and persists display choices", async () => {
     render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
     await screen.findByText("Build mobile workspaces");

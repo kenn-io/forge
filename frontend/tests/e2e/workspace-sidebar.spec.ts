@@ -1047,12 +1047,41 @@ test("direct phone workspace item tabs return to the workspace terminal", async 
   await page.setViewportSize({ width: 390, height: 844 });
   await setupTerminalMocks(page);
 
+  await page.goto("/m/workspaces");
   await page.goto("/m/workspaces/local/ws-123/item");
   await page.getByRole("tab", { name: "Files changed" }).click();
   await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123\/item\/files$/);
 
   await page.getByRole("button", { name: "Back to workspace terminal" }).click();
   await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123$/);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/m\/workspaces$/);
+});
+
+test("phone Fleet workspace keeps its linked item as passive metadata", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page);
+  await page.route("**/api/v1/fleet/hosts/member/workspaces/ws-123", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(testWorkspace),
+    });
+  });
+  await page.route("**/api/v1/fleet/hosts/member/workspaces/ws-123/runtime", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(workspaceRuntime),
+    });
+  });
+
+  await page.goto("/m/workspaces/fleet/member/ws-123");
+
+  await expect(page.locator(".mobile-workspace-terminal__item")).toContainText("#42");
+  await expect(page.getByRole("button", { name: "Open linked PR #42" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Linked PR #42 unavailable for Fleet workspace" })).toBeDisabled();
 });
 
 test("phone workspace setup failure retries through the shared workflow", async ({ page }) => {
@@ -1152,6 +1181,22 @@ test("typed terminal deletion returns the phone workflow to the workspace list",
         },
       ],
     },
+  });
+
+  await page.goto("/m/workspaces/local/ws-123");
+
+  await expect(page).toHaveURL(/\/m\/workspaces$/);
+});
+
+test("missing phone workspace runtime returns to the workspace list", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page);
+  await page.route("**/api/v1/workspaces/ws-123/runtime", async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: "application/problem+json",
+      body: JSON.stringify({ status: 404, detail: "workspace not found" }),
+    });
   });
 
   await page.goto("/m/workspaces/local/ws-123");

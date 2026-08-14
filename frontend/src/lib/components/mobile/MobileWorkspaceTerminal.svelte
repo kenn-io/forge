@@ -200,6 +200,10 @@
     }).pipe(
       Effect.catch((failure) =>
         Effect.sync(() => {
+          if (failure instanceof ApiProblemError && failure.problem.status === 404) {
+            onMissing();
+            return;
+          }
           runtimeError = failureMessage(failure, "Runtime unavailable");
         }),
       ),
@@ -592,7 +596,16 @@
     {/if}
     <div class="mobile-workspace-terminal__actions">
       {#if linkedItem}
-        <button type="button" class="mobile-workspace-terminal__item" aria-label={`Open linked ${linkedItem.itemType === "pr" ? "PR" : "issue"} #${linkedItem.number}`} onclick={onOpenItem}>#{linkedItem.number}</button>
+        <button
+          type="button"
+          class="mobile-workspace-terminal__item"
+          aria-label={hostKey
+            ? `Linked ${linkedItem.itemType === "pr" ? "PR" : "issue"} #${linkedItem.number} unavailable for Fleet workspace`
+            : `Open linked ${linkedItem.itemType === "pr" ? "PR" : "issue"} #${linkedItem.number}`}
+          onclick={onOpenItem}
+          disabled={hostKey !== undefined}
+          title={hostKey ? "Linked item details are not available for Fleet workspaces" : undefined}
+        >#{linkedItem.number}</button>
       {/if}
       <button
         type="button"
@@ -815,6 +828,7 @@
   .mobile-workspace-terminal__identity strong { color: var(--text-primary); font-size: var(--font-size-md); }
   .mobile-workspace-terminal__actions { display: flex; gap: 0.375rem; }
   .mobile-workspace-terminal__item { min-width: auto !important; min-height: 2rem !important; color: var(--text-on-accent) !important; border-color: var(--accent-green) !important; background: var(--accent-green) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
+  .mobile-workspace-terminal__item:disabled { cursor: not-allowed; opacity: 0.55; }
   .mobile-workspace-terminal__stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--terminal-bg, var(--bg-primary)); }
   .mobile-workspace-terminal__viewport { flex: 1; min-height: 0; display: flex; }
   .mobile-workspace-terminal__composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 0.5rem; padding: 0.5rem 0.5rem max(0.5rem, env(safe-area-inset-bottom)); border-top: thin solid var(--border-default); background: var(--bg-surface); }

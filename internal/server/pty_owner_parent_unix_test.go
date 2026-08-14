@@ -34,7 +34,7 @@ func TestServerPtyOwnerHelperStopsWhenParentKilled(t *testing.T) {
 		"-root", root,
 		"-session", session,
 	)
-	var output bytes.Buffer
+	var output lockedBuffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	require.NoError(cmd.Start())

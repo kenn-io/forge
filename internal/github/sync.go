@@ -660,6 +660,7 @@ type pendingSyncRun struct {
 	full                bool
 	priorityRepos       []RepoRef
 	onlyRepos           []RepoRef
+	bypassRepos         []RepoRef
 }
 
 const syncProgressLogInterval = 100
@@ -3746,7 +3747,7 @@ func (s *Syncer) triggerRunWithCadence(
 	onlyRepos []RepoRef,
 ) {
 	s.launchRunWithCadence(
-		ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, false,
+		ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, nil, false,
 	)
 }
 
@@ -3755,6 +3756,7 @@ func (s *Syncer) launchRunWithCadence(
 	bypassNextSyncAfter bool,
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
+	bypassRepos []RepoRef,
 	slotClaimed bool,
 ) bool {
 	if !s.SyncEnabled() {
@@ -3777,6 +3779,7 @@ func (s *Syncer) launchRunWithCadence(
 			bypassNextSyncAfter,
 			priorityRepos,
 			onlyRepos,
+			bypassRepos,
 			slotClaimed,
 		)
 	}()
@@ -5838,7 +5841,7 @@ func (s *Syncer) runOnce(
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 ) {
-	s.runOnceWithSlot(ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, false)
+	s.runOnceWithSlot(ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, nil, false)
 }
 
 func (s *Syncer) runOnceWithSlot(
@@ -5846,6 +5849,7 @@ func (s *Syncer) runOnceWithSlot(
 	bypassNextSyncAfter bool,
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
+	bypassRepos []RepoRef,
 	slotClaimed bool,
 ) {
 	if !s.SyncEnabled() {
@@ -5892,6 +5896,7 @@ func (s *Syncer) runOnceWithSlot(
 				pending.bypassNextSyncAfter,
 				pending.priorityRepos,
 				only,
+				pending.bypassRepos,
 				true,
 			)
 			if !launched {
@@ -5904,6 +5909,10 @@ func (s *Syncer) runOnceWithSlot(
 	if bypassNextSyncAfter {
 		ctx = withRepositoryFeatureCooldownBypass(
 			ctx, s.featureCooldowns.currentGeneration(),
+		)
+	} else if len(bypassRepos) > 0 {
+		ctx = withRepositoryFeatureCooldownBypassForRepos(
+			ctx, s.featureCooldowns.currentGeneration(), bypassRepos,
 		)
 	}
 
@@ -5926,7 +5935,16 @@ func (s *Syncer) runOnceWithSlot(
 	// out, so buckets holding only archived repositories keep an entry
 	// for the cadence advance below.
 	archivedEligibility := s.repoEligibility(repos, nextAfter)
-	repos = s.reconcileArchivedRepos(ctx, repos, archivedEligibility)
+	archivedBypassEligibility := s.repoEligibility(
+		selectRepos(repos, bypassRepos), nil,
+	)
+	repos = s.reconcileArchivedRepos(
+		ctx,
+		repos,
+		archivedEligibility,
+		bypassRepos,
+		archivedBypassEligibility,
+	)
 	repos = prioritizeRepos(repos, priorityRepos)
 
 	total := len(repos)
@@ -5958,7 +5976,12 @@ func (s *Syncer) runOnceWithSlot(
 		refreshed := s.refreshRateLimitSnapshots(rateLimitSnapshotCtx)
 		s.clearRecoveredRateLimitGates(refreshed, nextAfter, s.interval)
 	}
-	eligibleBuckets := s.repoEligibility(repos, nextAfter)
+	cadenceEligibleBuckets := s.repoEligibility(repos, nextAfter)
+	bypassEligibleBuckets := s.repoEligibility(
+		selectRepos(repos, bypassRepos), nil,
+	)
+	eligibleBuckets := maps.Clone(cadenceEligibleBuckets)
+	activeRepos := make([]RepoRef, 0, len(repos))
 
 	var (
 		completed               atomic.Int32
@@ -6000,12 +6023,20 @@ dispatch:
 			s.publishMonotonicProgress(state, done)
 			continue
 		}
-		if !eligibleBuckets[bucket] {
+		eligible := cadenceEligibleBuckets[bucket]
+		if !eligible && repoMatchesAnyIntent(r, bypassRepos) {
+			eligible = bypassEligibleBuckets[bucket]
+			if eligible {
+				eligibleBuckets[bucket] = true
+			}
+		}
+		if !eligible {
 			results[i].Error = "skipped: rate limit throttled"
 			done := completed.Add(1)
 			s.publishMonotonicProgress(state, done)
 			continue
 		}
+		activeRepos = append(activeRepos, r)
 		// Check ctx before entering the select. Go's select picks
 		// pseudo-randomly when both branches are ready, so a naked
 		// `select { case work <- r: case <-ctx.Done(): }` can still
@@ -6035,15 +6066,15 @@ dispatch:
 		// bucket rather than trusting only the workers' markers: the last
 		// repository on a credential can spend the headroom with no later
 		// repository left to observe it.
-		s.revokeExhaustedBuckets(eligibleBuckets, state, repos)
-		s.drainDetailQueue(ctx, eligibleBuckets, repos)
+		s.revokeExhaustedBuckets(eligibleBuckets, state, activeRepos)
+		s.drainDetailQueue(ctx, eligibleBuckets, activeRepos)
 	}
 
 	if !canceled.Load() && ctx.Err() == nil {
 		// The detail drain spends the same credentials, so re-check again
 		// before the comment drain rather than reusing a map the drain that
 		// just ran may have invalidated.
-		s.revokeExhaustedBuckets(eligibleBuckets, state, repos)
+		s.revokeExhaustedBuckets(eligibleBuckets, state, activeRepos)
 		s.drainPendingCommentSyncs(ctx, eligibleBuckets)
 	}
 
@@ -6074,6 +6105,11 @@ dispatch:
 		s.RefreshRateLimitSnapshots(rateLimitSnapshotCtx)
 	}
 	if onlyRepos == nil {
+		for bucket, eligible := range cadenceEligibleBuckets {
+			if eligible && !eligibleBuckets[bucket] {
+				cadenceEligibleBuckets[bucket] = false
+			}
+		}
 		// Archived-only buckets are absent from eligibleBuckets — their
 		// refs dropped out before it was computed — but an attempted
 		// archived refresh must advance the bucket's cadence gate too,
@@ -6081,7 +6117,7 @@ dispatch:
 		// throttle factor. The post-reconciliation value wins for
 		// buckets present in both maps.
 		advance := maps.Clone(archivedEligibility)
-		maps.Copy(advance, eligibleBuckets)
+		maps.Copy(advance, cadenceEligibleBuckets)
 		s.advanceNextSync(advance, s.nextSyncAfter, s.interval)
 	}
 
@@ -6121,18 +6157,25 @@ func (s *Syncer) coalescePendingRunLocked(
 	onlyRepos []RepoRef,
 ) {
 	full := onlyRepos == nil
+	bypassAll := bypassNextSyncAfter && full
+	var bypassRepos []RepoRef
+	if bypassNextSyncAfter && !full {
+		bypassRepos = onlyRepos
+	}
 	if s.pendingRun == nil {
 		s.pendingRun = &pendingSyncRun{
-			bypassNextSyncAfter: bypassNextSyncAfter,
+			bypassNextSyncAfter: bypassAll,
 			full:                full,
 			priorityRepos:       appendUniqueRepoRefs(nil, priorityRepos),
 			onlyRepos:           uniqueRepoRefsPreservingNil(onlyRepos),
+			bypassRepos:         appendUniqueRepoRefs(nil, bypassRepos),
 		}
 		return
 	}
 
 	pending := s.pendingRun
-	pending.bypassNextSyncAfter = pending.bypassNextSyncAfter || bypassNextSyncAfter
+	pending.bypassNextSyncAfter = pending.bypassNextSyncAfter || bypassAll
+	pending.bypassRepos = appendUniqueRepoRefs(pending.bypassRepos, bypassRepos)
 	if full {
 		if !pending.full {
 			pending.priorityRepos = appendUniqueRepoRefs(
@@ -6229,7 +6272,11 @@ func prioritizeRepos(repos, priorityRepos []RepoRef) []RepoRef {
 // before the pass refreshes rate-limit snapshots, so a gate that has
 // recovered upstream defers the refresh by at most one pass.
 func (s *Syncer) reconcileArchivedRepos(
-	ctx context.Context, repos []RepoRef, eligibility map[string]bool,
+	ctx context.Context,
+	repos []RepoRef,
+	eligibility map[string]bool,
+	bypassRepos []RepoRef,
+	bypassEligibility map[string]bool,
 ) []RepoRef {
 	live := make([]RepoRef, 0, len(repos))
 	skipped := make([]string, 0)
@@ -6243,7 +6290,11 @@ func (s *Syncer) reconcileArchivedRepos(
 			continue
 		}
 		bucket, err := s.bucketKeyForRepo(repo, false)
-		if err != nil || !eligibility[bucket] {
+		eligible := eligibility[bucket]
+		if !eligible && repoMatchesAnyIntent(repo, bypassRepos) {
+			eligible = bypassEligibility[bucket]
+		}
+		if err != nil || !eligible {
 			skipped = append(skipped, repo.Owner+"/"+repo.Name)
 			continue
 		}
@@ -6317,6 +6368,12 @@ func sameRepoIntent(a, b RepoRef) bool {
 	}
 	aRoute := repoPriorityKey(a)
 	return aRoute != "" && aRoute == repoPriorityKey(b)
+}
+
+func repoMatchesAnyIntent(repo RepoRef, intents []RepoRef) bool {
+	return slices.ContainsFunc(intents, func(intent RepoRef) bool {
+		return sameRepoIntent(repo, intent)
+	})
 }
 
 func repoPriorityKey(repo RepoRef) string {

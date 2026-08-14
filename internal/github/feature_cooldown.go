@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -51,6 +52,7 @@ type repositoryFeatureCooldownBypassKey struct{}
 
 type repositoryFeatureCooldownBypass struct {
 	throughGeneration uint64
+	repos             []RepoRef
 }
 
 func withRepositoryFeatureCooldownBypass(
@@ -62,11 +64,28 @@ func withRepositoryFeatureCooldownBypass(
 	})
 }
 
+func withRepositoryFeatureCooldownBypassForRepos(
+	ctx context.Context,
+	throughGeneration uint64,
+	repos []RepoRef,
+) context.Context {
+	return context.WithValue(ctx, repositoryFeatureCooldownBypassKey{}, repositoryFeatureCooldownBypass{
+		throughGeneration: throughGeneration,
+		repos:             slices.Clone(repos),
+	})
+}
+
 func repositoryFeatureCooldownBypassFromContext(
 	ctx context.Context,
 ) (repositoryFeatureCooldownBypass, bool) {
 	bypass, ok := ctx.Value(repositoryFeatureCooldownBypassKey{}).(repositoryFeatureCooldownBypass)
 	return bypass, ok
+}
+
+func (b repositoryFeatureCooldownBypass) appliesTo(repo RepoRef) bool {
+	return b.repos == nil || slices.ContainsFunc(b.repos, func(candidate RepoRef) bool {
+		return sameRepoIntent(repo, candidate)
+	})
 }
 
 // repositoryFeatureKeys returns the cooldown keys for a repository. The
@@ -262,6 +281,7 @@ func (s *Syncer) beginRepositoryFeatureProbe(
 	feature string,
 ) (repositoryFeatureProbe, bool) {
 	bypass, bypassEnabled := repositoryFeatureCooldownBypassFromContext(ctx)
+	bypassEnabled = bypassEnabled && bypass.appliesTo(repo)
 	return s.featureCooldowns.beginProbe(
 		repo, feature, s.now().UTC(), bypass, bypassEnabled,
 	)
@@ -273,6 +293,7 @@ func (s *Syncer) beginRepositoryFeatureProbeWithRetry(
 	feature string,
 ) (repositoryFeatureProbe, bool, time.Time) {
 	bypass, bypassEnabled := repositoryFeatureCooldownBypassFromContext(ctx)
+	bypassEnabled = bypassEnabled && bypass.appliesTo(repo)
 	return s.featureCooldowns.beginProbeWithRetry(
 		repo, feature, s.now().UTC(), bypass, bypassEnabled,
 	)

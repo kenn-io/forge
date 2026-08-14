@@ -14796,6 +14796,100 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 	}
 }
 
+// If a scoped refresh turns a queued cadence-respecting full pass into a
+// global bypass, the provider is called for unrelated repositories too.
+func TestQueuedScopedRefreshDoesNotBypassFullRunCadence(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	bucket := RateBucketKey("github", "github.com", "host")
+	database := openTestDB(t)
+	repos := []RepoRef{
+		{Owner: "owner", Name: "selected", PlatformHost: "github.com"},
+		{Owner: "owner", Name: "unrelated", PlatformHost: "github.com"},
+	}
+	disabledErr := platform.RepositoryFeatureDisabled(
+		platform.KindGitHub,
+		"github.com",
+		platform.RepositoryFeatureMergeRequests,
+		errors.New("repository pull requests disabled"),
+	)
+	firstSelectedEntered := make(chan struct{})
+	releaseFirstSelected := make(chan struct{})
+	completions := make(chan struct{}, 2)
+	var (
+		selectedCalls    atomic.Int32
+		unrelatedCalls   atomic.Int32
+		releaseFirstOnce sync.Once
+	)
+	mc := &mockClient{
+		listOpenPRsFn: func(ctx context.Context, _, repo string) ([]*gh.PullRequest, error) {
+			switch repo {
+			case "selected":
+				if selectedCalls.Add(1) == 1 {
+					close(firstSelectedEntered)
+					select {
+					case <-releaseFirstSelected:
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
+					return nil, disabledErr
+				}
+			case "unrelated":
+				unrelatedCalls.Add(1)
+			}
+			return []*gh.PullRequest{}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, database, nil, repos,
+		time.Hour,
+		map[string]*RateTracker{
+			bucket: NewRateTracker(database, "github.com", "host", "rest"),
+		},
+		nil,
+	)
+	syncer.SetParallelism(1)
+	syncer.nextSyncAfter[bucket] = time.Now().Add(time.Hour)
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repos[0], platform.RepositoryFeatureMergeRequests, disabledErr,
+	))
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repos[1], platform.RepositoryFeatureMergeRequests, disabledErr,
+	))
+	syncer.SetOnSyncCompleted(func([]RepoSyncResult) {
+		completions <- struct{}{}
+	})
+	t.Cleanup(func() {
+		releaseFirstOnce.Do(func() { close(releaseFirstSelected) })
+		syncer.Stop()
+	})
+
+	syncer.TriggerRunForRepos(ctx, repos[:1])
+	select {
+	case <-firstSelectedEntered:
+	case <-time.After(5 * time.Second):
+		require.FailNow("initial scoped refresh did not reach the provider")
+	}
+
+	// Retain a cadence-respecting full pass, then merge a user refresh for
+	// only the selected repository while the first pass still owns the slot.
+	syncer.RunOnce(ctx)
+	syncer.TriggerRunForRepos(ctx, repos[:1])
+	releaseFirstOnce.Do(func() { close(releaseFirstSelected) })
+
+	for range 2 {
+		select {
+		case <-completions:
+		case <-time.After(5 * time.Second):
+			require.FailNow("queued sync passes did not complete")
+		}
+	}
+	syncer.Stop()
+
+	require.Equal(int32(2), selectedCalls.Load())
+	require.Zero(unrelatedCalls.Load())
+}
+
 // If a queued pass loses the single-flight handoff to another run, the
 // accepted work is dropped and provider data can remain stale.
 func TestQueuedRunSurvivesSingleFlightHandoff(t *testing.T) {

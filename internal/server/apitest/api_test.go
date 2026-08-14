@@ -1,6 +1,7 @@
 package apitest
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -166,8 +167,20 @@ func TestAPIActivityAndRepoSummariesHideRemovedUpstreamArchiveRows(t *testing.T)
 		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
-	require.NotNil(repo)
 	now := time.Now().UTC().Truncate(time.Second)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "removed-pull-workspace",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   2,
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+		CreatedAt:    now,
+	}))
+	require.NotNil(repo)
 	_, err = database.WriteDB().ExecContext(ctx, `
 		UPDATE forge_merge_requests
 		SET author = CASE number WHEN 1 THEN 'visible-pr-author' ELSE 'removed-pr-author' END,
@@ -261,6 +274,141 @@ func TestAPIActivityAndRepoSummariesHideRemovedUpstreamArchiveRows(t *testing.T)
 	require.Len(*summary.RecentIssues, 1)
 	require.EqualValues(3, (*summary.RecentIssues)[0].Number)
 	require.Equal("Visible issue", (*summary.RecentIssues)[0].Title)
+}
+
+func TestAPIResolveAndAutocompleteHideOnlyRemovedUpstreamItems(t *testing.T) {
+	require := require.New(t)
+	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 1)
+	seedPR(t, database, "acme", "widget", 2)
+	seedIssue(t, database, "acme", "widget", 3, "open")
+	seedIssue(t, database, "acme", "widget", 4, "open")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 1, db.ArchiveLifecycleStateInaccessible)
+	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveLifecycleStateRemovedUpstream)
+	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeIssue, 3, db.ArchiveLifecycleStateInaccessible)
+	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeIssue, 4, db.ArchiveLifecycleStateRemovedUpstream)
+
+	now := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	providerClient.PRs["acme/widget"] = []*gh.PullRequest{{
+		ID: new(int64(2002)), Number: new(2), Title: new("removed pull"), State: new("open"),
+		CreatedAt: &now, UpdatedAt: &now,
+	}}
+	providerClient.Issues["acme/widget"] = []*gh.Issue{{
+		ID: new(int64(4004)), Number: new(4), Title: new("removed issue"), State: new("open"),
+		CreatedAt: &now, UpdatedAt: &now,
+	}}
+
+	client := setupTestClient(t, srv)
+	for _, tc := range []struct {
+		number int64
+		status int
+	}{
+		{number: 1, status: http.StatusOK},
+		{number: 2, status: http.StatusNotFound},
+		{number: 3, status: http.StatusOK},
+		{number: 4, status: http.StatusNotFound},
+	} {
+		resp, resolveErr := client.HTTP.ResolveRepoItemWithResponse(
+			ctx, "github", "acme", "widget", tc.number, nil,
+		)
+		require.NoError(resolveErr)
+		require.Equal(tc.status, resp.StatusCode(), string(resp.Body))
+	}
+
+	trigger, query := "#", ""
+	autocomplete, err := client.HTTP.GetCommentAutocompleteWithResponse(
+		ctx, "github", "acme", "widget",
+		&generated.GetCommentAutocompleteParams{Trigger: &trigger, Q: &query},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, autocomplete.StatusCode(), string(autocomplete.Body))
+	require.NotNil(autocomplete.JSON200)
+	require.NotNil(autocomplete.JSON200.References)
+	require.ElementsMatch([]generated.CommentAutocompleteReference{
+		{Kind: "pull", Number: 1, Title: "Test PR #1", State: "open"},
+		{Kind: "issue", Number: 3, Title: "Test Issue", State: "open"},
+	}, *autocomplete.JSON200.References)
+}
+
+func TestAPIRemovedIssueMutationsReturnNotFoundWithoutProviderWrites(t *testing.T) {
+	req := require.New(t)
+	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
+	ctx := t.Context()
+	issueID := seedIssue(t, database, "acme", "widget", 7, "open")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	req.NoError(err)
+	req.NotNil(repo)
+	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeIssue, 7, db.ArchiveLifecycleStateRemovedUpstream)
+	req.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{{
+		IssueID: issueID, PlatformExternalID: "99", EventType: "issue_comment",
+		CreatedAt: time.Now().UTC(), DedupeKey: "removed-comment-99",
+	}}))
+	now := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	providerIssue := &gh.Issue{
+		ID: new(int64(7007)), Number: new(7), Title: new("original title"), Body: new("original body"),
+		State: new("open"), CreatedAt: &now, UpdatedAt: &now,
+	}
+	providerClient.Issues["acme/widget"] = []*gh.Issue{providerIssue}
+	providerClient.OpenIssues["acme/widget"] = []*gh.Issue{providerIssue}
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		path   string
+		body   any
+	}{
+		{name: "post comment", method: http.MethodPost, path: "/api/v1/issues/github/acme/widget/7/comments", body: map[string]any{"body": "new comment"}},
+		{name: "edit comment", method: http.MethodPatch, path: "/api/v1/issues/github/acme/widget/7/comments/99", body: map[string]any{"body": "edited comment"}},
+		{name: "delete comment", method: http.MethodDelete, path: "/api/v1/issues/github/acme/widget/7/comments/99", body: map[string]any{}},
+		{name: "edit content", method: http.MethodPatch, path: "/api/v1/issues/github/acme/widget/7", body: map[string]any{"title": "changed title"}},
+		{name: "set labels", method: http.MethodPut, path: "/api/v1/issues/github/acme/widget/7/labels", body: map[string]any{"labels": []string{}}},
+		{name: "set assignees", method: http.MethodPut, path: "/api/v1/issues/github/acme/widget/7/assignees", body: map[string]any{"assignees": []string{}}},
+		{name: "set state", method: http.MethodPost, path: "/api/v1/issues/github/acme/widget/7/github-state", body: map[string]any{"state": "closed"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			rr := doLabelAPIRequest(t, srv, tc.method, tc.path, tc.body)
+			require.Equal(http.StatusNotFound, rr.Code, rr.Body.String())
+			var problem generated.ProblemError
+			require.NoError(json.Unmarshal(rr.Body.Bytes(), &problem))
+			require.Equal(generated.ProblemErrorCode("issueNotFound"), problem.Code)
+		})
+	}
+	req.Empty(providerClient.Comments["acme/widget#7"])
+	req.Equal("original title", providerIssue.GetTitle())
+	req.Equal("original body", providerIssue.GetBody())
+	req.Equal("open", providerIssue.GetState())
+}
+
+func TestAPIRefreshPullCIHidesOnlyRemovedUpstreamItems(t *testing.T) {
+	require := require.New(t)
+	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
+	ctx := t.Context()
+	seedPRWithHeadSHA(t, database, "acme", "widget", 1, "visible-head")
+	seedPRWithHeadSHA(t, database, "acme", "widget", 2, "removed-head")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 1, db.ArchiveLifecycleStateInaccessible)
+	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveLifecycleStateRemovedUpstream)
+	providerClient.CheckRuns["acme/widget@visible-head"] = []*gh.CheckRun{}
+
+	client := setupTestClient(t, srv)
+	visible, err := client.HTTP.RefreshPullCiWithResponse(ctx, "github", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, visible.StatusCode(), string(visible.Body))
+	removed, err := client.HTTP.RefreshPullCiWithResponse(ctx, "github", "acme", "widget", 2)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, removed.StatusCode(), string(removed.Body))
+	require.NotNil(removed.ApplicationproblemJSONDefault)
+	require.Equal(
+		generated.ProblemErrorCode("pullNotFound"),
+		removed.ApplicationproblemJSONDefault.Code,
+	)
 }
 
 func TestAPIIssuesHideRemovedUpstreamArchiveRows(t *testing.T) {

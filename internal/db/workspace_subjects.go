@@ -46,6 +46,13 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 		JOIN forge_repos r ON r.id = q.repo_id AND r.lifecycle_state = 'active'
 		JOIN forge_merge_requests p
 		  ON q.item_type = 'pull_request' AND p.repo_id = q.repo_id AND p.number = q.item_number
+		WHERE NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = p.repo_id
+			  AND ai.item_type = 'merge_request'
+			  AND ai.item_number = p.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		)
 		UNION ALL
 		SELECT q.repo_id, q.item_type, q.item_number,
 		       r.platform, r.platform_host, r.owner, r.name, r.repo_path,
@@ -53,7 +60,14 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 		FROM requested q
 		JOIN forge_repos r ON r.id = q.repo_id AND r.lifecycle_state = 'active'
 		JOIN forge_issues i
-		  ON q.item_type = 'issue' AND i.repo_id = q.repo_id AND i.number = q.item_number`
+		  ON q.item_type = 'issue' AND i.repo_id = q.repo_id AND i.number = q.item_number
+		WHERE NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = i.repo_id
+			  AND ai.item_type = 'issue'
+			  AND ai.item_number = i.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		)`
 	rows, err := d.ro.QueryContext(ctx, query, string(requestedJSON))
 	if err != nil {
 		return nil, fmt.Errorf("list workspace subject metadata: %w", err)

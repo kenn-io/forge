@@ -279,6 +279,27 @@ func seedIssueWithAssignees(t *testing.T, database *db.DB, owner, name string, n
 	return issueID
 }
 
+func markArchiveItemLifecycle(
+	t *testing.T,
+	database *db.DB,
+	repoID int64,
+	itemType db.ArchiveItemType,
+	number int,
+	lifecycle db.ArchiveLifecycleState,
+) {
+	t.Helper()
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err := database.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		repoID, itemType, number, fmt.Sprintf("%s-%d", itemType, number),
+		now, now, lifecycle,
+	)
+	require.NoError(t, err)
+}
+
 func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 	identity := db.GitHubRepoIdentity(host, owner, name)
 	identity.PlatformRepoID = "repo-" + owner + "-" + name

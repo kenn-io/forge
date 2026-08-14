@@ -917,6 +917,31 @@ type ArchiveItemTerminal struct {
 	At         time.Time
 }
 
+// IsArchiveItemRemovedUpstream reports whether retained canonical data is
+// hidden by a durable provider-removal tombstone.
+func (d *DB) IsArchiveItemRemovedUpstream(
+	ctx context.Context,
+	repoID int64,
+	itemType ArchiveItemType,
+	itemNumber int,
+) (bool, error) {
+	var exists int
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT 1
+		FROM forge_archive_items
+		WHERE repo_id = ? AND item_type = ? AND item_number = ?
+		  AND lifecycle_state = 'removed_upstream'`,
+		repoID, itemType, itemNumber,
+	).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check removed archive item: %w", err)
+	}
+	return true, nil
+}
+
 func markArchiveItemTerminalTx(ctx context.Context, tx *sql.Tx, t ArchiveItemTerminal) error {
 	result, err := tx.ExecContext(ctx, `
 		UPDATE forge_archive_items

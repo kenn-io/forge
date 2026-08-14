@@ -28,6 +28,10 @@ func (s *Handler) postIssueComment(ctx context.Context, input *postIssueCommentI
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
+	issueID, err := s.lookupIssueID(ctx, repo, input.Number)
+	if err != nil {
+		return nil, err
+	}
 	mutator, err := s.syncer.CommentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
@@ -38,10 +42,6 @@ func (s *Handler) postIssueComment(ctx context.Context, input *postIssueCommentI
 			err, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"create comment on provider failed",
 		)
-	}
-	issueID, err := s.lookupIssueID(ctx, repo, input.Number)
-	if err != nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, err.Error(), nil)
 	}
 	event := platform.DBIssueEvent(issueID, providerEvent)
 	// Preserve the established best-effort local write: provider success is
@@ -63,13 +63,13 @@ func (s *Handler) editIssueComment(ctx context.Context, input *editIssueCommentI
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
+	issueID, err := s.lookupIssueID(ctx, repo, input.Number)
+	if err != nil {
+		return nil, err
+	}
 	mutator, err := s.syncer.CommentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
-	}
-	issueID, err := s.lookupIssueID(ctx, repo, input.Number)
-	if err != nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, err.Error(), nil)
 	}
 	exists, err := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
 	if err != nil {
@@ -118,13 +118,13 @@ func (s *Handler) deleteIssueComment(ctx context.Context, input *deleteIssueComm
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
+	issueID, err := s.lookupIssueID(ctx, repo, input.Number)
+	if err != nil {
+		return nil, err
+	}
 	mutator, err := s.syncer.CommentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
-	}
-	issueID, err := s.lookupIssueID(ctx, repo, input.Number)
-	if err != nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, err.Error(), nil)
 	}
 	exists, err := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
 	if err != nil {
@@ -143,29 +143,39 @@ func (s *Handler) deleteIssueComment(ctx context.Context, input *deleteIssueComm
 }
 
 func (s *Handler) lookupIssueID(ctx context.Context, repo *db.Repo, number int) (int64, error) {
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, number)
+	issue, err := s.requireVisibleIssue(ctx, repo, number)
 	if err != nil {
 		return 0, err
-	}
-	if issue == nil {
-		return 0, fmt.Errorf("issue %s/%s#%d on %s not found", repo.Owner, repo.Name, number, repo.PlatformHost)
 	}
 	return issue.ID, nil
 }
 
+func (s *Handler) requireVisibleIssue(
+	ctx context.Context,
+	repo *db.Repo,
+	number int,
+) (*db.Issue, error) {
+	issue, err := s.db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, number)
+	if err != nil {
+		return nil, httpapi.Internal("get issue failed: " + err.Error())
+	}
+	if issue == nil {
+		return nil, httpapi.NotFound(
+			httpapi.CodeIssueNotFound,
+			fmt.Sprintf("issue %s/%s#%d on %s not found", repo.Owner, repo.Name, number, repo.PlatformHost),
+			nil,
+		)
+	}
+	return issue, nil
+}
+
 func (s *Handler) setIssueLabels(ctx context.Context, input *setIssueLabelsInput) (*setLabelsOutput, error) {
-	repo, names, err := s.resolveRequestedLabelNames(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Body.LabelNames(),
+	repo, issue, names, err := s.resolveRequestedLabelNames(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+		input.Number, input.Body.LabelNames(),
 	)
 	if err != nil {
 		return nil, err
-	}
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
-	if err != nil {
-		return nil, httpapi.Internal("get issue failed")
-	}
-	if issue == nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
 	if s.syncer == nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityLabelMutation)
@@ -184,7 +194,7 @@ func (s *Handler) setIssueLabels(ctx context.Context, input *setIssueLabelsInput
 	if err := s.db.ReplaceIssueLabels(ctx, repo.ID, issue.ID, labels); err != nil {
 		return nil, httpapi.Internal("save issue labels failed")
 	}
-	stored, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	stored, err := s.db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil || stored == nil {
 		return nil, httpapi.Internal("get issue failed")
 	}
@@ -194,31 +204,36 @@ func (s *Handler) setIssueLabels(ctx context.Context, input *setIssueLabelsInput
 func (s *Handler) resolveRequestedLabelNames(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
+	number int,
 	names []string,
-) (*db.Repo, []string, error) {
+) (*db.Repo, *db.Issue, []string, error) {
 	repo, err := s.resolver.LookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
-		return nil, nil, httpapi.ProviderRouteLookupError(err)
+		return nil, nil, nil, httpapi.ProviderRouteLookupError(err)
 	}
 	caps := s.resolver.CapabilitiesForRepo(*repo)
 	if !httpapi.CapabilityEnabled(caps, capabilityReadLabels) {
-		return nil, nil, httpapi.UnsupportedCapability(*repo, capabilityReadLabels)
+		return nil, nil, nil, httpapi.UnsupportedCapability(*repo, capabilityReadLabels)
 	}
 	if !httpapi.CapabilityEnabled(caps, capabilityLabelMutation) {
-		return nil, nil, httpapi.UnsupportedCapability(*repo, capabilityLabelMutation)
+		return nil, nil, nil, httpapi.UnsupportedCapability(*repo, capabilityLabelMutation)
+	}
+	issue, err := s.requireVisibleIssue(ctx, repo, number)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	if names == nil {
-		return nil, nil, httpapi.Validation("body.labels", "labels must be an array")
+		return nil, nil, nil, httpapi.Validation("body.labels", "labels must be an array")
 	}
 	catalog, freshness, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)
 	if err != nil {
-		return nil, nil, httpapi.Internal("list repo labels failed")
+		return nil, nil, nil, httpapi.Internal("list repo labels failed")
 	}
 	if labelCatalogStale(freshness, time.Now().UTC()) && s.syncer != nil {
 		_ = s.syncer.RefreshRepoLabelCatalog(ctx, *repo)
 		catalog, _, err = s.db.ListRepoLabelCatalog(ctx, repo.ID)
 		if err != nil {
-			return nil, nil, httpapi.Internal("list repo labels failed")
+			return nil, nil, nil, httpapi.Internal("list repo labels failed")
 		}
 	}
 	catalogByName := make(map[string]struct{}, len(catalog))
@@ -230,13 +245,13 @@ func (s *Handler) resolveRequestedLabelNames(
 	for _, raw := range names {
 		label := strings.TrimSpace(raw)
 		if label == "" {
-			return nil, nil, httpapi.Validation("body.labels", "label names must not be empty")
+			return nil, nil, nil, httpapi.Validation("body.labels", "label names must not be empty")
 		}
 		if _, ok := seen[label]; ok {
-			return nil, nil, httpapi.Validation("body.labels", fmt.Sprintf("duplicate label %q", label))
+			return nil, nil, nil, httpapi.Validation("body.labels", fmt.Sprintf("duplicate label %q", label))
 		}
 		if _, ok := catalogByName[label]; !ok {
-			return nil, nil, httpapi.NewProblem(
+			return nil, nil, nil, httpapi.NewProblem(
 				http.StatusBadRequest, httpapi.CodeValidationError,
 				fmt.Sprintf("label %q is not in the repository label catalog", label),
 				map[string]any{"field": "body.labels", "label": label},
@@ -245,7 +260,7 @@ func (s *Handler) resolveRequestedLabelNames(
 		seen[label] = struct{}{}
 		resolved = append(resolved, label)
 	}
-	return repo, resolved, nil
+	return repo, issue, resolved, nil
 }
 
 func (s *Handler) setIssueAssignees(ctx context.Context, input *setIssueAssigneesInput) (*setAssigneesOutput, error) {
@@ -255,12 +270,9 @@ func (s *Handler) setIssueAssignees(ctx context.Context, input *setIssueAssignee
 	if err != nil {
 		return nil, err
 	}
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	issue, err := s.requireVisibleIssue(ctx, repo, input.Number)
 	if err != nil {
-		return nil, httpapi.Internal("get issue failed")
-	}
-	if issue == nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
+		return nil, err
 	}
 	mutator, err := s.syncer.AssigneeMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
@@ -322,12 +334,9 @@ func (s *Handler) setIssueGitHubState(ctx context.Context, input *githubStateInp
 	if err != nil {
 		return nil, err
 	}
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	issue, err := s.requireVisibleIssue(ctx, repo, input.Number)
 	if err != nil {
-		return nil, httpapi.Internal("get issue: " + err.Error())
-	}
-	if issue == nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
+		return nil, err
 	}
 	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
 		return nil, err

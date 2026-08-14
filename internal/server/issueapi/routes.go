@@ -234,19 +234,16 @@ func (s *Handler) editIssueContent(ctx context.Context, input *editIssueContentI
 	if err != nil {
 		return nil, err
 	}
+	issue, err := s.requireVisibleIssue(ctx, repo, input.Number)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
 		return nil, err
 	}
 	mutator, err := s.syncer.IssueContentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
-	}
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
-	if err != nil {
-		return nil, httpapi.Internal("get issue failed")
-	}
-	if issue == nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
 	updated, err := mutator.EditIssueContent(ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.Body.Title, input.Body.Body)
 	if err != nil {
@@ -271,7 +268,7 @@ func (s *Handler) editIssueContent(ctx context.Context, input *editIssueContentI
 	if err := s.db.UpdateIssueTitleBody(ctx, issue.ID, newTitle, newBody, updatedAt); err != nil {
 		return nil, httpapi.Internal("update title/body failed")
 	}
-	issue, err = s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	issue, err = s.db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil || issue == nil {
 		return nil, httpapi.Internal("re-read issue failed")
 	}

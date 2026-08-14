@@ -3717,6 +3717,40 @@ func TestListCommentAutocompleteReferences(t *testing.T) {
 	}, refs)
 }
 
+func TestListCommentAutocompleteReferencesHidesOnlyRemovedUpstreamItems(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	insertTestMR(t, d, repoID, 1, "inaccessible pull", now)
+	insertTestMR(t, d, repoID, 2, "removed pull", now)
+	insertTestIssue(t, d, repoID, 3, "inaccessible issue", now)
+	insertTestIssue(t, d, repoID, 4, "removed issue", now)
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES
+			(?, 'merge_request', 1, 'pr-1', ?, ?, 'inaccessible'),
+			(?, 'merge_request', 2, 'pr-2', ?, ?, 'removed_upstream'),
+			(?, 'issue', 3, 'issue-3', ?, ?, 'inaccessible'),
+			(?, 'issue', 4, 'issue-4', ?, ?, 'removed_upstream')`,
+		repoID, now, now, repoID, now, now,
+		repoID, now, now, repoID, now, now,
+	)
+	require.NoError(err)
+
+	refs, err := d.ListCommentAutocompleteReferences(
+		ctx, "github", "github.com", "acme", "widget", "", "", 10,
+	)
+	require.NoError(err)
+	require.ElementsMatch([]CommentAutocompleteReference{
+		{Kind: "pull", Number: 1, Title: "inaccessible pull", State: "open"},
+		{Kind: "issue", Number: 3, Title: "inaccessible issue", State: "open"},
+	}, refs)
+}
+
 func TestListCommentAutocompleteReferencesScopesByProvider(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

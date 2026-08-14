@@ -1045,7 +1045,7 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request: " + err.Error())
 	}
@@ -1077,7 +1077,7 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 		)
 	}
 
-	mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err = s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request: " + err.Error())
 	}
@@ -1809,6 +1809,27 @@ func (s *Server) resolveItem(
 			},
 		}, nil
 	}
+	archiveTypes := []db.ArchiveItemType{
+		db.ArchiveItemTypeMergeRequest,
+		db.ArchiveItemTypeIssue,
+	}
+	switch itemTypeHint {
+	case "pr":
+		archiveTypes = []db.ArchiveItemType{db.ArchiveItemTypeMergeRequest}
+	case "issue":
+		archiveTypes = []db.ArchiveItemType{db.ArchiveItemTypeIssue}
+	}
+	for _, archiveType := range archiveTypes {
+		removed, removedErr := s.db.IsArchiveItemRemovedUpstream(
+			ctx, repo.ID, archiveType, number,
+		)
+		if removedErr != nil {
+			return nil, httpapi.Internal("resolve item: " + removedErr.Error())
+		}
+		if removed {
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "item not found", nil)
+		}
+	}
 
 	if providerKind == platform.KindGitLab && itemTypeHint != "" {
 		var syncErr error
@@ -1905,6 +1926,14 @@ func (s *Server) resolveItem(
 			"err", err,
 		)
 	}
+	resolvedType, visible, resolveErr := s.db.ResolveItemNumber(ctx, repo.ID, number)
+	if resolveErr != nil {
+		return nil, httpapi.Internal("resolve item: " + resolveErr.Error())
+	}
+	if !visible {
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "item not found", nil)
+	}
+	itemType = resolvedType
 
 	return &resolveItemOutput{
 		Body: resolveItemResponse{

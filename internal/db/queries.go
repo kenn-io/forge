@@ -3424,7 +3424,14 @@ func (d *DB) ResolveItemNumber(
 	var exists int
 	err = d.ro.QueryRowContext(ctx,
 		`SELECT 1 FROM forge_merge_requests
-		 WHERE repo_id = ? AND number = ?`,
+		 WHERE repo_id = ? AND number = ?
+		   AND NOT EXISTS (
+		       SELECT 1 FROM forge_archive_items ai
+		       WHERE ai.repo_id = forge_merge_requests.repo_id
+		         AND ai.item_type = 'merge_request'
+		         AND ai.item_number = forge_merge_requests.number
+		         AND ai.lifecycle_state = 'removed_upstream'
+		   )`,
 		repoID, number,
 	).Scan(&exists)
 	if err == nil {
@@ -3436,7 +3443,14 @@ func (d *DB) ResolveItemNumber(
 
 	err = d.ro.QueryRowContext(ctx,
 		`SELECT 1 FROM forge_issues
-		 WHERE repo_id = ? AND number = ?`,
+		 WHERE repo_id = ? AND number = ?
+		   AND NOT EXISTS (
+		       SELECT 1 FROM forge_archive_items ai
+		       WHERE ai.repo_id = forge_issues.repo_id
+		         AND ai.item_type = 'issue'
+		         AND ai.item_number = forge_issues.number
+		         AND ai.lifecycle_state = 'removed_upstream'
+		   )`,
 		repoID, number,
 	).Scan(&exists)
 	if err == nil {
@@ -3457,10 +3471,24 @@ func (d *DB) ResolveItemNumberOfType(
 	switch itemType {
 	case "pr":
 		query = `SELECT 1 FROM forge_merge_requests
-		         WHERE repo_id = ? AND number = ?`
+		         WHERE repo_id = ? AND number = ?
+		           AND NOT EXISTS (
+		               SELECT 1 FROM forge_archive_items ai
+		               WHERE ai.repo_id = forge_merge_requests.repo_id
+		                 AND ai.item_type = 'merge_request'
+		                 AND ai.item_number = forge_merge_requests.number
+		                 AND ai.lifecycle_state = 'removed_upstream'
+		           )`
 	case "issue":
 		query = `SELECT 1 FROM forge_issues
-		         WHERE repo_id = ? AND number = ?`
+		         WHERE repo_id = ? AND number = ?
+		           AND NOT EXISTS (
+		               SELECT 1 FROM forge_archive_items ai
+		               WHERE ai.repo_id = forge_issues.repo_id
+		                 AND ai.item_type = 'issue'
+		                 AND ai.item_number = forge_issues.number
+		                 AND ai.lifecycle_state = 'removed_upstream'
+		           )`
 	default:
 		return "", false, fmt.Errorf("unsupported item type %q", itemType)
 	}
@@ -4009,10 +4037,24 @@ func (d *DB) ListCommentAutocompleteReferences(
 			SELECT 'pull' AS kind, mr.number, mr.title, mr.state, mr.last_activity_at
 			FROM forge_merge_requests mr
 			WHERE mr.repo_id = (SELECT id FROM repo)
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = mr.repo_id
+			        AND ai.item_type = 'merge_request'
+			        AND ai.item_number = mr.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT 'issue' AS kind, i.number, i.title, i.state, i.last_activity_at
 			FROM forge_issues i
 			WHERE i.repo_id = (SELECT id FROM repo)
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = i.repo_id
+			        AND ai.item_type = 'issue'
+			        AND ai.item_number = i.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
 		)
 		SELECT kind, number, title, state
 		FROM candidates

@@ -14919,6 +14919,100 @@ func TestQueuedScopedRefreshDoesNotBypassFullRunCadence(t *testing.T) {
 	require.Zero(unrelatedCalls.Load())
 }
 
+// If the run slot is released before its terminal status is ordered, a new
+// run can publish Running:true before the completed run overwrites it with
+// Running:false.
+func TestTerminalStatusPublicationKeepsRunSlotUntilOrdered(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	providerEntered := make(chan struct{})
+	releaseProvider := make(chan struct{})
+	firstCompleted := make(chan struct{})
+	var (
+		providerCalls   atomic.Int32
+		completionCalls atomic.Int32
+		releaseOnce     sync.Once
+	)
+	mock := &mockClient{
+		listOpenPRsFn: func(ctx context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			if providerCalls.Add(1) == 1 {
+				close(providerEntered)
+				select {
+				case <-releaseProvider:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return []*gh.PullRequest{}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock}, openTestDB(t), nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Hour, nil, nil,
+	)
+	syncer.SetOnSyncCompleted(func([]RepoSyncResult) {
+		if completionCalls.Add(1) == 1 {
+			close(firstCompleted)
+		}
+	})
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(releaseProvider) })
+		syncer.Stop()
+	})
+
+	initialDone := make(chan struct{})
+	go func() {
+		defer close(initialDone)
+		syncer.RunOnce(ctx)
+	}()
+	select {
+	case <-providerEntered:
+	case <-time.After(5 * time.Second):
+		require.FailNow("initial sync did not reach the provider")
+	}
+
+	// Widen the terminal-publication boundary without replacing it: the
+	// provider pass is real, and publishStatus still owns statusMu.
+	syncer.statusMu.Lock()
+	statusLocked := true
+	t.Cleanup(func() {
+		if statusLocked {
+			syncer.statusMu.Unlock()
+		}
+	})
+	releaseOnce.Do(func() { close(releaseProvider) })
+	select {
+	case <-firstCompleted:
+	case <-time.After(5 * time.Second):
+		require.FailNow("initial sync did not reach completion")
+	}
+	require.Never(
+		func() bool { return !syncer.running.Load() },
+		100*time.Millisecond,
+		time.Millisecond,
+		"run slot was released while terminal status publication was blocked",
+	)
+
+	require.True(syncer.TriggerRun(ctx))
+	syncer.statusMu.Unlock()
+	statusLocked = false
+	require.Eventually(
+		func() bool {
+			return completionCalls.Load() == 2 &&
+				providerCalls.Load() == 2 && !syncer.Status().Running
+		},
+		5*time.Second,
+		time.Millisecond,
+		"coalesced follow-up did not reach terminal status",
+	)
+	select {
+	case <-initialDone:
+	case <-time.After(5 * time.Second):
+		require.FailNow("initial sync did not finish its handoff")
+	}
+}
+
 // If a queued pass loses the single-flight handoff to another run, the
 // accepted work is dropped and provider data can remain stale.
 func TestQueuedRunSurvivesSingleFlightHandoff(t *testing.T) {

@@ -74,8 +74,9 @@ migrate ticker-driven sync or refresh loops into `backoff/v5`
   bound to stable repository identity when coalesced with full work. Ad-hoc
   triggers return only after admission; provider execution stays asynchronous.
   (`internal/github/sync.go::triggerRunWithCadence`)
-- Public sync status stays running across retained follow-up handoffs and becomes
-  terminal only when the single-flight slot is released.
+- Public sync status stays running across retained follow-up handoffs; terminal
+  publication is ordered with slot release so later runs cannot be overwritten
+  by a stale idle snapshot.
   (`internal/github/sync.go::runOnceWithSlot`)
 
 Repository-disabled issue and merge-request scopes use a 24-hour in-memory

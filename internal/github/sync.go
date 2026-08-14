@@ -878,9 +878,9 @@ type Syncer struct {
 	// rows with older timestamps than the feed's top cursor, which the
 	// feed's incremental poll would miss without a full reload nudge.
 	onNotificationSyncComplete func()
-	// statusMu serializes publishStatus so worker goroutines
-	// can't interleave updates and deliver out-of-order snapshots
-	// to SSE subscribers.
+	// statusMu serializes status publication and terminal run-slot release so
+	// worker goroutines and later runs cannot deliver out-of-order snapshots.
+	// When both locks are needed, statusMu must be acquired before runMu.
 	statusMu sync.Mutex
 
 	// failedRepos tracks repos whose last sync had a partial failure
@@ -1139,6 +1139,10 @@ func (s *Syncer) consumeRepoFailed(repo RepoRef) failScope {
 func (s *Syncer) publishStatus(status *SyncStatus) {
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
+	s.publishStatusLocked(status)
+}
+
+func (s *Syncer) publishStatusLocked(status *SyncStatus) {
 	s.status.Store(status)
 	if s.onStatusChange != nil {
 		s.onStatusChange(status)
@@ -5916,6 +5920,10 @@ func (s *Syncer) runOnceWithSlot(
 	}
 	var terminalStatus *SyncStatus
 	defer func() {
+		// Serialize the terminal snapshot with slot release. A new run may
+		// claim runMu as soon as running becomes false, but its Running:true
+		// publication must follow this pass's terminal status.
+		s.statusMu.Lock()
 		s.runMu.Lock()
 		pending := s.pendingRun
 		s.pendingRun = nil
@@ -5928,26 +5936,27 @@ func (s *Syncer) runOnceWithSlot(
 			s.exclusiveRun = !pending.full
 		}
 		s.runMu.Unlock()
-		if pending != nil {
-			only := pending.onlyRepos
-			if pending.full {
-				only = nil
+		if pending == nil {
+			if terminalStatus != nil {
+				s.publishStatusLocked(terminalStatus)
 			}
-			launched := s.launchClaimedRun(
-				context.Background(),
-				pending.bypassNextSyncAfter,
-				pending.priorityRepos,
-				only,
-				pending.bypassRepos,
-			)
-			if !launched {
-				s.releaseRunSlot()
-			} else {
-				return
-			}
+			s.statusMu.Unlock()
+			return
 		}
-		if terminalStatus != nil {
-			s.publishStatus(terminalStatus)
+		s.statusMu.Unlock()
+		only := pending.onlyRepos
+		if pending.full {
+			only = nil
+		}
+		launched := s.launchClaimedRun(
+			context.Background(),
+			pending.bypassNextSyncAfter,
+			pending.priorityRepos,
+			only,
+			pending.bypassRepos,
+		)
+		if !launched {
+			s.releaseRunSlotWithStatus(terminalStatus)
 		}
 	}()
 
@@ -6192,6 +6201,15 @@ func (s *Syncer) releaseRunSlot() {
 	s.exclusiveRun = false
 	s.pendingRun = nil
 	s.runMu.Unlock()
+}
+
+func (s *Syncer) releaseRunSlotWithStatus(status *SyncStatus) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	s.releaseRunSlot()
+	if status != nil {
+		s.publishStatusLocked(status)
+	}
 }
 
 // coalescePendingRunLocked records work accepted while another pass owns the

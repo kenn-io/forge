@@ -890,10 +890,10 @@ Not every visibility control means "remove this entity entirely."
   load or suppress an earlier successful convergence read, and foreground failure
   must not suppress same-scope convergence. Request-start order decides between
   successful snapshots, and a logical filter-scope change still fences the old result.
-  A fenced foreground owner still settles loading, while its stale failure stays hidden
-  (`frontend/src/lib/stores/activity-workflow.ts::ActivityWorkflowLive`). An owned
-  successful snapshot clears any earlier error banner
-  (`frontend/src/lib/stores/activity.svelte.ts::reconcileActivityEffect`).
+  A later successful snapshot fences older foreground failures; without one, a fenced
+  foreground owner still settles loading (`frontend/src/lib/stores/activity-workflow.ts::ActivityWorkflowLive`).
+  Every authoritative snapshot projection clears an earlier error banner
+  (`frontend/src/lib/stores/activity.svelte.ts::createActivityStore`).
 - After a sync trigger is accepted, retain optimistic running state through the
   pre-trigger idle snapshot; accept completion only after running or a newer `last_run_at`
   (`frontend/src/lib/stores/sync.svelte.ts::applySyncStatus`).

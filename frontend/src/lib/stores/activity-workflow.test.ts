@@ -461,4 +461,38 @@ it.layer(ActivityWorkflowLive)("activity polling", (it) => {
       assert.deepStrictEqual(yield* Ref.get(projected), ["reconciliation"]);
     }),
   );
+
+  it.effect("suppresses a foreground failure after a replacement poll succeeds", () =>
+    Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      const foregroundStarted = yield* Deferred.make<void>();
+      const releaseForeground = yield* Deferred.make<void>();
+      const failurePublished = yield* Ref.make(false);
+      const projected = yield* Ref.make<string[]>([]);
+      const project = (value: string) => Ref.update(projected, (values) => [...values, value]);
+
+      const foreground = yield* Effect.forkChild(
+        Effect.exit(
+          workflow.load(
+            "activity",
+            Deferred.succeed(foregroundStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseForeground)),
+              Effect.andThen(Effect.fail("stale foreground failure")),
+            ),
+            project,
+            Ref.set(failurePublished, true),
+          ),
+        ),
+      );
+      yield* Deferred.await(foregroundStarted);
+
+      yield* workflow.pollSnapshotRead("activity", Effect.succeed("replacement"), project);
+      yield* Deferred.succeed(releaseForeground, undefined);
+
+      const foregroundExit = yield* Fiber.join(foreground);
+      assert.isTrue(Exit.isSuccess(foregroundExit));
+      assert.isFalse(yield* Ref.get(failurePublished));
+      assert.deepStrictEqual(yield* Ref.get(projected), ["replacement"]);
+    }),
+  );
 });

@@ -54,9 +54,12 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
       return Ref.get(projectionState).pipe(Effect.map((current) => current.generation === generation));
     }
 
-    function isCurrentClaim(generation: number, scope: string): Effect.Effect<boolean> {
+    function foregroundOwnership(generation: number, scope: string, requestStart: number) {
       return Ref.get(projectionState).pipe(
-        Effect.map((current) => current.generation === generation && current.scope === scope),
+        Effect.map((current) => {
+          const loading = current.generation === generation && current.successfulSnapshotStart < requestStart;
+          return { failure: loading && current.scope === scope, loading };
+        }),
       );
     }
 
@@ -154,15 +157,13 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
                   : isCurrent(claim.generation).pipe(Effect.flatMap((current) => (current ? onFailure : Effect.void)));
               return settle.pipe(Effect.andThen(Effect.fail(failure)));
             }
-            return isCurrentClaim(claim.generation, scope).pipe(
-              Effect.flatMap((current) => {
-                if (current) {
+            return foregroundOwnership(claim.generation, scope, claim.requestStart).pipe(
+              Effect.flatMap((ownership) => {
+                if (ownership.failure) {
                   return (onFailure ?? Effect.void).pipe(Effect.andThen(Effect.fail(failure)));
                 }
-                return isCurrent(claim.generation).pipe(
-                  Effect.flatMap((ownsLoading) => (ownsLoading ? (onFailure ?? Effect.void) : Effect.void)),
-                  Effect.as(suppressedForegroundFailure),
-                );
+                const settle = ownership.loading ? (onFailure ?? Effect.void) : Effect.void;
+                return settle.pipe(Effect.as(suppressedForegroundFailure));
               }),
             );
           }),
@@ -182,8 +183,8 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
             }),
           );
         } else if (owner === "foreground" && onFailure !== undefined) {
-          const ownsLoading = yield* isCurrent(claim.generation);
-          if (ownsLoading) yield* onFailure;
+          const ownership = yield* foregroundOwnership(claim.generation, scope, claim.requestStart);
+          if (ownership.loading) yield* onFailure;
         }
       });
     }

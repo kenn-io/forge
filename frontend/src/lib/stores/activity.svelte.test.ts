@@ -986,6 +986,52 @@ describe("activity store markNotificationSeen", () => {
 });
 
 describe("activity polling recovery", () => {
+  it("clears a foreground error when a replacement poll succeeds afterward", async () => {
+    const pendingPoll = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: boolean };
+      error: null;
+    }>();
+    const initial = notificationItem("ntf:initial", "unread");
+    const replacement = notificationItem("ntf:replacement", "unread");
+    let feedReads = 0;
+    const client = {
+      GET: vi.fn((path: string) => {
+        if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+        feedReads += 1;
+        if (feedReads === 1) return Promise.resolve({ data: { items: [initial], capped: false }, error: null });
+        if (feedReads === 2) return pendingPoll.promise;
+        if (feedReads === 3) {
+          return Promise.resolve({
+            error: {
+              code: "serviceUnavailable",
+              detail: "activity temporarily unavailable",
+              title: "Service unavailable",
+              type: "about:blank",
+            },
+            response: new Response(null, { status: 503 }),
+          });
+        }
+        if (feedReads === 4) {
+          return Promise.resolve({ data: { items: [replacement], capped: false }, error: null });
+        }
+        throw new Error(`unexpected activity request ${feedReads}`);
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems()).toEqual([initial]));
+
+    store.startActivityPolling();
+    await vi.waitFor(() => expect(feedReads).toBe(2));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityError()).toBe("activity temporarily unavailable"));
+
+    pendingPoll.resolve({ data: { items: [], capped: true }, error: null });
+
+    await vi.waitFor(() => expect(store.getActivityItems()).toEqual([replacement]));
+    expect(store.getActivityError()).toBeNull();
+  });
+
   it("refreshes author candidates when polling appends new activity", async () => {
     let authors = ["Alice"];
     let feedReads = 0;

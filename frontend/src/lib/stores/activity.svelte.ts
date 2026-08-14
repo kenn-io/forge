@@ -462,6 +462,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           workspaceActivity = result.response.workspace_activity ?? [];
           capped = result.response.capped;
           loading = false;
+          storeError = null;
         });
       const clearLoading = Effect.sync(() => {
         loading = false;
@@ -623,6 +624,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
               workspaceActivity = result.response.workspace_activity ?? [];
               capped = result.response.capped;
               loading = false;
+              storeError = null;
               return true;
             }
             workspaceActivity = result.response.workspace_activity ?? [];

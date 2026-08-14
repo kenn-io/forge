@@ -942,6 +942,42 @@ func (m *Manager) verifyWorkspaceRouteUnoccupied(
 	)
 }
 
+func (m *Manager) verifyWorkspaceSourceVisible(
+	ctx context.Context, ws *Workspace,
+) error {
+	if ws == nil {
+		return ErrWorkspaceNotFound
+	}
+	if m.db == nil ||
+		(ws.ItemType != db.WorkspaceItemTypePullRequest &&
+			ws.ItemType != db.WorkspaceItemTypeIssue) {
+		return nil
+	}
+	repo, err := m.workspaceRepo(
+		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
+	if err != nil {
+		return fmt.Errorf("look up workspace source repository: %w", err)
+	}
+	if repo == nil {
+		return fmt.Errorf("workspace source repository is not available")
+	}
+	itemType := db.ArchiveItemTypeIssue
+	if ws.ItemType == db.WorkspaceItemTypePullRequest {
+		itemType = db.ArchiveItemTypeMergeRequest
+	}
+	removed, err := m.db.IsArchiveItemRemovedUpstream(
+		ctx, repo.ID, itemType, ws.ItemNumber,
+	)
+	if err != nil {
+		return fmt.Errorf("check workspace source item visibility: %w", err)
+	}
+	if removed {
+		return fmt.Errorf("workspace source item was removed upstream")
+	}
+	return nil
+}
+
 // verifyRepoRouteUnoccupied fails closed on routes with contested history so
 // network git operations cannot exchange data with a route's new occupant.
 // Managers without a database (unmanaged local checkouts) skip the check.
@@ -978,6 +1014,12 @@ func (m *Manager) SetupWithWorktreeBasePath(
 		ws.ID, workspaceSetupStageSetup, "started",
 		"starting workspace setup",
 	)
+	// Admission and execution are separate for initial setup, retries, and
+	// recovery. Recheck the source at execution time before any Git or provider
+	// access so a retained tombstone cannot materialize a workspace.
+	if err := m.verifyWorkspaceSourceVisible(ctx, ws); err != nil {
+		return m.failSetup(ctx, ws.ID, workspaceSetupStageSetup, err)
+	}
 	// Setup is the chokepoint for every path that fetches code — initial
 	// creation, retries, and recovery — so it re-checks the same route
 	// fail-closed condition InsertWorkspace enforced at creation time.

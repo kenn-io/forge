@@ -9538,6 +9538,15 @@ func (s *Syncer) fetchMRDetail(
 	number int,
 	cloneFetchOK bool,
 ) (int, error) {
+	removed, err := s.removedUpstreamForLiveSync(
+		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("check PR #%d visibility: %w", number, err)
+	}
+	if removed {
+		return 0, nil
+	}
 	calls, err := s.fetchMRDetailWithRouteFence(
 		ctx, repo, repoID, number, cloneFetchOK,
 	)
@@ -10169,6 +10178,15 @@ func (s *Syncer) fetchIssueDetail(
 	repoID int64,
 	number int,
 ) (int, error) {
+	removed, err := s.removedUpstreamForLiveSync(
+		ctx, repoID, db.ArchiveItemTypeIssue, number,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("check issue #%d visibility: %w", number, err)
+	}
+	if removed {
+		return 0, nil
+	}
 	calls := 0
 	issueReader, err := s.issueReaderFor(repo)
 	if err != nil {
@@ -12396,6 +12414,22 @@ func (s *Syncer) syncMRForRepo(
 	)
 }
 
+// removedUpstreamForLiveSync fences delayed live work against an archive
+// tombstone created after the work was queued. Archive hydration deliberately
+// bypasses this check because it must fetch terminal items to repair them when
+// they reappear upstream.
+func (s *Syncer) removedUpstreamForLiveSync(
+	ctx context.Context,
+	repoID int64,
+	itemType db.ArchiveItemType,
+	number int,
+) (bool, error) {
+	if IsArchiveSyncBudgetContext(ctx) {
+		return false, nil
+	}
+	return s.db.IsArchiveItemRemovedUpstream(ctx, repoID, itemType, number)
+}
+
 type mergeRequestFetchEvidence struct {
 	merged         bool
 	headSHA        string
@@ -12458,6 +12492,15 @@ func (s *Syncer) syncMRForRepoResolved(
 		slog.Debug("skipping MR detail sync for archived repo",
 			"repo", owner+"/"+name, "number", number,
 		)
+		return nil
+	}
+	removed, err := s.removedUpstreamForLiveSync(
+		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
+	)
+	if err != nil {
+		return fmt.Errorf("check MR #%d visibility: %w", number, err)
+	}
+	if removed {
 		return nil
 	}
 	ctx = withCloneRepositoryIdentity(ctx, repo)

@@ -11862,6 +11862,91 @@ func TestDetailDrainSkipsRepoArchivedMidPass(t *testing.T) {
 	assert.True(tracked[0].Archived)
 }
 
+func TestDetailDrainRechecksRemovedUpstreamAfterQueueConstruction(t *testing.T) {
+	for _, itemType := range []db.ArchiveItemType{
+		db.ArchiveItemTypeMergeRequest,
+		db.ArchiveItemTypeIssue,
+	} {
+		t.Run(string(itemType), func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			d := openTestDB(t)
+			now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+			repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity(
+				"github.com", "owner", "repo",
+			))
+			require.NoError(err)
+			pr := buildOpenPR(7, now)
+			issue := buildOpenIssue(7, now)
+			if itemType == db.ArchiveItemTypeMergeRequest {
+				normalized, normalizeErr := NormalizePR(repoID, pr)
+				require.NoError(normalizeErr)
+				_, err = d.UpsertMergeRequest(ctx, normalized)
+			} else {
+				normalized, normalizeErr := NormalizeIssue(repoID, issue)
+				require.NoError(normalizeErr)
+				_, err = d.UpsertIssue(ctx, normalized)
+			}
+			require.NoError(err)
+
+			var detailCalls atomic.Int32
+			client := &mockClient{
+				getPullRequestFn: func(
+					context.Context, string, string, int,
+				) (*gh.PullRequest, error) {
+					detailCalls.Add(1)
+					return pr, nil
+				},
+				getIssueFn: func(
+					context.Context, string, string, int,
+				) (*gh.Issue, error) {
+					detailCalls.Add(1)
+					return issue, nil
+				},
+			}
+			client.getRepositoryFn = func(
+				_ context.Context, owner, name string,
+			) (*gh.Repository, error) {
+				_, insertErr := d.WriteDB().ExecContext(ctx, `
+					INSERT OR IGNORE INTO forge_archive_items (
+						repo_id, item_type, item_number, provider_item_id,
+						provider_created_at, provider_updated_at, lifecycle_state
+					) VALUES (?, ?, ?, ?, ?, ?, 'removed_upstream')`,
+					repoID, itemType, 7, string(itemType)+"-7", now, now,
+				)
+				require.NoError(insertErr)
+				id := int64(1)
+				nodeID := "repo-" + owner + "-" + name
+				return &gh.Repository{
+					ID: &id, NodeID: &nodeID, Name: &name,
+					Owner: &gh.User{Login: &owner},
+				}, nil
+			}
+			syncer := NewSyncer(
+				map[string]Client{"github.com": client}, d, nil,
+				[]RepoRef{{
+					Platform: platform.KindGitHub, PlatformHost: "github.com",
+					Owner: "owner", Name: "repo",
+				}},
+				time.Minute, nil, testBudget(500),
+			)
+			bucket, err := syncer.bucketKeyForRepo(RepoRef{
+				Platform: platform.KindGitHub, PlatformHost: "github.com",
+				Owner: "owner", Name: "repo",
+			}, false)
+			require.NoError(err)
+
+			syncer.drainDetailQueue(ctx, map[string]bool{bucket: true}, []RepoRef{{
+				Platform: platform.KindGitHub, PlatformHost: "github.com",
+				Owner: "owner", Name: "repo",
+			}})
+
+			require.Zero(detailCalls.Load(),
+				"detail drain must recheck a queued item after repository resolution")
+		})
+	}
+}
+
 func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -11912,6 +11997,50 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
 	assert.True(tracked[0].Archived)
+}
+
+func TestSyncWatchedMRsSkipsRemovedUpstreamPR(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity(
+		"github.com", "acme", "app",
+	))
+	require.NoError(err)
+	pr := buildOpenPR(7, now)
+	normalized, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalized)
+	require.NoError(err)
+	_, err = d.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, 'merge_request', ?, ?, ?, ?, 'removed_upstream')`,
+		repoID, 7, "pr-7", now, now,
+	)
+	require.NoError(err)
+
+	client := &detailTrackingClient{}
+	client.singlePR = pr
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, d, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app",
+		}},
+		time.Hour, nil, nil,
+	)
+	syncer.SetWatchedMRs([]WatchedMR{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "app", Number: 7,
+	}})
+
+	syncer.syncWatchedMRs(ctx)
+
+	require.Zero(client.getPRCalls.Load(),
+		"a stale watch entry must not fetch a removed PR")
 }
 
 func TestSyncMRForRepoHydratesArchivedRepoUnderArchiveBudget(t *testing.T) {

@@ -7064,6 +7064,72 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 	assert.Equal("error", stored.Status)
 }
 
+func TestSetupFailsBeforeGitWhenSourceItemWasRemovedUpstream(t *testing.T) {
+	for _, itemType := range []string{
+		db.WorkspaceItemTypePullRequest,
+		db.WorkspaceItemTypeIssue,
+	} {
+		t.Run(string(itemType), func(t *testing.T) {
+			require := require.New(t)
+			d := openTestDB(t)
+			repoID := seedRepo(t, d, "github.com", "acme", "widget")
+			if itemType == db.WorkspaceItemTypePullRequest {
+				seedMR(t, d, repoID, 7, "feature/removed")
+			} else {
+				seedIssue(t, d, repoID, 7, "Removed issue")
+			}
+
+			mgr := NewManager(d, t.TempDir())
+			var resolverCalls atomic.Int32
+			var ws *Workspace
+			var err error
+			if itemType == db.WorkspaceItemTypePullRequest {
+				ws, err = mgr.Create(
+					t.Context(), "github", "github.com", "acme", "widget", 7,
+				)
+			} else {
+				ws, err = mgr.CreateIssue(
+					t.Context(), "github.com", "acme", "widget", 7,
+					CreateIssueOptions{Provider: "github"},
+				)
+			}
+			require.NoError(err)
+			require.NotNil(ws)
+			mgr.SetWorktreeBasePathResolver(func(
+				context.Context, string, string, string, string,
+			) (string, bool, error) {
+				resolverCalls.Add(1)
+				return "", false, errors.New("git setup must not start")
+			})
+
+			archiveType := db.ArchiveItemTypeIssue
+			if itemType == db.WorkspaceItemTypePullRequest {
+				archiveType = db.ArchiveItemTypeMergeRequest
+			}
+			now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+			_, err = d.WriteDB().ExecContext(t.Context(), `
+				INSERT INTO forge_archive_items (
+					repo_id, item_type, item_number, provider_item_id,
+					provider_created_at, provider_updated_at, lifecycle_state
+				) VALUES (?, ?, ?, ?, ?, ?, 'removed_upstream')`,
+				repoID, archiveType, 7, string(archiveType)+"-7", now, now,
+			)
+			require.NoError(err)
+
+			err = mgr.Setup(t.Context(), ws)
+
+			require.ErrorContains(err, "source item")
+			require.Zero(resolverCalls.Load(),
+				"workspace setup must stop before resolving a Git base")
+			require.NoDirExists(ws.WorktreePath)
+			stored, getErr := d.GetWorkspace(t.Context(), ws.ID)
+			require.NoError(getErr)
+			require.NotNil(stored)
+			require.Equal("error", stored.Status)
+		})
+	}
+}
+
 func TestRefreshWorkspaceHeadRepoSnapshotSurvivesQueuedReconciliation(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

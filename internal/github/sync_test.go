@@ -7652,6 +7652,9 @@ type dedupGetUserClient struct {
 	mockClient
 	getUserCount atomic.Int32
 	block        chan struct{}
+	listEntered  chan struct{}
+	listRelease  chan struct{}
+	userEntered  chan struct{}
 	author       string
 	now          time.Time
 }
@@ -7659,6 +7662,8 @@ type dedupGetUserClient struct {
 func (c *dedupGetUserClient) ListOpenPullRequests(
 	_ context.Context, _, repo string,
 ) ([]*gh.PullRequest, error) {
+	c.listEntered <- struct{}{}
+	<-c.listRelease
 	number := 1
 	if repo == "r2" {
 		number = 2
@@ -7672,6 +7677,7 @@ func (c *dedupGetUserClient) GetUser(
 	_ context.Context, login string,
 ) (*gh.User, error) {
 	c.getUserCount.Add(1)
+	c.userEntered <- struct{}{}
 	<-c.block
 	name := "Display " + login
 	return &gh.User{Login: &login, Name: &name}, nil
@@ -7686,9 +7692,12 @@ func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
 	now := time.Date(2026, 4, 8, 12, 0, 0, 0, time.UTC)
 
 	mc := &dedupGetUserClient{
-		block:  make(chan struct{}),
-		author: author,
-		now:    now,
+		block:       make(chan struct{}),
+		listEntered: make(chan struct{}, 2),
+		listRelease: make(chan struct{}),
+		userEntered: make(chan struct{}, 1),
+		author:      author,
+		now:         now,
 	}
 
 	syncer := NewSyncer(
@@ -7707,14 +7716,26 @@ func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait until at least one worker has entered GetUser. Sleeping
-	// does not prove the second worker has arrived yet, but the
-	// blocked fn holds the singleflight slot open until we release
-	// it, so any arriving worker will be coalesced.
-	require.Eventually(func() bool {
-		return mc.getUserCount.Load() >= 1
-	}, 2*time.Second, 5*time.Millisecond,
-		"no worker reached GetUser")
+	// Hold both repository workers at the PR-list boundary. This keeps the
+	// assertion focused on display-name coalescing instead of imposing a short
+	// wall-clock deadline on the complete repository-sync startup path.
+	startupDeadline := time.NewTimer(30 * time.Second)
+	defer startupDeadline.Stop()
+	for range 2 {
+		select {
+		case <-mc.listEntered:
+		case <-startupDeadline.C:
+			require.Fail("both workers did not reach pull request listing")
+			return
+		}
+	}
+	close(mc.listRelease)
+
+	select {
+	case <-mc.userEntered:
+	case <-time.After(30 * time.Second):
+		require.Fail("no worker reached GetUser")
+	}
 
 	// Give the second worker plenty of time to enter singleflight.
 	time.Sleep(100 * time.Millisecond)
@@ -7723,7 +7744,7 @@ func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		require.Fail("RunOnce did not complete")
 	}
 

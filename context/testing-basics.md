@@ -10,6 +10,8 @@ fixtures, or changing shell-script coverage.
   ordered priority groups; keep the shared Go cache across worktrees (`scripts/run-hook-go.sh`, `prek.toml:53`).
 - `-short` must skip tests that build and launch real kenn-forge daemons or run
   load-sensitive sync E2Es; those flows belong in full Go lanes (`cmd/kenn-forge/lock_e2e_test.go::buildForgeWithLDFlags`, `internal/server/e2etest/sync_cooldown_test.go::TestTriggerSyncE2EPrioritizesNonDefaultHostFilter`).
+- Race tests must synchronize at the narrow boundary under test; do not put a short
+  wall-clock deadline around an entire sync pipeline (`internal/github/sync_test.go::TestResolveDisplayNameDedupsConcurrentLookups`).
 - Pre-commit runs frontend core checks without full-project Effect diagnostics;
   explicit frontend checks and CI retain Effect coverage (`Makefile::frontend-check-no-deps`).
 - Do not use `-v` unless the user requests it or a particular failure genuinely

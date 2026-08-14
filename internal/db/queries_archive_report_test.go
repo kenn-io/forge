@@ -59,6 +59,58 @@ func TestArchiveReportActivityUsesHalfOpenAttributionAndProviderIdentity(t *test
 		"equal logins on different providers remain distinct report inputs")
 }
 
+func TestArchiveReportActivityHidesRemovedUpstreamParents(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	start := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	repoID := insertArchiveReportRepo(t, database, RepoIdentity{
+		Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "widget",
+	})
+
+	issueID := insertArchiveReportIssue(
+		t, database, repoID, 1, "issue-1", "Removed issue", "sam", start,
+	)
+	mrID := insertArchiveReportMR(
+		t, database, repoID, 2, "mr-2", "Removed merge request", "sam", start,
+	)
+	insertArchiveReportIssueEvent(
+		t, database, issueID, "issue_comment", "comment-1", "removed", "sam", start,
+	)
+	insertArchiveReportMREvent(
+		t, database, mrID, "review", "review-2", "removed", "sam", start,
+	)
+	visibleID := insertArchiveReportMR(
+		t, database, repoID, 3, "mr-3", "Inaccessible merge request", "sam", start,
+	)
+	insertArchiveReportMREvent(
+		t, database, visibleID, "review", "review-3", "cached", "sam", start,
+	)
+	_, err := database.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES
+			(?, 'issue', 1, 'issue-1', ?, ?, 'removed_upstream'),
+			(?, 'merge_request', 2, 'mr-2', ?, ?, 'removed_upstream'),
+			(?, 'merge_request', 3, 'mr-3', ?, ?, 'inaccessible')`,
+		repoID, start, start, repoID, start, start, repoID, start, start,
+	)
+	require.NoError(err)
+
+	tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
+	require.NoError(err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	rows, err := LoadArchiveReportActivity(t.Context(), tx, []int64{repoID}, start, end)
+	require.NoError(err)
+	require.NoError(tx.Commit())
+	require.Len(rows, 2)
+	require.Equal([]ArchiveReportActivityKind{
+		ArchiveReportActivityMergeRequest,
+		ArchiveReportActivityReview,
+	}, archiveReportKinds(rows))
+}
+
 func TestArchiveReportActivityMeasuresUTF8Bytes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

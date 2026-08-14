@@ -282,6 +282,12 @@ func archiveReportActivityQuery(
 			JOIN forge_repos r ON r.id = i.repo_id
 			CROSS JOIN bounds b
 			WHERE i.created_at >= b.start_at AND i.created_at < b.end_at
+			  AND NOT EXISTS (
+				SELECT 1 FROM forge_archive_items ai
+				WHERE ai.repo_id = i.repo_id AND ai.item_type = 'issue'
+				  AND ai.item_number = i.number
+				  AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
 				'issue_closed', i.number,
@@ -301,6 +307,12 @@ func archiveReportActivityQuery(
 			JOIN forge_repos r ON r.id = i.repo_id
 			CROSS JOIN bounds b
 			WHERE i.closed_at >= b.start_at AND i.closed_at < b.end_at
+			  AND NOT EXISTS (
+				SELECT 1 FROM forge_archive_items ai
+				WHERE ai.repo_id = i.repo_id AND ai.item_type = 'issue'
+				  AND ai.item_number = i.number
+				  AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
 				'merge_request', mr.number,
@@ -313,6 +325,12 @@ func archiveReportActivityQuery(
 			JOIN forge_repos r ON r.id = mr.repo_id
 			CROSS JOIN bounds b
 			WHERE mr.created_at >= b.start_at AND mr.created_at < b.end_at
+			  AND NOT EXISTS (
+				SELECT 1 FROM forge_archive_items ai
+				WHERE ai.repo_id = mr.repo_id AND ai.item_type = 'merge_request'
+				  AND ai.item_number = mr.number
+				  AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
 				'merge_request_merged', mr.number,
@@ -333,6 +351,12 @@ func archiveReportActivityQuery(
 			JOIN forge_repos r ON r.id = mr.repo_id
 			CROSS JOIN bounds b
 			WHERE mr.merged_at >= b.start_at AND mr.merged_at < b.end_at
+			  AND NOT EXISTS (
+				SELECT 1 FROM forge_archive_items ai
+				WHERE ai.repo_id = mr.repo_id AND ai.item_type = 'merge_request'
+				  AND ai.item_number = mr.number
+				  AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
 				'ordinary_comment', i.number,
@@ -348,6 +372,12 @@ func archiveReportActivityQuery(
 			CROSS JOIN bounds b
 			WHERE e.event_type = 'issue_comment'
 			  AND e.created_at >= b.start_at AND e.created_at < b.end_at
+			  AND NOT EXISTS (
+				SELECT 1 FROM forge_archive_items ai
+				WHERE ai.repo_id = i.repo_id AND ai.item_type = 'issue'
+				  AND ai.item_number = i.number
+				  AND ai.lifecycle_state = 'removed_upstream'
+			  )
 			UNION ALL
 			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
 				CASE e.event_type
@@ -367,6 +397,12 @@ func archiveReportActivityQuery(
 			CROSS JOIN bounds b
 			WHERE e.event_type IN ('issue_comment', 'review', 'review_comment')
 			  AND e.created_at >= b.start_at AND e.created_at < b.end_at
+			  AND NOT EXISTS (
+				SELECT 1 FROM forge_archive_items ai
+				WHERE ai.repo_id = mr.repo_id AND ai.item_type = 'merge_request'
+				  AND ai.item_number = mr.number
+				  AND ai.lifecycle_state = 'removed_upstream'
+			  )
 		),
 		deduplicated AS (
 			SELECT activity.*,

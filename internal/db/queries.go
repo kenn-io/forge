@@ -1842,6 +1842,13 @@ func (d *DB) GetMergeRequest(
 		WHERE r.platform = ? AND r.platform_host = ?
 		  AND r.owner_key = ? AND r.name_key = ?
 		  AND r.lifecycle_state = 'active'
+		  AND NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = p.repo_id
+			  AND ai.item_type = 'merge_request'
+			  AND ai.item_number = p.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		  )
 		  AND p.number = ?`,
 		platform, platformHost, owner, name, number,
 	).Scan(
@@ -1879,7 +1886,32 @@ func (d *DB) GetMergeRequest(
 
 // GetMergeRequestByRepoIDAndNumber returns a merge request by repo ID and number.
 func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*MergeRequest, error) {
+	return d.getMergeRequestByRepoIDAndNumber(ctx, repoID, number, true)
+}
+
+// GetVisibleMergeRequestByRepoIDAndNumber returns a merge request unless its
+// archive parent was removed upstream. Internal sync paths use the unfiltered
+// query above so maintenance can reactivate and repair retained canonical data.
+func (d *DB) GetVisibleMergeRequestByRepoIDAndNumber(
+	ctx context.Context, repoID int64, number int,
+) (*MergeRequest, error) {
+	return d.getMergeRequestByRepoIDAndNumber(ctx, repoID, number, false)
+}
+
+func (d *DB) getMergeRequestByRepoIDAndNumber(
+	ctx context.Context, repoID int64, number int, includeRemoved bool,
+) (*MergeRequest, error) {
 	var mr MergeRequest
+	removedFilter := ""
+	if !includeRemoved {
+		removedFilter = ` AND NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = p.repo_id
+			  AND ai.item_type = 'merge_request'
+			  AND ai.item_number = p.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		)`
+	}
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
@@ -1903,7 +1935,7 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
-		WHERE p.repo_id = ? AND p.number = ?`,
+		WHERE p.repo_id = ? AND p.number = ?`+removedFilter,
 		repoID, number,
 	).Scan(
 		&mr.ID, &mr.SnapshotRevision, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
@@ -1947,6 +1979,13 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	}
 	var conds []string
 	var args []any
+	conds = append(conds, `NOT EXISTS (
+		SELECT 1 FROM forge_archive_items ai
+		WHERE ai.repo_id = p.repo_id
+		  AND ai.item_type = 'merge_request'
+		  AND ai.item_number = p.number
+		  AND ai.lifecycle_state = 'removed_upstream'
+	)`)
 
 	switch state {
 	case "all":
@@ -3130,6 +3169,13 @@ func (d *DB) GetIssue(
 		WHERE r.platform = ? AND r.platform_host = ?
 		  AND r.owner_key = ? AND r.name_key = ?
 		  AND r.lifecycle_state = 'active'
+		  AND NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = i.repo_id
+			  AND ai.item_type = 'issue'
+			  AND ai.item_number = i.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		  )
 		  AND i.number = ?`,
 		platform, platformHost, owner, name, number,
 	).Scan(
@@ -3162,7 +3208,31 @@ func (d *DB) GetIssue(
 
 // GetIssueByRepoIDAndNumber returns an issue by repo ID and number.
 func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*Issue, error) {
+	return d.getIssueByRepoIDAndNumber(ctx, repoID, number, true)
+}
+
+// GetVisibleIssueByRepoIDAndNumber returns an issue unless its archive parent
+// was removed upstream. Internal sync paths retain access for rediscovery.
+func (d *DB) GetVisibleIssueByRepoIDAndNumber(
+	ctx context.Context, repoID int64, number int,
+) (*Issue, error) {
+	return d.getIssueByRepoIDAndNumber(ctx, repoID, number, false)
+}
+
+func (d *DB) getIssueByRepoIDAndNumber(
+	ctx context.Context, repoID int64, number int, includeRemoved bool,
+) (*Issue, error) {
 	var issue Issue
+	removedFilter := ""
+	if !includeRemoved {
+		removedFilter = ` AND NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = i.repo_id
+			  AND ai.item_type = 'issue'
+			  AND ai.item_number = i.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		)`
+	}
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id, i.snapshot_revision, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
@@ -3175,7 +3245,7 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
 		LEFT JOIN forge_item_workflow_state w
 		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
-		WHERE i.repo_id = ? AND i.number = ?`,
+		WHERE i.repo_id = ? AND i.number = ?`+removedFilter,
 		repoID, number,
 	).Scan(
 		&issue.ID, &issue.SnapshotRevision, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
@@ -3215,6 +3285,13 @@ func (d *DB) ListIssues(
 	}
 	var conds []string
 	var args []any
+	conds = append(conds, `NOT EXISTS (
+		SELECT 1 FROM forge_archive_items ai
+		WHERE ai.repo_id = i.repo_id
+		  AND ai.item_type = 'issue'
+		  AND ai.item_number = i.number
+		  AND ai.lifecycle_state = 'removed_upstream'
+	)`)
 
 	switch state {
 	case "all":

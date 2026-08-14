@@ -38,6 +38,90 @@ func TestAPIListPullsIncludesLabels(t *testing.T) {
 	}}, *(*resp.JSON200)[0].Labels)
 }
 
+func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	seedPR(t, database, "acme", "widget", 1)
+	seedPR(t, database, "acme", "widget", 2)
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES
+			(?, 'merge_request', 1, 'inaccessible-pr-1', ?, ?, 'inaccessible'),
+			(?, 'merge_request', 2, 'removed-pr-2', ?, ?, 'removed_upstream')`,
+		repo.ID, now, now, repo.ID, now, now,
+	)
+	require.NoError(err)
+
+	client := setupTestClient(t, srv)
+	state := "all"
+	listed, err := client.HTTP.ListPullsWithResponse(
+		ctx, &generated.ListPullsParams{State: &state},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listed.StatusCode())
+	require.NotNil(listed.JSON200)
+	require.Len(*listed.JSON200, 1)
+	require.EqualValues(1, (*listed.JSON200)[0].Number)
+
+	detail, err := client.HTTP.GetPullWithResponse(
+		ctx, "gh", "acme", "widget", 2,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, detail.StatusCode())
+}
+
+func TestAPIIssuesHideRemovedUpstreamArchiveRows(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	seedIssue(t, database, "acme", "widget", 1, "open")
+	seedIssue(t, database, "acme", "widget", 2, "closed")
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES
+			(?, 'issue', 1, 'inaccessible-issue-1', ?, ?, 'inaccessible'),
+			(?, 'issue', 2, 'removed-issue-2', ?, ?, 'removed_upstream')`,
+		repo.ID, now, now, repo.ID, now, now,
+	)
+	require.NoError(err)
+
+	client := setupTestClient(t, srv)
+	state := "all"
+	listed, err := client.HTTP.ListIssuesWithResponse(
+		ctx, &generated.ListIssuesParams{State: &state},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listed.StatusCode())
+	require.NotNil(listed.JSON200)
+	require.Len(*listed.JSON200, 1)
+	require.EqualValues(1, (*listed.JSON200)[0].Number)
+
+	detail, err := client.HTTP.GetIssueWithResponse(
+		ctx, "gh", "acme", "widget", 2,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, detail.StatusCode())
+}
+
 func TestAPIGetPull(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)

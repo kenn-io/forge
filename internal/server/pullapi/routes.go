@@ -481,7 +481,7 @@ func (s *Handler) getPull(ctx context.Context, input *repoNumberInput) (*getPull
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request failed")
 	}

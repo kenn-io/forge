@@ -149,7 +149,7 @@ func (s *Handler) getIssue(ctx context.Context, input *issueRepoNumberInput) (*g
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	issue, err := s.db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get issue failed")
 	}

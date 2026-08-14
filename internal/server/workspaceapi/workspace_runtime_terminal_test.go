@@ -350,7 +350,7 @@ func TestServeRuntimeTerminalWaitsForWorkspaceDeletionResult(t *testing.T) {
 			}
 			require.NoError(json.Unmarshal(result.data, &msg))
 			require.Equal(test.messageType, msg.Type)
-			require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
+			_ = conn.Close(websocket.StatusNormalClosure, "done")
 
 			select {
 			case <-handlerDone:

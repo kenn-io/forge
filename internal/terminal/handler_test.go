@@ -202,14 +202,20 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	conn, _, err := websocket.Dial(
+	conn, resp, err := websocket.Dial(
 		t.Context(),
 		"ws"+strings.TrimPrefix(server.URL, "http")+
 			"/api/v1/workspaces/"+ws.ID+"/terminal",
-		nil,
+		&websocket.DialOptions{
+			CompressionMode: websocket.CompressionContextTakeover,
+		},
 	)
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
+	require.Contains(
+		resp.Header.Get("Sec-WebSocket-Extensions"),
+		"permessage-deflate",
+	)
 
 	require.Contains(readWebSocketUntil(t, conn, "ready"), "ready")
 	require.NoError(conn.Write(

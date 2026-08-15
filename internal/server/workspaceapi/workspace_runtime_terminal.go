@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -114,9 +115,7 @@ func (s *Handler) serveRuntimeTerminal(
 	attachSpan trace.Span,
 	endAttachSpan func(),
 ) {
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	conn, err := terminalwebsocket.Accept(w, r)
 	if err != nil {
 		slog.Error("websocket accept", "err", err)
 		attachSpan.SetAttributes(attribute.Bool("error", true))

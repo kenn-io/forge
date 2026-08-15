@@ -16,6 +16,7 @@ import (
 
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/internal/workspace"
 )
@@ -109,9 +110,7 @@ func (h *Handler) ServeHTTP(
 	}
 	defer releaseTerminal()
 
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	conn, err := terminalwebsocket.Accept(w, r)
 	if err != nil {
 		slog.Error("websocket accept", "err", err)
 		attachSpan.SetAttributes(attribute.Bool("error", true))

@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/tracing"
 )
 
@@ -829,9 +830,7 @@ func (s *Handler) serveFleetWebSocketProxy(
 	dialHeader := make(http.Header)
 	copyProxyWebSocketRequestHeaders(dialHeader, r.Header)
 	dialHeader.Set("X-Kenn-Forge-Fleet-Host", target.peer.Key)
-	peerConn, _, err := websocket.Dial(r.Context(), peerURL, &websocket.DialOptions{
-		HTTPHeader: dialHeader,
-	})
+	peerConn, _, err := terminalwebsocket.Dial(r.Context(), peerURL, dialHeader)
 	if err != nil {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, httpapi.NewProblem(
@@ -844,9 +843,7 @@ func (s *Handler) serveFleetWebSocketProxy(
 	}
 	defer peerConn.Close(websocket.StatusNormalClosure, "hub detached")
 
-	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	clientConn, err := terminalwebsocket.Accept(w, r)
 	if err != nil {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
 		slog.Debug(
@@ -958,9 +955,7 @@ func (s *Handler) serveSSHFleetWebSocketTerminal(
 		return
 	}
 
-	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	clientConn, err := terminalwebsocket.Accept(w, r)
 	if err != nil {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
 		attach.close()

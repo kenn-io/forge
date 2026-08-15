@@ -31,6 +31,15 @@ Rules:
   survive kenn-forge server restarts until the shell exits or the workspace is
   deleted.
 
+## Terminal Transport
+
+- Every terminal WebSocket leg negotiates RFC 7692 `permessage-deflate` with
+  context takeover; Fleet relays apply the same policy to their separately
+  terminated upstream leg. (`internal/terminalwebsocket/`)
+- Use standard negotiation, not an application compression envelope: context
+  takeover shares a dictionary across PTY messages, while unsupported peers
+  continue with an ordinary uncompressed WebSocket.
+
 ## Natural Exit Rules
 
 Natural process exit should collapse stale runtime state quickly.

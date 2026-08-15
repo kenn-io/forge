@@ -19,6 +19,36 @@ import (
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
+func TestServeRuntimeTerminalNegotiatesCompression(t *testing.T) {
+	require := require.New(t)
+	attachment := localruntime.NewAttachmentForTesting(
+		localruntime.AttachmentForTestingOptions{
+			Output: make(chan []byte),
+			Done:   make(chan struct{}),
+		},
+	)
+	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		CompressionMode: websocket.CompressionContextTakeover,
+	})
+	require.NoError(err)
+	require.NotNil(resp)
+	require.Contains(
+		resp.Header.Get("Sec-WebSocket-Extensions"),
+		"permessage-deflate",
+	)
+
+	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
+	select {
+	case <-handlerDone:
+	case <-ctx.Done():
+		require.Fail("terminal handler did not return")
+	}
+}
+
 func TestServeRuntimeTerminalForwardsBufferedReplayBeforeRefresh(t *testing.T) {
 	require := require.New(t)
 	replay := []byte("buffered replay")

@@ -99,7 +99,9 @@ owner:
 
 - Use Vitest component/store tests for UI-owned data flow, filtering, sorting,
   hidden/disabled states, menu contents, route-derived view state, and app-shell
-  behavior that does not depend on real browser layout.
+  behavior that does not depend on real browser layout. A jsdom test can cover
+  an entire frontend-owned flow end to end; the required lane follows the
+  boundary under test, not the “end-to-end” label.
 - Use Vitest browser tests (`*.browser.svelte.ts` with `vitest-browser-svelte`)
   when the behavior needs a real browser DOM, native focus or keyboard behavior,
   computed styles, layout, localStorage, matchMedia, or other browser primitives,
@@ -120,12 +122,15 @@ owner:
 - Effect schedule tests must advance `TestClock` from the `it.effect` runtime; a fiber started through
   a separate `ManagedRuntime` retains the live clock and reintroduces wall-time waits
   (`frontend/src/lib/stores/roborev/daemon.svelte.test.ts:224`).
-- Use Playwright mock e2e when the regression is specifically about a
-  multi-step browser workflow, viewport behavior, screenshots/video, drag,
-  scroll/sticky/overflow geometry, canvas/xterm rendering, or browser navigation.
-- Use full-stack e2e or server/API tests when the disputed fact is produced by
-  backend persistence, sync, capabilities, normalization, route middleware, or
-  wire serialization.
+- Use Playwright only when the regression depends on the rendered browser
+  surface: viewport behavior, screenshots/video, computed visual styles,
+  clipping or overflow, drag/scroll geometry, canvas/xterm rendering, or a
+  browser-engine difference that jsdom cannot model. Route changes and
+  multi-step frontend logic do not require Playwright when jsdom can drive them.
+- Use pure Go server/API tests when the disputed fact is produced by backend
+  persistence, SQLite, sync, capabilities, normalization, route middleware, or
+  wire serialization. Add full-stack Playwright only when that backend result
+  must also be verified through a real rendered-browser boundary.
 - Real-tmux Playwright tests observe user-visible state through the per-instance socket;
   never replace global key bindings, which can leak into developer sessions and prove only event receipt
   (`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts::expectWheelScroll`).

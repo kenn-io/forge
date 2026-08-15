@@ -27,20 +27,32 @@ Resource ceilings bound accepted or retained data, not peak process memory;
 transient processing amplification is acceptable. Do not demand finer
 allocation accounting without an unbounded input or observed problem.
 
-End-to-end tests are non-negotiable in this repository. Major features,
-bug fixes, refactors, and user-visible changes affecting API behavior,
-data flow, or maintainer workflows require e2e coverage that exercises
-the full stack with the real HTTP API and SQLite database.
+Use the narrowest test lane that can catch the regression. Use pure Go tests
+for HTTP API, SQLite, persistence, sync, middleware, and wire-serialization
+behavior. Use TypeScript and jsdom tests for frontend-owned workflows, route
+state, callbacks, and interaction logic.
 
-Treat missing required e2e coverage as at least MEDIUM severity.
+Require Playwright only when correctness depends on an actual rendered browser
+surface: viewport or layout behavior, computed visual styles, clipping or
+overflow, drag/scroll geometry, screenshots, canvas/xterm rendering, or a
+browser-engine difference that jsdom cannot model.
+
+Do not require Playwright or full-stack coverage for UI-owned data flow,
+callback handoff, hidden or disabled states, menu contents, or route-derived
+view state when a focused component or store test exercises the real subject
+and observes the result. A jsdom test may cover an entire frontend-owned flow
+end to end; do not reject it merely because it does not use Playwright.
+Existing higher-level coverage can protect the surrounding workflow; do not
+demand a duplicate Playwright test for route changes or multi-step frontend
+logic that jsdom can drive.
+
+Treat missing required boundary coverage as at least MEDIUM severity.
 Treat it as HIGH severity when the uncovered change affects core
 maintainer actions, regression-prone flows, or bug fixes where the lack
-of an e2e test could allow a user-visible breakage to ship.
+of a suitable test could allow a user-visible breakage to ship.
 
-Do not downgrade missing e2e coverage because of a claim that this repo
-lacks browser testing infrastructure. kenn-forge already has Playwright
-e2e coverage, and many required e2e tests here are API plus SQLite
-full-stack tests rather than purely browser concerns.
+Do not demand Playwright merely because kenn-forge has Playwright
+infrastructure. The test must need real rendering or browser-engine behavior.
 
 Do not require duplicate e2e coverage for default-host and
 `/host/{platform_host}` routes when the host route is only a generic

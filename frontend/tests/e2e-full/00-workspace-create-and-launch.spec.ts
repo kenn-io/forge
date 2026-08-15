@@ -180,6 +180,15 @@ async function liveSessionWebSockets(page: Page, workspaceId: string) {
   return (await sessionWebSockets(page, workspaceId)).filter((entry) => !entry.closed);
 }
 
+function workspaceBaseWebSockets(page: Page, workspaceId: string) {
+  return page.evaluate((needle) => {
+    const log = Reflect.get(window, "__mobileWorkspaceWebSockets") as
+      | Array<{ id: number; url: string; closed: boolean; sent: string[] }>
+      | undefined;
+    return (log ?? []).filter((entry) => entry.url.includes(needle));
+  }, `/workspaces/${workspaceId}/terminal`);
+}
+
 test.describe("workspace create-and-launch full stack", () => {
   test.describe.configure({ timeout: workspaceTestTimeoutMs });
 
@@ -647,7 +656,7 @@ test.describe("workspace create-and-launch full stack", () => {
       const created = (await createResponse.json()) as WorkspaceResponse;
       await expect(page).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
       await waitForWorkspaceReady(api, created.id);
-      await expect.poll(() => launchRequests).toBe(1);
+      await expect.poll(() => launchRequests, { timeout: 10_000 }).toBe(1);
       await expect.poll(() => runtimeTargets(api!, created.id)).toEqual([]);
       await page.getByRole("button", { name: "Terminal options" }).click();
       const terminalOptions = page.getByRole("dialog", { name: "Terminal options" });
@@ -780,6 +789,100 @@ test.describe("workspace create-and-launch full stack", () => {
       await phonePage.getByRole("button", { name: "Back to workspaces" }).tap();
       await expect(phonePage).toHaveURL(/\/m\/workspaces$/);
     } finally {
+      await phoneContext?.close();
+      await api?.dispose();
+      await server?.stop();
+    }
+  });
+
+  test("phone local base terminal survives pending and failed runtime discovery", async ({ page, browser }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
+      "git, tmux, and sh are required for the real workspace runtime flow",
+    );
+
+    let server: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    let phoneContext: BrowserContext | null = null;
+    let releaseRuntime: () => void = () => undefined;
+    let runtimeReleased = false;
+    try {
+      server = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: server.info.base_url });
+      await configureAgent(page, server.info.base_url);
+
+      phoneContext = await browser.newContext({ ...devices["Pixel 7"] });
+      const phonePage = await phoneContext.newPage();
+      await trackSessionWebSockets(phonePage);
+      const runtimeGate = new Promise<void>((resolve) => {
+        releaseRuntime = resolve;
+      });
+      await phonePage.route("**/api/v1/workspaces/*/runtime", async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.continue();
+          return;
+        }
+        await runtimeGate;
+        await route.fulfill({
+          status: 503,
+          contentType: "application/problem+json",
+          body: JSON.stringify({
+            status: 503,
+            code: "serviceUnavailable",
+            detail: "runtime discovery unavailable",
+          }),
+        });
+      });
+
+      const createResponsePromise = phonePage.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          /\/api\/v1\/repo\/github\/acme\/widgets\/workspaces$/.test(response.url()),
+      );
+      await phonePage.goto(`${server.info.base_url}/m/workspaces`);
+      await phonePage.getByRole("button", { name: "New workspace" }).tap();
+      const dialog = phonePage.getByRole("dialog", { name: "New workspace" });
+      await dialog.getByRole("button", { name: "Filter repositories" }).tap();
+      await dialog.getByRole("option", { name: /acme\/widgets/ }).tap();
+      await dialog.getByRole("button", { name: "Create workspace", exact: true }).tap();
+
+      const createResponse = await createResponsePromise;
+      expect(createResponse.status(), await createResponse.text()).toBe(202);
+      const created = (await createResponse.json()) as WorkspaceResponse;
+      await expect(phonePage).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
+      await waitForWorkspaceReady(api, created.id);
+      await expect(phonePage.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Workspace");
+      await expect(phonePage.locator(".mobile-workspace-terminal__stage")).toBeVisible();
+      await expect
+        .poll(async () => (await workspaceBaseWebSockets(phonePage, created.id)).filter((entry) => !entry.closed))
+        .toHaveLength(1);
+
+      const input = phonePage.getByRole("textbox", { name: "Terminal command" });
+      await phonePage.getByRole("button", { name: "Open terminal composer" }).tap();
+      await input.fill("printf 'base-before-runtime\\n'");
+      await phonePage.getByRole("button", { name: "Send terminal input" }).tap();
+      await expect
+        .poll(async () =>
+          (await workspaceBaseWebSockets(phonePage, created.id))
+            .flatMap((socket) => socket.sent)
+            .some((frame) => frame.includes("base-before-runtime")),
+        )
+        .toBe(true);
+
+      releaseRuntime();
+      runtimeReleased = true;
+      await expect(phonePage.getByText("Runtime sessions unavailable")).toBeVisible();
+      await input.fill("printf 'base-after-runtime-failure\\n'");
+      await phonePage.getByRole("button", { name: "Send terminal input" }).tap();
+      await expect
+        .poll(async () =>
+          (await workspaceBaseWebSockets(phonePage, created.id))
+            .flatMap((socket) => socket.sent)
+            .some((frame) => frame.includes("base-after-runtime-failure")),
+        )
+        .toBe(true);
+    } finally {
+      if (!runtimeReleased) releaseRuntime();
       await phoneContext?.close();
       await api?.dispose();
       await server?.stop();

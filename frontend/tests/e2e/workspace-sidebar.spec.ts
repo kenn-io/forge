@@ -1562,6 +1562,22 @@ test("phone pull request workspace action stays in the mobile workspace workflow
   await expect(page).toHaveURL(/\/m\/workspaces$/);
 });
 
+test("phone list item tabs open a workspace that returns to the list", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page);
+  await installLinkedItemWorkspaceDetail(page, "pull_request", testWorkspace);
+
+  await page.goto("/m/workspaces");
+  await page.getByRole("button", { name: "Open linked item #42" }).click();
+  await page.getByRole("tab", { name: "Files changed" }).click();
+  await page.getByRole("tab", { name: "Conversation" }).click();
+  await page.getByRole("button", { name: "Open Workspace" }).click();
+
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123$/);
+  await page.getByRole("button", { name: "Back to workspaces" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces$/);
+});
+
 test("phone issue workspace action returns to its mobile terminal", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await setupTerminalMocks(page, { workspace: testIssueWorkspace });

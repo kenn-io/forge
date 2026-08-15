@@ -710,7 +710,8 @@
   }
 
   function leaveMobileWorkspaceTerminal(): void {
-    if (mobileWorkspaceHistory()?.origin === "list") history.back();
+    const mobileHistory = mobileWorkspaceHistory();
+    if (mobileHistory?.origin === "list") history.go(-mobileHistory.backDepth);
     else replaceUrl("/m/workspaces");
   }
 

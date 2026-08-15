@@ -34,6 +34,8 @@
     workflowApprovalSync?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
     onStackMemberNavigate?: ((ref: PullRequestRouteRef) => boolean | void) | undefined;
+    onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
+    onViewWorkspaces?: (() => void) | undefined;
   }
 
   const {
@@ -47,6 +49,8 @@
     workflowApprovalSync = true,
     inlineWorkspace = null,
     onStackMemberNavigate = undefined,
+    onOpenWorkspace,
+    onViewWorkspaces,
   }: Props = $props();
 
   // Provider capabilities are unknown until the detail lands. Assuming the
@@ -107,6 +111,8 @@
     hideTabs={true}
     {hideStaleWhileLoading}
     onStackMemberNavigate={onStackMemberNavigate ?? (() => undefined)}
+    {onOpenWorkspace}
+    {onViewWorkspaces}
     {inlineWorkspace}
   />
 {:else if tabKey === "files" && visible}

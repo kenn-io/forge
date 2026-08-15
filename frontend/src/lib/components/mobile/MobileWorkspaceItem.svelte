@@ -5,6 +5,7 @@
   import { Effect } from "effect";
   import { untrack } from "svelte";
   import { ApiProblemError } from "../../api/effect-errors.js";
+  import { ProblemCodes } from "../../api/problems.js";
   import { apiErrorMessage } from "../../api/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { IssueRouteRef, PullRequestRouteRef } from "../../routes.js";
@@ -20,7 +21,10 @@
     tab?: "files" | undefined;
     backDestination?: "terminal" | "list";
     onBack: () => void;
+    onMissing: () => void;
     onTabChange: (tab: "conversation" | "files", options?: { replace?: boolean }) => void;
+    onOpenWorkspace: (workspaceId: string) => void;
+    onViewWorkspaces: () => void;
   }
 
   let {
@@ -29,7 +33,10 @@
     tab = undefined,
     backDestination = "terminal",
     onBack,
+    onMissing,
     onTabChange,
+    onOpenWorkspace,
+    onViewWorkspaces,
   }: Props = $props();
   const appRuntime = getAppRuntime();
 
@@ -68,7 +75,11 @@
       Effect.catch((failure) =>
         Effect.sync(() => {
           workspace = null;
-          loadError = failureMessage(failure);
+          if (failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.workspaceNotFound) {
+            onMissing();
+          } else {
+            loadError = failureMessage(failure);
+          }
         }),
       ),
     );
@@ -166,6 +177,8 @@
           autoSyncDetail="background"
           hideStaleDetailWhileLoading={true}
           onDetailTabChange={onTabChange}
+          {onOpenWorkspace}
+          {onViewWorkspaces}
         />
       {:else}
         <IssueListView
@@ -175,6 +188,8 @@
           hideSidebar={true}
           autoSyncDetail="background"
           hideStaleDetailWhileLoading={true}
+          {onOpenWorkspace}
+          {onViewWorkspaces}
         />
       {/if}
     </div>

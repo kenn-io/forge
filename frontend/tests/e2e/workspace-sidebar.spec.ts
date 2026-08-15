@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import type { components } from "../../src/lib/api/generated/schema.js";
+import { createMockApiHandler } from "../../src/test/mockApiFetch.js";
 import { mockApi } from "./support/mockApi";
 
 type ProblemBody = components["schemas"]["ProblemError"];
@@ -192,6 +193,35 @@ type WorkspaceCommitFixture = {
   author_name: string;
   authored_at: string;
 };
+
+async function installLinkedItemWorkspaceDetail(
+  page: import("@playwright/test").Page,
+  itemType: "pull_request" | "issue",
+  workspace: WorkspaceFixture,
+): Promise<void> {
+  const api = createMockApiHandler();
+  const routePrefix = itemType === "pull_request" ? "/api/v1/pulls/" : "/api/v1/issues/";
+  await page.route(
+    (url) => url.pathname.startsWith(routePrefix) && url.pathname.endsWith(`/${workspace.item_number}`),
+    async (route) => {
+      const request = route.request();
+      const response = api.handle({
+        method: request.method().toUpperCase(),
+        url: new URL(request.url()),
+        bodyText: request.postData() ?? "",
+      });
+      const body = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({
+        status: response.status,
+        contentType: response.headers.get("Content-Type") ?? "application/json",
+        body: JSON.stringify({
+          ...body,
+          workspace: { id: workspace.id, status: workspace.status },
+        }),
+      });
+    },
+  );
+}
 
 async function setupTerminalMocks(
   page: import("@playwright/test").Page,
@@ -1055,7 +1085,7 @@ test("phone workspace list keeps its selected terminal alive through linked PR n
           ).__kenn_forgeMobileTerminalSockets.filter(({ url }) => url.includes("/ws/v1/workspaces/")).length,
       ),
     )
-    .toBe(1);
+    .toBe(2);
 
   await page.getByRole("button", { name: "Open linked PR #42" }).click();
   await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123\/item$/);
@@ -1073,7 +1103,7 @@ test("phone workspace list keeps its selected terminal alive through linked PR n
           ).__kenn_forgeMobileTerminalSockets.filter(({ url }) => url.includes("/ws/v1/workspaces/")).length,
       ),
     )
-    .toBe(1);
+    .toBe(2);
 
   await page.getByRole("button", { name: "Back to workspace terminal" }).click();
   await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123$/);
@@ -1089,7 +1119,7 @@ test("phone workspace list keeps its selected terminal alive through linked PR n
           ).__kenn_forgeMobileTerminalSockets.filter(({ url }) => url.includes("/ws/v1/workspaces/")).length,
       ),
     )
-    .toBe(1);
+    .toBe(2);
 });
 
 test("phone workspace terminal opens its linked issue and returns", async ({ page }) => {
@@ -1107,7 +1137,69 @@ test("phone workspace terminal opens its linked issue and returns", async ({ pag
 
   await page.getByRole("button", { name: "Back to workspace terminal" }).click();
   await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-issue-7$/);
-  await expect(page.getByText("No terminal sessions")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Workspace");
+});
+
+test("phone offers the durable workspace terminal when no runtime session is launched", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installControllableTerminalWebSockets(page);
+  await setupTerminalMocks(page);
+
+  await page.goto("/m/workspaces/local/ws-123");
+
+  await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Workspace");
+  await expect(page.locator(".mobile-workspace-terminal__stage")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as unknown as {
+            __kenn_forgeControllableTerminalSockets: Array<{ url: string }>;
+          }
+        ).__kenn_forgeControllableTerminalSockets.map(({ url }) => new URL(url).pathname),
+      ),
+    )
+    .toContain("/ws/v1/workspaces/ws-123/terminal");
+
+  await page.getByRole("button", { name: "Terminal options" }).click();
+  await expect(page.getByRole("button", { name: /Stop terminal/ })).toHaveCount(0);
+});
+
+test("phone dismisses stop confirmation when the selected session generation changes", async ({ page }) => {
+  await page.clock.install();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const runtimeEvents: RuntimeEvents = { launches: [], renames: [], deletes: [] };
+  const mocked = await setupTerminalMocks(page, {
+    runtimeEvents,
+    runtime: {
+      ...workspaceRuntime,
+      sessions: [
+        {
+          key: "ws-123:codex",
+          workspace_id: "ws-123",
+          target_key: "codex",
+          label: "Codex",
+          kind: "agent",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        },
+      ],
+    },
+  });
+
+  await page.goto("/m/workspaces/local/ws-123");
+  await page.getByRole("button", { name: "Terminal options" }).click();
+  await page.getByRole("button", { name: "Stop terminal Codex" }).click();
+  await expect(page.getByRole("dialog", { name: "Stop terminal?" })).toBeVisible();
+
+  mocked.runtime.sessions = mocked.runtime.sessions.map((session) => ({
+    ...session,
+    created_at: "2026-04-10T12:05:00Z",
+  }));
+  await page.clock.fastForward(5_100);
+
+  await expect(page.getByRole("dialog", { name: "Stop terminal?" })).toHaveCount(0);
+  expect(runtimeEvents.deletes).toEqual([]);
 });
 
 test("phone applies a launched session before the runtime reconcile finishes", async ({ page }) => {
@@ -1137,7 +1229,9 @@ test("phone applies a launched session before the runtime reconcile finishes", a
 
   try {
     await page.goto("/m/workspaces/local/ws-123");
-    await page.getByRole("button", { name: "Codex", exact: true }).click();
+    await page.getByRole("button", { name: "Terminal options" }).click();
+    await page.getByRole("button", { name: "New terminal" }).click();
+    await page.getByRole("dialog", { name: "Launch workspace session" }).getByRole("button", { name: "Codex" }).click();
 
     await expect.poll(() => runtimeReads).toBe(3);
     await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Codex");
@@ -1193,7 +1287,7 @@ test("phone removes a stopped session before the runtime reconcile finishes", as
     await page.getByRole("dialog", { name: "Stop terminal?" }).getByRole("button", { name: "Stop terminal" }).click();
 
     await expect.poll(() => runtimeReads).toBe(2);
-    await expect(page.getByText("No terminal sessions")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Workspace");
   } finally {
     releaseReconcile();
   }
@@ -1387,6 +1481,79 @@ test("phone workspace list opens a linked item and returns to the list", async (
   await expect(page).toHaveURL(/\/m\/workspaces$/);
 });
 
+test("phone item routes do not start terminal runtime work without a terminal origin", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installControllableTerminalWebSockets(page);
+  const runtimeRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname.endsWith("/runtime")) runtimeRequests.push(url.pathname);
+  });
+  await setupTerminalMocks(page, {
+    runtime: {
+      ...workspaceRuntime,
+      sessions: [
+        {
+          key: "ws-123:codex",
+          workspace_id: "ws-123",
+          target_key: "codex",
+          label: "Codex",
+          kind: "agent",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        },
+      ],
+    },
+  });
+
+  await page.goto("/m/workspaces");
+  await page.getByRole("button", { name: "Open linked item #42" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123\/item$/);
+  await expect(page.locator(".mobile-workspace-item .pull-detail .detail-title")).toBeVisible();
+
+  await page.goto("/m/workspaces/local/ws-123/item");
+  await expect(page.locator(".mobile-workspace-item .pull-detail .detail-title")).toBeVisible();
+  expect(runtimeRequests).toEqual([]);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __kenn_forgeControllableTerminalSockets: Array<{ url: string }>;
+            }
+          ).__kenn_forgeControllableTerminalSockets.filter(({ url }) => url.includes("/ws/v1/workspaces/")).length,
+      ),
+    )
+    .toBe(0);
+});
+
+test("phone pull request workspace action stays in the mobile workspace workflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page);
+  await installLinkedItemWorkspaceDetail(page, "pull_request", testWorkspace);
+
+  await page.goto("/m/workspaces");
+  await page.getByRole("button", { name: "Open linked item #42" }).click();
+  await page.getByRole("button", { name: "Open Workspace" }).click();
+
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123$/);
+  await page.getByRole("button", { name: "Back to workspaces" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces$/);
+});
+
+test("phone issue workspace action returns to its mobile terminal", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page, { workspace: testIssueWorkspace });
+  await installLinkedItemWorkspaceDetail(page, "issue", testIssueWorkspace);
+
+  await page.goto("/m/workspaces/local/ws-issue-7/item");
+  await page.getByRole("button", { name: "Open Workspace" }).click();
+
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-issue-7$/);
+  await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Workspace");
+});
+
 test("direct phone workspace item tabs return to the workspace terminal", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await setupTerminalMocks(page);
@@ -1531,7 +1698,7 @@ test("typed workspace deletion returns the phone workflow to the workspace list"
   });
 
   await page.goto("/m/workspaces/local/ws-123");
-  await expect(page.locator(".session-host-wrapper")).toHaveCount(2);
+  await expect(page.locator(".session-host-wrapper")).toHaveCount(3);
   await page.evaluate(() => {
     (
       window as typeof window & {

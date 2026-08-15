@@ -179,6 +179,8 @@
     autoSync?: DetailSyncMode;
     workflowApprovalSync?: boolean;
     onStackMemberNavigate?: (ref: PullRequestRouteRef) => boolean | void;
+    onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
+    onViewWorkspaces?: (() => void) | undefined;
     inlineWorkspace?: InlineWorkspaceController | null;
   }
 
@@ -195,6 +197,8 @@
     autoSync = "background",
     workflowApprovalSync = true,
     onStackMemberNavigate,
+    onOpenWorkspace,
+    onViewWorkspaces,
     inlineWorkspace = null,
   }: Props = $props();
 
@@ -2489,7 +2493,14 @@
               onclick={() => {
                 if (stalePR) return;
                 closeActionMenu();
-                navigate(workspaceDeletionLifecycle ? "/workspaces" : `/terminal/${workspace.id}`);
+                if (workspaceDeletionLifecycle) {
+                  if (onViewWorkspaces) onViewWorkspaces();
+                  else navigate("/workspaces");
+                } else if (onOpenWorkspace) {
+                  onOpenWorkspace(workspace.id);
+                } else {
+                  navigate(`/terminal/${workspace.id}`);
+                }
               }}
               tone="info"
               surface="soft"

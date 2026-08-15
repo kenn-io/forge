@@ -701,6 +701,14 @@
     navigate(buildMobileWorkspaceItemRoute(workspaceId, hostKey), mobileWorkspaceHistoryState("terminal"));
   }
 
+  function openMobileWorkspaceFromItem(workspaceId: string, hostKey?: string): void {
+    const mobileHistory = mobileWorkspaceHistory() ?? { origin: "direct" as const, backDepth: 0 };
+    replaceUrl(
+      buildMobileWorkspaceRoute(workspaceId, hostKey),
+      mobileWorkspaceHistoryState(mobileHistory.origin, mobileHistory.backDepth),
+    );
+  }
+
   function leaveMobileWorkspaceTerminal(): void {
     if (mobileWorkspaceHistory()?.origin === "list") history.back();
     else replaceUrl("/m/workspaces");
@@ -1184,16 +1192,18 @@
           {@const route = getRoute()}
           {#if route.page === "mobile-workspace-terminal" || route.page === "mobile-workspace-item"}
             <div class="mobile-workspace-route focus-layout--phone">
-              <div class="mobile-workspace-route__terminal" hidden={route.page === "mobile-workspace-item"}>
-                <MobileWorkspaceTerminal
-                  workspaceId={route.workspaceId}
-                  hostKey={route.hostKey}
-                  visible={route.page === "mobile-workspace-terminal"}
-                  onBack={leaveMobileWorkspaceTerminal}
-                  onMissing={() => replaceUrl("/m/workspaces")}
-                  onOpenItem={() => openMobileWorkspaceItemFromTerminal(route.workspaceId, route.hostKey)}
-                />
-              </div>
+              {#if route.page === "mobile-workspace-terminal" || mobileWorkspaceHistory()?.origin === "terminal"}
+                <div class="mobile-workspace-route__terminal" hidden={route.page === "mobile-workspace-item"}>
+                  <MobileWorkspaceTerminal
+                    workspaceId={route.workspaceId}
+                    hostKey={route.hostKey}
+                    visible={route.page === "mobile-workspace-terminal"}
+                    onBack={leaveMobileWorkspaceTerminal}
+                    onMissing={() => replaceUrl("/m/workspaces")}
+                    onOpenItem={() => openMobileWorkspaceItemFromTerminal(route.workspaceId, route.hostKey)}
+                  />
+                </div>
+              {/if}
               {#if route.page === "mobile-workspace-item"}
                 <MobileWorkspaceItem
                   workspaceId={route.workspaceId}
@@ -1201,6 +1211,9 @@
                   tab={route.tab}
                   backDestination={mobileWorkspaceHistory()?.origin === "list" ? "list" : "terminal"}
                   onBack={() => leaveMobileWorkspaceItem(route.workspaceId, route.hostKey)}
+                  onMissing={() => replaceUrl("/m/workspaces")}
+                  onOpenWorkspace={(workspaceId) => openMobileWorkspaceFromItem(workspaceId, route.hostKey)}
+                  onViewWorkspaces={() => replaceUrl("/m/workspaces")}
                   onTabChange={(tab, options) => {
                     const path = buildMobileWorkspaceItemRoute(
                       route.workspaceId,

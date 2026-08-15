@@ -13,7 +13,11 @@
   import { apiErrorMessage } from "../../api/runtime.js";
   import { ApiProblemError } from "../../api/effect-errors.js";
   import { ProblemCodes } from "../../api/problems.js";
-  import { workspaceSessionWebSocketPath, type WorkspaceRuntimeState } from "../../api/workspace-runtime.js";
+  import {
+    workspaceSessionWebSocketPath,
+    workspaceTmuxWebSocketPath,
+    type WorkspaceRuntimeState,
+  } from "../../api/workspace-runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
   import {
@@ -69,6 +73,16 @@
     onOpenItem: () => void;
   }
 
+  interface MobileTerminalSession {
+    key: string;
+    label: string;
+    status: string;
+    generation: string;
+    websocketPath: string;
+    cursorWheelInput: boolean;
+    runtimeSession: RuntimeSession | null;
+  }
+
   let { workspaceId, hostKey = undefined, visible = true, onBack, onMissing, onOpenItem }: Props = $props();
   const appRuntime = getAppRuntime();
   const { settings: settingsStore } = getStores();
@@ -96,7 +110,7 @@
   let composerOpen = $state(false);
   let composerDragStartY: number | null = null;
 
-  const sessions = $derived(runtime?.sessions ?? []);
+  const sessions = $derived(mobileTerminalSessions(runtime, workspace));
   const launchTargets = $derived(runtime?.launch_targets ?? []);
   const sessionOptions = $derived<SelectDropdownOption[]>(
     sessions.map((session) => ({ value: session.key, label: session.label })),
@@ -121,8 +135,40 @@
     return { workspaceId, ...(hostKey === undefined ? {} : { hostKey }) };
   }
 
-  function pooledHostKey(session: RuntimeSession): SessionHostKey {
-    return sessionHostKey(workspaceId, hostKey, session.key, session.created_at);
+  function baseSessionKey(id: string): string {
+    return `${id}:@workspace`;
+  }
+
+  function mobileTerminalSessions(
+    runtimeState: WorkspaceRuntimeState | null,
+    detail: WorkspaceDetail | null,
+  ): MobileTerminalSession[] {
+    const launched = (runtimeState?.sessions ?? []).map((session) => ({
+      key: session.key,
+      label: session.label,
+      status: session.status,
+      generation: session.created_at,
+      websocketPath: workspaceSessionWebSocketPath(workspaceId, session.key, hostKey),
+      cursorWheelInput: session.kind === "agent",
+      runtimeSession: session,
+    }));
+    if (detail?.status !== "ready") return launched;
+    return [
+      ...launched,
+      {
+        key: baseSessionKey(detail.id),
+        label: "Workspace",
+        status: "running",
+        generation: detail.created_at,
+        websocketPath: workspaceTmuxWebSocketPath(workspaceId, hostKey),
+        cursorWheelInput: false,
+        runtimeSession: null,
+      },
+    ];
+  }
+
+  function pooledHostKey(session: MobileTerminalSession): SessionHostKey {
+    return sessionHostKey(workspaceId, hostKey, session.key, session.generation);
   }
 
   function failureMessage(failure: unknown, fallback: string): string {
@@ -156,16 +202,16 @@
     ownedHostKeys = [];
   }
 
-  function reconcilePooledSessions(nextSessions: readonly RuntimeSession[]): void {
+  function reconcilePooledSessions(nextSessions: readonly MobileTerminalSession[]): void {
     const desiredKeys = nextSessions.map(pooledHostKey);
     const desired = new Set(desiredKeys);
     for (const session of nextSessions) {
       const pooledKey = pooledHostKey(session);
       noteSessionMounted({
         hostKey: pooledKey,
-        websocketPath: workspaceSessionWebSocketPath(workspaceId, session.key, hostKey),
+        websocketPath: session.websocketPath,
         status: session.status,
-        cursorWheelInput: session.kind === "agent",
+        cursorWheelInput: session.cursorWheelInput,
       });
     }
     for (const key of ownedHostKeys) {
@@ -176,14 +222,20 @@
 
   function applyRuntime(next: WorkspaceRuntimeState, authoritative = true): void {
     const previousSelectedHostKey = selectedHostKey;
+    const nextSessions = mobileTerminalSessions(next, workspace);
     runtime = next;
-    reconcilePooledSessions(next.sessions);
-    if (stopSession && !next.sessions.some((session) => session.key === stopSession?.key)) {
+    reconcilePooledSessions(nextSessions);
+    if (
+      stopSession &&
+      !next.sessions.some(
+        (session) => session.key === stopSession?.key && session.created_at === stopSession?.created_at,
+      )
+    ) {
       stopSession = null;
     }
     const preferred = selectedSessionKey ?? loadMobileWorkspaceSession(workspaceId, hostKey);
-    const nextSelectedSessionKey = selectMobileWorkspaceSession(next.sessions, preferred);
-    const nextSelectedSession = next.sessions.find((session) => session.key === nextSelectedSessionKey);
+    const nextSelectedSessionKey = selectMobileWorkspaceSession(nextSessions, preferred);
+    const nextSelectedSession = nextSessions.find((session) => session.key === nextSelectedSessionKey);
     const nextSelectedHostKey = nextSelectedSession ? pooledHostKey(nextSelectedSession) : null;
     if (previousSelectedHostKey !== null && nextSelectedHostKey !== previousSelectedHostKey) {
       composedInput = "";
@@ -223,7 +275,7 @@
   }
 
   function requestSessionFocusForSelection(): void {
-    const session = runtime?.sessions.find((candidate) => candidate.key === selectedSessionKey);
+    const session = sessions.find((candidate) => candidate.key === selectedSessionKey);
     if (session) requestSessionFocus(pooledHostKey(session), { soft: true });
   }
 
@@ -532,9 +584,9 @@
   }
 
   function promptStopSelectedSession(): void {
-    if (selectedSession && !stoppingSession && !launchingTarget) {
+    if (selectedSession?.runtimeSession && !stoppingSession && !launchingTarget) {
       terminalOptionsOpen = false;
-      stopSession = selectedSession;
+      stopSession = selectedSession.runtimeSession;
     }
   }
 
@@ -622,7 +674,10 @@
     const stopExitListener = onSessionExited((exitedHostKey) => {
       const current = runtime;
       if (!current || !ownedHostKeys.includes(exitedHostKey)) return;
-      const nextSessions = current.sessions.filter((session) => pooledHostKey(session) !== exitedHostKey);
+      const nextSessions = current.sessions.filter(
+        (session) => sessionHostKey(workspaceId, hostKey, session.key, session.created_at) !== exitedHostKey,
+      );
+      if (nextSessions.length === current.sessions.length) return;
       applyRuntime({ ...current, sessions: nextSessions });
       requestRuntimeRefresh();
     });
@@ -804,18 +859,18 @@
         </button>
       </div>
 
-      {#if selectedSession}
+      {#if selectedSession?.runtimeSession}
         <div class="mobile-terminal-options-sheet__danger">
           <button
             type="button"
-            aria-label={`Stop terminal ${selectedSession.label}`}
+            aria-label={`Stop terminal ${selectedSession.runtimeSession.label}`}
             disabled={terminalOptionsSaving || stoppingSession !== null || launchingTarget !== null}
             onclick={promptStopSelectedSession}
           >
-            {#if stoppingSession === selectedSession.key}<Spinner size={16} />{:else}<SquareIcon size="17" strokeWidth="2" aria-hidden="true" />{/if}
+            {#if stoppingSession === selectedSession.runtimeSession.key}<Spinner size={16} />{:else}<SquareIcon size="17" strokeWidth="2" aria-hidden="true" />{/if}
             Stop terminal…
           </button>
-          <small>Terminates the process running in {selectedSession.label}.</small>
+          <small>Terminates the process running in {selectedSession.runtimeSession.label}.</small>
         </div>
       {/if}
 

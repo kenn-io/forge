@@ -1,5 +1,3 @@
-import type { RuntimeSession } from "../../api/types.js";
-
 function storageKey(workspaceId: string, hostKey?: string): string {
   return `kenn-forge:mobile-workspace-session:${encodeURIComponent(hostKey ?? "local")}:${encodeURIComponent(workspaceId)}`;
 }
@@ -36,7 +34,7 @@ export function saveMobileWorkspaceSession(
 }
 
 export function selectMobileWorkspaceSession(
-  sessions: readonly RuntimeSession[],
+  sessions: readonly { key: string }[],
   preferredKey: string | null,
 ): string | null {
   if (preferredKey && sessions.some((session) => session.key === preferredKey)) {

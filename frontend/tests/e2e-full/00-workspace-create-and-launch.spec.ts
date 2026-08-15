@@ -511,6 +511,15 @@ test.describe("workspace create-and-launch full stack", () => {
       await actionsSheet.getByRole("button", { name: "Close workspace actions" }).tap();
       await phonePage.goto(`${server.info.base_url}/m/workspaces/local/${created.id}`);
 
+      const sessionSwitcher = phonePage.getByRole("combobox", { name: /Terminal session/ });
+      await expect(sessionSwitcher).toContainText(agentLabel);
+      await sessionSwitcher.tap();
+      await phonePage.getByRole("option", { name: "Workspace" }).tap();
+      await expect(sessionSwitcher).toContainText("Workspace");
+      await sessionSwitcher.tap();
+      await phonePage.getByRole("option", { name: agentLabel }).tap();
+      await expect(sessionSwitcher).toContainText(agentLabel);
+
       await expect(phonePage.getByRole("button", { name: "Launch session" })).toHaveCount(0);
       await expect(phonePage.getByRole("button", { name: `Stop terminal ${agentLabel}` })).toHaveCount(0);
       const terminalOptionsButton = phonePage.getByRole("button", { name: "Terminal options" });
@@ -546,7 +555,14 @@ test.describe("workspace create-and-launch full stack", () => {
           response.request().method() === "POST" &&
           response.url().endsWith(`/api/v1/workspaces/${created.id}/runtime/sessions`),
       );
-      await phonePage.getByRole("button", { name: agentLabel, exact: true }).tap();
+      await terminalOptionsButton.tap();
+      const newTerminal = terminalOptions.getByRole("button", { name: "New terminal" });
+      await expect(newTerminal).toBeEnabled();
+      await newTerminal.tap();
+      await phonePage
+        .getByRole("dialog", { name: "Launch workspace session" })
+        .getByRole("button", { name: agentLabel })
+        .tap();
       const relaunchResponse = await relaunchResponsePromise;
       expect(relaunchResponse.status(), await relaunchResponse.text()).toBe(200);
       await expect.poll(() => runtimeTargets(api!, created.id)).toContain(agentKey);
@@ -633,11 +649,18 @@ test.describe("workspace create-and-launch full stack", () => {
       await waitForWorkspaceReady(api, created.id);
       await expect.poll(() => launchRequests).toBe(1);
       await expect.poll(() => runtimeTargets(api!, created.id)).toEqual([]);
-      const relaunch = page.getByRole("button", { name: agentLabel, exact: true });
-      await expect(relaunch).toBeDisabled();
+      await page.getByRole("button", { name: "Terminal options" }).click();
+      const terminalOptions = page.getByRole("dialog", { name: "Terminal options" });
+      const newTerminal = terminalOptions.getByRole("button", { name: "New terminal" });
+      await expect(newTerminal).toBeDisabled();
 
       const expiryMessage = `${agentLabel} launched, but its session did not become available`;
       await expect(page.getByText(expiryMessage)).toBeVisible({ timeout: 20_000 });
+      await expect(newTerminal).toBeEnabled();
+      await newTerminal.click();
+      const relaunch = page
+        .getByRole("dialog", { name: "Launch workspace session" })
+        .getByRole("button", { name: agentLabel });
       await expect(relaunch).toBeEnabled();
       await relaunch.click();
       await expect.poll(() => launchRequests).toBe(2);

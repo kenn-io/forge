@@ -47,6 +47,8 @@
     onSidebarResize?: (width: number) => void;
     onDetailTabChange?: (tab: DetailTab, options?: { replace?: boolean }) => void;
     onStackMemberNavigate?: StackMemberNavigate;
+    onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
+    onViewWorkspaces?: (() => void) | undefined;
     inlineWorkspace?: InlineWorkspaceController | null;
     /**
      * The workspace's own controls, rendered in the tab strip of the leaf holding
@@ -71,6 +73,8 @@
     onSidebarResize,
     onDetailTabChange,
     onStackMemberNavigate,
+    onOpenWorkspace,
+    onViewWorkspaces,
     inlineWorkspace = null,
     workspacePaneControls = undefined,
   }: Props = $props();
@@ -262,6 +266,8 @@
           hideStaleWhileLoading={hideStaleDetailWhileLoading}
           {workflowApprovalSync}
           onStackMemberNavigate={handleStackMemberNavigate}
+          {onOpenWorkspace}
+          {onViewWorkspaces}
           {inlineWorkspace}
         />
       {:else if paneLayout !== null}
@@ -315,6 +321,8 @@
               hideStaleWhileLoading={hideStaleDetailWhileLoading}
               {workflowApprovalSync}
               onStackMemberNavigate={handleStackMemberNavigate}
+              {onOpenWorkspace}
+              {onViewWorkspaces}
               {inlineWorkspace}
             />
           {/if}

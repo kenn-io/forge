@@ -5620,6 +5620,7 @@ const workspaceSummaryColumns = `
 	w.error_message, w.created_at, w.kata_metadata,
 	r.id, r.platform_repo_id,
 	CASE
+	    WHEN r.id IS NULL THEN 0
 	    WHEN w.item_type = 'pull_request' THEN NOT EXISTS (
 	        SELECT 1
 	        FROM forge_archive_items source_a
@@ -5639,7 +5640,7 @@ const workspaceSummaryColumns = `
 	    ELSE 1
 	END,
 	CASE
-	    WHEN w.associated_pr_number IS NULL THEN 0
+	    WHEN r.id IS NULL OR w.associated_pr_number IS NULL THEN 0
 	    ELSE NOT EXISTS (
 	        SELECT 1
 	        FROM forge_archive_items associated_a

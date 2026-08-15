@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 )
 
@@ -70,4 +71,83 @@ func TestWorkspaceAPIHidesRemovedAssociatedPullRequestE2E(t *testing.T) {
 	require.NotNil(stored)
 	require.NotNil(stored.AssociatedPRNumber)
 	require.Equal(42, *stored.AssociatedPRNumber)
+}
+
+func TestWorkspaceAPIHidesProviderMetadataForReusedRouteE2E(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	ts, database := bootFleetServer(t, nil)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	original, accepted, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-original", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	}, now)
+	require.NoError(err)
+	require.True(accepted)
+	require.NotNil(original)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: original.Repository.ID, PlatformID: 4200, Number: 42,
+		URL: "https://github.com/acme/widget/pull/42", Title: "Original pull",
+		Author: "dev", State: "open", HeadBranch: "feature", BaseBranch: "main",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	associatedPR := 42
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-associated", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypeAdHoc, ItemKey: db.AdHocWorkspaceItemKey("feature"),
+		AssociatedPRNumber: &associatedPR,
+		GitHeadRef:         "feature", WorktreePath: t.TempDir(), Status: "ready",
+	}))
+	forkHead := "https://github.com/contributor/widget.git"
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-pull", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+		GitHeadRef: "feature", MRHeadRepo: &forkHead,
+		WorktreePath: t.TempDir(), Status: "ready",
+	}))
+
+	_, accepted, err = database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-original", Owner: "acme", Name: "renamed-widget",
+		RepoPath: "acme/renamed-widget",
+	}, now.Add(time.Minute))
+	require.NoError(err)
+	require.True(accepted)
+	_, accepted, err = database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-replacement", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	}, now.Add(2*time.Minute))
+	require.NoError(err)
+	require.True(accepted)
+
+	pullSummary, err := database.GetWorkspaceSummary(ctx, "ws-pull")
+	require.NoError(err)
+	require.NotNil(pullSummary)
+	require.False(pullSummary.SourceItemVisible)
+	associatedSummary, err := database.GetWorkspaceSummary(ctx, "ws-associated")
+	require.NoError(err)
+	require.NotNil(associatedSummary)
+	require.False(associatedSummary.AssociatedPRVisible)
+
+	client, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
+	require.NoError(err)
+	list, err := client.HTTP.ListWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, list.StatusCode(), string(list.Body))
+	require.NotNil(list.JSON200)
+	require.NotNil(list.JSON200.Workspaces)
+	require.Len(*list.JSON200.Workspaces, 2)
+	byID := make(map[string]generated.WorkspaceResponse, 2)
+	for _, workspace := range *list.JSON200.Workspaces {
+		byID[workspace.Id] = workspace
+	}
+	require.Nil(byID["ws-associated"].AssociatedPrNumber)
+	require.Nil(byID["ws-pull"].MrHeadRepoKind)
+	require.Nil(byID["ws-pull"].MrTitle)
 }

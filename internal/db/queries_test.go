@@ -5275,7 +5275,7 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Nil(noMR.MRDeletions)
 	assert.Nil(noMR.AssociatedPRNumber)
 	assert.Nil(noMR.ItemLastActivityAt)
-	assert.True(noMR.SourceItemVisible)
+	assert.False(noMR.SourceItemVisible)
 	assert.False(noMR.AssociatedPRVisible)
 
 	// Issue workspace keeps issue-owned header metadata and the linked PR number.
@@ -5432,6 +5432,46 @@ func TestWorkspaceSummariesRetainWorkspaceWithoutRemovedPullMetadata(t *testing.
 	require.Len(summaries, 1)
 	require.Equal("ws-removed-pr", summaries[0].ID)
 	require.Nil(summaries[0].MRTitle)
+}
+
+func TestWorkspaceSummariesHideProviderMetadataForReusedRoute(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	observedAt := baseTime()
+	reconcileCatalogRepository(
+		t, d, "provider-original", "org-a", "project-a", observedAt,
+	)
+	associatedPR := 42
+	headRepo := "https://github.com/contributor/project-a.git"
+	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
+		ID: "ws-reused-route", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "org-a", RepoName: "project-a",
+		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
+		AssociatedPRNumber: &associatedPR,
+		GitHeadRef:         "feature/stale",
+		MRHeadRepo:         &headRepo,
+		WorktreePath:       "/tmp/ws-reused-route",
+		Status:             "ready",
+	}))
+	reconcileCatalogRepository(
+		t, d, "provider-original", "org-a", "renamed-project", observedAt.Add(time.Minute),
+	)
+	reconcileCatalogRepository(
+		t, d, "provider-replacement", "org-a", "project-a", observedAt.Add(2*time.Minute),
+	)
+
+	summary, err := d.GetWorkspaceSummary(t.Context(), "ws-reused-route")
+	require.NoError(err)
+	require.NotNil(summary)
+	require.Zero(summary.RepoID)
+	require.False(summary.SourceItemVisible)
+	require.False(summary.AssociatedPRVisible)
+
+	summaries, err := d.ListWorkspaceSummaries(t.Context())
+	require.NoError(err)
+	require.Len(summaries, 1)
+	require.False(summaries[0].SourceItemVisible)
+	require.False(summaries[0].AssociatedPRVisible)
 }
 
 func TestSetWorkspaceAssociatedPRNumberIfNull(t *testing.T) {

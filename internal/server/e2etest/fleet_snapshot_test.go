@@ -130,6 +130,10 @@ func TestFleetSnapshotLocalE2E(t *testing.T) {
 		DisplayName: "widget", LocalPath: t.TempDir() + "/widget", DefaultBranch: "main",
 	})
 	require.NoError(err)
+	repoIdentity := dbpkg.GitHubRepoIdentity("github.com", "acme", "widget")
+	repoIdentity.PlatformRepoID = "repo-acme-widget"
+	_, err = database.UpsertRepo(ctx, repoIdentity)
+	require.NoError(err)
 	require.NoError(database.InsertWorkspace(ctx, &dbpkg.Workspace{
 		ID: "ws-1", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
@@ -238,10 +242,9 @@ func TestFleetSnapshotIssueWorkspaceLinksIssueOnlyE2E(t *testing.T) {
 	ts, database := bootFleetServer(t, nil)
 	ctx := context.Background()
 
-	repoID, err := database.UpsertRepo(
-		ctx,
-		dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
-	)
+	repoIdentity := dbpkg.GitHubRepoIdentity("github.com", "acme", "widget")
+	repoIdentity.PlatformRepoID = "repo-acme-widget"
+	repoID, err := database.UpsertRepo(ctx, repoIdentity)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertIssue(ctx, &dbpkg.Issue{

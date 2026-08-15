@@ -317,6 +317,9 @@ a known head into `unknown` (`internal/workspace/manager.go::RefreshWorkspaceHea
 Head-trust refresh and generated-context rendering both recheck removed-upstream
 visibility; removed PRs contribute no provider title, URL, branch, or push target
 (`internal/workspace/agent_context.go::PrepareAgentLaunchContext`).
+Workspace summaries expose provider links and head metadata only when the mutable
+route resolves to one active repository; unresolved or reused routes keep local
+workspace state but hide provider projections (`internal/db/queries.go::workspaceSummaryColumns`).
 
 Workspace creation launches an agent only after an explicit target choice on
 the create split button. The one-shot target is reactive session state keyed by

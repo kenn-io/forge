@@ -106,6 +106,11 @@ func TestBuildLocalRawOverlaysWorkspaceOntoProjectWorktree(t *testing.T) {
 		DisplayName: "app", LocalPath: filepath.Join(t.TempDir(), "app"), DefaultBranch: "main",
 	})
 	require.NoError(err)
+	_, err = database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-o-app",
+		Owner: "o", Name: "app", RepoPath: "o/app",
+	})
+	require.NoError(err)
 
 	shared := filepath.Join(t.TempDir(), "shared-wt")
 	_, err = database.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{

@@ -31,8 +31,9 @@ func TestBuildAgentContext(t *testing.T) {
 					RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
 					ItemNumber: 42, GitHeadRef: "feature/widgets",
 				},
-				SourceTitle: ptr("Fix widget refresh"),
-				SourceURL:   ptr("https://github.com/acme/widget/pull/42"),
+				SourceItemVisible: true,
+				SourceTitle:       ptr("Fix widget refresh"),
+				SourceURL:         ptr("https://github.com/acme/widget/pull/42"),
 			},
 			want: []string{
 				"Source kind: pull request",
@@ -51,7 +52,8 @@ func TestBuildAgentContext(t *testing.T) {
 					ItemNumber: 43, GitHeadRef: "feature/fork-fix",
 					MRHeadRepo: ptr("github.com/contributor/widget"),
 				},
-				SourceTitle: ptr("Fix from fork"),
+				SourceItemVisible: true,
+				SourceTitle:       ptr("Fix from fork"),
 			},
 			want: []string{
 				"Source kind: pull request",
@@ -68,6 +70,7 @@ func TestBuildAgentContext(t *testing.T) {
 					ItemNumber: 44, GitHeadRef: "feature/unknown",
 					MRHeadRepo: ptr(""),
 				},
+				SourceItemVisible: true,
 			},
 			want: []string{
 				"Source kind: pull request",
@@ -83,8 +86,9 @@ func TestBuildAgentContext(t *testing.T) {
 					RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
 					ItemNumber: 7,
 				},
-				SourceTitle: ptr("Add retry controls"),
-				SourceURL:   ptr("https://git.example.test/acme/widget/issues/7"),
+				SourceItemVisible: true,
+				SourceTitle:       ptr("Add retry controls"),
+				SourceURL:         ptr("https://git.example.test/acme/widget/issues/7"),
 			},
 			want: []string{"Source kind: provider issue", "Issue: #7", "Add retry controls", "https://git.example.test/acme/widget/issues/7"},
 		},
@@ -96,6 +100,7 @@ func TestBuildAgentContext(t *testing.T) {
 					RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
 					ItemNumber: 7, AssociatedPRNumber: ptrInt(42),
 				},
+				SourceItemVisible:   true,
 				SourceTitle:         ptr("Add retry controls"),
 				AssociatedPRVisible: true,
 			},
@@ -447,6 +452,48 @@ func TestPrepareAgentLaunchContextUsesSyncedHeadBranchForPushTarget(t *testing.T
 	assert.NotContains(string(content), "Working branch")
 }
 
+func setupAgentContextRemovalDuringRefresh(
+	t *testing.T,
+) (*Manager, *Workspace, string, *bool) {
+	t.Helper()
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/widgets")
+	_, err := d.WriteDB().ExecContext(ctx, `
+		UPDATE forge_merge_requests
+		SET url = 'https://github.com/acme/widget/pull/42'
+		WHERE repo_id = ? AND number = 42`, repoID)
+	require.NoError(err)
+	mgr := NewManager(d, t.TempDir())
+	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	worktree := ws.WorktreePath
+	initWorkspaceGitRepoAt(t, worktree)
+	require.NoError(d.UpdateWorkspaceBranch(ctx, ws.ID, "feature/widgets"))
+	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
+
+	removed := false
+	mgr.afterHeadRepoSnapshotRead = func() {
+		if removed {
+			return
+		}
+		removed = true
+		now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+		_, insertErr := d.WriteDB().ExecContext(ctx, `
+			INSERT INTO forge_archive_items (
+				repo_id, item_type, item_number, provider_item_id,
+				provider_created_at, provider_updated_at, lifecycle_state
+			) VALUES (?, 'merge_request', 42, 'pull-42', ?, ?, 'removed_upstream')`,
+			repoID, now, now,
+		)
+		require.NoError(insertErr)
+	}
+	return mgr, ws, worktree, &removed
+}
+
 func TestPrepareAgentLaunchContextSuppressesRemovedPullPushTarget(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
@@ -481,12 +528,31 @@ func TestPrepareAgentLaunchContextSuppressesRemovedPullPushTarget(t *testing.T) 
 	content, err := os.ReadFile(filepath.Join(worktree, "AGENTS.override.md"))
 	require.NoError(err)
 	assert.NotContains(string(content), "updates this PR")
-	assert.Contains(string(content), "repository identity unavailable; no push upstream configured")
+	assert.NotContains(string(content), "PR head:")
 	stored, err := d.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	require.NotNil(stored.MRHeadRepo)
 	assert.Empty(*stored.MRHeadRepo)
+}
+
+func TestPrepareAgentLaunchContextDropsMetadataRemovedDuringRefresh(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	mgr, ws, worktree, removed := setupAgentContextRemovalDuringRefresh(t)
+
+	require.NoError(mgr.PrepareAgentLaunchContext(t.Context(), PrepareAgentLaunchContextOptions{
+		WorkspaceID: ws.ID,
+		TargetKey:   "codex",
+	}))
+	require.True(*removed)
+
+	content, err := os.ReadFile(filepath.Join(worktree, "AGENTS.override.md"))
+	require.NoError(err)
+	assert.NotContains(string(content), "Test PR")
+	assert.NotContains(string(content), "https://github.com/acme/widget/pull/42")
+	assert.NotContains(string(content), "feature/widgets")
 }
 
 func TestPrepareAgentLaunchContextRefreshesLegacyUnknownHeadRepo(t *testing.T) {
@@ -596,4 +662,18 @@ func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
 	assert.Contains(rendered, "Issue: #42")
 	assert.NotContains(rendered, generatedAgentContextMarker)
 	assert.NoFileExists(filepath.Join(worktree, "CLAUDE.local.md"))
+}
+
+func TestRenderAgentContextForWorktreeDropsMetadataRemovedDuringRefresh(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	mgr, _, worktree, removed := setupAgentContextRemovalDuringRefresh(t)
+
+	rendered, err := mgr.RenderAgentContextForWorktree(t.Context(), worktree)
+	require.NoError(err)
+	require.True(*removed)
+	assert.NotContains(rendered, "Test PR")
+	assert.NotContains(rendered, "https://github.com/acme/widget/pull/42")
+	assert.NotContains(rendered, "feature/widgets")
 }

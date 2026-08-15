@@ -314,9 +314,9 @@ commit (`internal/db/db.go::LockMergeRequestSnapshot`,
 Persisted-workspace refreshes reload by workspace ID while holding that same
 barrier through classification persistence, so repository renames cannot turn
 a known head into `unknown` (`internal/workspace/manager.go::RefreshWorkspaceHeadRepoSnapshot`).
-The revision guard also fences removed-upstream visibility; removed PRs persist
-unknown head trust so generated launch context never advertises a stale push
-target (`internal/db/queries.go::UpdateWorkspaceMRHeadRepoForSnapshot`).
+Head-trust refresh and generated-context rendering both recheck removed-upstream
+visibility; removed PRs contribute no provider title, URL, branch, or push target
+(`internal/workspace/agent_context.go::PrepareAgentLaunchContext`).
 
 Workspace creation launches an agent only after an explicit target choice on
 the create split button. The one-shot target is reactive session state keyed by

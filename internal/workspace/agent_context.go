@@ -90,11 +90,13 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 		RepoOwner:    ws.RepoOwner,
 		RepoName:     ws.RepoName,
 		ItemNumber:   ws.ItemNumber,
-		Title:        stringPtrValue(ws.SourceTitle),
-		URL:          stringPtrValue(ws.SourceURL),
 	}
-	if ctx.Title == "" {
-		ctx.Title = stringPtrValue(ws.MRTitle)
+	if ws.SourceItemVisible {
+		ctx.Title = stringPtrValue(ws.SourceTitle)
+		ctx.URL = stringPtrValue(ws.SourceURL)
+		if ctx.Title == "" {
+			ctx.Title = stringPtrValue(ws.MRTitle)
+		}
 	}
 
 	switch ws.ItemType {
@@ -126,13 +128,15 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 		}
 	default:
 		ctx.SourceKind = AgentSourceKindPullRequest
-		// Prefer the currently synced PR head branch: the creation-time
-		// GitHeadRef snapshot goes stale when the head branch is renamed.
-		ctx.HeadBranch = firstNonEmpty(stringPtrValue(ws.MRHeadBranch), ws.GitHeadRef)
-		if ws.MRHeadRepo != nil && strings.TrimSpace(*ws.MRHeadRepo) == "" {
-			ctx.HeadRepoUnknown = true
-		} else if ws.MRHeadRepo != nil {
-			ctx.ForkHeadRepo = *ws.MRHeadRepo
+		if ws.SourceItemVisible {
+			// Prefer the currently synced PR head branch: the creation-time
+			// GitHeadRef snapshot goes stale when the head branch is renamed.
+			ctx.HeadBranch = firstNonEmpty(stringPtrValue(ws.MRHeadBranch), ws.GitHeadRef)
+			if ws.MRHeadRepo != nil && strings.TrimSpace(*ws.MRHeadRepo) == "" {
+				ctx.HeadRepoUnknown = true
+			} else if ws.MRHeadRepo != nil {
+				ctx.ForkHeadRepo = *ws.MRHeadRepo
+			}
 		}
 	}
 
@@ -220,6 +224,13 @@ func (m *Manager) PrepareAgentLaunchContext(
 	if err := m.RefreshWorkspaceHeadRepo(ctx, &summary.Workspace); err != nil {
 		return fmt.Errorf("refresh workspace head repository: %w", err)
 	}
+	summary, err = m.GetSummary(ctx, opts.WorkspaceID)
+	if err != nil {
+		return fmt.Errorf("reload workspace summary: %w", err)
+	}
+	if summary == nil {
+		return ErrWorkspaceNotFound
+	}
 
 	relPath := agentContextRelPath(opts.TargetKey)
 	if relPath == "" {
@@ -268,7 +279,14 @@ func (m *Manager) RenderAgentContextForWorktree(
 		if err := m.RefreshWorkspaceHeadRepo(ctx, &summaries[i].Workspace); err != nil {
 			return "", err
 		}
-		rendered := RenderAgentContext(BuildAgentContext(summaries[i]))
+		refreshed, err := m.GetSummary(ctx, summaries[i].ID)
+		if err != nil {
+			return "", err
+		}
+		if refreshed == nil {
+			return "", nil
+		}
+		rendered := RenderAgentContext(BuildAgentContext(*refreshed))
 		return strings.TrimSpace(strings.TrimPrefix(
 			rendered, generatedAgentContextMarker,
 		)), nil

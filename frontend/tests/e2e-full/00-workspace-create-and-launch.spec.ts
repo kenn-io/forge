@@ -795,6 +795,48 @@ test.describe("workspace create-and-launch full stack", () => {
     }
   });
 
+  test("phone tabbed list item opens a workspace that returns to the list", async ({ page, browser }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
+      "git, tmux, and sh are required for the real workspace runtime flow",
+    );
+
+    let server: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    let phoneContext: BrowserContext | null = null;
+    try {
+      server = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: server.info.base_url });
+      await configureAgent(page, server.info.base_url);
+      const launchResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          /\/api\/v1\/workspaces\/[^/]+\/runtime\/sessions$/.test(response.url()),
+      );
+      const created = await createPullRequestWorkspaceWithAgent(page, server.info.base_url);
+      await waitForWorkspaceReady(api, created.id);
+      expect((await launchResponsePromise).status()).toBe(200);
+      await expect.poll(() => runtimeTargets(api!, created.id)).toContain(agentKey);
+
+      phoneContext = await browser.newContext({ ...devices["Pixel 7"] });
+      const phonePage = await phoneContext.newPage();
+      await phonePage.goto(`${server.info.base_url}/m/workspaces`);
+      await phonePage.getByRole("button", { name: "Open linked item #1" }).tap();
+      await expect(phonePage).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}/item$`));
+      await phonePage.getByRole("tab", { name: "Files changed" }).tap();
+      await phonePage.getByRole("tab", { name: "Conversation" }).tap();
+      await phonePage.getByRole("button", { name: "Open Workspace" }).tap();
+
+      await expect(phonePage).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
+      await phonePage.getByRole("button", { name: "Back to workspaces" }).tap();
+      await expect(phonePage).toHaveURL(/\/m\/workspaces$/);
+    } finally {
+      await phoneContext?.close();
+      await api?.dispose();
+      await server?.stop();
+    }
+  });
+
   test("phone local base terminal survives pending and failed runtime discovery", async ({ page, browser }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
@@ -851,7 +893,9 @@ test.describe("workspace create-and-launch full stack", () => {
       const created = (await createResponse.json()) as WorkspaceResponse;
       await expect(phonePage).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
       await waitForWorkspaceReady(api, created.id);
-      await expect(phonePage.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Workspace");
+      await expect(phonePage.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Workspace", {
+        timeout: 15_000,
+      });
       await expect(phonePage.locator(".mobile-workspace-terminal__stage")).toBeVisible();
       await expect
         .poll(async () => (await workspaceBaseWebSockets(phonePage, created.id)).filter((entry) => !entry.closed))

@@ -225,9 +225,13 @@ function renderPullDetail(
   },
   options: {
     hideWorkspaceAction?: boolean;
+    hideTabs?: boolean;
     actions?: { pull: unknown[] };
     detailSyncing?: boolean;
+    diff?: ReturnType<typeof makeReviewSuggestionDiffStore>;
+    diffReviewDraft?: { setRouteContext: ReturnType<typeof vi.fn>; isSubmitting: () => boolean };
     inlineWorkspace?: InlineWorkspaceController | null;
+    onDetailTabChange?: ((tab: "conversation" | "files") => void) | undefined;
     runtimeClient?: GeneratedClient;
   } = {},
 ) {
@@ -353,7 +357,9 @@ function renderPullDetail(
     platformHost: "github.com",
     repoPath: "acme/widget",
     hideWorkspaceAction: options.hideWorkspaceAction ?? true,
+    hideTabs: options.hideTabs ?? false,
     inlineWorkspace: options.inlineWorkspace ?? null,
+    onDetailTabChange: options.onDetailTabChange,
   };
   const rendered = render(PullDetailTestHarness, {
     props: {
@@ -365,6 +371,8 @@ function renderPullDetail(
         STORES_KEY,
         {
           detail: detailStore,
+          ...(options.diff === undefined ? {} : { diff: options.diff }),
+          ...(options.diffReviewDraft === undefined ? {} : { diffReviewDraft: options.diffReviewDraft }),
           pulls: { loadPulls: vi.fn() },
           activity: { loadActivity: vi.fn() },
           detailActivityView: createDetailActivityViewStore(),
@@ -1306,6 +1314,26 @@ describe("PullDetail approvals", () => {
     expect(screen.getByText("This can return directly.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Commit suggestion" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Add suggestion to batch" })).toBeNull();
+  });
+
+  it("uses the controlled detail tab when a focused review thread jumps to its diff", async () => {
+    const detail = pullDetail();
+    addReviewSuggestionToDetail(detail);
+    const onDetailTabChange = vi.fn();
+    const { navigate } = renderPullDetail(detail, undefined, undefined, {
+      hideTabs: true,
+      diff: makeReviewSuggestionDiffStore(),
+      diffReviewDraft: {
+        setRouteContext: vi.fn(),
+        isSubmitting: () => false,
+      },
+      onDetailTabChange,
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Jump to diff" }));
+
+    expect(onDetailTabChange).toHaveBeenCalledWith("files");
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("routes a failed suggestion refresh through shared conflict recovery", async () => {

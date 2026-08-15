@@ -85,6 +85,7 @@ interface RenderPRListViewOptions {
   detail?: unknown;
   navigate?: (path: string | { path: string }, options?: { replace?: boolean }) => void;
   workspacePaneControls?: Snippet | undefined;
+  onDetailTabChange?: ((tab: "conversation" | "files", options?: { replace?: boolean }) => void) | undefined;
 }
 
 /** Stands in for the frontend's workspace controls button. */
@@ -112,6 +113,7 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
         ...(options.workspacePaneControls !== undefined
           ? { workspacePaneControls: options.workspacePaneControls }
           : {}),
+        ...(options.onDetailTabChange !== undefined ? { onDetailTabChange: options.onDetailTabChange } : {}),
       },
       context: new Map<symbol, unknown>([
         [
@@ -183,6 +185,20 @@ describe("PRListView detail panes", () => {
     expect(screen.getByTestId("pull-detail").textContent).toContain("Conversation acme/widgets#12");
     expect(screen.queryByRole("tab", { name: "Files changed" })).toBeNull();
     expect(localStorage.getItem("kenn-forge-pane-layout-v1:prs")).toBe(storedLayout);
+  });
+
+  it("routes focused detail diff jumps through the controlled tab callback", async () => {
+    const onDetailTabChange = vi.fn();
+    renderPRListView({
+      detailPresentation: "focused",
+      detailTab: "conversation",
+      onDetailTabChange,
+    });
+    await tick();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
+
+    expect(onDetailTabChange).toHaveBeenCalledWith("files", { replace: false });
   });
 
   it("pushes history on a pane tab click while the panes share a leaf", async () => {

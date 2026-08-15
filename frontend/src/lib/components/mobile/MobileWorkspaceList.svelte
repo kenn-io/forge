@@ -283,7 +283,7 @@
     workspace: WorkspaceListItem,
     action: "push" | "pull" | "refresh" | "reveal",
   ): void {
-    if (actionBusy) return;
+    if (actionBusy || workspaceActionsDisabled(workspace)) return;
     actionBusy = `${workspace.fleet_host_key ?? "local"}:${workspace.id}:${action}`;
     const hostKey = workspace.fleet_host_key;
     const command = hostKey
@@ -402,6 +402,10 @@
 
   function canPull(workspace: WorkspaceListItem): boolean {
     return (workspace.commits_behind ?? 0) > 0 && (workspace.commits_ahead ?? 0) === 0;
+  }
+
+  function workspaceActionsDisabled(workspace: WorkspaceListItem): boolean {
+    return workspace.status === "deleting" || workspace.status === "deletion_failed";
   }
 
   function runSheetAction(action: "push" | "pull" | "refresh" | "reveal"): void {
@@ -635,17 +639,17 @@
     <div class="mobile-sheet-content mobile-sheet--actions">
       <small class="mobile-sheet__branch">{actionsWorkspace.git_head_ref}</small>
       <div class="mobile-sheet__action-list">
-        {#if canPush(actionsWorkspace)}<button type="button" disabled={actionBusy !== null} onclick={() => runSheetAction("push")}>Push branch</button>{/if}
-        {#if canPull(actionsWorkspace)}<button type="button" disabled={actionBusy !== null} onclick={() => runSheetAction("pull")}>Pull remote changes</button>{/if}
-        <button type="button" disabled={actionBusy !== null} onclick={() => runSheetAction("refresh")}>Refresh workspace</button>
-        <button type="button" disabled={actionBusy !== null} onclick={() => runSheetAction("reveal")}>Reveal worktree</button>
+        {#if canPush(actionsWorkspace)}<button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("push")}>Push branch</button>{/if}
+        {#if canPull(actionsWorkspace)}<button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("pull")}>Pull remote changes</button>{/if}
+        <button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("refresh")}>Refresh workspace</button>
+        <button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("reveal")}>Reveal worktree</button>
         <button type="button" onclick={() => copySheetValue("branch")}>Copy branch name</button>
         <button type="button" onclick={() => copySheetValue("path")}>Copy worktree path</button>
         {#if itemURL}
           <button type="button" onclick={() => openSheetProviderItem(itemURL)}>Open item on provider</button>
           <button type="button" onclick={() => copyText(itemURL, "Copied item URL.")}>Copy item URL</button>
         {/if}
-        <button class="danger" type="button" disabled={actionBusy !== null} onclick={() => promptSheetDelete(false)}>{actionsWorkspace.status === "deletion_failed" ? "Retry deletion…" : "Delete workspace…"}</button>
+        <button class="danger" type="button" disabled={actionBusy !== null || actionsWorkspace.status === "deleting"} onclick={() => promptSheetDelete(false)}>{actionsWorkspace.status === "deletion_failed" ? "Retry deletion…" : "Delete workspace…"}</button>
         {#if actionsWorkspace.status === "deletion_failed"}
           <button class="danger" type="button" disabled={actionBusy !== null} onclick={() => promptSheetDelete(true)}>Force delete workspace…</button>
         {/if}

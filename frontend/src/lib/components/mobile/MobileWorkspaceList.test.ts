@@ -356,6 +356,40 @@ describe("MobileWorkspaceList", () => {
     });
   });
 
+  it.each([
+    ["deleting", "Delete workspace…", true],
+    ["deletion_failed", "Retry deletion…", false],
+  ] as const)("disables ordinary actions while workspace status is %s", async (status, deleteLabel, deleteDisabled) => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") return Promise.resolve({ data: { hosts: [] } });
+      if (path === "/workspaces") {
+        return Promise.resolve({
+          data: {
+            workspaces: [{ ...fixture, status, commits_ahead: 1 }],
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Build mobile workspaces" }));
+
+    const actions = await screen.findByRole("dialog", { name: "Workspace actions" });
+    for (const label of ["Push branch", "Refresh workspace", "Reveal worktree"]) {
+      expect((within(actions).getByRole("button", { name: label }) as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect((within(actions).getByRole("button", { name: deleteLabel }) as HTMLButtonElement).disabled).toBe(
+      deleteDisabled,
+    );
+    if (status === "deletion_failed") {
+      expect(
+        (within(actions).getByRole("button", { name: "Force delete workspace…" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+    }
+  });
+
   it("does not restore a deleted Fleet workspace from a failed refresh cache", async () => {
     const fleetWorkspace = {
       ...fixture,

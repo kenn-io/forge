@@ -266,6 +266,7 @@
           hideStaleWhileLoading={hideStaleDetailWhileLoading}
           {workflowApprovalSync}
           onStackMemberNavigate={handleStackMemberNavigate}
+          onDetailTabChange={selectDetailTab}
           {onOpenWorkspace}
           {onViewWorkspaces}
           {inlineWorkspace}

@@ -179,6 +179,7 @@
     autoSync?: DetailSyncMode;
     workflowApprovalSync?: boolean;
     onStackMemberNavigate?: (ref: PullRequestRouteRef) => boolean | void;
+    onDetailTabChange?: ((tab: "conversation" | "files") => void) | undefined;
     onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
     inlineWorkspace?: InlineWorkspaceController | null;
@@ -197,6 +198,7 @@
     autoSync = "background",
     workflowApprovalSync = true,
     onStackMemberNavigate,
+    onDetailTabChange,
     onOpenWorkspace,
     onViewWorkspaces,
     inlineWorkspace = null,
@@ -454,6 +456,10 @@
       reviewThreadTargetSide(thread),
     );
     if (hideTabs) {
+      if (onDetailTabChange) {
+        onDetailTabChange("files");
+        return;
+      }
       navigate(buildPullRequestFilesRoute({ ...routeRef, number }));
       return;
     }

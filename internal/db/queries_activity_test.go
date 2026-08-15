@@ -1850,6 +1850,15 @@ func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
 	mergedPR.ClosedAt = &mergedAt
 	insertTestMRWithOptions(t, d, mergedPR)
 
+	// A reopen is a lifecycle action even though the feed renders no row for it.
+	reopenedAt := now.Add(-3 * time.Hour)
+	reopenedPRID := insertTestMRWithOptions(t, d, testMR(repoID, 5, withMRTitle("Reopened PR"),
+		withMRActivity(now.Add(-30*24*time.Hour))))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: reopenedPRID, EventType: "reopened", Author: "author",
+		CreatedAt: reopenedAt, DedupeKey: "reopened-pr",
+	}}))
+
 	issue := testIssue(repoID, 4, withIssueTitle("Issue"), withIssueActivity(now.Add(-9*24*time.Hour)))
 	issue.UpdatedAt = now.Add(-10 * time.Minute)
 	issue.LastActivityAt = now.Add(-10 * time.Minute)
@@ -1872,11 +1881,13 @@ func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
 		1347: lastComment,
 		3:    mergedAt,
 		4:    lastIssueComment,
+		5:    reopenedAt,
 	}, activityByNumber, "provider updated_at must not admit or date parents")
-	require.Len(subjects, 3)
+	require.Len(subjects, 4)
 	assert.Equal(3, subjects[0].Subject.Key.ItemNumber, "ordered by ledger recency")
-	assert.Equal(4, subjects[1].Subject.Key.ItemNumber)
-	assert.Equal(1347, subjects[2].Subject.Key.ItemNumber)
+	assert.Equal(5, subjects[1].Subject.Key.ItemNumber)
+	assert.Equal(4, subjects[2].Subject.Key.ItemNumber)
+	assert.Equal(1347, subjects[3].Subject.Key.ItemNumber)
 
 	items, err := d.ListActivity(ctx, ListActivityOpts{Since: &since, Limit: 50})
 	require.NoError(err)
@@ -1914,16 +1925,23 @@ func TestListActivityAuthorsIncludeParentsRecentOnlyByCloseOrMerge(t *testing.T)
 	closedIssue.ClosedAt = &closedAt
 	insertTestIssueWithOptions(t, d, closedIssue)
 
+	reopenedIssueID := insertTestIssueWithOptions(t, d, testIssue(repoID, 4, withIssueAuthor("Reopener"),
+		withIssueActivity(now.Add(-30*24*time.Hour))))
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID: reopenedIssueID, EventType: "reopened", Author: "Reopener",
+		CreatedAt: now.Add(-3 * time.Hour), DedupeKey: "reopened-issue",
+	}}))
+
 	dormant := testMR(repoID, 3, withMRAuthor("Dormant"), withMRActivity(now.Add(-30*24*time.Hour)))
 	dormant.LastActivityAt = now.Add(-time.Minute)
 	insertTestMRWithOptions(t, d, dormant)
 
 	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{Since: &since, Limit: 50})
 	require.NoError(err)
-	require.Len(subjects, 2, "merge and close admit parents to the window")
+	require.Len(subjects, 3, "merge, close, and reopen admit parents to the window")
 
 	authors, err := d.ListActivityAuthors(ctx, ListActivityAuthorsOpts{Since: &since})
 	require.NoError(err)
-	assert.Equal([]string{"Merger", "Closer"}, authors,
+	assert.Equal([]string{"Merger", "Closer", "Reopener"}, authors,
 		"every parent visible in Activity must offer its author as a filter candidate")
 }

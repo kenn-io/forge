@@ -896,7 +896,8 @@ Not every visibility control means "remove this entity entirely."
   issue opening rows
   (`frontend/src/lib/stores/activity.svelte.ts::buildActivityFilterTypes`).
 - Activity recency for a PR or issue is derived from the event ledger the feed can
-  render (opening, comments, reviews, commits, force pushes, merge, close), never from
+  render plus lifecycle transitions (opening, comments, reviews, commits, force pushes,
+  reopen, merge, close), never from
   provider `updated_at`/`last_activity_at`: GitHub bumps those for mergeability recomputes
   and branch deletion, which read as phantom activity. Event visibility filters must not
   redefine that recency (`internal/db/queries_activity.go::prActivityAtExpr`).

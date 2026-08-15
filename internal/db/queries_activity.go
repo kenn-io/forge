@@ -11,7 +11,8 @@ import (
 )
 
 // prActivityAtExpr is a pull request's Activity recency: opening, the newest
-// ledger event the feed can render, merge, or close, whichever is latest.
+// ledger event the feed can render, reopen, merge, or close, whichever is
+// latest.
 // Provider updated_at is not activity: GitHub bumps it for mergeability
 // recomputation after base pushes, head-branch deletion after merge, and other
 // invisible bookkeeping, which surfaced phantom recency in the feed. The
@@ -21,18 +22,18 @@ func prActivityAtExpr(pr string) string {
 	return fmt.Sprintf(
 		"MAX(%[1]s.created_at, COALESCE((SELECT e.created_at FROM forge_mr_events e "+
 			"WHERE e.merge_request_id = %[1]s.id "+
-			"AND e.event_type IN ('issue_comment', 'review', 'commit', 'force_push') "+
+			"AND e.event_type IN ('issue_comment', 'review', 'commit', 'force_push', 'reopened') "+
 			"ORDER BY e.created_at DESC LIMIT 1), %[1]s.created_at), "+
 			"COALESCE(%[1]s.merged_at, %[1]s.created_at), COALESCE(%[1]s.closed_at, %[1]s.created_at))",
 		pr)
 }
 
 // issueActivityAtExpr is an issue's Activity recency: opening, the newest
-// rendered ledger event, or close, whichever is latest.
+// rendered ledger event, reopen, or close, whichever is latest.
 func issueActivityAtExpr(issue string) string {
 	return fmt.Sprintf(
 		"MAX(%[1]s.created_at, COALESCE((SELECT e.created_at FROM forge_issue_events e "+
-			"WHERE e.issue_id = %[1]s.id AND e.event_type = 'issue_comment' "+
+			"WHERE e.issue_id = %[1]s.id AND e.event_type IN ('issue_comment', 'reopened') "+
 			"ORDER BY e.created_at DESC LIMIT 1), %[1]s.created_at), "+
 			"COALESCE(%[1]s.closed_at, %[1]s.created_at))",
 		issue)
@@ -760,7 +761,7 @@ func (d *DB) ListActivityAuthors(
 			FROM forge_mr_events e
 			JOIN forge_merge_requests p ON e.merge_request_id = p.id
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
-			WHERE e.event_type IN ('issue_comment', 'review', 'commit', 'force_push')
+			WHERE e.event_type IN ('issue_comment', 'review', 'commit', 'force_push', 'reopened')
 			  AND NOT EXISTS (
 			      SELECT 1 FROM forge_archive_items ai
 			      WHERE ai.repo_id = p.repo_id
@@ -774,7 +775,7 @@ func (d *DB) ListActivityAuthors(
 			FROM forge_issue_events e
 			JOIN forge_issues i ON e.issue_id = i.id
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
-			WHERE e.event_type = 'issue_comment'
+			WHERE e.event_type IN ('issue_comment', 'reopened')
 			  AND NOT EXISTS (
 			      SELECT 1 FROM forge_archive_items ai
 			      WHERE ai.repo_id = i.repo_id

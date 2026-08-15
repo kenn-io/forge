@@ -1702,8 +1702,15 @@ func TestReuseExistingWorkspaceWorktreeRechecksSymlinkAfterLock(t *testing.T) {
 	mgr := NewManager(d, wtDir)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	readyForRepoLock := make(chan struct{})
+	continueToRepoLock := make(chan struct{})
+	var continueOnce sync.Once
+	continueReuse := func() {
+		continueOnce.Do(func() { close(continueToRepoLock) })
+	}
+	defer continueReuse()
 	mgr.beforeExistingWorktreeRepoLock = func() {
 		close(readyForRepoLock)
+		<-continueToRepoLock
 	}
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
 	require.NoError(err)
@@ -1715,10 +1722,6 @@ func TestReuseExistingWorkspaceWorktreeRechecksSymlinkAfterLock(t *testing.T) {
 	metadataDir, err := worktreeGitDir(t.Context(), ws.WorktreePath)
 	require.NoError(err)
 
-	lockRoot := mgr.localWorktreeBaseLockRoot(localRepo)
-	require.NoError(os.MkdirAll(lockRoot, 0o755))
-	held, err := mgr.locks.Acquire(t.Context(), lockRoot)
-	require.NoError(err)
 	type reuseResult struct {
 		reused bool
 		err    error
@@ -1742,7 +1745,7 @@ func TestReuseExistingWorkspaceWorktreeRechecksSymlinkAfterLock(t *testing.T) {
 	targetPath := filepath.Join(wtDir, "replacement-target")
 	require.NoError(os.Rename(ws.WorktreePath, targetPath))
 	require.NoError(os.Symlink(targetPath, ws.WorktreePath))
-	require.NoError(held.Unlock())
+	continueReuse()
 
 	select {
 	case result := <-done:

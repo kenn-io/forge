@@ -51,6 +51,11 @@ func (s *Service) hydrateItem(
 			}
 			return err
 		}
+		if finalizer, ok := s.items.(ItemSyncFinalizer); ok {
+			finalizer.FinalizeArchiveItemSync(
+				ctx, work.RepoID, work.ItemType, work.ItemNumber,
+			)
+		}
 		return nil
 	}
 

@@ -2,9 +2,12 @@ package e2etest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -214,6 +217,220 @@ func TestArchiveHydrationRejectsInterveningMergeRequestSnapshotE2E(t *testing.T)
 	assert.Equal("intervening-merge-sha", stored.MergeCommitSHA)
 	require.NotNil(stored.FilesChanged)
 	assert.Equal(9, *stored.FilesChanged)
+}
+
+func TestArchiveReactivationReclassifiesWorkspaceHeadRepoE2E(t *testing.T) {
+	tests := []struct {
+		name       string
+		headOwner  string
+		headRepoID int64
+		headClone  string
+		expectKind generated.WorkspaceResponseMrHeadRepoKind
+	}{
+		{
+			name: "same repository", headOwner: "acme", headRepoID: 1,
+			headClone:  "https://github.com/acme/widget.git",
+			expectKind: generated.WorkspaceResponseMrHeadRepoKindSameRepo,
+		},
+		{
+			name: "fork", headOwner: "contributor", headRepoID: 2,
+			headClone:  "https://github.com/contributor/widget.git",
+			expectKind: generated.WorkspaceResponseMrHeadRepoKindFork,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testArchiveReactivationReclassifiesWorkspaceHeadRepo(t, tt.headOwner, tt.headRepoID, tt.headClone, tt.expectKind)
+		})
+	}
+}
+
+func testArchiveReactivationReclassifiesWorkspaceHeadRepo(
+	t *testing.T,
+	headOwner string,
+	headRepoID int64,
+	headClone string,
+	expectKind generated.WorkspaceResponseMrHeadRepoKind,
+) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+	pullStarted := make(chan struct{})
+	releasePull := make(chan struct{})
+	var startOnce sync.Once
+
+	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		baseRepo := map[string]any{
+			"id": int64(1), "node_id": "R_widget", "name": "widget",
+			"full_name": "acme/widget", "clone_url": "https://github.com/acme/widget.git",
+			"owner": map[string]any{"login": "acme"},
+		}
+		switch r.URL.Path {
+		case "/api/graphql":
+			var request struct {
+				Query string `json:"query"`
+			}
+			assert.NoError(json.NewDecoder(r.Body).Decode(&request))
+			switch {
+			case strings.Contains(request.Query, "reviewThreads"):
+				_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"edges":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+			case strings.Contains(request.Query, "timelineItems"):
+				_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+			default:
+				http.Error(w, `{"message":"unexpected GraphQL query"}`, http.StatusBadRequest)
+			}
+		case "/api/v3/repos/acme/widget":
+			assert.NoError(json.NewEncoder(w).Encode(baseRepo))
+		case "/api/v3/repos/acme/widget/pulls/7":
+			startOnce.Do(func() { close(pullStarted) })
+			<-releasePull
+			headRepo := map[string]any{
+				"id": headRepoID, "node_id": fmt.Sprintf("R_%d", headRepoID),
+				"name": "widget", "full_name": headOwner + "/widget",
+				"clone_url": headClone, "owner": map[string]any{"login": headOwner},
+			}
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id": int64(7), "node_id": "PR_7", "number": 7,
+				"html_url": "https://github.com/acme/widget/pull/7",
+				"title":    "Reappeared pull", "state": "open", "merged": false,
+				"created_at": now.Add(-2 * time.Hour).Format(time.RFC3339),
+				"updated_at": now.Format(time.RFC3339),
+				"head":       map[string]any{"ref": "feature", "sha": "head-sha", "repo": headRepo},
+				"base":       map[string]any{"ref": "main", "sha": "base-sha", "repo": baseRepo},
+			}))
+		case "/api/v3/repos/acme/widget/commits/head-sha/check-runs":
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"total_count": 0, "check_runs": []any{},
+			}))
+		case "/api/v3/repos/acme/widget/commits/head-sha/status":
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"state": "success", "sha": "head-sha", "statuses": []any{},
+			}))
+		case "/api/v3/repos/acme/widget/actions/runs":
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"total_count": 0, "workflow_runs": []any{},
+			}))
+		default:
+			assert.NoError(json.NewEncoder(w).Encode([]any{}))
+		}
+	}))
+	t.Cleanup(providerServer.Close)
+
+	providerClient, err := ghclient.NewClient(
+		staticTokenSource("archive-token"), "github.com", nil, nil,
+		ghclient.WithBaseURLForTesting(providerServer.URL),
+	)
+	require.NoError(err)
+	registry, err := ghclient.NewProviderRegistry(map[string]ghclient.Client{
+		"github.com": providerClient,
+	})
+	require.NoError(err)
+	database := dbtest.Open(t)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil,
+		[]ghclient.RepoRef{{
+			Platform: ref.Platform, PlatformHost: ref.Host,
+			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+		}},
+		time.Hour, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	archiveService, err := archive.NewService(
+		database, registry, nil, syncer, nil,
+		archiveMergeMetricsClock{now: now.Add(2 * time.Minute)},
+	)
+	require.NoError(err)
+	requireEnsureConfigured(t, archiveService, []platform.RepoRef{ref})
+
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
+		Archive: archiveService, HostCheckAllowLoopbackAnyPort: true,
+		WorktreeDir: t.TempDir(), DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	forgeServer := httptest.NewServer(srv)
+	t.Cleanup(forgeServer.Close)
+	api, err := apiclient.NewWithHTTPClient(forgeServer.URL, forgeServer.Client())
+	require.NoError(err)
+	repositories := []generated.ArchiveRepositoryRef{{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+	}}
+	started, err := api.HTTP.StartArchivesWithResponse(
+		ctx, generated.ArchiveMutationBody{Repositories: &repositories},
+	)
+	require.NoError(err)
+	require.NotNil(started.JSON200)
+
+	repo, err := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repo.ID, PlatformID: 7, PlatformExternalID: "PR_7", Number: 7,
+		URL: "https://github.com/acme/widget/pull/7", Title: "Stored pull",
+		State: db.MergeRequestStateOpen, PlatformHeadSHA: "old-head",
+		CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now.Add(-time.Hour),
+		LastActivityAt: now.Add(-time.Hour),
+	})
+	require.NoError(err)
+	unknownHead := ""
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-reappeared", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+		GitHeadRef: "feature", MRHeadRepo: &unknownHead,
+		WorktreePath: t.TempDir(), Status: "creating",
+	}))
+	require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{
+		RepoID: repo.ID, ItemType: db.ArchiveItemTypeIssue,
+		ScanGeneration: 1, Exhausted: true, Coverage: db.ArchiveCoverageSupported,
+		Now: now,
+	}))
+	require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{
+		RepoID: repo.ID, ItemType: db.ArchiveItemTypeMergeRequest,
+		Items: []db.ArchiveInventoryItem{{
+			Number: 7, ProviderItemID: "PR_7",
+			ProviderCreatedAt: now.Add(-3 * time.Hour), ProviderUpdatedAt: now,
+		}},
+		ScanGeneration: 1, Exhausted: true, Coverage: db.ArchiveCoverageSupported,
+		Now: now,
+	}))
+	progress, err := database.GetDatasetProgress(
+		ctx, repo.ID, db.ArchiveItemTypeMergeRequest, 7, db.ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+
+	runDone := make(chan error, 1)
+	go func() { runDone <- archiveService.RunEligible(ctx) }()
+	select {
+	case <-pullStarted:
+	case <-time.After(2 * time.Second):
+		require.Fail("archive hydration did not reach the provider pull request")
+	}
+	require.NoError(database.CommitArchiveItemSync(ctx, db.ArchiveItemSyncCommit{
+		RepoID: repo.ID, ItemType: db.ArchiveItemTypeMergeRequest, ItemNumber: 7,
+		ScanGeneration: progress.ScanGeneration, Outcome: db.ArchiveLookupRemoved,
+		Now: now.Add(time.Minute),
+	}))
+	close(releasePull)
+	require.NoError(<-runDone)
+
+	removed, err := database.IsArchiveItemRemovedUpstream(
+		ctx, repo.ID, db.ArchiveItemTypeMergeRequest, 7,
+	)
+	require.NoError(err)
+	require.False(removed)
+	detail, err := api.HTTP.GetWorkspaceWithResponse(ctx, "ws-reappeared")
+	require.NoError(err)
+	require.Equal(http.StatusOK, detail.StatusCode(), string(detail.Body))
+	require.NotNil(detail.JSON200)
+	require.NotNil(detail.JSON200.MrHeadRepoKind)
+	require.Equal(expectKind, *detail.JSON200.MrHeadRepoKind)
 }
 
 func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(

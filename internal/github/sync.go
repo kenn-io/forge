@@ -13296,6 +13296,36 @@ func (s *Syncer) SyncArchiveItem(
 	}
 }
 
+// FinalizeArchiveItemSync applies persistence that depends on the archive
+// lifecycle commit. A concurrent terminal observation can land after the item
+// is claimed, so parent-snapshot reclassification may still see the item as
+// removed. The successful archive commit reactivates it before this callback.
+func (s *Syncer) FinalizeArchiveItemSync(
+	ctx context.Context,
+	repoID int64,
+	itemType db.ArchiveItemType,
+	number int,
+) {
+	if itemType != db.ArchiveItemTypeMergeRequest {
+		return
+	}
+	stored, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil {
+		slog.Error("look up repository for archive item finalization failed",
+			"repo_id", repoID, "number", number, "err", err,
+		)
+		return
+	}
+	if stored == nil {
+		return
+	}
+	s.reclassifyWorkspaceHeadRepoTrust(ctx, RepoRef{
+		Platform: platform.Kind(stored.Platform), PlatformHost: stored.PlatformHost,
+		Owner: stored.Owner, Name: stored.Name, RepoPath: stored.RepoPath,
+		PlatformExternalID: stored.PlatformRepoID,
+	}, repoID, number)
+}
+
 func (s *Syncer) requireGitHubArchiveMergedMRMetrics(
 	ctx context.Context,
 	repoID int64,

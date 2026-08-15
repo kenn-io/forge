@@ -278,7 +278,9 @@ registry helpers return typed errors for missing providers or capabilities.
 
 - Archive is a scheduling and progress mode over normal sync, not a second sync engine; completeness is repository and item progress scoped by full repository identity. (`internal/db/queries_archive.go::GetArchiveProgress`)
 - Created-order inventory calls require the historical capability; updated-order maintenance traversal does not. Each returns one bounded identity page with an advancing opaque cursor or explicit exhaustion. (`internal/platform/reader_validation.go::pageReaderValidation.prepare`)
-- Hydration admits one item and invokes canonical item sync; only a successful complete sync records an archive outcome. Do not add archive-specific content paths. (`internal/archive/hydrate.go::hydrateItem`)
+- Hydration admits one item and invokes canonical item sync; only a successful complete
+  sync records an archive outcome, and provider finalizers run after that commit so they
+  observe lifecycle reactivation. (`internal/archive/hydrate.go::hydrateItem`)
 - Only parent lookups explicitly classified as removed, moved, or inaccessible are terminal. Generic and child-dataset not-found responses remain retries; a successful non-GitHub feature-metadata confirmation doubles as repository-accessibility evidence and must not be repeated before marking the parent absent. Canonical item content stays untouched. (`internal/archive/hydrate.go::archiveTerminalSyncOutcome`, `internal/platform/gitealike/feature_disabled.go::Provider.repositoryItemLookupError`,
   `internal/platform/gitlab/feature_disabled.go::Client.repositoryItemLookupError`)
 - Removed-upstream parents stay stored for rediscovery but are excluded from public

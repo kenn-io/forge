@@ -27,6 +27,14 @@ type ItemSyncer interface {
 	) (ItemSyncResult, error)
 }
 
+// ItemSyncFinalizer applies provider-specific persistence that must observe a
+// successful archive lifecycle commit. Most item sources need no finalizer.
+type ItemSyncFinalizer interface {
+	FinalizeArchiveItemSync(
+		context.Context, int64, db.ArchiveItemType, int,
+	)
+}
+
 // ItemSyncResult carries provider work accounting and any canonical evidence
 // that archive progress must revalidate atomically after domain persistence.
 type ItemSyncResult struct {

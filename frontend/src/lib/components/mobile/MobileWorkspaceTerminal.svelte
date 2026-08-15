@@ -41,7 +41,6 @@
     sessionHostKey,
     type SessionHostKey,
   } from "../../stores/session-host.svelte.js";
-  import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
   import SessionTerminalSlot from "../terminal/SessionTerminalSlot.svelte";
   import TerminalSettings from "../settings/TerminalSettings.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
@@ -178,23 +177,6 @@
   }
 
   function handleWorkspaceMissing(): void {
-    const detail = workspace;
-    const item = detail ? mobileWorkspaceLinkedItem(detail) : null;
-    notifyWorkspaceDeleted(
-      workspaceId,
-      hostKey,
-      detail && item
-        ? {
-            provider: detail.repo.provider,
-            platformHost: detail.repo.platform_host,
-            owner: detail.repo.owner,
-            name: detail.repo.name,
-            repoPath: detail.repo.repo_path,
-            number: item.number,
-            itemType: item.itemType === "pr" ? "pull_request" : "issue",
-          }
-        : undefined,
-    );
     onMissing();
   }
 

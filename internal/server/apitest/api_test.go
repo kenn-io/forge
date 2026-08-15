@@ -243,6 +243,12 @@ func TestAPIActivityAndRepoSummariesHideRemovedUpstreamArchiveRows(t *testing.T)
 		require.NotEqualValues(2, item.ItemNumber)
 		require.NotEqualValues(4, item.ItemNumber)
 	}
+	require.NotNil(activity.JSON200.ItemActivity)
+	require.NotEmpty(*activity.JSON200.ItemActivity)
+	for _, subject := range *activity.JSON200.ItemActivity {
+		require.NotEqualValues(2, subject.ItemNumber, "removed parents must not surface as parent-only threads")
+		require.NotEqualValues(4, subject.ItemNumber, "removed parents must not surface as parent-only threads")
+	}
 	authors, err := client.HTTP.ListActivityAuthorsWithResponse(
 		ctx, &generated.ListActivityAuthorsParams{Since: &since},
 	)

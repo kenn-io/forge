@@ -690,7 +690,7 @@ describe("createDetailStore", () => {
     store.setPullState(routeRef, 7, "closed");
 
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-    await vi.waitFor(() => expect(pulls.loadPulls).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(pulls.loadPulls).toHaveBeenCalledTimes(2));
   });
 
   it("syncs detail and resolves after applying the refreshed head", async () => {
@@ -715,6 +715,61 @@ describe("createDetailStore", () => {
     expect(refreshed).toBe(true);
     expect(store.getDetail()?.platform_head_sha).toBe("fresh-head");
     expect(pulls.loadPulls).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconciles visible lists after the initial detail read exposes persisted activity", async () => {
+    const loadPulls = vi.fn();
+    const onDetailSynchronized = vi.fn();
+    const store = createDetailStore({
+      client: mockClient({ GET: vi.fn().mockResolvedValue({ data: pullDetail("persisted-head") }) }),
+      getPage: () => "pulls",
+      pulls: { loadPulls },
+      onDetailSynchronized,
+    });
+
+    await loadDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+
+    expect(loadPulls).toHaveBeenCalledOnce();
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+  });
+
+  it("reconciles a successful initial read after its presentation generation is superseded", async () => {
+    const detailRead = Promise.withResolvers<{ data: PullDetail }>();
+    const get = vi.fn(() => detailRead.promise);
+    const post = vi.fn(() => new Promise<never>(() => {}));
+    const loadPulls = vi.fn();
+    const onDetailSynchronized = vi.fn();
+    const store = createDetailStore({
+      client: mockClient({ GET: get, POST: post }),
+      getPage: () => "pulls",
+      pulls: { loadPulls },
+      onDetailSynchronized,
+    });
+
+    store.loadDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    await vi.waitFor(() => expect(get).toHaveBeenCalledOnce());
+
+    detailRead.resolve({ data: pullDetail("persisted-head") });
+    store.syncDetailNow("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+
+    await vi.waitFor(() => expect(onDetailSynchronized).toHaveBeenCalledOnce());
+    expect(post).toHaveBeenCalledOnce();
+    expect(loadPulls).toHaveBeenCalledOnce();
+    expect(store.getDetail()).toBeNull();
   });
 
   it("reconciles visible lists when selection closes during an explicit detail sync", async () => {
@@ -819,8 +874,8 @@ describe("createDetailStore", () => {
     await vi.advanceTimersByTimeAsync(300);
 
     await vi.waitFor(() => expect(store.getDetail()?.merge_request.platform_head_sha).toBe("fresh-head"));
-    expect(loadPulls).toHaveBeenCalledOnce();
-    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    expect(loadPulls).toHaveBeenCalledTimes(2);
+    expect(onDetailSynchronized).toHaveBeenCalledTimes(2);
   });
 
   it("reconciles visible lists when selection changes during a background detail sync", async () => {
@@ -861,8 +916,8 @@ describe("createDetailStore", () => {
     syncPost.resolve({ data: undefined, error: undefined });
     await vi.advanceTimersByTimeAsync(300);
 
-    await vi.waitFor(() => expect(onDetailSynchronized).toHaveBeenCalledOnce());
-    expect(loadPulls).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(onDetailSynchronized).toHaveBeenCalledTimes(3));
+    expect(loadPulls).toHaveBeenCalledTimes(3);
     expect(store.getDetail()?.repo_name).toBe("widget-b");
     expect(store.getDetail()?.merge_request.platform_head_sha).toBe("other-head");
   });

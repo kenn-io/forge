@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
+import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
 import MobileActivityView from "./MobileActivityViewRuntimeHarness.svelte";
 
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
@@ -36,11 +36,15 @@ function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): 
 }
 
 const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
+const itemActivity = vi.hoisted(() => ({ value: [] as ActivitySubject[] }));
 const workspaceActivity = vi.hoisted(() => ({ value: [] as WorkspaceActivitySubject[] }));
 const onSelectItem = vi.hoisted(() => vi.fn());
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
+const hideBots = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const showNotifications = vi.hoisted(() => ({ value: true }));
+const activityCapped = vi.hoisted(() => ({ value: false }));
+const itemActivityCapped = vi.hoisted(() => ({ value: false }));
 const involvesMe = vi.hoisted(() => ({ value: false }));
 const enabledItemTypes = vi.hoisted(() => ({
   value: new Set<"pr" | "issue">(["pr", "issue"]),
@@ -81,6 +85,7 @@ vi.mock("../context.js", () => ({
       isActivityAuthorsLoading: () => false,
       getActivityAuthorsError: () => null,
       getActivityItems: () => items.value,
+      getItemActivity: () => itemActivity.value,
       getWorkspaceActivity: () => workspaceActivity.value,
       getActivityError: () => null,
       getTimeRange: () => "7d",
@@ -89,10 +94,11 @@ vi.mock("../context.js", () => ({
       getShowNotifications: () => showNotifications.value,
       getInvolvesMe: () => involvesMe.value,
       getHideClosedMerged: () => hideClosedMerged.value,
-      getHideBots: () => false,
+      getHideBots: () => hideBots.value,
       getHideDefaultBranchActivity: () => false,
       isActivityLoading: () => false,
-      isActivityCapped: () => false,
+      isActivityCapped: () => activityCapped.value,
+      isItemActivityCapped: () => itemActivityCapped.value,
       setActivityFilterTypes: vi.fn(),
       setActivitySearch: vi.fn(),
       setActivityAuthor,
@@ -122,12 +128,19 @@ vi.mock("../context.js", () => ({
   }),
 }));
 
+beforeEach(() => {
+  hideBots.value = false;
+});
+
 describe("MobileActivityView branch activity", () => {
   beforeEach(() => {
     items.value = [branchActivityItem("branch-commit")];
+    itemActivity.value = [];
     workspaceActivity.value = [];
     hideOrgName.value = false;
     hideClosedMerged.value = false;
+    activityCapped.value = false;
+    itemActivityCapped.value = false;
     enabledItemTypes.value = new Set(["pr", "issue"]);
     onSelectItem.mockClear();
     setEnabledItemTypes.mockClear();
@@ -153,6 +166,15 @@ describe("MobileActivityView branch activity", () => {
     expect(article?.textContent).not.toContain("#0");
     expect(article?.querySelector(".chip--kind-pr")).toBeNull();
     expect(article?.querySelector(".chip--kind-issue")).toBeNull();
+  });
+
+  it("warns about parent truncation separately from event truncation", () => {
+    itemActivityCapped.value = true;
+
+    render(MobileActivityView, { props: { onSelectItem } });
+
+    expect(screen.getByText(/5,000 most recently active pull requests and issues/)).toBeTruthy();
+    expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
   });
 
   it("exposes independent PR and issue toggles", async () => {
@@ -351,9 +373,15 @@ function workspaceSubject(
   } as WorkspaceActivitySubject;
 }
 
+function itemSubject(number: number, title: string, activityAt: string): ActivitySubject {
+  const { workspace: _workspace, ...subject } = workspaceSubject(number, title, activityAt);
+  return subject;
+}
+
 describe("MobileActivityView workspace activity", () => {
   beforeEach(() => {
     items.value = [];
+    itemActivity.value = [];
     workspaceActivity.value = [];
     hideClosedMerged.value = false;
     enabledItemTypes.value = new Set(["pr", "issue"]);
@@ -362,6 +390,7 @@ describe("MobileActivityView workspace activity", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   it("orders an existing thread by its newer workspace activity", () => {
@@ -375,6 +404,31 @@ describe("MobileActivityView workspace activity", () => {
 
     const cards = Array.from(container.querySelectorAll(".mobile-activity-card__title"));
     expect(cards.map((card) => card.textContent?.trim())).toEqual(["Workspace-active pull", "Provider-newer pull"]);
+  });
+
+  it("orders a thread by parent recency when its newer event is filtered", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-27T14:05:00Z"));
+    items.value = [
+      {
+        ...pullActivityItem("older-visible-event", "Recently committed pull", "2026-04-27T12:00:00Z", 1),
+        item_last_activity_at: "2026-04-27T14:00:00Z",
+      },
+      {
+        ...pullActivityItem("newer-visible-event", "Recently commented pull", "2026-04-27T13:00:00Z", 2),
+        item_last_activity_at: "2026-04-27T13:00:00Z",
+      },
+    ];
+
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+
+    const cards = Array.from(container.querySelectorAll(".mobile-activity-card__title"));
+    expect(cards.map((card) => card.textContent?.trim())).toEqual([
+      "Recently committed pull",
+      "Recently commented pull",
+    ]);
+    expect(container.querySelector(".mobile-activity-card time")?.textContent).toBe("5m ago");
+    expect(container.querySelector(".mobile-activity-events time")?.textContent).toBe("2h ago");
   });
 
   it("renders a workspace-only subject without inventing a timeline event", async () => {
@@ -395,6 +449,76 @@ describe("MobileActivityView workspace activity", () => {
         item_type: "pr",
       }),
     );
+  });
+
+  it("renders a recently active parent without inventing a timeline event", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-27T14:05:00Z"));
+    itemActivity.value = [itemSubject(8, "Old pull with recent hidden activity", "2026-04-27T14:00:00Z")];
+
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+
+    expect(screen.getByText("Old pull with recent hidden activity")).toBeTruthy();
+    expect(screen.getByText("0 events")).toBeTruthy();
+    expect(container.querySelector(".mobile-activity-card time")?.textContent).toBe("5m ago");
+    expect(container.querySelector(".mobile-activity-events")).toBeNull();
+  });
+
+  it("hides bot-authored parent and workspace-only cards", () => {
+    itemActivity.value = [
+      {
+        ...itemSubject(8, "Bot-authored parent", "2026-04-27T14:00:00Z"),
+        item_author: "renovate[bot]",
+      },
+    ];
+    workspaceActivity.value = [
+      {
+        ...workspaceSubject(9, "Bot-authored workspace", "2026-04-27T13:00:00Z"),
+        item_author: "release-bot",
+      },
+    ];
+    hideBots.value = true;
+
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+
+    expect(container.textContent).not.toContain("Bot-authored parent");
+    expect(container.textContent).not.toContain("Bot-authored workspace");
+  });
+
+  it("disambiguates repository labels for parent-only cards", () => {
+    hideOrgName.value = true;
+    itemActivity.value = [
+      {
+        ...itemSubject(8, "First parent", "2026-04-27T14:00:00Z"),
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          platform_repo_id: "repo-acme-widgets",
+          owner: "acme",
+          name: "widgets",
+          repo_path: "acme/widgets",
+        },
+      },
+      {
+        ...itemSubject(9, "Second parent", "2026-04-27T13:00:00Z"),
+        repo_owner: "platform",
+        repo: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com",
+          platform_repo_id: "repo-platform-widgets",
+          owner: "platform",
+          name: "widgets",
+          repo_path: "platform/widgets",
+        },
+      },
+    ];
+
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+
+    const repoLabels = Array.from(container.querySelectorAll(".mobile-activity-card__meta span:first-child")).map(
+      (element) => element.textContent?.trim(),
+    );
+    expect(repoLabels).toEqual(["acme/widgets", "platform/widgets"]);
   });
 });
 
@@ -429,6 +553,7 @@ function notificationItem(id: string, title: string, subjectState: string): Acti
 
 describe("MobileActivityView notifications", () => {
   beforeEach(() => {
+    itemActivity.value = [];
     workspaceActivity.value = [];
     hideClosedMerged.value = false;
     showNotifications.value = true;
@@ -486,6 +611,7 @@ describe("MobileActivityView notifications", () => {
 
 describe("MobileActivityView hide closed/merged", () => {
   beforeEach(() => {
+    itemActivity.value = [];
     workspaceActivity.value = [];
     hideClosedMerged.value = false;
     showNotifications.value = true;

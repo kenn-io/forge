@@ -40,7 +40,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 			FROM json_each(?)
 		)
 		SELECT q.repo_id, q.item_type, q.item_number,
-		       r.platform, r.platform_host, r.owner, r.name, r.repo_path,
+		       r.platform, r.platform_host, r.platform_repo_id, r.owner, r.name, r.repo_path,
 		       p.title, p.state, p.url, p.author
 		FROM requested q
 		JOIN forge_repos r ON r.id = q.repo_id AND r.lifecycle_state = 'active'
@@ -55,7 +55,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 		)
 		UNION ALL
 		SELECT q.repo_id, q.item_type, q.item_number,
-		       r.platform, r.platform_host, r.owner, r.name, r.repo_path,
+		       r.platform, r.platform_host, r.platform_repo_id, r.owner, r.name, r.repo_path,
 		       i.title, i.state, i.url, i.author
 		FROM requested q
 		JOIN forge_repos r ON r.id = q.repo_id AND r.lifecycle_state = 'active'
@@ -77,7 +77,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 		var item WorkspaceSubjectMetadata
 		if err := rows.Scan(
 			&item.Key.RepoID, &item.Key.ItemType, &item.Key.ItemNumber,
-			&item.Platform, &item.PlatformHost, &item.RepoOwner, &item.RepoName,
+			&item.Platform, &item.PlatformHost, &item.PlatformRepoID, &item.RepoOwner, &item.RepoName,
 			&item.RepoPath, &item.Title, &item.State, &item.URL, &item.Author,
 		); err != nil {
 			return nil, fmt.Errorf("scan workspace subject metadata: %w", err)

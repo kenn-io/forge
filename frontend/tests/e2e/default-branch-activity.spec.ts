@@ -89,8 +89,36 @@ function prComment(): unknown {
   };
 }
 
+function openingItem(
+  activityType: "new_pr" | "new_issue",
+  itemType: "pr" | "issue",
+  itemNumber: number,
+  title: string,
+  createdAt: string,
+): unknown {
+  const path = itemType === "pr" ? "pull" : "issues";
+  return {
+    id: `${activityType}-${itemNumber}`,
+    cursor: `${activityType}-${itemNumber}`,
+    activity_type: activityType,
+    author: "alice",
+    body_preview: "",
+    created_at: createdAt,
+    item_number: itemNumber,
+    item_state: "open",
+    item_title: title,
+    item_type: itemType,
+    item_url: `https://github.com/acme/widgets/${path}/${itemNumber}`,
+    platform_host: "github.com",
+    repo_owner: "acme",
+    repo_name: "widgets",
+    repo,
+  };
+}
+
 const activityItems = [
   branchForcePush("2026-03-30T14:06:00Z"),
+  openingItem("new_pr", "pr", 43, "New pull request opening", "2026-03-30T14:05:30Z"),
   branchCommit(
     "commit-5",
     "5555555555555555555555555555555555555555",
@@ -109,6 +137,7 @@ const activityItems = [
     "Ship direct main commit 3",
     "2026-03-30T14:03:00Z",
   ),
+  openingItem("new_issue", "issue", 44, "New issue opening", "2026-03-30T14:02:45Z"),
   prComment(),
   branchCommit(
     "commit-2",
@@ -142,7 +171,10 @@ function sparseCommitPatch(): string {
   ].join("\n");
 }
 
-async function mockDefaultBranchActivity(page: Page): Promise<void> {
+async function mockDefaultBranchActivity(
+  page: Page,
+  options: { readonly itemActivityCapped?: boolean } = {},
+): Promise<void> {
   await page.addInitScript(() => {
     Object.defineProperty(window, "__kenn_forgeOpenedURL", {
       configurable: true,
@@ -199,6 +231,7 @@ async function mockDefaultBranchActivity(page: Page): Promise<void> {
       contentType: "application/json",
       body: JSON.stringify({
         capped: false,
+        item_activity_capped: options.itemActivityCapped ?? false,
         items,
       }),
     });
@@ -321,6 +354,16 @@ test.describe("default branch activity", () => {
     ).toBeVisible();
   });
 
+  test("warns when parent activity is capped without reporting event overflow", async ({ page }) => {
+    await mockDefaultBranchActivity(page, { itemActivityCapped: true });
+    await page.goto("/?view=flat");
+
+    await expect(page.locator(".item-activity-capped-notice")).toContainText(
+      "5,000 most recently active pull requests and issues",
+    );
+    await expect(page.locator(".event-capped-notice")).toHaveCount(0);
+  });
+
   test("deselecting Commits hides default-branch commit rows", async ({ page }) => {
     await mockDefaultBranchActivity(page);
     await page.goto("/?view=flat");
@@ -340,6 +383,25 @@ test.describe("default branch activity", () => {
         hasText: "Add browser regression coverage",
       }),
     ).toBeVisible();
+  });
+
+  test("selecting only Commits hides pull request and issue opening rows", async ({ page }) => {
+    await mockDefaultBranchActivity(page);
+    await page.goto("/?view=flat");
+
+    await expect(page.locator(".activity-row", { hasText: "New pull request opening" })).toBeVisible();
+    await expect(page.locator(".activity-row", { hasText: "New issue opening" })).toBeVisible();
+
+    await page.locator(".activity-feed .activity-filters__trigger").click();
+    const filterPanel = page.locator(".activity-filters__panel");
+    await expect(filterPanel).toBeVisible();
+    for (const label of ["Comments", "Reviews", "Force pushes"]) {
+      await filterPanel.getByRole("button", { name: label, exact: true }).click();
+    }
+
+    await expect(page.locator(".activity-row", { hasText: "Ship direct main commit 5" })).toBeVisible();
+    await expect(page.locator(".activity-row", { hasText: "New pull request opening" })).toHaveCount(0);
+    await expect(page.locator(".activity-row", { hasText: "New issue opening" })).toHaveCount(0);
   });
 
   test("roll-up toggle collapses commit runs in the flat feed", async ({ page }) => {
@@ -371,13 +433,9 @@ test.describe("default branch activity", () => {
     ).toBeVisible();
   });
 
-  test("legacy URL with stale default-branch commit types hides commit rows on load", async ({ page }) => {
+  test("URL event state keeps default-branch commits disabled on load", async ({ page }) => {
     await mockDefaultBranchActivity(page);
-    // URLs written before the fix kept default_branch_commit in the types
-    // param even with commit deselected; hydration must normalize it away.
-    await page.goto(
-      "/?view=flat&types=new_pr,new_issue,default_branch_commit,default_branch_force_push,comment,review,force_push",
-    );
+    await page.goto("/?view=flat&event_types=comment,review,force_push");
 
     await expect(page.locator(".activity-row", { hasText: "aaaaaaa -> bbbbbbb" })).toBeVisible();
     await expect(
@@ -385,6 +443,20 @@ test.describe("default branch activity", () => {
         hasText: "Ship direct main commit",
       }),
     ).toHaveCount(0);
+  });
+
+  test("legacy commit bookmarks keep default-branch commits enabled", async ({ page }) => {
+    await mockDefaultBranchActivity(page);
+    await page.goto("/?view=flat&types=commit,notification");
+
+    await expect(page.locator(".activity-row", { hasText: "Ship direct main commit 5" })).toBeVisible();
+    await expect(page.locator(".activity-row", { hasText: "New pull request opening" })).toHaveCount(0);
+    await expect(page.locator(".activity-row", { hasText: "New issue opening" })).toHaveCount(0);
+
+    const url = new URL(page.url());
+    expect(url.searchParams.has("types")).toBe(false);
+    expect(url.searchParams.get("item_types")).toBe("none");
+    expect(url.searchParams.get("event_types")).toBe("commit");
   });
 
   test("deselecting Force pushes hides default-branch force pushes", async ({ page }) => {

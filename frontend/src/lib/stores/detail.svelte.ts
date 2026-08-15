@@ -979,6 +979,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const program = Effect.gen(function* () {
       const workflow = yield* DetailWorkflow;
       const data = yield* workflow.read(key, read);
+      reconcileListsAfterDetailSync();
       if (gen !== syncGeneration) return;
       const applied = yield* rebasePullMutations(requestRef, data, () => {
         if (gen !== syncGeneration || activeSelectionKey !== key) return false;

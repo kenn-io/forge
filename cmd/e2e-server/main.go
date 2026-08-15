@@ -299,6 +299,22 @@ func gitLabReadOnlyRepoRef(cloneURL string) platform.RepoRef {
 	}
 }
 
+func activityIdentityRepoRef(repo db.Repo, configuredRepoPath string) ghclient.RepoRef {
+	return ghclient.RepoRef{
+		Platform:           platform.Kind(repo.Platform),
+		RepoID:             repo.ID,
+		Owner:              repo.Owner,
+		Name:               repo.Name,
+		PlatformHost:       repo.PlatformHost,
+		RepoPath:           repo.RepoPath,
+		PlatformExternalID: repo.PlatformRepoID,
+		WebURL:             repo.WebURL,
+		CloneURL:           repo.CloneURL,
+		DefaultBranch:      repo.DefaultBranch,
+		ConfiguredRepoPath: configuredRepoPath,
+	}
+}
+
 func gitLabReadOnlyIssueFixture(
 	now time.Time,
 	cloneURL string,
@@ -1865,37 +1881,125 @@ func buildAppState(
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/activity/pr-comment" {
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/activity/item-comment" {
 			if r.URL.Query().Get("require_subscriber") != "false" && srv.SubscriberCount() == 0 {
 				http.Error(w, "event stream not connected", http.StatusConflict)
+				return
+			}
+			itemType := r.URL.Query().Get("item_type")
+			number := 1
+			if itemType == "issue" {
+				number = 10
+			} else if itemType != "pr" {
+				http.Error(w, "item_type must be pr or issue", http.StatusBadRequest)
 				return
 			}
 			body := r.URL.Query().Get("body")
 			if body == "" {
 				body = "Persisted live Activity comment"
 			}
+			comment, err := fc.CreateIssueComment(
+				r.Context(), "acme", "widgets", number, body,
+			)
+			if err != nil {
+				http.Error(w, "create fixture item comment", http.StatusInternalServerError)
+				return
+			}
+			if itemType == "pr" {
+				mr, err := database.GetMergeRequest(
+					r.Context(), "github", "github.com", "acme", "widgets", number,
+				)
+				if err != nil || mr == nil {
+					http.Error(w, "pull request not found", http.StatusNotFound)
+					return
+				}
+				if err := database.UpsertMREvents(r.Context(), []db.MREvent{
+					ghclient.NormalizeCommentEvent(mr.ID, comment),
+				}); err != nil {
+					http.Error(w, "persist pull request event", http.StatusInternalServerError)
+					return
+				}
+			} else {
+				issue, err := database.GetIssue(
+					r.Context(), "github", "github.com", "acme", "widgets", number,
+				)
+				if err != nil || issue == nil {
+					http.Error(w, "issue not found", http.StatusNotFound)
+					return
+				}
+				if err := database.UpsertIssueEvents(r.Context(), []db.IssueEvent{
+					ghclient.NormalizeIssueCommentEvent(issue.ID, comment),
+				}); err != nil {
+					http.Error(w, "persist issue event", http.StatusInternalServerError)
+					return
+				}
+			}
+			eventID := srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			w.Header().Set("X-Kenn-E2E-Event-ID", strconv.FormatUint(eventID, 10))
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/activity/stage-filtered-parent-recency" {
 			mr, err := database.GetMergeRequest(
-				r.Context(), "github", "github.com", "acme", "widgets", 1,
+				r.Context(), "github", "github.com", "acme", "widgets", 6,
 			)
 			if err != nil || mr == nil {
 				http.Error(w, "pull request not found", http.StatusNotFound)
 				return
 			}
-			comment, err := fc.CreateIssueComment(
-				r.Context(), "acme", "widgets", 1, body,
-			)
-			if err != nil {
-				http.Error(w, "create fixture pull request comment", http.StatusInternalServerError)
+			outsideRange := time.Now().UTC().Add(-45 * 24 * time.Hour).Truncate(time.Second)
+			if _, err := database.WriteDB().ExecContext(r.Context(), `
+				UPDATE forge_merge_requests
+				SET created_at = ?, updated_at = ?, last_activity_at = ?
+				WHERE id = ?`, outsideRange, outsideRange, outsideRange, mr.ID); err != nil {
+				http.Error(w, "age pull request activity", http.StatusInternalServerError)
 				return
 			}
+			if _, err := database.WriteDB().ExecContext(r.Context(), `
+				UPDATE forge_mr_events SET created_at = ? WHERE merge_request_id = ?`,
+				outsideRange, mr.ID,
+			); err != nil {
+				http.Error(w, "age pull request events", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/activity/filtered-parent-recency" {
+			if srv.SubscriberCount() == 0 {
+				http.Error(w, "event stream not connected", http.StatusConflict)
+				return
+			}
+			mr, err := database.GetMergeRequest(
+				r.Context(), "github", "github.com", "acme", "widgets", 6,
+			)
+			if err != nil || mr == nil {
+				http.Error(w, "pull request not found", http.StatusNotFound)
+				return
+			}
+			// The comment is the ledger event that defines Activity recency.
+			// The provider's updated_at is bumped further ahead, the way GitHub
+			// does after mergeability recomputes, and must not win.
+			activityAt := time.Now().UTC().Truncate(time.Second)
+			comment := fc.SeedIssueComment("acme", "widgets", 6, "Filtered parent comment", activityAt)
 			if err := database.UpsertMREvents(r.Context(), []db.MREvent{
 				ghclient.NormalizeCommentEvent(mr.ID, comment),
 			}); err != nil {
-				http.Error(w, "persist pull request event", http.StatusInternalServerError)
+				http.Error(w, "persist filtered pull request event", http.StatusInternalServerError)
 				return
 			}
-			eventID := srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
-			w.Header().Set("X-Kenn-E2E-Event-ID", strconv.FormatUint(eventID, 10))
+			providerBumpAt := activityAt.Add(10 * time.Minute)
+			if _, err := database.WriteDB().ExecContext(r.Context(), `
+				UPDATE forge_merge_requests
+				SET updated_at = ?, last_activity_at = ?
+				WHERE id = ?`, providerBumpAt, providerBumpAt, mr.ID); err != nil {
+				http.Error(w, "advance pull request activity", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("X-Kenn-E2E-Parent-Activity-At", activityAt.Format(time.RFC3339Nano))
+			srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -2057,6 +2161,86 @@ func buildAppState(
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/activity/repository-identity" {
+			const (
+				originalRepoPath    = "acme/widgets"
+				renamedRepoPath     = "acme/widgets-renamed"
+				replacementProvider = "e2e-replacement-widgets"
+			)
+			observedAt := time.Now().UTC().Add(time.Minute)
+			var entry *db.RepositoryCatalogEntry
+			var err error
+			switch r.URL.Query().Get("phase") {
+			case "rename":
+				original, getErr := database.GetRepoByIdentity(
+					r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+				)
+				if getErr != nil || original == nil {
+					http.Error(w, "original repository not found", http.StatusNotFound)
+					return
+				}
+				entry, _, err = database.ReconcileRepositoryObservation(r.Context(), db.RepoIdentity{
+					Platform:       original.Platform,
+					PlatformHost:   original.PlatformHost,
+					PlatformRepoID: original.PlatformRepoID,
+					Owner:          "acme",
+					Name:           "widgets-renamed",
+					RepoPath:       renamedRepoPath,
+				}, observedAt)
+				if err == nil && entry != nil {
+					_, err = database.WriteDB().ExecContext(r.Context(), `
+						UPDATE forge_merge_requests
+						SET url = ?
+						WHERE repo_id = ? AND number = 1`,
+						"https://github.com/acme/widgets-renamed/pull/1", entry.Repository.ID,
+					)
+				}
+			case "reuse":
+				entry, _, err = database.ReconcileRepositoryObservation(r.Context(), db.RepoIdentity{
+					Platform:       "github",
+					PlatformHost:   "github.com",
+					PlatformRepoID: replacementProvider,
+					Owner:          "acme",
+					Name:           "widgets",
+					RepoPath:       originalRepoPath,
+				}, observedAt.Add(time.Minute))
+				if err == nil && entry != nil {
+					now := time.Now().UTC().Truncate(time.Second)
+					_, err = database.UpsertMergeRequest(r.Context(), &db.MergeRequest{
+						RepoID:             entry.Repository.ID,
+						PlatformID:         990001,
+						PlatformExternalID: "e2e-replacement-pull",
+						Number:             1,
+						URL:                "https://github.com/acme/widgets/pull/1",
+						Title:              "Replacement route pull request",
+						Author:             "replacement-author",
+						State:              db.MergeRequestStateOpen,
+						CreatedAt:          now,
+						UpdatedAt:          now,
+						LastActivityAt:     now,
+					})
+				}
+			default:
+				http.Error(w, "phase must be rename or reuse", http.StatusBadRequest)
+				return
+			}
+			if err != nil || entry == nil {
+				http.Error(w, "reconcile repository identity", http.StatusInternalServerError)
+				return
+			}
+			syncer.SetRepos([]ghclient.RepoRef{
+				activityIdentityRepoRef(entry.Repository, originalRepoPath),
+			})
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"platform_repo_id": entry.Repository.PlatformRepoID,
+				"repo_path":        entry.Repository.RepoPath,
+			}); err != nil {
+				slog.Warn("write repository identity fixture response", "err", err)
+			}
 			return
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/repo-browser/tree/fail-next" {

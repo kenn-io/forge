@@ -858,6 +858,153 @@ func TestListActivityItemAuthor(t *testing.T) {
 	assert.Empty(branchCommit.ItemAuthor)
 }
 
+func TestListActivityCarriesParentRecencyWhenNewerEventsAreFiltered(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	// The filtered commit is the newest ledger event and must still define
+	// the parent's recency on the visible comment row.
+	prActivityAt := base.Add(19 * time.Minute)
+	prID := insertTestMRWithOptions(t, d, testMR(repoID, 1, withMRActivity(base)))
+	issueActivityAt := base.Add(11 * time.Minute)
+	issueID := insertTestIssueWithOptions(t, d, testIssue(repoID, 2, withIssueActivity(base)))
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{
+			MergeRequestID: prID,
+			EventType:      "issue_comment",
+			Author:         "reviewer",
+			CreatedAt:      base.Add(10 * time.Minute),
+			DedupeKey:      "visible-comment",
+		},
+		{
+			MergeRequestID: prID,
+			EventType:      "commit",
+			Author:         "alice",
+			CreatedAt:      base.Add(19 * time.Minute),
+			DedupeKey:      "filtered-commit",
+		},
+	}))
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:   issueID,
+		EventType: "issue_comment",
+		Author:    "reporter",
+		CreatedAt: base.Add(11 * time.Minute),
+		DedupeKey: "issue-comment",
+	}}))
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{
+		Types: []string{"comment"},
+		Limit: 50,
+	})
+	require.NoError(err)
+	require.Len(items, 2)
+
+	byType := make(map[string]ActivityItem, len(items))
+	for _, item := range items {
+		byType[item.ItemType] = item
+	}
+	require.NotNil(byType["pr"].ItemLastActivityAt)
+	assert.Equal(prActivityAt, *byType["pr"].ItemLastActivityAt)
+	require.NotNil(byType["issue"].ItemLastActivityAt)
+	assert.Equal(issueActivityAt, *byType["issue"].ItemLastActivityAt)
+	assert.NotContains(activityTypes(items), "commit")
+}
+
+func TestListActivitySubjectsUsesAuthoritativeRecencyForWindowAndLimit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	since := now.Add(-7 * 24 * time.Hour)
+
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	oldCreatedAt := now.Add(-30 * 24 * time.Hour)
+	recentActivityAt := now.Add(-time.Hour)
+	recentParent := testMR(repoID, 1,
+		withMRTitle("Old pull with recent hidden activity"),
+		withMRActivity(oldCreatedAt),
+	)
+	recentParent.UpdatedAt = recentActivityAt
+	recentParent.LastActivityAt = recentActivityAt
+	recentParentID := insertTestMRWithOptions(t, d, recentParent)
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: recentParentID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		CreatedAt:      recentActivityAt,
+		DedupeKey:      "recent-hidden-comment",
+	}}))
+
+	olderActivityAt := now.Add(-2 * time.Hour)
+	insertTestMRWithOptions(t, d, testMR(repoID, 2,
+		withMRTitle("Newer pull with older activity"),
+		withMRActivity(olderActivityAt),
+	))
+
+	visibleEvents, err := d.ListActivity(ctx, ListActivityOpts{
+		Types:     []string{"commit"},
+		ItemTypes: []string{"pr", "repo"},
+		Since:     &since,
+		Limit:     1,
+	})
+	require.NoError(err)
+	assert.Empty(visibleEvents, "the comment is hidden by the event filter")
+
+	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
+		ItemTypes: []string{"pr", "repo"},
+		Since:     &since,
+		Limit:     1,
+	})
+	require.NoError(err)
+	require.Len(subjects, 1)
+	assert.Equal(1, subjects[0].Subject.Key.ItemNumber)
+	assert.Equal("pr", subjects[0].Subject.Key.ItemType)
+	assert.Equal("Old pull with recent hidden activity", subjects[0].Subject.Title)
+	assert.Equal(recentActivityAt, subjects[0].ActivityAt)
+}
+
+func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+
+	insertTestMRWithOptions(t, d, testMR(repoID, 1,
+		withMRTitle("Unrelated parent matched through an event"),
+		withMRActivity(now.Add(-time.Hour)),
+	))
+	insertTestMRWithOptions(t, d, testMR(repoID, 2,
+		withMRTitle("Needle in the parent title"),
+		withMRActivity(now.Add(-2*time.Hour)),
+	))
+	insertTestMRWithOptions(t, d, testMR(repoID, 3,
+		withMRTitle("Unrelated parent without a matching event"),
+		withMRActivity(now.Add(-3*time.Hour)),
+	))
+
+	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
+		Search: "needle",
+		SearchMatchedSubjectKeys: []WorkspaceSubjectKey{
+			{RepoID: repoID, ItemType: "pr", ItemNumber: 1},
+		},
+		Limit: 50,
+	})
+	require.NoError(err)
+	require.Len(subjects, 2)
+	assert.ElementsMatch([]int{1, 2}, []int{
+		subjects[0].Subject.Key.ItemNumber,
+		subjects[1].Subject.Key.ItemNumber,
+	})
+}
+
 func testBranchCommit(
 	repoID int64,
 	branch string,
@@ -1571,4 +1718,212 @@ func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
 	require.NoError(err)
 	assert.Empty(stale,
 		"linked notifications must not answer to historical routes")
+}
+
+func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
+	tests := []struct {
+		name         string
+		itemType     string
+		staleURL     string
+		currentURL   string
+		insertParent func(t *testing.T, d *DB, repoID int64, number int, url string)
+	}{
+		{
+			name:       "pull request",
+			itemType:   "pr",
+			staleURL:   "https://github.com/acme/widget/pull/7",
+			currentURL: "https://github.com/acme/gadget/pull/7",
+			insertParent: func(t *testing.T, d *DB, repoID int64, number int, url string) {
+				mr := testMR(repoID, number, withMRTitle("Current parent title"))
+				mr.URL = url
+				insertTestMRWithOptions(t, d, mr)
+			},
+		},
+		{
+			name:       "issue",
+			itemType:   "issue",
+			staleURL:   "https://github.com/acme/widget/issues/7",
+			currentURL: "https://github.com/acme/gadget/issues/7",
+			insertParent: func(t *testing.T, d *DB, repoID int64, number int, url string) {
+				issue := testIssue(repoID, number, withIssueTitle("Current parent title"))
+				issue.URL = url
+				insertTestIssueWithOptions(t, d, issue)
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			d := openTestDB(t)
+			ctx := t.Context()
+			base := baseTime()
+			number := 7
+
+			entry, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
+			}, base)
+			require.NoError(err)
+			require.NoError(d.UpsertNotifications(ctx, []Notification{{
+				Platform:               "github",
+				PlatformHost:           "github.com",
+				PlatformNotificationID: "ntf-stale-parent",
+				RepoOwner:              "acme",
+				RepoName:               "widget",
+				SubjectType:            "PullRequest",
+				SubjectTitle:           "Title at notification time",
+				WebURL:                 tc.staleURL,
+				ItemNumber:             &number,
+				ItemType:               tc.itemType,
+				ItemAuthor:             "carol",
+				Reason:                 "mention",
+				Unread:                 true,
+				SourceUpdatedAt:        base.Add(10 * time.Minute),
+				SyncedAt:               base.Add(10 * time.Minute),
+			}}))
+			_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
+			}, base.Add(time.Hour))
+			require.NoError(err)
+			tc.insertParent(t, d, entry.Repository.ID, number, tc.currentURL)
+
+			items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50, Types: []string{"notification"}})
+			require.NoError(err)
+			require.Len(items, 1)
+			// The persisted notification keeps the route and title from when
+			// it was synced. The feed row must report the linked parent's
+			// current metadata so a renamed or reused route never leaks
+			// through the notification, whether or not the frontend later
+			// reconciles it against the capped parent snapshot.
+			assert.Equal("gadget", items[0].RepoName)
+			assert.Equal("Current parent title", items[0].ItemTitle)
+			assert.Equal(tc.currentURL, items[0].ItemURL)
+			assert.Equal(tc.currentURL, items[0].ActivityURL)
+			assert.Equal("unread", items[0].ItemState)
+			assert.Equal("open", items[0].SubjectState)
+		})
+	}
+}
+
+func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	since := now.Add(-7 * 24 * time.Hour)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+
+	// The provider bumped updated_at 16 minutes ago (mergeability recompute
+	// after a base push), but the last visible timeline entry is a comment
+	// from 14 hours ago. A cross reference an hour ago is in the ledger but
+	// never renders in the feed, so it must not count either.
+	stackedPR := testMR(repoID, 1347, withMRTitle("Stacked PR"), withMRActivity(now.Add(-10*24*time.Hour)))
+	stackedPR.UpdatedAt = now.Add(-16 * time.Minute)
+	stackedPR.LastActivityAt = now.Add(-16 * time.Minute)
+	stackedPRID := insertTestMRWithOptions(t, d, stackedPR)
+	lastComment := now.Add(-14 * time.Hour)
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{MergeRequestID: stackedPRID, EventType: "issue_comment", Author: "reviewer",
+			CreatedAt: lastComment, DedupeKey: "stack-comment"},
+		{MergeRequestID: stackedPRID, EventType: "cross_referenced", Author: "bot",
+			CreatedAt: now.Add(-time.Hour), DedupeKey: "stack-xref"},
+	}))
+
+	// Only the provider timestamp is inside the window; the ledger is stale.
+	dormantPR := testMR(repoID, 2, withMRTitle("Dormant PR"), withMRActivity(now.Add(-30*24*time.Hour)))
+	dormantPR.UpdatedAt = now.Add(-time.Hour)
+	dormantPR.LastActivityAt = now.Add(-time.Hour)
+	dormantPRID := insertTestMRWithOptions(t, d, dormantPR)
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: dormantPRID, EventType: "issue_comment", Author: "reviewer",
+		CreatedAt: now.Add(-20 * 24 * time.Hour), DedupeKey: "dormant-comment",
+	}}))
+
+	// A merge is activity even without a rendered event row.
+	mergedAt := now.Add(-2 * time.Hour)
+	mergedPR := testMR(repoID, 3, withMRTitle("Merged PR"), withMRState(MergeRequestStateMerged),
+		withMRActivity(now.Add(-30*24*time.Hour)))
+	mergedPR.MergedAt = &mergedAt
+	mergedPR.ClosedAt = &mergedAt
+	insertTestMRWithOptions(t, d, mergedPR)
+
+	issue := testIssue(repoID, 4, withIssueTitle("Issue"), withIssueActivity(now.Add(-9*24*time.Hour)))
+	issue.UpdatedAt = now.Add(-10 * time.Minute)
+	issue.LastActivityAt = now.Add(-10 * time.Minute)
+	issueID := insertTestIssueWithOptions(t, d, issue)
+	lastIssueComment := now.Add(-5 * time.Hour)
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{
+		{IssueID: issueID, EventType: "issue_comment", Author: "reporter",
+			CreatedAt: lastIssueComment, DedupeKey: "issue-comment"},
+		{IssueID: issueID, EventType: "assigned", Author: "triager",
+			CreatedAt: now.Add(-30 * time.Minute), DedupeKey: "issue-assigned"},
+	}))
+
+	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{Since: &since, Limit: 50})
+	require.NoError(err)
+	activityByNumber := make(map[int]time.Time, len(subjects))
+	for _, subject := range subjects {
+		activityByNumber[subject.Subject.Key.ItemNumber] = subject.ActivityAt
+	}
+	assert.Equal(map[int]time.Time{
+		1347: lastComment,
+		3:    mergedAt,
+		4:    lastIssueComment,
+	}, activityByNumber, "provider updated_at must not admit or date parents")
+	require.Len(subjects, 3)
+	assert.Equal(3, subjects[0].Subject.Key.ItemNumber, "ordered by ledger recency")
+	assert.Equal(4, subjects[1].Subject.Key.ItemNumber)
+	assert.Equal(1347, subjects[2].Subject.Key.ItemNumber)
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{Since: &since, Limit: 50})
+	require.NoError(err)
+	for _, item := range items {
+		switch item.ItemNumber {
+		case 1347:
+			require.NotNil(item.ItemLastActivityAt, "%s row", item.ActivityType)
+			assert.Equal(lastComment, *item.ItemLastActivityAt, "%s row", item.ActivityType)
+		case 4:
+			require.NotNil(item.ItemLastActivityAt, "%s row", item.ActivityType)
+			assert.Equal(lastIssueComment, *item.ItemLastActivityAt, "%s row", item.ActivityType)
+		}
+	}
+}
+
+func TestListActivityAuthorsIncludeParentsRecentOnlyByCloseOrMerge(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	since := now.Add(-7 * 24 * time.Hour)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+
+	mergedAt := now.Add(-time.Hour)
+	mergedPR := testMR(repoID, 1, withMRAuthor("Merger"), withMRState(MergeRequestStateMerged),
+		withMRActivity(now.Add(-30*24*time.Hour)))
+	mergedPR.MergedAt = &mergedAt
+	mergedPR.ClosedAt = &mergedAt
+	insertTestMRWithOptions(t, d, mergedPR)
+
+	closedAt := now.Add(-2 * time.Hour)
+	closedIssue := testIssue(repoID, 2, withIssueAuthor("Closer"), withIssueActivity(now.Add(-30*24*time.Hour)))
+	closedIssue.State = "closed"
+	closedIssue.ClosedAt = &closedAt
+	insertTestIssueWithOptions(t, d, closedIssue)
+
+	dormant := testMR(repoID, 3, withMRAuthor("Dormant"), withMRActivity(now.Add(-30*24*time.Hour)))
+	dormant.LastActivityAt = now.Add(-time.Minute)
+	insertTestMRWithOptions(t, d, dormant)
+
+	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{Since: &since, Limit: 50})
+	require.NoError(err)
+	require.Len(subjects, 2, "merge and close admit parents to the window")
+
+	authors, err := d.ListActivityAuthors(ctx, ListActivityAuthorsOpts{Since: &since})
+	require.NoError(err)
+	assert.Equal([]string{"Merger", "Closer"}, authors,
+		"every parent visible in Activity must offer its author as a filter candidate")
 }

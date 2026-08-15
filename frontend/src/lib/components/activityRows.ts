@@ -94,6 +94,7 @@ function repoKeyForItem(item: ActivityItem): string {
   return activityRepoKey({
     provider: item.repo?.provider ?? "",
     platformHost: item.platform_host ?? item.repo?.platform_host ?? "",
+    platformRepoId: item.repo?.platform_repo_id,
     owner: item.repo_owner,
     name: item.repo_name,
   });

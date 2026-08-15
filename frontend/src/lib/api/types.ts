@@ -24,6 +24,7 @@ export type LocalSyncCeilingStatus = components["schemas"]["LocalSyncCeilingStat
 export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
 export type ActivityItem = components["schemas"]["ActivityItemResponse"];
 export type ActivityResponse = components["schemas"]["ActivityResponse"];
+export type ActivitySubject = components["schemas"]["ActivitySubjectResponse"];
 export type WorkspaceActivitySubject = components["schemas"]["WorkspaceActivitySubjectResponse"];
 export type ActivityAuthorsResponse = components["schemas"]["ActivityAuthorsResponse"];
 export type NotificationItem = components["schemas"]["NotificationResponse"];

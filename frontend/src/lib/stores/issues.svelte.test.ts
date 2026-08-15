@@ -230,6 +230,56 @@ describe("createIssuesStore", () => {
     vi.useRealTimers();
   });
 
+  it("reconciles visible lists after the initial detail read exposes persisted activity", async () => {
+    const get = vi.fn(async (path: string) =>
+      path === "/issues" ? { data: [], error: undefined } : { data: issueDetail(), error: undefined },
+    );
+    const onDetailSynchronized = vi.fn();
+    const store = createIssuesStore({
+      client: mockClient({ GET: get }),
+      getPage: () => "issues",
+      onDetailSynchronized,
+    });
+
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(1);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+  });
+
+  it("reconciles visible lists when selection closes as the initial detail read succeeds", async () => {
+    const detailRead = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const get = vi.fn((path: string) =>
+      path === "/issues" ? Promise.resolve({ data: [], error: undefined }) : detailRead.promise,
+    );
+    const onDetailSynchronized = vi.fn();
+    const store = createIssuesStore({
+      client: mockClient({ GET: get }),
+      getPage: () => "issues",
+      onDetailSynchronized,
+    });
+
+    store.loadIssueDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    await vi.waitFor(() => expect(get).toHaveBeenCalledOnce());
+
+    detailRead.resolve({ data: issueDetail(), error: undefined });
+    store.clearIssueDetail();
+
+    await vi.waitFor(() => expect(onDetailSynchronized).toHaveBeenCalledOnce());
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(1);
+    expect(store.getIssueDetail()).toBeNull();
+  });
+
   it("reconciles visible activity and issue lists after a background detail sync converges", async () => {
     vi.useFakeTimers();
     const cached = issueDetail();
@@ -262,8 +312,8 @@ describe("createIssuesStore", () => {
     await vi.advanceTimersByTimeAsync(300);
 
     await vi.waitFor(() => expect(store.getIssueDetail()?.issue.Title).toBe("Fresh issue detail"));
-    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(1);
-    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(2);
+    expect(onDetailSynchronized).toHaveBeenCalledTimes(2);
   });
 
   it("reconciles visible lists when selection closes during a synchronous detail sync", async () => {
@@ -290,8 +340,8 @@ describe("createIssuesStore", () => {
 
     syncPost.resolve({ data: issueDetail(), error: undefined });
 
-    await vi.waitFor(() => expect(onDetailSynchronized).toHaveBeenCalledOnce());
-    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(1);
+    await vi.waitFor(() => expect(onDetailSynchronized).toHaveBeenCalledTimes(2));
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(2);
     expect(store.getIssueDetail()).toBeNull();
   });
 
@@ -326,8 +376,8 @@ describe("createIssuesStore", () => {
     syncPost.resolve({ data: undefined, error: undefined });
     await vi.advanceTimersByTimeAsync(300);
 
-    await vi.waitFor(() => expect(onDetailSynchronized).toHaveBeenCalledOnce());
-    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(1);
+    await vi.waitFor(() => expect(onDetailSynchronized).toHaveBeenCalledTimes(2));
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(2);
     expect(store.getIssueDetail()).toBeNull();
   });
 

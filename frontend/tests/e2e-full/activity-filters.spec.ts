@@ -68,20 +68,28 @@ test.describe("activity feed filters", () => {
     });
   });
 
-  test("notification-only URLs retain the default item scope", async ({ page }) => {
+  test("URLs with no top-level event types retain PR commits and the default item scope", async ({ page }) => {
     const notificationResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === "/api/v1/activity" && url.searchParams.getAll("types").includes("notification");
+      const types = (url.searchParams.get("types") ?? "").split(",");
+      return url.pathname === "/api/v1/activity" && types.includes("notification");
     });
 
-    await page.goto("/?types=notification");
-    const requestURL = new URL((await notificationResponse).url());
+    await page.goto("/?event_types=none");
+    const response = await notificationResponse;
+    const requestURL = new URL(response.url());
+    const snapshot = (await response.json()) as { items: Array<{ activity_type: string }> };
 
     expect(requestURL.searchParams.getAll("item_types")).toEqual([]);
+    expect(new Set(snapshot.items.map((item) => item.activity_type))).toEqual(new Set(["commit", "notification"]));
+    expect(new URL(page.url()).searchParams.get("event_types")).toBe("none");
     await expect(page.getByRole("switch", { name: "PRs" })).toBeChecked();
     await expect(page.getByRole("switch", { name: "Issues" })).toBeChecked();
     await expect(page.locator(".activity-row .evt-label.evt-notification").first()).toBeVisible();
-    await expect(page.locator(".activity-row .evt-label:not(.evt-notification)")).toHaveCount(0);
+    await expect(page.locator(".activity-row .evt-label.evt-commit").first()).toBeVisible();
+    await expect(page.locator(".activity-row .evt-label.evt-comment, .activity-row .evt-label.evt-review")).toHaveCount(
+      0,
+    );
   });
 
   test("Threaded item toggles hide the complete matching threads", async ({ page }) => {
@@ -93,8 +101,7 @@ test.describe("activity feed filters", () => {
 
     await expect(page.locator(".threaded-view .chip--kind-pr")).toHaveCount(0);
     await expect(page.locator(".threaded-view .chip--kind-issue").first()).toBeVisible();
-    await expect.poll(() => new URL(page.url()).searchParams.get("types") ?? "").not.toContain("new_pr");
-    await expect.poll(() => new URL(page.url()).searchParams.get("types") ?? "").toContain("new_issue");
+    await expect.poll(() => new URL(page.url()).searchParams.get("item_types")).toBe("issue");
   });
 
   test("disabling Comments hides comment rows", async ({ page }) => {

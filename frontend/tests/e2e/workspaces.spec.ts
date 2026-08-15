@@ -268,7 +268,8 @@ test("Activity filters survive a reload while viewing Workspaces", async ({ page
   await expect(commitsFilter).not.toHaveClass(/\bactive\b/);
 
   const activitySearch = new URL(page.url()).search;
-  expect(activitySearch).toContain("types=");
+  expect(activitySearch).toContain("item_types=pr");
+  expect(activitySearch).toContain("event_types=comment%2Creview%2Cforce_push");
 
   await page.getByRole("button", { name: "Workspaces" }).click();
   await expect(page).toHaveURL(/\/workspaces$/);
@@ -290,12 +291,16 @@ test("Activity filters survive navigation to a URL that only sets the view", asy
 
   await page.locator(".activity-feed .activity-filters__trigger").click();
   await page.locator(".activity-filters__panel").getByRole("button", { name: "Commits", exact: true }).click();
-  const activityTypes = new URL(page.url()).searchParams.get("types");
-  expect(activityTypes).not.toBeNull();
+  const activityURL = new URL(page.url());
+  const itemTypes = activityURL.searchParams.get("item_types");
+  const eventTypes = activityURL.searchParams.get("event_types");
+  expect(itemTypes).toBe("pr");
+  expect(eventTypes).toBe("comment,review,force_push");
 
   await page.goto("/?view=threaded");
 
-  await expect.poll(() => new URL(page.url()).searchParams.get("types")).toBe(activityTypes);
+  await expect.poll(() => new URL(page.url()).searchParams.get("item_types")).toBe(itemTypes);
+  await expect.poll(() => new URL(page.url()).searchParams.get("event_types")).toBe(eventTypes);
   await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
   await page.locator(".activity-feed .activity-filters__trigger").click();
   await expect(
@@ -308,15 +313,19 @@ test("Settings Back to app restores Activity filters after a reload", async ({ p
   await page.getByRole("switch", { name: "Issues" }).click();
   await page.locator(".activity-feed .activity-filters__trigger").click();
   await page.locator(".activity-filters__panel").getByRole("button", { name: "Commits", exact: true }).click();
-  const activityTypes = new URL(page.url()).searchParams.get("types");
-  expect(activityTypes).not.toBeNull();
+  const activityURL = new URL(page.url());
+  const itemTypes = activityURL.searchParams.get("item_types");
+  const eventTypes = activityURL.searchParams.get("event_types");
+  expect(itemTypes).toBe("pr");
+  expect(eventTypes).toBe("comment,review,force_push");
 
   await page.locator('button[title="Settings"]').click();
   await expect(page.getByRole("button", { name: "Back to app" })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Back to app" }).click();
 
-  await expect.poll(() => new URL(page.url()).searchParams.get("types")).toBe(activityTypes);
+  await expect.poll(() => new URL(page.url()).searchParams.get("item_types")).toBe(itemTypes);
+  await expect.poll(() => new URL(page.url()).searchParams.get("event_types")).toBe(eventTypes);
   await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
   await page.locator(".activity-feed .activity-filters__trigger").click();
   await expect(

@@ -317,8 +317,10 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		return nil, fmt.Errorf("upsert widgets#6: %w", err)
 	}
 
-	// widgets#7: open, dependabot[bot]
-	w7Created := now.Add(-1 * 24 * time.Hour)
+	// widgets#7: open, dependabot[bot], opened recently with no other ledger
+	// events so Activity treats it as recent parent activity without a
+	// selectable event row.
+	w7Created := now.Add(-6 * time.Hour)
 	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
 		PlatformID:        1007,

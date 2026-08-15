@@ -864,6 +864,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const program = Effect.gen(function* () {
       const workflow = yield* IssuesWorkflow;
       const result = yield* workflow.detail(issueDetailKey(ref), syncMode, readIssueDetail(ref, "GET issue detail"));
+      reconcileListsAfterDetailSync();
       const applied = yield* installIssueDetail(ref, result.detail, envelopeTick, generation, false);
       if (generation === issueSyncGeneration) detailLoading = false;
       if (!applied || generation !== issueSyncGeneration) return;

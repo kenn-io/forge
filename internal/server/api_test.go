@@ -9091,6 +9091,7 @@ func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
 	require.Contains(body, `"/activity"`)
 	require.Contains(body, `"name":"since"`)
 	require.Contains(body, `"capped"`)
+	require.Contains(body, `"item_activity_capped"`)
 	require.NotContains(body, `"name":"before"`)
 	require.NotContains(body, `"has_more"`)
 }
@@ -23821,6 +23822,179 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Len(*unfiltered.JSON200.Items, len(*resp.JSON200.Items))
 }
 
+func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	createdAt := now.Add(-30 * 24 * time.Hour)
+	activityAt := now.Add(-time.Hour)
+
+	prID := seedPR(
+		t, database, "acme", "widget", 77,
+		withSeedPRTitle("Old pull with recent hidden activity"),
+		withSeedPRTimes(createdAt, activityAt, activityAt),
+	)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-hidden-parent", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
+		ItemNumber: 77, WorktreePath: t.TempDir(), Status: "ready",
+	}))
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		CreatedAt:      activityAt,
+		DedupeKey:      "api-hidden-parent-comment",
+	}}))
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+since+"&types=commit&item_types=pr,repo",
+		nil,
+	)
+	require.Equal(http.StatusOK, rr.Code)
+	var body struct {
+		Items        []activityItemResponse    `json:"items"`
+		ItemActivity []activitySubjectResponse `json:"item_activity"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.Empty(body.Items, "the comment must remain hidden by the event filter")
+	require.Len(body.ItemActivity, 1)
+	assert.Equal(77, body.ItemActivity[0].ItemNumber)
+	assert.Equal("pr", body.ItemActivity[0].ItemType)
+	assert.Equal("Old pull with recent hidden activity", body.ItemActivity[0].ItemTitle)
+	assert.Equal(formatUTCRFC3339(activityAt), body.ItemActivity[0].ActivityAt)
+	require.NotNil(body.ItemActivity[0].Workspace)
+	assert.Equal("ws-hidden-parent", body.ItemActivity[0].Workspace.ID)
+}
+
+func TestAPIListActivityIncrementalSearchReturnsParentsMatchedByProviderEvents(t *testing.T) {
+	req := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	activityAt := now.Add(-time.Hour)
+
+	bodyMatchID := seedPR(
+		t, database, "acme", "widget", 78,
+		withSeedPRTitle("Parent with an unrelated title"),
+		withSeedPRTimes(activityAt, activityAt, activityAt),
+	)
+	actorMatchID := seedPR(
+		t, database, "acme", "widget", 79,
+		withSeedPRTitle("Another unrelated parent"),
+		withSeedPRTimes(activityAt, activityAt, activityAt),
+	)
+	req.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: bodyMatchID,
+			EventType:      "issue_comment",
+			Author:         "reviewer",
+			Body:           "contains body-match-term",
+			CreatedAt:      activityAt,
+			DedupeKey:      "incremental-search-body-match",
+		},
+		{
+			MergeRequestID: actorMatchID,
+			EventType:      "issue_comment",
+			Author:         "actor-match-term",
+			Body:           "unrelated comment",
+			CreatedAt:      activityAt,
+			DedupeKey:      "incremental-search-actor-match",
+		},
+	}))
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	after := url.QueryEscape(db.EncodeCursor(now, "mr_event", 1))
+	for _, tc := range []struct {
+		name       string
+		search     string
+		itemNumber int
+	}{
+		{name: "event body", search: "body-match-term", itemNumber: 78},
+		{name: "event actor", search: "actor-match-term", itemNumber: 79},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			rr := doJSON(
+				t,
+				srv,
+				http.MethodGet,
+				"/api/v1/activity?since="+since+"&after="+after+"&search="+url.QueryEscape(tc.search),
+				nil,
+			)
+			require.Equal(http.StatusOK, rr.Code)
+			var body struct {
+				Items        []activityItemResponse    `json:"items"`
+				ItemActivity []activitySubjectResponse `json:"item_activity"`
+			}
+			require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+			require.Empty(body.Items, "the matching event is behind the incremental cursor")
+			require.Len(body.ItemActivity, 1)
+			require.Equal(tc.itemNumber, body.ItemActivity[0].ItemNumber)
+		})
+	}
+}
+
+func TestAPIListActivitySeparatesEventAndParentSnapshotCaps(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "many-parents"))
+	require.NoError(err)
+
+	_, err = database.WriteDB().ExecContext(ctx, `
+		WITH digits(n) AS (
+			VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9)
+		), numbers(n) AS (
+			SELECT ones.n + 10 * tens.n + 100 * hundreds.n + 1000 * thousands.n + 1
+			FROM digits AS ones
+			CROSS JOIN digits AS tens
+			CROSS JOIN digits AS hundreds
+			CROSS JOIN digits AS thousands
+		)
+		INSERT INTO forge_merge_requests (
+			repo_id, platform_id, number, url, title, author, state,
+			created_at, updated_at, last_activity_at
+		)
+		SELECT ?, n, n,
+		       'https://github.com/acme/many-parents/pull/' || n,
+		       'Parent ' || n, 'testuser', 'open', ?, ?, ?
+		FROM numbers
+		WHERE n <= ?`,
+		repoID, now, now, now, activitySafetyCap+1,
+	)
+	require.NoError(err)
+
+	since := url.QueryEscape(now.Add(-time.Minute).Format(time.RFC3339))
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+since+"&types=commit&item_types=pr,repo",
+		nil,
+	)
+	require.Equal(http.StatusOK, rr.Code)
+	var body struct {
+		Items              []activityItemResponse    `json:"items"`
+		ItemActivity       []activitySubjectResponse `json:"item_activity"`
+		Capped             bool                      `json:"capped"`
+		ItemActivityCapped bool                      `json:"item_activity_capped"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.Empty(body.Items)
+	require.Len(body.ItemActivity, activitySafetyCap)
+	assert.False(body.Capped, "parent snapshot overflow must not report event overflow")
+	assert.True(body.ItemActivityCapped)
+}
+
 func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -24055,6 +24229,52 @@ func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {
 	assert.NotContains(candidateBody.Authors, "Hidden Actor")
 }
 
+func TestAPIListActivityReturnsParentRecencyWhenCommitEventsAreFiltered(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	// The hidden commit is the newest rendered ledger event, so it defines
+	// the parent's recency; the provider's later updated_at does not.
+	parentActivityAt := base.Add(19 * time.Minute)
+
+	prID := seedPR(
+		t, database, "acme", "widget", 1,
+		withSeedPRTimes(base, base.Add(20*time.Minute), base.Add(20*time.Minute)),
+	)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: prID,
+			EventType:      "issue_comment",
+			Author:         "reviewer",
+			CreatedAt:      base.Add(10 * time.Minute),
+			DedupeKey:      "visible-comment",
+		},
+		{
+			MergeRequestID: prID,
+			EventType:      "commit",
+			Author:         "owner",
+			CreatedAt:      base.Add(19 * time.Minute),
+			DedupeKey:      "filtered-commit",
+		},
+	}))
+
+	since := base.Add(-time.Minute).Format(time.RFC3339)
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+url.QueryEscape(since)+"&types=comment",
+		nil,
+	)
+	require.Equal(http.StatusOK, rr.Code)
+	var body activityResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(body.Items, 1)
+	require.Equal("comment", body.Items[0].ActivityType)
+	require.Equal(parentActivityAt.Format(time.RFC3339), body.Items[0].ItemLastActivityAt)
+}
+
 func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -24098,6 +24318,9 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
 	require.Len(feedBody.Items, 1)
 	assert.Equal("gadget", feedBody.Items[0].RepoName)
+	assert.Equal(repo.PlatformRepoID, feedBody.Items[0].Repo.PlatformRepoID)
+	require.Len(feedBody.ItemActivity, 1)
+	assert.Equal(repo.PlatformRepoID, feedBody.ItemActivity[0].Repo.PlatformRepoID)
 
 	candidates := doJSON(
 		t, srv, http.MethodGet,
@@ -24166,6 +24389,65 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 		assert.Equal("Item Owner", item.ItemAuthor)
 	}
 	assert.False(feedBody.Capped)
+}
+
+func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+
+	// The older parent matches the search only through its event body, and
+	// that event sits behind more than a full event page of newer matches on
+	// another parent, so it can only be recognised as a truncated parent.
+	olderPRID := seedPR(
+		t, database, "acme", "widget", 1,
+		withSeedPRTitle("Unrelated older parent"),
+		withSeedPRTimes(base, base, base),
+	)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: olderPRID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "needle in an older event",
+		CreatedAt:      base.Add(time.Minute),
+		DedupeKey:      "older-needle",
+	}}))
+	noisyPRID := seedPR(
+		t, database, "acme", "widget", 2,
+		withSeedPRTitle("Unrelated noisy parent"),
+		withSeedPRTimes(base, base, base),
+	)
+	noisyEvents := make([]db.MREvent, activitySafetyCap+1)
+	for i := range noisyEvents {
+		noisyEvents[i] = db.MREvent{
+			MergeRequestID: noisyPRID,
+			EventType:      "issue_comment",
+			Author:         "reviewer",
+			Body:           "needle repeated",
+			CreatedAt:      base.Add(2*time.Minute + time.Duration(i)*time.Second),
+			DedupeKey:      fmt.Sprintf("noisy-needle-%d", i),
+		}
+	}
+	require.NoError(database.UpsertMREvents(ctx, noisyEvents))
+
+	since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var body struct {
+		Items              []activityItemResponse    `json:"items"`
+		ItemActivity       []activitySubjectResponse `json:"item_activity"`
+		Capped             bool                      `json:"capped"`
+		ItemActivityCapped bool                      `json:"item_activity_capped"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(body.Items, activitySafetyCap)
+	assert.True(body.Capped)
+	assert.True(body.ItemActivityCapped,
+		"parents matched only through truncated events must be reported as truncated")
+	require.Len(body.ItemActivity, 1)
+	assert.Equal(2, body.ItemActivity[0].ItemNumber)
 }
 
 func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {

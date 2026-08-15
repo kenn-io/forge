@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
+import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
 import ActivityThreaded from "./ActivityThreaded.svelte";
 
 function activityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
@@ -68,6 +68,17 @@ function workspaceSubject(overrides: Partial<WorkspaceActivitySubject> = {}): Wo
   };
 }
 
+function itemSubject(overrides: Partial<ActivitySubject> = {}): ActivitySubject {
+  const { workspace: _workspace, ...subject } = workspaceSubject();
+  return {
+    ...subject,
+    item_number: 8,
+    item_title: "Old pull with recent hidden activity",
+    item_url: "https://github.com/acme/widgets/pull/8",
+    ...overrides,
+  };
+}
+
 const expanded = vi.hoisted(() => ({ value: true }));
 const groupByRepo = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
@@ -93,6 +104,7 @@ vi.mock("../context.js", () => ({
 describe("ActivityThreaded collapse", () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     expanded.value = true;
     groupByRepo.value = false;
     hideOrgName.value = false;
@@ -128,6 +140,36 @@ describe("ActivityThreaded collapse", () => {
     expect(onSelectItem).toHaveBeenCalledWith(expect.objectContaining({ item_number: 7, item_type: "pr" }));
   });
 
+  it("renders a recently active parent without inventing a visible event", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-27T14:05:00Z"));
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [],
+        itemActivity: [itemSubject()],
+        onSelectItem: undefined,
+      },
+    });
+
+    const row = container.querySelector(".item-row");
+    expect(row?.textContent).toContain("Old pull with recent hidden activity");
+    expect(row?.querySelector(".cell--time")?.textContent).toBe("5m ago");
+    expect(container.querySelector(".thread-caret")).toBeNull();
+    expect(container.querySelector(".event-row")).toBeNull();
+  });
+
+  it("keeps the event actor as thread author when the parent summary has no author", () => {
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [activityItem("authorless-parent-event", { item_number: 8, item_author: "", author: "alice" })],
+        itemActivity: [itemSubject({ item_author: undefined })],
+        onSelectItem: undefined,
+      },
+    });
+
+    expect(container.querySelector(".item-row .cell--author")?.textContent).toBe("alice");
+  });
+
   it("sorts existing threads by workspace activity without adding an event", () => {
     const { container } = render(ActivityThreaded, {
       props: {
@@ -151,6 +193,35 @@ describe("ActivityThreaded collapse", () => {
     const rows = Array.from(container.querySelectorAll(".item-row:not(.branch-activity-row)"));
     expect(rows[0]?.textContent).toContain("Workspace-active thread");
     expect(container.querySelectorAll(".event-row")).toHaveLength(2);
+  });
+
+  it("sorts and timestamps threads by parent recency when newer events are filtered", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-27T14:05:00Z"));
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [
+          activityItem("older-visible-event", {
+            item_number: 1,
+            item_title: "Recently committed pull",
+            created_at: "2026-04-27T12:00:00Z",
+            item_last_activity_at: "2026-04-27T14:00:00Z",
+          }),
+          activityItem("newer-visible-event", {
+            item_number: 2,
+            item_title: "Recently commented pull",
+            created_at: "2026-04-27T13:00:00Z",
+            item_last_activity_at: "2026-04-27T13:00:00Z",
+          }),
+        ],
+        onSelectItem: undefined,
+      },
+    });
+
+    const rows = Array.from(container.querySelectorAll(".item-row:not(.branch-activity-row)"));
+    expect(rows[0]?.textContent).toContain("Recently committed pull");
+    expect(rows[0]?.querySelector(".cell--time")?.textContent).toBe("5m ago");
+    expect(container.querySelector(".event-row .event-time")?.textContent).toBe("2h ago");
   });
 
   it("hides events but keeps the item row when collapsed", () => {

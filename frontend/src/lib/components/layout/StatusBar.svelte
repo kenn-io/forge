@@ -7,6 +7,7 @@
   import { getStores } from "../../context.js";
   import type { ActivityItem } from "../../api/types.js";
   import { isActivityItemTypeEnabled } from "../../stores/activity.svelte.js";
+  import { repoIdentityKey } from "../../utils/repo-label.js";
   import BudgetBars from "./BudgetBars.svelte";
   import BudgetPopover from "./BudgetPopover.svelte";
   import { formatCompact } from "./budget-utils";
@@ -70,6 +71,7 @@
     repo?: {
       provider?: string | undefined;
       platform_host?: string | undefined;
+      platform_repo_id?: string | undefined;
       repo_path?: string | undefined;
       owner?: string | undefined;
       name?: string | undefined;
@@ -77,6 +79,12 @@
     platform_host?: string | undefined;
     repo_owner?: string | undefined;
     repo_name?: string | undefined;
+  }
+
+  interface ActivityCountSubject extends RepoBackedItem {
+    item_number: number;
+    item_state: string;
+    item_type: string;
   }
 
   interface StatusCounts {
@@ -94,10 +102,17 @@
       ?? [item.repo?.owner ?? item.repo_owner, item.repo?.name ?? item.repo_name]
         .filter(Boolean)
         .join("/");
-    return `${provider}|${platformHost}/${repoPath}`;
+    return repoIdentityKey({
+      provider,
+      platformHost,
+      platformRepoId: item.repo?.platform_repo_id,
+      owner: item.repo?.owner ?? item.repo_owner ?? "",
+      name: item.repo?.name ?? item.repo_name ?? "",
+      repoPath,
+    });
   }
 
-  function activityItemKey(item: ActivityItem): string {
+  function activityItemKey(item: ActivityCountSubject): string {
     return `${repoKey(item)}|${item.item_type}|${item.item_number}`;
   }
 
@@ -125,6 +140,7 @@
   });
 
   const activityCounts = $derived.by((): StatusCounts => {
+    const subjects = new Map<string, { item: ActivityCountSubject; lifecycleState: string }>();
     const pullRequests = new Set<string>();
     const issueKeys = new Set<string>();
     const repos = new Set<string>();
@@ -135,17 +151,48 @@
       if (hideBots && isBot(item.author)) continue;
       if (!isActivityItemTypeEnabled(item.item_type, enabledItemTypes)) continue;
 
-      const lifecycleState = activityLifecycleState(item);
+      subjects.set(activityItemKey(item), {
+        item,
+        lifecycleState: activityLifecycleState(item),
+      });
+    }
+
+    // Parent summaries carry the authoritative lifecycle state and replace any
+    // event-backed snapshot for the same item.
+    for (const subject of activity.getItemActivity()) {
+      if (hideBots && isBot(subject.item_author ?? "")) continue;
+      if (!isActivityItemTypeEnabled(subject.item_type, enabledItemTypes)) continue;
+      subjects.set(activityItemKey(subject), {
+        item: subject,
+        lifecycleState: subject.item_state,
+      });
+    }
+
+    // Workspace-only subjects are visible threads too, but must not override
+    // an authoritative parent or an existing event-backed lifecycle state.
+    for (const subject of activity.getWorkspaceActivity()) {
+      if (hideBots && isBot(subject.item_author ?? "")) continue;
+      if (!isActivityItemTypeEnabled(subject.item_type, enabledItemTypes)) continue;
+      const key = activityItemKey(subject);
+      if (!subjects.has(key)) {
+        subjects.set(key, {
+          item: subject,
+          lifecycleState: subject.item_state,
+        });
+      }
+    }
+
+    for (const [key, { item, lifecycleState }] of subjects) {
       const isOpenPullRequest = item.item_type === "pr"
         && lifecycleState === "open";
       const isOpenIssue = item.item_type === "issue"
         && lifecycleState === "open";
 
       if (isOpenPullRequest) {
-        pullRequests.add(activityItemKey(item));
+        pullRequests.add(key);
         repos.add(repoKey(item));
       } else if (isOpenIssue) {
-        issueKeys.add(activityItemKey(item));
+        issueKeys.add(key);
         repos.add(repoKey(item));
       }
     }

@@ -133,4 +133,18 @@ describe("repo labels", () => {
     expect(repoIdentityKey(repos[0]!)).not.toBe(repoIdentityKey(repos[2]!));
     expect(repoIdentityKey(repos[0]!)).toBe(repoIdentityKey({ ...repos[0]! }));
   });
+
+  it("uses stable repository ids across renames and route reuse", () => {
+    const original = { ...repos[0]!, platformRepoId: "repo-widgets" };
+    const renamed = {
+      ...original,
+      owner: "platform",
+      name: "widgets-next",
+      repoPath: "platform/widgets-next",
+    };
+    const replacement = { ...repos[0]!, platformRepoId: "repo-replacement" };
+
+    expect(repoIdentityKey(original)).toBe(repoIdentityKey(renamed));
+    expect(repoIdentityKey(original)).not.toBe(repoIdentityKey(replacement));
+  });
 });

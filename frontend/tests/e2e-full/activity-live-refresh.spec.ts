@@ -27,10 +27,11 @@ async function persistActivityComment(
   baseURL: string,
   body: string,
   requireSubscriber = true,
+  itemType: "pr" | "issue" = "pr",
 ): Promise<number> {
-  const query = new URLSearchParams({ body });
+  const query = new URLSearchParams({ body, item_type: itemType });
   if (!requireSubscriber) query.set("require_subscriber", "false");
-  const response = await page.request.post(`${baseURL}/__e2e/activity/pr-comment?${query}`);
+  const response = await page.request.post(`${baseURL}/__e2e/activity/item-comment?${query}`);
   expect(response.status(), await response.text()).toBe(204);
   const eventID = Number(response.headers()["x-kenn-e2e-event-id"]);
   expect(eventID).toBeGreaterThan(0);
@@ -139,6 +140,136 @@ for (const item of olderDetailSyncCases) {
   });
 }
 
+for (const item of olderDetailSyncCases) {
+  test(`initial ${item.itemType} detail read reconciles already-persisted Activity behind the feed cursor`, async ({
+    page,
+  }, testInfo) => {
+    testInfo.setTimeout(60_000);
+    const server = await startIsolatedE2EServer();
+    const releaseDetailSync = Promise.withResolvers<void>();
+    try {
+      await page.route("**/api/v1/events**", async (route) => {
+        await route.abort("connectionfailed");
+      });
+      await page.route(`**${item.detailPath}/sync/async`, async (route) => {
+        await releaseDetailSync.promise;
+        await route.fulfill({ status: 202 });
+      });
+
+      const initialActivity = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === "GET" && url.pathname === "/api/v1/activity" && !url.searchParams.has("after")
+        );
+      });
+      await page.goto(`${server.info.base_url}/?view=threaded`);
+      await initialActivity;
+
+      const body = `Already-persisted ${item.itemType} Activity behind the feed cursor`;
+      await persistActivityComment(page, server.info.base_url, body, false, item.itemType);
+
+      const reconciledActivity = page.waitForResponse(
+        async (response) => {
+          const url = new URL(response.url());
+          if (
+            response.request().method() !== "GET" ||
+            url.pathname !== "/api/v1/activity" ||
+            url.searchParams.has("after")
+          ) {
+            return false;
+          }
+          const snapshot = (await response.json()) as { items: Array<{ body_preview: string }> };
+          return snapshot.items.some((event) => event.body_preview === body);
+        },
+        { timeout: 5_000 },
+      );
+
+      const itemRow = page.locator(".activity-feed .threaded-view .item-row", {
+        hasText: item.title,
+      });
+      const initialDetail = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "GET" && url.pathname === item.detailPath;
+      });
+      await itemRow.click();
+
+      const detailResponse = (await (await initialDetail).json()) as { events?: Array<{ Body?: string }> };
+      expect(detailResponse.events?.some((event) => event.Body === body)).toBe(true);
+      await reconciledActivity;
+      await expect(page.locator(".activity-feed").getByText("fixture-bot", { exact: true })).toBeVisible();
+    } finally {
+      releaseDetailSync.resolve();
+      await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
+      await server.stop();
+    }
+  });
+}
+
+test("a filtered newer event updates the parent ordering and timestamp", async ({ page }, testInfo) => {
+  testInfo.setTimeout(60_000);
+  const server = await startIsolatedE2EServer();
+  try {
+    const staged = await page.request.post(`${server.info.base_url}/__e2e/activity/stage-filtered-parent-recency`);
+    expect(staged.status(), await staged.text()).toBe(204);
+
+    const streamRequested = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/v1/events");
+    const initialActivity = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === "GET" && url.pathname === "/api/v1/activity";
+    });
+    await page.goto(
+      `${server.info.base_url}/?view=threaded&range=30d&item_types=pr&event_types=none&notif=0&hide_branch=1`,
+    );
+    await streamRequested;
+    await initialActivity;
+
+    // Recency comes from the event ledger, not provider updated_at: widgets#1
+    // was "updated" two hours ago but its newest event is days old, so the
+    // dependabot pull opened six hours ago leads.
+    const rows = page.locator(".activity-feed .threaded-view .item-row");
+    await expect(rows.first()).toContainText("Bump lodash from 4.17.20 to 4.17.21");
+    await expect(rows.first().locator(".cell--time")).toHaveText("6h ago");
+    await expect(rows.filter({ hasText: "WIP: new dashboard layout" })).toHaveCount(0);
+
+    const refreshStartedAt = Math.floor(Date.now() / 1000) * 1000;
+    const refreshedActivity = page.waitForResponse(async (response) => {
+      const url = new URL(response.url());
+      if (response.request().method() !== "GET" || url.pathname !== "/api/v1/activity") return false;
+      const snapshot = (await response.json()) as {
+        item_activity: Array<{ item_number: number; activity_at: string }>;
+      };
+      return snapshot.item_activity.some(
+        (subject) => subject.item_number === 6 && Date.parse(subject.activity_at) >= refreshStartedAt,
+      );
+    });
+    const advanced = await page.request.post(`${server.info.base_url}/__e2e/activity/filtered-parent-recency`);
+    expect(advanced.status(), await advanced.text()).toBe(204);
+    const expectedActivityAt = advanced.headers()["x-kenn-e2e-parent-activity-at"];
+    expect(expectedActivityAt).toBeDefined();
+
+    const refreshedSnapshot = (await (await refreshedActivity).json()) as {
+      items: Array<{
+        activity_type: string;
+        body_preview: string;
+        item_number: number;
+      }>;
+      item_activity: Array<{ activity_at: string; item_number: number; item_title: string }>;
+    };
+    expect(
+      refreshedSnapshot.items.some((activityItem) => activityItem.body_preview === "Filtered parent comment"),
+    ).toBe(false);
+    expect(refreshedSnapshot.items.some((activityItem) => activityItem.item_number === 6)).toBe(false);
+    const updatedParent = refreshedSnapshot.item_activity.find((subject) => subject.item_number === 6);
+    expect(updatedParent?.item_title).toBe("WIP: new dashboard layout");
+    expect(Date.parse(updatedParent?.activity_at ?? "")).toBe(Date.parse(expectedActivityAt ?? ""));
+
+    await expect(rows.first()).toContainText("WIP: new dashboard layout");
+    await expect(rows.first().locator(".cell--time")).toHaveText("just now");
+  } finally {
+    await server.stop();
+  }
+});
+
 test("accepted detail sync reconciles Activity after its selection closes", async ({ page }, testInfo) => {
   testInfo.setTimeout(60_000);
   const server = await startIsolatedE2EServer();
@@ -230,8 +361,7 @@ test("persisted Activity events appear in the open PR timeline after SSE invalid
       { timeout: 5_000 },
     );
 
-    const persisted = await page.request.post(`${server.info.base_url}/__e2e/activity/pr-comment`);
-    expect(persisted.status()).toBe(204);
+    await persistActivityComment(page, server.info.base_url, newComment);
 
     const storedDetail = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
     expect(storedDetail.ok()).toBe(true);
@@ -293,6 +423,131 @@ test("SSE comment refresh does not promote the commenter to an Activity author c
     await authorTrigger.click();
     await expect(page.getByRole("option", { name: "alice" })).toBeVisible();
     await expect(page.getByRole("option", { name: "fixture-bot" })).toHaveCount(0);
+  } finally {
+    await server.stop();
+  }
+});
+
+test("incremental Activity polling keeps renamed routes distinct and reconciles provider links", async ({
+  page,
+}, testInfo) => {
+  testInfo.setTimeout(75_000);
+  const server = await startIsolatedE2EServer();
+  try {
+    await page.goto(`${server.info.base_url}/?view=threaded&range=30d`);
+
+    const feed = page.locator(".activity-feed .threaded-view");
+    const original = feed.locator(".item-row", { hasText: "Add widget caching layer" });
+    await expect(original).toHaveCount(1);
+
+    const renamedActivity = page.waitForResponse(async (response) => {
+      const url = new URL(response.url());
+      if (
+        response.request().method() !== "GET" ||
+        url.pathname !== "/api/v1/activity" ||
+        !url.searchParams.has("after")
+      ) {
+        return false;
+      }
+      const snapshot = (await response.json()) as {
+        item_activity: Array<{ repo: { platform_repo_id?: string; repo_path?: string } }>;
+      };
+      return snapshot.item_activity.some(
+        (subject) => subject.repo.platform_repo_id && subject.repo.repo_path === "acme/widgets-renamed",
+      );
+    });
+    const rename = await page.request.post(`${server.info.base_url}/__e2e/activity/repository-identity?phase=rename`);
+    expect(rename.ok(), await rename.text()).toBe(true);
+    await renamedActivity;
+
+    await expect(original).toHaveCount(1);
+
+    const replacementActivity = page.waitForResponse(async (response) => {
+      const url = new URL(response.url());
+      if (
+        response.request().method() !== "GET" ||
+        url.pathname !== "/api/v1/activity" ||
+        !url.searchParams.has("after")
+      ) {
+        return false;
+      }
+      const snapshot = (await response.json()) as {
+        item_activity: Array<{
+          item_title: string;
+          repo: { platform_repo_id?: string; repo_path?: string };
+        }>;
+      };
+      return snapshot.item_activity.some(
+        (subject) =>
+          subject.item_title === "Replacement route pull request" &&
+          subject.repo.platform_repo_id === "e2e-replacement-widgets" &&
+          subject.repo.repo_path === "acme/widgets",
+      );
+    });
+    const reuse = await page.request.post(`${server.info.base_url}/__e2e/activity/repository-identity?phase=reuse`);
+    expect(reuse.ok(), await reuse.text()).toBe(true);
+    await replacementActivity;
+
+    await expect(original).toHaveCount(1);
+    const replacement = feed.locator(".item-row", { hasText: "Replacement route pull request" });
+    await expect(replacement).toHaveCount(1);
+
+    await page.getByRole("button", { name: /^Filters/ }).click();
+    await page.getByRole("radiogroup", { name: "View" }).getByRole("radio", { name: "Flat" }).click();
+    const notification = page.locator(".activity-row", { hasText: "Review requested" });
+    await expect(notification).toHaveCount(1);
+    await page.evaluate(() => {
+      window.open = ((url?: string | URL) => {
+        window.sessionStorage.setItem("e2e-opened-provider-url", String(url ?? ""));
+        return null;
+      }) as typeof window.open;
+    });
+    await notification.getByRole("button", { name: "Open activity in provider" }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.sessionStorage.getItem("e2e-opened-provider-url")))
+      .toBe("https://github.com/acme/widgets-renamed/pull/1");
+
+    await page.getByRole("button", { name: /^Filters/ }).click();
+    await page.getByRole("radiogroup", { name: "View" }).getByRole("radio", { name: "Threaded" }).click();
+    await original.click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("repo_path")).toBe("acme/widgets-renamed");
+
+    await replacement.click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("repo_path")).toBe("acme/widgets");
+  } finally {
+    await server.stop();
+  }
+});
+
+test("legacy commit bookmark normalizes against the real Activity API", async ({ page }) => {
+  const server = await startIsolatedE2EServer();
+  try {
+    const seeded = await page.request.post(`${server.info.base_url}/__e2e/activity/default-branch-commit`);
+    expect(seeded.status(), await seeded.text()).toBe(204);
+
+    const activityResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === "GET" && url.pathname === "/api/v1/activity";
+    });
+    await page.goto(`${server.info.base_url}/?view=flat&types=commit,notification`);
+    const snapshot = (await (await activityResponse).json()) as {
+      items: Array<{ activity_type: string; body_preview: string }>;
+    };
+    expect(
+      snapshot.items.some(
+        (item) =>
+          item.activity_type === "default_branch_commit" && item.body_preview === "Repository maintenance commit",
+      ),
+    ).toBe(true);
+
+    await expect(page.locator(".activity-row", { hasText: "Repository maintenance commit" })).toBeVisible();
+    await expect(page.locator(".activity-row", { hasText: "Add widget caching layer" })).toHaveCount(0);
+    await expect(page.locator(".activity-row", { hasText: "Widget rendering broken on Safari" })).toHaveCount(0);
+
+    const normalized = new URL(page.url());
+    expect(normalized.searchParams.has("types")).toBe(false);
+    expect(normalized.searchParams.get("item_types")).toBe("none");
+    expect(normalized.searchParams.get("event_types")).toBe("commit");
   } finally {
     await server.stop();
   }

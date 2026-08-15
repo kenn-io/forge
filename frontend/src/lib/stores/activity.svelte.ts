@@ -9,9 +9,11 @@ import type {
   ActivityParams,
   ActivityResponse,
   ActivitySettings,
+  ActivitySubject,
   NotificationBulkResponse,
   WorkspaceActivitySubject,
 } from "../api/types.js";
+import { activityItemKey } from "../components/activityRows.js";
 import { ActivityWorkflow } from "./activity-workflow.js";
 import { showFlash } from "./flash.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
@@ -24,10 +26,15 @@ export type ActivityAPIItemType = ActivityItemType | "repo";
 
 export const DEFAULT_ACTIVITY_ITEM_TYPES = ["pr", "issue"] as const;
 export const DEFAULT_EVENT_TYPES = ["comment", "review", "commit", "force_push"] as const;
+const PR_TIMELINE_EVENT_TYPES = ["comment", "review", "force_push"] as const;
+const ISSUE_TIMELINE_EVENT_TYPES = ["comment"] as const;
 const NO_ACTIVITY_FILTER_TYPE = "none";
+const ACTIVITY_ITEM_TYPES_PARAM = "item_types";
+const ACTIVITY_EVENT_TYPES_PARAM = "event_types";
 
-// Default-branch activity rows render as "Commit"/"Force-pushed" just like
-// their PR counterparts, so the event-type toggles must govern both kinds.
+// Default-branch force pushes and PR force pushes share a filter. Commits are
+// intentionally different: the Commits filter controls only top-level branch
+// activity, while commits inside PR timelines are always part of the PR.
 const BRANCH_TYPE_FOR_EVENT: Partial<Record<string, string>> = {
   commit: "default_branch_commit",
   force_push: "default_branch_force_push",
@@ -50,16 +57,20 @@ export function buildActivityFilterTypes(
   // to build the explicit list that omits "notification".
   if (allSelected) return [];
 
-  // Keep the established notification-only representation free of opening
-  // events when both item scopes remain at their default.
-  if (enabledItemTypes.size === DEFAULT_ACTIVITY_ITEM_TYPES.length && enabledEvents.size === 0 && showNotifications) {
-    return ["notification"];
-  }
-
   const types: string[] = [];
   if (enabledItemTypes.size === 0) types.push(NO_ACTIVITY_FILTER_TYPE);
-  if (enabledItemTypes.has("pr")) types.push("new_pr");
-  if (enabledItemTypes.has("issue")) types.push("new_issue");
+  // Opening rows are timeline events, not parent anchors. Authoritative parent
+  // summaries are projected separately, so opening rows follow only the
+  // timeline events that can occur on that item kind: an issue timeline has
+  // comments alone, so Reviews or Force pushes must not toggle issue opening
+  // rows. The Commits toggle controls top-level default-branch commits only,
+  // so it does not opt into PR or issue opening rows either.
+  if (enabledItemTypes.has("pr") && PR_TIMELINE_EVENT_TYPES.some((eventType) => enabledEvents.has(eventType))) {
+    types.push("new_pr");
+  }
+  if (enabledItemTypes.has("issue") && ISSUE_TIMELINE_EVENT_TYPES.some((eventType) => enabledEvents.has(eventType))) {
+    types.push("new_issue");
+  }
   if (!hideDefaultBranchActivity) {
     for (const evt of DEFAULT_EVENT_TYPES) {
       const branchType = BRANCH_TYPE_FOR_EVENT[evt];
@@ -67,7 +78,11 @@ export function buildActivityFilterTypes(
     }
   }
   for (const evt of DEFAULT_EVENT_TYPES) {
-    if (enabledEvents.has(evt)) types.push(evt);
+    if (evt === "commit") {
+      if (enabledItemTypes.has("pr")) types.push(evt);
+    } else if (enabledEvents.has(evt)) {
+      types.push(evt);
+    }
   }
   if (showNotifications) types.push("notification");
   return types.length > 0 ? types : [NO_ACTIVITY_FILTER_TYPE];
@@ -80,6 +95,50 @@ export function buildActivityItemTypeFilter(enabledItemTypes: ReadonlySet<Activi
 export function isActivityItemTypeEnabled(itemType: string, enabledItemTypes: ReadonlySet<ActivityItemType>): boolean {
   if (itemType !== "pr" && itemType !== "issue") return true;
   return enabledItemTypes.has(itemType);
+}
+
+function readSelectedFilters<T extends string>(value: string | null, defaults: readonly T[]): Set<T> {
+  if (value === null) return new Set(defaults);
+  const selected = value === NO_ACTIVITY_FILTER_TYPE ? [] : value.split(",");
+  return new Set(defaults.filter((candidate) => selected.includes(candidate)));
+}
+
+function writeSelectedFilters<T extends string>(
+  searchParams: URLSearchParams,
+  name: string,
+  selected: ReadonlySet<T>,
+  defaults: readonly T[],
+): void {
+  const ordered = defaults.filter((candidate) => selected.has(candidate));
+  if (ordered.length === defaults.length) {
+    searchParams.delete(name);
+  } else {
+    searchParams.set(name, ordered.length > 0 ? ordered.join(",") : NO_ACTIVITY_FILTER_TYPE);
+  }
+}
+
+function readLegacyFilterSelections(value: string): {
+  itemTypes: Set<ActivityItemType>;
+  events: Set<string>;
+} {
+  const types = value ? value.split(",") : [];
+  if (types.length === 0) {
+    return {
+      itemTypes: new Set(DEFAULT_ACTIVITY_ITEM_TYPES),
+      events: new Set(DEFAULT_EVENT_TYPES),
+    };
+  }
+
+  const encodedEmptyEventDefaultScope = types.length === 1 && types[0] === "notification";
+  const itemTypes = encodedEmptyEventDefaultScope
+    ? new Set(DEFAULT_ACTIVITY_ITEM_TYPES)
+    : new Set(
+        DEFAULT_ACTIVITY_ITEM_TYPES.filter((itemType) => types.includes(itemType === "pr" ? "new_pr" : "new_issue")),
+      );
+  const events = encodedEmptyEventDefaultScope
+    ? new Set<string>()
+    : new Set(DEFAULT_EVENT_TYPES.filter((eventType) => types.includes(eventType)));
+  return { itemTypes, events };
 }
 
 // Activity item ids are "<source>:<source_id>"; notification rows use
@@ -135,10 +194,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   // --- state ---
 
   let items = $state<ActivityItem[]>([]);
+  let itemActivity = $state.raw<ActivitySubject[]>([]);
   let workspaceActivity = $state.raw<WorkspaceActivitySubject[]>([]);
   let loading = $state(false);
   let storeError = $state<string | null>(null);
   let capped = $state(false);
+  let itemActivityCapped = $state(false);
   let filterTypes = $state<string[]>([]);
   let searchQuery = $state<string | undefined>(undefined);
   let authorFilter = $state<string | undefined>(undefined);
@@ -172,6 +233,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function getActivityItems(): ActivityItem[] {
     return items;
   }
+  function getItemActivity(): ActivitySubject[] {
+    return itemActivity;
+  }
   function getWorkspaceActivity(): WorkspaceActivitySubject[] {
     return workspaceActivity;
   }
@@ -183,6 +247,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function isActivityCapped(): boolean {
     return capped;
+  }
+  function isItemActivityCapped(): boolean {
+    return itemActivityCapped;
   }
   function getActivityFilterTypes(): string[] {
     return filterTypes;
@@ -451,19 +518,74 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return projected;
   }
 
+  function stableParentKey(item: ActivityItem | ActivitySubject): string | undefined {
+    const repo = item.repo;
+    if (!repo) return undefined;
+    const platformRepoId = repo.platform_repo_id?.trim();
+    if (!platformRepoId || (item.item_type !== "pr" && item.item_type !== "issue")) return undefined;
+    return activityItemKey({
+      provider: repo.provider,
+      platformHost: repo.platform_host,
+      platformRepoId,
+      owner: repo.owner,
+      name: repo.name,
+      repoPath: repo.repo_path,
+      itemType: item.item_type,
+      itemNumber: item.item_number,
+    });
+  }
+
+  function reconcileItemsWithParentSubjects(subjects: ActivitySubject[]): void {
+    const subjectsByKey = new Map<string, ActivitySubject>();
+    for (const subject of subjects) {
+      const key = stableParentKey(subject);
+      if (key) subjectsByKey.set(key, subject);
+    }
+    items = items.map((item) => {
+      const key = stableParentKey(item);
+      const subject = key ? subjectsByKey.get(key) : undefined;
+      if (!subject) return item;
+      const { workspace: _staleWorkspace, ...retainedEvent } = item;
+      return {
+        ...retainedEvent,
+        ...(item.activity_type === "notification" ? { activity_url: subject.item_url } : {}),
+        item_author: subject.item_author ?? "",
+        item_last_activity_at: subject.activity_at,
+        item_state: item.activity_type === "notification" ? item.item_state : subject.item_state,
+        item_title: subject.item_title,
+        item_url: subject.item_url,
+        platform_host: subject.repo.platform_host,
+        repo_owner: subject.repo.owner,
+        repo_name: subject.repo.name,
+        repo: subject.repo,
+        ...(item.activity_type === "notification" ? { subject_state: subject.item_state } : {}),
+        ...(subject.workspace ? { workspace: subject.workspace } : {}),
+      };
+    });
+  }
+
+  function projectActivitySubjects(response: ActivityResponse): void {
+    const subjects = response.item_activity ?? [];
+    reconcileItemsWithParentSubjects(subjects);
+    itemActivity = subjects;
+    workspaceActivity = response.workspace_activity ?? [];
+    itemActivityCapped = response.item_activity_capped ?? false;
+  }
+
+  function projectActivitySnapshot(result: OwnedActivityResponse): void {
+    items = projectOwnedNotificationStates(result);
+    projectActivitySubjects(result.response);
+    capped = result.response.capped;
+    loading = false;
+    storeError = null;
+  }
+
   function loadActivityProgram(params: ActivityParams, owner: "foreground" | "poll" = "foreground") {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
       const scope = activityProjectionScope(params);
       const read = activityRead(params);
-      const project = (result: OwnedActivityResponse) =>
-        Effect.sync(() => {
-          items = projectOwnedNotificationStates(result);
-          workspaceActivity = result.response.workspace_activity ?? [];
-          capped = result.response.capped;
-          loading = false;
-          storeError = null;
-        });
+      const project = (result: OwnedActivityResponse) => Effect.sync(() => projectActivitySnapshot(result));
       const clearLoading = Effect.sync(() => {
         loading = false;
       });
@@ -493,14 +615,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const params = buildParams();
       const scope = activityProjectionScope(params);
       const read = activityRead(params);
-      const project = (result: OwnedActivityResponse) =>
-        Effect.sync(() => {
-          items = projectOwnedNotificationStates(result);
-          workspaceActivity = result.response.workspace_activity ?? [];
-          capped = result.response.capped;
-          loading = false;
-          storeError = null;
-        });
+      const project = (result: OwnedActivityResponse) => Effect.sync(() => projectActivitySnapshot(result));
       return Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;
         yield* Effect.all([workflow.reconcileRead(scope, read, project), loadActivityAuthorsEffect(true)], {
@@ -526,20 +641,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function refreshActivityProgram(params: ActivityParams) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
-      yield* workflow.pollRead(activityProjectionScope(params), activityRead(params), (result) => {
-        const fresh = projectOwnedNotificationStates(result);
-        return Effect.sync(() => {
-          workspaceActivity = result.response.workspace_activity ?? [];
-          if (fresh.length === 0) return;
-          const freshById = new Map(fresh.map((item) => [item.id, item]));
-          items = items.map((item) => {
-            const updated = freshById.get(item.id);
-            return updated && updated.item_state !== item.item_state
-              ? { ...item, item_state: updated.item_state }
-              : item;
-          });
-        });
-      });
+      yield* workflow.pollSnapshotRead(
+        activityProjectionScope(params),
+        activityRead(params),
+        (result) => Effect.sync(() => projectActivitySnapshot(result)),
+        Effect.sync(() => {
+          loading = false;
+        }),
+      );
     });
   }
 
@@ -620,19 +729,15 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         Effect.gen(function* () {
           const activityChanged = yield* Effect.sync(() => {
             if (mode === "replace") {
-              items = projectOwnedNotificationStates(result);
-              workspaceActivity = result.response.workspace_activity ?? [];
-              capped = result.response.capped;
-              loading = false;
-              storeError = null;
+              projectActivitySnapshot(result);
               return true;
             }
-            workspaceActivity = result.response.workspace_activity ?? [];
             const existingIds = new Set(items.map((item) => item.id));
             const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
             if (newItems.length > 0) {
               items = [...newItems, ...items];
             }
+            projectActivitySubjects(result.response);
             const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
             items = items.filter((item) => new Date(item.created_at) >= cutoff);
             return newItems.length > 0;
@@ -685,31 +790,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     });
   }
 
-  // deriveFiltersFromTypes reconstructs the dropdown state from the
-  // persisted `types` list. The notification toggle is NOT inferred
-  // from list membership: a legacy URL listing every event type but no
-  // "notification" must still mean "show everything" rather than
-  // "notifications hidden", so showNotifications is carried by its own
-  // `notif` URL param (read in syncFromURL) instead.
-  function deriveFiltersFromTypes(): void {
-    if (filterTypes.length === 0) {
-      enabledItemTypes = new Set(DEFAULT_ACTIVITY_ITEM_TYPES);
-      enabledEvents = new Set(DEFAULT_EVENT_TYPES);
-    } else {
-      const notificationOnly = filterTypes.length === 1 && filterTypes[0] === "notification";
-      enabledItemTypes = notificationOnly
-        ? new Set(DEFAULT_ACTIVITY_ITEM_TYPES)
-        : new Set(
-            DEFAULT_ACTIVITY_ITEM_TYPES.filter((itemType) =>
-              filterTypes.includes(itemType === "pr" ? "new_pr" : "new_issue"),
-            ),
-          );
-      enabledEvents = new Set(DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)));
-    }
-    // Rebuild so the request matches the filter state the dropdown
-    // shows: legacy URLs can list default_branch_commit while commit is
-    // deselected, and an empty list with notifications hidden must
-    // become the explicit exclusion list a bare `[]` cannot express.
+  function rebuildFilterTypes(): void {
     filterTypes = buildActivityFilterTypes(
       enabledItemTypes,
       enabledEvents,
@@ -737,10 +818,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function syncFromURL(): void {
     const sp = new URLSearchParams(window.location.search);
-    if (sp.has("types")) {
-      const typesParam = sp.get("types");
-      filterTypes = typesParam ? typesParam.split(",") : [];
-    }
+    const legacySelections = sp.has("types") ? readLegacyFilterSelections(sp.get("types") ?? "") : undefined;
+    enabledItemTypes = sp.has(ACTIVITY_ITEM_TYPES_PARAM)
+      ? readSelectedFilters(sp.get(ACTIVITY_ITEM_TYPES_PARAM), DEFAULT_ACTIVITY_ITEM_TYPES)
+      : (legacySelections?.itemTypes ?? new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
+    enabledEvents = sp.has(ACTIVITY_EVENT_TYPES_PARAM)
+      ? readSelectedFilters(sp.get(ACTIVITY_EVENT_TYPES_PARAM), DEFAULT_EVENT_TYPES)
+      : (legacySelections?.events ?? new Set(DEFAULT_EVENT_TYPES));
     if (sp.has("search")) searchQuery = sp.get("search") ?? undefined;
     authorFilter = sp.get("author")?.trim() || undefined;
     if (sp.has("range")) {
@@ -755,13 +839,15 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     hideDefaultBranchActivity = sp.get("hide_branch") === "1";
     showNotifications = sp.get("notif") !== "0";
     applyCollapsedFromURL();
-    deriveFiltersFromTypes();
+    rebuildFilterTypes();
   }
 
   function syncToURL(): void {
     const sp = new URLSearchParams(window.location.search);
-    if (filterTypes.length > 0) sp.set("types", filterTypes.join(","));
-    else sp.delete("types");
+    rebuildFilterTypes();
+    sp.delete("types");
+    writeSelectedFilters(sp, ACTIVITY_ITEM_TYPES_PARAM, enabledItemTypes, DEFAULT_ACTIVITY_ITEM_TYPES);
+    writeSelectedFilters(sp, ACTIVITY_EVENT_TYPES_PARAM, enabledEvents, DEFAULT_EVENT_TYPES);
     if (searchQuery) sp.set("search", searchQuery);
     else sp.delete("search");
     if (authorFilter) sp.set("author", authorFilter);
@@ -789,10 +875,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   return {
     getActivityItems,
+    getItemActivity,
     getWorkspaceActivity,
     isActivityLoading,
     getActivityError,
     isActivityCapped,
+    isItemActivityCapped,
     getActivityFilterTypes,
     getActivitySearch,
     getActivityAuthor,

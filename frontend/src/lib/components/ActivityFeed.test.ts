@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
+import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
 
 const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
@@ -18,7 +18,9 @@ import ActivityFeed from "./ActivityFeed.svelte";
 
 beforeEach(() => {
   runtimeCapture.current = makeAppRuntime();
+  itemActivity.value = [];
   workspaceActivity.value = [];
+  hideBots.value = false;
 });
 
 afterEach(async () => {
@@ -91,6 +93,7 @@ function workspaceSubject(overrides: Partial<WorkspaceActivitySubject> = {}): Wo
 }
 
 const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
+const itemActivity = vi.hoisted(() => ({ value: [] as ActivitySubject[] }));
 const workspaceActivity = vi.hoisted(() => ({ value: [] as WorkspaceActivitySubject[] }));
 const viewMode = vi.hoisted(() => ({
   value: "flat" as "flat" | "threaded",
@@ -101,6 +104,7 @@ const expandAllThreads = vi.hoisted(() => vi.fn());
 const rollUpCommits = vi.hoisted(() => ({ value: false }));
 const hideDefaultBranchActivity = vi.hoisted(() => ({ value: false }));
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
+const hideBots = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const setActivityFilterTypes = vi.hoisted(() => vi.fn());
 const enabledItemTypes = vi.hoisted(() => ({
@@ -110,6 +114,8 @@ const enabledEvents = vi.hoisted(() => ({
   value: new Set(["comment", "review", "commit", "force_push"]),
 }));
 const showNotifications = vi.hoisted(() => ({ value: true }));
+const activityCapped = vi.hoisted(() => ({ value: false }));
+const itemActivityCapped = vi.hoisted(() => ({ value: false }));
 const involvesMe = vi.hoisted(() => ({ value: false }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 const selectedAuthor = vi.hoisted(() => ({ value: undefined as string | undefined }));
@@ -137,16 +143,18 @@ vi.mock("../context.js", () => ({
       getShowNotifications: () => showNotifications.value,
       getInvolvesMe: () => involvesMe.value,
       getHideClosedMerged: () => hideClosedMerged.value,
-      getHideBots: () => false,
+      getHideBots: () => hideBots.value,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
       getEnabledItemTypes: () => enabledItemTypes.value,
       getActivityItems: () => items.value,
+      getItemActivity: () => itemActivity.value,
       getWorkspaceActivity: () => workspaceActivity.value,
       getActivityError: () => null,
       getViewMode: () => viewMode.value,
       getTimeRange: () => "7d",
       isActivityLoading: () => false,
-      isActivityCapped: () => false,
+      isActivityCapped: () => activityCapped.value,
+      isItemActivityCapped: () => itemActivityCapped.value,
       getCollapseThreads: () => collapseThreads.value,
       collapseAllThreads,
       expandAllThreads,
@@ -210,6 +218,8 @@ describe("ActivityFeed compact mode", () => {
     enabledItemTypes.value = new Set(["pr", "issue"]);
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
     showNotifications.value = true;
+    activityCapped.value = false;
+    itemActivityCapped.value = false;
     selectedAuthor.value = undefined;
     setActivityAuthor.mockClear();
     setActivityFilterTypes.mockClear();
@@ -246,6 +256,15 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByText("Add widget caching layer")).toBeTruthy();
   });
 
+  it("warns about parent truncation separately from event truncation", () => {
+    itemActivityCapped.value = true;
+
+    render(ActivityFeed, { props: { compact: true } });
+
+    expect(screen.getByText(/5,000 most recently active pull requests and issues/)).toBeTruthy();
+    expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
+  });
+
   it("shows workspace-only subjects only in threaded mode", () => {
     items.value = [];
     workspaceActivity.value = [workspaceSubject()];
@@ -267,6 +286,32 @@ describe("ActivityFeed compact mode", () => {
 
     const { container } = render(ActivityFeed, { props: { compact: true } });
     expect(container.textContent).not.toContain("Workspace-only work");
+  });
+
+  it("hides bot-authored parent and workspace summaries in threaded mode", () => {
+    viewMode.value = "threaded";
+    items.value = [];
+    itemActivity.value = [
+      workspaceSubject({
+        item_author: "renovate[bot]",
+        item_number: 8,
+        item_title: "Bot-authored parent",
+        workspace: undefined,
+      }),
+    ];
+    workspaceActivity.value = [
+      workspaceSubject({
+        item_author: "release-bot",
+        item_number: 9,
+        item_title: "Bot-authored workspace",
+      }),
+    ];
+    hideBots.value = true;
+
+    const { container } = render(ActivityFeed, { props: { compact: true } });
+
+    expect(container.textContent).not.toContain("Bot-authored parent");
+    expect(container.textContent).not.toContain("Bot-authored workspace");
   });
 
   it("selects a single PR or issue author from the typeahead", async () => {
@@ -376,7 +421,6 @@ describe("ActivityFeed compact mode", () => {
       "default_branch_force_push",
       "comment",
       "review",
-      "commit",
       "force_push",
       "notification",
     ]);
@@ -668,7 +712,7 @@ describe("ActivityFeed compact mode", () => {
     expect(row?.querySelector(".chip--kind-issue")).toBeNull();
   });
 
-  it("deselecting Commits also hides default-branch commit activity", async () => {
+  it("deselecting Commits hides default-branch commits but keeps PR commits", async () => {
     render(ActivityFeed, { props: { compact: true } });
 
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
@@ -680,6 +724,7 @@ describe("ActivityFeed compact mode", () => {
       "default_branch_force_push",
       "comment",
       "review",
+      "commit",
       "force_push",
       "notification",
     ]);
@@ -759,10 +804,10 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     await fireEvent.click(screen.getByRole("button", { name: "Comments" }));
 
-    // Removing the last content event preserves the established
-    // notification-only view without leaking PR/issue opening rows.
+    // Removing the last top-level event keeps PR timeline commits and
+    // notifications without leaking PR/issue opening rows.
     expect(enabledEvents.value.size).toBe(0);
-    expect(setActivityFilterTypes).toHaveBeenCalledWith(["notification"]);
+    expect(setActivityFilterTypes).toHaveBeenCalledWith(["commit", "notification"]);
   });
 
   it("hides notifications on merged PRs even in a notifications-only feed", () => {

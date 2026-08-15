@@ -4664,6 +4664,8 @@ export interface components {
             cursor: string;
             id: string;
             item_author?: string;
+            /** Format: date-time */
+            item_last_activity_at?: string;
             /** Format: int64 */
             item_number: number;
             item_state: string;
@@ -4685,8 +4687,26 @@ export interface components {
              */
             readonly $schema?: string;
             capped: boolean;
+            item_activity: components["schemas"]["ActivitySubjectResponse"][] | null;
+            item_activity_capped: boolean;
             items: components["schemas"]["ActivityItemResponse"][] | null;
             workspace_activity: components["schemas"]["WorkspaceActivitySubjectResponse"][] | null;
+        };
+        ActivitySubjectResponse: {
+            /** Format: date-time */
+            activity_at: string;
+            item_author?: string;
+            /** Format: int64 */
+            item_number: number;
+            item_state: string;
+            item_title: string;
+            item_type: string;
+            item_url: string;
+            platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
+            repo_name: string;
+            repo_owner: string;
+            workspace?: components["schemas"]["WorkspaceRef"];
         };
         AddRepoInputBody: {
             /**

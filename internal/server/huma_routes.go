@@ -1376,7 +1376,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		slog.Error("list activity failed", "err", err)
 		return nil, httpapi.Internal("list activity failed")
 	}
-	var workspaceEventItems []db.ActivityItem
+	workspaceEventItems := items
 	hasFullWorkspaceEventItems := opts.Search != "" && opts.AfterTime != nil
 	if hasFullWorkspaceEventItems {
 		workspaceOpts := opts
@@ -1388,6 +1388,38 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			slog.Error("list activity search subjects failed", "err", err)
 			return nil, httpapi.Internal("list activity failed")
 		}
+	}
+	// Search-matched parents are derived from the bounded event read, so an
+	// event page that overflowed can hide parents whose only matches fell off
+	// it; report that as parent truncation rather than a complete snapshot.
+	searchMatchesTruncated := opts.Search != "" && len(workspaceEventItems) > activitySafetyCap
+	var searchMatchedSubjectKeys []db.WorkspaceSubjectKey
+	if opts.Search != "" {
+		searchMatchedSubjectKeys = make([]db.WorkspaceSubjectKey, 0, len(workspaceEventItems))
+		for _, item := range workspaceEventItems {
+			if item.ItemType != "pr" && item.ItemType != "issue" {
+				continue
+			}
+			searchMatchedSubjectKeys = append(searchMatchedSubjectKeys, db.WorkspaceSubjectKey{
+				RepoID: item.RepoID, ItemType: item.ItemType, ItemNumber: item.ItemNumber,
+			})
+		}
+	}
+	itemActivity, err := s.db.ListActivitySubjects(ctx, db.ListActivitySubjectsOpts{
+		Repo:                     opts.Repo,
+		RepoFilters:              opts.RepoFilters,
+		AllowedRepoIDs:           opts.AllowedRepoIDs,
+		ItemTypes:                opts.ItemTypes,
+		Search:                   opts.Search,
+		SearchMatchedSubjectKeys: searchMatchedSubjectKeys,
+		Author:                   opts.Author,
+		ViewerLogins:             opts.ViewerLogins,
+		Limit:                    activitySafetyCap + 1,
+		Since:                    opts.Since,
+	})
+	if err != nil {
+		slog.Error("list activity subjects failed", "err", err)
+		return nil, httpapi.Internal("list activity failed")
 	}
 	if s.activityAfterItemsForTest != nil {
 		s.activityAfterItemsForTest()
@@ -1425,9 +1457,13 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		}
 	}
 
-	capped := len(items) > activitySafetyCap
-	if capped {
+	eventsCapped := len(items) > activitySafetyCap
+	itemActivityCapped := len(itemActivity) > activitySafetyCap || searchMatchesTruncated
+	if len(items) > activitySafetyCap {
 		items = items[:activitySafetyCap]
+	}
+	if len(itemActivity) > activitySafetyCap {
+		itemActivity = itemActivity[:activitySafetyCap]
 	}
 	if hasFullWorkspaceEventItems {
 		if len(workspaceEventItems) > activitySafetyCap {
@@ -1443,9 +1479,11 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ID:           it.Source + ":" + strconv.FormatInt(it.SourceID, 10),
 			Cursor:       db.EncodeCursor(it.CreatedAt, it.Source, it.SourceID),
 			ActivityType: it.ActivityType,
-			Repo: s.repoResolver.RefFromParts(
-				it.Platform, it.PlatformHost, it.RepoOwner, it.RepoName,
-			),
+			Repo: s.repoResolver.Ref(db.Repo{
+				Platform: it.Platform, PlatformHost: it.PlatformHost,
+				PlatformRepoID: it.PlatformRepoID, Owner: it.RepoOwner,
+				Name: it.RepoName, RepoPath: it.RepoPath,
+			}),
 			PlatformHost: it.PlatformHost,
 			RepoOwner:    it.RepoOwner,
 			RepoName:     it.RepoName,
@@ -1459,6 +1497,9 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ItemAuthor:   it.ItemAuthor,
 			CreatedAt:    formatUTCRFC3339(it.CreatedAt),
 			BodyPreview:  it.BodyPreview,
+		}
+		if it.ItemLastActivityAt != nil {
+			item.ItemLastActivityAt = formatUTCRFC3339(*it.ItemLastActivityAt)
 		}
 		item.BranchName = it.BranchName
 		item.CommitSHA = it.CommitSHA
@@ -1482,9 +1523,40 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		out[i] = item
 	}
 
+	itemActivityOut := make([]activitySubjectResponse, len(itemActivity))
+	for i, activity := range itemActivity {
+		subject := activity.Subject
+		workspaceSubjectKey := subject.Key
+		workspaceSubjectKey.ItemType = workspaceItemTypeFromActivity(subject.Key.ItemType)
+		itemActivityOut[i] = activitySubjectResponse{
+			Repo: s.repoResolver.Ref(db.Repo{
+				Platform: subject.Platform, PlatformHost: subject.PlatformHost,
+				PlatformRepoID: subject.PlatformRepoID, Owner: subject.RepoOwner,
+				Name: subject.RepoName, RepoPath: subject.RepoPath,
+			}),
+			PlatformHost: subject.PlatformHost,
+			RepoOwner:    subject.RepoOwner,
+			RepoName:     subject.RepoName,
+			ItemType:     subject.Key.ItemType,
+			ItemNumber:   subject.Key.ItemNumber,
+			ItemTitle:    subject.Title,
+			ItemURL:      subject.URL,
+			ItemState:    subject.State,
+			ItemAuthor:   subject.Author,
+			Workspace:    workspaceRefForActivitySubjectKey(workspaceSnapshot, workspaceSubjectKey),
+			ActivityAt:   formatUTCRFC3339(activity.ActivityAt),
+		}
+	}
+
 	workspaceActivity := s.workspaceActivityResponse(input, opts, workspaceSnapshot, workspaceEventItems)
 	return &listActivityOutput{
-		Body: activityResponse{Items: out, WorkspaceActivity: workspaceActivity, Capped: capped},
+		Body: activityResponse{
+			Items:              out,
+			ItemActivity:       itemActivityOut,
+			WorkspaceActivity:  workspaceActivity,
+			Capped:             eventsCapped,
+			ItemActivityCapped: itemActivityCapped,
+		},
 	}, nil
 }
 
@@ -1552,9 +1624,11 @@ func (s *Server) workspaceActivityResponse(
 		}
 		ref := activity.Workspace
 		result = append(result, workspaceActivitySubjectResponse{
-			Repo: s.repoResolver.RefFromParts(
-				subject.Platform, subject.PlatformHost, subject.RepoOwner, subject.RepoName,
-			),
+			Repo: s.repoResolver.Ref(db.Repo{
+				Platform: subject.Platform, PlatformHost: subject.PlatformHost,
+				PlatformRepoID: subject.PlatformRepoID, Owner: subject.RepoOwner,
+				Name: subject.RepoName, RepoPath: subject.RepoPath,
+			}),
 			PlatformHost: subject.PlatformHost, RepoOwner: subject.RepoOwner, RepoName: subject.RepoName,
 			ItemType: wireType, ItemNumber: key.ItemNumber, ItemTitle: subject.Title,
 			ItemURL: subject.URL, ItemState: subject.State, ItemAuthor: subject.Author,

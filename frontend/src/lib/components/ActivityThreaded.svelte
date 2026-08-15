@@ -1,7 +1,7 @@
 <script lang="ts">
   import { EmptyState } from "@kenn-io/kit-ui";
   import { ScrollBox } from "@kenn-io/kit-ui";
-  import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
+  import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
     collapseActivityRuns,
@@ -19,6 +19,7 @@
     localDateLabel,
     parseAPITimestamp,
   } from "../utils/time.js";
+  import { latestActivityAt } from "../utils/effective-activity.js";
   import {
     createRepoLabelFormatter,
     type RepoLabelIdentity,
@@ -37,6 +38,7 @@
 
   interface Props {
     items: ActivityItem[];
+    itemActivity?: ActivitySubject[];
     workspaceActivity?: WorkspaceActivitySubject[];
     onSelectItem: ((item: ActivityItem) => void) | undefined;
     onSelectBranchCommit?: ((item: ActivityItem) => void) | undefined;
@@ -66,6 +68,7 @@
 
   let {
     items,
+    itemActivity = [],
     workspaceActivity = [],
     onSelectItem,
     onSelectBranchCommit,
@@ -107,6 +110,7 @@
     kind: "branch";
     row: ActivityRow;
     provider: string;
+    platformRepoId: string;
     repoOwner: string;
     repoName: string;
     repoPath: string;
@@ -130,6 +134,7 @@
     createRepoLabelFormatter(
       [
         ...items.map(activityRepoIdentity),
+        ...itemActivity.map(activitySubjectRepoIdentity),
         ...workspaceActivity.map(workspaceRepoIdentity),
       ],
       { showOrgNames: !grouping.getHideOrgName() },
@@ -153,6 +158,7 @@
       const itemKey = activityItemKey({
         provider: item.repo?.provider ?? "",
         platformHost: item.platform_host ?? "",
+        platformRepoId: item.repo?.platform_repo_id,
         owner: item.repo_owner,
         name: item.repo_name,
         itemType: item.item_type,
@@ -192,7 +198,7 @@
           repoName: first.repo.name,
           repoPath: first.repo.repo_path,
           platformHost: first.repo.platform_host,
-          latestTime: first.created_at,
+          latestTime: latestActivityAt(first.created_at, first.item_last_activity_at),
           itemAuthor: itemAuthor(first),
           workspace: first.workspace,
           repo: first.repo,
@@ -203,10 +209,62 @@
       });
     }
 
+    for (const subject of itemActivity) {
+      const itemKey = activityItemKey({
+        provider: subject.repo.provider,
+        platformHost: subject.repo.platform_host,
+        platformRepoId: subject.repo.platform_repo_id,
+        owner: subject.repo.owner,
+        name: subject.repo.name,
+        repoPath: subject.repo.repo_path,
+        itemType: subject.item_type,
+        itemNumber: subject.item_number,
+      });
+      const existing = itemGroups.get(itemKey);
+      if (existing) {
+        existing.itemTitle = subject.item_title;
+        existing.itemUrl = subject.item_url;
+        existing.itemState = subject.item_state;
+        existing.itemAuthor = subject.item_author || existing.itemAuthor;
+        existing.workspace = subject.workspace ?? existing.workspace;
+        existing.repo = subject.repo;
+        existing.provider = subject.repo.provider;
+        existing.platformHost = subject.repo.platform_host;
+        existing.repoOwner = subject.repo.owner;
+        existing.repoName = subject.repo.name;
+        existing.repoPath = subject.repo.repo_path;
+        if (parseAPITimestamp(subject.activity_at).getTime() > parseAPITimestamp(existing.latestTime).getTime()) {
+          existing.latestTime = subject.activity_at;
+        }
+        continue;
+      }
+      itemGroups.set(itemKey, {
+        kind: "item",
+        itemType: subject.item_type,
+        itemNumber: subject.item_number,
+        itemTitle: subject.item_title,
+        itemUrl: subject.item_url,
+        itemState: subject.item_state,
+        branchName: "",
+        provider: subject.repo.provider,
+        repoOwner: subject.repo.owner,
+        repoName: subject.repo.name,
+        repoPath: subject.repo.repo_path,
+        platformHost: subject.repo.platform_host,
+        latestTime: subject.activity_at,
+        itemAuthor: subject.item_author ?? "",
+        workspace: subject.workspace,
+        repo: subject.repo,
+        events: [],
+        displayEvents: [],
+      });
+    }
+
     for (const subject of workspaceActivity) {
       const itemKey = activityItemKey({
         provider: subject.repo.provider,
         platformHost: subject.repo.platform_host,
+        platformRepoId: subject.repo.platform_repo_id,
         owner: subject.repo.owner,
         name: subject.repo.name,
         repoPath: subject.repo.repo_path,
@@ -281,12 +339,7 @@
     const repoMap = new Map<string, ThreadedEntry[]>();
     const repoLabels = new Map<string, string>();
     for (const entry of allEntries) {
-      const repoKey = activityRepoKey({
-        provider: entryProvider(entry),
-        platformHost: entryPlatformHost(entry),
-        owner: entryRepoOwner(entry),
-        name: entryRepoName(entry),
-      });
+      const repoKey = activityRepoKey(entryRepoIdentity(entry));
       repoLabels.set(repoKey, repoLabel(entryRepoIdentity(entry)));
       let bucket = repoMap.get(repoKey);
       if (!bucket) {
@@ -323,6 +376,7 @@
       kind: "branch",
       row,
       provider: item.repo.provider,
+      platformRepoId: item.repo.platform_repo_id ?? "",
       repoOwner: item.repo.owner,
       repoName: item.repo.name,
       repoPath: item.repo.repo_path,
@@ -391,6 +445,7 @@
     return activityItemKey({
       provider: g.provider,
       platformHost: g.platformHost,
+      platformRepoId: g.repo.platform_repo_id,
       owner: g.repoOwner,
       name: g.repoName,
       itemType: g.itemType,
@@ -404,6 +459,7 @@
     return `${activityRepoKey({
       provider: entry.provider,
       platformHost: entry.platformHost,
+      platformRepoId: entry.platformRepoId,
       owner: entry.repoOwner,
       name: entry.repoName,
     })}:branch-activity:${entry.row.id}`;
@@ -576,6 +632,7 @@
     return {
       provider: item.repo?.provider ?? "",
       platformHost: item.repo?.platform_host ?? item.platform_host,
+      platformRepoId: item.repo?.platform_repo_id,
       owner: item.repo?.owner ?? item.repo_owner,
       name: item.repo?.name ?? item.repo_name,
       repoPath: item.repo?.repo_path,
@@ -586,6 +643,18 @@
     return {
       provider: subject.repo.provider,
       platformHost: subject.repo.platform_host,
+      platformRepoId: subject.repo.platform_repo_id,
+      owner: subject.repo.owner,
+      name: subject.repo.name,
+      repoPath: subject.repo.repo_path,
+    };
+  }
+
+  function activitySubjectRepoIdentity(subject: ActivitySubject): RepoLabelIdentity {
+    return {
+      provider: subject.repo.provider,
+      platformHost: subject.repo.platform_host,
+      platformRepoId: subject.repo.platform_repo_id,
       owner: subject.repo.owner,
       name: subject.repo.name,
       repoPath: subject.repo.repo_path,
@@ -596,6 +665,7 @@
     return {
       provider: entry.kind === "item" ? entry.group.provider : entry.provider,
       platformHost: entryPlatformHost(entry),
+      platformRepoId: entry.kind === "item" ? entry.group.repo.platform_repo_id : entry.platformRepoId,
       owner: entryRepoOwner(entry),
       name: entryRepoName(entry),
       repoPath: entryRepoPath(entry),

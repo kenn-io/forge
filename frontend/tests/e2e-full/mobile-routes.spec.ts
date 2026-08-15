@@ -315,7 +315,7 @@ test.describe("phone routes", () => {
 
     await page.getByRole("switch", { name: "Issues" }).click();
     await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
-    await expect(page).toHaveURL(/types=new_pr/);
+    await expect(page).toHaveURL(/item_types=pr/);
 
     await page.getByRole("combobox", { name: /Time range/ }).click();
     await page.getByRole("option", { name: "24h" }).click();
@@ -333,7 +333,7 @@ test.describe("phone routes", () => {
 
     const repoLabels = page.locator(".mobile-activity-card__meta > span:first-child");
     await expect(repoLabels.first()).toBeVisible();
-    await expect(repoLabels).toHaveText(["acme/widgets"]);
+    expect(new Set(await repoLabels.allTextContents())).toEqual(new Set(["acme/widgets"]));
   });
 
   test("mobile activity filters by author without overflowing the phone viewport", async ({ page }) => {

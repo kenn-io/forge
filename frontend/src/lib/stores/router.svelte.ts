@@ -553,7 +553,14 @@ let route = $state<Route>(parseRoute(configuredInitialRoute ?? currentLocationPa
 // Back/Forward), and initial load — so it stays current regardless of how
 // Activity is entered or left.
 const LAST_ACTIVITY_ROUTE_STORAGE_KEY = "kenn-forge:last-activity-route";
-const RESTORABLE_ACTIVITY_FILTER_PARAMS = ["types", "notif", "hide_branch", "author"] as const;
+const RESTORABLE_ACTIVITY_FILTER_PARAMS = [
+  "item_types",
+  "event_types",
+  "types",
+  "notif",
+  "hide_branch",
+  "author",
+] as const;
 
 function isRestorableActivityRoute(routePath: string): boolean {
   if (!routePath.startsWith("/") || routePath.startsWith("//")) return false;
@@ -592,9 +599,11 @@ function restoreMissingActivityFilters(): void {
 
   const currentURL = new URL(currentRoute, "https://example.invalid");
   const storedURL = new URL(lastActivityRoute, "https://example.invalid");
+  const currentHasLegacyTypes = currentURL.searchParams.has("types");
   let restored = false;
   for (const param of RESTORABLE_ACTIVITY_FILTER_PARAMS) {
-    if (!currentURL.searchParams.has(param) && storedURL.searchParams.has(param)) {
+    const representedByLegacyTypes = currentHasLegacyTypes && (param === "item_types" || param === "event_types");
+    if (!currentURL.searchParams.has(param) && !representedByLegacyTypes && storedURL.searchParams.has(param)) {
       currentURL.searchParams.set(param, storedURL.searchParams.get(param)!);
       restored = true;
     }

@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { GeneratedClient } from "../api/generated-api.js";
 import type { OwnedAppRuntime } from "../app/runtime.js";
-import type { ActivityItem, ActivitySettings, WorkspaceActivitySubject } from "../api/types.js";
+import type { ActivityItem, ActivitySettings, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import {
   buildActivityItemTypeFilter,
@@ -66,6 +66,21 @@ function workspaceActivity(itemNumber: number): WorkspaceActivitySubject {
   };
 }
 
+function itemActivity(itemNumber: number): ActivitySubject {
+  return {
+    activity_at: `2026-08-09T12:00:0${itemNumber}Z`,
+    item_number: itemNumber,
+    item_state: "open",
+    item_title: `PR ${itemNumber}`,
+    item_type: "pr",
+    item_url: `https://github.com/acme/widgets/pull/${itemNumber}`,
+    platform_host: "github.com",
+    repo: { host: "github.com", owner: "acme", name: "widgets" },
+    repo_name: "widgets",
+    repo_owner: "acme",
+  };
+}
+
 beforeEach(() => {
   runtime = undefined;
   localStorage.clear();
@@ -106,6 +121,35 @@ describe("activity store workspace activity", () => {
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
     expect(store.getWorkspaceActivity()).toEqual(snapshot);
+  });
+
+  it("retains the authoritative item snapshot returned with an activity read", async () => {
+    const snapshot = [itemActivity(7)];
+    const client = {
+      GET: async () => ({ data: { items: [], capped: false, item_activity: snapshot }, error: null }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(store.getItemActivity()).toEqual(snapshot);
+  });
+
+  it("retains parent-snapshot truncation independently from event truncation", async () => {
+    const client = {
+      GET: async () => ({
+        data: { items: [], capped: false, item_activity: [itemActivity(7)], item_activity_capped: true },
+        error: null,
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(store.isActivityCapped()).toBe(false);
+    expect(store.isItemActivityCapped()).toBe(true);
   });
 });
 
@@ -209,7 +253,7 @@ describe("buildActivityFilterTypes", () => {
     expect(buildActivityFilterTypes(allItemTypes, allEvents, false)).toEqual([]);
   });
 
-  it("drops default-branch commits when the commit event is deselected", () => {
+  it("drops default-branch commits but keeps PR commits when Commits is deselected", () => {
     const enabled = new Set(["comment", "review", "force_push"]);
     expect(buildActivityFilterTypes(allItemTypes, enabled, false)).toEqual([
       "new_pr",
@@ -217,6 +261,7 @@ describe("buildActivityFilterTypes", () => {
       "default_branch_force_push",
       "comment",
       "review",
+      "commit",
       "force_push",
       "notification",
     ]);
@@ -254,7 +299,6 @@ describe("buildActivityFilterTypes", () => {
       "default_branch_force_push",
       "comment",
       "review",
-      "commit",
       "force_push",
       "notification",
     ]);
@@ -277,15 +321,70 @@ describe("buildActivityFilterTypes", () => {
     ]);
   });
 
-  it("preserves notification-only filtering for the default item scope", () => {
-    expect(buildActivityFilterTypes(allItemTypes, new Set(), false, true)).toEqual(["notification"]);
+  it("gates issue opening rows on comments, the only issue timeline event", () => {
+    expect(buildActivityFilterTypes(allItemTypes, new Set(["review"]), true, false)).toEqual([
+      "new_pr",
+      "review",
+      "commit",
+    ]);
+    expect(buildActivityFilterTypes(allItemTypes, new Set(["force_push"]), true, false)).toEqual([
+      "new_pr",
+      "commit",
+      "force_push",
+    ]);
+    expect(buildActivityFilterTypes(allItemTypes, new Set(["comment"]), true, false)).toEqual([
+      "new_pr",
+      "new_issue",
+      "comment",
+      "commit",
+    ]);
+  });
+
+  it("keeps PR commits when every top-level event filter is deselected", () => {
+    expect(buildActivityFilterTypes(allItemTypes, new Set(), false, true)).toEqual(["commit", "notification"]);
+  });
+
+  it("does not include opening events when only default-branch commits are selected", () => {
+    expect(buildActivityFilterTypes(allItemTypes, new Set(["commit"]), false, true)).toEqual([
+      "default_branch_commit",
+      "commit",
+      "notification",
+    ]);
+  });
+
+  it.each([
+    {
+      name: "notifications off",
+      itemTypes: allItemTypes,
+      showNotifications: false,
+      expected: ["commit"],
+    },
+    {
+      name: "pull requests only",
+      itemTypes: new Set<"pr" | "issue">(["pr"]),
+      showNotifications: true,
+      expected: ["commit", "notification"],
+    },
+    {
+      name: "issues only with notifications",
+      itemTypes: new Set<"pr" | "issue">(["issue"]),
+      showNotifications: true,
+      expected: ["notification"],
+    },
+    {
+      name: "issues only without notifications",
+      itemTypes: new Set<"pr" | "issue">(["issue"]),
+      showNotifications: false,
+      expected: ["none"],
+    },
+  ])("keeps opening events hidden with no event toggles when $name", ({ itemTypes, showNotifications, expected }) => {
+    expect(buildActivityFilterTypes(itemTypes, new Set(), false, showNotifications)).toEqual(expected);
   });
 
   it("supports repository-level commits with both item types hidden", () => {
     expect(buildActivityFilterTypes(new Set(), new Set(["commit"]), false, false)).toEqual([
       "none",
       "default_branch_commit",
-      "commit",
     ]);
   });
 
@@ -326,18 +425,159 @@ describe("activity store URL hydration", () => {
     expect(new URLSearchParams(window.location.search).has("author")).toBe(false);
   });
 
-  it("normalizes legacy URLs that kept default-branch commits while commit was deselected", () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/?types=new_pr,new_issue,default_branch_commit,default_branch_force_push,comment,review,force_push",
-    );
+  it("restores mandatory PR commits without re-enabling default-branch commits", () => {
+    window.history.replaceState(null, "", "/?event_types=comment,review,force_push");
     const s = makeStore();
     s.initializeFromMount();
-    // Notifications default on, so a legacy filtered URL (no notif=0)
-    // gains the notification type on hydration.
     expect(s.getActivityFilterTypes()).toEqual([
       "new_pr",
+      "new_issue",
+      "default_branch_force_push",
+      "comment",
+      "review",
+      "commit",
+      "force_push",
+      "notification",
+    ]);
+    expect(new URLSearchParams(window.location.search).get("event_types")).toBe("comment,review,force_push");
+    expect(new URLSearchParams(window.location.search).has("types")).toBe(false);
+    expect(s.getEnabledEvents().has("commit")).toBe(false);
+  });
+
+  it.each([
+    {
+      name: "the all-items empty-event encoding",
+      legacyTypes: "notification",
+      expectedItems: ["pr", "issue"],
+      expectedEvents: [],
+      expectedItemParam: null,
+      expectedEventParam: "none",
+    },
+    {
+      name: "a notified commit-only filter",
+      legacyTypes: "commit,notification",
+      expectedItems: [],
+      expectedEvents: ["commit"],
+      expectedItemParam: "none",
+      expectedEventParam: "commit",
+    },
+    {
+      name: "a manually bookmarked commit-only filter",
+      legacyTypes: "commit",
+      expectedItems: [],
+      expectedEvents: ["commit"],
+      expectedItemParam: "none",
+      expectedEventParam: "commit",
+    },
+    {
+      name: "an issue-only comment filter",
+      legacyTypes: "new_issue,comment,notification",
+      expectedItems: ["issue"],
+      expectedEvents: ["comment"],
+      expectedItemParam: "issue",
+      expectedEventParam: "comment",
+    },
+    {
+      name: "a pull-request filter with default-branch commits enabled",
+      legacyTypes: "new_pr,default_branch_commit,comment,commit",
+      expectedItems: ["pr"],
+      expectedEvents: ["comment", "commit"],
+      expectedItemParam: "pr",
+      expectedEventParam: "comment,commit",
+    },
+  ])(
+    "migrates bookmarked legacy types for $name",
+    ({ legacyTypes, expectedItems, expectedEvents, expectedItemParam, expectedEventParam }) => {
+      window.history.replaceState(null, "", `/?types=${legacyTypes}`);
+      const first = makeStore();
+      first.initializeFromMount();
+
+      expect([...first.getEnabledItemTypes()]).toEqual(expectedItems);
+      expect([...first.getEnabledEvents()]).toEqual(expectedEvents);
+      const normalized = new URLSearchParams(window.location.search);
+      expect(normalized.has("types")).toBe(false);
+      expect(normalized.get("item_types")).toBe(expectedItemParam);
+      expect(normalized.get("event_types")).toBe(expectedEventParam);
+
+      const fresh = makeStore();
+      fresh.initializeFromMount();
+      expect([...fresh.getEnabledItemTypes()]).toEqual(expectedItems);
+      expect([...fresh.getEnabledEvents()]).toEqual(expectedEvents);
+    },
+  );
+
+  it("normalizes explicit default item and event selections out of the URL", () => {
+    window.history.replaceState(null, "", "/?item_types=pr,issue&event_types=comment,review,commit,force_push");
+    const s = makeStore();
+    s.initializeFromMount();
+    expect(s.getActivityFilterTypes()).toEqual([]);
+    const normalized = new URLSearchParams(window.location.search);
+    expect(normalized.has("item_types")).toBe(false);
+    expect(normalized.has("event_types")).toBe(false);
+  });
+
+  it.each([
+    {
+      name: "PRs only",
+      itemTypes: "pr",
+      eventTypes: "comment",
+      expected: ["pr"],
+      filterTypes: ["new_pr", "comment", "commit", "notification"],
+    },
+    {
+      name: "issues only",
+      itemTypes: "issue",
+      eventTypes: "comment",
+      expected: ["issue"],
+      filterTypes: ["new_issue", "comment", "notification"],
+    },
+    {
+      name: "neither item type",
+      itemTypes: "none",
+      eventTypes: "commit",
+      expected: [],
+      filterTypes: ["none", "default_branch_commit", "notification"],
+    },
+  ])("hydrates $name independently from event selections", ({ itemTypes, eventTypes, expected, filterTypes }) => {
+    window.history.replaceState(null, "", `/?item_types=${itemTypes}&event_types=${eventTypes}`);
+    const s = makeStore();
+    s.initializeFromMount();
+    expect([...s.getEnabledItemTypes()]).toEqual(expected);
+    expect(s.getActivityFilterTypes()).toEqual(filterTypes);
+    const normalized = new URLSearchParams(window.location.search);
+    expect(normalized.get("item_types")).toBe(itemTypes);
+    expect(normalized.get("event_types")).toBe(eventTypes);
+    expect(normalized.has("types")).toBe(false);
+  });
+
+  it("round trips default item scope with every event toggle disabled after URL normalization", () => {
+    window.history.replaceState(null, "", "/?item_types=pr,issue&event_types=none");
+    const first = makeStore();
+    first.initializeFromMount();
+
+    expect([...first.getEnabledItemTypes()]).toEqual(DEFAULT_ACTIVITY_ITEM_TYPES);
+    expect([...first.getEnabledEvents()]).toEqual([]);
+    expect(first.getActivityFilterTypes()).toEqual(["commit", "notification"]);
+    const normalized = new URLSearchParams(window.location.search);
+    expect(normalized.has("item_types")).toBe(false);
+    expect(normalized.get("event_types")).toBe("none");
+    expect(normalized.has("types")).toBe(false);
+
+    const fresh = makeStore();
+    fresh.initializeFromMount();
+    expect([...fresh.getEnabledItemTypes()]).toEqual(DEFAULT_ACTIVITY_ITEM_TYPES);
+    expect([...fresh.getEnabledEvents()]).toEqual([]);
+    expect(fresh.getActivityFilterTypes()).toEqual(["commit", "notification"]);
+  });
+
+  it("round trips item scope independently from the default-branch commit toggle", () => {
+    window.history.replaceState(null, "", "/?item_types=issue&event_types=comment,review,force_push");
+    const first = makeStore();
+    first.initializeFromMount();
+
+    expect([...first.getEnabledItemTypes()]).toEqual(["issue"]);
+    expect([...first.getEnabledEvents()]).toEqual(["comment", "review", "force_push"]);
+    expect(first.getActivityFilterTypes()).toEqual([
       "new_issue",
       "default_branch_force_push",
       "comment",
@@ -345,63 +585,15 @@ describe("activity store URL hydration", () => {
       "force_push",
       "notification",
     ]);
-    expect(new URLSearchParams(window.location.search).get("types")).toBe(
-      "new_pr,new_issue,default_branch_force_push,comment,review,force_push,notification",
-    );
-  });
 
-  it("normalizes a legacy all-selected types list back to no filter", () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/?types=new_pr,new_issue,default_branch_commit,default_branch_force_push,comment,review,commit,force_push",
-    );
-    const s = makeStore();
-    s.initializeFromMount();
-    expect(s.getActivityFilterTypes()).toEqual([]);
-    expect(new URLSearchParams(window.location.search).has("types")).toBe(false);
-  });
-
-  it.each([
-    {
-      name: "PRs only",
-      types: "new_pr,comment",
-      expected: ["pr"],
-      normalized: "new_pr,comment,notification",
-    },
-    {
-      name: "issues only",
-      types: "new_issue,comment",
-      expected: ["issue"],
-      normalized: "new_issue,comment,notification",
-    },
-    {
-      name: "neither item type",
-      types: "default_branch_commit,commit",
-      expected: [],
-      normalized: "none,default_branch_commit,commit,notification",
-    },
-  ])("hydrates $name from the types parameter", ({ types, expected, normalized }) => {
-    window.history.replaceState(null, "", `/?types=${types}`);
-    const s = makeStore();
-    s.initializeFromMount();
-    expect([...s.getEnabledItemTypes()]).toEqual(expected);
-    expect(new URLSearchParams(window.location.search).get("types")).toBe(normalized);
-  });
-
-  it("hydrates notification-only URLs with the default item scope", () => {
-    window.history.replaceState(null, "", "/?types=notification");
-    const s = makeStore();
-    s.initializeFromMount();
-
-    expect([...s.getEnabledItemTypes()]).toEqual(DEFAULT_ACTIVITY_ITEM_TYPES);
-    expect([...s.getEnabledEvents()]).toEqual([]);
-    expect(s.getActivityFilterTypes()).toEqual(["notification"]);
-    expect(new URLSearchParams(window.location.search).get("types")).toBe("notification");
+    const fresh = makeStore();
+    fresh.initializeFromMount();
+    expect([...fresh.getEnabledItemTypes()]).toEqual(["issue"]);
+    expect([...fresh.getEnabledEvents()]).toEqual(["comment", "review", "force_push"]);
   });
 
   it("round trips a fully empty selection without restoring defaults", () => {
-    window.history.replaceState(null, "", "/?types=none&notif=0&hide_branch=1");
+    window.history.replaceState(null, "", "/?item_types=none&event_types=none&notif=0&hide_branch=1");
     const s = makeStore();
     s.initializeFromMount();
 
@@ -410,7 +602,10 @@ describe("activity store URL hydration", () => {
     expect(s.getShowNotifications()).toBe(false);
     expect(s.getHideDefaultBranchActivity()).toBe(true);
     expect(s.getActivityFilterTypes()).toEqual(["none"]);
-    expect(new URLSearchParams(window.location.search).get("types")).toBe("none");
+    const normalized = new URLSearchParams(window.location.search);
+    expect(normalized.get("item_types")).toBe("none");
+    expect(normalized.get("event_types")).toBe("none");
+    expect(normalized.has("types")).toBe(false);
   });
 });
 
@@ -771,6 +966,63 @@ describe("activity store default-branch visibility", () => {
     next.syncToURL();
     expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(false);
   });
+
+  it("keeps the Commits toggle enabled while default-branch activity is hidden", () => {
+    window.history.replaceState(null, "", "/?hide_branch=1&notif=0");
+    const first = makeStore();
+    first.initializeFromMount();
+    expect(first.getEnabledEvents().has("commit")).toBe(true);
+    expect(first.getActivityFilterTypes()).not.toContain("default_branch_commit");
+
+    const fresh = makeStore();
+    fresh.initializeFromMount();
+    expect(fresh.getEnabledEvents().has("commit")).toBe(true);
+    fresh.setHideDefaultBranchActivity(false);
+    fresh.syncToURL();
+    expect(fresh.getActivityFilterTypes()).toContain("default_branch_commit");
+  });
+
+  it("migrates a legacy hidden-branch URL without disabling the Commits toggle", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?types=new_pr,new_issue,comment,review,commit,force_push,notification&hide_branch=1",
+    );
+    const first = makeStore();
+    first.initializeFromMount();
+
+    expect(first.getHideDefaultBranchActivity()).toBe(true);
+    expect(first.getEnabledEvents()).toEqual(new Set(DEFAULT_EVENT_TYPES));
+    const normalized = new URLSearchParams(window.location.search);
+    expect(normalized.has("types")).toBe(false);
+    expect(normalized.has("event_types")).toBe(false);
+    expect(normalized.get("hide_branch")).toBe("1");
+
+    const fresh = makeStore();
+    fresh.initializeFromMount();
+    expect(fresh.getEnabledEvents()).toEqual(new Set(DEFAULT_EVENT_TYPES));
+  });
+
+  it("drops a stale default-branch token when the legacy Commits toggle is absent", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?types=new_pr,new_issue,default_branch_commit,comment,review,force_push,notification&hide_branch=1",
+    );
+    const first = makeStore();
+    first.initializeFromMount();
+
+    expect(first.getHideDefaultBranchActivity()).toBe(true);
+    expect(first.getEnabledEvents()).toEqual(new Set(["comment", "review", "force_push"]));
+    const normalized = new URLSearchParams(window.location.search);
+    expect(normalized.has("types")).toBe(false);
+    expect(normalized.get("event_types")).toBe("comment,review,force_push");
+    expect(normalized.get("hide_branch")).toBe("1");
+
+    const fresh = makeStore();
+    fresh.initializeFromMount();
+    expect(fresh.getEnabledEvents()).toEqual(new Set(["comment", "review", "force_push"]));
+  });
 });
 
 describe("activity store commit roll-up", () => {
@@ -986,6 +1238,159 @@ describe("activity store markNotificationSeen", () => {
 });
 
 describe("activity polling recovery", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reconciles retained item events from stable authoritative parent identities", async () => {
+    const now = new Date().toISOString();
+    const retained = {
+      id: "pre:7",
+      cursor: "pre:7",
+      activity_type: "comment",
+      activity_url: "https://github.com/acme/widgets/pull/7#issuecomment-42",
+      author: "event-author",
+      body_preview: "Existing comment",
+      created_at: now,
+      item_author: "old-parent-author",
+      item_number: 7,
+      item_state: "open",
+      item_title: "Old title",
+      item_type: "pr",
+      item_url: "https://github.com/acme/widgets/pull/7",
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widgets",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: "repo-original",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+      },
+      workspace: { id: "old-workspace", status: "ready" },
+    } as ActivityItem;
+    const retainedNotification = {
+      ...retained,
+      id: "ntf:7",
+      cursor: "ntf:7",
+      activity_type: "notification",
+      activity_url: "https://github.com/acme/widgets/pull/7",
+      item_state: "unread",
+    } as ActivityItem;
+    const renamed = {
+      activity_at: now,
+      item_author: "current-parent-author",
+      item_number: 7,
+      item_state: "merged",
+      item_title: "Current title",
+      item_type: "pr",
+      item_url: "https://github.com/acme/widgets-renamed/pull/7",
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widgets-renamed",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: "repo-original",
+        owner: "acme",
+        name: "widgets-renamed",
+        repo_path: "acme/widgets-renamed",
+      },
+      workspace: { id: "current-workspace", status: "ready" },
+    } as ActivitySubject;
+    const replacement = {
+      ...renamed,
+      item_title: "Replacement title",
+      item_url: "https://github.com/acme/widgets/pull/7",
+      repo_name: "widgets",
+      repo: {
+        ...renamed.repo,
+        platform_repo_id: "repo-replacement",
+        name: "widgets",
+        repo_path: "acme/widgets",
+      },
+    } as ActivitySubject;
+    let feedReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        feedReads += 1;
+        if (feedReads === 1) {
+          return { data: { items: [retained, retainedNotification], capped: false }, error: null };
+        }
+        return {
+          data: { items: [], item_activity: [renamed, replacement], capped: false },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems()).toEqual([retained, retainedNotification]));
+
+    store.startActivityPolling();
+
+    await vi.waitFor(() =>
+      expect(store.getActivityItems().map((item) => item.repo.repo_path)).toEqual([
+        "acme/widgets-renamed",
+        "acme/widgets-renamed",
+      ]),
+    );
+    const reconciledEvent = store.getActivityItems().find((item) => item.id === retained.id);
+    const reconciledNotification = store.getActivityItems().find((item) => item.id === retainedNotification.id);
+    expect(reconciledEvent).toEqual(
+      expect.objectContaining({
+        activity_url: retained.activity_url,
+        author: "event-author",
+        item_author: "current-parent-author",
+        item_state: "merged",
+        item_title: "Current title",
+        item_url: "https://github.com/acme/widgets-renamed/pull/7",
+        platform_host: "github.com",
+        repo_owner: "acme",
+        repo_name: "widgets-renamed",
+        repo: renamed.repo,
+        workspace: renamed.workspace,
+      }),
+    );
+    expect(reconciledNotification).toEqual(
+      expect.objectContaining({
+        activity_url: renamed.item_url,
+        item_url: renamed.item_url,
+        repo: renamed.repo,
+      }),
+    );
+  });
+
+  it("replaces the feed on the scheduled full poll so cursor-behind activity becomes visible", async () => {
+    vi.useFakeTimers();
+    const now = new Date().toISOString();
+    const stale = { ...notificationItem("ntf:stale", "unread"), created_at: now };
+    const persistedBehindCursor = { ...notificationItem("ntf:persisted", "unread"), created_at: now };
+    let feedReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        feedReads += 1;
+        if (feedReads === 1) return { data: { items: [stale], capped: false }, error: null };
+        if (feedReads <= 4) return { data: { items: [], capped: false }, error: null };
+        if (feedReads === 5) return { data: { items: [persistedBehindCursor], capped: false }, error: null };
+        throw new Error(`unexpected activity request ${feedReads}`);
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems()).toEqual([stale]));
+
+    store.startActivityPolling();
+    await vi.advanceTimersByTimeAsync(45_000);
+    await vi.waitFor(() => expect(feedReads).toBe(5));
+
+    expect(store.getActivityItems()).toEqual([persistedBehindCursor]);
+  });
+
   it("clears a foreground error when a replacement poll succeeds afterward", async () => {
     const pendingPoll = Promise.withResolvers<{
       data: { items: ActivityItem[]; capped: boolean };
@@ -1154,5 +1559,41 @@ describe("activity polling recovery", () => {
     await vi.waitFor(() => expect(feedReads).toBe(3));
 
     expect(store.isActivityLoading()).toBe(false);
+  });
+
+  it("does not reload events when only the parent snapshot is capped", async () => {
+    const initial = { ...notificationItem("ntf:42", "unread"), created_at: new Date().toISOString() };
+    let feedReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        feedReads += 1;
+        if (feedReads === 1) {
+          return { data: { items: [initial], capped: false, item_activity_capped: false }, error: null };
+        }
+        if (feedReads === 2) {
+          return {
+            data: {
+              items: [],
+              capped: false,
+              item_activity: [itemActivity(7)],
+              item_activity_capped: true,
+            },
+            error: null,
+          };
+        }
+        throw new Error(`unexpected activity request ${feedReads}`);
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems()).toEqual([initial]));
+
+    store.startActivityPolling();
+    await vi.waitFor(() => expect(store.isItemActivityCapped()).toBe(true));
+
+    expect(feedReads).toBe(2);
+    expect(store.isActivityCapped()).toBe(false);
+    expect(store.getActivityItems()).toEqual([initial]);
   });
 });

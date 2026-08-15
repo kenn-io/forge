@@ -906,16 +906,17 @@ type WorkspaceSubjectKey struct {
 }
 
 type WorkspaceSubjectMetadata struct {
-	Key          WorkspaceSubjectKey
-	Platform     string
-	PlatformHost string
-	RepoOwner    string
-	RepoName     string
-	RepoPath     string
-	Title        string
-	State        string
-	URL          string
-	Author       string
+	Key            WorkspaceSubjectKey
+	Platform       string
+	PlatformHost   string
+	PlatformRepoID string
+	RepoOwner      string
+	RepoName       string
+	RepoPath       string
+	Title          string
+	State          string
+	URL            string
+	Author         string
 }
 
 // RepoViewerLogin binds a provider-authenticated login to the stable local
@@ -1117,20 +1118,22 @@ type RateLimit struct {
 
 // ActivityItem represents one row in the unified activity feed.
 type ActivityItem struct {
-	ActivityType string // new_pr, new_issue, comment, review, commit, default_branch_*
-	Source       string // pr, issue, pre, ise, bc, bfp
-	SourceID     int64  // PK from the source table
-	RepoID       int64
-	Platform     string
-	PlatformHost string
-	RepoOwner    string
-	RepoName     string
-	ItemType     string // pr, issue, or empty for repo-level activity
-	ItemNumber   int
-	ItemTitle    string
-	ItemURL      string
-	ItemState    string // open, merged, closed
-	Author       string
+	ActivityType   string // new_pr, new_issue, comment, review, commit, default_branch_*
+	Source         string // pr, issue, pre, ise, bc, bfp
+	SourceID       int64  // PK from the source table
+	RepoID         int64
+	Platform       string
+	PlatformHost   string
+	PlatformRepoID string
+	RepoOwner      string
+	RepoName       string
+	RepoPath       string
+	ItemType       string // pr, issue, or empty for repo-level activity
+	ItemNumber     int
+	ItemTitle      string
+	ItemURL        string
+	ItemState      string // open, merged, closed
+	Author         string
 	// ItemAuthor is the author of the parent PR/issue, carried on every
 	// PR/issue row (open, comment, review, commit, force_push) so the
 	// threaded feed can show the item's author rather than the latest
@@ -1149,11 +1152,23 @@ type ActivityItem struct {
 	AuthoredAt     *time.Time
 	CommittedAt    *time.Time
 	ActivityURL    string
+	// ItemLastActivityAt is the parent PR or issue's Activity recency, derived
+	// from the event ledger the feed can render rather than provider
+	// updated_at. It is independent of Activity filters, which may hide the
+	// event responsible for that timestamp.
+	ItemLastActivityAt *time.Time
 	// SubjectState is the open/closed/merged state of a notification row's
 	// linked PR/issue. Empty for non-notification rows, which carry their
 	// own state in ItemState. Lets the feed apply Hide closed/merged to
 	// notifications, whose ItemState holds unread/read instead.
 	SubjectState string
+}
+
+// ActivitySubject is the authoritative parent projection for one pull request
+// or issue in the Activity time range. It is independent of event visibility.
+type ActivitySubject struct {
+	Subject    WorkspaceSubjectMetadata
+	ActivityAt time.Time
 }
 
 // Stack represents a detected chain of dependent PRs.
@@ -1386,6 +1401,23 @@ type ListActivityOpts struct {
 	AfterTime      *time.Time
 	AfterSource    string
 	AfterSourceID  int64
+}
+
+// ListActivitySubjectsOpts holds parent-level filters for the Activity feed.
+// Event-type filters and cursors do not apply to this authoritative snapshot.
+type ListActivitySubjectsOpts struct {
+	Repo           string
+	RepoFilters    []RepoFilter
+	AllowedRepoIDs []int64
+	ItemTypes      []string
+	Search         string
+	// SearchMatchedSubjectKeys identifies parents whose provider events matched
+	// Search. The parent title and author do not necessarily contain that term.
+	SearchMatchedSubjectKeys []WorkspaceSubjectKey
+	Author                   string
+	ViewerLogins             []RepoViewerLogin
+	Limit                    int
+	Since                    *time.Time
 }
 
 // ListActivityAuthorsOpts holds the repository and time scopes used to build

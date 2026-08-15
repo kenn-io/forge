@@ -41,12 +41,18 @@ func workspaceRefForActivityItem(
 	if workspaceItemType == "" {
 		return nil
 	}
-	key := db.WorkspaceSubjectKey{
+	return workspaceRefForActivitySubjectKey(snapshot, db.WorkspaceSubjectKey{
 		RepoID: item.RepoID, ItemType: workspaceItemType, ItemNumber: item.ItemNumber,
-	}
+	})
+}
+
+func workspaceRefForActivitySubjectKey(
+	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+	key db.WorkspaceSubjectKey,
+) *workspaceapi.WorkspaceRef {
 	var ref workspaceapi.WorkspaceRef
 	var ok bool
-	if workspaceItemType == db.WorkspaceItemTypeIssue {
+	if key.ItemType == db.WorkspaceItemTypeIssue {
 		ref, ok = snapshot.OwnReferences[key]
 	} else if subject, exists := snapshot.Subjects[key]; exists {
 		ref, ok = subject.Workspace, true

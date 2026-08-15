@@ -8,7 +8,7 @@
   } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onMount, onDestroy } from "svelte";
-  import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
+  import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import {
@@ -170,11 +170,11 @@
   function toggleEvent(evt: EventType): void {
     const current = activity.getEnabledEvents();
     const next = new Set(current);
-    // Deselecting the last event type is valid: it hides every event row
-    // while PR/issue rows and the separate Notifications toggle still
-    // govern their own rows. buildActivityFilterTypes encodes the empty
-    // set as an explicit type list, so the state round-trips through the
-    // URL rather than collapsing back to "show everything".
+    // Deselecting the last event type is valid: it hides every filterable
+    // event row while PR timeline commits and the separate Notifications
+    // toggle remain independent. buildActivityFilterTypes encodes the empty
+    // set explicitly so the state round-trips through the URL rather than
+    // collapsing back to "show everything".
     if (next.has(evt)) next.delete(evt);
     else next.add(evt);
     activity.setEnabledEvents(next);
@@ -314,6 +314,22 @@
     );
     if (activity.getHideClosedMerged()) {
       result = result.filter((subject) => subject.item_state !== "closed" && subject.item_state !== "merged");
+    }
+    if (activity.getHideBots()) {
+      result = result.filter((subject) => !isBot(subject.item_author ?? ""));
+    }
+    return result;
+  });
+
+  const visibleItemActivity = $derived.by(() => {
+    let result: ActivitySubject[] = activity.getItemActivity().filter((subject) =>
+      isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
+    );
+    if (activity.getHideClosedMerged()) {
+      result = result.filter((subject) => subject.item_state !== "closed" && subject.item_state !== "merged");
+    }
+    if (activity.getHideBots()) {
+      result = result.filter((subject) => !isBot(subject.item_author ?? ""));
     }
     return result;
   });
@@ -716,7 +732,7 @@
     </div>
     </ScrollBox>
   {:else if activity.getViewMode() === "threaded"}
-    {#if displayItems.length === 0 && visibleWorkspaceActivity.length === 0 && activity.isActivityLoading()}
+    {#if displayItems.length === 0 && visibleItemActivity.length === 0 && visibleWorkspaceActivity.length === 0 && activity.isActivityLoading()}
       <ScrollBox label="Activity feed">
       <div class="table-container">
         <div class="loading-placeholder">
@@ -728,6 +744,7 @@
     {:else}
       <ActivityThreaded
         items={displayItems}
+        itemActivity={visibleItemActivity}
         workspaceActivity={visibleWorkspaceActivity}
         {onSelectItem}
         {onSelectBranchCommit}
@@ -1004,8 +1021,15 @@
   {/if}
 
   {#if activity.isActivityCapped()}
-    <div class="capped-notice">
+    <div class="capped-notice event-capped-notice">
       Showing most recent 5,000 events. Narrow the time range or use filters to see more.
+    </div>
+  {/if}
+
+  {#if activity.isItemActivityCapped()}
+    <div class="capped-notice item-activity-capped-notice">
+      Showing the 5,000 most recently active pull requests and issues. Item totals may be incomplete; narrow the time
+      range or item filters to see fewer results.
     </div>
   {/if}
 

@@ -4,7 +4,7 @@
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
-  import type { ActivityItem, WorkspaceActivitySubject } from "../api/types.js";
+  import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
     buildActivityFilterTypes,
@@ -25,6 +25,7 @@
     type TimelineTone,
   } from "@kenn-io/kit-ui";
   import { parseAPITimestamp } from "../utils/time.js";
+  import { latestActivityAt } from "../utils/effective-activity.js";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
   import { SelectDropdown } from "@kenn-io/kit-ui";
@@ -137,6 +138,23 @@
       );
     }
 
+    if (activity.getHideBots()) {
+      result = result.filter((subject) => !isBot(subject.item_author ?? ""));
+    }
+
+    return result;
+  });
+
+  const visibleItemActivity = $derived.by(() => {
+    let result = activity.getItemActivity().filter((subject) =>
+      isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
+    );
+    if (activity.getHideClosedMerged()) {
+      result = result.filter((subject) => subject.item_state !== "closed" && subject.item_state !== "merged");
+    }
+    if (activity.getHideBots()) {
+      result = result.filter((subject) => !isBot(subject.item_author ?? ""));
+    }
     return result;
   });
 
@@ -148,6 +166,7 @@
         ? activityBranchKey({
             provider: item.repo.provider,
             platformHost: item.repo.platform_host,
+            platformRepoId: item.repo.platform_repo_id,
             owner: item.repo.owner,
             name: item.repo.name,
             repoPath: item.repo.repo_path,
@@ -156,6 +175,7 @@
         : activityItemKey({
             provider: item.repo.provider,
             platformHost: item.repo.platform_host,
+            platformRepoId: item.repo.platform_repo_id,
             owner: item.repo.owner,
             name: item.repo.name,
             repoPath: item.repo.repo_path,
@@ -181,7 +201,52 @@
         representative,
         events,
         eventCount: events.length,
-        latestTime: representative.created_at,
+        latestTime: latestActivityAt(
+          representative.created_at,
+          representative.item_last_activity_at,
+        ),
+      });
+    }
+
+    for (const subject of visibleItemActivity) {
+      const key = activityItemKey({
+        provider: subject.repo.provider,
+        platformHost: subject.repo.platform_host,
+        platformRepoId: subject.repo.platform_repo_id,
+        owner: subject.repo.owner,
+        name: subject.repo.name,
+        repoPath: subject.repo.repo_path,
+        itemType: subject.item_type,
+        itemNumber: subject.item_number,
+      });
+      const existing = groupsByKey.get(key);
+      if (existing) {
+        if (
+          parseAPITimestamp(subject.activity_at).getTime()
+          > parseAPITimestamp(existing.latestTime).getTime()
+        ) {
+          existing.latestTime = subject.activity_at;
+        }
+        existing.representative = {
+          ...existing.representative,
+          item_title: subject.item_title,
+          item_url: subject.item_url,
+          item_state: subject.item_state,
+          item_author: subject.item_author || existing.representative.item_author || "",
+          platform_host: subject.repo.platform_host,
+          repo_owner: subject.repo.owner,
+          repo_name: subject.repo.name,
+          repo: subject.repo,
+          ...(subject.workspace ? { workspace: subject.workspace } : {}),
+        };
+        continue;
+      }
+      groupsByKey.set(key, {
+        key,
+        representative: subjectSelectionItem(subject, "parent"),
+        events: [],
+        eventCount: 0,
+        latestTime: subject.activity_at,
       });
     }
 
@@ -189,6 +254,7 @@
       const key = activityItemKey({
         provider: subject.repo.provider,
         platformHost: subject.repo.platform_host,
+        platformRepoId: subject.repo.platform_repo_id,
         owner: subject.repo.owner,
         name: subject.repo.name,
         repoPath: subject.repo.repo_path,
@@ -216,7 +282,7 @@
       }
       groupsByKey.set(key, {
         key,
-        representative: subjectSelectionItem(subject),
+        representative: subjectSelectionItem(subject, "workspace"),
         events: [],
         eventCount: 0,
         latestTime: subject.activity_at,
@@ -259,7 +325,8 @@
     createRepoLabelFormatter(
       [
         ...displayItems.map(activityRepoIdentity),
-        ...visibleWorkspaceActivity.map(workspaceRepoIdentity),
+        ...visibleItemActivity.map(subjectRepoIdentity),
+        ...visibleWorkspaceActivity.map(subjectRepoIdentity),
       ],
       { showOrgNames: !grouping.getHideOrgName() },
     ),
@@ -359,10 +426,14 @@
     onSelectItem?.(group.representative);
   }
 
-  function subjectSelectionItem(subject: WorkspaceActivitySubject): ActivityItem {
-    const id = `workspace:${activityItemKey({
+  function subjectSelectionItem(
+    subject: ActivitySubject | WorkspaceActivitySubject,
+    activityType: "parent" | "workspace",
+  ): ActivityItem {
+    const id = `${activityType}:${activityItemKey({
       provider: subject.repo.provider,
       platformHost: subject.repo.platform_host,
+      platformRepoId: subject.repo.platform_repo_id,
       owner: subject.repo.owner,
       name: subject.repo.name,
       repoPath: subject.repo.repo_path,
@@ -372,7 +443,7 @@
     return {
       id,
       cursor: id,
-      activity_type: "workspace",
+      activity_type: activityType,
       author: subject.item_author ?? "",
       body_preview: "",
       created_at: subject.activity_at,
@@ -466,16 +537,18 @@
     return {
       provider: item.repo.provider,
       platformHost: item.repo.platform_host,
+      platformRepoId: item.repo.platform_repo_id,
       owner: item.repo.owner,
       name: item.repo.name,
       repoPath: item.repo.repo_path,
     };
   }
 
-  function workspaceRepoIdentity(subject: WorkspaceActivitySubject): RepoLabelIdentity {
+  function subjectRepoIdentity(subject: ActivitySubject | WorkspaceActivitySubject): RepoLabelIdentity {
     return {
       provider: subject.repo.provider,
       platformHost: subject.repo.platform_host,
+      platformRepoId: subject.repo.platform_repo_id,
       owner: subject.repo.owner,
       name: subject.repo.name,
       repoPath: subject.repo.repo_path,
@@ -749,8 +822,15 @@
     {/if}
 
     {#if activity.isActivityCapped()}
-      <div class="mobile-activity-capped">
+      <div class="mobile-activity-capped event-capped-notice">
         Showing most recent 5,000 events. Narrow the range or filters to see more.
+      </div>
+    {/if}
+
+    {#if activity.isItemActivityCapped()}
+      <div class="mobile-activity-capped item-activity-capped-notice">
+        Showing the 5,000 most recently active pull requests and issues. Item totals may be incomplete; narrow the
+        range or item filters to see fewer results.
       </div>
     {/if}
   </div>

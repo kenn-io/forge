@@ -1081,35 +1081,36 @@ type ActivityAuthorsResponse struct {
 
 // ActivityItemResponse defines model for ActivityItemResponse.
 type ActivityItemResponse struct {
-	ActivityType   string          `json:"activity_type"`
-	ActivityUrl    *string         `json:"activity_url,omitempty"`
-	AfterSha       *string         `json:"after_sha,omitempty"`
-	Author         string          `json:"author"`
-	AuthorEmail    *string         `json:"author_email,omitempty"`
-	AuthorName     *string         `json:"author_name,omitempty"`
-	AuthoredAt     *string         `json:"authored_at,omitempty"`
-	BeforeSha      *string         `json:"before_sha,omitempty"`
-	BodyPreview    string          `json:"body_preview"`
-	BranchName     *string         `json:"branch_name,omitempty"`
-	CommitSha      *string         `json:"commit_sha,omitempty"`
-	CommittedAt    *string         `json:"committed_at,omitempty"`
-	CommitterEmail *string         `json:"committer_email,omitempty"`
-	CommitterName  *string         `json:"committer_name,omitempty"`
-	CreatedAt      string          `json:"created_at"`
-	Cursor         string          `json:"cursor"`
-	Id             string          `json:"id"`
-	ItemAuthor     *string         `json:"item_author,omitempty"`
-	ItemNumber     int64           `json:"item_number"`
-	ItemState      string          `json:"item_state"`
-	ItemTitle      string          `json:"item_title"`
-	ItemType       string          `json:"item_type"`
-	ItemUrl        string          `json:"item_url"`
-	PlatformHost   string          `json:"platform_host"`
-	Repo           RepoRefResponse `json:"repo"`
-	RepoName       string          `json:"repo_name"`
-	RepoOwner      string          `json:"repo_owner"`
-	SubjectState   *string         `json:"subject_state,omitempty"`
-	Workspace      *WorkspaceRef   `json:"workspace,omitempty"`
+	ActivityType       string          `json:"activity_type"`
+	ActivityUrl        *string         `json:"activity_url,omitempty"`
+	AfterSha           *string         `json:"after_sha,omitempty"`
+	Author             string          `json:"author"`
+	AuthorEmail        *string         `json:"author_email,omitempty"`
+	AuthorName         *string         `json:"author_name,omitempty"`
+	AuthoredAt         *string         `json:"authored_at,omitempty"`
+	BeforeSha          *string         `json:"before_sha,omitempty"`
+	BodyPreview        string          `json:"body_preview"`
+	BranchName         *string         `json:"branch_name,omitempty"`
+	CommitSha          *string         `json:"commit_sha,omitempty"`
+	CommittedAt        *string         `json:"committed_at,omitempty"`
+	CommitterEmail     *string         `json:"committer_email,omitempty"`
+	CommitterName      *string         `json:"committer_name,omitempty"`
+	CreatedAt          string          `json:"created_at"`
+	Cursor             string          `json:"cursor"`
+	Id                 string          `json:"id"`
+	ItemAuthor         *string         `json:"item_author,omitempty"`
+	ItemLastActivityAt *time.Time      `json:"item_last_activity_at,omitempty"`
+	ItemNumber         int64           `json:"item_number"`
+	ItemState          string          `json:"item_state"`
+	ItemTitle          string          `json:"item_title"`
+	ItemType           string          `json:"item_type"`
+	ItemUrl            string          `json:"item_url"`
+	PlatformHost       string          `json:"platform_host"`
+	Repo               RepoRefResponse `json:"repo"`
+	RepoName           string          `json:"repo_name"`
+	RepoOwner          string          `json:"repo_owner"`
+	SubjectState       *string         `json:"subject_state,omitempty"`
+	Workspace          *WorkspaceRef   `json:"workspace,omitempty"`
 }
 
 // ActivityResponse defines model for ActivityResponse.
@@ -1117,10 +1118,28 @@ type ActivityResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/ActivityResponse.json
-	Schema            *string                             `json:"$schema,omitempty"`
-	Capped            bool                                `json:"capped"`
-	Items             *[]ActivityItemResponse             `json:"items"`
-	WorkspaceActivity *[]WorkspaceActivitySubjectResponse `json:"workspace_activity"`
+	Schema             *string                             `json:"$schema,omitempty"`
+	Capped             bool                                `json:"capped"`
+	ItemActivity       *[]ActivitySubjectResponse          `json:"item_activity"`
+	ItemActivityCapped bool                                `json:"item_activity_capped"`
+	Items              *[]ActivityItemResponse             `json:"items"`
+	WorkspaceActivity  *[]WorkspaceActivitySubjectResponse `json:"workspace_activity"`
+}
+
+// ActivitySubjectResponse defines model for ActivitySubjectResponse.
+type ActivitySubjectResponse struct {
+	ActivityAt   time.Time       `json:"activity_at"`
+	ItemAuthor   *string         `json:"item_author,omitempty"`
+	ItemNumber   int64           `json:"item_number"`
+	ItemState    string          `json:"item_state"`
+	ItemTitle    string          `json:"item_title"`
+	ItemType     string          `json:"item_type"`
+	ItemUrl      string          `json:"item_url"`
+	PlatformHost string          `json:"platform_host"`
+	Repo         RepoRefResponse `json:"repo"`
+	RepoName     string          `json:"repo_name"`
+	RepoOwner    string          `json:"repo_owner"`
+	Workspace    *WorkspaceRef   `json:"workspace,omitempty"`
 }
 
 // AddRepoInputBody defines model for AddRepoInputBody.

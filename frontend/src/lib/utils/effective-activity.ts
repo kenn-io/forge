@@ -9,3 +9,10 @@ export function effectiveActivity(providerAt: string, workspaceAt?: string): Eff
   }
   return { at: providerAt, fromWorkspace: false };
 }
+
+export function latestActivityAt(eventAt: string, itemAt?: string): string {
+  if (itemAt && Date.parse(itemAt) > Date.parse(eventAt)) {
+    return itemAt;
+  }
+  return eventAt;
+}

@@ -93,9 +93,9 @@ embedder protocol for arbitrary host state.
   candidates include eventless subjects in the same repository and time scope,
   while provider-event matching preserves workspace recency only for text search
   (`internal/server/huma_routes.go::mergeWorkspaceActivityAuthors`).
-- Activity event references key that snapshot by stable repo ID: issues use
-  own identity and PRs use resolved identity, so route reuse stays fail-closed
-  (`internal/server/helpers.go::workspaceRefForActivityItem`).
+- Activity events and parent summaries key that snapshot by stable repo ID and
+  canonical item type; normalize wire `"pr"` to workspace `"pull_request"`
+  before lookup so route reuse stays fail-closed (`internal/server/helpers.go::workspaceItemTypeFromActivity`).
 - The shared subject snapshot holds the repository-reconciliation read barrier
   across both its workspace-summary and subject-metadata reads, so a route move
   cannot split one response across repository identities

@@ -21,6 +21,8 @@ type WorkspaceResponse = {
 };
 
 type ActivityResponse = {
+  items: Array<{ item_number: number; item_type: string }> | null;
+  item_activity: Array<{ item_number: number; item_type: string }> | null;
   workspace_activity: Array<{ item_number: number; item_type: string; activity_at: string }> | null;
 };
 
@@ -85,6 +87,18 @@ async function selectActivityViewItem(page: Page, label: string): Promise<void> 
     await expect(panel).toBeVisible();
   }
   await panel.locator(".activity-filters__item", { hasText: label }).click();
+}
+
+async function activityStatusCount(page: Page, label: "PRs" | "issues"): Promise<number> {
+  const item = page
+    .getByRole("contentinfo")
+    .locator(".status-item")
+    .filter({ hasText: new RegExp(`^\\d+ ${label}$`) });
+  await expect(item).toBeVisible();
+  const text = await item.textContent();
+  const count = Number.parseInt(text ?? "", 10);
+  expect(count).not.toBeNaN();
+  return count;
 }
 
 test.describe("workspace session activity across item surfaces", () => {
@@ -273,7 +287,7 @@ test.describe("workspace session activity across item surfaces", () => {
       const phoneContext = await browser.newContext({ ...devices["iPhone 13"] });
       try {
         const phonePage = await phoneContext.newPage();
-        await phonePage.goto(`${server.info.base_url}/m?range=24h&types=notification`);
+        await phonePage.goto(`${server.info.base_url}/m?range=24h&event_types=none`);
 
         await expect(phonePage.locator(".mobile-shell")).toBeVisible();
         const mobileCards = phonePage.locator(".mobile-activity-card");
@@ -294,6 +308,121 @@ test.describe("workspace session activity across item surfaces", () => {
         await expect(phonePage).toHaveURL(/\/focus\/issues\/github\/acme\/widgets\/10$/);
       } finally {
         await phoneContext.close();
+      }
+
+      // Exercise bot filtering against the authoritative parent/workspace
+      // projections, not event rows. PR #7 has recent parent activity but no
+      // selected event, while issue #13 is outside 24h until workspace output
+      // gives it a current workspace-only activity timestamp.
+      rmSync(changeSignal, { force: true });
+      const seededSessionCount = readdirSync(activitySignalDir).filter((entry) => entry.startsWith("seeded.")).length;
+      const botIssueCreated = await api.post("/api/v1/issues/github/acme/widgets/13/workspace", { data: {} });
+      expect(botIssueCreated.status(), await botIssueCreated.text()).toBe(202);
+      const botIssueWorkspace = (await botIssueCreated.json()) as WorkspaceResponse;
+      await waitForWorkspaceReady(api, botIssueWorkspace.id);
+
+      const botIssueLaunched = await api.post(`/api/v1/workspaces/${botIssueWorkspace.id}/runtime/sessions`, {
+        data: { target_key: "activity-e2e", display_region: "terminal" },
+      });
+      expect(botIssueLaunched.ok(), await botIssueLaunched.text()).toBe(true);
+      await expect
+        .poll(() => readdirSync(activitySignalDir).filter((entry) => entry.startsWith("seeded.")).length)
+        .toBe(seededSessionCount + 1);
+      await expect
+        .poll(async () => {
+          const response = await api.get(`/api/v1/workspaces/${botIssueWorkspace.id}`);
+          expect(response.ok(), await response.text()).toBe(true);
+          return ((await response.json()) as WorkspaceResponse).tmux_activity_source;
+        })
+        .toBe("none");
+
+      writeFileSync(changeSignal, "change\n", "utf8");
+      await expect
+        .poll(
+          async () => {
+            const response = await api.get("/api/v1/activity?since=2026-01-01T00:00:00Z");
+            expect(response.ok(), await response.text()).toBe(true);
+            return ((await response.json()) as ActivityResponse).workspace_activity?.some(
+              (subject) => subject.item_type === "issue" && subject.item_number === 13,
+            );
+          },
+          { timeout: 20_000 },
+        )
+        .toBe(true);
+
+      const since24h = encodeURIComponent(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+      const botSubjectsResponse = await api.get(
+        `/api/v1/activity?since=${since24h}&types=commit&item_types=pr,issue,repo`,
+      );
+      expect(botSubjectsResponse.ok(), await botSubjectsResponse.text()).toBe(true);
+      const botSubjects = (await botSubjectsResponse.json()) as ActivityResponse;
+      expect(botSubjects.items ?? []).not.toContainEqual(expect.objectContaining({ item_type: "pr", item_number: 7 }));
+      expect(botSubjects.items ?? []).not.toContainEqual(
+        expect.objectContaining({ item_type: "issue", item_number: 13 }),
+      );
+      expect(botSubjects.item_activity ?? []).toContainEqual(
+        expect.objectContaining({ item_type: "pr", item_number: 7 }),
+      );
+      expect(botSubjects.item_activity ?? []).not.toContainEqual(
+        expect.objectContaining({ item_type: "issue", item_number: 13 }),
+      );
+      expect(botSubjects.workspace_activity ?? []).toContainEqual(
+        expect.objectContaining({ item_type: "issue", item_number: 13 }),
+      );
+
+      const settingsLoaded = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname === "/api/v1/settings" && response.request().method() === "GET";
+      });
+      await page.goto(`${server.info.base_url}/`);
+      await settingsLoaded;
+      await expect(page.locator(".activity-table .activity-row").first()).toBeVisible();
+      await selectActivityViewItem(page, "Threaded");
+      await selectActivityViewItem(page, "24h");
+      await expect(page.locator(".activity-filters__trigger")).toContainText("Threaded · 24h");
+      const botPullTitle = "Bump lodash from 4.17.20 to 4.17.21";
+      const botIssueTitle = "Security advisory: prototype pollution";
+      const botPullRow = page.locator(".threaded-view .item-row", { hasText: botPullTitle });
+      const botIssueRow = page.locator(".threaded-view .item-row", { hasText: botIssueTitle });
+      await expect(botPullRow).toBeVisible();
+      await expect(botIssueRow).toBeVisible();
+      const pullCountBefore = await activityStatusCount(page, "PRs");
+      const issueCountBefore = await activityStatusCount(page, "issues");
+
+      await selectActivityViewItem(page, "Hide bots");
+      await expect(botPullRow).toHaveCount(0);
+      await expect(botIssueRow).toHaveCount(0);
+      await expect(page.getByRole("contentinfo").locator(".status-item").filter({ hasText: /PRs$/ })).toHaveText(
+        `${pullCountBefore - 1} PRs`,
+      );
+      await expect(
+        page
+          .getByRole("contentinfo")
+          .locator(".status-item")
+          .filter({ hasText: /issues$/ }),
+      ).toHaveText(`${issueCountBefore - 1} issues`);
+
+      const botPhoneContext = await browser.newContext({ ...devices["iPhone 13"] });
+      try {
+        const botPhonePage = await botPhoneContext.newPage();
+        const mobileSettingsLoaded = botPhonePage.waitForResponse((response) => {
+          const url = new URL(response.url());
+          return url.pathname === "/api/v1/settings" && response.request().method() === "GET";
+        });
+        await botPhonePage.goto(`${server.info.base_url}/m`);
+        await mobileSettingsLoaded;
+        await botPhonePage.getByRole("button", { name: /^Filters/ }).click();
+        await botPhonePage.getByRole("combobox", { name: /Time range/ }).click();
+        await botPhonePage.getByRole("option", { name: "24h" }).click();
+        const botPullCard = botPhonePage.locator(".mobile-activity-card", { hasText: botPullTitle });
+        const botIssueCard = botPhonePage.locator(".mobile-activity-card", { hasText: botIssueTitle });
+        await expect(botPullCard).toBeVisible();
+        await expect(botIssueCard).toBeVisible();
+        await botPhonePage.getByRole("button", { name: "Hide bots", exact: true }).click();
+        await expect(botPullCard).toHaveCount(0);
+        await expect(botIssueCard).toHaveCount(0);
+      } finally {
+        await botPhoneContext.close();
       }
     } finally {
       await api.dispose();

@@ -93,7 +93,7 @@ describe("router initialization", () => {
   });
 
   it("restores the last Activity route after reloading on Workspaces", async () => {
-    const activityRoute = "/?types=new_pr,comment,review,force_push,notification";
+    const activityRoute = "/?item_types=pr&event_types=comment,review,force_push";
     const router = await importRouterAt(activityRoute);
     router.navigate("/workspaces");
 
@@ -106,7 +106,7 @@ describe("router initialization", () => {
     window.__BASE_PATH__ = "/kenn-forge/";
     window.sessionStorage.setItem(
       "kenn-forge:last-activity-route",
-      "/?view=flat&types=new_pr,comment,review,force_push&notif=0&hide_branch=1&author=Alice%20Smith",
+      "/?view=flat&item_types=pr&event_types=comment,review,force_push&notif=0&hide_branch=1&author=Alice%20Smith",
     );
 
     const router = await importRouterAt("/kenn-forge/?view=threaded");
@@ -114,7 +114,8 @@ describe("router initialization", () => {
 
     expect(restoredURL.pathname).toBe("/kenn-forge/");
     expect(restoredURL.searchParams.get("view")).toBe("threaded");
-    expect(restoredURL.searchParams.get("types")).toBe("new_pr,comment,review,force_push");
+    expect(restoredURL.searchParams.get("item_types")).toBe("pr");
+    expect(restoredURL.searchParams.get("event_types")).toBe("comment,review,force_push");
     expect(restoredURL.searchParams.get("notif")).toBe("0");
     expect(restoredURL.searchParams.get("hide_branch")).toBe("1");
     expect(restoredURL.searchParams.get("author")).toBe("Alice Smith");
@@ -125,7 +126,7 @@ describe("router initialization", () => {
     window.__BASE_PATH__ = "/kenn-forge/";
     window.sessionStorage.setItem(
       "kenn-forge:last-activity-route",
-      "/?types=new_pr,comment,review,force_push&notif=0&hide_branch=1&author=Alice",
+      "/?item_types=pr&event_types=comment,review,force_push&notif=0&hide_branch=1&author=Alice",
     );
     const router = await importRouterAt("/kenn-forge/settings");
 
@@ -134,15 +135,50 @@ describe("router initialization", () => {
 
     expect(restoredURL.pathname).toBe("/kenn-forge/");
     expect(restoredURL.searchParams.get("view")).toBe("threaded");
-    expect(restoredURL.searchParams.get("types")).toBe("new_pr,comment,review,force_push");
+    expect(restoredURL.searchParams.get("item_types")).toBe("pr");
+    expect(restoredURL.searchParams.get("event_types")).toBe("comment,review,force_push");
     expect(restoredURL.searchParams.get("notif")).toBe("0");
     expect(restoredURL.searchParams.get("hide_branch")).toBe("1");
     expect(restoredURL.searchParams.get("author")).toBe("Bob");
   });
 
+  it("restores a stored legacy Activity filter for migration during store hydration", async () => {
+    window.__BASE_PATH__ = "/kenn-forge/";
+    window.sessionStorage.setItem("kenn-forge:last-activity-route", "/?types=new_issue,comment,notification&notif=0");
+    const router = await importRouterAt("/kenn-forge/settings");
+
+    router.navigate("/?view=threaded");
+    const restoredURL = new URL(window.location.href);
+
+    expect(restoredURL.pathname).toBe("/kenn-forge/");
+    expect(restoredURL.searchParams.get("view")).toBe("threaded");
+    expect(restoredURL.searchParams.get("types")).toBe("new_issue,comment,notification");
+    expect(restoredURL.searchParams.get("notif")).toBe("0");
+  });
+
+  it("keeps an explicit legacy Activity bookmark ahead of canonical session filters", async () => {
+    window.__BASE_PATH__ = "/kenn-forge/";
+    window.sessionStorage.setItem("kenn-forge:last-activity-route", "/?item_types=pr&event_types=comment&notif=0");
+
+    await importRouterAt("/kenn-forge/?types=new_issue,review,notification");
+    const { createActivityStore } = await import("./activity.svelte.js");
+    const store = createActivityStore({ runtime: {} as never });
+    store.initializeFromMount();
+
+    expect([...store.getEnabledItemTypes()]).toEqual(["issue"]);
+    expect([...store.getEnabledEvents()]).toEqual(["review"]);
+    const normalizedURL = new URL(window.location.href);
+    expect(normalizedURL.searchParams.has("types")).toBe(false);
+    expect(normalizedURL.searchParams.get("item_types")).toBe("issue");
+    expect(normalizedURL.searchParams.get("event_types")).toBe("review");
+  });
+
   it("restores stored Activity filters when Back or Forward enters Activity", async () => {
     window.__BASE_PATH__ = "/kenn-forge/";
-    window.sessionStorage.setItem("kenn-forge:last-activity-route", "/?types=new_pr,comment,review,force_push");
+    window.sessionStorage.setItem(
+      "kenn-forge:last-activity-route",
+      "/?item_types=pr&event_types=comment,review,force_push",
+    );
     await importRouterAt("/kenn-forge/settings");
 
     window.history.pushState(null, "", "/kenn-forge/?view=threaded");
@@ -150,10 +186,11 @@ describe("router initialization", () => {
     const restoredURL = new URL(window.location.href);
 
     expect(restoredURL.searchParams.get("view")).toBe("threaded");
-    expect(restoredURL.searchParams.get("types")).toBe("new_pr,comment,review,force_push");
+    expect(restoredURL.searchParams.get("item_types")).toBe("pr");
+    expect(restoredURL.searchParams.get("event_types")).toBe("comment,review,force_push");
   });
 
-  it.each(["/workspaces", "/unexpected", "//", "///?types=new_pr", "//example.com/?types=new_pr"])(
+  it.each(["/workspaces", "/unexpected", "//", "///?item_types=pr", "//example.com/?item_types=pr"])(
     "ignores an invalid stored Activity route: %s",
     async (storedRoute) => {
       window.sessionStorage.setItem("kenn-forge:last-activity-route", storedRoute);
@@ -175,7 +212,7 @@ describe("router initialization", () => {
   });
 
   it("keeps the in-memory Activity route when session storage writes are blocked", async () => {
-    const activityRoute = "/?types=new_pr,comment,review,force_push,notification";
+    const activityRoute = "/?item_types=pr&event_types=comment,review,force_push";
     const router = await importRouterAt(activityRoute);
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("blocked", "SecurityError");

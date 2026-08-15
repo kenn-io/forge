@@ -216,6 +216,11 @@ Persisted controls must state their scope clearly.
 - Activity filters remain URL-backed and session-scoped. Missing filter params on a
   partial Activity URL inherit the last validated route before store hydration, while
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
+- Activity URLs persist item scope (`item_types`) and event toggles (`event_types`)
+  independently. Legacy `types` migrates both dimensions and owns them during session
+  restoration; only exact `types=notification` means default item scope with no events,
+  and `commit` alone controls the old Commits toggle (ignore stale `default_branch_commit`)
+  (`frontend/src/lib/stores/activity.svelte.ts::readLegacyFilterSelections`).
 - Activity's Author filter follows GitHub `author:` semantics: it matches the parent PR
   or issue author, never a child event actor; its URL/API key remains `author`
   (`internal/db/queries_activity.go::ListActivity`).
@@ -884,11 +889,37 @@ Not every visibility control means "remove this entity entirely."
 
 - Controls that toggle detail visibility should preserve the parent row unless
   the feature explicitly removes that category from the result set.
+- Activity's Commits filter controls top-level default-branch commits only; it
+  neither selects PR or issue opening rows nor hides PR timeline commits while
+  PRs are enabled. Opening rows follow only the timeline events that can occur
+  on that item kind (issues: comments), so Reviews or Force pushes never toggle
+  issue opening rows
+  (`frontend/src/lib/stores/activity.svelte.ts::buildActivityFilterTypes`).
+- Activity recency for a PR or issue is derived from the event ledger the feed can
+  render (opening, comments, reviews, commits, force pushes, merge, close), never from
+  provider `updated_at`/`last_activity_at`: GitHub bumps those for mergeability recomputes
+  and branch deletion, which read as phantom activity. Event visibility filters must not
+  redefine that recency (`internal/db/queries_activity.go::prActivityAtExpr`).
+- Activity presentation filters apply to event, parent, and workspace projections;
+  "Hide bots" tests event actors on events and item authors on parent/workspace subjects
+  (`frontend/src/lib/components/ActivityFeed.svelte::visibleItemActivity`).
+- Activity `capped` reports event overflow; only it triggers event reloads and the
+  event warning. `item_activity_capped` drives only the independent parent-truncation
+  notice; a search whose event matches overflow the event page also reports it, because
+  event-matched parents are derived from that bounded page
+  (`frontend/src/lib/stores/activity.svelte.ts::createActivityStore`, `internal/server/huma_routes.go::Server.listActivity`).
+- Activity status totals deduplicate open subjects across event, parent, and workspace
+  snapshots; authoritative parent lifecycle state overrides event state
+  (`frontend/src/lib/components/layout/StatusBar.svelte::activityCounts`).
+- Authoritative Activity parents rewrite retained event parent metadata and notification provider
+  targets from the current parent URL; event-specific deep links stay event-owned. Key by stable
+  identity so mutable routes cannot split renames or route reuse (`frontend/src/lib/stores/activity.svelte.ts::reconcileItemsWithParentSubjects`).
 - When two data sources race, prefer the source that matches the user's current
   filter/scope rather than a stale but faster preview.
-- Detail sync convergence must directly reconcile visible PR, issue, and Activity
-  lists; Activity's forward cursor cannot surface newly persisted events older than
-  unrelated leading rows. Selection generations gate only detail installation, not
+- Successful initial detail reads and detail sync convergence must directly
+  reconcile visible PR, issue, and Activity lists; Activity's forward cursor
+  cannot surface newly persisted events older than unrelated leading rows.
+  Selection generations gate only detail installation, not successful-read or
   successful-sync invalidation (`frontend/src/lib/stores/detail.svelte.ts::reconcileListsAfterDetailSync`, `frontend/src/lib/stores/issues.svelte.ts::reconcileListsAfterDetailSync`).
 - Activity full-snapshot projections are latest-successful-request-wins across
   foreground and convergence reads. Incremental polling neither claims snapshot
@@ -900,6 +931,9 @@ Not every visibility control means "remove this entity entirely."
   successful snapshots, and a logical filter-scope change still fences the old result.
   A later successful snapshot fences older foreground failures; without one, a fenced
   foreground owner still settles loading (`frontend/src/lib/stores/activity-workflow.ts::ActivityWorkflowLive`).
+  Every fourth scheduled Activity poll is an authoritative full-snapshot
+  replacement so events hidden behind the forward cursor self-heal even without
+  detail navigation or SSE (`frontend/src/lib/stores/activity.svelte.ts::refreshActivityProgram`).
   Every authoritative snapshot projection clears an earlier error banner
   (`frontend/src/lib/stores/activity.svelte.ts::createActivityStore`).
 - After a sync trigger is accepted, retain optimistic running state through the

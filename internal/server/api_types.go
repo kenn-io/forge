@@ -215,9 +215,26 @@ type rateLimitsResponse struct {
 const activitySafetyCap = 5000
 
 type activityResponse struct {
-	Items             []activityItemResponse             `json:"items"`
-	WorkspaceActivity []workspaceActivitySubjectResponse `json:"workspace_activity"`
-	Capped            bool                               `json:"capped"`
+	Items              []activityItemResponse             `json:"items"`
+	ItemActivity       []activitySubjectResponse          `json:"item_activity"`
+	WorkspaceActivity  []workspaceActivitySubjectResponse `json:"workspace_activity"`
+	Capped             bool                               `json:"capped"`
+	ItemActivityCapped bool                               `json:"item_activity_capped"`
+}
+
+type activitySubjectResponse struct {
+	Repo         httpapi.RepoRefResponse    `json:"repo"`
+	PlatformHost string                     `json:"platform_host"`
+	RepoOwner    string                     `json:"repo_owner"`
+	RepoName     string                     `json:"repo_name"`
+	ItemType     string                     `json:"item_type"`
+	ItemNumber   int                        `json:"item_number"`
+	ItemTitle    string                     `json:"item_title"`
+	ItemURL      string                     `json:"item_url"`
+	ItemState    string                     `json:"item_state"`
+	ItemAuthor   string                     `json:"item_author,omitempty"`
+	Workspace    *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	ActivityAt   string                     `json:"activity_at" format:"date-time"`
 }
 
 type workspaceActivitySubjectResponse struct {
@@ -240,33 +257,34 @@ type activityAuthorsResponse struct {
 }
 
 type activityItemResponse struct {
-	ID             string                     `json:"id"`
-	Cursor         string                     `json:"cursor"`
-	ActivityType   string                     `json:"activity_type"`
-	Repo           httpapi.RepoRefResponse    `json:"repo"`
-	PlatformHost   string                     `json:"platform_host"`
-	RepoOwner      string                     `json:"repo_owner"`
-	RepoName       string                     `json:"repo_name"`
-	ItemType       string                     `json:"item_type"`
-	ItemNumber     int                        `json:"item_number"`
-	ItemTitle      string                     `json:"item_title"`
-	ItemURL        string                     `json:"item_url"`
-	ItemState      string                     `json:"item_state"`
-	Workspace      *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
-	Author         string                     `json:"author"`
-	ItemAuthor     string                     `json:"item_author,omitempty"`
-	CreatedAt      string                     `json:"created_at"`
-	BodyPreview    string                     `json:"body_preview"`
-	BranchName     string                     `json:"branch_name,omitempty"`
-	CommitSHA      string                     `json:"commit_sha,omitempty"`
-	BeforeSHA      string                     `json:"before_sha,omitempty"`
-	AfterSHA       string                     `json:"after_sha,omitempty"`
-	AuthorName     string                     `json:"author_name,omitempty"`
-	AuthorEmail    string                     `json:"author_email,omitempty"`
-	CommitterName  string                     `json:"committer_name,omitempty"`
-	CommitterEmail string                     `json:"committer_email,omitempty"`
-	AuthoredAt     string                     `json:"authored_at,omitempty"`
-	CommittedAt    string                     `json:"committed_at,omitempty"`
-	ActivityURL    string                     `json:"activity_url,omitempty"`
-	SubjectState   string                     `json:"subject_state,omitempty"`
+	ID                 string                     `json:"id"`
+	Cursor             string                     `json:"cursor"`
+	ActivityType       string                     `json:"activity_type"`
+	Repo               httpapi.RepoRefResponse    `json:"repo"`
+	PlatformHost       string                     `json:"platform_host"`
+	RepoOwner          string                     `json:"repo_owner"`
+	RepoName           string                     `json:"repo_name"`
+	ItemType           string                     `json:"item_type"`
+	ItemNumber         int                        `json:"item_number"`
+	ItemTitle          string                     `json:"item_title"`
+	ItemURL            string                     `json:"item_url"`
+	ItemState          string                     `json:"item_state"`
+	Workspace          *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	Author             string                     `json:"author"`
+	ItemAuthor         string                     `json:"item_author,omitempty"`
+	CreatedAt          string                     `json:"created_at"`
+	ItemLastActivityAt string                     `json:"item_last_activity_at,omitempty" format:"date-time"`
+	BodyPreview        string                     `json:"body_preview"`
+	BranchName         string                     `json:"branch_name,omitempty"`
+	CommitSHA          string                     `json:"commit_sha,omitempty"`
+	BeforeSHA          string                     `json:"before_sha,omitempty"`
+	AfterSHA           string                     `json:"after_sha,omitempty"`
+	AuthorName         string                     `json:"author_name,omitempty"`
+	AuthorEmail        string                     `json:"author_email,omitempty"`
+	CommitterName      string                     `json:"committer_name,omitempty"`
+	CommitterEmail     string                     `json:"committer_email,omitempty"`
+	AuthoredAt         string                     `json:"authored_at,omitempty"`
+	CommittedAt        string                     `json:"committed_at,omitempty"`
+	ActivityURL        string                     `json:"activity_url,omitempty"`
+	SubjectState       string                     `json:"subject_state,omitempty"`
 }

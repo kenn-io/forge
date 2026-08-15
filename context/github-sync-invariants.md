@@ -255,11 +255,6 @@ fallback repository listing.
   requests off still enters the cooldown.
   (`internal/github/native_stacks.go::decodeNativeStackHint`,
   `internal/github/sync.go::ListOpenMergeRequestsWithNativeStackHints`)
-- GitHub repositories can have pull requests disabled (issues-only trackers):
-  the pulls API 404s for every credential. A pulls-list 404 classifies as
-  merge-requests feature disabled only when the repository probe reads back
-  `has_pull_requests=false`; a bare 404 stays a transient failure
-  (`internal/github/sync.go::mergeRequestsDisabledByRepository`).
 - Preview-only GraphQL fields must be absent from disabled query shapes;
   `@include(false)` does not bypass schema validation on servers without those
   fields. Schema rejection drops the fields for that host instead of abandoning
@@ -437,6 +432,11 @@ fallback repository listing.
   success would hide a dead worker. (`internal/archive/scheduler.go::RunEligible`,
   `internal/archive/service.go::resolveRepositoriesTolerant`)
 - Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
+- GitHub issue-only repositories return pulls API 404; normal and archive paths
+  classify it as feature-disabled only for explicit `has_pull_requests=false`;
+  ambiguous probes preserve the failure. (`internal/github/sync.go::mergeRequestsDisabledByRepository`)
+- GitHub pull inventory admission reserves the possible metadata probe and its
+  authentication retry. (`internal/archive/scheduler.go::archiveFeatureReadAttemptCost`)
 - Every issue-only GitHub lookup rejects a PR-shaped Issues API response before normalization; `SyncItemByNumber` is the kind-dispatching exception. (`internal/github/pages.go::gitHubClientProvider.issuePullRequestOutcomeError`, `internal/github/sync.go::SyncItemByNumber`)
 - Updated issue scans query one second before the durable watermark while keeping cursor identity bound to the original boundary. Updated pull-request scans run newest-first across the same overlap. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - Durable pull-request inventory bypasses the process-local list ETag cache. Archive cursors require response bodies, so a bodyless `304 Not Modified` must not turn an unchanged maintenance scan into a retryable failure. (`internal/github/pages.go::liveClient.ListInventoryPullRequestsPage`)

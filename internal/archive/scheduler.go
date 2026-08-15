@@ -371,9 +371,9 @@ func archiveAttemptCost(logical int) int {
 	return logical * 2
 }
 
-func archiveFeatureReadAttemptCost(kind platform.Kind) int {
+func archiveFeatureReadAttemptCost(kind platform.Kind, itemType db.ArchiveItemType) int {
 	logicalRequests := 1
-	if kind != platform.KindGitHub {
+	if kind != platform.KindGitHub || itemType == db.ArchiveItemTypeMergeRequest {
 		logicalRequests++ // repository metadata confirmation after a candidate feature error
 	}
 	return archiveAttemptCost(logicalRequests)

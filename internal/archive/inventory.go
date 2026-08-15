@@ -31,7 +31,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 	} else {
 		requestCtx, complete, err := s.admit(
 			withInventoryProbe(ctx), repo, itemType,
-			archiveFeatureReadAttemptCost(repo.Ref.Platform),
+			archiveFeatureReadAttemptCost(repo.Ref.Platform, itemType),
 		)
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {

@@ -109,13 +109,13 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 				updatedIssueSucceededOnce.Do(func() { close(updatedIssueSucceeded) })
 			}
 		case "/api/v3/repos/acme/widget/pulls":
-			_, _ = w.Write([]byte(`[]`))
+			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
 		case "/api/v3/rate_limit":
 			_, _ = w.Write([]byte(`{"resources":{"core":{"limit":5000,"remaining":4999,"reset":4102444800}}}`))
 		case "/api/v3/repos/acme/widget":
 			_, _ = w.Write([]byte(`{
 				"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget",
-				"owner":{"login":"acme"}
+				"owner":{"login":"acme"},"has_pull_requests":false
 			}`))
 		case "/api/v3/repos/acme/widget/issues/17":
 			issueDetailCalls.Add(1)
@@ -228,6 +228,7 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 		ready := stateErr == nil && len(states) == 1 &&
 			historicalIssueListCalls.Load() >= 1 &&
 			states[0].IssuesCoverage == db.ArchiveCoverageUnsupported &&
+			states[0].MergeRequestsCoverage == db.ArchiveCoverageUnsupported &&
 			states[0].IssueInventory.Complete() && states[0].InitialCompletedAt != nil
 		if ready {
 			unsupportedGeneration = states[0].IssueInventory.Generation
@@ -258,6 +259,7 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	require.NoError(err)
 	require.Len(states, 1)
 	assert.Equal(db.ArchiveCoverageSupported, states[0].IssuesCoverage)
+	assert.Equal(db.ArchiveCoverageUnsupported, states[0].MergeRequestsCoverage)
 	assert.True(states[0].IssueInventory.Complete())
 	assert.Greater(states[0].IssueInventory.Generation, unsupportedGeneration,
 		"successful maintenance must reopen the unsupported historical inventory")
@@ -269,6 +271,6 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	require.Eventually(func() bool {
 		status, statusErr := api.HTTP.ListArchiveStatusWithResponse(ctx, nil)
 		return statusErr == nil && status.JSON200 != nil && len(*status.JSON200) == 1 &&
-			(*status.JSON200)[0].Status == generated.ArchiveStatusResponseStatusCurrent
+			(*status.JSON200)[0].Status == generated.ArchiveStatusResponseStatusPartial
 	}, 3*time.Second, 10*time.Millisecond)
 }

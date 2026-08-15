@@ -59,6 +59,85 @@ func TestGitHubRepositoryFeatureDisabled(t *testing.T) {
 	}
 }
 
+func TestGitHubArchiveMergeRequestInventoryClassifiesIssueOnlyRepository(t *testing.T) {
+	tests := []struct {
+		name               string
+		repositoryStatus   int
+		repositoryResponse string
+		wantDisabled       bool
+	}{
+		{
+			name:             "disabled",
+			repositoryStatus: http.StatusOK,
+			repositoryResponse: `{
+				"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget",
+				"owner":{"login":"acme"},"has_pull_requests":false
+			}`,
+			wantDisabled: true,
+		},
+		{
+			name:             "enabled",
+			repositoryStatus: http.StatusOK,
+			repositoryResponse: `{
+				"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget",
+				"owner":{"login":"acme"},"has_pull_requests":true
+			}`,
+		},
+		{
+			name:             "unknown",
+			repositoryStatus: http.StatusOK,
+			repositoryResponse: `{
+				"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget",
+				"owner":{"login":"acme"}
+			}`,
+		},
+		{
+			name:               "unreadable",
+			repositoryStatus:   http.StatusForbidden,
+			repositoryResponse: `{"message":"Forbidden"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			repositoryRequests := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/v3/repos/acme/widget/pulls":
+					http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+				case "/api/v3/repos/acme/widget":
+					repositoryRequests++
+					w.WriteHeader(tt.repositoryStatus)
+					_, _ = w.Write([]byte(tt.repositoryResponse))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+
+			provider := newArchiveTestGitHubProvider(t, srv.URL)
+			_, err := provider.ListMergeRequestsPage(
+				t.Context(), pagesTestRef(), platform.ItemPageQuery{Order: platform.ItemOrderCreated},
+			)
+
+			assert.Equal(1, repositoryRequests)
+			if tt.wantDisabled {
+				require.ErrorIs(err, platform.ErrRepositoryFeatureDisabled)
+				var platformErr *platform.Error
+				require.ErrorAs(err, &platformErr)
+				assert.Equal(platform.RepositoryFeatureMergeRequests, platformErr.Capability)
+				return
+			}
+			require.Error(err)
+			require.NotErrorIs(err, platform.ErrRepositoryFeatureDisabled)
+			assert.Equal(http.StatusNotFound, githubStatusCode(err))
+		})
+	}
+}
+
 // requestRecorder captures the method, path, and raw query of every request a
 // test server receives so parity tests can assert the canonical method and the
 // legacy delegate issued identical requests.

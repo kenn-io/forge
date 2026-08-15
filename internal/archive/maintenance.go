@@ -98,7 +98,7 @@ func (s *Service) promptPages(
 		}
 		requestCtx, complete, err := s.admit(
 			withInventoryProbe(ctx), repo, itemType,
-			archiveFeatureReadAttemptCost(repo.Ref.Platform),
+			archiveFeatureReadAttemptCost(repo.Ref.Platform, itemType),
 		)
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {

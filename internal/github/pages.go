@@ -325,6 +325,9 @@ func (p *gitHubClientProvider) listInventoryMergeRequestsPage(
 		ctx, ref.Owner, ref.Name, sortBy, state.Page,
 	)
 	if err != nil {
+		if disabledErr := p.mergeRequestsDisabledByRepository(ctx, ref, err); disabledErr != nil {
+			return platform.Page[platform.MergeRequest]{}, disabledErr
+		}
 		return platform.Page[platform.MergeRequest]{}, p.archiveTransportError(platform.ArchiveCapabilityHistoricalMergeRequests, err)
 	}
 	out := make([]platform.MergeRequest, 0, len(items))

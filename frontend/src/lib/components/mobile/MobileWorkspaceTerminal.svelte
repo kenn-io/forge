@@ -26,6 +26,7 @@
     type WorkspaceLaunchClaim,
   } from "../../stores/workspace-create-pending.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import {
     noteSessionDiscarded,
     noteSessionMounted,
@@ -106,6 +107,7 @@
   const selectedHostKey = $derived(
     selectedSession ? pooledHostKey(selectedSession) : null,
   );
+  const pendingLaunch = $derived(pendingWorkspaceLaunch(workspaceId, hostKey));
   const linkedItem = $derived(workspace ? mobileWorkspaceLinkedItem(workspace) : null);
   const workspaceIdentity = $derived(
     workspace
@@ -172,7 +174,7 @@
     ownedHostKeys = desiredKeys;
   }
 
-  function applyRuntime(next: WorkspaceRuntimeState): void {
+  function applyRuntime(next: WorkspaceRuntimeState, authoritative = true): void {
     const previousSelectedHostKey = selectedHostKey;
     runtime = next;
     reconcilePooledSessions(next.sessions);
@@ -191,8 +193,10 @@
     selectedSessionKey = nextSelectedSessionKey;
     saveMobileWorkspaceSession(workspaceId, hostKey, selectedSessionKey);
     runtimeError = null;
-    for (const session of next.sessions) {
-      completeAcceptedWorkspaceLaunch(workspaceId, hostKey, session.key);
+    if (authoritative) {
+      for (const session of next.sessions) {
+        completeAcceptedWorkspaceLaunch(workspaceId, hostKey, session.key);
+      }
     }
     reconcileQueuedWorkspaceLaunch(next);
   }
@@ -207,7 +211,10 @@
     const launchTarget = next.launch_targets.find((candidate) => candidate.key === pending.targetKey);
     if (!launchTarget || launchTarget.kind !== "agent" || !launchTarget.available) {
       if (discardWorkspaceLaunch(workspaceId, hostKey) !== null) {
-        runtimeError = `Agent "${pending.targetKey}" could not launch: ${launchTarget?.disabled_reason ?? "not available"}`;
+        showFlash(
+          `Agent "${pending.targetKey}" could not launch: ${launchTarget?.disabled_reason ?? "not available"}`,
+          { tone: "danger" },
+        );
       }
       return;
     }
@@ -269,7 +276,18 @@
           launchingTarget = null;
           launchSheetOpen = false;
           selectedSessionKey = state.session.key;
-          saveMobileWorkspaceSession(workspaceId, hostKey, selectedSessionKey);
+          const current = runtime;
+          if (current) {
+            applyRuntime(
+              {
+                ...current,
+                sessions: [...current.sessions.filter((session) => session.key !== state.session.key), state.session],
+              },
+              false,
+            );
+          } else {
+            saveMobileWorkspaceSession(workspaceId, hostKey, selectedSessionKey);
+          }
           requestRuntimeRefresh();
         } else if (state.kind === "failed" || state.kind === "uncertain") {
           launchingTarget = null;
@@ -281,6 +299,13 @@
         else if (state.kind === "succeeded") {
           stoppingSession = null;
           stopSession = null;
+          const current = runtime;
+          if (current) {
+            applyRuntime({
+              ...current,
+              sessions: current.sessions.filter((session) => session.key !== state.request.sessionKey),
+            });
+          }
           requestRuntimeRefresh();
         } else if (state.kind === "failed" || state.kind === "uncertain") {
           stoppingSession = null;
@@ -309,7 +334,7 @@
     state: Extract<WorkspaceRuntimeMutationState, { kind: "failed" | "uncertain" }>,
     fallback: string,
   ): void {
-    runtimeError = failureMessage(state.error, fallback);
+    showFlash(failureMessage(state.error, fallback), { tone: "danger" });
   }
 
   function requestRuntimeRefresh(): void {
@@ -340,7 +365,7 @@
         safeContext: { workspaceId, remote: Boolean(hostKey) },
         onFailure: (failure) => {
           retryingSetup = false;
-          runtimeError = failureMessage(failure, "Retry failed");
+          showFlash(failureMessage(failure, "Retry failed"), { tone: "danger" });
         },
       },
     );
@@ -414,7 +439,7 @@
   }
 
   function launch(targetKey: string, launchClaim?: WorkspaceLaunchClaim): void {
-    if (launchingTarget || stoppingSession) return;
+    if (launchingTarget || stoppingSession || (!launchClaim && pendingLaunch)) return;
     appRuntime.runCommand(
       Effect.gen(function* () {
         const workflow = yield* WorkspaceRuntimeWorkflow;
@@ -449,7 +474,7 @@
         onFailure: (failure) => {
           launchingTarget = null;
           if (launchClaim) failWorkspaceLaunch(launchClaim);
-          runtimeError = failureMessage(failure, "Launch failed");
+          showFlash(failureMessage(failure, "Launch failed"), { tone: "danger" });
         },
       },
     );
@@ -527,11 +552,21 @@
         onFailure: (failure) => {
           stoppingSession = null;
           stopSession = null;
-          runtimeError = failureMessage(failure, "Stop failed");
+          showFlash(failureMessage(failure, "Stop failed"), { tone: "danger" });
         },
       },
     );
   }
+
+  $effect(() => {
+    if (!terminalOptionsOpen) return;
+    return untrack(() => pushModalFrame("mobile-workspace-terminal-options", []));
+  });
+
+  $effect(() => {
+    if (!launchSheetOpen) return;
+    return untrack(() => pushModalFrame("mobile-workspace-launch-session", []));
+  });
 
   $effect(() => {
     const activeWorkspaceId = workspaceId;
@@ -662,7 +697,13 @@
     <div class="mobile-workspace-terminal__state"><Spinner size={18} /><span>Loading workspace…</span></div>
   {:else if workspace.status !== "ready"}
     <div class="mobile-workspace-terminal__state" class:error={workspace.status === "error"}>
-      <strong>{workspace.status === "creating" ? "Setting up workspace…" : "Workspace setup failed"}</strong>
+      <strong>{workspace.status === "creating"
+        ? "Setting up workspace…"
+        : workspace.status === "deleting"
+          ? "Deleting workspace…"
+          : workspace.status === "deletion_failed"
+            ? "Workspace deletion failed"
+            : "Workspace setup failed"}</strong>
       {#if workspace.error_message}<span>{workspace.error_message}</span>{/if}
       {#if runtimeError}<span>{runtimeError}</span>{/if}
       {#if workspace.status === "error"}
@@ -736,7 +777,7 @@
       <div><strong>No terminal sessions</strong><span>Launch an agent or shell in this workspace.</span></div>
       <div class="mobile-workspace-terminal__launch-grid">
         {#each launchTargets.filter((target) => target.available) as target (target.key)}
-          <button type="button" disabled={launchingTarget !== null} onclick={() => launch(target.key)}>
+          <button type="button" disabled={launchingTarget !== null || pendingLaunch !== null} onclick={() => launch(target.key)}>
             {#if launchingTarget === target.key}<Spinner size={16} />{/if}
             {target.kind === "plain_shell" ? "Shell" : target.label}
           </button>
@@ -757,7 +798,7 @@
   >
     <div class="mobile-terminal-options-sheet">
       <div class="mobile-terminal-options-sheet__actions">
-        <button type="button" disabled={terminalOptionsSaving || launchingTarget !== null || stoppingSession !== null} onclick={openLaunchSheet}>
+        <button type="button" disabled={terminalOptionsSaving || launchingTarget !== null || stoppingSession !== null || pendingLaunch !== null} onclick={openLaunchSheet}>
           <span><PlusIcon size="18" strokeWidth="2" aria-hidden="true" />New terminal</span>
           <small>Launch a shell or configured agent.</small>
         </button>
@@ -812,7 +853,7 @@
       <small class="mobile-terminal-sheet__branch">{workspace?.git_head_ref ?? workspaceId}</small>
       <div class="mobile-terminal-sheet__targets">
         {#each launchTargets as target (target.key)}
-          <button type="button" disabled={!target.available || launchingTarget !== null} title={target.disabled_reason} onclick={() => launch(target.key)}>
+          <button type="button" disabled={!target.available || launchingTarget !== null || pendingLaunch !== null} title={target.disabled_reason} onclick={() => launch(target.key)}>
             <span><strong>{target.kind === "plain_shell" ? "Shell" : target.label}</strong><small>{target.available ? target.source : target.disabled_reason}</small></span>
             {#if launchingTarget === target.key}<Spinner size={16} />{:else}<PlusIcon size="18" aria-hidden="true" />{/if}
           </button>

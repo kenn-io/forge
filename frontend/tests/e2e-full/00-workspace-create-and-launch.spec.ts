@@ -615,10 +615,11 @@ test.describe("workspace create-and-launch full stack", () => {
       await waitForWorkspaceReady(api, created.id);
       await expect.poll(() => launchRequests).toBe(1);
       await expect.poll(() => runtimeTargets(api!, created.id)).toEqual([]);
+      const relaunch = page.getByRole("button", { name: agentLabel, exact: true });
+      await expect(relaunch).toBeDisabled();
 
       const expiryMessage = `${agentLabel} launched, but its session did not become available`;
       await expect(page.getByText(expiryMessage)).toBeVisible({ timeout: 20_000 });
-      const relaunch = page.getByRole("button", { name: agentLabel, exact: true });
       await expect(relaunch).toBeEnabled();
       await relaunch.click();
       await expect.poll(() => launchRequests).toBe(2);

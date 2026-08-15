@@ -1110,6 +1110,191 @@ test("phone workspace terminal opens its linked issue and returns", async ({ pag
   await expect(page.getByText("No terminal sessions")).toBeVisible();
 });
 
+test("phone applies a launched session before the runtime reconcile finishes", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mocked = await setupTerminalMocks(page);
+  let runtimeReads = 0;
+  let releaseReconcile: () => void = () => {};
+  const reconcilePending = new Promise<void>((resolve) => {
+    releaseReconcile = resolve;
+  });
+  await page.route(
+    (url) => url.pathname === "/api/v1/workspaces/ws-123/runtime",
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      runtimeReads += 1;
+      if (runtimeReads > 2) await reconcilePending;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(mocked.runtime),
+      });
+    },
+  );
+
+  try {
+    await page.goto("/m/workspaces/local/ws-123");
+    await page.getByRole("button", { name: "Codex", exact: true }).click();
+
+    await expect.poll(() => runtimeReads).toBe(3);
+    await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Codex");
+  } finally {
+    releaseReconcile();
+  }
+});
+
+test("phone removes a stopped session before the runtime reconcile finishes", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mocked = await setupTerminalMocks(page, {
+    runtime: {
+      ...workspaceRuntime,
+      sessions: [
+        {
+          key: "ws-123:codex",
+          workspace_id: "ws-123",
+          target_key: "codex",
+          label: "Codex",
+          kind: "agent",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        },
+      ],
+    },
+  });
+  let runtimeReads = 0;
+  let releaseReconcile: () => void = () => {};
+  const reconcilePending = new Promise<void>((resolve) => {
+    releaseReconcile = resolve;
+  });
+  await page.route(
+    (url) => url.pathname === "/api/v1/workspaces/ws-123/runtime",
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      runtimeReads += 1;
+      if (runtimeReads > 1) await reconcilePending;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(mocked.runtime),
+      });
+    },
+  );
+
+  try {
+    await page.goto("/m/workspaces/local/ws-123");
+    await page.getByRole("button", { name: "Terminal options" }).click();
+    await page.getByRole("button", { name: "Stop terminal Codex" }).click();
+    await page.getByRole("dialog", { name: "Stop terminal?" }).getByRole("button", { name: "Stop terminal" }).click();
+
+    await expect.poll(() => runtimeReads).toBe(2);
+    await expect(page.getByText("No terminal sessions")).toBeVisible();
+  } finally {
+    releaseReconcile();
+  }
+});
+
+test("phone runtime mutation failures remain visible with an existing session", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page, {
+    runtime: {
+      ...workspaceRuntime,
+      sessions: [
+        {
+          key: "ws-123:codex",
+          workspace_id: "ws-123",
+          target_key: "codex",
+          label: "Codex",
+          kind: "agent",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        },
+      ],
+    },
+  });
+  await page.route(
+    (url) => url.pathname.startsWith("/api/v1/workspaces/ws-123/runtime/sessions"),
+    async (route) => {
+      const message = route.request().method() === "POST" ? "launch service unavailable" : "stop service unavailable";
+      await route.fulfill({
+        status: 500,
+        contentType: "application/problem+json",
+        body: JSON.stringify(problem("internalError", 500, message)),
+      });
+    },
+  );
+
+  await page.goto("/m/workspaces/local/ws-123");
+  await page.getByRole("button", { name: "Terminal options" }).click();
+  await page.getByRole("button", { name: "New terminal" }).click();
+  await page
+    .getByRole("dialog", { name: "Launch workspace session" })
+    .getByRole("button")
+    .filter({ hasText: "system" })
+    .click();
+  const launchFailure = page.locator(".kit-flash-banner").filter({ hasText: /launch/i });
+  await expect(launchFailure).toBeVisible();
+  await expect(launchFailure).toHaveAttribute("data-kit-tone", "danger");
+
+  await page.getByRole("button", { name: "Close launch session" }).click();
+  await page.getByRole("button", { name: "Terminal options" }).click();
+  await page.getByRole("button", { name: "Stop terminal Codex" }).click();
+  await page.getByRole("dialog", { name: "Stop terminal?" }).getByRole("button", { name: "Stop terminal" }).click();
+  const stopFailure = page.locator(".kit-flash-banner").filter({ hasText: /stop/i });
+  await expect(stopFailure).toBeVisible();
+  await expect(stopFailure).toHaveAttribute("data-kit-tone", "danger");
+});
+
+test("phone terminal sheets reserve global keyboard shortcuts", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page, {
+    runtime: {
+      ...workspaceRuntime,
+      sessions: [
+        {
+          key: "ws-123:codex",
+          workspace_id: "ws-123",
+          target_key: "codex",
+          label: "Codex",
+          kind: "agent",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        },
+      ],
+    },
+  });
+
+  await page.goto("/m/workspaces/local/ws-123");
+  await page.getByRole("button", { name: "Terminal options" }).click();
+  await page.keyboard.press("Meta+K");
+  await expect(page.getByRole("dialog", { name: "Command palette" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "New terminal" }).click();
+  await page.keyboard.press("Meta+K");
+  await expect(page.getByRole("dialog", { name: "Command palette" })).toHaveCount(0);
+});
+
+for (const [status, heading] of [
+  ["deleting", "Deleting workspace…"],
+  ["deletion_failed", "Workspace deletion failed"],
+] as const) {
+  test(`phone labels the ${status} workspace state accurately`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await setupTerminalMocks(page, {
+      workspace: { ...testWorkspace, status } as WorkspaceFixture,
+    });
+
+    await page.goto("/m/workspaces/local/ws-123");
+
+    await expect(page.locator(".mobile-workspace-terminal__state strong")).toHaveText(heading);
+  });
+}
+
 test("phone terminal clears a draft before falling back to another session", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installControllableTerminalWebSockets(page);

@@ -3,7 +3,7 @@
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { Effect, Schedule, Stream } from "effect";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { apiErrorMessage } from "../../api/runtime.js";
   import { configuredAPIPath } from "../../api/runtime-base.js";
   import { ApiProblemError } from "../../api/effect-errors.js";
@@ -18,6 +18,7 @@
   import { eventSourceStream } from "../../browser/event-source.js";
   import { openNewWorkspaceDialog } from "../../stores/new-workspace.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import {
@@ -430,6 +431,16 @@
     deleteWorkspace = null;
     deleteForce = false;
   }
+
+  $effect(() => {
+    if (!viewOpen) return;
+    return untrack(() => pushModalFrame("mobile-workspace-view-options", []));
+  });
+
+  $effect(() => {
+    if (!actionsWorkspace) return;
+    return untrack(() => pushModalFrame("mobile-workspace-actions", []));
+  });
 
   onMount(() => {
     const events = eventSourceStream(configuredAPIPath("/events"), "workspace_status").pipe(

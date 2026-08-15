@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { getTopFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 import { isNewWorkspaceDialogOpen, resetNewWorkspaceDialogState } from "../../stores/new-workspace.svelte.js";
 import * as workspaceHost from "../../stores/workspace-host.svelte.js";
 import MobileWorkspaceList from "./MobileWorkspaceListTestHarness.svelte";
@@ -57,6 +58,7 @@ describe("MobileWorkspaceList", () => {
     mockPost.mockReset();
     mockDelete.mockReset();
     localStorage.clear();
+    resetModalStack();
     resetNewWorkspaceDialogState();
     vi.stubGlobal("EventSource", MockEventSource);
     mockGet.mockImplementation((path: string) => {
@@ -68,6 +70,7 @@ describe("MobileWorkspaceList", () => {
 
   afterEach(() => {
     cleanup();
+    resetModalStack();
     vi.unstubAllGlobals();
   });
 
@@ -196,6 +199,7 @@ describe("MobileWorkspaceList", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "View workspace options" }));
     expect(screen.getByRole("dialog", { name: "View workspace options" })).toBeTruthy();
+    expect(getTopFrame()?.frameId).toBe("mobile-workspace-view-options");
     expect(screen.getByRole("radio", { name: /^Terminal activity/ })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("switch", { name: "Show organization names" }));
@@ -223,6 +227,7 @@ describe("MobileWorkspaceList", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Build mobile workspaces" }));
     const actions = await screen.findByRole("dialog", { name: "Workspace actions" });
+    expect(getTopFrame()?.frameId).toBe("mobile-workspace-actions");
     await fireEvent.click(within(actions).getByRole("button", { name: "Delete workspace…" }));
     const confirmation = await screen.findByRole("dialog", { name: "Delete workspace?" });
     await fireEvent.click(within(confirmation).getByRole("button", { name: "Delete workspace" }));

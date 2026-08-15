@@ -896,9 +896,16 @@ func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 		"?cols=80&rows=24" +
 		"&traceparent=00-33333333333333333333333333333333-4444444444444444-01" +
 		"&baggage=interaction%3Dworkspace-switch%2Chost.key%3Depyc"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		CompressionMode: websocket.CompressionContextTakeover,
+	})
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "test done")
+	require.NotNil(resp)
+	extensions := resp.Header.Get("Sec-WebSocket-Extensions")
+	assert.Contains(extensions, "permessage-deflate")
+	assert.NotContains(extensions, "client_no_context_takeover")
+	assert.NotContains(extensions, "server_no_context_takeover")
 
 	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("ping\n")))
 	readWebSocketBinaryUntil(t, ctx, conn, 5*time.Second, "echo:ping")

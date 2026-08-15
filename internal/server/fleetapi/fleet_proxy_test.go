@@ -1,14 +1,94 @@
 package fleetapi
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/config"
 )
+
+func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	peerExtensions := make(chan string, 1)
+	peerErrors := make(chan error, 1)
+	peer := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+				InsecureSkipVerify: true,
+				CompressionMode:    websocket.CompressionContextTakeover,
+			})
+			if err != nil {
+				peerErrors <- err
+				return
+			}
+			defer conn.Close(websocket.StatusNormalClosure, "done")
+			peerExtensions <- w.Header().Get("Sec-WebSocket-Extensions")
+
+			typ, payload, err := conn.Read(r.Context())
+			if err != nil {
+				peerErrors <- err
+				return
+			}
+			if err := conn.Write(r.Context(), typ, payload); err != nil {
+				peerErrors <- err
+			}
+		},
+	))
+	t.Cleanup(peer.Close)
+
+	srv, _ := setupTestServer(t)
+	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
+		cfg.Fleet.Peers = []config.FleetPeer{
+			{Key: "member", BaseURL: peer.URL},
+		}
+	})
+	hub := httptest.NewServer(srv.localHandler())
+	t.Cleanup(hub.Close)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(hub.URL, "http") +
+		"/ws/v1/fleet/hosts/member/workspaces/ws_1/runtime/sessions/sess-1/terminal"
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		CompressionMode: websocket.CompressionContextTakeover,
+	})
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+	require.NotNil(resp)
+
+	clientExtensions := resp.Header.Get("Sec-WebSocket-Extensions")
+	assert.Contains(clientExtensions, "permessage-deflate")
+	assert.NotContains(clientExtensions, "client_no_context_takeover")
+	assert.NotContains(clientExtensions, "server_no_context_takeover")
+
+	select {
+	case extensions := <-peerExtensions:
+		assert.Contains(extensions, "permessage-deflate")
+		assert.NotContains(extensions, "client_no_context_takeover")
+		assert.NotContains(extensions, "server_no_context_takeover")
+	case err := <-peerErrors:
+		require.NoError(err)
+	case <-ctx.Done():
+		require.Fail("peer websocket handshake did not complete")
+	}
+
+	want := []byte("fleet-compression-round-trip")
+	require.NoError(conn.Write(ctx, websocket.MessageBinary, want))
+	typ, got, err := conn.Read(ctx)
+	require.NoError(err)
+	assert.Equal(websocket.MessageBinary, typ)
+	assert.Equal(want, got)
+}
 
 // TestCopyProxyRequestHeadersStripsBrowserHeaders verifies the hub does not
 // forward a browser's Origin or Sec-Fetch-* metadata onto a server-to-server

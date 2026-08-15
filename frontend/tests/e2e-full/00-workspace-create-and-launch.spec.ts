@@ -720,6 +720,72 @@ test.describe("workspace create-and-launch full stack", () => {
     }
   });
 
+  test("phone direct item stays lightweight until its workspace is opened", async ({ page, browser }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
+      "git, tmux, and sh are required for the real workspace runtime flow",
+    );
+
+    let server: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    let phoneContext: BrowserContext | null = null;
+    try {
+      server = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: server.info.base_url });
+      await configureAgent(page, server.info.base_url);
+      const launchResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          /\/api\/v1\/workspaces\/[^/]+\/runtime\/sessions$/.test(response.url()),
+      );
+      const created = await createPullRequestWorkspaceWithAgent(page, server.info.base_url);
+      await waitForWorkspaceReady(api, created.id);
+      expect((await launchResponsePromise).status()).toBe(200);
+      await expect.poll(() => runtimeTargets(api!, created.id)).toContain(agentKey);
+
+      phoneContext = await browser.newContext({ ...devices["Pixel 7"] });
+      const phonePage = await phoneContext.newPage();
+      await trackSessionWebSockets(phonePage);
+      let runtimeReads = 0;
+      phonePage.on("request", (request) => {
+        if (
+          request.method() === "GET" &&
+          new URL(request.url()).pathname === `/api/v1/workspaces/${created.id}/runtime`
+        ) {
+          runtimeReads += 1;
+        }
+      });
+
+      await phonePage.goto(`${server.info.base_url}/m/workspaces/local/${created.id}/item`);
+      await expect(phonePage.locator(".pull-detail .detail-title")).toBeVisible();
+      expect(runtimeReads).toBe(0);
+      expect(
+        await phonePage.evaluate((workspaceID) => {
+          const log = Reflect.get(window, "__mobileWorkspaceWebSockets") as Array<{ url: string }> | undefined;
+          return (log ?? []).filter((entry) => entry.url.includes(`/workspaces/${workspaceID}/`)).length;
+        }, created.id),
+      ).toBe(0);
+
+      await phonePage.getByRole("button", { name: "Open Workspace" }).tap();
+      await expect(phonePage).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}$`));
+      await expect.poll(() => runtimeReads).toBeGreaterThan(0);
+      await expect
+        .poll(() =>
+          phonePage.evaluate((workspaceID) => {
+            const log = Reflect.get(window, "__mobileWorkspaceWebSockets") as Array<{ url: string }> | undefined;
+            return (log ?? []).filter((entry) => entry.url.includes(`/workspaces/${workspaceID}/`)).length;
+          }, created.id),
+        )
+        .toBeGreaterThan(0);
+      await phonePage.getByRole("button", { name: "Back to workspaces" }).tap();
+      await expect(phonePage).toHaveURL(/\/m\/workspaces$/);
+    } finally {
+      await phoneContext?.close();
+      await api?.dispose();
+      await server?.stop();
+    }
+  });
+
   test("explicit fork-head selection launches through the ordinary manual Launch-menu trust boundary", async ({
     page,
   }) => {

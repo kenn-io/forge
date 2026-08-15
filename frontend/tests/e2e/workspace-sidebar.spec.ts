@@ -1165,6 +1165,26 @@ test("phone offers the durable workspace terminal when no runtime session is lau
   await expect(page.getByRole("button", { name: /Stop terminal/ })).toHaveCount(0);
 });
 
+test("phone keeps the durable workspace terminal available when runtime discovery fails", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installControllableTerminalWebSockets(page);
+  await setupTerminalMocks(page);
+  await page.route("**/api/v1/workspaces/ws-123/runtime", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/problem+json",
+      body: JSON.stringify(problem("serviceUnavailable", 503, "runtime discovery unavailable")),
+    });
+  });
+
+  await page.goto("/m/workspaces/local/ws-123");
+
+  await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveText("Workspace");
+  await expect(page.locator(".mobile-workspace-terminal__stage")).toBeVisible();
+  await expect(page.getByText("Runtime sessions unavailable")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry runtime sessions" })).toBeVisible();
+});
+
 test("phone dismisses stop confirmation when the selected session generation changes", async ({ page }) => {
   await page.clock.install();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1590,6 +1610,8 @@ test("phone Fleet workspace keeps its linked item as passive metadata", async ({
 
   await page.goto("/m/workspaces/fleet/member/ws-123");
 
+  await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveCount(0);
+  await expect(page.getByText("No terminal sessions")).toBeVisible();
   await expect(page.locator(".mobile-workspace-terminal__item")).toContainText("#42");
   await expect(page.getByRole("button", { name: "Open linked PR #42" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Linked PR #42 unavailable for Fleet workspace" })).toBeDisabled();

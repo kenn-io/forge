@@ -92,6 +92,7 @@
   let workspace = $state.raw<WorkspaceDetail | null>(null);
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
   let selectedSessionKey = $state<string | null>(null);
+  let provisionalBaseSelection = false;
   let ownedHostKeys: SessionHostKey[] = [];
   let loadError = $state<string | null>(null);
   let runtimeError = $state<string | null>(null);
@@ -152,7 +153,7 @@
       cursorWheelInput: session.kind === "agent",
       runtimeSession: session,
     }));
-    if (detail?.status !== "ready") return launched;
+    if (detail?.status !== "ready" || hostKey !== undefined) return launched;
     return [
       ...launched,
       {
@@ -220,20 +221,19 @@
     ownedHostKeys = desiredKeys;
   }
 
-  function applyRuntime(next: WorkspaceRuntimeState, authoritative = true): void {
-    const previousSelectedHostKey = selectedHostKey;
-    const nextSessions = mobileTerminalSessions(next, workspace);
-    runtime = next;
+  function applyVisibleSessions(
+    nextSessions: readonly MobileTerminalSession[],
+    {
+      previousSelectedHostKey = selectedHostKey,
+      preferred = selectedSessionKey ?? loadMobileWorkspaceSession(workspaceId, hostKey),
+      persist = true,
+    }: {
+      previousSelectedHostKey?: SessionHostKey | null;
+      preferred?: string | null;
+      persist?: boolean;
+    } = {},
+  ): void {
     reconcilePooledSessions(nextSessions);
-    if (
-      stopSession &&
-      !next.sessions.some(
-        (session) => session.key === stopSession?.key && session.created_at === stopSession?.created_at,
-      )
-    ) {
-      stopSession = null;
-    }
-    const preferred = selectedSessionKey ?? loadMobileWorkspaceSession(workspaceId, hostKey);
     const nextSelectedSessionKey = selectMobileWorkspaceSession(nextSessions, preferred);
     const nextSelectedSession = nextSessions.find((session) => session.key === nextSelectedSessionKey);
     const nextSelectedHostKey = nextSelectedSession ? pooledHostKey(nextSelectedSession) : null;
@@ -243,7 +243,44 @@
       composerOpen = false;
     }
     selectedSessionKey = nextSelectedSessionKey;
-    saveMobileWorkspaceSession(workspaceId, hostKey, selectedSessionKey);
+    if (persist) saveMobileWorkspaceSession(workspaceId, hostKey, selectedSessionKey);
+  }
+
+  function applyWorkspace(next: WorkspaceDetail): void {
+    workspace = next;
+    if (next.status === "ready" && hostKey === undefined) {
+      const nextSessions = mobileTerminalSessions(runtime, next);
+      if (runtime === null) {
+        applyVisibleSessions(nextSessions, {
+          preferred: loadMobileWorkspaceSession(workspaceId, hostKey),
+          persist: false,
+        });
+        provisionalBaseSelection = true;
+      } else {
+        applyVisibleSessions(nextSessions);
+      }
+    }
+  }
+
+  function applyRuntime(next: WorkspaceRuntimeState, authoritative = true): void {
+    const previousSelectedHostKey = selectedHostKey;
+    runtime = next;
+    if (
+      stopSession &&
+      !next.sessions.some(
+        (session) => session.key === stopSession?.key && session.created_at === stopSession?.created_at,
+      )
+    ) {
+      stopSession = null;
+    }
+    const preferred = provisionalBaseSelection
+      ? loadMobileWorkspaceSession(workspaceId, hostKey)
+      : selectedSessionKey ?? loadMobileWorkspaceSession(workspaceId, hostKey);
+    provisionalBaseSelection = false;
+    applyVisibleSessions(mobileTerminalSessions(next, workspace), {
+      previousSelectedHostKey,
+      preferred,
+    });
     runtimeError = null;
     if (authoritative) {
       for (const session of next.sessions) {
@@ -303,7 +340,7 @@
     return Effect.gen(function* () {
       const detail = yield* loadMobileWorkspaceDetail(workspaceId, hostKey);
       yield* Effect.sync(() => {
-        workspace = detail;
+        applyWorkspace(detail);
         loadError = null;
       });
       if (detail.status === "ready") yield* readRuntime(true);
@@ -371,7 +408,7 @@
           runtimeError = null;
         } else if (state.kind === "succeeded") {
           retryingSetup = false;
-          workspace = state.workspace;
+          applyWorkspace(state.workspace);
           if (state.workspace.status === "ready") requestRuntimeRefresh();
         } else if (state.kind === "failed" || state.kind === "uncertain") {
           retryingSetup = false;
@@ -424,6 +461,7 @@
   }
 
   function selectSession(sessionKey: string): void {
+    provisionalBaseSelection = false;
     selectedSessionKey = sessionKey;
     composedInput = "";
     inputError = null;
@@ -630,6 +668,7 @@
     workspace = null;
     runtime = null;
     selectedSessionKey = loadMobileWorkspaceSession(activeWorkspaceId, activeHostKey);
+    provisionalBaseSelection = false;
     loadError = null;
     runtimeError = null;
     composedInput = "";
@@ -768,15 +807,23 @@
         </button>
       {/if}
     </div>
-  {:else if !runtime && !runtimeError}
+  {:else if !runtime && !runtimeError && !selectedHostKey}
     <div class="mobile-workspace-terminal__state"><Spinner size={18} /><span>Loading terminal sessions…</span></div>
-  {:else if runtimeError && !runtime}
+  {:else if runtimeError && !runtime && !selectedHostKey}
     <div class="mobile-workspace-terminal__state error">
       <strong>Terminal runtime unavailable</strong><span>{runtimeError}</span>
       <button type="button" onclick={requestRuntimeRefresh}><RefreshCwIcon size="18" aria-hidden="true" />Reconnect</button>
     </div>
   {:else if selectedHostKey}
     <div class="mobile-workspace-terminal__stage" aria-label={`Selected terminal: ${selectedSession?.label ?? "Terminal"}`}>
+      {#if runtimeError}
+        <div class="mobile-workspace-terminal__runtime-error" role="status">
+          <span><strong>Runtime sessions unavailable</strong><small>{runtimeError}</small></span>
+          <button type="button" aria-label="Retry runtime sessions" onclick={requestRuntimeRefresh}>
+            <RefreshCwIcon size="16" aria-hidden="true" />Retry
+          </button>
+        </div>
+      {/if}
       <div class="mobile-workspace-terminal__viewport">
         <SessionTerminalSlot hostKey={selectedHostKey} {visible} />
       </div>
@@ -951,6 +998,11 @@
   .mobile-workspace-terminal__item { min-width: auto !important; min-height: 2rem !important; color: var(--text-on-accent) !important; border-color: var(--accent-green) !important; background: var(--accent-green) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
   .mobile-workspace-terminal__item:disabled { cursor: not-allowed; opacity: 0.55; }
   .mobile-workspace-terminal__stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--terminal-bg, var(--bg-primary)); }
+  .mobile-workspace-terminal__runtime-error { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.75rem; color: var(--text-secondary); border-bottom: thin solid var(--border-default); background: var(--bg-surface); font-size: var(--font-size-sm); }
+  .mobile-workspace-terminal__runtime-error span { min-width: 0; display: flex; flex-direction: column; }
+  .mobile-workspace-terminal__runtime-error strong { color: var(--text-primary); }
+  .mobile-workspace-terminal__runtime-error small { overflow: hidden; color: var(--accent-red); text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-workspace-terminal__runtime-error button { min-height: 2.75rem; display: inline-flex; align-items: center; gap: 0.375rem; padding: 0 0.75rem; color: var(--text-primary); border: thin solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); font: inherit; font-weight: 650; }
   .mobile-workspace-terminal__viewport { flex: 1; min-height: 0; display: flex; }
   .mobile-workspace-terminal__composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 0.5rem; padding: 0.5rem 0.5rem max(0.5rem, env(safe-area-inset-bottom)); border-top: thin solid var(--border-default); background: var(--bg-surface); }
   .mobile-workspace-terminal__composer textarea, .mobile-workspace-terminal__send { min-height: 2.75rem; border: thin solid var(--border-default); border-radius: var(--radius-md); font: inherit; }

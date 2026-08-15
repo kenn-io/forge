@@ -444,6 +444,12 @@ test.describe("workspace create-and-launch full stack", () => {
       );
 
       await phonePage.goto(`${server.info.base_url}/m/workspaces`);
+      await phonePage.getByRole("button", { name: "View workspace options" }).tap();
+      const viewSheet = phonePage.getByRole("dialog", { name: "View workspace options" });
+      await expect(viewSheet).toBeVisible();
+      await phonePage.keyboard.press("Meta+K");
+      await expect(phonePage.getByRole("dialog", { name: "Command palette" })).toHaveCount(0);
+      await viewSheet.getByRole("button", { name: "Close View options" }).tap();
       await phonePage.getByRole("button", { name: "New workspace" }).tap();
       const dialog = phonePage.getByRole("dialog", { name: "New workspace" });
       await expect(dialog).toBeVisible();
@@ -494,7 +500,15 @@ test.describe("workspace create-and-launch full stack", () => {
       });
       expect(hookResponse.ok(), await hookResponse.text()).toBe(true);
       await phonePage.goto(`${server.info.base_url}/m/workspaces`);
-      await expect(phonePage.getByRole("button", { name: /agent working/ })).toContainText("Working");
+      const workspaceButton = phonePage.getByRole("button", { name: /agent working/ });
+      await expect(workspaceButton).toContainText("Working");
+      const workspaceRow = phonePage.locator(".mobile-workspace-row").filter({ has: workspaceButton });
+      await workspaceRow.getByRole("button", { name: /Workspace actions/ }).tap();
+      const actionsSheet = phonePage.getByRole("dialog", { name: "Workspace actions" });
+      await expect(actionsSheet).toBeVisible();
+      await phonePage.keyboard.press("Meta+K");
+      await expect(phonePage.getByRole("dialog", { name: "Command palette" })).toHaveCount(0);
+      await actionsSheet.getByRole("button", { name: "Close workspace actions" }).tap();
       await phonePage.goto(`${server.info.base_url}/m/workspaces/local/${created.id}`);
 
       await expect(phonePage.getByRole("button", { name: "Launch session" })).toHaveCount(0);
@@ -503,6 +517,8 @@ test.describe("workspace create-and-launch full stack", () => {
       await terminalOptionsButton.tap();
       const terminalOptions = phonePage.getByRole("dialog", { name: "Terminal options" });
       await expect(terminalOptions.getByRole("spinbutton", { name: "Font size", exact: true })).toBeVisible();
+      await phonePage.keyboard.press("Meta+K");
+      await expect(phonePage.getByRole("dialog", { name: "Command palette" })).toHaveCount(0);
       await terminalOptions.getByRole("button", { name: "Choose" }).tap();
       const fontDialog = phonePage.getByRole("dialog", { name: "Choose monospace font" });
       await expect(fontDialog).toBeVisible();
@@ -512,6 +528,8 @@ test.describe("workspace create-and-launch full stack", () => {
       await terminalOptions.getByRole("button", { name: "New terminal" }).tap();
       const launchSheet = phonePage.getByRole("dialog", { name: "Launch workspace session" });
       await expect(launchSheet).toBeVisible();
+      await phonePage.keyboard.press("Meta+K");
+      await expect(phonePage.getByRole("dialog", { name: "Command palette" })).toHaveCount(0);
       await launchSheet.getByRole("button", { name: "Close launch session" }).tap();
 
       await terminalOptionsButton.tap();

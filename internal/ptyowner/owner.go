@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -628,14 +629,29 @@ func defaultShellCommand() []string {
 	return []string{"/bin/sh"}
 }
 
+// sessionVarPrefixes mirrors the localruntime denylist: every built-in
+// daemon credential source, current and legacy. Keep the two lists in
+// sync so tmux-less and Windows hosts strip the same credentials from
+// panes as tmux-backed ones.
 var sessionVarPrefixes = []string{
 	"KENN_FORGE_GITHUB_TOKEN",
+	"KENN_FORGE_GITLAB_TOKEN",
+	"KENN_FORGE_FORGEJO_TOKEN",
+	"KENN_FORGE_GITEA_TOKEN",
+	"MIDDLEMAN_GITHUB_TOKEN",
+	"MIDDLEMAN_GITLAB_TOKEN",
+	"MIDDLEMAN_FORGEJO_TOKEN",
+	"MIDDLEMAN_GITEA_TOKEN",
 	"GITHUB_TOKEN",
+	"GITLAB_TOKEN",
+	"FORGEJO_TOKEN",
+	"GITEA_TOKEN",
 	"GH_TOKEN",
 	"GH_PAT",
 	"GITHUB_PAT",
 	"GITHUB_ENTERPRISE_TOKEN",
 	"GH_ENTERPRISE_TOKEN",
+	"KATA_AUTH_TOKEN",
 }
 
 func sessionEnvironment(env []string, extraStrip []string) []string {
@@ -656,12 +672,37 @@ func sessionEnvironment(env []string, extraStrip []string) []string {
 }
 
 func shouldStripSessionVar(key string, extraStrip []string) bool {
+	return shouldStripSessionVarFold(
+		key, extraStrip, runtime.GOOS == "windows",
+	)
+}
+
+// shouldStripSessionVarFold matches case-insensitively when fold is
+// set: Windows resolves environment variables case-insensitively, so a
+// token stored as github_token is the same credential as GITHUB_TOKEN.
+func shouldStripSessionVarFold(
+	key string, extraStrip []string, fold bool,
+) bool {
+	match := func(a, b string) bool {
+		if fold {
+			return strings.EqualFold(a, b)
+		}
+		return a == b
+	}
+	hasPrefix := func(value, prefix string) bool {
+		if len(value) < len(prefix) {
+			return false
+		}
+		return match(value[:len(prefix)], prefix)
+	}
 	for _, prefix := range sessionVarPrefixes {
-		if key == prefix || strings.HasPrefix(key, prefix+"_") {
+		if match(key, prefix) || hasPrefix(key, prefix+"_") {
 			return true
 		}
 	}
-	return slices.Contains(extraStrip, key)
+	return slices.ContainsFunc(extraStrip, func(name string) bool {
+		return match(key, name)
+	})
 }
 
 func waitExitCode(waitErr error) int {

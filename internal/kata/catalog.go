@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"go.kenn.io/forge/internal/config"
 )
 
 const catalogSource = "kata catalog"
@@ -47,18 +48,34 @@ func LoadCatalog() (Catalog, error) {
 		return Catalog{}, fmt.Errorf("parse kata config %s: %w", path, err)
 	}
 	trimCatalog(&cat)
+	// declaredOnly carries the decoded token_env names through
+	// validation rejections: a decoded-but-invalid catalog's declared
+	// credentials must still reach terminal-environment stripping, so
+	// every post-decode error returns it alongside the error. Callers
+	// treat any error as failure and must not use these daemons.
+	declaredOnly := Catalog{}
+	for _, e := range cat.Daemons {
+		// Collect every decoded token_env, including entries that
+		// validation will reject (for example local=true with a URL):
+		// a declared credential name must reach stripping regardless.
+		if e.TokenEnv != "" {
+			declaredOnly.Daemons = append(
+				declaredOnly.Daemons, Daemon{TokenEnv: e.TokenEnv},
+			)
+		}
+	}
 	seen := make(map[string]struct{}, len(cat.Daemons))
 	out := make([]Daemon, 0, len(cat.Daemons))
 	for i, e := range cat.Daemons {
 		if e.Name == "" {
-			return Catalog{}, fmt.Errorf("kata catalog daemon %d: name is required", i)
+			return declaredOnly, fmt.Errorf("kata catalog daemon %d: name is required", i)
 		}
 		if _, dup := seen[e.Name]; dup {
-			return Catalog{}, fmt.Errorf("kata catalog: duplicate daemon name %q", e.Name)
+			return declaredOnly, fmt.Errorf("kata catalog: duplicate daemon name %q", e.Name)
 		}
 		seen[e.Name] = struct{}{}
 		if e.Local == (e.URL != "") {
-			return Catalog{}, fmt.Errorf(
+			return declaredOnly, fmt.Errorf(
 				"kata catalog daemon %q: exactly one of local or url is required", e.Name)
 		}
 		daemon := Daemon{
@@ -70,8 +87,14 @@ func LoadCatalog() (Catalog, error) {
 		}
 		if !e.Local {
 			if e.Token != "" && e.TokenEnv != "" {
-				return Catalog{}, fmt.Errorf(
+				return declaredOnly, fmt.Errorf(
 					"kata catalog daemon %q: token and token_env are mutually exclusive", e.Name)
+			}
+			if config.IsTmuxNonSecretEnvVar(e.TokenEnv) {
+				return declaredOnly, fmt.Errorf(
+					"kata catalog daemon %q: token_env %q collides with the "+
+						"non-secret environment passed to terminal sessions; "+
+						"use a dedicated variable name", e.Name, e.TokenEnv)
 			}
 			daemon.Token = e.Token
 			daemon.TokenEnv = e.TokenEnv
@@ -80,11 +103,24 @@ func LoadCatalog() (Catalog, error) {
 	}
 	if cat.ActiveDaemon != "" {
 		if _, ok := seen[cat.ActiveDaemon]; !ok {
-			return Catalog{}, fmt.Errorf(
+			return declaredOnly, fmt.Errorf(
 				"kata catalog: active_daemon %q is not in the catalog", cat.ActiveDaemon)
 		}
 	}
 	return Catalog{Daemons: out, Source: catalogSource}, nil
+}
+
+// TokenEnvNames returns the non-empty daemon token_env names in the
+// catalog; they name credentials the daemon may resolve and must be
+// stripped from terminal environments.
+func (c Catalog) TokenEnvNames() []string {
+	names := make([]string, 0, len(c.Daemons))
+	for _, d := range c.Daemons {
+		if d.TokenEnv != "" {
+			names = append(names, d.TokenEnv)
+		}
+	}
+	return names
 }
 
 func trimCatalog(cat *catalogFile) {

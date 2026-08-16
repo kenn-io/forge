@@ -334,6 +334,14 @@ func (s *Server) handleConfigFileChanged() {
 // handleConfigFileChanged) so a slow subscriber cannot stall the daemon.
 func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	newCfg, err := config.Load(s.cfgPath)
+	// Accumulate the candidate's token env names from any parseable
+	// candidate — config.Load returns the parsed config alongside
+	// structural validation errors — before every failure path: a
+	// rejected reload must still stop those names from reaching future
+	// tmux panes, since the user just declared them credentials. The
+	// lists are monotonic, so over-stripping from a rejected candidate
+	// is safe.
+	s.updateRuntimeStripEnvVars(newCfg)
 	if err != nil {
 		slog.Warn(
 			"config reload failed; keeping last-known-good",
@@ -381,7 +389,6 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	}
 	s.cfgMu.Unlock()
 
-	s.updateRuntimeStripEnvVars(newCfg)
 	s.updateTokenSourcesForReload(newCfg)
 	restartRequired := s.bootCfgSnapshot.restartRequiredFor(newCfg)
 	if s.reloadCredentialNeedsClientRebuild(ctx, newCfg) {
@@ -426,8 +433,15 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		newCfg.PullRequests.PreferGitHubNativeStacks,
 	)
 	s.refreshRuntimeTargetsLocked()
+	stripEnvVars := s.updateRuntimeStripEnvVarsLocked(newCfg)
+	if s.workspaces != nil {
+		s.workspaces.UpdateTmuxStripEnvVars(stripEnvVars)
+	}
+	if s.ptyOwnerClient != nil {
+		s.ptyOwnerClient.UpdateStripEnvVars(stripEnvVars)
+	}
 	if s.runtime != nil {
-		s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(newCfg))
+		s.runtime.UpdateStripEnvVars(stripEnvVars)
 	}
 	s.applyWorkspaceConfigLocked()
 	s.applyFleetConfigLocked()

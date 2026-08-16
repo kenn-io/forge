@@ -49,3 +49,6 @@ __pycache__/
 /.roborev/
 .pi/superpowers-state.json
 .kata.local.toml
+
+# ptyowner test artifacts
+.sessions

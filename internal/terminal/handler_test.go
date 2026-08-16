@@ -138,7 +138,7 @@ func TestTmuxAttachCommandForcesUTF8(t *testing.T) {
 		t,
 		[]string{
 			"/usr/bin/env", "tmux", "-u",
-			"attach-session", "-t", "kenn-forge-test",
+			"attach-session", "-E", "-t", "kenn-forge-test",
 		},
 		tmuxAttachCommand(
 			[]string{"/usr/bin/env", "tmux"},

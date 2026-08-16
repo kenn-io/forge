@@ -64,8 +64,11 @@ func startTmuxAttachSession(
 	)
 
 	cmd := procutil.Command(resolvedPath, command[1:]...)
+	// tmux clients get only the non-secret allowlist; the attach also
+	// passes -E, so nothing from this environment can be copied into
+	// the session environment.
 	cmd.Env = append(
-		sessionEnvironment(os.Environ(), extraStripVars),
+		TmuxClientEnvironment(os.Environ(), extraStripVars),
 		"TERM=xterm-256color",
 	)
 

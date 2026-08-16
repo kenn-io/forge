@@ -38,7 +38,7 @@ func TestOwnerAttachInputAndReplay(t *testing.T) {
 		})
 	}()
 
-	client := Client{Root: root}
+	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, "kenn-forge-test")
 
 	first, err := client.Attach(context.Background(), "kenn-forge-test", 120, 30)
@@ -85,7 +85,7 @@ func TestOwnerStopWhileRunOwnerReturns(t *testing.T) {
 		})
 	}()
 
-	client := Client{Root: root}
+	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, "kenn-forge-stop-race")
 
 	require.NoError(client.Stop(context.Background(), "kenn-forge-stop-race"))
@@ -118,7 +118,7 @@ func TestOwnerQuickExitRemainsAttachable(t *testing.T) {
 		})
 	}()
 
-	client := Client{Root: root}
+	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, session)
 
 	attach, err := client.Attach(context.Background(), session, 120, 30)
@@ -167,7 +167,7 @@ func TestOwnerPTYEOFClosesAttachmentBeforeProcessWait(t *testing.T) {
 		})
 	}()
 
-	client := Client{Root: root}
+	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, session)
 
 	attach, err := client.Attach(context.Background(), session, 120, 30)
@@ -221,7 +221,7 @@ func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
 		})
 	}()
 
-	client := Client{Root: root}
+	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, session)
 
 	first, err := client.Attach(context.Background(), session, 120, 30)
@@ -346,7 +346,7 @@ func TestOwnerRejectsOversizedUnauthenticatedRequest(t *testing.T) {
 		})
 	}()
 
-	client := Client{Root: root}
+	client := &Client{Root: root}
 	require.Eventually(func() bool {
 		return client.Ping(context.Background(), session) == nil
 	}, 2*time.Second, 20*time.Millisecond)
@@ -387,6 +387,10 @@ func TestOwnerHelperEnvironmentStripsCredentials(t *testing.T) {
 		"KENN_FORGE_GITHUB_TOKEN=secret-1",
 		"GITHUB_TOKEN=secret-2",
 		"GH_TOKEN_WORK=secret-3",
+		"KATA_AUTH_TOKEN=secret-4",
+		"KENN_FORGE_FORGEJO_TOKEN=secret-5",
+		"GITLAB_TOKEN=secret-6",
+		"MIDDLEMAN_GITEA_TOKEN=secret-7",
 		"KEEP=value",
 	})
 
@@ -397,7 +401,7 @@ func TestOwnerHelperEnvironmentStripsCredentials(t *testing.T) {
 }
 
 func TestClientOwnerHelperEnvironmentAppliesSessionEnvironmentPolicy(t *testing.T) {
-	client := Client{
+	client := &Client{
 		StripEnvVars: []string{"WORKSPACE_TOKEN"},
 		ExtraEnv:     map[string]string{"KENN_FORGE_RUNTIME_SESSION_KEY": "runtime-1"},
 	}
@@ -586,7 +590,7 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 func TestClientOwnerCommandUsesExternalManagerDirectly(t *testing.T) {
 	assert := assert.New(t)
 
-	client := Client{
+	client := &Client{
 		Root:        "/tmp/owner-root",
 		ExeArgs:     []string{"kept"},
 		ManagerPath: "/tmp/kenn-forge-pty-manager",
@@ -666,7 +670,7 @@ func TestClientEnsuresExternalManager(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	client := Client{
+	client := &Client{
 		Root:        root,
 		ManagerPath: managerPath,
 		Command: []string{
@@ -703,7 +707,7 @@ func TestClientEnsuresExternalManagerWithPowerShell(t *testing.T) {
 
 	root := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
 	require.NoError(os.MkdirAll(root, 0o755))
-	client := Client{
+	client := &Client{
 		Root:        root,
 		ManagerPath: managerPath,
 		Command: []string{
@@ -739,7 +743,7 @@ func TestClientEnsuresExternalManagerWithGoTestHelper(t *testing.T) {
 
 	root := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
 	require.NoError(os.MkdirAll(root, 0o755))
-	client := Client{
+	client := &Client{
 		Root:        root,
 		ManagerPath: managerPath,
 		Command: []string{
@@ -855,7 +859,7 @@ func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {
 		}
 	}()
 
-	client := Client{
+	client := &Client{
 		Root:        root,
 		ManagerPath: "/tmp/kenn-forge-pty-manager",
 	}
@@ -902,7 +906,7 @@ func readUntil(t *testing.T, output <-chan []byte, needle string) string {
 func waitOwnerReady(
 	t *testing.T,
 	done <-chan error,
-	client Client,
+	client *Client,
 	session string,
 ) {
 	t.Helper()

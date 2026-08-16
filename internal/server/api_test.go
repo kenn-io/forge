@@ -26688,6 +26688,7 @@ func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
@@ -26699,7 +26700,6 @@ func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	t.Run("fixture", func(t *testing.T) {
-		t.Setenv("TMUX_RECORD", record)
 		cfg := &config.Config{
 			Tmux: config.Tmux{Command: []string{script}},
 		}
@@ -26730,6 +26730,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`if [ "$1" = "kill-session" ] && [ "$3" = "kenn-forge-fails" ]; then` + "\n" +
 		`  echo "permission denied" >&2` + "\n" +
@@ -26737,7 +26738,6 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 		`fi` + "\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	database := dbtest.Open(t)
 
@@ -28055,8 +28055,9 @@ func TestWorkspaceRuntimeNaturalTmuxAgentExitForgetsStoredSessionE2E(
 	dir := t.TempDir()
 	record := filepath.Join(dir, "tmux-record")
 	tmuxPath := filepath.Join(dir, "fake-tmux")
-	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
-printf '%s\0' "$@" >> "$TMUX_RECORD"
+	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
+		"TMUX_RECORD="+shellquote.Join(record)+"\n"+
+		`printf '%s\0' "$@" >> "$TMUX_RECORD"
 if [ "$1" = "-u" ]; then shift; fi
 case "$1" in
   has-session)
@@ -28069,7 +28070,6 @@ case "$1" in
 esac
 exit 0
 `), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	cfg := &config.Config{
 		Agents: []config.Agent{{
@@ -28119,12 +28119,19 @@ func TestWorkspaceRuntimeIncludesStoredRuntimeSessionsAfterReloadE2E(t *testing.
 	assert := assert.New(t)
 	dir := t.TempDir()
 	tmuxPath := filepath.Join(dir, "fake-tmux")
-	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
-if [ "$1" = "-u" ]; then shift; fi
+	database := dbtest.Open(t)
+	seedPR(t, database, "acme", "widget", 1)
+	worktreeDir := filepath.Join(dir, "worktrees")
+	ownerMarker := workspace.NewManager(database, worktreeDir).TmuxOwnerMarker()
+	restoredSession := runtimeTmuxSessionNameForTest("0000000000000001", "helper")
+	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
+		"TMUX_TEST_OWNER_MARKER="+shellquote.Join(ownerMarker)+"\n"+
+		"TMUX_TEST_RESTORED_SESSION="+shellquote.Join(restoredSession)+"\n"+
+		`if [ "$1" = "-u" ]; then shift; fi
 case "$1" in
   list-sessions)
     printf '%s\n' kenn-forge-0000000000000001
-    printf '%s\n' "$RESTORED_TMUX_SESSION"
+    printf '%s\n' "$TMUX_TEST_RESTORED_SESSION"
     exit 0
     ;;
   attach-session)
@@ -28132,7 +28139,7 @@ case "$1" in
     exit 0
     ;;
   show-options)
-    printf '%s\n' "$KENN_FORGE_TMUX_OWNER"
+    printf '%s\n' "$TMUX_TEST_OWNER_MARKER"
     exit 0
     ;;
   kill-session)
@@ -28142,11 +28149,6 @@ esac
 exit 0
 `), 0o755))
 
-	database := dbtest.Open(t)
-	seedPR(t, database, "acme", "widget", 1)
-	worktreeDir := filepath.Join(dir, "worktrees")
-	ownerMarker := workspace.NewManager(database, worktreeDir).TmuxOwnerMarker()
-	t.Setenv("KENN_FORGE_TMUX_OWNER", ownerMarker)
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "helper",
 		Label:   "Helper",
@@ -28167,9 +28169,8 @@ exit 0
 		Status:          "ready",
 	}
 	require.NoError(database.InsertWorkspace(ctx, ws))
-	tmuxSession := runtimeTmuxSessionNameForTest(ws.ID, "helper")
+	tmuxSession := restoredSession
 	sessionKey := ws.ID + "_restoredhelper01"
-	t.Setenv("RESTORED_TMUX_SESSION", tmuxSession)
 	createdAt := time.Now().UTC().Add(-time.Minute)
 	require.NoError(database.UpsertWorkspaceRuntimeSession(
 		ctx,
@@ -28360,8 +28361,15 @@ func TestServerStartupReapsUnrecordedRuntimeTmuxSessionE2E(t *testing.T) {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	tmuxPath := filepath.Join(dir, "fake-tmux")
+	database := dbtest.Open(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	worktreeDir := filepath.Join(dir, "worktrees")
+	ownerMarker := workspace.NewManager(database, worktreeDir).TmuxOwnerMarker()
 	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
-printf '%%s\0' "$#" "$@" >> %s
+TMUX_RECORD=%s
+TMUX_TEST_OWNER_MARKER=%s
+printf '%%s\0' "$#" "$@" >> "$TMUX_RECORD"
 target=""
 prev=""
 for a in "$@"; do
@@ -28370,8 +28378,8 @@ for a in "$@"; do
 done
 case "$1" in
   list-sessions)
-    printf 'middleman-0000000000000001:%%s\n' "$KENN_FORGE_TMUX_OWNER"
-    printf 'forge-0000000000000001-0123456789abcdef:%%s\n' "$KENN_FORGE_TMUX_OWNER"
+    printf 'middleman-0000000000000001:%%s\n' "$TMUX_TEST_OWNER_MARKER"
+    printf 'forge-0000000000000001-0123456789abcdef:%%s\n' "$TMUX_TEST_OWNER_MARKER"
     exit 0
     ;;
   kill-session)
@@ -28379,14 +28387,7 @@ case "$1" in
     ;;
 esac
 exit 0
-`, shellquote.Join(record)), 0o755))
-
-	database := dbtest.Open(t)
-	seedPR(t, database, "acme", "widget", 1)
-
-	worktreeDir := filepath.Join(dir, "worktrees")
-	ownerMarker := workspace.NewManager(database, worktreeDir).TmuxOwnerMarker()
-	t.Setenv("KENN_FORGE_TMUX_OWNER", ownerMarker)
+`, shellquote.Join(record), shellquote.Join(ownerMarker)), 0o755))
 	ws := &workspace.Workspace{
 		ID:              "0000000000000001",
 		PlatformHost:    "github.com",
@@ -28444,8 +28445,13 @@ func TestWorkspaceResponseProbesStoredRuntimeTmuxSessionWithoutBaseE2E(
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	tmuxPath := filepath.Join(dir, "fake-tmux")
-	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
-printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+	database := dbtest.Open(t)
+	worktreeDir := filepath.Join(dir, "worktrees")
+	ownerMarker := workspace.NewManager(database, worktreeDir).TmuxOwnerMarker()
+	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
+		"TMUX_RECORD="+shellquote.Join(record)+"\n"+
+		"TMUX_TEST_OWNER_MARKER="+shellquote.Join(ownerMarker)+"\n"+
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
 target=""
 mode=""
 prev=""
@@ -28462,7 +28468,7 @@ case "$1" in
     exit 0
     ;;
   show-options)
-    printf '%s\n' "$KENN_FORGE_TMUX_OWNER"
+    printf '%s\n' "$TMUX_TEST_OWNER_MARKER"
     exit 0
     ;;
   attach-session)
@@ -28483,14 +28489,9 @@ if [ "$mode" = "capture-pane" ]; then
 fi
 exit 0
 `), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
-	database := dbtest.Open(t)
 	seedPR(t, database, "acme", "widget", 1)
 
-	worktreeDir := filepath.Join(dir, "worktrees")
-	ownerMarker := workspace.NewManager(database, worktreeDir).TmuxOwnerMarker()
-	t.Setenv("KENN_FORGE_TMUX_OWNER", ownerMarker)
 	ws := &workspace.Workspace{
 		ID:              "0000000000000001",
 		PlatformHost:    "github.com",
@@ -28984,8 +28985,10 @@ func TestWorkspaceResponseUsesStoredRuntimeTmuxSessionsAfterRestartE2E(
 	assert := assert.New(t)
 	dir := t.TempDir()
 	tmuxPath := filepath.Join(dir, "fake-tmux")
-	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
-target=""
+	liveSessionsFile := filepath.Join(dir, "live-sessions")
+	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
+		"TMUX_LIVE_SESSIONS_FILE="+shellquote.Join(liveSessionsFile)+"\n"+
+		`target=""
 mode=""
 prev=""
 for a in "$@"; do
@@ -28993,7 +28996,7 @@ for a in "$@"; do
   if [ "$a" = "display-message" ]; then mode="display-message"; fi
   if [ "$a" = "capture-pane" ]; then mode="capture-pane"; fi
   if [ "$a" = "list-sessions" ]; then
-    printf '%s\n' "$TMUX_LIVE_SESSIONS"
+    [ -f "$TMUX_LIVE_SESSIONS_FILE" ] && cat "$TMUX_LIVE_SESSIONS_FILE"
     exit 0
   fi
   prev="$a"
@@ -29016,14 +29019,11 @@ exit 0
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 	require.NotEmpty(ws.TmuxSession)
-	t.Setenv(
-		"TMUX_LIVE_SESSIONS",
-		strings.Join([]string{
-			ws.TmuxSession,
-			ws.TmuxSession + "-codex",
-			ws.TmuxSession + "-claude",
-		}, "\n"),
-	)
+	require.NoError(os.WriteFile(liveSessionsFile, []byte(strings.Join([]string{
+		ws.TmuxSession,
+		ws.TmuxSession + "-codex",
+		ws.TmuxSession + "-claude",
+	}, "\n")+"\n"), 0o644))
 	recordRuntimeTmuxSessionForServerTest(
 		t, database, ws.Id, "", "codex", ws.TmuxSession+"-codex", time.Time{},
 	)
@@ -29743,10 +29743,11 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 	require := require.New(t)
 
 	tmuxPath := writeFakeWorkspaceRuntimeTmux(t)
-	attachGate := filepath.Join(t.TempDir(), "attach-gate")
+	attachGate := os.Getenv("KENN_FORGE_FAKE_TMUX_ATTACH_GATE")
 	require.NoError(os.WriteFile(attachGate, []byte("wait"), 0o600))
-	t.Setenv("KENN_FORGE_FAKE_TMUX_ATTACH_GATE", attachGate)
-	t.Setenv("KENN_FORGE_FAKE_TMUX_ATTACH_EXIT", "1")
+	require.NoError(os.WriteFile(
+		os.Getenv("KENN_FORGE_FAKE_TMUX_ATTACH_EXIT"), []byte("1"), 0o600,
+	))
 	cfg := &config.Config{
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 		Shell: config.Shell{
@@ -30969,10 +30970,20 @@ func writeFakeWorkspaceRuntimeTmux(t *testing.T) string {
 	dir := t.TempDir()
 	stateDir := filepath.Join(dir, "sessions")
 	require.NoError(t, os.MkdirAll(stateDir, 0o755))
+	attachGate := filepath.Join(dir, "attach-gate")
+	attachExit := filepath.Join(dir, "attach-exit")
+	// The tmux client runs with the non-secret allowlist environment,
+	// so control paths are baked into the script; the env vars below
+	// only let tests locate the control files.
 	t.Setenv("KENN_FORGE_FAKE_TMUX_STATE", stateDir)
+	t.Setenv("KENN_FORGE_FAKE_TMUX_ATTACH_GATE", attachGate)
+	t.Setenv("KENN_FORGE_FAKE_TMUX_ATTACH_EXIT", attachExit)
 	path := filepath.Join(dir, "tmux")
-	require.NoError(t, os.WriteFile(path, []byte(`#!/bin/sh
-set -eu
+	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"+
+		"KENN_FORGE_FAKE_TMUX_STATE="+shellquote.Join(stateDir)+"\n"+
+		"KENN_FORGE_FAKE_TMUX_ATTACH_GATE="+shellquote.Join(attachGate)+"\n"+
+		"KENN_FORGE_FAKE_TMUX_ATTACH_EXIT="+shellquote.Join(attachExit)+"\n"+
+		`set -eu
 state_dir="${KENN_FORGE_FAKE_TMUX_STATE:?}"
 mkdir -p "$state_dir"
 session_arg() {
@@ -31072,12 +31083,10 @@ case "$cmd" in
       exit 1
     fi
     printf 'attached:%s\n' "$session"
-    if [ -n "${KENN_FORGE_FAKE_TMUX_ATTACH_GATE:-}" ]; then
-      while [ -e "$KENN_FORGE_FAKE_TMUX_ATTACH_GATE" ]; do
-        sleep 0.01
-      done
-    fi
-    if [ "${KENN_FORGE_FAKE_TMUX_ATTACH_EXIT:-}" = "1" ]; then
+    while [ -e "$KENN_FORGE_FAKE_TMUX_ATTACH_GATE" ]; do
+      sleep 0.01
+    done
+    if [ -e "$KENN_FORGE_FAKE_TMUX_ATTACH_EXIT" ]; then
       exit 0
     fi
     while [ -e "$state_dir/$session" ]; do

@@ -2,12 +2,15 @@ package fleet
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 // probeCommandTimeout bounds each version-probe subprocess. Probe runs while
@@ -22,11 +25,12 @@ const probeCommandTimeout = 5 * time.Second
 // probe command runs under ctx with a short timeout and the shared
 // subprocess limiter.
 //
-// tmuxCmd is the configured tmux command and argv prefix (e.g. ["tmux"]
-// or a wrapper such as ["systemd-run", "--user", "--scope", "tmux"]). An
-// empty slice falls back to the bare "tmux" binary, so a server with a
-// custom tmux.command is not misreported as lacking tmux and does not have
-// its session operations disabled in the snapshot.
+// tmuxCmd is the configured tmux command and argv prefix (e.g.
+// ["tmux", "-L", "kenn-forge"] or a wrapper such as ["systemd-run",
+// "--user", "--scope", "tmux"]). An empty slice falls back to
+// config.DefaultTmuxCommand, so a server with a custom tmux.command is
+// not misreported as lacking tmux and does not have its session
+// operations disabled in the snapshot.
 func Probe(ctx context.Context, tmuxCmd []string) Capabilities {
 	tmuxCmd = tmuxCommandOrDefault(tmuxCmd)
 	deps := DependencyCapabilities{
@@ -72,7 +76,9 @@ func commandsForDeps(deps DependencyCapabilities) CommandCapabilities {
 }
 
 // commandSucceeds reports whether executable is on PATH and exits 0 for
-// the given version-probe arguments within the probe timeout.
+// the given version-probe arguments within the probe timeout. git and
+// gh probes keep the daemon environment: their installations may depend
+// on it, and version probes spawn no environment-retaining server.
 func commandSucceeds(ctx context.Context, executable string, args ...string) bool {
 	if _, err := exec.LookPath(executable); err != nil {
 		return false
@@ -83,20 +89,30 @@ func commandSucceeds(ctx context.Context, executable string, args ...string) boo
 	return procutil.Run(probeCtx, cmd, "fleet capability probe") == nil
 }
 
-// tmuxCommandOrDefault returns tmuxCmd, or ["tmux"] when it is empty or its
-// executable is blank, mirroring (*config.Config).TmuxCommand's default.
+// tmuxCommandOrDefault returns tmuxCmd, or config.DefaultTmuxCommand when it
+// is empty or its executable is blank, mirroring
+// (*config.Config).TmuxCommand's default.
 func tmuxCommandOrDefault(tmuxCmd []string) []string {
 	if len(tmuxCmd) == 0 || tmuxCmd[0] == "" {
-		return []string{"tmux"}
+		return config.DefaultTmuxCommand()
 	}
 	return tmuxCmd
 }
 
 // tmuxCommandSucceeds reports whether the configured tmux command runs and
 // exits 0 for `-V`. tmuxCmd must be non-empty (see tmuxCommandOrDefault).
+// tmux probes run with the sanitized tmux client environment like every
+// other Forge-issued tmux invocation.
 func tmuxCommandSucceeds(ctx context.Context, tmuxCmd []string) bool {
+	if _, err := exec.LookPath(tmuxCmd[0]); err != nil {
+		return false
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, probeCommandTimeout)
+	defer cancel()
 	args := append(slices.Clone(tmuxCmd[1:]), "-V")
-	return commandSucceeds(ctx, tmuxCmd[0], args...)
+	cmd := procutil.CommandContext(probeCtx, tmuxCmd[0], args...)
+	cmd.Env = localruntime.TmuxClientEnvironment(os.Environ(), nil)
+	return procutil.Run(probeCtx, cmd, "fleet capability probe") == nil
 }
 
 // tmuxVersionString returns the version token from the configured tmux
@@ -107,6 +123,7 @@ func tmuxVersionString(ctx context.Context, tmuxCmd []string) string {
 	probeCtx, cancel := context.WithTimeout(ctx, probeCommandTimeout)
 	defer cancel()
 	cmd := procutil.CommandContext(probeCtx, tmuxCmd[0], args...)
+	cmd.Env = localruntime.TmuxClientEnvironment(os.Environ(), nil)
 	out, err := procutil.Output(probeCtx, cmd, "fleet capability probe")
 	if err != nil {
 		return ""

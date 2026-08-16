@@ -1210,7 +1210,10 @@ func writeExclusive(src, dst string) error {
 func Load(path string) (*Config, error) {
 	cfg, err := load(path)
 	if err != nil {
-		return nil, err
+		// cfg is non-nil for post-decode rejections (deprecated keys);
+		// callers treat any error as failure but reload-side stripping
+		// may still read declared token names from the candidate.
+		return cfg, err
 	}
 	return cfg, cfg.validate()
 }
@@ -1240,7 +1243,10 @@ func load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}
 	if err := rejectDeprecatedConfigKeys(meta); err != nil {
-		return nil, fmt.Errorf("parsing config %s: %w", path, err)
+		// The decode succeeded, so return the populated config with the
+		// rejection: a reload must still see a rejected candidate's
+		// declared token env names to keep stripping them.
+		return cfg, fmt.Errorf("parsing config %s: %w", path, err)
 	}
 
 	if cfg.Repos == nil {
@@ -1261,7 +1267,9 @@ func load(path string) (*Config, error) {
 	cfg.dataDirWasRelative = !filepath.IsAbs(cfg.DataDir)
 	canonicalDir, err := CanonicalDataDir(cfg.DataDir)
 	if err != nil {
-		return nil, err
+		// The decode succeeded; return the config with the error so a
+		// rejected reload can still see its declared token names.
+		return cfg, err
 	}
 	cfg.DataDir = canonicalDir
 
@@ -1378,6 +1386,9 @@ func (c *Config) validate() error {
 		return err
 	}
 	if err := c.validateGitHubOwnerTokens(); err != nil {
+		return err
+	}
+	if err := c.validateTokenEnvNamesNotTerminalVars(); err != nil {
 		return err
 	}
 	if err := c.validateGitHubApps(); err != nil {
@@ -1788,6 +1799,26 @@ func (c *Config) validatePlatforms() error {
 			)
 		}
 		seen[key] = desc
+	}
+	return nil
+}
+
+// validateTokenEnvNamesNotTerminalVars rejects token env names that
+// collide with the non-secret environment passed to terminal sessions.
+// The tmux server permanently retains its spawn environment, so a
+// variable on that list could never be scrubbed once declared secret;
+// rejecting the collision keeps the two contracts disjoint by
+// construction.
+func (c *Config) validateTokenEnvNamesNotTerminalVars() error {
+	for _, name := range c.TokenEnvNames() {
+		if IsTmuxNonSecretEnvVar(strings.TrimSpace(name)) {
+			return fmt.Errorf(
+				"config: token env name %q collides with the non-secret "+
+					"environment passed to terminal sessions; use a "+
+					"dedicated variable name",
+				name,
+			)
+		}
 	}
 	return nil
 }
@@ -2744,6 +2775,16 @@ func (c *Config) TokenEnvNames() []string {
 	for _, r := range c.Repos {
 		names = appendTokenEnvNamesFromDescriptor(names, c.ResolveRepoTokenSource(r))
 	}
+	// Explicitly declared names are collected verbatim as well:
+	// descriptor resolution returns nothing for invalid provider
+	// identities, and a rejected candidate's declared credential names
+	// must still reach strip accumulation and collision validation.
+	for _, p := range c.Platforms {
+		names = appendTokenEnvName(names, strings.TrimSpace(p.TokenEnv))
+	}
+	for _, r := range c.Repos {
+		names = appendTokenEnvName(names, strings.TrimSpace(r.TokenEnv))
+	}
 	return names
 }
 
@@ -2907,12 +2948,95 @@ func (c *Config) RoborevEndpoint() string {
 	return "http://127.0.0.1:7373"
 }
 
-// TmuxCommand returns the command + argv prefix used to invoke
-// tmux. Defaults to ["tmux"] when c is nil or the setting is
-// unconfigured. The returned slice is a copy, safe to append to.
+// DefaultTmuxCommand returns the command + argv prefix used to invoke
+// tmux when no [tmux] command is configured. The -L socket isolates
+// kenn-forge sessions on a dedicated tmux server so heavy Forge
+// activity does not contend with the user's global tmux server. The
+// returned slice is a fresh copy, safe to append to.
+func DefaultTmuxCommand() []string {
+	return []string{"tmux", "-L", "kenn-forge"}
+}
+
+// tmuxNonSecretEnvVars names every variable admitted into tmux client
+// environments and, transitively, the tmux server's permanently
+// retained spawn environment — exact names only, never prefixes, which
+// a secret could hide under. Because these values are deliberately
+// non-secret, config validation rejects token env names that collide
+// with them: a running tmux server retains its spawn environment, so a
+// name on this list could never be scrubbed once declared secret.
+var tmuxNonSecretEnvVars = []string{
+	"COLORTERM",
+	"EDITOR",
+	"HOME",
+	// Locale: LANG/LANGUAGE plus the POSIX and glibc LC_* categories.
+	"LANG",
+	"LANGUAGE",
+	"LC_ADDRESS",
+	"LC_ALL",
+	"LC_COLLATE",
+	"LC_CTYPE",
+	"LC_IDENTIFICATION",
+	"LC_MEASUREMENT",
+	"LC_MESSAGES",
+	"LC_MONETARY",
+	"LC_NAME",
+	"LC_NUMERIC",
+	"LC_PAPER",
+	"LC_TELEPHONE",
+	"LC_TIME",
+	"LESS",
+	"LOGNAME",
+	"NO_COLOR",
+	"PAGER",
+	"PATH",
+	"SHELL",
+	"SSH_AUTH_SOCK",
+	"TERM",
+	"TMP",
+	"TMPDIR",
+	// tmux resolves -L sockets under TMUX_TMPDIR; dropping it would
+	// route the tmux client to a different server than the manager
+	// owns.
+	"TMUX_TMPDIR",
+	"TEMP",
+	"USER",
+	"VISUAL",
+	// XDG base directories and session identity.
+	"XDG_CACHE_HOME",
+	"XDG_CONFIG_DIRS",
+	"XDG_CONFIG_HOME",
+	"XDG_CURRENT_DESKTOP",
+	"XDG_DATA_DIRS",
+	"XDG_DATA_HOME",
+	"XDG_RUNTIME_DIR",
+	"XDG_SEAT",
+	"XDG_SESSION_CLASS",
+	"XDG_SESSION_DESKTOP",
+	"XDG_SESSION_ID",
+	"XDG_SESSION_TYPE",
+	"XDG_STATE_HOME",
+	"XDG_VTNR",
+}
+
+// IsTmuxNonSecretEnvVar reports whether name belongs to the non-secret
+// environment contract for tmux clients and terminal sessions. The
+// comparison is case-insensitive on every platform: Windows resolves
+// environment names case-insensitively, so "path" is PATH there, and a
+// case-folded reserved set costs nothing elsewhere.
+func IsTmuxNonSecretEnvVar(name string) bool {
+	return slices.ContainsFunc(tmuxNonSecretEnvVars, func(v string) bool {
+		return strings.EqualFold(v, name)
+	})
+}
+
+// TmuxCommand returns the command + argv prefix used to invoke tmux.
+// Defaults to DefaultTmuxCommand when c is nil or the setting is
+// unconfigured; an explicitly configured command is returned verbatim,
+// so choosing a socket (or the global server) stays with the user. The
+// returned slice is a copy, safe to append to.
 func (c *Config) TmuxCommand() []string {
 	if c == nil || len(c.Tmux.Command) == 0 {
-		return []string{"tmux"}
+		return DefaultTmuxCommand()
 	}
 	return slices.Clone(c.Tmux.Command)
 }

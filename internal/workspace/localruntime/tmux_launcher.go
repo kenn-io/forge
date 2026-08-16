@@ -11,6 +11,7 @@ import (
 	"time"
 
 	shellquote "github.com/kballard/go-shellquote"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 )
 
@@ -22,6 +23,17 @@ type tmuxPaneEnvironment struct {
 	keys        []string
 	paneCommand string
 	commandEnv  []string
+	// clientEnv feeds tmux client processes. It is derived from the
+	// policy environment before caller-supplied launch extras are
+	// applied: extras come from API request bodies and reach only the
+	// pane via the env-file handoff, never the tmux client, whose
+	// environment can seed the server's retained global environment or
+	// steer socket resolution.
+	clientEnv []string
+	// paneLocalKeys are captured from the pane's own environment before
+	// the env file is sourced and re-applied after the env -i wipe, so
+	// tmux's per-pane variables survive the sanitized handoff.
+	paneLocalKeys []string
 }
 
 var (
@@ -50,6 +62,7 @@ func (p tmuxEnvPolicy) paneEnvironmentWithExtra(
 	extraEnv map[string]string,
 ) tmuxPaneEnvironment {
 	env := p.environment(baseEnv, extraStripVars)
+	clientEnv := append(slices.Clone(env), "TERM=xterm-256color")
 	filtered := env[:0]
 	for _, value := range env {
 		key, _, found := strings.Cut(value, "=")
@@ -69,26 +82,53 @@ func (p tmuxEnvPolicy) paneEnvironmentWithExtra(
 	for _, key := range keys {
 		env = append(env, key+"="+extraEnv[key])
 	}
-	return paneEnvironmentFromEnv(env, command)
+	pane := paneEnvironmentFromEnv(env, command)
+	pane.clientEnv = clientEnv
+	return pane
 }
 
 func paneEnvironmentFromEnv(
 	env []string,
 	command []string,
 ) tmuxPaneEnvironment {
+	return paneEnvironmentFromEnvWithPaneLocals(env, command, nil)
+}
+
+func paneEnvironmentFromEnvWithPaneLocals(
+	env []string,
+	command []string,
+	paneLocals []string,
+) tmuxPaneEnvironment {
 	envWithTerm := append(slices.Clone(env), "TERM=xterm-256color")
 	keys := tmuxEnvironmentKeys(envWithTerm)
-	parts := make([]string, 0, len(keys)+4)
+	parts := make([]string, 0, len(keys)+len(paneLocals)+4)
 	parts = append(parts, "exec", "env", "-i")
 	for _, key := range keys {
 		parts = append(parts, key+"=\"${"+key+"-}\"")
 	}
+	// Pane-local re-applications come last so they win over the
+	// file-sourced values; TERM falls back to the xterm.js default when
+	// the pane somehow carries none.
+	for _, key := range paneLocals {
+		if key == "TERM" {
+			parts = append(parts,
+				"TERM=\"${"+paneLocalCaptureVar(key)+":-xterm-256color}\"")
+			continue
+		}
+		parts = append(parts, key+"=\"${"+paneLocalCaptureVar(key)+"-}\"")
+	}
 	parts = append(parts, shellCommand(command))
 	return tmuxPaneEnvironment{
-		keys:        keys,
-		paneCommand: strings.Join(parts, " "),
-		commandEnv:  envWithTerm,
+		keys:          keys,
+		paneCommand:   strings.Join(parts, " "),
+		commandEnv:    envWithTerm,
+		clientEnv:     envWithTerm,
+		paneLocalKeys: slices.Clone(paneLocals),
 	}
+}
+
+func paneLocalCaptureVar(key string) string {
+	return "__kenn_forge_pane_" + key
 }
 
 func (p tmuxEnvPolicy) keys(extraStripVars []string) []string {
@@ -104,6 +144,13 @@ func tmuxEnvironmentKeys(env []string) []string {
 		}
 		key := kv[:eq]
 		if !isShellIdentifier(key) {
+			continue
+		}
+		// Reserved handoff-internal names must never be sourced from
+		// the env file: the cleanup trap removes the file paths they
+		// hold, so an API-supplied override could aim rm at arbitrary
+		// caller-selected paths.
+		if strings.HasPrefix(key, "__kenn_forge") {
 			continue
 		}
 		keysByName[key] = struct{}{}
@@ -274,7 +321,12 @@ func (l tmuxLauncher) output(
 		return nil, fmt.Errorf("tmux command is empty")
 	}
 	cmd := procutil.CommandContext(ctx, command[0], command[1:]...)
-	cmd.Env = l.Pane.commandEnv
+	// The pane command receives its environment through the env-file
+	// handoff; the tmux client itself gets only the non-secret
+	// allowlist of the pre-extras policy environment, because a client
+	// that spawns the server seeds the server's permanently retained
+	// global environment and its TMUX_TMPDIR steers socket resolution.
+	cmd.Env = tmuxSessionEnvironment(l.Pane.clientEnv, nil)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -307,13 +359,34 @@ func (e tmuxCommandError) Unwrap() error {
 }
 
 func (l tmuxLauncher) newSessionPaneCommand() (string, func(), error) {
-	path, err := writeTmuxPaneEnvironment(l.Pane.commandEnv, l.Pane.keys)
+	return paneHandoffCommand(l.Pane)
+}
+
+// NewTmuxPaneHandoff builds the pane shell-command that delivers env to
+// the pane's process through a self-deleting env file, keeping values
+// out of tmux argv and out of the tmux server's retained environment.
+// tmux's per-pane variables (TERM, TMUX, TMUX_PANE) are preserved from
+// the pane's own environment so the base terminal's shell keeps nesting
+// detection and tmux's terminal capabilities. The returned cleanup
+// removes the handoff files; call it when the pane was never started.
+func NewTmuxPaneHandoff(
+	env []string, command []string,
+) (string, func(), error) {
+	return paneHandoffCommand(paneEnvironmentFromEnvWithPaneLocals(
+		env, command, []string{"TERM", "TMUX", "TMUX_PANE"},
+	))
+}
+
+func paneHandoffCommand(pane tmuxPaneEnvironment) (string, func(), error) {
+	path, err := writeTmuxPaneEnvironment(pane.commandEnv, pane.keys)
 	if err != nil {
 		return "", nil, fmt.Errorf("write tmux pane environment: %w", err)
 	}
 	// tmux parses shell-command with its default shell, which may not be
 	// POSIX-compatible. Keep the POSIX handoff in a script run by /bin/sh.
-	scriptPath, err := writeTmuxPaneScript(path, l.Pane.paneCommand)
+	scriptPath, err := writeTmuxPaneScript(
+		path, pane.paneCommand, pane.paneLocalKeys,
+	)
 	if err != nil {
 		_ = os.Remove(path)
 		return "", nil, fmt.Errorf("write tmux pane script: %w", err)
@@ -325,7 +398,9 @@ func (l tmuxLauncher) newSessionPaneCommand() (string, func(), error) {
 	return shellCommand([]string{"/bin/sh", scriptPath}), cleanup, nil
 }
 
-func writeTmuxPaneScript(envPath string, paneCommand string) (string, error) {
+func writeTmuxPaneScript(
+	envPath string, paneCommand string, paneLocals []string,
+) (string, error) {
 	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "kenn-forge-tmux-pane-*")
 	if err != nil {
 		return "", err
@@ -337,7 +412,14 @@ func writeTmuxPaneScript(envPath string, paneCommand string) (string, error) {
 		return "", err
 	}
 
-	content := strings.Join([]string{
+	// Capture pane-local values before the env file overwrites them.
+	captures := make([]string, 0, len(paneLocals))
+	for _, key := range paneLocals {
+		captures = append(
+			captures, paneLocalCaptureVar(key)+"=\"${"+key+"-}\"",
+		)
+	}
+	content := strings.Join(append(captures, []string{
 		"__kenn_forge_env_file=" + shellCommand([]string{envPath}),
 		"__kenn_forge_script_file=" + shellCommand([]string{path}),
 		`__kenn_forge_cleanup_tmux_files() { /bin/rm -f "$__kenn_forge_env_file" "$__kenn_forge_script_file"; }`,
@@ -350,7 +432,7 @@ func writeTmuxPaneScript(envPath string, paneCommand string) (string, error) {
 		`unset __kenn_forge_env_file`,
 		`unset __kenn_forge_script_file`,
 		paneCommand,
-	}, "\n")
+	}...), "\n")
 	if _, err := file.WriteString(content); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
@@ -474,9 +556,12 @@ func (l tmuxLauncher) attachSessionCommand() []string {
 func tmuxAttachSessionCommand(command []string, session string) []string {
 	// Kenn Forge may run as a service without locale variables. Force UTF-8 so
 	// tmux does not replace non-ASCII terminal output with underscores.
+	// -E disables update-environment: a pane can widen that server
+	// option, and without -E the next attach would copy the attach
+	// client's variables into the session environment.
 	return append(
 		slices.Clone(command),
-		"-u", "attach-session", "-t", session,
+		"-u", "attach-session", "-E", "-t", session,
 	)
 }
 
@@ -525,41 +610,6 @@ func isShellIdentifier(value string) bool {
 	return true
 }
 
-var tmuxSessionEnvAllowlist = []string{
-	"COLORTERM",
-	"EDITOR",
-	"HOME",
-	"LANG",
-	"LC_ALL",
-	"LC_CTYPE",
-	"LESS",
-	"LOGNAME",
-	"NO_COLOR",
-	"PAGER",
-	"PATH",
-	"SHELL",
-	"SSH_AUTH_SOCK",
-	"TERM",
-	"TMP",
-	"TMPDIR",
-	"TEMP",
-	"USER",
-	"VISUAL",
-}
-
-var tmuxSessionEnvPrefixAllowlist = []string{
-	"LC_",
-	"XDG_",
-}
-
 func shouldAllowTmuxSessionVar(key string) bool {
-	if slices.Contains(tmuxSessionEnvAllowlist, key) {
-		return true
-	}
-	for _, prefix := range tmuxSessionEnvPrefixAllowlist {
-		if strings.HasPrefix(key, prefix) {
-			return true
-		}
-	}
-	return false
+	return config.IsTmuxNonSecretEnvVar(key)
 }

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -4689,11 +4690,14 @@ func writeRecorderScript(t *testing.T) (scriptPath, recordPath string) {
 	dir := t.TempDir()
 	recordPath = filepath.Join(dir, "record")
 	scriptPath = filepath.Join(dir, "fake-tmux")
+	// The record path is baked into the script: tmux clients run with
+	// the non-secret allowlist environment, so fixtures cannot smuggle
+	// paths through custom env vars.
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(recordPath) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		"exit 0\n"
 	require.NoError(t, os.WriteFile(scriptPath, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", recordPath)
 	return scriptPath, recordPath
 }
 
@@ -4919,6 +4923,7 @@ func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "kill-session" ]; then` + "\n" +
@@ -4928,7 +4933,6 @@ func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -4965,6 +4969,7 @@ func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "kill-session" ]; then` + "\n" +
@@ -4974,7 +4979,6 @@ func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -5047,6 +5051,7 @@ func TestManagerDeleteTreatsTmuxServerExitDuringKillAsGone(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "kill-session" ]; then` + "\n" +
@@ -5056,7 +5061,6 @@ func TestManagerDeleteTreatsTmuxServerExitDuringKillAsGone(t *testing.T) {
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -5138,26 +5142,25 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		"TMUX_TEST_OWNER_MARKER=" + shellquote.Join(mgr.tmuxOwnerMarker()) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'forge-0000000000000001:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'forge-0000000000000001:%s\n' "$TMUX_TEST_OWNER_MARKER"` + "\n" +
 		`    printf 'forge-ffffffffffffffff\n'` + "\n" +
-		`    printf 'forge-aaaaaaaaaaaaaaaa-0123456789abcdef:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf 'forge-aaaaaaaaaaaaaaaa-claude:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'forge-aaaaaaaaaaaaaaaa-0123456789abcdef:%s\n' "$TMUX_TEST_OWNER_MARKER"` + "\n" +
+		`    printf 'forge-aaaaaaaaaaaaaaaa-claude:%s\n' "$TMUX_TEST_OWNER_MARKER"` + "\n" +
 		`    printf 'forge-notes\nother-session\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
-
-	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
-	t.Setenv("KENN_FORGE_TMUX_OWNER", mgr.tmuxOwnerMarker())
 
 	live := &Workspace{
 		ID:           "ws-live",
@@ -5210,32 +5213,10 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
-	body := "#!/bin/sh\n" +
-		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
-		`for a in "$@"; do` + "\n" +
-		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf 'middleman-0000000000000001-57de4cf40144bdf7:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf '%s:%s\n' "$STORED_HOST_SESSION" "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf '%s:%s\n' "$STORED_PROJECT_SESSION" "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf '%s:%s\n' "$ORPHAN_HOST_SESSION" "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf '%s:%s\n' "$ORPHAN_PROJECT_SESSION" "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf 'forge-aaaaaaaaaaaaaaaa-c857d09db23e6822:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    exit 0` + "\n" +
-		`  fi` + "\n" +
-		"done\n" +
-		"exit 0\n"
-	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
-
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
-	mgr.SetTmuxCommand([]string{script, "wrap"})
-	t.Setenv("KENN_FORGE_TMUX_OWNER", mgr.tmuxOwnerMarker())
 	storedHostSession := "forge-host-1111111111111111"
 	orphanHostSession := "forge-host-2222222222222222"
-	t.Setenv("STORED_HOST_SESSION", storedHostSession)
-	t.Setenv("ORPHAN_HOST_SESSION", orphanHostSession)
 
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
 		ID:           "0000000000000001",
@@ -5276,8 +5257,6 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 	storedProjectSession := "forge-project-worktree-" + worktree.ID +
 		"-3333333333333333"
 	orphanProjectSession := "forge-project-worktree-unrecorded-4444444444444444"
-	t.Setenv("STORED_PROJECT_SESSION", storedProjectSession)
-	t.Setenv("ORPHAN_PROJECT_SESSION", orphanProjectSession)
 	require.NoError(d.UpsertProjectWorktreeTmuxSession(
 		context.Background(), &db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktree.ID,
@@ -5285,6 +5264,28 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 			SessionName: storedProjectSession,
 		},
 	))
+
+	owner := mgr.tmuxOwnerMarker()
+	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		"    cat <<'SESSIONS'\n" +
+		"middleman-0000000000000001:" + owner + "\n" +
+		"middleman-0000000000000001-57de4cf40144bdf7:" + owner + "\n" +
+		storedHostSession + ":" + owner + "\n" +
+		storedProjectSession + ":" + owner + "\n" +
+		orphanHostSession + ":" + owner + "\n" +
+		orphanProjectSession + ":" + owner + "\n" +
+		"forge-aaaaaaaaaaaaaaaa-c857d09db23e6822:" + owner + "\n" +
+		"SESSIONS\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
 
@@ -5321,6 +5322,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
@@ -5330,7 +5332,6 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
@@ -5440,7 +5441,11 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		"TMUX_TEST_OWNER_MARKER=" + shellquote.Join(mgr.tmuxOwnerMarker()) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`fmt=''` + "\n" +
 		`prev=''` + "\n" +
@@ -5453,7 +5458,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		`    for name in middleman-0000000000000001 forge-aaaaaaaaaaaaaaaa; do` + "\n" +
 		`      printf '%s\n' "$fmt" \` + "\n" +
 		`        | sed -e "s|#{session_name}|$name|" \` + "\n" +
-		`              -e "s|#{@forge_owner}|$KENN_FORGE_TMUX_OWNER|" \` + "\n" +
+		`              -e "s|#{@forge_owner}|$TMUX_TEST_OWNER_MARKER|" \` + "\n" +
 		`        | tr '\t' '_'` + "\n" +
 		`    done` + "\n" +
 		`    exit 0` + "\n" +
@@ -5461,12 +5466,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		`done` + "\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
-
-	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
-	t.Setenv("KENN_FORGE_TMUX_OWNER", mgr.tmuxOwnerMarker())
 	ctx := context.Background()
 
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
@@ -5635,10 +5635,10 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
@@ -5700,6 +5700,7 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`target=""` + "\n" +
 		`prev=""` + "\n" +
@@ -5721,7 +5722,6 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 		`fi` + "\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
@@ -5852,6 +5852,8 @@ func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
 	existsFile := filepath.Join(dir, "exists")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		"TMUX_EXISTS_FILE=" + shellquote.Join(existsFile) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`if [ "$1" = "has-session" ]; then` + "\n" +
 		`  if [ -f "$TMUX_EXISTS_FILE" ]; then exit 0; fi` + "\n" +
@@ -5860,8 +5862,6 @@ func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
 		`fi` + "\n" +
 		`exit 0` + "\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
-	t.Setenv("TMUX_EXISTS_FILE", existsFile)
 	mgr.SetTmuxCommand([]string{script})
 
 	require.NoError(os.WriteFile(existsFile, []byte("1"), 0o644))
@@ -5897,6 +5897,7 @@ func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "kill-session" ]; then` + "\n" +
@@ -5906,7 +5907,6 @@ func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
@@ -5969,6 +5969,9 @@ func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
 	count := filepath.Join(dir, "count")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_STARTED=" + shellquote.Join(started) + "\n" +
+		"TMUX_RELEASE=" + shellquote.Join(release) + "\n" +
+		"TMUX_COUNT=" + shellquote.Join(count) + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "kill-session" ]; then` + "\n" +
 		`    n=0` + "\n" +
@@ -5985,9 +5988,6 @@ func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_STARTED", started)
-	t.Setenv("TMUX_RELEASE", release)
-	t.Setenv("TMUX_COUNT", count)
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
@@ -6373,6 +6373,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
@@ -6382,7 +6383,6 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
@@ -6397,18 +6397,17 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 		[]string{"has-session", "-t", "sess-B"},
 		argvs[0],
 	)
-	// new-session argv: "new-session -d -s sess-B -c /tmp/cwd <shell> -l"
-	// We check the prefix up to the shell; the shell resolves per
-	// runtime so just assert it is non-empty and ends with "-l".
-	require.GreaterOrEqual(len(argvs[1]), 8)
+	// new-session argv: "new-session -d -s sess-B -c /tmp/cwd <handoff>"
+	// where <handoff> is the /bin/sh env-file bootstrap that delivers
+	// the credential-sanitized environment and login shell to the pane.
+	require.Len(argvs[1], 7)
 	assert.Equal("new-session", argvs[1][0])
 	assert.Equal("-d", argvs[1][1])
 	assert.Equal("-s", argvs[1][2])
 	assert.Equal("sess-B", argvs[1][3])
 	assert.Equal("-c", argvs[1][4])
 	assert.Equal("/tmp/cwd", argvs[1][5])
-	assert.NotEmpty(argvs[1][6])
-	assert.Equal("-l", argvs[1][7])
+	assert.Contains(argvs[1][6], "/bin/sh ")
 	assert.Equal(
 		[]string{
 			"set-option", "-t", "sess-B",
@@ -6430,6 +6429,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
@@ -6439,7 +6439,6 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())

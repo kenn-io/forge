@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"github.com/creack/pty/v2"
 
 	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 )
@@ -661,7 +663,7 @@ func (m *Manager) restoredRuntimeCommand(
 	}
 	command := slices.Clone(m.tmuxCommand)
 	if len(command) == 0 {
-		command = []string{"tmux"}
+		command = config.DefaultTmuxCommand()
 	}
 	return tmuxAttachSessionCommand(command, restored.TmuxSession), nil
 }
@@ -728,8 +730,17 @@ func cloneLaunchTargetSet(
 }
 
 func (m *Manager) UpdateStripEnvVars(names []string) {
+	// Non-secret terminal variables are never credentials; see
+	// workspace.Manager.UpdateTmuxStripEnvVars.
+	filtered := make([]string, 0, len(names))
+	for _, name := range names {
+		if name == "" || config.IsTmuxNonSecretEnvVar(name) {
+			continue
+		}
+		filtered = append(filtered, name)
+	}
 	m.mu.Lock()
-	m.stripEnvVars = dedupeStrings(append(slices.Clone(m.stripEnvVars), names...))
+	m.stripEnvVars = dedupeStrings(append(slices.Clone(m.stripEnvVars), filtered...))
 	m.mu.Unlock()
 }
 
@@ -1015,7 +1026,7 @@ func (m *Manager) tmuxSessionLaunchID(
 	}
 	command := slices.Clone(m.tmuxCommand)
 	if len(command) == 0 {
-		command = []string{"tmux"}
+		command = config.DefaultTmuxCommand()
 	}
 	if len(command) == 0 || command[0] == "" {
 		return "", false, nil
@@ -1029,6 +1040,7 @@ func (m *Manager) tmuxSessionLaunchID(
 		command[1:], "show-options", "-qv", "-t", session, "@forge_launch",
 	)
 	cmd := procutil.CommandContext(ctx, command[0], args...)
+	cmd.Env = TmuxClientEnvironment(os.Environ(), m.currentStripEnvVars())
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -1056,7 +1068,7 @@ func (m *Manager) killTmuxSession(
 	}
 	command := slices.Clone(m.tmuxCommand)
 	if len(command) == 0 {
-		command = []string{"tmux"}
+		command = config.DefaultTmuxCommand()
 	}
 	if len(command) == 0 || command[0] == "" {
 		return nil
@@ -1068,6 +1080,7 @@ func (m *Manager) killTmuxSession(
 	}
 	args := append(command[1:], "kill-session", "-t", session)
 	cmd := procutil.CommandContext(ctx, command[0], args...)
+	cmd.Env = TmuxClientEnvironment(os.Environ(), m.currentStripEnvVars())
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err = procutil.Run(ctx, cmd, "tmux subprocess capacity")
@@ -1104,7 +1117,7 @@ func (m *Manager) refreshTmuxSessionClients(
 	}
 	command := slices.Clone(m.tmuxCommand)
 	if len(command) == 0 {
-		command = []string{"tmux"}
+		command = config.DefaultTmuxCommand()
 	}
 	if len(command) == 0 || command[0] == "" {
 		return nil
@@ -1115,6 +1128,7 @@ func (m *Manager) refreshTmuxSessionClients(
 		"list-clients", "-t", session, "-F", "#{client_tty}",
 	)
 	listCmd := procutil.CommandContext(ctx, command[0], listArgs...)
+	listCmd.Env = TmuxClientEnvironment(os.Environ(), m.currentStripEnvVars())
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	listCmd.Stdout = &stdout
@@ -1139,6 +1153,7 @@ func (m *Manager) refreshTmuxSessionClients(
 		refreshCmd := procutil.CommandContext(
 			ctx, command[0], refreshArgs...,
 		)
+		refreshCmd.Env = TmuxClientEnvironment(os.Environ(), m.currentStripEnvVars())
 		var refreshStderr bytes.Buffer
 		refreshCmd.Stderr = &refreshStderr
 		if err := procutil.Run(
@@ -1472,7 +1487,7 @@ func (m *Manager) shellLaunchCommand(
 		tmuxCommand = slices.Clone(tmux.Command)
 	}
 	if len(tmuxCommand) == 0 {
-		tmuxCommand = []string{"tmux"}
+		tmuxCommand = config.DefaultTmuxCommand()
 	}
 	tmuxCommand, err = resolveTmuxCommand(tmuxCommand)
 	if err != nil {
@@ -1650,7 +1665,7 @@ func (m *Manager) launchCommand(
 		tmuxCommand = slices.Clone(tmux.Command)
 	}
 	if len(tmuxCommand) == 0 {
-		tmuxCommand = []string{"tmux"}
+		tmuxCommand = config.DefaultTmuxCommand()
 	}
 	tmuxCommand, err = resolveTmuxCommand(tmuxCommand)
 	if err != nil {
@@ -2587,12 +2602,43 @@ func resolveTmuxCommand(command []string) ([]string, error) {
 // workspace must not be able to read.
 var sessionVarPrefixes = []string{
 	"KENN_FORGE_GITHUB_TOKEN",
+	"KENN_FORGE_GITLAB_TOKEN",
+	"KENN_FORGE_FORGEJO_TOKEN",
+	"KENN_FORGE_GITEA_TOKEN",
+	"MIDDLEMAN_GITHUB_TOKEN",
+	"MIDDLEMAN_GITLAB_TOKEN",
+	"MIDDLEMAN_FORGEJO_TOKEN",
+	"MIDDLEMAN_GITEA_TOKEN",
 	"GITHUB_TOKEN",
+	"GITLAB_TOKEN",
+	"FORGEJO_TOKEN",
+	"GITEA_TOKEN",
 	"GH_TOKEN",
 	"GITHUB_PAT",
 	"GH_PAT",
 	"GITHUB_ENTERPRISE_TOKEN",
 	"GH_ENTERPRISE_TOKEN",
+	"KATA_AUTH_TOKEN",
+}
+
+// TmuxClientEnvironment reduces env to the non-secret tmux session
+// allowlist, additionally stripping the configured token names in
+// extraStrip: the allowlist admits LC_ and XDG_ prefixes, which a
+// configured token name could hide under. Every tmux client invocation
+// that can spawn the tmux server must use it: the server retains its
+// spawn environment for any pane to read via `show-environment -g`,
+// and an allowlist cannot leak a credential the configuration never
+// named.
+func TmuxClientEnvironment(env []string, extraStrip []string) []string {
+	return tmuxSessionEnvironment(env, extraStrip)
+}
+
+// SessionEnvironment returns a copy of env with credential-shaped
+// variables removed (matched by the built-in prefix list and any names
+// in extraStrip). Other variables are preserved; pane processes use it
+// so benign daemon variables stay usable in terminals.
+func SessionEnvironment(env []string, extraStrip []string) []string {
+	return sessionEnvironment(env, extraStrip)
 }
 
 // sessionEnvironment returns a copy of env with credential-shaped
@@ -2616,12 +2662,37 @@ func sessionEnvironment(env []string, extraStrip []string) []string {
 }
 
 func shouldStripSessionVar(key string, extraStrip []string) bool {
+	return shouldStripSessionVarFold(
+		key, extraStrip, runtime.GOOS == "windows",
+	)
+}
+
+// shouldStripSessionVarFold matches case-insensitively when fold is
+// set: Windows resolves environment variables case-insensitively, so a
+// token stored as github_token is the same credential as GITHUB_TOKEN.
+func shouldStripSessionVarFold(
+	key string, extraStrip []string, fold bool,
+) bool {
+	match := func(a, b string) bool {
+		if fold {
+			return strings.EqualFold(a, b)
+		}
+		return a == b
+	}
+	hasPrefix := func(value, prefix string) bool {
+		if len(value) < len(prefix) {
+			return false
+		}
+		return match(value[:len(prefix)], prefix)
+	}
 	for _, prefix := range sessionVarPrefixes {
-		if key == prefix || strings.HasPrefix(key, prefix+"_") {
+		if match(key, prefix) || hasPrefix(key, prefix+"_") {
 			return true
 		}
 	}
-	return slices.Contains(extraStrip, key)
+	return slices.ContainsFunc(extraStrip, func(name string) bool {
+		return match(key, name)
+	})
 }
 
 func defaultShellCommand() []string {

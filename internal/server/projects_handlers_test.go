@@ -243,8 +243,9 @@ func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
 	assert.Equal("project-runtime-live", spec.TmuxSession)
 	assert.Equal(
 		[]string{
+			"env", "-u", "TMUX", "-u", "TMUX_TMPDIR",
 			tmuxScript, "--socket", "runtime",
-			"-u", "attach-session", "-t", "project-runtime-live",
+			"-u", "attach-session", "-E", "-t", "project-runtime-live",
 		},
 		spec.Command,
 	)
@@ -310,9 +311,7 @@ func TestProjectWorktreeRuntimeStopFallsBackToStoredTmuxSession(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	record := filepath.Join(t.TempDir(), "tmux-record")
-	tmuxScript := writeProjectRuntimeTmuxRecorder(t)
-	t.Setenv("TMUX_RECORD", record)
+	tmuxScript, record := writeProjectRuntimeTmuxRecorder(t)
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTestWithTmux(
 		t, []string{tmuxScript},
 	)
@@ -486,14 +485,19 @@ func createRuntimeTestProject(t *testing.T, database *db.DB, localPath string) *
 	return project
 }
 
-func writeProjectRuntimeTmuxRecorder(t *testing.T) string {
+func writeProjectRuntimeTmuxRecorder(t *testing.T) (script, record string) {
 	t.Helper()
-	script := filepath.Join(t.TempDir(), "fake-tmux")
+	dir := t.TempDir()
+	record = filepath.Join(dir, "tmux-record")
+	script = filepath.Join(dir, "fake-tmux")
+	// The record path is baked: tmux clients run with the allowlist
+	// environment, so fixtures cannot pass it through env vars.
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellQuoteTest(record) + "\n" +
 		`printf '%s\n' "$*" >> "$TMUX_RECORD"` + "\n" +
 		"exit 0\n"
 	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
-	return script
+	return script, record
 }
 
 func writeProjectRuntimeTmuxProbe(

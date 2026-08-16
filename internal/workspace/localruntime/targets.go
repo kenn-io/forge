@@ -99,7 +99,7 @@ func shellTarget(
 ) LaunchTarget {
 	command := slices.Clone(tmuxCommand)
 	if len(command) == 0 {
-		command = []string{"tmux"}
+		command = config.DefaultTmuxCommand()
 	}
 	target := LaunchTarget{
 		Key: "shell", Label: "Shell", Kind: LaunchTargetShell,

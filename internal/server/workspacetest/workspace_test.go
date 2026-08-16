@@ -293,8 +293,9 @@ func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
 	assert.Equal("workspace-runtime-live", spec.TmuxSession)
 	assert.Equal(
 		[]string{
+			"env", "-u", "TMUX", "-u", "TMUX_TMPDIR",
 			tmuxPath, "--socket", "workspace",
-			"-u", "attach-session", "-t", "workspace-runtime-live",
+			"-u", "attach-session", "-E", "-t", "workspace-runtime-live",
 		},
 		spec.Command,
 	)

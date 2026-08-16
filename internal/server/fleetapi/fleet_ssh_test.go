@@ -1108,7 +1108,9 @@ done
 if [ "$#" -gt 0 ]; then
   shift
 fi
-exec "$@"
+# Real OpenSSH joins the remote arguments with spaces and hands the
+# result to the remote shell; mirror that so quoting behavior matches.
+exec sh -c "$*"
 `
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))

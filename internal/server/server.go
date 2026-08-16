@@ -30,6 +30,7 @@ import (
 	"go.kenn.io/forge/internal/docs"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
+	katacatalog "go.kenn.io/forge/internal/kata"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/projects"
 	"go.kenn.io/forge/internal/ptyowner"
@@ -185,6 +186,7 @@ type Server struct {
 	// surface restart_required to the UI without ever mutating them.
 	bootCfgSnapshot     startupConfigSnapshot
 	runtimeStripEnvVars []string
+	ptyOwnerClient      *ptyowner.Client
 	configWatcher       *configwatch.Watcher
 	basePath            string
 	options             ServerOptions
@@ -699,6 +701,25 @@ func fleetConfigSnapshot(cfg *config.Config, tmuxCommand []string) fleetapi.Conf
 	}
 }
 
+// updateCatalogStripEnvVars widens every credential strip set with
+// externally cataloged token env names (Kata daemon catalogs). All
+// consumers accumulate monotonically, so stale catalog names only
+// over-strip.
+func (s *Server) updateCatalogStripEnvVars(names []string) {
+	if len(names) == 0 {
+		return
+	}
+	if s.workspaces != nil {
+		s.workspaces.UpdateTmuxStripEnvVars(names)
+	}
+	if s.runtime != nil {
+		s.runtime.UpdateStripEnvVars(names)
+	}
+	if s.ptyOwnerClient != nil {
+		s.ptyOwnerClient.UpdateStripEnvVars(names)
+	}
+}
+
 func (s *Server) applyWorkspaceConfigLocked() {
 	if s.workspaceAPI != nil {
 		s.workspaceAPI.ApplyConfig(workspaceConfigSnapshot(s.cfg, s.tmuxCmd))
@@ -853,8 +874,8 @@ func newServer(
 		)
 	}
 
-	// (*Config).TmuxCommand handles a nil receiver and returns the
-	// default ["tmux"]. Compute once so the workspace, runtime, and
+	// (*Config).TmuxCommand handles a nil receiver and returns
+	// config.DefaultTmuxCommand. Compute once so the workspace, runtime, and
 	// terminal handler all share the same value and the nil-safety
 	// of the call is explicit at this level.
 	tmuxCmd := cfg.TmuxCommand()
@@ -901,6 +922,7 @@ func newServer(
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
+		s.workspaces.UpdateTmuxStripEnvVars(s.runtimeStripEnvVars)
 		s.workspaces.SetHideTmuxStatus(hideTmuxStatus)
 		s.workspaces.SetIssueBranchSlugEnabled(
 			cfg.IssueWorkspaceBranchSlugEnabled(),
@@ -918,8 +940,12 @@ func newServer(
 			ExeArgs:     append([]string(nil), options.PtyOwnerExeArgs...),
 			ManagerPath: options.PtyOwnerManagerPath,
 			Command:     append([]string(nil), options.PtyOwnerCommand...),
-			InProcess:   options.PtyOwnerInProcess,
+			// Configured token names must vanish from tmux-less base
+			// terminals just like tmux-backed ones.
+			StripEnvVars: slices.Clone(s.runtimeStripEnvVars),
+			InProcess:    options.PtyOwnerInProcess,
 		}
+		s.ptyOwnerClient = ptyOwnerClient
 		if preferPtyOwnerForWorkspaces(runtime.GOOS, tmuxAvailable, options) {
 			s.workspaces.SetPtyOwnerClient(ptyOwnerClient)
 		} else {
@@ -991,14 +1017,27 @@ func newServer(
 		EnqueueDetailSync:       s.enqueueDetailSyncWithCompletion,
 	})
 	s.kataAPI = kata.New(kata.Deps{
-		DB:               database,
-		Resolver:         repoResolver,
-		Config:           kataConfigSnapshot(cfg),
-		Workspaces:       s.workspaces,
-		WorkspaceAPI:     s.workspaceAPI.Workspaces(),
-		SamePlatformHost: samePlatformHost,
-		ConfigRepoPath:   configRepoPath,
+		DB:                     database,
+		Resolver:               repoResolver,
+		Config:                 kataConfigSnapshot(cfg),
+		Workspaces:             s.workspaces,
+		WorkspaceAPI:           s.workspaceAPI.Workspaces(),
+		SamePlatformHost:       samePlatformHost,
+		ConfigRepoPath:         configRepoPath,
+		OnCatalogTokenEnvNames: s.updateCatalogStripEnvVars,
 	})
+	// Kata catalogs load lazily per request; feed their token env names
+	// into stripping at boot too so terminals created before the first
+	// Kata route never see cataloged credentials. Decoded-but-invalid
+	// catalogs still carry their declared names, so apply them
+	// regardless of the load error.
+	bootCatalog, err := katacatalog.LoadCatalog()
+	if err != nil {
+		slog.Debug(
+			"kata catalog boot load for credential stripping", "err", err,
+		)
+	}
+	s.updateCatalogStripEnvVars(bootCatalog.TokenEnvNames())
 	s.pullAPI = pullapi.New(pullapi.Deps{
 		DB:                     database,
 		Resolver:               repoResolver,

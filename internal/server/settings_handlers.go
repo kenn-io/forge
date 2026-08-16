@@ -1001,7 +1001,16 @@ func (s *Server) bootTmuxCommand() []string {
 }
 
 func (s *Server) updateRuntimeStripEnvVars(cfg *config.Config) {
-	if s.runtime == nil || cfg == nil {
+	if cfg == nil {
+		return
+	}
+	if s.workspaces != nil {
+		s.workspaces.UpdateTmuxStripEnvVars(cfg.TokenEnvNames())
+	}
+	if s.ptyOwnerClient != nil {
+		s.ptyOwnerClient.UpdateStripEnvVars(cfg.TokenEnvNames())
+	}
+	if s.runtime == nil {
 		return
 	}
 	s.runtime.UpdateStripEnvVars(cfg.TokenEnvNames())

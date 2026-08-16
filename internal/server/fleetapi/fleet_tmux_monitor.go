@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"os"
 	"os/exec"
 	"regexp"
 	"slices"
@@ -12,8 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 const (
@@ -102,7 +105,7 @@ func newFleetTmuxMonitor(
 		clock = time.Now
 	}
 	if len(tmuxCmd) == 0 {
-		tmuxCmd = []string{"tmux"}
+		tmuxCmd = config.DefaultTmuxCommand()
 	}
 	return &fleetTmuxMonitor{
 		tmuxCmd:                 slices.Clone(tmuxCmd),
@@ -334,13 +337,16 @@ func tmuxEmptyServerError(err error) bool {
 }
 
 func (m *fleetTmuxMonitor) tmuxCommand(ctx context.Context, args ...string) *exec.Cmd {
-	if len(m.tmuxCmd) == 0 {
-		return procutil.CommandContext(ctx, "tmux", args...)
+	command := m.tmuxCmd
+	if len(command) == 0 {
+		command = config.DefaultTmuxCommand()
 	}
-	cmdArgs := make([]string, 0, len(m.tmuxCmd)-1+len(args))
-	cmdArgs = append(cmdArgs, m.tmuxCmd[1:]...)
+	cmdArgs := make([]string, 0, len(command)-1+len(args))
+	cmdArgs = append(cmdArgs, command[1:]...)
 	cmdArgs = append(cmdArgs, args...)
-	return procutil.CommandContext(ctx, m.tmuxCmd[0], cmdArgs...)
+	cmd := procutil.CommandContext(ctx, command[0], cmdArgs...)
+	cmd.Env = localruntime.TmuxClientEnvironment(os.Environ(), nil)
+	return cmd
 }
 
 func parseFleetTmuxInventory(

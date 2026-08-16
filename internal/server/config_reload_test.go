@@ -2405,3 +2405,141 @@ func TestConfigReload_SettingsSavePreservesRestartRequiredFields(t *testing.T) {
 	assert.Equal("flat", reloaded.Activity.ViewMode)
 	assert.Equal("30d", reloaded.Activity.TimeRange)
 }
+
+// A rejected reload must still accumulate the candidate's token env
+// names: the user just declared them credentials, and a later base
+// terminal pane must not inherit them from the daemon environment.
+func TestConfigReloadRejectedCandidateStillStripsItsTokenNames(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "")
+	t.Setenv("KENN_FORGE_REPO_TOKEN", "old")
+
+	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(
+		t, validReloadConfigRepoTokenEnv, &mockGH{}, ServerOptions{
+			HostCheckAllowLoopbackAnyPort:      true,
+			WorktreeDir:                        t.TempDir(),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	sourceSet := tokenauth.NewSourceSet(tokenauth.Options{})
+	srv.cfgMu.Lock()
+	desc := srv.cfg.ResolveRepoTokenSource(srv.cfg.Repos[0])
+	srv.cfgMu.Unlock()
+	sourceSet.Upsert(desc)
+	srv.tokenSources = sourceSet
+
+	writeConfigToml(t, cfgPath, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+token_env = "WKSP_CANDIDATE_ONLY_TOKEN"
+`)
+	event := srv.applyConfigChange(t.Context())
+	require.False(event.Valid, "reload with an unset token env must be rejected")
+	assert.Contains(srv.workspaces.TmuxStripEnvVars(),
+		"WKSP_CANDIDATE_ONLY_TOKEN",
+		"a rejected candidate's token names must still be stripped from panes")
+}
+
+// A structurally invalid candidate still parses — config.Load returns
+// the parsed config alongside validation errors — so its newly declared
+// token names must be stripped from future panes even though the reload
+// is rejected before any other validation runs.
+func TestConfigReloadStructurallyInvalidCandidateStillStripsItsTokenNames(
+	t *testing.T,
+) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(
+		t, validReloadConfig, &mockGH{}, ServerOptions{
+			HostCheckAllowLoopbackAnyPort:      true,
+			WorktreeDir:                        t.TempDir(),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	writeConfigToml(t, cfgPath, `
+sync_interval = "5m"
+github_token_env = "WKSP_INVALID_CANDIDATE_TOKEN"
+host = "not-an-ip"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`)
+	event := srv.applyConfigChange(t.Context())
+	require.False(event.Valid, "structurally invalid candidate must be rejected")
+	assert.Contains(srv.workspaces.TmuxStripEnvVars(),
+		"WKSP_INVALID_CANDIDATE_TOKEN",
+		"an invalid candidate's token names must still be stripped from panes")
+}
+
+// A candidate rejected at the load stage for deprecated keys still
+// decodes, so its newly declared token names must reach strip
+// accumulation like validation-stage rejections.
+func TestConfigReloadDeprecatedKeyCandidateStillStripsItsTokenNames(
+	t *testing.T,
+) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(
+		t, validReloadConfig, &mockGH{}, ServerOptions{
+			HostCheckAllowLoopbackAnyPort:      true,
+			WorktreeDir:                        t.TempDir(),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	writeConfigToml(t, cfgPath, `
+sync_interval = "5m"
+github_token_env = "WKSP_DEPRECATED_CANDIDATE_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[notebooks]]
+id = "notes"
+path = "/tmp/notes"
+`)
+	event := srv.applyConfigChange(t.Context())
+	require.False(event.Valid, "deprecated keys must reject the reload")
+	assert.Contains(srv.workspaces.TmuxStripEnvVars(),
+		"WKSP_DEPRECATED_CANDIDATE_TOKEN",
+		"a load-stage-rejected candidate's token names must still be stripped")
+}
+
+// A rejected candidate declaring a non-secret terminal variable as a
+// token must not poison the strip sets: stripping PATH or TMUX_TMPDIR
+// would break terminals and tmux socket routing while the
+// last-known-good config stays active.
+func TestConfigReloadRejectedCollisionDoesNotPoisonStripSets(
+	t *testing.T,
+) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(
+		t, validReloadConfig, &mockGH{}, ServerOptions{
+			HostCheckAllowLoopbackAnyPort:      true,
+			WorktreeDir:                        t.TempDir(),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	writeConfigToml(t, cfgPath, `
+sync_interval = "5m"
+github_token_env = "TMUX_TMPDIR"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`)
+	event := srv.applyConfigChange(t.Context())
+	require.False(event.Valid, "terminal-variable token names must be rejected")
+	assert.NotContains(srv.workspaces.TmuxStripEnvVars(), "TMUX_TMPDIR",
+		"rejected collisions must never enter the strip sets")
+}

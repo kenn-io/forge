@@ -5,11 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 func runtimeAttachSpec(
@@ -66,11 +69,28 @@ type RuntimeAttachSpecOutput = httpapi.BodyOutput[runtimeAttachSpecResponse]
 func runtimeAttachCommand(tmuxCommand []string, tmuxSession string) []string {
 	command := append([]string{}, tmuxCommand...)
 	if len(command) == 0 {
-		command = []string{"tmux"}
+		command = config.DefaultTmuxCommand()
 	}
 	// Remote consumers may launch this command without locale variables.
-	// Force UTF-8 so tmux preserves non-ASCII terminal output.
-	return append(command, "-u", "attach-session", "-t", tmuxSession)
+	// Force UTF-8 so tmux preserves non-ASCII terminal output. This
+	// command runs in the caller's own shell, whose environment is not
+	// sanitized; -E stops a widened update-environment from copying the
+	// caller's variables (including provider tokens) into the session
+	// environment where pane processes could read them back.
+	command = append(command, "-u", "attach-session", "-E", "-t", tmuxSession)
+	// The command runs in the caller's shell, whose environment must
+	// not steer the attach: TMUX would make tmux refuse the nested
+	// attach, and tmux resolves -L sockets under TMUX_TMPDIR, so the
+	// caller's value must be replaced by the daemon's — set when the
+	// daemon has one, unset when it does not — or the attach targets a
+	// different tmux server than the daemon owns.
+	envPrefix := []string{"env", "-u", "TMUX"}
+	if dir := os.Getenv("TMUX_TMPDIR"); dir != "" {
+		envPrefix = append(envPrefix, "TMUX_TMPDIR="+dir)
+	} else {
+		envPrefix = append(envPrefix, "-u", "TMUX_TMPDIR")
+	}
+	return append(envPrefix, command...)
 }
 
 func attachSpecTmuxSessionExists(
@@ -80,7 +100,7 @@ func attachSpecTmuxSessionExists(
 ) (bool, error) {
 	command = append([]string{}, command...)
 	if len(command) == 0 {
-		command = []string{"tmux"}
+		command = config.DefaultTmuxCommand()
 	}
 	if strings.TrimSpace(command[0]) == "" {
 		return false, errors.New("tmux command is empty")
@@ -88,6 +108,7 @@ func attachSpecTmuxSessionExists(
 	args := append([]string{}, command[1:]...)
 	args = append(args, "has-session", "-t", session)
 	cmd := procutil.CommandContext(ctx, command[0], args...)
+	cmd.Env = localruntime.TmuxClientEnvironment(os.Environ(), nil)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := procutil.Run(ctx, cmd, "runtime attach tmux probe")

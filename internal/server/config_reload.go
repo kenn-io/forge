@@ -12,6 +12,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/configwatch"
 	ghclient "go.kenn.io/forge/internal/github"
+	katacatalog "go.kenn.io/forge/internal/kata"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/docsapi"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -395,6 +396,13 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		restartRequired = true
 	}
 	docsapi.WarnDaemonBindings(newCfg.DocFolders)
+	// Kata catalogs load lazily on Kata routes; a catalog edited since
+	// boot may declare new token names. Refresh the catalog-derived
+	// strip names on every config reload so terminals never race a
+	// catalog edit; rejected catalogs still carry declared names.
+	if catalog, err := katacatalog.LoadCatalog(); err == nil || len(catalog.TokenEnvNames()) > 0 {
+		s.updateCatalogStripEnvVars(catalog.TokenEnvNames())
+	}
 
 	// Resolve the new repo set against the boot-time registry. Repos
 	// whose (platform, host) the registry never learned about cannot

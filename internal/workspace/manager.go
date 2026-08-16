@@ -3967,6 +3967,17 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) (bool, error) {
 		changed = changed || deleted
 	}
 
+	// A server with zero live sessions is the bulk-gone case: machine
+	// reboot, or first boot after the dedicated-socket upgrade while
+	// old sessions remain on the previous server. Base sessions are
+	// recreated lazily on terminal attach, so ready workspaces stay
+	// ready and self-heal; marking them all errored would invite retry,
+	// whose cleanup force-removes worktrees. Individual missing
+	// sessions on a live server remain real anomalies and are errored
+	// below.
+	if len(live) == 0 {
+		return changed, nil
+	}
 	workspaces, err := m.db.ListWorkspaces(ctx)
 	if err != nil {
 		return changed, fmt.Errorf("list workspaces: %w", err)

@@ -46,7 +46,15 @@ describe("IssueItem compact label row", () => {
         repoLabel: "acme/widgets",
         onclick: () => {},
       },
-      context: new Map<symbol, unknown>([[STORES_KEY, { issues: { toggleIssueStar: vi.fn() } }]]),
+      context: new Map<symbol, unknown>([
+        [
+          STORES_KEY,
+          {
+            activity: { getUseWorkspaceActivityForRecency: () => false },
+            issues: { toggleIssueStar: vi.fn() },
+          },
+        ],
+      ]),
     });
 
     const pill = document.querySelector<HTMLElement>(".issue-item .kit-color-label")!;

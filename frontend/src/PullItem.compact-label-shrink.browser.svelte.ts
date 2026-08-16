@@ -73,7 +73,13 @@ function mountAt(widthPx: number, mobileMain: boolean): MountedItem {
       onclick: () => {},
     },
     context: new Map<symbol, unknown>([
-      [STORES_KEY, { pulls: { togglePRStar: vi.fn() } }],
+      [
+        STORES_KEY,
+        {
+          activity: { getUseWorkspaceActivityForRecency: () => false },
+          pulls: { togglePRStar: vi.fn() },
+        },
+      ],
       [HOST_STATE_KEY, {}],
     ]),
   });

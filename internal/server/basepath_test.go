@@ -129,6 +129,22 @@ func TestCSRFRejectsCrossSite(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rr.Code)
 }
 
+func TestPastedImageUploadRejectsCrossSite(t *testing.T) {
+	srv := setupWithBasePath(t, "/", nil)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/ws-1/pasted-images",
+		strings.NewReader(`{"data":"aW1hZ2U="}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	recorder := httptest.NewRecorder()
+
+	srv.ServeHTTP(recorder, req)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+}
+
 func TestCSRFRejectsWrongContentType(t *testing.T) {
 	srv := setupWithBasePath(t, "/", nil)
 

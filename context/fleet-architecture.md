@@ -33,6 +33,9 @@ peer transports, or remote workspace and session operations.
   non-hop-by-hop response headers instead of translating remote domain failures
   at the hub
   (`internal/server/fleetapi/fleet_proxy.go::Handler.serveRemoteFleetRESTProxy`).
+- Raw adapter handlers do not enforce Huma `MaxBodyBytes`; body-bounded fleet
+  routes must enforce the cap at the hub before either HTTP or SSH relay
+  (`internal/server/fleetapi/fleet_proxy.go::bufferFleetProxyBody`).
 
 ## Transport Trust Boundary
 

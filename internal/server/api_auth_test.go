@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -138,6 +139,40 @@ func TestAPIAuthGatesAPIRoutes(t *testing.T) {
 		r.Header.Set("Authorization", "Bearer wrong")
 	})
 	assert.Equal(http.StatusUnauthorized, resp.StatusCode)
+}
+
+func TestAPIAuthGatesPastedImageUpload(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ts := newAuthTestServer(t, "secret-token")
+	post := func(token string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequestWithContext(
+			t.Context(), http.MethodPost,
+			ts.URL+"/api/v1/workspaces/ws-1/pasted-images",
+			strings.NewReader(`{"data":"aW1hZ2U="}`),
+		)
+		require.NoError(err)
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := ts.Client().Do(req)
+		require.NoError(err)
+		t.Cleanup(func() { resp.Body.Close() })
+		return resp
+	}
+
+	unauthorized := post("")
+	require.Equal(http.StatusUnauthorized, unauthorized.StatusCode)
+	var problem struct {
+		Code string `json:"code"`
+	}
+	require.NoError(json.NewDecoder(unauthorized.Body).Decode(&problem))
+	assert.Equal("unauthorized", problem.Code)
+
+	authorized := post("secret-token")
+	assert.NotEqual(http.StatusUnauthorized, authorized.StatusCode)
 }
 
 // TestAPIAuthGatesTerminalWebSocketRoutes pins that the /ws/ terminal

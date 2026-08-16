@@ -1,4 +1,5 @@
 import type { Attachment } from "svelte/attachments";
+import type { WorkspaceImageUploadTarget } from "../api/workspace-pasted-image.js";
 
 /**
  * Registry of live per-session terminal subtrees.
@@ -47,8 +48,16 @@ export interface MountedSession {
   hostKey: SessionHostKey;
   websocketPath: string;
   status: string;
+  uploadTarget?: WorkspaceImageUploadTarget;
   cursorWheelInput?: boolean;
   disabled?: boolean;
+}
+
+function uploadTargetsEqual(
+  left: WorkspaceImageUploadTarget | undefined,
+  right: WorkspaceImageUploadTarget | undefined,
+): boolean {
+  return left?.workspaceId === right?.workspaceId && left?.hostKey === right?.hostKey;
 }
 
 let parkingEl: HTMLElement | null = null;
@@ -181,6 +190,7 @@ export function noteSessionMounted(session: MountedSession): void {
     if (
       existing.websocketPath === session.websocketPath &&
       existing.status === session.status &&
+      uploadTargetsEqual(existing.uploadTarget, session.uploadTarget) &&
       (existing.cursorWheelInput ?? false) === (session.cursorWheelInput ?? false) &&
       (existing.disabled ?? false) === (session.disabled ?? false)
     ) {

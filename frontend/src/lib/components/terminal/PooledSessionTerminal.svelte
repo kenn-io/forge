@@ -215,6 +215,7 @@
   <TerminalPane
     bind:this={terminalPane}
     websocketPath={session.websocketPath}
+    uploadTarget={session.uploadTarget}
     reconnectOnExit={false}
     disabled={session.disabled ?? false}
     active={active && attached}

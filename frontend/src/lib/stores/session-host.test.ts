@@ -52,6 +52,30 @@ describe("session host registry", () => {
     expect(agentOnA).toBe(sessionHostKey("ws-1", undefined, "agent", "2026-01-01T00:00:00Z"));
   });
 
+  it("replaces mounted metadata when the image upload target changes", () => {
+    const session = mountedSession("ws-1", "agent");
+    noteSessionMounted({
+      ...session,
+      uploadTarget: { workspaceId: "ws-1", hostKey: "host-a" },
+    });
+    const first = mountedSessions()[0];
+
+    noteSessionMounted({
+      ...session,
+      uploadTarget: { workspaceId: "ws-1", hostKey: "host-a" },
+    });
+    expect(mountedSessions()[0]).toBe(first);
+
+    noteSessionMounted({
+      ...session,
+      uploadTarget: { workspaceId: "ws-1", hostKey: "host-b" },
+    });
+    expect(mountedSessions()[0]?.uploadTarget).toEqual({
+      workspaceId: "ws-1",
+      hostKey: "host-b",
+    });
+  });
+
   it("routes composed input to the current pooled terminal", () => {
     const first = {
       send: vi.fn(() => true),

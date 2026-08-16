@@ -194,6 +194,7 @@
         hostKey: pooledKey,
         websocketPath: session.websocketPath,
         status: session.status,
+        uploadTarget: target(),
         cursorWheelInput: session.cursorWheelInput,
       });
     }

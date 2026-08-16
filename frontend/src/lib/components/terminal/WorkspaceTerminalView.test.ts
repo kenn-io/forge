@@ -1818,6 +1818,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(sockets[0]!.send).toHaveBeenCalled());
     const firstPrefix = sessionHostPrefix("ws-1", undefined);
     expect(mountedSessions()[0]?.hostKey.startsWith(firstPrefix)).toBe(true);
+    expect(mountedSessions()[0]?.uploadTarget).toEqual({ workspaceId: "ws-1" });
     const firstHostKey = mountedSessions()[0]!.hostKey;
     const firstWrapper = document.querySelector(`[data-session-host="${firstHostKey}"]`);
     const firstSocket = sockets[0];

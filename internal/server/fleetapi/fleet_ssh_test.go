@@ -2,6 +2,7 @@ package fleetapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -419,6 +420,47 @@ func TestSSHFleetProxyRelaysWrites(t *testing.T) {
 	}
 	assert.Contains(string(relayedBody), "create_on_disk",
 		"request body must ride the relay verbatim")
+}
+
+func TestSSHFleetProxyRelaysPastedImageJSON(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	png := []byte("\x89PNG\r\n\x1a\nfleet ssh fixture")
+	fake := &fakeSSHExec{routes: map[string]string{
+		"POST /api/v1/workspaces/ws_1/pasted-images": framedJSON(
+			http.StatusOK,
+			`{"path":".kenn-forge/pasted-images/paste-ssh.png"}`,
+		),
+	}}
+	srv, _ := setupTestServer(t)
+	setTestFleetConfig(srv, func(cfg *config.Config) { cfg.Fleet.Enabled = true })
+	srv.sshFleet = newSSHTestTransport(t, fake, config.FleetSSHPeer{
+		Key: "host-a", Destination: "maintainer@host-a.example",
+	})
+	hub := httptest.NewServer(srv.localHandler())
+	t.Cleanup(hub.Close)
+	body, err := json.Marshal(map[string]string{"data": base64.StdEncoding.EncodeToString(png)})
+	require.NoError(err)
+
+	response := httpDo(t, hub, http.MethodPost,
+		"/api/v1/fleet/hosts/host-a/workspaces/ws_1/pasted-images", body)
+	defer response.Body.Close()
+	require.Equal(http.StatusOK, response.StatusCode)
+	var output struct {
+		Path string `json:"path"`
+	}
+	require.NoError(json.NewDecoder(response.Body).Decode(&output))
+	assert.Equal(".kenn-forge/pasted-images/paste-ssh.png", output.Path)
+
+	index := slices.Index(fake.calls, "POST /api/v1/workspaces/ws_1/pasted-images")
+	require.NotEqual(-1, index)
+	var relayed struct {
+		Data string `json:"data"`
+	}
+	require.NoError(json.Unmarshal(fake.bodies[index], &relayed))
+	decoded, err := base64.StdEncoding.DecodeString(relayed.Data)
+	require.NoError(err)
+	assert.Equal(png, decoded)
 }
 
 func TestSSHFleetProxyRelaysWorkspaceDiffReads(t *testing.T) {

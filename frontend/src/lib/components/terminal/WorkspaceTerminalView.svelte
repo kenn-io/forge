@@ -1709,6 +1709,10 @@
           workspaceHostKey,
         ),
         status: session.status,
+        uploadTarget: {
+          workspaceId,
+          ...(workspaceHostKey === undefined ? {} : { hostKey: workspaceHostKey }),
+        },
         cursorWheelInput: session.kind === "agent",
         disabled: actionsBlocked,
       });

@@ -1,8 +1,10 @@
 <script lang="ts">
+  import type { WorkspaceImageUploadTarget } from "../../api/workspace-pasted-image.js";
   import XtermTerminalPane from "./XtermTerminalPane.svelte";
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
+    uploadTarget?: WorkspaceImageUploadTarget | undefined;
     websocketPath?: string | undefined;
     reconnectOnExit?: boolean | undefined;
     active?: boolean | undefined;
@@ -20,6 +22,7 @@
 
   let {
     workspaceId = undefined,
+    uploadTarget = undefined,
     websocketPath = undefined,
     reconnectOnExit = undefined,
     active = undefined,
@@ -50,6 +53,7 @@
 <XtermTerminalPane
   bind:this={xtermPane}
   {workspaceId}
+  {uploadTarget}
   {websocketPath}
   {reconnectOnExit}
   {active}

@@ -23,7 +23,7 @@ func TestEnsureGeneratedContextFilesIgnoredAppendsMissingEntriesToGitExclude(t *
 	}))
 
 	excludeText := readGitExclude(t, worktree)
-	assert.Contains(excludeText, "# kenn-forge generated agent context")
+	assert.Contains(excludeText, "# kenn-forge generated files")
 	assert.Contains(excludeText, "/AGENTS.override.md")
 	assert.Contains(excludeText, "/CLAUDE.local.md")
 	assert.Contains(excludeText, "/.tmp-agent-context-*")
@@ -113,7 +113,7 @@ func TestEnsureGeneratedContextFilesIgnoredRejectsUnknownPaths(t *testing.T) {
 
 	err := EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{"notes/scratch.md"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown generated context path")
+	assert.Contains(t, err.Error(), "unknown generated path")
 }
 
 func TestEnsureGeneratedContextFilesIgnoredRejectsRootInstructionFiles(t *testing.T) {
@@ -123,6 +123,31 @@ func TestEnsureGeneratedContextFilesIgnoredRejectsRootInstructionFiles(t *testin
 	err := EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{"CLAUDE.md"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to add root instruction file")
+}
+
+func TestEnsureWorkspaceGeneratedPathsIgnoredAddsPastedImageDirectory(t *testing.T) {
+	t.Parallel()
+	worktree := initWorkspaceGitRepo(t)
+
+	require.NoError(t, EnsureWorkspaceGeneratedPathsIgnored(
+		context.Background(), worktree, []string{PastedImageDirectory},
+	))
+
+	excludeText := readGitExclude(t, worktree)
+	assert.Contains(t, excludeText, "/.kenn-forge/pasted-images/")
+	assert.NotContains(t, excludeText, generatedContextTempPattern)
+	assertGitIgnored(t, worktree, ".kenn-forge/pasted-images/paste-1.png")
+}
+
+func TestEnsureWorkspaceGeneratedPathsIgnoredRejectsUnknownDirectory(t *testing.T) {
+	t.Parallel()
+	worktree := initWorkspaceGitRepo(t)
+
+	err := EnsureWorkspaceGeneratedPathsIgnored(
+		context.Background(), worktree, []string{".kenn-forge/other"},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown generated path")
 }
 
 func initWorkspaceGitRepo(t *testing.T) string {

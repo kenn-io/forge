@@ -1,6 +1,7 @@
 package fleetapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,14 +31,16 @@ import (
 )
 
 type fleetRESTProxyRoute struct {
-	operationID string
-	method      string
-	path        string
-	summary     string
-	pathParams  []string
-	queryParams []*huma.Param
-	body        bool
-	targetPath  func(*http.Request) string
+	operationID  string
+	method       string
+	path         string
+	summary      string
+	pathParams   []string
+	queryParams  []*huma.Param
+	body         bool
+	hidden       bool
+	maxBodyBytes int64
+	targetPath   func(*http.Request) string
 }
 
 type fleetHostTarget struct {
@@ -107,6 +110,19 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			pathParams:  []string{"host_key", "id"},
 			targetPath: func(r *http.Request) string {
 				return "/api/v1/workspaces/" + escapePath(r.PathValue("id"))
+			},
+		},
+		{
+			operationID:  "write-fleet-workspace-pasted-image",
+			method:       http.MethodPost,
+			path:         "/fleet/hosts/{host_key}/workspaces/{id}/pasted-images",
+			summary:      "Write a pasted image on fleet host",
+			pathParams:   []string{"host_key", "id"},
+			body:         true,
+			hidden:       true,
+			maxBodyBytes: workspaceapi.MaxPastedImageRequestBytes,
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/pasted-images"
 			},
 		},
 		{
@@ -539,6 +555,10 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 	}
 
 	for _, route := range routes {
+		maxBodyBytes := int64(-1)
+		if route.maxBodyBytes > 0 {
+			maxBodyBytes = route.maxBodyBytes
+		}
 		op := &huma.Operation{
 			OperationID:  route.operationID,
 			Method:       route.method,
@@ -547,17 +567,51 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			Tags:         []string{"Fleet"},
 			Parameters:   fleetProxyParams(route.pathParams, route.queryParams...),
 			Responses:    fleetProxyResponses(),
-			MaxBodyBytes: -1,
+			Hidden:       route.hidden,
+			MaxBodyBytes: maxBodyBytes,
 		}
 		if route.body {
 			op.RequestBody = fleetProxyRequestBody()
 		}
-		api.OpenAPI().AddOperation(op)
+		if !route.hidden {
+			api.OpenAPI().AddOperation(op)
+		}
 		api.Adapter().Handle(op, func(ctx huma.Context) {
 			r, w := humago.Unwrap(ctx)
+			if route.maxBodyBytes > 0 && !bufferFleetProxyBody(w, r, route.maxBodyBytes) {
+				return
+			}
 			s.serveFleetRESTProxy(w, r, route.targetPath(r))
 		})
 	}
+}
+
+func bufferFleetProxyBody(w http.ResponseWriter, r *http.Request, maxBytes int64) bool {
+	limited := http.MaxBytesReader(w, r.Body, maxBytes)
+	body, err := io.ReadAll(limited)
+	_ = limited.Close()
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeProblemResponse(w, httpapi.NewProblem(
+				http.StatusRequestEntityTooLarge,
+				httpapi.CodePayloadTooLarge,
+				"fleet request body exceeds the size limit",
+				map[string]any{"maxBytes": maxBytes},
+			))
+			return false
+		}
+		writeProblemResponse(w, httpapi.NewProblem(
+			http.StatusBadRequest,
+			httpapi.CodeBadRequest,
+			"read fleet request body: "+err.Error(),
+			nil,
+		))
+		return false
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+	return true
 }
 
 // RegisterTerminal registers hidden Fleet websocket proxy routes.

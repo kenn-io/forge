@@ -13,9 +13,20 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
+  import {
+    MAX_PASTED_IMAGE_BYTES,
+    MAX_PASTED_IMAGES_PER_PASTE,
+    uploadWorkspacePastedImage,
+    type WorkspaceImageUploadTarget,
+  } from "../../api/workspace-pasted-image.js";
   import { createWorkspaceSwitchPaneTimer } from "../../instrumentation/workspaceSwitchTiming.js";
   import { traceHeadersForRequest } from "../../instrumentation/traceContext.js";
   import { createTerminalPastePayload } from "./bracketedPaste.js";
+  import {
+    clipboardImageFiles,
+    formatPastedImagePaths,
+    type PastedImageUploadResult,
+  } from "./terminalImagePaste.js";
   import { embeddedWebSocketUrl } from "./embeddedWebSocket.js";
   import { parseOsc52ClipboardWrite } from "./osc52Clipboard.js";
   import {
@@ -48,6 +59,7 @@
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
+    uploadTarget?: WorkspaceImageUploadTarget | undefined;
     websocketPath?: string | undefined;
     reconnectOnExit?: boolean | undefined;
     active?: boolean | undefined;
@@ -65,6 +77,7 @@
 
   let {
     workspaceId,
+    uploadTarget,
     websocketPath,
     reconnectOnExit = true,
     active = true,
@@ -117,6 +130,7 @@
   let activePointerId: number | null = null;
   let pointerOrigin: { clientX: number; clientY: number } | null = null;
   let explicitFocusRequested = false;
+  const activeImagePasteInterrupts = new Set<() => void>();
   const encoder = new TextEncoder();
   let clipboardWriter: TerminalClipboardWriter | undefined;
   let mouseDragAutoscroll: TmuxMouseDragAutoscroll | undefined;
@@ -723,6 +737,25 @@
       event.stopImmediatePropagation();
       return;
     }
+
+    const imageFiles = clipboardImageFiles(event.clipboardData);
+    if (imageFiles.length > 0) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!terminalSession?.isConnected()) {
+        showFlash("Could not paste images while the terminal is disconnected.", {
+          tone: "danger",
+        });
+        return;
+      }
+      if (uploadTarget === undefined) {
+        showFlash("This terminal cannot receive pasted images.", { tone: "danger" });
+        return;
+      }
+      uploadPastedImages(imageFiles, uploadTarget, connectionGeneration);
+      return;
+    }
+
     if (!terminalSession?.isConnected()) return;
 
     const pastedText =
@@ -734,6 +767,78 @@
     if (!sendPastedInput(pastedText)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+  }
+
+  function uploadPastedImages(
+    files: readonly File[],
+    target: WorkspaceImageUploadTarget,
+    generation: number,
+  ): void {
+    const selectedFiles = files.slice(0, MAX_PASTED_IMAGES_PER_PASTE);
+    const skippedResults: PastedImageUploadResult[] = Array.from(
+      { length: files.length - selectedFiles.length },
+      () => ({ _tag: "Failure" }),
+    );
+    const program = Effect.forEach(
+      selectedFiles,
+      (file): Effect.Effect<PastedImageUploadResult> => {
+        if (file.size > MAX_PASTED_IMAGE_BYTES) {
+          return Effect.succeed({ _tag: "Failure" });
+        }
+        return uploadWorkspacePastedImage(target, file).pipe(
+          Effect.match({
+            onFailure: (): PastedImageUploadResult => ({ _tag: "Failure" }),
+            onSuccess: (path): PastedImageUploadResult => ({ _tag: "Success", path }),
+          }),
+        );
+      },
+      { concurrency: "unbounded" },
+    ).pipe(
+      Effect.map((results) => formatPastedImagePaths([...results, ...skippedResults])),
+      Effect.tap(({ text, failed }) =>
+        Effect.sync(() => {
+          if (
+            disposed ||
+            generation !== connectionGeneration ||
+            !terminalSession?.isConnected()
+          ) {
+            return;
+          }
+          if (text !== "") sendPastedInput(text);
+          if (failed > 0) {
+            const noun = files.length === 1 ? "image" : "images";
+            showFlash(`${failed} of ${files.length} pasted ${noun} could not be uploaded.`, {
+              tone: "danger",
+            });
+          }
+        }),
+      ),
+    );
+    const execution = runtime.runCommand(program, {
+      operation: "upload pasted terminal images",
+      safeContext: {
+        workspaceId: target.workspaceId,
+        remote: target.hostKey !== undefined,
+        count: files.length,
+      },
+      onFailure: () => {
+        if (
+          !disposed &&
+          generation === connectionGeneration &&
+          terminalSession?.isConnected()
+        ) {
+          showFlash("Could not upload the pasted images.", { tone: "danger" });
+        }
+      },
+    });
+    const interrupt = (): void => execution.interrupt();
+    activeImagePasteInterrupts.add(interrupt);
+    void execution.exit.finally(() => activeImagePasteInterrupts.delete(interrupt));
+  }
+
+  function interruptImagePastes(): void {
+    for (const interrupt of activeImagePasteInterrupts) interrupt();
+    activeImagePasteInterrupts.clear();
   }
 
   function handleTerminalMessage(data: string | Uint8Array): TerminalMessageDecision {
@@ -804,6 +909,7 @@
       onMessage: handleTerminalMessage,
       onDisconnected: () => {
         onConnectionChange?.(false);
+        interruptImagePastes();
         cancelPendingTerminalSequence();
         clipboardWriter?.cancelAuthorization();
         mouseDragAutoscroll?.reset();
@@ -813,6 +919,7 @@
 
   function cleanup(): void {
     disposed = true;
+    interruptImagePastes();
     pointerOrigin = null;
     clipboardWriter?.dispose();
     clipboardWriter = undefined;
@@ -886,9 +993,9 @@
     if (active) scheduleTerminalRefresh();
   });
 
-  const FONT_LOADED: "loaded" = "loaded";
-  const FONT_FAILED: "failed" = "failed";
-  const FONT_TIMED_OUT: "timed-out" = "timed-out";
+  const FONT_LOADED = "loaded" as const;
+  const FONT_FAILED = "failed" as const;
+  const FONT_TIMED_OUT = "timed-out" as const;
 
   function openTerminalPane(node: HTMLElement) {
     return Effect.gen(function* () {

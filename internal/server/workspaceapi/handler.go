@@ -242,6 +242,7 @@ func (h *Handler) enqueueDetailSyncWithCompletion(
 // Register registers workspace and local-project REST operations.
 func (s *Handler) Register(api huma.API) {
 	s.registerTerminalClipboard(api)
+	s.registerPastedImages(api)
 	huma.Register(api, huma.Operation{
 		OperationID: "receive-agent-hook",
 		Method:      http.MethodPost,

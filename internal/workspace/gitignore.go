@@ -11,6 +11,8 @@ import (
 )
 
 const (
+	PastedImageDirectory = ".kenn-forge/pasted-images"
+
 	// generatedContextTempPattern ignores the atomic writer's staging files.
 	generatedContextTempPattern = "/.tmp-agent-context-*"
 	// generatedContextTempProbePath is a representative path used to check
@@ -18,11 +20,15 @@ const (
 	generatedContextTempProbePath = ".tmp-agent-context-probe"
 )
 
-// EnsureGeneratedContextFilesIgnored guarantees the requested generated
-// context paths are ignored by git before they are written, adding local
-// exclude rules (never touching tracked .gitignore) only for the paths that
-// will actually be generated.
-func EnsureGeneratedContextFilesIgnored(
+type generatedIgnoreCheck struct {
+	probe   string
+	pattern string
+}
+
+// EnsureWorkspaceGeneratedPathsIgnored guarantees that known Forge-generated
+// paths are ignored by git before they are written. It updates only the
+// repository-local exclude file, never a tracked .gitignore.
+func EnsureWorkspaceGeneratedPathsIgnored(
 	ctx context.Context,
 	worktreePath string,
 	generatedRelPaths []string,
@@ -30,24 +36,16 @@ func EnsureGeneratedContextFilesIgnored(
 	missingPaths := make([]string, 0, len(generatedRelPaths)+1)
 	missingPatterns := make([]string, 0, len(generatedRelPaths)+1)
 	seenPatterns := make(map[string]bool, len(generatedRelPaths)+1)
-	checks := make([][2]string, 0, len(generatedRelPaths)+1)
+	checks := make([]generatedIgnoreCheck, 0, len(generatedRelPaths)+1)
 	for _, rel := range generatedRelPaths {
-		clean, pattern, err := generatedContextIgnorePattern(rel)
+		pathChecks, err := generatedIgnoreChecks(rel)
 		if err != nil {
 			return err
 		}
-		checks = append(checks, [2]string{clean, pattern})
-	}
-	if len(checks) > 0 {
-		// The atomic writer stages content as .tmp-agent-context-* next to
-		// the target; a crash between create and rename must not leave an
-		// untracked file dirtying the workspace.
-		checks = append(checks, [2]string{
-			generatedContextTempProbePath, generatedContextTempPattern,
-		})
+		checks = append(checks, pathChecks...)
 	}
 	for _, check := range checks {
-		clean, pattern := check[0], check[1]
+		clean, pattern := check.probe, check.pattern
 		ignored, err := gitPathIgnored(ctx, worktreePath, clean)
 		if err != nil {
 			return err
@@ -93,7 +91,7 @@ func EnsureGeneratedContextFilesIgnored(
 		if len(text) > 0 && !strings.HasSuffix(text, "\n") {
 			block.WriteString("\n")
 		}
-		block.WriteString("# kenn-forge generated agent context\n")
+		block.WriteString("# kenn-forge generated files\n")
 		for _, pattern := range add {
 			block.WriteString(pattern)
 			block.WriteString("\n")
@@ -115,12 +113,22 @@ func EnsureGeneratedContextFilesIgnored(
 		}
 		if !ignored {
 			return fmt.Errorf(
-				"generated context path %s is still not ignored after updating %s (a later rule may negate it)",
+				"generated path %s is still not ignored after updating %s (a later rule may negate it)",
 				clean, excludePath,
 			)
 		}
 	}
 	return nil
+}
+
+// EnsureGeneratedContextFilesIgnored retains the context-writer entry point
+// while sharing the generic known-generated-path implementation.
+func EnsureGeneratedContextFilesIgnored(
+	ctx context.Context,
+	worktreePath string,
+	generatedRelPaths []string,
+) error {
+	return EnsureWorkspaceGeneratedPathsIgnored(ctx, worktreePath, generatedRelPaths)
 }
 
 // gitPathIgnored reports whether git ignores rel inside worktreePath,
@@ -138,23 +146,33 @@ func gitPathIgnored(ctx context.Context, worktreePath, rel string) (bool, error)
 	return false, fmt.Errorf("git check-ignore %s: %w", rel, err)
 }
 
-// generatedContextIgnorePattern maps a generated context path to the exact
-// local ignore rule that covers it. Only known kenn-forge-generated paths are
-// allowed; anything else is rejected rather than silently ignored.
-func generatedContextIgnorePattern(rel string) (cleanPath, pattern string, err error) {
+// generatedIgnoreChecks maps a known generated path to the local ignore rules
+// and representative paths needed to verify them.
+func generatedIgnoreChecks(rel string) ([]generatedIgnoreCheck, error) {
 	rel = strings.TrimSpace(rel)
 	if rel == "AGENTS.md" || rel == "CLAUDE.md" {
-		return "", "", fmt.Errorf("refusing to add root instruction file to generated ignore list: %s", rel)
+		return nil, fmt.Errorf("refusing to add root instruction file to generated ignore list: %s", rel)
 	}
 	if rel == "" || filepath.IsAbs(rel) || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
-		return "", "", fmt.Errorf("invalid generated context path: %s", rel)
+		return nil, fmt.Errorf("invalid generated path: %s", rel)
 	}
 	clean := filepath.ToSlash(filepath.Clean(rel))
 	switch clean {
 	case "AGENTS.override.md", "CLAUDE.local.md":
-		return clean, "/" + clean, nil
+		return []generatedIgnoreCheck{
+			{probe: clean, pattern: "/" + clean},
+			{
+				probe:   generatedContextTempProbePath,
+				pattern: generatedContextTempPattern,
+			},
+		}, nil
+	case PastedImageDirectory:
+		return []generatedIgnoreCheck{{
+			probe:   PastedImageDirectory + "/.ignore-probe",
+			pattern: "/" + PastedImageDirectory + "/",
+		}}, nil
 	default:
-		return "", "", fmt.Errorf("unknown generated context path: %s", clean)
+		return nil, fmt.Errorf("unknown generated path: %s", clean)
 	}
 }
 

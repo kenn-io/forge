@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
+import { Effect } from "effect";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { beginTerminalGeometryIntent, extendTerminalGeometryIntent } from "./terminalGeometryIntent.js";
@@ -13,6 +14,7 @@ const {
   clipboardWriterWrite,
   ligaturesAddonCtor,
   mockShowFlash,
+  uploadWorkspacePastedImageMock,
   mockWebglCtor,
   mouseDragEndPointerGesture,
   mouseDragObserveTerminalData,
@@ -36,6 +38,7 @@ const {
   clipboardWriterWrite: vi.fn(),
   ligaturesAddonCtor: vi.fn(),
   mockShowFlash: vi.fn(),
+  uploadWorkspacePastedImageMock: vi.fn(),
   mockWebglCtor: vi.fn(),
   mouseDragEndPointerGesture: vi.fn(),
   mouseDragObserveTerminalData: vi.fn(),
@@ -155,6 +158,14 @@ vi.mock("../../stores/flash.svelte.js", () => ({
   showFlash: mockShowFlash,
 }));
 
+vi.mock("../../api/workspace-pasted-image.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/workspace-pasted-image.js")>();
+  return {
+    ...actual,
+    uploadWorkspacePastedImage: uploadWorkspacePastedImageMock,
+  };
+});
+
 vi.mock("./terminalClipboardWriter.js", async () => {
   const { Effect } = await import("effect");
   return {
@@ -195,8 +206,8 @@ vi.mock("@xterm/xterm", () => ({
     // The real xterm Terminal is a class instance, which Svelte leaves opaque.
     // Keep the double equally opaque so fit updates the same object the pane reads.
     class MockTerminal {}
-    const bufferType: "normal" = "normal";
-    const mouseTrackingMode: "none" = "none";
+    const bufferType = "normal" as const;
+    const mouseTrackingMode = "none" as const;
     const terminal = Object.assign(new MockTerminal(), {
       buffer: { active: { baseY: 0, type: bufferType } },
       cols: initialTerminalDimensions.cols,
@@ -283,6 +294,7 @@ vi.mock("@xterm/addon-webgl", () => ({
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 import TerminalPane from "./TerminalPaneTestHarness.svelte";
+import { MAX_PASTED_IMAGE_BYTES } from "../../api/workspace-pasted-image.js";
 
 function resizeFramesOf(socket: MockWebSocket): string[] {
   return socket.sent.map(String).filter((frame) => frame.includes('"type":"resize"'));
@@ -317,6 +329,9 @@ describe("TerminalPane", () => {
     clipboardWriterDispose.mockReset();
     clipboardWriterWrite.mockReset().mockResolvedValue("unauthorized");
     mockShowFlash.mockReset();
+    uploadWorkspacePastedImageMock
+      .mockReset()
+      .mockImplementation((_target, file: File) => Effect.succeed(`.kenn-forge/pasted-images/${file.name}`));
     mockWebglCtor.mockReset();
     mouseDragEndPointerGesture.mockReset();
     mouseDragObserveTerminalData.mockReset();
@@ -1617,7 +1632,160 @@ describe("TerminalPane", () => {
       "single[201~ line",
     ]);
   });
+
+  it("uploads pasted images concurrently and inserts their paths once in clipboard order", async () => {
+    const first = deferred<string>();
+    const second = deferred<string>();
+    uploadWorkspacePastedImageMock.mockImplementation((_target, file: File) =>
+      Effect.promise(() => (file.name === "first.png" ? first.promise : second.promise)),
+    );
+    const { container } = render(TerminalPane, {
+      props: {
+        websocketPath: "/api/v1/fleet/hosts/host-a/workspaces/ws-123/runtime/sessions/agent/terminal",
+        uploadTarget: { workspaceId: "ws-123", hostKey: "host-a" },
+      },
+    });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
+    mockSockets[0]!.sent = [];
+
+    const event = imagePasteEvent([
+      new File(["first"], "first.png", { type: "image/png" }),
+      new File(["second"], "second.png", { type: "image/png" }),
+    ]);
+    const defaultAllowed = container.querySelector(".terminal-container")!.dispatchEvent(event);
+
+    expect(defaultAllowed).toBe(false);
+    await waitFor(() => expect(uploadWorkspacePastedImageMock).toHaveBeenCalledTimes(2));
+    expect(uploadWorkspacePastedImageMock.mock.calls.map(([target]) => target)).toEqual([
+      { workspaceId: "ws-123", hostKey: "host-a" },
+      { workspaceId: "ws-123", hostKey: "host-a" },
+    ]);
+    second.resolve(".kenn-forge/pasted-images/second.png");
+    await tick();
+    expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).not.toContain(
+      ".kenn-forge/pasted-images/second.png",
+    );
+    first.resolve(".kenn-forge/pasted-images/first.png");
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain(
+        ".kenn-forge/pasted-images/first.png .kenn-forge/pasted-images/second.png",
+      ),
+    );
+  });
+
+  it("reports missing upload ownership instead of silently dropping pasted images", async () => {
+    const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
+
+    container
+      .querySelector(".terminal-container")!
+      .dispatchEvent(imagePasteEvent([new File(["image"], "image.png", { type: "image/png" })]));
+
+    expect(uploadWorkspacePastedImageMock).not.toHaveBeenCalled();
+    expect(mockShowFlash).toHaveBeenCalledWith("This terminal cannot receive pasted images.", {
+      tone: "danger",
+    });
+  });
+
+  it("caps each paste at four uploads and inserts only successful paths", async () => {
+    uploadWorkspacePastedImageMock.mockImplementation((_target, file: File) =>
+      file.name === "2.png"
+        ? Effect.fail(new Error("upload failed"))
+        : Effect.succeed(`.kenn-forge/pasted-images/${file.name}`),
+    );
+    const { container } = render(TerminalPane, {
+      props: {
+        workspaceId: "ws-123",
+        uploadTarget: { workspaceId: "ws-123" },
+      },
+    });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
+    mockSockets[0]!.sent = [];
+    const files = [1, 2, 3, 4, 5].map((number) => new File([String(number)], `${number}.png`, { type: "image/png" }));
+
+    container.querySelector(".terminal-container")!.dispatchEvent(imagePasteEvent(files));
+
+    await waitFor(() => expect(uploadWorkspacePastedImageMock).toHaveBeenCalledTimes(4));
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain(
+        ".kenn-forge/pasted-images/1.png .kenn-forge/pasted-images/3.png .kenn-forge/pasted-images/4.png",
+      ),
+    );
+    expect(mockShowFlash).toHaveBeenCalledWith("2 of 5 pasted images could not be uploaded.", {
+      tone: "danger",
+    });
+  });
+
+  it("rejects a known oversized image before uploading it", async () => {
+    const oversized = {
+      name: "oversized.png",
+      type: "image/png",
+      size: MAX_PASTED_IMAGE_BYTES + 1,
+    } as File;
+    const { container } = render(TerminalPane, {
+      props: {
+        workspaceId: "ws-123",
+        uploadTarget: { workspaceId: "ws-123" },
+      },
+    });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
+
+    container.querySelector(".terminal-container")!.dispatchEvent(imagePasteEvent([oversized]));
+
+    await waitFor(() =>
+      expect(mockShowFlash).toHaveBeenCalledWith("1 of 1 pasted image could not be uploaded.", {
+        tone: "danger",
+      }),
+    );
+    expect(uploadWorkspacePastedImageMock).not.toHaveBeenCalled();
+  });
+
+  it("does not insert a completed upload after its terminal connection is replaced", async () => {
+    const upload = deferred<string>();
+    uploadWorkspacePastedImageMock.mockReturnValue(Effect.promise(() => upload.promise));
+    const { container } = render(TerminalPane, {
+      props: {
+        workspaceId: "ws-123",
+        uploadTarget: { workspaceId: "ws-123" },
+      },
+    });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
+    container
+      .querySelector(".terminal-container")!
+      .dispatchEvent(imagePasteEvent([new File(["image"], "image.png", { type: "image/png" })]));
+    await waitFor(() => expect(uploadWorkspacePastedImageMock).toHaveBeenCalledOnce());
+
+    mockSockets[0]!.onclose();
+    await waitFor(() => expect(mockSockets).toHaveLength(2), { timeout: 2_000 });
+    mockSockets[1]!.sent = [];
+    upload.resolve(".kenn-forge/pasted-images/image.png");
+    await tick();
+
+    expect(mockSockets[1]!.sent).toHaveLength(0);
+    expect(mockShowFlash).not.toHaveBeenCalled();
+  });
 });
+
+function imagePasteEvent(files: readonly File[]): ClipboardEvent {
+  const event = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      getData: vi.fn(() => ""),
+      items: files.map((file) => ({
+        kind: "file",
+        type: file.type,
+        getAsFile: () => file,
+      })),
+      files,
+    },
+  });
+  return event;
+}
 
 function socketFramesOfType(socket: MockWebSocket, type: string): string[] {
   return socket.sent

@@ -2,9 +2,13 @@ package fleetapi
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,7 +17,84 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
+
+func TestHTTPFleetProxyRelaysPastedImageJSON(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	png := []byte("\x89PNG\r\n\x1a\nfleet http fixture")
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("/api/v1/workspaces/ws_1/pasted-images", r.URL.Path)
+		assert.Equal("application/json", r.Header.Get("Content-Type"))
+		var request struct {
+			Data string `json:"data"`
+		}
+		if !assert.NoError(json.NewDecoder(r.Body).Decode(&request)) {
+			return
+		}
+		decoded, err := base64.StdEncoding.DecodeString(request.Data)
+		if !assert.NoError(err) {
+			return
+		}
+		assert.Equal(png, decoded)
+		w.Header().Set("Content-Type", "application/json")
+		_, err = io.WriteString(w, `{"path":".kenn-forge/pasted-images/paste-http.png"}`)
+		assert.NoError(err)
+	}))
+	t.Cleanup(peer.Close)
+
+	srv, _ := setupTestServer(t)
+	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
+		cfg.Fleet.Peers = []config.FleetPeer{{Key: "member", BaseURL: peer.URL}}
+	})
+	hub := httptest.NewServer(srv.localHandler())
+	t.Cleanup(hub.Close)
+	body, err := json.Marshal(map[string]string{"data": base64.StdEncoding.EncodeToString(png)})
+	require.NoError(err)
+
+	response := httpDo(t, hub, http.MethodPost,
+		"/api/v1/fleet/hosts/member/workspaces/ws_1/pasted-images", body)
+	defer response.Body.Close()
+	require.Equal(http.StatusOK, response.StatusCode)
+	var output struct {
+		Path string `json:"path"`
+	}
+	require.NoError(json.NewDecoder(response.Body).Decode(&output))
+	assert.Equal(".kenn-forge/pasted-images/paste-http.png", output.Path)
+}
+
+func TestFleetPastedImageRejectsOversizedBodyBeforeRelay(t *testing.T) {
+	t.Parallel()
+	var relayed atomic.Bool
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		relayed.Store(true)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(peer.Close)
+
+	srv, _ := setupTestServer(t)
+	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
+		cfg.Fleet.Peers = []config.FleetPeer{{Key: "member", BaseURL: peer.URL}}
+	})
+	hub := httptest.NewServer(srv.localHandler())
+	t.Cleanup(hub.Close)
+	body := `{"data":"` + strings.Repeat("A", int(workspaceapi.MaxPastedImageRequestBytes)) + `"}`
+
+	response, err := http.Post(
+		hub.URL+"/api/v1/fleet/hosts/member/workspaces/ws_1/pasted-images",
+		"application/json",
+		strings.NewReader(body),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = response.Body.Close() })
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, response.StatusCode)
+	assert.False(t, relayed.Load())
+}
 
 func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	require := require.New(t)

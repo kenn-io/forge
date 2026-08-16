@@ -289,9 +289,10 @@ External identifiers are only normalized to one line, which preserves Markdown
 structure and is not a trust boundary; new free-prose fields must go through the
 fence.
 
-Before writing, kenn-forge ignores the generated path through the worktree's
-private exclude file, not tracked `.gitignore`. If the path would remain
-visible to Git, the write fails.
+Before writing agent context or workspace-lifetime pasted images, kenn-forge
+makes the generated location invisible through the repository's private
+exclude, never tracked `.gitignore`; the write fails if the rule is ineffective
+(`internal/workspace/gitignore.go::EnsureWorkspaceGeneratedPathsIgnored`).
 
 The recomputed head-repo trust classification must be persisted back to the
 workspace row, not just held on the in-memory struct: a sync that turns a

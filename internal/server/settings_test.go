@@ -524,13 +524,20 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfig(t)
 	require.False(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
+	require.False(srv.pullAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
+	require.False(srv.issueAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 
 	enabled := config.PullRequests{AllowMidStackMerges: true}
+	activityEnabled := srv.cfg.Activity
+	activityEnabled.UseWorkspaceActivityForRecency = true
 	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		PullRequests: &enabled,
+		Activity:     &activityEnabled,
 	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	require.True(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
+	require.True(srv.pullAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
+	require.True(srv.issueAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 
 	// Swapped under the reload lock: the config watcher goroutine reads
 	// cfgPath under configReloadMu.
@@ -538,14 +545,19 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	srv.cfgPath = t.TempDir()
 	srv.configReloadMu.Unlock()
 	disabled := config.PullRequests{AllowMidStackMerges: false}
+	activityDisabled := activityEnabled
+	activityDisabled.UseWorkspaceActivityForRecency = false
 	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		PullRequests: &disabled,
+		Activity:     &activityDisabled,
 	})
 	require.Equal(http.StatusInternalServerError, rr.Code, rr.Body.String())
 	require.True(
 		srv.pullAPI.ConfigSnapshot().AllowMidStackMerges,
 		"failed persistence published an uncommitted Pull config",
 	)
+	require.True(srv.pullAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
+	require.True(srv.issueAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 }
 
 func TestHandleUpdateSettingsSerializesWithConfigReload(t *testing.T) {

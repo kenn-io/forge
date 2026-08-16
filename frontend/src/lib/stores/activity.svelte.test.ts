@@ -34,7 +34,7 @@ function createActivityStore(options: TestActivityStoreOptions) {
   return createRuntimeActivityStore({ ...storeOptions, runtime });
 }
 
-function settings(collapse: boolean): ActivitySettings {
+function settings(collapse: boolean, useWorkspaceActivityForRecency = false): ActivitySettings {
   return {
     view_mode: "threaded",
     time_range: "7d",
@@ -43,6 +43,7 @@ function settings(collapse: boolean): ActivitySettings {
     collapse_threads: collapse,
     default_branch_retention_days: 90,
     default_branch_max_commits: 5000,
+    use_workspace_activity_for_recency: useWorkspaceActivityForRecency,
   };
 }
 
@@ -154,6 +155,12 @@ describe("activity store workspace activity", () => {
 });
 
 describe("activity store collapse state", () => {
+  it("hydrates the workspace activity recency preference", () => {
+    const s = makeStore();
+    s.hydrateDefaults(settings(false, true));
+    expect(s.getUseWorkspaceActivityForRecency()).toBe(true);
+  });
+
   it("treats threads as expanded when the collapse default is false", () => {
     const s = makeStore();
     s.hydrateDefaults(settings(false));

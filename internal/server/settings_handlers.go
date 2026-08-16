@@ -902,6 +902,7 @@ func (s *Server) updateSettings(
 	s.refreshRuntimeTargetsLocked()
 	s.applyWorkspaceConfigLocked()
 	s.applyPullConfigLocked()
+	s.applyIssueConfigLocked()
 	s.cfgMu.Unlock()
 	s.reconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
 

@@ -17,7 +17,7 @@ function pr(
     State: state,
     KanbanStatus: kanbanStatus,
     LastActivityAt: lastActivityAt,
-    workspace_activity_at: workspaceActivityAt,
+    last_workspace_activity_at: workspaceActivityAt,
     worktree_links: worktreeLinks,
   } as PullRequest;
 }
@@ -71,11 +71,26 @@ describe("PR status grouping", () => {
   });
 
   it("sorts a status group by effective provider and workspace activity", () => {
-    const groups = groupByWorkflow([
-      pr(1, "reviewing", "2026-01-03T00:00:00Z"),
-      pr(2, "reviewing", "2026-01-01T00:00:00Z", [], "open", "2026-01-04T00:00:00Z"),
-    ]);
+    const groups = groupByWorkflow(
+      [
+        pr(1, "reviewing", "2026-01-03T00:00:00Z"),
+        pr(2, "reviewing", "2026-01-01T00:00:00Z", [], "open", "2026-01-04T00:00:00Z"),
+      ],
+      true,
+    );
 
     expect(groups[0]?.items.map((item) => item.ID)).toEqual([2, 1]);
+  });
+
+  it("sorts by provider activity when workspace recency is disabled", () => {
+    const groups = groupByWorkflow(
+      [
+        pr(1, "reviewing", "2026-01-03T00:00:00Z"),
+        pr(2, "reviewing", "2026-01-01T00:00:00Z", [], "open", "2026-01-04T00:00:00Z"),
+      ],
+      false,
+    );
+
+    expect(groups[0]?.items.map((item) => item.ID)).toEqual([1, 2]);
   });
 });

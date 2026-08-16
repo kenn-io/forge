@@ -128,6 +128,7 @@
   });
 
   const visibleWorkspaceActivity = $derived.by(() => {
+    if (!activity.getUseWorkspaceActivityForRecency()) return [];
     let result = activity.getWorkspaceActivity().filter((subject) =>
       isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
     );

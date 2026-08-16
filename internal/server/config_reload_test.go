@@ -422,16 +422,23 @@ func TestConfigReloadPublishesPullConfigOnlyAfterSuccessfulReload(t *testing.T) 
 		t, validReloadConfig, &mockGH{},
 	)
 	require.False(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
+	require.False(srv.pullAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
+	require.False(srv.issueAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 
 	reloadPath := filepath.Join(t.TempDir(), "reload.toml")
 	srv.cfgPath = reloadPath
 	writeConfigToml(t, reloadPath, validReloadConfig+`
 [pull_requests]
 allow_mid_stack_merges = true
+
+[activity]
+use_workspace_activity_for_recency = true
 `)
 	event := srv.applyConfigChange(t.Context())
 	require.True(event.Valid, event.Error)
 	require.True(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
+	require.True(srv.pullAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
+	require.True(srv.issueAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 
 	writeConfigToml(t, reloadPath, malformedTomlConfig)
 	event = srv.applyConfigChange(t.Context())
@@ -440,6 +447,8 @@ allow_mid_stack_merges = true
 		srv.pullAPI.ConfigSnapshot().AllowMidStackMerges,
 		"failed reload published an invalid Pull config",
 	)
+	require.True(srv.pullAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
+	require.True(srv.issueAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 }
 
 // A server constructed without a syncer (Server.New permits nil; embedded

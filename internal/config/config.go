@@ -658,13 +658,14 @@ func cleanPath(path string) string {
 }
 
 type Activity struct {
-	ViewMode                   string `toml:"view_mode" json:"view_mode" enum:"flat,threaded"`
-	TimeRange                  string `toml:"time_range" json:"time_range" enum:"24h,7d,30d,90d"`
-	HideClosed                 bool   `toml:"hide_closed" json:"hide_closed"`
-	HideBots                   bool   `toml:"hide_bots" json:"hide_bots"`
-	CollapseThreads            bool   `toml:"collapse_threads" json:"collapse_threads"`
-	DefaultBranchRetentionDays int    `toml:"default_branch_retention_days" json:"default_branch_retention_days"`
-	DefaultBranchMaxCommits    int    `toml:"default_branch_max_commits" json:"default_branch_max_commits"`
+	ViewMode                       string `toml:"view_mode" json:"view_mode" enum:"flat,threaded"`
+	TimeRange                      string `toml:"time_range" json:"time_range" enum:"24h,7d,30d,90d"`
+	HideClosed                     bool   `toml:"hide_closed" json:"hide_closed"`
+	HideBots                       bool   `toml:"hide_bots" json:"hide_bots"`
+	CollapseThreads                bool   `toml:"collapse_threads" json:"collapse_threads"`
+	UseWorkspaceActivityForRecency bool   `toml:"use_workspace_activity_for_recency" json:"use_workspace_activity_for_recency"`
+	DefaultBranchRetentionDays     int    `toml:"default_branch_retention_days" json:"default_branch_retention_days"`
+	DefaultBranchMaxCommits        int    `toml:"default_branch_max_commits" json:"default_branch_max_commits"`
 }
 
 // PullRequests configures safeguards around pull-request mutations.

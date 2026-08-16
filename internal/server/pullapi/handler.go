@@ -22,7 +22,8 @@ type Event struct {
 }
 
 type ConfigSnapshot struct {
-	AllowMidStackMerges bool
+	AllowMidStackMerges            bool
+	UseWorkspaceActivityForRecency bool
 }
 
 type Deps struct {

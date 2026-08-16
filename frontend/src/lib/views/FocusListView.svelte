@@ -19,7 +19,7 @@
     type PullRequestRouteRef,
   } from "../routes.js";
 
-  const { pulls, issues, sync, settings, grouping } = getStores();
+  const { pulls, issues, sync, settings, grouping, activity } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
   const actions = getActions();
@@ -33,7 +33,7 @@
     grouping.getGroupingMode(),
   );
   const workflowGroups = $derived(
-    groupByWorkflow(pulls.getPulls()),
+    groupByWorkflow(pulls.getPulls(), activity.getUseWorkspaceActivityForRecency()),
   );
 
   interface Props {

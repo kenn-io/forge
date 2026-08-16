@@ -24025,7 +24025,12 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 			eventlessKey: subject(eventlessKey, "Another unrelated title"),
 		},
 	}
-	srv := &Server{repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{})}
+	srv := &Server{
+		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
+		cfg: &config.Config{Activity: config.Activity{
+			UseWorkspaceActivityForRecency: true,
+		}},
+	}
 
 	got := srv.workspaceActivityResponse(
 		&listActivityInput{},
@@ -24073,7 +24078,12 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 			eventlessKey: subject(eventlessKey),
 		},
 	}
-	srv := &Server{repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{})}
+	srv := &Server{
+		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
+		cfg: &config.Config{Activity: config.Activity{
+			UseWorkspaceActivityForRecency: true,
+		}},
+	}
 
 	byAuthor := srv.workspaceActivityResponse(
 		&listActivityInput{},
@@ -24149,6 +24159,46 @@ func TestMergeWorkspaceActivityAuthorsDeduplicatesCaseInsensitively(t *testing.T
 	)
 
 	assert.Equal(t, []string{"Provider Owner", "Workspace Owner", "Fresh Owner"}, got)
+}
+
+func TestWorkspaceActivityProjectionRequiresOptIn(t *testing.T) {
+	require := require.New(t)
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	key := db.WorkspaceSubjectKey{
+		RepoID: 7, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 41,
+	}
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+			key: {
+				Subject: db.WorkspaceSubjectMetadata{
+					Key: key, Platform: "github", PlatformHost: "github.com",
+					RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+					Title: "Workspace-only work", Author: "workspace owner", State: "open",
+				},
+				Workspace:  workspaceapi.WorkspaceRef{ID: "ws-41", Status: "ready"},
+				ActivityAt: &now,
+			},
+		},
+	}
+	srv := &Server{
+		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
+		cfg:          &config.Config{},
+	}
+
+	require.Empty(srv.workspaceActivityResponse(
+		&listActivityInput{}, db.ListActivityOpts{}, snapshot, nil,
+	))
+	require.Equal([]string{"provider author"}, srv.activityAuthorsWithWorkspace(
+		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{},
+	))
+
+	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
+	require.Len(srv.workspaceActivityResponse(
+		&listActivityInput{}, db.ListActivityOpts{}, snapshot, nil,
+	), 1)
+	require.ElementsMatch([]string{"provider author", "workspace owner"}, srv.activityAuthorsWithWorkspace(
+		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{},
+	))
 }
 
 func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {

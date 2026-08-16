@@ -18,7 +18,7 @@
   import { repoIdentityKey } from "../../utils/repo-label.js";
   import { effectiveActivity } from "../../utils/effective-activity.js";
 
-  const { pulls } = getStores();
+  const { pulls, activity } = getStores();
   const hostState = getHostState();
 
   interface Props {
@@ -62,7 +62,11 @@
     }
   });
 
-  const activityTime = $derived(effectiveActivity(pr.LastActivityAt, pr.workspace_activity_at));
+  const activityTime = $derived(effectiveActivity(
+    pr.LastActivityAt,
+    pr.last_workspace_activity_at,
+    activity.getUseWorkspaceActivityForRecency(),
+  ));
   const ago = $derived(formatRelativeTime(activityTime.at));
   const hasWorktree = $derived(
     (pr.worktree_links?.length ?? 0) > 0,

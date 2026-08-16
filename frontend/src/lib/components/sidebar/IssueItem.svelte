@@ -9,7 +9,7 @@
   import { repoIdentityKey } from "../../utils/repo-label.js";
   import { effectiveActivity } from "../../utils/effective-activity.js";
 
-  const { issues } = getStores();
+  const { issues, activity } = getStores();
 
   interface Props {
     issue: Issue;
@@ -52,7 +52,11 @@
     name: issue.repo.name,
     repoPath: issue.repo.repo_path,
   }));
-  const activityTime = $derived(effectiveActivity(issue.LastActivityAt, issue.workspace_activity_at));
+  const activityTime = $derived(effectiveActivity(
+    issue.LastActivityAt,
+    issue.last_workspace_activity_at,
+    activity.getUseWorkspaceActivityForRecency(),
+  ));
   const ago = $derived(formatRelativeTime(activityTime.at));
 </script>
 

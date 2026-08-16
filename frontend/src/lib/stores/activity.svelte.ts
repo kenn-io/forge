@@ -221,6 +221,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   let hideClosedMerged = $state(false);
   let hideBots = $state(false);
+  let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
   let enabledEvents = $state<Set<string>>(new Set(DEFAULT_EVENT_TYPES));
@@ -296,6 +297,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function getHideBots(): boolean {
     return hideBots;
+  }
+  function getUseWorkspaceActivityForRecency(): boolean {
+    return useWorkspaceActivityForRecency;
   }
   function getHideDefaultBranchActivity(): boolean {
     return hideDefaultBranchActivity;
@@ -383,6 +387,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     timeRange = activity.time_range;
     hideClosedMerged = activity.hide_closed;
     hideBots = activity.hide_bots;
+    useWorkspaceActivityForRecency = activity.use_workspace_activity_for_recency;
     collapseThreadsDefault = activity.collapse_threads;
     collapseThreads = activity.collapse_threads;
     expandOverrides = new Set();
@@ -894,6 +899,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     isThreadItemExpanded,
     getHideClosedMerged,
     getHideBots,
+    getUseWorkspaceActivityForRecency,
     getHideDefaultBranchActivity,
     getEnabledItemTypes,
     getEnabledEvents,

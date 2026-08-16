@@ -5,6 +5,7 @@ package issueapi
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -13,6 +14,10 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
+
+type ConfigSnapshot struct {
+	UseWorkspaceActivityForRecency bool
+}
 
 const (
 	capabilityAssigneeMutation = "assignee_mutation"
@@ -28,6 +33,7 @@ type Deps struct {
 	Resolver          *httpapi.RepositoryResolver
 	Syncer            *ghclient.Syncer
 	Now               func() time.Time
+	Config            ConfigSnapshot
 	WorkspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
 	ViewerLogins      func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 
@@ -47,6 +53,9 @@ type Handler struct {
 	filterRepos             func([]db.Repo) []db.Repo
 	repoOperations          func(db.Repo) httpapi.RepoOperations
 	markClosedNotifications func(context.Context)
+
+	configMu sync.RWMutex
+	config   ConfigSnapshot
 }
 
 func New(deps Deps) *Handler {
@@ -64,7 +73,20 @@ func New(deps Deps) *Handler {
 		filterRepos:             deps.FilterRepos,
 		repoOperations:          deps.RepoOperations,
 		markClosedNotifications: deps.MarkClosedLinkedNotificationsDone,
+		config:                  deps.Config,
 	}
+}
+
+func (s *Handler) ApplyConfig(config ConfigSnapshot) {
+	s.configMu.Lock()
+	s.config = config
+	s.configMu.Unlock()
+}
+
+func (s *Handler) ConfigSnapshot() ConfigSnapshot {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	return s.config
 }
 
 func (s *Handler) Register(api huma.API) {

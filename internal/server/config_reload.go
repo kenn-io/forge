@@ -433,6 +433,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	s.applyFleetConfigLocked()
 	s.applyKataConfigLocked()
 	s.applyPullConfigLocked()
+	s.applyIssueConfigLocked()
 	s.cfgMu.Unlock()
 
 	if s.syncer != nil {

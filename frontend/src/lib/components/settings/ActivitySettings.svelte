@@ -103,6 +103,16 @@
     save(updated, previous);
   }
 
+  function toggleUseWorkspaceActivityForRecency(): void {
+    const previous = activity;
+    const updated = {
+      ...activity,
+      use_workspace_activity_for_recency: !activity.use_workspace_activity_for_recency,
+    };
+    onUpdate(updated);
+    save(updated, previous);
+  }
+
   function setViewModeValue(value: string): void {
     if (value === "flat" || value === "threaded") setViewMode(value);
   }
@@ -154,6 +164,19 @@
 <div class="setting-row">
   <span class="setting-label">Hide bots</span>
   <button class="toggle-btn" class:toggle-on={activity.hide_bots} onclick={toggleHideBots} aria-label="Toggle hide bots" aria-pressed={activity.hide_bots}>
+    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+  </button>
+</div>
+
+<div class="setting-row">
+  <span class="setting-label">Use workspace activity for recency</span>
+  <button
+    class="toggle-btn"
+    class:toggle-on={activity.use_workspace_activity_for_recency}
+    onclick={toggleUseWorkspaceActivityForRecency}
+    aria-label="Toggle use workspace activity for recency"
+    aria-pressed={activity.use_workspace_activity_for_recency}
+  >
     <span class="toggle-track"><span class="toggle-thumb"></span></span>
   </button>
 </div>

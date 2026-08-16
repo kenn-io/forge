@@ -1566,6 +1566,9 @@ func (s *Server) workspaceActivityResponse(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 	providerItems []db.ActivityItem,
 ) []workspaceActivitySubjectResponse {
+	if !s.useWorkspaceActivityForRecency() {
+		return []workspaceActivitySubjectResponse{}
+	}
 	itemTypes := make(map[string]struct{}, len(input.ItemTypes))
 	for _, itemType := range input.ItemTypes {
 		itemTypes[strings.ToLower(strings.TrimSpace(itemType))] = struct{}{}
@@ -1712,10 +1715,27 @@ func (s *Server) listActivityAuthors(
 		slog.Error("list workspace activity authors failed", "err", err)
 		return nil, httpapi.Internal("list activity authors failed")
 	}
-	authors = mergeWorkspaceActivityAuthors(authors, workspaceSnapshot, opts)
+	authors = s.activityAuthorsWithWorkspace(authors, workspaceSnapshot, opts)
 	return &listActivityAuthorsOutput{
 		Body: activityAuthorsResponse{Authors: authors},
 	}, nil
+}
+
+func (s *Server) activityAuthorsWithWorkspace(
+	providerAuthors []string,
+	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+	opts db.ListActivityAuthorsOpts,
+) []string {
+	if !s.useWorkspaceActivityForRecency() {
+		return providerAuthors
+	}
+	return mergeWorkspaceActivityAuthors(providerAuthors, snapshot, opts)
+}
+
+func (s *Server) useWorkspaceActivityForRecency() bool {
+	s.cfgMu.Lock()
+	defer s.cfgMu.Unlock()
+	return s.cfg != nil && s.cfg.Activity.UseWorkspaceActivityForRecency
 }
 
 type workspaceActivityAuthorCandidate struct {

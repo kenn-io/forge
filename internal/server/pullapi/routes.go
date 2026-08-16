@@ -380,12 +380,15 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 			return nil, httpapi.Internal("load workspace activity failed")
 		}
 	}
-	overrides := make([]db.ItemActivityOverride, 0, len(snapshot.Subjects))
-	for key, activity := range snapshot.Subjects {
-		if key.ItemType == db.WorkspaceItemTypePullRequest && activity.ActivityAt != nil {
-			overrides = append(overrides, db.ItemActivityOverride{
-				RepoID: key.RepoID, ItemNumber: key.ItemNumber, ActivityAt: *activity.ActivityAt,
-			})
+	var overrides []db.ItemActivityOverride
+	if s.ConfigSnapshot().UseWorkspaceActivityForRecency {
+		overrides = make([]db.ItemActivityOverride, 0, len(snapshot.Subjects))
+		for key, activity := range snapshot.Subjects {
+			if key.ItemType == db.WorkspaceItemTypePullRequest && activity.ActivityAt != nil {
+				overrides = append(overrides, db.ItemActivityOverride{
+					RepoID: key.RepoID, ItemNumber: key.ItemNumber, ActivityAt: *activity.ActivityAt,
+				})
+			}
 		}
 	}
 	opts := db.ListMergeRequestsOpts{
@@ -463,7 +466,7 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 			DetailLoaded:  mr.DetailFetchedAt != nil,
 		}
 		if activity, ok := snapshot.Subjects[key]; ok && activity.ActivityAt != nil {
-			resp.WorkspaceActivityAt = formatUTCRFC3339(*activity.ActivityAt)
+			resp.LastWorkspaceActivityAt = formatUTCRFC3339(*activity.ActivityAt)
 		}
 		if mr.DetailFetchedAt != nil {
 			resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)

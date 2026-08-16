@@ -21,6 +21,7 @@ beforeEach(() => {
   itemActivity.value = [];
   workspaceActivity.value = [];
   hideBots.value = false;
+  useWorkspaceActivityForRecency.value = false;
 });
 
 afterEach(async () => {
@@ -105,6 +106,7 @@ const rollUpCommits = vi.hoisted(() => ({ value: false }));
 const hideDefaultBranchActivity = vi.hoisted(() => ({ value: false }));
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideBots = vi.hoisted(() => ({ value: false }));
+const useWorkspaceActivityForRecency = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const setActivityFilterTypes = vi.hoisted(() => vi.fn());
 const enabledItemTypes = vi.hoisted(() => ({
@@ -144,6 +146,7 @@ vi.mock("../context.js", () => ({
       getInvolvesMe: () => involvesMe.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => hideBots.value,
+      getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
       getEnabledItemTypes: () => enabledItemTypes.value,
       getActivityItems: () => items.value,
@@ -266,6 +269,7 @@ describe("ActivityFeed compact mode", () => {
   });
 
   it("shows workspace-only subjects only in threaded mode", () => {
+    useWorkspaceActivityForRecency.value = true;
     items.value = [];
     workspaceActivity.value = [workspaceSubject()];
 
@@ -278,7 +282,17 @@ describe("ActivityFeed compact mode", () => {
     expect(threaded.container.textContent).toContain("Workspace-only work");
   });
 
+  it("hides cached workspace-only subjects when workspace recency is disabled", () => {
+    viewMode.value = "threaded";
+    workspaceActivity.value = [workspaceSubject()];
+
+    const { container } = render(ActivityFeed, { props: { compact: true } });
+
+    expect(container.textContent).not.toContain("Workspace-only work");
+  });
+
   it("applies item-scope and closed filters to workspace summaries", () => {
+    useWorkspaceActivityForRecency.value = true;
     viewMode.value = "threaded";
     items.value = [];
     workspaceActivity.value = [workspaceSubject({ item_state: "closed" })];
@@ -289,6 +303,7 @@ describe("ActivityFeed compact mode", () => {
   });
 
   it("hides bot-authored parent and workspace summaries in threaded mode", () => {
+    useWorkspaceActivityForRecency.value = true;
     viewMode.value = "threaded";
     items.value = [];
     itemActivity.value = [

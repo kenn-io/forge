@@ -26,7 +26,7 @@
     type PullRequestRouteRef,
   } from "../../routes.js";
 
-  const { pulls, sync, grouping, collapsedRepos, settings } = getStores();
+  const { pulls, sync, grouping, collapsedRepos, settings, activity } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
   const actions = getActions();
@@ -45,7 +45,7 @@
     grouping.getGroupingMode(),
   );
   const workflowGroups = $derived(
-    groupByWorkflow(pulls.getFilteredPulls()),
+    groupByWorkflow(pulls.getFilteredPulls(), activity.getUseWorkspaceActivityForRecency()),
   );
   const pullStateOptions = ["open", "closed", "all"] as const;
   const attributeFilterOptions: {

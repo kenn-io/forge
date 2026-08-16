@@ -168,6 +168,7 @@ describe("RepoImportModal", () => {
         collapse_threads: false,
         default_branch_retention_days: 90,
         default_branch_max_commits: 5000,
+        use_workspace_activity_for_recency: false,
       },
       terminal: {
         font_family: "",
@@ -245,6 +246,7 @@ describe("RepoImportModal", () => {
         collapse_threads: false,
         default_branch_retention_days: 90,
         default_branch_max_commits: 5000,
+        use_workspace_activity_for_recency: false,
       },
       terminal: {
         font_family: "",

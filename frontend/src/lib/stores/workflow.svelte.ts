@@ -46,7 +46,7 @@ export function classifyPR(pr: PullRequest): WorkflowGroup {
  * Items within each group are sorted by effective provider/workspace
  * activity descending.
  */
-export function groupByWorkflow(prs: PullRequest[]): WorkflowGroupEntry[] {
+export function groupByWorkflow(prs: PullRequest[], useWorkspaceActivityForRecency = false): WorkflowGroupEntry[] {
   const buckets = new Map<WorkflowGroup, PullRequest[]>();
   for (const g of workflowGroupOrder) {
     buckets.set(g, []);
@@ -63,8 +63,12 @@ export function groupByWorkflow(prs: PullRequest[]): WorkflowGroupEntry[] {
     if (items.length === 0) continue;
     items.sort(
       (a, b) =>
-        Date.parse(effectiveActivity(b.LastActivityAt, b.workspace_activity_at).at) -
-        Date.parse(effectiveActivity(a.LastActivityAt, a.workspace_activity_at).at),
+        Date.parse(
+          effectiveActivity(b.LastActivityAt, b.last_workspace_activity_at, useWorkspaceActivityForRecency).at,
+        ) -
+        Date.parse(
+          effectiveActivity(a.LastActivityAt, a.last_workspace_activity_at, useWorkspaceActivityForRecency).at,
+        ),
     );
     result.push({
       group,

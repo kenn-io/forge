@@ -656,7 +656,17 @@ func pullConfigSnapshot(cfg *config.Config) pullapi.ConfigSnapshot {
 		return pullapi.ConfigSnapshot{}
 	}
 	return pullapi.ConfigSnapshot{
-		AllowMidStackMerges: cfg.PullRequests.AllowMidStackMerges,
+		AllowMidStackMerges:            cfg.PullRequests.AllowMidStackMerges,
+		UseWorkspaceActivityForRecency: cfg.Activity.UseWorkspaceActivityForRecency,
+	}
+}
+
+func issueConfigSnapshot(cfg *config.Config) issueapi.ConfigSnapshot {
+	if cfg == nil {
+		return issueapi.ConfigSnapshot{}
+	}
+	return issueapi.ConfigSnapshot{
+		UseWorkspaceActivityForRecency: cfg.Activity.UseWorkspaceActivityForRecency,
 	}
 }
 
@@ -710,6 +720,12 @@ func (s *Server) applyKataConfigLocked() {
 func (s *Server) applyPullConfigLocked() {
 	if s.pullAPI != nil {
 		s.pullAPI.ApplyConfig(pullConfigSnapshot(s.cfg))
+	}
+}
+
+func (s *Server) applyIssueConfigLocked() {
+	if s.issueAPI != nil {
+		s.issueAPI.ApplyConfig(issueConfigSnapshot(s.cfg))
 	}
 }
 
@@ -1014,6 +1030,7 @@ func newServer(
 		Resolver:          repoResolver,
 		Syncer:            syncer,
 		Now:               func() time.Time { return s.now() },
+		Config:            issueConfigSnapshot(cfg),
 		WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
 		ViewerLogins:      s.resolveAuthenticatedViewerLogins,
 		FilterRepos: func(repos []db.Repo) []db.Repo {

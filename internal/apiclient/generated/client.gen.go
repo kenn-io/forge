@@ -1055,13 +1055,14 @@ type ActionStatusBody struct {
 
 // Activity defines model for Activity.
 type Activity struct {
-	CollapseThreads            bool              `json:"collapse_threads"`
-	DefaultBranchMaxCommits    int64             `json:"default_branch_max_commits"`
-	DefaultBranchRetentionDays int64             `json:"default_branch_retention_days"`
-	HideBots                   bool              `json:"hide_bots"`
-	HideClosed                 bool              `json:"hide_closed"`
-	TimeRange                  ActivityTimeRange `json:"time_range"`
-	ViewMode                   ActivityViewMode  `json:"view_mode"`
+	CollapseThreads                bool              `json:"collapse_threads"`
+	DefaultBranchMaxCommits        int64             `json:"default_branch_max_commits"`
+	DefaultBranchRetentionDays     int64             `json:"default_branch_retention_days"`
+	HideBots                       bool              `json:"hide_bots"`
+	HideClosed                     bool              `json:"hide_closed"`
+	TimeRange                      ActivityTimeRange `json:"time_range"`
+	UseWorkspaceActivityForRecency bool              `json:"use_workspace_activity_for_recency"`
+	ViewMode                       ActivityViewMode  `json:"view_mode"`
 }
 
 // ActivityTimeRange defines model for Activity.TimeRange.
@@ -2420,34 +2421,34 @@ type IssueResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/IssueResponse.json
-	Schema              *string                     `json:"$schema,omitempty"`
-	Author              string                      `json:"Author"`
-	Body                string                      `json:"Body"`
-	ClosedAt            *time.Time                  `json:"ClosedAt"`
-	CommentCount        int64                       `json:"CommentCount"`
-	CreatedAt           time.Time                   `json:"CreatedAt"`
-	ID                  int64                       `json:"ID"`
-	LastActivityAt      time.Time                   `json:"LastActivityAt"`
-	Number              int64                       `json:"Number"`
-	PlatformExternalID  string                      `json:"PlatformExternalID"`
-	PlatformID          int64                       `json:"PlatformID"`
-	RepoID              int64                       `json:"RepoID"`
-	Starred             bool                        `json:"Starred"`
-	State               string                      `json:"State"`
-	Title               string                      `json:"Title"`
-	URL                 string                      `json:"URL"`
-	UpdatedAt           time.Time                   `json:"UpdatedAt"`
-	WorkflowStatus      IssueResponseWorkflowStatus `json:"WorkflowStatus"`
-	Assignees           *[]string                   `json:"assignees,omitempty"`
-	DetailFetchedAt     *string                     `json:"detail_fetched_at,omitempty"`
-	DetailLoaded        bool                        `json:"detail_loaded"`
-	Labels              *[]Label                    `json:"labels,omitempty"`
-	PlatformHost        string                      `json:"platform_host"`
-	Repo                RepoRefResponse             `json:"repo"`
-	RepoName            string                      `json:"repo_name"`
-	RepoOwner           string                      `json:"repo_owner"`
-	Workspace           *WorkspaceRef               `json:"workspace,omitempty"`
-	WorkspaceActivityAt *time.Time                  `json:"workspace_activity_at,omitempty"`
+	Schema                  *string                     `json:"$schema,omitempty"`
+	Author                  string                      `json:"Author"`
+	Body                    string                      `json:"Body"`
+	ClosedAt                *time.Time                  `json:"ClosedAt"`
+	CommentCount            int64                       `json:"CommentCount"`
+	CreatedAt               time.Time                   `json:"CreatedAt"`
+	ID                      int64                       `json:"ID"`
+	LastActivityAt          time.Time                   `json:"LastActivityAt"`
+	Number                  int64                       `json:"Number"`
+	PlatformExternalID      string                      `json:"PlatformExternalID"`
+	PlatformID              int64                       `json:"PlatformID"`
+	RepoID                  int64                       `json:"RepoID"`
+	Starred                 bool                        `json:"Starred"`
+	State                   string                      `json:"State"`
+	Title                   string                      `json:"Title"`
+	URL                     string                      `json:"URL"`
+	UpdatedAt               time.Time                   `json:"UpdatedAt"`
+	WorkflowStatus          IssueResponseWorkflowStatus `json:"WorkflowStatus"`
+	Assignees               *[]string                   `json:"assignees,omitempty"`
+	DetailFetchedAt         *string                     `json:"detail_fetched_at,omitempty"`
+	DetailLoaded            bool                        `json:"detail_loaded"`
+	Labels                  *[]Label                    `json:"labels,omitempty"`
+	LastWorkspaceActivityAt *time.Time                  `json:"last_workspace_activity_at,omitempty"`
+	PlatformHost            string                      `json:"platform_host"`
+	Repo                    RepoRefResponse             `json:"repo"`
+	RepoName                string                      `json:"repo_name"`
+	RepoOwner               string                      `json:"repo_owner"`
+	Workspace               *WorkspaceRef               `json:"workspace,omitempty"`
 }
 
 // IssueResponseWorkflowStatus defines model for IssueResponse.WorkflowStatus.
@@ -2952,52 +2953,52 @@ type MergeRequestEventResponse struct {
 
 // MergeRequestResponse defines model for MergeRequestResponse.
 type MergeRequestResponse struct {
-	Additions           int64                            `json:"Additions"`
-	Author              string                           `json:"Author"`
-	AuthorDisplayName   string                           `json:"AuthorDisplayName"`
-	BaseBranch          string                           `json:"BaseBranch"`
-	Body                string                           `json:"Body"`
-	CIChecksJSON        string                           `json:"CIChecksJSON"`
-	CIHadPending        bool                             `json:"CIHadPending"`
-	CIStatus            string                           `json:"CIStatus"`
-	ClosedAt            *time.Time                       `json:"ClosedAt"`
-	CommentCount        int64                            `json:"CommentCount"`
-	CreatedAt           time.Time                        `json:"CreatedAt"`
-	Deletions           int64                            `json:"Deletions"`
-	FilesChanged        *int64                           `json:"FilesChanged"`
-	HeadBranch          string                           `json:"HeadBranch"`
-	HeadRepoCloneURL    string                           `json:"HeadRepoCloneURL"`
-	ID                  int64                            `json:"ID"`
-	IsDraft             bool                             `json:"IsDraft"`
-	IsLocked            bool                             `json:"IsLocked"`
-	KanbanStatus        MergeRequestResponseKanbanStatus `json:"KanbanStatus"`
-	LastActivityAt      time.Time                        `json:"LastActivityAt"`
-	MergeCommitSHA      string                           `json:"MergeCommitSHA"`
-	MergeableState      string                           `json:"MergeableState"`
-	MergedAt            *time.Time                       `json:"MergedAt"`
-	Number              int64                            `json:"Number"`
-	PlatformExternalID  string                           `json:"PlatformExternalID"`
-	PlatformID          int64                            `json:"PlatformID"`
-	RepoID              int64                            `json:"RepoID"`
-	ReviewDecision      string                           `json:"ReviewDecision"`
-	Starred             bool                             `json:"Starred"`
-	State               MergeRequestResponseState        `json:"State"`
-	Title               string                           `json:"Title"`
-	URL                 string                           `json:"URL"`
-	UpdatedAt           time.Time                        `json:"UpdatedAt"`
-	Assignees           *[]string                        `json:"assignees,omitempty"`
-	DetailFetchedAt     *string                          `json:"detail_fetched_at,omitempty"`
-	DetailLoaded        bool                             `json:"detail_loaded"`
-	Labels              *[]Label                         `json:"labels,omitempty"`
-	PlatformHeadSha     *string                          `json:"platform_head_sha,omitempty"`
-	PlatformHost        string                           `json:"platform_host"`
-	Repo                RepoRefResponse                  `json:"repo"`
-	RepoName            string                           `json:"repo_name"`
-	RepoOwner           string                           `json:"repo_owner"`
-	RequestedReviewers  *[]string                        `json:"requested_reviewers,omitempty"`
-	Workspace           *WorkspaceRef                    `json:"workspace,omitempty"`
-	WorkspaceActivityAt *time.Time                       `json:"workspace_activity_at,omitempty"`
-	WorktreeLinks       *[]WorktreeLinkResponse          `json:"worktree_links"`
+	Additions               int64                            `json:"Additions"`
+	Author                  string                           `json:"Author"`
+	AuthorDisplayName       string                           `json:"AuthorDisplayName"`
+	BaseBranch              string                           `json:"BaseBranch"`
+	Body                    string                           `json:"Body"`
+	CIChecksJSON            string                           `json:"CIChecksJSON"`
+	CIHadPending            bool                             `json:"CIHadPending"`
+	CIStatus                string                           `json:"CIStatus"`
+	ClosedAt                *time.Time                       `json:"ClosedAt"`
+	CommentCount            int64                            `json:"CommentCount"`
+	CreatedAt               time.Time                        `json:"CreatedAt"`
+	Deletions               int64                            `json:"Deletions"`
+	FilesChanged            *int64                           `json:"FilesChanged"`
+	HeadBranch              string                           `json:"HeadBranch"`
+	HeadRepoCloneURL        string                           `json:"HeadRepoCloneURL"`
+	ID                      int64                            `json:"ID"`
+	IsDraft                 bool                             `json:"IsDraft"`
+	IsLocked                bool                             `json:"IsLocked"`
+	KanbanStatus            MergeRequestResponseKanbanStatus `json:"KanbanStatus"`
+	LastActivityAt          time.Time                        `json:"LastActivityAt"`
+	MergeCommitSHA          string                           `json:"MergeCommitSHA"`
+	MergeableState          string                           `json:"MergeableState"`
+	MergedAt                *time.Time                       `json:"MergedAt"`
+	Number                  int64                            `json:"Number"`
+	PlatformExternalID      string                           `json:"PlatformExternalID"`
+	PlatformID              int64                            `json:"PlatformID"`
+	RepoID                  int64                            `json:"RepoID"`
+	ReviewDecision          string                           `json:"ReviewDecision"`
+	Starred                 bool                             `json:"Starred"`
+	State                   MergeRequestResponseState        `json:"State"`
+	Title                   string                           `json:"Title"`
+	URL                     string                           `json:"URL"`
+	UpdatedAt               time.Time                        `json:"UpdatedAt"`
+	Assignees               *[]string                        `json:"assignees,omitempty"`
+	DetailFetchedAt         *string                          `json:"detail_fetched_at,omitempty"`
+	DetailLoaded            bool                             `json:"detail_loaded"`
+	Labels                  *[]Label                         `json:"labels,omitempty"`
+	LastWorkspaceActivityAt *time.Time                       `json:"last_workspace_activity_at,omitempty"`
+	PlatformHeadSha         *string                          `json:"platform_head_sha,omitempty"`
+	PlatformHost            string                           `json:"platform_host"`
+	Repo                    RepoRefResponse                  `json:"repo"`
+	RepoName                string                           `json:"repo_name"`
+	RepoOwner               string                           `json:"repo_owner"`
+	RequestedReviewers      *[]string                        `json:"requested_reviewers,omitempty"`
+	Workspace               *WorkspaceRef                    `json:"workspace,omitempty"`
+	WorktreeLinks           *[]WorktreeLinkResponse          `json:"worktree_links"`
 }
 
 // MergeRequestResponseKanbanStatus defines model for MergeRequestResponse.KanbanStatus.

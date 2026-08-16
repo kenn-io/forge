@@ -901,6 +901,7 @@ Not every visibility control means "remove this entity entirely."
   provider `updated_at`/`last_activity_at`: GitHub bumps those for mergeability recomputes
   and branch deletion, which read as phantom activity. Event visibility filters must not
   redefine that recency (`internal/db/queries_activity.go::prActivityAtExpr`).
+- "Use workspace activity for recency" hydrates one global PR, Issue, and Activity opt-in. Disabled mode keeps provider sorting/display and hides cached workspace-only subjects while retaining `last_workspace_activity_at` as metadata (`frontend/src/lib/utils/effective-activity.ts::effectiveActivity`, `frontend/src/lib/components/ActivityFeed.svelte::visibleWorkspaceActivity`).
 - Activity presentation filters apply to event, parent, and workspace projections;
   "Hide bots" tests event actors on events and item authors on parent/workspace subjects
   (`frontend/src/lib/components/ActivityFeed.svelte::visibleItemActivity`).

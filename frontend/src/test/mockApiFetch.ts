@@ -278,6 +278,7 @@ export const mockSettings = {
   activity: {
     collapse_threads: false,
     default_branch_max_commits: 5000,
+    use_workspace_activity_for_recency: false,
     default_branch_retention_days: 90,
     view_mode: "threaded",
     time_range: "7d",

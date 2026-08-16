@@ -778,6 +778,7 @@ name = "b"
 	assert.False(cfg.Activity.HideClosed)
 	assert.False(cfg.Activity.HideBots)
 	assert.True(cfg.Activity.CollapseThreads)
+	assert.False(cfg.Activity.UseWorkspaceActivityForRecency)
 }
 
 func TestLoadActivityExplicit(t *testing.T) {
@@ -793,6 +794,7 @@ time_range = "30d"
 hide_closed = true
 hide_bots = true
 collapse_threads = true
+use_workspace_activity_for_recency = true
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
@@ -801,6 +803,7 @@ collapse_threads = true
 	assert.True(cfg.Activity.HideClosed)
 	assert.True(cfg.Activity.HideBots)
 	assert.True(cfg.Activity.CollapseThreads)
+	assert.True(cfg.Activity.UseWorkspaceActivityForRecency)
 }
 
 func TestLoadActivityExplicitCollapseThreadsFalse(t *testing.T) {
@@ -1099,6 +1102,7 @@ time_range = "30d"
 hide_closed = true
 hide_bots = true
 collapse_threads = true
+use_workspace_activity_for_recency = true
 `)
 	assert.Equal("MY_TOKEN", cfg2.GitHubTokenEnv)
 	assert.Equal(cfg.SyncInterval, cfg2.SyncInterval)
@@ -1112,6 +1116,7 @@ collapse_threads = true
 	assert.Equal(cfg.Activity.HideClosed, cfg2.Activity.HideClosed)
 	assert.Equal(cfg.Activity.HideBots, cfg2.Activity.HideBots)
 	assert.Equal(cfg.Activity.CollapseThreads, cfg2.Activity.CollapseThreads)
+	assert.Equal(cfg.Activity.UseWorkspaceActivityForRecency, cfg2.Activity.UseWorkspaceActivityForRecency)
 }
 
 func TestSavePreservesDefaults(t *testing.T) {

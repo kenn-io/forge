@@ -30,12 +30,15 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 			return nil, httpapi.Internal("load workspace activity failed")
 		}
 	}
-	overrides := make([]db.ItemActivityOverride, 0, len(snapshot.Subjects))
-	for key, activity := range snapshot.Subjects {
-		if key.ItemType == db.WorkspaceItemTypeIssue && activity.ActivityAt != nil {
-			overrides = append(overrides, db.ItemActivityOverride{
-				RepoID: key.RepoID, ItemNumber: key.ItemNumber, ActivityAt: *activity.ActivityAt,
-			})
+	var overrides []db.ItemActivityOverride
+	if s.ConfigSnapshot().UseWorkspaceActivityForRecency {
+		overrides = make([]db.ItemActivityOverride, 0, len(snapshot.Subjects))
+		for key, activity := range snapshot.Subjects {
+			if key.ItemType == db.WorkspaceItemTypeIssue && activity.ActivityAt != nil {
+				overrides = append(overrides, db.ItemActivityOverride{
+					RepoID: key.RepoID, ItemNumber: key.ItemNumber, ActivityAt: *activity.ActivityAt,
+				})
+			}
 		}
 	}
 	opts := db.ListIssuesOpts{
@@ -80,7 +83,7 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 			DetailLoaded: issue.DetailFetchedAt != nil,
 		}
 		if activity, ok := snapshot.Subjects[key]; ok && activity.ActivityAt != nil {
-			response.WorkspaceActivityAt = formatUTCRFC3339(*activity.ActivityAt)
+			response.LastWorkspaceActivityAt = formatUTCRFC3339(*activity.ActivityAt)
 		}
 		if issue.DetailFetchedAt != nil {
 			response.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)

@@ -26,6 +26,7 @@ it.layer(StartupTestLayer)("shares startup settings demand", (it) => {
           collapse_threads: false,
           default_branch_retention_days: 90,
           default_branch_max_commits: 5000,
+          use_workspace_activity_for_recency: false,
         },
         agents: [],
         fleet: {
@@ -100,6 +101,7 @@ it.layer(StartupTestLayer)("startup invalidation", (it) => {
           collapse_threads: false,
           default_branch_retention_days: 90,
           default_branch_max_commits: 5000,
+          use_workspace_activity_for_recency: false,
         },
         agents: [],
         fleet: {
@@ -181,6 +183,7 @@ it.layer(StartupTestLayer)("startup retry after failure", (it) => {
           collapse_threads: false,
           default_branch_retention_days: 90,
           default_branch_max_commits: 5000,
+          use_workspace_activity_for_recency: false,
         },
         agents: [],
         fleet: {

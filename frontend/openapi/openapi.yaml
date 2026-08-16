@@ -40,6 +40,8 @@ components:
             - 30d
             - 90d
           type: string
+        use_workspace_activity_for_recency:
+          type: boolean
         view_mode:
           enum:
             - flat
@@ -51,6 +53,7 @@ components:
         - hide_closed
         - hide_bots
         - collapse_threads
+        - use_workspace_activity_for_recency
         - default_branch_retention_days
         - default_branch_max_commits
       type: object
@@ -2945,6 +2948,9 @@ components:
           type:
             - array
             - "null"
+        last_workspace_activity_at:
+          format: date-time
+          type: string
         platform_host:
           type: string
         repo:
@@ -2955,9 +2961,6 @@ components:
           type: string
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
-        workspace_activity_at:
-          format: date-time
-          type: string
       required:
         - repo
         - platform_host
@@ -4227,6 +4230,9 @@ components:
           type:
             - array
             - "null"
+        last_workspace_activity_at:
+          format: date-time
+          type: string
         platform_head_sha:
           type: string
         platform_host:
@@ -4245,9 +4251,6 @@ components:
             - "null"
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
-        workspace_activity_at:
-          format: date-time
-          type: string
         worktree_links:
           items:
             $ref: "#/components/schemas/WorktreeLinkResponse"

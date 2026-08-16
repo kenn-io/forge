@@ -4633,6 +4633,7 @@ export interface components {
             hide_closed: boolean;
             /** @enum {string} */
             time_range: "24h" | "7d" | "30d" | "90d";
+            use_workspace_activity_for_recency: boolean;
             /** @enum {string} */
             view_mode: "flat" | "threaded";
         };
@@ -5975,13 +5976,13 @@ export interface components {
             detail_fetched_at?: string;
             detail_loaded: boolean;
             labels?: components["schemas"]["Label"][] | null;
+            /** Format: date-time */
+            last_workspace_activity_at?: string;
             platform_host: string;
             repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
             workspace?: components["schemas"]["WorkspaceRef"];
-            /** Format: date-time */
-            workspace_activity_at?: string;
         };
         Issues: {
             hide_bots: boolean;
@@ -6527,6 +6528,8 @@ export interface components {
             detail_fetched_at?: string;
             detail_loaded: boolean;
             labels?: components["schemas"]["Label"][] | null;
+            /** Format: date-time */
+            last_workspace_activity_at?: string;
             platform_head_sha?: string;
             platform_host: string;
             repo: components["schemas"]["RepoRefResponse"];
@@ -6534,8 +6537,6 @@ export interface components {
             repo_owner: string;
             requested_reviewers?: string[] | null;
             workspace?: components["schemas"]["WorkspaceRef"];
-            /** Format: date-time */
-            workspace_activity_at?: string;
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
         MergeRequestSummary: {

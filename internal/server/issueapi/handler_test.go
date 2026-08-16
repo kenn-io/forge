@@ -116,3 +116,48 @@ func TestIssueDetailTreatsWorkspaceSnapshotFailureAsBestEffort(t *testing.T) {
 	assert.Equal(t, 43, response.Issue.Number)
 	assert.Nil(t, response.Workspace)
 }
+
+func TestListIssuesWorkspaceActivityRecencyIsOptIn(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	base := time.Date(2026, 8, 15, 10, 0, 0, 0, time.UTC)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
+	repoID, err := database.UpsertRepo(t.Context(), identity)
+	require.NoError(err)
+	for number, activityAt := range map[int]time.Time{1: base, 2: base.Add(time.Hour)} {
+		_, err = database.UpsertIssue(t.Context(), &db.Issue{
+			RepoID: repoID, PlatformID: int64(number), Number: number, Title: "Work",
+			Author: "alice", State: "open",
+			CreatedAt: activityAt, UpdatedAt: activityAt, LastActivityAt: activityAt,
+		})
+		require.NoError(err)
+	}
+	key := db.WorkspaceSubjectKey{RepoID: repoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 1}
+	workspaceAt := base.Add(2 * time.Hour)
+	ref := workspaceapi.WorkspaceRef{ID: "ws-1", Status: "ready"}
+	handler := New(Deps{
+		DB: database, Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
+		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{
+				OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{key: ref},
+				Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+					key: {Workspace: ref, ActivityAt: &workspaceAt},
+				},
+			}, nil
+		},
+	})
+
+	disabled, err := handler.listIssues(t.Context(), &listIssuesInput{State: "open"})
+	require.NoError(err)
+	require.Len(disabled.Body, 2)
+	assert.Equal(t, 2, disabled.Body[0].Number)
+	assert.Equal(t, workspaceAt.Format(time.RFC3339), disabled.Body[1].LastWorkspaceActivityAt)
+	require.NotNil(disabled.Body[1].Workspace)
+
+	handler.ApplyConfig(ConfigSnapshot{UseWorkspaceActivityForRecency: true})
+	enabled, err := handler.listIssues(t.Context(), &listIssuesInput{State: "open"})
+	require.NoError(err)
+	require.Len(enabled.Body, 2)
+	assert.Equal(t, 1, enabled.Body[0].Number)
+}

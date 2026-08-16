@@ -83,16 +83,17 @@ embedder protocol for arbitrary host state.
 - Workspace enrichment is best-effort on Issue/PR detail: snapshot failures log
   and omit optional workspace metadata rather than hiding a valid item; list and
   Activity reads stay fail-fast because the snapshot affects ordering and identity (`internal/server/pullapi/routes.go::Handler.buildPullDetailResponse`, `internal/server/issueapi/routes.go::Handler.BuildDetail`).
-- Threaded and Mobile Activity merge that snapshot after provider-event filters,
-  so workspace recency can keep an event-less subject visible; Flat Activity
-  remains provider-event-only (`frontend/src/lib/views/MobileActivityView.svelte::groups`).
-- Activity number search uses the same `#number` shape for provider events,
+- Only enabled workspace recency merges the snapshot into Threaded and Mobile
+  Activity after provider-event filters, allowing eventless subjects; disabled
+  mode leaves every Activity mode provider-event-only
+  (`frontend/src/lib/views/MobileActivityView.svelte::visibleWorkspaceActivity`).
+- In enabled mode, Activity number search uses the same `#number` shape for provider events,
   notifications, and eventless workspace subjects; matching provider events keep
   workspace recency across incremental polls (`internal/server/huma_routes.go::Server.workspaceActivityResponse`).
-- Activity author filtering and candidates match workspace subject authors;
-  candidates include eventless subjects in the same repository and time scope,
-  while provider-event matching preserves workspace recency only for text search
-  (`internal/server/huma_routes.go::mergeWorkspaceActivityAuthors`).
+- Enabled workspace recency lets Activity author filters and candidates match
+  eventless workspace subjects in the same repository and time scope; disabled
+  mode returns provider authors unchanged
+  (`internal/server/huma_routes.go::Server.activityAuthorsWithWorkspace`).
 - Activity events and parent summaries key that snapshot by stable repo ID and
   canonical item type; normalize wire `"pr"` to workspace `"pull_request"`
   before lookup so route reuse stays fail-closed (`internal/server/helpers.go::workspaceItemTypeFromActivity`).
@@ -103,12 +104,14 @@ embedder protocol for arbitrary host state.
 - Activity holds one reconciliation barrier across provider events and the
   under-lock workspace-subject snapshot, keeping routes and stable IDs in one epoch
   (`internal/server/huma_routes.go::Server.listActivity`).
-- Subject metadata and Issue/PR effective-activity ordering use JSON-backed
-  SQLite relations, so retained workspaces cannot exhaust bind variables
+- Subject metadata and opt-in Issue/PR activity ordering use JSON-backed SQLite
+  relations, so retained workspaces cannot exhaust bind variables. Lists always
+  expose `last_workspace_activity_at`; provider activity is authoritative by default
   (`internal/db/workspace_subjects.go::DB.ListWorkspaceSubjectMetadata`, `internal/db/queries.go::workspaceActivityCTE`).
 - Association changes only activity identity: an issue keeps its own workspace
-  affordance after its work resolves to a PR, while that PR receives the tmux
-  recency override (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
+  affordance after its work resolves to a PR, while that PR receives the tmux recency
+  candidate and uses it only when workspace recency is enabled
+  (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
 - Aggregate enrichment is fresh only after divergence and tmux both complete;
   partial results remain pending or stale
   (`internal/server/workspaceapi/workspace_enrichment.go::workspaceResponseFromEnrichmentCacheEntry`).

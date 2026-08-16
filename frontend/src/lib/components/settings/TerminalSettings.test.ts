@@ -75,6 +75,7 @@ function settingsResponse(terminal: StartupSnapshot["terminal"]): StartupSnapsho
       collapse_threads: false,
       default_branch_retention_days: 90,
       default_branch_max_commits: 5000,
+      use_workspace_activity_for_recency: false,
     },
     agents: [],
     fleet: {

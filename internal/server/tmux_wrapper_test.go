@@ -436,7 +436,10 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("TMUX_PANE_OUTPUT", "baseline output")
 	script, _ := writeTmuxRecorder(t)
-	client, _, database, _ := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	srv.cfgMu.Lock()
+	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
+	srv.cfgMu.Unlock()
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -551,7 +554,10 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("TMUX_PANE_OUTPUT", "baseline output")
 	script, _ := writeTmuxRecorder(t)
-	client, _, database, _ := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	srv.cfgMu.Lock()
+	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
+	srv.cfgMu.Unlock()
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(
@@ -627,7 +633,10 @@ func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("TMUX_PANE_OUTPUT", "baseline output")
 	script, _ := writeTmuxRecorder(t)
-	client, _, database, _ := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	srv.cfgMu.Lock()
+	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
+	srv.cfgMu.Unlock()
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(

@@ -30,7 +30,7 @@ type PullResponse = Array<{
   Number: number;
   LastActivityAt: string;
   workspace?: { id: string; status: string };
-  workspace_activity_at?: string;
+  last_workspace_activity_at?: string;
 }>;
 
 type IssueResponse = PullResponse;
@@ -118,6 +118,11 @@ test.describe("workspace session activity across item surfaces", () => {
     const server = await startIsolatedWorkspaceE2EServer();
     const api = await playwrightRequest.newContext({ baseURL: server.info.base_url });
     try {
+      const currentSettingsResponse = await api.get("/api/v1/settings");
+      expect(currentSettingsResponse.ok(), await currentSettingsResponse.text()).toBe(true);
+      const currentSettings = (await currentSettingsResponse.json()) as {
+        activity: Record<string, unknown>;
+      };
       const settings = await api.put("/api/v1/settings", {
         data: {
           agents: [
@@ -190,16 +195,49 @@ test.describe("workspace session activity across item surfaces", () => {
         .toMatchObject({
           workspace: { id: workspace.id, status: "ready" },
         });
-      expect((await pull(api, 1))?.workspace_activity_at).toBeUndefined();
+      expect((await pull(api, 1))?.last_workspace_activity_at).toBeUndefined();
 
       await expect
         .poll(async () => await issue(api, 10))
         .toMatchObject({
           workspace: { id: issueWorkspace.id, status: "ready" },
         });
-      expect((await issue(api, 10))?.workspace_activity_at).toBeUndefined();
+      expect((await issue(api, 10))?.last_workspace_activity_at).toBeUndefined();
+
+      const providerOrderedPulls = await listPulls(api);
+      const providerOrderedIssues = await listIssues(api);
+      expect(providerOrderedPulls.length).toBeGreaterThan(1);
+      expect(providerOrderedIssues.length).toBeGreaterThan(1);
 
       writeFileSync(changeSignal, "change\n", "utf8");
+
+      await expect
+        .poll(async () => (await pull(api, 1))?.last_workspace_activity_at, { timeout: 20_000 })
+        .not.toBeUndefined();
+      await expect
+        .poll(async () => (await issue(api, 10))?.last_workspace_activity_at, { timeout: 20_000 })
+        .not.toBeUndefined();
+      expect((await listPulls(api)).map((pullRequest) => pullRequest.Number)).toEqual(
+        providerOrderedPulls.map((pullRequest) => pullRequest.Number),
+      );
+      expect((await listIssues(api)).map((issue) => issue.Number)).toEqual(
+        providerOrderedIssues.map((issue) => issue.Number),
+      );
+      const providerAuthoritativeActivity = await api.get("/api/v1/activity?since=2026-01-01T00:00:00Z");
+      expect(providerAuthoritativeActivity.ok(), await providerAuthoritativeActivity.text()).toBe(true);
+      expect(((await providerAuthoritativeActivity.json()) as ActivityResponse).workspace_activity ?? []).toHaveLength(
+        0,
+      );
+
+      const enableWorkspaceRecency = await api.put("/api/v1/settings", {
+        data: {
+          activity: {
+            ...currentSettings.activity,
+            use_workspace_activity_for_recency: true,
+          },
+        },
+      });
+      expect(enableWorkspaceRecency.ok(), await enableWorkspaceRecency.text()).toBe(true);
 
       await expect
         .poll(
@@ -224,8 +262,8 @@ test.describe("workspace session activity across item surfaces", () => {
             firstNumber: pulls[0]?.Number,
             workspaceID: pulls[0]?.workspace?.id,
             hasNewerWorkspaceActivity:
-              pulls[0]?.workspace_activity_at !== undefined &&
-              Date.parse(pulls[0].workspace_activity_at) > Date.parse(pulls[0].LastActivityAt),
+              pulls[0]?.last_workspace_activity_at !== undefined &&
+              Date.parse(pulls[0].last_workspace_activity_at) > Date.parse(pulls[0].LastActivityAt),
           };
         })
         .toEqual({
@@ -243,8 +281,8 @@ test.describe("workspace session activity across item surfaces", () => {
             firstNumber: issues[0]?.Number,
             workspaceID: issues[0]?.workspace?.id,
             hasNewerWorkspaceActivity:
-              issues[0]?.workspace_activity_at !== undefined &&
-              Date.parse(issues[0].workspace_activity_at) > Date.parse(issues[0].LastActivityAt),
+              issues[0]?.last_workspace_activity_at !== undefined &&
+              Date.parse(issues[0].last_workspace_activity_at) > Date.parse(issues[0].LastActivityAt),
           };
         })
         .toEqual({

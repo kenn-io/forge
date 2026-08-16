@@ -41,6 +41,7 @@ const workspaceActivity = vi.hoisted(() => ({ value: [] as WorkspaceActivitySubj
 const onSelectItem = vi.hoisted(() => vi.fn());
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideBots = vi.hoisted(() => ({ value: false }));
+const useWorkspaceActivityForRecency = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
@@ -95,6 +96,7 @@ vi.mock("../context.js", () => ({
       getInvolvesMe: () => involvesMe.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => hideBots.value,
+      getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
       getHideDefaultBranchActivity: () => false,
       isActivityLoading: () => false,
       isActivityCapped: () => activityCapped.value,
@@ -130,6 +132,7 @@ vi.mock("../context.js", () => ({
 
 beforeEach(() => {
   hideBots.value = false;
+  useWorkspaceActivityForRecency.value = false;
 });
 
 describe("MobileActivityView branch activity", () => {
@@ -380,6 +383,7 @@ function itemSubject(number: number, title: string, activityAt: string): Activit
 
 describe("MobileActivityView workspace activity", () => {
   beforeEach(() => {
+    useWorkspaceActivityForRecency.value = true;
     items.value = [];
     itemActivity.value = [];
     workspaceActivity.value = [];
@@ -449,6 +453,15 @@ describe("MobileActivityView workspace activity", () => {
         item_type: "pr",
       }),
     );
+  });
+
+  it("hides cached workspace-only subjects when workspace recency is disabled", () => {
+    useWorkspaceActivityForRecency.value = false;
+    workspaceActivity.value = [workspaceSubject(7, "Workspace-only pull", "2026-04-27T14:00:00Z")];
+
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+
+    expect(container.textContent).not.toContain("Workspace-only pull");
   });
 
   it("renders a recently active parent without inventing a timeline event", () => {

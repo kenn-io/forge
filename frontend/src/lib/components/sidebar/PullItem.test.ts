@@ -35,7 +35,7 @@ const mkPR = (overrides: Record<string, unknown>): PullRequest =>
     ...overrides,
   }) as unknown as PullRequest;
 
-function renderItem(pr: PullRequest): void {
+function renderItem(pr: PullRequest, useWorkspaceActivityForRecency = false): void {
   render(PullItem, {
     props: {
       pr,
@@ -45,7 +45,13 @@ function renderItem(pr: PullRequest): void {
       onclick: () => {},
     },
     context: new Map<symbol, unknown>([
-      [STORES_KEY, { pulls: { togglePRStar: vi.fn() } }],
+      [
+        STORES_KEY,
+        {
+          pulls: { togglePRStar: vi.fn() },
+          activity: { getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency },
+        },
+      ],
       [HOST_STATE_KEY, {}],
     ]),
   });
@@ -64,13 +70,25 @@ describe("PullItem CI cluster", () => {
     renderItem(
       mkPR({
         LastActivityAt: "2026-05-01T12:00:00Z",
-        workspace_activity_at: "2026-05-02T12:00:00Z",
+        last_workspace_activity_at: "2026-05-02T12:00:00Z",
       }),
+      true,
     );
 
     const time = document.querySelector('.time[title="Recent workspace activity"]');
     expect(time).not.toBeNull();
     expect(time?.getAttribute("aria-label")).toContain("Recent workspace activity");
+  });
+
+  it("keeps provider recency authoritative when workspace recency is disabled", () => {
+    renderItem(
+      mkPR({
+        LastActivityAt: "2026-05-01T12:00:00Z",
+        last_workspace_activity_at: "2026-05-02T12:00:00Z",
+      }),
+    );
+
+    expect(document.querySelector('.time[title="Recent workspace activity"]')).toBeNull();
   });
 
   it("renders compact tokens for a mixed-state PR", () => {
@@ -247,7 +265,13 @@ describe("PullItem repository label", () => {
         onclick: () => {},
       },
       context: new Map<symbol, unknown>([
-        [STORES_KEY, { pulls: { togglePRStar: vi.fn() } }],
+        [
+          STORES_KEY,
+          {
+            pulls: { togglePRStar: vi.fn() },
+            activity: { getUseWorkspaceActivityForRecency: () => false },
+          },
+        ],
         [HOST_STATE_KEY, {}],
       ]),
     });
@@ -350,7 +374,13 @@ describe("PullItem compact layout", () => {
         onclick: () => {},
       },
       context: new Map<symbol, unknown>([
-        [STORES_KEY, { pulls: { togglePRStar: vi.fn() } }],
+        [
+          STORES_KEY,
+          {
+            pulls: { togglePRStar: vi.fn() },
+            activity: { getUseWorkspaceActivityForRecency: () => false },
+          },
+        ],
         [HOST_STATE_KEY, {}],
       ]),
     });

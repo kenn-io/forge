@@ -40,6 +40,7 @@ const initial: ActivitySettingsType = {
   collapse_threads: false,
   default_branch_retention_days: 90,
   default_branch_max_commits: 5000,
+  use_workspace_activity_for_recency: false,
 };
 
 describe("ActivitySettings", () => {
@@ -61,6 +62,19 @@ describe("ActivitySettings", () => {
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ activity: updated });
     expect(mockHydrateDefaults).toHaveBeenCalledWith(updated);
     expect(onUpdate).toHaveBeenLastCalledWith(updated);
+  });
+
+  it("persists the global workspace activity recency preference", async () => {
+    const updated = { ...initial, use_workspace_activity_for_recency: true };
+    const onUpdate = vi.fn();
+    mockPersistSettings.mockReturnValue(Effect.succeed({ activity: updated }));
+    render(ActivitySettingsTestHarness, { props: { activity: initial, onUpdate } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle use workspace activity for recency" }));
+
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ activity: updated });
+    expect(mockHydrateDefaults).toHaveBeenCalledWith(updated);
   });
 
   it("restores the previous activity defaults when saving fails", async () => {

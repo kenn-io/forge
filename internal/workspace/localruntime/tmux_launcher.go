@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -611,5 +612,17 @@ func isShellIdentifier(value string) bool {
 }
 
 func shouldAllowTmuxSessionVar(key string) bool {
-	return config.IsTmuxNonSecretEnvVar(key)
+	return shouldAllowTmuxSessionVarFold(key, runtime.GOOS == "windows")
+}
+
+// shouldAllowTmuxSessionVarFold admits by exact name on case-sensitive
+// platforms; on Windows, where environment names resolve
+// case-insensitively, "Path" is PATH and folding is correct. Admission
+// must stay exact elsewhere or unrelated variables such as a Unix
+// "editor" would enter tmux's retained environment.
+func shouldAllowTmuxSessionVarFold(key string, fold bool) bool {
+	if fold {
+		return config.IsTmuxNonSecretEnvVar(key)
+	}
+	return config.IsTmuxNonSecretEnvVarExact(key)
 }

@@ -3020,13 +3020,23 @@ var tmuxNonSecretEnvVars = []string{
 
 // IsTmuxNonSecretEnvVar reports whether name belongs to the non-secret
 // environment contract for tmux clients and terminal sessions. The
-// comparison is case-insensitive on every platform: Windows resolves
-// environment names case-insensitively, so "path" is PATH there, and a
-// case-folded reserved set costs nothing elsewhere.
+// comparison is case-insensitive on every platform because this
+// predicate REJECTS: token names may never collide with a reserved name
+// in any casing (Windows resolves env names case-insensitively), and
+// over-rejection is safe. Environment ADMISSION must not use this
+// predicate on case-sensitive platforms — use
+// IsTmuxNonSecretEnvVarExact there, or a Unix variable literally named
+// "editor" would be admitted into tmux's retained environment.
 func IsTmuxNonSecretEnvVar(name string) bool {
 	return slices.ContainsFunc(tmuxNonSecretEnvVars, func(v string) bool {
 		return strings.EqualFold(v, name)
 	})
+}
+
+// IsTmuxNonSecretEnvVarExact is the exact-case admission predicate for
+// case-sensitive platforms.
+func IsTmuxNonSecretEnvVarExact(name string) bool {
+	return slices.Contains(tmuxNonSecretEnvVars, name)
 }
 
 // TmuxCommand returns the command + argv prefix used to invoke tmux.

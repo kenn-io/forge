@@ -591,3 +591,17 @@ func TestTmuxEnvironmentKeysRejectsReservedHandoffNames(t *testing.T) {
 	assert.NotContains(pane.keys, "__kenn_forge_script_file")
 	assert.NotContains(pane.paneCommand, "__kenn_forge_env_file=")
 }
+
+// TestShouldAllowTmuxSessionVarFold pins admission casing: exact names
+// on case-sensitive platforms, folded on Windows where environment
+// names resolve case-insensitively.
+func TestShouldAllowTmuxSessionVarFold(t *testing.T) {
+	assert := assert.New(t)
+	assert.True(shouldAllowTmuxSessionVarFold("EDITOR", false))
+	assert.False(shouldAllowTmuxSessionVarFold("editor", false),
+		"a Unix variable named editor is unrelated to EDITOR")
+	assert.False(shouldAllowTmuxSessionVarFold("path", false))
+	assert.True(shouldAllowTmuxSessionVarFold("Path", true),
+		"Windows resolves Path as PATH")
+	assert.True(shouldAllowTmuxSessionVarFold("editor", true))
+}

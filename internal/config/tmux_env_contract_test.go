@@ -28,12 +28,18 @@ func TestIsTmuxNonSecretEnvVarExactNamesOnly(t *testing.T) {
 	assert := assert.New(t)
 	assert.True(IsTmuxNonSecretEnvVar("EDITOR"))
 	assert.True(IsTmuxNonSecretEnvVar("TMUX_TMPDIR"))
-	// Case-insensitive on every platform: Windows resolves env names
-	// case-insensitively, so "path" is PATH there.
+	// The rejection predicate folds case on every platform: token names
+	// may never collide with a reserved name in any casing.
 	assert.True(IsTmuxNonSecretEnvVar("path"))
 	assert.True(IsTmuxNonSecretEnvVar("Editor"))
 	assert.False(IsTmuxNonSecretEnvVar("XDG_API_TOKEN"))
 	assert.False(IsTmuxNonSecretEnvVar("GITHUB_TOKEN"))
+	// The admission predicate is exact: on case-sensitive platforms a
+	// variable literally named "editor" is unrelated to EDITOR and must
+	// not enter tmux's retained environment.
+	assert.True(IsTmuxNonSecretEnvVarExact("EDITOR"))
+	assert.False(IsTmuxNonSecretEnvVarExact("editor"))
+	assert.False(IsTmuxNonSecretEnvVarExact("path"))
 }
 
 // TestValidateRejectsWhitespacePaddedCollisions pins normalization

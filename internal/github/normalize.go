@@ -28,10 +28,7 @@ func sanitizeURL(raw string) string {
 	return ""
 }
 
-var (
-	ErrNilPullRequest = platformgithub.ErrNilPullRequest
-	ErrNilIssue       = platformgithub.ErrNilIssue
-)
+var ErrNilPullRequest = platformgithub.ErrNilPullRequest
 
 // NormalizePR converts a GitHub PullRequest to a db.MergeRequest.
 // If the PR is merged, State is set to "merged". LastActivityAt is

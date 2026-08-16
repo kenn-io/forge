@@ -3,11 +3,6 @@ import { InvalidExternalPayload } from "./effect-errors.js";
 import { executeGeneratedApiRequest } from "./generated-api.js";
 import type { PullRequest } from "./types.js";
 
-export interface CreatedWorkspace {
-  id: string;
-  status: string;
-}
-
 export const createPullRequestWorkspace = Effect.fn("Onboarding.createPullRequestWorkspace")(function* (
   pull: PullRequest,
 ) {

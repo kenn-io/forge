@@ -451,10 +451,6 @@ func NormalizeIssueCommentEvent(
 	}
 }
 
-func NormalizeCheckRuns(repo platform.RepoRef, runs []*gh.CheckRun) []platform.CICheck {
-	return normalizeCIChecks(repo, runs, nil)
-}
-
 func NormalizeCIChecks(
 	repo platform.RepoRef,
 	runs []*gh.CheckRun,

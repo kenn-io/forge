@@ -44,15 +44,6 @@ const (
 // TmuxActivitySourceTitle identifies pane-title-based activity.
 const TmuxActivitySourceTitle = tmuxActivitySourceTitle
 
-const (
-	TmuxActivitySourceNone    = tmuxActivitySourceNone
-	TmuxActivitySourceOutput  = tmuxActivitySourceOutput
-	TmuxActivitySourceUnknown = tmuxActivitySourceUnknown
-	TmuxSampleMinInterval     = tmuxSampleMinInterval
-	TmuxActivityTTL           = tmuxActivityTTL
-	TmuxProbeMaxConcurrency   = tmuxProbeMaxConcurrency
-)
-
 // IsWorkingTmuxTitle reports whether a pane title carries the working spinner.
 func IsWorkingTmuxTitle(title string) bool { return isWorkingTmuxTitle(title) }
 

@@ -105,13 +105,6 @@ export function localDateTimeLabel(dateStr: string): string {
   return new Date(dateStr).toLocaleString();
 }
 
-export function shortDateLabel(dateStr: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(new Date(dateStr));
-}
-
 export function displayReleaseName(release: RepoSummaryReleaseResponse | undefined): string {
   if (!release) return "No release";
   return release.tag_name || release.name || "Release";

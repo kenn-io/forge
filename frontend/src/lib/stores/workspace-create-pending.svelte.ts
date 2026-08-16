@@ -8,7 +8,7 @@ import { identityEquals, type WorkspaceItemIdentity, type WorkspaceRefLite } fro
 // "workspace already exists" conflict. Pending entries always clear in the
 // request's finally; confirmed creations are recorded here as well so a
 // replacement detail instance WITHOUT an inline controller (focus/mobile
-// views, DetailDrawer) still learns the workspace exists even when the
+// views) still learns the workspace exists even when the
 // response landed after unmount or a selection change.
 type PendingWorkspaceCreate = {
   identity: WorkspaceItemIdentity;
@@ -331,7 +331,7 @@ export function reconcileWorkspaceCreated(
 }
 
 // Workspace resolution for detail instances WITHOUT an inline controller
-// (focus/mobile views, DetailDrawer) — the controller-less mirror of the
+// (focus/mobile views) — the controller-less mirror of the
 // host store's effectiveRef. The confirmed creation record wins until
 // reconciled away (it is fresher than any cached envelope), and an
 // envelope still carrying a session-deleted ID is masked — the

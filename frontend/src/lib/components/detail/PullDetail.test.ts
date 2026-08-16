@@ -2161,7 +2161,7 @@ describe("PullDetail inline workspace handoff", () => {
   });
 
   it("a confirmed creation without a controller survives a selection round-trip", async () => {
-    // Focus/mobile views and DetailDrawer mount PullDetail without an
+    // Focus/mobile views mount PullDetail without an
     // inline controller, so there is no override store: the shared
     // created-record is the only way a replacement view learns the
     // workspace exists when the response lands after a round-trip, and

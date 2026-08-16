@@ -109,7 +109,6 @@ const (
 type ArchiveLifecycleState string
 
 const (
-	ArchiveLifecycleStateActive          ArchiveLifecycleState = "active"
 	ArchiveLifecycleStateRemovedUpstream ArchiveLifecycleState = "removed_upstream"
 	ArchiveLifecycleStateInaccessible    ArchiveLifecycleState = "inaccessible"
 )
@@ -138,7 +137,6 @@ const (
 	ArchiveScanRunning  ArchiveScanStatus = "running"
 	ArchiveScanComplete ArchiveScanStatus = "complete"
 	ArchiveScanBlocked  ArchiveScanStatus = "blocked"
-	ArchiveScanFailed   ArchiveScanStatus = "failed"
 )
 
 // ArchiveScanState is the durable progress of one repository-level scan:
@@ -197,7 +195,6 @@ type ArchiveDatasetProgressStatus string
 
 const (
 	ArchiveDatasetProgressPending     ArchiveDatasetProgressStatus = "pending"
-	ArchiveDatasetProgressRunning     ArchiveDatasetProgressStatus = "running"
 	ArchiveDatasetProgressComplete    ArchiveDatasetProgressStatus = "complete"
 	ArchiveDatasetProgressUnsupported ArchiveDatasetProgressStatus = "unsupported"
 	ArchiveDatasetProgressBlocked     ArchiveDatasetProgressStatus = "blocked"
@@ -396,17 +393,6 @@ func (e *ArchiveRepoStateNotFoundError) Error() string {
 	return fmt.Sprintf("archive repository state not found for repo IDs %v", e.RepoIDs)
 }
 
-type ArchiveItemState struct {
-	RepoID            int64
-	ItemType          ArchiveItemType
-	ItemNumber        int
-	ProviderItemID    string
-	ProviderCreatedAt time.Time
-	ProviderUpdatedAt time.Time
-	LifecycleState    ArchiveLifecycleState
-	RefreshReason     ArchiveRefreshReason
-}
-
 type ClaimArchiveItemOpts struct {
 	RepoIDs        []int64
 	Now            time.Time
@@ -416,30 +402,6 @@ type ClaimArchiveItemOpts struct {
 type ArchiveItemScope struct {
 	RepoID   int64
 	ItemType ArchiveItemType
-}
-
-// IssueSnapshot and MergeRequestSnapshot contain provider-owned content from
-// one read. Complete flags are explicit so partial pagination can never erase
-// a previously complete family.
-type IssueSnapshot struct {
-	Issue                    Issue
-	Labels                   []Label
-	OrdinaryComments         []IssueEvent
-	OrdinaryCommentsComplete bool
-	DerivedFields            *IssueDerivedFields
-}
-
-type MergeRequestSnapshot struct {
-	MergeRequest             MergeRequest
-	Labels                   []Label
-	OrdinaryComments         []MREvent
-	OrdinaryCommentsComplete bool
-	SubmittedReviews         []MREvent
-	SubmittedReviewsComplete bool
-	InlineComments           []MREvent
-	ReviewThreads            []MRReviewThread
-	InlineCommentsComplete   bool
-	DerivedFields            *MRDerivedFields
 }
 
 type ArchiveInventoryItem struct {
@@ -999,13 +961,6 @@ type ListIssuesOpts struct {
 	Offset            int
 	WorkspaceActivity []ItemActivityOverride
 	ViewerLogins      []RepoViewerLogin
-}
-
-type StarredItem struct {
-	ItemType  string
-	RepoID    int64
-	Number    int
-	StarredAt time.Time
 }
 
 type Notification struct {

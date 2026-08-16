@@ -51,7 +51,6 @@ var (
 	ErrNotFound                  = &Error{Code: ErrCodeNotFound}
 	ErrRateLimited               = &Error{Code: ErrCodeRateLimited}
 	ErrStaleState                = &Error{Code: ErrCodeStaleState}
-	ErrConflict                  = &Error{Code: ErrCodeConflict}
 	ErrPageLimit                 = &Error{Code: ErrCodePageLimit}
 )
 

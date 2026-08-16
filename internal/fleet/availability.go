@@ -135,37 +135,6 @@ func policyForHost(policy AvailabilityPolicy, hostKey string) AvailabilityPolicy
 	return keyed.ForHost(hostKey)
 }
 
-// HostScopedPolicy applies different overrides to the local host and to
-// remote hosts. A hub serves some write operations through its own API while
-// not routing them to peers (for example project register/delete), so a
-// single uniform override would either disable a working local operation or
-// advertise an unrouted remote one. Apply (the AvailabilityPolicy contract)
-// delegates to Remote; the enrichment layer applies Self to the local host.
-// A nil side means no overrides for that side.
-type HostScopedPolicy struct {
-	Self   AvailabilityPolicy
-	Remote AvailabilityPolicy
-}
-
-func (p HostScopedPolicy) Apply(result map[string]HostOperationAvailability, reachable bool) {
-	if p.Remote != nil {
-		p.Remote.Apply(result, reachable)
-	}
-}
-
-// selfPolicy returns the policy to apply to the local host: HostScopedPolicy
-// callers get their Self side; any other policy applies uniformly.
-func selfPolicy(policy AvailabilityPolicy) AvailabilityPolicy {
-	scoped, ok := policy.(HostScopedPolicy)
-	if !ok {
-		return policy
-	}
-	if scoped.Self == nil {
-		return RealCapabilityPolicy{}
-	}
-	return scoped.Self
-}
-
 // DefaultMutationOps lists the write operations a read-only hub suppresses.
 func DefaultMutationOps() []string {
 	return []string{

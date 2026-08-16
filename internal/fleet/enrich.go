@@ -103,7 +103,7 @@ func buildHosts(
 	local.Diagnostics = localDiags
 	if raw.Capabilities != nil {
 		local.OperationAvailability = OperationAvailabilityFromState(
-			localDiags, raw.Capabilities.Commands, true, selfPolicy(policy),
+			localDiags, raw.Capabilities.Commands, true, policy,
 		)
 	}
 	local.TmuxSessions = tmuxOrEmpty(raw.Host.TmuxSessions)

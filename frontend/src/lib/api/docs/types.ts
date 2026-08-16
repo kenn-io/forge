@@ -6,12 +6,6 @@ import type { components } from "../generated/schema.js";
 
 export type Folder = components["schemas"]["DocsFolderResponse"];
 
-export type FolderListResponse = Omit<components["schemas"]["ListDocsFoldersOutputBody"], "folders"> & {
-  folders: Folder[];
-};
-
-export type FolderMutationResponse = components["schemas"]["DocsFolderOutputBody"];
-
 export type AddFolderInput = Omit<components["schemas"]["CreateDocsFolderInputBody"], "path"> & {
   path: string;
 };
@@ -28,8 +22,6 @@ type TreeNodeWire = components["schemas"]["Node"];
 export type TreeNode = Omit<TreeNodeWire, "children"> & {
   children?: TreeNode[];
 };
-
-export type FileContentResponse = components["schemas"]["DocsReadFileOutputBody"];
 
 export type SearchHit = components["schemas"]["Hit"];
 
@@ -86,7 +78,3 @@ export type GitPublishResponse = Omit<components["schemas"]["PublishResponse"], 
 };
 
 export type GitPullResponse = components["schemas"]["PullResponse"];
-
-export interface DocsPublishError extends DocsAPIError {
-  commit?: string;
-}

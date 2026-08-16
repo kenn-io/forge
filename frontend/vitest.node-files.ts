@@ -2,7 +2,6 @@
 // identities and outcomes. New tests default to jsdom until they are promoted
 // here after the same A/B check, so an indirect browser dependency fails safe.
 export const nodeUnitTestFiles = [
-  "src/lib/api/dates.test.ts",
   "src/lib/api/docs/api.test.ts",
   "src/lib/api/docs/folderLinks.test.ts",
   "src/lib/api/generated-api.test.ts",
@@ -34,7 +33,6 @@ export const nodeUnitTestFiles = [
   "src/lib/components/docs/docsTestBackend.test.ts",
   "src/lib/components/docs/folderDaemon.test.ts",
   "src/lib/components/docs/folderTreePaths.test.ts",
-  "src/lib/components/docs/mentionCompletion.test.ts",
   "src/lib/components/docs/wikilinkCompletion.test.ts",
   "src/lib/components/kata/kataTaskColumns.test.ts",
   "src/lib/components/repoTree.test.ts",

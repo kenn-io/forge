@@ -51,26 +51,12 @@ type cliConfig struct {
 	timeout time.Duration
 }
 
-func NewCommand(opts Options) *cobra.Command {
-	return newCommand(commandDeps{
-		Stdout:            opts.Stdout,
-		Stderr:            opts.Stderr,
-		APICommandFactory: opts.APICommandFactory,
-	})
-}
-
 func RegisterCommands(root *cobra.Command, opts Options) {
 	registerCommands(root, commandDeps{
 		Stdout:            opts.Stdout,
 		Stderr:            opts.Stderr,
 		APICommandFactory: opts.APICommandFactory,
 	})
-}
-
-func Execute(args []string, opts Options) error {
-	cmd := NewCommand(opts)
-	cmd.SetArgs(args)
-	return cmd.Execute()
 }
 
 func newCommand(deps commandDeps) *cobra.Command {

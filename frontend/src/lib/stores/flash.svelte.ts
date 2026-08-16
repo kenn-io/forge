@@ -7,13 +7,4 @@
 // which were single-message latest-wins: bursts of errors now stay visible
 // together and each dismisses independently (or on its own timeout). Do not
 // write callers or tests that assume a new flash replaces the previous one.
-export {
-  showFlash,
-  dismissFlash,
-  getFlash,
-  getFlashes,
-  getFlashMessage,
-  type FlashOptions,
-  type FlashState,
-  type FlashTone,
-} from "@kenn-io/kit-ui";
+export { showFlash, dismissFlash, getFlash, getFlashes } from "@kenn-io/kit-ui";

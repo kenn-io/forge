@@ -14,9 +14,6 @@ type workspaceDiffWatchResponse struct {
 	Version string `json:"version" doc:"Opaque version of the current default-HEAD snapshot; never a version from another diff scope."`
 }
 
-// WorkspaceDiffWatchResponse is shared with Fleet wire tests and proxy code.
-type WorkspaceDiffWatchResponse = workspaceDiffWatchResponse
-
 type filePreviewResponse = httpapi.FilePreviewResponse
 type commitResponse = httpapi.CommitResponse
 type commitsResponse = httpapi.CommitsResponse

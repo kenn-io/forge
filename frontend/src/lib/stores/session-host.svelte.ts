@@ -140,10 +140,6 @@ export function registerSessionParking(el: HTMLElement | null): void {
   parkingEl = el;
 }
 
-export function getSessionParking(): HTMLElement | null {
-  return parkingEl;
-}
-
 /**
  * Sessions the pool keeps live. Promotion never changes this set: a promoted
  * session is the same session in a different slot.

@@ -112,12 +112,6 @@ func (s *Server) isGatedAPIRequest(r *http.Request) bool {
 	return strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws/")
 }
 
-// AuthBootstrapURL renders the tokenized URL a browser loads once to
-// obtain the session cookie.
-func AuthBootstrapURL(baseURL, token string) string {
-	return baseURL + "/?" + authBootstrapParam + "=" + url.QueryEscape(token)
-}
-
 // redactedQuery renders a URL's query for logging with credential
 // parameters masked, so the auth bootstrap token never lands in
 // debug logs.

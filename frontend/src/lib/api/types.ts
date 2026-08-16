@@ -6,8 +6,6 @@ export type RepoSummaryAuthor = components["schemas"]["RepoSummaryAuthorResponse
 export type RepoSummaryIssue = components["schemas"]["RepoSummaryIssueResponse"];
 export type RepoSummaryCommitPointResponse = components["schemas"]["RepoSummaryCommitPointResponse"];
 export type RepoSummaryReleaseResponse = components["schemas"]["RepoSummaryReleaseResponse"];
-export type RoborevConfiguredRepository = components["schemas"]["RoborevConfiguredRepositoryResponse"];
-export type RoborevConfiguredRepositories = components["schemas"]["RoborevConfiguredRepositoriesResponse"];
 export type PullRequest = components["schemas"]["MergeRequestResponse"];
 export type ProviderCapabilities = components["schemas"]["ProviderCapabilitiesResponse"];
 export type OperationAvailability = components["schemas"]["OperationAvailability"];
@@ -27,12 +25,8 @@ export type ActivityResponse = components["schemas"]["ActivityResponse"];
 export type ActivitySubject = components["schemas"]["ActivitySubjectResponse"];
 export type WorkspaceActivitySubject = components["schemas"]["WorkspaceActivitySubjectResponse"];
 export type ActivityAuthorsResponse = components["schemas"]["ActivityAuthorsResponse"];
-export type NotificationItem = components["schemas"]["NotificationResponse"];
 export type NotificationsResponse = components["schemas"]["NotificationsResponse"];
-export type NotificationSummary = components["schemas"]["NotificationSummaryResponse"];
-export type NotificationSyncStatus = components["schemas"]["NotificationSyncStatusResponse"];
 export type NotificationBulkResponse = components["schemas"]["NotificationBulkResponse"];
-export type NotificationParams = NonNullable<operations["list-notifications"]["parameters"]["query"]>;
 export type CommentAutocompleteResponse = components["schemas"]["CommentAutocompleteResponse"];
 export type CommentAutocompleteReference = components["schemas"]["CommentAutocompleteReference"];
 export type RepoBrowserBlob = components["schemas"]["RepoBrowserBlob"];
@@ -51,18 +45,15 @@ export type EditPRContentInputBody = components["schemas"]["EditPRContentInputBo
 export type StarredRequest = components["schemas"]["StarredRequest"];
 export type GithubStateInputBody = components["schemas"]["GithubStateInputBody"];
 
-export type WorktreeLink = components["schemas"]["WorktreeLinkResponse"];
 export type LaunchTarget = components["schemas"]["LaunchTarget"];
 export type RuntimeSession = components["schemas"]["SessionInfo"];
 export type WorkspaceRuntime = components["schemas"]["WorkspaceRuntimeResponse"];
 
 export type Label = components["schemas"]["Label"];
-export type IssueLabel = Label;
 export type RepoLabelsResponse = components["schemas"]["RepoLabelsResponse"];
 export type ItemLabelsResponse = components["schemas"]["ItemLabelsResponse"];
 
 export type KanbanStatus = PullRequest["KanbanStatus"];
-export type MergeRequestState = PullRequest["State"];
 
 export type CICheckWire = components["schemas"]["CICheck"];
 export type CICheck = CICheckWire & { readonly required?: boolean };
@@ -115,7 +106,6 @@ export type FleetPeer = components["schemas"]["FleetPeer"];
 export type FleetSSHPeer = components["schemas"]["FleetSSHPeer"];
 
 export type FilePreview = components["schemas"]["FilePreviewResponse"];
-export type DiffFileSide = "old" | "new";
 export type DiffResponseWire = components["schemas"]["DiffResponse"];
 export type FilesResponseWire = components["schemas"]["FilesResponse"];
 export type DiffFileWire = components["schemas"]["DiffFile"];
@@ -217,16 +207,4 @@ export interface WorkspaceSession {
 export interface WorkspaceResources {
   cpuPercent: number;
   residentMB: number;
-}
-
-export interface WorkspaceData {
-  hosts: WorkspaceHost[];
-  selectedWorktreeKey: string | null;
-  selectedHostKey: string | null;
-}
-
-export interface WorkspaceDetailContext {
-  worktree: WorkspaceWorktree | null;
-  project: WorkspaceProject | null;
-  host: WorkspaceHost | null;
 }

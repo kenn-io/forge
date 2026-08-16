@@ -59,7 +59,7 @@ Interactive surfaces must agree on which item is selected.
   still in flight, re-enabling the action for a duplicate submission
   (`frontend/src/lib/stores/workspace-create-pending.svelte.ts`). The same
   store records confirmed creations for detail instances WITHOUT an inline
-  controller (focus/mobile views, DetailDrawer), which otherwise only see
+  controller (focus/mobile views), which otherwise only see
   the detail envelope; records reconcile away when an identity-matched
   envelope carries a workspace and clear on deletion by workspace ID. A
   workspace-absent envelope clears a created record or override only when
@@ -81,7 +81,7 @@ Interactive surfaces must agree on which item is selected.
   override — same-ID envelope or newer-tick request only; a stale
   different-ID envelope must not erase a recreation
   (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::reconcileWorkspaceCreated`).
-  Controller-less detail views (focus/mobile, DetailDrawer) AND the host
+  Controller-less detail views (focus/mobile) AND the host
   store's `effectiveRef` (both its tombstone and no-override branches)
   resolve under one rule — `resolveControllerlessWorkspaceRef`, never
   bare `envelope ?? createdWorkspaceRef`: the created record wins over a

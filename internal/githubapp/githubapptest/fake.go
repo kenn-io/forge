@@ -188,19 +188,6 @@ func (f *Fake) AppBySlug(slug string) (App, bool) {
 	return App{}, false
 }
 
-// App returns a snapshot of a registered app.
-func (f *Fake) App(appID int64) (App, bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	app, ok := f.apps[appID]
-	if !ok {
-		return App{}, false
-	}
-	snapshot := *app
-	snapshot.Installations = append([]Installation(nil), app.Installations...)
-	return snapshot, true
-}
-
 // RenameApp simulates a user renaming the GitHub App out of band.
 func (f *Fake) RenameApp(appID int64, slug string) error {
 	f.mu.Lock()

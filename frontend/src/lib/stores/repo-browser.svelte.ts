@@ -647,4 +647,3 @@ export function createRepoBrowserStore() {
 }
 
 export type RepoBrowserStore = ReturnType<typeof createRepoBrowserStore>;
-export type RepoBrowserMount = ReturnType<RepoBrowserStore["mount"]>;

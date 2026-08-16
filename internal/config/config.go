@@ -703,9 +703,7 @@ const (
 	DefaultTerminalFontSize         = 12
 	DefaultTerminalScrollback       = 1000
 	DefaultTerminalLineHeight       = 1.0
-	DefaultTerminalLetterSpacing    = 0
 	DefaultTerminalCursorBlink      = true
-	DefaultTerminalFontLigatures    = false
 	DefaultTerminalRetainedSessions = 10
 )
 

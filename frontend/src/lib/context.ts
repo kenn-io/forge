@@ -2,10 +2,6 @@ import { getContext } from "svelte";
 import type {
   ActionRegistry,
   NavigateCallback,
-  EventCallback,
-  PrepareRouteCallback,
-  WorkspaceCommandCallback,
-  WorkspaceDeletedCallback,
   HostStateAccessors,
   StoreInstances,
   UIConfig,
@@ -29,18 +25,6 @@ export function getActions(): ActionRegistry {
 }
 export function getNavigate(): NavigateCallback {
   return getContext(NAVIGATE_KEY);
-}
-export function getEventCallback(): EventCallback {
-  return getContext(EVENT_KEY);
-}
-export function getPrepareRoute(): PrepareRouteCallback | null {
-  return getContext(PREPARE_ROUTE_KEY);
-}
-export function getWorkspaceCommand(): WorkspaceCommandCallback | null {
-  return getContext(WORKSPACE_COMMAND_KEY);
-}
-export function getWorkspaceDeletedCallback(): WorkspaceDeletedCallback | null {
-  return getContext(WORKSPACE_DELETED_KEY);
 }
 export function getStores(): StoreInstances {
   return getContext(STORES_KEY);

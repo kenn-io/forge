@@ -45,10 +45,6 @@ export function getCommentDraft(
   return drafts[keys.primary] ?? (keys.legacy ? drafts[keys.legacy] : undefined) ?? "";
 }
 
-export function getCommentDraftByKey(key: string): string {
-  return drafts[key] ?? "";
-}
-
 export function setCommentDraft(
   target: CommentDraftTarget,
   owner: string,

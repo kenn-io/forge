@@ -71,21 +71,18 @@ export function makeRoborevOwner(prefix: string): string {
   return `${prefix}:${nextRoborevOwner}`;
 }
 
-export class RoborevMutationError extends Schema.TaggedErrorClass<RoborevMutationError>()("RoborevMutationError", {
+export class RoborevMutationError extends Schema.TaggedError<RoborevMutationError>()("RoborevMutationError", {
   operation: Schema.String,
   cause: Schema.Defect(),
 }) {}
 
-export class RoborevMutationBlocked extends Schema.TaggedErrorClass<RoborevMutationBlocked>()(
-  "RoborevMutationBlocked",
-  {
-    key: Schema.String,
-    operation: Schema.String,
-    resolution: Schema.Literal("applied"),
-  },
-) {}
+export class RoborevMutationBlocked extends Schema.TaggedError<RoborevMutationBlocked>()("RoborevMutationBlocked", {
+  key: Schema.String,
+  operation: Schema.String,
+  resolution: Schema.Literal("applied"),
+}) {}
 
-export class RoborevMutationNotApplied extends Schema.TaggedErrorClass<RoborevMutationNotApplied>()(
+export class RoborevMutationNotApplied extends Schema.TaggedError<RoborevMutationNotApplied>()(
   "RoborevMutationNotApplied",
   {
     key: Schema.String,
@@ -93,7 +90,7 @@ export class RoborevMutationNotApplied extends Schema.TaggedErrorClass<RoborevMu
   },
 ) {}
 
-export class RoborevMutationBlockedUnknown extends Schema.TaggedErrorClass<RoborevMutationBlockedUnknown>()(
+export class RoborevMutationBlockedUnknown extends Schema.TaggedError<RoborevMutationBlockedUnknown>()(
   "RoborevMutationBlockedUnknown",
   {
     key: Schema.String,
@@ -103,7 +100,7 @@ export class RoborevMutationBlockedUnknown extends Schema.TaggedErrorClass<Robor
   },
 ) {}
 
-export class RoborevMutationOutcomeUnknown extends Schema.TaggedErrorClass<RoborevMutationOutcomeUnknown>()(
+export class RoborevMutationOutcomeUnknown extends Schema.TaggedError<RoborevMutationOutcomeUnknown>()(
   "RoborevMutationOutcomeUnknown",
   {
     key: Schema.String,
@@ -126,7 +123,7 @@ export function roborevMutationFailureMessage(fallback: string, failure: unknown
   return fallback;
 }
 
-export class RoborevResponseError extends Schema.TaggedErrorClass<RoborevResponseError>()("RoborevResponseError", {
+export class RoborevResponseError extends Schema.TaggedError<RoborevResponseError>()("RoborevResponseError", {
   operation: Schema.String,
   message: Schema.String,
   cause: Schema.Defect(),

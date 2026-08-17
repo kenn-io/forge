@@ -28,7 +28,7 @@ class FleetDiffWatchUpdate extends Schema.Class<FleetDiffWatchUpdate>("FleetDiff
   version: Schema.optionalKey(Schema.String),
 }) {}
 
-class RetryableFleetDiffWatchStatus extends Schema.TaggedErrorClass<RetryableFleetDiffWatchStatus>()(
+class RetryableFleetDiffWatchStatus extends Schema.TaggedError<RetryableFleetDiffWatchStatus>()(
   "RetryableFleetDiffWatchStatus",
   { status: Schema.Number },
 ) {}

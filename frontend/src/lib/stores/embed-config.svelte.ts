@@ -2,12 +2,12 @@ import { Effect, Schema } from "effect";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { setGlobalRepo } from "../stores/filter.svelte.js";
 
-class EmbeddingCallbackError extends Schema.TaggedErrorClass<EmbeddingCallbackError>()("EmbeddingCallbackError", {
+class EmbeddingCallbackError extends Schema.TaggedError<EmbeddingCallbackError>()("EmbeddingCallbackError", {
   operation: Schema.String,
   cause: Schema.Defect(),
 }) {}
 
-export class InvalidEmbeddingAcknowledgement extends Schema.TaggedErrorClass<InvalidEmbeddingAcknowledgement>()(
+export class InvalidEmbeddingAcknowledgement extends Schema.TaggedError<InvalidEmbeddingAcknowledgement>()(
   "InvalidEmbeddingAcknowledgement",
   {
     operation: Schema.String,

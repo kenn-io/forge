@@ -21,6 +21,7 @@ RUN node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(
     && bun add --global --ignore-scripts "vite-plus@${VITE_PLUS_VERSION}" \
     && vp --version \
     && sed -i \
+      -e 's|http://azure.archive.ubuntu.com/ubuntu|https://mirrors.edge.kernel.org/ubuntu|g' \
       -e 's|http://archive.ubuntu.com/ubuntu|https://mirrors.edge.kernel.org/ubuntu|g' \
       -e 's|http://security.ubuntu.com/ubuntu|https://mirrors.edge.kernel.org/ubuntu|g' \
       /etc/apt/sources.list.d/ubuntu.sources \

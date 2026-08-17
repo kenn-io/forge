@@ -64,7 +64,7 @@ export interface DocsAPIClientOptions {
   fetch?: typeof fetch;
 }
 
-export class DocsRequestError extends Schema.TaggedErrorClass<DocsRequestError>()("DocsRequestError", {
+export class DocsRequestError extends Schema.TaggedError<DocsRequestError>()("DocsRequestError", {
   operation: Schema.String,
   message: Schema.String,
   status: Schema.Number,

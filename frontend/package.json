@@ -38,6 +38,7 @@
     "@tiptap/extension-paragraph": "3.29.2",
     "@tiptap/extension-placeholder": "3.29.2",
     "@tiptap/extension-text": "3.29.2",
+    "@tiptap/extensions": "3.29.2",
     "@tiptap/pm": "3.29.2",
     "@tiptap/suggestion": "3.29.2",
     "@xterm/addon-fit": "^0.11.0",

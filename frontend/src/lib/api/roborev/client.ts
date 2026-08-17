@@ -26,7 +26,7 @@ export const executeRoborevRequest = Effect.fn("RoborevClient.execute")(function
   });
 });
 
-export class RoborevStreamError extends Schema.TaggedErrorClass<RoborevStreamError>()("RoborevStreamError", {
+export class RoborevStreamError extends Schema.TaggedError<RoborevStreamError>()("RoborevStreamError", {
   operation: Schema.String,
   retryable: Schema.Boolean,
   cause: Schema.Defect(),

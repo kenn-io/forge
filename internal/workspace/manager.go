@@ -48,6 +48,7 @@ type Manager struct {
 	retryMu                   sync.Mutex
 	retryQueued               map[string]bool
 	runtimeTmuxMu             sync.Mutex
+	pastedImageLocks          pastedImageLockSet
 	issueBranchSlugEnabled    bool
 	summaryCacheMu            sync.RWMutex
 	summaryCache              []WorkspaceSummary

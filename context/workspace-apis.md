@@ -289,10 +289,10 @@ External identifiers are only normalized to one line, which preserves Markdown
 structure and is not a trust boundary; new free-prose fields must go through the
 fence.
 
-Before writing agent context or workspace-lifetime pasted images, kenn-forge
-makes the generated location invisible through the repository's private
-exclude, never tracked `.gitignore`; the write fails if the rule is ineffective
-(`internal/workspace/gitignore.go::EnsureWorkspaceGeneratedPathsIgnored`).
+Before writing agent context or workspace-lifetime pasted images, pin the path
+in the private exclude even when tracked rules already ignore it, then verify
+the result. Serialize pasted-image quota checks per workspace and stop at 100 entries
+(`internal/workspace/gitignore.go::EnsureWorkspaceGeneratedPathsIgnored`, `internal/workspace/pasted_images.go::Manager.StorePastedImage`).
 
 The recomputed head-repo trust classification must be persisted back to the
 workspace row, not just held on the in-memory struct: a sync that turns a

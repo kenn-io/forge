@@ -1,6 +1,8 @@
 package workspace
 
 import (
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -168,6 +170,55 @@ func TestStorePastedImageConcurrentFirstWrites(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join(workspaceRow.WorktreePath, PastedImageDirectory))
 	require.NoError(t, err)
 	assert.Len(t, entries, writes)
+}
+
+func TestStorePastedImageEnforcesConcurrentWorkspaceQuota(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	manager, workspaceRow := setupPastedImageWorkspace(t, "ready")
+	imageDir := filepath.Join(workspaceRow.WorktreePath, PastedImageDirectory)
+	require.NoError(os.MkdirAll(imageDir, 0o755))
+	for index := range MaxPastedImagesPerWorkspace - 1 {
+		require.NoError(os.WriteFile(
+			filepath.Join(imageDir, fmt.Sprintf("existing-%03d.png", index)),
+			pastedImagePNGFixture(),
+			0o600,
+		))
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wait sync.WaitGroup
+	for range 2 {
+		wait.Go(func() {
+			<-start
+			_, err := manager.StorePastedImage(
+				t.Context(), workspaceRow.ID, pastedImagePNGFixture(),
+			)
+			errs <- err
+		})
+	}
+	close(start)
+	wait.Wait()
+	close(errs)
+
+	successes := 0
+	quotaFailures := 0
+	for err := range errs {
+		if err == nil {
+			successes++
+			continue
+		}
+		if errors.Is(err, ErrPastedImageQuotaExceeded) {
+			quotaFailures++
+		}
+	}
+	assert.Equal(1, successes)
+	assert.Equal(1, quotaFailures)
+	entries, err := os.ReadDir(imageDir)
+	require.NoError(err)
+	assert.Len(entries, MaxPastedImagesPerWorkspace)
 }
 
 func setupPastedImageWorkspace(t *testing.T, status string) (*Manager, *db.Workspace) {

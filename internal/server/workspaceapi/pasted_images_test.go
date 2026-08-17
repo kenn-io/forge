@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -106,6 +107,33 @@ func TestPostPastedImageEnforcesEncodedAndDecodedLimits(t *testing.T) {
 	recorder = httptest.NewRecorder()
 	mux.ServeHTTP(recorder, request)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code, recorder.Body.String())
+}
+
+func TestPostPastedImageReturnsConflictAtWorkspaceQuota(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	mux, _, worktree := setupPastedImageAPI(t, "ready")
+	imageDir := filepath.Join(worktree, workspace.PastedImageDirectory)
+	require.NoError(os.MkdirAll(imageDir, 0o755))
+	for index := range workspace.MaxPastedImagesPerWorkspace {
+		require.NoError(os.WriteFile(
+			filepath.Join(imageDir, fmt.Sprintf("existing-%03d.png", index)),
+			[]byte("fixture"),
+			0o600,
+		))
+	}
+
+	recorder := postPastedImage(t, mux, "ws-pasted-image-api", map[string]string{
+		"data": base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\nfixture")),
+	})
+
+	assert.Equal(http.StatusConflict, recorder.Code, recorder.Body.String())
+	var problem struct {
+		Code string `json:"code"`
+	}
+	require.NoError(json.Unmarshal(recorder.Body.Bytes(), &problem))
+	assert.Equal("conflict", problem.Code)
 }
 
 func setupPastedImageAPI(t *testing.T, status string) (*http.ServeMux, huma.API, string) {

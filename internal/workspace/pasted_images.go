@@ -11,15 +11,39 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 )
 
-const MaxPastedImageBytes = 10 * 1024 * 1024
+const (
+	MaxPastedImageBytes         = 10 * 1024 * 1024
+	MaxPastedImagesPerWorkspace = 100
+)
 
 var (
-	ErrPastedImageTooLarge     = errors.New("pasted image exceeds the size limit")
-	ErrUnsupportedPastedImage  = errors.New("unsupported pasted image")
-	ErrPastedImagePathConflict = errors.New("pasted image storage path conflicts with an existing file")
+	ErrPastedImageTooLarge      = errors.New("pasted image exceeds the size limit")
+	ErrPastedImageQuotaExceeded = errors.New("pasted image workspace quota exceeded")
+	ErrUnsupportedPastedImage   = errors.New("unsupported pasted image")
+	ErrPastedImagePathConflict  = errors.New("pasted image storage path conflicts with an existing file")
 )
+
+type pastedImageLockSet struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}
+
+func (s *pastedImageLockSet) workspace(workspaceID string) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.locks == nil {
+		s.locks = make(map[string]*sync.Mutex)
+	}
+	if lock := s.locks[workspaceID]; lock != nil {
+		return lock
+	}
+	lock := &sync.Mutex{}
+	s.locks[workspaceID] = lock
+	return lock
+}
 
 // StorePastedImage validates decoded clipboard bytes and materializes them
 // inside a ready workspace. It returns only a slash-separated workspace path.
@@ -46,6 +70,9 @@ func (m *Manager) StorePastedImage(
 	if ws.Status != "ready" || strings.TrimSpace(ws.WorktreePath) == "" {
 		return "", ErrWorkspaceInvalidState
 	}
+	lock := m.pastedImageLocks.workspace(ws.ID)
+	lock.Lock()
+	defer lock.Unlock()
 	if err := preparePastedImageDirectory(ws.WorktreePath); err != nil {
 		return "", err
 	}
@@ -91,6 +118,9 @@ func writePastedImageAtomic(worktreePath string, data []byte, extension string) 
 	if err := ensurePastedImageDirectory(root); err != nil {
 		return "", err
 	}
+	if err := enforcePastedImageQuota(root); err != nil {
+		return "", err
+	}
 	id, err := pastedImageID()
 	if err != nil {
 		return "", err
@@ -116,6 +146,25 @@ func writePastedImageAtomic(worktreePath string, data []byte, extension string) 
 	}
 	installed = true
 	return finalPath, nil
+}
+
+func enforcePastedImageQuota(root *os.Root) error {
+	directory, err := root.Open(PastedImageDirectory)
+	if err != nil {
+		return fmt.Errorf("inspect pasted image quota: %w", err)
+	}
+	entries, readErr := directory.ReadDir(MaxPastedImagesPerWorkspace)
+	closeErr := directory.Close()
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		return fmt.Errorf("inspect pasted image quota: %w", readErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close pasted image directory: %w", closeErr)
+	}
+	if len(entries) >= MaxPastedImagesPerWorkspace {
+		return ErrPastedImageQuotaExceeded
+	}
+	return nil
 }
 
 func ensurePastedImageDirectory(root *os.Root) error {

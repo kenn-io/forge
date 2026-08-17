@@ -1674,6 +1674,45 @@ describe("TerminalPane", () => {
     );
   });
 
+  it("inserts separate image paste batches in event order when the second upload finishes first", async () => {
+    const first = deferred<string>();
+    const second = deferred<string>();
+    uploadWorkspacePastedImageMock.mockImplementation((_target, file: File) =>
+      Effect.promise(() => (file.name === "first.png" ? first.promise : second.promise)),
+    );
+    const { container } = render(TerminalPane, {
+      props: {
+        workspaceId: "ws-123",
+        uploadTarget: { workspaceId: "ws-123" },
+      },
+    });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
+    mockSockets[0]!.sent = [];
+    const terminal = container.querySelector(".terminal-container")!;
+
+    terminal.dispatchEvent(imagePasteEvent([new File(["first"], "first.png", { type: "image/png" })]));
+    terminal.dispatchEvent(imagePasteEvent([new File(["second"], "second.png", { type: "image/png" })]));
+
+    await waitFor(() => expect(uploadWorkspacePastedImageMock).toHaveBeenCalledTimes(2));
+    second.resolve(".kenn-forge/pasted-images/second.png");
+    await tick();
+    expect(
+      mockSockets[0]!.sent
+        .map((_, index) => sentText(mockSockets[0]!, index))
+        .filter((frame) => frame.includes(".kenn-forge/pasted-images/")),
+    ).toEqual([]);
+
+    first.resolve(".kenn-forge/pasted-images/first.png");
+    await waitFor(() =>
+      expect(
+        mockSockets[0]!.sent
+          .map((_, index) => sentText(mockSockets[0]!, index))
+          .filter((frame) => frame.includes(".kenn-forge/pasted-images/")),
+      ).toEqual([".kenn-forge/pasted-images/first.png", ".kenn-forge/pasted-images/second.png"]),
+    );
+  });
+
   it("reports missing upload ownership instead of silently dropping pasted images", async () => {
     const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(mockSockets).toHaveLength(1));

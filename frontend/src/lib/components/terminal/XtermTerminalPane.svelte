@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Deferred, Effect, Queue } from "effect";
+  import { Deferred, Effect, Exit, Queue } from "effect";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { makeAnimationFrameScheduler, nextAnimationFrame } from "../../browser/animation-frame.js";
   import { observeResize } from "../../browser/observers.js";
@@ -131,6 +131,7 @@
   let pointerOrigin: { clientX: number; clientY: number } | null = null;
   let explicitFocusRequested = false;
   const activeImagePasteInterrupts = new Set<() => void>();
+  let imagePasteDeliveryTail: Promise<void> = Promise.resolve();
   const encoder = new TextEncoder();
   let clipboardWriter: TerminalClipboardWriter | undefined;
   let mouseDragAutoscroll: TmuxMouseDragAutoscroll | undefined;
@@ -793,27 +794,7 @@
         );
       },
       { concurrency: "unbounded" },
-    ).pipe(
-      Effect.map((results) => formatPastedImagePaths([...results, ...skippedResults])),
-      Effect.tap(({ text, failed }) =>
-        Effect.sync(() => {
-          if (
-            disposed ||
-            generation !== connectionGeneration ||
-            !terminalSession?.isConnected()
-          ) {
-            return;
-          }
-          if (text !== "") sendPastedInput(text);
-          if (failed > 0) {
-            const noun = files.length === 1 ? "image" : "images";
-            showFlash(`${failed} of ${files.length} pasted ${noun} could not be uploaded.`, {
-              tone: "danger",
-            });
-          }
-        }),
-      ),
-    );
+    ).pipe(Effect.map((results) => formatPastedImagePaths([...results, ...skippedResults])));
     const execution = runtime.runCommand(program, {
       operation: "upload pasted terminal images",
       safeContext: {
@@ -834,6 +815,25 @@
     const interrupt = (): void => execution.interrupt();
     activeImagePasteInterrupts.add(interrupt);
     void execution.exit.finally(() => activeImagePasteInterrupts.delete(interrupt));
+    imagePasteDeliveryTail = imagePasteDeliveryTail.then(async () => {
+      const exit = await execution.exit;
+      if (!Exit.isSuccess(exit)) return;
+      if (
+        disposed ||
+        generation !== connectionGeneration ||
+        !terminalSession?.isConnected()
+      ) {
+        return;
+      }
+      const { text, failed } = exit.value;
+      if (text !== "") sendPastedInput(text);
+      if (failed > 0) {
+        const noun = files.length === 1 ? "image" : "images";
+        showFlash(`${failed} of ${files.length} pasted ${noun} could not be uploaded.`, {
+          tone: "danger",
+        });
+      }
+    });
   }
 
   function interruptImagePastes(): void {

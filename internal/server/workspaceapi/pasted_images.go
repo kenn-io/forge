@@ -68,6 +68,7 @@ func (h *Handler) writeWorkspacePastedImage(
 				httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
 			)
 		case errors.Is(err, workspace.ErrWorkspaceInvalidState),
+			errors.Is(err, workspace.ErrPastedImageQuotaExceeded),
 			errors.Is(err, workspace.ErrPastedImagePathConflict):
 			return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 		default:

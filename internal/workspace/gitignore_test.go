@@ -103,7 +103,7 @@ func TestEnsureGeneratedContextFilesIgnoredFailsOnFatalGitError(t *testing.T) {
 
 	err := EnsureGeneratedContextFilesIgnored(context.Background(), notARepo, []string{"AGENTS.override.md"})
 	require.Error(err)
-	assert.Contains(t, err.Error(), "check-ignore")
+	assert.Contains(t, err.Error(), "resolve git exclude path")
 	assert.NoFileExists(t, filepath.Join(notARepo, ".git", "info", "exclude"))
 }
 
@@ -136,6 +136,28 @@ func TestEnsureWorkspaceGeneratedPathsIgnoredAddsPastedImageDirectory(t *testing
 	excludeText := readGitExclude(t, worktree)
 	assert.Contains(t, excludeText, "/.kenn-forge/pasted-images/")
 	assert.NotContains(t, excludeText, generatedContextTempPattern)
+	assertGitIgnored(t, worktree, ".kenn-forge/pasted-images/paste-1.png")
+}
+
+func TestEnsureWorkspaceGeneratedPathsIgnoredPinsTrackedRulesInPrivateExclude(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	worktree := initWorkspaceGitRepo(t)
+	require.NoError(os.WriteFile(
+		filepath.Join(worktree, ".gitignore"),
+		[]byte("/.kenn-forge/pasted-images/\n"),
+		0o644,
+	))
+	runWorkspaceTestGit(t, worktree, "add", ".gitignore")
+	runWorkspaceTestGit(t, worktree, "commit", "-m", "ignore generated images")
+
+	require.NoError(EnsureWorkspaceGeneratedPathsIgnored(
+		context.Background(), worktree, []string{PastedImageDirectory},
+	))
+
+	assert.Contains(readGitExclude(t, worktree), "/.kenn-forge/pasted-images/")
+	require.NoError(os.WriteFile(filepath.Join(worktree, ".gitignore"), nil, 0o644))
 	assertGitIgnored(t, worktree, ".kenn-forge/pasted-images/paste-1.png")
 }
 

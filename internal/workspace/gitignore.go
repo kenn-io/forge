@@ -33,8 +33,8 @@ func EnsureWorkspaceGeneratedPathsIgnored(
 	worktreePath string,
 	generatedRelPaths []string,
 ) error {
-	missingPaths := make([]string, 0, len(generatedRelPaths)+1)
-	missingPatterns := make([]string, 0, len(generatedRelPaths)+1)
+	probePaths := make([]string, 0, len(generatedRelPaths)+1)
+	patterns := make([]string, 0, len(generatedRelPaths)+1)
 	seenPatterns := make(map[string]bool, len(generatedRelPaths)+1)
 	checks := make([]generatedIgnoreCheck, 0, len(generatedRelPaths)+1)
 	for _, rel := range generatedRelPaths {
@@ -46,21 +46,11 @@ func EnsureWorkspaceGeneratedPathsIgnored(
 	}
 	for _, check := range checks {
 		clean, pattern := check.probe, check.pattern
-		ignored, err := gitPathIgnored(ctx, worktreePath, clean)
-		if err != nil {
-			return err
-		}
-		if ignored {
-			continue
-		}
-		missingPaths = append(missingPaths, clean)
+		probePaths = append(probePaths, clean)
 		if !seenPatterns[pattern] {
 			seenPatterns[pattern] = true
-			missingPatterns = append(missingPatterns, pattern)
+			patterns = append(patterns, pattern)
 		}
-	}
-	if len(missingPaths) == 0 {
-		return nil
 	}
 
 	excludePathOut, err := gitCombinedOutput(ctx, worktreePath, "rev-parse", "--git-path", "info/exclude")
@@ -80,8 +70,8 @@ func EnsureWorkspaceGeneratedPathsIgnored(
 		return fmt.Errorf("read git exclude: %w", err)
 	}
 	text := string(content)
-	add := make([]string, 0, len(missingPatterns))
-	for _, pattern := range missingPatterns {
+	add := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
 		if !gitExcludeContainsLine(text, pattern) {
 			add = append(add, pattern)
 		}
@@ -106,7 +96,7 @@ func EnsureWorkspaceGeneratedPathsIgnored(
 		}
 	}
 
-	for _, clean := range missingPaths {
+	for _, clean := range probePaths {
 		ignored, err := gitPathIgnored(ctx, worktreePath, clean)
 		if err != nil {
 			return err

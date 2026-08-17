@@ -16,6 +16,7 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
   test.setTimeout(90_000);
   await mockApi(page);
   const updatedEntrypointPath = "/assets/index-updated.js";
+  const updatedDocsWorkflowPath = "/assets/docs-workflow-updated.js";
   const updatedMermaidCorePath = "/assets/mermaid.core-updated.js";
   const updatedSequencePath = "/assets/sequenceDiagram-updated.js";
   let mainFrameNavigations = 0;
@@ -23,6 +24,7 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
   let oldSequenceRequests = 0;
   let updatedSequenceRequests = 0;
   let currentEntrypointUrl = "";
+  let currentDocsWorkflowUrl = "";
   let currentMermaidCoreUrl = "";
   let currentSequenceUrl = "";
   page.on("framenavigated", (frame) => {
@@ -55,10 +57,24 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
     if (!currentEntrypointUrl) throw new Error("Current frontend entrypoint URL not captured");
 
     const body = await readFile(distAssetUrl(currentEntrypointUrl), "utf8");
-    const mermaidCoreFilename = body.match(/mermaid\.core-[A-Za-z0-9_-]+\.js/)?.[0];
-    if (!mermaidCoreFilename) throw new Error("Mermaid core chunk not found in frontend entrypoint");
+    const docsWorkflowFilename = body.match(/docs-workflow-[A-Za-z0-9_-]+\.js/)?.[0];
+    if (!docsWorkflowFilename) throw new Error("Docs workflow chunk not found in frontend entrypoint");
 
-    currentMermaidCoreUrl = new URL(mermaidCoreFilename, currentEntrypointUrl).href;
+    currentDocsWorkflowUrl = new URL(docsWorkflowFilename, currentEntrypointUrl).href;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: body.replaceAll(docsWorkflowFilename, "docs-workflow-updated.js"),
+    });
+  });
+  await page.route(updatedDocsWorkflowPath, async (route) => {
+    if (!currentDocsWorkflowUrl) throw new Error("Current docs workflow URL not captured");
+
+    const body = await readFile(distAssetUrl(currentDocsWorkflowUrl), "utf8");
+    const mermaidCoreFilename = body.match(/mermaid\.core-[A-Za-z0-9_-]+\.js/)?.[0];
+    if (!mermaidCoreFilename) throw new Error("Mermaid core chunk not found in docs workflow");
+
+    currentMermaidCoreUrl = new URL(mermaidCoreFilename, currentDocsWorkflowUrl).href;
     await route.fulfill({
       status: 200,
       contentType: "application/javascript",

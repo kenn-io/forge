@@ -3006,6 +3006,8 @@
             showCommitDetails={timelineFilter.showCommitDetails}
             activityViewMode={detailActivityView.getMode()}
             timelineOrder={detailActivityView.getOrder()}
+            initialEntryLimit={settings.getDetailSettings().initial_timeline_entry_limit}
+            itemIdentity={`${provider}:${platformHost ?? ""}:${repoPath}:${number}`}
             onEditComment={capabilities.comment_mutation && !stalePR && !editCommentGate.unavailable
               ? editTimelineComment
               : undefined}

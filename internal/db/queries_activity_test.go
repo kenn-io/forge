@@ -760,6 +760,33 @@ func TestListActivity(t *testing.T) {
 	_ = prID2
 }
 
+func TestListCollapsedActivityProjection(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	prID := insertTestMR(t, d, repoID, 1, "Fix projection", base)
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		CreatedAt:      base.Add(time.Minute),
+		DedupeKey:      "projection-comment",
+	}}))
+
+	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{Limit: 50},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	assert.Empty(projection.TopLevelRows)
+	require.Len(projection.Subjects, 1)
+	assert.Equal(1, projection.Subjects[0].Subject.Key.ItemNumber)
+	assert.Equal(EncodeCursor(base.Add(time.Minute), "pre", 1), projection.EventCursor)
+}
+
 func insertOversizedBranchCommitRow(
 	ctx context.Context,
 	d *DB,

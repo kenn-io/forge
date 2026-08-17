@@ -41,6 +41,9 @@ const (
 	defaultSyncBudgetPerHour               = 500
 	defaultBranchActivityRetentionDays     = 90
 	defaultBranchActivityMaxCommits        = 5000
+	DefaultInitialTimelineEntryLimit       = 50
+	MinInitialTimelineEntryLimit           = 10
+	MaxInitialTimelineEntryLimit           = 250
 	defaultPlatform                        = "github"
 	defaultPlatformHost                    = platformpkg.DefaultGitHubHost
 	defaultSSEBufferSize                   = 256
@@ -678,6 +681,11 @@ type PullRequests struct {
 	PreferGitHubNativeStacks bool `toml:"prefer_github_native_stacks,omitempty" json:"prefer_github_native_stacks"`
 }
 
+// Detail configures presentation shared by pull-request and issue detail.
+type Detail struct {
+	InitialTimelineEntryLimit int `toml:"initial_timeline_entry_limit,omitempty" json:"initial_timeline_entry_limit" minimum:"10" maximum:"250"`
+}
+
 // Workspaces configures behavior shared by PR- and issue-backed workspaces.
 type Workspaces struct {
 	// AutoAssignOnCreate adds the authenticated provider user to the source
@@ -898,6 +906,7 @@ type Config struct {
 	GitHubApps        []GitHubAppConfig        `toml:"github_apps"`
 	Activity          Activity                 `toml:"activity"`
 	PullRequests      PullRequests             `toml:"pull_requests"`
+	Detail            Detail                   `toml:"detail"`
 	Workspaces        Workspaces               `toml:"workspaces"`
 	Issues            Issues                   `toml:"issues"`
 	Notifications     Notifications            `toml:"notifications"`
@@ -1111,6 +1120,9 @@ collapse_threads = true
 default_branch_retention_days = 90
 default_branch_max_commits = 5000
 
+[detail]
+initial_timeline_entry_limit = 50
+
 [terminal]
 
 [modes]
@@ -1228,6 +1240,9 @@ func load(path string) (*Config, error) {
 		Activity: Activity{
 			CollapseThreads: true,
 		},
+		Detail: Detail{
+			InitialTimelineEntryLimit: DefaultInitialTimelineEntryLimit,
+		},
 	}
 
 	data, err := os.ReadFile(path)
@@ -1276,6 +1291,9 @@ func load(path string) (*Config, error) {
 	}
 	if cfg.Activity.DefaultBranchMaxCommits == 0 {
 		cfg.Activity.DefaultBranchMaxCommits = defaultBranchActivityMaxCommits
+	}
+	if cfg.Detail.InitialTimelineEntryLimit == 0 {
+		cfg.Detail.InitialTimelineEntryLimit = DefaultInitialTimelineEntryLimit
 	}
 	if cfg.Notifications.SyncInterval == "" {
 		cfg.Notifications.SyncInterval = defaultNotificationSyncInterval
@@ -1567,6 +1585,18 @@ func (c *Config) validate() error {
 		return fmt.Errorf(
 			"config: activity.default_branch_max_commits must be positive or omitted, got %d",
 			c.Activity.DefaultBranchMaxCommits,
+		)
+	}
+	if c.Detail.InitialTimelineEntryLimit == 0 {
+		c.Detail.InitialTimelineEntryLimit = DefaultInitialTimelineEntryLimit
+	}
+	if c.Detail.InitialTimelineEntryLimit < MinInitialTimelineEntryLimit ||
+		c.Detail.InitialTimelineEntryLimit > MaxInitialTimelineEntryLimit {
+		return fmt.Errorf(
+			"config: detail.initial_timeline_entry_limit must be between %d and %d or omitted, got %d",
+			MinInitialTimelineEntryLimit,
+			MaxInitialTimelineEntryLimit,
+			c.Detail.InitialTimelineEntryLimit,
 		)
 	}
 
@@ -3002,6 +3032,7 @@ type configFile struct {
 	DocFolders                []DocFolder              `toml:"doc_folders,omitempty"`
 	Roborev                   Roborev                  `toml:"roborev,omitempty"`
 	PullRequests              PullRequests             `toml:"pull_requests,omitempty"`
+	Detail                    Detail                   `toml:"detail,omitempty"`
 	Workspaces                Workspaces               `toml:"workspaces,omitempty"`
 	Issues                    Issues                   `toml:"issues,omitempty"`
 	Tmux                      Tmux                     `toml:"tmux,omitempty"`
@@ -3040,6 +3071,7 @@ func (c *Config) Save(path string) error {
 		DocFolders:              cfg.DocFolders,
 		Roborev:                 cfg.Roborev,
 		PullRequests:            cfg.PullRequests,
+		Detail:                  cfg.Detail,
 		Workspaces:              cfg.Workspaces,
 		Issues:                  cfg.Issues,
 		Tmux:                    cfg.Tmux,

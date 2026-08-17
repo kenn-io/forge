@@ -155,6 +155,148 @@ describe("activity store workspace activity", () => {
 });
 
 describe("activity store collapse state", () => {
+  it("requests the collapsed projection for the default collapsed threaded view", async () => {
+    const get = vi.fn(async () => ({
+      data: { items: [], item_activity: [], workspace_activity: [], capped: false, event_cursor: "hidden:9" },
+      error: null,
+    }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ projection: "collapsed" }) },
+      }),
+    );
+    expect(store.getActivityEventCursor()).toBe("hidden:9");
+  });
+
+  it("loads every frozen page of a collapsed thread once by stable provider repository identity", async () => {
+    const subject = {
+      ...itemActivity(7),
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: "repo-7",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        host: "github.com",
+      },
+    } satisfies ActivitySubject;
+    const threadQueries: Array<Record<string, unknown>> = [];
+    const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
+      if (path !== "/activity/thread-events") {
+        return {
+          data: {
+            items: [],
+            item_activity: [subject],
+            workspace_activity: [],
+            capped: false,
+            event_cursor: "hidden:9",
+          },
+          error: null,
+        };
+      }
+      const query = options.params?.query ?? {};
+      threadQueries.push(query);
+      return {
+        data: {
+          items: [],
+          item_activity: [],
+          workspace_activity: [],
+          capped: query.before === undefined,
+          event_cursor: "hidden:9",
+          ...(query.before === undefined ? { next_cursor: "thread-page-2" } : {}),
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    const key = "github|github.com|id|repo-7:pr:7";
+    store.toggleThreadItem(key);
+    await vi.waitFor(() => expect(threadQueries).toHaveLength(2));
+    store.toggleThreadItem(key);
+    store.toggleThreadItem(key);
+
+    expect(threadQueries).toEqual([
+      expect.objectContaining({
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: "repo-7",
+        item_type: "pr",
+        item_number: 7,
+        at_or_before: "hidden:9",
+      }),
+      expect.objectContaining({ before: "thread-page-2", at_or_before: "hidden:9" }),
+    ]);
+  });
+
+  it("expands all through sequential frozen event pages", async () => {
+    const first = notificationItem("ntf:71", "unread");
+    const second = notificationItem("ntf:70", "unread");
+    const eventQueries: Array<Record<string, unknown>> = [];
+    const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      const query = options.params?.query ?? {};
+      if (query.projection === "events") {
+        eventQueries.push(query);
+        if (query.before === undefined) {
+          return {
+            data: {
+              items: [first],
+              item_activity: [],
+              workspace_activity: [],
+              capped: true,
+              event_cursor: "snapshot",
+              next_cursor: "page-2",
+            },
+            error: null,
+          };
+        }
+        return {
+          data: { items: [second], item_activity: [], workspace_activity: [], capped: false, event_cursor: "snapshot" },
+          error: null,
+        };
+      }
+      return {
+        data: {
+          items: [],
+          item_activity: [itemActivity(7)],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    store.expandAllThreads();
+
+    await vi.waitFor(() => expect(eventQueries).toHaveLength(2));
+    expect(eventQueries[0]).toEqual(
+      expect.objectContaining({
+        projection: "events",
+        limit: 500,
+        at_or_before: "snapshot",
+      }),
+    );
+    expect(eventQueries[1]).toEqual(expect.objectContaining({ before: "page-2" }));
+    expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:71", "ntf:70"]);
+  });
+
   it("hydrates the workspace activity recency preference", () => {
     const s = makeStore();
     s.hydrateDefaults(settings(false, true));
@@ -1325,10 +1467,13 @@ describe("activity polling recovery", () => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
         feedReads += 1;
         if (feedReads === 1) {
-          return { data: { items: [retained, retainedNotification], capped: false }, error: null };
+          return {
+            data: { items: [retained, retainedNotification], capped: false, event_cursor: retained.cursor },
+            error: null,
+          };
         }
         return {
-          data: { items: [], item_activity: [renamed, replacement], capped: false },
+          data: { items: [], item_activity: [renamed, replacement], capped: false, event_cursor: retained.cursor },
           error: null,
         };
       }),
@@ -1337,7 +1482,12 @@ describe("activity polling recovery", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityItems()).toEqual([retained, retainedNotification]));
 
-    store.startActivityPolling();
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
 
     await vi.waitFor(() =>
       expect(store.getActivityItems().map((item) => item.repo.repo_path)).toEqual([
@@ -1374,16 +1524,26 @@ describe("activity polling recovery", () => {
   it("replaces the feed on the scheduled full poll so cursor-behind activity becomes visible", async () => {
     vi.useFakeTimers();
     const now = new Date().toISOString();
-    const stale = { ...notificationItem("ntf:stale", "unread"), created_at: now };
-    const persistedBehindCursor = { ...notificationItem("ntf:persisted", "unread"), created_at: now };
+    const stale = { ...notificationItem("ntf:stale", "unread"), created_at: now, item_type: "", item_number: 0 };
+    const persistedBehindCursor = {
+      ...notificationItem("ntf:persisted", "unread"),
+      created_at: now,
+      item_type: "",
+      item_number: 0,
+    };
     let feedReads = 0;
     const client = {
       GET: vi.fn(async (path: string) => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
         feedReads += 1;
-        if (feedReads === 1) return { data: { items: [stale], capped: false }, error: null };
-        if (feedReads <= 4) return { data: { items: [], capped: false }, error: null };
-        if (feedReads === 5) return { data: { items: [persistedBehindCursor], capped: false }, error: null };
+        if (feedReads === 1)
+          return { data: { items: [stale], capped: false, event_cursor: stale.cursor }, error: null };
+        if (feedReads <= 4) return { data: { items: [], capped: false, event_cursor: stale.cursor }, error: null };
+        if (feedReads === 5)
+          return {
+            data: { items: [persistedBehindCursor], capped: false, event_cursor: persistedBehindCursor.cursor },
+            error: null,
+          };
         throw new Error(`unexpected activity request ${feedReads}`);
       }),
     } as unknown as GeneratedClient;
@@ -1410,7 +1570,11 @@ describe("activity polling recovery", () => {
       GET: vi.fn((path: string) => {
         if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
         feedReads += 1;
-        if (feedReads === 1) return Promise.resolve({ data: { items: [initial], capped: false }, error: null });
+        if (feedReads === 1)
+          return Promise.resolve({
+            data: { items: [initial], capped: false, event_cursor: initial.cursor },
+            error: null,
+          });
         if (feedReads === 2) return pendingPoll.promise;
         if (feedReads === 3) {
           return Promise.resolve({
@@ -1424,7 +1588,10 @@ describe("activity polling recovery", () => {
           });
         }
         if (feedReads === 4) {
-          return Promise.resolve({ data: { items: [replacement], capped: false }, error: null });
+          return Promise.resolve({
+            data: { items: [replacement], capped: false, event_cursor: replacement.cursor },
+            error: null,
+          });
         }
         throw new Error(`unexpected activity request ${feedReads}`);
       }),
@@ -1438,7 +1605,7 @@ describe("activity polling recovery", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityError()).toBe("activity temporarily unavailable"));
 
-    pendingPoll.resolve({ data: { items: [], capped: true }, error: null });
+    pendingPoll.resolve({ data: { items: [], capped: true, event_cursor: initial.cursor }, error: null });
 
     await vi.waitFor(() => expect(store.getActivityItems()).toEqual([replacement]));
     expect(store.getActivityError()).toBeNull();
@@ -1454,8 +1621,9 @@ describe("activity polling recovery", () => {
       GET: vi.fn(async (path: string) => {
         if (path === "/activity/authors") return { data: { authors }, error: null };
         feedReads += 1;
-        if (feedReads === 1) return { data: { items: [initial], capped: false }, error: null };
-        return { data: { items: [fresh], capped: false }, error: null };
+        if (feedReads === 1)
+          return { data: { items: [initial], capped: false, event_cursor: initial.cursor }, error: null };
+        return { data: { items: [fresh], capped: false, event_cursor: fresh.cursor }, error: null };
       }),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
@@ -1484,13 +1652,15 @@ describe("activity polling recovery", () => {
       GET: vi.fn(async (path: string) => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
         feedReads += 1;
-        if (feedReads === 1) return { data: { items: [initial], capped: false }, error: null };
+        if (feedReads === 1)
+          return { data: { items: [initial], capped: false, event_cursor: initial.cursor }, error: null };
         if (feedReads === 2) {
           const response = await pendingPoll.promise;
           pollReturned.resolve();
           return response;
         }
-        if (feedReads === 3) return { data: { items: [foregroundItem], capped: false }, error: null };
+        if (feedReads === 3)
+          return { data: { items: [foregroundItem], capped: false, event_cursor: foregroundItem.cursor }, error: null };
         throw new Error(`unexpected activity request ${feedReads}`);
       }),
     } as unknown as GeneratedClient;
@@ -1504,7 +1674,10 @@ describe("activity polling recovery", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:3"]));
 
-    pendingPoll.resolve({ data: { items: [stalePollItem], capped: false }, error: null });
+    pendingPoll.resolve({
+      data: { items: [stalePollItem], capped: false, event_cursor: stalePollItem.cursor },
+      error: null,
+    });
     await pollReturned.promise;
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
@@ -1545,8 +1718,9 @@ describe("activity polling recovery", () => {
       GET: vi.fn(async (path: string) => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
         feedReads += 1;
-        if (feedReads === 1) return { data: { items: [notificationItem("ntf:42", "unread")], capped: false } };
-        if (feedReads === 2) return { data: { items: [], capped: true } };
+        if (feedReads === 1)
+          return { data: { items: [notificationItem("ntf:42", "unread")], capped: false, event_cursor: "ntf:42" } };
+        if (feedReads === 2) return { data: { items: [], capped: true, event_cursor: "ntf:42" } };
         return {
           error: {
             code: "validationError",
@@ -1568,7 +1742,7 @@ describe("activity polling recovery", () => {
     expect(store.isActivityLoading()).toBe(false);
   });
 
-  it("does not reload events when only the parent snapshot is capped", async () => {
+  it("retains event rows when an authoritative parent snapshot is capped", async () => {
     const initial = { ...notificationItem("ntf:42", "unread"), created_at: new Date().toISOString() };
     let feedReads = 0;
     const client = {
@@ -1576,7 +1750,10 @@ describe("activity polling recovery", () => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
         feedReads += 1;
         if (feedReads === 1) {
-          return { data: { items: [initial], capped: false, item_activity_capped: false }, error: null };
+          return {
+            data: { items: [initial], capped: false, item_activity_capped: false, event_cursor: initial.cursor },
+            error: null,
+          };
         }
         if (feedReads === 2) {
           return {
@@ -1585,6 +1762,7 @@ describe("activity polling recovery", () => {
               capped: false,
               item_activity: [itemActivity(7)],
               item_activity_capped: true,
+              event_cursor: initial.cursor,
             },
             error: null,
           };
@@ -1596,7 +1774,12 @@ describe("activity polling recovery", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityItems()).toEqual([initial]));
 
-    store.startActivityPolling();
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
     await vi.waitFor(() => expect(store.isItemActivityCapped()).toBe(true));
 
     expect(feedReads).toBe(2);

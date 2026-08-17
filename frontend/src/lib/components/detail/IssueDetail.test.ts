@@ -242,6 +242,7 @@ function renderIssueDetail(
           detailActivityView: createDetailActivityViewStore(),
           settings: {
             getLaunchTargets: () => launchTargets,
+            getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
           },
         },
       ],

@@ -248,6 +248,31 @@ describe("EventTimeline", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  it("renders the configured initial entry limit and progressively loads the remainder", async () => {
+    const events = Array.from({ length: 51 }, (_, index) =>
+      makeEvent({
+        ID: index + 1,
+        EventType: "assigned",
+        Summary: `assigned-${index + 1}`,
+        DedupeKey: `assigned-${index + 1}`,
+        CreatedAt: `2024-06-01T12:${String(index).padStart(2, "0")}:00Z`,
+      }),
+    );
+    renderTimeline({
+      props: { events, initialEntryLimit: 50, itemIdentity: "github:acme/widget#42" },
+    });
+
+    expect(document.querySelectorAll(".event-timeline .kit-timeline-item")).toHaveLength(50);
+    const loadButton = screen.getByRole("button", { name: "Load full timeline (1 more entry)" });
+
+    await fireEvent.click(loadButton);
+
+    await waitFor(() => {
+      expect(document.querySelectorAll(".event-timeline .kit-timeline-item")).toHaveLength(51);
+    });
+    expect(screen.queryByRole("button", { name: /Load full timeline/ })).toBeNull();
+  });
+
   it("renders force-push label, actor, and SHA transition", () => {
     renderTimeline({
       props: {

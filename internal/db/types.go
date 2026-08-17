@@ -1342,6 +1342,12 @@ type ListActivityOpts struct {
 	// nil-safety), so the safety-capped window is never spent on rows the
 	// caller will not serve.
 	ExcludeNotifications bool
+	HideClosedMerged     bool
+	HideBots             bool
+	HideDefaultBranch    bool
+	ParentRepoID         int64
+	ParentItemType       string
+	ParentItemNumber     int
 	// NotificationRepoFilters limits notification rows to the caller's
 	// current monitored repo set before ordering/limit. nil means no
 	// additional notification scope; an empty/non-matching set means no
@@ -1350,12 +1356,15 @@ type ListActivityOpts struct {
 	Limit                   int        // page size (default 50, max 200)
 	Since                   *time.Time // only return events created at or after this time
 	// Cursor fields -- decoded from opaque token by the handler.
-	BeforeTime     *time.Time
-	BeforeSource   string
-	BeforeSourceID int64
-	AfterTime      *time.Time
-	AfterSource    string
-	AfterSourceID  int64
+	BeforeTime         *time.Time
+	BeforeSource       string
+	BeforeSourceID     int64
+	AfterTime          *time.Time
+	AfterSource        string
+	AfterSourceID      int64
+	AtOrBeforeTime     *time.Time
+	AtOrBeforeSource   string
+	AtOrBeforeSourceID int64
 }
 
 // ListActivitySubjectsOpts holds parent-level filters for the Activity feed.
@@ -1371,8 +1380,21 @@ type ListActivitySubjectsOpts struct {
 	SearchMatchedSubjectKeys []WorkspaceSubjectKey
 	Author                   string
 	ViewerLogins             []RepoViewerLogin
+	HideClosedMerged         bool
+	HideBots                 bool
 	Limit                    int
 	Since                    *time.Time
+}
+
+type ActivityProjection struct {
+	TopLevelRows []ActivityItem
+	Subjects     []ActivitySubject
+	EventCursor  string
+}
+
+type ListActivityProjectionOpts struct {
+	ListActivityOpts
+	SubjectLimit int
 }
 
 // ListActivityAuthorsOpts holds the repository and time scopes used to build

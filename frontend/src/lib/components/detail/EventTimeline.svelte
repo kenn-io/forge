@@ -41,6 +41,7 @@
     type MarkdownSuggestionBlock,
   } from "../../utils/markdown-suggestions.js";
   import { getStores } from "../../context.js";
+  import { createProgressiveMountController } from "../../utils/progressive-mount.js";
   import {
     buildItemReferenceLink,
     type ItemReferenceDataAttributes,
@@ -70,6 +71,8 @@
     showCommitDetails?: boolean;
     activityViewMode?: DetailActivityViewMode;
     timelineOrder?: DetailTimelineOrder;
+    initialEntryLimit?: number;
+    itemIdentity?: string;
     onEditComment?:
       | ((event: PREvent | IssueEvent, body: string, callbacks: MutationCallbacks) => void)
       | undefined;
@@ -115,6 +118,8 @@
     showCommitDetails = true,
     activityViewMode = "normal",
     timelineOrder = "grouped",
+    initialEntryLimit = Number.MAX_SAFE_INTEGER,
+    itemIdentity = "",
     onEditComment,
     onDeleteComment,
     onApplySuggestion,
@@ -735,6 +740,34 @@
   const renderedTimelineEntries = $derived(
     activityViewMode === "compact" ? compactTimelineEntries : timelineEntries,
   );
+  const progressiveMount = createProgressiveMountController({ batchSize: 25 });
+  let mountedEntryCount = $state(0);
+  let fullTimelineRequested = $state(false);
+  const mountedTimelineEntries = $derived(renderedTimelineEntries.slice(0, mountedEntryCount));
+  const unmountedEntryCount = $derived(renderedTimelineEntries.length - mountedEntryCount);
+  const timelineMountKey = $derived(
+    `${itemIdentity}\u0000${activityViewMode}\u0000${timelineOrder}\u0000${filtered}\u0000${initialEntryLimit}`,
+  );
+  let lastTimelineResetKey = "";
+
+  $effect(() => {
+    const resetKey = `${timelineMountKey}\u0000${renderedTimelineEntries.length}`;
+    if (resetKey === lastTimelineResetKey) return;
+    const initialCount = Math.min(initialEntryLimit, renderedTimelineEntries.length);
+    untrack(() => {
+      lastTimelineResetKey = resetKey;
+      progressiveMount.cancel();
+      fullTimelineRequested = false;
+      mountedEntryCount = initialCount;
+    });
+  });
+
+  function loadFullTimeline(): void {
+    fullTimelineRequested = true;
+    progressiveMount.start(mountedEntryCount, renderedTimelineEntries.length, (count) => {
+      mountedEntryCount = count;
+    });
+  }
 
   function buildCompactTimelineEntries(
     sourceEvents: Array<PREvent | IssueEvent>,
@@ -1032,6 +1065,7 @@
 
   onDestroy(() => {
     copyExecution?.interrupt();
+    progressiveMount.cancel();
   });
   let editingId = $state<number | null>(null);
   let editDraft = $state("");
@@ -1812,7 +1846,7 @@
   {/if}
   <div class="event-timeline">
     <Timeline ariaLabel="Item activity">
-      {#each renderedTimelineEntries as entry (entry.key)}
+      {#each mountedTimelineEntries as entry (entry.key)}
       {@const event = entry.event}
       {@const hiddenState = providerHiddenState(event)}
       {@const targetID = replyTargetID(entry)}
@@ -2131,6 +2165,19 @@
       {/if}
       {/each}
     </Timeline>
+    {#if unmountedEntryCount > 0}
+      <div class="timeline-load-more">
+        {#if fullTimelineRequested}
+          <span role="status">
+            Loading full timeline ({unmountedEntryCount} {unmountedEntryCount === 1 ? "entry" : "entries"} remaining)
+          </span>
+        {:else}
+          <Button size="sm" tone="neutral" surface="outline" onclick={loadFullTimeline}>
+            Load full timeline ({unmountedEntryCount} more {unmountedEntryCount === 1 ? "entry" : "entries"})
+          </Button>
+        {/if}
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -2162,6 +2209,14 @@
     font-size: var(--font-size-root);
     color: var(--text-muted);
     padding: 16px 0;
+  }
+
+  .timeline-load-more {
+    display: flex;
+    justify-content: center;
+    padding: var(--focus-detail-space-md, 12px) 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
   }
 
   :global(.suggestion-batch-bar) {

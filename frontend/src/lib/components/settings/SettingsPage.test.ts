@@ -3,8 +3,9 @@ import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS, type Settings } from "../../api/types.js";
 
-const { loadSettings, setLaunchTargets, setRepoPresets } = vi.hoisted(() => ({
+const { loadSettings, setDetailSettings, setLaunchTargets, setRepoPresets } = vi.hoisted(() => ({
   loadSettings: vi.fn(),
+  setDetailSettings: vi.fn(),
   setLaunchTargets: vi.fn(),
   setRepoPresets: vi.fn(),
 }));
@@ -19,6 +20,7 @@ vi.mock("../../context.js", async (importOriginal) => ({
       setRepoPresets,
       setModeVisibility: vi.fn(),
       setPullRequestSettings: vi.fn(),
+      setDetailSettings,
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setWorkspaceSettings: vi.fn(),
       setLaunchTargets,
@@ -61,6 +63,9 @@ vi.mock("./KataProjectMappingsSettings.svelte", async () => ({
 vi.mock("./PullRequestSettings.svelte", async () => ({
   default: (await import("../../testing/AppViewStub.svelte")).default,
 }));
+vi.mock("./DetailSettings.svelte", async () => ({
+  default: (await import("../../testing/AppViewStub.svelte")).default,
+}));
 vi.mock("./WorkspaceSettings.svelte", async () => ({
   default: (await import("../../testing/AppViewStub.svelte")).default,
 }));
@@ -92,6 +97,7 @@ function makeSettings(): Settings {
       },
     ],
     pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+    detail: { initial_timeline_entry_limit: 50 },
     workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
     issues: { hide_bots: true },
     kata_projects: [],
@@ -133,6 +139,7 @@ describe("SettingsPage", () => {
     cleanup();
     loadSettings.mockReset();
     setLaunchTargets.mockReset();
+    setDetailSettings.mockReset();
     setRepoPresets.mockReset();
   });
 
@@ -159,6 +166,19 @@ describe("SettingsPage", () => {
 
     await waitFor(() => {
       expect(setRepoPresets).toHaveBeenCalledWith(settings.repo_presets);
+    });
+  });
+
+  it("hydrates detail settings into the shared settings store on initial load", async () => {
+    const settings = makeSettings();
+    loadSettings.mockReturnValue(Effect.succeed(settings));
+
+    render(SettingsRuntimeHarness, {
+      props: { component: SettingsPage, componentProps: {} },
+    });
+
+    await waitFor(() => {
+      expect(setDetailSettings).toHaveBeenCalledWith(settings.detail);
     });
   });
 });

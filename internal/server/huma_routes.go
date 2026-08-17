@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -123,14 +124,41 @@ type streamEventsInput struct {
 }
 
 type listActivityInput struct {
-	Repo       string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	Types      []string `query:"types"`
-	ItemTypes  []string `query:"item_types" doc:"Item scopes included before limiting activity results: pr, issue, or repo."`
-	Search     string   `query:"search"`
-	Author     string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
-	InvolvesMe bool     `query:"involves_me" doc:"Only include activity for pull requests and issues involving the authenticated viewer."`
-	After      string   `query:"after"`
-	Since      string   `query:"since"`
+	Repo                 string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	Types                []string `query:"types"`
+	ItemTypes            []string `query:"item_types" doc:"Item scopes included before limiting activity results: pr, issue, or repo."`
+	Search               string   `query:"search"`
+	Author               string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
+	InvolvesMe           bool     `query:"involves_me" doc:"Only include activity for pull requests and issues involving the authenticated viewer."`
+	After                string   `query:"after"`
+	Before               string   `query:"before"`
+	AtOrBefore           string   `query:"at_or_before"`
+	Since                string   `query:"since"`
+	Projection           string   `query:"projection" enum:"full,collapsed,events" default:"full"`
+	Limit                int      `query:"limit" minimum:"10" maximum:"500"`
+	HideClosedMerged     bool     `query:"hide_closed_merged"`
+	HideBots             bool     `query:"hide_bots"`
+	HideDefaultBranch    bool     `query:"hide_default_branch"`
+	parentProvider       string
+	parentPlatformHost   string
+	parentPlatformRepoID string
+	parentItemType       string
+	parentItemNumber     int
+}
+
+type listActivityThreadEventsInput struct {
+	Provider          string `query:"provider"`
+	PlatformHost      string `query:"platform_host"`
+	PlatformRepoID    string `query:"platform_repo_id"`
+	ItemType          string `query:"item_type" enum:"pr,issue"`
+	ItemNumber        int    `query:"item_number" minimum:"1"`
+	Since             string `query:"since"`
+	Before            string `query:"before"`
+	AtOrBefore        string `query:"at_or_before"`
+	Limit             int    `query:"limit" minimum:"10" maximum:"250" default:"100"`
+	HideClosedMerged  bool   `query:"hide_closed_merged"`
+	HideBots          bool   `query:"hide_bots"`
+	HideDefaultBranch bool   `query:"hide_default_branch"`
 }
 
 type listActivityAuthorsInput struct {
@@ -195,6 +223,8 @@ func (s *Server) registerAPI(api huma.API) {
 
 	huma.Get(api, "/activity", s.listActivity,
 		httpapi.DocumentOperation("list-activity", "List activity", "Activity"))
+	huma.Get(api, "/activity/thread-events", s.listActivityThreadEvents,
+		httpapi.DocumentOperation("list-activity-thread-events", "List activity thread events", "Activity"))
 	huma.Get(api, "/activity/authors", s.listActivityAuthors,
 		httpapi.DocumentOperation("list-activity-authors", "List activity authors", "Activity"))
 	s.kataAPI.Register(api)
@@ -1326,9 +1356,23 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		// SQL when no config is loaded (the nil-config safety guard), so the
 		// safety-cap window is filled by real activity, not stale notifications.
 		ExcludeNotifications: !s.notificationsEnabled(),
+		HideClosedMerged:     input.HideClosedMerged,
+		HideBots:             input.HideBots,
+		HideDefaultBranch:    input.HideDefaultBranch,
 	}
 
-	opts.Limit = activitySafetyCap + 1
+	projection := input.Projection
+	if projection == "" {
+		projection = "full"
+	}
+	pageLimit := activitySafetyCap
+	if projection == "events" {
+		pageLimit = input.Limit
+		if pageLimit == 0 {
+			pageLimit = 500
+		}
+	}
+	opts.Limit = pageLimit + 1
 	if input.InvolvesMe {
 		viewerLogins, err := s.resolveAuthenticatedViewerLogins(ctx, opts.RepoFilters)
 		if err != nil {
@@ -1357,6 +1401,24 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		opts.AfterSource = source
 		opts.AfterSourceID = sourceID
 	}
+	if input.Before != "" {
+		t, source, sourceID, err := db.DecodeCursor(input.Before)
+		if err != nil {
+			return nil, httpapi.Validation("query.before", "invalid before cursor: "+err.Error())
+		}
+		opts.BeforeTime = &t
+		opts.BeforeSource = source
+		opts.BeforeSourceID = sourceID
+	}
+	if input.AtOrBefore != "" {
+		t, source, sourceID, err := db.DecodeCursor(input.AtOrBefore)
+		if err != nil {
+			return nil, httpapi.Validation("query.at_or_before", "invalid upper-bound cursor: "+err.Error())
+		}
+		opts.AtOrBeforeTime = &t
+		opts.AtOrBeforeSource = source
+		opts.AtOrBeforeSourceID = sourceID
+	}
 
 	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
 	if err != nil {
@@ -1370,14 +1432,50 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			return nil, httpapi.Internal("load tracked activity repos failed")
 		}
 	}
+	if input.parentPlatformRepoID != "" {
+		repository, lookupErr := s.db.GetRepositoryByProviderIDUnderRepositoryReconciliationRead(
+			ctx, input.parentProvider, input.parentPlatformHost, input.parentPlatformRepoID,
+		)
+		if lookupErr != nil {
+			return nil, httpapi.Internal("resolve activity thread repository failed")
+		}
+		if repository == nil || repository.Lifecycle != db.RepositoryLifecycleActive ||
+			!activityRepoIDAllowed(repository.Repository.ID, opts.AllowedRepoIDs) {
+			opts.AllowedRepoIDs = []int64{}
+		} else {
+			opts.ParentRepoID = repository.Repository.ID
+			opts.ParentItemType = input.parentItemType
+			opts.ParentItemNumber = input.parentItemNumber
+		}
+	}
 
-	items, err := s.db.ListActivity(ctx, opts)
-	if err != nil {
-		slog.Error("list activity failed", "err", err)
-		return nil, httpapi.Internal("list activity failed")
+	var items []db.ActivityItem
+	var itemActivity []db.ActivitySubject
+	eventCursor := input.After
+	if projection == "collapsed" {
+		collapsed, projectionErr := s.db.ListCollapsedActivityProjection(ctx, db.ListActivityProjectionOpts{
+			ListActivityOpts: opts,
+			SubjectLimit:     activitySafetyCap + 1,
+		})
+		if projectionErr != nil {
+			slog.Error("list collapsed activity failed", "err", projectionErr)
+			return nil, httpapi.Internal("list activity failed")
+		}
+		items = collapsed.TopLevelRows
+		itemActivity = collapsed.Subjects
+		eventCursor = collapsed.EventCursor
+	} else {
+		items, err = s.db.ListActivity(ctx, opts)
+		if err != nil {
+			slog.Error("list activity failed", "err", err)
+			return nil, httpapi.Internal("list activity failed")
+		}
+		if len(items) > 0 {
+			eventCursor = db.EncodeCursor(items[0].CreatedAt, items[0].Source, items[0].SourceID)
+		}
 	}
 	workspaceEventItems := items
-	hasFullWorkspaceEventItems := opts.Search != "" && opts.AfterTime != nil
+	hasFullWorkspaceEventItems := opts.Search != "" && (opts.AfterTime != nil || projection == "collapsed")
 	if hasFullWorkspaceEventItems {
 		workspaceOpts := opts
 		workspaceOpts.AfterTime = nil
@@ -1405,21 +1503,25 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			})
 		}
 	}
-	itemActivity, err := s.db.ListActivitySubjects(ctx, db.ListActivitySubjectsOpts{
-		Repo:                     opts.Repo,
-		RepoFilters:              opts.RepoFilters,
-		AllowedRepoIDs:           opts.AllowedRepoIDs,
-		ItemTypes:                opts.ItemTypes,
-		Search:                   opts.Search,
-		SearchMatchedSubjectKeys: searchMatchedSubjectKeys,
-		Author:                   opts.Author,
-		ViewerLogins:             opts.ViewerLogins,
-		Limit:                    activitySafetyCap + 1,
-		Since:                    opts.Since,
-	})
-	if err != nil {
-		slog.Error("list activity subjects failed", "err", err)
-		return nil, httpapi.Internal("list activity failed")
+	if projection == "full" {
+		itemActivity, err = s.db.ListActivitySubjects(ctx, db.ListActivitySubjectsOpts{
+			Repo:                     opts.Repo,
+			RepoFilters:              opts.RepoFilters,
+			AllowedRepoIDs:           opts.AllowedRepoIDs,
+			ItemTypes:                opts.ItemTypes,
+			Search:                   opts.Search,
+			SearchMatchedSubjectKeys: searchMatchedSubjectKeys,
+			Author:                   opts.Author,
+			ViewerLogins:             opts.ViewerLogins,
+			HideClosedMerged:         opts.HideClosedMerged,
+			HideBots:                 opts.HideBots,
+			Limit:                    activitySafetyCap + 1,
+			Since:                    opts.Since,
+		})
+		if err != nil {
+			slog.Error("list activity subjects failed", "err", err)
+			return nil, httpapi.Internal("list activity failed")
+		}
 	}
 	if s.activityAfterItemsForTest != nil {
 		s.activityAfterItemsForTest()
@@ -1457,10 +1559,24 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		}
 	}
 
-	eventsCapped := len(items) > activitySafetyCap
+	eventsCapped := len(items) > pageLimit
 	itemActivityCapped := len(itemActivity) > activitySafetyCap || searchMatchesTruncated
-	if len(items) > activitySafetyCap {
-		items = items[:activitySafetyCap]
+	if len(items) > pageLimit {
+		items = items[:pageLimit]
+	}
+	nextCursor := ""
+	if projection == "events" && len(items) == pageLimit && len(items) > 0 {
+		last := items[len(items)-1]
+		nextCursor = db.EncodeCursor(last.CreatedAt, last.Source, last.SourceID)
+	}
+	if projection == "collapsed" {
+		topLevel := make([]db.ActivityItem, 0, len(items))
+		for _, item := range items {
+			if item.ItemType == "" {
+				topLevel = append(topLevel, item)
+			}
+		}
+		items = topLevel
 	}
 	if len(itemActivity) > activitySafetyCap {
 		itemActivity = itemActivity[:activitySafetyCap]
@@ -1479,11 +1595,11 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ID:           it.Source + ":" + strconv.FormatInt(it.SourceID, 10),
 			Cursor:       db.EncodeCursor(it.CreatedAt, it.Source, it.SourceID),
 			ActivityType: it.ActivityType,
-			Repo: s.repoResolver.Ref(db.Repo{
+			Repo: activityRepoRef(s.repoResolver.Ref(db.Repo{
 				Platform: it.Platform, PlatformHost: it.PlatformHost,
 				PlatformRepoID: it.PlatformRepoID, Owner: it.RepoOwner,
 				Name: it.RepoName, RepoPath: it.RepoPath,
-			}),
+			})),
 			PlatformHost: it.PlatformHost,
 			RepoOwner:    it.RepoOwner,
 			RepoName:     it.RepoName,
@@ -1529,11 +1645,11 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		workspaceSubjectKey := subject.Key
 		workspaceSubjectKey.ItemType = workspaceItemTypeFromActivity(subject.Key.ItemType)
 		itemActivityOut[i] = activitySubjectResponse{
-			Repo: s.repoResolver.Ref(db.Repo{
+			Repo: activityRepoRef(s.repoResolver.Ref(db.Repo{
 				Platform: subject.Platform, PlatformHost: subject.PlatformHost,
 				PlatformRepoID: subject.PlatformRepoID, Owner: subject.RepoOwner,
 				Name: subject.RepoName, RepoPath: subject.RepoPath,
-			}),
+			})),
 			PlatformHost: subject.PlatformHost,
 			RepoOwner:    subject.RepoOwner,
 			RepoName:     subject.RepoName,
@@ -1547,8 +1663,14 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ActivityAt:   formatUTCRFC3339(activity.ActivityAt),
 		}
 	}
+	if projection == "events" {
+		itemActivityOut = []activitySubjectResponse{}
+	}
 
 	workspaceActivity := s.workspaceActivityResponse(input, opts, workspaceSnapshot, workspaceEventItems)
+	if projection == "events" {
+		workspaceActivity = []workspaceActivitySubjectResponse{}
+	}
 	return &listActivityOutput{
 		Body: activityResponse{
 			Items:              out,
@@ -1556,8 +1678,64 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			WorkspaceActivity:  workspaceActivity,
 			Capped:             eventsCapped,
 			ItemActivityCapped: itemActivityCapped,
+			EventCursor:        eventCursor,
+			NextCursor:         nextCursor,
 		},
 	}, nil
+}
+
+func activityRepoIDAllowed(repoID int64, allowed []int64) bool {
+	if allowed == nil {
+		return true
+	}
+	return slices.Contains(allowed, repoID)
+}
+
+func activityRepoRef(repo httpapi.RepoRefResponse) activityRepoRefResponse {
+	return activityRepoRefResponse{
+		Provider:       repo.Provider,
+		PlatformHost:   repo.PlatformHost,
+		PlatformRepoID: repo.PlatformRepoID,
+		RepoPath:       repo.RepoPath,
+		Owner:          repo.Owner,
+		Name:           repo.Name,
+	}
+}
+
+func (s *Server) listActivityThreadEvents(
+	ctx context.Context,
+	input *listActivityThreadEventsInput,
+) (*listActivityOutput, error) {
+	if strings.TrimSpace(input.Provider) == "" {
+		return nil, httpapi.Validation("query.provider", "provider is required")
+	}
+	if strings.TrimSpace(input.PlatformHost) == "" {
+		return nil, httpapi.Validation("query.platform_host", "platform host is required")
+	}
+	if strings.TrimSpace(input.PlatformRepoID) == "" {
+		return nil, httpapi.Validation("query.platform_repo_id", "platform repository id is required")
+	}
+	if input.ItemType != "pr" && input.ItemType != "issue" {
+		return nil, httpapi.Validation("query.item_type", "item type must be pr or issue")
+	}
+	if input.ItemNumber <= 0 {
+		return nil, httpapi.Validation("query.item_number", "item number must be positive")
+	}
+	return s.listActivity(ctx, &listActivityInput{
+		Since:                input.Since,
+		Before:               input.Before,
+		AtOrBefore:           input.AtOrBefore,
+		Projection:           "events",
+		Limit:                input.Limit,
+		HideClosedMerged:     input.HideClosedMerged,
+		HideBots:             input.HideBots,
+		HideDefaultBranch:    input.HideDefaultBranch,
+		parentProvider:       input.Provider,
+		parentPlatformHost:   input.PlatformHost,
+		parentPlatformRepoID: input.PlatformRepoID,
+		parentItemType:       input.ItemType,
+		parentItemNumber:     input.ItemNumber,
+	})
 }
 
 func (s *Server) workspaceActivityResponse(
@@ -1627,11 +1805,11 @@ func (s *Server) workspaceActivityResponse(
 		}
 		ref := activity.Workspace
 		result = append(result, workspaceActivitySubjectResponse{
-			Repo: s.repoResolver.Ref(db.Repo{
+			Repo: activityRepoRef(s.repoResolver.Ref(db.Repo{
 				Platform: subject.Platform, PlatformHost: subject.PlatformHost,
 				PlatformRepoID: subject.PlatformRepoID, Owner: subject.RepoOwner,
 				Name: subject.RepoName, RepoPath: subject.RepoPath,
-			}),
+			})),
 			PlatformHost: subject.PlatformHost, RepoOwner: subject.RepoOwner, RepoName: subject.RepoName,
 			ItemType: wireType, ItemNumber: key.ItemNumber, ItemTitle: subject.Title,
 			ItemURL: subject.URL, ItemState: subject.State, ItemAuthor: subject.Author,

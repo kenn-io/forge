@@ -137,8 +137,11 @@
     activity.loadActivity(true);
     activity.startActivityPolling();
     unsubSync = sync.subscribeSyncComplete(() => {
-      activity.loadActivity();
-      activity.loadActivityAuthors(true);
+      runtime.runCommand(activity.reconcileActivityEffect(), {
+        operation: "reconcile activity after sync",
+        safeContext: {},
+        onFailure: () => {},
+      });
     });
   });
 
@@ -190,6 +193,7 @@
   function handleViewModeChange(mode: ViewMode): void {
     activity.setViewMode(mode);
     activity.syncToURL();
+    activity.loadActivity();
   }
 
   function handleRollUpCommitsChange(value: boolean): void {

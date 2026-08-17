@@ -16,6 +16,7 @@
   import FleetSettings from "./FleetSettings.svelte";
   import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
   import PullRequestSettings from "./PullRequestSettings.svelte";
+  import DetailSettings from "./DetailSettings.svelte";
   import WorkspaceSettings from "./WorkspaceSettings.svelte";
   import {
     beginTerminalSettingsHydration,
@@ -81,6 +82,7 @@
               settingsStore.setModeVisibility(loaded.modes);
               hydrateTerminalSettings(terminalHydration, loaded.terminal);
               settingsStore.setPullRequestSettings(loaded.pull_requests);
+              settingsStore.setDetailSettings(loaded.detail);
               settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
               hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
               loading = false;
@@ -161,6 +163,14 @@
               onUpdate={(pull_requests) => {
                 settings = { ...settings!, pull_requests };
                 settingsStore.setPullRequestSettings(pull_requests);
+              }}
+            />
+          {:else if meta.id === "settings-detail"}
+            <DetailSettings
+              detail={loaded.detail}
+              onUpdate={(detail) => {
+                settings = { ...settings!, detail };
+                settingsStore.setDetailSettings(detail);
               }}
             />
           {:else if meta.id === "settings-workspaces"}

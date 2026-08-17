@@ -1,8 +1,10 @@
 import {
   DEFAULT_MODE_VISIBILITY,
+  DEFAULT_DETAIL_SETTINGS,
   DEFAULT_PULL_REQUEST_SETTINGS,
   DEFAULT_TERMINAL_SETTINGS,
   type ConfigRepo,
+  type DetailSettings,
   type LaunchTarget,
   type ModeVisibility,
   type PullRequestSettings,
@@ -21,6 +23,9 @@ export function createSettingsStore() {
   });
   let pullRequestSettings = $state.raw<PullRequestSettings>({
     ...DEFAULT_PULL_REQUEST_SETTINGS,
+  });
+  let detailSettings = $state.raw<DetailSettings>({
+    ...DEFAULT_DETAIL_SETTINGS,
   });
   let launchTargets = $state.raw<LaunchTarget[]>([]);
   let workspaceSettings = $state.raw<Settings["workspaces"]>({
@@ -80,6 +85,17 @@ export function createSettingsStore() {
   function setPullRequestSettings(settings: PullRequestSettings | null | undefined): void {
     pullRequestSettings = {
       ...DEFAULT_PULL_REQUEST_SETTINGS,
+      ...(settings ?? {}),
+    };
+  }
+
+  function getDetailSettings(): DetailSettings {
+    return detailSettings;
+  }
+
+  function setDetailSettings(settings: DetailSettings | null | undefined): void {
+    detailSettings = {
+      ...DEFAULT_DETAIL_SETTINGS,
       ...(settings ?? {}),
     };
   }
@@ -162,6 +178,8 @@ export function createSettingsStore() {
     isModeVisible,
     getPullRequestSettings,
     setPullRequestSettings,
+    getDetailSettings,
+    setDetailSettings,
     getLaunchTargets,
     setLaunchTargets,
     getWorkspaceSettings,

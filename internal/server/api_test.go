@@ -9092,7 +9092,11 @@ func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
 	require.Contains(body, `"name":"since"`)
 	require.Contains(body, `"capped"`)
 	require.Contains(body, `"item_activity_capped"`)
-	require.NotContains(body, `"name":"before"`)
+	require.Contains(body, `"name":"projection"`)
+	require.Contains(body, `"name":"before"`)
+	require.Contains(body, `"name":"at_or_before"`)
+	require.Contains(body, `"event_cursor"`)
+	require.Contains(body, `"/activity/thread-events"`)
 	require.NotContains(body, `"has_more"`)
 }
 
@@ -15559,10 +15563,10 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 	activityItems := activity["items"].([]any)
 	require.NotEmpty(activityItems)
 	activityRepo := activityItems[0].(map[string]any)["repo"].(map[string]any)
-	activityCaps := activityRepo["capabilities"].(map[string]any)
 	assert.Equal("gitlab", activityRepo["provider"])
-	assert.Equal(true, activityCaps["read_merge_requests"])
-	assert.Equal(false, activityCaps["comment_mutation"])
+	assert.Equal("gitlab.example.com", activityRepo["platform_host"])
+	assert.Equal("group/project", activityRepo["repo_path"])
+	assert.NotContains(activityRepo, "capabilities")
 
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
 		ID:           "gitlabcap0000001",
@@ -23785,6 +23789,58 @@ func TestAPIListActivity(t *testing.T) {
 	assert.NotEmpty(*resp.JSON200.Items,
 		"activity feed should contain PR and comment items")
 	assert.Equal("github.com", (*resp.JSON200.Items)[0].PlatformHost)
+
+	collapsed := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+url.QueryEscape(since)+"&projection=collapsed",
+		nil,
+	)
+	require.Equal(http.StatusOK, collapsed.Code)
+	var collapsedBody struct {
+		Items        []activityItemResponse    `json:"items"`
+		ItemActivity []activitySubjectResponse `json:"item_activity"`
+		EventCursor  string                    `json:"event_cursor"`
+	}
+	require.NoError(json.NewDecoder(collapsed.Body).Decode(&collapsedBody))
+	assert.Empty(collapsedBody.Items, "collapsed projection must omit pull request child events")
+	require.Len(collapsedBody.ItemActivity, 1)
+	assert.NotEmpty(collapsedBody.EventCursor, "cursor must cover omitted child events")
+
+	delta := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+url.QueryEscape(since)+"&projection=events&after="+
+			url.QueryEscape(collapsedBody.EventCursor),
+		nil,
+	)
+	require.Equal(http.StatusOK, delta.Code)
+	var deltaBody struct {
+		Items        []activityItemResponse    `json:"items"`
+		ItemActivity []activitySubjectResponse `json:"item_activity"`
+		EventCursor  string                    `json:"event_cursor"`
+	}
+	require.NoError(json.NewDecoder(delta.Body).Decode(&deltaBody))
+	assert.Empty(deltaBody.Items)
+	assert.Empty(deltaBody.ItemActivity, "event deltas must not resend parent summaries")
+	assert.Equal(collapsedBody.EventCursor, deltaBody.EventCursor)
+
+	thread := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
+			"&platform_repo_id=repo-acme-widget&item_type=pr&item_number=1&since="+
+			url.QueryEscape(since),
+		nil,
+	)
+	require.Equal(http.StatusOK, thread.Code)
+	var threadBody activityResponse
+	require.NoError(json.NewDecoder(thread.Body).Decode(&threadBody))
+	require.Len(threadBody.Items, 2)
+	assert.Empty(threadBody.ItemActivity)
 
 	search := "reviewer"
 	filtered, err := client.HTTP.ListActivityWithResponse(

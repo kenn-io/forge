@@ -47,6 +47,16 @@ func issueActivityAtExpr(issue string) string {
 func (d *DB) ListActivity(
 	ctx context.Context, opts ListActivityOpts,
 ) ([]ActivityItem, error) {
+	return listActivityWithQueryer(ctx, d.ro, opts)
+}
+
+type activityQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func listActivityWithQueryer(
+	ctx context.Context, queryer activityQueryer, opts ListActivityOpts,
+) ([]ActivityItem, error) {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 50
@@ -120,6 +130,30 @@ func (d *DB) ListActivity(
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
 	}
+	if opts.HideClosedMerged {
+		whereClauses = append(whereClauses,
+			"((source = 'ntf' AND (subject_state = '' OR subject_state NOT IN ('closed', 'merged'))) OR "+
+				"(source != 'ntf' AND item_state NOT IN ('closed', 'merged')))")
+	}
+	if opts.HideBots {
+		whereClauses = append(whereClauses, activityNotBotCondition("author"))
+	}
+	if opts.HideDefaultBranch {
+		whereClauses = append(whereClauses,
+			"activity_type NOT IN ('default_branch_commit', 'default_branch_force_push')")
+	}
+	if opts.ParentRepoID != 0 {
+		whereClauses = append(whereClauses, "repo_id = ?")
+		args = append(args, opts.ParentRepoID)
+	}
+	if opts.ParentItemType != "" {
+		whereClauses = append(whereClauses, "item_type = ?")
+		args = append(args, opts.ParentItemType)
+	}
+	if opts.ParentItemNumber != 0 {
+		whereClauses = append(whereClauses, "item_number = ?")
+		args = append(args, opts.ParentItemNumber)
+	}
 	if opts.ViewerLogins != nil {
 		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))
 	}
@@ -148,6 +182,15 @@ func (d *DB) ListActivity(
 			*opts.AfterTime, *opts.AfterTime,
 			opts.AfterSource, opts.AfterSource,
 			opts.AfterSourceID)
+	}
+	if opts.AtOrBeforeTime != nil {
+		whereClauses = append(whereClauses,
+			"(created_at < ? OR (created_at = ? AND "+
+				"(source < ? OR (source = ? AND source_id <= ?))))")
+		args = append(args,
+			*opts.AtOrBeforeTime, *opts.AtOrBeforeTime,
+			opts.AtOrBeforeSource, opts.AtOrBeforeSource,
+			opts.AtOrBeforeSourceID)
 	}
 
 	where := ""
@@ -409,7 +452,7 @@ func (d *DB) ListActivity(
 	queryArgs = append(queryArgs, args...)
 	queryArgs = append(queryArgs, limit)
 
-	rows, err := d.ro.QueryContext(ctx, query, queryArgs...)
+	rows, err := queryer.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("list activity: %w", err)
 	}
@@ -483,6 +526,12 @@ func (d *DB) ListActivity(
 // event can still advance a parent's visible timestamp and position.
 func (d *DB) ListActivitySubjects(
 	ctx context.Context, opts ListActivitySubjectsOpts,
+) ([]ActivitySubject, error) {
+	return listActivitySubjectsWithQueryer(ctx, d.ro, opts)
+}
+
+func listActivitySubjectsWithQueryer(
+	ctx context.Context, queryer activityQueryer, opts ListActivitySubjectsOpts,
 ) ([]ActivitySubject, error) {
 	limit := opts.Limit
 	if limit <= 0 {
@@ -561,6 +610,12 @@ func (d *DB) ListActivitySubjects(
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
 	}
+	if opts.HideClosedMerged {
+		whereClauses = append(whereClauses, "item_state NOT IN ('closed', 'merged')")
+	}
+	if opts.HideBots {
+		whereClauses = append(whereClauses, activityNotBotCondition("item_author"))
+	}
 	if opts.ViewerLogins != nil {
 		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))
 	}
@@ -614,7 +669,7 @@ func (d *DB) ListActivitySubjects(
 		LIMIT ?`
 	args = append(args, limit)
 
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := queryer.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list activity subjects: %w", err)
 	}
@@ -970,7 +1025,7 @@ func EncodeCursor(
 	createdAt time.Time, source string, sourceID int64,
 ) string {
 	raw := fmt.Sprintf("%d:%s:%d",
-		createdAt.UnixMilli(), source, sourceID)
+		createdAt.UnixNano(), source, sourceID)
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
 
@@ -989,7 +1044,7 @@ func DecodeCursor(cursor string) (
 			fmt.Errorf("invalid cursor: expected 3 parts, got %d",
 				len(parts))
 	}
-	ms, err := strconv.ParseInt(parts[0], 10, 64)
+	ns, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
 		return time.Time{}, "", 0,
 			fmt.Errorf("invalid cursor timestamp: %w", err)
@@ -999,5 +1054,5 @@ func DecodeCursor(cursor string) (
 		return time.Time{}, "", 0,
 			fmt.Errorf("invalid cursor source_id: %w", err)
 	}
-	return time.UnixMilli(ms).UTC(), parts[1], sourceID, nil
+	return time.Unix(0, ns).UTC(), parts[1], sourceID, nil
 }

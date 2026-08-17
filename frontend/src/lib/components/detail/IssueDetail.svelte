@@ -1473,7 +1473,10 @@
             repoOwner={owner}
             repoName={name}
             {repoPath}
+            {number}
             activityViewMode={detailActivityView.getMode()}
+            initialEntryLimit={settings.getDetailSettings().initial_timeline_entry_limit}
+            itemIdentity={`${provider}:${platformHost ?? ""}:${repoPath}:${number}`}
             onEditComment={capabilities.comment_mutation && !staleIssue && !editCommentGate.unavailable
               ? editTimelineComment
               : undefined}

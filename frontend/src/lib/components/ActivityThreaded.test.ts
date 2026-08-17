@@ -119,6 +119,20 @@ describe("ActivityThreaded collapse", () => {
     expect(container.querySelectorAll(".event-row").length).toBeGreaterThan(0);
   });
 
+  it("mounts large collapsed projections in bounded batches", async () => {
+    vi.useFakeTimers();
+    const subjects = Array.from({ length: 51 }, (_, index) =>
+      itemSubject({ item_number: index + 1, item_title: `Projection item ${index + 1}` }),
+    );
+    const { container } = render(ActivityThreaded, {
+      props: { items: [], itemActivity: subjects, onSelectItem: undefined },
+    });
+
+    expect(container.querySelectorAll(".item-row")).toHaveLength(25);
+    await vi.runAllTimersAsync();
+    expect(container.querySelectorAll(".item-row")).toHaveLength(51);
+  });
+
   it("renders a workspace-active subject with no provider events as an unexpandable group", async () => {
     const onSelectItem = vi.fn();
     const { container, getByLabelText } = render(ActivityThreaded, {
@@ -140,7 +154,7 @@ describe("ActivityThreaded collapse", () => {
     expect(onSelectItem).toHaveBeenCalledWith(expect.objectContaining({ item_number: 7, item_type: "pr" }));
   });
 
-  it("renders a recently active parent without inventing a visible event", () => {
+  it("renders a recently active parent as a lazily expandable row without inventing a visible event", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-27T14:05:00Z"));
     const { container } = render(ActivityThreaded, {
@@ -154,7 +168,7 @@ describe("ActivityThreaded collapse", () => {
     const row = container.querySelector(".item-row");
     expect(row?.textContent).toContain("Old pull with recent hidden activity");
     expect(row?.querySelector(".cell--time")?.textContent).toBe("5m ago");
-    expect(container.querySelector(".thread-caret")).toBeNull();
+    expect(container.querySelector(".thread-caret")).not.toBeNull();
     expect(container.querySelector(".event-row")).toBeNull();
   });
 

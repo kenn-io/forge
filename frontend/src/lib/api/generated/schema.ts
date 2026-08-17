@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/activity/thread-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List activity thread events */
+        get: operations["list-activity-thread-events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent-hooks/{agent}": {
         parameters: {
             query?: never;
@@ -4674,11 +4691,19 @@ export interface components {
             item_type: string;
             item_url: string;
             platform_host: string;
-            repo: components["schemas"]["RepoRefResponse"];
+            repo: components["schemas"]["ActivityRepoRefResponse"];
             repo_name: string;
             repo_owner: string;
             subject_state?: string;
             workspace?: components["schemas"]["WorkspaceRef"];
+        };
+        ActivityRepoRefResponse: {
+            name: string;
+            owner: string;
+            platform_host: string;
+            platform_repo_id?: string;
+            provider: string;
+            repo_path: string;
         };
         ActivityResponse: {
             /**
@@ -4688,9 +4713,11 @@ export interface components {
              */
             readonly $schema?: string;
             capped: boolean;
+            event_cursor: string;
             item_activity: components["schemas"]["ActivitySubjectResponse"][] | null;
             item_activity_capped: boolean;
             items: components["schemas"]["ActivityItemResponse"][] | null;
+            next_cursor?: string;
             workspace_activity: components["schemas"]["WorkspaceActivitySubjectResponse"][] | null;
         };
         ActivitySubjectResponse: {
@@ -4704,7 +4731,7 @@ export interface components {
             item_type: string;
             item_url: string;
             platform_host: string;
-            repo: components["schemas"]["RepoRefResponse"];
+            repo: components["schemas"]["ActivityRepoRefResponse"];
             repo_name: string;
             repo_owner: string;
             workspace?: components["schemas"]["WorkspaceRef"];
@@ -5269,6 +5296,10 @@ export interface components {
             gh: boolean;
             git: boolean;
             tmux: boolean;
+        };
+        Detail: {
+            /** Format: int64 */
+            initial_timeline_entry_limit: number;
         };
         DiffFile: {
             /** Format: int64 */
@@ -7726,6 +7757,7 @@ export interface components {
             readonly $schema?: string;
             activity: components["schemas"]["Activity"];
             agents: components["schemas"]["Agent"][];
+            detail: components["schemas"]["Detail"];
             fleet: components["schemas"]["FleetSettingsResponse"];
             issues: components["schemas"]["Issues"];
             kata_projects: components["schemas"]["KataProjectRepoMapping"][];
@@ -7965,6 +7997,7 @@ export interface components {
             readonly $schema?: string;
             activity?: components["schemas"]["Activity"];
             agents?: components["schemas"]["Agent"][];
+            detail?: components["schemas"]["Detail"];
             issues?: components["schemas"]["Issues"];
             kata_projects?: components["schemas"]["KataProjectRepoMapping"][];
             modes?: components["schemas"]["ModeVisibility"];
@@ -8015,7 +8048,7 @@ export interface components {
             item_type: string;
             item_url: string;
             platform_host: string;
-            repo: components["schemas"]["RepoRefResponse"];
+            repo: components["schemas"]["ActivityRepoRefResponse"];
             repo_name: string;
             repo_owner: string;
             workspace?: components["schemas"]["WorkspaceRef"];
@@ -8245,7 +8278,14 @@ export interface operations {
                 /** @description Only include activity for pull requests and issues involving the authenticated viewer. */
                 involves_me?: boolean;
                 after?: string;
+                before?: string;
+                at_or_before?: string;
                 since?: string;
+                projection?: "full" | "collapsed" | "events";
+                limit?: number;
+                hide_closed_merged?: boolean;
+                hide_bots?: boolean;
+                hide_default_branch?: boolean;
             };
             header?: never;
             path?: never;
@@ -8293,6 +8333,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityAuthorsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-activity-thread-events": {
+        parameters: {
+            query?: {
+                provider?: string;
+                platform_host?: string;
+                platform_repo_id?: string;
+                item_type?: "pr" | "issue";
+                item_number?: number;
+                since?: string;
+                before?: string;
+                at_or_before?: string;
+                limit?: number;
+                hide_closed_merged?: boolean;
+                hide_bots?: boolean;
+                hide_default_branch?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityResponse"];
                 };
             };
             /** @description Error */
@@ -18849,6 +18931,8 @@ type ReadonlyArray<T> = [
 ] extends [
     unknown[]
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
+export const pathsActivityGetParametersQueryProjectionValues: ReadonlyArray<FlattenedDeepRequired<paths>["/activity"]["get"]["parameters"]["query"]["projection"]> = ["full", "collapsed", "events"];
+export const pathsActivityThreadEventsGetParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/activity/thread-events"]["get"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];

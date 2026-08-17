@@ -61,6 +61,7 @@ export type CICheck = CICheckWire & { readonly required?: boolean };
 export type ActivitySettings = components["schemas"]["Activity"];
 export type IssueSettings = components["schemas"]["Issues"];
 export type PullRequestSettings = components["schemas"]["PullRequests"];
+export type DetailSettings = components["schemas"]["Detail"];
 export type TerminalSettings = components["schemas"]["Terminal"];
 export type ModeVisibility = components["schemas"]["ModeVisibility"];
 
@@ -89,6 +90,10 @@ export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {
 export const DEFAULT_PULL_REQUEST_SETTINGS: PullRequestSettings = {
   allow_mid_stack_merges: false,
   prefer_github_native_stacks: false,
+};
+
+export const DEFAULT_DETAIL_SETTINGS: DetailSettings = {
+  initial_timeline_entry_limit: 50,
 };
 
 export type AgentSettings = components["schemas"]["Agent"];

@@ -917,6 +917,45 @@ func (e WorkspacesDefaultSidebarView) Valid() bool {
 	}
 }
 
+// Defines values for ListActivityParamsProjection.
+const (
+	ListActivityParamsProjectionCollapsed ListActivityParamsProjection = "collapsed"
+	ListActivityParamsProjectionEvents    ListActivityParamsProjection = "events"
+	ListActivityParamsProjectionFull      ListActivityParamsProjection = "full"
+)
+
+// Valid indicates whether the value is a known member of the ListActivityParamsProjection enum.
+func (e ListActivityParamsProjection) Valid() bool {
+	switch e {
+	case ListActivityParamsProjectionCollapsed:
+		return true
+	case ListActivityParamsProjectionEvents:
+		return true
+	case ListActivityParamsProjectionFull:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListActivityThreadEventsParamsItemType.
+const (
+	ListActivityThreadEventsParamsItemTypeIssue ListActivityThreadEventsParamsItemType = "issue"
+	ListActivityThreadEventsParamsItemTypePr    ListActivityThreadEventsParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the ListActivityThreadEventsParamsItemType enum.
+func (e ListActivityThreadEventsParamsItemType) Valid() bool {
+	switch e {
+	case ListActivityThreadEventsParamsItemTypeIssue:
+		return true
+	case ListActivityThreadEventsParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetPullFilePreviewOnHostParamsSide.
 const (
 	GetPullFilePreviewOnHostParamsSideNew GetPullFilePreviewOnHostParamsSide = "new"
@@ -1082,36 +1121,46 @@ type ActivityAuthorsResponse struct {
 
 // ActivityItemResponse defines model for ActivityItemResponse.
 type ActivityItemResponse struct {
-	ActivityType       string          `json:"activity_type"`
-	ActivityUrl        *string         `json:"activity_url,omitempty"`
-	AfterSha           *string         `json:"after_sha,omitempty"`
-	Author             string          `json:"author"`
-	AuthorEmail        *string         `json:"author_email,omitempty"`
-	AuthorName         *string         `json:"author_name,omitempty"`
-	AuthoredAt         *string         `json:"authored_at,omitempty"`
-	BeforeSha          *string         `json:"before_sha,omitempty"`
-	BodyPreview        string          `json:"body_preview"`
-	BranchName         *string         `json:"branch_name,omitempty"`
-	CommitSha          *string         `json:"commit_sha,omitempty"`
-	CommittedAt        *string         `json:"committed_at,omitempty"`
-	CommitterEmail     *string         `json:"committer_email,omitempty"`
-	CommitterName      *string         `json:"committer_name,omitempty"`
-	CreatedAt          string          `json:"created_at"`
-	Cursor             string          `json:"cursor"`
-	Id                 string          `json:"id"`
-	ItemAuthor         *string         `json:"item_author,omitempty"`
-	ItemLastActivityAt *time.Time      `json:"item_last_activity_at,omitempty"`
-	ItemNumber         int64           `json:"item_number"`
-	ItemState          string          `json:"item_state"`
-	ItemTitle          string          `json:"item_title"`
-	ItemType           string          `json:"item_type"`
-	ItemUrl            string          `json:"item_url"`
-	PlatformHost       string          `json:"platform_host"`
-	Repo               RepoRefResponse `json:"repo"`
-	RepoName           string          `json:"repo_name"`
-	RepoOwner          string          `json:"repo_owner"`
-	SubjectState       *string         `json:"subject_state,omitempty"`
-	Workspace          *WorkspaceRef   `json:"workspace,omitempty"`
+	ActivityType       string                  `json:"activity_type"`
+	ActivityUrl        *string                 `json:"activity_url,omitempty"`
+	AfterSha           *string                 `json:"after_sha,omitempty"`
+	Author             string                  `json:"author"`
+	AuthorEmail        *string                 `json:"author_email,omitempty"`
+	AuthorName         *string                 `json:"author_name,omitempty"`
+	AuthoredAt         *string                 `json:"authored_at,omitempty"`
+	BeforeSha          *string                 `json:"before_sha,omitempty"`
+	BodyPreview        string                  `json:"body_preview"`
+	BranchName         *string                 `json:"branch_name,omitempty"`
+	CommitSha          *string                 `json:"commit_sha,omitempty"`
+	CommittedAt        *string                 `json:"committed_at,omitempty"`
+	CommitterEmail     *string                 `json:"committer_email,omitempty"`
+	CommitterName      *string                 `json:"committer_name,omitempty"`
+	CreatedAt          string                  `json:"created_at"`
+	Cursor             string                  `json:"cursor"`
+	Id                 string                  `json:"id"`
+	ItemAuthor         *string                 `json:"item_author,omitempty"`
+	ItemLastActivityAt *time.Time              `json:"item_last_activity_at,omitempty"`
+	ItemNumber         int64                   `json:"item_number"`
+	ItemState          string                  `json:"item_state"`
+	ItemTitle          string                  `json:"item_title"`
+	ItemType           string                  `json:"item_type"`
+	ItemUrl            string                  `json:"item_url"`
+	PlatformHost       string                  `json:"platform_host"`
+	Repo               ActivityRepoRefResponse `json:"repo"`
+	RepoName           string                  `json:"repo_name"`
+	RepoOwner          string                  `json:"repo_owner"`
+	SubjectState       *string                 `json:"subject_state,omitempty"`
+	Workspace          *WorkspaceRef           `json:"workspace,omitempty"`
+}
+
+// ActivityRepoRefResponse defines model for ActivityRepoRefResponse.
+type ActivityRepoRefResponse struct {
+	Name           string  `json:"name"`
+	Owner          string  `json:"owner"`
+	PlatformHost   string  `json:"platform_host"`
+	PlatformRepoId *string `json:"platform_repo_id,omitempty"`
+	Provider       string  `json:"provider"`
+	RepoPath       string  `json:"repo_path"`
 }
 
 // ActivityResponse defines model for ActivityResponse.
@@ -1121,26 +1170,28 @@ type ActivityResponse struct {
 	// Example: /api/v1/schemas/ActivityResponse.json
 	Schema             *string                             `json:"$schema,omitempty"`
 	Capped             bool                                `json:"capped"`
+	EventCursor        string                              `json:"event_cursor"`
 	ItemActivity       *[]ActivitySubjectResponse          `json:"item_activity"`
 	ItemActivityCapped bool                                `json:"item_activity_capped"`
 	Items              *[]ActivityItemResponse             `json:"items"`
+	NextCursor         *string                             `json:"next_cursor,omitempty"`
 	WorkspaceActivity  *[]WorkspaceActivitySubjectResponse `json:"workspace_activity"`
 }
 
 // ActivitySubjectResponse defines model for ActivitySubjectResponse.
 type ActivitySubjectResponse struct {
-	ActivityAt   time.Time       `json:"activity_at"`
-	ItemAuthor   *string         `json:"item_author,omitempty"`
-	ItemNumber   int64           `json:"item_number"`
-	ItemState    string          `json:"item_state"`
-	ItemTitle    string          `json:"item_title"`
-	ItemType     string          `json:"item_type"`
-	ItemUrl      string          `json:"item_url"`
-	PlatformHost string          `json:"platform_host"`
-	Repo         RepoRefResponse `json:"repo"`
-	RepoName     string          `json:"repo_name"`
-	RepoOwner    string          `json:"repo_owner"`
-	Workspace    *WorkspaceRef   `json:"workspace,omitempty"`
+	ActivityAt   time.Time               `json:"activity_at"`
+	ItemAuthor   *string                 `json:"item_author,omitempty"`
+	ItemNumber   int64                   `json:"item_number"`
+	ItemState    string                  `json:"item_state"`
+	ItemTitle    string                  `json:"item_title"`
+	ItemType     string                  `json:"item_type"`
+	ItemUrl      string                  `json:"item_url"`
+	PlatformHost string                  `json:"platform_host"`
+	Repo         ActivityRepoRefResponse `json:"repo"`
+	RepoName     string                  `json:"repo_name"`
+	RepoOwner    string                  `json:"repo_owner"`
+	Workspace    *WorkspaceRef           `json:"workspace,omitempty"`
 }
 
 // AddRepoInputBody defines model for AddRepoInputBody.
@@ -1751,6 +1802,11 @@ type DependencyCapabilities struct {
 	Gh   bool `json:"gh"`
 	Git  bool `json:"git"`
 	Tmux bool `json:"tmux"`
+}
+
+// Detail defines model for Detail.
+type Detail struct {
+	InitialTimelineEntryLimit int64 `json:"initial_timeline_entry_limit"`
 }
 
 // DiffFile defines model for DiffFile.
@@ -4202,6 +4258,7 @@ type SettingsResponse struct {
 	Schema        *string                       `json:"$schema,omitempty"`
 	Activity      Activity                      `json:"activity"`
 	Agents        []Agent                       `json:"agents"`
+	Detail        Detail                        `json:"detail"`
 	Fleet         FleetSettingsResponse         `json:"fleet"`
 	Issues        Issues                        `json:"issues"`
 	KataProjects  []KataProjectRepoMapping      `json:"kata_projects"`
@@ -4434,6 +4491,7 @@ type UpdateSettingsRequest struct {
 	Schema       *string                   `json:"$schema,omitempty"`
 	Activity     *Activity                 `json:"activity,omitempty"`
 	Agents       *[]Agent                  `json:"agents,omitempty"`
+	Detail       *Detail                   `json:"detail,omitempty"`
 	Issues       *Issues                   `json:"issues,omitempty"`
 	KataProjects *[]KataProjectRepoMapping `json:"kata_projects,omitempty"`
 	Modes        *ModeVisibility           `json:"modes,omitempty"`
@@ -4482,18 +4540,18 @@ type WorkflowStateMetaResponseStatus string
 
 // WorkspaceActivitySubjectResponse defines model for WorkspaceActivitySubjectResponse.
 type WorkspaceActivitySubjectResponse struct {
-	ActivityAt   time.Time       `json:"activity_at"`
-	ItemAuthor   *string         `json:"item_author,omitempty"`
-	ItemNumber   int64           `json:"item_number"`
-	ItemState    string          `json:"item_state"`
-	ItemTitle    string          `json:"item_title"`
-	ItemType     string          `json:"item_type"`
-	ItemUrl      string          `json:"item_url"`
-	PlatformHost string          `json:"platform_host"`
-	Repo         RepoRefResponse `json:"repo"`
-	RepoName     string          `json:"repo_name"`
-	RepoOwner    string          `json:"repo_owner"`
-	Workspace    *WorkspaceRef   `json:"workspace,omitempty"`
+	ActivityAt   time.Time               `json:"activity_at"`
+	ItemAuthor   *string                 `json:"item_author,omitempty"`
+	ItemNumber   int64                   `json:"item_number"`
+	ItemState    string                  `json:"item_state"`
+	ItemTitle    string                  `json:"item_title"`
+	ItemType     string                  `json:"item_type"`
+	ItemUrl      string                  `json:"item_url"`
+	PlatformHost string                  `json:"platform_host"`
+	Repo         ActivityRepoRefResponse `json:"repo"`
+	RepoName     string                  `json:"repo_name"`
+	RepoOwner    string                  `json:"repo_owner"`
+	Workspace    *WorkspaceRef           `json:"workspace,omitempty"`
 }
 
 // WorkspaceDiffWatchResponse defines model for WorkspaceDiffWatchResponse.
@@ -4716,10 +4774,20 @@ type ListActivityParams struct {
 	Author *string `form:"author,omitempty" json:"author,omitempty"`
 
 	// InvolvesMe Only include activity for pull requests and issues involving the authenticated viewer.
-	InvolvesMe *bool   `form:"involves_me,omitempty" json:"involves_me,omitempty"`
-	After      *string `form:"after,omitempty" json:"after,omitempty"`
-	Since      *string `form:"since,omitempty" json:"since,omitempty"`
+	InvolvesMe        *bool                         `form:"involves_me,omitempty" json:"involves_me,omitempty"`
+	After             *string                       `form:"after,omitempty" json:"after,omitempty"`
+	Before            *string                       `form:"before,omitempty" json:"before,omitempty"`
+	AtOrBefore        *string                       `form:"at_or_before,omitempty" json:"at_or_before,omitempty"`
+	Since             *string                       `form:"since,omitempty" json:"since,omitempty"`
+	Projection        *ListActivityParamsProjection `form:"projection,omitempty" json:"projection,omitempty"`
+	Limit             *int64                        `form:"limit,omitempty" json:"limit,omitempty"`
+	HideClosedMerged  *bool                         `form:"hide_closed_merged,omitempty" json:"hide_closed_merged,omitempty"`
+	HideBots          *bool                         `form:"hide_bots,omitempty" json:"hide_bots,omitempty"`
+	HideDefaultBranch *bool                         `form:"hide_default_branch,omitempty" json:"hide_default_branch,omitempty"`
 }
+
+// ListActivityParamsProjection defines parameters for ListActivity.
+type ListActivityParamsProjection string
 
 // ListActivityAuthorsParams defines parameters for ListActivityAuthors.
 type ListActivityAuthorsParams struct {
@@ -4727,6 +4795,25 @@ type ListActivityAuthorsParams struct {
 	Repo  *string `form:"repo,omitempty" json:"repo,omitempty"`
 	Since *string `form:"since,omitempty" json:"since,omitempty"`
 }
+
+// ListActivityThreadEventsParams defines parameters for ListActivityThreadEvents.
+type ListActivityThreadEventsParams struct {
+	Provider          *string                                 `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost      *string                                 `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+	PlatformRepoId    *string                                 `form:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
+	ItemType          *ListActivityThreadEventsParamsItemType `form:"item_type,omitempty" json:"item_type,omitempty"`
+	ItemNumber        *int64                                  `form:"item_number,omitempty" json:"item_number,omitempty"`
+	Since             *string                                 `form:"since,omitempty" json:"since,omitempty"`
+	Before            *string                                 `form:"before,omitempty" json:"before,omitempty"`
+	AtOrBefore        *string                                 `form:"at_or_before,omitempty" json:"at_or_before,omitempty"`
+	Limit             *int64                                  `form:"limit,omitempty" json:"limit,omitempty"`
+	HideClosedMerged  *bool                                   `form:"hide_closed_merged,omitempty" json:"hide_closed_merged,omitempty"`
+	HideBots          *bool                                   `form:"hide_bots,omitempty" json:"hide_bots,omitempty"`
+	HideDefaultBranch *bool                                   `form:"hide_default_branch,omitempty" json:"hide_default_branch,omitempty"`
+}
+
+// ListActivityThreadEventsParamsItemType defines parameters for ListActivityThreadEvents.
+type ListActivityThreadEventsParamsItemType string
 
 // ReceiveAgentHookParams defines parameters for ReceiveAgentHook.
 type ReceiveAgentHookParams struct {
@@ -5943,6 +6030,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /activity/authors (the `ListActivityAuthors` operationId).
 	ListActivityAuthors(ctx context.Context, params *ListActivityAuthorsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListActivityThreadEvents List activity thread events
+	//
+	// Corresponds with GET /activity/thread-events (the `ListActivityThreadEvents` operationId).
+	ListActivityThreadEvents(ctx context.Context, params *ListActivityThreadEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ReceiveAgentHookWithBody Receive agent lifecycle hook
 	//
@@ -8553,6 +8645,21 @@ func (c *Client) ListActivity(ctx context.Context, params *ListActivityParams, r
 // Corresponds with GET /activity/authors (the `ListActivityAuthors` operationId).
 func (c *Client) ListActivityAuthors(ctx context.Context, params *ListActivityAuthorsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListActivityAuthorsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListActivityThreadEvents List activity thread events
+//
+// Corresponds with GET /activity/thread-events (the `ListActivityThreadEvents` operationId).
+func (c *Client) ListActivityThreadEvents(ctx context.Context, params *ListActivityThreadEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListActivityThreadEventsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -15503,9 +15610,93 @@ func NewListActivityRequest(server string, params *ListActivityParams) (*http.Re
 
 		}
 
+		if params.Before != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "before", *params.Before, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.AtOrBefore != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "at_or_before", *params.AtOrBefore, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Since != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "since", *params.Since, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Projection != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "projection", *params.Projection, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HideClosedMerged != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "hide_closed_merged", *params.HideClosedMerged, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HideBots != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "hide_bots", *params.HideBots, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HideDefaultBranch != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "hide_default_branch", *params.HideDefaultBranch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -15572,6 +15763,192 @@ func NewListActivityAuthorsRequest(server string, params *ListActivityAuthorsPar
 		if params.Since != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "since", *params.Since, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListActivityThreadEventsRequest constructs an http.Request for the ListActivityThreadEvents method
+func NewListActivityThreadEventsRequest(server string, params *ListActivityThreadEventsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/activity/thread-events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PlatformRepoId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_repo_id", *params.PlatformRepoId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ItemType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "item_type", *params.ItemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ItemNumber != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "item_number", *params.ItemNumber, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Since != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "since", *params.Since, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Before != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "before", *params.Before, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.AtOrBefore != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "at_or_before", *params.AtOrBefore, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HideClosedMerged != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "hide_closed_merged", *params.HideClosedMerged, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HideBots != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "hide_bots", *params.HideBots, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HideDefaultBranch != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "hide_default_branch", *params.HideDefaultBranch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -34435,6 +34812,9 @@ type ClientWithResponsesInterface interface {
 	// ListActivityAuthorsWithResponse request
 	ListActivityAuthorsWithResponse(ctx context.Context, params *ListActivityAuthorsParams, reqEditors ...RequestEditorFn) (*ListActivityAuthorsResponse, error)
 
+	// ListActivityThreadEventsWithResponse request
+	ListActivityThreadEventsWithResponse(ctx context.Context, params *ListActivityThreadEventsParams, reqEditors ...RequestEditorFn) (*ListActivityThreadEventsResponse, error)
+
 	// ReceiveAgentHookWithBodyWithResponse request with any body
 	ReceiveAgentHookWithBodyWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error)
 
@@ -35629,6 +36009,29 @@ func (r ListActivityAuthorsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListActivityAuthorsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListActivityThreadEventsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActivityResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListActivityThreadEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListActivityThreadEventsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -42667,6 +43070,15 @@ func (c *ClientWithResponses) ListActivityAuthorsWithResponse(ctx context.Contex
 	return ParseListActivityAuthorsResponse(rsp)
 }
 
+// ListActivityThreadEventsWithResponse request returning *ListActivityThreadEventsResponse
+func (c *ClientWithResponses) ListActivityThreadEventsWithResponse(ctx context.Context, params *ListActivityThreadEventsParams, reqEditors ...RequestEditorFn) (*ListActivityThreadEventsResponse, error) {
+	rsp, err := c.ListActivityThreadEvents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListActivityThreadEventsResponse(rsp)
+}
+
 // ReceiveAgentHookWithBodyWithResponse request with arbitrary body returning *ReceiveAgentHookResponse
 func (c *ClientWithResponses) ReceiveAgentHookWithBodyWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error) {
 	rsp, err := c.ReceiveAgentHookWithBody(ctx, agent, params, contentType, body, reqEditors...)
@@ -46407,6 +46819,39 @@ func ParseListActivityAuthorsResponse(rsp *http.Response) (*ListActivityAuthorsR
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ActivityAuthorsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListActivityThreadEventsResponse parses an HTTP response from a ListActivityThreadEventsWithResponse call
+func ParseListActivityThreadEventsResponse(rsp *http.Response) (*ListActivityThreadEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListActivityThreadEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActivityResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

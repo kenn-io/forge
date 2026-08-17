@@ -2465,6 +2465,55 @@ prefer_github_native_stacks = true
 	assert.True(cfg2.PullRequests.PreferGitHubNativeStacks)
 }
 
+func TestDetailInitialTimelineEntryLimitDefaultsAndValidates(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+	`)
+	cfg, err := Load(path)
+	require.NoError(err)
+	assert.Equal(50, cfg.Detail.InitialTimelineEntryLimit)
+
+	for _, limit := range []int{10, 250} {
+		candidate := *cfg
+		candidate.Detail.InitialTimelineEntryLimit = limit
+		require.NoError(candidate.Validate())
+	}
+	for _, limit := range []int{9, 251} {
+		candidate := *cfg
+		candidate.Detail.InitialTimelineEntryLimit = limit
+		err := candidate.Validate()
+		require.Error(err)
+		assert.Contains(err.Error(), "detail.initial_timeline_entry_limit must be between 10 and 250 or omitted")
+	}
+}
+
+func TestDetailConfigRoundTrip(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[detail]
+initial_timeline_entry_limit = 80
+	`)
+	cfg, err := Load(path)
+	require.NoError(err)
+	assert.Equal(80, cfg.Detail.InitialTimelineEntryLimit)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(cfg.Save(savePath))
+
+	cfg2, err := Load(savePath)
+	require.NoError(err)
+	assert.Equal(80, cfg2.Detail.InitialTimelineEntryLimit)
+}
+
 func TestRepoPresetsConfigRoundTrip(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

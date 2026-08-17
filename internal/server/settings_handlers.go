@@ -23,6 +23,7 @@ type settingsResponse struct {
 	Repos         []ghclient.ConfiguredRepoStatus `json:"repos" nullable:"false"`
 	RepoPresets   []config.RepoPreset             `json:"repo_presets" nullable:"false"`
 	Activity      config.Activity                 `json:"activity"`
+	Detail        config.Detail                   `json:"detail"`
 	PullRequests  config.PullRequests             `json:"pull_requests"`
 	Workspaces    config.Workspaces               `json:"workspaces"`
 	Issues        config.Issues                   `json:"issues"`
@@ -41,6 +42,7 @@ type notificationsSettingsResponse struct {
 
 type updateSettingsRequest struct {
 	Activity     *config.Activity                 `json:"activity,omitempty"`
+	Detail       *config.Detail                   `json:"detail,omitempty"`
 	PullRequests *config.PullRequests             `json:"pull_requests,omitempty"`
 	Workspaces   *workspaceSettingsUpdate         `json:"workspaces,omitempty"`
 	Issues       *config.Issues                   `json:"issues,omitempty"`
@@ -86,6 +88,7 @@ func (s *Server) buildLocalSettingsResponse(
 		repoPresets = []config.RepoPreset{}
 	}
 	activity := s.cfg.Activity
+	detail := s.cfg.Detail
 	pullRequests := s.cfg.PullRequests
 	workspaces := s.cfg.Workspaces
 	issues := s.cfg.Issues
@@ -141,6 +144,7 @@ func (s *Server) buildLocalSettingsResponse(
 		Repos:        configured,
 		RepoPresets:  repoPresets,
 		Activity:     activity,
+		Detail:       detail,
 		PullRequests: pullRequests,
 		Workspaces:   workspaces,
 		Issues:       issues,
@@ -824,6 +828,7 @@ func (s *Server) updateSettings(
 	defer s.configReloadMu.Unlock()
 	s.cfgMu.Lock()
 	prevActivity := s.cfg.Activity
+	prevDetail := s.cfg.Detail
 	prevPullRequests := s.cfg.PullRequests
 	prevWorkspaces := s.cfg.Workspaces
 	prevIssues := s.cfg.Issues
@@ -840,6 +845,9 @@ func (s *Server) updateSettings(
 			candidate.TimeRange = "7d"
 		}
 		s.cfg.Activity = candidate
+	}
+	if input.Body.Detail != nil {
+		s.cfg.Detail = *input.Body.Detail
 	}
 	if input.Body.PullRequests != nil {
 		s.cfg.PullRequests = *input.Body.PullRequests
@@ -869,6 +877,7 @@ func (s *Server) updateSettings(
 	}
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Activity = prevActivity
+		s.cfg.Detail = prevDetail
 		s.cfg.PullRequests = prevPullRequests
 		s.cfg.Workspaces = prevWorkspaces
 		s.cfg.Issues = prevIssues
@@ -881,6 +890,7 @@ func (s *Server) updateSettings(
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Activity = prevActivity
+		s.cfg.Detail = prevDetail
 		s.cfg.PullRequests = prevPullRequests
 		s.cfg.Workspaces = prevWorkspaces
 		s.cfg.Issues = prevIssues

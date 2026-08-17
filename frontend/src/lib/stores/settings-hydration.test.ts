@@ -39,6 +39,7 @@ const settingsPayload = {
     },
   ],
   activity: activitySettings,
+  detail: { initial_timeline_entry_limit: 75 },
   issues: { hide_bots: true },
   terminal: DEFAULT_TERMINAL_SETTINGS,
   modes: DEFAULT_MODE_VISIBILITY,
@@ -88,6 +89,11 @@ describe("applySettingsHydration", () => {
   it("hydrates workspace preferences into the settings store", () => {
     const { settingsStore } = hydrate();
     expect(settingsStore.getWorkspaceSettings()).toEqual(settingsPayload.workspaces);
+  });
+
+  it("hydrates the detail timeline limit into the settings store", () => {
+    const { settingsStore } = hydrate();
+    expect(settingsStore.getDetailSettings()).toEqual({ initial_timeline_entry_limit: 75 });
   });
 
   it("clears stale launch targets when settings reports an empty inventory", () => {

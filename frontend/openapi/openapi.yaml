@@ -132,7 +132,7 @@ components:
         platform_host:
           type: string
         repo:
-          $ref: "#/components/schemas/RepoRefResponse"
+          $ref: "#/components/schemas/ActivityRepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -158,6 +158,28 @@ components:
         - created_at
         - body_preview
       type: object
+    ActivityRepoRefResponse:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - repo_path
+        - owner
+        - name
+      type: object
     ActivityResponse:
       additionalProperties: false
       properties:
@@ -170,6 +192,8 @@ components:
           type: string
         capped:
           type: boolean
+        event_cursor:
+          type: string
         item_activity:
           items:
             $ref: "#/components/schemas/ActivitySubjectResponse"
@@ -184,6 +208,8 @@ components:
           type:
             - array
             - "null"
+        next_cursor:
+          type: string
         workspace_activity:
           items:
             $ref: "#/components/schemas/WorkspaceActivitySubjectResponse"
@@ -196,6 +222,7 @@ components:
         - workspace_activity
         - capped
         - item_activity_capped
+        - event_cursor
       type: object
     ActivitySubjectResponse:
       additionalProperties: false
@@ -219,7 +246,7 @@ components:
         platform_host:
           type: string
         repo:
-          $ref: "#/components/schemas/RepoRefResponse"
+          $ref: "#/components/schemas/ActivityRepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -1472,6 +1499,17 @@ components:
         - git
         - gh
         - tmux
+      type: object
+    Detail:
+      additionalProperties: false
+      properties:
+        initial_timeline_entry_limit:
+          format: int64
+          maximum: 250
+          minimum: 10
+          type: integer
+      required:
+        - initial_timeline_entry_limit
       type: object
     DiffFile:
       additionalProperties: false
@@ -6905,6 +6943,8 @@ components:
           items:
             $ref: "#/components/schemas/Agent"
           type: array
+        detail:
+          $ref: "#/components/schemas/Detail"
         fleet:
           $ref: "#/components/schemas/FleetSettingsResponse"
         issues:
@@ -6941,6 +6981,7 @@ components:
         - repos
         - repo_presets
         - activity
+        - detail
         - pull_requests
         - workspaces
         - issues
@@ -7445,6 +7486,8 @@ components:
           items:
             $ref: "#/components/schemas/Agent"
           type: array
+        detail:
+          $ref: "#/components/schemas/Detail"
         issues:
           $ref: "#/components/schemas/Issues"
         kata_projects:
@@ -7555,7 +7598,7 @@ components:
         platform_host:
           type: string
         repo:
-          $ref: "#/components/schemas/RepoRefResponse"
+          $ref: "#/components/schemas/ActivityRepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -8081,9 +8124,52 @@ paths:
             type: string
         - explode: false
           in: query
+          name: before
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: at_or_before
+          schema:
+            type: string
+        - explode: false
+          in: query
           name: since
           schema:
             type: string
+        - explode: false
+          in: query
+          name: projection
+          schema:
+            default: full
+            enum:
+              - full
+              - collapsed
+              - events
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            maximum: 500
+            minimum: 10
+            type: integer
+        - explode: false
+          in: query
+          name: hide_closed_merged
+          schema:
+            type: boolean
+        - explode: false
+          in: query
+          name: hide_bots
+          schema:
+            type: boolean
+        - explode: false
+          in: query
+          name: hide_default_branch
+          schema:
+            type: boolean
       responses:
         "200":
           content:
@@ -8130,6 +8216,95 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List activity authors
+      tags:
+        - Activity
+  /activity/thread-events:
+    get:
+      operationId: list-activity-thread-events
+      parameters:
+        - explode: false
+          in: query
+          name: provider
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_host
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_repo_id
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: item_type
+          schema:
+            enum:
+              - pr
+              - issue
+            type: string
+        - explode: false
+          in: query
+          name: item_number
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: since
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: before
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: at_or_before
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 100
+            format: int64
+            maximum: 250
+            minimum: 10
+            type: integer
+        - explode: false
+          in: query
+          name: hide_closed_merged
+          schema:
+            type: boolean
+        - explode: false
+          in: query
+          name: hide_bots
+          schema:
+            type: boolean
+        - explode: false
+          in: query
+          name: hide_default_branch
+          schema:
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List activity thread events
       tags:
         - Activity
   /agent-hooks/{agent}:

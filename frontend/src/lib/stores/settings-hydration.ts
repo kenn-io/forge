@@ -12,6 +12,7 @@ export interface SettingsHydrationStore {
   setRepoPresets: (presets: SettingsResponse["repo_presets"]) => void;
   setModeVisibility: (modes: SettingsResponse["modes"]) => void;
   setPullRequestSettings: (pullRequests: SettingsResponse["pull_requests"]) => void;
+  setDetailSettings: (detail: SettingsResponse["detail"]) => void;
   setLaunchTargets: (targets: NonNullable<SettingsResponse["launch_targets"]>) => void;
   setWorkspaceSettings: (workspaces: SettingsResponse["workspaces"]) => void;
   getWorkspaceSettings: () => SettingsResponse["workspaces"];
@@ -48,6 +49,7 @@ export function applySettingsHydration(
   hydrateTerminalSettings(terminalHydration, payload.terminal);
   stores.settings.setModeVisibility(payload.modes);
   stores.settings.setPullRequestSettings(payload.pull_requests);
+  stores.settings.setDetailSettings(payload.detail);
   stores.settings.setLaunchTargets(payload.launch_targets ?? []);
   hydrateWorkspaceSettings(workspaceHydration, payload.workspaces);
   stores.activity.hydrateDefaults(payload.activity);

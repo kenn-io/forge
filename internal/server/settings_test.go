@@ -1613,6 +1613,35 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 	assert.Equal(http.StatusNotFound, delRR.Code)
 }
 
+func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var initial settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&initial))
+	assert.Equal(config.DefaultInitialTimelineEntryLimit, initial.Detail.InitialTimelineEntryLimit)
+
+	updated := config.Detail{InitialTimelineEntryLimit: 80}
+	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Detail: &updated})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var saved settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&saved))
+	assert.Equal(80, saved.Detail.InitialTimelineEntryLimit)
+	persisted, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal(80, persisted.Detail.InitialTimelineEntryLimit)
+
+	invalid := config.Detail{InitialTimelineEntryLimit: 9}
+	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Detail: &invalid})
+	require.Equal(http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
+	persisted, err = config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal(80, persisted.Detail.InitialTimelineEntryLimit)
+}
+
 func TestHandleDeleteLastRepo(t *testing.T) {
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { EmptyState } from "@kenn-io/kit-ui";
   import { ScrollBox } from "@kenn-io/kit-ui";
+  import { onDestroy, untrack } from "svelte";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
@@ -28,6 +29,7 @@
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
   import WorkspaceIndicator from "./shared/WorkspaceIndicator.svelte";
+  import { createProgressiveMountController } from "../utils/progressive-mount.js";
 
   const { grouping, activity } = getStores();
   import { hashColor } from "@kenn-io/kit-ui";
@@ -95,6 +97,7 @@
     workspace: ActivityItem["workspace"];
     repo: ActivityItem["repo"];
     workspaceActivityAt?: string;
+    loadable: boolean;
     events: ActivityItem[];
     displayEvents: ReturnType<
       typeof collapseActivityRuns
@@ -202,6 +205,7 @@
           itemAuthor: itemAuthor(first),
           workspace: first.workspace,
           repo: first.repo,
+          loadable: true,
           events,
           displayEvents: collapseActivityRuns(events, {
             rollUpCommits: activity.getRollUpCommits(),
@@ -222,6 +226,7 @@
       });
       const existing = itemGroups.get(itemKey);
       if (existing) {
+        existing.loadable = true;
         existing.itemTitle = subject.item_title;
         existing.itemUrl = subject.item_url;
         existing.itemState = subject.item_state;
@@ -255,6 +260,7 @@
         itemAuthor: subject.item_author ?? "",
         workspace: subject.workspace,
         repo: subject.repo,
+        loadable: true,
         events: [],
         displayEvents: [],
       });
@@ -301,6 +307,7 @@
         itemAuthor: subject.item_author ?? "",
         workspace: subject.workspace,
         repo: subject.repo,
+        loadable: false,
         workspaceActivityAt: subject.activity_at,
         events: [],
         displayEvents: [],
@@ -366,6 +373,40 @@
 
     return repoGroups;
   });
+
+  const mountController = createProgressiveMountController({ batchSize: 25 });
+  let mountedEntryCount = $state(0);
+  let lastMountProjectionKey = "";
+  const totalEntryCount = $derived(grouped.reduce((count, group) => count + group.items.length, 0));
+  const visibleGrouped = $derived.by(() => {
+    let remaining = mountedEntryCount;
+    const visible: RepoGroup[] = [];
+    for (const group of grouped) {
+      if (remaining <= 0) break;
+      const items = group.items.slice(0, remaining);
+      if (items.length > 0) visible.push({ ...group, items });
+      remaining -= items.length;
+    }
+    return visible;
+  });
+
+  $effect(() => {
+    const first = grouped[0]?.items[0];
+    const lastGroup = grouped[grouped.length - 1];
+    const last = lastGroup?.items[lastGroup.items.length - 1];
+    const projectionKey = `${totalEntryCount}\u0000${first ? entryKeyOf(first) : ""}\u0000${last ? entryKeyOf(last) : ""}`;
+    if (projectionKey === lastMountProjectionKey) return;
+    untrack(() => {
+      lastMountProjectionKey = projectionKey;
+      mountController.cancel();
+      mountedEntryCount = Math.min(25, totalEntryCount);
+      mountController.start(mountedEntryCount, totalEntryCount, (count) => {
+        mountedEntryCount = count;
+      });
+    });
+  });
+
+  onDestroy(() => mountController.cancel());
 
   function branchEntryFromRow(row: ActivityRow): BranchEntry {
     const item = branchRowRepresentative(row);
@@ -757,7 +798,7 @@
     <span class="cell cell--link" aria-hidden="true"></span>
   </div>
 
-  {#each grouped as repoGroup (repoGroup.key)}
+  {#each visibleGrouped as repoGroup (repoGroup.key)}
     <div class="repo-section">
       {#if grouping.getGroupByRepo()}
         <div class="repo-header">
@@ -823,7 +864,7 @@
           class:selected={isSelectedItemGroup(itemGroup)}
           onclick={() => handleItemClick(itemGroup)}
         >
-          {#if itemGroup.events.length > 0}
+          {#if itemGroup.loadable}
             <button
               class="thread-caret cell cell--caret"
               type="button"

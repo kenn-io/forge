@@ -26,6 +26,14 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     keywords: "pull requests merge stack stacked branches safety",
   },
   {
+    id: "settings-detail",
+    label: "Detail views",
+    title: "Detail view performance",
+    group: "Workflow",
+    description: "Initial timeline rendering limit",
+    keywords: "detail timeline entries events performance load full",
+  },
+  {
     id: "settings-activity",
     label: "Activity",
     title: "Activity feed defaults",

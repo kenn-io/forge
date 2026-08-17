@@ -210,7 +210,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   // --- state ---
 
-  let detail = $state<PullDetail | null>(null);
+  // Detail envelopes are replaced immutably. Keeping the large event array raw
+  // avoids proxying thousands of timeline objects that are never mutated in place.
+  let detail = $state.raw<PullDetail | null>(null);
   // Lifecycle tick captured when the request that produced the current
   // envelope STARTED (not when it landed). Workspace-create reconciliation
   // compares it against a creation confirmation's tick to tell a stale

@@ -172,6 +172,8 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
         prefer_github_native_stacks: false,
       }),
       setPullRequestSettings: vi.fn(),
+      getDetailSettings: () => ({ initial_timeline_entry_limit: 50 }),
+      setDetailSettings: vi.fn(),
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setWorkspaceSettings: vi.fn(),
       getModeVisibility: () => ({
@@ -312,10 +314,11 @@ describe("app store event wiring", () => {
         workspaces: true,
       },
       pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      detail: { initial_timeline_entry_limit: 50 },
       launch_targets: [codexTarget],
     } satisfies Pick<
       Settings,
-      "repos" | "activity" | "issues" | "terminal" | "modes" | "pull_requests" | "launch_targets"
+      "repos" | "activity" | "issues" | "terminal" | "modes" | "pull_requests" | "detail" | "launch_targets"
     >;
     getSettings.mockResolvedValue({ data: settings });
 

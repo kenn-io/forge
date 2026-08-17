@@ -243,6 +243,9 @@ Persisted controls must state their scope clearly.
   (`frontend/src/lib/stores/activity.svelte.ts::loadActivity`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
+- Detail timelines apply the server-backed entry limit after filtering and grouping,
+  then make the remainder explicit and mount it in bounded idle batches; harnesses
+  that require every fixture row pass a large limit (`frontend/src/lib/components/detail/EventTimeline.svelte`).
 - Concurrent controls for one server-backed settings object must share a
   serialized mutation path and reconcile only fields still owned by the settling
   mutation generation; value equality alone is ABA-prone, while stale full-object
@@ -905,6 +908,17 @@ Not every visibility control means "remove this entity entirely."
 - Activity presentation filters apply to event, parent, and workspace projections;
   "Hide bots" tests event actors on events and item authors on parent/workspace subjects
   (`frontend/src/lib/components/ActivityFeed.svelte::visibleItemActivity`).
+- Collapsed Activity cursors come from the same snapshot as the visible summaries and
+  cover hidden children; clients must not derive forward-poll authority from a visible
+  row (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
+- Empty Activity deltas must not rebuild or replace parent/workspace summaries
+  (`frontend/src/lib/stores/activity.svelte.ts::pollNewItems`).
+- Thread expansion uses stable repository identity and a frozen upper bound; Expand all
+  pages the bulk event read instead of fanning out per thread
+  (`frontend/src/lib/stores/activity.svelte.ts::loadBulkActivity`).
+- Parent recency invalidates stale thread caches; otherwise authoritative reconciliation
+  preserves loaded children and merges deltas. Mobile and status totals consume the same
+  summary authority (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
 - Activity `capped` reports event overflow; only it triggers event reloads and the
   event warning. `item_activity_capped` drives only the independent parent-truncation
   notice; a search whose event matches overflow the event page also reports it, because
@@ -933,9 +947,10 @@ Not every visibility control means "remove this entity entirely."
   successful snapshots, and a logical filter-scope change still fences the old result.
   A later successful snapshot fences older foreground failures; without one, a fenced
   foreground owner still settles loading (`frontend/src/lib/stores/activity-workflow.ts::ActivityWorkflowLive`).
-  Every fourth scheduled Activity poll is an authoritative full-snapshot
-  replacement so events hidden behind the forward cursor self-heal even without
-  detail navigation or SSE (`frontend/src/lib/stores/activity.svelte.ts::refreshActivityProgram`).
+  Every fourth scheduled Activity poll is an authoritative collapsed-snapshot
+  replacement in collapsed threaded mode, so events hidden behind the forward
+  cursor self-heal even without detail navigation or SSE without reloading the
+  complete event ledger (`frontend/src/lib/stores/activity.svelte.ts::refreshActivityProgram`).
   Every authoritative snapshot projection clears an earlier error banner
   (`frontend/src/lib/stores/activity.svelte.ts::createActivityStore`).
 - After a sync trigger is accepted, retain optimistic running state through the

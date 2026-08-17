@@ -40,6 +40,7 @@ function makeStores(
         terminalSettings = settings;
       }),
       setPullRequestSettings: vi.fn(),
+      setDetailSettings: vi.fn(),
       getWorkspaceSettings: () => workspaceSettings,
       setWorkspaceSettings: vi.fn((settings) => {
         workspaceSettings = settings;
@@ -74,6 +75,7 @@ const settings = {
   repos: [],
   repo_presets: [],
   pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+  detail: { initial_timeline_entry_limit: 50 },
   workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
   issues: { hide_bots: true },
   kata_projects: [],

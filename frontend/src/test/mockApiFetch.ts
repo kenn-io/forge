@@ -285,6 +285,9 @@ export const mockSettings = {
     hide_closed: false,
     hide_bots: false,
   },
+  detail: {
+    initial_timeline_entry_limit: 50,
+  },
   issues: {
     hide_bots: false,
   },

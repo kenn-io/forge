@@ -172,6 +172,10 @@ function renderWithRealPullDetail(
             pulls: { loadPulls: vi.fn() },
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
+            settings: {
+              getLaunchTargets: () => [],
+              getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
+            },
           },
         ],
         [ACTIONS_KEY, { pull: [] }],

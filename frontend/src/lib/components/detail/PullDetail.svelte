@@ -37,6 +37,7 @@
   import EventTimeline from "./EventTimeline.svelte";
   import CollapsibleDescription from "./CollapsibleDescription.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
+  import DetailRefreshButton from "./DetailRefreshButton.svelte";
   import CommentBox from "./CommentBox.svelte";
   import ApproveButton from "./ApproveButton.svelte";
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
@@ -128,6 +129,47 @@
   const actions = getActions();
   const uiConfig = getUIConfig();
   const navigate = getNavigate();
+  let manualRefreshPending = $state(false);
+  let manualRefreshGeneration = 0;
+
+  function isCurrentManualRefresh(
+    requestGeneration: number,
+    requestIdentity: WorkspaceItemIdentity,
+  ): boolean {
+    return !componentDestroyed
+      && requestGeneration === manualRefreshGeneration
+      && identityEquals(requestIdentity, $state.snapshot(itemIdentity));
+  }
+
+  function refreshDetail(): void {
+    if (
+      manualRefreshPending
+      || detailStore.isDetailLoading()
+      || detailStore.isDetailSyncing()
+      || stalePR
+    ) return;
+    const requestIdentity = $state.snapshot(itemIdentity);
+    const requestGeneration = ++manualRefreshGeneration;
+    manualRefreshPending = true;
+    detailStore.syncDetailNow(
+      owner,
+      name,
+      number,
+      { provider, platformHost, repoPath },
+      {
+        onFailure: (message) => {
+          if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
+            showFlash(message, { tone: "danger" });
+          }
+        },
+        onSettled: () => {
+          if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
+            manualRefreshPending = false;
+          }
+        },
+      },
+    );
+  }
 
   const defaultProviderCapabilities: ProviderCapabilities = {
     read_repositories: true,
@@ -543,6 +585,10 @@
     return execution.interrupt;
   });
 
+  let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
+  let lastDetailLoadAutoSync: DetailSyncMode | undefined;
+  let lastDetailLoadWorkflowApprovalSync: boolean | undefined;
+
   $effect(() => {
     const requestOwner = owner;
     const requestName = name;
@@ -552,19 +598,32 @@
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     const requestWorkflowApprovalSync = workflowApprovalSync;
+    const requestIdentity = $state.snapshot(itemIdentity);
+    const shouldLoad =
+      lastDetailLoadIdentity === null
+      || !identityEquals(lastDetailLoadIdentity, requestIdentity)
+      || lastDetailLoadAutoSync !== requestAutoSync
+      || lastDetailLoadWorkflowApprovalSync !== requestWorkflowApprovalSync;
+    if (shouldLoad) {
+      lastDetailLoadIdentity = requestIdentity;
+      lastDetailLoadAutoSync = requestAutoSync;
+      lastDetailLoadWorkflowApprovalSync = requestWorkflowApprovalSync;
+    }
     untrack(() => {
-      detailStore.loadDetail(
-        requestOwner,
-        requestName,
-        requestNumber,
-        {
-          sync: requestAutoSync,
-          workflowApprovalSync: requestWorkflowApprovalSync,
-          provider: requestProvider,
-          platformHost: requestPlatformHost,
-          repoPath: requestRepoPath,
-        },
-      );
+      if (shouldLoad) {
+        detailStore.loadDetail(
+          requestOwner,
+          requestName,
+          requestNumber,
+          {
+            sync: requestAutoSync,
+            workflowApprovalSync: requestWorkflowApprovalSync,
+            provider: requestProvider,
+            platformHost: requestPlatformHost,
+            repoPath: requestRepoPath,
+          },
+        );
+      }
       detailStore.startDetailPolling(
         requestOwner,
         requestName,
@@ -621,6 +680,8 @@
     const current = $state.snapshot(itemIdentity);
     if (lastResetIdentity !== null && identityEquals(lastResetIdentity, current)) return;
     lastResetIdentity = current;
+    manualRefreshGeneration += 1;
+    manualRefreshPending = false;
     mutationRouteGeneration = untrack(() => mutationRouteGeneration) + 1;
     wsRequestGen += 1;
     // The generation bump above stops an in-flight create's finally from
@@ -2097,7 +2158,7 @@
             >{pr.BaseBranch}</button>
           </span>
         {/if}
-        {#if detailStore.isDetailSyncing()}
+        {#if detailStore.isDetailSyncing() && !manualRefreshPending}
           <span class="meta-sep meta-sep--sync">·</span>
           <span class="sync-indicator" title="Syncing from GitHub">
             <Spinner size={12} label="Syncing" />
@@ -2980,14 +3041,21 @@
       <div class="section">
         <div class="section-title-row">
           <h3 class="section-title">Activity</h3>
-          <DetailActivityViewMenu
-            viewMode={detailActivityView.getMode()}
-            onViewChange={(mode) => detailActivityView.setMode(mode)}
-            timelineOrder={detailActivityView.getOrder()}
-            onOrderChange={(order) => detailActivityView.setOrder(order)}
-            filter={timelineFilter}
-            onFilterChange={updateTimelineFilter}
-          />
+          <div class="section-title-actions">
+            <DetailRefreshButton
+              disabled={detailStore.isDetailLoading() || detailStore.isDetailSyncing() || stalePR}
+              refreshing={manualRefreshPending}
+              onRefresh={refreshDetail}
+            />
+            <DetailActivityViewMenu
+              viewMode={detailActivityView.getMode()}
+              onViewChange={(mode) => detailActivityView.setMode(mode)}
+              timelineOrder={detailActivityView.getOrder()}
+              onOrderChange={(order) => detailActivityView.setOrder(order)}
+              filter={timelineFilter}
+              onFilterChange={updateTimelineFilter}
+            />
+          </div>
         </div>
         {#if detailStore.getDetailLoaded()}
           <EventTimeline
@@ -3639,6 +3707,12 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+  }
+
+  .section-title-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
   }
 
   .section-title {

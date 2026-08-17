@@ -381,6 +381,143 @@ describe("createIssuesStore", () => {
     expect(store.getIssueDetail()).toBeNull();
   });
 
+  it("synchronizes the selected issue on demand while preserving local body edits", async () => {
+    const cached = issueDetail();
+    cached.issue.Title = "Cached issue detail";
+    const fresh = issueDetail();
+    fresh.issue.Title = "Fresh issue detail";
+    fresh.issue.Body = "provider body";
+    const syncResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const get = vi.fn(async (path: string) =>
+      path === "/issues" ? { data: [], error: undefined } : { data: cached, error: undefined },
+    );
+    const onDetailSynchronized = vi.fn();
+    let page = "";
+    const store = createIssuesStore({
+      client: mockClient({ GET: get, POST: vi.fn(() => syncResponse.promise) }),
+      getPage: () => page,
+      onDetailSynchronized,
+    });
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    onDetailSynchronized.mockClear();
+    page = "issues";
+    store.setLocalIssueBody("github", "github.com", "acme", "widget", 7, "local body");
+    const onSuccess = vi.fn();
+    const onSettled = vi.fn();
+
+    const result = store.syncIssueDetailNow(
+      "acme",
+      "widget",
+      7,
+      { provider: "github", platformHost: "github.com", repoPath: "acme/widget" },
+      { onSuccess, onSettled },
+    );
+
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(store.isIssueDetailSyncing()).toBe(true));
+    syncResponse.resolve({ data: fresh, error: undefined });
+    await vi.waitFor(() => expect(store.isIssueDetailSyncing()).toBe(false));
+    expect(store.getIssueDetail()?.issue).toMatchObject({
+      Title: "Fresh issue detail",
+      Body: "local body",
+    });
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(1);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    expect(onSuccess).toHaveBeenCalledOnce();
+    expect(onSettled).toHaveBeenCalledOnce();
+  });
+
+  it("skips a scheduled poll while an on-demand issue sync is pending", async () => {
+    vi.useFakeTimers();
+    const cached = issueDetail();
+    cached.issue.Title = "Cached issue detail";
+    const fresh = issueDetail();
+    fresh.issue.Title = "Fresh issue detail";
+    const syncResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: cached, error: undefined })
+      .mockResolvedValue({ data: fresh, error: undefined });
+    const store = createIssuesStore({
+      client: mockClient({ GET: get, POST: vi.fn(() => syncResponse.promise) }),
+    });
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    store.startIssueDetailPolling("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+    const settled = Promise.withResolvers<void>();
+
+    store.syncIssueDetailNow(
+      "acme",
+      "widget",
+      7,
+      { provider: "github", platformHost: "github.com", repoPath: "acme/widget" },
+      { onSettled: settled.resolve },
+    );
+    await vi.waitFor(() => expect(store.isIssueDetailSyncing()).toBe(true));
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(get).toHaveBeenCalledTimes(1);
+    syncResponse.resolve({ data: fresh, error: undefined });
+    await settled.promise;
+    expect(store.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(get).toHaveBeenCalledTimes(2);
+    store.stopIssueDetailPolling();
+  });
+
+  it("keeps cached issue detail and reports an on-demand synchronization failure", async () => {
+    const cached = issueDetail();
+    cached.issue.Title = "Cached issue detail";
+    const store = createIssuesStore({
+      client: mockClient({
+        GET: vi.fn(async () => ({ data: cached, error: undefined })),
+        POST: vi.fn(async () => ({
+          error: {
+            type: "about:blank",
+            title: "Provider unavailable",
+            status: 503,
+            detail: "provider unavailable",
+          },
+          response: new Response(null, { status: 503 }),
+        })),
+      }),
+    });
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    const onFailure = vi.fn();
+    const onSettled = vi.fn();
+
+    store.syncIssueDetailNow(
+      "acme",
+      "widget",
+      7,
+      { provider: "github", platformHost: "github.com", repoPath: "acme/widget" },
+      { onFailure, onSettled },
+    );
+
+    await vi.waitFor(() => expect(onSettled).toHaveBeenCalledOnce());
+    expect(store.isIssueDetailSyncing()).toBe(false);
+    expect(store.getIssueDetail()?.issue.Title).toBe("Cached issue detail");
+    expect(onFailure).toHaveBeenCalledWith("provider unavailable");
+  });
+
   it("applies a local body edit addressed through a provider alias and omitted host", async () => {
     const get = vi.fn().mockResolvedValueOnce({ data: issueDetail() });
     const store = createIssuesStore({ client: mockClient({ GET: get }) });

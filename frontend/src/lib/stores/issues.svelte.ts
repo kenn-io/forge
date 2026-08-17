@@ -777,7 +777,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     );
   }
 
-  function syncIssueDetailEffect(ref: IssueDetailRequestRef, expectedGeneration: number) {
+  function synchronizeIssueDetailEffect(ref: IssueDetailRequestRef, expectedGeneration: number) {
     const envelopeTick = nextWorkspaceLifecycleTick();
     const sync = executeGeneratedApiRequest("POST issue detail sync", (client, signal) =>
       client.POST(providerItemPath("issues", ref, "/sync"), {
@@ -797,7 +797,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           }
         }),
       ),
-      Effect.catch(() => Effect.succeed(false)),
     );
     return Effect.sync(() => {
       if (expectedGeneration === issueSyncGeneration) detailSyncing = true;
@@ -812,6 +811,36 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         }),
       ),
     );
+  }
+
+  function syncIssueDetailEffect(ref: IssueDetailRequestRef, expectedGeneration: number) {
+    return synchronizeIssueDetailEffect(ref, expectedGeneration).pipe(Effect.catch(() => Effect.succeed(false)));
+  }
+
+  function syncIssueDetailNow(
+    owner: string,
+    name: string,
+    number: number,
+    identity: IssueDetailRequestOptions,
+    callbacks: MutationCallbacks = {},
+  ): void {
+    const ref = issueDetailRequestRef(owner, name, number, identity);
+    const generation = ++issueSyncGeneration;
+    const program = synchronizeIssueDetailEffect(ref, generation).pipe(
+      Effect.tap(() => invokeMutationCallback(callbacks.onSuccess)),
+      Effect.ensuring(invokeMutationCallback(callbacks.onSettled)),
+    );
+    runtime.runCommand(program, {
+      operation: "synchronize issue detail",
+      safeContext: {
+        provider: ref.provider,
+        platformHost: concretePlatformHost(ref),
+        owner,
+        name,
+        number,
+      },
+      onFailure: (failure) => invokeMutationFailure(callbacks.onFailure, readErrorMessage(failure)),
+    });
   }
 
   function enqueueBackgroundIssueSyncEffect(
@@ -905,10 +934,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   ): void {
     const ref = issueDetailRequestRef(owner, name, number, options);
     const pollingGeneration = ++issuePollingGeneration;
-    const pollOnce = Effect.suspend(() => refreshIssueDetailProgram(ref, issueSyncGeneration)).pipe(
-      Effect.catch(() => Effect.succeed(false)),
-      Effect.asVoid,
-    );
+    const pollOnce = Effect.suspend(() =>
+      detailSyncing ? Effect.void : refreshIssueDetailProgram(ref, issueSyncGeneration).pipe(Effect.asVoid),
+    ).pipe(Effect.catch(() => Effect.void));
     const program = Effect.gen(function* () {
       const workflow = yield* IssuesWorkflow;
       yield* workflow.poll(pollingGeneration, pollOnce, "60 seconds");
@@ -1843,6 +1871,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     getIssueDetailLoaded,
     isIssueStaleRefreshing,
     loadIssueDetail,
+    syncIssueDetailNow,
     startIssueDetailPolling,
     stopIssueDetailPolling,
     clearIssueDetail,

@@ -130,6 +130,9 @@ func ensurePastedImageDirectory(root *os.Root) error {
 		if err != nil {
 			return fmt.Errorf("inspect pasted image directory %s: %w", directory, err)
 		}
+		if info == nil {
+			return fmt.Errorf("inspect pasted image directory %s: missing file information", directory)
+		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return fmt.Errorf("%w: %s", ErrPastedImagePathConflict, directory)
 		}

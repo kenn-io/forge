@@ -88,6 +88,7 @@
   onMount(() => {
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
+    activity.setFullEventProjectionRequired(true);
     activity.loadActivity(true);
     activity.startActivityPolling();
     unsubSync = sync.subscribeSyncComplete(() => {
@@ -97,6 +98,7 @@
   });
 
   onDestroy(() => {
+    activity.setFullEventProjectionRequired(false);
     activity.stopActivityPolling();
     unsubSync?.();
     searchExecution?.interrupt();

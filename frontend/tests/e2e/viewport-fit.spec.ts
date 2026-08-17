@@ -106,6 +106,7 @@ test("settings sidebar lists every panel in declaration order under group headin
       "Repositories",
       "Workflow",
       "Pull requests",
+      "Detail views",
       "Activity",
       "Workspace",
       "Workspaces",

@@ -66,6 +66,8 @@ const setShowNotifications = vi.hoisted(() =>
   }),
 );
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
+const loadActivity = vi.hoisted(() => vi.fn(async () => undefined));
+const setFullEventProjectionRequired = vi.hoisted(() => vi.fn());
 const selectedAuthor = vi.hoisted(() => ({ value: undefined as string | undefined }));
 const setActivityAuthor = vi.hoisted(() =>
   vi.fn((author: string | undefined) => {
@@ -77,7 +79,7 @@ vi.mock("../context.js", () => ({
   getStores: () => ({
     activity: {
       initializeFromMount: vi.fn(),
-      loadActivity: vi.fn(async () => undefined),
+      loadActivity,
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
@@ -110,6 +112,7 @@ vi.mock("../context.js", () => ({
       setInvolvesMe: vi.fn((value: boolean) => {
         involvesMe.value = value;
       }),
+      setFullEventProjectionRequired,
       markNotificationSeen,
       setHideBots: vi.fn(),
       setHideDefaultBranchActivity: vi.fn(),
@@ -150,6 +153,8 @@ describe("MobileActivityView branch activity", () => {
     setHideOrgName.mockClear();
     selectedAuthor.value = undefined;
     setActivityAuthor.mockClear();
+    loadActivity.mockClear();
+    setFullEventProjectionRequired.mockClear();
   });
 
   afterEach(() => {
@@ -169,6 +174,18 @@ describe("MobileActivityView branch activity", () => {
     expect(article?.textContent).not.toContain("#0");
     expect(article?.querySelector(".chip--kind-pr")).toBeNull();
     expect(article?.querySelector(".chip--kind-issue")).toBeNull();
+  });
+
+  it("requires full event projection for its mounted lifetime", () => {
+    const view = render(MobileActivityView, { props: { onSelectItem } });
+
+    expect(setFullEventProjectionRequired).toHaveBeenCalledWith(true);
+    expect(setFullEventProjectionRequired.mock.invocationCallOrder[0]).toBeLessThan(
+      loadActivity.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+
+    view.unmount();
+    expect(setFullEventProjectionRequired).toHaveBeenLastCalledWith(false);
   });
 
   it("warns about parent truncation separately from event truncation", () => {

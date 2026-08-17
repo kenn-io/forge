@@ -908,6 +908,9 @@ Not every visibility control means "remove this entity entirely."
 - Activity presentation filters apply to event, parent, and workspace projections;
   "Hide bots" tests event actors on events and item authors on parent/workspace subjects
   (`frontend/src/lib/components/ActivityFeed.svelte::visibleItemActivity`).
+- Visibility controls backed by server filtering, including "Hide closed/merged" and
+  "Hide bots", reload Activity so turning a filter off can restore rows omitted from
+  the bounded server window (`frontend/src/lib/components/ActivityFeed.svelte`).
 - Collapsed Activity cursors come from the same snapshot as the visible summaries and
   cover hidden children; clients must not derive forward-poll authority from a visible
   row (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
@@ -916,9 +919,16 @@ Not every visibility control means "remove this entity entirely."
 - Thread expansion uses stable repository identity and a frozen upper bound; Expand all
   pages the bulk event read instead of fanning out per thread
   (`frontend/src/lib/stores/activity.svelte.ts::loadBulkActivity`).
+- Thread and bulk event pages belong to the repository, range, filter, and projection
+  generation that started them. Scope changes discard late pages and prevent older
+  requests from clearing newer loading or error ownership
+  (`frontend/src/lib/stores/activity.svelte.ts::invalidatePagedActivityRequests`).
 - Parent recency invalidates stale thread caches; otherwise authoritative reconciliation
   preserves loaded children and merges deltas. Mobile and status totals consume the same
   summary authority (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
+- An uncapped authoritative parent snapshot removes cached children whose stable parent
+  identity is absent; a capped parent snapshot retains them because absence is not
+  authoritative (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
 - Activity `capped` reports event overflow; only it triggers event reloads and the
   event warning. `item_activity_capped` drives only the independent parent-truncation
   notice; a search whose event matches overflow the event page also reports it, because

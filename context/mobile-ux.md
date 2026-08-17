@@ -87,6 +87,10 @@ Avoid by default:
 - Tiny icon-only actions without accessible names and visible context.
 - Routing mobile taps into desktop drawer/query state with no visible phone result.
 
+Mobile Activity requires a full event projection because its cards expose event actions
+without desktop thread expansion; a collapsed desktop projection is not a valid mobile
+data source (`frontend/src/lib/views/MobileActivityView.svelte`).
+
 ## Routing expectations
 
 - Phone list/start routes should route to phone-appropriate focused detail routes when the user is already in a phone route family.

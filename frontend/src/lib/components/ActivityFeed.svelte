@@ -434,6 +434,7 @@
             activity.setHideClosedMerged(
               !activity.getHideClosedMerged(),
             );
+            activity.loadActivity();
           },
         },
         {
@@ -443,6 +444,7 @@
           color: "var(--accent-purple)",
           onSelect: () => {
             activity.setHideBots(!activity.getHideBots());
+            activity.loadActivity();
           },
         },
         {

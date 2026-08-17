@@ -175,6 +175,50 @@ describe("activity store collapse state", () => {
     expect(store.getActivityEventCursor()).toBe("hidden:9");
   });
 
+  it("requests full events while a mobile activity consumer is mounted", async () => {
+    const get = vi.fn(async () => ({
+      data: { items: [], item_activity: [], workspace_activity: [], capped: false, event_cursor: "hidden:9" },
+      error: null,
+    }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+
+    store.setFullEventProjectionRequired(true);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ projection: "full" }) },
+      }),
+    );
+  });
+
+  it("keeps authoritative mobile reconciliation on the full projection", async () => {
+    const projections: Array<string | undefined> = [];
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      projections.push(options?.params?.query?.projection);
+      return {
+        data: { items: [], item_activity: [], workspace_activity: [], capped: false, event_cursor: "hidden:9" },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.setFullEventProjectionRequired(true);
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile mobile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    expect(projections).toEqual(["full"]);
+  });
+
   it("loads every frozen page of a collapsed thread once by stable provider repository identity", async () => {
     const subject = {
       ...itemActivity(7),
@@ -240,6 +284,63 @@ describe("activity store collapse state", () => {
     ]);
   });
 
+  it("discards a thread page that resolves after the activity scope changes", async () => {
+    const subject = {
+      ...itemActivity(7),
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: "repo-7",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        host: "github.com",
+      },
+    } satisfies ActivitySubject;
+    const staleEvent = {
+      ...notificationItem("ntf:stale-thread", "unread"),
+      item_number: 7,
+      repo: subject.repo,
+    } as ActivityItem;
+    const pendingThread = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: false; event_cursor: string };
+      error: null;
+    }>();
+    let activityReads = 0;
+    const get = vi.fn((path: string) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      if (path === "/activity/thread-events") return pendingThread.promise;
+      activityReads += 1;
+      return Promise.resolve({
+        data: {
+          items: [],
+          item_activity: activityReads === 1 ? [subject] : [],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      });
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([subject]));
+
+    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    await vi.waitFor(() =>
+      expect(get.mock.calls.filter(([path]) => path === "/activity/thread-events")).toHaveLength(1),
+    );
+    store.setTimeRange("30d");
+    store.loadActivity();
+    await vi.waitFor(() => expect(activityReads).toBe(2));
+
+    pendingThread.resolve({ data: { items: [staleEvent], capped: false, event_cursor: "snapshot" }, error: null });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(store.getActivityItems()).toEqual([]);
+  });
+
   it("expands all through sequential frozen event pages", async () => {
     const first = notificationItem("ntf:71", "unread");
     const second = notificationItem("ntf:70", "unread");
@@ -295,6 +396,103 @@ describe("activity store collapse state", () => {
     );
     expect(eventQueries[1]).toEqual(expect.objectContaining({ before: "page-2" }));
     expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:71", "ntf:70"]);
+  });
+
+  it("discards bulk pages that resolve after the activity scope changes", async () => {
+    const staleEvent = { ...notificationItem("ntf:stale-bulk", "unread"), created_at: new Date().toISOString() };
+    const freshEvent = { ...notificationItem("ntf:fresh-scope", "unread"), created_at: new Date().toISOString() };
+    const pendingBulk = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: false; event_cursor: string };
+      error: null;
+    }>();
+    const pendingForeground = Promise.withResolvers<{
+      data: {
+        items: ActivityItem[];
+        item_activity: never[];
+        workspace_activity: never[];
+        capped: false;
+        event_cursor: string;
+      };
+      error: null;
+    }>();
+    let snapshotReads = 0;
+    const get = vi.fn((path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      if (options?.params?.query?.projection === "events") return pendingBulk.promise;
+      snapshotReads += 1;
+      if (snapshotReads === 2) return pendingForeground.promise;
+      return Promise.resolve({
+        data: {
+          items: [],
+          item_activity: [],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      });
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(snapshotReads).toBe(1));
+
+    store.expandAllThreads();
+    await vi.waitFor(() =>
+      expect(get.mock.calls.some(([, options]) => options?.params?.query?.projection === "events")).toBe(true),
+    );
+    store.setTimeRange("30d");
+    store.loadActivity();
+    await vi.waitFor(() => expect(snapshotReads).toBe(2));
+
+    pendingBulk.resolve({ data: { items: [staleEvent], capped: false, event_cursor: "snapshot" }, error: null });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(store.isActivityLoading()).toBe(true);
+    expect(store.getActivityItems()).toEqual([]);
+
+    pendingForeground.resolve({
+      data: {
+        items: [freshEvent],
+        item_activity: [],
+        workspace_activity: [],
+        capped: false,
+        event_cursor: "snapshot",
+      },
+      error: null,
+    });
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([freshEvent.id]));
+
+    expect(store.getActivityItems().map((item) => item.id)).toEqual([freshEvent.id]);
+  });
+
+  it("reports a failure from the current bulk expansion", async () => {
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (options?.params?.query?.projection === "events") {
+        return {
+          error: {
+            code: "serviceUnavailable",
+            detail: "bulk activity unavailable",
+            title: "Service unavailable",
+            type: "about:blank",
+          },
+          response: new Response(null, { status: 503 }),
+        };
+      }
+      return {
+        data: { items: [], item_activity: [], workspace_activity: [], capped: false, event_cursor: "snapshot" },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    store.expandAllThreads();
+
+    await vi.waitFor(() => expect(store.getActivityError()).toBe("bulk activity unavailable"));
+    expect(store.isActivityLoading()).toBe(false);
   });
 
   it("hydrates the workspace activity recency preference", () => {
@@ -1598,7 +1796,7 @@ describe("activity polling recovery", () => {
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
     store.loadActivity();
-    await vi.waitFor(() => expect(store.getActivityItems()).toEqual([initial]));
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([initial.id]));
 
     store.startActivityPolling();
     await vi.waitFor(() => expect(feedReads).toBe(2));
@@ -1740,6 +1938,74 @@ describe("activity polling recovery", () => {
     await vi.waitFor(() => expect(feedReads).toBe(3));
 
     expect(store.isActivityLoading()).toBe(false);
+  });
+
+  it("drops cached events whose parents are absent from an uncapped authoritative snapshot", async () => {
+    const initial = {
+      ...notificationItem("ntf:42", "unread"),
+      created_at: new Date().toISOString(),
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: "repo-1",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+      },
+    } as ActivityItem;
+    let feedReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        feedReads += 1;
+        if (feedReads === 1) {
+          return {
+            data: {
+              items: [initial],
+              item_activity: [
+                {
+                  ...itemActivity(1),
+                  repo: {
+                    provider: "github",
+                    platform_host: "github.com",
+                    platform_repo_id: "repo-1",
+                    owner: "acme",
+                    name: "widgets",
+                    repo_path: "acme/widgets",
+                  },
+                },
+              ],
+              item_activity_capped: false,
+              capped: false,
+              event_cursor: initial.cursor,
+            },
+            error: null,
+          };
+        }
+        return {
+          data: {
+            items: [],
+            item_activity: [],
+            item_activity_capped: false,
+            capped: false,
+            event_cursor: initial.cursor,
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([initial.id]));
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    expect(store.getActivityItems()).toEqual([]);
   });
 
   it("retains event rows when an authoritative parent snapshot is capped", async () => {

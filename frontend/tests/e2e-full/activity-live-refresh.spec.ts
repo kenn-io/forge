@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
 
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
@@ -36,6 +36,51 @@ async function persistActivityComment(
   const eventID = Number(response.headers()["x-kenn-e2e-event-id"]);
   expect(eventID).toBeGreaterThan(0);
   return eventID;
+}
+
+function waitForCollapsedSubject(page: Page, itemType: "pr" | "issue", itemNumber: number) {
+  return page.waitForResponse(async (response) => {
+    const url = new URL(response.url());
+    if (
+      response.request().method() !== "GET" ||
+      url.pathname !== "/api/v1/activity" ||
+      url.searchParams.has("after") ||
+      url.searchParams.get("projection") !== "collapsed"
+    ) {
+      return false;
+    }
+    const snapshot = (await response.json()) as {
+      item_activity: Array<{ item_number: number; item_type: string }>;
+    };
+    return snapshot.item_activity.some(
+      (subject) => subject.item_type === itemType && subject.item_number === itemNumber,
+    );
+  });
+}
+
+async function expandThreadContaining(
+  page: Page,
+  itemRow: Locator,
+  itemType: "pr" | "issue",
+  itemNumber: number,
+  body: string,
+): Promise<void> {
+  if (await itemRow.getByRole("button", { name: "Collapse item activity" }).isVisible()) return;
+  const threadEvents = page.waitForResponse(async (response) => {
+    const url = new URL(response.url());
+    if (
+      response.request().method() !== "GET" ||
+      url.pathname !== "/api/v1/activity/thread-events" ||
+      url.searchParams.get("item_type") !== itemType ||
+      url.searchParams.get("item_number") !== String(itemNumber)
+    ) {
+      return false;
+    }
+    const snapshot = (await response.json()) as { items: Array<{ body_preview: string }> };
+    return snapshot.items.some((event) => event.body_preview === body);
+  });
+  await itemRow.getByRole("button", { name: "Expand item activity" }).click();
+  await threadEvents;
 }
 
 for (const item of olderDetailSyncCases) {
@@ -105,20 +150,7 @@ for (const item of olderDetailSyncCases) {
       await expect.poll(() => activityReadsInFlight).toBe(0);
       await page.waitForTimeout(250);
       await expect.poll(() => activityReadsInFlight).toBe(0);
-      const reconciledActivity = page.waitForResponse(async (response) => {
-        const url = new URL(response.url());
-        if (
-          response.request().method() !== "GET" ||
-          url.pathname !== "/api/v1/activity" ||
-          url.searchParams.has("after")
-        ) {
-          return false;
-        }
-        const snapshot = (await response.json()) as {
-          items: Array<{ body_preview: string }>;
-        };
-        return snapshot.items.some((event) => event.body_preview === item.body);
-      });
+      const reconciledActivity = waitForCollapsedSubject(page, item.itemType, item.number);
       releaseDetailSync?.();
       await detailSyncAccepted;
 
@@ -133,6 +165,7 @@ for (const item of olderDetailSyncCases) {
         .toBe(true);
       await reconciledActivity;
 
+      await expandThreadContaining(page, itemRow, item.itemType, item.number, item.body);
       await expect(feed.getByText("fixture-bot", { exact: true })).toBeVisible({ timeout: 5_000 });
     } finally {
       await server.stop();
@@ -168,21 +201,7 @@ for (const item of olderDetailSyncCases) {
       const body = `Already-persisted ${item.itemType} Activity behind the feed cursor`;
       await persistActivityComment(page, server.info.base_url, body, false, item.itemType);
 
-      const reconciledActivity = page.waitForResponse(
-        async (response) => {
-          const url = new URL(response.url());
-          if (
-            response.request().method() !== "GET" ||
-            url.pathname !== "/api/v1/activity" ||
-            url.searchParams.has("after")
-          ) {
-            return false;
-          }
-          const snapshot = (await response.json()) as { items: Array<{ body_preview: string }> };
-          return snapshot.items.some((event) => event.body_preview === body);
-        },
-        { timeout: 5_000 },
-      );
+      const reconciledActivity = waitForCollapsedSubject(page, item.itemType, item.number);
 
       const itemRow = page.locator(".activity-feed .threaded-view .item-row", {
         hasText: item.title,
@@ -196,6 +215,7 @@ for (const item of olderDetailSyncCases) {
       const detailResponse = (await (await initialDetail).json()) as { events?: Array<{ Body?: string }> };
       expect(detailResponse.events?.some((event) => event.Body === body)).toBe(true);
       await reconciledActivity;
+      await expandThreadContaining(page, itemRow, item.itemType, item.number, body);
       await expect(page.locator(".activity-feed").getByText("fixture-bot", { exact: true })).toBeVisible();
     } finally {
       releaseDetailSync.resolve();
@@ -304,24 +324,13 @@ test("accepted detail sync reconciles Activity after its selection closes", asyn
     await page.getByRole("button", { name: "Close Activity selection" }).click();
     await expect(page.locator(".activity-detail")).toHaveCount(0);
 
-    const reconciledActivity = page.waitForResponse(async (response) => {
-      const url = new URL(response.url());
-      if (
-        response.request().method() !== "GET" ||
-        url.pathname !== "/api/v1/activity" ||
-        url.searchParams.has("after")
-      ) {
-        return false;
-      }
-      const snapshot = (await response.json()) as {
-        items: Array<{ body_preview: string }>;
-      };
-      return snapshot.items.some((event) => event.body_preview === item.body);
-    });
+    const reconciledActivity = waitForCollapsedSubject(page, item.itemType, item.number);
     const released = await releaseSync();
     expect(released.status(), await released.text()).toBe(204);
     await reconciledActivity;
 
+    const itemRow = page.locator(".activity-feed .threaded-view .item-row", { hasText: item.title });
+    await expandThreadContaining(page, itemRow, item.itemType, item.number, item.body);
     await expect(page.locator(".activity-feed").getByText("fixture-bot", { exact: true })).toBeVisible();
   } finally {
     await releaseSync().catch(() => {});
@@ -428,7 +437,7 @@ test("SSE comment refresh does not promote the commenter to an Activity author c
   }
 });
 
-test("incremental Activity polling keeps renamed routes distinct and reconciles provider links", async ({
+test("authoritative Activity reloads keep renamed routes distinct and reconcile provider links", async ({
   page,
 }, testInfo) => {
   testInfo.setTimeout(75_000);
@@ -442,56 +451,24 @@ test("incremental Activity polling keeps renamed routes distinct and reconciles 
 
     const renamedActivity = page.waitForResponse(async (response) => {
       const url = new URL(response.url());
-      if (
-        response.request().method() !== "GET" ||
-        url.pathname !== "/api/v1/activity" ||
-        !url.searchParams.has("after")
-      ) {
+      if (response.request().method() !== "GET" || url.pathname !== "/api/v1/activity") {
         return false;
       }
       const snapshot = (await response.json()) as {
-        item_activity: Array<{ repo: { platform_repo_id?: string; repo_path?: string } }>;
+        item_activity?: Array<{ repo: { platform_repo_id?: string; repo_path?: string } }>;
       };
-      return snapshot.item_activity.some(
+      return (snapshot.item_activity ?? []).some(
         (subject) => subject.repo.platform_repo_id && subject.repo.repo_path === "acme/widgets-renamed",
       );
     });
     const rename = await page.request.post(`${server.info.base_url}/__e2e/activity/repository-identity?phase=rename`);
     expect(rename.ok(), await rename.text()).toBe(true);
+    await page.getByRole("button", { name: /^Filters/ }).click();
+    await page.getByRole("radiogroup", { name: "Time range" }).getByRole("radio", { name: "90d" }).click();
+    await page.keyboard.press("Escape");
     await renamedActivity;
 
     await expect(original).toHaveCount(1);
-
-    const replacementActivity = page.waitForResponse(async (response) => {
-      const url = new URL(response.url());
-      if (
-        response.request().method() !== "GET" ||
-        url.pathname !== "/api/v1/activity" ||
-        !url.searchParams.has("after")
-      ) {
-        return false;
-      }
-      const snapshot = (await response.json()) as {
-        item_activity: Array<{
-          item_title: string;
-          repo: { platform_repo_id?: string; repo_path?: string };
-        }>;
-      };
-      return snapshot.item_activity.some(
-        (subject) =>
-          subject.item_title === "Replacement route pull request" &&
-          subject.repo.platform_repo_id === "e2e-replacement-widgets" &&
-          subject.repo.repo_path === "acme/widgets",
-      );
-    });
-    const reuse = await page.request.post(`${server.info.base_url}/__e2e/activity/repository-identity?phase=reuse`);
-    expect(reuse.ok(), await reuse.text()).toBe(true);
-    await replacementActivity;
-
-    await expect(original).toHaveCount(1);
-    const replacement = feed.locator(".item-row", { hasText: "Replacement route pull request" });
-    await expect(replacement).toHaveCount(1);
-
     await page.getByRole("button", { name: /^Filters/ }).click();
     await page.getByRole("radiogroup", { name: "View" }).getByRole("radio", { name: "Flat" }).click();
     const notification = page.locator(".activity-row", { hasText: "Review requested" });
@@ -511,6 +488,35 @@ test("incremental Activity polling keeps renamed routes distinct and reconciles 
     await page.getByRole("radiogroup", { name: "View" }).getByRole("radio", { name: "Threaded" }).click();
     await original.click();
     await expect.poll(() => new URL(page.url()).searchParams.get("repo_path")).toBe("acme/widgets-renamed");
+
+    const replacementActivity = page.waitForResponse(async (response) => {
+      const url = new URL(response.url());
+      if (response.request().method() !== "GET" || url.pathname !== "/api/v1/activity") {
+        return false;
+      }
+      const snapshot = (await response.json()) as {
+        item_activity?: Array<{
+          item_title: string;
+          repo: { platform_repo_id?: string; repo_path?: string };
+        }>;
+      };
+      return (snapshot.item_activity ?? []).some(
+        (subject) =>
+          subject.item_title === "Replacement route pull request" &&
+          subject.repo.platform_repo_id === "e2e-replacement-widgets" &&
+          subject.repo.repo_path === "acme/widgets",
+      );
+    });
+    const reuse = await page.request.post(`${server.info.base_url}/__e2e/activity/repository-identity?phase=reuse`);
+    expect(reuse.ok(), await reuse.text()).toBe(true);
+    await page.getByRole("button", { name: /^Filters/ }).click();
+    await page.getByRole("radiogroup", { name: "Time range" }).getByRole("radio", { name: "30d" }).click();
+    await page.keyboard.press("Escape");
+    await replacementActivity;
+
+    await expect(original).toHaveCount(0);
+    const replacement = feed.locator(".item-row", { hasText: "Replacement route pull request" });
+    await expect(replacement).toHaveCount(1);
 
     await replacement.click();
     await expect.poll(() => new URL(page.url()).searchParams.get("repo_path")).toBe("acme/widgets");

@@ -530,24 +530,22 @@ func run(opts serve.Options) error {
 			)
 		},
 	})
-	var providerSources map[string]tokenauth.Source
+	var startup providerStartup
 	if opts.DisableSync {
+		var providerSources map[string]tokenauth.Source
 		providerSources, err = registerProviderTokenSources(cfg, tokenSources)
+		if err == nil {
+			startup, err = buildProviderStartup(
+				ctx, database, cfg, tokenSources, providerSources,
+				defaultProviderFactories(), nil,
+			)
+		}
 	} else {
-		providerSources, err = collectProviderTokenSources(ctx, cfg, tokenSources)
+		startup, err = buildProviderStartupWithFallback(
+			ctx, database, cfg, tokenSources,
+			defaultProviderFactories(), ghclient.HTTPIdentityResolver{},
+		)
 	}
-	if err != nil {
-		return err
-	}
-	var identityResolver ghclient.IdentityResolver
-	if !opts.DisableSync {
-		identityResolver = ghclient.HTTPIdentityResolver{}
-	}
-
-	startup, err := buildProviderStartup(
-		ctx, database, cfg, tokenSources, providerSources,
-		defaultProviderFactories(), identityResolver,
-	)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			slog.Info("shutting down")

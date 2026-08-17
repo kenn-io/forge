@@ -1231,6 +1231,37 @@ func TestBuildProviderStartupReportsSafeGitHubIdentityResolutionFailure(t *testi
 	assert.NotContains(t, err.Error(), "super-secret-token")
 }
 
+func TestBuildProviderStartupOrDegradedKeepsServerBootableWhenGitHubUnavailable(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	t.Setenv("ORG_A_TOKEN", "org-a-token")
+	cfg := &config.Config{
+		SyncInterval: "5m",
+		Host:         "127.0.0.1",
+		Port:         8091,
+		BasePath:     "/",
+		Activity:     config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos:        []config.Repo{{Owner: "org-a", Name: "one"}},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
+			Host: "github.com", Owner: "org-a", TokenEnv: "ORG_A_TOKEN",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+
+	startup, err := buildProviderStartupOrDegraded(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{err: map[string]error{
+			"ORG_A_TOKEN": errors.New("GitHub API unavailable: 503"),
+		}},
+	)
+	require.NoError(err)
+	assert.Empty(startup.registry.Providers())
+}
+
 // A repository PAT override picks the credential that signs that repository's
 // writes; it must not cost the owner its App installation. The installation
 // carries its own rate-limit budget, so it still leads reads, and it remains

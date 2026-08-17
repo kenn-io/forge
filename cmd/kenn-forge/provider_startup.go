@@ -292,6 +292,33 @@ func providerTokenSources(
 	return providerSources, nil
 }
 
+// buildProviderStartupOrDegraded keeps the local UI available when a remote
+// provider cannot be initialized. The database already contains the last
+// successful sync, and provider operations can report unavailable until the
+// daemon is restarted after the provider recovers.
+func buildProviderStartupOrDegraded(
+	ctx context.Context,
+	database *db.DB,
+	cfg *config.Config,
+	set *tokenauth.SourceSet,
+	providerSources map[string]tokenauth.Source,
+	factories map[string]providerFactory,
+	resolver github.IdentityResolver,
+) (providerStartup, error) {
+	startup, err := buildProviderStartup(
+		ctx, database, cfg, set, providerSources, factories, resolver,
+	)
+	if err == nil {
+		return startup, nil
+	}
+
+	slog.Warn(
+		"provider startup unavailable; serving cached data without provider sync",
+		"err", err,
+	)
+	return buildProviderStartup(ctx, database, cfg, set, nil, factories, nil)
+}
+
 func buildProviderStartup(
 	ctx context.Context,
 	database *db.DB,

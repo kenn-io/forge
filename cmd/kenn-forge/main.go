@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/githubapp"
+	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/profiler"
 	"go.kenn.io/forge/internal/ptyowner"
@@ -53,6 +54,32 @@ type serveReadyListener struct {
 func (l serveReadyListener) Accept() (net.Conn, error) {
 	l.notifyReady()
 	return l.Listener.Accept()
+}
+
+func newMCPStartupHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "MCP is unavailable during startup", http.StatusServiceUnavailable)
+	})
+	return mux
+}
+
+func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error) {
+	primaryAddr := cfg.ListenAddr()
+	primary, err := net.Listen("tcp", primaryAddr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("listen on %s: %w", primaryAddr, err)
+	}
+	if !cfg.MCP.Enabled {
+		return primary, nil, nil
+	}
+	mcpAddr := cfg.MCPListenAddr()
+	mcpListener, err := net.Listen("tcp", mcpAddr)
+	if err != nil {
+		_ = primary.Close()
+		return nil, nil, fmt.Errorf("listen for MCP on %s: %w", mcpAddr, err)
+	}
+	return primary, mcpListener, nil
 }
 
 func (h splitLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -351,10 +378,21 @@ func run(opts serve.Options) error {
 	if err != nil {
 		return fmt.Errorf("ensure auth token: %w", err)
 	}
-	addr := cfg.ListenAddr()
-	ln, err := net.Listen("tcp", addr)
+	ln, mcpLn, err := bindDaemonListeners(cfg)
 	if err != nil {
-		return fmt.Errorf("listen on %s: %w", addr, err)
+		return err
+	}
+	mcpListenAddr := ""
+	mcpURL := ""
+	if mcpLn != nil {
+		mcpListenAddr = mcpLn.Addr().String()
+		mcpURL = "http://" + mcpListenAddr + "/mcp"
+	}
+	closeListeners := func() {
+		_ = ln.Close()
+		if mcpLn != nil {
+			_ = mcpLn.Close()
+		}
 	}
 	if ip := net.ParseIP(cfg.Host); ip != nil && !ip.IsLoopback() {
 		slog.Warn(
@@ -368,9 +406,10 @@ func run(opts serve.Options) error {
 	runtimeIdentity, err := daemonruntime.NewIdentity(ln.Addr(), daemonruntime.IdentityOptions{
 		Version: version, Commit: commit, DataDir: cfg.DataDir, ConfigPath: configPath,
 		BasePath: cfg.BasePath, RequireAuth: cfg.API.RequireAuth,
+		MCPListenAddr: mcpListenAddr,
 	})
 	if err != nil {
-		_ = ln.Close()
+		closeListeners()
 		return fmt.Errorf("build daemon runtime identity: %w", err)
 	}
 	if err := lockHandle.WriteMetadata(runtimeIdentity.LockMetadata); err != nil {
@@ -378,12 +417,12 @@ func run(opts serve.Options) error {
 	}
 	proof, err := daemon.NewProof([]byte(authToken))
 	if err != nil {
-		_ = ln.Close()
+		closeListeners()
 		return fmt.Errorf("initialize daemon proof: %w", err)
 	}
 	daemonProofHandler, err := proof.NewPingHandler(runtimeIdentity.Record)
 	if err != nil {
-		_ = ln.Close()
+		closeListeners()
 		return fmt.Errorf("initialize daemon ping: %w", err)
 	}
 	daemonAccess := server.DaemonAccessOptions{
@@ -391,9 +430,8 @@ func run(opts serve.Options) error {
 		ProofHandler: daemonProofHandler,
 	}
 
-	startupHandler := server.NewStartupHandler(
-		assets, cfg, server.ServerOptions{DaemonAccess: daemonAccess}, ln,
-	)
+	startupOptions := server.ServerOptions{DaemonAccess: daemonAccess, MCPURL: mcpURL}
+	startupHandler := server.NewStartupHandler(assets, cfg, startupOptions, ln)
 	switcher := server.NewSwitchHandler(startupHandler)
 	httpSrv := &http.Server{
 		Handler:     switcher,
@@ -402,20 +440,54 @@ func run(opts serve.Options) error {
 		// responses are long-lived by design.
 		IdleTimeout: 60 * time.Second,
 	}
-	serveReady := make(chan struct{})
-	readyListener := serveReadyListener{
-		Listener:    ln,
-		notifyReady: sync.OnceFunc(func() { close(serveReady) }),
+
+	var mcpHTTPSrv *http.Server
+	var mcpSwitcher *server.SwitchHandler
+	if mcpLn != nil {
+		bind, parseErr := config.ParseHostKey(mcpListenAddr)
+		if parseErr != nil {
+			closeListeners()
+			return fmt.Errorf("parse MCP listener address %s: %w", mcpListenAddr, parseErr)
+		}
+		mcpSwitcher = server.NewSwitchHandler(newMCPStartupHandler())
+		mcpHTTPSrv = &http.Server{
+			Handler: server.NewMCPHTTPGuard(mcpSwitcher, server.MCPHTTPGuardOptions{
+				Bind: bind, Token: authToken, RequireAuth: cfg.API.RequireAuth,
+			}),
+			ReadHeaderTimeout: 5 * time.Second,
+		}
 	}
-	errCh := make(chan error, 1)
+
+	readyCount := 1
+	if mcpLn != nil {
+		readyCount++
+	}
+	serveReady := make(chan struct{}, readyCount)
+	errCh := make(chan error, readyCount)
+	primaryReadyListener := serveReadyListener{
+		Listener:    ln,
+		notifyReady: sync.OnceFunc(func() { serveReady <- struct{}{} }),
+	}
 	go func() {
-		if serveErr := httpSrv.Serve(readyListener); !errors.Is(serveErr, http.ErrServerClosed) {
-			errCh <- serveErr
+		if serveErr := httpSrv.Serve(primaryReadyListener); !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- fmt.Errorf("primary HTTP server: %w", serveErr)
 		}
 	}()
+	if mcpLn != nil {
+		mcpReadyListener := serveReadyListener{
+			Listener:    mcpLn,
+			notifyReady: sync.OnceFunc(func() { serveReady <- struct{}{} }),
+		}
+		go func() {
+			if serveErr := mcpHTTPSrv.Serve(mcpReadyListener); !errors.Is(serveErr, http.ErrServerClosed) {
+				errCh <- fmt.Errorf("MCP HTTP server: %w", serveErr)
+			}
+		}()
+	}
 
 	var database *db.DB
 	var srv *server.Server
+	var mcpSrv *mcpserver.Server
 	var syncer *ghclient.Syncer
 	var telemetryReporter *telemetry.Reporter
 	var profilerSrv *profiler.Server
@@ -433,6 +505,12 @@ func run(opts serve.Options) error {
 						return nil
 					}
 					return notificationLoops.Stop(ctx)
+				},
+				ShutdownMCPHTTP: func(shutdownCtx context.Context) error {
+					if mcpHTTPSrv == nil {
+						return nil
+					}
+					return mcpHTTPSrv.Shutdown(shutdownCtx)
 				},
 				ShutdownPrimaryHTTP: func(shutdownCtx context.Context) error {
 					if srv != nil {
@@ -457,6 +535,12 @@ func run(opts serve.Options) error {
 					}
 					return telemetryReporter.Close()
 				},
+				CloseMCP: func() error {
+					if mcpSrv == nil {
+						return nil
+					}
+					return mcpSrv.Close()
+				},
 				CloseDatabase: func() error {
 					if database == nil {
 						return nil
@@ -469,12 +553,14 @@ func run(opts serve.Options) error {
 		}
 	}()
 
-	select {
-	case <-serveReady:
-	case <-ctx.Done():
-		return fmt.Errorf("wait for HTTP server readiness: %w", ctx.Err())
-	case serveErr := <-errCh:
-		return fmt.Errorf("start HTTP server: %w", serveErr)
+	for range readyCount {
+		select {
+		case <-serveReady:
+		case <-ctx.Done():
+			return fmt.Errorf("wait for HTTP server readiness: %w", ctx.Err())
+		case serveErr := <-errCh:
+			return fmt.Errorf("start HTTP server: %w", serveErr)
+		}
 	}
 	if err := waitForRuntimeGate(ctx, runtimePublishGatePath, "publish"); err != nil {
 		return err
@@ -493,6 +579,9 @@ func run(opts serve.Options) error {
 	}
 
 	slog.Info(fmt.Sprintf("starting server at http://%s", ln.Addr().String()))
+	if mcpListenAddr != "" {
+		slog.Info("starting MCP listener", "url", mcpURL)
+	}
 
 	if ctx.Err() != nil {
 		slog.Info("shutting down")
@@ -618,6 +707,7 @@ func run(opts serve.Options) error {
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
 			DaemonAccess:                    daemonAccess,
+			MCPURL:                          mcpURL,
 			WorktreeDir:                     filepath.Join(cfg.DataDir, "worktrees"),
 			PtyOwnerManagerPath:             os.Getenv("KENN_FORGE_PTY_MANAGER"),
 			Telemetry:                       telemetryReporter,
@@ -703,7 +793,18 @@ func run(opts serve.Options) error {
 		Commit:    commit,
 		BuildDate: buildDate,
 	})
+	if mcpSwitcher != nil {
+		mcpSrv, err = mcpserver.New(mcpserver.Options{
+			Backend: srv.MCPBackend(), Version: version,
+		})
+		if err != nil {
+			return fmt.Errorf("initialize MCP server: %w", err)
+		}
+	}
 	switcher.Swap(srv)
+	if mcpSwitcher != nil {
+		mcpSwitcher.Swap(mcpSrv.HTTPHandler())
+	}
 
 	select {
 	case <-ctx.Done():
@@ -744,10 +845,12 @@ func waitForRuntimeGate(ctx context.Context, gatePath, phase string) error {
 type mainShutdownCallbacks struct {
 	StopSignals           func()
 	StopNotificationLoops func(context.Context) error
+	ShutdownMCPHTTP       func(context.Context) error
 	ShutdownPrimaryHTTP   func(context.Context) error
 	StopSyncer            func()
 	ShutdownProfiler      func(context.Context) error
 	CloseTelemetry        func() error
+	CloseMCP              func() error
 	CloseDatabase         func() error
 }
 
@@ -771,6 +874,16 @@ func runMainShutdown(
 		); err != nil {
 			errs = append(errs, mainShutdownError{
 				message: "notification loops shutdown",
+				err:     err,
+			})
+		}
+	}
+	if callbacks.ShutdownMCPHTTP != nil {
+		if err := runContextShutdown(
+			ctx, shutdownbudget.MCPHTTP, callbacks.ShutdownMCPHTTP,
+		); err != nil {
+			errs = append(errs, mainShutdownError{
+				message: "MCP HTTP shutdown",
 				err:     err,
 			})
 		}
@@ -804,6 +917,14 @@ func runMainShutdown(
 		); err != nil {
 			errs = append(errs, mainShutdownError{
 				message: "close telemetry",
+				err:     err,
+			})
+		}
+	}
+	if callbacks.CloseMCP != nil {
+		if err := callbacks.CloseMCP(); err != nil {
+			errs = append(errs, mainShutdownError{
+				message: "close MCP temp store",
 				err:     err,
 			})
 		}

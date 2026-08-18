@@ -65,6 +65,7 @@ type versionOutput = httpapi.BodyOutput[versionOutputBody]
 
 type ServerOptions struct {
 	DaemonAccess                       DaemonAccessOptions
+	MCPURL                             string
 	Clones                             *gitclone.Manager // optional clone manager for diff view
 	WorktreeDir                        string            // base dir for workspace worktrees
 	DisableWorkspaceBackgroundMonitors bool

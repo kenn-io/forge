@@ -45,11 +45,33 @@ func (s *Handler) listWorkspaceAgentSessions(
 	ctx context.Context,
 	input *listWorkspaceAgentSessionsInput,
 ) (*listWorkspaceAgentSessionsOutput, error) {
+	sessions, err := s.ListWorkspaceAgentSessionsService(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	output := &listWorkspaceAgentSessionsOutput{}
+	output.Body.Sessions = make([]workspaceAgentSessionResponse, 0, len(sessions))
+	for _, session := range sessions {
+		response := workspaceAgentSessionResponse{
+			Agent: session.Agent, SessionID: session.SessionID,
+			RuntimeSessionKey: session.RuntimeSessionKey, TargetKey: session.TargetKey,
+			State: session.State, UpdatedAt: session.UpdatedAt,
+		}
+		if session.InitialMessage != nil {
+			response.InitialMessage = initialMessageResultResponse(*session.InitialMessage)
+		}
+		output.Body.Sessions = append(output.Body.Sessions, response)
+	}
+	return output, nil
+}
+
+func (s *Handler) ListWorkspaceAgentSessionsService(
+	ctx context.Context, workspaceID string,
+) ([]AgentSessionResult, error) {
 	if s.workspaces == nil || s.runtime == nil || s.agentActivity == nil || s.db == nil {
 		return nil, httpapi.ServiceUnavailable("workspace agent sessions not configured")
 	}
-
-	summary, err := s.workspaces.GetSummary(ctx, input.ID)
+	summary, err := s.workspaces.GetSummary(ctx, workspaceID)
 	if err != nil {
 		return nil, httpapi.Internal("get workspace failed")
 	}
@@ -58,7 +80,6 @@ func (s *Handler) listWorkspaceAgentSessions(
 			httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
 		)
 	}
-
 	liveByKey := make(map[string]localruntime.SessionInfo)
 	for _, session := range s.runtime.ListSessions(summary.ID) {
 		if session.Kind != localruntime.LaunchTargetAgent ||
@@ -72,12 +93,8 @@ func (s *Handler) listWorkspaceAgentSessions(
 	for key := range liveByKey {
 		liveKeys = append(liveKeys, key)
 	}
-
-	output := &listWorkspaceAgentSessionsOutput{}
-	output.Body.Sessions = make([]workspaceAgentSessionResponse, 0)
-	for _, report := range s.agentActivity.LiveReportsForWorkspace(
-		summary.WorktreePath, liveKeys,
-	) {
+	results := make([]AgentSessionResult, 0)
+	for _, report := range s.agentActivity.LiveReportsForWorkspace(summary.WorktreePath, liveKeys) {
 		agent, parseErr := agenthook.ParseAgent(report.Agent)
 		if parseErr != nil {
 			continue
@@ -86,23 +103,20 @@ func (s *Handler) listWorkspaceAgentSessions(
 		if !ok {
 			continue
 		}
-		response := workspaceAgentSessionResponse{
-			Agent:             string(agent),
-			SessionID:         report.SessionID,
-			RuntimeSessionKey: report.RuntimeSessionKey,
-			TargetKey:         live.TargetKey,
-			State:             report.State,
-			UpdatedAt:         report.UpdatedAt.UTC(),
+		result := AgentSessionResult{
+			Agent: string(agent), SessionID: report.SessionID,
+			RuntimeSessionKey: report.RuntimeSessionKey, TargetKey: live.TargetKey,
+			State: report.State, UpdatedAt: report.UpdatedAt.UTC(),
 		}
 		if attempt, found := s.initialMessageAttempt(
 			summary.ID, report.RuntimeSessionKey,
 		); found && attempt.Agent == string(agent) && attempt.SessionID == report.SessionID {
-			response.InitialMessage = initialMessageStatusResponse(attempt)
+			message := initialMessageAttemptResult(attempt)
+			result.InitialMessage = &message
 		}
-		output.Body.Sessions = append(output.Body.Sessions, response)
+		results = append(results, result)
 	}
-
-	slices.SortFunc(output.Body.Sessions, func(a, b workspaceAgentSessionResponse) int {
+	slices.SortFunc(results, func(a, b AgentSessionResult) int {
 		if order := b.UpdatedAt.Compare(a.UpdatedAt); order != 0 {
 			return order
 		}
@@ -114,20 +128,25 @@ func (s *Handler) listWorkspaceAgentSessions(
 		}
 		return strings.Compare(a.RuntimeSessionKey, b.RuntimeSessionKey)
 	})
-	return output, nil
+	return results, nil
 }
 
-func initialMessageStatusResponse(attempt initialMessageAttempt) *agentInitialMessageStatusResponse {
-	response := &agentInitialMessageStatusResponse{
-		Agent:        attempt.Agent,
-		SessionID:    attempt.SessionID,
-		State:        attempt.State,
-		MessageBytes: len(attempt.Message),
-		ReservedAt:   attempt.ReservedAt.UTC(),
+func initialMessageAttemptResult(attempt initialMessageAttempt) InitialMessageResult {
+	result := InitialMessageResult{
+		Agent: attempt.Agent, SessionID: attempt.SessionID, State: attempt.State,
+		MessageBytes: len(attempt.Message), ReservedAt: attempt.ReservedAt.UTC(),
 	}
 	if attempt.DeliveredAt != nil {
 		deliveredAt := attempt.DeliveredAt.UTC()
-		response.DeliveredAt = &deliveredAt
+		result.DeliveredAt = &deliveredAt
 	}
-	return response
+	return result
+}
+
+func initialMessageResultResponse(result InitialMessageResult) *agentInitialMessageStatusResponse {
+	return &agentInitialMessageStatusResponse{
+		Agent: result.Agent, SessionID: result.SessionID, State: result.State,
+		MessageBytes: result.MessageBytes, ReservedAt: result.ReservedAt,
+		DeliveredAt: result.DeliveredAt,
+	}
 }

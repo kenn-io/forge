@@ -46,22 +46,6 @@ type getItemDiffOutput struct {
 	DiffFile       *diffFileHandle `json:"diff_file,omitempty"`
 }
 
-type daemonDiffResponse struct {
-	Stale bool             `json:"stale"`
-	Files []daemonDiffFile `json:"files"`
-}
-
-type daemonDiffFile struct {
-	Path        string `json:"path"`
-	OldPath     string `json:"old_path"`
-	Status      string `json:"status"`
-	IsBinary    bool   `json:"is_binary"`
-	IsGenerated bool   `json:"is_generated"`
-	Additions   int    `json:"additions"`
-	Deletions   int    `json:"deletions"`
-	Patch       string `json:"patch"`
-}
-
 func (s *Server) registerDiffTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_item_diff",
@@ -75,25 +59,18 @@ func (s *Server) getItemDiff(ctx context.Context, in getItemDiffInput) (getItemD
 		return getItemDiffOutput{}, err
 	}
 	if in.Item.Type != "pr" {
-		return getItemDiffOutput{}, &daemonError{
+		return getItemDiffOutput{}, &Error{
 			Kind:    "invalid_request",
 			Message: "diff is only available for prs",
 		}
 	}
 
-	basePath := itemPath("pulls", in.Item)
-	if !in.EmitDiffFile {
-		var summary daemonDiffResponse
-		if err := s.daemon.getJSON(ctx, basePath+"/files", nil, &summary); err != nil {
-			return getItemDiffOutput{}, diffRouteError(err)
-		}
-		out := diffOutputFromFiles(summary)
-		return out, nil
-	}
-
-	var diff daemonDiffResponse
-	if err := s.daemon.getJSON(ctx, basePath+"/diff", nil, &diff); err != nil {
+	diff, err := s.backend.GetPullDiff(ctx, itemIdentity(in.Item), in.EmitDiffFile)
+	if err != nil {
 		return getItemDiffOutput{}, diffRouteError(err)
+	}
+	if !in.EmitDiffFile {
+		return diffOutputFromFiles(diff), nil
 	}
 	out := diffOutputFromFiles(diff)
 	data, err := serializeDiffPatches(diff.Files)
@@ -102,17 +79,17 @@ func (s *Server) getItemDiff(ctx context.Context, in getItemDiffInput) (getItemD
 	}
 	store, err := s.diffStore()
 	if err != nil {
-		return getItemDiffOutput{}, &daemonError{Kind: "daemon_error", Message: "create diff temp store: " + err.Error()}
+		return getItemDiffOutput{}, &Error{Kind: "internal_error", Message: "create diff temp store: " + err.Error()}
 	}
 	path, size, err := store.write(diffFileName(in.Item), data)
 	if err != nil {
-		return getItemDiffOutput{}, &daemonError{Kind: "daemon_error", Message: "write diff file: " + err.Error()}
+		return getItemDiffOutput{}, &Error{Kind: "internal_error", Message: "write diff file: " + err.Error()}
 	}
 	out.DiffFile = &diffFileHandle{Path: path, Bytes: size}
 	return out, nil
 }
 
-func diffOutputFromFiles(resp daemonDiffResponse) getItemDiffOutput {
+func diffOutputFromFiles(resp Diff) getItemDiffOutput {
 	out := getItemDiffOutput{
 		Stale: resp.Stale,
 		Files: make([]diffFileRow, 0, len(resp.Files)),
@@ -147,19 +124,19 @@ func (s *Server) diffStore() (*diffFileStore, error) {
 	return store, nil
 }
 
-func serializeDiffPatches(files []daemonDiffFile) ([]byte, error) {
+func serializeDiffPatches(files []DiffFile) ([]byte, error) {
 	var buf bytes.Buffer
 	for _, file := range files {
 		if file.Patch == "" {
-			return nil, &daemonError{
-				Kind:    "daemon_error",
-				Message: "daemon returned an empty patch for " + file.Path,
+			return nil, &Error{
+				Kind:    "internal_error",
+				Message: "Forge returned an empty patch for " + file.Path,
 			}
 		}
 		if buf.Len()+len(file.Patch) > maxMCPDiffFileBytes {
-			return nil, &daemonError{
+			return nil, &Error{
 				Kind:    "diff_too_large",
-				Message: "diff is too large for MCP temp-file handoff; use the daemon API or a local checkout",
+				Message: "diff is too large for MCP temp-file handoff; use a local checkout",
 			}
 		}
 		buf.WriteString(file.Patch)
@@ -168,7 +145,7 @@ func serializeDiffPatches(files []daemonDiffFile) ([]byte, error) {
 }
 
 func diffRouteError(err error) error {
-	var derr *daemonError
+	var derr *Error
 	if !errors.As(err, &derr) {
 		return err
 	}
@@ -182,7 +159,7 @@ func diffRouteError(err error) error {
 		strings.Contains(msg, "file list not available") ||
 		strings.Contains(msg, "diff view not available") ||
 		strings.Contains(msg, "files view not available") {
-		return &daemonError{
+		return &Error{
 			Kind:    "diff_unavailable",
 			Message: derr.Message,
 			Details: derr.Details,
@@ -191,7 +168,7 @@ func diffRouteError(err error) error {
 	return err
 }
 
-func isDiffIdentityNotFound(derr *daemonError, msg string) bool {
+func isDiffIdentityNotFound(derr *Error, msg string) bool {
 	switch derr.Code {
 	case "repoNotFound", "pullNotFound":
 		return true

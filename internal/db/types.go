@@ -810,12 +810,13 @@ type SetItemWorkflowStateParams struct {
 }
 
 type ListWorkflowStatesOpts struct {
-	RepoFilters   []RepoFilter
-	ItemTypes     []string
-	States        []string
-	IncludeClosed bool
-	Limit         int
-	Cursor        string
+	RepoFilters            []RepoFilter
+	ItemTypes              []string
+	States                 []string
+	IncludeClosed          bool
+	ExcludeRemovedUpstream bool
+	Limit                  int
+	Cursor                 string
 }
 
 type WorkflowStateListRow struct {

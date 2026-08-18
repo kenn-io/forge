@@ -95,8 +95,9 @@ and the root event stream.
   (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.Status`).
 - Record metadata is string-valued `host`, `port`, `read_only=false`,
   `require_auth`, `data_dir`, canonical `config_path`, and canonical
-  `base_path`; `auth_token_path` is present only when auth is enabled. One typed
-  owner builds and validates it;
+  `base_path`; `auth_token_path` is present only when auth is enabled, and
+  `mcp_listen_addr` only when MCP is enabled. One typed owner builds and
+  validates it;
   discovery still requires a live PID and a token-derived proof bound to the
   record's service, version, PID, network, and address
   (`internal/daemonruntime/runtime.go::Compatible`).

@@ -34,6 +34,7 @@ Start with the [user guide](docs/index.md) for setup and workflows.
 - Read and respond to Roborev reviews from a running daemon.
 - Link Kata issues to provider work and local workspaces.
 - Browse and edit registered Markdown folders.
+- Expose cached maintainer workflows to local MCP clients from the daemon.
 - View and operate remote kenn-forge daemons through a federated fleet.
 
 Provider capabilities vary. kenn-forge shows unsupported actions as unavailable.
@@ -95,6 +96,7 @@ kenn-forge host when you need workspace sessions.
 - [Integrations](docs/integrations.md)
 - [Configuration](docs/configuration.md)
 - [Commands](docs/commands.md)
+- [MCP companion](docs/kenn-forge-mcp.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 kenn-forge is licensed under the [Elastic License 2.0](LICENSE). Contributions

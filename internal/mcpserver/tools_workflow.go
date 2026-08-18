@@ -55,63 +55,30 @@ func (s *Server) setItemWorkflowState(
 		}
 	}
 	if expected == "" && !in.Force {
-		return setWorkflowOutput{}, &daemonError{
+		return setWorkflowOutput{}, &Error{
 			Kind:    "invalid_request",
 			Message: "expected_status is required unless force is true",
 		}
 	}
 	if expected != "" && in.Force {
-		return setWorkflowOutput{}, &daemonError{
+		return setWorkflowOutput{}, &Error{
 			Kind:    "invalid_request",
 			Message: "force cannot be true when expected_status is provided",
 		}
 	}
-	if err := s.daemon.ensureWorkflowStateSupported(ctx); err != nil {
+	mutation, err := s.backend.SetWorkflowState(ctx, itemIdentity(in.Item), WorkflowUpdate{
+		Status: status, ExpectedStatus: expected, Force: in.Force, Source: "mcp",
+		Actor: in.Actor, Reason: in.Reason,
+	})
+	if err != nil {
 		return setWorkflowOutput{}, err
 	}
-
-	body := map[string]any{
-		"status": status,
-		"source": "mcp",
-	}
-	if expected != "" {
-		body["expected_status"] = expected
-	}
-	if in.Force {
-		body["force"] = true
-	}
-	if in.Actor != "" {
-		body["actor"] = in.Actor
-	}
-	if in.Reason != "" {
-		body["reason"] = in.Reason
-	}
-
-	var out setWorkflowOutput
-	if err := s.daemon.putJSON(ctx, workflowPath(in.Item), body, &out); err != nil {
-		return setWorkflowOutput{}, err
-	}
-	return out, nil
-}
-
-func workflowPath(ref itemRefInput) string {
-	if ref.PlatformHost != "" {
-		return fmt.Sprintf(
-			"/api/v1/host/%s/workflow-state/%s/%s/%s/%s/%d",
-			seg(ref.PlatformHost),
-			seg(ref.Type),
-			seg(ref.Provider),
-			seg(ref.Owner),
-			seg(ref.Name),
-			ref.Number,
-		)
-	}
-	return fmt.Sprintf(
-		"/api/v1/workflow-state/%s/%s/%s/%s/%d",
-		seg(ref.Type),
-		seg(ref.Provider),
-		seg(ref.Owner),
-		seg(ref.Name),
-		ref.Number,
-	)
+	return setWorkflowOutput{
+		PreviousStatus: mutation.PreviousStatus,
+		Status:         mutation.State.Status,
+		UpdatedAt:      mutation.State.UpdatedAt,
+		UpdatedSource:  mutation.State.UpdatedSource,
+		UpdatedActor:   mutation.State.UpdatedActor,
+		UpdatedReason:  mutation.State.UpdatedReason,
+	}, nil
 }

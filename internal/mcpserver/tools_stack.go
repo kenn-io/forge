@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"errors"
-	"net/url"
 	"sort"
 	"strings"
 
@@ -30,19 +29,6 @@ type getStackContextOutput struct {
 	Members []stackMemberOut `json:"members,omitempty"`
 }
 
-type daemonFullStackContext struct {
-	Health  string              `json:"health"`
-	Members []daemonStackMember `json:"members"`
-}
-
-type daemonStackMember struct {
-	Number   int    `json:"number"`
-	Title    string `json:"title"`
-	State    string `json:"state"`
-	Position int    `json:"position"`
-	IsDraft  bool   `json:"is_draft"`
-}
-
 func (s *Server) registerStackTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_get_stack_context",
@@ -58,16 +44,16 @@ func (s *Server) getStackContext(
 		return getStackContextOutput{}, err
 	}
 	if in.Item.Type != "pr" {
-		return getStackContextOutput{}, &daemonError{
+		return getStackContextOutput{}, &Error{
 			Kind:    "invalid_request",
 			Message: "stack context is only available for prs",
 		}
 	}
 
-	var stack daemonFullStackContext
-	if err := s.daemon.getJSON(ctx, itemPath("pulls", in.Item)+"/stack", nil, &stack); err != nil {
-		var derr *daemonError
-		if errors.As(err, &derr) && isStackAbsentError(derr) {
+	stack, err := s.backend.GetPullStack(ctx, itemIdentity(in.Item))
+	if err != nil {
+		var backendErr *Error
+		if errors.As(err, &backendErr) && isStackAbsentError(backendErr) {
 			return getStackContextOutput{Present: false}, nil
 		}
 		return getStackContextOutput{}, err
@@ -107,7 +93,7 @@ func (s *Server) getStackContext(
 	return out, nil
 }
 
-func isStackAbsentError(err *daemonError) bool {
+func isStackAbsentError(err *Error) bool {
 	if err == nil || err.Kind != "not_found" {
 		return false
 	}
@@ -124,32 +110,28 @@ func (s *Server) stackWorkflowStatuses(
 	wanted map[int]bool,
 ) (map[int]string, error) {
 	filter, err := (repoFilterInput{
-		Provider:     ref.Provider,
-		PlatformHost: ref.PlatformHost,
-		Owner:        ref.Owner,
-		Name:         ref.Name,
-	}).queryValue()
+		Provider: ref.Provider, PlatformHost: ref.PlatformHost,
+		Owner: ref.Owner, Name: ref.Name,
+	}).repositoryIdentity()
 	if err != nil {
 		return nil, err
 	}
-	query := url.Values{}
-	query.Set("repo", filter)
-	query.Add("item_type", "pr")
-	query.Set("include_closed", "true")
-	query.Set("limit", "200")
+	query := WorkflowQuery{
+		Repository: filter, ItemTypes: []string{"pr"}, IncludeClosed: true, Limit: 200,
+	}
 	statuses := map[int]string{}
 	for {
-		var resp daemonWorkflowStateResponse
-		if err := s.getWorkflowStateJSON(ctx, query, &resp); err != nil {
+		resp, err := s.backend.ListWorkflowStates(ctx, query)
+		if err != nil {
 			return nil, err
 		}
 		for _, item := range resp.Items {
-			statuses[item.Number] = workflowStatusOrNew(item.Workflow.Status)
-			delete(wanted, item.Number)
+			statuses[item.Identity.Number] = workflowStatusOrNew(item.Workflow.Status)
+			delete(wanted, item.Identity.Number)
 		}
 		if len(wanted) == 0 || resp.NextCursor == "" {
 			return statuses, nil
 		}
-		query.Set("cursor", resp.NextCursor)
+		query.Cursor = resp.NextCursor
 	}
 }

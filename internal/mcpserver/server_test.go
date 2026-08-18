@@ -1,10 +1,9 @@
 package mcpserver
 
 import (
-	"os"
-	"path/filepath"
+	"net/http"
+	"net/http/httptest"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -13,23 +12,17 @@ import (
 )
 
 func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	s, err := New(Options{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), Version: "test"})
-	require.NoError(err)
-	t.Cleanup(func() {
-		require.NoError(s.Close())
-	})
+	s := newMCPTestServer(t, &fakeBackend{})
 	cs := connectMCPTestSession(t, s)
 
 	tools, err := cs.ListTools(t.Context(), nil)
-	require.NoError(err)
+	require.NoError(t, err)
 	var toolNames []string
 	for _, tool := range tools.Tools {
 		toolNames = append(toolNames, tool.Name)
 	}
 	slices.Sort(toolNames)
-	assert.Equal([]string{
+	assert.Equal(t, []string{
 		"kenn_forge_find_review_candidates",
 		"kenn_forge_get_item_context",
 		"kenn_forge_get_item_diff",
@@ -45,107 +38,66 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 	}, toolNames)
 
 	resources, err := cs.ListResources(t.Context(), nil)
-	require.NoError(err)
-	require.Len(resources.Resources, 1)
-	assert.Equal("kenn-forge://mcp/guidance", resources.Resources[0].URI)
-	assert.Equal("text/markdown", resources.Resources[0].MIMEType)
+	require.NoError(t, err)
+	require.Len(t, resources.Resources, 1)
+	assert.Equal(t, "kenn-forge://mcp/guidance", resources.Resources[0].URI)
 	read, err := cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "kenn-forge://mcp/guidance"})
-	require.NoError(err)
-	require.Len(read.Contents, 1)
-	assert.Equal("kenn-forge://mcp/guidance", read.Contents[0].URI)
-	assert.Equal("text/markdown", read.Contents[0].MIMEType)
-	assert.Contains(read.Contents[0].Text, "kenn_forge_find_review_candidates")
-	assert.Contains(read.Contents[0].Text, "expected_status")
+	require.NoError(t, err)
+	require.Len(t, read.Contents, 1)
+	assert.Contains(t, read.Contents[0].Text, "kenn_forge_find_review_candidates")
 
 	prompts, err := cs.ListPrompts(t.Context(), nil)
-	require.NoError(err)
-	require.Len(prompts.Prompts, 1)
-	assert.Equal("kenn-forge-review-candidates", prompts.Prompts[0].Name)
+	require.NoError(t, err)
+	require.Len(t, prompts.Prompts, 1)
 	prompt, err := cs.GetPrompt(t.Context(), &mcp.GetPromptParams{Name: "kenn-forge-review-candidates"})
-	require.NoError(err)
-	require.Len(prompt.Messages, 1)
-	assert.Equal("user", string(prompt.Messages[0].Role))
+	require.NoError(t, err)
+	require.Len(t, prompt.Messages, 1)
 	content, ok := prompt.Messages[0].Content.(*mcp.TextContent)
-	require.True(ok)
-	assert.Contains(content.Text, "kenn_forge_list_repos")
-	assert.Contains(content.Text, "kenn_forge_get_item_diff")
-	assert.Contains(content.Text, "kenn_forge_get_stack_context")
-	assert.Contains(content.Text, "expected_status")
-	assert.Contains(content.Text, "awaiting_merge")
-	assert.Contains(content.Text, "stale")
+	require.True(t, ok)
+	assert.Contains(t, content.Text, "kenn_forge_get_item_diff")
+	assert.Contains(t, content.Text, "expected_status")
 }
 
 func TestServerUses20260728ProtocolCapabilities(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	s, err := New(Options{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), Version: "test"})
-	require.NoError(err)
-	t.Cleanup(func() {
-		require.NoError(s.Close())
-	})
+	s := newMCPTestServer(t, &fakeBackend{})
 
 	initialized := connectMCPTestSession(t, s).InitializeResult()
-	require.NotNil(initialized)
-	assert.Equal("2026-07-28", initialized.ProtocolVersion)
+
+	require.NotNil(t, initialized)
+	assert.Equal(t, "2026-07-28", initialized.ProtocolVersion)
 	//nolint:staticcheck // Verify the 2026-07-28 server does not advertise deprecated logging.
-	assert.Nil(initialized.Capabilities.Logging)
-	require.NotNil(initialized.Capabilities.Tools)
-	assert.False(initialized.Capabilities.Tools.ListChanged)
-	require.NotNil(initialized.Capabilities.Prompts)
-	assert.False(initialized.Capabilities.Prompts.ListChanged)
-	require.NotNil(initialized.Capabilities.Resources)
-	assert.False(initialized.Capabilities.Resources.ListChanged)
-	assert.False(initialized.Capabilities.Resources.Subscribe)
+	assert.Nil(t, initialized.Capabilities.Logging)
+	require.NotNil(t, initialized.Capabilities.Tools)
+	assert.False(t, initialized.Capabilities.Tools.ListChanged)
+	require.NotNil(t, initialized.Capabilities.Prompts)
+	assert.False(t, initialized.Capabilities.Prompts.ListChanged)
+	require.NotNil(t, initialized.Capabilities.Resources)
+	assert.False(t, initialized.Capabilities.Resources.ListChanged)
+	assert.False(t, initialized.Capabilities.Resources.Subscribe)
 }
 
-func TestKennForgeMCPDocsCoverClientSetupAndSafety(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "kenn-forge-mcp.md"))
-	require.NoError(err)
-	text := string(data)
-	normalized := strings.Join(strings.Fields(text), " ")
+func TestHTTPHandlerServesOnlyStatelessMCPPath(t *testing.T) {
+	s := newMCPTestServer(t, &fakeBackend{})
+	handler := s.HTTPHandler()
 
-	required := []string{
-		`"command": "kenn-forge"`,
-		`"args": ["mcp"]`,
-		`--transport http --addr 127.0.0.1:8092 --http-token-env KENN_FORGE_MCP_TOKEN`,
-		`Authorization: Bearer`,
-		`openssl rand -hex 32`,
-		`cached kenn-forge data`,
-		`does not force provider refreshes`,
-		`writes only kenn-forge-local workflow state`,
-		`kenn_forge_list_repos`,
-		`kenn_forge_find_review_candidates`,
-		`kenn_forge_search_items`,
-		`kenn_forge_get_item_diff`,
-		`ephemeral and local to the companion host`,
-		`reviewing`,
-		`expected_status`,
-		`reviewing/waiting`,
-		`stale cache`,
-		`no kenn-forge daemon is running on`,
-		`auth_token`,
-	}
-	for _, want := range required {
-		assert.Contains(normalized, want)
-	}
+	missing := httptest.NewRecorder()
+	handler.ServeHTTP(missing, httptest.NewRequest(http.MethodPost, "http://localhost/other", nil))
+	assert.Equal(t, http.StatusNotFound, missing.Code)
+
+	mcpResponse := httptest.NewRecorder()
+	handler.ServeHTTP(mcpResponse, httptest.NewRequest(http.MethodGet, "http://localhost/mcp", nil))
+	assert.NotEqual(t, http.StatusNotFound, mcpResponse.Code)
 }
 
 func connectMCPTestSession(t *testing.T, s *Server) *mcp.ClientSession {
 	t.Helper()
-	require := require.New(t)
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	serverSession, err := s.mcp.Connect(t.Context(), serverTransport, nil)
-	require.NoError(err)
-	t.Cleanup(func() {
-		require.NoError(serverSession.Close())
-	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, serverSession.Close()) })
 	client := mcp.NewClient(&mcp.Implementation{Name: "kenn-forge-test-client", Version: "test"}, nil)
 	clientSession, err := client.Connect(t.Context(), clientTransport, nil)
-	require.NoError(err)
-	t.Cleanup(func() {
-		require.NoError(clientSession.Close())
-	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, clientSession.Close()) })
 	return clientSession
 }

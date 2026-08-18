@@ -3,9 +3,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"sort"
-	"time"
 	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -47,15 +45,15 @@ type contextCheck struct {
 }
 
 type getItemContextOutput struct {
-	Item           itemRef             `json:"item"`
-	Body           string              `json:"body,omitempty"`
-	Events         []contextEvent      `json:"events,omitempty"`
-	Checks         []contextCheck      `json:"checks,omitempty"`
-	Workspace      *daemonWorkspaceRef `json:"workspace,omitempty"`
-	Stack          candidateStack      `json:"stack,omitzero"`
-	Workflow       candidateWorkflow   `json:"workflow"`
-	Cache          candidateCache      `json:"cache"`
-	LastActivityAt string              `json:"last_activity_at,omitempty"`
+	Item           itemRef           `json:"item"`
+	Body           string            `json:"body,omitempty"`
+	Events         []contextEvent    `json:"events,omitempty"`
+	Checks         []contextCheck    `json:"checks,omitempty"`
+	Workspace      *WorkspaceRef     `json:"workspace,omitempty"`
+	Stack          candidateStack    `json:"stack,omitzero"`
+	Workflow       candidateWorkflow `json:"workflow"`
+	Cache          candidateCache    `json:"cache"`
+	LastActivityAt string            `json:"last_activity_at,omitempty"`
 }
 
 type listByWorkflowInput struct {
@@ -76,86 +74,6 @@ type workflowListItem struct {
 type listByWorkflowOutput struct {
 	Items      []workflowListItem `json:"items"`
 	NextCursor string             `json:"next_cursor,omitempty"`
-}
-
-type daemonPullDetail struct {
-	MergeRequest    *daemonPullBody     `json:"merge_request"`
-	Events          []daemonDetailEvent `json:"events"`
-	Repo            daemonRepoRef       `json:"repo"`
-	PlatformHost    string              `json:"platform_host"`
-	RepoOwner       string              `json:"repo_owner"`
-	RepoName        string              `json:"repo_name"`
-	DetailLoaded    bool                `json:"detail_loaded"`
-	DetailFetchedAt string              `json:"detail_fetched_at"`
-	Workspace       *daemonWorkspaceRef `json:"workspace"`
-	Stack           *daemonStackContext `json:"stack"`
-	Checks          []contextCheck      `json:"checks"`
-}
-
-type daemonPullBody struct {
-	Number         int       `json:"Number"`
-	Title          string    `json:"Title"`
-	State          string    `json:"State"`
-	Author         string    `json:"Author"`
-	URL            string    `json:"URL"`
-	IsDraft        bool      `json:"IsDraft"`
-	Body           string    `json:"Body"`
-	KanbanStatus   string    `json:"KanbanStatus"`
-	LastActivityAt time.Time `json:"LastActivityAt"`
-}
-
-type daemonIssueDetail struct {
-	Issue           *daemonIssueBody    `json:"issue"`
-	Events          []daemonDetailEvent `json:"events"`
-	Repo            daemonRepoRef       `json:"repo"`
-	PlatformHost    string              `json:"platform_host"`
-	RepoOwner       string              `json:"repo_owner"`
-	RepoName        string              `json:"repo_name"`
-	DetailLoaded    bool                `json:"detail_loaded"`
-	DetailFetchedAt string              `json:"detail_fetched_at"`
-	Workspace       *daemonWorkspaceRef `json:"workspace"`
-	Workflow        *candidateWorkflow  `json:"workflow"`
-}
-
-type daemonIssueBody struct {
-	Number         int       `json:"Number"`
-	Title          string    `json:"Title"`
-	State          string    `json:"State"`
-	Author         string    `json:"Author"`
-	URL            string    `json:"URL"`
-	Body           string    `json:"Body"`
-	WorkflowStatus string    `json:"WorkflowStatus"`
-	LastActivityAt time.Time `json:"LastActivityAt"`
-}
-
-type daemonDetailEvent struct {
-	EventType string    `json:"EventType"`
-	Author    string    `json:"Author"`
-	Summary   string    `json:"Summary"`
-	Body      string    `json:"Body"`
-	CreatedAt time.Time `json:"CreatedAt"`
-}
-
-type daemonWorkflowStateResponse struct {
-	Items      []daemonWorkflowStateItem `json:"items"`
-	NextCursor string                    `json:"next_cursor"`
-}
-
-type daemonWorkflowStateItem struct {
-	Provider       string            `json:"provider"`
-	PlatformHost   string            `json:"platform_host"`
-	Owner          string            `json:"owner"`
-	Name           string            `json:"name"`
-	RepoPath       string            `json:"repo_path"`
-	ItemType       string            `json:"item_type"`
-	Number         int               `json:"number"`
-	Title          string            `json:"title"`
-	State          string            `json:"state"`
-	URL            string            `json:"url"`
-	Author         string            `json:"author"`
-	IsDraft        bool              `json:"is_draft"`
-	LastActivityAt string            `json:"last_activity_at"`
-	Workflow       candidateWorkflow `json:"workflow"`
 }
 
 func (s *Server) registerItemTools() {
@@ -186,47 +104,31 @@ func (s *Server) getItemContext(ctx context.Context, in getItemContextInput) (ge
 }
 
 func (s *Server) getPullContext(ctx context.Context, in getItemContextInput) (getItemContextOutput, error) {
-	var detail daemonPullDetail
-	if err := s.daemon.getJSON(ctx, itemPath("pulls", in.Item), nil, &detail); err != nil {
+	detail, err := s.backend.GetPull(ctx, itemIdentity(in.Item))
+	if err != nil {
 		return getItemContextOutput{}, err
 	}
-	if detail.MergeRequest == nil {
-		return getItemContextOutput{}, fmt.Errorf("daemon pull detail missing merge_request")
+	if detail.Pull == nil {
+		return getItemContextOutput{}, fmt.Errorf("pull detail missing pull")
 	}
-	pull := daemonPull{
-		Number:          detail.MergeRequest.Number,
-		Title:           detail.MergeRequest.Title,
-		State:           detail.MergeRequest.State,
-		Author:          detail.MergeRequest.Author,
-		URL:             detail.MergeRequest.URL,
-		IsDraft:         detail.MergeRequest.IsDraft,
-		KanbanStatus:    detail.MergeRequest.KanbanStatus,
-		LastActivityAt:  detail.MergeRequest.LastActivityAt,
-		Repo:            detail.Repo,
-		PlatformHost:    detail.PlatformHost,
-		RepoOwner:       detail.RepoOwner,
-		RepoName:        detail.RepoName,
-		Workspace:       detail.Workspace,
-		DetailLoaded:    detail.DetailLoaded,
-		DetailFetchedAt: detail.DetailFetchedAt,
-	}
+	pull := *detail.Pull
 	out := getItemContextOutput{
 		Item:           pull.itemRef(),
-		Body:           detail.MergeRequest.Body,
+		Body:           pull.Body,
 		Cache:          candidateCache{DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt},
-		LastActivityAt: formatMCPTime(detail.MergeRequest.LastActivityAt),
+		LastActivityAt: formatMCPTime(pull.LastActivityAt),
 	}
 	workflowKey := candidateKeyFromItem(out.Item)
 	workflows, err := s.workflowStatesForKeys(ctx, map[candidateKey]bool{workflowKey: true})
 	if err != nil {
 		return getItemContextOutput{}, err
 	}
-	out.Workflow = workflowForCandidate(workflowKey, workflows, detail.MergeRequest.KanbanStatus)
+	out.Workflow = workflowForCandidate(workflowKey, workflows, pull.WorkflowStatus)
 	if boolDefault(in.IncludeEvents, true) {
 		out.Events = contextEvents(detail.Events, clampLimit(in.EventLimit, 30, 100))
 	}
 	if boolDefault(in.IncludeChecks, true) {
-		out.Checks = detail.Checks
+		out.Checks = contextChecks(detail.Checks)
 	}
 	if boolDefault(in.IncludeWorkspace, true) {
 		out.Workspace = detail.Workspace
@@ -243,40 +145,24 @@ func (s *Server) getPullContext(ctx context.Context, in getItemContextInput) (ge
 }
 
 func (s *Server) getIssueContext(ctx context.Context, in getItemContextInput) (getItemContextOutput, error) {
-	var detail daemonIssueDetail
-	if err := s.daemon.getJSON(ctx, itemPath("issues", in.Item), nil, &detail); err != nil {
+	detail, err := s.backend.GetIssue(ctx, itemIdentity(in.Item))
+	if err != nil {
 		return getItemContextOutput{}, err
 	}
 	if detail.Issue == nil {
-		return getItemContextOutput{}, fmt.Errorf("daemon issue detail missing issue")
+		return getItemContextOutput{}, fmt.Errorf("issue detail missing issue")
 	}
-	issue := daemonIssue{
-		Number:          detail.Issue.Number,
-		Title:           detail.Issue.Title,
-		State:           detail.Issue.State,
-		Author:          detail.Issue.Author,
-		URL:             detail.Issue.URL,
-		WorkflowStatus:  detail.Issue.WorkflowStatus,
-		LastActivityAt:  detail.Issue.LastActivityAt,
-		Repo:            detail.Repo,
-		PlatformHost:    detail.PlatformHost,
-		RepoOwner:       detail.RepoOwner,
-		RepoName:        detail.RepoName,
-		Workspace:       detail.Workspace,
-		DetailLoaded:    detail.DetailLoaded,
-		DetailFetchedAt: detail.DetailFetchedAt,
-	}
-	workflow := candidateWorkflow{Status: workflowStatusOrNew(detail.Issue.WorkflowStatus)}
+	issue := *detail.Issue
+	workflow := candidateWorkflow{Status: workflowStatusOrNew(issue.WorkflowStatus)}
 	if detail.Workflow != nil {
-		workflow = *detail.Workflow
-		workflow.Status = workflowStatusOrNew(workflow.Status)
+		workflow = candidateWorkflowFromState(*detail.Workflow)
 	}
 	out := getItemContextOutput{
 		Item:           issue.itemRef(),
-		Body:           detail.Issue.Body,
+		Body:           issue.Body,
 		Workflow:       workflow,
 		Cache:          candidateCache{DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt},
-		LastActivityAt: formatMCPTime(detail.Issue.LastActivityAt),
+		LastActivityAt: formatMCPTime(issue.LastActivityAt),
 	}
 	if boolDefault(in.IncludeEvents, true) {
 		out.Events = contextEvents(detail.Events, clampLimit(in.EventLimit, 30, 100))
@@ -297,31 +183,15 @@ func (s *Server) listItemsByWorkflowState(
 	if _, _, err := itemTypeSelection(in.ItemTypes); err != nil {
 		return listByWorkflowOutput{}, err
 	}
-	repo, err := in.Repo.queryValue()
+	repo, err := in.Repo.repositoryIdentity()
 	if err != nil {
 		return listByWorkflowOutput{}, err
 	}
-	query := url.Values{}
-	for _, state := range in.States {
-		query.Add("state", state)
-	}
-	for _, itemType := range in.ItemTypes {
-		query.Add("item_type", itemType)
-	}
-	if repo != "" {
-		query.Set("repo", repo)
-	}
-	if in.IncludeClosed {
-		query.Set("include_closed", "true")
-	}
-	if in.Limit > 0 {
-		query.Set("limit", fmt.Sprintf("%d", in.Limit))
-	}
-	if in.Cursor != "" {
-		query.Set("cursor", in.Cursor)
-	}
-	var resp daemonWorkflowStateResponse
-	if err := s.getWorkflowStateJSON(ctx, query, &resp); err != nil {
+	resp, err := s.backend.ListWorkflowStates(ctx, WorkflowQuery{
+		Repository: repo, States: in.States, ItemTypes: in.ItemTypes,
+		IncludeClosed: in.IncludeClosed, Limit: in.Limit, Cursor: in.Cursor,
+	})
+	if err != nil {
 		return listByWorkflowOutput{}, err
 	}
 	out := listByWorkflowOutput{
@@ -332,7 +202,7 @@ func (s *Server) listItemsByWorkflowState(
 		out.Items = append(out.Items, workflowListItem{
 			Item:           row.itemRef(),
 			LastActivityAt: row.LastActivityAt,
-			Workflow:       row.Workflow,
+			Workflow:       candidateWorkflowFromState(row.Workflow),
 		})
 	}
 	return out, nil
@@ -357,29 +227,7 @@ func validateItemRef(ref itemRefInput) error {
 	return nil
 }
 
-func itemPath(kind string, ref itemRefInput) string {
-	if ref.PlatformHost != "" {
-		return fmt.Sprintf(
-			"/api/v1/host/%s/%s/%s/%s/%s/%d",
-			seg(ref.PlatformHost),
-			kind,
-			seg(ref.Provider),
-			seg(ref.Owner),
-			seg(ref.Name),
-			ref.Number,
-		)
-	}
-	return fmt.Sprintf(
-		"/api/v1/%s/%s/%s/%s/%d",
-		kind,
-		seg(ref.Provider),
-		seg(ref.Owner),
-		seg(ref.Name),
-		ref.Number,
-	)
-}
-
-func contextEvents(events []daemonDetailEvent, limit int) []contextEvent {
+func contextEvents(events []DetailEvent, limit int) []contextEvent {
 	sort.Slice(events, func(i, j int) bool {
 		if !events[i].CreatedAt.Equal(events[j].CreatedAt) {
 			return events[i].CreatedAt.After(events[j].CreatedAt)
@@ -402,21 +250,30 @@ func contextEvents(events []daemonDetailEvent, limit int) []contextEvent {
 	return out
 }
 
-func (row daemonWorkflowStateItem) itemRef() itemRef {
+func (row WorkflowItem) itemRef() itemRef {
 	return itemRef{
-		Type:         row.ItemType,
-		Provider:     row.Provider,
-		PlatformHost: row.PlatformHost,
-		Owner:        row.Owner,
-		Name:         row.Name,
-		RepoPath:     row.RepoPath,
-		Number:       row.Number,
-		Title:        row.Title,
-		URL:          row.URL,
-		State:        row.State,
-		Author:       row.Author,
-		IsDraft:      row.IsDraft,
+		Type: row.Identity.Type, Provider: row.Identity.Provider,
+		PlatformHost: row.Identity.PlatformHost, Owner: row.Identity.Owner,
+		Name: row.Identity.Name, RepoPath: repositoryPath(row.Repository),
+		Number: row.Identity.Number, Title: row.Title, URL: row.URL,
+		State: row.State, Author: row.Author, IsDraft: row.IsDraft,
 	}
+}
+
+func candidateWorkflowFromState(state WorkflowState) candidateWorkflow {
+	return candidateWorkflow{
+		Status: workflowStatusOrNew(state.Status), UpdatedAt: state.UpdatedAt,
+		UpdatedSource: state.UpdatedSource, UpdatedActor: state.UpdatedActor,
+		UpdatedReason: state.UpdatedReason,
+	}
+}
+
+func contextChecks(checks []Check) []contextCheck {
+	out := make([]contextCheck, 0, len(checks))
+	for _, check := range checks {
+		out = append(out, contextCheck(check))
+	}
+	return out
 }
 
 func boolDefault(value *bool, def bool) bool {

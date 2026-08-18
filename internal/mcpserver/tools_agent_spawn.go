@@ -54,32 +54,12 @@ type spawnedRuntime struct {
 }
 
 type spawnWorkspaceWithAgentOutput struct {
-	Stage            string                   `json:"stage"`
-	Source           workspaceSourceInput     `json:"source"`
-	Workspace        spawnedWorkspace         `json:"workspace"`
-	Runtime          spawnedRuntime           `json:"runtime"`
-	CodingSession    workspaceAgentSessionRow `json:"coding_session"`
-	InitialMessage   *agentInitialMessageRow  `json:"initial_message,omitempty"`
-	MessageDelivered bool                     `json:"message_delivered"`
-}
-
-type daemonSpawnWorkspace struct {
-	ID           string  `json:"id"`
-	Status       string  `json:"status"`
-	Created      bool    `json:"created"`
-	GitHeadRef   string  `json:"git_head_ref"`
-	ErrorMessage *string `json:"error_message"`
-}
-
-type daemonSpawnRuntime struct {
-	Key       string    `json:"key"`
-	TargetKey string    `json:"target_key"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-type daemonWorkspaceRuntime struct {
-	Sessions []daemonSpawnRuntime `json:"sessions"`
+	Stage          string                   `json:"stage"`
+	Source         workspaceSourceInput     `json:"source"`
+	Workspace      spawnedWorkspace         `json:"workspace"`
+	Runtime        spawnedRuntime           `json:"runtime"`
+	CodingSession  workspaceAgentSessionRow `json:"coding_session"`
+	InitialMessage *agentInitialMessageRow  `json:"initial_message,omitempty"`
 }
 
 func (s *Server) spawnWorkspaceWithAgent(
@@ -129,21 +109,9 @@ func (s *Server) spawnWorkspaceWithAgent(
 	out.Stage = "workspace_ready"
 	out.Workspace.Status = workspace.Status
 
-	var runtime daemonSpawnRuntime
-	if err := s.daemon.postJSON(
-		ctx,
-		"/api/v1/workspaces/"+seg(workspace.ID)+"/runtime/sessions",
-		map[string]any{"target_key": in.AgentTarget},
-		&runtime,
-	); err != nil {
+	runtime, err := s.backend.LaunchWorkspaceRuntime(ctx, workspace.ID, in.AgentTarget)
+	if err != nil {
 		return out, handoffFailure(ctx, err, out, "workspace_ready", "runtime_launched")
-	}
-	if strings.TrimSpace(runtime.Key) == "" {
-		return out, handoffFailure(
-			ctx,
-			errors.New("daemon runtime response missing key"), out,
-			"workspace_ready", "runtime_launched",
-		)
 	}
 	out.Stage = "runtime_launched"
 	out.Runtime = spawnedRuntime{
@@ -168,14 +136,17 @@ func (s *Server) spawnWorkspaceWithAgent(
 	}
 	out.InitialMessage = &messageStatus
 	if messageStatus.State != "delivered" {
+		stateErr := &Error{
+			Kind:      "agent_handoff_failed",
+			Message:   fmt.Sprintf("initial message state is %s", messageStatus.State),
+			Ambiguous: messageStatus.State == "pending" || messageStatus.State == "uncertain",
+			Details:   map[string]any{"initial_message_state": messageStatus.State},
+		}
 		return out, handoffFailure(
-			ctx,
-			fmt.Errorf("initial message state is %s", messageStatus.State), out,
-			"coding_session_observed", "message_delivered",
+			ctx, stateErr, out, "coding_session_observed", "message_delivered",
 		)
 	}
 	out.Stage = "message_delivered"
-	out.MessageDelivered = true
 	return out, nil
 }
 
@@ -336,7 +307,7 @@ func findAgentTarget(targets []agentTargetRow, key string) (agentTargetRow, bool
 func (s *Server) resolveOrCreateWorkspace(
 	ctx context.Context,
 	source workspaceSourceInput,
-) (daemonSpawnWorkspace, bool, error) {
+) (Workspace, bool, error) {
 	if source.Item != nil {
 		switch source.Item.Type {
 		case "pr":
@@ -348,39 +319,23 @@ func (s *Server) resolveOrCreateWorkspace(
 	if source.AdHoc != nil {
 		return s.createAdHocWorkspace(ctx, *source.AdHoc)
 	}
-	return daemonSpawnWorkspace{}, false, fmt.Errorf("unsupported workspace source")
+	return Workspace{}, false, fmt.Errorf("unsupported workspace source")
 }
 
 func (s *Server) resolveOrCreatePRWorkspace(
 	ctx context.Context,
 	item itemRefInput,
-) (daemonSpawnWorkspace, bool, error) {
-	var detail daemonPullDetail
-	if err := s.daemon.getJSON(ctx, itemPath("pulls", item), nil, &detail); err != nil {
-		return daemonSpawnWorkspace{}, false, err
-	}
-	if detail.MergeRequest == nil {
-		return daemonSpawnWorkspace{}, false, fmt.Errorf("daemon pull detail missing merge_request")
-	}
-	if detail.Workspace != nil && strings.TrimSpace(detail.Workspace.ID) != "" {
-		return daemonSpawnWorkspace{
-			ID: detail.Workspace.ID, Status: detail.Workspace.Status,
-		}, true, nil
-	}
-	var workspace daemonSpawnWorkspace
-	err := s.daemon.postJSON(ctx, "/api/v1/workspaces", map[string]any{
-		"provider":             item.Provider,
-		"platform_host":        item.PlatformHost,
-		"owner":                item.Owner,
-		"name":                 item.Name,
-		"mr_number":            item.Number,
-		"suppress_auto_assign": true,
-	}, &workspace)
+) (Workspace, bool, error) {
+	detail, err := s.backend.GetPull(ctx, itemIdentity(item))
 	if err != nil {
-		return daemonSpawnWorkspace{}, false, err
+		return Workspace{}, false, err
 	}
-	if strings.TrimSpace(workspace.ID) == "" {
-		return daemonSpawnWorkspace{}, false, fmt.Errorf("daemon workspace response missing id")
+	if detail.Workspace != nil {
+		return Workspace{ID: detail.Workspace.ID, Status: detail.Workspace.Status}, true, nil
+	}
+	workspace, err := s.backend.CreatePullWorkspace(ctx, itemIdentity(item), true)
+	if err != nil {
+		return Workspace{}, false, err
 	}
 	return workspace, !workspace.Created, nil
 }
@@ -388,30 +343,17 @@ func (s *Server) resolveOrCreatePRWorkspace(
 func (s *Server) resolveOrCreateIssueWorkspace(
 	ctx context.Context,
 	item itemRefInput,
-) (daemonSpawnWorkspace, bool, error) {
-	var detail daemonIssueDetail
-	if err := s.daemon.getJSON(ctx, itemPath("issues", item), nil, &detail); err != nil {
-		return daemonSpawnWorkspace{}, false, err
+) (Workspace, bool, error) {
+	detail, err := s.backend.GetIssue(ctx, itemIdentity(item))
+	if err != nil {
+		return Workspace{}, false, err
 	}
-	if detail.Issue == nil {
-		return daemonSpawnWorkspace{}, false, fmt.Errorf("daemon issue detail missing issue")
+	if detail.Workspace != nil {
+		return Workspace{ID: detail.Workspace.ID, Status: detail.Workspace.Status}, true, nil
 	}
-	if detail.Workspace != nil && strings.TrimSpace(detail.Workspace.ID) != "" {
-		return daemonSpawnWorkspace{
-			ID: detail.Workspace.ID, Status: detail.Workspace.Status,
-		}, true, nil
-	}
-	var workspace daemonSpawnWorkspace
-	if err := s.daemon.postJSON(
-		ctx,
-		itemPath("issues", item)+"/workspace",
-		map[string]any{"suppress_auto_assign": true},
-		&workspace,
-	); err != nil {
-		return daemonSpawnWorkspace{}, false, err
-	}
-	if strings.TrimSpace(workspace.ID) == "" {
-		return daemonSpawnWorkspace{}, false, fmt.Errorf("daemon workspace response missing id")
+	workspace, err := s.backend.CreateIssueWorkspace(ctx, itemIdentity(item), true)
+	if err != nil {
+		return Workspace{}, false, err
 	}
 	return workspace, !workspace.Created, nil
 }
@@ -419,44 +361,25 @@ func (s *Server) resolveOrCreateIssueWorkspace(
 func (s *Server) createAdHocWorkspace(
 	ctx context.Context,
 	source adHocWorkspaceSource,
-) (daemonSpawnWorkspace, bool, error) {
-	body := map[string]any{}
-	if source.Branch != "" {
-		body["branch"] = source.Branch
+) (Workspace, bool, error) {
+	repository, err := source.Repo.repositoryIdentity()
+	if err != nil {
+		return Workspace{}, false, err
 	}
-	var workspace daemonSpawnWorkspace
-	if err := s.daemon.postJSON(
-		ctx, repoWorkspacePath(source.Repo), body, &workspace,
-	); err != nil {
-		return daemonSpawnWorkspace{}, false, err
-	}
-	if strings.TrimSpace(workspace.ID) == "" {
-		return daemonSpawnWorkspace{}, false, fmt.Errorf("daemon workspace response missing id")
+	workspace, err := s.backend.CreateAdHocWorkspace(ctx, repository, source.Branch)
+	if err != nil {
+		return Workspace{}, false, err
 	}
 	return workspace, !workspace.Created, nil
-}
-
-func repoWorkspacePath(repo repoFilterInput) string {
-	if repo.PlatformHost != "" {
-		return fmt.Sprintf(
-			"/api/v1/host/%s/repo/%s/%s/%s/workspaces",
-			seg(repo.PlatformHost), seg(repo.Provider), seg(repo.Owner), seg(repo.Name),
-		)
-	}
-	return fmt.Sprintf(
-		"/api/v1/repo/%s/%s/%s/workspaces",
-		seg(repo.Provider), seg(repo.Owner), seg(repo.Name),
-	)
 }
 
 func (s *Server) waitForWorkspaceReady(
 	ctx context.Context,
 	workspaceID string,
-) (daemonSpawnWorkspace, error) {
-	path := "/api/v1/workspaces/" + seg(workspaceID)
+) (Workspace, error) {
 	for {
-		var workspace daemonSpawnWorkspace
-		if err := s.daemon.getJSON(ctx, path, nil, &workspace); err != nil {
+		workspace, err := s.backend.GetWorkspace(ctx, workspaceID)
+		if err != nil {
 			return workspace, err
 		}
 		switch workspace.Status {
@@ -506,10 +429,8 @@ func (s *Server) ensureRuntimeStillLive(
 	workspaceID string,
 	runtimeSessionKey string,
 ) error {
-	var runtime daemonWorkspaceRuntime
-	if err := s.daemon.getJSON(
-		ctx, "/api/v1/workspaces/"+seg(workspaceID)+"/runtime", nil, &runtime,
-	); err != nil {
+	runtime, err := s.backend.GetWorkspaceRuntime(ctx, workspaceID)
+	if err != nil {
 		return err
 	}
 	for _, session := range runtime.Sessions {
@@ -546,21 +467,17 @@ func (s *Server) submitInitialAgentMessage(
 	session workspaceAgentSessionRow,
 	message string,
 ) (agentInitialMessageRow, error) {
-	path := "/api/v1/workspaces/" + seg(workspaceID) +
-		"/runtime/sessions/" + seg(runtimeSessionKey) + "/initial-message"
-	var messageStatus daemonAgentInitialMessage
-	err := s.daemon.postJSON(ctx, path, map[string]any{
-		"agent":      session.Agent,
-		"session_id": session.SessionID,
-		"message":    message,
-	}, &messageStatus)
+	messageStatus, err := s.backend.SubmitInitialMessage(ctx, InitialMessageRequest{
+		WorkspaceID: workspaceID, RuntimeSessionKey: runtimeSessionKey,
+		Agent: session.Agent, SessionID: session.SessionID, Message: message,
+	})
 	if err != nil {
-		var daemonErr *daemonError
-		if !errors.As(err, &daemonErr) || !daemonErr.Ambiguous {
+		var backendErr *Error
+		if !errors.As(err, &backendErr) || !backendErr.Ambiguous {
 			return agentInitialMessageRow{}, err
 		}
 		if recoveryErr := s.recoverInitialMessageStatus(
-			ctx, path, daemonErr, &messageStatus,
+			ctx, workspaceID, runtimeSessionKey, backendErr, &messageStatus,
 		); recoveryErr != nil {
 			return agentInitialMessageRow{}, recoveryErr
 		}
@@ -576,9 +493,10 @@ func (s *Server) submitInitialAgentMessage(
 
 func (s *Server) recoverInitialMessageStatus(
 	ctx context.Context,
-	path string,
-	original *daemonError,
-	messageStatus *daemonAgentInitialMessage,
+	workspaceID string,
+	runtimeSessionKey string,
+	original *Error,
+	messageStatus *InitialMessageStatus,
 ) error {
 	timeout := messageStatusRecoveryTimeout
 	if deadline, ok := ctx.Deadline(); ok {
@@ -590,8 +508,8 @@ func (s *Server) recoverInitialMessageStatus(
 	defer cancel()
 
 	for {
-		var recovered daemonAgentInitialMessage
-		if err := s.daemon.getJSON(recoveryCtx, path, nil, &recovered); err != nil {
+		recovered, err := s.backend.GetInitialMessage(recoveryCtx, workspaceID, runtimeSessionKey)
+		if err != nil {
 			return original
 		}
 		*messageStatus = recovered
@@ -607,7 +525,7 @@ func (s *Server) recoverInitialMessageStatus(
 	}
 }
 
-func initialMessageRecoveryError(original *daemonError, state string) *daemonError {
+func initialMessageRecoveryError(original *Error, state string) *Error {
 	recovered := *original
 	recovered.Details = maps.Clone(original.Details)
 	if recovered.Details == nil {
@@ -623,27 +541,23 @@ func handoffFailure(
 	state spawnWorkspaceWithAgentOutput,
 	lastCompletedStage string,
 	failedStage string,
-) *daemonError {
-	result := &daemonError{
-		Kind:      "agent_handoff_failed",
-		Message:   cause.Error(),
-		Retryable: false,
-		Details: map[string]any{
-			"message_delivered": false,
-		},
+) *Error {
+	result := &Error{
+		Kind: "agent_handoff_failed", Message: cause.Error(), Retryable: false,
+		Details: map[string]any{},
 	}
-	var daemonErr *daemonError
-	if errors.As(cause, &daemonErr) {
-		result.Kind = daemonErr.Kind
-		result.Code = daemonErr.Code
-		result.Message = daemonErr.Message
-		result.Ambiguous = daemonErr.Ambiguous
-		maps.Copy(result.Details, daemonErr.Details)
+	var backendErr *Error
+	if errors.As(cause, &backendErr) {
+		result.Kind = backendErr.Kind
+		result.Code = backendErr.Code
+		result.Message = backendErr.Message
+		result.Ambiguous = backendErr.Ambiguous
+		maps.Copy(result.Details, backendErr.Details)
 	}
 	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
 		result.Kind = "agent_handoff_timeout"
 		result.Message = "agent handoff timed out"
-	} else if daemonErr == nil && errors.Is(cause, context.DeadlineExceeded) {
+	} else if backendErr == nil && errors.Is(cause, context.DeadlineExceeded) {
 		result.Kind = "agent_handoff_timeout"
 		result.Message = "agent handoff timed out"
 	}

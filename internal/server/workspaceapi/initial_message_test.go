@@ -62,7 +62,7 @@ func TestNormalizeInitialAgentMessage(t *testing.T) {
 	}
 }
 
-func TestInitialMessageRoutesDeliverOnceAndKeepStatusAfterRuntimeExit(t *testing.T) {
+func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -127,8 +127,18 @@ func TestInitialMessageRoutesDeliverOnceAndKeepStatusAfterRuntimeExit(t *testing
 
 	requestContext, cancelRequest := context.WithCancel(ctx)
 	owner.pty.setOnWrite(cancelRequest)
-	response := postContext(requestContext, endpoint, "CoDeX", "coding-session", "review this")
+	serviceStatus, err := handler.SubmitInitialMessageService(requestContext, InitialMessageRequest{
+		WorkspaceID: workspaceID, RuntimeSessionKey: session.Key,
+		Agent: "CoDeX", SessionID: "coding-session", Message: "review this",
+	})
 	owner.pty.setOnWrite(nil)
+	require.NoError(err)
+	assert.Equal(initialMessageDelivered, serviceStatus.State)
+	assert.Equal(11, serviceStatus.MessageBytes)
+	require.NotNil(serviceStatus.DeliveredAt)
+	assert.Equal("review this\r", string(owner.pty.written()))
+
+	response := post(endpoint, "codex", "coding-session", "review this")
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	var messageStatus struct {
 		Agent        string     `json:"agent"`
@@ -178,8 +188,12 @@ func TestInitialMessageRoutesDeliverOnceAndKeepStatusAfterRuntimeExit(t *testing
 
 	failingSession := launchSession("coding-failure", true)
 	owner.pty.setWriteError(errors.New("write failed"))
-	response = post(endpointFor(failingSession.Key), "codex", "coding-failure", "try once")
-	require.Equal(http.StatusInternalServerError, response.Code, response.Body.String())
+	failedResult, err := handler.SubmitInitialMessageService(ctx, InitialMessageRequest{
+		WorkspaceID: workspaceID, RuntimeSessionKey: failingSession.Key,
+		Agent: "codex", SessionID: "coding-failure", Message: "try once",
+	})
+	require.Error(err)
+	assert.Equal(initialMessageUncertain, failedResult.State)
 	failedAttempt, found := handler.initialMessageAttempt(workspaceID, failingSession.Key)
 	require.True(found)
 	assert.Equal(initialMessageUncertain, failedAttempt.State)

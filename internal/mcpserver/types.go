@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -17,39 +16,49 @@ type repoFilterInput struct {
 	Name         string `json:"name,omitempty" jsonschema:"repository name"`
 }
 
-func (r repoFilterInput) queryValue() (string, error) {
+func (r repoFilterInput) repositoryIdentity() (RepositoryIdentity, error) {
 	provider := strings.TrimSpace(r.Provider)
 	host := strings.TrimSpace(r.PlatformHost)
 	repoPath := strings.Trim(strings.TrimSpace(r.RepoPath), "/")
 	owner := strings.Trim(strings.TrimSpace(r.Owner), "/")
 	name := strings.Trim(strings.TrimSpace(r.Name), "/")
 	if provider == "" && host == "" && repoPath == "" && owner == "" && name == "" {
-		return "", nil
+		return RepositoryIdentity{}, nil
 	}
 	if provider == "" {
-		return "", fmt.Errorf("repo provider is required")
+		return RepositoryIdentity{}, fmt.Errorf("repo provider is required")
 	}
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
-		return "", err
+		return RepositoryIdentity{}, err
 	}
 	meta, ok := platform.MetadataFor(kind)
 	if !ok {
-		return "", fmt.Errorf("unsupported provider %q", provider)
+		return RepositoryIdentity{}, fmt.Errorf("unsupported provider %q", provider)
 	}
 	if host == "" {
 		host = meta.DefaultHost
 	}
 	if repoPath != "" {
-		return fmt.Sprintf("%s|%s/%s", kind, host, repoPath), nil
+		parts := strings.Split(repoPath, "/")
+		if len(parts) < 2 {
+			return RepositoryIdentity{}, fmt.Errorf("repo_path must contain an owner and repository name")
+		}
+		owner = strings.Join(parts[:len(parts)-1], "/")
+		name = parts[len(parts)-1]
+	} else {
+		if owner == "" {
+			return RepositoryIdentity{}, fmt.Errorf("repo owner is required")
+		}
+		if name == "" {
+			return RepositoryIdentity{}, fmt.Errorf("repo name is required")
+		}
+		repoPath = owner + "/" + name
 	}
-	if owner == "" {
-		return "", fmt.Errorf("repo owner is required")
-	}
-	if name == "" {
-		return "", fmt.Errorf("repo name is required")
-	}
-	return fmt.Sprintf("%s|%s/%s/%s", kind, host, owner, name), nil
+	return RepositoryIdentity{
+		Provider: string(kind), PlatformHost: host, RepoPath: repoPath,
+		Owner: owner, Name: name,
+	}, nil
 }
 
 type itemRef struct {
@@ -67,119 +76,17 @@ type itemRef struct {
 	IsDraft      bool   `json:"is_draft"`
 }
 
-type daemonRepoRef struct {
-	Provider     string `json:"provider"`
-	PlatformHost string `json:"platform_host"`
-	RepoPath     string `json:"repo_path"`
-	Owner        string `json:"owner"`
-	Name         string `json:"name"`
-}
-
-type daemonWorkspaceRef struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-}
-
-type daemonPull struct {
-	Number          int                 `json:"Number"`
-	Title           string              `json:"Title"`
-	State           string              `json:"State"`
-	Author          string              `json:"Author"`
-	URL             string              `json:"URL"`
-	IsDraft         bool                `json:"IsDraft"`
-	KanbanStatus    string              `json:"KanbanStatus"`
-	LastActivityAt  time.Time           `json:"LastActivityAt"`
-	Repo            daemonRepoRef       `json:"repo"`
-	PlatformHost    string              `json:"platform_host"`
-	RepoOwner       string              `json:"repo_owner"`
-	RepoName        string              `json:"repo_name"`
-	Workspace       *daemonWorkspaceRef `json:"workspace"`
-	DetailLoaded    bool                `json:"detail_loaded"`
-	DetailFetchedAt string              `json:"detail_fetched_at"`
-}
-
-type daemonIssue struct {
-	Number          int                 `json:"Number"`
-	Title           string              `json:"Title"`
-	State           string              `json:"State"`
-	Author          string              `json:"Author"`
-	URL             string              `json:"URL"`
-	WorkflowStatus  string              `json:"WorkflowStatus"`
-	LastActivityAt  time.Time           `json:"LastActivityAt"`
-	Repo            daemonRepoRef       `json:"repo"`
-	PlatformHost    string              `json:"platform_host"`
-	RepoOwner       string              `json:"repo_owner"`
-	RepoName        string              `json:"repo_name"`
-	Workspace       *daemonWorkspaceRef `json:"workspace"`
-	DetailLoaded    bool                `json:"detail_loaded"`
-	DetailFetchedAt string              `json:"detail_fetched_at"`
-}
-
-type daemonRepoSummary struct {
-	Repo                daemonRepoRef `json:"repo"`
-	PlatformHost        string        `json:"platform_host"`
-	Owner               string        `json:"owner"`
-	Name                string        `json:"name"`
-	OpenPRCount         int           `json:"open_pr_count"`
-	OpenIssueCount      int           `json:"open_issue_count"`
-	LastSyncCompletedAt string        `json:"last_sync_completed_at"`
-	LastSyncError       string        `json:"last_sync_error"`
-}
-
-type daemonActivityResponse struct {
-	Items  []daemonActivityItem `json:"items"`
-	Capped bool                 `json:"capped"`
-}
-
-type daemonActivityItem struct {
-	ID             string              `json:"id"`
-	Cursor         string              `json:"cursor"`
-	ActivityType   string              `json:"activity_type"`
-	Repo           daemonRepoRef       `json:"repo"`
-	PlatformHost   string              `json:"platform_host"`
-	RepoOwner      string              `json:"repo_owner"`
-	RepoName       string              `json:"repo_name"`
-	ItemType       string              `json:"item_type"`
-	ItemNumber     int                 `json:"item_number"`
-	ItemTitle      string              `json:"item_title"`
-	ItemURL        string              `json:"item_url"`
-	ItemState      string              `json:"item_state"`
-	Workspace      *daemonWorkspaceRef `json:"workspace"`
-	Author         string              `json:"author"`
-	ItemAuthor     string              `json:"item_author"`
-	CreatedAt      string              `json:"created_at"`
-	BodyPreview    string              `json:"body_preview"`
-	BranchName     string              `json:"branch_name"`
-	CommitSHA      string              `json:"commit_sha"`
-	BeforeSHA      string              `json:"before_sha"`
-	AfterSHA       string              `json:"after_sha"`
-	AuthorName     string              `json:"author_name"`
-	AuthorEmail    string              `json:"author_email"`
-	CommitterName  string              `json:"committer_name"`
-	CommitterEmail string              `json:"committer_email"`
-	AuthoredAt     string              `json:"authored_at"`
-	CommittedAt    string              `json:"committed_at"`
-	ActivityURL    string              `json:"activity_url"`
-	SubjectState   string              `json:"subject_state"`
-}
-
-func repoPathOrFallback(repo daemonRepoRef, owner, name string) string {
+func repositoryPath(repo RepositoryIdentity) string {
 	if repo.RepoPath != "" {
 		return repo.RepoPath
 	}
-	if owner == "" {
-		owner = repo.Owner
+	if repo.Owner == "" {
+		return repo.Name
 	}
-	if name == "" {
-		name = repo.Name
+	if repo.Name == "" {
+		return repo.Owner
 	}
-	if owner == "" {
-		return name
-	}
-	if name == "" {
-		return owner
-	}
-	return owner + "/" + name
+	return repo.Owner + "/" + repo.Name
 }
 
 func workflowStatusOrNew(status string) string {
@@ -196,6 +103,43 @@ func formatMCPTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-func seg(value string) string {
-	return url.PathEscape(value)
+func (p Pull) itemRef() itemRef {
+	return itemRef{
+		Type: "pr", Provider: p.Repository.Provider,
+		PlatformHost: p.Repository.PlatformHost, Owner: p.Repository.Owner,
+		Name: p.Repository.Name, RepoPath: repositoryPath(p.Repository),
+		Number: p.Number, Title: p.Title, URL: p.URL, State: p.State,
+		Author: p.Author, IsDraft: p.IsDraft,
+	}
+}
+
+func (i Issue) itemRef() itemRef {
+	return itemRef{
+		Type: "issue", Provider: i.Repository.Provider,
+		PlatformHost: i.Repository.PlatformHost, Owner: i.Repository.Owner,
+		Name: i.Repository.Name, RepoPath: repositoryPath(i.Repository),
+		Number: i.Number, Title: i.Title, URL: i.URL, State: i.State,
+		Author: i.Author,
+	}
+}
+
+func (a ActivityItem) itemRef() itemRef {
+	return itemRef{
+		Type: a.ItemType, Provider: a.Repository.Provider,
+		PlatformHost: a.Repository.PlatformHost, Owner: a.Repository.Owner,
+		Name: a.Repository.Name, RepoPath: repositoryPath(a.Repository),
+		Number: a.ItemNumber, Title: a.ItemTitle, URL: a.ItemURL,
+		State: a.ItemState, Author: a.ItemAuthor,
+	}
+}
+
+func itemIdentity(ref itemRefInput) ItemIdentity {
+	return ItemIdentity(ref)
+}
+
+func itemIdentityFromRef(ref itemRef) ItemIdentity {
+	return ItemIdentity{
+		Type: ref.Type, Provider: ref.Provider, PlatformHost: ref.PlatformHost,
+		Owner: ref.Owner, Name: ref.Name, Number: ref.Number,
+	}
 }

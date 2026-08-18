@@ -13,6 +13,18 @@ import (
 )
 
 func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {
+	rows, err := s.ListService(ctx, ListQuery{
+		Repo: input.Repo, State: input.State, Starred: input.Starred,
+		InvolvesMe: input.InvolvesMe, Text: input.Q, Assignee: input.Assignee,
+		Limit: input.Limit, Offset: input.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &listIssuesOutput{Body: rows}, nil
+}
+
+func (s *Handler) listIssuesRouteCore(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {
 	if input.State != "" && input.State != "open" && input.State != "closed" && input.State != "all" {
 		return nil, httpapi.Validation("query.state", "state must be one of: open, closed, all", "open", "closed", "all")
 	}
@@ -148,6 +160,17 @@ func createIssuePersistenceProblem(repo db.Repo) error {
 }
 
 func (s *Handler) getIssue(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
+	body, err := s.GetService(ctx, ItemIdentity{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &getIssueOutput{Body: body}, nil
+}
+
+func (s *Handler) getIssueRouteCore(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
 	repo, err := s.resolver.LookupRoute(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name)
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)

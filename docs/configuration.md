@@ -294,6 +294,20 @@ sse_buffer_size = 256
 present accepted direct and forwarded hosts. `sse_buffer_size` defaults to 256
 and accepts 16 through 16384.
 
+### MCP companion
+
+Enable the daemon's optional loopback MCP listener with:
+
+```toml
+[mcp]
+enabled = true
+# port = 8092 # defaults to the main backend port plus one
+```
+
+The sessionless Streamable HTTP endpoint is
+`http://127.0.0.1:<resolved-port>/mcp`. Authentication follows
+`[api].require_auth`. Listener changes require a daemon restart.
+
 ## Pull request stacks
 
 ```toml

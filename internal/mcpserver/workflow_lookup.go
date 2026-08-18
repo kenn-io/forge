@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"maps"
-	"net/url"
 	"sort"
 )
 
@@ -39,16 +38,13 @@ func (s *Server) workflowStatesForKeys(
 
 	out := map[candidateKey]candidateWorkflow{}
 	for _, group := range sortedWorkflowLookupGroups(groups) {
-		filter, err := group.repo.repoFilter().queryValue()
-		if err != nil {
-			return nil, err
-		}
+		filter := group.repo.repositoryIdentity()
 		remaining := copyCandidateKeySet(groups[group])
 		cursor := ""
 		for {
 			query := workflowLookupQuery(filter, group.itemType, cursor)
-			var resp daemonWorkflowStateResponse
-			if err := s.getWorkflowStateJSON(ctx, query, &resp); err != nil {
+			resp, err := s.backend.ListWorkflowStates(ctx, query)
+			if err != nil {
 				return nil, err
 			}
 			for _, row := range resp.Items {
@@ -56,9 +52,7 @@ func (s *Server) workflowStatesForKeys(
 				if !remaining[key] {
 					continue
 				}
-				workflow := row.Workflow
-				workflow.Status = workflowStatusOrNew(workflow.Status)
-				out[key] = workflow
+				out[key] = candidateWorkflowFromState(row.Workflow)
 				delete(remaining, key)
 			}
 			if len(remaining) == 0 || resp.NextCursor == "" {
@@ -70,40 +64,23 @@ func (s *Server) workflowStatesForKeys(
 	return out, nil
 }
 
-func (s *Server) getWorkflowStateJSON(ctx context.Context, query url.Values, out any) error {
-	if err := s.daemon.ensureWorkflowStateSupported(ctx); err != nil {
-		return err
+func workflowLookupQuery(repo RepositoryIdentity, itemType string, cursor string) WorkflowQuery {
+	return WorkflowQuery{
+		Repository: repo, ItemTypes: []string{itemType}, IncludeClosed: true,
+		Limit: 200, Cursor: cursor,
 	}
-	return s.daemon.getJSON(ctx, "/api/v1/workflow-state", query, out)
 }
 
-func workflowLookupQuery(repo string, itemType string, cursor string) url.Values {
-	query := url.Values{}
-	query.Set("repo", repo)
-	query.Add("item_type", itemType)
-	query.Set("include_closed", "true")
-	query.Set("limit", "200")
-	if cursor != "" {
-		query.Set("cursor", cursor)
-	}
-	return query
-}
-
-func workflowRowKey(row daemonWorkflowStateItem, group workflowLookupGroup) candidateKey {
-	provider := firstNonEmpty(row.Provider, group.repo.provider)
-	platformHost := firstNonEmpty(row.PlatformHost, group.repo.platformHost)
-	repoPath := firstNonEmpty(row.RepoPath, group.repo.repoPath)
-	owner := firstNonEmpty(row.Owner, group.repo.owner)
-	name := firstNonEmpty(row.Name, group.repo.name)
-	itemType := firstNonEmpty(row.ItemType, group.itemType)
+func workflowRowKey(row WorkflowItem, group workflowLookupGroup) candidateKey {
+	provider := firstNonEmpty(row.Identity.Provider, row.Repository.Provider, group.repo.provider)
+	platformHost := firstNonEmpty(row.Identity.PlatformHost, row.Repository.PlatformHost, group.repo.platformHost)
+	repoPath := firstNonEmpty(row.Repository.RepoPath, group.repo.repoPath)
+	owner := firstNonEmpty(row.Identity.Owner, row.Repository.Owner, group.repo.owner)
+	name := firstNonEmpty(row.Identity.Name, row.Repository.Name, group.repo.name)
+	itemType := firstNonEmpty(row.Identity.Type, group.itemType)
 	return candidateKey{
-		provider:     provider,
-		platformHost: platformHost,
-		repoPath:     repoPath,
-		owner:        owner,
-		name:         name,
-		itemType:     itemType,
-		number:       row.Number,
+		provider: provider, platformHost: platformHost, repoPath: repoPath,
+		owner: owner, name: name, itemType: itemType, number: row.Identity.Number,
 	}
 }
 

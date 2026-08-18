@@ -80,57 +80,77 @@ func normalizeInitialAgentMessage(message string) (string, int, error) {
 }
 
 func (s *Handler) getInitialMessageStatus(
-	_ context.Context,
+	ctx context.Context,
 	input *initialMessagePathInput,
 ) (*initialMessageOutput, error) {
-	attempt, ok := s.initialMessageAttempt(input.ID, input.SessionKey)
-	if !ok {
-		return nil, httpapi.NotFound(
-			httpapi.CodeNotFound, "initial message status not found", nil,
-		)
+	result, err := s.GetInitialMessageService(ctx, input.ID, input.SessionKey)
+	if err != nil {
+		return nil, err
 	}
-	return &initialMessageOutput{Body: *initialMessageStatusResponse(attempt)}, nil
+	return &initialMessageOutput{Body: *initialMessageResultResponse(result)}, nil
 }
 
 func (s *Handler) submitInitialMessage(
 	ctx context.Context,
 	input *submitInitialMessageInput,
 ) (*initialMessageOutput, error) {
+	result, err := s.SubmitInitialMessageService(ctx, InitialMessageRequest{
+		WorkspaceID: input.ID, RuntimeSessionKey: input.SessionKey,
+		Agent: input.Body.Agent, SessionID: input.Body.SessionID,
+		Message: input.Body.Message,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &initialMessageOutput{Body: *initialMessageResultResponse(result)}, nil
+}
+
+func (s *Handler) GetInitialMessageService(
+	_ context.Context, workspaceID, runtimeSessionKey string,
+) (InitialMessageResult, error) {
+	attempt, ok := s.initialMessageAttempt(workspaceID, runtimeSessionKey)
+	if !ok {
+		return InitialMessageResult{}, httpapi.NotFound(
+			httpapi.CodeNotFound, "initial message status not found", nil,
+		)
+	}
+	return initialMessageAttemptResult(attempt), nil
+}
+
+func (s *Handler) SubmitInitialMessageService(
+	ctx context.Context, req InitialMessageRequest,
+) (InitialMessageResult, error) {
 	if s.workspaces == nil || s.runtime == nil || s.agentActivity == nil {
-		return nil, httpapi.ServiceUnavailable("initial message delivery not configured")
+		return InitialMessageResult{}, httpapi.ServiceUnavailable("initial message delivery not configured")
 	}
-	agent, err := agenthook.ParseAgent(input.Body.Agent)
+	agent, err := agenthook.ParseAgent(req.Agent)
 	if err != nil {
-		return nil, httpapi.Validation("body.agent", err.Error())
+		return InitialMessageResult{}, httpapi.Validation("body.agent", err.Error())
 	}
-	sessionID := strings.TrimSpace(input.Body.SessionID)
+	sessionID := strings.TrimSpace(req.SessionID)
 	if sessionID == "" {
-		return nil, httpapi.Validation("body.session_id", "session_id is required")
+		return InitialMessageResult{}, httpapi.Validation("body.session_id", "session_id is required")
 	}
-	message, _, err := normalizeInitialAgentMessage(input.Body.Message)
+	message, _, err := normalizeInitialAgentMessage(req.Message)
 	if err != nil {
-		return nil, httpapi.Validation("body.message", err.Error())
+		return InitialMessageResult{}, httpapi.Validation("body.message", err.Error())
 	}
-	proposed := initialMessageAttempt{
-		Agent: string(agent), SessionID: sessionID, Message: message,
+	proposed := initialMessageAttempt{Agent: string(agent), SessionID: sessionID, Message: message}
+	if existing, ok := s.initialMessageAttempt(req.WorkspaceID, req.RuntimeSessionKey); ok {
+		return existingInitialMessageAttemptResult(existing, proposed)
 	}
-
-	if existing, ok := s.initialMessageAttempt(input.ID, input.SessionKey); ok {
-		return existingInitialMessageAttempt(existing, proposed)
-	}
-
-	summary, err := s.workspaces.GetSummary(ctx, input.ID)
+	summary, err := s.workspaces.GetSummary(ctx, req.WorkspaceID)
 	if err != nil {
-		return nil, httpapi.Internal("get workspace failed")
+		return InitialMessageResult{}, httpapi.Internal("get workspace failed")
 	}
 	if summary == nil {
-		return nil, httpapi.NotFound(
+		return InitialMessageResult{}, httpapi.NotFound(
 			httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
 		)
 	}
 	live := false
-	for _, runtimeSession := range s.runtime.ListSessions(input.ID) {
-		if runtimeSession.Key == input.SessionKey &&
+	for _, runtimeSession := range s.runtime.ListSessions(req.WorkspaceID) {
+		if runtimeSession.Key == req.RuntimeSessionKey &&
 			runtimeSession.Kind == localruntime.LaunchTargetAgent &&
 			(runtimeSession.Status == localruntime.SessionStatusStarting ||
 				runtimeSession.Status == localruntime.SessionStatusRunning) {
@@ -139,13 +159,13 @@ func (s *Handler) submitInitialMessage(
 		}
 	}
 	if !live {
-		return nil, httpapi.Conflict(
+		return InitialMessageResult{}, httpapi.Conflict(
 			httpapi.CodeConflict, "agent runtime session is not live", nil,
 		)
 	}
 	matchedReport := false
 	for _, report := range s.agentActivity.LiveReportsForWorkspace(
-		summary.WorktreePath, []string{input.SessionKey},
+		summary.WorktreePath, []string{req.RuntimeSessionKey},
 	) {
 		if report.Agent == string(agent) && report.SessionID == sessionID {
 			matchedReport = true
@@ -153,45 +173,46 @@ func (s *Handler) submitInitialMessage(
 		}
 	}
 	if !matchedReport {
-		return nil, httpapi.Conflict(
+		return InitialMessageResult{}, httpapi.Conflict(
 			httpapi.CodeConflict, "coding session does not match the live agent runtime", nil,
 		)
 	}
-
-	attempt, reserved := s.reserveInitialMessageAttempt(input.ID, input.SessionKey, proposed)
+	attempt, reserved := s.reserveInitialMessageAttempt(req.WorkspaceID, req.RuntimeSessionKey, proposed)
 	if !reserved {
-		return existingInitialMessageAttempt(attempt, proposed)
+		return existingInitialMessageAttemptResult(attempt, proposed)
 	}
-	if err := s.runtime.SubmitInitialMessage(input.ID, input.SessionKey, message); err != nil {
+	if err := s.runtime.SubmitInitialMessage(req.WorkspaceID, req.RuntimeSessionKey, message); err != nil {
 		if errors.Is(err, localruntime.ErrBracketedPasteInactive) {
-			s.releaseInitialMessageAttempt(input.ID, input.SessionKey, proposed)
-			return nil, httpapi.Validation("body.message", err.Error())
+			s.releaseInitialMessageAttempt(req.WorkspaceID, req.RuntimeSessionKey, proposed)
+			return InitialMessageResult{}, httpapi.Validation("body.message", err.Error())
 		}
-		s.finishInitialMessageAttempt(input.ID, input.SessionKey, initialMessageUncertain)
-		return nil, httpapi.Internal("submit initial message failed")
+		uncertain := s.finishInitialMessageAttempt(
+			req.WorkspaceID, req.RuntimeSessionKey, initialMessageUncertain,
+		)
+		return initialMessageAttemptResult(uncertain), httpapi.Internal("submit initial message failed")
 	}
 	delivered := s.finishInitialMessageAttempt(
-		input.ID, input.SessionKey, initialMessageDelivered,
+		req.WorkspaceID, req.RuntimeSessionKey, initialMessageDelivered,
 	)
-	return &initialMessageOutput{Body: *initialMessageStatusResponse(delivered)}, nil
+	return initialMessageAttemptResult(delivered), nil
 }
 
-func existingInitialMessageAttempt(
+func existingInitialMessageAttemptResult(
 	existing initialMessageAttempt,
 	proposed initialMessageAttempt,
-) (*initialMessageOutput, error) {
+) (InitialMessageResult, error) {
 	if existing.Agent != proposed.Agent ||
 		existing.SessionID != proposed.SessionID ||
 		existing.Message != proposed.Message {
 		return initialMessageAttemptConflict(existing)
 	}
-	return &initialMessageOutput{Body: *initialMessageStatusResponse(existing)}, nil
+	return initialMessageAttemptResult(existing), nil
 }
 
 func initialMessageAttemptConflict(
 	existing initialMessageAttempt,
-) (*initialMessageOutput, error) {
-	return nil, httpapi.Conflict(
+) (InitialMessageResult, error) {
+	return InitialMessageResult{}, httpapi.Conflict(
 		httpapi.CodeConflict,
 		"an initial message attempt already exists for this runtime session",
 		map[string]any{

@@ -239,6 +239,13 @@ func workflowListLimit(limit int) int {
 	}
 }
 
+func workflowWhereClause(conditions []string) string {
+	if len(conditions) == 0 {
+		return ""
+	}
+	return "WHERE " + strings.Join(conditions, " AND ")
+}
+
 func (d *DB) ListItemWorkflowStates(
 	ctx context.Context,
 	opts ListWorkflowStatesOpts,
@@ -246,15 +253,33 @@ func (d *DB) ListItemWorkflowStates(
 	limit := workflowListLimit(opts.Limit)
 
 	prArgs := []any{}
-	prWhere := ""
+	var prConds []string
 	if cond := repoListFilterCondition("r", opts.RepoFilters, &prArgs); cond != "" {
-		prWhere = "WHERE " + cond
+		prConds = append(prConds, cond)
 	}
 	issueArgs := []any{}
-	issueWhere := ""
+	var issueConds []string
 	if cond := repoListFilterCondition("r", opts.RepoFilters, &issueArgs); cond != "" {
-		issueWhere = "WHERE " + cond
+		issueConds = append(issueConds, cond)
 	}
+	if opts.ExcludeRemovedUpstream {
+		prConds = append(prConds, `NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = p.repo_id
+			  AND ai.item_type = 'merge_request'
+			  AND ai.item_number = p.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		)`)
+		issueConds = append(issueConds, `NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = i.repo_id
+			  AND ai.item_type = 'issue'
+			  AND ai.item_number = i.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		)`)
+	}
+	prWhere := workflowWhereClause(prConds)
+	issueWhere := workflowWhereClause(issueConds)
 
 	args := make([]any, 0, len(prArgs)+len(issueArgs)+len(opts.ItemTypes)+len(opts.States)+16)
 	args = append(args, prArgs...)

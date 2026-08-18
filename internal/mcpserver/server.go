@@ -1,45 +1,33 @@
 package mcpserver
 
 import (
-	"context"
-	"io"
+	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"go.kenn.io/forge/internal/config"
 )
 
 type Options struct {
-	ConfigPath    string
-	Transport     string
-	Addr          string
-	HTTPTokenEnv  string
-	DaemonTimeout time.Duration
-	Version       string
+	Backend Backend
+	Version string
 }
 
 type Server struct {
-	opts                     Options
-	daemon                   *daemonClient
+	backend                  Backend
 	mcp                      *mcp.Server
 	agentHandoffPollInterval time.Duration
 	diffMu                   sync.Mutex
 	diffs                    *diffFileStore
-	httpMu                   sync.RWMutex
-	httpAddr                 string
 }
 
 func New(opts Options) (*Server, error) {
-	if opts.ConfigPath == "" {
-		opts.ConfigPath = config.DefaultConfigPath()
-	}
-	if opts.DaemonTimeout <= 0 {
-		opts.DaemonTimeout = 10 * time.Second
+	if opts.Backend == nil {
+		return nil, fmt.Errorf("MCP backend is required")
 	}
 	s := &Server{
-		opts:                     opts,
-		daemon:                   newDaemonClient(opts.ConfigPath, opts.DaemonTimeout),
+		backend:                  opts.Backend,
 		agentHandoffPollInterval: defaultAgentHandoffPollInterval,
 	}
 	s.mcp = mcp.NewServer(
@@ -65,16 +53,16 @@ func (s *Server) registerTools() {
 	s.registerGuidance()
 }
 
-func (s *Server) RunStdio(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-	return s.mcp.Run(ctx, &mcp.IOTransport{
-		Reader: io.NopCloser(stdin),
-		Writer: nopWriteCloser{Writer: stdout},
-	})
+// HTTPHandler serves the single stateless Streamable HTTP MCP endpoint.
+func (s *Server) HTTPHandler() http.Handler {
+	stream := mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return s.mcp },
+		&mcp.StreamableHTTPOptions{Stateless: true},
+	)
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", stream)
+	return mux
 }
-
-type nopWriteCloser struct{ io.Writer }
-
-func (nopWriteCloser) Close() error { return nil }
 
 func (s *Server) Close() error {
 	s.diffMu.Lock()

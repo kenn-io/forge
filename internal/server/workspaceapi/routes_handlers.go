@@ -203,6 +203,37 @@ type workspaceDiffRequest struct {
 func (s *Handler) createWorkspace(
 	ctx context.Context, input *createWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
+	result, err := s.CreatePullWorkspace(ctx, CreatePullWorkspaceRequest{
+		Provider: input.Body.Provider, PlatformHost: input.Body.PlatformHost,
+		Owner: input.Body.Owner, Name: input.Body.Name, Number: input.Body.MRNumber,
+		SuppressAutoAssign: input.Body.SuppressAutoAssign,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &createWorkspaceOutput{Status: http.StatusAccepted, Body: result.Workspace}, nil
+}
+
+func (s *Handler) CreatePullWorkspace(
+	ctx context.Context, req CreatePullWorkspaceRequest,
+) (WorkspaceResult, error) {
+	input := &createWorkspaceInput{}
+	input.Body.Provider = req.Provider
+	input.Body.PlatformHost = req.PlatformHost
+	input.Body.Owner = req.Owner
+	input.Body.Name = req.Name
+	input.Body.MRNumber = req.Number
+	input.Body.SuppressAutoAssign = req.SuppressAutoAssign
+	output, err := s.createPullWorkspaceRouteCore(ctx, input)
+	if err != nil {
+		return WorkspaceResult{}, err
+	}
+	return WorkspaceResult{Workspace: output.Body}, nil
+}
+
+func (s *Handler) createPullWorkspaceRouteCore(
+	ctx context.Context, input *createWorkspaceInput,
+) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
@@ -497,6 +528,41 @@ func (s *Handler) PublishWorkspaceCreated(workspaceID string, created bool) {
 func (s *Handler) createIssueWorkspace(
 	ctx context.Context, input *createIssueWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
+	result, err := s.CreateIssueWorkspaceService(ctx, CreateIssueWorkspaceRequest{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number,
+		GitHeadRef:             input.Body.GitHeadRef,
+		ReuseExistingBranch:    input.Body.ReuseExistingBranch,
+		ReuseExistingDirectory: input.Body.ReuseExistingDirectory,
+		SuppressAutoAssign:     input.Body.SuppressAutoAssign,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &createWorkspaceOutput{Status: http.StatusAccepted, Body: result.Workspace}, nil
+}
+
+func (s *Handler) CreateIssueWorkspaceService(
+	ctx context.Context, req CreateIssueWorkspaceRequest,
+) (WorkspaceResult, error) {
+	input := &createIssueWorkspaceInput{
+		Provider: req.Provider, PlatformHost: req.PlatformHost,
+		Owner: req.Owner, Name: req.Name, Number: req.Number,
+	}
+	input.Body.GitHeadRef = req.GitHeadRef
+	input.Body.ReuseExistingBranch = req.ReuseExistingBranch
+	input.Body.ReuseExistingDirectory = req.ReuseExistingDirectory
+	input.Body.SuppressAutoAssign = req.SuppressAutoAssign
+	output, err := s.createIssueWorkspaceRouteCore(ctx, input)
+	if err != nil {
+		return WorkspaceResult{}, err
+	}
+	return WorkspaceResult{Workspace: output.Body}, nil
+}
+
+func (s *Handler) createIssueWorkspaceRouteCore(
+	ctx context.Context, input *createIssueWorkspaceInput,
+) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
@@ -681,6 +747,36 @@ func (s *Handler) CreateIssueWorkspace(
 func (s *Handler) createAdHocWorkspace(
 	ctx context.Context, input *createAdHocWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
+	result, err := s.CreateAdHocWorkspaceService(ctx, CreateAdHocWorkspaceRequest{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Branch: input.Body.Branch,
+		ReuseExistingBranch: input.Body.ReuseExistingBranch,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &createWorkspaceOutput{Status: http.StatusAccepted, Body: result.Workspace}, nil
+}
+
+func (s *Handler) CreateAdHocWorkspaceService(
+	ctx context.Context, req CreateAdHocWorkspaceRequest,
+) (WorkspaceResult, error) {
+	input := &createAdHocWorkspaceInput{
+		Provider: req.Provider, PlatformHost: req.PlatformHost,
+		Owner: req.Owner, Name: req.Name,
+	}
+	input.Body.Branch = req.Branch
+	input.Body.ReuseExistingBranch = req.ReuseExistingBranch
+	output, err := s.createAdHocWorkspaceRouteCore(ctx, input)
+	if err != nil {
+		return WorkspaceResult{}, err
+	}
+	return WorkspaceResult{Workspace: output.Body}, nil
+}
+
+func (s *Handler) createAdHocWorkspaceRouteCore(
+	ctx context.Context, input *createAdHocWorkspaceInput,
+) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
@@ -861,21 +957,27 @@ func derefString(value *string) string {
 func (s *Handler) getWorkspace(
 	ctx context.Context, input *getWorkspaceInput,
 ) (*getWorkspaceOutput, error) {
-	if s.workspaces == nil {
-		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
-	}
-
-	summary, err := s.workspaces.GetSummary(ctx, input.ID)
+	result, err := s.GetWorkspaceService(ctx, input.ID)
 	if err != nil {
-		return nil, httpapi.Internal("get workspace failed")
+		return nil, err
+	}
+	return &getWorkspaceOutput{Body: result.Workspace}, nil
+}
+
+func (s *Handler) GetWorkspaceService(ctx context.Context, id string) (WorkspaceResult, error) {
+	if s.workspaces == nil {
+		return WorkspaceResult{}, httpapi.ServiceUnavailable("workspace manager not configured")
+	}
+	summary, err := s.workspaces.GetSummary(ctx, id)
+	if err != nil {
+		return WorkspaceResult{}, httpapi.Internal("get workspace failed")
 	}
 	if summary == nil {
-		return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
+		return WorkspaceResult{}, httpapi.NotFound(
+			httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
+		)
 	}
-
-	return &getWorkspaceOutput{
-		Body: s.toCachedWorkspaceResponse(summary),
-	}, nil
+	return WorkspaceResult{Workspace: s.toCachedWorkspaceResponse(summary)}, nil
 }
 
 func (s *Handler) refreshWorkspace(
@@ -2031,20 +2133,26 @@ func (s *Handler) getWorkspaceRuntime(
 	ctx context.Context,
 	input *getWorkspaceRuntimeInput,
 ) (*getWorkspaceRuntimeOutput, error) {
-	summary, err := s.getRuntimeWorkspace(ctx, input.ID)
+	result, err := s.GetWorkspaceRuntimeService(ctx, input.ID)
 	if err != nil {
 		return nil, err
 	}
+	return &getWorkspaceRuntimeOutput{Body: workspaceRuntimeResponse(result)}, nil
+}
+
+func (s *Handler) GetWorkspaceRuntimeService(
+	ctx context.Context, workspaceID string,
+) (WorkspaceRuntimeResult, error) {
+	summary, err := s.getRuntimeWorkspace(ctx, workspaceID)
+	if err != nil {
+		return WorkspaceRuntimeResult{}, err
+	}
 	sessions, err := s.workspaceRuntimeSessions(ctx, summary.ID)
 	if err != nil {
-		return nil, httpapi.Internal("list runtime sessions: " + err.Error())
+		return WorkspaceRuntimeResult{}, httpapi.Internal("list runtime sessions: " + err.Error())
 	}
-
-	return &getWorkspaceRuntimeOutput{
-		Body: workspaceRuntimeResponse{
-			LaunchTargets: s.runtime.LaunchTargets(),
-			Sessions:      sessions,
-		},
+	return WorkspaceRuntimeResult{
+		LaunchTargets: s.runtime.LaunchTargets(), Sessions: sessions,
 	}, nil
 }
 
@@ -2141,57 +2249,62 @@ func (s *Handler) launchWorkspaceRuntimeSession(
 	ctx context.Context,
 	input *launchWorkspaceRuntimeSessionInput,
 ) (*workspaceRuntimeSessionOutput, error) {
-	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	session, err := s.launchWorkspaceRuntimeService(
+		ctx, input.ID, input.Body.TargetKey, input.Body.DisplayRegion,
+	)
 	if err != nil {
 		return nil, err
 	}
-	targetKey := strings.TrimSpace(input.Body.TargetKey)
+	return &workspaceRuntimeSessionOutput{Body: session}, nil
+}
+
+func (s *Handler) LaunchWorkspaceRuntimeService(
+	ctx context.Context, workspaceID, targetKey string,
+) (localruntime.SessionInfo, error) {
+	return s.launchWorkspaceRuntimeService(ctx, workspaceID, targetKey, "")
+}
+
+func (s *Handler) launchWorkspaceRuntimeService(
+	ctx context.Context, workspaceID, targetKey, displayRegion string,
+) (localruntime.SessionInfo, error) {
+	summary, err := s.getReadyRuntimeWorkspace(ctx, workspaceID)
+	if err != nil {
+		return localruntime.SessionInfo{}, err
+	}
+	targetKey = strings.TrimSpace(targetKey)
 	if targetKey == "" {
-		return nil, httpapi.Validation("body.target_key", "target_key is required")
+		return localruntime.SessionInfo{}, httpapi.Validation("body.target_key", "target_key is required")
 	}
 	if workspaceRuntimeTargetIsAgent(s.runtime, targetKey) {
 		if err := s.workspaces.PrepareAgentLaunchContext(
 			ctx,
 			workspace.PrepareAgentLaunchContextOptions{
-				WorkspaceID: summary.ID,
-				TargetKey:   targetKey,
+				WorkspaceID: summary.ID, TargetKey: targetKey,
 			},
 		); err != nil {
-			return nil, httpapi.Internal("prepare agent context: " + err.Error())
+			return localruntime.SessionInfo{}, httpapi.Internal("prepare agent context: " + err.Error())
 		}
 	}
-
-	session, err := s.runtime.Launch(
-		ctx, summary.ID, summary.WorktreePath, targetKey,
-	)
+	session, err := s.runtime.Launch(ctx, summary.ID, summary.WorktreePath, targetKey)
 	if err != nil {
-		return nil, workspaceRuntimeLaunchError(err)
+		return localruntime.SessionInfo{}, workspaceRuntimeLaunchError(err)
 	}
-	session.DisplayRegion = normalizeRuntimeDisplayRegion(
-		input.Body.DisplayRegion,
-		session,
-	)
-	if err := s.recordRuntimeSession(
-		ctx, summary.ID, session, "session",
-	); err != nil {
-		cleanupCtx, cancel := context.WithTimeout(
-			context.WithoutCancel(ctx), 5*time.Second,
-		)
+	session.DisplayRegion = normalizeRuntimeDisplayRegion(displayRegion, session)
+	if err := s.recordRuntimeSession(ctx, summary.ID, session, "session"); err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if cleanupErr := s.runtime.RollbackLaunch(cleanupCtx, session); cleanupErr != nil {
 			slog.Warn(
 				"roll back unrecorded runtime session",
-				"workspace_id", summary.ID,
-				"session_key", session.Key,
-				"tmux_session", session.TmuxSession,
-				"err", cleanupErr,
+				"workspace_id", summary.ID, "session_key", session.Key,
+				"tmux_session", session.TmuxSession, "err", cleanupErr,
 			)
 		}
-		return nil, err
+		return localruntime.SessionInfo{}, err
 	}
 	s.invalidateWorkspaceEnrichment(summary.ID)
 	s.forgetRecordedRuntimeSessionIfExited(ctx, session)
-	return &workspaceRuntimeSessionOutput{Body: session}, nil
+	return session, nil
 }
 
 // LaunchWorkspaceRuntimeSession launches a configured workspace target.

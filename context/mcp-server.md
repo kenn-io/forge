@@ -1,38 +1,52 @@
 # MCP Companion
 
-- MCP is disabled unless `[mcp].enabled = true`; an omitted or zero port uses
-  the backend port plus one, while a nonzero port overrides it
-  (`internal/config/config.go::Config.MCPPort`).
-- MCP listeners are startup-bound, loopback-only, and use a distinct valid port
-  (`internal/server/config_reload.go::startupConfigSnapshot`).
-- Discovery publishes `mcp_listen_addr` through both daemon metadata surfaces
-  when MCP is enabled (`internal/daemonruntime/runtime.go::NewIdentity`).
-- MCP is a curated companion over the authenticated daemon, never a direct DB
-  client or OpenAPI mirror (`internal/mcpserver/daemon.go::daemonClient`).
+- MCP is an optional daemon-owned secondary listener enabled by
+  `[mcp].enabled`; an omitted or zero port uses the backend port plus one, while
+  a nonzero port overrides it (`internal/config/config.go::Config.MCPPort`).
+- The listener is startup-bound and loopback-only. Discovery publishes
+  `mcp_listen_addr` and `/api/ping` publishes `mcp_url`; changing listener
+  settings requires a restart (`cmd/kenn-forge/main.go::bindDaemonListeners`,
+  `internal/server/daemon_ping.go::Server.daemonPing`).
+- MCP serves only `/mcp` over stateless Streamable HTTP. Authentication follows
+  `[api].require_auth`; direct loopback peer, exact loopback authority, absent
+  forwarding headers, and optional same-origin HTTP Origin are required
+  (`internal/mcpserver/server.go::Server.HTTPHandler`,
+  `internal/server/mcp_http.go::NewMCPHTTPGuard`).
+- Tool implementations call the typed in-process Forge backend and never the
+  daemon's public HTTP API (`internal/mcpserver/backend.go::Backend`,
+  `internal/server/mcp_backend.go::Server.MCPBackend`).
+- Target MCP `2026-07-28`; do not advertise deprecated logging or catalog
+  change notifications for the static surface (`internal/mcpserver/server.go::New`).
 - Use only canonical `kenn-forge` command/resource/prompt names and
-  `kenn_forge_*` tools; do not add legacy aliases (`internal/mcpserver/server.go::Server.registerTools`).
+  `kenn_forge_*` tools; do not add aliases (`internal/mcpserver/server.go::Server.registerTools`).
 - The surface may write local workflow/workspace state but must not expose
-  provider mutations, arbitrary commands, terminal bytes, or lifecycle cleanup.
-- HTTP transport is loopback-only with independent bearer, Host, and Origin
-  enforcement (`internal/mcpserver/http.go::Server.httpGuard`).
-- Target MCP `2026-07-28`: keep HTTP sessionless and do not advertise deprecated
-  logging or change notifications for the static catalog (`internal/mcpserver/server.go::New`, `internal/mcpserver/http.go::Server.RunHTTP`).
+  provider mutations, arbitrary commands, terminal bytes, lifecycle cleanup,
+  or `removed_upstream` items through workflow reads or writes
+  (`internal/server/mcp_backend.go::mcpBackend.ListWorkflowStates`,
+  `internal/server/mcp_backend.go::mcpBackend.SetWorkflowState`).
+- Candidate output defaults to 25 and caps at 100. Apply candidate `item_types`
+  to Activity before its 5,000-row internal safety window
+  (`internal/mcpserver/tools_candidates.go::Server.findReviewCandidates`,
+  `internal/server/mcp_backend.go::mcpBackend.ListActivity`).
 - Treat only typed not-stacked responses as absence; surface other evidence
-  failures and structured retry/ambiguity state (`internal/mcpserver/tools_stack.go::isStackAbsentError`).
-- Confirm a mutation only from exactly one complete JSON response value;
-  malformed or trailing response data is ambiguous and non-retryable
-  (`internal/mcpserver/daemon.go::daemonClient.do`).
+  failures with structured retry and ambiguity state
+  (`internal/mcpserver/tools_stack.go::isStackAbsentError`).
 - Initial-message attempts are process-local and retain the exact normalized
   prompt only in daemon memory. Same-daemon retries must match agent, coding
-  session, and prompt; daemon restart intentionally permits a fresh attempt
+  session, and prompt; daemon restart permits a fresh attempt
   (`internal/server/workspaceapi/initial_message.go::initialMessageAttempt`).
 - Initial input requires exact live hook identity, LF or printable Unicode, and
   tracked bracketed paste for multiline text. Proven no-write rejection releases
-  its reservation; possible writes finalize without client cancellation (`internal/server/workspaceapi/initial_message.go::Handler.submitInitialMessage`).
-- MCP-created PR/issue workspaces must set `suppress_auto_assign`; ordinary UI
-  omission preserves configured self-assignment (`internal/server/workspaceapi/routes_handlers.go::Handler.createWorkspace`).
-- MCP can create/reuse PR, issue, or ad-hoc workspaces and launch one new agent
-  runtime with one initial message. Ambiguous mutations are never retried or
-  cleaned up; lost message responses permit only bounded cancellation-independent
-  status reads from the same daemon, and unresolved `pending` or `uncertain`
-  evidence remains ambiguous (`internal/mcpserver/tools_agent_spawn.go::Server.recoverInitialMessageStatus`).
+  its reservation; possible writes finalize without client cancellation
+  (`internal/server/workspaceapi/initial_message.go::Handler.SubmitInitialMessageService`).
+- MCP-created pull-request and issue workspaces suppress optional automatic
+  assignment; ordinary UI omission preserves configured self-assignment
+  (`internal/server/workspaceapi/routes_handlers.go::Handler.CreatePullWorkspace`,
+  `internal/server/workspaceapi/routes_handlers.go::Handler.CreateIssueWorkspaceService`).
+- MCP can create or reuse a pull-request, issue, or ad-hoc workspace and launch
+  one new agent runtime with one initial message. Ambiguous mutations are never
+  retried or cleaned up; only initial-message status receives a bounded,
+  cancellation-independent read (`internal/mcpserver/tools_agent_spawn.go::Server.recoverInitialMessageStatus`).
+- Handoff success and failure evidence uses `stage` plus
+  `initial_message.state`; never add a separate `message_delivered` output or
+  error detail (`internal/mcpserver/tools_agent_spawn.go::spawnWorkspaceWithAgentOutput`).

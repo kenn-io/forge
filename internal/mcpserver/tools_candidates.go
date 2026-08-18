@@ -4,9 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
+	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -99,12 +98,6 @@ type candidateGroup struct {
 	reasonsSeen map[string]bool
 }
 
-type daemonStackContext struct {
-	Position int    `json:"position"`
-	Size     int    `json:"size"`
-	Health   string `json:"health"`
-}
-
 func (s *Server) registerCandidateTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_find_review_candidates",
@@ -115,7 +108,7 @@ func (s *Server) registerCandidateTools() {
 
 func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInput) (findCandidatesOutput, error) {
 	limit := clampLimit(in.Limit, 25, 100)
-	repo, err := in.Repo.queryValue()
+	repo, err := in.Repo.repositoryIdentity()
 	if err != nil {
 		return findCandidatesOutput{}, err
 	}
@@ -132,16 +125,12 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 		return findCandidatesOutput{}, err
 	}
 
-	query := url.Values{}
-	query.Set("since", sinceToRFC3339(firstNonEmpty(in.Since, "24h")))
-	if repo != "" {
-		query.Set("repo", repo)
-	}
-	for _, typ := range in.ActivityTypes {
-		query.Add("types", typ)
-	}
-	var resp daemonActivityResponse
-	if err := s.daemon.getJSON(ctx, "/api/v1/activity", query, &resp); err != nil {
+	resp, err := s.backend.ListActivity(ctx, ActivityQuery{
+		Since:      sinceToRFC3339(firstNonEmpty(in.Since, "24h")),
+		Repository: repo, ActivityTypes: slices.Clone(in.ActivityTypes),
+		ItemTypes: slices.Clone(in.ItemTypes),
+	})
+	if err != nil {
 		return findCandidatesOutput{}, err
 	}
 
@@ -225,7 +214,7 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 	return findCandidatesOutput{Candidates: candidates, Capped: capped}, nil
 }
 
-func (g *candidateGroup) addActivity(row daemonActivityItem) {
+func (g *candidateGroup) addActivity(row ActivityItem) {
 	if timeStringAfter(row.CreatedAt, g.activity.LatestAt) {
 		g.activity.LatestAt = row.CreatedAt
 	}
@@ -249,14 +238,11 @@ func (s *Server) fetchCandidateItems(
 	ctx context.Context,
 	repos map[candidateRepoKey]candidateRepoKey,
 	needed map[candidateKey]bool,
-) (map[candidateKey]daemonPull, map[candidateKey]daemonIssue, error) {
-	pulls := map[candidateKey]daemonPull{}
-	issues := map[candidateKey]daemonIssue{}
+) (map[candidateKey]Pull, map[candidateKey]Issue, error) {
+	pulls := map[candidateKey]Pull{}
+	issues := map[candidateKey]Issue{}
 	for _, repo := range repos {
-		filter, err := repo.repoFilter().queryValue()
-		if err != nil {
-			return nil, nil, err
-		}
+		filter := repo.repositoryIdentity()
 		repoPulls, repoIssues := neededForRepo(needed, repo)
 		if len(repoPulls) > 0 {
 			if err := s.fetchCandidatePullPages(ctx, filter, repoPulls, pulls); err != nil {
@@ -274,15 +260,16 @@ func (s *Server) fetchCandidateItems(
 
 func (s *Server) fetchCandidatePullPages(
 	ctx context.Context,
-	filter string,
+	filter RepositoryIdentity,
 	needed map[candidateKey]bool,
-	out map[candidateKey]daemonPull,
+	out map[candidateKey]Pull,
 ) error {
 	const pageSize = 200
 	for offset := 0; ; offset += pageSize {
-		query := candidateListQuery(filter, offset, pageSize)
-		var rows []daemonPull
-		if err := s.daemon.getJSON(ctx, "/api/v1/pulls", query, &rows); err != nil {
+		rows, err := s.backend.ListPulls(ctx, ItemListQuery{
+			Repository: filter, State: "all", Limit: pageSize, Offset: offset,
+		})
+		if err != nil {
 			return err
 		}
 		for _, row := range rows {
@@ -298,15 +285,16 @@ func (s *Server) fetchCandidatePullPages(
 
 func (s *Server) fetchCandidateIssuePages(
 	ctx context.Context,
-	filter string,
+	filter RepositoryIdentity,
 	needed map[candidateKey]bool,
-	out map[candidateKey]daemonIssue,
+	out map[candidateKey]Issue,
 ) error {
 	const pageSize = 200
 	for offset := 0; ; offset += pageSize {
-		query := candidateListQuery(filter, offset, pageSize)
-		var issueRows []daemonIssue
-		if err := s.daemon.getJSON(ctx, "/api/v1/issues", query, &issueRows); err != nil {
+		issueRows, err := s.backend.ListIssues(ctx, ItemListQuery{
+			Repository: filter, State: "all", Limit: pageSize, Offset: offset,
+		})
+		if err != nil {
 			return err
 		}
 		for _, row := range issueRows {
@@ -318,17 +306,6 @@ func (s *Server) fetchCandidateIssuePages(
 			return nil
 		}
 	}
-}
-
-func candidateListQuery(filter string, offset int, limit int) url.Values {
-	query := url.Values{}
-	query.Set("repo", filter)
-	query.Set("state", "all")
-	query.Set("limit", strconv.Itoa(limit))
-	if offset > 0 {
-		query.Set("offset", strconv.Itoa(offset))
-	}
-	return query
 }
 
 func candidateKeys(groups map[candidateKey]*candidateGroup) map[candidateKey]bool {
@@ -366,8 +343,8 @@ func neededForRepo(
 func (s *Server) buildCandidate(
 	ctx context.Context,
 	group *candidateGroup,
-	pulls map[candidateKey]daemonPull,
-	issues map[candidateKey]daemonIssue,
+	pulls map[candidateKey]Pull,
+	issues map[candidateKey]Issue,
 	workflows map[candidateKey]candidateWorkflow,
 	includeClosed bool,
 	includeDrafts bool,
@@ -388,7 +365,7 @@ func (s *Server) buildCandidate(
 		workspace := workspaceFromRef(row.Workspace)
 		return candidate{
 			Item:      item,
-			Workflow:  workflowForCandidate(group.key, workflows, row.KanbanStatus),
+			Workflow:  workflowForCandidate(group.key, workflows, row.WorkflowStatus),
 			Activity:  group.activity,
 			Workspace: workspace,
 			Cache: candidateCache{
@@ -434,10 +411,10 @@ func (s *Server) enrichCandidateStack(ctx context.Context, cand *candidate) erro
 }
 
 func (s *Server) stackForCandidate(ctx context.Context, item itemRef) (candidateStack, error) {
-	var stack daemonStackContext
-	if err := s.daemon.getJSON(ctx, stackPath(item), nil, &stack); err != nil {
-		var derr *daemonError
-		if errors.As(err, &derr) && isStackAbsentError(derr) {
+	stack, err := s.backend.GetPullStack(ctx, itemIdentityFromRef(item))
+	if err != nil {
+		var backendErr *Error
+		if errors.As(err, &backendErr) && isStackAbsentError(backendErr) {
 			return candidateStack{}, nil
 		}
 		return candidateStack{}, err
@@ -450,24 +427,10 @@ func (s *Server) stackForCandidate(ctx context.Context, item itemRef) (candidate
 	}, nil
 }
 
-func stackPath(item itemRef) string {
-	return fmt.Sprintf(
-		"/api/v1/host/%s/pulls/%s/%s/%s/%d/stack",
-		seg(item.PlatformHost),
-		seg(item.Provider),
-		seg(item.Owner),
-		seg(item.Name),
-		item.Number,
-	)
-}
-
-func (k candidateRepoKey) repoFilter() repoFilterInput {
-	return repoFilterInput{
-		Provider:     k.provider,
-		PlatformHost: k.platformHost,
-		RepoPath:     k.repoPath,
-		Owner:        k.owner,
-		Name:         k.name,
+func (k candidateRepoKey) repositoryIdentity() RepositoryIdentity {
+	return RepositoryIdentity{
+		Provider: k.provider, PlatformHost: k.platformHost, RepoPath: k.repoPath,
+		Owner: k.owner, Name: k.name,
 	}
 }
 
@@ -500,7 +463,7 @@ func workflowStateSet(values []string) (map[string]bool, error) {
 	return out, nil
 }
 
-func workspaceFromRef(ref *daemonWorkspaceRef) candidateWorkspace {
+func workspaceFromRef(ref *WorkspaceRef) candidateWorkspace {
 	if ref == nil || ref.ID == "" {
 		return candidateWorkspace{}
 	}

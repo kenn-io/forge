@@ -353,6 +353,18 @@ type listStacksOutput = httpapi.BodyOutput[[]stackResponse]
 type getStackForPROutput = httpapi.BodyOutput[stackContextResponse]
 
 func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPullsOutput, error) {
+	rows, err := s.ListService(ctx, ListQuery{
+		Repo: input.Repo, State: input.State, Kanban: input.Kanban,
+		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Text: input.Q,
+		Limit: input.Limit, Offset: input.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &listPullsOutput{Body: rows}, nil
+}
+
+func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput) (*listPullsOutput, error) {
 	if input.State != "" {
 		valid := map[string]bool{
 			"open": true, "closed": true, "all": true,
@@ -478,6 +490,17 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 }
 
 func (s *Handler) getPull(ctx context.Context, input *repoNumberInput) (*getPullOutput, error) {
+	body, err := s.GetService(ctx, ItemIdentity{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &getPullOutput{Body: body}, nil
+}
+
+func (s *Handler) getPullRouteCore(ctx context.Context, input *repoNumberInput) (*getPullOutput, error) {
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -2365,6 +2388,19 @@ func (s *Handler) resolveDiffRange(
 }
 
 func (s *Handler) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutput, error) {
+	body, err := s.GetDiffService(ctx, ItemIdentity{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number,
+	}, DiffQuery{
+		Whitespace: input.Whitespace, Commit: input.Commit, From: input.From, To: input.To,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &getDiffOutput{Body: body}, nil
+}
+
+func (s *Handler) getDiffRouteCore(ctx context.Context, input *getDiffInput) (*getDiffOutput, error) {
 	resolved, err := s.resolveDiffRange(ctx, input)
 	if err != nil {
 		return nil, err
@@ -2551,6 +2587,17 @@ type getFilesInput struct {
 type getFilesOutput = httpapi.BodyOutput[filesResponse]
 
 func (s *Handler) getFiles(ctx context.Context, input *getFilesInput) (*getFilesOutput, error) {
+	body, err := s.GetFilesService(ctx, ItemIdentity{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &getFilesOutput{Body: body}, nil
+}
+
+func (s *Handler) getFilesRouteCore(ctx context.Context, input *getFilesInput) (*getFilesOutput, error) {
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -2672,6 +2719,17 @@ func stackContextForPR(number int, stack *db.Stack, members []db.StackMemberWith
 }
 
 func (s *Handler) getStackForPR(ctx context.Context, input *repoNumberInput) (*getStackForPROutput, error) {
+	body, err := s.GetStackService(ctx, ItemIdentity{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &getStackForPROutput{Body: body.routeResponse()}, nil
+}
+
+func (s *Handler) getStackForPRRouteCore(ctx context.Context, input *repoNumberInput) (*getStackForPROutput, error) {
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)

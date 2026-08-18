@@ -12,7 +12,12 @@ import (
 	"go.kenn.io/kit/daemon"
 )
 
-type daemonPingOutput = httpapi.BodyOutput[daemon.PingInfo]
+type daemonPingResponse struct {
+	daemon.PingInfo
+	MCPURL string `json:"mcp_url,omitempty"`
+}
+
+type daemonPingOutput = httpapi.BodyOutput[daemonPingResponse]
 
 func daemonPingAPIConfig() huma.Config {
 	config := huma.DefaultConfig("kenn-forge daemon", "0.1.0")
@@ -33,10 +38,11 @@ func (s *Server) registerDaemonPing(mux *http.ServeMux) {
 func (s *Server) daemonPing(
 	_ context.Context, _ *struct{},
 ) (*daemonPingOutput, error) {
-	return &daemonPingOutput{Body: daemon.PingInfo{
-		OK:      true,
-		Service: daemonruntime.Service,
-		Version: s.buildInfo.Version,
-		PID:     os.Getpid(),
+	return &daemonPingOutput{Body: daemonPingResponse{
+		PingInfo: daemon.PingInfo{
+			OK: true, Service: daemonruntime.Service,
+			Version: s.buildInfo.Version, PID: os.Getpid(),
+		},
+		MCPURL: s.options.MCPURL,
 	}}, nil
 }

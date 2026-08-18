@@ -391,3 +391,35 @@ func TestIssueQueriesExposeWorkflowStatus(t *testing.T) {
 	require.NotNil(iss)
 	assert.Equal(KanbanStatus(""), iss.WorkflowStatus)
 }
+
+func TestListItemWorkflowStatesCanExcludeRemovedUpstreamItems(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	insertTestMR(t, d, repoID, 1, "visible pull", now)
+	insertTestMR(t, d, repoID, 2, "removed pull", now.Add(time.Minute))
+	insertTestIssue(t, d, repoID, 3, "visible issue", now.Add(2*time.Minute))
+	insertTestIssue(t, d, repoID, 4, "removed issue", now.Add(3*time.Minute))
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES
+			(?, 'merge_request', 2, 'pull-2', ?, ?, 'removed_upstream'),
+			(?, 'issue', 4, 'issue-4', ?, ?, 'removed_upstream')`,
+		repoID, now, now, repoID, now, now,
+	)
+	require.NoError(err)
+
+	rows, _, err := d.ListItemWorkflowStates(ctx, ListWorkflowStatesOpts{
+		IncludeClosed: true, ExcludeRemovedUpstream: true,
+	})
+
+	require.NoError(err)
+	require.Len(rows, 2)
+	assert.ElementsMatch([]int{1, 3}, []int{rows[0].Number, rows[1].Number})
+}

@@ -3,7 +3,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
-	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -37,20 +37,20 @@ type listActivityInput struct {
 	Types  []string        `json:"types,omitempty"`
 	Search string          `json:"search,omitempty"`
 	Limit  int             `json:"limit,omitempty"`
-	After  string          `json:"after,omitempty" jsonschema:"opaque daemon activity cursor"`
+	After  string          `json:"after,omitempty" jsonschema:"opaque Forge activity cursor"`
 }
 
 type activityRow struct {
-	ID           string              `json:"id"`
-	Cursor       string              `json:"cursor"`
-	ActivityType string              `json:"activity_type"`
-	Item         itemRef             `json:"item"`
-	Workspace    *daemonWorkspaceRef `json:"workspace,omitempty"`
-	Author       string              `json:"author"`
-	ItemAuthor   string              `json:"item_author,omitempty"`
-	CreatedAt    string              `json:"created_at"`
-	BodyPreview  string              `json:"body_preview,omitempty"`
-	ActivityURL  string              `json:"activity_url,omitempty"`
+	ID           string        `json:"id"`
+	Cursor       string        `json:"cursor"`
+	ActivityType string        `json:"activity_type"`
+	Item         itemRef       `json:"item"`
+	Workspace    *WorkspaceRef `json:"workspace,omitempty"`
+	Author       string        `json:"author"`
+	ItemAuthor   string        `json:"item_author,omitempty"`
+	CreatedAt    string        `json:"created_at"`
+	BodyPreview  string        `json:"body_preview,omitempty"`
+	ActivityURL  string        `json:"activity_url,omitempty"`
 }
 
 type listActivityOutput struct {
@@ -105,8 +105,8 @@ func wrapTool[In, Out any](
 }
 
 func (s *Server) listRepos(ctx context.Context, in listReposInput) (listReposOutput, error) {
-	var rows []daemonRepoSummary
-	if err := s.daemon.getJSON(ctx, "/api/v1/repos/summary", nil, &rows); err != nil {
+	rows, err := s.backend.ListRepositories(ctx)
+	if err != nil {
 		return listReposOutput{}, err
 	}
 	limit := in.Limit
@@ -115,16 +115,13 @@ func (s *Server) listRepos(ctx context.Context, in listReposInput) (listReposOut
 	}
 	out := listReposOutput{Repos: make([]repoRow, 0, len(rows))}
 	for _, row := range rows {
-		repo := row.Repo
-		owner := firstNonEmpty(repo.Owner, row.Owner)
-		name := firstNonEmpty(repo.Name, row.Name)
-		host := firstNonEmpty(repo.PlatformHost, row.PlatformHost)
+		repo := row.Repository
 		out.Repos = append(out.Repos, repoRow{
 			Provider:            repo.Provider,
-			PlatformHost:        host,
-			Owner:               owner,
-			Name:                name,
-			RepoPath:            repoPathOrFallback(repo, owner, name),
+			PlatformHost:        repo.PlatformHost,
+			Owner:               repo.Owner,
+			Name:                repo.Name,
+			RepoPath:            repositoryPath(repo),
 			OpenPRCount:         row.OpenPRCount,
 			OpenIssueCount:      row.OpenIssueCount,
 			LastSyncCompletedAt: row.LastSyncCompletedAt,
@@ -136,26 +133,16 @@ func (s *Server) listRepos(ctx context.Context, in listReposInput) (listReposOut
 
 func (s *Server) listActivity(ctx context.Context, in listActivityInput) (listActivityOutput, error) {
 	limit := clampLimit(in.Limit, 50, 200)
-	repo, err := in.Repo.queryValue()
+	repo, err := in.Repo.repositoryIdentity()
 	if err != nil {
 		return listActivityOutput{}, err
 	}
-	query := url.Values{}
-	query.Set("since", sinceToRFC3339(firstNonEmpty(in.Since, "24h")))
-	if repo != "" {
-		query.Set("repo", repo)
-	}
-	for _, typ := range in.Types {
-		query.Add("types", typ)
-	}
-	if in.Search != "" {
-		query.Set("search", in.Search)
-	}
-	if in.After != "" {
-		query.Set("after", in.After)
-	}
-	var resp daemonActivityResponse
-	if err := s.daemon.getJSON(ctx, "/api/v1/activity", query, &resp); err != nil {
+	resp, err := s.backend.ListActivity(ctx, ActivityQuery{
+		Since:      sinceToRFC3339(firstNonEmpty(in.Since, "24h")),
+		Repository: repo, ActivityTypes: slices.Clone(in.Types),
+		Search: in.Search, After: in.After,
+	})
+	if err != nil {
 		return listActivityOutput{}, err
 	}
 	capped := resp.Capped || len(resp.Items) > limit
@@ -192,7 +179,7 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 		return searchItemsOutput{}, fmt.Errorf("state must be open, closed, merged, or all")
 	}
 	limit := clampLimit(in.Limit, 25, 100)
-	repo, err := in.Repo.queryValue()
+	repo, err := in.Repo.repositoryIdentity()
 	if err != nil {
 		return searchItemsOutput{}, err
 	}
@@ -231,7 +218,7 @@ func (s *Server) searchPulls(
 	ctx context.Context,
 	text string,
 	state string,
-	repo string,
+	repo RepositoryIdentity,
 	limit int,
 ) ([]searchResult, bool, error) {
 	pageSize := limit + 1
@@ -251,7 +238,7 @@ func (s *Server) searchPulls(
 			}
 			out = append(out, searchResult{
 				Item:           row.itemRef(),
-				WorkflowStatus: workflowStatusOrNew(row.KanbanStatus),
+				WorkflowStatus: workflowStatusOrNew(row.WorkflowStatus),
 				LastActivityAt: formatMCPTime(row.LastActivityAt),
 			})
 			if len(out) > limit {
@@ -270,46 +257,30 @@ func (s *Server) fetchPullSearchPage(
 	ctx context.Context,
 	text string,
 	state string,
-	repo string,
+	repo RepositoryIdentity,
 	limit int,
 	offset int,
-) ([]daemonPull, error) {
-	query := url.Values{}
-	query.Set("q", text)
-	query.Set("state", state)
+) ([]Pull, error) {
+	queryState := state
 	if state == "merged" {
-		query.Set("state", "all")
+		queryState = "all"
 	}
-	query.Set("limit", fmt.Sprintf("%d", limit))
-	if offset > 0 {
-		query.Set("offset", fmt.Sprintf("%d", offset))
-	}
-	if repo != "" {
-		query.Set("repo", repo)
-	}
-	var rows []daemonPull
-	if err := s.daemon.getJSON(ctx, "/api/v1/pulls", query, &rows); err != nil {
-		return nil, err
-	}
-	return rows, nil
+	return s.backend.ListPulls(ctx, ItemListQuery{
+		Repository: repo, State: queryState, Text: text, Limit: limit, Offset: offset,
+	})
 }
 
 func (s *Server) searchIssues(
 	ctx context.Context,
 	text string,
 	state string,
-	repo string,
+	repo RepositoryIdentity,
 	limit int,
 ) ([]searchResult, bool, error) {
-	query := url.Values{}
-	query.Set("q", text)
-	query.Set("state", state)
-	query.Set("limit", fmt.Sprintf("%d", limit+1))
-	if repo != "" {
-		query.Set("repo", repo)
-	}
-	var rows []daemonIssue
-	if err := s.daemon.getJSON(ctx, "/api/v1/issues", query, &rows); err != nil {
+	rows, err := s.backend.ListIssues(ctx, ItemListQuery{
+		Repository: repo, State: state, Text: text, Limit: limit + 1,
+	})
+	if err != nil {
 		return nil, false, err
 	}
 	out := make([]searchResult, 0, len(rows))
@@ -339,64 +310,6 @@ func itemTypeSelection(values []string) (bool, bool, error) {
 		}
 	}
 	return includePR, includeIssue, nil
-}
-
-func (p daemonPull) itemRef() itemRef {
-	repo := p.Repo
-	owner := firstNonEmpty(repo.Owner, p.RepoOwner)
-	name := firstNonEmpty(repo.Name, p.RepoName)
-	return itemRef{
-		Type:         "pr",
-		Provider:     repo.Provider,
-		PlatformHost: firstNonEmpty(repo.PlatformHost, p.PlatformHost),
-		Owner:        owner,
-		Name:         name,
-		RepoPath:     repoPathOrFallback(repo, owner, name),
-		Number:       p.Number,
-		Title:        p.Title,
-		URL:          p.URL,
-		State:        p.State,
-		Author:       p.Author,
-		IsDraft:      p.IsDraft,
-	}
-}
-
-func (i daemonIssue) itemRef() itemRef {
-	repo := i.Repo
-	owner := firstNonEmpty(repo.Owner, i.RepoOwner)
-	name := firstNonEmpty(repo.Name, i.RepoName)
-	return itemRef{
-		Type:         "issue",
-		Provider:     repo.Provider,
-		PlatformHost: firstNonEmpty(repo.PlatformHost, i.PlatformHost),
-		Owner:        owner,
-		Name:         name,
-		RepoPath:     repoPathOrFallback(repo, owner, name),
-		Number:       i.Number,
-		Title:        i.Title,
-		URL:          i.URL,
-		State:        i.State,
-		Author:       i.Author,
-	}
-}
-
-func (a daemonActivityItem) itemRef() itemRef {
-	repo := a.Repo
-	owner := firstNonEmpty(repo.Owner, a.RepoOwner)
-	name := firstNonEmpty(repo.Name, a.RepoName)
-	return itemRef{
-		Type:         a.ItemType,
-		Provider:     repo.Provider,
-		PlatformHost: firstNonEmpty(repo.PlatformHost, a.PlatformHost),
-		Owner:        owner,
-		Name:         name,
-		RepoPath:     repoPathOrFallback(repo, owner, name),
-		Number:       a.ItemNumber,
-		Title:        a.ItemTitle,
-		URL:          a.ItemURL,
-		State:        a.ItemState,
-		Author:       a.ItemAuthor,
-	}
 }
 
 func sortSearchResults(results []searchResult) {

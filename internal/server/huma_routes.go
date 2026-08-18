@@ -725,6 +725,24 @@ func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, 
 func (s *Server) listRepoSummaries(
 	ctx context.Context, _ *struct{},
 ) (*listRepoSummariesOutput, error) {
+	rows, err := s.listRepoSummariesService(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &listRepoSummariesOutput{Body: rows}, nil
+}
+
+func (s *Server) listRepoSummariesService(ctx context.Context) ([]repoSummaryResponse, error) {
+	output, err := s.listRepoSummariesRouteCore(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return output.Body, nil
+}
+
+func (s *Server) listRepoSummariesRouteCore(
+	ctx context.Context,
+) (*listRepoSummariesOutput, error) {
 	summaries, err := s.db.ListRepoSummaries(ctx)
 	if err != nil {
 		return nil, httpapi.Internal("list repo summaries failed")
@@ -1348,6 +1366,24 @@ func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInp
 }
 
 func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*listActivityOutput, error) {
+	body, err := s.listActivityService(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	return &listActivityOutput{Body: body}, nil
+}
+
+func (s *Server) listActivityService(
+	ctx context.Context, input *listActivityInput,
+) (activityResponse, error) {
+	output, err := s.listActivityRouteCore(ctx, input)
+	if err != nil {
+		return activityResponse{}, err
+	}
+	return output.Body, nil
+}
+
+func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityInput) (*listActivityOutput, error) {
 	if hasInvalidRepoFilter(input.Repo) {
 		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
 	}

@@ -6,6 +6,25 @@ local SQLite database and serves the UI from one binary.
 
 Start with the [user guide](docs/index.md) for setup and workflows.
 
+## Teaser
+
+<picture>
+  <source
+    media="(prefers-color-scheme: dark)"
+    srcset="https://forge.kenn.io/assets/generated/maintainer-overview-dark.svg"
+  >
+  <source
+    media="(prefers-color-scheme: light)"
+    srcset="https://forge.kenn.io/assets/generated/maintainer-overview-light.svg"
+  >
+  <img
+    src="https://forge.kenn.io/assets/generated/maintainer-overview-light.svg"
+    alt="kenn-forge Activity with a selected pull request, live workspace, and coding-agent session"
+  >
+</picture>
+
+<sub>Activity keeps the selected pull request beside its live workspace and coding-agent session.</sub>
+
 ## What you can do
 
 - Triage activity across repositories and provider hosts.

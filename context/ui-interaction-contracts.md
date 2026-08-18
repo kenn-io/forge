@@ -836,8 +836,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   protect replacements, while presenter leases retain refreshes until a current surface claims them
   (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflowService`).
 - When a settings or Docs write may have committed before failing, reconcile through its application workflow:
-  matching state is recovered success, contradictory state preserves the failure, and an inconclusive read
-  fences duplicate submission. Retain any pre-mutation absence evidence across retries. Repository evidence
+  matching state is recovered success only when every requested field or section matches;
+  contradictory state preserves the failure, and an inconclusive read fences duplicate submission. Retain pre-mutation
+  absence evidence. Repository evidence
   includes canonical provider, resolved host, owner, and name
   (`frontend/src/lib/stores/settings-workflow.ts::SettingsWorkflowLive`,
   `frontend/src/lib/stores/docs-workflow.ts::DocsWorkflow`).
@@ -924,7 +925,8 @@ Not every visibility control means "remove this entity entirely."
   generation that started them. Scope changes discard late pages and prevent older
   requests from clearing newer loading or error ownership
   (`frontend/src/lib/stores/activity.svelte.ts::invalidatePagedActivityRequests`).
-- Parent recency invalidates stale thread caches; new expanded parents load complete history.
+- Parent recency invalidates stale and in-flight thread pages before restarting from
+  authoritative recency; new expanded parents load complete history.
   Otherwise authoritative reconciliation preserves loaded children and merges deltas; mobile and status
   totals consume the same summary authority (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
 - An uncapped authoritative parent snapshot removes cached children whose stable parent

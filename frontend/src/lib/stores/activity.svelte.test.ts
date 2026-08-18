@@ -392,6 +392,84 @@ describe("activity store collapse state", () => {
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(newEvent.id));
   });
 
+  it("restarts an in-flight thread load when authoritative recency advances", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const originalSubject = { ...itemActivity(7), repo } satisfies ActivitySubject;
+    const advancedSubject = {
+      ...originalSubject,
+      activity_at: "2026-08-09T13:00:07Z",
+    } satisfies ActivitySubject;
+    const staleEvent = {
+      ...notificationItem("ntf:stale-thread-page", "unread"),
+      item_number: 7,
+      repo,
+    } as ActivityItem;
+    const freshEvent = {
+      ...notificationItem("ntf:fresh-thread-page", "unread"),
+      item_number: 7,
+      repo,
+    } as ActivityItem;
+    const pendingOldThread = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: false; event_cursor: string };
+      error: null;
+    }>();
+    const threadQueries: Array<Record<string, unknown>> = [];
+    let activityReads = 0;
+    const get = vi.fn((path: string, options: { params?: { query?: Record<string, unknown> } }) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      if (path === "/activity/thread-events") {
+        const query = options.params?.query ?? {};
+        threadQueries.push(query);
+        if (threadQueries.length === 1) return pendingOldThread.promise;
+        return Promise.resolve({
+          data: { items: [freshEvent], capped: false, event_cursor: "new-snapshot" },
+          error: null,
+        });
+      }
+      activityReads += 1;
+      return Promise.resolve({
+        data: {
+          items: [],
+          item_activity: [activityReads === 1 ? originalSubject : advancedSubject],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: activityReads === 1 ? "old-snapshot" : "new-snapshot",
+        },
+        error: null,
+      });
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
+
+    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    await vi.waitFor(() => expect(threadQueries).toHaveLength(1));
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity during thread load in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    pendingOldThread.resolve({
+      data: { items: [staleEvent], capped: false, event_cursor: "old-snapshot" },
+      error: null,
+    });
+
+    await vi.waitFor(() => expect(threadQueries).toHaveLength(2));
+    expect(threadQueries.map((query) => query.at_or_before)).toEqual(["old-snapshot", "new-snapshot"]);
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([freshEvent.id]));
+  });
+
   it("discards a thread page that resolves after the activity scope changes", async () => {
     const subject = {
       ...itemActivity(7),

@@ -22,6 +22,7 @@ function makeSettings(repos: SettingsResponse["repos"] = []): SettingsResponse {
       use_workspace_activity_for_recency: false,
     },
     agents: [],
+    detail: { initial_timeline_entry_limit: 50 },
     fleet: {
       enabled: false,
       sessions: {},
@@ -571,6 +572,47 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
       const result = yield* workflow.persist(() => ({ activity: saved.activity }));
 
       assert.isTrue(result.activity.hide_bots);
+    }),
+  );
+
+  it.effect("returns authoritative detail settings after a save response is lost", () =>
+    Effect.gen(function* () {
+      const original = makeSettings();
+      const saved = { ...original, detail: { initial_timeline_entry_limit: 80 } };
+      let committed = false;
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (request.method === "PUT") {
+          committed = true;
+          return Promise.reject(new TypeError("response lost after commit"));
+        }
+        return Promise.resolve(Response.json(committed ? saved : original));
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const workflow = yield* SettingsWorkflow;
+      const result = yield* workflow.persist(() => ({ detail: saved.detail }));
+
+      assert.strictEqual(result.detail.initial_timeline_entry_limit, 80);
+    }),
+  );
+
+  it.effect("does not report detail settings committed when reconciliation returns the prior value", () =>
+    Effect.gen(function* () {
+      const original = makeSettings();
+      const requested = { initial_timeline_entry_limit: 80 };
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return request.method === "PUT"
+          ? Promise.reject(new TypeError("response lost before commit"))
+          : Promise.resolve(Response.json(original));
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const workflow = yield* SettingsWorkflow;
+      const failure = yield* Effect.flip(workflow.persist(() => ({ detail: requested })));
+
+      assert.strictEqual(failure._tag, "TransientTransportError");
     }),
   );
 

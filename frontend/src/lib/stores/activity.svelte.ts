@@ -677,6 +677,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     activityEventCursor = result.response.event_cursor ?? activityEventCursor;
     if (advancedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0) {
       loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !advancedThreadKeys.has(key)));
+      loadingThreadKeys = new Set([...loadingThreadKeys].filter((key) => !advancedThreadKeys.has(key)));
+      for (const key of advancedThreadKeys) threadRequestTokens.delete(key);
       for (const key of new Set([...advancedThreadKeys, ...newExpandedThreadKeys])) {
         if (isThreadItemExpanded(key)) loadThreadEvents(key);
       }

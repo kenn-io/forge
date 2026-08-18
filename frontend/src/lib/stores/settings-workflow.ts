@@ -206,6 +206,7 @@ function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSetting
   return (
     (request.activity === undefined || sameValue(settings.activity, request.activity)) &&
     (request.agents === undefined || sameValue(settings.agents, request.agents)) &&
+    (request.detail === undefined || sameValue(settings.detail, request.detail)) &&
     (request.issues === undefined || sameValue(settings.issues, request.issues)) &&
     (request.kata_projects === undefined || sameValue(settings.kata_projects, request.kata_projects)) &&
     (request.modes === undefined || sameValue(settings.modes, request.modes)) &&

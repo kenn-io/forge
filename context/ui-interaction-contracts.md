@@ -908,9 +908,9 @@ Not every visibility control means "remove this entity entirely."
   `updated_at`/`last_activity_at`: GitHub bumps those for mergeability recomputes
   and branch deletion, which read as phantom activity
   (`internal/db/queries_activity.go::prActivitySubjectAtExpr`).
-- An in-window notification keeps its parent summary in scope even when the parent's other
-  activity is older than the window. Event visibility filters do not redefine parent recency
-  (`internal/db/queries_activity.go::listActivitySubjectsWithQueryer`).
+- An in-window notification dates and retains its parent only while Notifications are visible;
+  hiding it cannot admit or reorder an otherwise-old parent. Other event visibility filters do
+  not redefine parent recency (`internal/db/queries_activity.go::listActivitySubjectsWithQueryer`).
 - "Use workspace activity for recency" hydrates one global PR, Issue, and Activity opt-in. Disabled mode keeps provider sorting/display and hides cached workspace-only subjects while retaining `last_workspace_activity_at` as metadata (`frontend/src/lib/utils/effective-activity.ts::effectiveActivity`, `frontend/src/lib/components/ActivityFeed.svelte::visibleWorkspaceActivity`).
 - Activity presentation filters apply to event, parent, and workspace projections;
   "Hide bots" tests event actors on events and item authors on parent/workspace subjects

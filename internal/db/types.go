@@ -1378,7 +1378,10 @@ type ListActivitySubjectsOpts struct {
 	RepoFilters    []RepoFilter
 	AllowedRepoIDs []int64
 	ItemTypes      []string
-	Search         string
+	// ExcludeNotificationRecency prevents hidden notification rows from
+	// admitting or reordering otherwise-old parents.
+	ExcludeNotificationRecency bool
+	Search                     string
 	// SearchMatchedSubjectKeys identifies parents whose provider events matched
 	// Search. The parent title and author do not necessarily contain that term.
 	SearchMatchedSubjectKeys []WorkspaceSubjectKey

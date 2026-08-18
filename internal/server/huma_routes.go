@@ -1508,10 +1508,12 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	}
 	if projection == "full" {
 		itemActivity, err = s.db.ListActivitySubjects(ctx, db.ListActivitySubjectsOpts{
-			Repo:                     opts.Repo,
-			RepoFilters:              opts.RepoFilters,
-			AllowedRepoIDs:           opts.AllowedRepoIDs,
-			ItemTypes:                opts.ItemTypes,
+			Repo:           opts.Repo,
+			RepoFilters:    opts.RepoFilters,
+			AllowedRepoIDs: opts.AllowedRepoIDs,
+			ItemTypes:      opts.ItemTypes,
+			ExcludeNotificationRecency: opts.ExcludeNotifications ||
+				(len(opts.Types) > 0 && !slices.Contains(opts.Types, "notification")),
 			Search:                   opts.Search,
 			SearchMatchedSubjectKeys: searchMatchedSubjectKeys,
 			Author:                   opts.Author,

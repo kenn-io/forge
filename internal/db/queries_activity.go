@@ -55,11 +55,17 @@ func activityNotificationAtExpr(parent, itemType string) string {
 	)
 }
 
-func prActivitySubjectAtExpr(pr string) string {
+func prActivitySubjectAtExpr(pr string, excludeNotificationRecency bool) string {
+	if excludeNotificationRecency {
+		return prActivityAtExpr(pr)
+	}
 	return fmt.Sprintf("MAX(%s, %s)", prActivityAtExpr(pr), activityNotificationAtExpr(pr, "pr"))
 }
 
-func issueActivitySubjectAtExpr(issue string) string {
+func issueActivitySubjectAtExpr(issue string, excludeNotificationRecency bool) string {
+	if excludeNotificationRecency {
+		return issueActivityAtExpr(issue)
+	}
 	return fmt.Sprintf("MAX(%s, %s)", issueActivityAtExpr(issue), activityNotificationAtExpr(issue, "issue"))
 }
 
@@ -680,7 +686,7 @@ func listActivitySubjectsWithQueryer(
 			       r.owner AS repo_owner, r.name AS repo_name, r.repo_path_key,
 			       'pr' AS item_type, p.number AS item_number, p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state, p.author AS item_author,
-			       ` + prActivitySubjectAtExpr("p") + ` AS activity_at,
+			       ` + prActivitySubjectAtExpr("p", opts.ExcludeNotificationRecency) + ` AS activity_at,
 			       ` + prEventLedgerRevisionExpr("p") + ` AS event_ledger_revision
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -695,7 +701,7 @@ func listActivitySubjectsWithQueryer(
 			SELECT r.id, r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
 			       r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title, i.url, i.state, i.author,
-			       ` + issueActivitySubjectAtExpr("i") + `,
+			       ` + issueActivitySubjectAtExpr("i", opts.ExcludeNotificationRecency) + `,
 			       ` + issueEventLedgerRevisionExpr("i") + `
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'

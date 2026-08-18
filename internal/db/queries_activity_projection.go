@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 )
 
 // ListCollapsedActivityProjection reads the hidden-event high-water mark,
@@ -58,10 +59,12 @@ func (d *DB) ListCollapsedActivityProjection(
 		subjectLimit = opts.Limit
 	}
 	subjects, err := listActivitySubjectsWithQueryer(ctx, tx, ListActivitySubjectsOpts{
-		Repo:                     opts.Repo,
-		RepoFilters:              opts.RepoFilters,
-		AllowedRepoIDs:           opts.AllowedRepoIDs,
-		ItemTypes:                opts.ItemTypes,
+		Repo:           opts.Repo,
+		RepoFilters:    opts.RepoFilters,
+		AllowedRepoIDs: opts.AllowedRepoIDs,
+		ItemTypes:      opts.ItemTypes,
+		ExcludeNotificationRecency: opts.ExcludeNotifications ||
+			activityTypesExcludeNotification(opts.Types),
 		Search:                   opts.Search,
 		SearchMatchedSubjectKeys: searchMatched,
 		Author:                   opts.Author,
@@ -82,4 +85,8 @@ func (d *DB) ListCollapsedActivityProjection(
 		Subjects:    subjects,
 		EventCursor: eventCursor,
 	}, nil
+}
+
+func activityTypesExcludeNotification(types []string) bool {
+	return len(types) > 0 && !slices.Contains(types, "notification")
 }

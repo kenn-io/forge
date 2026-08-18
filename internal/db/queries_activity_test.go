@@ -1024,6 +1024,15 @@ func TestListCollapsedActivityProjectionIncludesParentsRecentOnlyByNotification(
 	assert.Equal(pullNotificationAt, projection.Subjects[0].ActivityAt)
 	assert.Equal(8, projection.Subjects[1].Subject.Key.ItemNumber)
 	assert.Equal(issueNotificationAt, projection.Subjects[1].ActivityAt)
+
+	withoutNotifications, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{Since: &since, Limit: 50, Types: []string{"comment"}},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	assert.Empty(withoutNotifications.DirectRows)
+	assert.Empty(withoutNotifications.Subjects,
+		"hidden notifications must not pull otherwise-old parents into the window")
 }
 
 func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {

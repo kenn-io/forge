@@ -23898,7 +23898,7 @@ func TestAPIListActivity(t *testing.T) {
 func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database := setupNotificationsEnabledTestServer(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 	oldActivity := now.Add(-30 * 24 * time.Hour)
@@ -23938,6 +23938,23 @@ func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testi
 	require.Len(body.ItemActivity, 1)
 	assert.Equal(71, body.ItemActivity[0].ItemNumber)
 	assert.Equal(formatUTCRFC3339(notificationAt), body.ItemActivity[0].ActivityAt)
+
+	filtered := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+since+"&projection=collapsed&types=comment",
+		nil,
+	)
+	require.Equal(http.StatusOK, filtered.Code)
+	var filteredBody struct {
+		Items        []activityItemResponse    `json:"items"`
+		ItemActivity []activitySubjectResponse `json:"item_activity"`
+	}
+	require.NoError(json.NewDecoder(filtered.Body).Decode(&filteredBody))
+	assert.Empty(filteredBody.Items)
+	assert.Empty(filteredBody.ItemActivity,
+		"hidden notifications must not pull otherwise-old parents into the window")
 }
 
 func TestAPIListActivitySearchEventDeltaDoesNotReadBeforeCursor(t *testing.T) {

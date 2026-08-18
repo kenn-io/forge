@@ -476,6 +476,7 @@ describe("activity store collapse state", () => {
     } as ActivityItem;
     let snapshotReads = 0;
     const threadQueries: Array<Record<string, unknown>> = [];
+    const bulkQueries: Array<Record<string, unknown>> = [];
     const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
       const query = options.params?.query ?? {};
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
@@ -484,7 +485,11 @@ describe("activity store collapse state", () => {
         return { data: { items: [newEvent], capped: false, event_cursor: "snapshot" }, error: null };
       }
       if (query.projection === "events") {
-        return { data: { items: [], capped: false, event_cursor: "snapshot" }, error: null };
+        bulkQueries.push(query);
+        return {
+          data: { items: bulkQueries.length === 1 ? [] : [newEvent], capped: false, event_cursor: "snapshot" },
+          error: null,
+        };
       }
       snapshotReads += 1;
       return {
@@ -503,7 +508,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([firstSubject]));
     store.expandAllThreads();
-    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    await vi.waitFor(() => expect(bulkQueries).toHaveLength(1));
 
     if (runtime === undefined) throw new Error("test runtime was not created");
     await runtime.runCommand(store.reconcileActivityEffect(), {
@@ -512,8 +517,8 @@ describe("activity store collapse state", () => {
       onFailure: () => {},
     }).exit;
 
-    await vi.waitFor(() => expect(threadQueries).toHaveLength(1));
-    expect(threadQueries[0]).toEqual(expect.objectContaining({ item_number: 8 }));
+    await vi.waitFor(() => expect(bulkQueries).toHaveLength(2));
+    expect(threadQueries).toHaveLength(0);
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(newEvent.id));
   });
 
@@ -830,14 +835,72 @@ describe("activity store collapse state", () => {
     }).exit;
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([]));
 
+    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+
     await runtime.runCommand(store.reconcileActivityEffect(), {
       operation: "reconcile reappeared activity parent in test",
       safeContext: {},
       onFailure: () => {},
     }).exit;
 
+    expect(threadReads).toBe(1);
+    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+
     await vi.waitFor(() => expect(threadReads).toBe(2));
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([reappearedEvent.id]));
+  });
+
+  it("uses bulk paging when collapsed reconciliation discovers globally expanded parents", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const subjects = [7, 8, 9].map((number) => ({ ...itemActivity(number), repo }));
+    let snapshotReads = 0;
+    let bulkReads = 0;
+    let threadReads = 0;
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (path === "/activity/thread-events") {
+        threadReads += 1;
+        return { data: { items: [], capped: false, event_cursor: "snapshot" }, error: null };
+      }
+      if (options?.params?.query?.projection === "events") {
+        bulkReads += 1;
+        return { data: { items: [], capped: false, event_cursor: "snapshot" }, error: null };
+      }
+      snapshotReads += 1;
+      return {
+        data: {
+          items: [],
+          item_activity: snapshotReads === 1 ? [] : subjects,
+          item_activity_capped: false,
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(false));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile new globally expanded parents in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    await vi.waitFor(() => expect(bulkReads).toBe(1));
+    expect(threadReads).toBe(0);
   });
 
   it("replaces edited and deleted cached events after a capped ledger revision change", async () => {

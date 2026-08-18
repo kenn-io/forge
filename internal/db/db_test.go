@@ -651,6 +651,24 @@ func TestActivityEventMutationRevisionMigrationUpgradesPopulatedV50Database(t *t
 			VALUES
 				(201, 21, 'comment', 'first', '2026-08-01T01:00:00Z', 'issue-201'),
 				(202, 21, 'comment', 'second', '2026-08-01T02:00:00Z', 'issue-202');
+			INSERT INTO forge_notification_items (
+				id, platform, platform_host, platform_notification_id, repo_id,
+				repo_owner, repo_name, subject_type, subject_title, web_url,
+				item_number, item_type, item_author, reason, unread,
+				source_updated_at, synced_at
+			) VALUES
+				(301, 'github', 'github.com', 'notification-pr', 1,
+				 'acme', 'widgets', 'PullRequest', 'PR notification', 'https://github.com/acme/widgets/pull/1',
+				 1, 'pr', 'author', 'mention', 1,
+				 '2026-08-01T01:30:00Z', '2026-08-01T01:30:00Z'),
+				(302, 'github', 'github.com', 'notification-issue', 1,
+				 'acme', 'widgets', 'Issue', 'Issue notification', 'https://github.com/acme/widgets/issues/3',
+				 3, 'issue', 'author', 'mention', 1,
+				 '2026-08-01T01:30:00Z', '2026-08-01T01:30:00Z'),
+				(303, 'github', 'github.com', 'notification-author', 1,
+				 'acme', 'widgets', 'PullRequest', 'Invisible author notification', 'https://github.com/acme/widgets/pull/1',
+				 1, 'pr', 'author', 'author', 1,
+				 '2026-08-01T01:45:00Z', '2026-08-01T01:45:00Z');
 		`)
 		require.NoError(err)
 	})
@@ -672,9 +690,9 @@ func TestActivityEventMutationRevisionMigrationUpgradesPopulatedV50Database(t *t
 	require.NoError(database.ReadDB().QueryRow(
 		`SELECT activity_event_revision FROM forge_issues WHERE id = 22`,
 	).Scan(&emptyIssueRevision))
-	assert.Equal(2, mrRevision)
+	assert.Equal(3, mrRevision)
 	assert.Zero(emptyMRRevision)
-	assert.Equal(2, issueRevision)
+	assert.Equal(3, issueRevision)
 	assert.Zero(emptyIssueRevision)
 
 	_, err = database.WriteDB().Exec(`
@@ -688,6 +706,25 @@ func TestActivityEventMutationRevisionMigrationUpgradesPopulatedV50Database(t *t
 		UPDATE forge_issue_events SET body = 'edited' WHERE id = 201;
 		DELETE FROM forge_issue_events WHERE id = 202;
 		UPDATE forge_issue_events SET issue_id = 22 WHERE id = 201;
+		INSERT INTO forge_notification_items (
+			id, platform, platform_host, platform_notification_id, repo_id,
+			repo_owner, repo_name, subject_type, subject_title, web_url,
+			item_number, item_type, item_author, reason, unread,
+			source_updated_at, synced_at
+		) VALUES
+			(304, 'github', 'github.com', 'notification-pr-inserted', 1,
+			 'acme', 'widgets', 'PullRequest', 'Inserted PR notification', 'https://github.com/acme/widgets/pull/1',
+			 1, 'pr', 'author', 'mention', 1,
+			 '2026-08-01T03:00:00Z', '2026-08-01T03:00:00Z'),
+			(305, 'github', 'github.com', 'notification-issue-inserted', 1,
+			 'acme', 'widgets', 'Issue', 'Inserted issue notification', 'https://github.com/acme/widgets/issues/3',
+			 3, 'issue', 'author', 'mention', 1,
+			 '2026-08-01T03:00:00Z', '2026-08-01T03:00:00Z');
+		UPDATE forge_notification_items SET subject_title = 'Edited PR notification' WHERE id = 301;
+		UPDATE forge_notification_items SET subject_title = 'Edited issue notification' WHERE id = 302;
+		DELETE FROM forge_notification_items WHERE id IN (304, 305);
+		UPDATE forge_notification_items SET item_number = 2 WHERE id = 301;
+		UPDATE forge_notification_items SET item_number = 4 WHERE id = 302;
 	`)
 	require.NoError(err)
 
@@ -703,10 +740,10 @@ func TestActivityEventMutationRevisionMigrationUpgradesPopulatedV50Database(t *t
 	require.NoError(database.ReadDB().QueryRow(
 		`SELECT activity_event_revision FROM forge_issues WHERE id = 22`,
 	).Scan(&emptyIssueRevision))
-	assert.Equal(6, mrRevision)
-	assert.Equal(1, emptyMRRevision)
-	assert.Equal(6, issueRevision)
-	assert.Equal(1, emptyIssueRevision)
+	assert.Equal(11, mrRevision)
+	assert.Equal(2, emptyMRRevision)
+	assert.Equal(11, issueRevision)
+	assert.Equal(2, emptyIssueRevision)
 
 	planRows, err := database.ReadDB().Query(`
 		EXPLAIN QUERY PLAN

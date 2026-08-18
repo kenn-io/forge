@@ -697,6 +697,17 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       hideClosedMerged ||
       hideBots ||
       enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
+    const absentThreadKeys = new Set<string>();
+    if (reconcileCollapsedThreads && (!result.response.item_activity_capped || parentFilterActive)) {
+      for (const key of previousSubjects.keys()) {
+        if (key !== undefined && !receivedSubjectKeys.has(key)) absentThreadKeys.add(key);
+      }
+      loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !absentThreadKeys.has(key)));
+      loadingThreadKeys = new Set([...loadingThreadKeys].filter((key) => !absentThreadKeys.has(key)));
+      failedThreadKeys = new Set([...failedThreadKeys].filter((key) => !absentThreadKeys.has(key)));
+      if (failedThreadKeys.size === 0) threadLoadError = null;
+      for (const key of absentThreadKeys) threadRequestTokens.delete(key);
+    }
     for (const subject of result.response.item_activity ?? []) {
       const key = stableParentKey(subject);
       const previous = key ? previousSubjects.get(key) : undefined;
@@ -730,7 +741,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? activityEventCursor;
     if (reconcileCollapsedThreads && (changedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0)) {
-      restartBulkActivity = changedThreadKeys.size > 0 && bulkRequestToken !== undefined;
+      restartBulkActivity =
+        (changedThreadKeys.size > 0 && bulkRequestToken !== undefined) ||
+        (!collapseThreads && newExpandedThreadKeys.size > 0);
       if (!restartBulkActivity) {
         const reloadThreadKeys = new Set([...changedThreadKeys, ...newExpandedThreadKeys]);
         loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !reloadThreadKeys.has(key)));

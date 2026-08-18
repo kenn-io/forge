@@ -1020,6 +1020,63 @@ func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {
 		"the issue ledger revision must detect edits to existing comments")
 }
 
+func TestListCollapsedActivityProjectionDetectsNonNewestNotificationMutation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	insertTestMR(t, d, repoID, 7, "Fix notification projection", base)
+	number := 7
+	older := Notification{
+		Platform:               "github",
+		PlatformHost:           "github.com",
+		PlatformNotificationID: "projection-older-notification",
+		RepoOwner:              "alice",
+		RepoName:               "alpha",
+		SubjectType:            "PullRequest",
+		SubjectTitle:           "Original notification",
+		WebURL:                 "https://github.com/alice/alpha/pull/7",
+		ItemNumber:             &number,
+		ItemType:               "pr",
+		ItemAuthor:             "contributor",
+		Reason:                 "mention",
+		Unread:                 true,
+		SourceUpdatedAt:        base.Add(time.Minute),
+		SyncedAt:               base.Add(time.Minute),
+	}
+	newer := older
+	newer.PlatformNotificationID = "projection-newer-notification"
+	newer.SubjectTitle = "Newer notification"
+	newer.SourceUpdatedAt = base.Add(4 * time.Minute)
+	newer.SyncedAt = base.Add(4 * time.Minute)
+	require.NoError(d.UpsertNotifications(ctx, []Notification{older, newer}))
+
+	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{Limit: 50},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	require.Len(projection.Subjects, 1)
+	initialLedgerRevision := projection.Subjects[0].EventLedgerRevision
+
+	older.SubjectTitle = "Edited notification"
+	older.Reason = "review_requested"
+	older.SourceUpdatedAt = base.Add(2 * time.Minute)
+	older.SyncedAt = base.Add(5 * time.Minute)
+	require.NoError(d.UpsertNotifications(ctx, []Notification{older}))
+
+	edited, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{Limit: 50},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	require.Len(edited.Subjects, 1)
+	assert.NotEqual(initialLedgerRevision, edited.Subjects[0].EventLedgerRevision,
+		"the parent revision must detect mutation of a non-newest notification")
+}
+
 func insertOversizedBranchCommitRow(
 	ctx context.Context,
 	d *DB,

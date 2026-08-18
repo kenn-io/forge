@@ -39,39 +39,18 @@ func issueActivityAtExpr(issue string) string {
 		issue)
 }
 
-// activityNotificationLedgerRevisionExpr identifies the visible notification
-// rows for a parent without depending on their activity timestamps. The count
-// and insertion high-water detect older backfills, while unread and provider
-// recency detect visible state changes to existing notification rows.
-func activityNotificationLedgerRevisionExpr(repo, itemType, itemNumber string) string {
-	return fmt.Sprintf(
-		"(SELECT printf('ntf:%%d:%%d:%%d:%%s', COUNT(*), COALESCE(MAX(n.id), 0), "+
-			"COALESCE(SUM(n.unread), 0), COALESCE(MAX(n.source_updated_at), '')) "+
-			"FROM forge_notification_items n WHERE n.item_type = '%s' "+
-			"AND n.item_number = %s AND n.reason != 'author' AND "+
-			"(n.repo_id = %s.id OR (n.repo_id IS NULL AND n.platform = %s.platform "+
-			"AND n.platform_host = %s.platform_host AND n.repo_owner = %s.owner_key "+
-			"AND n.repo_name = %s.name_key)))",
-		itemType, itemNumber, repo, repo, repo, repo, repo,
-	)
-}
-
 // prEventLedgerRevisionExpr and issueEventLedgerRevisionExpr identify every
 // child row a thread-events request can render. The parent mutation revision
 // advances for inserts, edits, and deletes, including older backfills that do
-// not change activity_at.
-func prEventLedgerRevisionExpr(pr, repo string) string {
-	return fmt.Sprintf(
-		"printf('pre:%%d', %s.activity_event_revision) || ':' || %s",
-		pr, activityNotificationLedgerRevisionExpr(repo, "pr", pr+".number"),
-	)
+// not change activity_at. Migration-owned triggers advance the same revision
+// for visible notification mutations, avoiding a correlated notification scan
+// for every projected parent.
+func prEventLedgerRevisionExpr(pr string) string {
+	return fmt.Sprintf("printf('pre:%%d', %s.activity_event_revision)", pr)
 }
 
-func issueEventLedgerRevisionExpr(issue, repo string) string {
-	return fmt.Sprintf(
-		"printf('ise:%%d', %s.activity_event_revision) || ':' || %s",
-		issue, activityNotificationLedgerRevisionExpr(repo, "issue", issue+".number"),
-	)
+func issueEventLedgerRevisionExpr(issue string) string {
+	return fmt.Sprintf("printf('ise:%%d', %s.activity_event_revision)", issue)
 }
 
 // ListActivity returns a unified, reverse-chronological feed of
@@ -678,7 +657,7 @@ func listActivitySubjectsWithQueryer(
 			       'pr' AS item_type, p.number AS item_number, p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state, p.author AS item_author,
 			       ` + prActivityAtExpr("p") + ` AS activity_at,
-			       ` + prEventLedgerRevisionExpr("p", "r") + ` AS event_ledger_revision
+			       ` + prEventLedgerRevisionExpr("p") + ` AS event_ledger_revision
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -693,7 +672,7 @@ func listActivitySubjectsWithQueryer(
 			       r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title, i.url, i.state, i.author,
 			       ` + issueActivityAtExpr("i") + `,
-			       ` + issueEventLedgerRevisionExpr("i", "r") + `
+			       ` + issueEventLedgerRevisionExpr("i") + `
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (

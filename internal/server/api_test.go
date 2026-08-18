@@ -23806,6 +23806,8 @@ func TestAPIListActivity(t *testing.T) {
 	require.NoError(json.NewDecoder(collapsed.Body).Decode(&collapsedBody))
 	assert.Empty(collapsedBody.Items, "collapsed projection must omit pull request child events")
 	require.Len(collapsedBody.ItemActivity, 1)
+	assert.NotEmpty(collapsedBody.ItemActivity[0].EventLedgerRevision,
+		"collapsed parents must identify the exact child ledger snapshot")
 	assert.NotEmpty(collapsedBody.EventCursor, "cursor must cover omitted child events")
 
 	delta := doJSON(

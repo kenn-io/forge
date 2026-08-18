@@ -470,6 +470,155 @@ describe("activity store collapse state", () => {
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([freshEvent.id]));
   });
 
+  it("reloads a loaded thread when an older event changes its ledger revision", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const originalSubject = {
+      ...itemActivity(7),
+      repo,
+      event_ledger_revision: "pre:1",
+    } as ActivitySubject;
+    const backfilledSubject = {
+      ...originalSubject,
+      event_ledger_revision: "pre:2",
+    } as ActivitySubject;
+    const recentEvent = {
+      ...notificationItem("ntf:recent-thread-event", "unread"),
+      item_number: 7,
+      repo,
+    } as ActivityItem;
+    const olderEvent = {
+      ...notificationItem("ntf:older-backfilled-event", "unread"),
+      item_number: 7,
+      repo,
+      created_at: "2026-08-08T12:00:00Z",
+    } as ActivityItem;
+    let activityReads = 0;
+    let threadReads = 0;
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (path === "/activity/thread-events") {
+        threadReads += 1;
+        return {
+          data: {
+            items: threadReads === 1 ? [recentEvent] : [recentEvent, olderEvent],
+            capped: false,
+            event_cursor: "snapshot",
+          },
+          error: null,
+        };
+      }
+      activityReads += 1;
+      return {
+        data: {
+          items: [],
+          item_activity: [activityReads === 1 ? originalSubject : backfilledSubject],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
+
+    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    await vi.waitFor(() => expect(threadReads).toBe(1));
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile backfilled activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    await vi.waitFor(() => expect(threadReads).toBe(2));
+    await vi.waitFor(() =>
+      expect(store.getActivityItems().map((item) => item.id)).toEqual([recentEvent.id, olderEvent.id]),
+    );
+  });
+
+  it("surfaces a later thread-page failure and retries the thread", async () => {
+    const subject = {
+      ...itemActivity(7),
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: "repo-7",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        host: "github.com",
+      },
+    } satisfies ActivitySubject;
+    const firstPageEvent = {
+      ...notificationItem("ntf:first-thread-page", "unread"),
+      item_number: 7,
+      repo: subject.repo,
+    } as ActivityItem;
+    let threadReads = 0;
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (path === "/activity/thread-events") {
+        threadReads += 1;
+        if (threadReads === 1) {
+          return {
+            data: { items: [firstPageEvent], capped: true, event_cursor: "snapshot", next_cursor: "page-2" },
+            error: null,
+          };
+        }
+        if (threadReads === 2) {
+          return {
+            error: {
+              code: "serviceUnavailable",
+              detail: "thread history unavailable",
+              title: "Service unavailable",
+              type: "about:blank",
+            },
+            response: new Response(null, { status: 503 }),
+          };
+        }
+        return {
+          data: { items: [firstPageEvent], capped: false, event_cursor: "snapshot" },
+          error: null,
+        };
+      }
+      return {
+        data: {
+          items: [],
+          item_activity: [subject],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([subject]));
+
+    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    await vi.waitFor(() => expect(store.getThreadLoadError()).toBe("thread history unavailable"));
+    expect(store.getActivityItems().map((item) => item.id)).toEqual([firstPageEvent.id]);
+
+    store.retryFailedThreadLoads();
+
+    await vi.waitFor(() => expect(threadReads).toBe(3));
+    await vi.waitFor(() => expect(store.getThreadLoadError()).toBeNull());
+  });
+
   it("discards a thread page that resolves after the activity scope changes", async () => {
     const subject = {
       ...itemActivity(7),

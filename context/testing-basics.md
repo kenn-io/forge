@@ -15,6 +15,8 @@ fixtures, or changing shell-script coverage.
   wall-clock deadline around an entire sync pipeline (`internal/github/sync_test.go::TestResolveDisplayNameDedupsConcurrentLookups`).
 - Pre-commit runs frontend core checks without full-project Effect diagnostics;
   explicit frontend checks and CI retain Effect coverage (`Makefile::frontend-check-no-deps`).
+- Package-local `svelte-check` tasks must pass that package's Vite config explicitly;
+  implicit discovery can load the root non-Svelte task config (`vite.config.ts:56`).
 - Do not use `-v` unless the user requests it or a particular failure genuinely
   needs verbose output.
 - Prefer table-driven Go tests. Use testify `require` for preconditions and

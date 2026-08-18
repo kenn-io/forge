@@ -1180,18 +1180,19 @@ type ActivityResponse struct {
 
 // ActivitySubjectResponse defines model for ActivitySubjectResponse.
 type ActivitySubjectResponse struct {
-	ActivityAt   time.Time               `json:"activity_at"`
-	ItemAuthor   *string                 `json:"item_author,omitempty"`
-	ItemNumber   int64                   `json:"item_number"`
-	ItemState    string                  `json:"item_state"`
-	ItemTitle    string                  `json:"item_title"`
-	ItemType     string                  `json:"item_type"`
-	ItemUrl      string                  `json:"item_url"`
-	PlatformHost string                  `json:"platform_host"`
-	Repo         ActivityRepoRefResponse `json:"repo"`
-	RepoName     string                  `json:"repo_name"`
-	RepoOwner    string                  `json:"repo_owner"`
-	Workspace    *WorkspaceRef           `json:"workspace,omitempty"`
+	ActivityAt          time.Time               `json:"activity_at"`
+	EventLedgerRevision string                  `json:"event_ledger_revision"`
+	ItemAuthor          *string                 `json:"item_author,omitempty"`
+	ItemNumber          int64                   `json:"item_number"`
+	ItemState           string                  `json:"item_state"`
+	ItemTitle           string                  `json:"item_title"`
+	ItemType            string                  `json:"item_type"`
+	ItemUrl             string                  `json:"item_url"`
+	PlatformHost        string                  `json:"platform_host"`
+	Repo                ActivityRepoRefResponse `json:"repo"`
+	RepoName            string                  `json:"repo_name"`
+	RepoOwner           string                  `json:"repo_owner"`
+	Workspace           *WorkspaceRef           `json:"workspace,omitempty"`
 }
 
 // AddRepoInputBody defines model for AddRepoInputBody.

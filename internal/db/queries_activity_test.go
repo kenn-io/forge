@@ -785,6 +785,27 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 	require.Len(projection.Subjects, 1)
 	assert.Equal(1, projection.Subjects[0].Subject.Key.ItemNumber)
 	assert.Equal(EncodeCursor(base.Add(time.Minute), "pre", 1), projection.EventCursor)
+	initialLedgerRevision := projection.Subjects[0].EventLedgerRevision
+	assert.NotEmpty(initialLedgerRevision)
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "late-sync",
+		CreatedAt:      base.Add(30 * time.Second),
+		DedupeKey:      "projection-backfilled-comment",
+	}}))
+
+	refreshed, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{Limit: 50},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	require.Len(refreshed.Subjects, 1)
+	assert.Equal(projection.Subjects[0].ActivityAt, refreshed.Subjects[0].ActivityAt,
+		"an older backfill must not change display recency")
+	assert.NotEqual(initialLedgerRevision, refreshed.Subjects[0].EventLedgerRevision,
+		"the per-parent ledger revision must detect an older backfill")
 }
 
 func insertOversizedBranchCommitRow(

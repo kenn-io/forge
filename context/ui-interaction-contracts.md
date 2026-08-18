@@ -925,10 +925,13 @@ Not every visibility control means "remove this entity entirely."
   generation that started them. Scope changes discard late pages and prevent older
   requests from clearing newer loading or error ownership
   (`frontend/src/lib/stores/activity.svelte.ts::invalidatePagedActivityRequests`).
-- Parent recency invalidates stale and in-flight thread pages before restarting from
-  authoritative recency; new expanded parents load complete history.
+- Parent recency or child-ledger revision invalidates stale and in-flight thread pages
+  before restarting; the ledger revision must advance for older backfills that do not
+  change display recency. New expanded parents load complete history.
   Otherwise authoritative reconciliation preserves loaded children and merges deltas; mobile and status
   totals consume the same summary authority (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
+- A failed thread page preserves already loaded children and exposes a retry that restarts
+  the frozen thread read (`frontend/src/lib/stores/activity.svelte.ts::retryFailedThreadLoads`).
 - An uncapped authoritative parent snapshot removes cached children whose stable parent
   identity is absent; a capped parent snapshot retains them because absence is not
   authoritative (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).

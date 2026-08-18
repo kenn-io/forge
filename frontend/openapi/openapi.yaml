@@ -230,6 +230,8 @@ components:
         activity_at:
           format: date-time
           type: string
+        event_ledger_revision:
+          type: string
         item_author:
           type: string
         item_number:
@@ -264,6 +266,7 @@ components:
         - item_url
         - item_state
         - activity_at
+        - event_ledger_revision
       type: object
     AddRepoInputBody:
       additionalProperties: false

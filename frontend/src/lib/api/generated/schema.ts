@@ -4723,6 +4723,7 @@ export interface components {
         ActivitySubjectResponse: {
             /** Format: date-time */
             activity_at: string;
+            event_ledger_revision: string;
             item_author?: string;
             /** Format: int64 */
             item_number: number;

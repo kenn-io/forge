@@ -203,6 +203,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let activityEventCursor = $state("");
   let loadedThreadKeys = $state.raw<ReadonlySet<string>>(new Set());
   let loadingThreadKeys = $state.raw<ReadonlySet<string>>(new Set());
+  let failedThreadKeys = $state.raw<ReadonlySet<string>>(new Set());
+  let threadLoadError = $state<string | null>(null);
   let filterTypes = $state<string[]>([]);
   let searchQuery = $state<string | undefined>(undefined);
   let authorFilter = $state<string | undefined>(undefined);
@@ -252,6 +254,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function getActivityError(): string | null {
     return storeError;
+  }
+  function getThreadLoadError(): string | null {
+    return threadLoadError;
   }
   function isActivityCapped(): boolean {
     return capped;
@@ -491,6 +496,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     pagedActivityGeneration += 1;
     threadRequestTokens.clear();
     loadingThreadKeys = new Set();
+    failedThreadKeys = new Set();
+    threadLoadError = null;
     bulkRequestToken = undefined;
   }
 
@@ -637,6 +644,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     activityEventCursor = result.response.event_cursor ?? "";
     loadedThreadKeys = new Set();
     loadingThreadKeys = new Set();
+    failedThreadKeys = new Set();
+    threadLoadError = null;
     loading = false;
     storeError = null;
   }
@@ -650,13 +659,18 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         .filter((key): key is string => key !== undefined),
     );
     const previousSubjects = new Map(itemActivity.map((subject) => [stableParentKey(subject), subject] as const));
-    const advancedThreadKeys = new Set<string>();
+    const changedThreadKeys = new Set<string>();
     const newExpandedThreadKeys = new Set<string>();
     for (const subject of result.response.item_activity ?? []) {
       const key = stableParentKey(subject);
       const previous = key ? previousSubjects.get(key) : undefined;
-      if (key && previous && previous.activity_at !== subject.activity_at) {
-        advancedThreadKeys.add(key);
+      if (
+        key &&
+        previous &&
+        (previous.activity_at !== subject.activity_at ||
+          previous.event_ledger_revision !== subject.event_ledger_revision)
+      ) {
+        changedThreadKeys.add(key);
       }
       if (key && !previous && isThreadItemExpanded(key) && !loadedThreadKeys.has(key)) {
         newExpandedThreadKeys.add(key);
@@ -668,18 +682,20 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         return (item.item_type === "pr" || item.item_type === "issue") && !receivedIDs.has(item.id);
       }
       return (
-        key !== undefined && receivedSubjectKeys.has(key) && !receivedIDs.has(item.id) && !advancedThreadKeys.has(key)
+        key !== undefined && receivedSubjectKeys.has(key) && !receivedIDs.has(item.id) && !changedThreadKeys.has(key)
       );
     });
     items = [...received, ...retainedThreadItems];
     projectActivitySubjects(result.response);
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-    if (advancedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0) {
-      loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !advancedThreadKeys.has(key)));
-      loadingThreadKeys = new Set([...loadingThreadKeys].filter((key) => !advancedThreadKeys.has(key)));
-      for (const key of advancedThreadKeys) threadRequestTokens.delete(key);
-      for (const key of new Set([...advancedThreadKeys, ...newExpandedThreadKeys])) {
+    if (changedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0) {
+      loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !changedThreadKeys.has(key)));
+      loadingThreadKeys = new Set([...loadingThreadKeys].filter((key) => !changedThreadKeys.has(key)));
+      failedThreadKeys = new Set([...failedThreadKeys].filter((key) => !changedThreadKeys.has(key)));
+      if (failedThreadKeys.size === 0) threadLoadError = null;
+      for (const key of changedThreadKeys) threadRequestTokens.delete(key);
+      for (const key of new Set([...changedThreadKeys, ...newExpandedThreadKeys])) {
         if (isThreadItemExpanded(key)) loadThreadEvents(key);
       }
     }
@@ -747,6 +763,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const requestToken = Symbol(key);
     threadRequestTokens.set(key, requestToken);
     loadingThreadKeys = new Set([...loadingThreadKeys, key]);
+    failedThreadKeys = new Set([...failedThreadKeys].filter((candidate) => candidate !== key));
+    if (failedThreadKeys.size === 0) threadLoadError = null;
     const snapshotCursor = activityEventCursor;
     const baseQuery = {
       provider: subject.repo.provider,
@@ -767,6 +785,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       requestGeneration === pagedActivityGeneration &&
       requestScope === pagedActivityScopeKey() &&
       threadRequestTokens.get(key) === requestToken;
+    const isCurrentScope = () =>
+      requestGeneration === pagedActivityGeneration && requestScope === pagedActivityScopeKey();
     const readAllPages = Effect.gen(function* () {
       let before = "";
       while (true) {
@@ -812,9 +832,20 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       {
         operation: "load activity thread",
         safeContext: { itemType: subject.item_type, itemNumber: subject.item_number },
-        onFailure: () => {},
+        onFailure: (failure) => {
+          if (!isCurrentScope()) return;
+          failedThreadKeys = new Set([...failedThreadKeys, key]);
+          threadLoadError = readErrorMessage(failure, "could not load activity thread");
+        },
       },
     );
+  }
+
+  function retryFailedThreadLoads(): void {
+    const retryKeys = [...failedThreadKeys].filter((key) => isThreadItemExpanded(key));
+    failedThreadKeys = new Set();
+    threadLoadError = null;
+    for (const key of retryKeys) loadThreadEvents(key);
   }
 
   function loadBulkActivity(): void {
@@ -1142,6 +1173,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getWorkspaceActivity,
     isActivityLoading,
     getActivityError,
+    getThreadLoadError,
     isActivityCapped,
     isItemActivityCapped,
     getActivityEventCursor,
@@ -1175,6 +1207,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     collapseAllThreads,
     expandAllThreads,
     toggleThreadItem,
+    retryFailedThreadLoads,
     setHideClosedMerged,
     setHideBots,
     setHideDefaultBranchActivity,

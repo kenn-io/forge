@@ -51,8 +51,8 @@ export default defineConfig({
       // package-local typechecks cheap without exposing per-package tasks.
       "svelte-check": {
         command: [
-          `(cd frontend && ${frontendVP} exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)`,
-          `(cd packages/github-app-ui && ${packageVP} exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)`,
+          `(cd frontend && ${frontendVP} exec -- svelte-check --config ./vite.config.ts --tsconfig ./tsconfig.json --fail-on-warnings)`,
+          `(cd packages/github-app-ui && ${packageVP} exec -- svelte-check --config ./vite.config.ts --tsconfig ./tsconfig.json --fail-on-warnings)`,
         ],
         input: [
           { auto: true },

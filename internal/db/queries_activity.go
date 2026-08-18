@@ -39,6 +39,44 @@ func issueActivityAtExpr(issue string) string {
 		issue)
 }
 
+// activityNotificationLedgerRevisionExpr identifies the visible notification
+// rows for a parent without depending on their activity timestamps. The count
+// and insertion high-water detect older backfills, while unread and provider
+// recency detect visible state changes to existing notification rows.
+func activityNotificationLedgerRevisionExpr(repo, itemType, itemNumber string) string {
+	return fmt.Sprintf(
+		"(SELECT printf('ntf:%%d:%%d:%%d:%%s', COUNT(*), COALESCE(MAX(n.id), 0), "+
+			"COALESCE(SUM(n.unread), 0), COALESCE(MAX(n.source_updated_at), '')) "+
+			"FROM forge_notification_items n WHERE n.item_type = '%s' "+
+			"AND n.item_number = %s AND n.reason != 'author' AND "+
+			"(n.repo_id = %s.id OR (n.repo_id IS NULL AND n.platform = %s.platform "+
+			"AND n.platform_host = %s.platform_host AND n.repo_owner = %s.owner_key "+
+			"AND n.repo_name = %s.name_key)))",
+		itemType, itemNumber, repo, repo, repo, repo, repo,
+	)
+}
+
+// prEventLedgerRevisionExpr and issueEventLedgerRevisionExpr are insertion
+// cursors for every child row a thread-events request can render. Unlike
+// activity_at, they advance when a sync backfills an older event.
+func prEventLedgerRevisionExpr(pr, repo string) string {
+	return fmt.Sprintf(
+		"(SELECT printf('pre:%%d:%%d', COUNT(*), COALESCE(MAX(e.id), 0)) "+
+			"FROM forge_mr_events e WHERE e.merge_request_id = %s.id "+
+			"AND e.event_type IN ('issue_comment', 'review', 'commit', 'force_push')) || ':' || %s",
+		pr, activityNotificationLedgerRevisionExpr(repo, "pr", pr+".number"),
+	)
+}
+
+func issueEventLedgerRevisionExpr(issue, repo string) string {
+	return fmt.Sprintf(
+		"(SELECT printf('ise:%%d:%%d', COUNT(*), COALESCE(MAX(e.id), 0)) "+
+			"FROM forge_issue_events e WHERE e.issue_id = %s.id "+
+			"AND e.event_type = 'issue_comment') || ':' || %s",
+		issue, activityNotificationLedgerRevisionExpr(repo, "issue", issue+".number"),
+	)
+}
+
 // ListActivity returns a unified, reverse-chronological feed of
 // activity across all repos. It merges new PRs, new issues, PR
 // events, issue events, default-branch commits/force-pushes, and
@@ -632,14 +670,15 @@ func listActivitySubjectsWithQueryer(
 		SELECT repo_id, platform, platform_host, platform_repo_id, repo_path,
 		       repo_owner, repo_name,
 		       item_type, item_number, item_title, item_url, item_state,
-		       item_author, activity_at
+		       item_author, activity_at, event_ledger_revision
 		FROM (
 			SELECT r.id AS repo_id, r.platform, r.platform_host,
 			       r.platform_repo_id, r.repo_path,
 			       r.owner AS repo_owner, r.name AS repo_name, r.repo_path_key,
 			       'pr' AS item_type, p.number AS item_number, p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state, p.author AS item_author,
-			       ` + prActivityAtExpr("p") + ` AS activity_at
+			       ` + prActivityAtExpr("p") + ` AS activity_at,
+			       ` + prEventLedgerRevisionExpr("p", "r") + ` AS event_ledger_revision
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -653,7 +692,8 @@ func listActivitySubjectsWithQueryer(
 			SELECT r.id, r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
 			       r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title, i.url, i.state, i.author,
-			       ` + issueActivityAtExpr("i") + `
+			       ` + issueActivityAtExpr("i") + `,
+			       ` + issueEventLedgerRevisionExpr("i", "r") + `
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -694,6 +734,7 @@ func listActivitySubjectsWithQueryer(
 			&subject.Subject.State,
 			&subject.Subject.Author,
 			&activityAt,
+			&subject.EventLedgerRevision,
 		); err != nil {
 			return nil, fmt.Errorf("scan activity subject: %w", err)
 		}

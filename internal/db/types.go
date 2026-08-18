@@ -1122,8 +1122,9 @@ type ActivityItem struct {
 // ActivitySubject is the authoritative parent projection for one pull request
 // or issue in the Activity time range. It is independent of event visibility.
 type ActivitySubject struct {
-	Subject    WorkspaceSubjectMetadata
-	ActivityAt time.Time
+	Subject             WorkspaceSubjectMetadata
+	ActivityAt          time.Time
+	EventLedgerRevision string
 }
 
 // Stack represents a detected chain of dependent PRs.

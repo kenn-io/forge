@@ -729,6 +729,12 @@
   {#if activity.getActivityError()}
     <div class="error-banner">{activity.getActivityError()}</div>
   {/if}
+  {#if activity.getThreadLoadError()}
+    <div class="error-banner error-banner--action" role="alert">
+      <span>{activity.getThreadLoadError()}</span>
+      <button type="button" onclick={activity.retryFailedThreadLoads}>Retry thread history</button>
+    </div>
+  {/if}
 
   {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
     <ScrollBox label="Activity feed">
@@ -1459,6 +1465,27 @@
     color: var(--accent-red);
     font-size: var(--font-size-sm);
     border-bottom: 1px solid var(--border-default);
+  }
+
+  .error-banner--action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .error-banner--action button {
+    border: 1px solid currentColor;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    padding: 2px 8px;
+  }
+
+  .error-banner--action button:hover {
+    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
   }
 
   .capped-notice {

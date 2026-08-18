@@ -237,18 +237,19 @@ type activityRepoRefResponse struct {
 }
 
 type activitySubjectResponse struct {
-	Repo         activityRepoRefResponse    `json:"repo"`
-	PlatformHost string                     `json:"platform_host"`
-	RepoOwner    string                     `json:"repo_owner"`
-	RepoName     string                     `json:"repo_name"`
-	ItemType     string                     `json:"item_type"`
-	ItemNumber   int                        `json:"item_number"`
-	ItemTitle    string                     `json:"item_title"`
-	ItemURL      string                     `json:"item_url"`
-	ItemState    string                     `json:"item_state"`
-	ItemAuthor   string                     `json:"item_author,omitempty"`
-	Workspace    *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
-	ActivityAt   string                     `json:"activity_at" format:"date-time"`
+	Repo                activityRepoRefResponse    `json:"repo"`
+	PlatformHost        string                     `json:"platform_host"`
+	RepoOwner           string                     `json:"repo_owner"`
+	RepoName            string                     `json:"repo_name"`
+	ItemType            string                     `json:"item_type"`
+	ItemNumber          int                        `json:"item_number"`
+	ItemTitle           string                     `json:"item_title"`
+	ItemURL             string                     `json:"item_url"`
+	ItemState           string                     `json:"item_state"`
+	ItemAuthor          string                     `json:"item_author,omitempty"`
+	Workspace           *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	ActivityAt          string                     `json:"activity_at" format:"date-time"`
+	EventLedgerRevision string                     `json:"event_ledger_revision"`
 }
 
 type workspaceActivitySubjectResponse struct {

@@ -1,5 +1,12 @@
 # MCP Companion
 
+- MCP is disabled unless `[mcp].enabled = true`; an omitted or zero port uses
+  the backend port plus one, while a nonzero port overrides it
+  (`internal/config/config.go::Config.MCPPort`).
+- MCP listeners are startup-bound, loopback-only, and use a distinct valid port
+  (`internal/server/config_reload.go::startupConfigSnapshot`).
+- Discovery publishes `mcp_listen_addr` through both daemon metadata surfaces
+  when MCP is enabled (`internal/daemonruntime/runtime.go::NewIdentity`).
 - MCP is a curated companion over the authenticated daemon, never a direct DB
   client or OpenAPI mirror (`internal/mcpserver/daemon.go::daemonClient`).
 - Use only canonical `kenn-forge` command/resource/prompt names and

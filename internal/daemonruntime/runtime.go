@@ -32,17 +32,19 @@ const (
 	metadataConfigPath    = "config_path"
 	metadataAuthTokenPath = "auth_token_path"
 	metadataBasePath      = "base_path"
+	metadataMCPListenAddr = "mcp_listen_addr"
 )
 
 // IdentityOptions contains the startup-bound values shared by both runtime
 // discovery surfaces.
 type IdentityOptions struct {
-	Version     string
-	Commit      string
-	DataDir     string
-	ConfigPath  string
-	BasePath    string
-	RequireAuth bool
+	Version       string
+	Commit        string
+	DataDir       string
+	ConfigPath    string
+	BasePath      string
+	RequireAuth   bool
+	MCPListenAddr string
 }
 
 // Identity is the single startup identity serialized to the authoritative
@@ -221,20 +223,24 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 	if opts.RequireAuth {
 		record.Metadata[metadataAuthTokenPath] = tokenPath
 	}
+	if opts.MCPListenAddr != "" {
+		record.Metadata[metadataMCPListenAddr] = opts.MCPListenAddr
+	}
 	return Identity{
 		Record: record,
 		LockMetadata: runtimelock.Metadata{
-			PID:         record.PID,
-			Host:        host,
-			Port:        tcpAddress.Port,
-			ListenAddr:  record.Address,
-			StartedAt:   record.StartedAt.UTC().Format(time.RFC3339),
-			Version:     record.Version,
-			Commit:      opts.Commit,
-			ConfigPath:  configPath,
-			TokenPath:   tokenPath,
-			BasePath:    basePath,
-			RequireAuth: opts.RequireAuth,
+			PID:           record.PID,
+			Host:          host,
+			Port:          tcpAddress.Port,
+			ListenAddr:    record.Address,
+			StartedAt:     record.StartedAt.UTC().Format(time.RFC3339),
+			Version:       record.Version,
+			Commit:        opts.Commit,
+			ConfigPath:    configPath,
+			TokenPath:     tokenPath,
+			BasePath:      basePath,
+			RequireAuth:   opts.RequireAuth,
+			MCPListenAddr: opts.MCPListenAddr,
 		},
 	}, nil
 }

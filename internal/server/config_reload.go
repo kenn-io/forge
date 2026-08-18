@@ -48,6 +48,7 @@ type startupConfigSnapshot struct {
 	DefaultPlatformHost             string
 	Host                            string
 	Port                            int
+	MCP                             config.MCP
 	BasePath                        string
 	DataDir                         string
 	SyncBudgetPerHour               int
@@ -91,6 +92,7 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		DefaultPlatformHost:             cfg.DefaultPlatformHost,
 		Host:                            cfg.Host,
 		Port:                            cfg.Port,
+		MCP:                             cfg.MCP,
 		BasePath:                        cfg.BasePath,
 		DataDir:                         cfg.DataDir,
 		SyncBudgetPerHour:               cfg.SyncBudgetPerHour,

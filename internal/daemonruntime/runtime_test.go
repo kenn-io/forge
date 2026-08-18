@@ -19,7 +19,7 @@ import (
 // authoritative lock metadata and generic daemon record. If either surface is
 // built independently again, they can advertise different process or listener
 // identities and attach clients to the wrong runtime.
-func TestNewIdentityKeepsDiscoverySurfacesAligned(t *testing.T) {
+func TestNewIdentityKeepsMCPListenAddrDiscoverySurfacesAligned(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -37,8 +37,10 @@ func TestNewIdentityKeepsDiscoverySurfacesAligned(t *testing.T) {
 
 	identity, err := NewIdentity(listener.Addr(), IdentityOptions{
 		Version: "v-test", Commit: "commit-test", DataDir: dataDir,
-		ConfigPath: configPath,
-		BasePath:   "/kenn-forge/", RequireAuth: true,
+		ConfigPath:    configPath,
+		BasePath:      "/kenn-forge/",
+		RequireAuth:   true,
+		MCPListenAddr: "127.0.0.1:8092",
 	})
 
 	require.NoError(err)
@@ -56,6 +58,8 @@ func TestNewIdentityKeepsDiscoverySurfacesAligned(t *testing.T) {
 	assert.Equal(metadata.ConfigPath, record.Metadata[metadataConfigPath])
 	assert.Equal("/kenn-forge", metadata.BasePath)
 	assert.Equal(metadata.BasePath, record.Metadata[metadataBasePath])
+	assert.Equal("127.0.0.1:8092", identity.Record.Metadata["mcp_listen_addr"])
+	assert.Equal("127.0.0.1:8092", identity.LockMetadata.MCPListenAddr)
 	assert.True(metadata.RequireAuth)
 }
 

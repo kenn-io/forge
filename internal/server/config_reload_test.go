@@ -2144,6 +2144,21 @@ func TestRestartRequiredForAuthFleetSessionsAndSSHPeers(t *testing.T) {
 	require.True(snap.restartRequiredFor(peerEdited))
 }
 
+func TestRestartRequiredForMCPConfig(t *testing.T) {
+	base := &config.Config{MCP: config.MCP{Enabled: true, Port: 8092}}
+	snap := snapshotStartupConfig(base)
+
+	assert.False(t, snap.restartRequiredFor(&config.Config{
+		MCP: config.MCP{Enabled: true, Port: 8092},
+	}))
+	assert.True(t, snap.restartRequiredFor(&config.Config{
+		MCP: config.MCP{Enabled: false, Port: 8092},
+	}))
+	assert.True(t, snap.restartRequiredFor(&config.Config{
+		MCP: config.MCP{Enabled: true, Port: 9192},
+	}))
+}
+
 func TestRestartRequiredForNotificationIntervals(t *testing.T) {
 	require := require.New(t)
 	base := func() *config.Config {

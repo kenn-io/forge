@@ -874,6 +874,11 @@ type Shell struct {
 	Command []string `toml:"command,omitempty"`
 }
 
+type MCP struct {
+	Enabled bool `toml:"enabled,omitempty" json:"enabled,omitempty"`
+	Port    int  `toml:"port,omitempty" json:"port,omitempty"`
+}
+
 type Config struct {
 	SyncInterval              string `toml:"sync_interval"`
 	ActivePRRefreshInterval   string `toml:"active_pr_refresh_interval"`
@@ -919,6 +924,7 @@ type Config struct {
 	Shell             Shell                    `toml:"shell"`
 	Fleet             Fleet                    `toml:"fleet"`
 	API               API                      `toml:"api"`
+	MCP               MCP                      `toml:"mcp"`
 
 	// parsedAllowedHosts is the canonicalised form of AllowedHosts,
 	// populated by Validate so the server constructor does not have
@@ -1034,6 +1040,24 @@ func (c *Config) SSEBufferSizeOrDefault() int {
 		return defaultSSEBufferSize
 	}
 	return c.SSEBufferSize
+}
+
+func (c *Config) MCPPort() int {
+	if c == nil || !c.MCP.Enabled {
+		return 0
+	}
+	if c.MCP.Port != 0 {
+		return c.MCP.Port
+	}
+	return c.Port + 1
+}
+
+func (c *Config) MCPListenAddr() string {
+	port := c.MCPPort()
+	if port == 0 {
+		return ""
+	}
+	return net.JoinHostPort(c.Host, strconv.Itoa(port))
 }
 
 // IsLoopbackHostname reports whether a URL hostname (no port, no
@@ -1521,6 +1545,21 @@ func (c *Config) validate() error {
 
 	if c.Port < 1 || c.Port > 65535 {
 		return fmt.Errorf("config: invalid port %d", c.Port)
+	}
+	if c.MCP.Port != 0 && (c.MCP.Port < 1 || c.MCP.Port > 65535) {
+		return fmt.Errorf("config: invalid MCP port %d", c.MCP.Port)
+	}
+	if c.MCP.Enabled {
+		mcpPort := c.MCPPort()
+		if mcpPort < 1 || mcpPort > 65535 {
+			return fmt.Errorf("config: invalid resolved MCP port %d", mcpPort)
+		}
+		if mcpPort == c.Port {
+			return fmt.Errorf("config: MCP port %d matches backend port", mcpPort)
+		}
+		if !IsLoopbackHostname(c.Host) {
+			return fmt.Errorf("config: MCP listener requires a loopback host, got %q", c.Host)
+		}
 	}
 
 	bindKey, err := ParseHostKey(net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
@@ -3173,6 +3212,7 @@ type configFile struct {
 	Shell                     Shell                    `toml:"shell,omitempty"`
 	Fleet                     Fleet                    `toml:"fleet,omitempty"`
 	API                       API                      `toml:"api,omitempty"`
+	MCP                       MCP                      `toml:"mcp,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -3212,6 +3252,7 @@ func (c *Config) Save(path string) error {
 		Shell:                   cfg.Shell,
 		Fleet:                   cfg.Fleet,
 		API:                     cfg.API,
+		MCP:                     cfg.MCP,
 	}
 	if cfg.DefaultPlatformHost == defaultPlatformHost {
 		f.DefaultPlatformHost = ""

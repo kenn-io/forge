@@ -1,6 +1,7 @@
 package runtimelock
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,21 +17,28 @@ func TestPathsAreUnderDataDir(t *testing.T) {
 	require.Equal(t, filepath.Join(dir, ".kenn-forge.run.json.tmp"), metadataTmpPath(dir))
 }
 
-func TestMetadataAtomicWriteRoundTrip(t *testing.T) {
+func TestMetadataMCPListenAddrAtomicWriteRoundTrip(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 
 	meta := Metadata{
-		PID:        4242,
-		Host:       "127.0.0.1",
-		Port:       8091,
-		ListenAddr: "127.0.0.1:8091",
-		StartedAt:  "2026-05-19T10:30:00Z",
-		Version:    "1.2.3",
-		Commit:     "abcd1234",
+		PID:           4242,
+		Host:          "127.0.0.1",
+		Port:          8091,
+		ListenAddr:    "127.0.0.1:8091",
+		MCPListenAddr: "127.0.0.1:8092",
+		StartedAt:     "2026-05-19T10:30:00Z",
+		Version:       "1.2.3",
+		Commit:        "abcd1234",
 	}
 
 	require.NoError(writeMetadata(dir, meta))
+
+	data, err := os.ReadFile(MetadataPath(dir))
+	require.NoError(err)
+	var encoded map[string]any
+	require.NoError(json.Unmarshal(data, &encoded))
+	require.Equal("127.0.0.1:8092", encoded["mcp_listen_addr"])
 
 	got, err := readMetadata(dir)
 	require.NoError(err)

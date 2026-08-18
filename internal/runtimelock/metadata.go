@@ -14,14 +14,15 @@ import (
 // Decoders accept unknown keys so future fields don't break older
 // readers; the default encoding/json behavior already does this.
 type Metadata struct {
-	PID        int    `json:"pid"`
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	ListenAddr string `json:"listen_addr"`
-	StartedAt  string `json:"started_at"`
-	Version    string `json:"version"`
-	Commit     string `json:"commit"`
-	ConfigPath string `json:"config_path,omitempty"`
+	PID           int    `json:"pid"`
+	Host          string `json:"host"`
+	Port          int    `json:"port"`
+	ListenAddr    string `json:"listen_addr"`
+	MCPListenAddr string `json:"mcp_listen_addr,omitempty"`
+	StartedAt     string `json:"started_at"`
+	Version       string `json:"version"`
+	Commit        string `json:"commit"`
+	ConfigPath    string `json:"config_path,omitempty"`
 	// TokenPath locates the API auth token file thin clients read
 	// to authenticate (see EnsureAuthToken). The daemon always mints
 	// the token at startup, so the path is always readable by the

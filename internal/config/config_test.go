@@ -57,6 +57,66 @@ func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
 	return cfg, cfg2
 }
 
+func TestMCPConfigDefaultsToBackendPortPlusOne(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\n"))
+	require.NoError(t, err)
+	assert.Equal(t, 8092, cfg.MCPPort())
+	assert.Equal(t, "127.0.0.1:8092", cfg.MCPListenAddr())
+}
+
+func TestMCPConfigRoundTrip(t *testing.T) {
+	cfg, err := Load(writeConfig(t, ""))
+	require.NoError(t, err)
+	cfg.MCP = MCP{Enabled: true, Port: 9192}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, cfg.Save(path))
+	reloaded, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, MCP{Enabled: true, Port: 9192}, reloaded.MCP)
+}
+
+func TestMCPConfigValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{
+			name:    "default port overflows",
+			content: "host = \"127.0.0.1\"\nport = 65535\n[mcp]\nenabled = true\n",
+			wantErr: "MCP port",
+		},
+		{
+			name:    "matches backend port",
+			content: "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\nport = 8091\n",
+			wantErr: "MCP port",
+		},
+		{
+			name:    "explicit port below range",
+			content: "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\nport = -1\n",
+			wantErr: "MCP port",
+		},
+		{
+			name:    "explicit port above range",
+			content: "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\nport = 65536\n",
+			wantErr: "MCP port",
+		},
+		{
+			name:    "non-loopback host",
+			content: "host = \"192.0.2.10\"\nport = 8091\n[mcp]\nenabled = true\n",
+			wantErr: "loopback",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tt.content))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
 func setFakeGHCLI(t *testing.T, stdout string) {
 	t.Helper()
 	setFakeGHCLIScript(t, fakeGHCLIOptions{Stdout: stdout})

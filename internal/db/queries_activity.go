@@ -198,8 +198,14 @@ func listActivityWithQueryer(
 		whereClauses = append(whereClauses, "item_number = ?")
 		args = append(args, opts.ParentItemNumber)
 	}
-	if opts.UnparentedOnly {
-		whereClauses = append(whereClauses, "parent_id IS NULL")
+	if opts.DirectProjectionOnly {
+		directConditions := []string{"parent_id IS NULL"}
+		if opts.HideBots {
+			directConditions = append(directConditions,
+				"NOT "+activityNotBotCondition("item_author"))
+		}
+		whereClauses = append(whereClauses,
+			"("+strings.Join(directConditions, " OR ")+")")
 	}
 	if opts.ViewerLogins != nil {
 		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))

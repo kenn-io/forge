@@ -1349,9 +1349,10 @@ type ListActivityOpts struct {
 	ParentRepoID         int64
 	ParentItemType       string
 	ParentItemNumber     int
-	// UnparentedOnly selects repository rows and item-scoped rows whose
-	// authoritative pull request or issue parent is absent.
-	UnparentedOnly bool
+	// DirectProjectionOnly selects rows that cannot be represented by the
+	// filtered parent projection, including repository/unparented rows and
+	// visible human events whose bot-authored parent is hidden.
+	DirectProjectionOnly bool
 	// NotificationRepoFilters limits notification rows to the caller's
 	// current monitored repo set before ordering/limit. nil means no
 	// additional notification scope; an empty/non-matching set means no

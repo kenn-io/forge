@@ -973,6 +973,46 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 		"an unchanged event upsert must not invalidate the thread cache")
 }
 
+func TestListCollapsedActivityProjectionRetainsVisibleEventsForBotParents(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "example", "actors")
+	botParentID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
+		withMRAuthor("dependabot[bot]"),
+		withMRActivity(base)))
+	humanParentID := insertTestMRWithOptions(t, d, testMR(repoID, 2,
+		withMRAuthor("human-author"),
+		withMRActivity(base)))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{
+			MergeRequestID: botParentID,
+			EventType:      "issue_comment", Author: "human-reviewer",
+			CreatedAt: base.Add(2 * time.Minute), DedupeKey: "human-comment-on-bot-parent",
+		},
+		{
+			MergeRequestID: humanParentID,
+			EventType:      "issue_comment", Author: "other-reviewer",
+			CreatedAt: base.Add(time.Minute), DedupeKey: "human-comment-on-human-parent",
+		},
+	}))
+
+	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{HideBots: true, Limit: 50},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	require.Len(projection.DirectRows, 1)
+	assert.Equal("comment", projection.DirectRows[0].ActivityType)
+	assert.Equal(1, projection.DirectRows[0].ItemNumber)
+	assert.Equal("human-reviewer", projection.DirectRows[0].Author)
+	require.Len(projection.Subjects, 1)
+	assert.Equal(2, projection.Subjects[0].Subject.Key.ItemNumber,
+		"ordinary human-authored parents must remain collapsed")
+}
+
 func TestListCollapsedActivityProjectionIncludesParentsRecentOnlyByNotification(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

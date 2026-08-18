@@ -912,9 +912,9 @@ Not every visibility control means "remove this entity entirely."
   hiding it cannot admit or reorder an otherwise-old parent. Other event visibility filters do
   not redefine parent recency (`internal/db/queries_activity.go::listActivitySubjectsWithQueryer`).
 - "Use workspace activity for recency" hydrates one global PR, Issue, and Activity opt-in. Disabled mode keeps provider sorting/display and hides cached workspace-only subjects while retaining `last_workspace_activity_at` as metadata (`frontend/src/lib/utils/effective-activity.ts::effectiveActivity`, `frontend/src/lib/components/ActivityFeed.svelte::visibleWorkspaceActivity`).
-- Activity presentation filters apply to event, parent, and workspace projections;
-  "Hide bots" tests event actors on events and item authors on parent/workspace subjects
-  (`frontend/src/lib/components/ActivityFeed.svelte::visibleItemActivity`).
+- "Hide bots" tests event actors on events and item authors on parent/workspace subjects;
+  collapsed Activity keeps a visible event direct when this hides its parent summary
+  (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
 - Visibility controls backed by server filtering, including "Hide closed/merged" and
   "Hide bots", reload Activity so turning a filter off can restore rows omitted from
   the bounded server window (`frontend/src/lib/components/ActivityFeed.svelte`).

@@ -32,7 +32,7 @@ func (d *DB) ListCollapsedActivityProjection(
 	}
 
 	directOpts := opts.ListActivityOpts
-	directOpts.UnparentedOnly = true
+	directOpts.DirectProjectionOnly = true
 	directRows, err := listActivityWithQueryer(ctx, tx, directOpts)
 	if err != nil {
 		return ActivityProjection{}, err

@@ -23957,6 +23957,48 @@ func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testi
 		"hidden notifications must not pull otherwise-old parents into the window")
 }
 
+func TestAPIListCollapsedActivityRetainsVisibleEventsForBotParents(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	prID := seedPR(
+		t, database, "acme", "widget", 81,
+		withSeedPRTitle("Bot-authored pull request"),
+		withSeedPRAuthor("dependabot[bot]"),
+		withSeedPRTimes(now.Add(-time.Hour), now.Add(-time.Hour), now.Add(-time.Hour)),
+	)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "human-reviewer",
+		Body:           "Visible human comment",
+		CreatedAt:      now,
+		DedupeKey:      "api-human-comment-on-bot-parent",
+	}}))
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+since+"&projection=collapsed&hide_bots=true",
+		nil,
+	)
+	require.Equal(http.StatusOK, rr.Code)
+	var body struct {
+		Items        []activityItemResponse    `json:"items"`
+		ItemActivity []activitySubjectResponse `json:"item_activity"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(body.Items, 1)
+	assert.Equal("comment", body.Items[0].ActivityType)
+	assert.Equal(81, body.Items[0].ItemNumber)
+	assert.Equal("human-reviewer", body.Items[0].Author)
+	assert.Empty(body.ItemActivity)
+}
+
 func TestAPIListActivitySearchEventDeltaDoesNotReadBeforeCursor(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)

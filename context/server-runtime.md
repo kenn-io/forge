@@ -21,6 +21,9 @@ and the root event stream.
   files before marking completion and relocating the database; explicit config
   paths and `KENN_FORGE_HOME` never relocate config
   (`internal/config/legacy_migration.go::migrateLegacyConfig`).
+- Sync-enabled startup keeps the local UI and scheduled sync available during transient
+  GitHub credential or identity failures; permanent auth and config failures remain fatal
+  (`cmd/kenn-forge/provider_startup_fallback.go::buildProviderStartupWithFallback`).
 
 ## Startup Lock
 

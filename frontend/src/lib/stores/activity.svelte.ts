@@ -666,6 +666,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         const key = stableParentKey(subject);
         if (key && isThreadItemExpanded(key)) loadThreadEvents(key);
       }
+    } else if (
+      projection === "full" &&
+      viewMode === "threaded" &&
+      !collapseThreads &&
+      capped &&
+      activityEventCursor !== ""
+    ) {
+      loadBulkActivity();
     }
   }
 

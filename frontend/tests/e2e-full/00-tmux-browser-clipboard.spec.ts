@@ -474,6 +474,24 @@ async function terminalCellCenter(
   );
 }
 
+async function hoverTerminalLink(
+  page: Page,
+  terminal: Locator,
+  resetPoint: { x: number; y: number },
+  linkPoint: { x: number; y: number },
+  destination: string,
+): Promise<Locator> {
+  const tooltip = terminal.locator(".terminal-link-tooltip");
+  await expect
+    .poll(async () => {
+      await page.mouse.move(resetPoint.x, resetPoint.y);
+      await page.mouse.move(linkPoint.x, linkPoint.y);
+      return await tooltip.textContent();
+    })
+    .toContain(destination);
+  return tooltip;
+}
+
 async function emitApplicationOsc52(
   page: Page,
   container: Locator,
@@ -845,10 +863,7 @@ test("real xterm links disclose destinations and require a modified click", asyn
       const point = await terminalCellCenter(terminal, dimensions, 4, 0);
       const resetPoint = await terminalCellCenter(terminal, dimensions, 4, 2);
 
-      await page.mouse.move(resetPoint.x, resetPoint.y);
-      await page.mouse.move(point.x, point.y);
-      const tooltip = terminal.locator(".terminal-link-tooltip");
-      await expect(tooltip).toContainText(link.destination);
+      const tooltip = await hoverTerminalLink(page, terminal, resetPoint, point, link.destination);
       await expect(tooltip).toContainText(`${modifierLabel}+Click to open link`);
 
       const opensBeforeClick = await terminalLinkOpens(page);
@@ -857,8 +872,7 @@ test("real xterm links disclose destinations and require a modified click", asyn
 
       await page.mouse.move(resetPoint.x, resetPoint.y);
       await expect(tooltip).toHaveCount(0);
-      await page.mouse.move(point.x, point.y);
-      await expect(tooltip).toContainText(link.destination);
+      await hoverTerminalLink(page, terminal, resetPoint, point, link.destination);
       await page.keyboard.down(modifier);
       await page.mouse.click(point.x, point.y);
       await page.keyboard.up(modifier);

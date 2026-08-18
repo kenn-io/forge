@@ -155,6 +155,49 @@ describe("activity store workspace activity", () => {
 });
 
 describe("activity store collapse state", () => {
+  async function expectInitialExpandedFeedToPage(
+    initialize: (store: ReturnType<typeof createActivityStore>) => void,
+  ): Promise<void> {
+    const newest = notificationItem("ntf:initial-expanded-newest", "unread");
+    const older = notificationItem("ntf:initial-expanded-older", "read");
+    const projections: Array<string | undefined> = [];
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      const projection = options?.params?.query?.projection;
+      projections.push(projection);
+      if (projection === "events") {
+        return {
+          data: {
+            items: [newest, older],
+            item_activity: [],
+            workspace_activity: [],
+            capped: false,
+            event_cursor: "snapshot",
+          },
+          error: null,
+        };
+      }
+      return {
+        data: {
+          items: [newest],
+          item_activity: [],
+          workspace_activity: [],
+          capped: true,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    initialize(store);
+
+    store.loadActivity();
+
+    await vi.waitFor(() => expect(projections).toEqual(["full", "events"]));
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.getActivityItems().map((item) => item.id)).toEqual([newest.id, older.id]);
+  }
+
   it("requests the collapsed projection for the default collapsed threaded view", async () => {
     const get = vi.fn(async () => ({
       data: { items: [], item_activity: [], workspace_activity: [], capped: false, event_cursor: "hidden:9" },
@@ -173,6 +216,21 @@ describe("activity store collapse state", () => {
       }),
     );
     expect(store.getActivityEventCursor()).toBe("hidden:9");
+  });
+
+  it("pages a capped feed when persisted settings initialize threaded mode expanded", async () => {
+    await expectInitialExpandedFeedToPage((store) => {
+      store.hydrateDefaults(settings(false));
+      store.initializeFromMount();
+    });
+  });
+
+  it("pages a capped feed when the URL initializes threaded mode expanded", async () => {
+    window.history.replaceState(null, "", "/?collapsed=0");
+    await expectInitialExpandedFeedToPage((store) => {
+      store.hydrateDefaults(settings(true));
+      store.initializeFromMount();
+    });
   });
 
   it("requests full events while a mobile activity consumer is mounted", async () => {

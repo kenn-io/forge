@@ -374,7 +374,8 @@
     return repoGroups;
   });
 
-  const mountController = createProgressiveMountController({ batchSize: 25 });
+  const progressiveMountBatchSize = 25;
+  const mountController = createProgressiveMountController({ batchSize: progressiveMountBatchSize });
   let mountedEntryCount = $state(0);
   let lastMountProjectionKey = "";
   const totalEntryCount = $derived(grouped.reduce((count, group) => count + group.items.length, 0));
@@ -399,7 +400,10 @@
     untrack(() => {
       lastMountProjectionKey = projectionKey;
       mountController.cancel();
-      mountedEntryCount = Math.min(25, totalEntryCount);
+      mountedEntryCount = Math.min(
+        Math.max(mountedEntryCount, progressiveMountBatchSize),
+        totalEntryCount,
+      );
       mountController.start(mountedEntryCount, totalEntryCount, (count) => {
         mountedEntryCount = count;
       });

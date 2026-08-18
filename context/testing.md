@@ -270,6 +270,9 @@ creates a canvas (`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.t
 Derive xterm pointer coordinates from rendered cell geometry, not terminal
 WebSocket dimensions; resize frames can lag an inline pane's rendered size
 (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts::dragTerminalCells`).
+Canvas-backed xterm link tests must re-enter the target cell while polling; PTY output
+can arrive before Chromium updates the painted link map
+(`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts::hoverTerminalLink`).
 When a real-tmux browser test moves one session between terminal hosts, close
 the old WebSocket before mounting the next host and reassert mouse mode; concurrent
 clients change tmux sizing and mode delivery (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts:524`).

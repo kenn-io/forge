@@ -2177,7 +2177,7 @@
           </span>
         {:else}
           <Button size="sm" tone="neutral" surface="outline" onclick={loadFullTimeline}>
-            Load full timeline ({unmountedEntryCount} more {unmountedEntryCount === 1 ? "entry" : "entries"})
+            Show {unmountedEntryCount} more
           </Button>
         {/if}
       </div>

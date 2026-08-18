@@ -921,8 +921,12 @@ Not every visibility control means "remove this entity entirely."
   (`frontend/src/lib/stores/activity.svelte.ts::pollNewItems`).
 - Single-thread Activity expansion uses stable repository identity, a frozen upper bound,
   and the active event, search, and visibility filters (`internal/server/huma_routes.go::listActivityThreadEvents`).
-- Expand all pages the bulk event read instead of fanning out per thread
+- Globally expanded threaded Activity pages the bulk event read, including when settings
+  or URL state initializes it expanded, instead of fanning out per thread
   (`frontend/src/lib/stores/activity.svelte.ts::loadBulkActivity`).
+- Progressive Activity mounting must retain its already-visible row window across routine
+  projection updates; collapsing it during refresh makes the side pane flash
+  (`frontend/src/lib/components/ActivityThreaded.svelte::mountedEntryCount`).
 - Thread and bulk event pages belong to the repository, range, filter, and projection
   generation that started them. Scope changes discard late pages and prevent older
   requests from clearing newer loading or error ownership

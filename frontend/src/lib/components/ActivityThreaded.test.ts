@@ -133,6 +133,35 @@ describe("ActivityThreaded collapse", () => {
     expect(container.querySelectorAll(".item-row")).toHaveLength(51);
   });
 
+  it("keeps mounted rows visible when activity updates the projection", async () => {
+    vi.useFakeTimers();
+    const subjects = Array.from({ length: 51 }, (_, index) =>
+      itemSubject({ item_number: index + 1, item_title: `Projection item ${index + 1}` }),
+    );
+    const { container, rerender } = render(ActivityThreaded, {
+      props: { items: [], itemActivity: subjects, onSelectItem: undefined },
+    });
+    await vi.runAllTimersAsync();
+    expect(container.querySelectorAll(".item-row")).toHaveLength(51);
+
+    await rerender({
+      items: [],
+      itemActivity: [
+        itemSubject({
+          activity_at: "2026-04-27T15:00:00Z",
+          item_number: 52,
+          item_title: "Newly reconciled item",
+        }),
+        ...subjects,
+      ],
+      onSelectItem: undefined,
+    });
+
+    expect(container.querySelectorAll(".item-row")).toHaveLength(51);
+    await vi.runAllTimersAsync();
+    expect(container.querySelectorAll(".item-row")).toHaveLength(52);
+  });
+
   it("renders a workspace-active subject with no provider events as an unexpandable group", async () => {
     const onSelectItem = vi.fn();
     const { container, getByLabelText } = render(ActivityThreaded, {

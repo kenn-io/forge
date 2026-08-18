@@ -583,6 +583,19 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return projected;
   }
 
+  function projectOwnedActivityPages(results: readonly OwnedActivityResponse[]): ActivityItem[] {
+    const seen = new Set<string>();
+    const projected: ActivityItem[] = [];
+    for (const result of results) {
+      for (const item of projectOwnedNotificationStates(result, false)) {
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+        projected.push(item);
+      }
+    }
+    return projected;
+  }
+
   function stableParentKey(item: ActivityItem | ActivitySubject): string | undefined {
     const repo = item.repo;
     if (!repo) return undefined;
@@ -657,6 +670,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function projectAuthoritativeActivitySnapshot(result: OwnedActivityResponse): void {
+    const reconcileCollapsedThreads = shouldUseCollapsedAuthoritativeProjection();
     const received = projectOwnedNotificationStates(result);
     const receivedIDs = new Set(received.map((item) => item.id));
     const receivedSubjectKeys = new Set(
@@ -667,6 +681,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const previousSubjects = new Map(itemActivity.map((subject) => [stableParentKey(subject), subject] as const));
     const changedThreadKeys = new Set<string>();
     const newExpandedThreadKeys = new Set<string>();
+    const parentFilterActive =
+      searchQuery !== undefined ||
+      authorFilter !== undefined ||
+      involvesMe ||
+      hideClosedMerged ||
+      hideBots ||
+      enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
     for (const subject of result.response.item_activity ?? []) {
       const key = stableParentKey(subject);
       const previous = key ? previousSubjects.get(key) : undefined;
@@ -678,13 +699,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ) {
         changedThreadKeys.add(key);
       }
-      if (key && !previous && isThreadItemExpanded(key) && !loadedThreadKeys.has(key)) {
+      if (reconcileCollapsedThreads && key && !previous && isThreadItemExpanded(key) && !loadedThreadKeys.has(key)) {
         newExpandedThreadKeys.add(key);
       }
     }
     const retainedThreadItems = items.filter((item) => {
       const key = stableParentKey(item);
-      if (result.response.item_activity_capped) {
+      if (result.response.item_activity_capped && !parentFilterActive) {
         return (
           (item.item_type === "pr" || item.item_type === "issue") &&
           !receivedIDs.has(item.id) &&
@@ -699,7 +720,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     projectActivitySubjects(result.response);
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-    if (changedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0) {
+    if (reconcileCollapsedThreads && (changedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0)) {
       loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !changedThreadKeys.has(key)));
       loadingThreadKeys = new Set([...loadingThreadKeys].filter((key) => !changedThreadKeys.has(key)));
       failedThreadKeys = new Set([...failedThreadKeys].filter((key) => !changedThreadKeys.has(key)));
@@ -772,6 +793,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const requestGeneration = pagedActivityGeneration;
     const requestScope = pagedActivityScopeKey();
     const requestToken = Symbol(key);
+    const initialThreadItemIDs = new Set(items.filter((item) => stableParentKey(item) === key).map((item) => item.id));
     threadRequestTokens.set(key, requestToken);
     loadingThreadKeys = new Set([...loadingThreadKeys, key]);
     failedThreadKeys = new Set([...failedThreadKeys].filter((candidate) => candidate !== key));
@@ -798,29 +820,35 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       threadRequestTokens.get(key) === requestToken;
     const readAllPages = Effect.gen(function* () {
       let before = "";
+      const pageResults: OwnedActivityResponse[] = [];
       while (true) {
         const query = {
           ...baseQuery,
           ...(before ? { before } : {}),
         };
+        const startedAt = yield* Effect.sync(() => ++activityLifecycleTick);
         const response = yield* executeGeneratedApiRequest("GET /activity/thread-events", (client, signal) =>
           client.GET("/activity/thread-events", { params: { query }, signal }),
         ).pipe(retryIdempotentRead);
-        const current = yield* Effect.sync(() => {
-          if (!isCurrentRequest()) return false;
-          const existingIDs = new Set(items.map((item) => item.id));
-          const additions = (response.items ?? []).filter((item) => !existingIDs.has(item.id));
-          if (additions.length > 0) {
-            items = [...items, ...additions];
-            reconcileItemsWithParentSubjects(itemActivity);
-          }
-          return true;
-        });
-        if (!current) return;
+        if (!(yield* Effect.sync(isCurrentRequest))) return;
+        pageResults.push({ response, startedAt });
         const next = response.next_cursor ?? "";
         if (next === "") break;
         before = next;
       }
+      yield* Effect.sync(() => {
+        if (!isCurrentRequest()) return;
+        const replacement = projectOwnedActivityPages(pageResults);
+        const replacementIDs = new Set(replacement.map((item) => item.id));
+        items = [
+          ...items.filter((item) => {
+            if (stableParentKey(item) !== key) return true;
+            return !initialThreadItemIDs.has(item.id) && !replacementIDs.has(item.id);
+          }),
+          ...replacement,
+        ];
+        reconcileItemsWithParentSubjects(itemActivity);
+      });
     });
     runtime.runCommand(
       readAllPages.pipe(
@@ -872,6 +900,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const requestScope = pagedActivityScopeKey();
     const requestToken = Symbol("bulk activity");
     bulkRequestToken = requestToken;
+    const initialItemIDs = new Set(items.map((item) => item.id));
     const snapshotCursor = activityEventCursor;
     const baseParams = buildParams();
     baseParams.projection = "events";
@@ -885,24 +914,26 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     storeError = null;
     const program = Effect.gen(function* () {
       let before = "";
+      const pageResults: OwnedActivityResponse[] = [];
       while (true) {
         const params = { ...baseParams, ...(before !== "" ? { before } : {}) };
         const result = yield* activityRead(params);
-        const current = yield* Effect.sync(() => {
-          if (!isCurrentRequest()) return false;
-          const existingIDs = new Set(items.map((item) => item.id));
-          const additions = projectOwnedNotificationStates(result, false).filter((item) => !existingIDs.has(item.id));
-          if (additions.length > 0) {
-            items = [...items, ...additions];
-            reconcileItemsWithParentSubjects(itemActivity);
-          }
-          return true;
-        });
-        if (!current) return;
+        if (!(yield* Effect.sync(isCurrentRequest))) return;
+        pageResults.push(result);
         const next = result.response.next_cursor ?? "";
         if (next === "") break;
         before = next;
       }
+      yield* Effect.sync(() => {
+        if (!isCurrentRequest()) return;
+        const replacement = projectOwnedActivityPages(pageResults);
+        const replacementIDs = new Set(replacement.map((item) => item.id));
+        items = [
+          ...items.filter((item) => !initialItemIDs.has(item.id) && !replacementIDs.has(item.id)),
+          ...replacement,
+        ];
+        reconcileItemsWithParentSubjects(itemActivity);
+      });
     }).pipe(
       Effect.tapError((failure) =>
         Effect.sync(() => {

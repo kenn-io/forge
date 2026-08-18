@@ -937,13 +937,12 @@ Not every visibility control means "remove this entity entirely."
 - A foreground collapsed snapshot replacement clears thread-page authority, then reloads
   every received parent that remains expanded so a scope or filter change cannot leave an
   expanded row empty (`frontend/src/lib/stores/activity.svelte.ts::projectActivitySnapshot`).
-- A failed thread page preserves already loaded children and exposes a retry that restarts
-  the frozen thread read. Only the request token that still owns the thread may publish
-  that error; superseded failures are discarded
-  (`frontend/src/lib/stores/activity.svelte.ts::retryFailedThreadLoads`).
-- An uncapped authoritative parent snapshot removes cached children whose stable parent
-  identity is absent; a capped parent snapshot retains them because absence is not
-  authoritative (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
+- Thread and bulk pages publish only after complete success; failures preserve the
+  pre-request projection. Thread retries restart the frozen read, and only the owning
+  token may publish an error (`frontend/src/lib/stores/activity.svelte.ts::retryFailedThreadLoads`).
+- Uncapped snapshots evict absent-parent children. Capped snapshots retain absent
+  caches only without an active parent filter; filtered absence is authoritative for
+  the visible projection (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
 - Activity `capped` reports event overflow; only it triggers event reloads and the
   event warning. `item_activity_capped` drives only the independent parent-truncation
   notice; a search whose event matches overflow the event page also reports it, because

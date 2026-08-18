@@ -617,6 +617,99 @@ func TestArchivePromotionBoundaryMigrationReopensMaintenanceGap(t *testing.T) {
 	assertDatabaseIntegrityForTest(t, database.ReadDB())
 }
 
+func TestActivityEventMutationRevisionMigrationUpgradesPopulatedV50Database(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dbPath := filepath.Join(t.TempDir(), "activity-event-revision-v50.db")
+
+	openAtVersionForTest(t, dbPath, 50, func(raw *sql.DB) {
+		_, err := raw.Exec(`
+			INSERT INTO forge_repos (
+				id, platform, platform_host, platform_repo_id,
+				owner, name, repo_path, owner_key, name_key, repo_path_key,
+				created_at
+			) VALUES (
+				1, 'github', 'github.com', 'provider-1',
+				'acme', 'widgets', 'acme/widgets', 'acme', 'widgets', 'acme/widgets',
+				'2026-08-01T00:00:00Z'
+			);
+			INSERT INTO forge_merge_requests (
+				id, repo_id, platform_id, number, created_at, updated_at, last_activity_at
+			) VALUES
+				(11, 1, 101, 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+				(12, 1, 102, 2, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z');
+			INSERT INTO forge_issues (
+				id, repo_id, platform_id, number, created_at, updated_at, last_activity_at
+			) VALUES
+				(21, 1, 201, 3, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+				(22, 1, 202, 4, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z');
+			INSERT INTO forge_mr_events (id, merge_request_id, event_type, body, created_at, dedupe_key)
+			VALUES
+				(101, 11, 'comment', 'first', '2026-08-01T01:00:00Z', 'mr-101'),
+				(102, 11, 'comment', 'second', '2026-08-01T02:00:00Z', 'mr-102');
+			INSERT INTO forge_issue_events (id, issue_id, event_type, body, created_at, dedupe_key)
+			VALUES
+				(201, 21, 'comment', 'first', '2026-08-01T01:00:00Z', 'issue-201'),
+				(202, 21, 'comment', 'second', '2026-08-01T02:00:00Z', 'issue-202');
+		`)
+		require.NoError(err)
+	})
+
+	database, err := Open(dbPath)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	var mrRevision, emptyMRRevision, issueRevision, emptyIssueRevision int
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT activity_event_revision FROM forge_merge_requests WHERE id = 11`,
+	).Scan(&mrRevision))
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT activity_event_revision FROM forge_merge_requests WHERE id = 12`,
+	).Scan(&emptyMRRevision))
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT activity_event_revision FROM forge_issues WHERE id = 21`,
+	).Scan(&issueRevision))
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT activity_event_revision FROM forge_issues WHERE id = 22`,
+	).Scan(&emptyIssueRevision))
+	assert.Equal(2, mrRevision)
+	assert.Zero(emptyMRRevision)
+	assert.Equal(2, issueRevision)
+	assert.Zero(emptyIssueRevision)
+
+	_, err = database.WriteDB().Exec(`
+		INSERT INTO forge_mr_events (id, merge_request_id, event_type, body, created_at, dedupe_key)
+		VALUES (103, 11, 'comment', 'inserted', '2026-08-01T03:00:00Z', 'mr-103');
+		UPDATE forge_mr_events SET body = 'edited' WHERE id = 101;
+		DELETE FROM forge_mr_events WHERE id = 102;
+		UPDATE forge_mr_events SET merge_request_id = 12 WHERE id = 101;
+		INSERT INTO forge_issue_events (id, issue_id, event_type, body, created_at, dedupe_key)
+		VALUES (203, 21, 'comment', 'inserted', '2026-08-01T03:00:00Z', 'issue-203');
+		UPDATE forge_issue_events SET body = 'edited' WHERE id = 201;
+		DELETE FROM forge_issue_events WHERE id = 202;
+		UPDATE forge_issue_events SET issue_id = 22 WHERE id = 201;
+	`)
+	require.NoError(err)
+
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT activity_event_revision FROM forge_merge_requests WHERE id = 11`,
+	).Scan(&mrRevision))
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT activity_event_revision FROM forge_merge_requests WHERE id = 12`,
+	).Scan(&emptyMRRevision))
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT activity_event_revision FROM forge_issues WHERE id = 21`,
+	).Scan(&issueRevision))
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT activity_event_revision FROM forge_issues WHERE id = 22`,
+	).Scan(&emptyIssueRevision))
+	assert.Equal(6, mrRevision)
+	assert.Equal(1, emptyMRRevision)
+	assert.Equal(6, issueRevision)
+	assert.Equal(1, emptyIssueRevision)
+	assertDatabaseIntegrityForTest(t, database.ReadDB())
+}
+
 func TestOpenMigratesLegacyDatabase(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

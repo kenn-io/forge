@@ -785,7 +785,7 @@ describe("activity store collapse state", () => {
     );
   });
 
-  it("surfaces a later thread-page failure and retries the thread", async () => {
+  it("keeps thread pages atomic across a later failure and retry", async () => {
     const subject = {
       ...itemActivity(7),
       repo: {
@@ -798,11 +798,19 @@ describe("activity store collapse state", () => {
         host: "github.com",
       },
     } satisfies ActivitySubject;
-    const firstPageEvent = {
-      ...notificationItem("ntf:first-thread-page", "unread"),
+    const staleEditedEvent = {
+      ...notificationItem("ntf:edited-thread-event", "unread"),
       item_number: 7,
+      body_preview: "stale body",
       repo: subject.repo,
     } as ActivityItem;
+    const staleDeletedEvent = {
+      ...notificationItem("ntf:deleted-thread-event", "unread"),
+      item_number: 7,
+      body_preview: "deleted body",
+      repo: subject.repo,
+    } as ActivityItem;
+    const refreshedEditedEvent = { ...staleEditedEvent, body_preview: "refreshed body" };
     let threadReads = 0;
     const get = vi.fn(async (path: string) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
@@ -810,7 +818,12 @@ describe("activity store collapse state", () => {
         threadReads += 1;
         if (threadReads === 1) {
           return {
-            data: { items: [firstPageEvent], capped: true, event_cursor: "snapshot", next_cursor: "page-2" },
+            data: {
+              items: [staleEditedEvent, staleDeletedEvent],
+              capped: true,
+              event_cursor: "snapshot",
+              next_cursor: "page-2",
+            },
             error: null,
           };
         }
@@ -826,7 +839,7 @@ describe("activity store collapse state", () => {
           };
         }
         return {
-          data: { items: [firstPageEvent], capped: false, event_cursor: "snapshot" },
+          data: { items: [refreshedEditedEvent], capped: false, event_cursor: "snapshot" },
           error: null,
         };
       }
@@ -848,12 +861,15 @@ describe("activity store collapse state", () => {
 
     store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
     await vi.waitFor(() => expect(store.getThreadLoadError()).toBe("thread history unavailable"));
-    expect(store.getActivityItems().map((item) => item.id)).toEqual([firstPageEvent.id]);
+    expect(store.getActivityItems()).toEqual([]);
 
     store.retryFailedThreadLoads();
 
     await vi.waitFor(() => expect(threadReads).toBe(3));
     await vi.waitFor(() => expect(store.getThreadLoadError()).toBeNull());
+    expect(store.getActivityItems().map((item) => [item.id, item.body_preview])).toEqual([
+      [refreshedEditedEvent.id, refreshedEditedEvent.body_preview],
+    ]);
   });
 
   it("discards a thread page that resolves after the activity scope changes", async () => {
@@ -968,6 +984,70 @@ describe("activity store collapse state", () => {
     );
     expect(eventQueries[1]).toEqual(expect.objectContaining({ before: "page-2" }));
     expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:71", "ntf:70"]);
+  });
+
+  it("atomically replaces edited and deleted events after a failed bulk retry", async () => {
+    const staleEditedEvent = notificationItem("ntf:edited-bulk-event", "unread");
+    const staleDeletedEvent = notificationItem("ntf:deleted-bulk-event", "unread");
+    const refreshedEditedEvent = { ...staleEditedEvent, body_preview: "refreshed body" };
+    let bulkReads = 0;
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (options?.params?.query?.projection === "events") {
+        bulkReads += 1;
+        if (bulkReads === 1) {
+          return {
+            data: {
+              items: [refreshedEditedEvent],
+              capped: true,
+              event_cursor: "snapshot",
+              next_cursor: "page-2",
+            },
+            error: null,
+          };
+        }
+        if (bulkReads === 2) {
+          return {
+            error: {
+              code: "serviceUnavailable",
+              detail: "bulk history unavailable",
+              title: "Service unavailable",
+              type: "about:blank",
+            },
+            response: new Response(null, { status: 503 }),
+          };
+        }
+        return {
+          data: { items: [refreshedEditedEvent], capped: false, event_cursor: "snapshot" },
+          error: null,
+        };
+      }
+      return {
+        data: {
+          items: [staleEditedEvent, staleDeletedEvent],
+          item_activity: [itemActivity(1)],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(store.getActivityError()).toBe("bulk history unavailable"));
+    expect(store.getActivityItems().map((item) => item.id)).toEqual([staleEditedEvent.id, staleDeletedEvent.id]);
+
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(bulkReads).toBe(3));
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.getActivityItems().map((item) => [item.id, item.body_preview])).toEqual([
+      [refreshedEditedEvent.id, refreshedEditedEvent.body_preview],
+    ]);
   });
 
   it("discards bulk pages that resolve after the activity scope changes", async () => {
@@ -2669,5 +2749,65 @@ describe("activity polling recovery", () => {
     expect(feedReads).toBe(2);
     expect(store.isActivityCapped()).toBe(false);
     expect(store.getActivityItems()).toEqual([initial]);
+  });
+
+  it("drops absent cached threads from a capped snapshot when a parent filter is active", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-1",
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    };
+    const initial = {
+      ...notificationItem("ntf:filtered-thread", "unread"),
+      created_at: new Date().toISOString(),
+      repo,
+    } as ActivityItem;
+    const subject = { ...itemActivity(1), repo } as ActivitySubject;
+    let feedReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        feedReads += 1;
+        if (feedReads === 1) {
+          return {
+            data: {
+              items: [initial],
+              item_activity: [subject],
+              item_activity_capped: false,
+              capped: false,
+              event_cursor: initial.cursor,
+            },
+            error: null,
+          };
+        }
+        return {
+          data: {
+            items: [],
+            item_activity: [],
+            item_activity_capped: true,
+            capped: false,
+            event_cursor: initial.cursor,
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([initial.id]));
+
+    store.setActivitySearch("current match");
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile capped filtered activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    expect(store.isItemActivityCapped()).toBe(true);
+    expect(store.getActivityItems()).toEqual([]);
   });
 });

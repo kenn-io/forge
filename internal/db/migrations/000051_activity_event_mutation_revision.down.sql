@@ -1,0 +1,9 @@
+DROP TRIGGER IF EXISTS forge_issue_events_activity_revision_delete;
+DROP TRIGGER IF EXISTS forge_issue_events_activity_revision_update;
+DROP TRIGGER IF EXISTS forge_issue_events_activity_revision_insert;
+DROP TRIGGER IF EXISTS forge_mr_events_activity_revision_delete;
+DROP TRIGGER IF EXISTS forge_mr_events_activity_revision_update;
+DROP TRIGGER IF EXISTS forge_mr_events_activity_revision_insert;
+
+ALTER TABLE forge_issues DROP COLUMN activity_event_revision;
+ALTER TABLE forge_merge_requests DROP COLUMN activity_event_revision;

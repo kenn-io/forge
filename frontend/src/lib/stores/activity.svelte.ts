@@ -785,8 +785,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       requestGeneration === pagedActivityGeneration &&
       requestScope === pagedActivityScopeKey() &&
       threadRequestTokens.get(key) === requestToken;
-    const isCurrentScope = () =>
-      requestGeneration === pagedActivityGeneration && requestScope === pagedActivityScopeKey();
     const readAllPages = Effect.gen(function* () {
       let before = "";
       while (true) {
@@ -821,6 +819,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
             loadedThreadKeys = new Set([...loadedThreadKeys, key]);
           }),
         ),
+        Effect.tapError((failure) =>
+          Effect.sync(() => {
+            if (!isCurrentRequest()) return;
+            failedThreadKeys = new Set([...failedThreadKeys, key]);
+            threadLoadError = readErrorMessage(failure, "could not load activity thread");
+          }),
+        ),
         Effect.ensuring(
           Effect.sync(() => {
             if (threadRequestTokens.get(key) !== requestToken) return;
@@ -832,11 +837,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       {
         operation: "load activity thread",
         safeContext: { itemType: subject.item_type, itemNumber: subject.item_number },
-        onFailure: (failure) => {
-          if (!isCurrentScope()) return;
-          failedThreadKeys = new Set([...failedThreadKeys, key]);
-          threadLoadError = readErrorMessage(failure, "could not load activity thread");
-        },
+        onFailure: () => {},
       },
     );
   }

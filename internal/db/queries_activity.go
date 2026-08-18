@@ -56,23 +56,20 @@ func activityNotificationLedgerRevisionExpr(repo, itemType, itemNumber string) s
 	)
 }
 
-// prEventLedgerRevisionExpr and issueEventLedgerRevisionExpr are insertion
-// cursors for every child row a thread-events request can render. Unlike
-// activity_at, they advance when a sync backfills an older event.
+// prEventLedgerRevisionExpr and issueEventLedgerRevisionExpr identify every
+// child row a thread-events request can render. The parent mutation revision
+// advances for inserts, edits, and deletes, including older backfills that do
+// not change activity_at.
 func prEventLedgerRevisionExpr(pr, repo string) string {
 	return fmt.Sprintf(
-		"(SELECT printf('pre:%%d:%%d', COUNT(*), COALESCE(MAX(e.id), 0)) "+
-			"FROM forge_mr_events e WHERE e.merge_request_id = %s.id "+
-			"AND e.event_type IN ('issue_comment', 'review', 'commit', 'force_push')) || ':' || %s",
+		"printf('pre:%%d', %s.activity_event_revision) || ':' || %s",
 		pr, activityNotificationLedgerRevisionExpr(repo, "pr", pr+".number"),
 	)
 }
 
 func issueEventLedgerRevisionExpr(issue, repo string) string {
 	return fmt.Sprintf(
-		"(SELECT printf('ise:%%d:%%d', COUNT(*), COALESCE(MAX(e.id), 0)) "+
-			"FROM forge_issue_events e WHERE e.issue_id = %s.id "+
-			"AND e.event_type = 'issue_comment') || ':' || %s",
+		"printf('ise:%%d', %s.activity_event_revision) || ':' || %s",
 		issue, activityNotificationLedgerRevisionExpr(repo, "issue", issue+".number"),
 	)
 }

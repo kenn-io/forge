@@ -273,6 +273,47 @@ describe("EventTimeline", () => {
     expect(screen.queryByRole("button", { name: /Load full timeline/ })).toBeNull();
   });
 
+  it("keeps the full timeline expanded when the same item receives another event", async () => {
+    const events = Array.from({ length: 51 }, (_, index) =>
+      makeEvent({
+        ID: index + 1,
+        EventType: "assigned",
+        Summary: `assigned-${index + 1}`,
+        DedupeKey: `assigned-${index + 1}`,
+        CreatedAt: `2024-06-01T12:${String(index).padStart(2, "0")}:00Z`,
+      }),
+    );
+    const timeline = renderTimeline({
+      props: { events, initialEntryLimit: 50, itemIdentity: "github:acme/widget#42" },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Load full timeline (1 more entry)" }));
+    await waitFor(() => {
+      expect(document.querySelectorAll(".event-timeline .kit-timeline-item")).toHaveLength(51);
+    });
+
+    const updatedEvents = [
+      ...events,
+      makeEvent({
+        ID: 52,
+        EventType: "assigned",
+        Summary: "assigned-52",
+        DedupeKey: "assigned-52",
+        CreatedAt: "2024-06-01T12:52:00Z",
+      }),
+    ];
+    await timeline.rerender({
+      events: updatedEvents,
+      initialEntryLimit: 50,
+      itemIdentity: "github:acme/widget#42",
+    });
+
+    await waitFor(() => {
+      expect(document.querySelectorAll(".event-timeline .kit-timeline-item")).toHaveLength(52);
+    });
+    expect(screen.queryByRole("button", { name: /Load full timeline/ })).toBeNull();
+  });
+
   it("renders force-push label, actor, and SHA transition", () => {
     renderTimeline({
       props: {

@@ -772,6 +772,7 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 		MergeRequestID: prID,
 		EventType:      "issue_comment",
 		Author:         "reviewer",
+		Body:           "original comment",
 		CreatedAt:      base.Add(time.Minute),
 		DedupeKey:      "projection-comment",
 	}}))
@@ -806,6 +807,92 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 		"an older backfill must not change display recency")
 	assert.NotEqual(initialLedgerRevision, refreshed.Subjects[0].EventLedgerRevision,
 		"the per-parent ledger revision must detect an older backfill")
+
+	backfilledLedgerRevision := refreshed.Subjects[0].EventLedgerRevision
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "edited comment",
+		CreatedAt:      base.Add(time.Minute),
+		DedupeKey:      "projection-comment",
+	}}))
+
+	edited, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{Limit: 50},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	require.Len(edited.Subjects, 1)
+	assert.Equal(refreshed.Subjects[0].ActivityAt, edited.Subjects[0].ActivityAt,
+		"editing an existing event must not change display recency")
+	assert.NotEqual(backfilledLedgerRevision, edited.Subjects[0].EventLedgerRevision,
+		"the per-parent ledger revision must detect edits to existing events")
+
+	editedLedgerRevision := edited.Subjects[0].EventLedgerRevision
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "edited comment",
+		CreatedAt:      base.Add(time.Minute),
+		DedupeKey:      "projection-comment",
+	}}))
+	unchanged, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{Limit: 50},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	require.Len(unchanged.Subjects, 1)
+	assert.Equal(editedLedgerRevision, unchanged.Subjects[0].EventLedgerRevision,
+		"an unchanged event upsert must not invalidate the thread cache")
+}
+
+func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	issueID := insertTestIssueWithOptions(t, d, testIssue(repoID, 9,
+		withIssueTitle("Fix issue projection"),
+		withIssueActivity(base)))
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:   issueID,
+		EventType: "issue_comment",
+		Author:    "reporter",
+		Body:      "original issue comment",
+		CreatedAt: base.Add(time.Minute),
+		DedupeKey: "projection-issue-comment",
+	}}))
+
+	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{Limit: 50},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	require.Len(projection.Subjects, 1)
+	initialLedgerRevision := projection.Subjects[0].EventLedgerRevision
+
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:   issueID,
+		EventType: "issue_comment",
+		Author:    "reporter",
+		Body:      "edited issue comment",
+		CreatedAt: base.Add(time.Minute),
+		DedupeKey: "projection-issue-comment",
+	}}))
+
+	edited, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{Limit: 50},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	require.Len(edited.Subjects, 1)
+	assert.Equal(projection.Subjects[0].ActivityAt, edited.Subjects[0].ActivityAt)
+	assert.NotEqual(initialLedgerRevision, edited.Subjects[0].EventLedgerRevision,
+		"the issue ledger revision must detect edits to existing comments")
 }
 
 func insertOversizedBranchCommitRow(

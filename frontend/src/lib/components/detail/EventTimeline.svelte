@@ -748,17 +748,21 @@
   const timelineMountKey = $derived(
     `${itemIdentity}\u0000${activityViewMode}\u0000${timelineOrder}\u0000${filtered}\u0000${initialEntryLimit}`,
   );
-  let lastTimelineResetKey = "";
+  let lastTimelineMountKey = "";
 
   $effect(() => {
-    const resetKey = `${timelineMountKey}\u0000${renderedTimelineEntries.length}`;
-    if (resetKey === lastTimelineResetKey) return;
-    const initialCount = Math.min(initialEntryLimit, renderedTimelineEntries.length);
+    const mountKey = timelineMountKey;
+    const entryCount = renderedTimelineEntries.length;
     untrack(() => {
-      lastTimelineResetKey = resetKey;
+      if (mountKey === lastTimelineMountKey) {
+        progressiveMount.cancel();
+        mountedEntryCount = fullTimelineRequested ? entryCount : Math.min(initialEntryLimit, entryCount);
+        return;
+      }
+      lastTimelineMountKey = mountKey;
       progressiveMount.cancel();
       fullTimelineRequested = false;
-      mountedEntryCount = initialCount;
+      mountedEntryCount = Math.min(initialEntryLimit, entryCount);
     });
   });
 

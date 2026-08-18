@@ -245,7 +245,9 @@ Persisted controls must state their scope clearly.
   follow the user/config rather than one browser session.
 - Detail timelines apply the server-backed entry limit after filtering and grouping,
   then make the remainder explicit and mount it in bounded idle batches; harnesses
-  that require every fixture row pass a large limit (`frontend/src/lib/components/detail/EventTimeline.svelte`).
+  that require every fixture row pass a large limit. An explicit full-timeline request
+  survives event additions and edits for the same item, and resets only when item or
+  presentation scope changes (`frontend/src/lib/components/detail/EventTimeline.svelte`).
 - Concurrent controls for one server-backed settings object must share a
   serialized mutation path and reconcile only fields still owned by the settling
   mutation generation; value equality alone is ABA-prone, while stale full-object
@@ -926,12 +928,14 @@ Not every visibility control means "remove this entity entirely."
   requests from clearing newer loading or error ownership
   (`frontend/src/lib/stores/activity.svelte.ts::invalidatePagedActivityRequests`).
 - Parent recency or child-ledger revision invalidates stale and in-flight thread pages
-  before restarting; the ledger revision must advance for older backfills that do not
-  change display recency. New expanded parents load complete history.
+  before restarting; the ledger revision must advance for edits, deletes, and older
+  backfills that do not change display recency. New expanded parents load complete history.
   Otherwise authoritative reconciliation preserves loaded children and merges deltas; mobile and status
   totals consume the same summary authority (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
 - A failed thread page preserves already loaded children and exposes a retry that restarts
-  the frozen thread read (`frontend/src/lib/stores/activity.svelte.ts::retryFailedThreadLoads`).
+  the frozen thread read. Only the request token that still owns the thread may publish
+  that error; superseded failures are discarded
+  (`frontend/src/lib/stores/activity.svelte.ts::retryFailedThreadLoads`).
 - An uncapped authoritative parent snapshot removes cached children whose stable parent
   identity is absent; a capped parent snapshot retains them because absence is not
   authoritative (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).

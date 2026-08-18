@@ -470,6 +470,90 @@ describe("activity store collapse state", () => {
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([freshEvent.id]));
   });
 
+  it("discards a superseded thread failure after its replacement succeeds", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const originalSubject = { ...itemActivity(7), repo } satisfies ActivitySubject;
+    const advancedSubject = {
+      ...originalSubject,
+      activity_at: "2026-08-09T13:00:07Z",
+    } satisfies ActivitySubject;
+    const freshEvent = {
+      ...notificationItem("ntf:fresh-thread-page", "unread"),
+      item_number: 7,
+      repo,
+    } as ActivityItem;
+    const pendingOldThread = Promise.withResolvers<{
+      error: {
+        code: string;
+        detail: string;
+        title: string;
+        type: string;
+      };
+      response: Response;
+    }>();
+    let activityReads = 0;
+    let threadReads = 0;
+    const get = vi.fn((path: string) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      if (path === "/activity/thread-events") {
+        threadReads += 1;
+        if (threadReads === 1) return pendingOldThread.promise;
+        return Promise.resolve({
+          data: { items: [freshEvent], capped: false, event_cursor: "new-snapshot" },
+          error: null,
+        });
+      }
+      activityReads += 1;
+      return Promise.resolve({
+        data: {
+          items: [],
+          item_activity: [activityReads === 1 ? originalSubject : advancedSubject],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: activityReads === 1 ? "old-snapshot" : "new-snapshot",
+        },
+        error: null,
+      });
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
+
+    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    await vi.waitFor(() => expect(threadReads).toBe(1));
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity during superseded thread failure test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    await vi.waitFor(() => expect(threadReads).toBe(2));
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([freshEvent.id]));
+
+    pendingOldThread.resolve({
+      error: {
+        code: "serviceUnavailable",
+        detail: "stale thread failure",
+        title: "Service unavailable",
+        type: "about:blank",
+      },
+      response: new Response(null, { status: 503 }),
+    });
+
+    await vi.waitFor(() => expect(pendingOldThread.promise).resolves.toBeDefined());
+    expect(store.getThreadLoadError()).toBeNull();
+  });
+
   it("reloads a loaded thread when an older event changes its ledger revision", async () => {
     const repo = {
       provider: "github",

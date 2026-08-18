@@ -8354,6 +8354,8 @@ export interface operations {
                 platform_repo_id?: string;
                 item_type?: "pr" | "issue";
                 item_number?: number;
+                types?: string[] | null;
+                search?: string;
                 since?: string;
                 before?: string;
                 at_or_before?: string;

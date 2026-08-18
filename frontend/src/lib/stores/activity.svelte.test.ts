@@ -284,6 +284,114 @@ describe("activity store collapse state", () => {
     ]);
   });
 
+  it("forwards active event and search filters when loading a collapsed thread", async () => {
+    const subject = {
+      ...itemActivity(7),
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: "repo-7",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        host: "github.com",
+      },
+    } satisfies ActivitySubject;
+    let threadQuery: Record<string, unknown> | undefined;
+    const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
+      if (path === "/activity/thread-events") {
+        threadQuery = options.params?.query;
+        return { data: { items: [], capped: false, event_cursor: "snapshot" }, error: null };
+      }
+      return {
+        data: {
+          items: [],
+          item_activity: [subject],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.setActivityFilterTypes(["comment", "notification"]);
+    store.setActivitySearch("reviewer");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    await vi.waitFor(() => expect(threadQuery).toBeDefined());
+
+    expect(threadQuery).toEqual(
+      expect.objectContaining({
+        types: ["comment", "notification"],
+        search: "reviewer",
+      }),
+    );
+  });
+
+  it("loads complete history for a parent discovered while Expand all is active", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const firstSubject = { ...itemActivity(7), repo } satisfies ActivitySubject;
+    const newSubject = { ...itemActivity(8), repo } satisfies ActivitySubject;
+    const newEvent = {
+      ...notificationItem("ntf:new-thread", "unread"),
+      item_number: 8,
+      repo,
+    } as ActivityItem;
+    let snapshotReads = 0;
+    const threadQueries: Array<Record<string, unknown>> = [];
+    const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
+      const query = options.params?.query ?? {};
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (path === "/activity/thread-events") {
+        threadQueries.push(query);
+        return { data: { items: [newEvent], capped: false, event_cursor: "snapshot" }, error: null };
+      }
+      if (query.projection === "events") {
+        return { data: { items: [], capped: false, event_cursor: "snapshot" }, error: null };
+      }
+      snapshotReads += 1;
+      return {
+        data: {
+          items: [],
+          item_activity: snapshotReads === 1 ? [firstSubject] : [firstSubject, newSubject],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([firstSubject]));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile expanded activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    await vi.waitFor(() => expect(threadQueries).toHaveLength(1));
+    expect(threadQueries[0]).toEqual(expect.objectContaining({ item_number: 8 }));
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(newEvent.id));
+  });
+
   it("discards a thread page that resolves after the activity scope changes", async () => {
     const subject = {
       ...itemActivity(7),
@@ -1262,6 +1370,52 @@ describe("activity store projection scope", () => {
     store.setInvolvesMe(true);
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityError()).toBe("filtered activity unavailable"));
+
+    pendingReconciliation.resolve({ data: { items: [staleItem], capped: false }, error: null });
+    await reconciliation.exit;
+
+    expect(store.getActivityItems()).toEqual([]);
+  });
+
+  it("rejects an older collapsed reconciliation after a full projection load fails", async () => {
+    const pendingReconciliation = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: boolean };
+      error: null;
+    }>();
+    const staleItem = notificationItem("ntf:stale-collapsed", "unread");
+    let feedReads = 0;
+    const get = vi.fn((path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      feedReads += 1;
+      if (feedReads === 1) {
+        expect(options?.params?.query?.projection).toBe("collapsed");
+        return pendingReconciliation.promise;
+      }
+      expect(options?.params?.query?.projection).toBe("full");
+      return Promise.resolve({
+        error: {
+          code: "serviceUnavailable",
+          detail: "full activity unavailable",
+          title: "Service unavailable",
+          type: "about:blank",
+        },
+        response: new Response(null, { status: 503 }),
+      });
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    const reconciliation = runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile collapsed activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(feedReads).toBe(1));
+
+    store.setViewMode("flat");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityError()).toBe("full activity unavailable"));
 
     pendingReconciliation.resolve({ data: { items: [staleItem], capped: false }, error: null });
     await reconciliation.exit;

@@ -916,16 +916,17 @@ Not every visibility control means "remove this entity entirely."
   row (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
 - Empty Activity deltas must not rebuild or replace parent/workspace summaries
   (`frontend/src/lib/stores/activity.svelte.ts::pollNewItems`).
-- Thread expansion uses stable repository identity and a frozen upper bound; Expand all
-  pages the bulk event read instead of fanning out per thread
+- Single-thread Activity expansion uses stable repository identity, a frozen upper bound,
+  and the active event, search, and visibility filters (`internal/server/huma_routes.go::listActivityThreadEvents`).
+- Expand all pages the bulk event read instead of fanning out per thread
   (`frontend/src/lib/stores/activity.svelte.ts::loadBulkActivity`).
 - Thread and bulk event pages belong to the repository, range, filter, and projection
   generation that started them. Scope changes discard late pages and prevent older
   requests from clearing newer loading or error ownership
   (`frontend/src/lib/stores/activity.svelte.ts::invalidatePagedActivityRequests`).
-- Parent recency invalidates stale thread caches; otherwise authoritative reconciliation
-  preserves loaded children and merges deltas. Mobile and status totals consume the same
-  summary authority (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
+- Parent recency invalidates stale thread caches; new expanded parents load complete history.
+  Otherwise authoritative reconciliation preserves loaded children and merges deltas; mobile and status
+  totals consume the same summary authority (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
 - An uncapped authoritative parent snapshot removes cached children whose stable parent
   identity is absent; a capped parent snapshot retains them because absence is not
   authoritative (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
@@ -957,6 +958,8 @@ Not every visibility control means "remove this entity entirely."
   successful snapshots, and a logical filter-scope change still fences the old result.
   A later successful snapshot fences older foreground failures; without one, a fenced
   foreground owner still settles loading (`frontend/src/lib/stores/activity-workflow.ts::ActivityWorkflowLive`).
+- Projection is part of Activity snapshot scope, so collapsed and full responses cannot
+  replace each other (`frontend/src/lib/stores/activity.svelte.ts::activityProjectionScope`).
   Every fourth scheduled Activity poll is an authoritative collapsed-snapshot
   replacement in collapsed threaded mode, so events hidden behind the forward
   cursor self-heal even without detail navigation or SSE without reloading the

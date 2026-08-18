@@ -147,18 +147,20 @@ type listActivityInput struct {
 }
 
 type listActivityThreadEventsInput struct {
-	Provider          string `query:"provider"`
-	PlatformHost      string `query:"platform_host"`
-	PlatformRepoID    string `query:"platform_repo_id"`
-	ItemType          string `query:"item_type" enum:"pr,issue"`
-	ItemNumber        int    `query:"item_number" minimum:"1"`
-	Since             string `query:"since"`
-	Before            string `query:"before"`
-	AtOrBefore        string `query:"at_or_before"`
-	Limit             int    `query:"limit" minimum:"10" maximum:"250" default:"100"`
-	HideClosedMerged  bool   `query:"hide_closed_merged"`
-	HideBots          bool   `query:"hide_bots"`
-	HideDefaultBranch bool   `query:"hide_default_branch"`
+	Provider          string   `query:"provider"`
+	PlatformHost      string   `query:"platform_host"`
+	PlatformRepoID    string   `query:"platform_repo_id"`
+	ItemType          string   `query:"item_type" enum:"pr,issue"`
+	ItemNumber        int      `query:"item_number" minimum:"1"`
+	Types             []string `query:"types"`
+	Search            string   `query:"search"`
+	Since             string   `query:"since"`
+	Before            string   `query:"before"`
+	AtOrBefore        string   `query:"at_or_before"`
+	Limit             int      `query:"limit" minimum:"10" maximum:"250" default:"100"`
+	HideClosedMerged  bool     `query:"hide_closed_merged"`
+	HideBots          bool     `query:"hide_bots"`
+	HideDefaultBranch bool     `query:"hide_default_branch"`
 }
 
 type listActivityAuthorsInput struct {
@@ -1722,6 +1724,8 @@ func (s *Server) listActivityThreadEvents(
 		return nil, httpapi.Validation("query.item_number", "item number must be positive")
 	}
 	return s.listActivity(ctx, &listActivityInput{
+		Types:                input.Types,
+		Search:               input.Search,
 		Since:                input.Since,
 		Before:               input.Before,
 		AtOrBefore:           input.AtOrBefore,

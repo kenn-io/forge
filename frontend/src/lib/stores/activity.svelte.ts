@@ -469,6 +469,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function activityProjectionScope(params: ActivityParams): string {
     return JSON.stringify([
       timeRange,
+      params.projection ?? "full",
       params.repo ?? "",
       params.types ?? [],
       params.item_types ?? [],
@@ -650,11 +651,15 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     );
     const previousSubjects = new Map(itemActivity.map((subject) => [stableParentKey(subject), subject] as const));
     const advancedThreadKeys = new Set<string>();
+    const newExpandedThreadKeys = new Set<string>();
     for (const subject of result.response.item_activity ?? []) {
       const key = stableParentKey(subject);
       const previous = key ? previousSubjects.get(key) : undefined;
       if (key && previous && previous.activity_at !== subject.activity_at) {
         advancedThreadKeys.add(key);
+      }
+      if (key && !previous && isThreadItemExpanded(key) && !loadedThreadKeys.has(key)) {
+        newExpandedThreadKeys.add(key);
       }
     }
     const retainedThreadItems = items.filter((item) => {
@@ -670,9 +675,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     projectActivitySubjects(result.response);
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-    if (advancedThreadKeys.size > 0) {
+    if (advancedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0) {
       loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !advancedThreadKeys.has(key)));
-      for (const key of advancedThreadKeys) {
+      for (const key of new Set([...advancedThreadKeys, ...newExpandedThreadKeys])) {
         if (isThreadItemExpanded(key)) loadThreadEvents(key);
       }
     }
@@ -750,6 +755,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       since: computeSince(),
       ...(snapshotCursor ? { at_or_before: snapshotCursor } : {}),
       limit: 100,
+      ...(filterTypes.length > 0 ? { types: [...filterTypes] } : {}),
+      ...(searchQuery ? { search: searchQuery } : {}),
       ...(hideClosedMerged ? { hide_closed_merged: true } : {}),
       ...(hideBots ? { hide_bots: true } : {}),
       ...(hideDefaultBranchActivity ? { hide_default_branch: true } : {}),
@@ -969,12 +976,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       return refreshActivityProgram(params).pipe(Effect.andThen(loadActivityAuthorsEffect(true)));
     }
     if (activityEventCursor === "") return Effect.void;
+    const authoritativeParams = { ...params };
+    if (shouldUseCollapsedAuthoritativeProjection()) authoritativeParams.projection = "collapsed";
+    const scope = activityProjectionScope(authoritativeParams);
     params.projection = "events";
     params.limit = 500;
     params.after = activityEventCursor;
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
-      const scope = activityProjectionScope(params);
       const projectPoll = ({ mode, result }: ActivityPollProjection) =>
         Effect.gen(function* () {
           const activityChanged = yield* Effect.sync(() => {

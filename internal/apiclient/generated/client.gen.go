@@ -4803,6 +4803,8 @@ type ListActivityThreadEventsParams struct {
 	PlatformRepoId    *string                                 `form:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
 	ItemType          *ListActivityThreadEventsParamsItemType `form:"item_type,omitempty" json:"item_type,omitempty"`
 	ItemNumber        *int64                                  `form:"item_number,omitempty" json:"item_number,omitempty"`
+	Types             *[]string                               `form:"types,omitempty" json:"types,omitempty"`
+	Search            *string                                 `form:"search,omitempty" json:"search,omitempty"`
 	Since             *string                                 `form:"since,omitempty" json:"since,omitempty"`
 	Before            *string                                 `form:"before,omitempty" json:"before,omitempty"`
 	AtOrBefore        *string                                 `form:"at_or_before,omitempty" json:"at_or_before,omitempty"`
@@ -15865,6 +15867,30 @@ func NewListActivityThreadEventsRequest(server string, params *ListActivityThrea
 		if params.ItemNumber != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "item_number", *params.ItemNumber, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Types != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "types", *params.Types, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Search != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "search", *params.Search, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

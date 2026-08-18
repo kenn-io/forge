@@ -23842,6 +23842,21 @@ func TestAPIListActivity(t *testing.T) {
 	require.Len(threadBody.Items, 2)
 	assert.Empty(threadBody.ItemActivity)
 
+	filteredThread := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
+			"&platform_repo_id=repo-acme-widget&item_type=pr&item_number=1&since="+
+			url.QueryEscape(since)+"&types=comment&search="+url.QueryEscape("Looks good"),
+		nil,
+	)
+	require.Equal(http.StatusOK, filteredThread.Code)
+	var filteredThreadBody activityResponse
+	require.NoError(json.NewDecoder(filteredThread.Body).Decode(&filteredThreadBody))
+	require.Len(filteredThreadBody.Items, 1)
+	assert.Equal("comment", filteredThreadBody.Items[0].ActivityType)
+
 	search := "reviewer"
 	filtered, err := client.HTTP.ListActivityWithResponse(
 		ctx, &generated.ListActivityParams{Since: &since, Search: &search},

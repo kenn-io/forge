@@ -708,7 +708,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ) {
         changedThreadKeys.add(key);
       }
-      if (reconcileCollapsedThreads && key && !previous && isThreadItemExpanded(key) && !loadedThreadKeys.has(key)) {
+      if (reconcileCollapsedThreads && key && !previous && isThreadItemExpanded(key)) {
         newExpandedThreadKeys.add(key);
       }
     }
@@ -732,12 +732,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (reconcileCollapsedThreads && (changedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0)) {
       restartBulkActivity = changedThreadKeys.size > 0 && bulkRequestToken !== undefined;
       if (!restartBulkActivity) {
-        loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !changedThreadKeys.has(key)));
-        loadingThreadKeys = new Set([...loadingThreadKeys].filter((key) => !changedThreadKeys.has(key)));
-        failedThreadKeys = new Set([...failedThreadKeys].filter((key) => !changedThreadKeys.has(key)));
+        const reloadThreadKeys = new Set([...changedThreadKeys, ...newExpandedThreadKeys]);
+        loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !reloadThreadKeys.has(key)));
+        loadingThreadKeys = new Set([...loadingThreadKeys].filter((key) => !reloadThreadKeys.has(key)));
+        failedThreadKeys = new Set([...failedThreadKeys].filter((key) => !reloadThreadKeys.has(key)));
         if (failedThreadKeys.size === 0) threadLoadError = null;
-        for (const key of changedThreadKeys) threadRequestTokens.delete(key);
-        for (const key of new Set([...changedThreadKeys, ...newExpandedThreadKeys])) {
+        for (const key of reloadThreadKeys) threadRequestTokens.delete(key);
+        for (const key of reloadThreadKeys) {
           if (isThreadItemExpanded(key)) loadThreadEvents(key);
         }
       }

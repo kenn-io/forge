@@ -757,6 +757,89 @@ describe("activity store collapse state", () => {
     );
   });
 
+  it("reloads an expanded thread after its parent disappears and reappears", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const originalSubject = {
+      ...itemActivity(7),
+      repo,
+      event_ledger_revision: "pre:1",
+    } as ActivitySubject;
+    const reappearedSubject = {
+      ...originalSubject,
+      event_ledger_revision: "pre:2",
+    } as ActivitySubject;
+    const originalEvent = {
+      ...notificationItem("ntf:original-thread-event", "unread"),
+      item_number: 7,
+      repo,
+    } as ActivityItem;
+    const reappearedEvent = {
+      ...notificationItem("ntf:reappeared-thread-event", "unread"),
+      item_number: 7,
+      repo,
+    } as ActivityItem;
+    let activityReads = 0;
+    let threadReads = 0;
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (path === "/activity/thread-events") {
+        threadReads += 1;
+        return {
+          data: {
+            items: threadReads === 1 ? [originalEvent] : [reappearedEvent],
+            capped: false,
+            event_cursor: "snapshot",
+          },
+          error: null,
+        };
+      }
+      activityReads += 1;
+      return {
+        data: {
+          items: [],
+          item_activity: activityReads === 1 ? [originalSubject] : activityReads === 2 ? [] : [reappearedSubject],
+          item_activity_capped: false,
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
+
+    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([originalEvent.id]));
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile disappeared activity parent in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([]));
+
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile reappeared activity parent in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    await vi.waitFor(() => expect(threadReads).toBe(2));
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([reappearedEvent.id]));
+  });
+
   it("replaces edited and deleted cached events after a capped ledger revision change", async () => {
     const repo = {
       provider: "github",

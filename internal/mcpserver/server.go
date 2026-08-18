@@ -59,9 +59,13 @@ func (s *Server) HTTPHandler() http.Handler {
 		func(*http.Request) *mcp.Server { return s.mcp },
 		&mcp.StreamableHTTPOptions{Stateless: true},
 	)
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", stream)
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/mcp" {
+			http.NotFound(w, r)
+			return
+		}
+		stream.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Close() error {

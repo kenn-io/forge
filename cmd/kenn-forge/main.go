@@ -57,11 +57,13 @@ func (l serveReadyListener) Accept() (net.Conn, error) {
 }
 
 func newMCPStartupHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/mcp", func(w http.ResponseWriter, _ *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/mcp" {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, "MCP is unavailable during startup", http.StatusServiceUnavailable)
 	})
-	return mux
 }
 
 func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error) {

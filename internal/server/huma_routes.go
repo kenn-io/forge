@@ -1477,7 +1477,8 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		}
 	}
 	workspaceEventItems := items
-	hasFullWorkspaceEventItems := opts.Search != "" && (opts.AfterTime != nil || projection == "collapsed")
+	hasFullWorkspaceEventItems := projection != "events" &&
+		opts.Search != "" && (opts.AfterTime != nil || projection == "collapsed")
 	if hasFullWorkspaceEventItems {
 		workspaceOpts := opts
 		workspaceOpts.AfterTime = nil

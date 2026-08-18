@@ -23895,6 +23895,47 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Len(*unfiltered.JSON200.Items, len(*resp.JSON200.Items))
 }
 
+func TestAPIListActivitySearchEventDeltaDoesNotReadBeforeCursor(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	prID := seedPR(t, database, "acme", "widget", 1)
+	malformedCreatedAt := now.Add(-time.Hour).Format("2006-01-02 15:04:05") + " invalid"
+	_, err := database.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_mr_events (
+			merge_request_id, event_type, author, body, created_at, dedupe_key
+		) VALUES (?, 'issue_comment', 'search-reviewer', 'needle', ?, 'malformed-before-cursor')`,
+		prID, malformedCreatedAt)
+	require.NoError(err)
+
+	search := "needle"
+	sinceTime := now.Add(-2 * time.Hour)
+	deltaRows, err := database.ListActivity(ctx, db.ListActivityOpts{
+		Search: search, Since: &sinceTime, AfterTime: &now, Limit: 11,
+	})
+	require.NoError(err, "the cursor-bounded event query must exclude the malformed older row")
+	require.Empty(deltaRows)
+
+	projection := generated.ListActivityParamsProjectionEvents
+	since := sinceTime.Format(time.RFC3339)
+	after := db.EncodeCursor(now, "pre", 0)
+	limit := int64(10)
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{
+		Search: &search, Since: &since, After: &after, Projection: &projection, Limit: &limit,
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.Empty(*resp.JSON200.Items)
+	require.NotNil(resp.JSON200.ItemActivity)
+	require.Empty(*resp.JSON200.ItemActivity)
+	require.NotNil(resp.JSON200.WorkspaceActivity)
+	require.Empty(*resp.JSON200.WorkspaceActivity)
+}
+
 func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

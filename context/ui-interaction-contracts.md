@@ -982,6 +982,8 @@ Not every visibility control means "remove this entity entirely."
   foreground owner still settles loading (`frontend/src/lib/stores/activity-workflow.ts::ActivityWorkflowLive`).
 - Projection is part of Activity snapshot scope, so collapsed and full responses cannot
   replace each other (`frontend/src/lib/stores/activity.svelte.ts::activityProjectionScope`).
+  The `events` projection is delta-only; searched polling must not reconstruct full
+  parent or workspace inputs that its response discards (`internal/server/huma_routes.go::Server.listActivity`).
   Every fourth scheduled Activity poll is an authoritative collapsed-snapshot
   replacement in collapsed threaded mode, so events hidden behind the forward
   cursor self-heal even without detail navigation or SSE without reloading the

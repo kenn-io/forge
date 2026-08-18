@@ -2064,149 +2064,151 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
-  test("terminal replay preserves split data through a real tmux websocket boundary", async ({ page }) => {
-    test.skip(
-      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
-      "git and tmux are required for the real workspace flow",
-    );
+  const replayBoundaryCases = [
+    {
+      name: "partial-utf8",
+      candidateFormat: "replay-partial-utf8:\\033\\033[He\\314",
+      continuationFormat: "\\201\\033\\033[6n",
+      pasteText: null,
+      entersAlternateScreen: false,
+      evictsCandidateFromReplay: false,
+      expectsBracketedPaste: false,
+      expectsCursorReport: true,
+    },
+    {
+      name: "incomplete-csi",
+      candidateFormat: "replay-incomplete-csi:\\033\\033[?2004",
+      continuationFormat: "h",
+      pasteText: "incomplete-csi-bracketed-paste",
+      entersAlternateScreen: false,
+      evictsCandidateFromReplay: false,
+      expectsBracketedPaste: true,
+      expectsCursorReport: false,
+    },
+    {
+      name: "unicode-interrupted-csi",
+      candidateFormat: "replay-unicode-interrupted-csi:\\033\\033[?2004\\342\\230\\203h",
+      continuationFormat: "\\033\\033[6n",
+      pasteText: "unicode-interrupted-csi-paste",
+      entersAlternateScreen: true,
+      evictsCandidateFromReplay: true,
+      expectsBracketedPaste: false,
+      expectsCursorReport: true,
+    },
+    {
+      name: "alternate-screen-incomplete-csi",
+      candidateFormat: "",
+      continuationFormat: "",
+      directPrecondition: "\x1b[?1000l;1002l;1003l",
+      directCandidate: "\x1b[?1049h\rsame-renderer-alt-csi:\x1b[?1003h\x1b[5",
+      directContinuation: "C\x1b[6n",
+      pasteText: null,
+      entersAlternateScreen: false,
+      evictsCandidateFromReplay: false,
+      expectsBracketedPaste: false,
+      expectsCursorReport: true,
+      expectedCursorColumn: "28",
+    },
+    {
+      name: "osc-split-st",
+      candidateFormat: "\\033\\033]0;replay-osc-split-st\\033\\033",
+      continuationFormat: "\\\\\\033\\033[6n",
+      pasteText: null,
+      entersAlternateScreen: false,
+      evictsCandidateFromReplay: false,
+      expectsBracketedPaste: false,
+      expectsCursorReport: true,
+    },
+    {
+      name: "dcs-split-st",
+      candidateFormat: "replay-dcs-split-st:\\033\\033P$qm\\033\\033",
+      continuationFormat: "\\\\\\033\\033[6n",
+      pasteText: null,
+      entersAlternateScreen: false,
+      evictsCandidateFromReplay: false,
+      expectsBracketedPaste: false,
+      expectsCursorReport: true,
+    },
+  ] as const;
 
-    const cases = [
-      {
-        name: "partial-utf8",
-        candidateFormat: "replay-partial-utf8:\\033\\033[He\\314",
-        continuationFormat: "\\201\\033\\033[6n",
-        pasteText: null,
-        entersAlternateScreen: false,
-        evictsCandidateFromReplay: false,
-        expectsBracketedPaste: false,
-        expectsCursorReport: true,
-      },
-      {
-        name: "incomplete-csi",
-        candidateFormat: "replay-incomplete-csi:\\033\\033[?2004",
-        continuationFormat: "h",
-        pasteText: "incomplete-csi-bracketed-paste",
-        entersAlternateScreen: false,
-        evictsCandidateFromReplay: false,
-        expectsBracketedPaste: true,
-        expectsCursorReport: false,
-      },
-      {
-        name: "unicode-interrupted-csi",
-        candidateFormat: "replay-unicode-interrupted-csi:\\033\\033[?2004\\342\\230\\203h",
-        continuationFormat: "\\033\\033[6n",
-        pasteText: "unicode-interrupted-csi-paste",
-        entersAlternateScreen: true,
-        evictsCandidateFromReplay: true,
-        expectsBracketedPaste: false,
-        expectsCursorReport: true,
-      },
-      {
-        name: "alternate-screen-incomplete-csi",
-        candidateFormat: "",
-        continuationFormat: "",
-        directPrecondition: "\x1b[?1000l;1002l;1003l",
-        directCandidate: "\x1b[?1049h\rsame-renderer-alt-csi:\x1b[?1003h\x1b[5",
-        directContinuation: "C\x1b[6n",
-        pasteText: null,
-        entersAlternateScreen: false,
-        evictsCandidateFromReplay: false,
-        expectsBracketedPaste: false,
-        expectsCursorReport: true,
-        expectedCursorColumn: "28",
-      },
-      {
-        name: "osc-split-st",
-        candidateFormat: "\\033\\033]0;replay-osc-split-st\\033\\033",
-        continuationFormat: "\\\\\\033\\033[6n",
-        pasteText: null,
-        entersAlternateScreen: false,
-        evictsCandidateFromReplay: false,
-        expectsBracketedPaste: false,
-        expectsCursorReport: true,
-      },
-      {
-        name: "dcs-split-st",
-        candidateFormat: "replay-dcs-split-st:\\033\\033P$qm\\033\\033",
-        continuationFormat: "\\\\\\033\\033[6n",
-        pasteText: null,
-        entersAlternateScreen: false,
-        evictsCandidateFromReplay: false,
-        expectsBracketedPaste: false,
-        expectsCursorReport: true,
-      },
-    ] as const;
+  for (const boundary of replayBoundaryCases) {
+    test(`terminal replay preserves ${boundary.name} split data through a real tmux websocket boundary`, async ({
+      page,
+    }) => {
+      test.skip(
+        !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+        "git and tmux are required for the real workspace flow",
+      );
 
-    await page.addInitScript(() => {
-      const refreshSuppressedFor = new Set<string>();
-      const runtimeSockets: Array<{ url: string; socket: WebSocket; receivedFrames: number }> = [];
-      (
-        window as unknown as {
-          __suppressRuntimeRefresh: (workspaceId: string) => void;
-        }
-      ).__suppressRuntimeRefresh = (workspaceId: string) => {
-        refreshSuppressedFor.add(workspaceId);
-      };
-      (
-        window as unknown as {
-          __disconnectRuntime: (workspaceId: string) => number;
-          __runtimeReconnectReady: (workspaceId: string, previousCount: number) => boolean;
-        }
-      ).__disconnectRuntime = (workspaceId: string) => {
-        const matching = runtimeSockets.filter(({ url }) => url.includes(`/workspaces/${workspaceId}/`));
-        matching.at(-1)?.socket.close();
-        return matching.length;
-      };
-      (
-        window as unknown as {
-          __runtimeReconnectReady: (workspaceId: string, previousCount: number) => boolean;
-        }
-      ).__runtimeReconnectReady = (workspaceId: string, previousCount: number) => {
-        const matching = runtimeSockets.filter(({ url }) => url.includes(`/workspaces/${workspaceId}/`));
-        const latest = matching.at(-1);
-        return (
-          matching.length > previousCount && latest?.socket.readyState === WebSocket.OPEN && latest.receivedFrames > 0
-        );
-      };
-      const Native = window.WebSocket;
-      class RefreshSuppressingWebSocket extends Native {
-        readonly suppressRefresh: boolean;
-
-        constructor(url: string | URL, protocols?: string | string[]) {
-          const rewritten = new URL(String(url));
-          const suppressRefresh = [...refreshSuppressedFor].some((id) =>
-            rewritten.pathname.includes(`/workspaces/${id}/`),
+      await page.addInitScript(() => {
+        const refreshSuppressedFor = new Set<string>();
+        const runtimeSockets: Array<{ url: string; socket: WebSocket; receivedFrames: number }> = [];
+        (
+          window as unknown as {
+            __suppressRuntimeRefresh: (workspaceId: string) => void;
+          }
+        ).__suppressRuntimeRefresh = (workspaceId: string) => {
+          refreshSuppressedFor.add(workspaceId);
+        };
+        (
+          window as unknown as {
+            __disconnectRuntime: (workspaceId: string) => number;
+            __runtimeReconnectReady: (workspaceId: string, previousCount: number) => boolean;
+          }
+        ).__disconnectRuntime = (workspaceId: string) => {
+          const matching = runtimeSockets.filter(({ url }) => url.includes(`/workspaces/${workspaceId}/`));
+          matching.at(-1)?.socket.close();
+          return matching.length;
+        };
+        (
+          window as unknown as {
+            __runtimeReconnectReady: (workspaceId: string, previousCount: number) => boolean;
+          }
+        ).__runtimeReconnectReady = (workspaceId: string, previousCount: number) => {
+          const matching = runtimeSockets.filter(({ url }) => url.includes(`/workspaces/${workspaceId}/`));
+          const latest = matching.at(-1);
+          return (
+            matching.length > previousCount && latest?.socket.readyState === WebSocket.OPEN && latest.receivedFrames > 0
           );
-          if (suppressRefresh) {
-            rewritten.searchParams.delete("cols");
-            rewritten.searchParams.delete("rows");
-          }
-          super(rewritten, protocols);
-          this.suppressRefresh = suppressRefresh;
-          if (rewritten.pathname.includes("/runtime/sessions/")) {
-            const entry = { url: rewritten.toString(), socket: this as WebSocket, receivedFrames: 0 };
-            runtimeSockets.push(entry);
-            this.addEventListener("message", () => {
-              entry.receivedFrames += 1;
-            });
-          }
-        }
+        };
+        const Native = window.WebSocket;
+        class RefreshSuppressingWebSocket extends Native {
+          readonly suppressRefresh: boolean;
 
-        override send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
-          if (this.suppressRefresh && typeof data === "string") {
-            try {
-              if ((JSON.parse(data) as { type?: string }).type === "refresh") return;
-            } catch {
-              // Forward non-JSON terminal input unchanged.
+          constructor(url: string | URL, protocols?: string | string[]) {
+            const rewritten = new URL(String(url));
+            const suppressRefresh = [...refreshSuppressedFor].some((id) =>
+              rewritten.pathname.includes(`/workspaces/${id}/`),
+            );
+            if (suppressRefresh) {
+              rewritten.searchParams.delete("cols");
+              rewritten.searchParams.delete("rows");
+            }
+            super(rewritten, protocols);
+            this.suppressRefresh = suppressRefresh;
+            if (rewritten.pathname.includes("/runtime/sessions/")) {
+              const entry = { url: rewritten.toString(), socket: this as WebSocket, receivedFrames: 0 };
+              runtimeSockets.push(entry);
+              this.addEventListener("message", () => {
+                entry.receivedFrames += 1;
+              });
             }
           }
-          Native.prototype.send.call(this, data);
-        }
-      }
-      window.WebSocket = RefreshSuppressingWebSocket as unknown as typeof WebSocket;
-    });
 
-    for (const boundary of cases) {
+          override send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+            if (this.suppressRefresh && typeof data === "string") {
+              try {
+                if ((JSON.parse(data) as { type?: string }).type === "refresh") return;
+              } catch {
+                // Forward non-JSON terminal input unchanged.
+              }
+            }
+            Native.prototype.send.call(this, data);
+          }
+        }
+        window.WebSocket = RefreshSuppressingWebSocket as unknown as typeof WebSocket;
+      });
+
       let isolatedServer: IsolatedE2EServer | null = null;
       let api: APIRequestContext | null = null;
       let helperFinishPath: string | null = null;
@@ -2385,8 +2387,8 @@ test.describe("inline workspace pane continuity", () => {
         await api?.dispose();
         await isolatedServer?.stop();
       }
-    }
-  });
+    });
+  }
 
   test("same renderer reconnect applies mouse mode disabled while offline", async ({ page }) => {
     test.skip(

@@ -17020,6 +17020,8 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 		Hint:         "approval 99 was removed after the head moved",
 	}
 	provider.mergeRequests[0].HeadSHA = "fresh-head"
+	provider.blockNextMRFetch.Store(true)
+	provider.mrFetchStarted = make(chan struct{}, 1)
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -17069,12 +17071,17 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 	assert.Equal("approval 99 was removed after the head moved", details["context"])
 	require.Len(provider.publishedReviews, 1)
 	require.Eventually(func() bool {
-		synced, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-		if err != nil || synced == nil {
+		select {
+		case <-provider.mrFetchStarted:
+			return true
+		default:
 			return false
 		}
-		return synced.PlatformHeadSHA == "fresh-head"
-	}, time.Second, 10*time.Millisecond)
+	}, 10*time.Second, 10*time.Millisecond, "background refresh did not reach the provider")
+	require.Eventually(func() bool {
+		synced, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+		return err == nil && synced != nil && synced.PlatformHeadSHA == "fresh-head"
+	}, 10*time.Second, 10*time.Millisecond)
 }
 
 func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing.T) {
@@ -17100,6 +17107,8 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 		},
 	}
 	provider.mergeRequests[0].HeadSHA = "fresh-head"
+	provider.blockNextMRFetch.Store(true)
+	provider.mrFetchStarted = make(chan struct{}, 1)
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -17147,12 +17156,17 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 	assert.EqualValues(0, details["publishedCommentCount"])
 	assert.Equal("summary note already posted before stale approval", details["context"])
 	require.Eventually(func() bool {
-		synced, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-		if err != nil || synced == nil {
+		select {
+		case <-provider.mrFetchStarted:
+			return true
+		default:
 			return false
 		}
-		return synced.PlatformHeadSHA == "fresh-head"
-	}, time.Second, 10*time.Millisecond)
+	}, 10*time.Second, 10*time.Millisecond, "background refresh did not reach the provider")
+	require.Eventually(func() bool {
+		synced, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+		return err == nil && synced != nil && synced.PlatformHeadSHA == "fresh-head"
+	}, 10*time.Second, 10*time.Millisecond)
 }
 
 func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.T) {

@@ -224,6 +224,8 @@ and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.t
 
 - Full-stack Playwright workers must publish child ownership in the shared tmux root;
   the root removes it only after every published child exits (`frontend/tests/e2e-full/support/e2eServer.ts::waitForSharedServerOwners`).
+- Give independent full-stack boundary scenarios separate Playwright tests; a loop shares
+  one timeout and obscures the failing boundary (`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts::replayBoundaryCases`).
 - Once e2e-server tmux shutdown starts, no new session may be admitted; cleanup waits
   for an admitted creation before killing the private server (`cmd/e2e-server/main.go::tmuxCreationGate`).
 - Keep explicit PTY-owner test mode unwrapped so its missing tmux command remains

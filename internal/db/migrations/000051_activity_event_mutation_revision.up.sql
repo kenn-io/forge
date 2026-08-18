@@ -4,6 +4,10 @@ ALTER TABLE forge_merge_requests
 ALTER TABLE forge_issues
     ADD COLUMN activity_event_revision INTEGER NOT NULL DEFAULT 0;
 
+CREATE INDEX idx_forge_notification_items_activity_parent
+    ON forge_notification_items(repo_id, item_type, item_number)
+    WHERE repo_id IS NOT NULL;
+
 UPDATE forge_merge_requests
 SET activity_event_revision = (
     SELECT COUNT(*)

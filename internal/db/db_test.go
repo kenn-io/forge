@@ -707,6 +707,40 @@ func TestActivityEventMutationRevisionMigrationUpgradesPopulatedV50Database(t *t
 	assert.Equal(1, emptyMRRevision)
 	assert.Equal(6, issueRevision)
 	assert.Equal(1, emptyIssueRevision)
+
+	planRows, err := database.ReadDB().Query(`
+		EXPLAIN QUERY PLAN
+		SELECT COUNT(*), MAX(n.id), SUM(n.unread), MAX(n.source_updated_at)
+		FROM forge_notification_items n
+		WHERE n.item_type = 'pr'
+		  AND n.item_number = 1
+		  AND n.reason != 'author'
+		  AND (
+			n.repo_id = 1
+			OR (
+				n.repo_id IS NULL
+				AND n.platform = 'github'
+				AND n.platform_host = 'github.com'
+				AND n.repo_owner = 'acme'
+				AND n.repo_name = 'widgets'
+			)
+		  )
+	`)
+	require.NoError(err)
+	defer planRows.Close()
+	var planDetails []string
+	for planRows.Next() {
+		var id, parent, notUsed int
+		var detail string
+		require.NoError(planRows.Scan(&id, &parent, &notUsed, &detail))
+		planDetails = append(planDetails, detail)
+	}
+	require.NoError(planRows.Err())
+	assert.Contains(
+		strings.Join(planDetails, "\n"),
+		"idx_forge_notification_items_activity_parent",
+		"notification ledger lookup should use the parent index",
+	)
 	assertDatabaseIntegrityForTest(t, database.ReadDB())
 }
 

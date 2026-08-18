@@ -986,6 +986,93 @@ describe("activity store collapse state", () => {
     expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:71", "ntf:70"]);
   });
 
+  it("restarts bulk expansion when reconciliation advances a parent ledger revision", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const originalSubject = {
+      ...itemActivity(7),
+      repo,
+      event_ledger_revision: "pre:1",
+    } satisfies ActivitySubject;
+    const advancedSubject = {
+      ...originalSubject,
+      event_ledger_revision: "pre:2",
+    } satisfies ActivitySubject;
+    const staleEvent = {
+      ...notificationItem("ntf:bulk-sync-race", "unread"),
+      body_preview: "stale body",
+      item_number: 7,
+      repo,
+    } as ActivityItem;
+    const freshEvent = { ...staleEvent, body_preview: "fresh body" };
+    const pendingOldBulk = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: false; event_cursor: string };
+      error: null;
+    }>();
+    let snapshotReads = 0;
+    let bulkReads = 0;
+    const get = vi.fn((path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      if (options?.params?.query?.projection === "events") {
+        bulkReads += 1;
+        if (bulkReads === 1) return pendingOldBulk.promise;
+        return Promise.resolve({
+          data: { items: [freshEvent], capped: false, event_cursor: "new-snapshot" },
+          error: null,
+        });
+      }
+      snapshotReads += 1;
+      return Promise.resolve({
+        data: {
+          items: [],
+          item_activity: [snapshotReads === 1 ? originalSubject : advancedSubject],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: snapshotReads === 1 ? "old-snapshot" : "new-snapshot",
+        },
+        error: null,
+      });
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
+
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(bulkReads).toBe(1));
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity during bulk expansion in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    await vi.waitFor(() => expect(bulkReads).toBe(2));
+    await vi.waitFor(() =>
+      expect(store.getActivityItems().map((item) => [item.id, item.body_preview])).toEqual([
+        [freshEvent.id, freshEvent.body_preview],
+      ]),
+    );
+
+    pendingOldBulk.resolve({
+      data: { items: [staleEvent], capped: false, event_cursor: "old-snapshot" },
+      error: null,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(store.getActivityItems().map((item) => [item.id, item.body_preview])).toEqual([
+      [freshEvent.id, freshEvent.body_preview],
+    ]);
+  });
+
   it("atomically replaces edited and deleted events after a failed bulk retry", async () => {
     const staleEditedEvent = notificationItem("ntf:edited-bulk-event", "unread");
     const staleDeletedEvent = notificationItem("ntf:deleted-bulk-event", "unread");

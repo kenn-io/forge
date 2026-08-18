@@ -928,8 +928,9 @@ Not every visibility control means "remove this entity entirely."
   requests from clearing newer loading or error ownership
   (`frontend/src/lib/stores/activity.svelte.ts::invalidatePagedActivityRequests`).
 - Parent recency or child-ledger revision invalidates stale and in-flight thread pages
-  before restarting; the ledger revision must advance for edits, deletes, and older
-  backfills that do not change display recency. Changed parents discard cached children
+  before restarting; if bulk expansion is active, restart the bulk read instead. The
+  ledger revision must advance for edits, deletes, and older backfills that do not change
+  display recency. Changed parents discard cached children
   before reloading even when the authoritative parent snapshot is capped. New expanded
   parents load complete history.
   Otherwise authoritative reconciliation preserves loaded children and merges deltas; mobile and status

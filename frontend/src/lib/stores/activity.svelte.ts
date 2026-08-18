@@ -681,6 +681,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const previousSubjects = new Map(itemActivity.map((subject) => [stableParentKey(subject), subject] as const));
     const changedThreadKeys = new Set<string>();
     const newExpandedThreadKeys = new Set<string>();
+    let restartBulkActivity = false;
     const parentFilterActive =
       searchQuery !== undefined ||
       authorFilter !== undefined ||
@@ -721,17 +722,21 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? activityEventCursor;
     if (reconcileCollapsedThreads && (changedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0)) {
-      loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !changedThreadKeys.has(key)));
-      loadingThreadKeys = new Set([...loadingThreadKeys].filter((key) => !changedThreadKeys.has(key)));
-      failedThreadKeys = new Set([...failedThreadKeys].filter((key) => !changedThreadKeys.has(key)));
-      if (failedThreadKeys.size === 0) threadLoadError = null;
-      for (const key of changedThreadKeys) threadRequestTokens.delete(key);
-      for (const key of new Set([...changedThreadKeys, ...newExpandedThreadKeys])) {
-        if (isThreadItemExpanded(key)) loadThreadEvents(key);
+      restartBulkActivity = changedThreadKeys.size > 0 && bulkRequestToken !== undefined;
+      if (!restartBulkActivity) {
+        loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !changedThreadKeys.has(key)));
+        loadingThreadKeys = new Set([...loadingThreadKeys].filter((key) => !changedThreadKeys.has(key)));
+        failedThreadKeys = new Set([...failedThreadKeys].filter((key) => !changedThreadKeys.has(key)));
+        if (failedThreadKeys.size === 0) threadLoadError = null;
+        for (const key of changedThreadKeys) threadRequestTokens.delete(key);
+        for (const key of new Set([...changedThreadKeys, ...newExpandedThreadKeys])) {
+          if (isThreadItemExpanded(key)) loadThreadEvents(key);
+        }
       }
     }
     loading = false;
     storeError = null;
+    if (restartBulkActivity) loadBulkActivity();
   }
 
   function loadActivityProgram(params: ActivityParams, owner: "foreground" | "poll" = "foreground") {

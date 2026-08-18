@@ -731,6 +731,9 @@ func TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(func() { _ = os.RemoveAll(tmuxDir) })
 	readyFile := filepath.Join(t.TempDir(), "ready.json")
+	// Model the interval after WriteFile creates the ready file but before it
+	// writes the JSON payload.
+	require.NoError(os.WriteFile(readyFile, nil, 0o600))
 	cmd := procutil.Command(os.Args[0], "-test.run=^TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM$")
 	cmd.Env = append(os.Environ(),
 		"KENN_FORGE_E2E_SIGNAL_HELPER=1",
@@ -750,15 +753,16 @@ func TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM(t *testing.T) {
 		data, readErr := os.ReadFile(readyFile)
 		if readErr == nil {
 			var tmuxCommand []string
-			require.NoError(json.Unmarshal(data, &tmuxCommand))
-			t.Cleanup(func() { killTmuxServer(tmuxCommand) })
-			require.NoError(cmd.Process.Signal(syscall.SIGTERM))
-			waitErr := cmd.Wait()
-			var exitErr *exec.ExitError
-			require.ErrorAs(waitErr, &exitErr)
-			require.Equal(143, exitErr.ExitCode())
-			requirePrivateTmuxServerStopped(t, tmuxCommand)
-			return
+			if jsonErr := json.Unmarshal(data, &tmuxCommand); jsonErr == nil && len(tmuxCommand) > 0 {
+				t.Cleanup(func() { killTmuxServer(tmuxCommand) })
+				require.NoError(cmd.Process.Signal(syscall.SIGTERM))
+				waitErr := cmd.Wait()
+				var exitErr *exec.ExitError
+				require.ErrorAs(waitErr, &exitErr)
+				require.Equal(143, exitErr.ExitCode())
+				requirePrivateTmuxServerStopped(t, tmuxCommand)
+				return
+			}
 		}
 		if time.Now().After(deadline) {
 			require.FailNow("signal helper did not create its private tmux server")

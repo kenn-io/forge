@@ -492,6 +492,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return JSON.stringify([activityProjectionScope(params), params.projection]);
   }
 
+  function ownsForegroundSnapshot(generation: number, scope: string): boolean {
+    return generation === pagedActivityGeneration && scope === activityProjectionScope(buildParams());
+  }
+
   function invalidatePagedActivityRequests(): void {
     pagedActivityGeneration += 1;
     threadRequestTokens.clear();
@@ -761,15 +765,21 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (restartBulkActivity) loadBulkActivity();
   }
 
-  function loadActivityProgram(params: ActivityParams, owner: "foreground" | "poll" = "foreground") {
+  function loadActivityProgram(
+    params: ActivityParams,
+    owner: "foreground" | "poll" = "foreground",
+    acceptsProjection: () => boolean = () => true,
+  ) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
       const scope = activityProjectionScope(params);
       const read = activityRead(params);
       const project = (result: OwnedActivityResponse) =>
-        Effect.sync(() => projectActivitySnapshot(result, params.projection));
+        Effect.sync(() => {
+          if (acceptsProjection()) projectActivitySnapshot(result, params.projection);
+        });
       const clearLoading = Effect.sync(() => {
-        loading = false;
+        if (acceptsProjection()) loading = false;
       });
       yield* owner === "foreground"
         ? workflow.load(scope, read, project, clearLoading)
@@ -777,14 +787,18 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     });
   }
 
-  function loadActivityEffect() {
-    return Effect.sync(() => {
-      loading = true;
-      storeError = null;
-    }).pipe(
-      Effect.andThen(Effect.suspend(() => loadActivityProgram(buildParams()))),
+  function loadActivityEffect(params: ActivityParams, generation: number, scope: string) {
+    const ownsProjection = () => ownsForegroundSnapshot(generation, scope);
+    return Effect.sync(() => ownsProjection()).pipe(
+      Effect.flatMap((current) => {
+        if (!current) return Effect.void;
+        loading = true;
+        storeError = null;
+        return loadActivityProgram(params, "foreground", ownsProjection);
+      }),
       Effect.tapError((failure) =>
         Effect.sync(() => {
+          if (!ownsProjection()) return;
           storeError = readErrorMessage(failure);
           loading = false;
         }),
@@ -985,11 +999,15 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function loadActivity(forceAuthors = false): void {
     invalidatePagedActivityRequests();
+    const generation = pagedActivityGeneration;
+    const params = buildParams();
+    const scope = activityProjectionScope(params);
     loadActivityAuthors(forceAuthors || authorsLoading);
-    runtime.runCommand(loadActivityEffect(), {
+    runtime.runCommand(loadActivityEffect(params, generation, scope), {
       operation: "load activity",
       safeContext: {},
       onFailure: (failure) => {
+        if (!ownsForegroundSnapshot(generation, scope)) return;
         storeError = readErrorMessage(failure);
         loading = false;
       },

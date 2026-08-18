@@ -1190,6 +1190,90 @@ describe("activity store collapse state", () => {
     expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:71", "ntf:70"]);
   });
 
+  it("keeps bulk expansion when an older collapsed foreground load resolves later", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const firstSubject = { ...itemActivity(7), repo } satisfies ActivitySubject;
+    const staleSubject = { ...itemActivity(8), repo } satisfies ActivitySubject;
+    const bulkEvent = {
+      ...notificationItem("ntf:bulk-after-expand", "unread"),
+      item_number: 7,
+      repo,
+    } as ActivityItem;
+    const pendingCollapsed = Promise.withResolvers<{
+      data: {
+        items: never[];
+        item_activity: ActivitySubject[];
+        workspace_activity: never[];
+        capped: false;
+        event_cursor: string;
+      };
+      error: null;
+    }>();
+    let snapshotReads = 0;
+    let bulkReads = 0;
+    let threadReads = 0;
+    const get = vi.fn((path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      if (path === "/activity/thread-events") {
+        threadReads += 1;
+        return Promise.resolve({ data: { items: [], capped: false, event_cursor: "stale-snapshot" }, error: null });
+      }
+      if (options?.params?.query?.projection === "events") {
+        bulkReads += 1;
+        return Promise.resolve({
+          data: { items: [bulkEvent], capped: false, event_cursor: "initial-snapshot" },
+          error: null,
+        });
+      }
+      snapshotReads += 1;
+      if (snapshotReads === 2) return pendingCollapsed.promise;
+      return Promise.resolve({
+        data: {
+          items: [],
+          item_activity: [firstSubject],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "initial-snapshot",
+        },
+        error: null,
+      });
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([firstSubject]));
+
+    store.loadActivity();
+    await vi.waitFor(() => expect(snapshotReads).toBe(2));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(bulkReads).toBe(1));
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([bulkEvent.id]));
+
+    pendingCollapsed.resolve({
+      data: {
+        items: [],
+        item_activity: [firstSubject, staleSubject],
+        workspace_activity: [],
+        capped: false,
+        event_cursor: "stale-snapshot",
+      },
+      error: null,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(store.getActivityItems().map((item) => item.id)).toEqual([bulkEvent.id]);
+    expect(threadReads).toBe(0);
+    expect(store.isActivityLoading()).toBe(false);
+  });
+
   it("restarts bulk expansion when reconciliation advances a parent ledger revision", async () => {
     const repo = {
       provider: "github",

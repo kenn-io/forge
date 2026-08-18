@@ -637,7 +637,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     itemActivityCapped = response.item_activity_capped ?? false;
   }
 
-  function projectActivitySnapshot(result: OwnedActivityResponse): void {
+  function projectActivitySnapshot(result: OwnedActivityResponse, projection: ActivityParams["projection"]): void {
     items = projectOwnedNotificationStates(result);
     projectActivitySubjects(result.response);
     capped = result.response.capped;
@@ -648,6 +648,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     threadLoadError = null;
     loading = false;
     storeError = null;
+    if (projection === "collapsed") {
+      for (const subject of itemActivity) {
+        const key = stableParentKey(subject);
+        if (key && isThreadItemExpanded(key)) loadThreadEvents(key);
+      }
+    }
   }
 
   function projectAuthoritativeActivitySnapshot(result: OwnedActivityResponse): void {
@@ -679,7 +685,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const retainedThreadItems = items.filter((item) => {
       const key = stableParentKey(item);
       if (result.response.item_activity_capped) {
-        return (item.item_type === "pr" || item.item_type === "issue") && !receivedIDs.has(item.id);
+        return (
+          (item.item_type === "pr" || item.item_type === "issue") &&
+          !receivedIDs.has(item.id) &&
+          (key === undefined || !changedThreadKeys.has(key))
+        );
       }
       return (
         key !== undefined && receivedSubjectKeys.has(key) && !receivedIDs.has(item.id) && !changedThreadKeys.has(key)
@@ -708,7 +718,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const workflow = yield* ActivityWorkflow;
       const scope = activityProjectionScope(params);
       const read = activityRead(params);
-      const project = (result: OwnedActivityResponse) => Effect.sync(() => projectActivitySnapshot(result));
+      const project = (result: OwnedActivityResponse) =>
+        Effect.sync(() => projectActivitySnapshot(result, params.projection));
       const clearLoading = Effect.sync(() => {
         loading = false;
       });

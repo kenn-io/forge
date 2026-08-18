@@ -284,6 +284,73 @@ describe("activity store collapse state", () => {
     ]);
   });
 
+  it("reloads expanded threads after a foreground collapsed-scope reload", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const subject = { ...itemActivity(7), repo } satisfies ActivitySubject;
+    const firstEvent = {
+      ...notificationItem("ntf:before-scope-reload", "read"),
+      item_number: 7,
+      body_preview: "before scope reload",
+      repo,
+    } as ActivityItem;
+    const reloadedEvent = {
+      ...notificationItem("ntf:after-scope-reload", "read"),
+      item_number: 7,
+      body_preview: "after scope reload",
+      repo,
+    } as ActivityItem;
+    let activityReads = 0;
+    let threadReads = 0;
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (path === "/activity/thread-events") {
+        threadReads += 1;
+        return {
+          data: {
+            items: [threadReads === 1 ? firstEvent : reloadedEvent],
+            capped: false,
+            event_cursor: `thread-snapshot-${threadReads}`,
+          },
+          error: null,
+        };
+      }
+      activityReads += 1;
+      return {
+        data: {
+          items: [],
+          item_activity: [subject],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: `activity-snapshot-${activityReads}`,
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([subject]));
+
+    const key = "github|github.com|id|repo-7:pr:7";
+    store.toggleThreadItem(key);
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([firstEvent.id]));
+
+    store.setTimeRange("30d");
+    store.loadActivity();
+
+    await vi.waitFor(() => expect(threadReads).toBe(2));
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([reloadedEvent.id]));
+    expect(store.isThreadItemExpanded(key)).toBe(true);
+  });
+
   it("forwards active event and search filters when loading a collapsed thread", async () => {
     const subject = {
       ...itemActivity(7),
@@ -629,6 +696,92 @@ describe("activity store collapse state", () => {
     await vi.waitFor(() => expect(threadReads).toBe(2));
     await vi.waitFor(() =>
       expect(store.getActivityItems().map((item) => item.id)).toEqual([recentEvent.id, olderEvent.id]),
+    );
+  });
+
+  it("replaces edited and deleted cached events after a capped ledger revision change", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const originalSubject = {
+      ...itemActivity(7),
+      repo,
+      event_ledger_revision: "pre:1",
+    } as ActivitySubject;
+    const changedSubject = {
+      ...originalSubject,
+      event_ledger_revision: "pre:2",
+    } as ActivitySubject;
+    const cachedEditedEvent = {
+      ...notificationItem("ntf:edited-event", "read"),
+      item_number: 7,
+      body_preview: "old comment body",
+      repo,
+    } as ActivityItem;
+    const cachedDeletedEvent = {
+      ...notificationItem("ntf:deleted-event", "read"),
+      item_number: 7,
+      body_preview: "deleted comment body",
+      repo,
+    } as ActivityItem;
+    const refreshedEditedEvent = {
+      ...cachedEditedEvent,
+      body_preview: "new comment body",
+    } as ActivityItem;
+    let activityReads = 0;
+    let threadReads = 0;
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (path === "/activity/thread-events") {
+        threadReads += 1;
+        return {
+          data: {
+            items: threadReads === 1 ? [cachedEditedEvent, cachedDeletedEvent] : [refreshedEditedEvent],
+            capped: false,
+            event_cursor: "snapshot",
+          },
+          error: null,
+        };
+      }
+      activityReads += 1;
+      return {
+        data: {
+          items: [],
+          item_activity: [activityReads === 1 ? originalSubject : changedSubject],
+          item_activity_capped: activityReads > 1,
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "snapshot",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
+
+    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    await vi.waitFor(() => expect(threadReads).toBe(1));
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile capped edited activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    await vi.waitFor(() => expect(threadReads).toBe(2));
+    await vi.waitFor(() =>
+      expect(store.getActivityItems().map((item) => [item.id, item.body_preview])).toEqual([
+        [refreshedEditedEvent.id, refreshedEditedEvent.body_preview],
+      ]),
     );
   });
 

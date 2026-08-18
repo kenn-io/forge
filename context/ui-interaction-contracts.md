@@ -929,9 +929,14 @@ Not every visibility control means "remove this entity entirely."
   (`frontend/src/lib/stores/activity.svelte.ts::invalidatePagedActivityRequests`).
 - Parent recency or child-ledger revision invalidates stale and in-flight thread pages
   before restarting; the ledger revision must advance for edits, deletes, and older
-  backfills that do not change display recency. New expanded parents load complete history.
+  backfills that do not change display recency. Changed parents discard cached children
+  before reloading even when the authoritative parent snapshot is capped. New expanded
+  parents load complete history.
   Otherwise authoritative reconciliation preserves loaded children and merges deltas; mobile and status
   totals consume the same summary authority (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
+- A foreground collapsed snapshot replacement clears thread-page authority, then reloads
+  every received parent that remains expanded so a scope or filter change cannot leave an
+  expanded row empty (`frontend/src/lib/stores/activity.svelte.ts::projectActivitySnapshot`).
 - A failed thread page preserves already loaded children and exposes a retry that restarts
   the frozen thread read. Only the request token that still owns the thread may publish
   that error; superseded failures are discarded

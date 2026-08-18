@@ -168,9 +168,9 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	provider.pullAssigned = nil
 	provider.issueAssigned = nil
 
-	err = handler.autoAssignWorkspaceItem(t.Context(), *repo, 7, false)
+	err = handler.autoAssignWorkspaceItem(t.Context(), *repo, 7, false, false)
 	require.ErrorContains(err, "not visible")
-	err = handler.autoAssignWorkspaceItem(t.Context(), *repo, 8, true)
+	err = handler.autoAssignWorkspaceItem(t.Context(), *repo, 8, true, false)
 	require.ErrorContains(err, "not visible")
 	assert.Empty(provider.pullAssigned)
 	assert.Empty(provider.issueAssigned)

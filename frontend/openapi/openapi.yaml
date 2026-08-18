@@ -7442,14 +7442,6 @@ components:
         - hide_tmux_status
         - retained_sessions
       type: object
-    TerminalClipboardInputBody:
-      additionalProperties: false
-      properties:
-        text:
-          type: string
-      required:
-        - text
-      type: object
     TmuxSessionInfo:
       additionalProperties: false
       properties:

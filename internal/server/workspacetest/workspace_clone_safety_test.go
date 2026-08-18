@@ -821,7 +821,7 @@ func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) 
 
 	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
 	require.NotNil(ws.MrHeadRepoKind)
-	assert.Equal(generated.SameRepo, *ws.MrHeadRepoKind)
+	assert.Equal(generated.WorkspaceResponseMrHeadRepoKindSameRepo, *ws.MrHeadRepoKind)
 	stored, err := database.GetWorkspace(ctx, ws.Id)
 	require.NoError(err)
 	require.NotNil(stored)
@@ -903,7 +903,7 @@ func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.
 	// row and the wire response must both reflect it rather than the
 	// stale same_repo classification the nil default implies.
 	require.NotNil(ready.MrHeadRepoKind)
-	assert.Equal(generated.Unknown, *ready.MrHeadRepoKind)
+	assert.Equal(generated.WorkspaceResponseMrHeadRepoKindUnknown, *ready.MrHeadRepoKind)
 	stored, err := fixture.database.GetWorkspace(ctx, workspaceID)
 	require.NoError(err)
 	require.NotNil(stored)

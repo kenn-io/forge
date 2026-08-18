@@ -32418,7 +32418,7 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
 	require.NotNil(ready.MrHeadRepoKind)
-	assert.Equal(generated.Fork, *ready.MrHeadRepoKind)
+	assert.Equal(generated.WorkspaceResponseMrHeadRepoKindFork, *ready.MrHeadRepoKind)
 	stored, err := fixture.database.GetWorkspace(ctx, ready.Id)
 	require.NoError(err)
 	require.NotNil(stored)

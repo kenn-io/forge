@@ -8058,9 +8058,6 @@ export interface components {
             /** Format: int64 */
             scrollback: number;
         };
-        TerminalClipboardInputBody: {
-            text: string;
-        };
         TmuxSessionInfo: {
             createdAt?: string;
             managed: boolean;

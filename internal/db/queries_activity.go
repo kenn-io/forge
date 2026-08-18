@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// prActivityAtExpr is a pull request's Activity recency: opening, the newest
-// ledger event the feed can render, reopen, merge, or close, whichever is
-// latest.
+// prActivityAtExpr is a pull request's provider-event recency: opening, the
+// newest ledger event the feed can render, reopen, merge, or close, whichever
+// is latest. Parent summaries layer visible notification recency on top.
 // Provider updated_at is not activity: GitHub bumps it for mergeability
 // recomputation after base pushes, head-branch deletion after merge, and other
 // invisible bookkeeping, which surfaced phantom recency in the feed. The
@@ -28,8 +28,9 @@ func prActivityAtExpr(pr string) string {
 		pr)
 }
 
-// issueActivityAtExpr is an issue's Activity recency: opening, the newest
-// rendered ledger event, reopen, or close, whichever is latest.
+// issueActivityAtExpr is an issue's provider-event recency: opening, the newest
+// rendered ledger event, reopen, or close, whichever is latest. Parent
+// summaries layer visible notification recency on top.
 func issueActivityAtExpr(issue string) string {
 	return fmt.Sprintf(
 		"MAX(%[1]s.created_at, COALESCE((SELECT e.created_at FROM forge_issue_events e "+
@@ -37,6 +38,29 @@ func issueActivityAtExpr(issue string) string {
 			"ORDER BY e.created_at DESC LIMIT 1), %[1]s.created_at), "+
 			"COALESCE(%[1]s.closed_at, %[1]s.created_at))",
 		issue)
+}
+
+// activityNotificationAtExpr returns the newest visible notification for one
+// parent. The canonical repo ID survives renames; legacy null IDs fall back to
+// the current normalized route.
+func activityNotificationAtExpr(parent, itemType string) string {
+	return fmt.Sprintf(
+		"COALESCE((SELECT MAX(n.source_updated_at) FROM forge_notification_items n "+
+			"JOIN forge_repos nr ON nr.id = %[1]s.repo_id "+
+			"WHERE n.item_type = '%[2]s' AND n.item_number = %[1]s.number "+
+			"AND n.reason != 'author' AND (n.repo_id = nr.id OR (n.repo_id IS NULL "+
+			"AND n.platform = nr.platform AND n.platform_host = nr.platform_host "+
+			"AND n.repo_owner = nr.owner_key AND n.repo_name = nr.name_key))), %[1]s.created_at)",
+		parent, itemType,
+	)
+}
+
+func prActivitySubjectAtExpr(pr string) string {
+	return fmt.Sprintf("MAX(%s, %s)", prActivityAtExpr(pr), activityNotificationAtExpr(pr, "pr"))
+}
+
+func issueActivitySubjectAtExpr(issue string) string {
+	return fmt.Sprintf("MAX(%s, %s)", issueActivityAtExpr(issue), activityNotificationAtExpr(issue, "issue"))
 }
 
 // prEventLedgerRevisionExpr and issueEventLedgerRevisionExpr identify every
@@ -538,9 +562,9 @@ func listActivityWithQueryer(
 }
 
 // ListActivitySubjects returns a full parent snapshot ordered and filtered by
-// ledger-derived pull-request and issue recency (see prActivityAtExpr). Event
-// filters and cursors do not participate because a hidden or behind-cursor
-// event can still advance a parent's visible timestamp and position.
+// ledger-derived pull-request and issue recency, including visible notification
+// timestamps. Event filters and cursors do not participate because a hidden or
+// behind-cursor event can still advance a parent's visible timestamp and position.
 func (d *DB) ListActivitySubjects(
 	ctx context.Context, opts ListActivitySubjectsOpts,
 ) ([]ActivitySubject, error) {
@@ -656,7 +680,7 @@ func listActivitySubjectsWithQueryer(
 			       r.owner AS repo_owner, r.name AS repo_name, r.repo_path_key,
 			       'pr' AS item_type, p.number AS item_number, p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state, p.author AS item_author,
-			       ` + prActivityAtExpr("p") + ` AS activity_at,
+			       ` + prActivitySubjectAtExpr("p") + ` AS activity_at,
 			       ` + prEventLedgerRevisionExpr("p") + ` AS event_ledger_revision
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -671,7 +695,7 @@ func listActivitySubjectsWithQueryer(
 			SELECT r.id, r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
 			       r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title, i.url, i.state, i.author,
-			       ` + issueActivityAtExpr("i") + `,
+			       ` + issueActivitySubjectAtExpr("i") + `,
 			       ` + issueEventLedgerRevisionExpr("i") + `
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'

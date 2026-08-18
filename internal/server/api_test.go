@@ -23895,6 +23895,51 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Len(*unfiltered.JSON200.Items, len(*resp.JSON200.Items))
 }
 
+func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	oldActivity := now.Add(-30 * 24 * time.Hour)
+	seedPR(
+		t, database, "acme", "widget", 71,
+		withSeedPRTitle("Old pull with recent notification"),
+		withSeedPRTimes(oldActivity, oldActivity, oldActivity),
+	)
+	number := 71
+	notificationAt := now.Add(-time.Hour)
+	require.NoError(database.UpsertNotifications(ctx, []db.Notification{{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformNotificationID: "api-recent-old-pull",
+		RepoOwner:              "acme", RepoName: "widget",
+		SubjectType: "PullRequest", SubjectTitle: "Old pull with recent notification",
+		WebURL:     "https://github.com/acme/widget/pull/71",
+		ItemNumber: &number, ItemType: "pr", ItemAuthor: "contributor",
+		Reason: "mention", Unread: true,
+		SourceUpdatedAt: notificationAt, SyncedAt: notificationAt,
+	}}))
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+since+"&projection=collapsed",
+		nil,
+	)
+	require.Equal(http.StatusOK, rr.Code)
+	var body struct {
+		Items        []activityItemResponse    `json:"items"`
+		ItemActivity []activitySubjectResponse `json:"item_activity"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.Empty(body.Items)
+	require.Len(body.ItemActivity, 1)
+	assert.Equal(71, body.ItemActivity[0].ItemNumber)
+	assert.Equal(formatUTCRFC3339(notificationAt), body.ItemActivity[0].ActivityAt)
+}
+
 func TestAPIListActivitySearchEventDeltaDoesNotReadBeforeCursor(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)

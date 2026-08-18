@@ -973,6 +973,59 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 		"an unchanged event upsert must not invalidate the thread cache")
 }
 
+func TestListCollapsedActivityProjectionIncludesParentsRecentOnlyByNotification(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	since := now.Add(-7 * 24 * time.Hour)
+	oldActivity := now.Add(-30 * 24 * time.Hour)
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	insertTestMR(t, d, repoID, 7, "Old pull request", oldActivity)
+	insertTestIssueWithOptions(t, d, testIssue(repoID, 8,
+		withIssueTitle("Old issue"),
+		withIssueActivity(oldActivity)))
+	pullNumber := 7
+	issueNumber := 8
+	pullNotificationAt := now.Add(-time.Hour)
+	issueNotificationAt := now.Add(-2 * time.Hour)
+	require.NoError(d.UpsertNotifications(ctx, []Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "recent-old-pull",
+			RepoOwner:              "alice", RepoName: "alpha",
+			SubjectType: "PullRequest", SubjectTitle: "Old pull request",
+			WebURL:     "https://github.com/alice/alpha/pull/7",
+			ItemNumber: &pullNumber, ItemType: "pr", ItemAuthor: "contributor",
+			Reason: "mention", Unread: true,
+			SourceUpdatedAt: pullNotificationAt, SyncedAt: pullNotificationAt,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "recent-old-issue",
+			RepoOwner:              "alice", RepoName: "alpha",
+			SubjectType: "Issue", SubjectTitle: "Old issue",
+			WebURL:     "https://github.com/alice/alpha/issues/8",
+			ItemNumber: &issueNumber, ItemType: "issue", ItemAuthor: "reporter",
+			Reason: "subscribed", Unread: true,
+			SourceUpdatedAt: issueNotificationAt, SyncedAt: issueNotificationAt,
+		},
+	}))
+
+	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		ListActivityOpts: ListActivityOpts{Since: &since, Limit: 50},
+		SubjectLimit:     50,
+	})
+	require.NoError(err)
+	assert.Empty(projection.DirectRows, "anchored notifications must collapse into their parent summaries")
+	require.Len(projection.Subjects, 2)
+	assert.Equal(7, projection.Subjects[0].Subject.Key.ItemNumber)
+	assert.Equal(pullNotificationAt, projection.Subjects[0].ActivityAt)
+	assert.Equal(8, projection.Subjects[1].Subject.Key.ItemNumber)
+	assert.Equal(issueNotificationAt, projection.Subjects[1].ActivityAt)
+}
+
 func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -747,7 +747,7 @@ func TestActivityEventMutationRevisionMigrationUpgradesPopulatedV50Database(t *t
 
 	planRows, err := database.ReadDB().Query(`
 		EXPLAIN QUERY PLAN
-		SELECT COUNT(*), MAX(n.id), SUM(n.unread), MAX(n.source_updated_at)
+		SELECT MAX(n.source_updated_at)
 		FROM forge_notification_items n
 		WHERE n.item_type = 'pr'
 		  AND n.item_number = 1
@@ -776,7 +776,7 @@ func TestActivityEventMutationRevisionMigrationUpgradesPopulatedV50Database(t *t
 	assert.Contains(
 		strings.Join(planDetails, "\n"),
 		"idx_forge_notification_items_activity_parent",
-		"notification ledger lookup should use the parent index",
+		"notification recency lookup should use the parent index",
 	)
 	assertDatabaseIntegrityForTest(t, database.ReadDB())
 }

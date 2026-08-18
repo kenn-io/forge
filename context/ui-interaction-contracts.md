@@ -902,12 +902,15 @@ Not every visibility control means "remove this entity entirely."
   on that item kind (issues: comments), so Reviews or Force pushes never toggle
   issue opening rows
   (`frontend/src/lib/stores/activity.svelte.ts::buildActivityFilterTypes`).
-- Activity recency for a PR or issue is derived from the event ledger the feed can
-  render plus lifecycle transitions (opening, comments, reviews, commits, force pushes,
-  reopen, merge, close), never from
-  provider `updated_at`/`last_activity_at`: GitHub bumps those for mergeability recomputes
-  and branch deletion, which read as phantom activity. Event visibility filters must not
-  redefine that recency (`internal/db/queries_activity.go::prActivityAtExpr`).
+- Activity recency for a PR or issue parent includes the event ledger the feed can
+  render, visible notification timestamps, and lifecycle transitions (opening, comments,
+  reviews, commits, force pushes, reopen, merge, close), never provider
+  `updated_at`/`last_activity_at`: GitHub bumps those for mergeability recomputes
+  and branch deletion, which read as phantom activity
+  (`internal/db/queries_activity.go::prActivitySubjectAtExpr`).
+- An in-window notification keeps its parent summary in scope even when the parent's other
+  activity is older than the window. Event visibility filters do not redefine parent recency
+  (`internal/db/queries_activity.go::listActivitySubjectsWithQueryer`).
 - "Use workspace activity for recency" hydrates one global PR, Issue, and Activity opt-in. Disabled mode keeps provider sorting/display and hides cached workspace-only subjects while retaining `last_workspace_activity_at` as metadata (`frontend/src/lib/utils/effective-activity.ts::effectiveActivity`, `frontend/src/lib/components/ActivityFeed.svelte::visibleWorkspaceActivity`).
 - Activity presentation filters apply to event, parent, and workspace projections;
   "Hide bots" tests event actors on events and item authors on parent/workspace subjects

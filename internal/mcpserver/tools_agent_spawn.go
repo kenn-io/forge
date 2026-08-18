@@ -476,10 +476,11 @@ func (s *Server) submitInitialAgentMessage(
 		if !errors.As(err, &backendErr) || !backendErr.Ambiguous {
 			return agentInitialMessageRow{}, err
 		}
-		if recoveryErr := s.recoverInitialMessageStatus(
-			ctx, workspaceID, runtimeSessionKey, backendErr, &messageStatus,
-		); recoveryErr != nil {
-			return agentInitialMessageRow{}, recoveryErr
+		messageStatus, err = s.recoverInitialMessageStatus(
+			ctx, workspaceID, runtimeSessionKey, backendErr,
+		)
+		if err != nil {
+			return agentInitialMessageRow{}, err
 		}
 	}
 	row := agentInitialMessageRow{
@@ -496,8 +497,7 @@ func (s *Server) recoverInitialMessageStatus(
 	workspaceID string,
 	runtimeSessionKey string,
 	original *Error,
-	messageStatus *InitialMessageStatus,
-) error {
+) (InitialMessageStatus, error) {
 	timeout := messageStatusRecoveryTimeout
 	if deadline, ok := ctx.Deadline(); ok {
 		if remaining := time.Until(deadline); remaining > 0 && remaining < timeout {
@@ -510,17 +510,16 @@ func (s *Server) recoverInitialMessageStatus(
 	for {
 		recovered, err := s.backend.GetInitialMessage(recoveryCtx, workspaceID, runtimeSessionKey)
 		if err != nil {
-			return original
+			return InitialMessageStatus{}, original
 		}
-		*messageStatus = recovered
 		if recovered.State == "delivered" {
-			return nil
+			return recovered, nil
 		}
 		if recovered.State != "pending" {
-			return initialMessageRecoveryError(original, recovered.State)
+			return InitialMessageStatus{}, initialMessageRecoveryError(original, recovered.State)
 		}
 		if err := s.waitAgentHandoffPoll(recoveryCtx); err != nil {
-			return initialMessageRecoveryError(original, recovered.State)
+			return InitialMessageStatus{}, initialMessageRecoveryError(original, recovered.State)
 		}
 	}
 }

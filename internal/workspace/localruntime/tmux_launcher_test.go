@@ -118,7 +118,7 @@ func TestTmuxLauncherAttachForcesUTF8(t *testing.T) {
 	assert.Equal(t,
 		[]string{
 			"/usr/bin/tmux", "-L", "kenn-forge-test",
-			"-u", "attach-session", "-t", "kenn-forge-test",
+			"-u", "attach-session", "-E", "-t", "kenn-forge-test",
 		},
 		launcher.attachSessionCommand(),
 	)
@@ -131,8 +131,11 @@ func TestTmuxLauncherCleansUpWhenHideStatusFails(t *testing.T) {
 	record := filepath.Join(dir, "tmux-record")
 	created := filepath.Join(dir, "created")
 	tmuxPath := filepath.Join(dir, "tmux")
-	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
-printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
+		"TMUX_RECORD="+shellquote.Join(record)+"\n"+
+		"TMUX_CREATED="+shellquote.Join(created)+"\n"+
+		"TMUX_EXISTING_OWNER='kenn-forge:test-owner'\n"+
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
 case "$1" in
   has-session)
     if [ -f "$TMUX_CREATED" ]; then exit 0; fi
@@ -179,12 +182,7 @@ exit 0
 		Pane: tmuxPaneEnvironment{
 			paneCommand: "exec /bin/sh",
 			keys:        []string{"PATH", "TERM"},
-			commandEnv: append(
-				os.Environ(),
-				"TMUX_RECORD="+record,
-				"TMUX_CREATED="+created,
-				"TMUX_EXISTING_OWNER=kenn-forge:test-owner",
-			),
+			commandEnv:  os.Environ(),
 		},
 		OwnerMarker: "kenn-forge:test-owner",
 		HideStatus:  true,
@@ -199,7 +197,7 @@ exit 0
 		"kill-session", "-t", "kenn-forge-test",
 	})
 	assert.NotContains(records, []string{
-		"-u", "attach-session", "-t", "kenn-forge-test",
+		"-u", "attach-session", "-E", "-t", "kenn-forge-test",
 	})
 	assert.NoFileExists(created)
 }
@@ -214,8 +212,13 @@ func TestTmuxLauncherCleansUpCreatedSessionAfterLaunchContextCancellation(
 	createdSessionState := filepath.Join(dir, "created-session")
 	statusStarted := filepath.Join(dir, "status-started")
 	tmuxPath := filepath.Join(dir, "tmux")
-	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
-printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+	statusRelease := filepath.Join(dir, "status-release")
+	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
+		"TMUX_RECORD="+shellquote.Join(record)+"\n"+
+		"TMUX_CREATED="+shellquote.Join(createdSessionState)+"\n"+
+		"TMUX_STATUS_STARTED="+shellquote.Join(statusStarted)+"\n"+
+		"TMUX_STATUS_RELEASE="+shellquote.Join(statusRelease)+"\n"+
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
 case "$1" in
   has-session)
     if [ -f "$TMUX_CREATED" ]; then exit 0; fi
@@ -252,10 +255,6 @@ exit 0
 			commandEnv: []string{
 				"PATH=" + os.Getenv("PATH"),
 				"TERM=xterm-256color",
-				"TMUX_RECORD=" + record,
-				"TMUX_CREATED=" + createdSessionState,
-				"TMUX_STATUS_STARTED=" + statusStarted,
-				"TMUX_STATUS_RELEASE=" + filepath.Join(dir, "status-release"),
 			},
 		},
 		HideStatus: true,
@@ -296,8 +295,9 @@ func TestTmuxLauncherDoesNotKillSessionAfterNewSessionError(t *testing.T) {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "tmux-record")
 	tmuxPath := filepath.Join(dir, "tmux")
-	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
-printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
+		"TMUX_RECORD="+shellquote.Join(record)+"\n"+
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
 case "$1" in
   has-session)
     echo "can't find session: $3" >&2
@@ -323,7 +323,6 @@ exit 0
 			commandEnv: []string{
 				"PATH=" + os.Getenv("PATH"),
 				"TERM=xterm-256color",
-				"TMUX_RECORD=" + record,
 			},
 		},
 	}
@@ -363,8 +362,10 @@ func TestTmuxLauncherRejectsUnownedExistingSession(t *testing.T) {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "tmux-record")
 	tmuxPath := filepath.Join(dir, "tmux")
-	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
-printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
+		"TMUX_RECORD="+shellquote.Join(record)+"\n"+
+		"TMUX_EXISTING_OWNER='other-owner'\n"+
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
 case "$1" in
   has-session)
     exit 0
@@ -386,11 +387,7 @@ exit 0
 		Pane: tmuxPaneEnvironment{
 			paneCommand: "exec /bin/sh",
 			keys:        []string{"PATH", "TERM"},
-			commandEnv: append(
-				os.Environ(),
-				"TMUX_RECORD="+record,
-				"TMUX_EXISTING_OWNER=other-owner",
-			),
+			commandEnv:  os.Environ(),
 		},
 		OwnerMarker: "kenn-forge:test-owner",
 	}
@@ -406,7 +403,7 @@ exit 0
 		"show-options", "-qv", "-t", "kenn-forge-test", "@forge_owner",
 	})
 	assert.NotContains(records, []string{
-		"-u", "attach-session", "-t", "kenn-forge-test",
+		"-u", "attach-session", "-E", "-t", "kenn-forge-test",
 	})
 	assert.NotContains(records, []string{
 		"new-session", "-e", "PATH", "-e", "TERM",
@@ -471,4 +468,140 @@ func containsArgvSequence(argv []string, sequence []string) bool {
 		}
 	}
 	return false
+}
+
+// TestTmuxAgentPolicyPreservesTmuxTmpdirInClientEnv pins socket routing:
+// tmux resolves -L sockets under TMUX_TMPDIR, so the launcher's tmux
+// client must see the daemon's value or agent sessions land on a
+// different tmux server than the manager-owned base sessions, breaking
+// attachment and orphan reaping.
+func TestTmuxAgentPolicyPreservesTmuxTmpdirInClientEnv(t *testing.T) {
+	assert := assert.New(t)
+	env := []string{
+		"PATH=/usr/bin",
+		"TMUX_TMPDIR=/private/socket-dir",
+		"GITHUB_TOKEN=agent-secret",
+	}
+	pane := tmuxAgentEnvPolicy.paneEnvironment(env, []string{"agent"}, nil)
+	joined := strings.Join(pane.commandEnv, "\n")
+	assert.Contains(joined, "TMUX_TMPDIR=/private/socket-dir",
+		"tmux client must resolve the same socket directory as the daemon")
+	assert.NotContains(joined, "GITHUB_TOKEN",
+		"credential stripping must survive the socket-routing fix")
+	client := TmuxClientEnvironment(
+		append(env,
+			"TMUX_GITHUB_TOKEN=sneaky",
+			"XDG_CONFIGURED_TOKEN=xdg-sneaky",
+			"XDG_RUNTIME_DIR=/run/user/1000",
+		),
+		[]string{"XDG_CONFIGURED_TOKEN"},
+	)
+	clientJoined := strings.Join(client, "\n")
+	assert.Contains(clientJoined, "TMUX_TMPDIR=/private/socket-dir")
+	assert.Contains(clientJoined, "XDG_RUNTIME_DIR=/run/user/1000")
+	assert.NotContains(clientJoined, "TMUX_GITHUB_TOKEN",
+		"the allowlist must name exact variables, not a TMUX_ wildcard a secret could hide under")
+	assert.NotContains(clientJoined, "XDG_CONFIGURED_TOKEN",
+		"configured token names must be stripped even under allowlisted prefixes")
+	undeclared := TmuxClientEnvironment(
+		append(env,
+			"XDG_API_TOKEN=undeclared-xdg-secret",
+			"LC_SECRET_TOKEN=undeclared-lc-secret",
+			"XDG_RUNTIME_DIR=/run/user/1000",
+			"LC_ALL=en_US.UTF-8",
+		),
+		nil,
+	)
+	undeclaredJoined := strings.Join(undeclared, "\n")
+	assert.Contains(undeclaredJoined, "XDG_RUNTIME_DIR=/run/user/1000")
+	assert.Contains(undeclaredJoined, "LC_ALL=en_US.UTF-8")
+	assert.NotContains(undeclaredJoined, "XDG_API_TOKEN",
+		"the allowlist must name exact XDG variables, not a prefix a secret could hide under")
+	assert.NotContains(undeclaredJoined, "LC_SECRET_TOKEN",
+		"the allowlist must name exact locale variables, not a prefix a secret could hide under")
+}
+
+// TestTmuxAttachSessionCommandDisablesUpdateEnvironment pins -E on every
+// daemon-side attach: a pane can widen the server's update-environment,
+// and without -E the next attach would copy the attach client's
+// variables into the session environment where panes read them back.
+func TestTmuxAttachSessionCommandDisablesUpdateEnvironment(t *testing.T) {
+	assert.Equal(t,
+		[]string{"tmux", "-L", "sock", "-u", "attach-session", "-E", "-t", "kenn-forge-test"},
+		tmuxAttachSessionCommand(
+			[]string{"tmux", "-L", "sock"}, "kenn-forge-test",
+		),
+	)
+}
+
+// TestTmuxPaneEnvironmentExtraNeverReachesClientEnv pins the client/pane
+// split: launch extras come from API request bodies, so they may only
+// reach the pane via the env-file handoff. The tmux client environment
+// must derive from the pre-extras policy env, or an extra such as
+// TMUX_TMPDIR could steer new-session to a different socket than the
+// daemon's own management clients.
+func TestTmuxPaneEnvironmentExtraNeverReachesClientEnv(t *testing.T) {
+	assert := assert.New(t)
+	pane := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(
+		[]string{"PATH=/usr/bin", "TMUX_TMPDIR=/daemon/sockets"},
+		[]string{"/bin/sh"}, nil,
+		map[string]string{
+			"TMUX_TMPDIR": "/attacker/sockets",
+			"HOME":        "/attacker/home",
+		},
+	)
+
+	clientJoined := strings.Join(pane.clientEnv, "\n")
+	assert.Contains(clientJoined, "TMUX_TMPDIR=/daemon/sockets")
+	assert.NotContains(clientJoined, "/attacker/sockets")
+	assert.NotContains(clientJoined, "/attacker/home")
+	// The pane still receives the extras through the handoff env.
+	commandJoined := strings.Join(pane.commandEnv, "\n")
+	assert.Contains(commandJoined, "TMUX_TMPDIR=/attacker/sockets")
+	assert.Contains(commandJoined, "HOME=/attacker/home")
+}
+
+// TestShouldStripSessionVarFold pins Windows semantics: environment
+// variable names resolve case-insensitively there, so github_token is
+// the same credential as GITHUB_TOKEN.
+func TestShouldStripSessionVarFold(t *testing.T) {
+	assert := assert.New(t)
+	assert.True(shouldStripSessionVarFold("github_token", nil, true))
+	assert.True(shouldStripSessionVarFold("Kata_Auth_Token", nil, true))
+	assert.True(shouldStripSessionVarFold("my_token", []string{"MY_TOKEN"}, true))
+	assert.False(shouldStripSessionVarFold("github_token", nil, false))
+	assert.True(shouldStripSessionVarFold("GITHUB_TOKEN", nil, false))
+}
+
+// TestTmuxEnvironmentKeysRejectsReservedHandoffNames pins that
+// handoff-internal variables can never be sourced from the env file:
+// the cleanup trap removes the paths they hold, so an API-supplied
+// override could aim rm at caller-selected files.
+func TestTmuxEnvironmentKeysRejectsReservedHandoffNames(t *testing.T) {
+	pane := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(
+		[]string{"PATH=/usr/bin"},
+		[]string{"/bin/sh"}, nil,
+		map[string]string{
+			"__kenn_forge_env_file":    "/victim/path",
+			"__kenn_forge_script_file": "/victim/script",
+		},
+	)
+	assert := assert.New(t)
+	assert.NotContains(pane.keys, "__kenn_forge_env_file")
+	assert.NotContains(pane.keys, "__kenn_forge_script_file")
+	assert.NotContains(pane.paneCommand, "__kenn_forge_env_file=")
+}
+
+// TestShouldAllowTmuxSessionVarFold pins admission casing: exact names
+// on case-sensitive platforms, folded on Windows where environment
+// names resolve case-insensitively.
+func TestShouldAllowTmuxSessionVarFold(t *testing.T) {
+	assert := assert.New(t)
+	assert.True(shouldAllowTmuxSessionVarFold("EDITOR", false))
+	assert.False(shouldAllowTmuxSessionVarFold("editor", false),
+		"a Unix variable named editor is unrelated to EDITOR")
+	assert.False(shouldAllowTmuxSessionVarFold("path", false))
+	assert.True(shouldAllowTmuxSessionVarFold("Path", true),
+		"Windows resolves Path as PATH")
+	assert.True(shouldAllowTmuxSessionVarFold("editor", true))
 }

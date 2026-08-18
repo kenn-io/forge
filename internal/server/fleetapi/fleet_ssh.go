@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	shellquote "github.com/kballard/go-shellquote"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -508,7 +510,14 @@ func wrapAttachSpecForSSH(
 	if len(spec.Command) == 0 {
 		return nil, false
 	}
-	spec.Command = append(append([]string(nil), sshCommand...), spec.Command...)
+	// OpenSSH joins remote arguments with spaces and hands the result
+	// to the remote shell, so the attach argv must collapse into one
+	// shell-quoted remote command or arguments containing whitespace
+	// or metacharacters are re-split and interpreted remotely.
+	spec.Command = append(
+		append([]string(nil), sshCommand...),
+		shellquote.Join(spec.Command...),
+	)
 	spec.RequiresLocalHost = false
 	wrapped, err := json.Marshal(spec)
 	if err != nil {

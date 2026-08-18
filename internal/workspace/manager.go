@@ -21,10 +21,12 @@ import (
 	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitremote "go.kenn.io/kit/git/remote"
 )
@@ -41,6 +43,8 @@ type Manager struct {
 	clones                    *gitclone.Manager
 	locks                     *FileLockManager
 	tmuxCmd                   []string
+	tmuxStripEnvMu            sync.RWMutex
+	tmuxStripEnvVars          []string
 	hideTmuxStatusMu          sync.RWMutex
 	hideTmuxStatus            bool
 	ptyOwner                  PtyOwnerClient
@@ -280,9 +284,50 @@ func (m *Manager) worktreeLockRoot(ctx context.Context, gitDir string) (string, 
 
 // SetTmuxCommand sets the command + argv prefix for every tmux
 // invocation the manager issues. When nil/empty, the manager uses
-// ["tmux"] — preserving today's behavior.
+// config.DefaultTmuxCommand — the dedicated kenn-forge tmux server.
 func (m *Manager) SetTmuxCommand(cmd []string) {
 	m.tmuxCmd = slices.Clone(cmd)
+}
+
+// UpdateTmuxStripEnvVars merges names into the configured provider
+// token env var names stripped from tmux client and base-pane
+// environments; the client allowlist admits LC_ and XDG_ prefixes a
+// configured token name could hide under. Names accumulate
+// monotonically so reload ordering can never stop stripping a
+// previously configured name.
+func (m *Manager) UpdateTmuxStripEnvVars(names []string) {
+	m.tmuxStripEnvMu.Lock()
+	defer m.tmuxStripEnvMu.Unlock()
+	merged := slices.Clone(m.tmuxStripEnvVars)
+	for _, name := range names {
+		// Never accumulate non-secret terminal variables: validation
+		// rejects such token names, but a rejected candidate's names
+		// are accumulated before rejection, and stripping PATH or
+		// TMUX_TMPDIR would break terminals and socket routing.
+		if name == "" || config.IsTmuxNonSecretEnvVar(name) ||
+			slices.Contains(merged, name) {
+			continue
+		}
+		merged = append(merged, name)
+	}
+	m.tmuxStripEnvVars = merged
+}
+
+func (m *Manager) currentTmuxStripEnvVars() []string {
+	m.tmuxStripEnvMu.RLock()
+	defer m.tmuxStripEnvMu.RUnlock()
+	return m.tmuxStripEnvVars
+}
+
+// TmuxStripEnvVars returns the accumulated configured token env var
+// names. The returned slice is a copy, safe for callers to retain.
+func (m *Manager) TmuxStripEnvVars() []string {
+	if m == nil {
+		return nil
+	}
+	m.tmuxStripEnvMu.RLock()
+	defer m.tmuxStripEnvMu.RUnlock()
+	return slices.Clone(m.tmuxStripEnvVars)
 }
 
 // SetHideTmuxStatus controls whether newly-created tmux sessions hide
@@ -300,22 +345,30 @@ func (m *Manager) currentHideTmuxStatus() bool {
 }
 
 // tmuxExec builds an *exec.Cmd for a tmux invocation: the
-// configured prefix + extra args. Defaults to ["tmux"] when
-// unconfigured. Returning the *exec.Cmd directly (rather than a
-// []string that callers index) keeps the first-element access
-// inside this function where the branch structure makes it
-// statically safe — NilAway cannot prove safety through an indexed
-// slice return.
+// configured prefix + extra args. Defaults to
+// config.DefaultTmuxCommand when unconfigured. Returning the
+// *exec.Cmd directly (rather than a []string that callers index)
+// keeps the first-element access inside this function where the
+// branch structure makes it statically safe — NilAway cannot prove
+// safety through an indexed slice return.
 func (m *Manager) tmuxExec(
 	ctx context.Context, extra ...string,
 ) *exec.Cmd {
-	if len(m.tmuxCmd) == 0 {
-		return procutil.CommandContext(ctx, "tmux", extra...)
+	command := m.tmuxCmd
+	if len(command) == 0 {
+		command = config.DefaultTmuxCommand()
 	}
-	args := make([]string, 0, len(m.tmuxCmd)-1+len(extra))
-	args = append(args, m.tmuxCmd[1:]...)
+	args := make([]string, 0, len(command)-1+len(extra))
+	args = append(args, command[1:]...)
 	args = append(args, extra...)
-	return procutil.CommandContext(ctx, m.tmuxCmd[0], args...)
+	cmd := procutil.CommandContext(ctx, command[0], args...)
+	// Any invocation can be the one that spawns the tmux server, which
+	// retains its spawn environment globally; give the client only the
+	// non-secret allowlist so no credential can ever enter it.
+	cmd.Env = localruntime.TmuxClientEnvironment(
+		os.Environ(), m.currentTmuxStripEnvVars(),
+	)
+	return cmd
 }
 
 // Create persists a PR-backed kenn-forge workspace.
@@ -3914,6 +3967,17 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) (bool, error) {
 		changed = changed || deleted
 	}
 
+	// A server with zero live sessions is the bulk-gone case: machine
+	// reboot, or first boot after the dedicated-socket upgrade while
+	// old sessions remain on the previous server. Base sessions are
+	// recreated lazily on terminal attach, so ready workspaces stay
+	// ready and self-heal; marking them all errored would invite retry,
+	// whose cleanup force-removes worktrees. Individual missing
+	// sessions on a live server remain real anomalies and are errored
+	// below.
+	if len(live) == 0 {
+		return changed, nil
+	}
 	workspaces, err := m.db.ListWorkspaces(ctx)
 	if err != nil {
 		return changed, fmt.Errorf("list workspaces: %w", err)
@@ -4396,16 +4460,36 @@ func (m *Manager) newTmuxSession(
 	ctx context.Context, session, cwd string,
 ) error {
 	shell := userLoginShell()
+	// The pane receives the credential-sanitized full daemon
+	// environment through the env-file handoff, matching runtime shell
+	// sessions: benign daemon variables stay usable in the base
+	// terminal while the tmux client itself stays allowlisted.
+	paneCommand, cleanupHandoff, err := localruntime.NewTmuxPaneHandoff(
+		localruntime.SessionEnvironment(
+			os.Environ(), m.currentTmuxStripEnvVars(),
+		),
+		[]string{shell, "-l"},
+	)
+	if err != nil {
+		return fmt.Errorf("prepare base tmux pane environment: %w", err)
+	}
+	created := false
+	defer func() {
+		if !created {
+			cleanupHandoff()
+		}
+	}()
 	cmd := m.tmuxExec(
 		ctx,
 		"new-session", "-d",
 		"-s", session,
 		"-c", cwd,
-		shell, "-l",
+		paneCommand,
 	)
 	if err := runBuiltCmd(ctx, cmd); err != nil {
 		return err
 	}
+	created = true
 	if err := m.setTmuxOwnerMarker(ctx, session); err != nil {
 		if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
 			!isTmuxKillSessionGone(killErr) {

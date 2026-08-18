@@ -772,6 +772,101 @@ describe("createDetailStore", () => {
     expect(store.getDetail()).toBeNull();
   });
 
+  it("skips a scheduled poll while an explicit detail sync is pending", async () => {
+    vi.useFakeTimers();
+    const syncResponse = Promise.withResolvers<{ data: PullDetail; error: undefined }>();
+    const post = vi.fn((path: string) =>
+      path.endsWith("/sync") ? syncResponse.promise : Promise.resolve({ data: undefined, error: undefined }),
+    );
+    const store = createDetailStore({ client: mockClient({ POST: post }) });
+    store.startDetailPolling("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+
+    const syncing = syncDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(post).toHaveBeenCalledTimes(1);
+    syncResponse.resolve({ data: pullDetail("fresh-head"), error: undefined });
+    await expect(syncing).resolves.toBe(true);
+    expect(store.getDetail()?.platform_head_sha).toBe("fresh-head");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledTimes(2);
+    store.stopDetailPolling();
+  });
+
+  it("skips sync-completion refreshes while an explicit detail sync is pending", async () => {
+    const syncResponse = Promise.withResolvers<{ data: PullDetail; error: undefined }>();
+    const get = vi.fn().mockResolvedValue({ data: pullDetail("cached-head"), error: undefined });
+    const post = vi.fn(() => syncResponse.promise);
+    let notifySyncComplete: (() => void) | undefined;
+    const store = createDetailStore({
+      client: mockClient({ GET: get, POST: post }),
+      sync: {
+        subscribeSyncComplete: (callback) => {
+          notifySyncComplete = callback;
+          return vi.fn();
+        },
+      },
+    });
+    store.startDetailPolling("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+
+    const syncing = syncDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+    await vi.waitFor(() => expect(store.isDetailSyncing()).toBe(true));
+    notifySyncComplete?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(get).not.toHaveBeenCalled();
+    syncResponse.resolve({ data: pullDetail("fresh-head"), error: undefined });
+    await expect(syncing).resolves.toBe(true);
+    expect(store.getDetail()?.platform_head_sha).toBe("fresh-head");
+    store.stopDetailPolling();
+  });
+
+  it("skips pending CI refreshes while an explicit detail sync is pending", async () => {
+    const syncResponse = Promise.withResolvers<{ data: PullDetail; error: undefined }>();
+    const get = vi.fn().mockResolvedValue({ data: pullDetail("cached-head"), error: undefined });
+    const post = vi.fn((path: string) =>
+      path.endsWith("/sync")
+        ? syncResponse.promise
+        : Promise.resolve({ data: pullDetail("cached-head"), error: undefined }),
+    );
+    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
+    const routeIdentity = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    };
+    await loadDetail(store, "acme", "widget", 7, { ...routeIdentity, sync: false });
+
+    const syncing = syncDetail(store, "acme", "widget", 7, routeIdentity);
+    await vi.waitFor(() => expect(store.isDetailSyncing()).toBe(true));
+    const ciSettled = vi.fn();
+    store.refreshPendingCI("acme", "widget", 7, routeIdentity, { onSettled: ciSettled });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(post).toHaveBeenCalledOnce();
+    expect(ciSettled).toHaveBeenCalledOnce();
+    syncResponse.resolve({ data: pullDetail("fresh-head"), error: undefined });
+    await expect(syncing).resolves.toBe(true);
+    expect(store.getDetail()?.platform_head_sha).toBe("fresh-head");
+  });
+
   it("reconciles visible lists when selection closes during an explicit detail sync", async () => {
     const syncPost = Promise.withResolvers<{ data: PullDetail; error: undefined }>();
     const post = vi.fn(() => syncPost.promise);

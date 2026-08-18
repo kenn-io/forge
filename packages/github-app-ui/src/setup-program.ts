@@ -20,17 +20,17 @@ export interface SetupFlowView extends Pick<SetupFlow, "action" | "manifest" | "
   readonly permissions: ReadonlyArray<SetupPermission>;
 }
 
-export class SetupFlowFetchError extends Schema.TaggedErrorClass<SetupFlowFetchError>()("SetupFlowFetchError", {
+export class SetupFlowFetchError extends Schema.TaggedError<SetupFlowFetchError>()("SetupFlowFetchError", {
   reason: Schema.String,
   cause: Schema.Defect(),
 }) {}
 
-export class SetupInvalidPayload extends Schema.TaggedErrorClass<SetupInvalidPayload>()("SetupInvalidPayload", {
+export class SetupInvalidPayload extends Schema.TaggedError<SetupInvalidPayload>()("SetupInvalidPayload", {
   reason: Schema.String,
   cause: Schema.Defect(),
 }) {}
 
-export class SetupFormSubmitError extends Schema.TaggedErrorClass<SetupFormSubmitError>()("SetupFormSubmitError", {
+export class SetupFormSubmitError extends Schema.TaggedError<SetupFormSubmitError>()("SetupFormSubmitError", {
   reason: Schema.String,
   cause: Schema.Defect(),
 }) {}

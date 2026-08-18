@@ -386,7 +386,7 @@ exit 0
 	sessionName := tmuxSessionName("ws:alpha", "codex")
 
 	assert.Equal(
-		[]string{tmuxPath, "-u", "attach-session", "-t", sessionName},
+		[]string{tmuxPath, "-u", "attach-session", "-E", "-t", sessionName},
 		launch.Command,
 	)
 	assert.Equal(sessionName, launch.TmuxSession)
@@ -510,7 +510,7 @@ exit 0
 	sessionName := tmuxSessionName("ws-1", "codex")
 
 	assert.Equal(
-		[]string{tmuxPath, "-u", "attach-session", "-t", sessionName},
+		[]string{tmuxPath, "-u", "attach-session", "-E", "-t", sessionName},
 		launch.Command,
 	)
 	assert.Equal(sessionName, launch.TmuxSession)
@@ -649,7 +649,7 @@ func TestManagerRestoredRuntimeCommandForcesUTF8(t *testing.T) {
 	assert.Equal(t,
 		[]string{
 			"/usr/bin/tmux", "-L", "kenn-forge-test",
-			"-u", "attach-session", "-t", "kenn-forge-ws-1-shell",
+			"-u", "attach-session", "-E", "-t", "kenn-forge-ws-1-shell",
 		},
 		command,
 	)
@@ -1100,10 +1100,13 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 	}.prepare(context.Background())
 	require.NoError(err)
 
+	// Poll for content, not existence: the shell creates the file via
+	// the > redirect before printf writes, so an existence check can
+	// read the file empty under load.
 	require.Eventually(func() bool {
-		_, err := os.Stat(output)
-		return err == nil
-	}, 2*time.Second, 20*time.Millisecond)
+		data, err := os.ReadFile(output)
+		return err == nil && len(data) > 0
+	}, 5*time.Second, 20*time.Millisecond)
 	data, err := os.ReadFile(output)
 	require.NoError(err)
 	require.Equal("client-visible-value\nunset\nunset\n", string(data))
@@ -1371,10 +1374,10 @@ func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 	tmuxPath := filepath.Join(dir, "tmux-records")
 	require.NoError(os.WriteFile(
 		tmuxPath,
-		[]byte("#!/bin/sh\nprintf '%s\\0' \"$@\" >> \"$TMUX_RECORD\"\n"),
+		[]byte("#!/bin/sh\nTMUX_RECORD="+shellquote.Join(record)+
+			"\nprintf '%s\\0' \"$@\" >> \"$TMUX_RECORD\"\n"),
 		0o755,
 	))
-	t.Setenv("TMUX_RECORD", record)
 	mgr := NewManager(Options{
 		TmuxCommand:                    []string{tmuxPath},
 		DetachSessionsForServerRestart: true,

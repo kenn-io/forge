@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
 )
@@ -226,11 +227,17 @@ func resetFixtureRows(ctx context.Context, database *db.DB, projectPath string) 
 }
 
 func startWorkspaceTmux(ctx context.Context, session, worktreePath string) error {
-	_ = procutil.CommandContext(ctx, "tmux", "kill-session", "-t", session).Run()
-	cmd := procutil.CommandContext(
-		ctx,
-		"tmux", "new-session", "-d", "-s", session, "-c", worktreePath, "sh",
+	// The fleet daemons run with an unconfigured [tmux] command, so
+	// seeded sessions must land on the same dedicated kenn-forge
+	// server the fleet monitor reads, not the global tmux server.
+	tmuxCmd := config.DefaultTmuxCommand()
+	killArgs := append(tmuxCmd[1:], "kill-session", "-t", session)
+	_ = procutil.CommandContext(ctx, tmuxCmd[0], killArgs...).Run()
+	newArgs := append(
+		config.DefaultTmuxCommand()[1:],
+		"new-session", "-d", "-s", session, "-c", worktreePath, "sh",
 	)
+	cmd := procutil.CommandContext(ctx, tmuxCmd[0], newArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("start tmux session %q: %w: %s", session, err, output)

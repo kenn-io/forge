@@ -41,6 +41,33 @@ func setupWorkspaceServerFixture(
 	serverOptions ...server.ServerOptions,
 ) workspaceServerFixture {
 	t.Helper()
+	return setupWorkspaceServerFixtureWithTmuxInjection(
+		t, cfg, true, serverOptions...,
+	)
+}
+
+// setupWorkspaceServerFixtureUnconfiguredTmux leaves [tmux] command unset so
+// the server resolves config.DefaultTmuxCommand. The caller must point
+// TMUX_TMPDIR at a private directory first so the kenn-forge socket resolves
+// inside the test sandbox instead of the developer's real socket directory.
+func setupWorkspaceServerFixtureUnconfiguredTmux(
+	t *testing.T,
+	cfg *config.Config,
+	serverOptions ...server.ServerOptions,
+) workspaceServerFixture {
+	t.Helper()
+	return setupWorkspaceServerFixtureWithTmuxInjection(
+		t, cfg, false, serverOptions...,
+	)
+}
+
+func setupWorkspaceServerFixtureWithTmuxInjection(
+	t *testing.T,
+	cfg *config.Config,
+	injectTestTmux bool,
+	serverOptions ...server.ServerOptions,
+) workspaceServerFixture {
+	t.Helper()
 
 	if testing.Short() {
 		t.Skip("workspace e2e tests skipped in short mode")
@@ -51,7 +78,7 @@ func setupWorkspaceServerFixture(
 		clone := *cfg
 		cfg = &clone
 	}
-	if len(cfg.Tmux.Command) == 0 {
+	if injectTestTmux && len(cfg.Tmux.Command) == 0 {
 		cfg.Tmux.Command = append([]string(nil), workspaceTestTmuxCommand...)
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 )
 
 // TestCommandsForDeps table-tests the pure dependency->capability
@@ -62,9 +63,10 @@ func TestProbeDerivesCommandsFromDeps(t *testing.T) {
 
 func TestTmuxCommandOrDefault(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal([]string{"tmux"}, tmuxCommandOrDefault(nil), "nil falls back to bare tmux")
-	assert.Equal([]string{"tmux"}, tmuxCommandOrDefault([]string{}), "empty falls back to bare tmux")
-	assert.Equal([]string{"tmux"}, tmuxCommandOrDefault([]string{""}), "blank executable falls back to bare tmux")
+	forgeDefault := config.DefaultTmuxCommand()
+	assert.Equal(forgeDefault, tmuxCommandOrDefault(nil), "nil falls back to the kenn-forge tmux server")
+	assert.Equal(forgeDefault, tmuxCommandOrDefault([]string{}), "empty falls back to the kenn-forge tmux server")
+	assert.Equal(forgeDefault, tmuxCommandOrDefault([]string{""}), "blank executable falls back to the kenn-forge tmux server")
 	wrapper := []string{"systemd-run", "--user", "--scope", "tmux"}
 	assert.Equal(wrapper, tmuxCommandOrDefault(wrapper), "a configured command is used verbatim")
 }

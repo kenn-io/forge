@@ -1284,7 +1284,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     callbacks: DetailRefreshCallbacks = {},
   ): void {
     const ref = detailRequestRef(owner, name, number, identity);
-    if (!isDetailShowingRef(ref)) {
+    if (syncing || !isDetailShowingRef(ref)) {
       callbacks.onSettled?.();
       return;
     }
@@ -1946,7 +1946,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
       unsubSyncComplete = null;
     }
     const pollOnce = Effect.suspend(() =>
-      enqueueBackgroundDetailSyncEffect(owner, name, number, syncGeneration, observedFetchedAtBaseline(), ref),
+      syncing
+        ? Effect.void
+        : enqueueBackgroundDetailSyncEffect(owner, name, number, syncGeneration, observedFetchedAtBaseline(), ref),
     ).pipe(Effect.catch(() => Effect.void));
     const program = Effect.gen(function* () {
       const workflow = yield* DetailWorkflow;
@@ -1969,6 +1971,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     });
     if (syncDep) {
       unsubSyncComplete = syncDep.subscribeSyncComplete(() => {
+        if (syncing) return;
         refreshDetailOnly(owner, name, number, ref);
       });
     }

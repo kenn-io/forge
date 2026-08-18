@@ -66,7 +66,7 @@ export interface WorkspaceRuntimePort {
     | undefined;
 }
 
-export class WorkspaceRuntimeMutationOutcomeUnknown extends Schema.TaggedErrorClass<WorkspaceRuntimeMutationOutcomeUnknown>()(
+export class WorkspaceRuntimeMutationOutcomeUnknown extends Schema.TaggedError<WorkspaceRuntimeMutationOutcomeUnknown>()(
   "WorkspaceRuntimeMutationOutcomeUnknown",
   {
     operation: Schema.String,

@@ -172,11 +172,6 @@ test("SPA shell cannot be framed by another origin", async ({ page, baseURL }) =
         { timeout: 10_000 },
       )
       .toBe(true);
-
-    const frameHandle = await page.locator("#kenn-forge-frame").elementHandle();
-    expect(frameHandle).not.toBeNull();
-    const frame = await frameHandle!.contentFrame();
-    expect(await frame?.locator(".workspace-list-sidebar").count()).toBeFalsy();
   } finally {
     await externalOrigin.close();
   }

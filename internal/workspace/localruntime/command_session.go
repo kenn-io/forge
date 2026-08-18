@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/internal/config"
 )
 
 // ErrSessionKeyConflict reports a caller-supplied session key that is
@@ -263,7 +265,7 @@ func (m *Manager) commandSessionLaunch(
 ) (launchCommand, error) {
 	tmuxCommand := slices.Clone(m.tmuxCommand)
 	if len(tmuxCommand) == 0 {
-		tmuxCommand = []string{"tmux"}
+		tmuxCommand = config.DefaultTmuxCommand()
 	}
 	tmuxCommand, err := resolveTmuxCommand(tmuxCommand)
 	if err != nil {

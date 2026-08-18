@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { InvalidExternalPayload } from "../api/effect-errors.js";
 
-export class BrowserStorageError extends Schema.TaggedErrorClass<BrowserStorageError>()("BrowserStorageError", {
+export class BrowserStorageError extends Schema.TaggedError<BrowserStorageError>()("BrowserStorageError", {
   operation: Schema.String,
   cause: Schema.Defect(),
 }) {}

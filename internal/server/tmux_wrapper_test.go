@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -62,7 +63,12 @@ func writeTmuxRecorder(t *testing.T) (script, record string) {
 	dir := t.TempDir()
 	record = filepath.Join(dir, "record")
 	script = filepath.Join(dir, "fake-tmux")
+	// Control paths are baked into the script and dynamic pane title /
+	// output values are read from files derived from the record path:
+	// tmux clients run with the non-secret allowlist environment, so
+	// fixtures cannot smuggle state through custom env vars.
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`session_file="${TMUX_RECORD}.sessions"` + "\n" +
 		`new_session=""` + "\n" +
@@ -78,11 +84,19 @@ func writeTmuxRecorder(t *testing.T) (script, record string) {
 		`    exit 1` + "\n" +
 		`  fi` + "\n" +
 		`  if [ "$a" = "display-message" ]; then` + "\n" +
-		`    printf '%s\n' "$TMUX_PANE_TITLE"` + "\n" +
+		`    if [ -f "${TMUX_RECORD}.pane-title" ]; then` + "\n" +
+		`      cat "${TMUX_RECORD}.pane-title"` + "\n" +
+		`    else` + "\n" +
+		`      printf '\n'` + "\n" +
+		`    fi` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		`  if [ "$a" = "capture-pane" ]; then` + "\n" +
-		`    printf '%s\n' "$TMUX_PANE_OUTPUT"` + "\n" +
+		`    if [ -f "${TMUX_RECORD}.pane-output" ]; then` + "\n" +
+		`      cat "${TMUX_RECORD}.pane-output"` + "\n" +
+		`    else` + "\n" +
+		`      printf '\n'` + "\n" +
+		`    fi` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		`  prev="$a"` + "\n" +
@@ -90,8 +104,25 @@ func writeTmuxRecorder(t *testing.T) (script, record string) {
 		`if [ -n "$new_session" ]; then printf '%s\n' "$new_session" >> "$session_file"; fi` + "\n" +
 		"exit 0\n"
 	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 	return script, record
+}
+
+// setTmuxRecorderPaneTitle sets the value the fake tmux returns for
+// display-message pane-title probes.
+func setTmuxRecorderPaneTitle(t *testing.T, record, title string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(
+		record+".pane-title", []byte(title+"\n"), 0o644,
+	))
+}
+
+// setTmuxRecorderPaneOutput sets the value the fake tmux returns for
+// capture-pane probes.
+func setTmuxRecorderPaneOutput(t *testing.T, record, output string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(
+		record+".pane-output", []byte(output+"\n"), 0o644,
+	))
 }
 
 func readTmuxRecord(t *testing.T, path string) [][]string {
@@ -353,8 +384,10 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 		}
 	}
 
-	// "wrap" prefix, then "new-session -d -s <id> -c <path> <shell> -l"
-	require.GreaterOrEqual(len(newSession), 9)
+	// "wrap" prefix, then "new-session -d -s <id> -c <path> <handoff>"
+	// where <handoff> is the /bin/sh env-file bootstrap that delivers
+	// the credential-sanitized environment and login shell to the pane.
+	require.Len(newSession, 8)
 	assert.Equal("wrap", newSession[0])
 	assert.Equal("new-session", newSession[1])
 	assert.Equal("-d", newSession[2])
@@ -362,17 +395,15 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 	assert.NotEmpty(newSession[4])
 	assert.Equal("-c", newSession[5])
 	assert.NotEmpty(newSession[6])
-	assert.NotEmpty(newSession[7])
-	assert.Equal("-l", newSession[8])
+	assert.Contains(newSession[7], "/bin/sh ")
 }
 
 func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	t.Setenv("TMUX_PANE_TITLE", "⠴ t3code-b5014b03")
-	t.Setenv("TMUX_PANE_OUTPUT", "stable output")
-
-	client, _, _ := setupWrapperServer(t)
+	client, _, record := setupWrapperServer(t)
+	setTmuxRecorderPaneTitle(t, record, "⠴ t3code-b5014b03")
+	setTmuxRecorderPaneOutput(t, record, "stable output")
 	ctx := context.Background()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
@@ -434,8 +465,8 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	t.Setenv("TMUX_PANE_OUTPUT", "baseline output")
-	script, _ := writeTmuxRecorder(t)
+	script, record := writeTmuxRecorder(t)
+	setTmuxRecorderPaneOutput(t, record, "baseline output")
 	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
 	srv.cfgMu.Lock()
 	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
@@ -475,7 +506,7 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 		activity := getRawWorkspaceActivity(t, client, ctx, workspaceID)
 		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
 	}, 3*time.Second, 50*time.Millisecond, "tmux baseline was not observed")
-	t.Setenv("TMUX_PANE_OUTPUT", "changed output")
+	setTmuxRecorderPaneOutput(t, record, "changed output")
 
 	search := "search-reviewer"
 	since := now.Add(-time.Hour).Format(time.RFC3339)
@@ -552,8 +583,8 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	t.Setenv("TMUX_PANE_OUTPUT", "baseline output")
-	script, _ := writeTmuxRecorder(t)
+	script, record := writeTmuxRecorder(t)
+	setTmuxRecorderPaneOutput(t, record, "baseline output")
 	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
 	srv.cfgMu.Lock()
 	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
@@ -586,7 +617,7 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
 	}, 3*time.Second, 50*time.Millisecond, "tmux baseline was not observed")
 	since := time.Now().UTC().Format(time.RFC3339Nano)
-	t.Setenv("TMUX_PANE_OUTPUT", "workspace-only activity")
+	setTmuxRecorderPaneOutput(t, record, "workspace-only activity")
 
 	params := &generated.ListActivityAuthorsParams{Since: &since}
 	var response *generated.ListActivityAuthorsResponse
@@ -631,8 +662,8 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	t.Setenv("TMUX_PANE_OUTPUT", "baseline output")
-	script, _ := writeTmuxRecorder(t)
+	script, record := writeTmuxRecorder(t)
+	setTmuxRecorderPaneOutput(t, record, "baseline output")
 	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
 	srv.cfgMu.Lock()
 	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
@@ -669,7 +700,7 @@ func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
 	}, 3*time.Second, 50*time.Millisecond, "tmux baseline was not observed")
 	since := time.Now().UTC().Format(time.RFC3339Nano)
-	t.Setenv("TMUX_PANE_OUTPUT", "changed output")
+	setTmuxRecorderPaneOutput(t, record, "changed output")
 
 	for _, search := range []string{"1", "#1"} {
 		var response *generated.ListActivityResponse
@@ -863,6 +894,7 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
@@ -875,7 +907,6 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
 		t, script,
@@ -1060,6 +1091,9 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 	countFile := filepath.Join(dir, "new-session-count")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		"TMUX_RELEASE=" + shellquote.Join(release) + "\n" +
+		"TMUX_COUNT=" + shellquote.Join(countFile) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
@@ -1080,9 +1114,6 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
-	t.Setenv("TMUX_RELEASE", release)
-	t.Setenv("TMUX_COUNT", countFile)
 
 	client, _, database := setupWrapperServerWithScriptAndDB(
 		t, script,
@@ -1176,6 +1207,7 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
@@ -1188,7 +1220,6 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	client, baseURL, database, srv := setupWrapperServerWithScriptAndDBAndServer(
 		t, script,
@@ -1375,12 +1406,13 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 		}
 	}
 	require.NotNil(attach, "attach-session argv not recorded")
-	require.Len(attach, 5)
+	require.Len(attach, 6)
 	assert.Equal("wrap", attach[0])
 	assert.Equal("-u", attach[1])
 	assert.Equal("attach-session", attach[2])
-	assert.Equal("-t", attach[3])
-	assert.NotEmpty(attach[4])
+	assert.Equal("-E", attach[3])
+	assert.Equal("-t", attach[4])
+	assert.NotEmpty(attach[5])
 }
 
 func TestTerminalRouteE2EPropagatesWorkspaceID(t *testing.T) {
@@ -1408,6 +1440,7 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "new-session" ]; then` + "\n" +
@@ -1421,7 +1454,6 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
 	ctx := context.Background()
@@ -1888,7 +1920,9 @@ func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
 // the terminal handler sees the error and closes the WebSocket with
 // StatusInternalError.
 func TestTmuxWrapperAttachSurfacesWrapperFailure(t *testing.T) {
+	record := filepath.Join(t.TempDir(), "record")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then exit 127; fi` + "\n" +
@@ -1909,10 +1943,8 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 	require := require.New(t)
 
 	dir := t.TempDir()
-	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	require.NoError(os.WriteFile(script, []byte(scriptBody), 0o755))
-	t.Setenv("TMUX_RECORD", record)
 
 	client, baseURL := setupWrapperServerWithScript(t, script)
 	ctx := t.Context()
@@ -1982,7 +2014,9 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 // reviewer flagged — shell wrappers often exit 1 for their own
 // generic errors.
 func TestTmuxWrapperAttachSurfacesExit1Failure(t *testing.T) {
+	record := filepath.Join(t.TempDir(), "record")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
@@ -2001,7 +2035,9 @@ func TestTmuxWrapperAttachSurfacesExit1Failure(t *testing.T) {
 // "session absent." Pairs with the unit-level
 // TestManagerEnsureTmuxIgnoresAbsencePhraseOnStdout.
 func TestTmuxWrapperAttachIgnoresAbsencePhraseOnStdout(t *testing.T) {
+	record := filepath.Join(t.TempDir(), "record")
 	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +

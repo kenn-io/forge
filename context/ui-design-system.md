@@ -15,9 +15,12 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 - Layouts should feel compact, deliberate, and information-rich.
 - Visual emphasis should come from hierarchy and semantic color, not oversized controls or decorative effects.
 - Light and dark themes should express the same UI language through shared tokens.
-- PR detail background refresh has one progress surface: the metadata-row
-  `Syncing` indicator; do not add a second stale-data banner or spinner
-  (`frontend/src/lib/components/detail/PullDetail.svelte`).
+- Detail background refresh uses the metadata-row `Syncing` indicator; a manual
+  Activity refresh reports progress only in its initiating icon button. Do not
+  add stale-data banners or other progress surfaces. Keep the manual control
+  disabled while detail is loading, stale for the current route, or already
+  syncing (`frontend/src/lib/components/detail/PullDetail.svelte::refreshDetail`,
+  `frontend/src/lib/components/detail/IssueDetail.svelte::refreshDetail`).
 - Inline conditional notices occupy layout only while active; do not reserve
   invisible rows for them (`frontend/src/lib/components/diff/DiffView.svelte`).
 

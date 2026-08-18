@@ -30,7 +30,7 @@ export interface RepoContext {
   repoPath: string;
 }
 
-export class MarkdownRenderError extends Schema.TaggedErrorClass<MarkdownRenderError>()("MarkdownRenderError", {
+export class MarkdownRenderError extends Schema.TaggedError<MarkdownRenderError>()("MarkdownRenderError", {
   cause: Schema.Defect(),
 }) {}
 

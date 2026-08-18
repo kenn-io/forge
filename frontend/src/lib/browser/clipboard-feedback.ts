@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 
-class ClipboardWriteError extends Schema.TaggedErrorClass<ClipboardWriteError>()("ClipboardWriteError", {
+class ClipboardWriteError extends Schema.TaggedError<ClipboardWriteError>()("ClipboardWriteError", {
   cause: Schema.Defect(),
 }) {}
 

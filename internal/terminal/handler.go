@@ -14,11 +14,13 @@ import (
 	"github.com/creack/pty/v2"
 	"go.opentelemetry.io/otel/attribute"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 // Handler serves WebSocket connections that bridge a
@@ -172,11 +174,20 @@ func (h *Handler) ServeHTTP(
 
 	prefix := h.TmuxCommand
 	if len(prefix) == 0 {
-		prefix = []string{"tmux"}
+		prefix = config.DefaultTmuxCommand()
 	}
 	argv := tmuxAttachCommand(prefix, ws.TmuxSession)
 	cmd := procutil.CommandContext(ctx, argv[0], argv[1:]...)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	// Attach cannot spawn the tmux server, but a user tmux.conf with a
+	// widened update-environment could copy client variables into the
+	// session environment; give the attach client only the non-secret
+	// allowlist.
+	cmd.Env = append(
+		localruntime.TmuxClientEnvironment(
+			os.Environ(), h.Workspaces.TmuxStripEnvVars(),
+		),
+		"TERM=xterm-256color",
+	)
 	logWebsocketDebug(
 		"workspace terminal starting tmux attach",
 		"workspace_id", id,
@@ -315,7 +326,10 @@ func tmuxAttachCommand(prefix []string, session string) []string {
 	argv = append(argv, prefix...)
 	// Kenn Forge may run as a service without locale variables. Force UTF-8 so
 	// tmux does not replace non-ASCII terminal output with underscores.
-	return append(argv, "-u", "attach-session", "-t", session)
+	// -E disables update-environment: a pane can widen that server
+	// option, and without -E the next attach would copy the attach
+	// client's variables into the session environment.
+	return append(argv, "-u", "attach-session", "-E", "-t", session)
 }
 
 func bridgePtyOwnerAttachment(

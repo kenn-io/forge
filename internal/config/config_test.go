@@ -3235,7 +3235,7 @@ func TestLoadTmuxCommandOmitted(t *testing.T) {
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	assert.Empty(cfg.Tmux.Command)
-	assert.Equal([]string{"tmux"}, cfg.TmuxCommand())
+	assert.Equal([]string{"tmux", "-L", "kenn-forge"}, cfg.TmuxCommand())
 	assert.True(cfg.TmuxAgentSessionsEnabled())
 }
 
@@ -3247,7 +3247,7 @@ command = []
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
-	assert.Equal([]string{"tmux"}, cfg.TmuxCommand())
+	assert.Equal([]string{"tmux", "-L", "kenn-forge"}, cfg.TmuxCommand())
 }
 
 func TestLoadTmuxAgentSessionsDisabled(t *testing.T) {
@@ -3299,7 +3299,14 @@ func TestTmuxCommandDefensiveCopy(t *testing.T) {
 func TestTmuxCommandNilReceiver(t *testing.T) {
 	assert := assert.New(t)
 	var cfg *Config
-	assert.Equal([]string{"tmux"}, cfg.TmuxCommand())
+	assert.Equal([]string{"tmux", "-L", "kenn-forge"}, cfg.TmuxCommand())
+}
+
+func TestDefaultTmuxCommandDefensiveCopy(t *testing.T) {
+	assert := assert.New(t)
+	first := DefaultTmuxCommand()
+	first[0] = "hacked"
+	assert.Equal([]string{"tmux", "-L", "kenn-forge"}, DefaultTmuxCommand())
 }
 
 func TestLoadTmuxCommandRejectsEmptyFirstElement(t *testing.T) {

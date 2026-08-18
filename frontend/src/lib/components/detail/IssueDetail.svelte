@@ -25,6 +25,7 @@
   import EventTimeline from "./EventTimeline.svelte";
   import CollapsibleDescription from "./CollapsibleDescription.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
+  import DetailRefreshButton from "./DetailRefreshButton.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
     import { Button, Chip, Modal } from "@kenn-io/kit-ui";
@@ -66,6 +67,47 @@
   const actions = getActions();
   const uiConfig = getUIConfig();
   const navigate = getNavigate();
+  let manualRefreshPending = $state(false);
+  let manualRefreshGeneration = 0;
+
+  function isCurrentManualRefresh(
+    requestGeneration: number,
+    requestIdentity: WorkspaceItemIdentity,
+  ): boolean {
+    return !componentDestroyed
+      && requestGeneration === manualRefreshGeneration
+      && identityEquals(requestIdentity, $state.snapshot(itemIdentity));
+  }
+
+  function refreshDetail(): void {
+    if (
+      manualRefreshPending
+      || issues.isIssueDetailLoading()
+      || issues.isIssueDetailSyncing()
+      || staleIssue
+    ) return;
+    const requestIdentity = $state.snapshot(itemIdentity);
+    const requestGeneration = ++manualRefreshGeneration;
+    manualRefreshPending = true;
+    issues.syncIssueDetailNow(
+      owner,
+      name,
+      number,
+      { provider, platformHost, repoPath },
+      {
+        onFailure: (message) => {
+          if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
+            showFlash(message, { tone: "danger" });
+          }
+        },
+        onSettled: () => {
+          if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
+            manualRefreshPending = false;
+          }
+        },
+      },
+    );
+  }
 
   const defaultProviderCapabilities: ProviderCapabilities = {
     read_repositories: true,
@@ -232,6 +274,9 @@
     issues.deleteIssueComment(owner, name, number, event.PlatformID, callbacks);
   }
 
+  let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
+  let lastDetailLoadAutoSync: IssueDetailSyncMode | undefined;
+
   $effect(() => {
     const requestOwner = owner;
     const requestName = name;
@@ -240,18 +285,29 @@
     const requestPlatformHost = platformHost;
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
+    const requestIdentity = $state.snapshot(itemIdentity);
+    const shouldLoad =
+      lastDetailLoadIdentity === null
+      || !identityEquals(lastDetailLoadIdentity, requestIdentity)
+      || lastDetailLoadAutoSync !== requestAutoSync;
+    if (shouldLoad) {
+      lastDetailLoadIdentity = requestIdentity;
+      lastDetailLoadAutoSync = requestAutoSync;
+    }
     untrack(() => {
-      issues.loadIssueDetail(
-        requestOwner,
-        requestName,
-        requestNumber,
-        {
-          sync: requestAutoSync,
-          provider: requestProvider,
-          platformHost: requestPlatformHost,
-          repoPath: requestRepoPath,
-        },
-      );
+      if (shouldLoad) {
+        issues.loadIssueDetail(
+          requestOwner,
+          requestName,
+          requestNumber,
+          {
+            sync: requestAutoSync,
+            provider: requestProvider,
+            platformHost: requestPlatformHost,
+            repoPath: requestRepoPath,
+          },
+        );
+      }
       issues.startIssueDetailPolling(
         requestOwner,
         requestName,
@@ -287,6 +343,8 @@
     const current = $state.snapshot(itemIdentity);
     if (lastResetIdentity !== null && identityEquals(lastResetIdentity, current)) return;
     lastResetIdentity = current;
+    manualRefreshGeneration += 1;
+    manualRefreshPending = false;
     workspaceRequestGen += 1;
     branchConflict = null;
     pendingWorkspaceLaunchTarget = null;
@@ -1143,7 +1201,7 @@
           Couldn't load this issue: {issues.getIssueDetailError()}
         </div>
       {/if}
-      {#if issues.isIssueStaleRefreshing()}
+      {#if issues.isIssueStaleRefreshing() && !manualRefreshPending}
         <div class="refresh-banner">
           <StatusDot status="working" label="Refreshing issue details" size={5} />
           <span aria-hidden="true">Refreshing...</span>
@@ -1260,7 +1318,7 @@
             </div>
           {/if}
         {/if}
-        {#if issues.isIssueDetailSyncing()}
+        {#if issues.isIssueDetailSyncing() && !manualRefreshPending}
           <span class="meta-sep">·</span>
           <span class="sync-indicator" title="Syncing from GitHub">
             <Spinner size={12} label="Syncing" />
@@ -1460,10 +1518,17 @@
       <div class="section">
         <div class="section-title-row">
           <h3 class="section-title">Activity</h3>
-          <DetailActivityViewMenu
-            viewMode={detailActivityView.getMode()}
-            onViewChange={(mode) => detailActivityView.setMode(mode)}
-          />
+          <div class="section-title-actions">
+            <DetailRefreshButton
+              disabled={issues.isIssueDetailLoading() || issues.isIssueDetailSyncing() || staleIssue}
+              refreshing={manualRefreshPending}
+              onRefresh={refreshDetail}
+            />
+            <DetailActivityViewMenu
+              viewMode={detailActivityView.getMode()}
+              onViewChange={(mode) => detailActivityView.setMode(mode)}
+            />
+          </div>
         </div>
         {#if issues.getIssueDetailLoaded()}
           <EventTimeline
@@ -1791,6 +1856,12 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+  }
+
+  .section-title-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
   }
 
   .section-title {

@@ -1,7 +1,7 @@
 import { Deferred, Effect, Exit, Fiber, Queue, Ref, Schema } from "effect";
 import type { Scope } from "effect/Scope";
 
-export class CommandQueueClosed extends Schema.TaggedErrorClass<CommandQueueClosed>()("CommandQueueClosed", {
+export class CommandQueueClosed extends Schema.TaggedError<CommandQueueClosed>()("CommandQueueClosed", {
   queue: Schema.String,
 }) {}
 

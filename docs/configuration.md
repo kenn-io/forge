@@ -171,6 +171,40 @@ command = ["review-agent", "--fast"]
 
 You can also edit agents under **Settings → Agents**.
 
+## Workspace terminals and tmux
+
+Workspace terminals and agent sessions run on a dedicated tmux server
+(socket name `kenn-forge`), so busy Forge sessions do not contend with
+your personal tmux server. To inspect or attach from a regular terminal:
+
+```sh
+tmux -L kenn-forge ls
+tmux -L kenn-forge attach-session -E -t <session>
+```
+
+`-E` keeps variables from your shell (including any exported provider
+tokens, if you widened tmux's `update-environment`) out of the session
+environment, which processes inside the workspace can read.
+
+Set `[tmux] command` to pick a different socket or wrap the launch; the
+configured command line is used verbatim:
+
+```toml
+[tmux]
+command = ["tmux", "-L", "kenn-forge"]
+```
+
+Wrapper commands run with a minimal non-secret environment, because the
+tmux server permanently retains the environment it was started with.
+Pass any custom data a wrapper needs as command-line arguments rather
+than environment variables. For the same reason, provider `token_env`
+names may not reuse standard terminal variables such as `EDITOR` or
+`PATH`; configuration validation rejects the collision.
+
+Sessions started by versions that used the default tmux server keep
+running there after an upgrade, but kenn-forge no longer sees them.
+Reattach or clean them up with plain `tmux ls` and `tmux kill-session`.
+
 ## Docs folders
 
 Register local Markdown folders from the CLI:

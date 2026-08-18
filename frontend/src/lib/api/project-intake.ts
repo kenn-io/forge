@@ -15,7 +15,7 @@ export interface ProjectIntakeOptions {
   readonly hostKey?: string | null;
 }
 
-export class InvalidProjectIntake extends Schema.TaggedErrorClass<InvalidProjectIntake>()("InvalidProjectIntake", {
+export class InvalidProjectIntake extends Schema.TaggedError<InvalidProjectIntake>()("InvalidProjectIntake", {
   message: Schema.String,
 }) {}
 

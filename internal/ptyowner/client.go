@@ -17,18 +17,56 @@ import (
 	"syscall"
 	"time"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 )
 
 type Client struct {
-	Root         string
-	ExePath      string
-	ExeArgs      []string
-	ManagerPath  string
-	Command      []string
+	Root        string
+	ExePath     string
+	ExeArgs     []string
+	ManagerPath string
+	Command     []string
+	// StripEnvVars holds the configured token env names removed from
+	// owner session environments. Set it at construction; after that,
+	// widen it only through UpdateStripEnvVars.
 	StripEnvVars []string
 	ExtraEnv     map[string]string
 	InProcess    bool
+
+	stripMu sync.RWMutex
+}
+
+// UpdateStripEnvVars merges names into the credential strip set applied
+// to owner session environments. Names accumulate monotonically so a
+// config reload can only widen stripping, mirroring the tmux and
+// runtime managers.
+func (c *Client) UpdateStripEnvVars(names []string) {
+	c.stripMu.Lock()
+	defer c.stripMu.Unlock()
+	merged := slices.Clone(c.StripEnvVars)
+	for _, name := range names {
+		// Non-secret terminal variables are never credentials; see
+		// workspace.Manager.UpdateTmuxStripEnvVars.
+		if name == "" || config.IsTmuxNonSecretEnvVar(name) ||
+			slices.Contains(merged, name) {
+			continue
+		}
+		merged = append(merged, name)
+	}
+	c.StripEnvVars = merged
+}
+
+// StripEnvVarsSnapshot returns a copy of the current strip set for
+// callers deriving per-launch clients.
+func (c *Client) StripEnvVarsSnapshot() []string {
+	return c.currentStripEnvVars()
+}
+
+func (c *Client) currentStripEnvVars() []string {
+	c.stripMu.RLock()
+	defer c.stripMu.RUnlock()
+	return slices.Clone(c.StripEnvVars)
 }
 
 const (
@@ -102,7 +140,7 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 				Session:      session,
 				Cwd:          cwd,
 				Command:      command,
-				StripEnvVars: c.StripEnvVars,
+				StripEnvVars: c.currentStripEnvVars(),
 				ExtraEnv:     c.ExtraEnv,
 			})
 		}()
@@ -479,9 +517,9 @@ func ownerHelperEnvironment(env []string) []string {
 	return sessionEnvironment(env, nil)
 }
 
-func (c Client) ownerHelperEnvironment(env []string) []string {
+func (c *Client) ownerHelperEnvironment(env []string) []string {
 	return mergeEnvironment(
-		sessionEnvironment(env, c.StripEnvVars), c.ExtraEnv,
+		sessionEnvironment(env, c.currentStripEnvVars()), c.ExtraEnv,
 	)
 }
 

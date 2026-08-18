@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
 	ghclient "go.kenn.io/forge/internal/github"
@@ -1649,7 +1650,7 @@ func killProjectRuntimeTmuxSession(
 		return nil
 	}
 	if len(command) == 0 {
-		command = []string{"tmux"}
+		command = config.DefaultTmuxCommand()
 	}
 	if command[0] == "" {
 		return nil
@@ -1657,6 +1658,7 @@ func killProjectRuntimeTmuxSession(
 	args := append([]string{}, command[1:]...)
 	args = append(args, "kill-session", "-t", session)
 	cmd := procutil.CommandContext(ctx, command[0], args...)
+	cmd.Env = localruntime.TmuxClientEnvironment(os.Environ(), nil)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := procutil.Run(ctx, cmd, "project worktree runtime tmux cleanup")

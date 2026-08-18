@@ -151,6 +151,45 @@ still exists.
   `internal/workspace/localruntime/manager.go::Manager.Shutdown`).
 - New tmux sessions use the `forge-` prefix; persisted `middleman-` session
   names remain valid and must not be rewritten (`internal/workspace/`).
+- Forge talks to its own tmux server, not the user's global one: every
+  empty-tmux-command fallback must use `config.DefaultTmuxCommand`, never bare
+  `tmux`; a configured `[tmux] command` is used verbatim, so socket choice
+  stays with the user (`internal/config/config.go::DefaultTmuxCommand`).
+- The tmux server permanently retains its spawn environment for every pane to
+  read via `show-environment -g`, and only `new-session` clients spawn it, so
+  every Forge-issued tmux client runs with the non-secret allowlist
+  environment, minus configured token names that could hide under the admitted
+  `LC_`/`XDG_` prefixes — deny-by-default; never a bare strip list, which
+  silently leaks any credential the configuration did not name. Pane processes
+  (including the base workspace terminal, which keeps the credential-sanitized
+  full daemon environment) get their environment only through the env-file
+  handoff (`internal/workspace/localruntime/manager.go::TmuxClientEnvironment`,
+  `internal/workspace/localruntime/manager.go::NewTmuxPaneHandoff`).
+- The allowlist names exact variables only — never prefixes, which a secret
+  such as `XDG_API_TOKEN` could hide under. It must keep `TMUX_TMPDIR`: tmux
+  resolves `-L` sockets beneath it, so dropping it routes tmux clients to a
+  different server than the manager owns. Attach commands returned to external
+  callers always wrap in `env`, unsetting the caller's `TMUX` and setting or
+  unsetting `TMUX_TMPDIR` to match the daemon; the hub's SSH wrapping must
+  collapse that argv into one shell-quoted remote command because OpenSSH
+  re-splits remote arguments through the remote shell. Fake tmux test fixtures
+  bake their control paths into the script instead of smuggling them through
+  the client environment
+  (`internal/config/config.go::IsTmuxNonSecretEnvVar`,
+  `internal/server/fleetapi/fleet_ssh.go::wrapAttachSpecForSSH`).
+- The non-secret terminal environment and credential names are disjoint by
+  construction: config and Kata catalog validation reject `token_env` names
+  that appear in the allowlist, because the tmux server's retained spawn
+  environment can never be scrubbed after a name turns secret
+  (`internal/config/config.go::Config.validateTokenEnvNamesNotTerminalVars`).
+- Kata catalog `token_env` names feed every credential strip set on catalog
+  load and at boot; catalogs load lazily per request, so the boot feed keeps
+  earlier terminals covered (`internal/server/server.go::Server.updateCatalogStripEnvVars`).
+- Every attach command passes `-E`: a pane can widen the server's
+  update-environment, and without `-E` the next attach copies the attach
+  client's variables into the session environment; external attach specs
+  additionally run in the caller's unsanitized shell
+  (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
@@ -340,6 +379,10 @@ behavior.
   created workspaces; shutdown preserves durable base sessions, so temp-dir
   cleanup alone leaks (`internal/server/kata/testmain_test.go::TestMain`).
 - Use tmux wrappers/fakes for missing-session and dead-server cases.
+- Tests exercising the unconfigured tmux default must sandbox `TMUX_TMPDIR`
+  and probe the `kenn-forge` socket name literally; deriving the probe from
+  the default command would follow a regressed default and pass
+  (`internal/server/workspacetest/default_tmux_socket_test.go`).
 - Add frontend or Playwright coverage when the regression is visible in tab
   selection, shell drawer state, or workspace navigation.
 

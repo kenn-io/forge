@@ -100,16 +100,22 @@ func (o owner) Start(
 		"cwd", cwd,
 		"pty_backend", "pty_owner",
 	)
-	client := *o.client
-	client.ExeArgs = append([]string(nil), o.client.ExeArgs...)
-	client.Command = resolvedCommand
-	client.ExtraEnv = map[string]string{
-		agentactivity.RuntimeSessionKeyEnv: session,
+	// Build a fresh per-launch client rather than copying o.client: the
+	// shared client carries a mutex guarding its reloadable strip set.
+	client := ptyowner.Client{
+		Root:        o.client.Root,
+		ExePath:     o.client.ExePath,
+		ExeArgs:     append([]string(nil), o.client.ExeArgs...),
+		ManagerPath: o.client.ManagerPath,
+		InProcess:   o.client.InProcess,
+		Command:     resolvedCommand,
+		ExtraEnv: map[string]string{
+			agentactivity.RuntimeSessionKeyEnv: session,
+		},
+		StripEnvVars: append(
+			o.client.StripEnvVarsSnapshot(), stripEnvVars...,
+		),
 	}
-	client.StripEnvVars = append(
-		append([]string(nil), o.client.StripEnvVars...),
-		stripEnvVars...,
-	)
 	if err := client.Ensure(ctx, session, cwd); err != nil {
 		return nil, err
 	}

@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 
 ARG BUN_IMAGE=oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4
-ARG PLAYWRIGHT_BASE_IMAGE=mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48
-ARG VITE_PLUS_VERSION=0.2.4
+ARG PLAYWRIGHT_BASE_IMAGE=mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
+ARG VITE_PLUS_VERSION=0.2.8
 
 FROM ${BUN_IMAGE} AS bun
 FROM ${PLAYWRIGHT_BASE_IMAGE}
@@ -21,6 +21,7 @@ RUN node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(
     && bun add --global --ignore-scripts "vite-plus@${VITE_PLUS_VERSION}" \
     && vp --version \
     && sed -i \
+      -e 's|http://azure.archive.ubuntu.com/ubuntu|https://mirrors.edge.kernel.org/ubuntu|g' \
       -e 's|http://archive.ubuntu.com/ubuntu|https://mirrors.edge.kernel.org/ubuntu|g' \
       -e 's|http://security.ubuntu.com/ubuntu|https://mirrors.edge.kernel.org/ubuntu|g' \
       /etc/apt/sources.list.d/ubuntu.sources \

@@ -97,8 +97,12 @@ it.effect("reconciles retained Docs uncertainty before resubmitting the same int
           paths.includes("created.md") ? Option.some("created.md") : Option.none(),
         )
         .pipe(Effect.exit);
-      const outcome = yield* workflow.reconcileMutation(identity, "create Docs document", request, reconcile, (paths) =>
-        paths.includes("created.md") ? Option.some("created.md") : Option.none(),
+      const outcome = yield* workflow.reconcileMutation(
+        identity,
+        "create Docs document",
+        request,
+        reconcile,
+        (paths) => (paths.includes("created.md") ? Option.some("created.md") : Option.none()),
       );
 
       assert.strictEqual(outcome.result, "created.md");

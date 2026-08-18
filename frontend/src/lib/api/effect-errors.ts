@@ -1,23 +1,17 @@
 import { Data, Schema } from "effect";
 import type { ProblemBody } from "./problems.js";
 
-export class TransientTransportError extends Schema.TaggedErrorClass<TransientTransportError>()(
-  "TransientTransportError",
-  {
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {}
+export class TransientTransportError extends Schema.TaggedError<TransientTransportError>()("TransientTransportError", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
-export class InvalidExternalPayload extends Schema.TaggedErrorClass<InvalidExternalPayload>()(
-  "InvalidExternalPayload",
-  {
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {}
+export class InvalidExternalPayload extends Schema.TaggedError<InvalidExternalPayload>()("InvalidExternalPayload", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
-export class BrowserStreamError extends Schema.TaggedErrorClass<BrowserStreamError>()("BrowserStreamError", {
+export class BrowserStreamError extends Schema.TaggedError<BrowserStreamError>()("BrowserStreamError", {
   operation: Schema.String,
   cause: Schema.Defect(),
 }) {}

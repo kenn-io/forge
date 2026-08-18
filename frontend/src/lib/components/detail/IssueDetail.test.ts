@@ -8,6 +8,7 @@ import type { IssueDetail, Label } from "../../api/types.js";
 import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
 import { ACTIONS_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
+import { createIssuesStore } from "../../stores/issues.svelte.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
 import {
@@ -182,6 +183,10 @@ function renderIssueDetail(
   ),
   options: {
     staleRefreshing?: boolean;
+    detailLoading?: boolean;
+    detailSyncing?: boolean;
+    deferRefresh?: boolean;
+    refreshFailure?: string;
     inlineWorkspace?: InlineWorkspaceController | null;
     actions?: ActionRegistry;
     runtimeClient?: GeneratedClient;
@@ -192,17 +197,30 @@ function renderIssueDetail(
   },
 ) {
   let envelopeTick = 0;
+  let pendingRefreshCallbacks: MutationCallbacks | null = null;
   const issuesStore = {
     loadIssueDetail: vi.fn(),
     startIssueDetailPolling: vi.fn(),
     stopIssueDetailPolling: vi.fn(),
     getIssueDetail: () => detail,
     getIssueDetailEnvelopeTick: () => envelopeTick,
-    isIssueDetailLoading: () => false,
+    isIssueDetailLoading: () => options.detailLoading ?? false,
     getIssueDetailError: () => null,
     isIssueStaleRefreshing: () => options.staleRefreshing ?? false,
-    isIssueDetailSyncing: () => false,
+    isIssueDetailSyncing: () => options.detailSyncing ?? false,
     getIssueDetailLoaded: () => true,
+    syncIssueDetailNow: vi.fn(
+      (_owner: string, _name: string, _number: number, _identity: unknown, callbacks: MutationCallbacks) => {
+        if (options.deferRefresh) {
+          options.detailSyncing = true;
+          pendingRefreshCallbacks = callbacks;
+          return;
+        }
+        if (options.refreshFailure) callbacks.onFailure?.(options.refreshFailure);
+        else callbacks.onSuccess?.();
+        callbacks.onSettled?.();
+      },
+    ),
     loadIssues: vi.fn(),
     updateIssueKanbanState: vi.fn(),
     toggleIssueStar: vi.fn(),
@@ -260,6 +278,18 @@ function renderIssueDetail(
     deleteIssueComment,
     issuesStore,
     navigate,
+    settleRefresh: () => {
+      options.detailSyncing = false;
+      pendingRefreshCallbacks?.onSuccess?.();
+      pendingRefreshCallbacks?.onSettled?.();
+      pendingRefreshCallbacks = null;
+    },
+    failRefresh: (message: string) => {
+      options.detailSyncing = false;
+      pendingRefreshCallbacks?.onFailure?.(message);
+      pendingRefreshCallbacks?.onSettled?.();
+      pendingRefreshCallbacks = null;
+    },
     setEnvelopeTick: (tick: number) => {
       envelopeTick = tick;
     },
@@ -273,6 +303,7 @@ describe("IssueDetail activity view", () => {
 
   afterEach(() => {
     cleanup();
+    for (const item of getFlashes()) dismissFlash(item.id);
   });
 
   it("offers compact activity rows from the shared View menu without PR filters", async () => {
@@ -289,6 +320,156 @@ describe("IssueDetail activity view", () => {
     expect(localStorage.getItem("kenn-forge-detail-activity-view")).toBe("compact");
     expect(container.querySelectorAll(".event-card--compact-row")).toHaveLength(1);
     expect(container.textContent).toContain("Issue activity preview");
+  });
+
+  it("refreshes the whole selected issue from the Activity header", async () => {
+    const { issuesStore } = renderIssueDetail(issueDetail());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
+
+    expect(issuesStore.syncIssueDetailNow).toHaveBeenCalledWith(
+      "acme",
+      "widget",
+      7,
+      {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+      },
+      expect.objectContaining({ onFailure: expect.any(Function) }),
+    );
+  });
+
+  it("tracks manual refresh progress separately and reports issue sync failures", async () => {
+    renderIssueDetail(issueDetail(), undefined, { refreshFailure: "provider unavailable" });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
+    expect(getFlashes()).toEqual([expect.objectContaining({ message: "provider unavailable", tone: "danger" })]);
+
+    cleanup();
+    const { settleRefresh } = renderIssueDetail(issueDetail(), undefined, { deferRefresh: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
+    expect((screen.getByRole("button", { name: "Refresh detail" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByLabelText("Refreshing detail")).toBeTruthy();
+    expect(document.querySelector(".sync-indicator")).toBeNull();
+
+    settleRefresh();
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: "Refresh detail" }) as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
+
+  it("does not present a background issue sync as a manual refresh", () => {
+    renderIssueDetail(issueDetail(), undefined, { detailSyncing: true });
+
+    expect((screen.getByRole("button", { name: "Refresh detail" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByLabelText("Refreshing detail")).toBeNull();
+    expect(document.querySelector(".sync-indicator")?.textContent).toContain("Syncing");
+  });
+
+  it("blocks manual refresh while issue detail navigation is loading or stale", async () => {
+    const loading = renderIssueDetail(issueDetail(), undefined, { detailLoading: true });
+    const loadingButton = screen.getByRole("button", { name: "Refresh detail" });
+
+    expect((loadingButton as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(loadingButton);
+    expect(loading.issuesStore.syncIssueDetailNow).not.toHaveBeenCalled();
+
+    cleanup();
+    const navigating = renderIssueDetail(issueDetail());
+    await navigating.rerender({ number: 8 });
+    const staleButton = screen.getByRole("button", { name: "Refresh detail" });
+
+    expect((staleButton as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(staleButton);
+    expect(navigating.issuesStore.syncIssueDetailNow).not.toHaveBeenCalled();
+  });
+
+  it("drops pending manual refresh UI and late failures after an issue reroute", async () => {
+    const { failRefresh, rerender } = renderIssueDetail(issueDetail(), undefined, { deferRefresh: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
+    expect(screen.getByLabelText("Refreshing detail")).toBeTruthy();
+
+    await rerender({ number: 8 });
+
+    await waitFor(() => expect(screen.queryByLabelText("Refreshing detail")).toBeNull());
+
+    failRefresh("old issue failed");
+    expect(getFlashes()).toHaveLength(0);
+  });
+
+  it("drops a manual refresh failure after the issue detail unmounts", async () => {
+    const { failRefresh, unmount } = renderIssueDetail(issueDetail(), undefined, { deferRefresh: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
+
+    unmount();
+    failRefresh("unmounted issue failed");
+
+    expect(getFlashes()).toHaveLength(0);
+  });
+
+  it("keeps a pending issue refresh across an equivalent route alias", async () => {
+    const { failRefresh, rerender } = renderIssueDetail(issueDetail(), undefined, { deferRefresh: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
+
+    await rerender({ provider: "gh", platformHost: undefined });
+
+    expect(screen.getByLabelText("Refreshing detail")).toBeTruthy();
+    failRefresh("current issue failed");
+    expect(getFlashes()).toEqual([expect.objectContaining({ message: "current issue failed" })]);
+  });
+
+  it("preserves a real issue-store refresh across an equivalent route alias", async () => {
+    const cached = issueDetail();
+    cached.issue.Title = "Cached issue detail";
+    const fresh = issueDetail();
+    fresh.issue.Title = "Fresh issue detail";
+    const syncResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const get = vi.fn(async () => ({ data: cached, error: undefined }));
+    const post = vi.fn(() => syncResponse.promise);
+    issueRuntime = makeTestAppRuntime({ GET: get, POST: post } as unknown as GeneratedClient);
+    const issuesStore = createIssuesStore({ runtime: issueRuntime });
+    let detailProps: ComponentProps<typeof IssueDetailComponent> = {
+      owner: "acme",
+      name: "widget",
+      number: 7,
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      autoSync: false,
+    };
+    const rendered = render(IssueDetailTestHarness, {
+      props: { runtime: issueRuntime, detailProps },
+      context: new Map<symbol, unknown>([
+        [
+          STORES_KEY,
+          {
+            issues: issuesStore,
+            activity: { loadActivity: vi.fn() },
+            detailActivityView: createDetailActivityViewStore(),
+            settings: {
+              getLaunchTargets: () => launchTargets,
+              getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
+            },
+          },
+        ],
+        [ACTIONS_KEY, { issue: [] }],
+        [UI_CONFIG_KEY, { hideStar: true }],
+        [NAVIGATE_KEY, vi.fn()],
+      ]),
+    });
+    await waitFor(() => expect(get).toHaveBeenCalledOnce());
+    await waitFor(() => expect(issuesStore.isIssueDetailLoading()).toBe(false));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
+    await waitFor(() => expect(issuesStore.isIssueDetailSyncing()).toBe(true));
+    detailProps = { ...detailProps, provider: "gh", platformHost: undefined };
+    await rendered.rerender({ runtime: issueRuntime, detailProps });
+    syncResponse.resolve({ data: fresh, error: undefined });
+
+    await waitFor(() => expect(screen.queryByLabelText("Refreshing detail")).toBeNull());
+    expect(get).toHaveBeenCalledOnce();
+    expect(issuesStore.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
   });
 
   it("explains that creating a workspace enables agent sessions", () => {

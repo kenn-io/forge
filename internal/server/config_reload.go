@@ -12,6 +12,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/configwatch"
 	ghclient "go.kenn.io/forge/internal/github"
+	katacatalog "go.kenn.io/forge/internal/kata"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/docsapi"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -334,6 +335,14 @@ func (s *Server) handleConfigFileChanged() {
 // handleConfigFileChanged) so a slow subscriber cannot stall the daemon.
 func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	newCfg, err := config.Load(s.cfgPath)
+	// Accumulate the candidate's token env names from any parseable
+	// candidate — config.Load returns the parsed config alongside
+	// structural validation errors — before every failure path: a
+	// rejected reload must still stop those names from reaching future
+	// tmux panes, since the user just declared them credentials. The
+	// lists are monotonic, so over-stripping from a rejected candidate
+	// is safe.
+	s.updateRuntimeStripEnvVars(newCfg)
 	if err != nil {
 		slog.Warn(
 			"config reload failed; keeping last-known-good",
@@ -381,13 +390,19 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	}
 	s.cfgMu.Unlock()
 
-	s.updateRuntimeStripEnvVars(newCfg)
 	s.updateTokenSourcesForReload(newCfg)
 	restartRequired := s.bootCfgSnapshot.restartRequiredFor(newCfg)
 	if s.reloadCredentialNeedsClientRebuild(ctx, newCfg) {
 		restartRequired = true
 	}
 	docsapi.WarnDaemonBindings(newCfg.DocFolders)
+	// Kata catalogs load lazily on Kata routes; a catalog edited since
+	// boot may declare new token names. Refresh the catalog-derived
+	// strip names on every config reload so terminals never race a
+	// catalog edit; rejected catalogs still carry declared names.
+	if catalog, err := katacatalog.LoadCatalog(); err == nil || len(catalog.TokenEnvNames()) > 0 {
+		s.updateCatalogStripEnvVars(catalog.TokenEnvNames())
+	}
 
 	// Resolve the new repo set against the boot-time registry. Repos
 	// whose (platform, host) the registry never learned about cannot
@@ -426,8 +441,15 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		newCfg.PullRequests.PreferGitHubNativeStacks,
 	)
 	s.refreshRuntimeTargetsLocked()
+	stripEnvVars := s.updateRuntimeStripEnvVarsLocked(newCfg)
+	if s.workspaces != nil {
+		s.workspaces.UpdateTmuxStripEnvVars(stripEnvVars)
+	}
+	if s.ptyOwnerClient != nil {
+		s.ptyOwnerClient.UpdateStripEnvVars(stripEnvVars)
+	}
 	if s.runtime != nil {
-		s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(newCfg))
+		s.runtime.UpdateStripEnvVars(stripEnvVars)
 	}
 	s.applyWorkspaceConfigLocked()
 	s.applyFleetConfigLocked()

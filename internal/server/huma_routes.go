@@ -1463,7 +1463,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			slog.Error("list collapsed activity failed", "err", projectionErr)
 			return nil, httpapi.Internal("list activity failed")
 		}
-		items = collapsed.TopLevelRows
+		items = collapsed.DirectRows
 		itemActivity = collapsed.Subjects
 		eventCursor = collapsed.EventCursor
 	} else {
@@ -1570,15 +1570,6 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	if projection == "events" && len(items) == pageLimit && len(items) > 0 {
 		last := items[len(items)-1]
 		nextCursor = db.EncodeCursor(last.CreatedAt, last.Source, last.SourceID)
-	}
-	if projection == "collapsed" {
-		topLevel := make([]db.ActivityItem, 0, len(items))
-		for _, item := range items {
-			if item.ItemType == "" {
-				topLevel = append(topLevel, item)
-			}
-		}
-		items = topLevel
 	}
 	if len(itemActivity) > activitySafetyCap {
 		itemActivity = itemActivity[:activitySafetyCap]

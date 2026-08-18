@@ -189,6 +189,9 @@ func listActivityWithQueryer(
 		whereClauses = append(whereClauses, "item_number = ?")
 		args = append(args, opts.ParentItemNumber)
 	}
+	if opts.UnparentedOnly {
+		whereClauses = append(whereClauses, "parent_id IS NULL")
+	}
 	if opts.ViewerLogins != nil {
 		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))
 	}

@@ -209,6 +209,8 @@ Rules:
 - Provider-neutral storage and DB naming must not leak through API accidentally; translate at server boundary.
 - Generated OpenAPI clients must be regenerated after API shape changes.
 - Activity notification rows take `item_title`, `item_url`, and `activity_url` from the linked PR/issue when it has synced and fall back to persisted `subject_title`/`web_url` only for unsynced subjects; persisted values are frozen at sync time, and the frontend parent reconciliation is capped, so it cannot be the only rename repair (`internal/db/queries_activity.go::ListActivity`).
+- Collapsed Activity returns an anchored notification directly until its authoritative
+  PR/issue parent syncs; no parent summary can represent it yet (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
 - Activity notification rows carry the linked PR/issue lifecycle state in `subject_state` (allowed values `open` | `closed` | `merged`). `item_state` keeps carrying the notification's own `unread`/`read` triage state. `listActivity` populates `subject_state` via a `LEFT JOIN` to the merge-request/issue tables on `(repo_id, item_number)`, so the Hide closed/merged filter works in a notifications-only feed with no sibling PR/issue row present. The field is `omitempty`: when the subject is unanchored or has not synced, clients receive it absent rather than as `""`. Consumers must treat missing and empty string identically — both mean "lifecycle unknown / not applicable" — and must not treat unknown as `open`. Non-notification rows omit `subject_state` entirely; use `item_state` for them.
 
 ## Testing Expectations

@@ -4,11 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"slices"
 )
 
 // ListCollapsedActivityProjection reads the hidden-event high-water mark,
-// repository-level rows, and authoritative parents from one SQLite snapshot.
+// directly rendered rows, and authoritative parents from one SQLite snapshot.
 func (d *DB) ListCollapsedActivityProjection(
 	ctx context.Context,
 	opts ListActivityProjectionOpts,
@@ -31,14 +30,11 @@ func (d *DB) ListCollapsedActivityProjection(
 		eventCursor = EncodeCursor(row.CreatedAt, row.Source, row.SourceID)
 	}
 
-	var topLevelRows []ActivityItem
-	if projectionIncludesRepoRows(opts.ItemTypes) {
-		topLevelOpts := opts.ListActivityOpts
-		topLevelOpts.ItemTypes = []string{"repo"}
-		topLevelRows, err = listActivityWithQueryer(ctx, tx, topLevelOpts)
-		if err != nil {
-			return ActivityProjection{}, err
-		}
+	directOpts := opts.ListActivityOpts
+	directOpts.UnparentedOnly = true
+	directRows, err := listActivityWithQueryer(ctx, tx, directOpts)
+	if err != nil {
+		return ActivityProjection{}, err
 	}
 
 	var searchMatched []WorkspaceSubjectKey
@@ -82,15 +78,8 @@ func (d *DB) ListCollapsedActivityProjection(
 		return ActivityProjection{}, fmt.Errorf("commit collapsed activity projection: %w", err)
 	}
 	return ActivityProjection{
-		TopLevelRows: topLevelRows,
-		Subjects:     subjects,
-		EventCursor:  eventCursor,
+		DirectRows:  directRows,
+		Subjects:    subjects,
+		EventCursor: eventCursor,
 	}, nil
-}
-
-func projectionIncludesRepoRows(itemTypes []string) bool {
-	if len(itemTypes) == 0 {
-		return true
-	}
-	return slices.Contains(itemTypes, "repo")
 }

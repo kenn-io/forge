@@ -1349,6 +1349,9 @@ type ListActivityOpts struct {
 	ParentRepoID         int64
 	ParentItemType       string
 	ParentItemNumber     int
+	// UnparentedOnly selects repository rows and item-scoped rows whose
+	// authoritative pull request or issue parent is absent.
+	UnparentedOnly bool
 	// NotificationRepoFilters limits notification rows to the caller's
 	// current monitored repo set before ordering/limit. nil means no
 	// additional notification scope; an empty/non-matching set means no
@@ -1388,9 +1391,9 @@ type ListActivitySubjectsOpts struct {
 }
 
 type ActivityProjection struct {
-	TopLevelRows []ActivityItem
-	Subjects     []ActivitySubject
-	EventCursor  string
+	DirectRows  []ActivityItem
+	Subjects    []ActivitySubject
+	EventCursor string
 }
 
 type ListActivityProjectionOpts struct {

@@ -880,13 +880,34 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 		CreatedAt:      base.Add(time.Minute),
 		DedupeKey:      "projection-comment",
 	}}))
+	unsyncedNumber := 2
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform:               "github",
+		PlatformHost:           "github.com",
+		PlatformNotificationID: "projection-unsynced",
+		RepoOwner:              "alice",
+		RepoName:               "alpha",
+		SubjectType:            "PullRequest",
+		SubjectTitle:           "Unsynced projection",
+		WebURL:                 "https://github.com/alice/alpha/pull/2",
+		ItemNumber:             &unsyncedNumber,
+		ItemType:               "pr",
+		ItemAuthor:             "contributor",
+		Reason:                 "mention",
+		Unread:                 true,
+		SourceUpdatedAt:        base.Add(30 * time.Second),
+		SyncedAt:               base.Add(30 * time.Second),
+	}}))
 
 	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
 		ListActivityOpts: ListActivityOpts{Limit: 50},
 		SubjectLimit:     50,
 	})
 	require.NoError(err)
-	assert.Empty(projection.TopLevelRows)
+	require.Len(projection.DirectRows, 1)
+	assert.Equal("notification", projection.DirectRows[0].ActivityType)
+	assert.Equal("pr", projection.DirectRows[0].ItemType)
+	assert.Equal(2, projection.DirectRows[0].ItemNumber)
 	require.Len(projection.Subjects, 1)
 	assert.Equal(1, projection.Subjects[0].Subject.Key.ItemNumber)
 	assert.Equal(EncodeCursor(base.Add(time.Minute), "pre", 1), projection.EventCursor)

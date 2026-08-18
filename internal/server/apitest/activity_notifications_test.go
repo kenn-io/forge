@@ -193,6 +193,21 @@ func TestActivityNotificationsFullStack(t *testing.T) {
 	assert.Equal("open", *open.SubjectState)
 	assert.Nil(notifByKey["pr:4"].SubjectState, "unsynced subject lifecycle must remain unknown")
 
+	// --- default collapsed view ---
+	// Synced subjects are represented by authoritative parent summaries, but an
+	// unsynced notification must remain as a directly rendered item row.
+	collapsedProjection := generated.ListActivityParamsProjectionCollapsed
+	collapsedResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{
+		Projection: &collapsedProjection,
+	})
+	require.NoError(err)
+	require.Equal(200, collapsedResp.StatusCode())
+	require.NotNil(collapsedResp.JSON200)
+	require.NotNil(collapsedResp.JSON200.Items)
+	require.Len(*collapsedResp.JSON200.Items, 1)
+	assert.Equal("notification", (*collapsedResp.JSON200.Items)[0].ActivityType)
+	assert.Equal("pr:4", activityItemKey((*collapsedResp.JSON200.Items)[0]))
+
 	// --- hide closed/merged notifications ---
 	hideClosedMerged := true
 	limit := int64(10)

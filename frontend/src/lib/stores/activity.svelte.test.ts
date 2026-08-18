@@ -409,6 +409,102 @@ describe("activity store collapse state", () => {
     expect(store.isThreadItemExpanded(key)).toBe(true);
   });
 
+  it("reloads expanded child projections when filtered reconciliation supersedes a foreground load", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: "repo-7",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      host: "github.com",
+    };
+    const subject = { ...itemActivity(7), event_ledger_revision: "unchanged", repo } satisfies ActivitySubject;
+    const staleComment = {
+      ...notificationItem("pre:stale-comment", "read"),
+      activity_type: "comment",
+      item_number: 7,
+      repo,
+    } as ActivityItem;
+    const filteredReview = {
+      ...notificationItem("pre:filtered-review", "read"),
+      activity_type: "review",
+      item_number: 7,
+      repo,
+    } as ActivityItem;
+    const pendingForeground = Promise.withResolvers<{
+      data: {
+        items: ActivityItem[];
+        item_activity: ActivitySubject[];
+        workspace_activity: never[];
+        capped: false;
+        event_cursor: string;
+      };
+      error: null;
+    }>();
+    let activityReads = 0;
+    const threadQueries: Array<Record<string, unknown>> = [];
+    const get = vi.fn((path: string, options?: { params?: { query?: Record<string, unknown> } }) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      if (path === "/activity/thread-events") {
+        threadQueries.push(options?.params?.query ?? {});
+        return Promise.resolve({
+          data: {
+            items: [threadQueries.length === 1 ? staleComment : filteredReview],
+            capped: false,
+            event_cursor: "thread-snapshot",
+          },
+          error: null,
+        });
+      }
+      activityReads += 1;
+      if (activityReads === 2) return pendingForeground.promise;
+      return Promise.resolve({
+        data: {
+          items: [],
+          item_activity: [subject],
+          workspace_activity: [],
+          capped: false as const,
+          event_cursor: `activity-snapshot-${activityReads}`,
+        },
+        error: null as const,
+      });
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([subject]));
+
+    const key = "github|github.com|id|repo-7:pr:7";
+    store.toggleThreadItem(key);
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([staleComment.id]));
+
+    store.setActivityFilterTypes(["review"]);
+    store.loadActivity();
+    await vi.waitFor(() => expect(activityReads).toBe(2));
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile filtered activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+
+    await vi.waitFor(() => expect(threadQueries).toHaveLength(2));
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([filteredReview.id]));
+    expect(threadQueries[1]).toEqual(expect.objectContaining({ types: ["review"] }));
+
+    pendingForeground.resolve({
+      data: {
+        items: [],
+        item_activity: [subject],
+        workspace_activity: [],
+        capped: false,
+        event_cursor: "stale-foreground",
+      },
+      error: null,
+    });
+  });
+
   it("forwards active event and search filters when loading a collapsed thread", async () => {
     const subject = {
       ...itemActivity(7),

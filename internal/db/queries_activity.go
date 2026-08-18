@@ -1080,8 +1080,8 @@ func parseDBTime(s string) (time.Time, error) {
 func EncodeCursor(
 	createdAt time.Time, source string, sourceID int64,
 ) string {
-	raw := fmt.Sprintf("%d:%s:%d",
-		createdAt.UnixNano(), source, sourceID)
+	raw := fmt.Sprintf("%d:%d:%s:%d",
+		createdAt.Unix(), createdAt.Nanosecond(), source, sourceID)
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
 
@@ -1094,21 +1094,26 @@ func DecodeCursor(cursor string) (
 		return time.Time{}, "", 0,
 			fmt.Errorf("decode cursor base64: %w", err)
 	}
-	parts := strings.SplitN(string(raw), ":", 3)
-	if len(parts) != 3 {
+	parts := strings.SplitN(string(raw), ":", 4)
+	if len(parts) != 4 {
 		return time.Time{}, "", 0,
-			fmt.Errorf("invalid cursor: expected 3 parts, got %d",
+			fmt.Errorf("invalid cursor: expected 4 parts, got %d",
 				len(parts))
 	}
-	ns, err := strconv.ParseInt(parts[0], 10, 64)
+	seconds, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
 		return time.Time{}, "", 0,
 			fmt.Errorf("invalid cursor timestamp: %w", err)
 	}
-	sourceID, err := strconv.ParseInt(parts[2], 10, 64)
+	nanoseconds, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || nanoseconds < 0 || nanoseconds >= int64(time.Second) {
+		return time.Time{}, "", 0,
+			fmt.Errorf("invalid cursor nanoseconds")
+	}
+	sourceID, err := strconv.ParseInt(parts[3], 10, 64)
 	if err != nil {
 		return time.Time{}, "", 0,
 			fmt.Errorf("invalid cursor source_id: %w", err)
 	}
-	return time.Unix(0, ns).UTC(), parts[1], sourceID, nil
+	return time.Unix(seconds, nanoseconds).UTC(), parts[2], sourceID, nil
 }

@@ -921,6 +921,8 @@ Not every visibility control means "remove this entity entirely."
 - Collapsed Activity cursors come from the same snapshot as the visible summaries and
   cover hidden children; clients must not derive forward-poll authority from a visible
   row (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
+- Opaque Activity cursors preserve provider-controlled timestamps outside the Unix
+  nanosecond range (`internal/db/queries_activity.go::EncodeCursor`).
 - Empty Activity deltas must not rebuild or replace parent/workspace summaries
   (`frontend/src/lib/stores/activity.svelte.ts::pollNewItems`).
 - Single-thread Activity expansion uses stable repository identity, a frozen upper bound,
@@ -943,9 +945,9 @@ Not every visibility control means "remove this entity entirely."
   parents load complete history.
   Otherwise authoritative reconciliation preserves loaded children and merges deltas; mobile and status
   totals consume the same summary authority (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
-- A foreground collapsed snapshot replacement clears thread-page authority, then reloads
-  every received parent that remains expanded so a scope or filter change cannot leave an
-  expanded row empty (`frontend/src/lib/stores/activity.svelte.ts::projectActivitySnapshot`).
+- Any collapsed snapshot accepted after scope or filter invalidation clears child-page
+  authority, then reloads each expanded parent or restarts bulk expansion; stale children
+  never cross scopes (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
 - Thread and bulk pages publish only after complete success; failures preserve the
   pre-request projection. Thread retries restart the frozen read, and only the owning
   token may publish an error (`frontend/src/lib/stores/activity.svelte.ts::retryFailedThreadLoads`).

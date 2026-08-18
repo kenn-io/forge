@@ -219,6 +219,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let fullEventProjectionRequired = false;
   let expandOverrides = $state<Set<string>>(new Set());
   let pagedActivityGeneration = 0;
+  let childProjectionInvalidationGeneration = 0;
+  let projectedChildInvalidationGeneration = 0;
   const threadRequestTokens = new Map<string, symbol>();
   let bulkRequestToken: symbol | undefined;
   let authorRequestVersion = 0;
@@ -498,6 +500,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function invalidatePagedActivityRequests(): void {
     pagedActivityGeneration += 1;
+    childProjectionInvalidationGeneration += 1;
     threadRequestTokens.clear();
     loadingThreadKeys = new Set();
     failedThreadKeys = new Set();
@@ -663,6 +666,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     loadingThreadKeys = new Set();
     failedThreadKeys = new Set();
     threadLoadError = null;
+    projectedChildInvalidationGeneration = childProjectionInvalidationGeneration;
     loading = false;
     storeError = null;
     if (projection === "collapsed") {
@@ -683,6 +687,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function projectAuthoritativeActivitySnapshot(result: OwnedActivityResponse): void {
     const reconcileCollapsedThreads = shouldUseCollapsedAuthoritativeProjection();
+    const childProjectionStale =
+      reconcileCollapsedThreads && projectedChildInvalidationGeneration !== childProjectionInvalidationGeneration;
     const received = projectOwnedNotificationStates(result);
     const receivedIDs = new Set(received.map((item) => item.id));
     const receivedSubjectKeys = new Set(
@@ -727,24 +733,44 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         newExpandedThreadKeys.add(key);
       }
     }
-    const retainedThreadItems = items.filter((item) => {
-      const key = stableParentKey(item);
-      if (result.response.item_activity_capped && !parentFilterActive) {
-        return (
-          (item.item_type === "pr" || item.item_type === "issue") &&
-          !receivedIDs.has(item.id) &&
-          (key === undefined || !changedThreadKeys.has(key))
-        );
-      }
-      return (
-        key !== undefined && receivedSubjectKeys.has(key) && !receivedIDs.has(item.id) && !changedThreadKeys.has(key)
-      );
-    });
+    const retainedThreadItems = childProjectionStale
+      ? []
+      : items.filter((item) => {
+          const key = stableParentKey(item);
+          if (result.response.item_activity_capped && !parentFilterActive) {
+            return (
+              (item.item_type === "pr" || item.item_type === "issue") &&
+              !receivedIDs.has(item.id) &&
+              (key === undefined || !changedThreadKeys.has(key))
+            );
+          }
+          return (
+            key !== undefined &&
+            receivedSubjectKeys.has(key) &&
+            !receivedIDs.has(item.id) &&
+            !changedThreadKeys.has(key)
+          );
+        });
     items = [...received, ...retainedThreadItems];
     projectActivitySubjects(result.response);
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-    if (reconcileCollapsedThreads && (changedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0)) {
+    if (childProjectionStale) {
+      projectedChildInvalidationGeneration = childProjectionInvalidationGeneration;
+      loadedThreadKeys = new Set();
+      loadingThreadKeys = new Set();
+      failedThreadKeys = new Set();
+      threadLoadError = null;
+      threadRequestTokens.clear();
+      bulkRequestToken = undefined;
+      if (!collapseThreads) {
+        restartBulkActivity = true;
+      } else {
+        for (const key of receivedSubjectKeys) {
+          if (isThreadItemExpanded(key)) loadThreadEvents(key);
+        }
+      }
+    } else if (reconcileCollapsedThreads && (changedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0)) {
       restartBulkActivity =
         (changedThreadKeys.size > 0 && bulkRequestToken !== undefined) ||
         (!collapseThreads && newExpandedThreadKeys.size > 0);

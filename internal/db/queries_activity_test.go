@@ -760,6 +760,44 @@ func TestListActivity(t *testing.T) {
 	_ = prID2
 }
 
+func TestListActivityAtOrBeforeCursorBeyondUnixNanoRange(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	future := time.Date(2500, time.December, 30, 20, 19, 18, 987654321, time.UTC)
+	repoID := insertTestRepo(t, d, "example", "future")
+	prID := insertTestMR(t, d, repoID, 1, "Future activity", future.Add(-time.Hour))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "Cursor boundary",
+		CreatedAt:      future,
+		DedupeKey:      "future-cursor-boundary",
+	}}))
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 10})
+	require.NoError(err)
+	require.NotEmpty(items)
+	boundary := items[0]
+	createdAt, source, sourceID, err := DecodeCursor(
+		EncodeCursor(boundary.CreatedAt, boundary.Source, boundary.SourceID),
+	)
+	require.NoError(err)
+
+	bounded, err := d.ListActivity(ctx, ListActivityOpts{
+		Limit:              10,
+		AtOrBeforeTime:     &createdAt,
+		AtOrBeforeSource:   source,
+		AtOrBeforeSourceID: sourceID,
+	})
+	require.NoError(err)
+	require.NotEmpty(bounded)
+	assert.Equal(boundary.Source, bounded[0].Source)
+	assert.Equal(boundary.SourceID, bounded[0].SourceID)
+}
+
 func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
 	t.Run("hide closed merged uses notification subject state and keeps unknown state", func(t *testing.T) {
 		require := require.New(t)

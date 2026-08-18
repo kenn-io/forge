@@ -68,6 +68,7 @@
     canResolveReviewThreads?: boolean;
     canReplyToThreads?: boolean;
     filtered?: boolean;
+    filterScope?: string;
     showCommitDetails?: boolean;
     activityViewMode?: DetailActivityViewMode;
     timelineOrder?: DetailTimelineOrder;
@@ -115,6 +116,7 @@
     canResolveReviewThreads = false,
     canReplyToThreads = false,
     filtered = false,
+    filterScope = "",
     showCommitDetails = true,
     activityViewMode = "normal",
     timelineOrder = "grouped",
@@ -746,7 +748,7 @@
   const mountedTimelineEntries = $derived(renderedTimelineEntries.slice(0, mountedEntryCount));
   const unmountedEntryCount = $derived(renderedTimelineEntries.length - mountedEntryCount);
   const timelineMountKey = $derived(
-    `${itemIdentity}\u0000${activityViewMode}\u0000${timelineOrder}\u0000${filtered}\u0000${initialEntryLimit}`,
+    `${itemIdentity}\u0000${activityViewMode}\u0000${timelineOrder}\u0000${filtered}\u0000${filterScope}\u0000${initialEntryLimit}`,
   );
   let lastTimelineMountKey = "";
 

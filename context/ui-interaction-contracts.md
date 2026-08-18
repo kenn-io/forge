@@ -247,7 +247,8 @@ Persisted controls must state their scope clearly.
   then make the remainder explicit and mount it in bounded idle batches; harnesses
   that require every fixture row pass a large limit. An explicit full-timeline request
   survives event additions and edits for the same item, and resets only when item or
-  presentation scope changes (`frontend/src/lib/components/detail/EventTimeline.svelte`).
+  presentation scope, including the exact active filter set, changes
+  (`frontend/src/lib/components/detail/EventTimeline.svelte`).
 - Concurrent controls for one server-backed settings object must share a
   serialized mutation path and reconcile only fields still owned by the settling
   mutation generation; value equality alone is ABA-prone, while stale full-object

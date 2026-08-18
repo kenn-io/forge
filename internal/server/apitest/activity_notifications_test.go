@@ -143,6 +143,19 @@ func TestActivityNotificationsFullStack(t *testing.T) {
 		Reason: "author", Unread: true,
 	})
 
+	// Anchored notification whose parent has not synced yet. Its lifecycle is
+	// unknown, so Hide closed/merged must retain it.
+	number4 := 4
+	seedNotification(t, database, db.Notification{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformNotificationID: "ntf-unknown-state",
+		RepoOwner:              "acme", RepoName: "widget",
+		SubjectType: "PullRequest", SubjectTitle: "Unsynced PR",
+		WebURL:     "https://github.com/acme/widget/pull/4",
+		ItemNumber: &number4, ItemType: "pr", ItemAuthor: "carol",
+		Reason: "mention", Unread: true,
+	})
+
 	// --- notifications-only view ---
 	notifResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{
 		Types: &[]string{"notification"},
@@ -162,10 +175,11 @@ func TestActivityNotificationsFullStack(t *testing.T) {
 		notifByKey[activityItemKey(it)] = it
 	}
 
-	// Only the two anchored, non-author notifications survive.
-	assert.Len(notifByKey, 2)
+	// Only the three anchored, non-author notifications survive.
+	assert.Len(notifByKey, 3)
 	assert.Contains(notifByKey, "pr:1")
 	assert.Contains(notifByKey, "pr:2")
+	assert.Contains(notifByKey, "pr:4")
 	assert.NotContains(notifByKey, "pr:3", "author notification must be dropped from activity")
 
 	merged, ok := notifByKey["pr:2"]
@@ -177,6 +191,23 @@ func TestActivityNotificationsFullStack(t *testing.T) {
 	open := notifByKey["pr:1"]
 	require.NotNil(open.SubjectState)
 	assert.Equal("open", *open.SubjectState)
+	assert.Nil(notifByKey["pr:4"].SubjectState, "unsynced subject lifecycle must remain unknown")
+
+	// --- hide closed/merged notifications ---
+	hideClosedMerged := true
+	limit := int64(10)
+	visibleResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{
+		Types: &[]string{"notification"}, HideClosedMerged: &hideClosedMerged, Limit: &limit,
+	})
+	require.NoError(err)
+	require.Equal(200, visibleResp.StatusCode())
+	require.NotNil(visibleResp.JSON200)
+	require.NotNil(visibleResp.JSON200.Items)
+	visibleKeys := make([]string, 0, len(*visibleResp.JSON200.Items))
+	for _, it := range *visibleResp.JSON200.Items {
+		visibleKeys = append(visibleKeys, activityItemKey(it))
+	}
+	assert.ElementsMatch([]string{"pr:1", "pr:4"}, visibleKeys)
 
 	// --- default (all types) view ---
 	// Anchored notifications coexist with the new_pr rows the notifications-only
@@ -197,6 +228,6 @@ func TestActivityNotificationsFullStack(t *testing.T) {
 			newPRRows++
 		}
 	}
-	assert.Equal(2, notifRows, "only anchored non-author notifications appear in the full feed")
+	assert.Equal(3, notifRows, "only anchored non-author notifications appear in the full feed")
 	assert.Equal(3, newPRRows, "all three seeded PRs contribute new_pr rows")
 }

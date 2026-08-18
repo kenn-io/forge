@@ -760,6 +760,110 @@ func TestListActivity(t *testing.T) {
 	_ = prID2
 }
 
+func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
+	t.Run("hide closed merged uses notification subject state and keeps unknown state", func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "example", "visibility")
+
+		insertTestMRWithOptions(t, d, testMR(repoID, 1,
+			withMRState(MergeRequestStateClosed),
+			withMRActivity(base.Add(6*time.Minute))))
+		insertTestMRWithOptions(t, d, testMR(repoID, 2,
+			withMRState(MergeRequestStateMerged),
+			withMRActivity(base)))
+		insertTestMRWithOptions(t, d, testMR(repoID, 4,
+			withMRActivity(base.Add(time.Minute))))
+
+		mergedNumber := 2
+		unknownNumber := 3
+		openNumber := 4
+		require.NoError(d.UpsertNotifications(ctx, []Notification{
+			{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformNotificationID: "ntf-merged-limit",
+				RepoOwner:              "example", RepoName: "visibility",
+				SubjectType: "PullRequest", SubjectTitle: "Merged notification",
+				WebURL:     "https://github.com/example/visibility/pull/2",
+				ItemNumber: &mergedNumber, ItemType: "pr", ItemAuthor: "human-author",
+				Reason: "mention", Unread: true,
+				SourceUpdatedAt: base.Add(5 * time.Minute), SyncedAt: base.Add(5 * time.Minute),
+			},
+			{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformNotificationID: "ntf-unknown-limit",
+				RepoOwner:              "example", RepoName: "visibility",
+				SubjectType: "PullRequest", SubjectTitle: "Unknown notification",
+				WebURL:     "https://github.com/example/visibility/pull/3",
+				ItemNumber: &unknownNumber, ItemType: "pr", ItemAuthor: "human-author",
+				Reason: "mention", Unread: true,
+				SourceUpdatedAt: base.Add(4 * time.Minute), SyncedAt: base.Add(4 * time.Minute),
+			},
+			{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformNotificationID: "ntf-open-limit",
+				RepoOwner:              "example", RepoName: "visibility",
+				SubjectType: "PullRequest", SubjectTitle: "Open notification",
+				WebURL:     "https://github.com/example/visibility/pull/4",
+				ItemNumber: &openNumber, ItemType: "pr", ItemAuthor: "human-author",
+				Reason: "mention", Unread: true,
+				SourceUpdatedAt: base.Add(3 * time.Minute), SyncedAt: base.Add(3 * time.Minute),
+			},
+		}))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{
+			HideClosedMerged: true,
+			Limit:            2,
+		})
+		require.NoError(err)
+		require.Len(items, 2)
+		assert.Equal([]int{3, 4}, []int{items[0].ItemNumber, items[1].ItemNumber})
+		assert.Equal([]string{"", "open"}, []string{items[0].SubjectState, items[1].SubjectState})
+	})
+
+	t.Run("hide bots tests event actors and parent authors", func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "example", "actors")
+
+		botParentID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
+			withMRAuthor("dependabot[bot]"),
+			withMRActivity(base.Add(4*time.Minute))))
+		humanParentWithBotEventID := insertTestMRWithOptions(t, d, testMR(repoID, 2,
+			withMRAuthor("human-author"),
+			withMRActivity(base.Add(2*time.Minute))))
+		insertTestMRWithOptions(t, d, testMR(repoID, 3,
+			withMRAuthor("human-author"),
+			withMRActivity(base.Add(3*time.Minute))))
+		require.NoError(d.UpsertMREvents(ctx, []MREvent{
+			{
+				MergeRequestID: humanParentWithBotEventID,
+				EventType:      "issue_comment", Author: "review-bot",
+				CreatedAt: base.Add(6 * time.Minute), DedupeKey: "bot-comment",
+			},
+			{
+				MergeRequestID: botParentID,
+				EventType:      "issue_comment", Author: "human-reviewer",
+				CreatedAt: base.Add(5 * time.Minute), DedupeKey: "human-comment",
+			},
+		}))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{HideBots: true, Limit: 2})
+		require.NoError(err)
+		require.Len(items, 2)
+		assert.Equal([]string{"comment", "new_pr"}, activityTypes(items))
+		assert.Equal([]int{1, 3}, []int{items[0].ItemNumber, items[1].ItemNumber})
+		assert.Equal("human-reviewer", items[0].Author)
+		assert.Equal("human-author", items[1].ItemAuthor)
+	})
+}
+
 func TestListCollapsedActivityProjection(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

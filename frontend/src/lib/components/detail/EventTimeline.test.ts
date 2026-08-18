@@ -31,14 +31,16 @@ let originalResizeObserverExisted = false;
 let originalReplaceSync: unknown;
 let runtime: OwnedAppRuntime;
 
-function renderTimeline(options: { props: ComponentProps<typeof EventTimeline>; context?: Map<symbol, unknown> }) {
+type EventTimelineTestProps = ComponentProps<typeof EventTimeline> & { filterScope?: string };
+
+function renderTimeline(options: { props: EventTimelineTestProps; context?: Map<symbol, unknown> }) {
   let timelineProps = options.props;
   const rendered = render(EventTimelineTestHarness, {
     props: { runtime, timelineProps, context: options.context },
   });
   return {
     ...rendered,
-    rerender: (next: ComponentProps<typeof EventTimeline>) => {
+    rerender: (next: EventTimelineTestProps) => {
       timelineProps = next;
       return rendered.rerender({ runtime, timelineProps, context: options.context });
     },
@@ -312,6 +314,50 @@ describe("EventTimeline", () => {
       expect(document.querySelectorAll(".event-timeline .kit-timeline-item")).toHaveLength(52);
     });
     expect(screen.queryByRole("button", { name: /Show \d+ more/ })).toBeNull();
+  });
+
+  it("resets full mounting when the active timeline filter scope changes", async () => {
+    const messages = Array.from({ length: 51 }, (_, index) =>
+      makeEvent({
+        ID: index + 1,
+        EventType: "issue_comment",
+        Summary: `message-${index + 1}`,
+        DedupeKey: `message-${index + 1}`,
+        CreatedAt: `2024-06-01T12:${String(index).padStart(2, "0")}:00Z`,
+      }),
+    );
+    const timeline = renderTimeline({
+      props: {
+        events: messages,
+        filtered: true,
+        filterScope: "messages",
+        initialEntryLimit: 50,
+        itemIdentity: "github:acme/widget#42",
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Show 1 more" }));
+    await waitFor(() => {
+      expect(document.querySelectorAll(".event-timeline .kit-timeline-item")).toHaveLength(51);
+    });
+
+    const lifecycleEvents = messages.map((event, index) => ({
+      ...event,
+      ID: event.ID + 100,
+      EventType: "assigned",
+      Summary: `assigned-${index + 1}`,
+      DedupeKey: `assigned-${index + 1}`,
+    }));
+    await timeline.rerender({
+      events: lifecycleEvents,
+      filtered: true,
+      filterScope: "events",
+      initialEntryLimit: 50,
+      itemIdentity: "github:acme/widget#42",
+    });
+
+    expect(document.querySelectorAll(".event-timeline .kit-timeline-item")).toHaveLength(50);
+    expect(screen.getByRole("button", { name: "Show 1 more" })).toBeTruthy();
   });
 
   it("renders force-push label, actor, and SHA transition", () => {

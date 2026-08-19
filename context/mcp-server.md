@@ -37,8 +37,10 @@
   (`internal/mcpserver/tools_read.go::wrapTool`).
 - Full-diff handoff stays within 10 MiB and represents binary, rename-only,
   copy-only, and other files without text hunks using minimal Git-style headers;
-  one empty text patch must not discard the rest of the diff
-  (`internal/mcpserver/tools_diff.go::serializeDiffPatches`).
+  one empty text patch must not discard the rest of the diff. Temporary diff
+  identity case-folds repository names only when the provider requires it
+  (`internal/mcpserver/tools_diff.go::serializeDiffPatches`,
+  `internal/mcpserver/tools_diff.go::canonicalDiffFileRef`).
 - Initial-message attempts are process-local and retain the exact normalized
   prompt only in daemon memory. Same-daemon retries must match agent, coding
   session, and prompt; daemon restart permits a fresh attempt

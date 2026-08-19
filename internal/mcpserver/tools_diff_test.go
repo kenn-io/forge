@@ -192,8 +192,26 @@ func TestDiffFileNameCanonicalizesAndSeparatesIdentities(t *testing.T) {
 	collisionCandidate := diffFileName(itemRefInput{
 		Type: "pr", Provider: "github", Owner: "acme_widget", Name: "x", Number: 7,
 	})
+	forgejoUpper := diffFileName(itemRefInput{
+		Type: "pr", Provider: "forgejo", PlatformHost: "forge.example.test",
+		Owner: "Team", Name: "Widget", Number: 7,
+	})
+	forgejoLower := diffFileName(itemRefInput{
+		Type: "pr", Provider: "forgejo", PlatformHost: "forge.example.test",
+		Owner: "team", Name: "widget", Number: 7,
+	})
+	giteaUpper := diffFileName(itemRefInput{
+		Type: "pr", Provider: "gitea", PlatformHost: "git.example.test",
+		Owner: "Team", Name: "Widget", Number: 7,
+	})
+	giteaLower := diffFileName(itemRefInput{
+		Type: "pr", Provider: "gitea", PlatformHost: "git.example.test",
+		Owner: "team", Name: "widget", Number: 7,
+	})
 	assert.Equal(t, omittedHost, explicitHost)
 	assert.NotEqual(t, omittedHost, collisionCandidate)
+	assert.NotEqual(t, forgejoUpper, forgejoLower)
+	assert.NotEqual(t, giteaUpper, giteaLower)
 	assert.NotContains(t, omittedHost, "/")
 	assert.LessOrEqual(t, len(omittedHost), maxMCPDiffFileNameBytes)
 	assert.True(t, strings.HasSuffix(omittedHost, ".diff"))

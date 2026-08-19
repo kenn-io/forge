@@ -31,6 +31,10 @@
 - Treat only typed not-stacked responses as absence; surface other evidence
   failures with structured retry and ambiguity state
   (`internal/mcpserver/tools_stack.go::isStackAbsentError`).
+- Tool failures set MCP `isError` and preserve kind, code, retryability,
+  ambiguity, and details as JSON content plus `io.kenn.forge/error` metadata;
+  never reduce typed backend failures to message-only errors
+  (`internal/mcpserver/tools_read.go::wrapTool`).
 - Initial-message attempts are process-local and retain the exact normalized
   prompt only in daemon memory. Same-daemon retries must match agent, coding
   session, and prompt; daemon restart permits a fresh attempt

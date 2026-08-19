@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -95,12 +97,52 @@ func (s *Server) registerReadTools() {
 	}, wrapTool(s.searchItems))
 }
 
+const toolErrorMetaKey = "io.kenn.forge/error"
+
+type toolErrorEvidence struct {
+	Kind      string         `json:"kind"`
+	Code      string         `json:"code,omitempty"`
+	Message   string         `json:"message"`
+	Retryable bool           `json:"retryable"`
+	Ambiguous bool           `json:"ambiguous"`
+	Details   map[string]any `json:"details,omitempty"`
+}
+
+type toolErrorOutput struct {
+	Error toolErrorEvidence `json:"error"`
+}
+
 func wrapTool[In, Out any](
 	fn func(context.Context, In) (Out, error),
 ) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		out, err := fn(ctx, in)
-		return nil, out, err
+		if err == nil {
+			return nil, out, nil
+		}
+		payload := toolErrorOutput{Error: toolErrorEvidence{
+			Kind: "tool_error", Message: err.Error(),
+		}}
+		var backendErr *Error
+		if errors.As(err, &backendErr) {
+			payload.Error = toolErrorEvidence{
+				Kind: backendErr.Kind, Code: backendErr.Code, Message: backendErr.Message,
+				Retryable: backendErr.Retryable, Ambiguous: backendErr.Ambiguous,
+				Details: backendErr.Details,
+			}
+		}
+		content, marshalErr := json.Marshal(payload)
+		if marshalErr != nil {
+			return nil, out, fmt.Errorf("marshal MCP tool error: %w", marshalErr)
+		}
+		result := &mcp.CallToolResult{
+			Meta: mcp.Meta{toolErrorMetaKey: payload.Error},
+			Content: []mcp.Content{&mcp.TextContent{
+				Text: string(content),
+			}},
+		}
+		result.SetError(err)
+		return result, out, nil
 	}
 }
 

@@ -1,6 +1,8 @@
 package mcpserver
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -74,6 +76,58 @@ func TestServerUses20260728ProtocolCapabilities(t *testing.T) {
 	require.NotNil(t, initialized.Capabilities.Resources)
 	assert.False(t, initialized.Capabilities.Resources.ListChanged)
 	assert.False(t, initialized.Capabilities.Resources.Subscribe)
+}
+
+func TestToolErrorsPreserveStructuredEvidenceThroughClientSession(t *testing.T) {
+	backend := &fakeBackend{listRepositoriesFn: func(context.Context) ([]RepositorySummary, error) {
+		return nil, &Error{
+			Kind: "agent_handoff_failed", Code: "runtime_launch_failed",
+			Message: "agent launch outcome is unknown", Ambiguous: true,
+			Details: map[string]any{
+				"workspace_id": "ws-1", "runtime_session_key": "runtime-1",
+				"failed_stage": "message_delivered",
+			},
+		}
+	}}
+	s := newMCPTestServer(t, backend)
+	result, err := connectMCPTestSession(t, s).CallTool(
+		t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_repos"},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError)
+	type evidence struct {
+		Kind      string         `json:"kind"`
+		Code      string         `json:"code"`
+		Message   string         `json:"message"`
+		Retryable bool           `json:"retryable"`
+		Ambiguous bool           `json:"ambiguous"`
+		Details   map[string]any `json:"details"`
+	}
+	metadata, found := result.Meta[toolErrorMetaKey]
+	require.True(t, found)
+	data, err := json.Marshal(metadata)
+	require.NoError(t, err)
+	var got evidence
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, "agent_handoff_failed", got.Kind)
+	assert.Equal(t, "runtime_launch_failed", got.Code)
+	assert.Equal(t, "agent launch outcome is unknown", got.Message)
+	assert.False(t, got.Retryable)
+	assert.True(t, got.Ambiguous)
+	assert.Equal(t, "ws-1", got.Details["workspace_id"])
+	assert.Equal(t, "runtime-1", got.Details["runtime_session_key"])
+	assert.Equal(t, "message_delivered", got.Details["failed_stage"])
+
+	require.Len(t, result.Content, 1)
+	text, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	var payload struct {
+		Error evidence `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
+	assert.Equal(t, got, payload.Error)
 }
 
 func TestHTTPHandlerServesOnlyStatelessMCPPath(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -212,6 +213,7 @@ func (c *Client) CoreRateLimit(ctx context.Context, token string) (*RateLimit, e
 // StatusError is a non-2xx API response.
 type StatusError struct {
 	StatusCode int
+	Header     http.Header
 	Body       string
 }
 
@@ -221,6 +223,32 @@ func (e *StatusError) Error() string {
 		msg = msg[:200] + "..."
 	}
 	return fmt.Sprintf("github api status %d: %s", e.StatusCode, msg)
+}
+
+// RetryDeadline returns the server-provided time when a rate-limited request
+// may be retried. Retry-After takes precedence over the primary rate-limit
+// reset header when both are present.
+func (e *StatusError) RetryDeadline(now time.Time) time.Time {
+	if e == nil {
+		return time.Time{}
+	}
+	if value := strings.TrimSpace(e.Header.Get("Retry-After")); value != "" {
+		if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return now.Add(time.Duration(seconds) * time.Second)
+		}
+		if at, err := http.ParseTime(value); err == nil {
+			return at
+		}
+	}
+	rateExhausted := strings.TrimSpace(e.Header.Get("X-RateLimit-Remaining")) == "0"
+	reset := strings.TrimSpace(e.Header.Get("X-RateLimit-Reset"))
+	if (e.StatusCode == http.StatusTooManyRequests || rateExhausted) &&
+		reset != "" {
+		if epoch, err := strconv.ParseInt(reset, 10, 64); err == nil {
+			return time.Unix(epoch, 0).UTC()
+		}
+	}
+	return time.Time{}
 }
 
 // IsStatus reports whether err is a StatusError with the given code.
@@ -265,7 +293,11 @@ func (c *Client) do(
 		return fmt.Errorf("reading response body: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &StatusError{StatusCode: resp.StatusCode, Body: string(data)}
+		return &StatusError{
+			StatusCode: resp.StatusCode,
+			Header:     resp.Header.Clone(),
+			Body:       string(data),
+		}
 	}
 	if out == nil {
 		return nil

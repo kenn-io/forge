@@ -2,6 +2,7 @@ package githubapp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -136,5 +137,40 @@ func TestAPIBaseForHost(t *testing.T) {
 	}
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, APIBaseForHost(tt.host), "host %q", tt.host)
+	}
+}
+
+func TestStatusErrorRetryDeadline(t *testing.T) {
+	now := time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC)
+	rateResetHeader := make(http.Header)
+	rateResetHeader.Set("X-RateLimit-Reset", fmt.Sprint(now.Add(10*time.Minute).Unix()))
+	rateResetHeader.Set("X-RateLimit-Remaining", "0")
+	unrelatedResetHeader := make(http.Header)
+	unrelatedResetHeader.Set("X-RateLimit-Reset", fmt.Sprint(now.Add(10*time.Minute).Unix()))
+	unrelatedResetHeader.Set("X-RateLimit-Remaining", "4999")
+	for _, tt := range []struct {
+		name   string
+		header http.Header
+		want   time.Time
+	}{
+		{
+			name:   "retry after seconds",
+			header: http.Header{"Retry-After": {"90"}},
+			want:   now.Add(90 * time.Second),
+		},
+		{
+			name:   "rate limit reset",
+			header: rateResetHeader,
+			want:   now.Add(10 * time.Minute),
+		},
+		{
+			name:   "unrelated forbidden response",
+			header: unrelatedResetHeader,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := &StatusError{StatusCode: http.StatusForbidden, Header: tt.header}
+			assert.Equal(t, tt.want, err.RetryDeadline(now))
+		})
 	}
 }

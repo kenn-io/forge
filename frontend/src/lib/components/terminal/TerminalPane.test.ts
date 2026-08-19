@@ -1070,6 +1070,30 @@ describe("TerminalPane", () => {
     expect(terminal.focus).toHaveBeenCalledOnce();
   });
 
+  it("suppresses the software keyboard when a manual-keyboard terminal surface is touched", async () => {
+    render(TerminalPane, {
+      props: { workspaceId: "ws-123", active: true, autoFocus: false },
+    });
+
+    await waitFor(() => expect(xtermInstances.length).toBe(1));
+    const container = document.querySelector<HTMLElement>(".terminal-container");
+    expect(container).not.toBeNull();
+    container!.dataset.terminalSoftwareKeyboard = "manual";
+    const input = document.createElement("textarea");
+    input.className = "xterm-helper-textarea";
+    container!.append(input);
+
+    container!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerType: "touch",
+      }),
+    );
+
+    expect(input.inputMode).toBe("none");
+  });
+
   it("repaints after container resize without rebuilding the WebGL atlas", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 

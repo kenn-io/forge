@@ -485,6 +485,20 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect(input).not.toBeVisible();
       const composerToggle = phonePage.getByRole("button", { name: "Open terminal composer" });
       await expect(composerToggle).toBeVisible();
+      const composeLabelCenterDelta = await composerToggle.evaluate((button) => {
+        const label = [...button.childNodes].find((node) => node.textContent?.trim() === "Compose");
+        if (!label) throw new Error("Compose label is unavailable");
+        const labelRange = document.createRange();
+        labelRange.selectNode(label);
+        const labelBox = labelRange.getBoundingClientRect();
+        const buttonBox = button.getBoundingClientRect();
+        return Math.abs(labelBox.x + labelBox.width / 2 - (buttonBox.x + buttonBox.width / 2));
+      });
+      expect(composeLabelCenterDelta).toBeLessThanOrEqual(1);
+      const phoneTerminal = phonePage.locator(".mobile-workspace-terminal__viewport .terminal-container");
+      const xtermInput = phoneTerminal.locator(".xterm-helper-textarea");
+      await phoneTerminal.tap({ position: { x: 24, y: 24 } });
+      await expect(xtermInput).toHaveAttribute("inputmode", "none");
       await composerToggle.tap();
       await expect(input).toBeVisible();
       const initialInputHeight = (await input.boundingBox())?.height ?? 0;

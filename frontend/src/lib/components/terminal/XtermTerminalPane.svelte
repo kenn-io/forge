@@ -229,8 +229,15 @@
     }
     // xterm focuses its hidden textarea from mousedown, but its touch gesture
     // path only handles scrolling. Focus synchronously while the touch/pen
-    // activation is live so mobile browsers can open their software keyboard.
+    // activation is live, applying the owning surface's software-keyboard
+    // policy first.
     if (active && (event.pointerType === "touch" || event.pointerType === "pen")) {
+      const input = containerEl.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+      if (containerEl.closest('[data-terminal-software-keyboard="manual"]')) {
+        input?.setAttribute("inputmode", "none");
+      } else {
+        input?.removeAttribute("inputmode");
+      }
       terminal?.focus();
     }
     if (!event.isTrusted) return;

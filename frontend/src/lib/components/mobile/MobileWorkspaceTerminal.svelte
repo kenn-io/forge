@@ -806,7 +806,7 @@
           </button>
         </div>
       {/if}
-      <div class="mobile-workspace-terminal__viewport">
+      <div class="mobile-workspace-terminal__viewport" data-terminal-software-keyboard="manual">
         <SessionTerminalSlot hostKey={selectedHostKey} {visible} />
       </div>
       {#if composerOpen}
@@ -992,7 +992,8 @@
   .mobile-workspace-terminal__send { padding: 0 1rem; color: var(--text-on-accent); border-color: var(--accent-blue); background: var(--accent-blue); font-weight: 700; }
   .mobile-workspace-terminal__composer-handle { grid-column: 1 / -1; width: 100%; min-height: 1.5rem; display: flex; align-items: center; justify-content: center; gap: 0.375rem; padding: 0; color: var(--text-muted); border: 0; background: transparent; touch-action: none; }
   .mobile-workspace-terminal__composer-handle > span, .mobile-workspace-terminal__composer-toggle > span { width: 2.25rem; height: 0.25rem; border-radius: 999px; background: var(--border-strong); }
-  .mobile-workspace-terminal__composer-toggle { position: absolute; z-index: 4; left: 50%; bottom: max(0.5rem, env(safe-area-inset-bottom)); min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0 0.75rem; color: var(--text-secondary); border: thin solid var(--border-default); border-radius: 999px; background: color-mix(in srgb, var(--bg-surface) 92%, transparent); box-shadow: var(--shadow-md); font: inherit; font-size: var(--font-size-sm); font-weight: 650; touch-action: none; transform: translateX(-50%); }
+  .mobile-workspace-terminal__composer-toggle { position: absolute; z-index: 4; left: 50%; bottom: max(0.5rem, env(safe-area-inset-bottom)); min-height: 2.75rem; display: grid; grid-template-columns: 2.25rem auto 2.25rem; align-items: center; justify-content: center; gap: 0.5rem; padding: 0 0.75rem; color: var(--text-secondary); border: thin solid var(--border-default); border-radius: 999px; background: color-mix(in srgb, var(--bg-surface) 92%, transparent); box-shadow: var(--shadow-md); font: inherit; font-size: var(--font-size-sm); font-weight: 650; touch-action: none; transform: translateX(-50%); }
+  .mobile-workspace-terminal__composer-toggle > :global(svg) { justify-self: center; }
   .mobile-workspace-terminal__composer small { grid-column: 1 / -1; color: var(--accent-red); font-size: var(--font-size-sm); }
   .mobile-workspace-terminal__composer textarea:focus-visible, .mobile-workspace-terminal__composer button:focus-visible, .mobile-workspace-terminal__composer-toggle:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
   .mobile-workspace-terminal__state, .mobile-workspace-terminal__empty { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 2rem 1rem; color: var(--text-muted); text-align: center; font-size: var(--font-size-md); }

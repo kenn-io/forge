@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -127,21 +128,70 @@ func (s *Server) diffStore() (*diffFileStore, error) {
 func serializeDiffPatches(files []DiffFile) ([]byte, error) {
 	var buf bytes.Buffer
 	for _, file := range files {
-		if file.Patch == "" {
-			return nil, &Error{
-				Kind:    "internal_error",
-				Message: "Forge returned an empty patch for " + file.Path,
-			}
+		patch := file.Patch
+		if patch == "" {
+			patch = synthesizeDiffEvidence(file)
 		}
-		if buf.Len()+len(file.Patch) > maxMCPDiffFileBytes {
+		if buf.Len()+len(patch) > maxMCPDiffFileBytes {
 			return nil, &Error{
 				Kind:    "diff_too_large",
 				Message: "diff is too large for MCP temp-file handoff; use a local checkout",
 			}
 		}
-		buf.WriteString(file.Patch)
+		buf.WriteString(patch)
 	}
 	return buf.Bytes(), nil
+}
+
+func synthesizeDiffEvidence(file DiffFile) string {
+	oldPath := file.OldPath
+	if oldPath == "" {
+		oldPath = file.Path
+	}
+	var buf strings.Builder
+	fmt.Fprintf(
+		&buf, "diff --git %s %s\n",
+		diffPatchPath("a/"+oldPath), diffPatchPath("b/"+file.Path),
+	)
+	switch file.Status {
+	case "renamed":
+		fmt.Fprintf(
+			&buf, "rename from %s\nrename to %s\n",
+			diffPatchPath(oldPath), diffPatchPath(file.Path),
+		)
+	case "copied":
+		fmt.Fprintf(
+			&buf, "copy from %s\ncopy to %s\n",
+			diffPatchPath(oldPath), diffPatchPath(file.Path),
+		)
+	}
+	if file.IsBinary && file.Status != "renamed" && file.Status != "copied" {
+		binaryOldPath := "a/" + oldPath
+		binaryNewPath := "b/" + file.Path
+		if file.Status == "added" {
+			binaryOldPath = "/dev/null"
+		}
+		if file.Status == "deleted" {
+			binaryNewPath = "/dev/null"
+		}
+		fmt.Fprintf(
+			&buf, "Binary files %s and %s differ\n",
+			diffPatchPath(binaryOldPath), diffPatchPath(binaryNewPath),
+		)
+	}
+	return buf.String()
+}
+
+func diffPatchPath(path string) string {
+	if path == "/dev/null" {
+		return path
+	}
+	for _, r := range path {
+		if r == '"' || r == '\\' || unicode.IsSpace(r) || unicode.IsControl(r) {
+			return strconv.Quote(path)
+		}
+	}
+	return path
 }
 
 func diffRouteError(err error) error {

@@ -35,6 +35,10 @@
   ambiguity, and details as JSON content plus `io.kenn.forge/error` metadata;
   never reduce typed backend failures to message-only errors
   (`internal/mcpserver/tools_read.go::wrapTool`).
+- Full-diff handoff stays within 10 MiB and represents binary, rename-only,
+  copy-only, and other files without text hunks using minimal Git-style headers;
+  one empty text patch must not discard the rest of the diff
+  (`internal/mcpserver/tools_diff.go::serializeDiffPatches`).
 - Initial-message attempts are process-local and retain the exact normalized
   prompt only in daemon memory. Same-daemon retries must match agent, coding
   session, and prompt; daemon restart permits a fresh attempt

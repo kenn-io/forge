@@ -133,15 +133,35 @@ func TestGetItemDiffClassifiesUnavailableIdentityAndLocalFailures(t *testing.T) 
 		Item: itemRefInput{Type: "issue", Provider: "github", Owner: "acme", Name: "widget", Number: 7},
 	})
 	assertBackendErrorKind(t, err, "invalid_request")
+}
 
-	s = newMCPTestServer(t, &fakeBackend{getPullDiffFn: func(context.Context, ItemIdentity, bool) (Diff, error) {
-		return Diff{Files: []DiffFile{{Path: "empty.go"}}}, nil
-	}})
-	_, err = s.getItemDiff(t.Context(), getItemDiffInput{
-		Item:         itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
+func TestGetItemDiffEmitSynthesizesEvidenceForFilesWithoutTextPatches(t *testing.T) {
+	backend := &fakeBackend{getPullDiffFn: func(context.Context, ItemIdentity, bool) (Diff, error) {
+		return Diff{Files: []DiffFile{
+			{Path: "assets/logo.png", Status: "modified", IsBinary: true},
+			{Path: "src/new.go", OldPath: "src/old.go", Status: "renamed"},
+			{Path: "scripts/run.sh", Status: "modified"},
+		}}, nil
+	}}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.getItemDiff(t.Context(), getItemDiffInput{
+		Item: itemRefInput{
+			Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42,
+		},
 		EmitDiffFile: true,
 	})
-	assertBackendErrorKind(t, err, "internal_error")
+
+	require.NoError(t, err)
+	require.NotNil(t, out.DiffFile)
+	data, err := os.ReadFile(out.DiffFile.Path)
+	require.NoError(t, err)
+	patch := string(data)
+	assert.Contains(t, patch, "diff --git a/assets/logo.png b/assets/logo.png\n")
+	assert.Contains(t, patch, "Binary files a/assets/logo.png and b/assets/logo.png differ\n")
+	assert.Contains(t, patch, "diff --git a/src/old.go b/src/new.go\n")
+	assert.Contains(t, patch, "rename from src/old.go\nrename to src/new.go\n")
+	assert.Contains(t, patch, "diff --git a/scripts/run.sh b/scripts/run.sh\n")
 }
 
 func TestGetItemDiffRejectsOversizedTempFile(t *testing.T) {

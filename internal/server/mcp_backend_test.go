@@ -7,9 +7,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 func TestDaemonPingPublishesMCPURL(t *testing.T) {
@@ -59,6 +64,56 @@ func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
 		assert.Equal(t, repo.PlatformRepoID, item.Repository.PlatformRepoID)
 	}
 	assert.False(t, page.Capped)
+}
+
+func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	worktree := t.TempDir()
+	workspaceID := "ws-mcp-initial-message"
+	require.NoError(t, database.InsertWorkspace(ctx, &db.Workspace{
+		ID: workspaceID, Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widgets",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+		GitHeadRef: "feature/message", WorkspaceBranch: "feature/message",
+		WorktreePath: worktree, TmuxSession: "forge-mcp-initial-message", Status: "ready",
+	}))
+
+	// The fake PTY owner never emits the bracketed-paste enable sequence, so
+	// the real runtime manager rejects the write and the real workspace
+	// service raises its input-mode-not-ready signal across this boundary.
+	owner := &fakeRuntimeOwner{}
+	runtime := localruntime.NewManager(localruntime.Options{
+		Targets: []localruntime.LaunchTarget{{
+			Key: "codex", Label: "Codex", Kind: localruntime.LaunchTargetAgent,
+			Source: "test", Command: []string{"unused"}, Available: true,
+		}},
+		PtyOwnerRuntime: owner,
+	})
+	t.Cleanup(runtime.Shutdown)
+	session, err := runtime.Launch(ctx, workspaceID, worktree, "codex")
+	require.NoError(t, err)
+	activity := agentactivity.NewStore(t.TempDir())
+	require.NoError(t, activity.HandleEvent("codex", agentactivity.HookEvent{
+		SessionID: "coding-session", CWD: worktree,
+		HookEventName: "UserPromptSubmit",
+	}, session.Key))
+	srv := &Server{workspaceAPI: workspaceapi.New(workspaceapi.Deps{
+		DB: database, Workspaces: workspace.NewManager(database, t.TempDir()),
+		Runtime: runtime, AgentActivity: activity,
+	})}
+
+	_, err = srv.MCPBackend().SubmitInitialMessage(ctx, mcpserver.InitialMessageRequest{
+		WorkspaceID: workspaceID, RuntimeSessionKey: session.Key,
+		Agent: "codex", SessionID: "coding-session", Message: "first\nsecond",
+	})
+
+	var backendErr *mcpserver.Error
+	require.ErrorAs(t, err, &backendErr)
+	assert.Equal(t, mcpserver.ErrorCodeInitialMessageInputModeNotReady, backendErr.Code)
+	assert.Equal(t, "unavailable", backendErr.Kind)
+	assert.True(t, backendErr.Retryable)
+	assert.False(t, backendErr.Ambiguous)
 }
 
 func TestMCPPullWorkspaceDuplicateUsesStableConflictCode(t *testing.T) {

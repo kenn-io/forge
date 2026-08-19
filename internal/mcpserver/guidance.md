@@ -5,8 +5,9 @@ reads from the running daemon and does not force provider refreshes.
 
 Recommended flow:
 
-1. Call `kenn_forge_list_repos` first to discover valid repo filters and sync
-   freshness.
+1. Call `kenn_forge_list_repos` first to discover valid repo filters, stable
+   `platform_repo_id` values, and sync freshness. Copy the stable ID into every
+   later repository or item reference; do not reconstruct references from routes.
 2. Use `kenn_forge_find_review_candidates` to find recent PR and issue activity.
 3. Inspect details only for plausible items with `kenn_forge_get_item_context`.
 4. Use `kenn_forge_get_item_diff` to check the size and shape of a PR before

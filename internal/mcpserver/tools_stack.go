@@ -111,7 +111,8 @@ func (s *Server) stackWorkflowStatuses(
 ) (map[int]string, error) {
 	filter, err := (repoFilterInput{
 		Provider: ref.Provider, PlatformHost: ref.PlatformHost,
-		Owner: ref.Owner, Name: ref.Name,
+		PlatformRepoID: ref.PlatformRepoID,
+		Owner:          ref.Owner, Name: ref.Name,
 	}).repositoryIdentity()
 	if err != nil {
 		return nil, err

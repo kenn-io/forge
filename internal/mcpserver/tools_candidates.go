@@ -72,21 +72,23 @@ type findCandidatesOutput struct {
 }
 
 type candidateKey struct {
-	provider     string
-	platformHost string
-	repoPath     string
-	owner        string
-	name         string
-	itemType     string
-	number       int
+	provider       string
+	platformHost   string
+	platformRepoID string
+	repoPath       string
+	owner          string
+	name           string
+	itemType       string
+	number         int
 }
 
 type candidateRepoKey struct {
-	provider     string
-	platformHost string
-	repoPath     string
-	owner        string
-	name         string
+	provider       string
+	platformHost   string
+	platformRepoID string
+	repoPath       string
+	owner          string
+	name           string
 }
 
 type candidateGroup struct {
@@ -162,11 +164,12 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 			}
 			groups[key] = group
 			repoKey := candidateRepoKey{
-				provider:     key.provider,
-				platformHost: key.platformHost,
-				repoPath:     key.repoPath,
-				owner:        key.owner,
-				name:         key.name,
+				provider:       key.provider,
+				platformHost:   key.platformHost,
+				platformRepoID: key.platformRepoID,
+				repoPath:       key.repoPath,
+				owner:          key.owner,
+				name:           key.name,
 			}
 			repos[repoKey] = repoKey
 		}
@@ -325,6 +328,7 @@ func neededForRepo(
 	for key := range needed {
 		if key.provider != repo.provider ||
 			key.platformHost != repo.platformHost ||
+			key.platformRepoID != repo.platformRepoID ||
 			key.repoPath != repo.repoPath ||
 			key.owner != repo.owner ||
 			key.name != repo.name {
@@ -429,20 +433,22 @@ func (s *Server) stackForCandidate(ctx context.Context, item itemRef) (candidate
 
 func (k candidateRepoKey) repositoryIdentity() RepositoryIdentity {
 	return RepositoryIdentity{
-		Provider: k.provider, PlatformHost: k.platformHost, RepoPath: k.repoPath,
+		Provider: k.provider, PlatformHost: k.platformHost,
+		PlatformRepoID: k.platformRepoID, RepoPath: k.repoPath,
 		Owner: k.owner, Name: k.name,
 	}
 }
 
 func candidateKeyFromItem(item itemRef) candidateKey {
 	return candidateKey{
-		provider:     item.Provider,
-		platformHost: item.PlatformHost,
-		repoPath:     item.RepoPath,
-		owner:        item.Owner,
-		name:         item.Name,
-		itemType:     item.Type,
-		number:       item.Number,
+		provider:       item.Provider,
+		platformHost:   item.PlatformHost,
+		platformRepoID: item.PlatformRepoID,
+		repoPath:       item.RepoPath,
+		owner:          item.Owner,
+		name:           item.Name,
+		itemType:       item.Type,
+		number:         item.Number,
 	}
 }
 

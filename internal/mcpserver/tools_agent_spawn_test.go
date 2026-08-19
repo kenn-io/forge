@@ -42,7 +42,8 @@ func TestSpawnWorkspaceWithAgentCallsDirectServicesAndUsesAuthoritativeEvidence(
 	out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
 		Source: workspaceSourceInput{Type: "item", Item: &itemRefInput{
 			Type: "pr", Provider: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", Number: 42,
+			PlatformRepoID: "repo-acme-widget",
+			Owner:          "acme", Name: "widget", Number: 42,
 		}},
 		AgentTarget: "codex", InitialMessage: "review this\r\nthen implement", Timeout: "2s",
 	})
@@ -137,7 +138,8 @@ func TestSpawnWorkspaceWithAgentCreatesIssueAndAdHocWorkspaces(t *testing.T) {
 
 		out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
 			Source: workspaceSourceInput{Type: "item", Item: &itemRefInput{
-				Type: "issue", Provider: "github", Owner: "acme", Name: "widget", Number: 7,
+				Type: "issue", Provider: "github", PlatformRepoID: "repo-acme-widget",
+				Owner: "acme", Name: "widget", Number: 7,
 			}},
 			AgentTarget: "codex", InitialMessage: "fix the issue", Timeout: "2s",
 		})
@@ -159,7 +161,10 @@ func TestSpawnWorkspaceWithAgentCreatesIssueAndAdHocWorkspaces(t *testing.T) {
 
 		out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
 			Source: workspaceSourceInput{Type: "adhoc", AdHoc: &adHocWorkspaceSource{
-				Repo: repoFilterInput{Provider: "github", Owner: "acme", Name: "widget"},
+				Repo: repoFilterInput{
+					Provider: "github", PlatformRepoID: "repo-acme-widget",
+					Owner: "acme", Name: "widget",
+				},
 			}},
 			AgentTarget: "codex", InitialMessage: "start work", Timeout: "2s",
 		})
@@ -265,7 +270,8 @@ func TestSpawnWorkspaceWithAgentRejectsInvalidInputBeforeBackendCalls(t *testing
 		{AgentTarget: "codex", InitialMessage: "start", Timeout: "16m"},
 		{
 			Source: workspaceSourceInput{Type: "item", Item: &itemRefInput{
-				Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42,
+				Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget",
+				Owner: "acme", Name: "widget", Number: 42,
 			}},
 			AgentTarget: "codex", InitialMessage: " \n\t",
 		},
@@ -321,7 +327,8 @@ func successfulSpawnBackend(workspaceID, runtimeKey, codingSessionID string) *fa
 func prSpawnInput(message string) spawnWorkspaceWithAgentInput {
 	return spawnWorkspaceWithAgentInput{
 		Source: workspaceSourceInput{Type: "item", Item: &itemRefInput{
-			Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42,
+			Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget",
+			Owner: "acme", Name: "widget", Number: 42,
 		}},
 		AgentTarget: "codex", InitialMessage: message, Timeout: "2s",
 	}

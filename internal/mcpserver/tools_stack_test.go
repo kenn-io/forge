@@ -15,14 +15,14 @@ func TestGetStackContextTreatsTypedNotStackedAsAbsent(t *testing.T) {
 	s := newMCPTestServer(t, backend)
 
 	out, err := s.getStackContext(t.Context(), getStackContextInput{
-		Item: itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
+		Item: itemRefInput{Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 42},
 	})
 
 	require.NoError(t, err)
 	assert.False(t, out.Present)
 
 	_, err = s.getStackContext(t.Context(), getStackContextInput{
-		Item: itemRefInput{Type: "issue", Provider: "github", Owner: "acme", Name: "widget", Number: 7},
+		Item: itemRefInput{Type: "issue", Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 7},
 	})
 	assertBackendErrorKind(t, err, "invalid_request")
 }
@@ -34,7 +34,7 @@ func TestGetStackContextPropagatesMissingPull(t *testing.T) {
 	s := newMCPTestServer(t, backend)
 
 	_, err := s.getStackContext(t.Context(), getStackContextInput{
-		Item: itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 99},
+		Item: itemRefInput{Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 99},
 	})
 
 	var backendErr *Error
@@ -74,7 +74,7 @@ func TestGetStackContextSortsMembersAndJoinsPagedWorkflowState(t *testing.T) {
 
 	out, err := s.getStackContext(t.Context(), getStackContextInput{
 		Item: itemRefInput{
-			Type: "pr", Provider: "github", PlatformHost: "github.com",
+			Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget", PlatformHost: "github.com",
 			Owner: "acme", Name: "widget", Number: 42,
 		},
 	})

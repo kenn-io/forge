@@ -10,12 +10,13 @@ import (
 )
 
 type itemRefInput struct {
-	Type         string `json:"type" jsonschema:"item type: pr or issue"`
-	Provider     string `json:"provider"`
-	PlatformHost string `json:"platform_host,omitempty"`
-	Owner        string `json:"owner"`
-	Name         string `json:"name"`
-	Number       int    `json:"number"`
+	Type           string `json:"type" jsonschema:"item type: pr or issue"`
+	Provider       string `json:"provider"`
+	PlatformHost   string `json:"platform_host,omitempty"`
+	PlatformRepoID string `json:"platform_repo_id" jsonschema:"stable provider-verified repository id"`
+	Owner          string `json:"owner"`
+	Name           string `json:"name"`
+	Number         int    `json:"number"`
 }
 
 type getItemContextInput struct {
@@ -215,6 +216,9 @@ func validateItemRef(ref itemRefInput) error {
 	if ref.Provider == "" {
 		return fmt.Errorf("item.provider is required")
 	}
+	if ref.PlatformRepoID == "" {
+		return fmt.Errorf("item.platform_repo_id is required")
+	}
 	if ref.Owner == "" {
 		return fmt.Errorf("item.owner is required")
 	}
@@ -253,8 +257,9 @@ func contextEvents(events []DetailEvent, limit int) []contextEvent {
 func (row WorkflowItem) itemRef() itemRef {
 	return itemRef{
 		Type: row.Identity.Type, Provider: row.Identity.Provider,
-		PlatformHost: row.Identity.PlatformHost, Owner: row.Identity.Owner,
-		Name: row.Identity.Name, RepoPath: repositoryPath(row.Repository),
+		PlatformHost: row.Identity.PlatformHost, PlatformRepoID: row.Identity.PlatformRepoID,
+		Owner: row.Identity.Owner,
+		Name:  row.Identity.Name, RepoPath: repositoryPath(row.Repository),
 		Number: row.Identity.Number, Title: row.Title, URL: row.URL,
 		State: row.State, Author: row.Author, IsDraft: row.IsDraft,
 	}

@@ -239,7 +239,19 @@ func repoListFilterCondition(repoAlias string, filters []RepoFilter, args *[]any
 	var groups []string
 	for _, filter := range filters {
 		var clauses []string
-		if filter.RepoPath != "" {
+		if filter.PlatformRepoID != "" {
+			if filter.Platform != "" {
+				clauses = append(clauses, repoAlias+".platform = ?")
+				*args = append(*args, strings.ToLower(strings.TrimSpace(filter.Platform)))
+			}
+			if filter.PlatformHost != "" {
+				host, _, _ := canonicalRepoLookupIdentifier(filter.PlatformHost, "", "")
+				clauses = append(clauses, repoAlias+".platform_host = ?")
+				*args = append(*args, host)
+			}
+			clauses = append(clauses, repoAlias+".platform_repo_id = ?")
+			*args = append(*args, strings.TrimSpace(filter.PlatformRepoID))
+		} else if filter.RepoPath != "" {
 			if filter.Platform != "" {
 				clauses = append(clauses, repoAlias+".platform = ?")
 				*args = append(*args, strings.ToLower(strings.TrimSpace(filter.Platform)))

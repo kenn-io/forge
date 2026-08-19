@@ -135,12 +135,14 @@ esac
 
 	repos := callTool[struct {
 		Repos []struct {
-			Provider string `json:"provider"`
-			RepoPath string `json:"repo_path"`
+			Provider       string `json:"provider"`
+			PlatformRepoID string `json:"platform_repo_id"`
+			RepoPath       string `json:"repo_path"`
 		} `json:"repos"`
 	}](t, session, "kenn_forge_list_repos", map[string]any{})
 	require.Len(repos.Repos, 1)
 	assert.Equal("github", repos.Repos[0].Provider)
+	assert.Equal("repo-acme-widgets", repos.Repos[0].PlatformRepoID)
 	assert.Equal("acme/widgets", repos.Repos[0].RepoPath)
 
 	candidates := callTool[struct {
@@ -156,7 +158,8 @@ esac
 	}](t, session, "kenn_forge_find_review_candidates", map[string]any{
 		"since": "2h", "item_types": []string{"pr", "issue"},
 		"repo": map[string]any{
-			"provider": "github", "platform_host": "github.com", "repo_path": "acme/widgets",
+			"provider": "github", "platform_host": "github.com",
+			"platform_repo_id": "repo-acme-widgets", "repo_path": "acme/widgets",
 		},
 	})
 	require.Len(candidates.Candidates, 3)
@@ -174,7 +177,8 @@ esac
 
 	item := map[string]any{
 		"type": "pr", "provider": "github", "platform_host": "github.com",
-		"owner": "acme", "name": "widgets", "number": 1,
+		"platform_repo_id": "repo-acme-widgets",
+		"owner":            "acme", "name": "widgets", "number": 1,
 	}
 	contextResult := callTool[struct {
 		Item struct {

@@ -337,13 +337,13 @@ func (d *DB) ListItemWorkflowStates(
 	args = append(args, limit+1)
 
 	query := fmt.Sprintf(`
-		SELECT t.platform, t.platform_host, t.owner, t.name, t.repo_path,
+		SELECT t.platform, t.platform_host, t.platform_repo_id, t.owner, t.name, t.repo_path,
 		       t.item_type, t.number, t.title, t.state, t.url, t.author,
 		       t.is_draft, t.last_activity_at, t.status, t.has_row,
 		       t.updated_at, t.updated_source, t.updated_actor,
 		       t.updated_reason, t.sort_key, t.activity_key
 		FROM (
-		    SELECT r.platform, r.platform_host, r.owner, r.name,
+		    SELECT r.platform, r.platform_host, r.platform_repo_id, r.owner, r.name,
 		           COALESCE(NULLIF(r.repo_path, ''), r.owner || '/' || r.name) AS repo_path,
 		           'pr' AS item_type, p.number, p.title, p.state, p.url, p.author,
 		           p.is_draft, p.last_activity_at,
@@ -360,7 +360,7 @@ func (d *DB) ListItemWorkflowStates(
 		        ON w.repo_id = p.repo_id AND w.item_type = 'pr' AND w.item_number = p.number
 		    %s
 		    UNION ALL
-		    SELECT r.platform, r.platform_host, r.owner, r.name,
+		    SELECT r.platform, r.platform_host, r.platform_repo_id, r.owner, r.name,
 		           COALESCE(NULLIF(r.repo_path, ''), r.owner || '/' || r.name) AS repo_path,
 		           'issue' AS item_type, i.number, i.title, i.state, i.url, i.author,
 		           0 AS is_draft, i.last_activity_at,
@@ -403,6 +403,7 @@ func (d *DB) ListItemWorkflowStates(
 		if err := rows.Scan(
 			&row.Platform,
 			&row.PlatformHost,
+			&row.PlatformRepoID,
 			&row.Owner,
 			&row.Name,
 			&row.RepoPath,

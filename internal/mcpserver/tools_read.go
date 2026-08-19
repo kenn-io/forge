@@ -20,6 +20,7 @@ type listReposInput struct {
 type repoRow struct {
 	Provider            string `json:"provider"`
 	PlatformHost        string `json:"platform_host"`
+	PlatformRepoID      string `json:"platform_repo_id"`
 	Owner               string `json:"owner"`
 	Name                string `json:"name"`
 	RepoPath            string `json:"repo_path"`
@@ -161,6 +162,7 @@ func (s *Server) listRepos(ctx context.Context, in listReposInput) (listReposOut
 		out.Repos = append(out.Repos, repoRow{
 			Provider:            repo.Provider,
 			PlatformHost:        repo.PlatformHost,
+			PlatformRepoID:      repo.PlatformRepoID,
 			Owner:               repo.Owner,
 			Name:                repo.Name,
 			RepoPath:            repositoryPath(repo),
@@ -372,6 +374,7 @@ func itemSortKey(item itemRef) string {
 	return strings.Join([]string{
 		item.Provider,
 		item.PlatformHost,
+		item.PlatformRepoID,
 		item.RepoPath,
 		item.Type,
 		fmt.Sprintf("%08d", item.Number),

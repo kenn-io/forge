@@ -204,6 +204,7 @@ func normalizeSpawnItem(item itemRefInput) (itemRefInput, error) {
 	item.Type = strings.ToLower(strings.TrimSpace(item.Type))
 	item.Provider = strings.ToLower(strings.TrimSpace(item.Provider))
 	item.PlatformHost = strings.TrimSpace(item.PlatformHost)
+	item.PlatformRepoID = strings.TrimSpace(item.PlatformRepoID)
 	item.Owner = strings.Trim(strings.TrimSpace(item.Owner), "/")
 	item.Name = strings.Trim(strings.TrimSpace(item.Name), "/")
 	if err := validateItemRef(item); err != nil {
@@ -227,11 +228,15 @@ func normalizeSpawnItem(item itemRefInput) (itemRefInput, error) {
 func normalizeSpawnRepo(repo repoFilterInput) (repoFilterInput, error) {
 	repo.Provider = strings.ToLower(strings.TrimSpace(repo.Provider))
 	repo.PlatformHost = strings.TrimSpace(repo.PlatformHost)
+	repo.PlatformRepoID = strings.TrimSpace(repo.PlatformRepoID)
 	repo.RepoPath = strings.Trim(strings.TrimSpace(repo.RepoPath), "/")
 	repo.Owner = strings.Trim(strings.TrimSpace(repo.Owner), "/")
 	repo.Name = strings.Trim(strings.TrimSpace(repo.Name), "/")
 	if repo.Provider == "" {
 		return repo, fmt.Errorf("repo provider is required")
+	}
+	if repo.PlatformRepoID == "" {
+		return repo, fmt.Errorf("repo platform_repo_id is required")
 	}
 	kind, err := platform.NormalizeKind(repo.Provider)
 	if err != nil {

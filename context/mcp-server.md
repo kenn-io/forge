@@ -15,6 +15,11 @@
 - Tool implementations call the typed in-process Forge backend and never the
   daemon's public HTTP API (`internal/mcpserver/backend.go::Backend`,
   `internal/server/mcp_backend.go::Server.MCPBackend`).
+- Every MCP repository and item reference carries provider-verified
+  `platform_repo_id`. Resolve the mutable route and reject it unless the stable
+  ID still matches; never fall back to route-only identity
+  (`internal/mcpserver/types.go::repoFilterInput.repositoryIdentity`,
+  `internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
 - Target MCP `2026-07-28`; do not advertise deprecated logging or catalog
   change notifications for the static surface (`internal/mcpserver/server.go::New`).
 - Use only canonical `kenn-forge` command/resource/prompt names and

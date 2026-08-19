@@ -56,8 +56,25 @@ func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
 	require.NotEmpty(t, page.Items)
 	for _, item := range page.Items {
 		assert.Equal(t, "pr", item.ItemType)
+		assert.Equal(t, repo.PlatformRepoID, item.Repository.PlatformRepoID)
 	}
 	assert.False(t, page.Capped)
+}
+
+func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 42)
+
+	_, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
+		Type: "pr", Provider: "github", PlatformHost: "github.com",
+		PlatformRepoID: "replacement-repository",
+		Owner:          "acme", Name: "widget", Number: 42,
+	})
+
+	var backendErr *mcpserver.Error
+	require.ErrorAs(t, err, &backendErr)
+	assert.Equal(t, "not_found", backendErr.Kind)
+	assert.Equal(t, string(httpapi.CodeRepoNotFound), backendErr.Code)
 }
 
 func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.T) {
@@ -78,7 +95,8 @@ func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.
 	backend := srv.MCPBackend()
 	repository := mcpserver.RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com",
-		RepoPath: "acme/widget", Owner: "acme", Name: "widget",
+		PlatformRepoID: repo.PlatformRepoID,
+		RepoPath:       "acme/widget", Owner: "acme", Name: "widget",
 	}
 
 	page, err := backend.ListWorkflowStates(ctx, mcpserver.WorkflowQuery{
@@ -88,10 +106,12 @@ func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
 	assert.Equal(t, 2, page.Items[0].Identity.Number)
+	assert.Equal(t, repo.PlatformRepoID, page.Items[0].Identity.PlatformRepoID)
 
 	_, err = backend.SetWorkflowState(ctx, mcpserver.ItemIdentity{
 		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		Owner: "acme", Name: "widget", Number: 1,
+		PlatformRepoID: repo.PlatformRepoID,
+		Owner:          "acme", Name: "widget", Number: 1,
 	}, mcpserver.WorkflowUpdate{
 		Status: "reviewing", ExpectedStatus: "new", Source: "mcp",
 	})

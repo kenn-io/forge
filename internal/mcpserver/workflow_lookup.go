@@ -22,11 +22,12 @@ func (s *Server) workflowStatesForKeys(
 		}
 		group := workflowLookupGroup{
 			repo: candidateRepoKey{
-				provider:     key.provider,
-				platformHost: key.platformHost,
-				repoPath:     key.repoPath,
-				owner:        key.owner,
-				name:         key.name,
+				provider:       key.provider,
+				platformHost:   key.platformHost,
+				platformRepoID: key.platformRepoID,
+				repoPath:       key.repoPath,
+				owner:          key.owner,
+				name:           key.name,
 			},
 			itemType: key.itemType,
 		}
@@ -74,13 +75,17 @@ func workflowLookupQuery(repo RepositoryIdentity, itemType string, cursor string
 func workflowRowKey(row WorkflowItem, group workflowLookupGroup) candidateKey {
 	provider := firstNonEmpty(row.Identity.Provider, row.Repository.Provider, group.repo.provider)
 	platformHost := firstNonEmpty(row.Identity.PlatformHost, row.Repository.PlatformHost, group.repo.platformHost)
+	platformRepoID := firstNonEmpty(
+		row.Identity.PlatformRepoID, row.Repository.PlatformRepoID, group.repo.platformRepoID,
+	)
 	repoPath := firstNonEmpty(row.Repository.RepoPath, group.repo.repoPath)
 	owner := firstNonEmpty(row.Identity.Owner, row.Repository.Owner, group.repo.owner)
 	name := firstNonEmpty(row.Identity.Name, row.Repository.Name, group.repo.name)
 	itemType := firstNonEmpty(row.Identity.Type, group.itemType)
 	return candidateKey{
-		provider: provider, platformHost: platformHost, repoPath: repoPath,
-		owner: owner, name: name, itemType: itemType, number: row.Identity.Number,
+		provider: provider, platformHost: platformHost, platformRepoID: platformRepoID,
+		repoPath: repoPath, owner: owner, name: name,
+		itemType: itemType, number: row.Identity.Number,
 	}
 }
 
@@ -118,6 +123,7 @@ func sortedWorkflowLookupGroups(groups map[workflowLookupGroup]map[candidateKey]
 func workflowLookupGroupSortKey(group workflowLookupGroup) string {
 	return group.repo.provider + "\x00" +
 		group.repo.platformHost + "\x00" +
+		group.repo.platformRepoID + "\x00" +
 		group.repo.repoPath + "\x00" +
 		group.repo.owner + "\x00" +
 		group.repo.name + "\x00" +

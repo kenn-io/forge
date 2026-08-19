@@ -822,6 +822,7 @@ type ListWorkflowStatesOpts struct {
 type WorkflowStateListRow struct {
 	Platform       string
 	PlatformHost   string
+	PlatformRepoID string
 	Owner          string
 	Name           string
 	RepoPath       string
@@ -895,11 +896,12 @@ type RepoViewerLogin struct {
 }
 
 type RepoFilter struct {
-	Platform     string
-	PlatformHost string
-	RepoOwner    string
-	RepoName     string
-	RepoPath     string
+	Platform       string
+	PlatformHost   string
+	PlatformRepoID string
+	RepoOwner      string
+	RepoName       string
+	RepoPath       string
 }
 
 type Issue struct {

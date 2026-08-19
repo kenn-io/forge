@@ -30,11 +30,12 @@ type Backend interface {
 }
 
 type RepositoryIdentity struct {
-	Provider     string
-	PlatformHost string
-	RepoPath     string
-	Owner        string
-	Name         string
+	Provider       string
+	PlatformHost   string
+	PlatformRepoID string
+	RepoPath       string
+	Owner          string
+	Name           string
 }
 
 type RepositorySummary struct {
@@ -133,12 +134,13 @@ type Issue struct {
 }
 
 type ItemIdentity struct {
-	Type         string
-	Provider     string
-	PlatformHost string
-	Owner        string
-	Name         string
-	Number       int
+	Type           string
+	Provider       string
+	PlatformHost   string
+	PlatformRepoID string
+	Owner          string
+	Name           string
+	Number         int
 }
 
 type DetailEvent struct {

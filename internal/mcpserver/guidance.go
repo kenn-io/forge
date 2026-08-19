@@ -14,7 +14,7 @@ var guidanceMarkdown string
 
 const reviewCandidatesPrompt = `Use kenn-forge's cached data to triage review work.
 
-Call kenn_forge_list_repos first to learn valid repo filters and sync freshness.
+Call kenn_forge_list_repos first to learn valid repo filters, stable platform_repo_id values, and sync freshness. Copy the stable ID into every later repository or item reference.
 Use kenn_forge_find_review_candidates for recent PR and issue activity.
 Inspect details only for plausible items with kenn_forge_get_item_context.
 Use kenn_forge_get_item_diff to check the size and shape of a change before claiming it; request the full diff file only when the summary is not enough.

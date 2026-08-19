@@ -48,8 +48,11 @@ server catalog, the shape is typically similar to:
 
 ## Review workflow
 
-Call `kenn_forge_list_repos` first to discover provider-aware repository filters
-and sync freshness. For review triage:
+Call `kenn_forge_list_repos` first to discover provider-aware repository filters,
+stable `platform_repo_id` values, and sync freshness. Copy the returned stable
+ID into every later repository or item reference; route-only references are not
+accepted. Rediscover the current route after a repository rename. For review
+triage:
 
 1. Call `kenn_forge_find_review_candidates` with the desired time window and
    item types.

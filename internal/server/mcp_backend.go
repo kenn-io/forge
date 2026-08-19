@@ -43,6 +43,11 @@ func (b mcpBackend) ListRepositories(ctx context.Context) ([]mcpserver.Repositor
 func (b mcpBackend) ListActivity(
 	ctx context.Context, query mcpserver.ActivityQuery,
 ) (mcpserver.ActivityPage, error) {
+	if query.Repository.Provider != "" {
+		if _, err := b.resolveRepository(ctx, query.Repository); err != nil {
+			return mcpserver.ActivityPage{}, err
+		}
+	}
 	body, err := b.server.listActivityService(ctx, &listActivityInput{
 		Repo: mcpRepositoryFilter(query.Repository), Types: query.ActivityTypes,
 		ItemTypes: query.ItemTypes, Search: query.Search, After: query.After, Since: query.Since,
@@ -58,7 +63,8 @@ func (b mcpBackend) ListActivity(
 			ID: row.ID, Cursor: row.Cursor, ActivityType: row.ActivityType,
 			Repository: mcpserver.RepositoryIdentity{
 				Provider: row.Repo.Provider, PlatformHost: row.Repo.PlatformHost,
-				RepoPath: row.Repo.RepoPath, Owner: row.Repo.Owner, Name: row.Repo.Name,
+				PlatformRepoID: row.Repo.PlatformRepoID,
+				RepoPath:       row.Repo.RepoPath, Owner: row.Repo.Owner, Name: row.Repo.Name,
 			},
 			ItemType: row.ItemType, ItemNumber: row.ItemNumber,
 			ItemTitle: row.ItemTitle, ItemURL: row.ItemURL, ItemState: row.ItemState,
@@ -79,6 +85,11 @@ func (b mcpBackend) ListActivity(
 func (b mcpBackend) ListPulls(
 	ctx context.Context, query mcpserver.ItemListQuery,
 ) ([]mcpserver.Pull, error) {
+	if query.Repository.Provider != "" {
+		if _, err := b.resolveRepository(ctx, query.Repository); err != nil {
+			return nil, err
+		}
+	}
 	rows, err := b.server.pullAPI.ListService(ctx, pullapi.ListQuery{
 		Repo: mcpRepositoryFilter(query.Repository), State: query.State,
 		Text: query.Text, Limit: query.Limit, Offset: query.Offset,
@@ -96,6 +107,11 @@ func (b mcpBackend) ListPulls(
 func (b mcpBackend) ListIssues(
 	ctx context.Context, query mcpserver.ItemListQuery,
 ) ([]mcpserver.Issue, error) {
+	if query.Repository.Provider != "" {
+		if _, err := b.resolveRepository(ctx, query.Repository); err != nil {
+			return nil, err
+		}
+	}
 	rows, err := b.server.issueAPI.ListService(ctx, issueapi.ListQuery{
 		Repo: mcpRepositoryFilter(query.Repository), State: query.State,
 		Text: query.Text, Limit: query.Limit, Offset: query.Offset,
@@ -113,6 +129,9 @@ func (b mcpBackend) ListIssues(
 func (b mcpBackend) GetPull(
 	ctx context.Context, item mcpserver.ItemIdentity,
 ) (mcpserver.PullDetail, error) {
+	if _, err := b.resolveRepository(ctx, itemRepositoryIdentity(item)); err != nil {
+		return mcpserver.PullDetail{}, err
+	}
 	detail, err := b.server.pullAPI.GetService(ctx, pullServiceIdentity(item))
 	if err != nil {
 		return mcpserver.PullDetail{}, mcpBackendError(err)
@@ -169,6 +188,9 @@ func (b mcpBackend) GetPull(
 func (b mcpBackend) GetIssue(
 	ctx context.Context, item mcpserver.ItemIdentity,
 ) (mcpserver.IssueDetail, error) {
+	if _, err := b.resolveRepository(ctx, itemRepositoryIdentity(item)); err != nil {
+		return mcpserver.IssueDetail{}, err
+	}
 	detail, err := b.server.issueAPI.GetService(ctx, issueServiceIdentity(item))
 	if err != nil {
 		return mcpserver.IssueDetail{}, mcpBackendError(err)
@@ -211,6 +233,9 @@ func (b mcpBackend) GetIssue(
 func (b mcpBackend) GetPullDiff(
 	ctx context.Context, item mcpserver.ItemIdentity, includePatches bool,
 ) (mcpserver.Diff, error) {
+	if _, err := b.resolveRepository(ctx, itemRepositoryIdentity(item)); err != nil {
+		return mcpserver.Diff{}, err
+	}
 	identity := pullServiceIdentity(item)
 	var (
 		stale bool
@@ -237,6 +262,9 @@ func (b mcpBackend) GetPullDiff(
 func (b mcpBackend) GetPullStack(
 	ctx context.Context, item mcpserver.ItemIdentity,
 ) (mcpserver.Stack, error) {
+	if _, err := b.resolveRepository(ctx, itemRepositoryIdentity(item)); err != nil {
+		return mcpserver.Stack{}, err
+	}
 	stack, err := b.server.pullAPI.GetStackService(ctx, pullServiceIdentity(item))
 	if err != nil {
 		return mcpserver.Stack{}, mcpBackendError(err)
@@ -247,6 +275,11 @@ func (b mcpBackend) GetPullStack(
 func (b mcpBackend) ListWorkflowStates(
 	ctx context.Context, query mcpserver.WorkflowQuery,
 ) (mcpserver.WorkflowPage, error) {
+	if query.Repository.Provider != "" {
+		if _, err := b.resolveRepository(ctx, query.Repository); err != nil {
+			return mcpserver.WorkflowPage{}, err
+		}
+	}
 	rows, next, err := b.server.db.ListItemWorkflowStates(ctx, db.ListWorkflowStatesOpts{
 		RepoFilters: mcpRepoFilters(query.Repository), ItemTypes: query.ItemTypes,
 		States: query.States, IncludeClosed: query.IncludeClosed,
@@ -274,12 +307,14 @@ func (b mcpBackend) ListWorkflowStates(
 		}
 		repository := mcpserver.RepositoryIdentity{
 			Provider: row.Platform, PlatformHost: row.PlatformHost,
-			RepoPath: row.RepoPath, Owner: row.Owner, Name: row.Name,
+			PlatformRepoID: row.PlatformRepoID,
+			RepoPath:       row.RepoPath, Owner: row.Owner, Name: row.Name,
 		}
 		out.Items = append(out.Items, mcpserver.WorkflowItem{
 			Identity: mcpserver.ItemIdentity{
 				Type: row.ItemType, Provider: row.Platform, PlatformHost: row.PlatformHost,
-				Owner: row.Owner, Name: row.Name, Number: row.Number,
+				PlatformRepoID: row.PlatformRepoID,
+				Owner:          row.Owner, Name: row.Name, Number: row.Number,
 			},
 			Repository: repository, Title: row.Title, State: row.State,
 			URL: row.URL, Author: row.Author, IsDraft: row.IsDraft,
@@ -292,11 +327,9 @@ func (b mcpBackend) ListWorkflowStates(
 func (b mcpBackend) SetWorkflowState(
 	ctx context.Context, item mcpserver.ItemIdentity, update mcpserver.WorkflowUpdate,
 ) (mcpserver.WorkflowMutation, error) {
-	repo, err := b.server.repoResolver.LookupRoute(
-		ctx, item.Provider, item.PlatformHost, item.Owner, item.Name,
-	)
+	repo, err := b.resolveRepository(ctx, itemRepositoryIdentity(item))
 	if err != nil {
-		return mcpserver.WorkflowMutation{}, mcpBackendError(httpapi.ProviderRouteLookupError(err))
+		return mcpserver.WorkflowMutation{}, err
 	}
 	switch item.Type {
 	case db.ItemTypePR:
@@ -402,6 +435,9 @@ func (b mcpBackend) GetWorkspace(
 func (b mcpBackend) CreatePullWorkspace(
 	ctx context.Context, item mcpserver.ItemIdentity, suppressAutoAssign bool,
 ) (mcpserver.Workspace, error) {
+	if _, err := b.resolveRepository(ctx, itemRepositoryIdentity(item)); err != nil {
+		return mcpserver.Workspace{}, err
+	}
 	result, err := b.server.workspaceAPI.CreatePullWorkspace(ctx, workspaceapi.CreatePullWorkspaceRequest{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
 		Owner: item.Owner, Name: item.Name, Number: item.Number,
@@ -416,6 +452,9 @@ func (b mcpBackend) CreatePullWorkspace(
 func (b mcpBackend) CreateIssueWorkspace(
 	ctx context.Context, item mcpserver.ItemIdentity, suppressAutoAssign bool,
 ) (mcpserver.Workspace, error) {
+	if _, err := b.resolveRepository(ctx, itemRepositoryIdentity(item)); err != nil {
+		return mcpserver.Workspace{}, err
+	}
 	result, err := b.server.workspaceAPI.CreateIssueWorkspaceService(ctx, workspaceapi.CreateIssueWorkspaceRequest{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
 		Owner: item.Owner, Name: item.Name, Number: item.Number,
@@ -430,6 +469,9 @@ func (b mcpBackend) CreateIssueWorkspace(
 func (b mcpBackend) CreateAdHocWorkspace(
 	ctx context.Context, repo mcpserver.RepositoryIdentity, branch string,
 ) (mcpserver.Workspace, error) {
+	if _, err := b.resolveRepository(ctx, repo); err != nil {
+		return mcpserver.Workspace{}, err
+	}
 	var branchPtr *string
 	if branch != "" {
 		branchPtr = &branch
@@ -510,6 +552,44 @@ func (b mcpBackend) GetInitialMessage(
 	return *mcpInitialMessage(result), nil
 }
 
+func (b mcpBackend) resolveRepository(
+	ctx context.Context, identity mcpserver.RepositoryIdentity,
+) (*db.Repo, error) {
+	if strings.TrimSpace(identity.Provider) == "" {
+		return nil, &mcpserver.Error{
+			Kind: "invalid_request", Code: string(httpapi.CodeValidationError),
+			Message: "provider is required",
+		}
+	}
+	if strings.TrimSpace(identity.PlatformRepoID) == "" {
+		return nil, &mcpserver.Error{
+			Kind: "invalid_request", Code: string(httpapi.CodeValidationError),
+			Message: "platform_repo_id is required",
+		}
+	}
+	repo, err := b.server.repoResolver.LookupRoute(
+		ctx, identity.Provider, identity.PlatformHost, identity.Owner, identity.Name,
+	)
+	if err != nil {
+		return nil, mcpBackendError(httpapi.ProviderRouteLookupError(err))
+	}
+	if repo.PlatformRepoID != strings.TrimSpace(identity.PlatformRepoID) {
+		return nil, &mcpserver.Error{
+			Kind: "not_found", Code: string(httpapi.CodeRepoNotFound),
+			Message: "repository identity no longer matches this route",
+		}
+	}
+	return repo, nil
+}
+
+func itemRepositoryIdentity(item mcpserver.ItemIdentity) mcpserver.RepositoryIdentity {
+	return mcpserver.RepositoryIdentity{
+		Provider: item.Provider, PlatformHost: item.PlatformHost,
+		PlatformRepoID: item.PlatformRepoID,
+		Owner:          item.Owner, Name: item.Name,
+	}
+}
+
 func mcpBackendError(err error) error {
 	if err == nil {
 		return nil
@@ -578,7 +658,8 @@ func normalizeMCPWorkflowStatus(status string) db.KanbanStatus {
 func repositoryIdentityFromResponse(repo httpapi.RepoRefResponse) mcpserver.RepositoryIdentity {
 	return mcpserver.RepositoryIdentity{
 		Provider: repo.Provider, PlatformHost: repo.PlatformHost,
-		RepoPath: repo.RepoPath, Owner: repo.Owner, Name: repo.Name,
+		PlatformRepoID: repo.PlatformRepoID,
+		RepoPath:       repo.RepoPath, Owner: repo.Owner, Name: repo.Name,
 	}
 }
 
@@ -599,7 +680,8 @@ func mcpRepoFilters(repo mcpserver.RepositoryIdentity) []db.RepoFilter {
 	}
 	return []db.RepoFilter{{
 		Platform: repo.Provider, PlatformHost: repo.PlatformHost,
-		RepoPath: repo.RepoPath, RepoOwner: repo.Owner, RepoName: repo.Name,
+		PlatformRepoID: repo.PlatformRepoID,
+		RepoPath:       repo.RepoPath, RepoOwner: repo.Owner, RepoName: repo.Name,
 	}}
 }
 

@@ -18,24 +18,30 @@ func TestRepoFilterInputRepositoryIdentity(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:   "github default host",
-			filter: repoFilterInput{Provider: "GH", Owner: "acme", Name: "widget"},
-			want:   testRepository(),
+			name: "github default host",
+			filter: repoFilterInput{
+				Provider: "GH", PlatformRepoID: "repo-acme-widget",
+				Owner: "acme", Name: "widget",
+			},
+			want: testRepository(),
 		},
 		{name: "empty filter"},
 		{
 			name: "nested path",
 			filter: repoFilterInput{
 				Provider: "gitlab", PlatformHost: "git.example.test",
-				RepoPath: "group/subgroup/project",
+				PlatformRepoID: "gid://gitlab/Project/42",
+				RepoPath:       "group/subgroup/project",
 			},
 			want: RepositoryIdentity{
 				Provider: "gitlab", PlatformHost: "git.example.test",
-				RepoPath: "group/subgroup/project", Owner: "group/subgroup", Name: "project",
+				PlatformRepoID: "gid://gitlab/Project/42",
+				RepoPath:       "group/subgroup/project", Owner: "group/subgroup", Name: "project",
 			},
 		},
-		{name: "missing provider", filter: repoFilterInput{Owner: "acme", Name: "widget"}, wantErr: "provider"},
-		{name: "missing name", filter: repoFilterInput{Provider: "github", Owner: "acme"}, wantErr: "name"},
+		{name: "missing provider", filter: repoFilterInput{PlatformRepoID: "repo-1", Owner: "acme", Name: "widget"}, wantErr: "provider"},
+		{name: "missing stable id", filter: repoFilterInput{Provider: "github", Owner: "acme", Name: "widget"}, wantErr: "platform_repo_id"},
+		{name: "missing name", filter: repoFilterInput{Provider: "github", PlatformRepoID: "repo-1", Owner: "acme"}, wantErr: "name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -54,7 +60,7 @@ func TestListReposUsesBackendSummaries(t *testing.T) {
 	backend := &fakeBackend{listRepositoriesFn: func(context.Context) ([]RepositorySummary, error) {
 		return []RepositorySummary{
 			{Repository: testRepository(), OpenPRCount: 3, OpenIssueCount: 2, LastSyncCompletedAt: "2026-07-01T10:00:00Z"},
-			{Repository: RepositoryIdentity{Provider: "gitlab", PlatformHost: "git.example.test", RepoPath: "group/project", Owner: "group", Name: "project"}},
+			{Repository: RepositoryIdentity{Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test", RepoPath: "group/project", Owner: "group", Name: "project"}},
 		}, nil
 	}}
 	s := newMCPTestServer(t, backend)
@@ -63,6 +69,7 @@ func TestListReposUsesBackendSummaries(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, out.Repos, 1)
+	assert.Equal(t, "repo-acme-widget", out.Repos[0].PlatformRepoID)
 	assert.Equal(t, "acme/widget", out.Repos[0].RepoPath)
 	assert.Equal(t, 3, out.Repos[0].OpenPRCount)
 	assert.Equal(t, 2, out.Repos[0].OpenIssueCount)
@@ -93,7 +100,7 @@ func TestSearchItemsForwardsTypedQueriesAndOrdersResults(t *testing.T) {
 	s := newMCPTestServer(t, backend)
 
 	out, err := s.searchItems(t.Context(), searchItemsInput{
-		Query: "retry", Repo: repoFilterInput{Provider: "github", Owner: "acme", Name: "widget"},
+		Query: "retry", Repo: repoFilterInput{Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget"},
 	})
 
 	require.NoError(t, err)
@@ -159,7 +166,7 @@ func TestListActivityForwardsTypedFiltersAndAppliesOutputLimit(t *testing.T) {
 
 	out, err := s.listActivity(t.Context(), listActivityInput{
 		Since: "2026-07-01T00:00:00Z",
-		Repo:  repoFilterInput{Provider: "github", Owner: "acme", Name: "widget"},
+		Repo:  repoFilterInput{Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget"},
 		Types: []string{"comment", "commit"}, Search: "retry", Limit: 1, After: "cursor-1",
 	})
 

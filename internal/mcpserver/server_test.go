@@ -130,6 +130,69 @@ func TestToolErrorsPreserveStructuredEvidenceThroughClientSession(t *testing.T) 
 	assert.Equal(t, got, payload.Error)
 }
 
+func TestSpawnToolFailurePreservesPartialHandoffEvidenceThroughClientSession(t *testing.T) {
+	backend := successfulSpawnBackend("ws-1", "runtime-1", "coding-1")
+	backend.launchWorkspaceRuntimeFn = func(context.Context, string, string) (RuntimeSession, error) {
+		return RuntimeSession{}, &Error{
+			Kind: "unavailable", Code: "runtimeLaunchFailed",
+			Message: "agent runtime failed to launch", Retryable: true,
+		}
+	}
+	s := newMCPTestServer(t, backend)
+
+	result, err := connectMCPTestSession(t, s).CallTool(
+		t.Context(), &mcp.CallToolParams{
+			Name: "kenn_forge_spawn_workspace_with_agent",
+			Arguments: map[string]any{
+				"source": map[string]any{
+					"type": "item",
+					"item": map[string]any{
+						"type": "pr", "provider": "github", "platform_host": "github.com",
+						"platform_repo_id": "repo-acme-widget",
+						"owner":            "acme", "name": "widget", "number": 42,
+					},
+				},
+				"agent_target":    "codex",
+				"initial_message": "review this",
+				"timeout":         "2s",
+			},
+		},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError)
+
+	metadata, found := result.Meta[toolErrorMetaKey]
+	require.True(t, found)
+	raw, err := json.Marshal(metadata)
+	require.NoError(t, err)
+	var evidence toolErrorEvidence
+	require.NoError(t, json.Unmarshal(raw, &evidence))
+	assert.Equal(t, "unavailable", evidence.Kind)
+	assert.Equal(t, "runtimeLaunchFailed", evidence.Code)
+	assert.Equal(t, "runtime_launched", evidence.Details["failed_stage"])
+	assert.Equal(t, "workspace_ready", evidence.Details["last_completed_stage"])
+	assert.Equal(t, "ws-1", evidence.Details["workspace_id"])
+	assert.Equal(t, "ready", evidence.Details["workspace_status"])
+
+	// The partial handoff output survives alongside the structured error so
+	// clients can locate the workspace that was already created.
+	structured, err := json.Marshal(result.StructuredContent)
+	require.NoError(t, err)
+	var partial struct {
+		Stage     string `json:"stage"`
+		Workspace struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"workspace"`
+	}
+	require.NoError(t, json.Unmarshal(structured, &partial))
+	assert.Equal(t, "workspace_ready", partial.Stage)
+	assert.Equal(t, "ws-1", partial.Workspace.ID)
+	assert.Equal(t, "ready", partial.Workspace.Status)
+}
+
 func TestHTTPHandlerServesOnlyStatelessMCPPath(t *testing.T) {
 	s := newMCPTestServer(t, &fakeBackend{})
 	handler := s.HTTPHandler()

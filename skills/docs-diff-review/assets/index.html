@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>kenn-forge docs review</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: #f5f2ec;
+        --panel: #fffdfa;
+        --ink: #24231f;
+        --muted: #6c6961;
+        --line: #d9d3c8;
+        --old: #a63b32;
+        --old-bg: #fff1ef;
+        --new: #21734b;
+        --new-bg: #edf9f1;
+        --accent: #5746af;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #171715;
+          --panel: #22221f;
+          --ink: #ece9e1;
+          --muted: #aaa69c;
+          --line: #3e3d38;
+          --old: #ef8a80;
+          --old-bg: #351f1e;
+          --new: #74c99a;
+          --new-bg: #1c3225;
+          --accent: #b3a7ff;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        font:
+          15px/1.55 ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+      button,
+      input {
+        font: inherit;
+      }
+      a {
+        color: var(--accent);
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 250px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+      aside {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow: auto;
+        padding: 24px 16px;
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+      }
+      aside h1 {
+        margin: 0 8px 6px;
+        font-size: 19px;
+      }
+      aside p {
+        margin: 0 8px 20px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      nav {
+        display: grid;
+        gap: 3px;
+      }
+      nav button {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding: 8px 10px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      nav button:hover {
+        background: color-mix(in srgb, var(--accent) 8%, transparent);
+      }
+      nav button[aria-current="page"] {
+        background: color-mix(in srgb, var(--accent) 15%, transparent);
+        color: var(--accent);
+        font-weight: 650;
+      }
+      .count {
+        min-width: 25px;
+        padding: 1px 6px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 11px;
+        text-align: center;
+      }
+      main {
+        min-width: 0;
+        padding: 28px clamp(18px, 4vw, 54px) 80px;
+      }
+      .toolbar {
+        position: sticky;
+        z-index: 10;
+        top: 0;
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+        margin: -28px 0 24px;
+        padding: 18px 0 14px;
+        background: color-mix(in srgb, var(--page) 92%, transparent);
+        backdrop-filter: blur(8px);
+      }
+      .toolbar h2 {
+        margin: 0;
+        font-size: clamp(20px, 3vw, 30px);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: center;
+      }
+      .actions label {
+        white-space: nowrap;
+        color: var(--muted);
+      }
+      .actions a {
+        white-space: nowrap;
+        font-weight: 650;
+        text-decoration: none;
+      }
+      .columns,
+      .row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 16px;
+      }
+      .columns {
+        position: sticky;
+        z-index: 9;
+        top: 68px;
+        margin-bottom: 9px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .columns div {
+        padding: 7px 14px;
+        border-radius: 7px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+      }
+      .columns div:first-child {
+        border-left: 3px solid var(--old);
+      }
+      .columns div:last-child {
+        border-left: 3px solid var(--new);
+      }
+      #comparison {
+        display: grid;
+        gap: 9px;
+      }
+      .row.same[hidden] {
+        display: none;
+      }
+      .cell {
+        min-width: 0;
+        padding: 15px 17px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--panel);
+        overflow-wrap: anywhere;
+      }
+      .row.changed .cell:first-child,
+      .row.removed .cell:first-child {
+        border-left: 4px solid var(--old);
+        background: var(--old-bg);
+      }
+      .row.changed .cell:last-child,
+      .row.added .cell:last-child {
+        border-left: 4px solid var(--new);
+        background: var(--new-bg);
+      }
+      .cell.empty {
+        display: grid;
+        place-items: center;
+        min-height: 62px;
+        border-style: dashed;
+        background: transparent;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .cell > :first-child {
+        margin-top: 0;
+      }
+      .cell > :last-child {
+        margin-bottom: 0;
+      }
+      .cell h1,
+      .cell h2,
+      .cell h3,
+      .cell h4 {
+        line-height: 1.2;
+      }
+      .cell h1 {
+        font-size: 1.7em;
+      }
+      .cell h2 {
+        font-size: 1.4em;
+      }
+      .cell h3 {
+        font-size: 1.16em;
+      }
+      .cell pre,
+      .cell code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .cell code {
+        padding: 0.1em 0.3em;
+        border-radius: 4px;
+        background: color-mix(in srgb, var(--ink) 8%, transparent);
+      }
+      .cell pre {
+        padding: 13px;
+        border-radius: 7px;
+        overflow: auto;
+        background: color-mix(in srgb, var(--ink) 8%, transparent);
+      }
+      .cell pre code {
+        padding: 0;
+        background: transparent;
+      }
+      .cell img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        border-radius: 7px;
+      }
+      .cell table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .cell th,
+      .cell td {
+        padding: 7px 8px;
+        border: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+      .cell blockquote {
+        margin-left: 0;
+        padding-left: 14px;
+        border-left: 3px solid var(--line);
+        color: var(--muted);
+      }
+      .cell .headerlink {
+        display: none;
+      }
+      .empty-state {
+        padding: 48px;
+        text-align: center;
+        color: var(--muted);
+      }
+      .error {
+        color: var(--old);
+      }
+
+      @media (max-width: 820px) {
+        .app {
+          display: block;
+        }
+        aside {
+          position: static;
+          width: auto;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+        nav {
+          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        }
+        .toolbar {
+          position: static;
+          margin-top: 0;
+        }
+        .columns {
+          top: 0;
+        }
+        main {
+          padding-top: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside>
+        <h1>Docs review</h1>
+        <p>Changed user-facing pages, compared with the branch point.</p>
+        <nav id="pages" aria-label="Changed pages"></nav>
+      </aside>
+      <main>
+        <div class="toolbar">
+          <h2 id="page-title">Loading…</h2>
+          <div class="actions">
+            <label><input id="show-same" type="checkbox" /> Show unchanged blocks</label>
+            <a id="open-before" href="/" target="_blank">Open before ↗</a>
+            <a id="open-final" href="/" target="_blank">Open final page ↗</a>
+          </div>
+        </div>
+        <div class="columns" aria-hidden="true">
+          <div>Before</div>
+          <div>After</div>
+        </div>
+        <div id="comparison"><div class="empty-state">Building comparison…</div></div>
+      </main>
+    </div>
+
+    <script type="module">
+      const manifest = await fetch("/manifest.json").then((response) => {
+        if (!response.ok) throw new Error(`Could not load review manifest: ${response.status}`);
+        return response.json();
+      });
+      const pages = manifest.pages;
+
+      const pageNav = document.querySelector("#pages");
+      const comparison = document.querySelector("#comparison");
+      const pageTitle = document.querySelector("#page-title");
+      const showSame = document.querySelector("#show-same");
+      const openBefore = document.querySelector("#open-before");
+      const openFinal = document.querySelector("#open-final");
+      const cache = new Map();
+
+      const normal = (value) => value.replace(/\s+/g, " ").trim();
+      const words = (value) =>
+        new Set(
+          normal(value)
+            .toLowerCase()
+            .match(/[\p{L}\p{N}]+/gu) || [],
+        );
+
+      async function sha256(value) {
+        const bytes = value instanceof ArrayBuffer ? value : new TextEncoder().encode(value);
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      }
+
+      async function imageSignature(image) {
+        const src = image.getAttribute("src") || "";
+        if (!src) return "";
+        try {
+          const response = await fetch(src);
+          if (!response.ok) return `unavailable:${response.status}`;
+          return await sha256(await response.arrayBuffer());
+        } catch {
+          return `unavailable:${src}`;
+        }
+      }
+
+      async function contentSignature(node) {
+        const links = [...node.querySelectorAll("a")].map((link) => link.getAttribute("href") || "").join("|");
+        const images = (
+          await Promise.all(
+            [...node.querySelectorAll("img")].map(async (image) =>
+              [
+                image.getAttribute("alt") || "",
+                (image.getAttribute("src") || "").split("/").pop(),
+                await imageSignature(image),
+              ].join("|"),
+            ),
+          )
+        ).join("|");
+        return `${normal(node.textContent || "")}|${links}|${images}`;
+      }
+
+      function group(node) {
+        if (/^H[1-6]$/.test(node.tagName)) return "heading";
+        if (["UL", "OL"].includes(node.tagName)) return "list";
+        if (["PRE", "DIV"].includes(node.tagName) && node.querySelector("pre")) return "code";
+        if (["PICTURE", "FIGURE"].includes(node.tagName) || node.querySelector("img")) return "image";
+        return node.tagName.toLowerCase();
+      }
+
+      function similarity(left, right) {
+        if (left.signature === right.signature) return 1;
+        const a = words(left.text);
+        const b = words(right.text);
+        if (!a.size && !b.size) return left.group === right.group ? 0.6 : 0;
+        let shared = 0;
+        for (const word of a) if (b.has(word)) shared += 1;
+        return (2 * shared) / (a.size + b.size || 1);
+      }
+
+      function matchCost(left, right) {
+        if (left.signature === right.signature) return 0;
+        if (left.group !== right.group) return 1.65;
+        return 1.15 - 0.9 * similarity(left, right);
+      }
+
+      function align(before, after) {
+        const gap = 0.72;
+        const rows = Array.from({ length: before.length + 1 }, () => Array(after.length + 1).fill(0));
+        const moves = Array.from({ length: before.length + 1 }, () => Array(after.length + 1).fill(""));
+        for (let i = 1; i <= before.length; i += 1) {
+          rows[i][0] = i * gap;
+          moves[i][0] = "remove";
+        }
+        for (let j = 1; j <= after.length; j += 1) {
+          rows[0][j] = j * gap;
+          moves[0][j] = "add";
+        }
+        for (let i = 1; i <= before.length; i += 1) {
+          for (let j = 1; j <= after.length; j += 1) {
+            const choices = [
+              [rows[i - 1][j - 1] + matchCost(before[i - 1], after[j - 1]), "pair"],
+              [rows[i - 1][j] + gap, "remove"],
+              [rows[i][j - 1] + gap, "add"],
+            ].sort((a, b) => a[0] - b[0]);
+            rows[i][j] = choices[0][0];
+            moves[i][j] = choices[0][1];
+          }
+        }
+        const aligned = [];
+        let i = before.length;
+        let j = after.length;
+        while (i || j) {
+          const move = moves[i][j];
+          if (move === "pair") {
+            aligned.push([before[--i], after[--j]]);
+          } else if (move === "remove") {
+            aligned.push([before[--i], null]);
+          } else {
+            aligned.push([null, after[--j]]);
+          }
+        }
+        return aligned.reverse();
+      }
+
+      function fixUrls(node, sourceUrl, prefix) {
+        for (const element of node.querySelectorAll("[src], [href]")) {
+          for (const attr of ["src", "href"]) {
+            const value = element.getAttribute(attr);
+            if (!value || value.startsWith("#") || /^(data:|https?:|mailto:)/.test(value)) continue;
+            const fixed = value.startsWith("/") ? `${prefix}${value}` : new URL(value, sourceUrl).pathname;
+            element.setAttribute(attr, fixed);
+          }
+        }
+      }
+
+      async function readBlocks(page, before) {
+        if (before ? !page.beforeAvailable : !page.afterAvailable) return [];
+        const prefix = before ? "/before" : "/after";
+        const url = `${prefix}${page.path}`;
+        const response = await fetch(url);
+        if (!response.ok) return [];
+        const documentNode = new DOMParser().parseFromString(await response.text(), "text/html");
+        const article = documentNode.querySelector("article.md-content__inner");
+        if (!article) return [];
+        const sources = [...article.children];
+        if (page.path === "/") {
+          const siteNavigation = documentNode.querySelector(".md-sidebar--primary nav[data-md-level='0']");
+          if (siteNavigation) {
+            const navigationBlock = document.createElement("section");
+            const heading = document.createElement("h2");
+            heading.textContent = "Site navigation";
+            navigationBlock.append(heading, siteNavigation.cloneNode(true));
+            sources.unshift(navigationBlock);
+          }
+        }
+        return Promise.all(sources.map(async (source) => {
+          const node = source.cloneNode(true);
+          fixUrls(node, new URL(url, location.href), prefix);
+          const signature = await contentSignature(node);
+          return {
+            node,
+            group: group(node),
+            text: normal(node.textContent || ""),
+            signature,
+          };
+        }));
+      }
+
+      function makeCell(block, side) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        if (block) cell.append(block.node.cloneNode(true));
+        else {
+          cell.classList.add("empty");
+          cell.textContent = side === "before" ? "Not in the old docs" : "Removed from the new docs";
+        }
+        return cell;
+      }
+
+      function renderRows(aligned) {
+        comparison.replaceChildren();
+        let changes = 0;
+        for (const [before, after] of aligned) {
+          const same = before && after && before.signature === after.signature;
+          const kind = same ? "same" : before && after ? "changed" : before ? "removed" : "added";
+          if (!same) changes += 1;
+          const row = document.createElement("section");
+          row.className = `row ${kind}`;
+          row.hidden = same && !showSame.checked;
+          row.append(makeCell(before, "before"), makeCell(after, "after"));
+          comparison.append(row);
+        }
+        if (!aligned.length)
+          comparison.innerHTML = '<div class="empty-state">No rendered content found for this page.</div>';
+        return changes;
+      }
+
+      async function comparisonFor(page) {
+        if (!cache.has(page.path)) {
+          cache.set(
+            page.path,
+            Promise.all([readBlocks(page, true), readBlocks(page, false)]).then(([a, b]) => align(a, b)),
+          );
+        }
+        return cache.get(page.path);
+      }
+
+      async function selectPage(page) {
+        pageTitle.textContent = page.label;
+        openBefore.href = `/before${page.path}`;
+        openBefore.hidden = !page.beforeAvailable;
+        openFinal.href = `/after${page.path}`;
+        openFinal.hidden = !page.afterAvailable;
+        comparison.innerHTML = '<div class="empty-state">Loading comparison…</div>';
+        for (const button of pageNav.querySelectorAll("button")) {
+          button.removeAttribute("aria-current");
+          if (button.dataset.path === page.path) button.setAttribute("aria-current", "page");
+        }
+        try {
+          const aligned = await comparisonFor(page);
+          const changes = renderRows(aligned);
+          const count = pageNav.querySelector(`[data-path="${page.path}"] .count`);
+          if (count) count.textContent = changes;
+          history.replaceState(null, "", `#${encodeURIComponent(page.path)}`);
+        } catch (error) {
+          comparison.innerHTML = `<div class="empty-state error">Could not load this comparison: ${error.message}</div>`;
+        }
+      }
+
+      for (const page of pages) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.path = page.path;
+        button.innerHTML = `<span>${page.label}</span><span class="count">…</span>`;
+        button.addEventListener("click", () => selectPage(page));
+        pageNav.append(button);
+        comparisonFor(page).then((aligned) => {
+          const changes = aligned.filter(
+            ([before, after]) => !before || !after || before.signature !== after.signature,
+          ).length;
+          button.querySelector(".count").textContent = changes;
+        });
+      }
+
+      showSame.addEventListener("change", () => {
+        for (const row of comparison.querySelectorAll(".row.same")) row.hidden = !showSame.checked;
+      });
+
+      const requested = decodeURIComponent(location.hash.slice(1));
+      const initial = pages.find((page) => page.path === requested) || pages[0];
+      selectPage(initial);
+    </script>
+  </body>
+</html>

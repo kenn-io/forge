@@ -86,6 +86,12 @@ Open `/m/workspaces` for the phone layout. It uses workspace cards and shows one
 terminal at a time. The session picker moves between the base shell and running
 agents without stopping the sessions in the background.
 
+<figure class="workflow-shot workflow-shot--phone">
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/mobile-workspace-session-light.svg" alt="kenn-forge phone workspace with a Codex terminal and the input composer open in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/mobile-workspace-session-dark.svg" alt="kenn-forge phone workspace with a Codex terminal and the input composer open in dark mode">
+  <figcaption>The phone view keeps one terminal on screen, with session switching at the top and software-keyboard input at the bottom.</figcaption>
+</figure>
+
 The phone composer helps with software keyboards, while direct terminal input
 still works with a hardware keyboard. Pull request and issue links return to the
 same mobile workspace and selected session.

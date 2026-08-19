@@ -22,6 +22,7 @@ nav = [
     {"Read and edit Docs" = "workflows/docs.md"},
   ]},
   {"Integrations" = "integrations.md"},
+  {"Settings" = "settings.md"},
   {"Configuration" = "configuration.md"},
   {"Commands" = "commands.md"},
   {"Advanced / experimental" = [

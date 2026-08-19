@@ -63,7 +63,7 @@ branch, then launches the agent there. You do not need to run
 the pull request after local verification or follow-up changes.
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/workspace-codex-session-light.svg" alt="kenn-forge Workspaces view with a pull-request worktree and running Codex session in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/workspace-codex-session-dark.svg" alt="kenn-forge Workspaces view with a pull-request worktree and running Codex session in dark mode">
-  <figcaption>Workspaces tracks the pull-request branch and its running Codex session.</figcaption>
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/workspace-pr-details-light.svg" alt="kenn-forge Workspaces view with a running Codex session and the linked pull request open in the right sidebar in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/workspace-pr-details-dark.svg" alt="kenn-forge Workspaces view with a running Codex session and the linked pull request open in the right sidebar in dark mode">
+  <figcaption>Keep the coding session open while checking the linked pull request in the right sidebar.</figcaption>
 </figure>

@@ -16,6 +16,7 @@ const publishedFiles = new Set([
   "index.md",
   "integrations.md",
   "quickstart.md",
+  "settings.md",
   path.join("overrides", "main.html"),
   path.join("stylesheets", "extra.css"),
   "troubleshooting.md",

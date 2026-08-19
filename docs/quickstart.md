@@ -75,26 +75,6 @@ gh auth login
 kenn-forge daemon start
 ```
 
-You can also provide a GitHub token directly:
-
-```sh
-export KENN_FORGE_GITHUB_TOKEN=ghp_your_token_here
-kenn-forge daemon start
-```
-
-In PowerShell:
-
-```powershell
-$env:KENN_FORGE_GITHUB_TOKEN = 'ghp_your_token_here'
-kenn-forge.exe daemon start
-```
-
-For another provider or host, set its token environment variable before
-starting. To use `token_env` or `token_file`, start once to create
-`~/.kenn/forge/config.toml`, edit it, then restart. Settings chooses provider
-hosts and repository patterns, but it does not store credentials. See
-[Configuration](configuration.md#credentials).
-
 Use `kenn-forge serve` instead when you want foreground logs for development or
 diagnosis.
 
@@ -140,12 +120,37 @@ Unix-like kenn-forge host for that step.
 - [**Repos**](workflows/repositories.md): browse configured source, refs, and file history.
 - [**Workspaces**](workflows/workspaces.md): open local shells and configured agents.
 - [**Docs**](workflows/docs.md): read and edit registered Markdown folders.
-- **Settings**: manage repositories, agents, modes, and app preferences.
+- [**Settings**](settings.md): manage repositories, agents, modes, and app preferences.
 
 Press `?` to see shortcuts for the current view.
 
 On a phone, open `/m` for Activity, Pulls, Issues, and Workspaces in a
 touch-first layout. Docs and Kata-linked task detail remain desktop-first.
+
+## Advanced credential setup
+
+Most GitHub users do not need this section. Use it when the GitHub CLI is not
+available, or when you connect another provider or host.
+
+To provide a GitHub token directly:
+
+```sh
+export KENN_FORGE_GITHUB_TOKEN=ghp_your_token_here
+kenn-forge daemon start
+```
+
+In PowerShell:
+
+```powershell
+$env:KENN_FORGE_GITHUB_TOKEN = 'ghp_your_token_here'
+kenn-forge.exe daemon start
+```
+
+For another provider or host, set its token environment variable before
+starting. To use `token_env` or `token_file`, start once to create
+`~/.kenn/forge/config.toml`, edit it, then restart. Settings chooses provider
+hosts and repository patterns, but it does not store credentials. See
+[Configuration](configuration.md#credentials).
 
 ## Connect optional integrations
 

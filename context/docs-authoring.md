@@ -17,6 +17,9 @@ screenshots, or the Zensical site.
   `context/` topic docs, delete the artifacts, and do not convert them into ADRs.
 - Verify candidate documentation against implementation and tests before
   promoting it into living documentation.
+- Review substantial docs changes as rendered before-and-after blocks; source
+  diffs miss navigation, theme, and generated screenshot changes.
+  (`skills/docs-diff-review/SKILL.md`)
 
 ## Authoring Conventions
 

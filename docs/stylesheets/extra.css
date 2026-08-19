@@ -47,6 +47,12 @@
   line-height: 0;
 }
 
+.md-typeset figure.workflow-shot--phone .workflow-shot__image,
+.md-typeset figure.workflow-shot--phone .workflow-shot__trigger {
+  max-width: 390px;
+  margin-inline: auto;
+}
+
 .md-typeset .workflow-shot__trigger:focus-visible {
   outline: 3px solid var(--md-accent-fg-color);
   outline-offset: 4px;

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review docs diffs"
+  short_description: "Render docs changes in two columns"
+  default_prompt: "Use $docs-diff-review to render the current documentation changes as a two-column browser review."

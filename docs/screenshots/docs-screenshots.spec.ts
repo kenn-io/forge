@@ -191,9 +191,13 @@ type CaptureCase = {
     | "repository-source"
     | "roborev-reviews"
     | "workspace-codex-session"
+    | "workspace-pr-details"
+    | "mobile-workspace-session"
+    | "settings-overview"
     | "first-run";
   theme: ThemeName;
   path: string;
+  viewport?: { width: number; height: number };
   readySelector: string;
   readyText: string;
   requiredSelector?: string;
@@ -336,6 +340,63 @@ async function showCodexWorkspace(page: Page, theme: ThemeName): Promise<void> {
     pathText.textContent = replacement;
     element.setAttribute("title", replacement);
   }, syntheticPath);
+}
+
+async function showWorkspacePRDetails(page: Page, theme: ThemeName): Promise<void> {
+  await showCodexWorkspace(page, theme);
+
+  const prButton = page.locator(".terminal-view").getByRole("button", { name: "PR", exact: true });
+  await prButton.click();
+  await expect(prButton).toHaveClass(/\bactive\b/);
+  await expect(page.locator(".right-sidebar .pull-detail .detail-title")).toContainText("Add widget caching layer");
+  await expect(page.getByText(/Loading discussion/i)).toHaveCount(0);
+  await waitForIdleSync(page);
+}
+
+async function showMobileCodexWorkspace(page: Page, theme: ThemeName): Promise<void> {
+  await page.getByRole("button", { name: /^Open workspace Add widget caching layer/ }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces\/local\//);
+
+  const workspace = page.getByRole("region", { name: "Workspace terminal" });
+  await expect(workspace).toBeVisible();
+  const sessionSwitcher = workspace.getByRole("combobox", { name: /Terminal session/ });
+  await expect(sessionSwitcher).toContainText("Codex");
+
+  const terminal = workspace.locator(".terminal-container:visible").first();
+  await expect(terminal).toBeVisible();
+  await terminal.evaluate(
+    (element, { transcript, palette }) => {
+      const existing = element.querySelector(".docs-mobile-codex-transcript");
+      if (existing) existing.remove();
+
+      const output = document.createElement("pre");
+      output.className = "docs-mobile-codex-transcript";
+      output.setAttribute("aria-label", "Synthetic Codex session transcript");
+      output.textContent = transcript;
+      output.style.cssText = [
+        "position: absolute",
+        "inset: 0",
+        "z-index: 3",
+        "box-sizing: border-box",
+        "margin: 0",
+        "padding: 16px 14px",
+        "overflow: hidden",
+        `background: ${palette.background}`,
+        `color: ${palette.foreground}`,
+        'font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
+        "font-size: 11.5px",
+        "line-height: 1.45",
+        "white-space: pre-wrap",
+      ].join("; ");
+      element.appendChild(output);
+    },
+    { transcript: syntheticCodexTranscript, palette: syntheticCodexPalettes[theme] },
+  );
+
+  await workspace.getByRole("button", { name: "Open terminal composer" }).click();
+  const composer = workspace.getByRole("textbox", { name: "Terminal command" });
+  await composer.fill("Summarize recent commits");
+  await expect(composer).toHaveValue("Summarize recent commits");
 }
 
 async function showActivityCodexWorkspace(page: Page, theme: ThemeName): Promise<void> {
@@ -525,6 +586,53 @@ const cases: CaptureCase[] = [
       "Workspaces view in dark mode with the pull request worktree selected and its Codex session available.",
   },
   {
+    name: "workspace-pr-details",
+    theme: "light",
+    path: "/workspaces",
+    readySelector: ".workspace-list-sidebar",
+    readyText: "Add widget caching layer",
+    waitForSync: true,
+    prepare: ensureSyntheticCodexWorkspace,
+    afterReady: showWorkspacePRDetails,
+    description:
+      "Workspaces view with a pull request worktree, its Codex session, and the linked PR open in the right sidebar.",
+  },
+  {
+    name: "workspace-pr-details",
+    theme: "dark",
+    path: "/workspaces",
+    readySelector: ".workspace-list-sidebar",
+    readyText: "Add widget caching layer",
+    waitForSync: true,
+    prepare: ensureSyntheticCodexWorkspace,
+    afterReady: showWorkspacePRDetails,
+    description:
+      "Workspaces view in dark mode with a pull request worktree, its Codex session, and the linked PR open in the right sidebar.",
+  },
+  {
+    name: "mobile-workspace-session",
+    theme: "light",
+    path: "/m/workspaces",
+    viewport: { width: 390, height: 844 },
+    readySelector: ".mobile-workspace-list",
+    readyText: "Add widget caching layer",
+    prepare: ensureSyntheticCodexWorkspace,
+    afterReady: showMobileCodexWorkspace,
+    description: "Phone workspace with Codex selected, terminal output visible, and the touch composer open.",
+  },
+  {
+    name: "mobile-workspace-session",
+    theme: "dark",
+    path: "/m/workspaces",
+    viewport: { width: 390, height: 844 },
+    readySelector: ".mobile-workspace-list",
+    readyText: "Add widget caching layer",
+    prepare: ensureSyntheticCodexWorkspace,
+    afterReady: showMobileCodexWorkspace,
+    description:
+      "Phone workspace in dark mode with Codex selected, terminal output visible, and the touch composer open.",
+  },
+  {
     name: "maintainer-overview",
     theme: "light",
     path: "/",
@@ -549,6 +657,28 @@ const cases: CaptureCase[] = [
     afterReady: showActivityCodexWorkspace,
     description:
       "Activity in dark mode with a selected pull request, its live workspace, and the workspace's selected Codex session.",
+  },
+  {
+    name: "settings-overview",
+    theme: "light",
+    path: "/settings",
+    readySelector: ".settings-page",
+    readyText: "Repositories",
+    requiredSelector: ".settings-panel:not([hidden])",
+    requiredButtonName: "Add repositories…",
+    loadingText: /Loading settings/i,
+    description: "Settings with its searchable category menu and configured repository controls.",
+  },
+  {
+    name: "settings-overview",
+    theme: "dark",
+    path: "/settings",
+    readySelector: ".settings-page",
+    readyText: "Repositories",
+    requiredSelector: ".settings-panel:not([hidden])",
+    requiredButtonName: "Add repositories…",
+    loadingText: /Loading settings/i,
+    description: "Settings in dark mode with its searchable category menu and configured repository controls.",
   },
 ];
 
@@ -891,6 +1021,9 @@ test.describe("docs screenshot export safety", () => {
 });
 
 async function captureCase(page: Page, baseURL: string, capture: CaptureCase): Promise<void> {
+  if (capture.viewport) {
+    await page.setViewportSize(capture.viewport);
+  }
   await preparePage(page, capture.theme);
   await capture.prepare?.(page, baseURL);
   if (capture.waitForSync) {
@@ -916,7 +1049,11 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
     .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
     .toBe(capture.theme === "dark");
 
-  if (capture.name === "workspace-codex-session" || capture.name === "maintainer-overview") {
+  if (
+    capture.name === "workspace-codex-session" ||
+    capture.name === "workspace-pr-details" ||
+    capture.name === "maintainer-overview"
+  ) {
     const terminal = page.locator(".docs-codex-transcript:visible").first();
     const composer = terminal.getByLabel("Codex prompt composer");
     const status = terminal.getByLabel("Codex model and workspace status");
@@ -958,6 +1095,27 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
       expect(terminalLightness).toBeLessThan(100);
       expect(composerLightness).toBeLessThan(250);
     }
+  }
+
+  if (capture.name === "mobile-workspace-session") {
+    const workspace = page.getByRole("region", { name: "Workspace terminal" });
+    await expect(workspace.getByRole("combobox", { name: /Terminal session/ })).toContainText("Codex");
+    await expect(workspace.getByRole("textbox", { name: "Terminal command" })).toHaveValue("Summarize recent commits");
+    await expect(workspace.locator(".docs-mobile-codex-transcript")).toContainText("3 passed, 0 failed");
+  }
+
+  if (capture.name === "workspace-pr-details") {
+    await expect(page.locator(".terminal-view").getByRole("button", { name: "PR", exact: true })).toHaveClass(
+      /\bactive\b/,
+    );
+    await expect(page.locator(".right-sidebar .pull-detail .detail-title")).toContainText("Add widget caching layer");
+  }
+
+  if (capture.name === "settings-overview") {
+    const navigation = page.getByRole("navigation", { name: "Settings" });
+    await expect(navigation).toBeVisible();
+    await expect(navigation.getByRole("button", { name: /^Repositories\b/ })).toBeVisible();
+    await expect(navigation.getByRole("button", { name: /^Workspace agents\b/ })).toBeVisible();
   }
 
   const svg = await nativeSVGSnapshot(page, {

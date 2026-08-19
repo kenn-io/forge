@@ -572,6 +572,7 @@ func run(opts serve.Options) error {
 	}
 	repos := resolveStartupRepos(
 		ctx, cfg, syncer.SyncRegistry(), database, startup.githubRouters,
+		startup.degradedProviderHosts,
 	)
 	slog.Debug("startup repos resolved", "count", len(repos))
 	syncer.SetBranchActivityLimits(
@@ -872,14 +873,24 @@ func resolveStartupRepos(
 	registry *platform.Registry,
 	database *db.DB,
 	githubRouters map[string]*ghclient.HostRouter,
+	degradedProviderHosts map[string]struct{},
 ) []ghclient.RepoRef {
 	set := ghclient.NewExpandedRepoSet()
 	for _, raw := range cfg.Repos {
-		_, expanded, err := ghclient.ResolveConfiguredRepoWithRegistry(
-			ctx, registry, raw,
-		)
-		if err != nil {
-			slog.Warn("resolve configured repo", "err", err)
+		_, degraded := degradedProviderHosts[providerHostKey(
+			raw.PlatformOrDefault(), raw.PlatformHostOrDefault(),
+		)]
+		var expanded []ghclient.RepoRef
+		var err error
+		if !degraded {
+			_, expanded, err = ghclient.ResolveConfiguredRepoWithRegistry(
+				ctx, registry, raw,
+			)
+		}
+		if degraded || err != nil {
+			if err != nil {
+				slog.Warn("resolve configured repo", "err", err)
+			}
 			if raw.HasNameGlob() {
 				expanded = fallbackGlobFromDB(
 					ctx, database, raw,
@@ -904,7 +915,7 @@ func resolveStartupRepos(
 			)
 		}
 		for _, repo := range expanded {
-			set.Add(repo, err == nil)
+			set.Add(repo, !degraded && err == nil)
 		}
 	}
 	return set.Refs()

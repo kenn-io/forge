@@ -119,9 +119,9 @@ GitHub may additionally define exact-repository and owner authorization routes.
 - A missing token should fail only the provider host that needs it.
 - Disabled startup registers credential descriptors without resolving them, so
   provider tokens stay lazy (`cmd/kenn-forge/provider_startup.go::registerProviderTokenSources`).
-- Transient GitHub bootstrap failures preserve archive access and scheduled sync;
-  PAT routes use host accounting until restart while App reads retain installation
-  identity. Permanent auth or config failures remain fatal (`cmd/kenn-forge/provider_startup_fallback.go::buildProviderStartupWithFallback`).
+- Transient GitHub bootstrap failures degrade affected provider-hosts while route
+  validation continues, so permanent auth or config failures remain fatal; degraded PAT
+  routes use host accounting while App reads retain installation identity (`cmd/kenn-forge/provider_startup_fallback.go::buildProviderStartupWithFallback`).
 - Refresh access uses the gated registry; only explicit foreground provider
   operations use direct access (`internal/github/sync.go::Syncer.SyncRegistry`).
 - Refresh interfaces that may be retained across policy setup must recheck the

@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/githubapp"
+	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/tokenauth"
 )
@@ -34,7 +35,26 @@ func TestTransientGitHubStartupErrorClassification(t *testing.T) {
 		{name: "request timeout", err: &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusRequestTimeout}}, want: true},
 		{name: "too many requests", err: &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusTooManyRequests}}, want: true},
 		{name: "app rate limit", err: &githubapp.StatusError{StatusCode: http.StatusTooManyRequests}, want: true},
+		{
+			name: "app headerless secondary rate limit",
+			err: &githubapp.StatusError{
+				StatusCode: http.StatusForbidden,
+				Body: `{"message":"You have exceeded a secondary rate limit.",` +
+					`"documentation_url":"https://docs.github.com/rest/using-the-rest-api/` +
+					`rate-limits-for-the-rest-api#about-secondary-rate-limits"}`,
+			},
+			want: true,
+		},
 		{name: "app forbidden", err: &githubapp.StatusError{StatusCode: http.StatusForbidden}, want: false},
+		{
+			name: "app unrelated structured forbidden",
+			err: &githubapp.StatusError{
+				StatusCode: http.StatusForbidden,
+				Body: `{"message":"Resource not accessible by integration",` +
+					`"documentation_url":"https://docs.github.com/rest/apps/apps"}`,
+			},
+			want: false,
+		},
 		{name: "canceled", err: context.Canceled, want: false},
 		{name: "unauthorized", err: &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusUnauthorized}}, want: false},
 		{name: "permanent", err: errors.New("invalid configuration"), want: false},
@@ -132,6 +152,10 @@ func TestBuildProviderStartupWithFallbackKeepsRoutesAfterGitHubUnavailable(t *te
 		}},
 	)
 	require.NoError(err)
+	assert.Contains(
+		startup.degradedProviderHosts,
+		providerHostKey(string(platform.KindGitHub), "github.com"),
+	)
 
 	router := startup.githubRouters["github.com"]
 	require.NotNil(router)
@@ -185,6 +209,50 @@ func TestBuildProviderStartupWithFallbackKeepsPermanentErrorsFatal(t *testing.T)
 	var responseErr *gh.ErrorResponse
 	require.ErrorAs(err, &responseErr)
 	assert.Equal(t, http.StatusUnauthorized, responseErr.Response.StatusCode)
+}
+
+func TestBuildProviderStartupWithFallbackPermanentErrorsOverrideTransientRoutes(t *testing.T) {
+	require := require.New(t)
+	t.Setenv("TRANSIENT_PAT", "transient-token")
+	t.Setenv("PERMANENT_PAT", "permanent-token")
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos: []config.Repo{
+			{Owner: "transient-org", Name: "one"},
+			{Owner: "permanent-org", Name: "two"},
+		},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{
+			{Host: "github.com", Owner: "transient-org", TokenEnv: "TRANSIENT_PAT"},
+			{Host: "github.com", Owner: "permanent-org", TokenEnv: "PERMANENT_PAT"},
+		},
+	}
+	require.NoError(cfg.Validate())
+	var calls atomic.Int32
+
+	_, err := buildProviderStartupWithFallback(
+		t.Context(), dbtest.Open(t), cfg,
+		tokenauth.NewSourceSet(tokenauth.Options{}),
+		defaultProviderFactories(),
+		fakeGitHubIdentityResolver{
+			err: map[string]error{
+				"TRANSIENT_PAT": &gh.ErrorResponse{
+					Response: &http.Response{StatusCode: http.StatusServiceUnavailable},
+					Message:  "GitHub is unavailable",
+				},
+				"PERMANENT_PAT": &gh.ErrorResponse{
+					Response: &http.Response{StatusCode: http.StatusUnauthorized},
+					Message:  "Bad credentials",
+				},
+			},
+			calls: &calls,
+		},
+	)
+	require.Error(err)
+	var responseErr *gh.ErrorResponse
+	require.ErrorAs(err, &responseErr)
+	assert.Equal(t, http.StatusUnauthorized, responseErr.Response.StatusCode)
+	assert.Equal(t, int32(2), calls.Load())
 }
 
 func TestBuildProviderStartupWithFallbackHandlesAppRateLimitWithoutRemint(t *testing.T) {

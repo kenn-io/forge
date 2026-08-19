@@ -102,20 +102,21 @@ type githubCredentialRoute struct {
 }
 
 type providerStartup struct {
-	registry             *platform.Registry
-	rateTrackers         map[string]*github.RateTracker
-	writeRateTrackers    map[string]*github.RateTracker
-	writeGQLRateTrackers map[string]*github.RateTracker
-	budgets              map[string]*github.SyncBudget
-	cloneSources         map[tokenauth.Key]tokenauth.Source
-	cloneAuth            map[string]tokenauth.Source
-	fetchers             map[string]*github.GraphQLFetcher
-	githubRoutes         map[tokenauth.Key]githubCredentialRoute
-	githubIdentities     map[string]*githubIdentityRuntime
-	githubRouters        map[string]*github.HostRouter
-	githubClients        map[string]github.Client
-	ratePrincipalLabels  map[string]string
-	quotaRegistry        *github.QuotaRegistry
+	registry              *platform.Registry
+	rateTrackers          map[string]*github.RateTracker
+	writeRateTrackers     map[string]*github.RateTracker
+	writeGQLRateTrackers  map[string]*github.RateTracker
+	budgets               map[string]*github.SyncBudget
+	cloneSources          map[tokenauth.Key]tokenauth.Source
+	cloneAuth             map[string]tokenauth.Source
+	fetchers              map[string]*github.GraphQLFetcher
+	githubRoutes          map[tokenauth.Key]githubCredentialRoute
+	githubIdentities      map[string]*githubIdentityRuntime
+	githubRouters         map[string]*github.HostRouter
+	githubClients         map[string]github.Client
+	ratePrincipalLabels   map[string]string
+	quotaRegistry         *github.QuotaRegistry
+	degradedProviderHosts map[string]struct{}
 }
 
 func (s *providerStartup) SourceForRepo(
@@ -238,14 +239,26 @@ func collectProviderTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 ) (map[string]tokenauth.Source, error) {
-	return providerTokenSources(ctx, cfg, set, true)
+	return providerTokenSources(ctx, cfg, set, true, nil)
+}
+
+func collectProviderTokenSourcesWithFallback(
+	ctx context.Context,
+	cfg *config.Config,
+	set *tokenauth.SourceSet,
+) (map[string]tokenauth.Source, map[string]struct{}, error) {
+	degradedProviderHosts := make(map[string]struct{})
+	sources, err := providerTokenSources(
+		ctx, cfg, set, true, degradedProviderHosts,
+	)
+	return sources, degradedProviderHosts, err
 }
 
 func registerProviderTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 ) (map[string]tokenauth.Source, error) {
-	return providerTokenSources(context.Background(), cfg, set, false)
+	return providerTokenSources(context.Background(), cfg, set, false, nil)
 }
 
 func providerTokenSources(
@@ -253,6 +266,7 @@ func providerTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 	resolve bool,
+	degradedProviderHosts map[string]struct{},
 ) (map[string]tokenauth.Source, error) {
 	if err := cfg.ValidateRepoTokenSourceConsistency(); err != nil {
 		return nil, err
@@ -272,17 +286,23 @@ func providerTokenSources(
 				if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
 					continue
 				}
-				label := fmt.Sprintf("%s host %s", desc.Key.Platform, desc.Key.Host)
-				if plan.GitHubOwner != "" {
-					label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
+				if degradedProviderHosts != nil &&
+					desc.Key.Platform == string(platform.KindGitHub) &&
+					isTransientGitHubStartupError(err) {
+					degradedProviderHosts[key] = struct{}{}
+				} else {
+					label := fmt.Sprintf("%s host %s", desc.Key.Platform, desc.Key.Host)
+					if plan.GitHubOwner != "" {
+						label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
+					}
+					if plan.Required {
+						return nil, fmt.Errorf("no token for %s via %s: %w", label, desc.SafeString(), err)
+					}
+					return nil, fmt.Errorf(
+						"read optional token for %s via %s: %w",
+						label, desc.SafeString(), err,
+					)
 				}
-				if plan.Required {
-					return nil, fmt.Errorf("no token for %s via %s: %w", label, desc.SafeString(), err)
-				}
-				return nil, fmt.Errorf(
-					"read optional token for %s via %s: %w",
-					label, desc.SafeString(), err,
-				)
 			}
 		}
 		if !seen {

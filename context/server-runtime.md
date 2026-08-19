@@ -24,6 +24,9 @@ and the root event stream.
 - Sync-enabled startup keeps the local UI and scheduled sync available during transient
   GitHub credential or identity failures; permanent auth and config failures remain fatal
   (`cmd/kenn-forge/provider_startup_fallback.go::buildProviderStartupWithFallback`).
+- Degraded provider-host startup expands repositories from SQLite and config only; it
+  never waits on upstream repository reads before serving archive APIs
+  (`cmd/kenn-forge/main.go::resolveStartupRepos`).
 
 ## Startup Lock
 

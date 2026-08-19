@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 
 	gh "github.com/google/go-github/v89/github"
 
@@ -14,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/githubapp"
+	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -31,6 +33,24 @@ func (hostAccountingIdentityResolver) ResolvePAT(
 	return github.GitHubIdentity{Key: github.HostIdentity(host)}, token, nil
 }
 
+type fallbackIdentityResolver struct {
+	primary               github.IdentityResolver
+	degradedProviderHosts map[string]struct{}
+}
+
+func (r fallbackIdentityResolver) ResolvePAT(
+	ctx context.Context,
+	host string,
+	source tokenauth.Source,
+) (github.GitHubIdentity, string, error) {
+	identity, token, err := r.primary.ResolvePAT(ctx, host, source)
+	if err == nil || !isTransientGitHubStartupError(err) {
+		return identity, token, err
+	}
+	r.degradedProviderHosts[providerHostKey(string(platform.KindGitHub), host)] = struct{}{}
+	return (hostAccountingIdentityResolver{}).ResolvePAT(ctx, host, source)
+}
+
 func buildProviderStartupWithFallback(
 	ctx context.Context,
 	database *db.DB,
@@ -39,37 +59,26 @@ func buildProviderStartupWithFallback(
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
 ) (providerStartup, error) {
-	providerSources, err := collectProviderTokenSources(ctx, cfg, set)
-	if err == nil {
-		var startup providerStartup
-		startup, err = buildProviderStartup(
-			ctx, database, cfg, set, providerSources, factories, resolver,
-		)
-		if err == nil {
-			return startup, nil
-		}
-	}
-	if !isTransientGitHubStartupError(err) {
+	providerSources, degradedProviderHosts, err := collectProviderTokenSourcesWithFallback(
+		ctx, cfg, set,
+	)
+	if err != nil {
 		return providerStartup{}, err
 	}
-
-	slog.Warn(
-		"GitHub unavailable during provider startup; serving local archive while sync retries",
-		"error", err,
+	startup, err := buildProviderStartup(
+		ctx, database, cfg, set, providerSources, factories, fallbackIdentityResolver{
+			primary:               resolver,
+			degradedProviderHosts: degradedProviderHosts,
+		},
 	)
-	providerSources, fallbackErr := registerProviderTokenSources(cfg, set)
-	if fallbackErr != nil {
-		return providerStartup{}, fmt.Errorf(
-			"register degraded provider sources: %w", fallbackErr,
-		)
+	if err != nil {
+		return providerStartup{}, err
 	}
-	startup, fallbackErr := buildProviderStartup(
-		ctx, database, cfg, set, providerSources, factories,
-		hostAccountingIdentityResolver{},
-	)
-	if fallbackErr != nil {
-		return providerStartup{}, fmt.Errorf(
-			"build degraded provider startup: %w", fallbackErr,
+	startup.degradedProviderHosts = degradedProviderHosts
+	if len(degradedProviderHosts) > 0 {
+		slog.Warn(
+			"GitHub unavailable during provider startup; serving local archive while sync retries",
+			"degraded_hosts", len(degradedProviderHosts),
 		)
 	}
 	return startup, nil
@@ -104,11 +113,24 @@ func isTransientGitHubStartupError(err error) bool {
 	if errors.As(err, &appErr) {
 		if appErr.StatusCode == http.StatusForbidden {
 			return appErr.Header.Get("X-RateLimit-Remaining") == "0" ||
-				appErr.Header.Get("Retry-After") != ""
+				appErr.Header.Get("Retry-After") != "" ||
+				isGitHubSecondaryRateLimitBody(appErr.Body)
 		}
 		return appErr.StatusCode == http.StatusRequestTimeout ||
 			appErr.StatusCode == http.StatusTooManyRequests ||
 			appErr.StatusCode >= 500
 	}
 	return false
+}
+
+func isGitHubSecondaryRateLimitBody(body string) bool {
+	var response struct {
+		DocumentationURL string `json:"documentation_url"`
+	}
+	if json.Unmarshal([]byte(body), &response) != nil {
+		return false
+	}
+	documentationURL := strings.TrimSpace(response.DocumentationURL)
+	return strings.HasSuffix(documentationURL, "secondary-rate-limits") ||
+		strings.HasSuffix(documentationURL, "#abuse-rate-limits")
 }

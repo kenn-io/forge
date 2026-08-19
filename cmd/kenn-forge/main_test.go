@@ -245,6 +245,7 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		nil,
 		nil,
+		nil,
 	)
 
 	assert.Equal([]ghclient.RepoRef{
@@ -264,6 +265,70 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 			Archived:     true,
 		},
 	}, repos)
+}
+
+type blockingStartupRepositoryReader struct {
+	mainTestRepositoryReader
+	started chan struct{}
+	release chan struct{}
+}
+
+func (r blockingStartupRepositoryReader) GetRepository(
+	ctx context.Context,
+	_ platform.RepoRef,
+) (platform.Repository, error) {
+	close(r.started)
+	select {
+	case <-r.release:
+		return platform.Repository{}, errors.New("released blocked repository read")
+	case <-ctx.Done():
+		return platform.Repository{}, ctx.Err()
+	}
+}
+
+func TestResolveStartupReposSkipsNetworkForDegradedProviderHost(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	reader := blockingStartupRepositoryReader{
+		mainTestRepositoryReader: mainTestRepositoryReader{
+			kind: platform.KindGitHub,
+			host: "github.com",
+		},
+		started: started,
+		release: release,
+	}
+	cfg := &config.Config{
+		Repos: []config.Repo{{Owner: "acme", Name: "widgets"}},
+	}
+	registry := mustProviderRegistry(t, nil, reader)
+	resolved := make(chan []ghclient.RepoRef, 1)
+	go func() {
+		resolved <- resolveStartupRepos(
+			t.Context(), cfg, registry, nil, nil,
+			map[string]struct{}{
+				providerHostKey(string(platform.KindGitHub), "github.com"): {},
+			},
+		)
+	}()
+
+	select {
+	case <-started:
+		require.Fail("degraded startup attempted a provider repository read")
+	case repos := <-resolved:
+		assert.Equal([]ghclient.RepoRef{{
+			Platform:           platform.KindGitHub,
+			PlatformHost:       "github.com",
+			Owner:              "acme",
+			Name:               "widgets",
+			RepoPath:           "acme/widgets",
+			ConfiguredRepoPath: "acme/widgets",
+		}}, repos)
+	case <-time.After(time.Second):
+		require.Fail("degraded startup blocked on repository resolution")
+	}
 }
 
 type getRepoFailingClient struct {
@@ -304,6 +369,7 @@ func TestResolveStartupReposPrefersResolvedOverFallbackDuplicates(t *testing.T) 
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		nil,
 		nil,
+		nil,
 	)
 
 	assert.Equal([]ghclient.RepoRef{{
@@ -328,6 +394,7 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 		t.Context(),
 		cfg,
 		mustProviderRegistry(t, nil),
+		nil,
 		nil,
 		nil,
 	)
@@ -383,6 +450,7 @@ func TestResolveStartupReposRecoversRenamedExactEntryFromCatalog(t *testing.T) {
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		database,
 		nil,
+		nil,
 	)
 
 	require.Len(repos, 1)
@@ -421,6 +489,7 @@ func TestResolveStartupReposRegistersCredentialAliasForCatalogFallback(t *testin
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		database,
 		map[string]*ghclient.HostRouter{"github.com": router},
+		nil,
 	)
 
 	require.Len(repos, 1)
@@ -454,7 +523,7 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	}
 
 	repos := resolveStartupRepos(
-		ctx, cfg, mustProviderRegistry(t, nil), database, nil,
+		ctx, cfg, mustProviderRegistry(t, nil), database, nil, nil,
 	)
 
 	assert.ElementsMatch([]ghclient.RepoRef{
@@ -488,7 +557,7 @@ func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 		host: "gitlab.com",
 	})
 
-	repos := resolveStartupRepos(t.Context(), cfg, registry, nil, nil)
+	repos := resolveStartupRepos(t.Context(), cfg, registry, nil, nil, nil)
 
 	assert.Equal([]ghclient.RepoRef{{
 		Platform:           platform.KindGitLab,
@@ -767,6 +836,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 		cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		database,
+		nil,
 		nil,
 	)
 	syncer := ghclient.NewSyncer(

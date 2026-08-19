@@ -122,6 +122,9 @@ GitHub may additionally define exact-repository and owner authorization routes.
 - Transient GitHub bootstrap failures degrade affected provider-hosts while route
   validation continues, so permanent auth or config failures remain fatal; degraded PAT
   routes use host accounting while App reads retain installation identity (`cmd/kenn-forge/provider_startup_fallback.go::buildProviderStartupWithFallback`).
+- Startup fallback may mark degraded hosts only during discovery; live PAT revalidation
+  always uses the primary resolver so degraded-host state is frozen before sync begins
+  (`cmd/kenn-forge/provider_startup_fallback.go::fallbackIdentityResolver.LiveSourceIdentityResolver`).
 - Refresh access uses the gated registry; only explicit foreground provider
   operations use direct access (`internal/github/sync.go::Syncer.SyncRegistry`).
 - Refresh interfaces that may be retained across policy setup must recheck the

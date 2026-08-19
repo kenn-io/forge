@@ -181,6 +181,41 @@ func TestBuildProviderStartupWithFallbackKeepsRoutesAfterGitHubUnavailable(t *te
 	}
 }
 
+func TestBuildProviderStartupWithFallbackBindsLiveSourcesToPrimaryResolver(t *testing.T) {
+	require := require.New(t)
+	t.Setenv("ORG_PAT", "startup-token")
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos:    []config.Repo{{Owner: "org", Name: "repo"}},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
+			Host: "github.com", Owner: "org", TokenEnv: "ORG_PAT",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	upstreamErr := &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusServiceUnavailable},
+		Message:  "GitHub is unavailable",
+	}
+
+	startup, err := buildProviderStartupWithFallback(
+		t.Context(), dbtest.Open(t), cfg,
+		tokenauth.NewSourceSet(tokenauth.Options{}),
+		defaultProviderFactories(),
+		fakeGitHubIdentityResolver{err: map[string]error{"ORG_PAT": upstreamErr}},
+	)
+	require.NoError(err)
+
+	// A changed live token must be revalidated by the primary resolver. The
+	// startup-only fallback must not remain attached to the source and mutate
+	// degradedProviderHosts after concurrent sync has begun.
+	t.Setenv("ORG_PAT", "live-token")
+	source := startup.SourceForRepo("github", "github.com", "org", "repo")
+	require.NotNil(source)
+	_, err = source.Token(t.Context())
+	require.ErrorIs(err, upstreamErr)
+}
+
 func TestBuildProviderStartupWithFallbackKeepsPermanentErrorsFatal(t *testing.T) {
 	require := require.New(t)
 	t.Setenv("ORG_PAT", "org-token")

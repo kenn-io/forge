@@ -42,8 +42,12 @@ type ManagedSource struct {
 }
 
 type githubAppTokenCache struct {
-	token string
-	exp   time.Time
+	token       string
+	exp         time.Time
+	err         error
+	retryAt     time.Time
+	mintDone    chan struct{}
+	invalidated bool
 }
 
 // githubAppTokenStore is shared by every managed source in one SourceSet.
@@ -51,31 +55,98 @@ type githubAppTokenCache struct {
 // minted for their common App installation without weakening route selection.
 type githubAppTokenStore struct {
 	mu     sync.Mutex
-	tokens map[Candidate]githubAppTokenCache
+	tokens map[Candidate]*githubAppTokenCache
+	now    func() time.Time
 }
 
 func newGitHubAppTokenStore() *githubAppTokenStore {
-	return &githubAppTokenStore{tokens: make(map[Candidate]githubAppTokenCache)}
+	return &githubAppTokenStore{
+		tokens: make(map[Candidate]*githubAppTokenCache),
+		now:    time.Now,
+	}
 }
 
-func (s *githubAppTokenStore) get(candidate Candidate) githubAppTokenCache {
-	if s == nil {
-		return githubAppTokenCache{}
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.tokens[canonicalCandidate(candidate)]
+const githubAppMintRetryMax = time.Hour
+
+type retryDeadlineError interface {
+	RetryDeadline(time.Time) time.Time
 }
 
-func (s *githubAppTokenStore) put(
-	candidate Candidate, cached githubAppTokenCache,
-) {
-	if s == nil {
-		return
+func githubAppMintRetryDeadline(err error, now time.Time) time.Time {
+	var retryErr retryDeadlineError
+	if !errors.As(err, &retryErr) {
+		return time.Time{}
 	}
-	s.mu.Lock()
-	s.tokens[canonicalCandidate(candidate)] = cached
-	s.mu.Unlock()
+	retryAt := retryErr.RetryDeadline(now)
+	if !retryAt.After(now) {
+		return time.Time{}
+	}
+	maxRetryAt := now.Add(githubAppMintRetryMax)
+	if retryAt.After(maxRetryAt) {
+		return maxRetryAt
+	}
+	return retryAt
+}
+
+func (s *githubAppTokenStore) resolve(
+	ctx context.Context,
+	candidate Candidate,
+	minter GitHubAppMinter,
+) (string, time.Time, error) {
+	key := canonicalCandidate(candidate)
+	for {
+		now := s.now()
+		s.mu.Lock()
+		cached := s.tokens[key]
+		if cached != nil && cached.err != nil && now.Before(cached.retryAt) {
+			err := cached.err
+			s.mu.Unlock()
+			return "", time.Time{}, err
+		}
+		if cached != nil && cached.token != "" &&
+			now.Add(githubAppTokenRefreshSkew).Before(cached.exp) {
+			token, exp := cached.token, cached.exp
+			s.mu.Unlock()
+			return token, exp, nil
+		}
+		if cached != nil && cached.mintDone != nil {
+			done := cached.mintDone
+			s.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return "", time.Time{}, ctx.Err()
+			case <-done:
+				s.mu.Lock()
+				if cached.invalidated {
+					s.mu.Unlock()
+					continue
+				}
+				token, exp, err := cached.token, cached.exp, cached.err
+				s.mu.Unlock()
+				return token, exp, err
+			}
+		}
+
+		cached = &githubAppTokenCache{mintDone: make(chan struct{})}
+		s.tokens[key] = cached
+		s.mu.Unlock()
+
+		token, exp, err := minter(ctx, candidate)
+		now = s.now()
+		s.mu.Lock()
+		cached.token = token
+		cached.exp = exp
+		cached.err = err
+		cached.retryAt = githubAppMintRetryDeadline(err, now)
+		close(cached.mintDone)
+		cached.mintDone = nil
+		if s.tokens[key] == cached &&
+			(cached.invalidated || (err != nil && cached.retryAt.IsZero())) {
+			delete(s.tokens, key)
+		}
+		s.mu.Unlock()
+		return token, exp, err
+	}
 }
 
 func (s *githubAppTokenStore) invalidate(candidates []Candidate) {
@@ -85,7 +156,11 @@ func (s *githubAppTokenStore) invalidate(candidates []Candidate) {
 	s.mu.Lock()
 	for _, candidate := range candidates {
 		if candidate.Kind == SourceKindGitHubApp {
-			delete(s.tokens, canonicalCandidate(candidate))
+			key := canonicalCandidate(candidate)
+			if cached := s.tokens[key]; cached != nil {
+				cached.invalidated = true
+			}
+			delete(s.tokens, key)
 		}
 	}
 	s.mu.Unlock()
@@ -231,7 +306,6 @@ func (s *ManagedSource) githubAppToken(
 			return "", false, nil
 		}
 	}
-	cacheKey := canonicalCandidate(candidate)
 	s.mu.Lock()
 	minter := s.options.GitHubApp
 	store := s.appTokens
@@ -239,11 +313,7 @@ func (s *ManagedSource) githubAppToken(
 	if minter == nil {
 		return "", false, nil
 	}
-	cached := store.get(cacheKey)
-	if cached.token != "" && time.Until(cached.exp) > githubAppTokenRefreshSkew {
-		return cached.token, true, nil
-	}
-	token, exp, err := minter(ctx, candidate)
+	token, _, err := store.resolve(ctx, candidate, minter)
 	if err != nil {
 		// Surface mint failures instead of silently degrading to the
 		// PAT chain: the app exists precisely because the PAT budget
@@ -255,7 +325,6 @@ func (s *ManagedSource) githubAppToken(
 	if token == "" {
 		return "", true, nil
 	}
-	store.put(cacheKey, githubAppTokenCache{token: token, exp: exp})
 	return token, true, nil
 }
 

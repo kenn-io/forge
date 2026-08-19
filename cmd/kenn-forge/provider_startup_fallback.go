@@ -38,6 +38,13 @@ type fallbackIdentityResolver struct {
 	degradedProviderHosts map[string]struct{}
 }
 
+// LiveSourceIdentityResolver keeps the startup-only fallback from escaping in
+// identity-bound token sources. Once startup finishes, changed PATs must be
+// revalidated against GitHub rather than mutating degradedProviderHosts.
+func (r fallbackIdentityResolver) LiveSourceIdentityResolver() github.IdentityResolver {
+	return r.primary
+}
+
 func (r fallbackIdentityResolver) ResolvePAT(
 	ctx context.Context,
 	host string,

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -222,6 +223,32 @@ func (e *StatusError) Error() string {
 		msg = msg[:200] + "..."
 	}
 	return fmt.Sprintf("github api status %d: %s", e.StatusCode, msg)
+}
+
+// RetryDeadline returns the server-provided time when a rate-limited request
+// may be retried. Retry-After takes precedence over the primary rate-limit
+// reset header when both are present.
+func (e *StatusError) RetryDeadline(now time.Time) time.Time {
+	if e == nil {
+		return time.Time{}
+	}
+	if value := strings.TrimSpace(e.Header.Get("Retry-After")); value != "" {
+		if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return now.Add(time.Duration(seconds) * time.Second)
+		}
+		if at, err := http.ParseTime(value); err == nil {
+			return at
+		}
+	}
+	rateExhausted := strings.TrimSpace(e.Header.Get("X-RateLimit-Remaining")) == "0"
+	reset := strings.TrimSpace(e.Header.Get("X-RateLimit-Reset"))
+	if (e.StatusCode == http.StatusTooManyRequests || rateExhausted) &&
+		reset != "" {
+		if epoch, err := strconv.ParseInt(reset, 10, 64); err == nil {
+			return time.Unix(epoch, 0).UTC()
+		}
+	}
+	return time.Time{}
 }
 
 // IsStatus reports whether err is a StatusError with the given code.

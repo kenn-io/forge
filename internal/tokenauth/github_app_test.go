@@ -206,6 +206,87 @@ func TestGitHubAppMintFailureSurfacesError(t *testing.T) {
 	require.ErrorContains(t, err, "github_app:77@github.com")
 }
 
+func TestGitHubAppFailedMintIsSingleFlight(t *testing.T) {
+	var mints atomic.Int64
+	firstEntered := make(chan struct{})
+	secondEntered := make(chan struct{})
+	release := make(chan struct{})
+	src := NewManagedSource(githubAppDescriptor(42), Options{
+		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+			switch mints.Add(1) {
+			case 1:
+				close(firstEntered)
+			case 2:
+				close(secondEntered)
+			}
+			<-release
+			return "", time.Time{}, errors.New("rate limited")
+		},
+	})
+
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, err := src.Token(context.Background())
+			results <- err
+		}()
+	}
+	<-firstEntered
+	select {
+	case <-secondEntered:
+		assert.Fail(t, "parallel callers minted the same App token independently")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	for range 2 {
+		require.ErrorContains(t, <-results, "rate limited")
+	}
+	assert.Equal(t, int64(1), mints.Load())
+}
+
+type retryDeadlineTestError struct {
+	at time.Time
+}
+
+func (e retryDeadlineTestError) Error() string { return "rate limited" }
+
+func (e retryDeadlineTestError) RetryDeadline(time.Time) time.Time { return e.at }
+
+func TestGitHubAppFailedMintCachesBoundedRetryDeadline(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC)
+	tooLate := now.Add(24 * time.Hour)
+	assert.Equal(now.Add(githubAppMintRetryMax),
+		githubAppMintRetryDeadline(retryDeadlineTestError{at: tooLate}, now))
+	assert.True(
+		githubAppMintRetryDeadline(retryDeadlineTestError{at: now}, now).IsZero())
+
+	var mints atomic.Int64
+	store := newGitHubAppTokenStore()
+	store.now = func() time.Time { return now }
+	src := newManagedSource(githubAppDescriptor(42), Options{
+		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+			if mints.Add(1) == 1 {
+				return "", time.Time{}, retryDeadlineTestError{at: now.Add(time.Minute)}
+			}
+			return "ghs_recovered", now.Add(time.Hour), nil
+		},
+	}, store)
+
+	_, err := src.Token(context.Background())
+	require.ErrorContains(err, "rate limited")
+	_, err = src.Token(context.Background())
+	require.ErrorContains(err, "rate limited")
+	assert.Equal(int64(1), mints.Load(), "retry window must suppress another mint")
+
+	now = now.Add(time.Minute)
+	token, err := src.Token(context.Background())
+	require.NoError(err)
+	assert.Equal("ghs_recovered", token)
+	assert.Equal(int64(2), mints.Load())
+}
+
 func TestMutationAuthSkipsGitHubAppCandidate(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

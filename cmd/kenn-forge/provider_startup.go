@@ -494,6 +494,12 @@ func buildGitHubIdentityRuntimes(
 		}
 	}
 	resolvedPATs := make(map[string]resolvedGitHubPAT, len(plans))
+	liveResolver := resolver
+	if provider, ok := resolver.(interface {
+		LiveSourceIdentityResolver() github.IdentityResolver
+	}); ok {
+		liveResolver = provider.LiveSourceIdentityResolver()
+	}
 	for _, plan := range plans {
 		desc := plan.Descriptor
 		// Scoped routes already carry every credential needed for their
@@ -551,7 +557,7 @@ func buildGitHubIdentityRuntimes(
 		}
 		if writeIdentity.Key.Principal != "" {
 			source = github.BindSourceIdentity(
-				source, desc.Key.Host, writeIdentity.Key, resolvedWrite.token, resolver,
+				source, desc.Key.Host, writeIdentity.Key, resolvedWrite.token, liveResolver,
 			)
 		}
 		discoveryOwner := ""

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,6 +34,7 @@ func TestTransientGitHubStartupErrorClassification(t *testing.T) {
 		{name: "request timeout", err: &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusRequestTimeout}}, want: true},
 		{name: "too many requests", err: &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusTooManyRequests}}, want: true},
 		{name: "app rate limit", err: &githubapp.StatusError{StatusCode: http.StatusTooManyRequests}, want: true},
+		{name: "app forbidden", err: &githubapp.StatusError{StatusCode: http.StatusForbidden}, want: false},
 		{name: "canceled", err: context.Canceled, want: false},
 		{name: "unauthorized", err: &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusUnauthorized}}, want: false},
 		{name: "permanent", err: errors.New("invalid configuration"), want: false},
@@ -43,10 +45,61 @@ func TestTransientGitHubStartupErrorClassification(t *testing.T) {
 			assert.Equal(t, tt.want, isTransientGitHubStartupError(tt.err))
 		})
 	}
+
+	for _, tt := range []struct {
+		name   string
+		header http.Header
+		want   bool
+	}{
+		{
+			name:   "app primary rate limit",
+			header: http.Header{"X-RateLimit-Remaining": {"0"}},
+			want:   true,
+		},
+		{
+			name:   "app secondary rate limit",
+			header: http.Header{"Retry-After": {"60"}},
+			want:   true,
+		},
+		{
+			name:   "app forbidden with remaining budget",
+			header: http.Header{"X-RateLimit-Remaining": {"4999"}},
+			want:   false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isTransientGitHubStartupError(
+				githubAppStatusError(t, http.StatusForbidden, tt.header),
+			))
+		})
+	}
+}
+
+func githubAppStatusError(t *testing.T, status int, header http.Header) error {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		for name, values := range header {
+			for _, value := range values {
+				w.Header().Add(name, value)
+			}
+		}
+		http.Error(w, http.StatusText(status), status)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := githubapp.NewClientWithBase(server.URL).CoreRateLimit(t.Context(), "app-token")
+	require.Error(t, err)
+	var statusErr *githubapp.StatusError
+	require.ErrorAs(t, err, &statusErr)
+	for name, values := range header {
+		assert.Equal(t, values, statusErr.Header.Values(name))
+	}
+	return err
 }
 
 func TestBuildProviderStartupWithFallbackKeepsRoutesAfterGitHubUnavailable(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 	t.Setenv("ORG_A_PAT", "org-a-token")
 	t.Setenv("ORG_B_PAT", "org-b-token")
 	cfg := &config.Config{
@@ -61,7 +114,7 @@ func TestBuildProviderStartupWithFallbackKeepsRoutesAfterGitHubUnavailable(t *te
 			{Host: "github.com", Owner: "org-b", TokenEnv: "ORG_B_PAT"},
 		},
 	}
-	require.NoError(t, cfg.Validate())
+	require.NoError(cfg.Validate())
 
 	startup, err := buildProviderStartupWithFallback(
 		t.Context(), dbtest.Open(t), cfg,
@@ -78,10 +131,10 @@ func TestBuildProviderStartupWithFallbackKeepsRoutesAfterGitHubUnavailable(t *te
 			},
 		}},
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	router := startup.githubRouters["github.com"]
-	require.NotNil(t, router)
+	require.NotNil(router)
 	wantIdentity := github.IdentityKey{Host: "github.com", Principal: "host"}
 	for _, tc := range []struct {
 		owner string
@@ -92,19 +145,20 @@ func TestBuildProviderStartupWithFallbackKeepsRoutesAfterGitHubUnavailable(t *te
 		{owner: "org-b", name: "two", token: "org-b-token"},
 	} {
 		route, routeErr := router.RouteForRepo(tc.owner, tc.name)
-		require.NoError(t, routeErr)
+		require.NoError(routeErr)
 		assert.Equal(wantIdentity, route.ReadIdentity)
 		assert.Equal(wantIdentity, route.WriteIdentity)
 
 		source := startup.SourceForRepo("github", "github.com", tc.owner, tc.name)
-		require.NotNil(t, source)
+		require.NotNil(source)
 		gotToken, tokenErr := source.Token(t.Context())
-		require.NoError(t, tokenErr)
+		require.NoError(tokenErr)
 		assert.Equal(tc.token, gotToken)
 	}
 }
 
 func TestBuildProviderStartupWithFallbackKeepsPermanentErrorsFatal(t *testing.T) {
+	require := require.New(t)
 	t.Setenv("ORG_PAT", "org-token")
 	cfg := &config.Config{
 		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
@@ -114,7 +168,7 @@ func TestBuildProviderStartupWithFallbackKeepsPermanentErrorsFatal(t *testing.T)
 			Host: "github.com", Owner: "org", TokenEnv: "ORG_PAT",
 		}},
 	}
-	require.NoError(t, cfg.Validate())
+	require.NoError(cfg.Validate())
 
 	_, err := buildProviderStartupWithFallback(
 		t.Context(), dbtest.Open(t), cfg,
@@ -127,14 +181,15 @@ func TestBuildProviderStartupWithFallbackKeepsPermanentErrorsFatal(t *testing.T)
 			},
 		}},
 	)
-	require.Error(t, err)
+	require.Error(err)
 	var responseErr *gh.ErrorResponse
-	require.ErrorAs(t, err, &responseErr)
+	require.ErrorAs(err, &responseErr)
 	assert.Equal(t, http.StatusUnauthorized, responseErr.Response.StatusCode)
 }
 
-func TestBuildProviderStartupWithFallbackDoesNotRemintAppToken(t *testing.T) {
+func TestBuildProviderStartupWithFallbackHandlesAppRateLimitWithoutRemint(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 	cfg := &config.Config{
 		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
 		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
@@ -145,15 +200,15 @@ func TestBuildProviderStartupWithFallbackDoesNotRemintAppToken(t *testing.T) {
 			RepositorySelection: "all",
 		}},
 	}
-	require.NoError(t, cfg.Validate())
+	require.NoError(cfg.Validate())
 	var mints atomic.Int32
+	rateLimitErr := githubAppStatusError(t, http.StatusForbidden, http.Header{
+		"X-RateLimit-Remaining": {"0"},
+	})
 	set := tokenauth.NewSourceSet(tokenauth.Options{
 		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
 			mints.Add(1)
-			return "", time.Time{}, &githubapp.StatusError{
-				StatusCode: http.StatusServiceUnavailable,
-				Body:       "GitHub is unavailable",
-			}
+			return "", time.Time{}, rateLimitErr
 		},
 		GitHubCLI: func(context.Context, string) (string, error) {
 			return "", tokenauth.ErrMissingToken
@@ -164,13 +219,13 @@ func TestBuildProviderStartupWithFallbackDoesNotRemintAppToken(t *testing.T) {
 		t.Context(), dbtest.Open(t), cfg, set,
 		defaultProviderFactories(), fakeGitHubIdentityResolver{},
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(int32(1), mints.Load())
 
 	router := startup.githubRouters["github.com"]
-	require.NotNil(t, router)
+	require.NotNil(router)
 	route, err := router.RouteForRepo("org", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(
 		github.IdentityKey{Host: "github.com", Principal: "installation:789"},
 		route.ReadIdentity,

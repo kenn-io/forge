@@ -102,6 +102,10 @@ func isTransientGitHubStartupError(err error) bool {
 	}
 	var appErr *githubapp.StatusError
 	if errors.As(err, &appErr) {
+		if appErr.StatusCode == http.StatusForbidden {
+			return appErr.Header.Get("X-RateLimit-Remaining") == "0" ||
+				appErr.Header.Get("Retry-After") != ""
+		}
 		return appErr.StatusCode == http.StatusRequestTimeout ||
 			appErr.StatusCode == http.StatusTooManyRequests ||
 			appErr.StatusCode >= 500

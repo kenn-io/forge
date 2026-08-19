@@ -212,6 +212,7 @@ func (c *Client) CoreRateLimit(ctx context.Context, token string) (*RateLimit, e
 // StatusError is a non-2xx API response.
 type StatusError struct {
 	StatusCode int
+	Header     http.Header
 	Body       string
 }
 
@@ -265,7 +266,11 @@ func (c *Client) do(
 		return fmt.Errorf("reading response body: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &StatusError{StatusCode: resp.StatusCode, Body: string(data)}
+		return &StatusError{
+			StatusCode: resp.StatusCode,
+			Header:     resp.Header.Clone(),
+			Body:       string(data),
+		}
 	}
 	if out == nil {
 		return nil

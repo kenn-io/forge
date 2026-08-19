@@ -109,6 +109,22 @@ func TestTmuxLauncherCanHideStatusOnNewSessions(t *testing.T) {
 	assert.NotContains(launcher.attachSessionCommand(), "status")
 }
 
+func TestTmuxLauncherEnablesPassthroughPerPane(t *testing.T) {
+	launcher := tmuxLauncher{
+		TmuxCommand: []string{"/usr/bin/tmux", "-L", "kenn-forge-test"},
+		Session:     "kenn-forge-test",
+	}
+
+	assert.Equal(t,
+		[]string{
+			"/usr/bin/tmux", "-L", "kenn-forge-test",
+			"set-option", "-q", "-p", "-t", "kenn-forge-test",
+			"allow-passthrough", "on",
+		},
+		launcher.enablePassthroughCommand(),
+	)
+}
+
 func TestTmuxLauncherAttachForcesUTF8(t *testing.T) {
 	launcher := tmuxLauncher{
 		TmuxCommand: []string{"/usr/bin/tmux", "-L", "kenn-forge-test"},

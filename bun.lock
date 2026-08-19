@@ -36,6 +36,7 @@
         "@tiptap/pm": "3.29.2",
         "@tiptap/suggestion": "3.29.2",
         "@xterm/addon-fit": "^0.11.0",
+        "@xterm/addon-image": "0.10.0-beta.299",
         "@xterm/addon-ligatures": "^0.10.0",
         "@xterm/addon-web-links": "^0.12.0",
         "@xterm/addon-webgl": "0.20.0-beta.298",
@@ -596,6 +597,8 @@
     "@voidzero-dev/vite-plus-win32-x64-msvc": ["@voidzero-dev/vite-plus-win32-x64-msvc@0.2.8", "", { "os": "win32", "cpu": "x64" }, "sha512-VSpa+gK1MjOH7GeO6H5xtJLqisQOWVeRQIDQs9XKizXFX0R4NCrioYO6Rc31QLXfL0lPCkwsKhp/9M9gllImRg=="],
 
     "@xterm/addon-fit": ["@xterm/addon-fit@0.11.0", "", {}, "sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g=="],
+
+    "@xterm/addon-image": ["@xterm/addon-image@0.10.0-beta.299", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.301" } }, "sha512-odxXWWAKh2KRIUgXTvQejzkzlvIbpV3aepkkS6uaQKUVYf9HUqWEhECUsUvm2pMgZtqLqGuhmynw/qvKWmHrBQ=="],
 
     "@xterm/addon-ligatures": ["@xterm/addon-ligatures@0.10.0", "", { "dependencies": { "font-finder": "^1.1.0", "font-ligatures": "^1.4.1" } }, "sha512-/Few8ZSHMib7sGjRJoc5l7bCtEB9XJfkNofvPpOcWADxKaUl8og8P172j67OoACSNJAXqeCLIuvj8WFCBkcTxg=="],
 

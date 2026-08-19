@@ -8,6 +8,7 @@
   import { Terminal } from "@xterm/xterm";
   import type { ILinkHandler } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
+  import { ImageAddon } from "@xterm/addon-image";
   import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { WebglAddon } from "@xterm/addon-webgl";
@@ -991,6 +992,13 @@
       const fit = new FitAddon();
       fitAddon = fit;
       term.loadAddon(fit);
+      term.loadAddon(
+        new ImageAddon({
+          iipSupport: false,
+          kittySupport: true,
+          sixelSupport: false,
+        }),
+      );
       term.loadAddon(
         new WebLinksAddon(openTerminalLink, {
           hover: showTerminalLink,

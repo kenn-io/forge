@@ -196,6 +196,9 @@ still exists.
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
+- Direct Kitty frames need the browser decoder and per-pane tmux `allow-passthrough`;
+  the current addon does not handle the Unicode placeholder mode that `kitten icat`
+  forces through tmux (`frontend/tests/e2e-full/00-terminal-kitty-graphics.spec.ts:106`).
 - Local-runtime reconnects restore browser-generated cursor-key, mouse, focus,
   and paste DEC modes from session-wide PTY state, not bounded screen replay
   (`internal/workspace/localruntime/manager.go::session.subscribe`).

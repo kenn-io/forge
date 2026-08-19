@@ -199,13 +199,7 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 		return tmuxLaunchResult{}, err
 	}
 	if exists {
-		if err := l.validateOwner(ctx); err != nil {
-			return tmuxLaunchResult{}, err
-		}
-		if err := l.replaceLaunchMarker(ctx); err != nil {
-			return tmuxLaunchResult{}, err
-		}
-		return tmuxLaunchResult{AttachCommand: l.attachSessionCommand()}, nil
+		return l.prepareExisting(ctx)
 	}
 
 	paneCommand, cleanupEnvFile, err := l.newSessionPaneCommand()
@@ -220,28 +214,20 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 	}()
 	if err := l.run(ctx, l.newSessionCommand(paneCommand)); err != nil {
 		if retryErr := l.validateExistingAfterCreateRace(ctx); retryErr == nil {
-			if markerErr := l.replaceLaunchMarker(ctx); markerErr != nil {
-				return tmuxLaunchResult{}, markerErr
-			}
-			return tmuxLaunchResult{AttachCommand: l.attachSessionCommand()}, nil
+			return l.prepareExisting(ctx)
 		}
 		return tmuxLaunchResult{}, fmt.Errorf("tmux new-session: %w", err)
 	}
+	if err := l.run(ctx, l.enablePassthroughCommand()); err != nil {
+		return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+			ctx, "enable tmux passthrough", err,
+		)
+	}
 	if l.HideStatus {
 		if err := l.run(ctx, l.hideStatusCommand()); err != nil {
-			cleanupCtx, cancel := context.WithTimeout(
-				context.WithoutCancel(ctx),
-				5*time.Second,
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "hide tmux status", err,
 			)
-			killErr := l.run(cleanupCtx, l.killSessionCommand())
-			cancel()
-			if killErr != nil {
-				return tmuxLaunchResult{}, fmt.Errorf(
-					"hide tmux status: %w; cleanup new tmux session: %v",
-					err, killErr,
-				)
-			}
-			return tmuxLaunchResult{}, fmt.Errorf("hide tmux status: %w", err)
 		}
 	}
 	created = true
@@ -249,6 +235,38 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 		AttachCommand: l.attachSessionCommand(),
 		Created:       true,
 	}, nil
+}
+
+func (l tmuxLauncher) prepareExisting(ctx context.Context) (tmuxLaunchResult, error) {
+	if err := l.validateOwner(ctx); err != nil {
+		return tmuxLaunchResult{}, err
+	}
+	if err := l.replaceLaunchMarker(ctx); err != nil {
+		return tmuxLaunchResult{}, err
+	}
+	if err := l.run(ctx, l.enablePassthroughCommand()); err != nil {
+		return tmuxLaunchResult{}, fmt.Errorf("enable tmux passthrough: %w", err)
+	}
+	return tmuxLaunchResult{AttachCommand: l.attachSessionCommand()}, nil
+}
+
+func (l tmuxLauncher) cleanupNewSessionAfterError(
+	ctx context.Context,
+	operation string,
+	cause error,
+) error {
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		5*time.Second,
+	)
+	defer cancel()
+	if err := l.run(cleanupCtx, l.killSessionCommand()); err != nil {
+		return fmt.Errorf(
+			"%s: %w; cleanup new tmux session: %v",
+			operation, cause, err,
+		)
+	}
+	return fmt.Errorf("%s: %w", operation, cause)
 }
 
 // replaceLaunchMarker rewrites @forge_launch when this launch adopts an
@@ -541,6 +559,14 @@ func (l tmuxLauncher) hideStatusCommand() []string {
 	return append(
 		slices.Clone(l.TmuxCommand),
 		"set-option", "-q", "-t", l.Session, "status", "off",
+	)
+}
+
+func (l tmuxLauncher) enablePassthroughCommand() []string {
+	return append(
+		slices.Clone(l.TmuxCommand),
+		"set-option", "-q", "-p", "-t", l.Session,
+		"allow-passthrough", "on",
 	)
 }
 

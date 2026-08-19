@@ -262,6 +262,10 @@
       [data-expand-button] {
         cursor: pointer;
       }
+      [data-kenn-forge-review-line-number]:focus-visible {
+        outline: 2px solid var(--accent-blue);
+        outline-offset: -2px;
+      }
     `,
   }));
 
@@ -491,6 +495,7 @@
     demandContextHandlerRoot = root;
     root.addEventListener("click", handleDemandContextClick, { capture: true });
     root.addEventListener("click", handleGutterUtilityKeyboardClick, { capture: true });
+    root.addEventListener("keydown", handleLineNumberKeyboardSelection, { capture: true });
     root.addEventListener("slotchange", handleAnnotationSlotChange);
   }
 
@@ -571,6 +576,9 @@
       capture: true,
     });
     demandContextHandlerRoot?.removeEventListener("click", handleGutterUtilityKeyboardClick, {
+      capture: true,
+    });
+    demandContextHandlerRoot?.removeEventListener("keydown", handleLineNumberKeyboardSelection, {
       capture: true,
     });
     demandContextHandlerRoot?.removeEventListener("slotchange", handleAnnotationSlotChange);
@@ -1204,6 +1212,12 @@
       line.removeAttribute("data-diff-path");
       line.removeAttribute("data-diff-old-line");
       line.removeAttribute("data-diff-new-line");
+      if (line.hasAttribute("data-kenn-forge-review-line-number")) {
+        line.tabIndex = -1;
+        line.removeAttribute("aria-label");
+        line.removeAttribute("data-kenn-forge-review-line-number");
+        line.removeAttribute("role");
+      }
     }
 
     const split = pre.getAttribute("data-diff-type") === "split";
@@ -1235,6 +1249,56 @@
         }
       }
     }
+  }
+
+  function configureLineNumberKeyboardTarget(
+    gutter: HTMLElement,
+    side: PierreSide,
+    attributes: Record<string, string>,
+  ): void {
+    if (!enableLineSelection || !onLineSelected) {
+      gutter.tabIndex = -1;
+      gutter.removeAttribute("aria-label");
+      gutter.removeAttribute("data-kenn-forge-review-line-number");
+      gutter.removeAttribute("role");
+      return;
+    }
+    const lineNumber = attributes[side === "additions" ? "data-diff-new-line" : "data-diff-old-line"];
+    if (!lineNumber) return;
+    gutter.tabIndex = 0;
+    gutter.setAttribute("role", "button");
+    gutter.setAttribute("data-kenn-forge-review-line-number", "");
+    gutter.setAttribute(
+      "aria-label",
+      `Select ${side === "additions" ? "new" : "old"} line ${lineNumber} for review`,
+    );
+  }
+
+  function handleLineNumberKeyboardSelection(event: Event): void {
+    if (
+      !(event instanceof KeyboardEvent) ||
+      (event.key !== "Enter" && event.key !== " ") ||
+      closestFromEvent(event, "[data-utility-button]")
+    ) return;
+    const gutter = closestFromEvent(event, "[data-kenn-forge-review-line-number]");
+    if (!(gutter instanceof HTMLElement)) return;
+    const selection = keyboardLineSelection(gutter);
+    if (!selection) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    onLineSelected?.(selection);
+  }
+
+  function keyboardLineSelection(gutter: HTMLElement): SelectedLineRange | undefined {
+    const newLine = Number.parseInt(gutter.getAttribute("data-diff-new-line") ?? "", 10);
+    if (Number.isFinite(newLine)) {
+      return { start: newLine, end: newLine, side: "additions" };
+    }
+    const oldLine = Number.parseInt(gutter.getAttribute("data-diff-old-line") ?? "", 10);
+    if (Number.isFinite(oldLine)) {
+      return { start: oldLine, end: oldLine, side: "deletions" };
+    }
+    return undefined;
   }
 
   function labelGutterUtility(): void {
@@ -1508,7 +1572,7 @@
     const pair = renderedLinePair(pre, lineIndex, split, side);
     if (!pair) return;
     pair.content.tabIndex = -1;
-    pair.gutter.tabIndex = -1;
+    configureLineNumberKeyboardTarget(pair.gutter, side, attributes);
     pair.content.setAttribute("data-diff-path", renderFile.path);
     pair.gutter.setAttribute("data-diff-path", renderFile.path);
     for (const [name, value] of Object.entries(attributes)) {

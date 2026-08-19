@@ -716,7 +716,9 @@ describe("DiffFile", () => {
   async function keyboardActivateLineCommentButton(line: number, side: "left" | "right"): Promise<void> {
     const button = await findLineCommentButton(line, side);
     button.focus();
+    expect(await fireEvent.keyDown(button, { key: "Enter", code: "Enter" })).toBe(true);
     await fireEvent.click(button, { detail: 0 });
+    await fireEvent.keyUp(button, { key: "Enter", code: "Enter" });
   }
 
   async function findLineCommentButton(line: number, side: "left" | "right"): Promise<HTMLButtonElement> {
@@ -931,6 +933,26 @@ describe("DiffFile", () => {
 
     expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
     expect(selectedPierreLines()).toHaveLength(0);
+  });
+
+  it("opens an inline composer without preceding pointer interaction", async () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+    });
+
+    const lineNumber = await findPierreLineNumber(2, "right");
+    expect(lineNumber.tabIndex).toBe(0);
+    lineNumber.focus();
+    await fireEvent.keyDown(lineNumber, { key: "Enter", code: "Enter" });
+    await fireEvent.keyUp(lineNumber, { key: "Enter", code: "Enter" });
+
+    await findLineCommentButton(2, "right");
+    expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+
+    await keyboardActivateLineCommentButton(2, "right");
+
+    expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
   });
 
   it("toggles an active multiline composer from keyboard line comment button activation", async () => {

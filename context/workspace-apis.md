@@ -50,8 +50,10 @@ embedder protocol for arbitrary host state.
   derived from the number must exclude this type
   (`internal/db/queries.go::workspaceItemTypeKeysByNumber`). Requesting the same
   branch twice returns the existing workspace. Local branch and ref-namespace
-  conflicts use the first available `-N` variant as the persisted identity;
-  setup repeats allocation under the repository lock (`internal/workspace/manager.go::Manager.CreateAdHoc`).
+  conflicts use a four-character random hash suffix as the persisted identity;
+  database collisions retry with another suffix
+  (`internal/workspace/manager.go::Manager.persistAdHocWorkspace`). Setup never
+  rewrites that identity: a later Git ref collision fails explicitly.
   Once its branch is pushed the monitor links a PR into `associated_pr_number`
   (`internal/workspace/monitor.go::workspacePRMonitorEligible`); that number is
   the workspace's item identity for display, links, and search, so surfaces must
@@ -513,6 +515,8 @@ then to a detached checkout with no managed branch
 (`internal/workspace/manager.go::addFallbackWorktree`). kenn-forge owns the
 synthetic name and its numbered variants and may delete them during cleanup;
 any other pre-existing branch is user-owned and must keep pointing where it did.
+Ad-hoc workspaces instead reserve their final hashed branch identity before
+setup; a later external Git ref collision is an explicit setup error.
 
 ## Branch Upstream
 
@@ -521,8 +525,11 @@ single source of truth for every sync-derived workspace surface:
 `commits_ahead`/`commits_behind` in the list response, the sidebar
 ahead/behind arrows, push, pull, and unpushed-commit flags. All of them
 silently report nothing when the upstream is missing, so every path that
-creates a workspace-owned branch should configure it when repository identity
-is known. Upstream wiring requires a non-empty head-repository identity whose
+creates a PR-owned branch should configure it when repository identity is
+known. Issue, Kata, and ad-hoc workspaces create new untracked branches; a
+same-named remote ref is not authority to adopt an upstream
+(`internal/workspace/manager.go::configureFallbackBranchUpstream`). PR upstream
+wiring requires a non-empty head-repository identity whose
 provider, host, and full repository path match the base repository; matching
 commit SHAs are not identity evidence
 because forks preserve commit IDs. Unknown and fork heads stay untracked. The

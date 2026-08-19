@@ -146,35 +146,42 @@ func TestCreateAdHocExistingLocalBranchIsUniquified(t *testing.T) {
 
 	require.NoError(err)
 	require.NotNil(ws)
-	assert.Equal(branch+"-2", ws.GitHeadRef)
-	assert.Equal(branch+"-2", ws.WorkspaceBranch)
-	assert.Equal(db.AdHocWorkspaceItemKey(branch+"-2"), ws.ItemKey)
+	assert.Regexp(`^spike/thing-[0-9a-f]{4}$`, ws.GitHeadRef)
+	assert.Equal(ws.GitHeadRef, ws.WorkspaceBranch)
+	assert.Equal(db.AdHocWorkspaceItemKey(ws.GitHeadRef), ws.ItemKey)
 }
 
-func TestNextAvailableBranchNameAvoidsRefNamespaceConflicts(t *testing.T) {
+func TestNextAvailableAdHocBranchNameAvoidsRefNamespaceConflicts(t *testing.T) {
+	const workspaceID = "0011223344556677"
+	firstHash := adHocBranchHash(workspaceID, 0)
+	secondHash := adHocBranchHash(workspaceID, 1)
 	tests := []struct {
 		name      string
 		existing  []string
 		requested string
 		want      string
+		wantNext  int
 	}{
 		{
 			name:      "descendant",
 			existing:  []string{"docs/guide-refresh"},
 			requested: "docs",
-			want:      "docs-2",
+			want:      "docs-" + firstHash,
+			wantNext:  1,
 		},
 		{
-			name:      "numbered descendant",
-			existing:  []string{"docs/guide-refresh", "docs-2/claimed"},
+			name:      "hash collision",
+			existing:  []string{"docs/guide-refresh", "docs-" + firstHash},
 			requested: "docs",
-			want:      "docs-3",
+			want:      "docs-" + secondHash,
+			wantNext:  2,
 		},
 		{
 			name:      "ancestor",
 			existing:  []string{"docs"},
 			requested: "docs/guide-refresh",
-			want:      "docs-2/guide-refresh",
+			want:      "docs-" + firstHash + "/guide-refresh",
+			wantNext:  1,
 		},
 	}
 
@@ -185,12 +192,76 @@ func TestNextAvailableBranchNameAvoidsRefNamespaceConflicts(t *testing.T) {
 				runWorkspaceTestGit(t, localRepo, "branch", branch)
 			}
 
-			got, err := nextAvailableBranchName(t.Context(), localRepo, tt.requested)
+			got, nextAttempt, err := nextAvailableAdHocBranchName(
+				t.Context(), localRepo, tt.requested, workspaceID, 0,
+			)
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantNext, nextAttempt)
 		})
 	}
+}
+
+func TestPersistAdHocWorkspaceRetriesReservedHashedBranch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	const (
+		workspaceID = "0011223344556677"
+		requested   = "docs"
+	)
+	d := openTestDB(t)
+	seedRepo(t, d, "github.com", "acme", "widget")
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/other")
+	runWorkspaceTestGit(t, localRepo, "branch", "docs/guide-refresh")
+	mgr := NewManager(d, t.TempDir())
+
+	firstBranch, nextAttempt, err := nextAvailableAdHocBranchName(
+		t.Context(), localRepo, requested, workspaceID, 0,
+	)
+	require.NoError(err)
+	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
+		ID:              "reserved-workspace",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeAdHoc,
+		ItemKey:         db.AdHocWorkspaceItemKey(firstBranch),
+		GitHeadRef:      firstBranch,
+		WorkspaceBranch: firstBranch,
+		WorktreePath:    filepath.Join(t.TempDir(), "reserved-worktree"),
+		TmuxSession:     "forge-reserved-workspace",
+		TerminalBackend: "tmux",
+		Status:          "creating",
+	}))
+
+	ws := &Workspace{
+		ID:              workspaceID,
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeAdHoc,
+		TmuxSession:     "forge-" + workspaceID,
+		TerminalBackend: "tmux",
+		Status:          "creating",
+	}
+	mgr.setAdHocWorkspaceIdentity(ws, firstBranch, firstBranch)
+
+	require.NoError(mgr.persistAdHocWorkspace(
+		t.Context(), ws, localRepo, requested, nextAttempt,
+	))
+	assert.NotEqual(firstBranch, ws.GitHeadRef)
+	assert.Regexp(`^docs-[0-9a-f]{4}$`, ws.GitHeadRef)
+	assert.Equal(ws.GitHeadRef, ws.WorkspaceBranch)
+	assert.Equal(db.AdHocWorkspaceItemKey(ws.GitHeadRef), ws.ItemKey)
+
+	stored, err := d.GetWorkspace(t.Context(), workspaceID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(ws.GitHeadRef, stored.GitHeadRef)
 }
 
 func TestCreateAdHocReuseExistingLocalBranch(t *testing.T) {
@@ -260,7 +331,45 @@ func TestSetupAdHocWorkspaceBranchesFromOriginHead(t *testing.T) {
 	assert.Equal(originHead, worktreeHead)
 }
 
-func TestSetupAdHocWorkspaceUniquifiesBranchPrefixConflict(t *testing.T) {
+func TestConfigureFallbackBranchUpstreamIgnoresAdHocWorkspace(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	const (
+		headBranch     = "spike/thing"
+		fallbackBranch = "kenn-forge/work-abcd"
+	)
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/other")
+	headSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "HEAD",
+	)))
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/remotes/origin/"+headBranch, headSHA,
+	)
+	runWorkspaceTestGit(t, localRepo, "branch", fallbackBranch, headSHA)
+	worktreePath := filepath.Join(t.TempDir(), "worktree")
+	runWorkspaceTestGit(
+		t, localRepo, "worktree", "add", worktreePath, fallbackBranch,
+	)
+
+	err := configureFallbackBranchUpstream(
+		t.Context(), localRepo,
+		&Workspace{
+			ItemType:     db.WorkspaceItemTypeAdHoc,
+			GitHeadRef:   headBranch,
+			WorktreePath: worktreePath,
+		},
+		fallbackBranch,
+	)
+	require.NoError(err)
+
+	_, err = gitConfigValue(
+		t.Context(), worktreePath, "branch."+fallbackBranch+".remote",
+	)
+	assert.Error(err)
+}
+
+func TestSetupAdHocWorkspaceUsesHashedBranchForPrefixConflict(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -287,13 +396,46 @@ func TestSetupAdHocWorkspaceUniquifiesBranchPrefixConflict(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("ready", got.Status)
-	assert.Equal("docs-2", got.GitHeadRef)
-	assert.Equal("docs-2", got.WorkspaceBranch)
+	assert.Regexp(`^docs-[0-9a-f]{4}$`, got.GitHeadRef)
+	assert.Equal(got.GitHeadRef, got.WorkspaceBranch)
+	assert.Equal(db.AdHocWorkspaceItemKey(got.GitHeadRef), got.ItemKey)
 
 	head := strings.TrimSpace(string(runWorkspaceTestGit(
 		t, got.WorktreePath, "rev-parse", "--abbrev-ref", "HEAD",
 	)))
-	assert.Equal("docs-2", head)
+	assert.Equal(got.GitHeadRef, head)
+}
+
+func TestSetupAdHocWorkspaceLateBranchConflictFailsWithoutChangingIdentity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/other",
+	)
+	seedRepo(t, d, platformHost, "acme", "widget")
+
+	tmuxScript, _ := writeRecorderScript(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.CreateAdHoc(
+		t.Context(), "github", platformHost, "acme", "widget",
+		CreateAdHocOptions{BranchName: "docs"},
+	)
+	require.NoError(err)
+	runWorkspaceTestGit(t, localRepo, "branch", "docs/guide-refresh")
+
+	require.Error(mgr.Setup(t.Context(), ws))
+	got, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+	assert.Equal("docs", got.GitHeadRef)
+	assert.Equal("docs", got.WorkspaceBranch)
+	assert.Equal(db.AdHocWorkspaceItemKey("docs"), got.ItemKey)
 }
 
 func TestAgentContextForAdHocWorkspace(t *testing.T) {

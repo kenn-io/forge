@@ -148,11 +148,11 @@ func TestCreateAdHocWorkspaceExistingBranchIsUniquified(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
 	require.NotNil(resp.JSON202)
-	assert.Equal(branch+"-2", resp.JSON202.GitHeadRef)
+	assert.Regexp(`^spike/rate-limits-[0-9a-f]{4}$`, resp.JSON202.GitHeadRef)
 
 	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
-	assert.Equal(branch+"-2", ready.GitHeadRef)
-	assert.Equal(branch+"-2", workspaceGitOutput(
+	assert.Equal(resp.JSON202.GitHeadRef, ready.GitHeadRef)
+	assert.Equal(resp.JSON202.GitHeadRef, workspaceGitOutput(
 		t, ready.WorktreePath, "rev-parse", "--abbrev-ref", "HEAD",
 	))
 }
@@ -280,5 +280,8 @@ func TestCreateAdHocWorkspaceAfterInWorktreeBranchRename(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, unique.StatusCode(), string(unique.Body))
 	require.NotNil(unique.JSON202)
-	assert.Equal(renamed+"-2", unique.JSON202.GitHeadRef)
+	assert.Regexp(
+		`^spike/rate-limits-v2-[0-9a-f]{4}$`,
+		unique.JSON202.GitHeadRef,
+	)
 }

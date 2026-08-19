@@ -93,8 +93,7 @@ type CreateIssueOptions struct {
 //
 // Ad-hoc workspaces have no source item, so the branch is their only identity.
 // An empty BranchName generates one; a name that already exists locally is
-// reused when requested or automatically suffixed with the first available
-// numbered variant.
+// reused when requested or automatically suffixed with a short random hash.
 type CreateAdHocOptions struct {
 	BranchName          string
 	ReuseExistingBranch bool
@@ -742,11 +741,13 @@ func (m *Manager) CreateAdHoc(
 	if gitHeadRef == "" {
 		gitHeadRef = adHocWorkspaceBranch(id)
 	}
+	requestedBranch := gitHeadRef
 	if err := validateLocalBranchName(ctx, "", gitHeadRef); err != nil {
 		return nil, err
 	}
 
 	workspaceBranch := gitHeadRef
+	nextHashAttempt := 0
 	branchDir, ok, localBase, err := m.branchInspectionDir(
 		ctx, repo.Platform, platformHost, owner, name,
 		workspaceCloneRemoteURL(repo, platformHost, owner, name),
@@ -763,7 +764,12 @@ func (m *Manager) CreateAdHoc(
 			if !errors.As(err, &conflict) {
 				return nil, err
 			}
-			branch = conflict.SuggestedBranch
+			branch, nextHashAttempt, err = nextAvailableAdHocBranchName(
+				ctx, branchDir, requestedBranch, id, nextHashAttempt,
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 		workspaceBranch = branch
 	}
@@ -778,25 +784,60 @@ func (m *Manager) CreateAdHoc(
 		RepoOwner:       owner,
 		RepoName:        name,
 		ItemType:        db.WorkspaceItemTypeAdHoc,
-		ItemKey:         db.AdHocWorkspaceItemKey(gitHeadRef),
-		GitHeadRef:      gitHeadRef,
-		WorkspaceBranch: workspaceBranch,
-		WorktreePath: filepath.Join(
-			m.worktreeDir, repo.Platform, platformHost, owner, name,
-			adHocWorktreeDirName(gitHeadRef),
-		),
 		TmuxSession:     "forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
 	}
+	m.setAdHocWorkspaceIdentity(ws, gitHeadRef, workspaceBranch)
 
-	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
-		if isUniqueConstraintError(err) {
-			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
-		}
+	if err := m.persistAdHocWorkspace(
+		ctx, ws, branchDir, requestedBranch, nextHashAttempt,
+	); err != nil {
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
 	return ws, nil
+}
+
+func (m *Manager) persistAdHocWorkspace(
+	ctx context.Context,
+	ws *Workspace,
+	branchDir, requestedBranch string,
+	nextHashAttempt int,
+) error {
+	for {
+		err := m.db.InsertWorkspace(ctx, ws)
+		if err == nil {
+			return nil
+		}
+		if !isUniqueConstraintError(err) {
+			return err
+		}
+		if nextHashAttempt == 0 {
+			return fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
+		}
+
+		branch, nextAttempt, nameErr := nextAvailableAdHocBranchName(
+			ctx, branchDir, requestedBranch, ws.ID, nextHashAttempt,
+		)
+		if nameErr != nil {
+			return nameErr
+		}
+		m.setAdHocWorkspaceIdentity(ws, branch, branch)
+		nextHashAttempt = nextAttempt
+	}
+}
+
+func (m *Manager) setAdHocWorkspaceIdentity(
+	ws *Workspace, identityBranch, managedBranch string,
+) {
+	ws.GitHeadRef = identityBranch
+	ws.WorkspaceBranch = managedBranch
+	ws.ItemKey = db.AdHocWorkspaceItemKey(identityBranch)
+	ws.WorktreePath = filepath.Join(
+		m.worktreeDir,
+		ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		adHocWorktreeDirName(identityBranch),
+	)
 }
 
 // adHocWorkspaceBranch names a branch for work the user did not name. The
@@ -2383,9 +2424,12 @@ func (m *Manager) addIssueWorktree(
 		return "", nil
 	}
 	startRef := workspaceStartRef(ws)
-	return m.addFallbackWorktree(
+	if _, err := m.runOwnedGitWorktreeAddCreatingBranch(
 		ctx, cloneDir, ws, workspaceBranch, startRef,
-	)
+	); err != nil {
+		return "", err
+	}
+	return workspaceBranch, nil
 }
 
 func (m *Manager) addPreferredWorktree(
@@ -2652,7 +2696,7 @@ func configureFallbackBranchUpstream(
 	ws *Workspace,
 	fallbackBranch string,
 ) error {
-	if ws.MRHeadRepo != nil {
+	if ws.ItemType != db.WorkspaceItemTypePullRequest || ws.MRHeadRepo != nil {
 		return nil
 	}
 	trackingSHA, ok, err := gitRefSHA(
@@ -5582,18 +5626,60 @@ func nextAvailableBranchName(
 	)
 }
 
+func nextAvailableAdHocBranchName(
+	ctx context.Context,
+	dir, branch, workspaceID string,
+	startAttempt int,
+) (string, int, error) {
+	_, ancestorConflict, err := localBranchNameStatus(ctx, dir, branch)
+	if err != nil {
+		return "", startAttempt, err
+	}
+	for attempt := startAttempt; attempt < 1000; attempt++ {
+		suffix := adHocBranchHash(workspaceID, attempt)
+		for _, candidate := range suffixedBranchCandidates(
+			branch, suffix, ancestorConflict,
+		) {
+			available, err := localBranchNameAvailable(ctx, dir, candidate)
+			if err != nil {
+				return "", attempt, err
+			}
+			if available {
+				return candidate, attempt + 1, nil
+			}
+		}
+	}
+	return "", startAttempt, fmt.Errorf(
+		"could not find an available branch name derived from %q",
+		branch,
+	)
+}
+
+func adHocBranchHash(workspaceID string, attempt int) string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%d", workspaceID, attempt))
+	return hex.EncodeToString(sum[:2])
+}
+
 func numberedBranchCandidates(
 	branch string, number int, escapeAncestors bool,
 ) []string {
+	return suffixedBranchCandidates(
+		branch, strconv.Itoa(number), escapeAncestors,
+	)
+}
+
+func suffixedBranchCandidates(
+	branch, suffix string, escapeAncestors bool,
+) []string {
 	parts := strings.Split(branch, "/")
 	candidates := make([]string, 0, len(parts))
-	candidates = append(candidates, fmt.Sprintf("%s-%d", branch, number))
+	candidates = append(candidates, branch+"-"+suffix)
 	if !escapeAncestors {
 		return candidates
 	}
 	for i := len(parts) - 2; i >= 0; i-- {
 		candidate := slices.Clone(parts)
-		candidate[i] = fmt.Sprintf("%s-%d", candidate[i], number)
+		candidate[i] += "-" + suffix
 		candidates = append(candidates, strings.Join(candidate, "/"))
 	}
 	return candidates

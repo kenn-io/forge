@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,6 +12,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type doneObservedContext struct {
+	context.Context
+	observed chan struct{}
+	once     sync.Once
+}
+
+func (c *doneObservedContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.observed) })
+	return c.Context.Done()
+}
 
 func githubAppDescriptor(installationID int64) Descriptor {
 	return Descriptor{
@@ -271,12 +283,16 @@ func TestGitHubAppMintCancellationIsNotPublishedToWaiters(t *testing.T) {
 		token string
 		err   error
 	}
+	waiterCtx := &doneObservedContext{
+		Context:  context.Background(),
+		observed: make(chan struct{}),
+	}
 	waiterResult := make(chan result, 1)
 	go func() {
-		token, err := src.Token(context.Background())
+		token, err := src.Token(waiterCtx)
 		waiterResult <- result{token: token, err: err}
 	}()
-	time.Sleep(50 * time.Millisecond) // let the waiter park on the in-flight mint
+	<-waiterCtx.observed
 	cancel()
 
 	require.ErrorIs(<-winnerErr, context.Canceled)

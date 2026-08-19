@@ -41,6 +41,7 @@
   const builtins: BuiltinAgent[] = [
     { key: "codex", label: "Codex", binary: "codex" },
     { key: "claude", label: "Claude", binary: "claude" },
+    { key: "pi", label: "Pi", binary: "pi" },
     { key: "gemini", label: "Gemini", binary: "gemini" },
     { key: "opencode", label: "opencode", binary: "opencode" },
     { key: "aider", label: "aider", binary: "aider" },

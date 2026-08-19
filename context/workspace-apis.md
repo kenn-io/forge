@@ -270,6 +270,10 @@ where needed.
 
 ## Agent Launch Context
 
+Keep runtime and settings built-in agent inventories, including search keywords,
+aligned; a runtime-only entry is launchable but cannot be configured or found by
+agent name (`internal/workspace/localruntime/targets.go::builtinAgents`, `frontend/src/lib/components/settings/`).
+
 Agent launch selects Codex, Pi, and Claude families by case-folded target-name prefix.
 Codex and Pi receive generated workspace context followed by root `AGENTS.md` verbatim
 in `AGENTS.override.md`; only a non-symlink regular file up to 1 MiB is appended,

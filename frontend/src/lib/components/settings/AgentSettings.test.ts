@@ -49,6 +49,17 @@ describe("AgentSettings", () => {
     mockPersistSettings.mockReset();
   });
 
+  it("renders Pi with its default built-in command", async () => {
+    renderAgentSettings({
+      agents: [],
+      onUpdate: vi.fn(),
+    });
+
+    expect((screen.getByLabelText("Pi") as HTMLInputElement).checked).toBe(true);
+    await expandAgent("Pi");
+    expect((screen.getByLabelText("Pi binary") as HTMLInputElement).value).toBe("pi");
+  });
+
   it("persists built-in agent binary and argument overrides", async () => {
     mockPersistSettings.mockResolvedValue({
       agents: [

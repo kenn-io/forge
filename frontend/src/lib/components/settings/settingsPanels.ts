@@ -71,7 +71,7 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     title: "Workspace agents",
     group: "Workspace",
     description: "Agent commands available in workspaces",
-    keywords: "workspace agents codex claude gemini opencode aider binary arguments",
+    keywords: "workspace agents codex claude pi gemini opencode aider binary arguments",
   },
   {
     id: "settings-fleet",

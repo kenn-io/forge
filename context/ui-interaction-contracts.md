@@ -136,9 +136,9 @@ Interactive surfaces must agree on which item is selected.
 - Pull and issue detail actions route `deleting`/`deletion_failed` workspaces to
   Workspaces recovery; inline hosts must not reopen their terminals
   (`frontend/src/lib/components/detail/PullDetail.svelte::workspaceActionButton`).
-- A `deletion_failed` workspace exposes the same confirmed force-delete recovery
-  on local and fleet rows; fleet requests forward `force=true` to the owning host
-  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::confirmDeleteWorkspaceFromList`).
+- A `deletion_failed` workspace remains selectable so terminal recovery and the same confirmed force-delete action stay reachable on local and fleet rows; fleet requests
+  forward `force=true` to the owning host (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::openWorkspace`,
+  `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::confirmDeleteWorkspaceFromList`).
 - A terminal view whose loaded workspace is `deleting` or `deletion_failed`
   blocks its normal runtime and workspace actions. It renders deletion progress
   or confirmed force-delete recovery instead, retaining the exact workspace and

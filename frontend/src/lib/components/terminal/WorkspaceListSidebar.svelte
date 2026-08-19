@@ -821,7 +821,7 @@
   }
 
   function openWorkspace(ws: Workspace): void {
-    if (ws.status === "deleting" || ws.status === "deletion_failed") return;
+    if (ws.status === "deleting") return;
     const doneVersion = doneStateVersion(ws);
     if (doneVersion !== null) {
       acknowledgedDoneStates = {

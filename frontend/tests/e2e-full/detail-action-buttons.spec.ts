@@ -389,7 +389,7 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("a merge cleanup failure remains visible and supports force-delete recovery", async ({ page }) => {
+  test("a merge cleanup failure opens and supports force-delete recovery", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -449,6 +449,12 @@ test.describe("detail action buttons", () => {
       const failedWorkspaceRow = page.locator(".ws-row").filter({
         has: page.locator(".workspace-lifecycle-state--deletion_failed"),
       });
+      await failedWorkspaceRow.click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${createdWorkspace.id}$`));
+      await expect(page.getByRole("img", { name: "Workspace deletion failed" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Force delete workspace" })).toBeVisible();
+
+      await page.goto(`${server.info.base_url}/workspaces`);
       await failedWorkspaceRow.click({ button: "right" });
       await page.getByRole("menuitem", { name: "Force delete workspace..." }).click();
 

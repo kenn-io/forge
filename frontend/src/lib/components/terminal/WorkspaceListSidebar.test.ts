@@ -1103,7 +1103,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "kenn-platform",
+            name: "project-platform",
             number: 2,
             title: "Hosted code fetch and caching strategy",
           }),
@@ -1133,7 +1133,7 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByText("Migrate native HTTP surface to Huma v2")).toBeTruthy();
 
     await fireEvent.input(filter, {
-      target: { value: "kenn-platform" },
+      target: { value: "project-platform" },
     });
     expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
     expect(screen.getByText("Hosted code fetch and caching strategy")).toBeTruthy();
@@ -1785,7 +1785,7 @@ describe("WorkspaceListSidebar", () => {
     expect((await screen.findByLabelText(label)).classList.contains(className)).toBe(true);
   });
 
-  it("keeps failed deletion visible with retry and confirmed force-delete recovery", async () => {
+  it("opens a failed issue workspace for retry and confirmed force-delete recovery", async () => {
     mockGet.mockResolvedValue({
       data: {
         workspaces: [
@@ -1796,6 +1796,7 @@ describe("WorkspaceListSidebar", () => {
             owner: "kenn-io",
             name: "kenn-forge",
             number: 9,
+            itemType: "issue",
             status: "deletion_failed",
             errorMessage: "workspace has uncommitted changes: notes.txt",
           }),
@@ -1816,7 +1817,7 @@ describe("WorkspaceListSidebar", () => {
       "workspace has uncommitted changes: notes.txt",
     );
     await fireEvent.click(container.querySelector(".ws-row")!);
-    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-delete-failed");
 
     await fireEvent.contextMenu(container.querySelector(".ws-row")!);
     expect((screen.getByRole("menuitem", { name: "Retry deletion..." }) as HTMLButtonElement).disabled).toBe(false);

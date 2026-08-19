@@ -16,13 +16,17 @@ import (
 func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	cfg := &config.Config{Agents: []config.Agent{{
-		Key: "hook-agent", Label: "Hook agent",
-		Command: []string{
-			"/bin/sh", "-c",
-			"printf '\033[?2004h'; while IFS= read -r _; do :; done",
-		},
-	}}}
+	disableTmuxAgentSessions := false
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key: "hook-agent", Label: "Hook agent",
+			Command: []string{
+				"/bin/sh", "-c",
+				"printf '\033[?2004h'; while IFS= read -r _; do :; done",
+			},
+		}},
+		Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions},
+	}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)

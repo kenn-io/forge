@@ -10,16 +10,13 @@ open it for the user.
 
 ## Trust boundary
 
-Use this skill only for documentation the user authored or explicitly approved
-for local execution. The canonical docs build executes code from the checkout
-before the viewer opens, so the viewer treats HTML produced by that same
-checkout as trusted input. Review an untrusted branch as source, or build it in
-a separate disposable environment instead of using this workflow.
+Use this skill only for documentation the user authored or approved for local
+execution. The docs build runs code from the checkout before the viewer opens,
+so it trusts HTML from that checkout. Review untrusted branches as source, or
+build them in a disposable environment.
 
-Keep the base checkout and review bundle in owner-private temporary
-directories. Bind every preview server explicitly to `127.0.0.1`, and keep the
-bundle local. This skill is a maintainer tool, not a hosted review service or an
-HTML sandbox.
+Keep checkouts and review bundles in private temporary directories. Bind
+preview servers to `127.0.0.1`, and keep bundles local.
 
 ## Build the two sites
 

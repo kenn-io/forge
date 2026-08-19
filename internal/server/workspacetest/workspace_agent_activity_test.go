@@ -18,7 +18,10 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	require := require.New(t)
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key: "hook-agent", Label: "Hook agent",
-		Command: []string{"/bin/sh", "-c", "while :; do sleep 1; done"},
+		Command: []string{
+			"/bin/sh", "-c",
+			"printf '\033[?2004h'; while IFS= read -r _; do :; done",
+		},
 	}}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()

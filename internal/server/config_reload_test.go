@@ -1986,27 +1986,13 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	var recovered atomic.Bool
-	mock := &mockGH{
-		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
-			if !recovered.Load() {
-				return nil, errors.New("temporary repo listing failure")
-			}
-			return []*gh.Repository{
-				{
-					NodeID: new("repo-acme-widget-api"), Name: new("widget-api"),
-					Owner: &gh.User{Login: new(owner)},
-				},
-				{
-					NodeID: new("repo-acme-widget-ui"), Name: new("widget-ui"),
-					Owner: &gh.User{Login: new(owner)},
-				},
-			}, nil
-		},
-	}
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
-		t, validReloadConfig, mock,
+		t, validReloadConfig, &mockGH{
+			listReposByOwnerFn: func(context.Context, string) ([]*gh.Repository, error) {
+				return nil, errors.New("temporary repo listing failure")
+			},
+		},
 	)
 	waitForConfigWatcher(t, srv, 2*time.Second)
 	stream := streamConfigEvents(t, srv)
@@ -2028,14 +2014,6 @@ func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {
 	require.Len(tracked, 1)
 	assert.Equal("acme", tracked[0].Owner)
 	assert.Equal("widget-api", tracked[0].Name)
-
-	recovered.Store(true)
-	srv.syncer.RunOnce(t.Context())
-	tracked = srv.syncer.TrackedRepos()
-	require.Len(tracked, 2)
-	assert.Equal([]string{"widget-api", "widget-ui"}, []string{
-		tracked[0].Name, tracked[1].Name,
-	})
 }
 
 func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {

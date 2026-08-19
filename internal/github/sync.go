@@ -816,12 +816,6 @@ type Syncer struct {
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
-	// repoConfigMu serializes configured-repository replacement with deferred
-	// outage recovery. deferredConfiguredRepos and archiveSeedPending are
-	// guarded by this mutex.
-	repoConfigMu             sync.Mutex
-	deferredConfiguredRepos  []config.Repo
-	archiveSeedPending       bool
 	mergedActorCursorMu      sync.Mutex
 	mergedActorCursors       map[int64]mergedActorSweepState
 	interval                 time.Duration
@@ -4463,12 +4457,9 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 func (s *Syncer) SetRepos(repos []RepoRef) {
 	if err := s.SetReposWithContext(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
-		s.repoConfigMu.Lock()
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
 		s.reposMu.Unlock()
-		s.deferredConfiguredRepos = nil
-		s.repoConfigMu.Unlock()
 		s.WakeArchive()
 	}
 }
@@ -4477,13 +4468,7 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // configured repository set to sync workers. Credential reloads may also make
 // authentication-blocked work eligible without resetting archive progress.
 func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
-	s.repoConfigMu.Lock()
-	defer s.repoConfigMu.Unlock()
-	if err := s.setReposWithContextLocked(ctx, repos, retryAuthentication, nil); err != nil {
-		return err
-	}
-	s.deferredConfiguredRepos = nil
-	return nil
+	return s.setReposWithContext(ctx, repos, retryAuthentication, nil)
 }
 
 // SetReposWithContextForDegradedHosts defers startup archive reconciliation
@@ -4497,16 +4482,10 @@ func (s *Syncer) SetReposWithContextForDegradedHosts(
 	retryAuthentication bool,
 	hostDegraded func(platformName, host string) bool,
 ) error {
-	s.repoConfigMu.Lock()
-	defer s.repoConfigMu.Unlock()
-	if err := s.setReposWithContextLocked(ctx, repos, retryAuthentication, hostDegraded); err != nil {
-		return err
-	}
-	s.deferredConfiguredRepos = nil
-	return nil
+	return s.setReposWithContext(ctx, repos, retryAuthentication, hostDegraded)
 }
 
-func (s *Syncer) setReposWithContextLocked(
+func (s *Syncer) setReposWithContext(
 	ctx context.Context,
 	repos []RepoRef,
 	retryAuthentication bool,
@@ -4517,7 +4496,6 @@ func (s *Syncer) setReposWithContextLocked(
 		refs = append(refs, platformRepoRef(repo))
 	}
 	deferArchiveSeed := degradedArchiveSeedNeedsProvider(repos, hostDegraded)
-	pendingBeforeSeed := s.archiveSeedPending
 	if s.SyncEnabled() && s.archiveLifecycle != nil && !deferArchiveSeed {
 		seeded, err := s.archiveLifecycle.EnsureConfigured(ctx, refs)
 		if err != nil {
@@ -4530,69 +4508,12 @@ func (s *Syncer) setReposWithContextLocked(
 				return fmt.Errorf("retry archive authentication: %w", err)
 			}
 		}
-		s.archiveSeedPending = pendingBeforeSeed && len(seeded) != len(refs)
-	} else {
-		s.archiveSeedPending = deferArchiveSeed
 	}
 	s.reposMu.Lock()
 	s.repos = slices.Clone(repos)
 	s.reposMu.Unlock()
 	s.WakeArchive()
 	return nil
-}
-
-// SetDeferredConfiguredRepos retains configured entries that could not be
-// expanded while their provider host was degraded. Full sync passes retry the
-// expansion and publish any recovered repositories into the tracked set.
-func (s *Syncer) SetDeferredConfiguredRepos(repos []config.Repo) {
-	s.repoConfigMu.Lock()
-	s.deferredConfiguredRepos = slices.Clone(repos)
-	s.repoConfigMu.Unlock()
-}
-
-func (s *Syncer) resolveDeferredConfiguredRepos(ctx context.Context) {
-	s.repoConfigMu.Lock()
-	defer s.repoConfigMu.Unlock()
-	if len(s.deferredConfiguredRepos) == 0 {
-		return
-	}
-
-	s.reposMu.Lock()
-	tracked := slices.Clone(s.repos)
-	s.reposMu.Unlock()
-	merged := NewExpandedRepoSet()
-	for _, repo := range tracked {
-		merged.Add(repo, false)
-	}
-
-	remaining := make([]config.Repo, 0, len(s.deferredConfiguredRepos))
-	resolvedAny := false
-	for _, raw := range s.deferredConfiguredRepos {
-		_, expanded, err := ResolveConfiguredRepoWithRegistry(ctx, s.clients, raw)
-		if err != nil {
-			remaining = append(remaining, raw)
-			slog.Info("deferred configured repository expansion still unavailable",
-				"platform", raw.PlatformOrDefault(),
-				"host", raw.PlatformHostOrDefault(),
-				"owner", raw.Owner,
-				"name", raw.Name,
-				"err", err,
-			)
-			continue
-		}
-		resolvedAny = true
-		for _, repo := range expanded {
-			merged.Add(repo, true)
-		}
-	}
-	if !resolvedAny {
-		return
-	}
-	if err := s.setReposWithContextLocked(ctx, merged.Refs(), false, nil); err != nil {
-		slog.Warn("publish deferred configured repository expansion", "err", err)
-		return
-	}
-	s.deferredConfiguredRepos = remaining
 }
 
 func degradedArchiveSeedNeedsProvider(
@@ -5977,9 +5898,6 @@ func (s *Syncer) runOnce(
 	// made during background sync. User-initiated server
 	// handler paths do not carry this key and are not counted.
 	ctx = WithSyncBudget(ctx)
-	if onlyRepos == nil {
-		s.resolveDeferredConfiguredRepos(ctx)
-	}
 
 	s.reposMu.Lock()
 	repos := slices.Clone(s.repos)
@@ -6408,9 +6326,7 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	if s.archiveLifecycle == nil {
 		return nil
 	}
-	s.repoConfigMu.Lock()
-	defer s.repoConfigMu.Unlock()
-	needsReconcile := s.archiveSeedPending || previousID != 0 && previousID != repoID
+	needsReconcile := previousID != 0 && previousID != repoID
 	if !needsReconcile {
 		states, err := s.db.ListArchiveRepoStates(ctx, []int64{repoID})
 		if err != nil {
@@ -6428,12 +6344,8 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	for _, trackedRepo := range tracked {
 		refs = append(refs, platformRepoRef(trackedRepo))
 	}
-	seeded, err := s.archiveLifecycle.EnsureConfigured(ctx, refs)
-	if err != nil {
+	if _, err := s.archiveLifecycle.EnsureConfigured(ctx, refs); err != nil {
 		return fmt.Errorf("reconcile archive repository replacement: %w", err)
-	}
-	if s.archiveSeedPending && len(seeded) == len(refs) {
-		s.archiveSeedPending = false
 	}
 	s.WakeArchive()
 	return nil

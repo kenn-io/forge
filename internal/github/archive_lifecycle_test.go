@@ -931,65 +931,6 @@ func TestSetReposPassesOnlySeededRefsToRetryAuthentication(t *testing.T) {
 		"refs skipped by seeding must not reach authentication retry")
 }
 
-func TestDeferredArchiveSeedRunsFullReconciliationAfterProviderRecovery(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	database := dbtest.Open(t)
-	resolved := RepoRef{
-		Platform: platform.KindGitHub, PlatformHost: "github.com",
-		Owner: "acme", Name: "widgets", RepoPath: "acme/widgets",
-		PlatformExternalID: "repo-acme-widgets",
-	}
-	provider := &syncTestRepositoryReadProvider{
-		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitHub, host: "github.com",
-			},
-		},
-		repository: platform.Repository{
-			Ref:                platformRepoRef(resolved),
-			PlatformExternalID: resolved.PlatformExternalID,
-		},
-	}
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(err)
-	syncer := NewSyncerWithRegistry(
-		registry, database, nil, nil, time.Hour, nil, nil,
-	)
-	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
-	require.NoError(err)
-	_, err = service.EnsureConfigured(ctx, []platform.RepoRef{platformRepoRef(resolved)})
-	require.NoError(err)
-
-	recorder := &archiveLifecycleRecorder{}
-	syncer.SetArchiveService(recorder)
-	fallback := resolved
-	fallback.PlatformExternalID = ""
-	require.NoError(syncer.SetReposWithContextForDegradedHosts(
-		ctx, []RepoRef{fallback}, false,
-		func(string, string) bool { return true },
-	))
-	assert.Empty(recorder.ensured)
-	recorder.ensureResult = []platform.RepoRef{}
-
-	_, _, _, _, _, err = syncer.reconcileRepoIdentityObservation(ctx, fallback)
-	require.NoError(err)
-	require.Len(recorder.ensured, 1)
-	assert.Equal(resolved.PlatformExternalID, recorder.ensured[0].PlatformExternalID)
-
-	recorder.ensureResult = nil
-	_, _, _, _, _, err = syncer.reconcileRepoIdentityObservation(ctx, resolved)
-	require.NoError(err)
-	require.Len(recorder.ensured, 2,
-		"an incomplete deferred reconciliation must remain pending")
-
-	_, _, _, _, _, err = syncer.reconcileRepoIdentityObservation(ctx, resolved)
-	require.NoError(err)
-	assert.Len(recorder.ensured, 2,
-		"the completed deferred reconciliation must not repeat")
-}
-
 func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

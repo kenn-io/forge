@@ -415,7 +415,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	if s.syncer != nil {
 		previous = s.syncer.TrackedRepos()
 	}
-	resolved, deferred, skipped := s.resolveReposForReload(ctx, newCfg.Repos, previous)
+	resolved, skipped := s.resolveReposForReload(ctx, newCfg.Repos, previous)
 	if len(skipped) > 0 {
 		slog.Info(
 			"config reload: skipping repos for unknown platform hosts",
@@ -433,7 +433,6 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 				),
 			}
 		}
-		s.syncer.SetDeferredConfiguredRepos(deferred)
 	}
 
 	s.cfgMu.Lock()
@@ -683,18 +682,16 @@ func cloneReloadedConfig(in *config.Config) config.Config {
 // (via the boot-time platform registry) whether each (provider, host)
 // pair has a client. Known hosts are resolved into RepoRefs; unknown
 // hosts are returned in the skipped slice with a "owner/name@host"
-// display string for logging. Globs that fail transient expansion are returned
-// separately so scheduled sync can retry them without another reload.
+// display string for logging.
 func (s *Server) resolveReposForReload(
 	ctx context.Context,
 	repos []config.Repo,
 	previous []ghclient.RepoRef,
-) ([]ghclient.RepoRef, []config.Repo, []string) {
+) ([]ghclient.RepoRef, []string) {
 	if s.syncer == nil {
-		return nil, nil, nil
+		return nil, nil
 	}
 	set := ghclient.NewExpandedRepoSet()
-	deferred := make([]config.Repo, 0)
 	skipped := make([]string, 0)
 
 	for _, raw := range repos {
@@ -723,15 +720,12 @@ func (s *Server) resolveReposForReload(
 				"err", err,
 			)
 			expanded = ghclient.FallbackConfiguredRepoRefs(previous, raw)
-			if raw.HasNameGlob() {
-				deferred = append(deferred, raw)
-			}
 		}
 		for _, repo := range expanded {
 			set.Add(repo, err == nil)
 		}
 	}
-	return set.Refs(), deferred, skipped
+	return set.Refs(), skipped
 }
 
 // sanitizeConfigError trims internal path prefixes from the error so the

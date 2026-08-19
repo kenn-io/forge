@@ -268,23 +268,6 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	}, repos)
 }
 
-func TestDegradedConfiguredRepoGlobsRetainsOnlyAffectedGlobs(t *testing.T) {
-	assert := assert.New(t)
-	repos := []config.Repo{
-		{Owner: "acme", Name: "exact"},
-		{Owner: "acme", Name: "*"},
-		{Platform: "gitlab", PlatformHost: "gitlab.test", Owner: "group", Name: "*"},
-	}
-	hostDegraded := func(platformName, host string) bool {
-		return platformName == "github" && host == "github.com"
-	}
-
-	assert.Equal(
-		[]config.Repo{{Owner: "acme", Name: "*"}},
-		degradedConfiguredRepoGlobs(repos, hostDegraded),
-	)
-}
-
 type blockingStartupRepositoryReader struct {
 	mainTestRepositoryReader
 	started chan struct{}

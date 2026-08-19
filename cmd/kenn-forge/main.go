@@ -597,15 +597,11 @@ func run(opts serve.Options) error {
 	archiveService.SetMaintenanceInterval(cfg.SyncDuration())
 	archiveService.SetWake(syncer.WakeArchive)
 	syncer.SetArchiveService(archiveService)
-	hostDegraded := degradedHostLookup(startup.degradedProviderHosts)
 	if err := syncer.SetReposWithContextForDegradedHosts(
-		ctx, repos, false, hostDegraded,
+		ctx, repos, false, degradedHostLookup(startup.degradedProviderHosts),
 	); err != nil {
 		return fmt.Errorf("prepare archive repositories: %w", err)
 	}
-	syncer.SetDeferredConfiguredRepos(
-		degradedConfiguredRepoGlobs(cfg.Repos, hostDegraded),
-	)
 
 	telemetryReporter = telemetry.NewReporterOrDisabled(telemetry.Options{
 		Database: database,
@@ -942,24 +938,6 @@ func degradedHostLookup(hosts map[string]struct{}) func(platformName, host strin
 		_, degraded := hosts[providerHostKey(platformName, host)]
 		return degraded
 	}
-}
-
-func degradedConfiguredRepoGlobs(
-	repos []config.Repo,
-	hostDegraded func(platformName, host string) bool,
-) []config.Repo {
-	if hostDegraded == nil {
-		return nil
-	}
-	deferred := make([]config.Repo, 0)
-	for _, repo := range repos {
-		if repo.HasNameGlob() && hostDegraded(
-			repo.PlatformOrDefault(), repo.PlatformHostOrDefault(),
-		) {
-			deferred = append(deferred, repo)
-		}
-	}
-	return deferred
 }
 
 func splitProviderHostKey(key string) (string, string) {

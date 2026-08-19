@@ -907,6 +907,61 @@ func TestSetReposSeedsActiveArchiveForArchivedRepo(t *testing.T) {
 		"an archived configured repo keeps an active archive")
 }
 
+func TestDeferredArchiveSeedRunsAfterRecoveryOntoExistingArchive(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	registry, err := platform.NewRegistry(syncTestProvider{
+		kind: platform.KindGitHub, host: "github.test",
+	})
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(registry, database, nil, nil, time.Hour, nil, nil)
+	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
+	require.NoError(err)
+	syncer.SetArchiveService(service)
+	resolved := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.test",
+		Owner: "acme", Name: "widgets", RepoPath: "acme/widgets",
+		PlatformExternalID: "repo-widgets",
+	}
+	require.NoError(syncer.SetReposWithContext(t.Context(), []RepoRef{resolved}, false))
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), platform.DBRepoIdentity(platformRepoRef(resolved)),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+
+	// A degraded restart tracks the same repo as an identity-less fallback
+	// ref and defers the whole reconciliation pass.
+	recorder := &archiveLifecycleRecorder{}
+	syncer.SetArchiveService(recorder)
+	fallback := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.test",
+		Owner: "acme", Name: "widgets", RepoPath: "acme/widgets",
+	}
+	require.NoError(syncer.SetReposWithContextForDegradedHosts(
+		t.Context(), []RepoRef{fallback}, false,
+		func(_, host string) bool { return host == "github.test" },
+	))
+	require.Empty(recorder.ensured, "degraded startup must defer archive seeding")
+
+	// Background identity resolution recovers onto the existing archived
+	// repository: identity is unchanged and archive state already exists,
+	// yet the deferred pass must still run exactly once.
+	require.NoError(syncer.reconcileArchiveRepositoryIfNeeded(
+		t.Context(), repo.ID, repo.ID,
+	))
+	require.Len(recorder.ensured, 1)
+	assert.Equal("acme/widgets", recorder.ensured[0].RepoPath)
+
+	recorder.ensured = nil
+	require.NoError(syncer.reconcileArchiveRepositoryIfNeeded(
+		t.Context(), repo.ID, repo.ID,
+	))
+	assert.Empty(recorder.ensured,
+		"a completed deferred pass must not re-run on every resolution")
+}
+
 func TestSetReposPassesOnlySeededRefsToRetryAuthentication(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

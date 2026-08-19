@@ -414,8 +414,10 @@ fallback repository listing.
   (`internal/archive/service.go::EnsureConfigured`,
   `internal/github/sync.go::SetReposWithContext`)
 - Degraded startup defers the whole archive reconciliation pass when any degraded ref
-  lacks a stable provider ID; partial local seeding could pause the wrong archive, and
-  background identity resolution triggers the safe pass (`internal/github/sync.go::Syncer.SetReposWithContextForDegradedHosts`).
+  lacks a stable provider ID; partial local seeding could pause the wrong archive. The
+  deferral is recorded so the first successful background identity resolution runs the
+  full pass even when recovery lands on already-archived rows
+  (`internal/github/sync.go::Syncer.SetReposWithContextForDegradedHosts`).
 - Removal pausing (`configuration_removed`) requires a complete picture: when
   any configured ref fails seeding without a known repository row, the pass
   ensures discovery archives but defers the pausing side entirely — an

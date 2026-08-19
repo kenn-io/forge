@@ -816,6 +816,7 @@ type Syncer struct {
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
+	archiveSeedDeferred      atomic.Bool // degraded startup skipped EnsureConfigured; next resolution runs it
 	mergedActorCursorMu      sync.Mutex
 	mergedActorCursors       map[int64]mergedActorSweepState
 	interval                 time.Duration
@@ -4496,11 +4497,19 @@ func (s *Syncer) setReposWithContext(
 		refs = append(refs, platformRepoRef(repo))
 	}
 	deferArchiveSeed := degradedArchiveSeedNeedsProvider(repos, hostDegraded)
+	if deferArchiveSeed {
+		// Recovery may map every fallback ref onto an existing archived
+		// repository, which reconcileArchiveRepositoryIfNeeded would not
+		// treat as a reason to reconcile; record the debt explicitly so
+		// the first successful resolution always runs the full pass.
+		s.archiveSeedDeferred.Store(true)
+	}
 	if s.SyncEnabled() && s.archiveLifecycle != nil && !deferArchiveSeed {
 		seeded, err := s.archiveLifecycle.EnsureConfigured(ctx, refs)
 		if err != nil {
 			return fmt.Errorf("seed archive discovery: %w", err)
 		}
+		s.archiveSeedDeferred.Store(false)
 		if retryAuthentication {
 			// Only refs that seeded can resolve; a ref skipped by seeding
 			// must not fail the retry pass (and with it the config reload).
@@ -6326,7 +6335,8 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	if s.archiveLifecycle == nil {
 		return nil
 	}
-	needsReconcile := previousID != 0 && previousID != repoID
+	needsReconcile := s.archiveSeedDeferred.Load() ||
+		(previousID != 0 && previousID != repoID)
 	if !needsReconcile {
 		states, err := s.db.ListArchiveRepoStates(ctx, []int64{repoID})
 		if err != nil {
@@ -6347,6 +6357,7 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	if _, err := s.archiveLifecycle.EnsureConfigured(ctx, refs); err != nil {
 		return fmt.Errorf("reconcile archive repository replacement: %w", err)
 	}
+	s.archiveSeedDeferred.Store(false)
 	s.WakeArchive()
 	return nil
 }

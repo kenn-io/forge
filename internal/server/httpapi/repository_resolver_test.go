@@ -225,6 +225,56 @@ func TestRepositoryResolverRequireRouteCapabilityUsesCanonicalContract(t *testin
 	require.Equal(CodeUnsupportedCapability, problem.Code)
 }
 
+func TestRequireRouteCapabilitySuspendsProviderWritesForDegradedHost(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-acme-widgets",
+		Owner:          "acme",
+		Name:           "widgets",
+		RepoPath:       "acme/widgets",
+	})
+	require.NoError(err)
+	suspended := true
+	resolver := NewRepositoryResolver(RepositoryResolverDeps{
+		DB: database,
+		ProviderCapabilities: func(platform.Kind, string) (platform.Capabilities, error) {
+			return platform.Capabilities{
+				CommentMutation: true, ReadReviewThreads: true,
+			}, nil
+		},
+		ProviderWritesSuspended: func(kind platform.Kind, host string) bool {
+			return suspended && kind == platform.KindGitHub && host == "github.com"
+		},
+	})
+
+	_, err = resolver.RequireRouteCapability(
+		t.Context(), "github", "github.com", "acme", "widgets", "comment_mutation",
+	)
+	var problem *ProblemError
+	require.ErrorAs(err, &problem)
+	assert.Equal(CodeServiceUnavailable, problem.Code)
+
+	// Reads keep serving the local archive while writes are suspended.
+	repo, err := resolver.RequireRouteCapability(
+		t.Context(), "github", "github.com", "acme", "widgets", "read_review_threads",
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(resolver.RequireProviderWritable(db.Repo{
+		Platform: "github", PlatformHost: "github.example",
+	}), "other hosts stay writable")
+
+	suspended = false
+	_, err = resolver.RequireRouteCapability(
+		t.Context(), "github", "github.com", "acme", "widgets", "comment_mutation",
+	)
+	require.NoError(err)
+}
+
 func TestRepositoryResolverRefFromPartsAppliesCanonicalDefaults(t *testing.T) {
 	resolver := NewRepositoryResolver(RepositoryResolverDeps{})
 

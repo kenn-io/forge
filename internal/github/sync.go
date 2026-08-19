@@ -817,6 +817,12 @@ type Syncer struct {
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
 	archiveSeedDeferred      atomic.Bool // degraded startup skipped EnsureConfigured; next resolution runs it
+	// repoConfigMu serializes configured-repository replacement with deferred
+	// outage recovery so a recovery publish cannot clobber a concurrent
+	// reload or settings replacement. Guards the deferred fields below.
+	repoConfigMu             sync.Mutex
+	deferredConfiguredRepos  []config.Repo
+	deferredExpansionRetries func(error) bool
 	mergedActorCursorMu      sync.Mutex
 	mergedActorCursors       map[int64]mergedActorSweepState
 	interval                 time.Duration
@@ -4458,9 +4464,12 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 func (s *Syncer) SetRepos(repos []RepoRef) {
 	if err := s.SetReposWithContext(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
+		s.repoConfigMu.Lock()
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
 		s.reposMu.Unlock()
+		s.deferredConfiguredRepos = nil
+		s.repoConfigMu.Unlock()
 		s.WakeArchive()
 	}
 }
@@ -4468,8 +4477,16 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // SetReposWithContext prepares durable archive state before exposing a new
 // configured repository set to sync workers. Credential reloads may also make
 // authentication-blocked work eligible without resetting archive progress.
+// Replacing the set supersedes any deferred outage-recovery expansion, which
+// was derived from the previous configuration.
 func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
-	return s.setReposWithContext(ctx, repos, retryAuthentication, nil)
+	s.repoConfigMu.Lock()
+	defer s.repoConfigMu.Unlock()
+	if err := s.setReposWithContext(ctx, repos, retryAuthentication, nil); err != nil {
+		return err
+	}
+	s.deferredConfiguredRepos = nil
+	return nil
 }
 
 // SetReposWithContextForDegradedHosts defers startup archive reconciliation
@@ -4483,7 +4500,111 @@ func (s *Syncer) SetReposWithContextForDegradedHosts(
 	retryAuthentication bool,
 	hostDegraded func(platformName, host string) bool,
 ) error {
-	return s.setReposWithContext(ctx, repos, retryAuthentication, hostDegraded)
+	s.repoConfigMu.Lock()
+	defer s.repoConfigMu.Unlock()
+	if err := s.setReposWithContext(ctx, repos, retryAuthentication, hostDegraded); err != nil {
+		return err
+	}
+	s.deferredConfiguredRepos = nil
+	return nil
+}
+
+// SetDeferredConfiguredRepos retains configured entries that could not be
+// expanded while their provider host was degraded. Full sync passes retry the
+// expansion and publish recovered repositories into the tracked set,
+// replacing fallback-derived duplicates. Call after the degraded repo set is
+// published; any later repo-set replacement (reload, settings) supersedes it.
+// retries classifies expansion errors: entries with transient errors stay
+// deferred, while a definitive provider answer (for example a 404 on a
+// removed route) resolves the entry, so one dead config entry cannot pin its
+// host in the deferred state forever. Nil retries everything.
+func (s *Syncer) SetDeferredConfiguredRepos(
+	repos []config.Repo, retries func(error) bool,
+) {
+	s.repoConfigMu.Lock()
+	s.deferredConfiguredRepos = slices.Clone(repos)
+	s.deferredExpansionRetries = retries
+	s.repoConfigMu.Unlock()
+}
+
+// ProviderWritesSuspended reports whether provider writes for a host must
+// stay suspended because degraded-startup identity reconciliation has not
+// completed. Mutations route by owner/name, so until every deferred entry on
+// the host has been re-expanded against the provider, a write could land on
+// a repository recreated under a previously tracked route.
+func (s *Syncer) ProviderWritesSuspended(platformName, host string) bool {
+	if s == nil {
+		return false
+	}
+	s.repoConfigMu.Lock()
+	defer s.repoConfigMu.Unlock()
+	for _, raw := range s.deferredConfiguredRepos {
+		if strings.EqualFold(raw.PlatformOrDefault(), platformName) &&
+			strings.EqualFold(raw.PlatformHostOrDefault(), host) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Syncer) resolveDeferredConfiguredRepos(ctx context.Context) {
+	s.repoConfigMu.Lock()
+	defer s.repoConfigMu.Unlock()
+	if len(s.deferredConfiguredRepos) == 0 {
+		return
+	}
+
+	s.reposMu.Lock()
+	tracked := slices.Clone(s.repos)
+	s.reposMu.Unlock()
+	merged := NewExpandedRepoSet()
+	for _, repo := range tracked {
+		merged.Add(repo, false)
+	}
+
+	remaining := make([]config.Repo, 0, len(s.deferredConfiguredRepos))
+	resolvedAny := false
+	for _, raw := range s.deferredConfiguredRepos {
+		_, expanded, err := ResolveConfiguredRepoWithRegistry(ctx, s.clients, raw)
+		if err != nil {
+			if s.deferredExpansionRetries == nil || s.deferredExpansionRetries(err) {
+				remaining = append(remaining, raw)
+				slog.Info("deferred configured repository expansion still unavailable",
+					"platform", raw.PlatformOrDefault(),
+					"host", raw.PlatformHostOrDefault(),
+					"owner", raw.Owner,
+					"name", raw.Name,
+					"err", err,
+				)
+				continue
+			}
+			// The provider answered definitively; the entry cannot recover
+			// by retrying and must not keep its host write-suspended.
+			resolvedAny = true
+			slog.Warn("deferred configured repository expansion failed permanently",
+				"platform", raw.PlatformOrDefault(),
+				"host", raw.PlatformHostOrDefault(),
+				"owner", raw.Owner,
+				"name", raw.Name,
+				"err", err,
+			)
+			continue
+		}
+		resolvedAny = true
+		for _, repo := range expanded {
+			merged.Add(repo, true)
+		}
+	}
+	if !resolvedAny {
+		return
+	}
+	if err := s.setReposWithContext(ctx, merged.Refs(), false, nil); err != nil {
+		// Keep every entry deferred so the next pass republishes the
+		// successful expansions along with the retries.
+		slog.Warn("publish deferred configured repository expansion", "err", err)
+		return
+	}
+	s.deferredConfiguredRepos = remaining
 }
 
 func (s *Syncer) setReposWithContext(
@@ -5907,6 +6028,9 @@ func (s *Syncer) runOnce(
 	// made during background sync. User-initiated server
 	// handler paths do not carry this key and are not counted.
 	ctx = WithSyncBudget(ctx)
+	if onlyRepos == nil {
+		s.resolveDeferredConfiguredRepos(ctx)
+	}
 
 	s.reposMu.Lock()
 	repos := slices.Clone(s.repos)

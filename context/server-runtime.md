@@ -26,8 +26,10 @@ and the root event stream.
   (`cmd/kenn-forge/provider_startup_fallback.go::buildProviderStartupWithFallback`).
 - Degraded provider-host startup expands repositories from SQLite and config only and
   defers archive seeding when a fallback lacks a stable provider ID; provider reads begin
-  only in background sync (`cmd/kenn-forge/main.go::resolveStartupRepos`,
-  `internal/github/sync.go::Syncer.SetReposWithContextForDegradedHosts`).
+  only in background sync, provider writes stay 503-suspended per host until deferred
+  config re-expansion re-verifies identity (`cmd/kenn-forge/main.go::resolveStartupRepos`,
+  `internal/github/sync.go::Syncer.SetReposWithContextForDegradedHosts`,
+  `internal/server/httpapi/repository_resolver.go::RepositoryResolver.RequireProviderWritable`).
 
 ## Startup Lock
 

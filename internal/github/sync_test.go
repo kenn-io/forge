@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/archive"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/platform"
@@ -1103,6 +1104,7 @@ type syncTestRepositoryReadProvider struct {
 	repository         platform.Repository
 	repositoryErr      error
 	getRepositoryFn    func(context.Context, platform.RepoRef) (platform.Repository, error)
+	listRepositoriesFn func(context.Context, string, platform.RepositoryListOptions) ([]platform.Repository, error)
 	getRepositoryCalls atomic.Int32
 }
 
@@ -1231,11 +1233,148 @@ func (p *syncTestRepositoryReadProvider) GetRepository(
 }
 
 func (p *syncTestRepositoryReadProvider) ListRepositories(
-	context.Context,
-	string,
-	platform.RepositoryListOptions,
+	ctx context.Context,
+	owner string,
+	opts platform.RepositoryListOptions,
 ) ([]platform.Repository, error) {
+	if p.listRepositoriesFn != nil {
+		return p.listRepositoriesFn(ctx, owner, opts)
+	}
 	return nil, nil
+}
+
+func TestDeferredConfiguredGlobEntersTrackedSetAfterProviderRecovery(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var recovered atomic.Bool
+	var listCalls atomic.Int32
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitHub, host: "github.com",
+			},
+		},
+		listRepositoriesFn: func(
+			context.Context, string, platform.RepositoryListOptions,
+		) ([]platform.Repository, error) {
+			listCalls.Add(1)
+			if !recovered.Load() {
+				return nil, errors.New("provider unavailable")
+			}
+			return []platform.Repository{{
+				Ref: platform.RepoRef{
+					Platform: platform.KindGitHub,
+					Host:     "github.com",
+					Owner:    "acme",
+					Name:     "widgets",
+					RepoPath: "acme/widgets",
+				},
+				PlatformExternalID: "repo-acme-widgets",
+			}}, nil
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform: platform.KindGitHub,
+				Host:     "github.com",
+				Owner:    "acme",
+				Name:     "widgets",
+				RepoPath: "acme/widgets",
+			},
+			PlatformExternalID: "repo-acme-widgets",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, dbtest.Open(t), nil, nil, time.Hour, nil, nil,
+	)
+	syncer.SetDeferredConfiguredRepos(
+		[]config.Repo{{Owner: "acme", Name: "*"}}, nil,
+	)
+	assert.True(syncer.ProviderWritesSuspended("github", "github.com"))
+	assert.False(syncer.ProviderWritesSuspended("github", "github.example"))
+
+	syncer.RunOnce(t.Context())
+	assert.Empty(syncer.TrackedRepos())
+	assert.True(syncer.ProviderWritesSuspended("github", "github.com"),
+		"writes stay suspended while expansion keeps failing")
+
+	recovered.Store(true)
+	syncer.RunOnce(t.Context())
+	require.Len(syncer.TrackedRepos(), 1)
+	assert.Equal("widgets", syncer.TrackedRepos()[0].Name)
+	assert.Equal("repo-acme-widgets", syncer.TrackedRepos()[0].PlatformExternalID)
+	assert.False(syncer.ProviderWritesSuspended("github", "github.com"),
+		"successful expansion re-verifies identity and resumes writes")
+
+	syncer.RunOnce(t.Context())
+	assert.Equal(int32(2), listCalls.Load(),
+		"a successful expansion must leave the deferred retry set")
+}
+
+func TestDeferredConfiguredRepoPermanentFailureResumesWrites(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	permanentErr := errors.New("repository route removed upstream")
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitHub, host: "github.com",
+			},
+		},
+		getRepositoryFn: func(
+			context.Context, platform.RepoRef,
+		) (platform.Repository, error) {
+			return platform.Repository{}, permanentErr
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, dbtest.Open(t), nil, nil, time.Hour, nil, nil,
+	)
+	syncer.SetDeferredConfiguredRepos(
+		[]config.Repo{{Owner: "acme", Name: "gone"}},
+		func(err error) bool { return !errors.Is(err, permanentErr) },
+	)
+	assert.True(syncer.ProviderWritesSuspended("github", "github.com"))
+
+	syncer.RunOnce(t.Context())
+	assert.False(syncer.ProviderWritesSuspended("github", "github.com"),
+		"a definitive provider answer must not pin the host write-suspended")
+}
+
+func TestSetReposWithContextClearsDeferredConfiguredRepos(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitHub, host: "github.com",
+			},
+		},
+		listRepositoriesFn: func(
+			context.Context, string, platform.RepositoryListOptions,
+		) ([]platform.Repository, error) {
+			require.Fail("superseded deferred expansion must not run")
+			return nil, nil
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, dbtest.Open(t), nil, nil, time.Hour, nil, nil,
+	)
+	syncer.SetDeferredConfiguredRepos(
+		[]config.Repo{{Owner: "acme", Name: "*"}}, nil,
+	)
+
+	// A reload or settings replacement re-derives the repo set from current
+	// config, superseding the boot-time deferred expansion.
+	require.NoError(syncer.SetReposWithContext(t.Context(), nil, false))
+	assert.False(syncer.ProviderWritesSuspended("github", "github.com"))
+	syncer.RunOnce(t.Context())
+	assert.Empty(syncer.TrackedRepos())
 }
 
 func (p *syncTestReadProvider) ListOpenMergeRequests(

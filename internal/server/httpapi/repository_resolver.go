@@ -16,8 +16,52 @@ var ErrRepoNotFound = errors.New("repo not found")
 var ErrRepositoryStoreUnavailable = errors.New("repository store unavailable")
 
 type RepositoryResolver struct {
-	db                   *db.DB
-	providerCapabilities func(platform.Kind, string) (platform.Capabilities, error)
+	db                      *db.DB
+	providerCapabilities    func(platform.Kind, string) (platform.Capabilities, error)
+	providerWritesSuspended func(platform.Kind, string) bool
+}
+
+// providerWriteCapabilities lists the route capabilities whose handlers write
+// to the provider. review_draft_mutation is absent because local draft CRUD
+// shares it; the publish handler calls RequireProviderWritable itself.
+var providerWriteCapabilities = map[string]struct{}{
+	"comment_mutation":              {},
+	"state_mutation":                {},
+	"merge_mutation":                {},
+	"review_mutation":               {},
+	"workflow_approval":             {},
+	"ready_for_review":              {},
+	"draft_mutation":                {},
+	"issue_mutation":                {},
+	"label_mutation":                {},
+	"assignee_mutation":             {},
+	"reviewer_mutation":             {},
+	"thread_reply":                  {},
+	"thread_resolve":                {},
+	"review_thread_resolution":      {},
+	"review_suggestion_application": {},
+}
+
+// RequireProviderWritable fails with a 503 while provider writes for the
+// repository's host are suspended. Degraded startup restores routes from
+// SQLite before their provider identity is re-verified; a mutation routed by
+// owner/name could land on a repository recreated under the same route, so
+// writes stay closed until deferred identity reconciliation completes. Reads
+// keep serving the local archive.
+func (r *RepositoryResolver) RequireProviderWritable(repo db.Repo) error {
+	if r == nil || r.providerWritesSuspended == nil {
+		return nil
+	}
+	kind := ProviderKind(repo)
+	host := ProviderHost(repo)
+	if !r.providerWritesSuspended(kind, host) {
+		return nil
+	}
+	return ServiceUnavailable(fmt.Sprintf(
+		"provider writes for %s host %s are paused until sync re-verifies "+
+			"repository identity after a degraded start; retry shortly",
+		kind, host,
+	))
 }
 
 // LookupRoute resolves the provider-aware route tuple through the canonical
@@ -46,6 +90,11 @@ func (r *RepositoryResolver) RequireRouteCapability(
 	}
 	if !CapabilityEnabled(r.Ref(*repo).Capabilities, capability) {
 		return nil, UnsupportedCapability(*repo, capability)
+	}
+	if _, writes := providerWriteCapabilities[capability]; writes {
+		if err := r.RequireProviderWritable(*repo); err != nil {
+			return nil, err
+		}
 	}
 	return repo, nil
 }
@@ -154,12 +203,17 @@ func CapabilityEnabled(caps ProviderCapabilitiesResponse, capability string) boo
 type RepositoryResolverDeps struct {
 	DB                   *db.DB
 	ProviderCapabilities func(platform.Kind, string) (platform.Capabilities, error)
+	// ProviderWritesSuspended reports whether provider writes for a host are
+	// suspended pending degraded-startup identity reconciliation. Nil means
+	// writes are never suspended.
+	ProviderWritesSuspended func(platform.Kind, string) bool
 }
 
 func NewRepositoryResolver(deps RepositoryResolverDeps) *RepositoryResolver {
 	return &RepositoryResolver{
-		db:                   deps.DB,
-		providerCapabilities: deps.ProviderCapabilities,
+		db:                      deps.DB,
+		providerCapabilities:    deps.ProviderCapabilities,
+		providerWritesSuspended: deps.ProviderWritesSuspended,
 	}
 }
 

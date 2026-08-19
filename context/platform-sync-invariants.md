@@ -125,6 +125,15 @@ GitHub may additionally define exact-repository and owner authorization routes.
 - Startup fallback may mark degraded hosts only during discovery; live PAT revalidation
   always uses the primary resolver so degraded-host state is frozen before sync begins
   (`cmd/kenn-forge/provider_startup_fallback.go::fallbackIdentityResolver.LiveSourceIdentityResolver`).
+- Degraded config entries stay deferred on the syncer and re-expand each full sync;
+  success replaces fallback matches, while a definitive provider answer drops the entry
+  so one dead route cannot pin its host (`internal/github/sync.go::Syncer.resolveDeferredConfiguredRepos`).
+- Provider writes on a degraded host return 503 `serviceUnavailable` until every deferred
+  entry re-verifies identity: mutations route by mutable owner/name, so a write could land on a
+  repository recreated under a previously tracked route. Reads and local review drafts stay
+  available; `review_draft_mutation` is excluded from the route gate because local draft CRUD
+  shares it, and publish gates itself
+  (`internal/server/httpapi/repository_resolver.go::RepositoryResolver.RequireProviderWritable`).
 - Refresh access uses the gated registry; only explicit foreground provider
   operations use direct access (`internal/github/sync.go::Syncer.SyncRegistry`).
 - Refresh interfaces that may be retained across policy setup must recheck the

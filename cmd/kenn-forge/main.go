@@ -597,11 +597,16 @@ func run(opts serve.Options) error {
 	archiveService.SetMaintenanceInterval(cfg.SyncDuration())
 	archiveService.SetWake(syncer.WakeArchive)
 	syncer.SetArchiveService(archiveService)
+	hostDegraded := degradedHostLookup(startup.degradedProviderHosts)
 	if err := syncer.SetReposWithContextForDegradedHosts(
-		ctx, repos, false, degradedHostLookup(startup.degradedProviderHosts),
+		ctx, repos, false, hostDegraded,
 	); err != nil {
 		return fmt.Errorf("prepare archive repositories: %w", err)
 	}
+	syncer.SetDeferredConfiguredRepos(
+		degradedConfiguredRepos(cfg.Repos, hostDegraded),
+		isTransientGitHubStartupError,
+	)
 
 	telemetryReporter = telemetry.NewReporterOrDisabled(telemetry.Options{
 		Database: database,
@@ -938,6 +943,31 @@ func degradedHostLookup(hosts map[string]struct{}) func(platformName, host strin
 		_, degraded := hosts[providerHostKey(platformName, host)]
 		return degraded
 	}
+}
+
+// degradedConfiguredRepos returns the configured entries whose provider host
+// was degraded at startup. Globs need their expansion retried, since fallback
+// matches from SQLite cannot discover new repositories and an empty database
+// yields no matches at all. Exact entries need their provider identity
+// re-verified: their fallback refs carry pre-outage owner/name→ID mappings,
+// and provider writes stay suspended per host until every deferred entry has
+// been re-expanded (`Syncer.ProviderWritesSuspended`).
+func degradedConfiguredRepos(
+	repos []config.Repo,
+	hostDegraded func(platformName, host string) bool,
+) []config.Repo {
+	if hostDegraded == nil {
+		return nil
+	}
+	deferred := make([]config.Repo, 0)
+	for _, repo := range repos {
+		if hostDegraded(
+			repo.PlatformOrDefault(), repo.PlatformHostOrDefault(),
+		) {
+			deferred = append(deferred, repo)
+		}
+	}
+	return deferred
 }
 
 func splitProviderHostKey(key string) (string, string) {

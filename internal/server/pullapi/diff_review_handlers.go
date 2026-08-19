@@ -510,6 +510,11 @@ func (s *Handler) publishDiffReviewDraft(
 	if err != nil {
 		return nil, err
 	}
+	// Local draft CRUD shares capabilityReviewDraftMutation and must keep
+	// working offline; only this publish path writes to the provider.
+	if err := s.resolver.RequireProviderWritable(*repo); err != nil {
+		return nil, err
+	}
 	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")

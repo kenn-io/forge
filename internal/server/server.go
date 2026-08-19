@@ -786,6 +786,9 @@ func newServer(
 			}
 			return syncer.ProviderCapabilities(kind, host)
 		},
+		ProviderWritesSuspended: func(kind platform.Kind, host string) bool {
+			return syncer != nil && syncer.ProviderWritesSuspended(string(kind), host)
+		},
 	})
 
 	s := &Server{

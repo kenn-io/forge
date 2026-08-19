@@ -160,21 +160,21 @@ func TestNextAvailableBranchNameAvoidsRefNamespaceConflicts(t *testing.T) {
 	}{
 		{
 			name:      "descendant",
-			existing:  []string{"docs/agent-context-routing"},
+			existing:  []string{"docs/guide-refresh"},
 			requested: "docs",
 			want:      "docs-2",
 		},
 		{
 			name:      "numbered descendant",
-			existing:  []string{"docs/agent-context-routing", "docs-2/claimed"},
+			existing:  []string{"docs/guide-refresh", "docs-2/claimed"},
 			requested: "docs",
 			want:      "docs-3",
 		},
 		{
 			name:      "ancestor",
 			existing:  []string{"docs"},
-			requested: "docs/agent-context-routing",
-			want:      "docs-2/agent-context-routing",
+			requested: "docs/guide-refresh",
+			want:      "docs-2/guide-refresh",
 		},
 	}
 
@@ -268,7 +268,7 @@ func TestSetupAdHocWorkspaceUniquifiesBranchPrefixConflict(t *testing.T) {
 	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
 		t, "feature/other",
 	)
-	runWorkspaceTestGit(t, localRepo, "branch", "docs/agent-context-routing")
+	runWorkspaceTestGit(t, localRepo, "branch", "docs/guide-refresh")
 	seedRepo(t, d, platformHost, "acme", "widget")
 
 	tmuxScript, _ := writeRecorderScript(t)

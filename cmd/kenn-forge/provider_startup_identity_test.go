@@ -1262,6 +1262,125 @@ func TestBuildProviderStartupOrDegradedKeepsServerBootableWhenGitHubUnavailable(
 	assert.Empty(startup.registry.Providers())
 }
 
+func TestCollectProviderTokenSourcesDegradedExcludesFailedHost(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("FORGE_PAT", "forge-token")
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Platforms: []config.PlatformConfig{{
+			Type: "forgejo", Host: "code.example.com", TokenEnv: "FORGE_PAT",
+		}},
+		Repos: []config.Repo{
+			{Owner: "org-a", Name: "one"},
+			{Platform: "forgejo", PlatformHost: "code.example.com", Owner: "group", Name: "two"},
+		},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
+			Host: "github.com", Owner: "org-a", TokenEnv: "UNSET_ORG_A_PAT",
+		}},
+	}
+	require.NoError(cfg.Validate())
+
+	sources, err := collectProviderTokenSourcesDegraded(
+		t.Context(), cfg, tokenauth.NewSourceSet(tokenauth.Options{}),
+	)
+	require.NoError(err,
+		"a failing host must degrade instead of failing startup")
+	assert.Contains(sources, providerHostKey("forgejo", "code.example.com"))
+	assert.NotContains(sources, providerHostKey("github", "github.com"))
+}
+
+func TestBuildProviderStartupOrDegradedKeepsHealthyProvidersWhenGitHubFails(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	t.Setenv("ORG_A_TOKEN", "org-a-token")
+	t.Setenv("GITLAB_PAT", "gitlab-token")
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Platforms: []config.PlatformConfig{{
+			Type: "gitlab", Host: "gitlab.example.com", TokenEnv: "GITLAB_PAT",
+		}},
+		Repos: []config.Repo{
+			{Owner: "org-a", Name: "one"},
+			{Platform: "gitlab", PlatformHost: "gitlab.example.com", Owner: "group", Name: "two"},
+		},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
+			Host: "github.com", Owner: "org-a", TokenEnv: "ORG_A_TOKEN",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	sources, err := collectProviderTokenSourcesDegraded(t.Context(), cfg, set)
+	require.NoError(err)
+
+	startup, err := buildProviderStartupOrDegraded(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{err: map[string]error{
+			"ORG_A_TOKEN": errors.New("GitHub API unavailable: 503"),
+		}},
+	)
+	require.NoError(err)
+	require.Len(startup.registry.Providers(), 1,
+		"the healthy GitLab host must keep syncing")
+	assert.Empty(startup.githubClients)
+	assert.NotContains(startup.cloneSources, tokenauth.Key{
+		Platform: "github", Host: "github.com",
+	})
+	assert.Contains(startup.cloneSources, tokenauth.Key{
+		Platform: "gitlab", Host: "gitlab.example.com",
+	})
+}
+
+func TestBuildProviderStartupOrDegradedIsolatesFailingGitHubHost(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	t.Setenv("ORG_A_TOKEN", "org-a-token")
+	t.Setenv("GHE_PAT", "ghe-token")
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Platforms: []config.PlatformConfig{{
+			Type: "github", Host: "ghe.example.com", TokenEnv: "GHE_PAT",
+		}},
+		Repos: []config.Repo{
+			{Owner: "org-a", Name: "one"},
+			{PlatformHost: "ghe.example.com", Owner: "org-b", Name: "two"},
+		},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
+			Host: "github.com", Owner: "org-a", TokenEnv: "ORG_A_TOKEN",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	sources, err := collectProviderTokenSourcesDegraded(t.Context(), cfg, set)
+	require.NoError(err)
+
+	startup, err := buildProviderStartupOrDegraded(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{
+			byEnv: map[string]github.GitHubIdentity{
+				"GHE_PAT": {Key: github.IdentityKey{
+					Host: "ghe.example.com", Principal: "user:octo",
+				}},
+			},
+			err: map[string]error{
+				"ORG_A_TOKEN": errors.New("GitHub API unavailable: 503"),
+			},
+		},
+	)
+	require.NoError(err)
+	assert.NotContains(startup.cloneSources, tokenauth.Key{
+		Platform: "github", Host: "github.com",
+	}, "the unavailable GitHub host must degrade to cached data")
+	assert.Contains(startup.cloneSources, tokenauth.Key{
+		Platform: "github", Host: "ghe.example.com",
+	}, "the healthy GitHub host must keep syncing")
+}
+
 // A repository PAT override picks the credential that signs that repository's
 // writes; it must not cost the owner its App installation. The installation
 // carries its own rate-limit budget, so it still leads reads, and it remains

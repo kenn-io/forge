@@ -22,8 +22,10 @@ and the root event stream.
   paths and `KENN_FORGE_HOME` never relocate config
   (`internal/config/legacy_migration.go::migrateLegacyConfig`).
 - Sync-enabled startup keeps the local UI available when provider credentials or
-  identity initialization is unavailable; it serves cached data without provider
-  sync until a later restart (`cmd/kenn-forge/main.go::run`).
+  identity initialization is unavailable. Failures attributable to one provider
+  host drop only that host while healthy hosts keep syncing; unattributable
+  failures degrade to no provider sync. Dropped hosts serve cached data until a
+  later restart (`cmd/kenn-forge/provider_startup.go::buildProviderStartupOrDegraded`).
 
 ## Startup Lock
 

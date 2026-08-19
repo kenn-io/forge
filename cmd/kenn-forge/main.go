@@ -534,7 +534,7 @@ func run(opts serve.Options) error {
 	if opts.DisableSync {
 		providerSources, err = registerProviderTokenSources(cfg, tokenSources)
 	} else {
-		providerSources, err = collectProviderTokenSources(ctx, cfg, tokenSources)
+		providerSources, err = collectProviderTokenSourcesDegraded(ctx, cfg, tokenSources)
 		if err != nil {
 			slog.Warn(
 				"provider credentials unavailable; serving cached data without provider sync",

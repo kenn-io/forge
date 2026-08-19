@@ -238,14 +238,26 @@ func collectProviderTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 ) (map[string]tokenauth.Source, error) {
-	return providerTokenSources(ctx, cfg, set, true)
+	return providerTokenSources(ctx, cfg, set, true, false)
+}
+
+// collectProviderTokenSourcesDegraded resolves provider tokens like
+// collectProviderTokenSources, but a host whose credentials fail is excluded
+// with a warning instead of failing startup, so one provider outage cannot
+// stop sync for healthy hosts. Config-consistency errors still fail.
+func collectProviderTokenSourcesDegraded(
+	ctx context.Context,
+	cfg *config.Config,
+	set *tokenauth.SourceSet,
+) (map[string]tokenauth.Source, error) {
+	return providerTokenSources(ctx, cfg, set, true, true)
 }
 
 func registerProviderTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 ) (map[string]tokenauth.Source, error) {
-	return providerTokenSources(context.Background(), cfg, set, false)
+	return providerTokenSources(context.Background(), cfg, set, false, false)
 }
 
 func providerTokenSources(
@@ -253,14 +265,19 @@ func providerTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 	resolve bool,
+	degradeFailedHosts bool,
 ) (map[string]tokenauth.Source, error) {
 	if err := cfg.ValidateRepoTokenSourceConsistency(); err != nil {
 		return nil, err
 	}
 	providerSources := make(map[string]tokenauth.Source, len(cfg.Repos)+len(cfg.Platforms)+1)
+	failedHosts := make(map[string]struct{})
 	for _, plan := range cfg.ProviderTokenSources() {
 		desc := plan.Descriptor
 		key := providerHostKey(desc.Key.Platform, desc.Key.Host)
+		if _, failed := failedHosts[key]; failed {
+			continue
+		}
 		_, seen := providerSources[key]
 		src := set.Upsert(desc)
 		if resolve {
@@ -270,6 +287,20 @@ func providerTokenSources(
 			}
 			if _, err := src.Token(tokenCtx); err != nil {
 				if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
+					continue
+				}
+				if degradeFailedHosts {
+					// Any credential failure excludes the whole host: syncing
+					// with a partial credential chain could select the wrong
+					// route for repositories whose token did not resolve.
+					failedHosts[key] = struct{}{}
+					delete(providerSources, key)
+					slog.Warn(
+						"provider host credentials unavailable; serving cached data for it without sync",
+						"platform", desc.Key.Platform,
+						"host", desc.Key.Host,
+						"err", err,
+					)
 					continue
 				}
 				label := fmt.Sprintf("%s host %s", desc.Key.Platform, desc.Key.Host)
@@ -292,10 +323,24 @@ func providerTokenSources(
 	return providerSources, nil
 }
 
+// providerHostStartupError marks a startup failure attributable to one
+// provider host so degraded startup can drop that host and keep the rest.
+type providerHostStartupError struct {
+	platformName string
+	host         string
+	err          error
+}
+
+func (e *providerHostStartupError) Error() string { return e.err.Error() }
+
+func (e *providerHostStartupError) Unwrap() error { return e.err }
+
 // buildProviderStartupOrDegraded keeps the local UI available when a remote
-// provider cannot be initialized. The database already contains the last
-// successful sync, and provider operations can report unavailable until the
-// daemon is restarted after the provider recovers.
+// provider cannot be initialized. Failures attributable to one provider host
+// drop only that host, so healthy hosts keep syncing; anything else falls
+// back to an empty provider registry. The database already contains the last
+// successful sync, and dropped hosts serve cached data until the daemon is
+// restarted after the provider recovers.
 func buildProviderStartupOrDegraded(
 	ctx context.Context,
 	database *db.DB,
@@ -305,18 +350,40 @@ func buildProviderStartupOrDegraded(
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
 ) (providerStartup, error) {
-	startup, err := buildProviderStartup(
-		ctx, database, cfg, set, providerSources, factories, resolver,
-	)
-	if err == nil {
-		return startup, nil
+	sources := providerSources
+	for {
+		startup, err := buildProviderStartup(
+			ctx, database, cfg, set, sources, factories, resolver,
+		)
+		if err == nil {
+			return startup, nil
+		}
+		var hostErr *providerHostStartupError
+		if errors.As(err, &hostErr) {
+			key := providerHostKey(hostErr.platformName, hostErr.host)
+			if _, ok := sources[key]; ok {
+				slog.Warn(
+					"provider host startup unavailable; serving cached data for it without sync",
+					"platform", hostErr.platformName,
+					"host", hostErr.host,
+					"err", hostErr.err,
+				)
+				next := make(map[string]tokenauth.Source, len(sources)-1)
+				for k, v := range sources {
+					if k != key {
+						next[k] = v
+					}
+				}
+				sources = next
+				continue
+			}
+		}
+		slog.Warn(
+			"provider startup unavailable; serving cached data without provider sync",
+			"err", err,
+		)
+		return buildProviderStartup(ctx, database, cfg, set, nil, factories, nil)
 	}
-
-	slog.Warn(
-		"provider startup unavailable; serving cached data without provider sync",
-		"err", err,
-	)
-	return buildProviderStartup(ctx, database, cfg, set, nil, factories, nil)
 }
 
 func buildProviderStartup(
@@ -349,7 +416,8 @@ func buildProviderStartup(
 	}
 	if resolver != nil {
 		if err := buildGitHubIdentityRuntimes(
-			ctx, database, cfg, set, resolver, budgetPerHour, &startup,
+			ctx, database, cfg, set, resolver, budgetPerHour,
+			providerSources, &startup,
 		); err != nil {
 			return providerStartup{}, err
 		}
@@ -488,12 +556,24 @@ func buildGitHubIdentityRuntimes(
 	set *tokenauth.SourceSet,
 	resolver github.IdentityResolver,
 	budgetPerHour int,
+	providerSources map[string]tokenauth.Source,
 	startup *providerStartup,
 ) error {
 	if cfg == nil || set == nil || resolver == nil {
 		return nil
 	}
-	plans := githubCredentialPlans(cfg)
+	// Hosts absent from providerSources were excluded (credentials failed or
+	// nothing resolved); their identity runtimes and routes stay absent too.
+	allPlans := githubCredentialPlans(cfg)
+	plans := allPlans[:0:0]
+	for _, plan := range allPlans {
+		key := providerHostKey(
+			plan.Descriptor.Key.Platform, plan.Descriptor.Key.Host,
+		)
+		if _, ok := providerSources[key]; ok {
+			plans = append(plans, plan)
+		}
+	}
 	requiredHosts := make(map[string]struct{}, len(plans))
 	for _, plan := range plans {
 		if plan.Required {
@@ -530,10 +610,14 @@ func buildGitHubIdentityRuntimes(
 				)
 				continue
 			} else {
-				return fmt.Errorf(
-					"resolve GitHub identity for %s via %s: %w",
-					desc.Key.Scope, desc.SafeString(), err,
-				)
+				return &providerHostStartupError{
+					platformName: desc.Key.Platform,
+					host:         desc.Key.Host,
+					err: fmt.Errorf(
+						"resolve GitHub identity for %s via %s: %w",
+						desc.Key.Scope, desc.SafeString(), err,
+					),
+				}
 			}
 		}
 		readIdentity := writeIdentity

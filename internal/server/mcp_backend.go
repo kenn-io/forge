@@ -524,6 +524,12 @@ func (b mcpBackend) SubmitInitialMessage(
 		Agent: req.Agent, SessionID: req.SessionID, Message: req.Message,
 	})
 	status := *mcpInitialMessage(result)
+	if errors.Is(err, workspaceapi.ErrInitialMessageInputModeNotReady) {
+		return status, &mcpserver.Error{
+			Kind: "unavailable", Code: mcpserver.ErrorCodeInitialMessageInputModeNotReady,
+			Message: err.Error(), Retryable: true,
+		}
+	}
 	if err != nil {
 		converted := mcpBackendError(err)
 		if result.State == "pending" || result.State == "uncertain" {

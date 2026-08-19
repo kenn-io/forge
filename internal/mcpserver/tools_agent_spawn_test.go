@@ -200,6 +200,29 @@ func TestSpawnWorkspaceWithAgentCreatesIssueAndAdHocWorkspaces(t *testing.T) {
 	})
 }
 
+func TestSpawnWorkspaceWithAgentRetriesMultilineMessageUntilInputModeIsReady(t *testing.T) {
+	backend := successfulSpawnBackend("ws-paste", "runtime-paste", "coding-paste")
+	messagePosts := 0
+	backend.submitInitialMessageFn = func(context.Context, InitialMessageRequest) (InitialMessageStatus, error) {
+		messagePosts++
+		if messagePosts < 3 {
+			return InitialMessageStatus{}, &Error{
+				Kind: "unavailable", Code: ErrorCodeInitialMessageInputModeNotReady,
+				Message: "agent terminal input mode is not ready", Retryable: true,
+			}
+		}
+		return InitialMessageStatus{State: "delivered", MessageBytes: 12}, nil
+	}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("first\nsecond"))
+
+	require.NoError(t, err)
+	assert.Equal(t, "message_delivered", out.Stage)
+	assert.Equal(t, "delivered", out.InitialMessage.State)
+	assert.Equal(t, 3, messagePosts)
+}
+
 func TestSpawnWorkspaceWithAgentRecoversAmbiguousMessageFromSameBackend(t *testing.T) {
 	backend := successfulSpawnBackend("ws-recovery", "runtime-recovery", "coding-recovery")
 	messagePosts := 0

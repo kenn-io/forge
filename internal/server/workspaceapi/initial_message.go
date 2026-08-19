@@ -22,6 +22,8 @@ const (
 	initialMessageUncertain = "uncertain"
 )
 
+var ErrInitialMessageInputModeNotReady = errors.New("agent terminal input mode is not ready")
+
 type initialMessageKey struct {
 	workspaceID       string
 	runtimeSessionKey string
@@ -99,6 +101,9 @@ func (s *Handler) submitInitialMessage(
 		Agent: input.Body.Agent, SessionID: input.Body.SessionID,
 		Message: input.Body.Message,
 	})
+	if errors.Is(err, ErrInitialMessageInputModeNotReady) {
+		return nil, httpapi.Validation("body.message", err.Error())
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +205,7 @@ func (s *Handler) handleInitialMessageSubmitError(
 ) (InitialMessageResult, error) {
 	if errors.Is(err, localruntime.ErrBracketedPasteInactive) {
 		s.releaseInitialMessageAttempt(workspaceID, runtimeSessionKey, proposed)
-		return InitialMessageResult{}, httpapi.Validation("body.message", err.Error())
+		return InitialMessageResult{}, ErrInitialMessageInputModeNotReady
 	}
 	if errors.Is(err, localruntime.ErrInitialMessageNotWritten) {
 		s.releaseInitialMessageAttempt(workspaceID, runtimeSessionKey, proposed)

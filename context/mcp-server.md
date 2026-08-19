@@ -55,8 +55,10 @@
   session, and prompt; daemon restart permits a fresh attempt
   (`internal/server/workspaceapi/initial_message.go::initialMessageAttempt`).
 - Initial input requires exact live hook identity, LF or printable Unicode, and
-  tracked bracketed paste for multiline text. Terminal writes honor the handoff
-  context and do not hold the session lock while waiting. Proven no-write
+  tracked bracketed paste for multiline text. If safe paste mode is not observed
+  yet, release the no-write reservation and retry only that typed condition on
+  the same runtime until the handoff deadline. Terminal writes honor the handoff
+  context and do not hold the session lock while waiting. Other proven no-write
   rejection releases its reservation; a timed-out write that may have started
   remains uncertain
   (`internal/workspace/localruntime/manager.go::Manager.SubmitInitialMessage`,

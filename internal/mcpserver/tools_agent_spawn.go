@@ -491,13 +491,28 @@ func (s *Server) submitInitialAgentMessage(
 	session workspaceAgentSessionRow,
 	message string,
 ) (agentInitialMessageRow, error) {
-	messageStatus, err := s.backend.SubmitInitialMessage(ctx, InitialMessageRequest{
-		WorkspaceID: workspaceID, RuntimeSessionKey: runtimeSessionKey,
-		Agent: session.Agent, SessionID: session.SessionID, Message: message,
-	})
-	if err != nil {
+	var messageStatus InitialMessageStatus
+	for {
+		status, err := s.backend.SubmitInitialMessage(ctx, InitialMessageRequest{
+			WorkspaceID: workspaceID, RuntimeSessionKey: runtimeSessionKey,
+			Agent: session.Agent, SessionID: session.SessionID, Message: message,
+		})
+		if err == nil {
+			messageStatus = status
+			break
+		}
 		var backendErr *Error
-		if !errors.As(err, &backendErr) || !backendErr.Ambiguous {
+		if !errors.As(err, &backendErr) || backendErr == nil {
+			return agentInitialMessageRow{}, err
+		}
+		if backendErr.Code == ErrorCodeInitialMessageInputModeNotReady &&
+			backendErr.Retryable && !backendErr.Ambiguous {
+			if err := s.waitAgentHandoffPoll(ctx); err != nil {
+				return agentInitialMessageRow{}, err
+			}
+			continue
+		}
+		if !backendErr.Ambiguous {
 			return agentInitialMessageRow{}, err
 		}
 		messageStatus, err = s.recoverInitialMessageStatus(
@@ -506,6 +521,7 @@ func (s *Server) submitInitialAgentMessage(
 		if err != nil {
 			return agentInitialMessageRow{}, err
 		}
+		break
 	}
 	row := agentInitialMessageRow{
 		State: messageStatus.State, MessageBytes: messageStatus.MessageBytes,

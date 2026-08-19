@@ -310,7 +310,10 @@ type InitialMessageRequest struct {
 	Message           string
 }
 
-const ErrorCodeWorkspaceAlreadyExists = "workspaceAlreadyExists"
+const (
+	ErrorCodeWorkspaceAlreadyExists          = "workspaceAlreadyExists"
+	ErrorCodeInitialMessageInputModeNotReady = "initialMessageInputModeNotReady"
+)
 
 // Error is the transport-neutral MCP service error.
 type Error struct {

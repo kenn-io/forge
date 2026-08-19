@@ -172,7 +172,7 @@ func synthesizeDiffEvidence(file DiffFile) string {
 			diffPatchPath(oldPath), diffPatchPath(file.Path),
 		)
 	}
-	if file.IsBinary && file.Status != "renamed" && file.Status != "copied" {
+	if file.IsBinary {
 		binaryOldPath := "a/" + oldPath
 		binaryNewPath := "b/" + file.Path
 		if file.Status == "added" {
@@ -185,6 +185,13 @@ func synthesizeDiffEvidence(file DiffFile) string {
 			&buf, "Binary files %s and %s differ\n",
 			diffPatchPath(binaryOldPath), diffPatchPath(binaryNewPath),
 		)
+		return buf.String()
+	}
+	switch file.Status {
+	case "added":
+		fmt.Fprintf(&buf, "--- /dev/null\n+++ %s\n", diffPatchPath("b/"+file.Path))
+	case "deleted":
+		fmt.Fprintf(&buf, "--- %s\n+++ /dev/null\n", diffPatchPath("a/"+oldPath))
 	}
 	return buf.String()
 }

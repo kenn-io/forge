@@ -141,6 +141,10 @@ func TestGetItemDiffEmitSynthesizesEvidenceForFilesWithoutTextPatches(t *testing
 			{Path: "assets/logo.png", Status: "modified", IsBinary: true},
 			{Path: "src/new.go", OldPath: "src/old.go", Status: "renamed"},
 			{Path: "scripts/run.sh", Status: "modified"},
+			{Path: "docs/empty.md", Status: "added"},
+			{Path: "legacy/empty.cfg", Status: "deleted"},
+			{Path: "assets/moved.png", OldPath: "assets/original.png", Status: "renamed", IsBinary: true},
+			{Path: "assets/copy.png", OldPath: "assets/original.png", Status: "copied", IsBinary: true},
 		}}, nil
 	}}
 	s := newMCPTestServer(t, backend)
@@ -162,6 +166,10 @@ func TestGetItemDiffEmitSynthesizesEvidenceForFilesWithoutTextPatches(t *testing
 	assert.Contains(t, patch, "diff --git a/src/old.go b/src/new.go\n")
 	assert.Contains(t, patch, "rename from src/old.go\nrename to src/new.go\n")
 	assert.Contains(t, patch, "diff --git a/scripts/run.sh b/scripts/run.sh\n")
+	assert.Contains(t, patch, "diff --git a/docs/empty.md b/docs/empty.md\n--- /dev/null\n+++ b/docs/empty.md\n")
+	assert.Contains(t, patch, "diff --git a/legacy/empty.cfg b/legacy/empty.cfg\n--- a/legacy/empty.cfg\n+++ /dev/null\n")
+	assert.Contains(t, patch, "rename from assets/original.png\nrename to assets/moved.png\nBinary files a/assets/original.png and b/assets/moved.png differ\n")
+	assert.Contains(t, patch, "copy from assets/original.png\ncopy to assets/copy.png\nBinary files a/assets/original.png and b/assets/copy.png differ\n")
 }
 
 func TestGetItemDiffRejectsOversizedTempFile(t *testing.T) {

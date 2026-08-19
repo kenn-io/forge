@@ -187,6 +187,12 @@ timeline/comment-like events through provider capability interfaces in
 `internal/platform`. Providers implement only supported optional interfaces;
 registry helpers return typed errors for missing providers or capabilities.
 
+- Historical cross-reference events cannot prove a current issue-PR relationship.
+  A current-link capability requires an authoritative replaceable provider snapshot;
+  providers without one must not advertise it.
+- Persist normalized issue-PR relationships and query that graph for list filters.
+  A missing edge means no link; never parse Markdown during list reads.
+
 - Missing optional capabilities should degrade that feature with a typed
   platform error, not break unrelated sync work.
 - Never put foreground deadlines on a shared provider HTTP client; scope them to

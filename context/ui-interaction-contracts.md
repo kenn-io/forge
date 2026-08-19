@@ -203,6 +203,9 @@ Persisted controls must state their scope clearly.
 - `Involves me` is three independent browser-local preferences for Pulls, Issues, and
   Activity; each enabled view sends the server query so filtering happens before limits,
   never through URL or config state (`frontend/src/lib/stores/involves-me-filter.ts`, `internal/db/queries_involvement.go`).
+- `Has linked PR` is a browser-local Issues preference. Every issue-filter
+  presentation exposes the same control, and the server combines it with state,
+  repository, search, starred, and involvement filters before limits.
 - Named repository preset definitions follow server settings, while the active
   repository selection and preset affinity remain browser-local; `Global` clears both
   (`frontend/src/lib/stores/filter.svelte.ts::setGlobalRepoPresetSelection`).

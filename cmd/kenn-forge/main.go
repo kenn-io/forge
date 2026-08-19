@@ -925,7 +925,9 @@ func runMainShutdown(
 		}
 	}
 	if callbacks.CloseMCP != nil {
-		if err := callbacks.CloseMCP(); err != nil {
+		if err := runBoundedShutdown(
+			ctx, shutdownbudget.MCPStore, callbacks.CloseMCP,
+		); err != nil {
 			errs = append(errs, mainShutdownError{
 				message: "close MCP temp store",
 				err:     err,

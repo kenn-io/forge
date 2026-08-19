@@ -10,10 +10,11 @@ const (
 	Syncer            = 30 * time.Second
 	Profiler          = 5 * time.Second
 	TelemetryReporter = 5 * time.Second
+	MCPStore          = time.Minute
 	Database          = 5 * time.Second
 	ProcessExitMargin = 5 * time.Second
 
 	// Total covers every bounded shutdown phase plus process exit.
 	Total = OpenTelemetry + NotificationLoop + MCPHTTP + PrimaryHTTP + Syncer +
-		Profiler + TelemetryReporter + Database + ProcessExitMargin
+		Profiler + TelemetryReporter + MCPStore + Database + ProcessExitMargin
 )

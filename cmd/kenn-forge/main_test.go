@@ -188,6 +188,33 @@ func TestRunMainShutdownStopsSignalsBeforeLongCleanup(t *testing.T) {
 	}, order)
 }
 
+func TestRunMainShutdownBoundsMCPStoreCleanup(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	release := make(chan struct{})
+	done := make(chan []mainShutdownError, 1)
+	go func() {
+		done <- runMainShutdown(ctx, mainShutdownCallbacks{
+			CloseMCP: func() error {
+				<-release
+				return nil
+			},
+		})
+	}()
+
+	select {
+	case errs := <-done:
+		close(release)
+		require.Len(t, errs, 1)
+		assert.Equal(t, "close MCP temp store", errs[0].message)
+		require.ErrorIs(t, errs[0].err, context.Canceled)
+	case <-time.After(100 * time.Millisecond):
+		close(release)
+		<-done
+		require.Fail(t, "MCP temp-store cleanup ignored the shutdown context")
+	}
+}
+
 func TestRunBoundedShutdownHonorsDeadline(t *testing.T) {
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })

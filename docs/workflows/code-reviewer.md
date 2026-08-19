@@ -30,7 +30,8 @@ change labels or project fields at the provider.
 
 Unsupported actions remain visible but unavailable.
 
-In **Files**, select one line or a contiguous range to draft an inline comment.
+In **Files**, select a line to draft an inline comment. When the provider
+supports native multiline ranges, you can also select a contiguous range.
 Drafts stay local until you publish the review. kenn-forge rejects a draft if
 the pull request head changed after you started it, so comments cannot land on
 the wrong revision.

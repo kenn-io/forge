@@ -21,7 +21,8 @@ modes, and headings in a preview can be linked directly. Supported images render
 inside Markdown previews.
 
 The history rail lists commits that changed the selected file. Open a commit to
-inspect the change without losing the current repository and path.
+inspect its SHA, author, date, subject, and commit message without losing the
+current repository and path.
 
 ## Share the exact view
 
@@ -38,6 +39,7 @@ revision.
 The source browser reads from its own local clone. It does not read from a
 workspace worktree, so uncommitted workspace changes do not appear here.
 
-kenn-forge creates the clone on first use and refreshes it on the repository
-sync cadence. If a newly pushed branch or tag has not appeared yet, sync the
-repository and reopen the ref picker.
+kenn-forge creates the clone on first use and refreshes it automatically on the
+configured sync interval. This refresh is separate from repository sync. If a
+newly pushed branch or tag has not appeared yet, wait for the next source
+refresh, then reopen the ref picker.

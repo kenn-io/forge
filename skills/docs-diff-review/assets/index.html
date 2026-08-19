@@ -343,6 +343,8 @@
     </div>
 
     <script type="module">
+      import { linkSignature } from "./viewer-utils.mjs";
+
       const manifest = await fetch("/manifest.json").then((response) => {
         if (!response.ok) throw new Error(`Could not load review manifest: ${response.status}`);
         return response.json();
@@ -383,8 +385,11 @@
         }
       }
 
-      async function contentSignature(node) {
-        const links = [...node.querySelectorAll("a")].map((link) => link.getAttribute("href") || "").join("|");
+      async function contentSignature(node, prefix) {
+        const links = linkSignature(
+          [...node.querySelectorAll("a")].map((link) => link.getAttribute("href") || ""),
+          prefix,
+        );
         const images = (
           await Promise.all(
             [...node.querySelectorAll("img")].map(async (image) =>
@@ -496,7 +501,7 @@
         return Promise.all(sources.map(async (source) => {
           const node = source.cloneNode(true);
           fixUrls(node, new URL(url, location.href), prefix);
-          const signature = await contentSignature(node);
+          const signature = await contentSignature(node, prefix);
           return {
             node,
             group: group(node),

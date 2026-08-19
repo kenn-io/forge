@@ -263,8 +263,10 @@ repo_path = "acme/widgets"
 ```
 
 `daemon_id` scopes the mapping to one daemon. Leave it out only for a mapping
-that should apply to the same project UID on every daemon. `repo_path` must name
-an exact configured repository, not a repository glob.
+that should apply to the same project UID on every daemon. Choose an exact
+repository identity available in Settings. That repository may have been found
+through a configured pattern, a tracked repository, or a registered project,
+but the mapping itself cannot contain a glob.
 
 ## Server and storage
 

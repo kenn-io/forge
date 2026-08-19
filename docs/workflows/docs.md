@@ -54,14 +54,19 @@ saving your edit.
 ## Pull and publish Git changes
 
 Git-backed folders show **Pull** and **Publish** controls. Pull accepts only a
-fast-forward update and refuses changes the checkout would overwrite.
+fast-forward update and refuses to overwrite tracked changes. Ignored,
+untracked files follow Git's usual pull behavior: Git may replace one if the
+incoming commit starts tracking the same path.
 
 Publish shows the Markdown changes before it commits and pushes them. It stages
-Markdown changes only. Existing staged files, conflicts, or a branch without an
-upstream block publication until you resolve them with Git.
+Markdown changes only and includes Markdown files that are already fully
+staged. Staged non-Markdown files, partially staged Markdown files, conflicts,
+or a branch without an upstream block publication until you resolve them with
+Git.
 
 If a push fails after the commit succeeds, the local commit remains in the
-folder. Fix the remote or upstream problem, then publish or push it yourself.
+folder. Fix the remote or upstream problem, then run `git push` in that folder.
+Publish cannot retry because it has already committed the Markdown changes.
 
 ## Open Kata references
 

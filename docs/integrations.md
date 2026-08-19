@@ -39,9 +39,10 @@ directly. Set `reviews = false` under `[modes]` if you do not use Roborev.
 ## Link Kata issues
 
 Kata is contextual. It does not add a Kata page to the main navigation.
-Instead, pull requests, provider issues, and workspaces have a **Kata** tab
-where you can link an issue and read its current details. Use **Open in Kata**
-when you need to edit the task.
+Instead, pull requests, provider issues, and local workspaces have a **Kata**
+tab where you can link an issue and read its current details. Remote fleet
+workspaces hide Kata controls. Use **Open in Kata** when you need to edit the
+task.
 
 The **New workspace** dialog can search a selected Kata daemon and create or
 reopen the worktree for a task. kenn-forge reads the daemon catalog from

@@ -135,8 +135,9 @@ Open **Settings → Kata mappings**. The effective mappings table shows how each
 project resolves and whether kenn-forge found an automatic match. Add a manual
 override for any project with no repository or the wrong repository.
 
-The target must be an exact repository already configured in kenn-forge.
-Repository globs are not valid mapping targets.
+Choose an exact repository identity available in Settings. The list can include
+repositories found through configured patterns, tracked repositories, and
+registered projects. A glob expression is not a valid mapping target.
 
 ## The Roborev daemon is not reachable
 

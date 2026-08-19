@@ -58,29 +58,13 @@ func (d *diffFileStore) write(name string, data []byte) (string, int64, error) {
 
 	base := filepath.Base(name)
 	path := filepath.Join(d.dir, base)
-	if existing := d.entries[base]; existing != nil {
-		entry := existing.Value.(diffFileEntry)
-		if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", 0, err
-		}
-		d.totalBytes -= entry.size
-		d.lru.Remove(existing)
-		delete(d.entries, base)
-	}
-	for d.totalBytes+size > d.maxBytes {
-		oldest := d.lru.Front()
-		if oldest == nil {
-			return "", 0, fmt.Errorf("%w: no evictable files", errDiffCacheFileTooLarge)
-		}
-		entry := oldest.Value.(diffFileEntry)
-		if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", 0, err
-		}
-		d.totalBytes -= entry.size
-		d.lru.Remove(oldest)
-		delete(d.entries, entry.name)
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", 0, err
 	}
 
+	// Stage the replacement fully before touching published state so a failed
+	// write never removes the current same-name diff or evicts other entries.
 	tmp, err := os.CreateTemp(d.dir, base+".*.tmp")
 	if err != nil {
 		return "", 0, err
@@ -103,14 +87,40 @@ func (d *diffFileStore) write(name string, data []byte) (string, int64, error) {
 	if err := tmp.Close(); err != nil {
 		return "", 0, err
 	}
+
+	// A same-name entry is replaced by the rename below, never evicted, so it
+	// stays reachable for concurrent consumers until the atomic swap.
+	var existingSize int64
+	if existing := d.entries[base]; existing != nil {
+		existingSize = existing.Value.(diffFileEntry).size
+	}
+	evictCursor := d.lru.Front()
+	for d.totalBytes-existingSize+size > d.maxBytes {
+		for evictCursor != nil && evictCursor.Value.(diffFileEntry).name == base {
+			evictCursor = evictCursor.Next()
+		}
+		if evictCursor == nil {
+			return "", 0, fmt.Errorf("%w: no evictable files", errDiffCacheFileTooLarge)
+		}
+		entry := evictCursor.Value.(diffFileEntry)
+		next := evictCursor.Next()
+		if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", 0, err
+		}
+		d.totalBytes -= entry.size
+		d.lru.Remove(evictCursor)
+		delete(d.entries, entry.name)
+		evictCursor = next
+	}
+
 	if err := os.Rename(tmpPath, path); err != nil {
 		return "", 0, err
 	}
 	cleanup = false
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		_ = os.Remove(path)
-		return "", 0, err
+	if existing := d.entries[base]; existing != nil {
+		d.totalBytes -= existing.Value.(diffFileEntry).size
+		d.lru.Remove(existing)
+		delete(d.entries, base)
 	}
 	entry := diffFileEntry{name: base, path: abs, size: size}
 	d.entries[base] = d.lru.PushBack(entry)

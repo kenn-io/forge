@@ -61,6 +61,17 @@ func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
 	assert.False(t, page.Capped)
 }
 
+func TestMCPPullWorkspaceDuplicateUsesStableConflictCode(t *testing.T) {
+	err := mcpPullWorkspaceCreateError(httpapi.Conflict(
+		httpapi.CodeConflict, "workspace already exists for this MR", nil,
+	))
+
+	var backendErr *mcpserver.Error
+	require.ErrorAs(t, err, &backendErr)
+	assert.Equal(t, "conflict", backendErr.Kind)
+	assert.Equal(t, mcpserver.ErrorCodeWorkspaceAlreadyExists, backendErr.Code)
+}
+
 func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 42)

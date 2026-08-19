@@ -339,10 +339,29 @@ func (s *Server) resolveOrCreatePRWorkspace(
 		return Workspace{ID: detail.Workspace.ID, Status: detail.Workspace.Status}, true, nil
 	}
 	workspace, err := s.backend.CreatePullWorkspace(ctx, itemIdentity(item), true)
-	if err != nil {
+	if err == nil {
+		return workspace, !workspace.Created, nil
+	}
+	if !isWorkspaceAlreadyExistsError(err) {
 		return Workspace{}, false, err
 	}
-	return workspace, !workspace.Created, nil
+	detail, readErr := s.backend.GetPull(ctx, itemIdentity(item))
+	if readErr != nil {
+		return Workspace{}, false, readErr
+	}
+	if detail.Workspace == nil {
+		return Workspace{}, false, err
+	}
+	return Workspace{ID: detail.Workspace.ID, Status: detail.Workspace.Status}, true, nil
+}
+
+func isWorkspaceAlreadyExistsError(err error) bool {
+	var backendErr *Error
+	if !errors.As(err, &backendErr) || backendErr == nil {
+		return false
+	}
+	return backendErr.Kind == "conflict" &&
+		backendErr.Code == ErrorCodeWorkspaceAlreadyExists
 }
 
 func (s *Server) resolveOrCreateIssueWorkspace(

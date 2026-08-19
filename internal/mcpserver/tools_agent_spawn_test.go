@@ -80,6 +80,33 @@ func TestSpawnWorkspaceWithAgentReusesWorkspaceAndLaunchesFreshRuntime(t *testin
 	assert.Equal(t, "runtime-fresh", out.Runtime.SessionKey)
 }
 
+func TestSpawnWorkspaceWithAgentReusesPRWorkspaceCreatedConcurrently(t *testing.T) {
+	backend := successfulSpawnBackend("ws-raced", "runtime-raced", "coding-raced")
+	pullReads := 0
+	backend.getPullFn = func(context.Context, ItemIdentity) (PullDetail, error) {
+		pullReads++
+		detail := PullDetail{Pull: &Pull{Number: 42, Repository: testRepository()}}
+		if pullReads > 1 {
+			detail.Workspace = &WorkspaceRef{ID: "ws-raced", Status: "ready"}
+		}
+		return detail, nil
+	}
+	backend.createPullWorkspaceFn = func(context.Context, ItemIdentity, bool) (Workspace, error) {
+		return Workspace{}, &Error{
+			Kind: "conflict", Code: ErrorCodeWorkspaceAlreadyExists,
+			Message: "workspace already exists for this pull request",
+		}
+	}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("start"))
+
+	require.NoError(t, err)
+	assert.True(t, out.Workspace.Reused)
+	assert.Equal(t, "ws-raced", out.Workspace.ID)
+	assert.Equal(t, 2, pullReads)
+}
+
 func TestSpawnWorkspaceWithAgentTimeoutReturnsStageWithoutDeliveryClaim(t *testing.T) {
 	backend := successfulSpawnBackend("ws-timeout", "runtime", "coding")
 	backend.createPullWorkspaceFn = func(context.Context, ItemIdentity, bool) (Workspace, error) {

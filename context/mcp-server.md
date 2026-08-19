@@ -67,8 +67,12 @@
   `internal/server/workspaceapi/routes_handlers.go::Handler.CreateIssueWorkspaceService`).
 - MCP can create or reuse a pull-request, issue, or ad-hoc workspace and launch
   one new agent runtime with one initial message. Ambiguous mutations are never
-  retried or cleaned up; only initial-message status receives a bounded,
-  cancellation-independent read (`internal/mcpserver/tools_agent_spawn.go::Server.recoverInitialMessageStatus`).
+  retried or cleaned up. The exact `workspaceAlreadyExists` pull-workspace
+  conflict receives one authoritative pull read and reuses the concurrent
+  winner; only initial-message status receives a bounded,
+  cancellation-independent read
+  (`internal/mcpserver/tools_agent_spawn.go::Server.resolveOrCreatePRWorkspace`,
+  `internal/mcpserver/tools_agent_spawn.go::Server.recoverInitialMessageStatus`).
 - Handoff success and failure evidence uses `stage` plus
   `initial_message.state`; never add a separate `message_delivered` output or
   error detail (`internal/mcpserver/tools_agent_spawn.go::spawnWorkspaceWithAgentOutput`).

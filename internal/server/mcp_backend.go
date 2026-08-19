@@ -444,7 +444,7 @@ func (b mcpBackend) CreatePullWorkspace(
 		SuppressAutoAssign: suppressAutoAssign,
 	})
 	if err != nil {
-		return mcpserver.Workspace{}, mcpBackendMutationError(err)
+		return mcpserver.Workspace{}, mcpPullWorkspaceCreateError(err)
 	}
 	return mcpWorkspace(result), nil
 }
@@ -630,6 +630,18 @@ func mcpBackendError(err error) error {
 		Kind: kind, Code: string(problem.Code), Message: problem.Error(),
 		Retryable: retryable, Ambiguous: ambiguous, Details: problem.Details,
 	}
+}
+
+func mcpPullWorkspaceCreateError(err error) error {
+	var problem *httpapi.ProblemError
+	if errors.As(err, &problem) && problem.Status == http.StatusConflict &&
+		problem.Detail == "workspace already exists for this MR" {
+		return &mcpserver.Error{
+			Kind: "conflict", Code: mcpserver.ErrorCodeWorkspaceAlreadyExists,
+			Message: problem.Error(),
+		}
+	}
+	return mcpBackendMutationError(err)
 }
 
 func mcpBackendMutationError(err error) error {

@@ -297,7 +297,8 @@ func (m *Manager) RenderAgentContextForWorktree(
 func agentContextRelPath(targetKey string) string {
 	targetKey = strings.TrimSpace(targetKey)
 	switch {
-	case hasCaseFoldedPrefix(targetKey, "codex"):
+	case hasCaseFoldedPrefix(targetKey, "codex"),
+		hasCaseFoldedPrefix(targetKey, "pi"):
 		return "AGENTS.override.md"
 	case hasCaseFoldedPrefix(targetKey, "claude"):
 		return "CLAUDE.local.md"

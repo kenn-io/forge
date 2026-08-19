@@ -258,10 +258,14 @@ func TestAgentContextRelPathMatchesCaseFoldedAgentFamilyPrefixes(t *testing.T) {
 		{name: "codex builtin", targetKey: "codex", want: "AGENTS.override.md"},
 		{name: "codex configured suffix", targetKey: "Codex yolo", want: "AGENTS.override.md"},
 		{name: "codex surrounding whitespace", targetKey: "  CODEX proxy  ", want: "AGENTS.override.md"},
+		{name: "pi builtin", targetKey: "pi", want: "AGENTS.override.md"},
+		{name: "pi configured suffix", targetKey: "Pi-reviewer", want: "AGENTS.override.md"},
+		{name: "pi surrounding whitespace", targetKey: "  PI custom  ", want: "AGENTS.override.md"},
 		{name: "claude builtin", targetKey: "claude", want: "CLAUDE.local.md"},
 		{name: "claude configured suffix", targetKey: "Claude reviewer", want: "CLAUDE.local.md"},
 		{name: "unrelated agent", targetKey: "opencode"},
-		{name: "prefix must begin name", targetKey: "my-codex"},
+		{name: "codex prefix must begin name", targetKey: "my-codex"},
+		{name: "pi prefix must begin name", targetKey: "my-pi"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

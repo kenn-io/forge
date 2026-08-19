@@ -20,6 +20,10 @@ var builtinAgents = []LaunchTarget{
 		Source: "builtin", Command: []string{"claude"},
 	},
 	{
+		Key: "pi", Label: "Pi", Kind: LaunchTargetAgent,
+		Source: "builtin", Command: []string{"pi"},
+	},
+	{
 		Key: "gemini", Label: "Gemini", Kind: LaunchTargetAgent,
 		Source: "builtin", Command: []string{"gemini"},
 	},

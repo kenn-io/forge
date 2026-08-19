@@ -106,15 +106,37 @@ func TestResolveLaunchTargetsConfigKeyCoexistsWithBuiltin(
 	assert.True(findTarget(t, targets, "codex").Available)
 }
 
+func TestResolveLaunchTargetsIncludesPiBuiltin(t *testing.T) {
+	targets := ResolveLaunchTargets(
+		nil,
+		[]string{"tmux"},
+		fakeLookPath(map[string]string{
+			"pi":   "/usr/bin/pi",
+			"tmux": "/usr/bin/tmux",
+		}),
+	)
+
+	pi := findTarget(t, targets, "pi")
+	assert := assert.New(t)
+	assert.Equal("Pi", pi.Label)
+	assert.Equal(LaunchTargetAgent, pi.Kind)
+	assert.Equal("builtin", pi.Source)
+	assert.Equal([]string{"pi"}, pi.Command)
+	assert.True(pi.Available)
+}
+
 func TestResolveLaunchTargetsUndetectedBuiltinUnavailable(
 	t *testing.T,
 ) {
 	targets := ResolveLaunchTargets(nil, []string{"tmux"}, fakeLookPath(nil))
 
 	codex := findTarget(t, targets, "codex")
+	pi := findTarget(t, targets, "pi")
 	assert := assert.New(t)
 	assert.False(codex.Available)
 	assert.Contains(codex.DisabledReason, "not found")
+	assert.False(pi.Available)
+	assert.Contains(pi.DisabledReason, "pi not found")
 }
 
 func TestResolveLaunchTargetsIncludesSystemTargets(t *testing.T) {

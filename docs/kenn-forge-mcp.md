@@ -65,8 +65,9 @@ absent from recent activity. Candidate output defaults to 25 items and never
 exceeds 100.
 
 Diff files produced by `kenn_forge_get_item_diff` are temporary files on the
-daemon host. They may disappear when the daemon stops or the operating system
-cleans its temporary directory.
+daemon host. Forge keeps the most recently requested files within the
+`[mcp].diff_cache_mb` limit, which defaults to 128 MiB. Older files may be
+deleted before daemon shutdown.
 
 ## Coding-agent handoff
 

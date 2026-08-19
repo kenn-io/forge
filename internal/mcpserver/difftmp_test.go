@@ -11,7 +11,7 @@ import (
 func TestDiffFileStoreWriteAtomicallyReplacesExistingFile(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	store, err := newDiffFileStore()
+	store, err := newDiffFileStore(defaultDiffCacheBytes)
 	require.NoError(err)
 	t.Cleanup(func() {
 		require.NoError(store.Close())

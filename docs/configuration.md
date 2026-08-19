@@ -302,11 +302,14 @@ Enable the daemon's optional loopback MCP listener with:
 [mcp]
 enabled = true
 # port = 8092 # defaults to the main backend port plus one
+diff_cache_mb = 128
 ```
 
 The sessionless Streamable HTTP endpoint is
 `http://127.0.0.1:<resolved-port>/mcp`. Authentication follows
-`[api].require_auth`. Listener changes require a daemon restart.
+`[api].require_auth`. Full diff files use a request-based least-recently-used
+cache; `diff_cache_mb` defaults to 128 MiB. MCP listener or cache changes
+require a daemon restart.
 
 ## Pull request stacks
 

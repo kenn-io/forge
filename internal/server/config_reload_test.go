@@ -2145,17 +2145,20 @@ func TestRestartRequiredForAuthFleetSessionsAndSSHPeers(t *testing.T) {
 }
 
 func TestRestartRequiredForMCPConfig(t *testing.T) {
-	base := &config.Config{MCP: config.MCP{Enabled: true, Port: 8092}}
+	base := &config.Config{MCP: config.MCP{Enabled: true, Port: 8092, DiffCacheMB: 128}}
 	snap := snapshotStartupConfig(base)
 
 	assert.False(t, snap.restartRequiredFor(&config.Config{
-		MCP: config.MCP{Enabled: true, Port: 8092},
+		MCP: config.MCP{Enabled: true, Port: 8092, DiffCacheMB: 128},
 	}))
 	assert.True(t, snap.restartRequiredFor(&config.Config{
-		MCP: config.MCP{Enabled: false, Port: 8092},
+		MCP: config.MCP{Enabled: false, Port: 8092, DiffCacheMB: 128},
 	}))
 	assert.True(t, snap.restartRequiredFor(&config.Config{
-		MCP: config.MCP{Enabled: true, Port: 9192},
+		MCP: config.MCP{Enabled: true, Port: 9192, DiffCacheMB: 128},
+	}))
+	assert.True(t, snap.restartRequiredFor(&config.Config{
+		MCP: config.MCP{Enabled: true, Port: 8092, DiffCacheMB: 256},
 	}))
 }
 

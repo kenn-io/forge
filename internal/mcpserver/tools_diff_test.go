@@ -181,6 +181,26 @@ func TestGetItemDiffRejectsOversizedTempFile(t *testing.T) {
 	assert.Nil(t, s.diffs)
 }
 
+func TestGetItemDiffRejectsFileLargerThanConfiguredCache(t *testing.T) {
+	backend := &fakeBackend{getPullDiffFn: func(context.Context, ItemIdentity, bool) (Diff, error) {
+		return Diff{Files: []DiffFile{{
+			Path: "bounded.txt", Patch: "diff --git a/bounded.txt b/bounded.txt\n" + strings.Repeat("x", 64),
+		}}}, nil
+	}}
+	s, err := New(Options{Backend: backend, Version: "test", DiffCacheBytes: 64})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+	_, err = s.getItemDiff(t.Context(), getItemDiffInput{
+		Item: itemRefInput{
+			Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 2,
+		},
+		EmitDiffFile: true,
+	})
+
+	assertBackendErrorKind(t, err, "diff_too_large")
+}
+
 func TestDiffFileNameCanonicalizesAndSeparatesIdentities(t *testing.T) {
 	omittedHost := diffFileName(itemRefInput{
 		Type: "pr", Provider: "gh", Owner: "Acme", Name: "Widget", Number: 7,
@@ -217,8 +237,42 @@ func TestDiffFileNameCanonicalizesAndSeparatesIdentities(t *testing.T) {
 	assert.True(t, strings.HasSuffix(omittedHost, ".diff"))
 }
 
+func TestDiffFileStoreEvictsLeastRecentlyRequestedFiles(t *testing.T) {
+	store, err := newDiffFileStore(8)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+
+	firstPath, _, err := store.write("first.diff", []byte("1111"))
+	require.NoError(t, err)
+	secondPath, _, err := store.write("second.diff", []byte("2222"))
+	require.NoError(t, err)
+	refreshedPath, _, err := store.write("first.diff", []byte("1111"))
+	require.NoError(t, err)
+	assert.Equal(t, firstPath, refreshedPath)
+	thirdPath, _, err := store.write("third.diff", []byte("3333"))
+	require.NoError(t, err)
+
+	_, err = os.Stat(firstPath)
+	require.NoError(t, err)
+	_, err = os.Stat(secondPath)
+	assert.True(t, os.IsNotExist(err), "expected least recently requested diff to be evicted, got %v", err)
+	_, err = os.Stat(thirdPath)
+	require.NoError(t, err)
+}
+
+func TestDiffFileStoreRejectsFileLargerThanCache(t *testing.T) {
+	store, err := newDiffFileStore(4)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+
+	_, _, err = store.write("large.diff", []byte("12345"))
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "exceeds MCP diff cache")
+}
+
 func TestDiffFileStoreCloseRemovesDirectory(t *testing.T) {
-	store, err := newDiffFileStore()
+	store, err := newDiffFileStore(64)
 	require.NoError(t, err)
 	path, _, err := store.write("one.diff", []byte("diff --git a/a b/a\n"))
 	require.NoError(t, err)

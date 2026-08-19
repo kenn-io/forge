@@ -9,15 +9,19 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const defaultDiffCacheBytes int64 = 128 << 20
+
 type Options struct {
-	Backend Backend
-	Version string
+	Backend        Backend
+	Version        string
+	DiffCacheBytes int64
 }
 
 type Server struct {
 	backend                  Backend
 	mcp                      *mcp.Server
 	agentHandoffPollInterval time.Duration
+	diffCacheBytes           int64
 	diffMu                   sync.Mutex
 	diffs                    *diffFileStore
 }
@@ -26,9 +30,14 @@ func New(opts Options) (*Server, error) {
 	if opts.Backend == nil {
 		return nil, fmt.Errorf("MCP backend is required")
 	}
+	diffCacheBytes := opts.DiffCacheBytes
+	if diffCacheBytes <= 0 {
+		diffCacheBytes = defaultDiffCacheBytes
+	}
 	s := &Server{
 		backend:                  opts.Backend,
 		agentHandoffPollInterval: defaultAgentHandoffPollInterval,
+		diffCacheBytes:           diffCacheBytes,
 	}
 	s.mcp = mcp.NewServer(
 		&mcp.Implementation{Name: "kenn-forge", Version: opts.Version},

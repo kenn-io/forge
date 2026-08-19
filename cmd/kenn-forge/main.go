@@ -798,6 +798,7 @@ func run(opts serve.Options) error {
 	if mcpSwitcher != nil {
 		mcpSrv, err = mcpserver.New(mcpserver.Options{
 			Backend: srv.MCPBackend(), Version: version,
+			DiffCacheBytes: cfg.MCPDiffCacheBytes(),
 		})
 		if err != nil {
 			return fmt.Errorf("initialize MCP server: %w", err)

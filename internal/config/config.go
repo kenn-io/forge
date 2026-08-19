@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -47,6 +48,7 @@ const (
 	defaultPlatform                        = "github"
 	defaultPlatformHost                    = platformpkg.DefaultGitHubHost
 	defaultSSEBufferSize                   = 256
+	defaultMCPDiffCacheMB                  = 128
 	minSSEBufferSize                       = 16
 	maxSSEBufferSize                       = 16384
 )
@@ -875,8 +877,9 @@ type Shell struct {
 }
 
 type MCP struct {
-	Enabled bool `toml:"enabled,omitempty" json:"enabled,omitempty"`
-	Port    int  `toml:"port,omitempty" json:"port,omitempty"`
+	Enabled     bool `toml:"enabled,omitempty" json:"enabled,omitempty"`
+	Port        int  `toml:"port,omitempty" json:"port,omitempty"`
+	DiffCacheMB int  `toml:"diff_cache_mb,omitempty" json:"diff_cache_mb,omitempty"`
 }
 
 type Config struct {
@@ -1058,6 +1061,14 @@ func (c *Config) MCPListenAddr() string {
 		return ""
 	}
 	return net.JoinHostPort(c.Host, strconv.Itoa(port))
+}
+
+func (c *Config) MCPDiffCacheBytes() int64 {
+	megabytes := defaultMCPDiffCacheMB
+	if c != nil && c.MCP.DiffCacheMB != 0 {
+		megabytes = c.MCP.DiffCacheMB
+	}
+	return int64(megabytes) << 20
 }
 
 // IsLoopbackHostname reports whether a URL hostname (no port, no
@@ -1548,6 +1559,9 @@ func (c *Config) validate() error {
 	}
 	if c.MCP.Port != 0 && (c.MCP.Port < 1 || c.MCP.Port > 65535) {
 		return fmt.Errorf("config: invalid MCP port %d", c.MCP.Port)
+	}
+	if c.MCP.DiffCacheMB < 0 || c.MCP.DiffCacheMB > math.MaxInt64>>20 {
+		return fmt.Errorf("config: MCP diff cache size is outside the supported range")
 	}
 	if c.MCP.Enabled {
 		mcpPort := c.MCPPort()

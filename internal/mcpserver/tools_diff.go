@@ -83,6 +83,13 @@ func (s *Server) getItemDiff(ctx context.Context, in getItemDiffInput) (getItemD
 		return getItemDiffOutput{}, &Error{Kind: "internal_error", Message: "create diff temp store: " + err.Error()}
 	}
 	path, size, err := store.write(diffFileName(in.Item), data)
+	if errors.Is(err, errDiffCacheFileTooLarge) {
+		return getItemDiffOutput{}, &Error{
+			Kind: "diff_too_large",
+			Message: "diff exceeds the configured MCP diff cache; increase mcp.diff_cache_mb" +
+				" or use a local checkout",
+		}
+	}
 	if err != nil {
 		return getItemDiffOutput{}, &Error{Kind: "internal_error", Message: "write diff file: " + err.Error()}
 	}
@@ -117,7 +124,7 @@ func (s *Server) diffStore() (*diffFileStore, error) {
 	if s.diffs != nil {
 		return s.diffs, nil
 	}
-	store, err := newDiffFileStore()
+	store, err := newDiffFileStore(s.diffCacheBytes)
 	if err != nil {
 		return nil, err
 	}

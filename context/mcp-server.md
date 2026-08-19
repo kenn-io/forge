@@ -35,11 +35,15 @@
   ambiguity, and details as JSON content plus `io.kenn.forge/error` metadata;
   never reduce typed backend failures to message-only errors
   (`internal/mcpserver/tools_read.go::wrapTool`).
-- Full-diff handoff stays within 10 MiB and represents binary, rename-only,
-  copy-only, and other files without text hunks using minimal Git-style headers;
-  one empty text patch must not discard the rest of the diff. Temporary diff
-  identity case-folds repository names only when the provider requires it
-  (`internal/mcpserver/tools_diff.go::serializeDiffPatches`,
+- Each full-diff handoff stays within 10 MiB. The request-based LRU temp store
+  defaults to 128 MiB through `[mcp].diff_cache_mb` and evicts oldest requested
+  files before writes. Represent binary, rename-only, copy-only, and other files
+  without text hunks using minimal Git-style headers; one empty text patch must
+  not discard the rest of the diff. Temporary diff identity case-folds
+  repository names only when the provider requires it
+  (`internal/config/config.go::Config.MCPDiffCacheBytes`,
+  `internal/mcpserver/difftmp.go::diffFileStore.write`,
+  `internal/mcpserver/tools_diff.go::serializeDiffPatches`,
   `internal/mcpserver/tools_diff.go::canonicalDiffFileRef`).
 - Initial-message attempts are process-local and retain the exact normalized
   prompt only in daemon memory. Same-daemon retries must match agent, coding

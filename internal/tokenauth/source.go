@@ -48,7 +48,6 @@ type githubAppTokenCache struct {
 	retryAt     time.Time
 	mintDone    chan struct{}
 	invalidated bool
-	abandoned   bool
 }
 
 // githubAppTokenStore is shared by every managed source in one SourceSet.
@@ -77,7 +76,8 @@ type retryDeadlineError interface {
 }
 
 func githubAppMintRetryDeadline(err error, now time.Time) time.Time {
-	if err == nil || errors.Is(err, context.Canceled) {
+	if err == nil || errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
 		return time.Time{}
 	}
 	var retryErr retryDeadlineError
@@ -124,7 +124,7 @@ func (s *githubAppTokenStore) resolve(
 				return "", time.Time{}, ctx.Err()
 			case <-done:
 				s.mu.Lock()
-				if cached.invalidated || cached.abandoned {
+				if cached.invalidated {
 					s.mu.Unlock()
 					continue
 				}
@@ -141,43 +141,25 @@ func (s *githubAppTokenStore) resolve(
 		token, exp, err := minter(ctx, candidate)
 		now = s.now()
 		s.mu.Lock()
-		if mintAbortedByCaller(ctx, err) {
-			// The winning caller's own context expired mid-mint. That
-			// failure says nothing about GitHub, so it is neither cached
-			// for the retry window nor handed to waiters: they loop and
-			// re-mint with their own live contexts.
-			cached.abandoned = true
-			close(cached.mintDone)
-			cached.mintDone = nil
-			if s.tokens[key] == cached {
-				delete(s.tokens, key)
-			}
-			s.mu.Unlock()
-			return "", time.Time{}, err
-		}
 		cached.token = token
 		cached.exp = exp
 		cached.err = err
 		cached.retryAt = githubAppMintRetryDeadline(err, now)
+		if err != nil && cached.retryAt.IsZero() {
+			// Cancellation and deadline failures come from the winning
+			// caller's context, not from GitHub: mark the entry so
+			// waiters loop and re-mint with their own live contexts
+			// instead of inheriting the error.
+			cached.invalidated = true
+		}
 		close(cached.mintDone)
 		cached.mintDone = nil
-		if s.tokens[key] == cached &&
-			(cached.invalidated || (err != nil && cached.retryAt.IsZero())) {
+		if s.tokens[key] == cached && cached.invalidated {
 			delete(s.tokens, key)
 		}
 		s.mu.Unlock()
 		return token, exp, err
 	}
-}
-
-// mintAbortedByCaller reports whether a failed mint was caused by the minting
-// caller's context rather than by the upstream API.
-func mintAbortedByCaller(ctx context.Context, err error) bool {
-	if err == nil || ctx.Err() == nil {
-		return false
-	}
-	return errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded)
 }
 
 func (s *githubAppTokenStore) invalidate(candidates []Candidate) {
@@ -186,13 +168,24 @@ func (s *githubAppTokenStore) invalidate(candidates []Candidate) {
 	}
 	s.mu.Lock()
 	for _, candidate := range candidates {
-		if candidate.Kind == SourceKindGitHubApp {
-			key := canonicalCandidate(candidate)
-			if cached := s.tokens[key]; cached != nil {
-				cached.invalidated = true
-			}
-			delete(s.tokens, key)
+		if candidate.Kind != SourceKindGitHubApp {
+			continue
 		}
+		key := canonicalCandidate(candidate)
+		cached := s.tokens[key]
+		if cached == nil {
+			continue
+		}
+		// An in-flight mint has never handed a token to anyone, so an
+		// invalidation arriving now is about an older, completed token
+		// (a stale 401 retry). Evicting the mint would let concurrent
+		// stale invalidations trigger parallel mints and discard the
+		// fresh result.
+		if cached.mintDone != nil {
+			continue
+		}
+		cached.invalidated = true
+		delete(s.tokens, key)
 	}
 	s.mu.Unlock()
 }

@@ -34,6 +34,10 @@ The generated files are:
 - `code-reviewer-agent-launch-dark.svg`
 - `roborev-reviews-light.svg`
 - `roborev-reviews-dark.svg`
+- `repository-source-light.svg`
+- `repository-source-dark.svg`
+- `docs-workspace-light.svg`
+- `docs-workspace-dark.svg`
 - `workspace-codex-session-light.svg`
 - `workspace-codex-session-dark.svg`
 
@@ -51,6 +55,11 @@ before export.
 The Roborev capture starts a synthetic daemon on a free loopback port, then
 opens its seeded job through kenn-forge's real status and proxy routes. It does
 not contact an installed Roborev daemon or read a Roborev database.
+
+The repository source capture reads the seeded repository clone through the
+real source-browser routes. The Docs capture registers a temporary synthetic
+Markdown folder with the isolated server. Neither capture reads a developer
+worktree or personal notes folder.
 
 The visible Codex pane contains a short static transcript derived from a
 one-time real Codex run in a synthetic widget-cache repository. The capture

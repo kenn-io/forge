@@ -1,4 +1,4 @@
-# Quick Start
+# Quick start
 
 Install kenn-forge, connect a code forge, and open your first workspace.
 
@@ -134,14 +134,18 @@ Unix-like kenn-forge host for that step.
 
 ## Use the main views
 
-- **Activity**: scan recent cross-repository changes.
-- **Pulls**: review discussion, diffs, CI, and merge state.
-- **Issues**: triage, comment, change state, or create a workspace.
-- **Repos**: browse configured source and branches.
-- **Workspaces**: open local shells and configured agents.
-- **Settings**: manage repositories, agents, and app preferences.
+- [**Activity**](workflows/activity.md): scan recent cross-repository changes.
+- [**Pulls**](workflows/code-reviewer.md): review discussion, diffs, CI, and merge state.
+- [**Issues**](workflows/issue-triager.md): triage, comment, change state, or create a workspace.
+- [**Repos**](workflows/repositories.md): browse configured source, refs, and file history.
+- [**Workspaces**](workflows/workspaces.md): open local shells and configured agents.
+- [**Docs**](workflows/docs.md): read and edit registered Markdown folders.
+- **Settings**: manage repositories, agents, modes, and app preferences.
 
 Press `?` to see shortcuts for the current view.
+
+On a phone, open `/m` for Activity, Pulls, Issues, and Workspaces in a
+touch-first layout. Docs and Kata-linked task detail remain desktop-first.
 
 ## Connect optional integrations
 

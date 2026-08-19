@@ -88,3 +88,6 @@ kenn-forge docs add-folder --id project --daemon kata-main ~/project-docs
 
 That binding lets task references open in Kata. It does not copy Kata task data
 into the Markdown folder.
+
+See [Read and edit local Docs](workflows/docs.md) for the folder tree, search,
+editing, and Git workflow.

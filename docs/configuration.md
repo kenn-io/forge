@@ -189,7 +189,7 @@ You can also edit agents under **Settings → Agents**.
 ## Workspace terminals and tmux
 
 Workspace terminals and agent sessions run on a dedicated tmux server
-(socket name `kenn-forge`), so busy Forge sessions do not contend with
+(socket name `kenn-forge`), so busy kenn-forge sessions do not contend with
 your personal tmux server. To inspect or attach from a regular terminal:
 
 ```sh

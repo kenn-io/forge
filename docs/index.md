@@ -6,7 +6,7 @@ SQLite and serves the UI from a single binary.
 
 <div class="docs-actions">
   <a class="md-button md-button--primary" data-download-current href="https://github.com/kenn-io/forge/releases">Download latest release</a>
-  <a class="md-button" href="quickstart/">Quick Start</a>
+  <a class="md-button" href="quickstart/">Quick start</a>
 </div>
 
 <p class="docs-download-meta"><span data-download-version></span>Linux, macOS, and Windows</p>
@@ -26,14 +26,18 @@ Use kenn-forge to answer four daily questions:
 
 ## Start here
 
-New users should follow the [Quick Start](quickstart.md). It covers
+New users should follow the [Quick start](quickstart.md). It covers
 installation, provider setup, repository selection, the first sync, and
 workspace creation.
 
 Returning users can jump to a task:
 
+- [Follow activity across repositories](workflows/activity.md)
 - [Triage an issue](workflows/issue-triager.md)
 - [Review a pull request](workflows/code-reviewer.md)
+- [Browse repository source](workflows/repositories.md)
+- [Work in local sessions](workflows/workspaces.md)
+- [Read and edit local Docs](workflows/docs.md)
 - [Run daily maintainer workflows](workflows.md)
 - [Connect Roborev, Kata, or Docs](integrations.md)
 - [Change repositories, tokens, or modes](configuration.md)
@@ -42,17 +46,19 @@ Returning users can jump to a task:
 ## Main views
 
 **Activity** collects recent comments, reviews, commits, and state changes.
-Filter by time, repository, item type, event type, or text.
+Use threaded or flat mode, filter the queue, and open item details without
+losing your place.
 
 **Pulls** and **Issues** combine lists, details, discussion, provider actions,
 and workspace creation. Unsupported provider actions remain visible but
 unavailable.
 
-**Workspaces** opens local shells and configured agents against repository
-worktrees. **Repos** browses configured source. **Reviews** connects to a
-running Roborev daemon. **Docs** works with registered Markdown folders. Kata
-issues appear where they are linked to a pull request, provider issue, or
-workspace rather than in a separate mode.
+**Workspaces** opens durable local shells and configured agents against
+repository worktrees. **Repos** browses branches, tags, files, previews, and
+file history. **Reviews** connects to a running Roborev daemon. **Docs** reads,
+edits, pulls, and publishes registered Markdown folders. Kata issues appear
+where they are linked to a pull request, provider issue, or workspace rather
+than in a separate mode.
 
 ## Advanced use
 

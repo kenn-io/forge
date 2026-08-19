@@ -11,6 +11,9 @@ event order. Select a row to open its detail without leaving the queue.
 Use **Sync current repository** when one repository needs fresh data. This
 avoids scheduling a global refresh.
 
+See [Follow activity across repositories](workflows/activity.md) for saved
+filter URLs, local workspace activity, commit diffs, and detail panes.
+
 ## Follow a role-based guide
 
 - [Triage an issue](workflows/issue-triager.md)
@@ -93,6 +96,9 @@ Use `--agent NAME` to limit installation. Active work, approval requests, and
 input requests update while the sidebar is open. Hook reports expire after 30
 minutes without another event, then fall back to tmux activity.
 
+See [Work in local sessions](workflows/workspaces.md) for workspace types,
+session layouts, tmux attachment, phone use, deletion, and recovery.
+
 ## Use Kata tasks
 
 Link a Kata issue from a pull request, provider issue, or workspace to view its
@@ -120,6 +126,9 @@ pull, and publish files from the console. Task references can open a Kata task
 through the folder's daemon binding.
 
 Files remain on disk inside the configured folders.
+
+See [Read and edit local Docs](workflows/docs.md) for search, file editing, Git
+pull and publish, and Kata reference behavior.
 
 ## Use a fleet
 

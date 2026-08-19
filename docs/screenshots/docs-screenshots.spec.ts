@@ -15,6 +15,8 @@ import {
 
 const outputDir = process.env.KENN_FORGE_DOCS_SCREENSHOT_DIR;
 const execFileAsync = promisify(execFile);
+let syntheticDocsRoot: string | null = null;
+let syntheticDocsRegistered = false;
 
 const syntheticRoborevJob = {
   id: 501,
@@ -181,10 +183,12 @@ const syntheticCodexPalettes = {
 
 type CaptureCase = {
   name:
+    | "docs-workspace"
     | "maintainer-overview"
     | "issue-triager"
     | "code-reviewer"
     | "code-reviewer-agent-launch"
+    | "repository-source"
     | "roborev-reviews"
     | "workspace-codex-session"
     | "first-run";
@@ -204,6 +208,20 @@ type CaptureCase = {
 async function openCodexLaunchMenu(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Create Workspace options" }).click();
   await expect(page.getByRole("menuitem", { name: "Codex" })).toBeVisible();
+}
+
+async function registerSyntheticDocsFolder(page: Page, baseURL: string): Promise<void> {
+  if (syntheticDocsRegistered) return;
+  if (!syntheticDocsRoot) throw new Error("synthetic Docs root was not created");
+  const response = await page.request.post(`${baseURL}/api/v1/docs/folders`, {
+    data: {
+      id: "engineering",
+      name: "Engineering",
+      path: syntheticDocsRoot,
+    },
+  });
+  expect(response.status()).toBe(201);
+  syntheticDocsRegistered = true;
 }
 
 async function embedSyntheticCodexTranscript(workspace: Locator, theme: ThemeName): Promise<void> {
@@ -438,6 +456,50 @@ const cases: CaptureCase[] = [
     loadingText: /Loading review|Loading\.\.\./i,
     description:
       "Roborev review queue in dark mode with a completed review selected beside its status, usage, and response controls.",
+  },
+  {
+    name: "repository-source",
+    theme: "light",
+    path: "/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md&mode=preview",
+    readySelector: ".repo-browser__path",
+    readyText: "README.md",
+    requiredSelector: ".repo-browser__markdown",
+    loadingText: /Loading repository|Loading file|Loading history/i,
+    description: "Repository source browser with the selected branch, file tree, rendered Markdown, and file history.",
+  },
+  {
+    name: "repository-source",
+    theme: "dark",
+    path: "/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md&mode=preview",
+    readySelector: ".repo-browser__path",
+    readyText: "README.md",
+    requiredSelector: ".repo-browser__markdown",
+    loadingText: /Loading repository|Loading file|Loading history/i,
+    description:
+      "Repository source browser in dark mode with the selected branch, file tree, rendered Markdown, and file history.",
+  },
+  {
+    name: "docs-workspace",
+    theme: "light",
+    path: "/docs?folder=engineering&doc=README.md",
+    readySelector: ".docs-detail",
+    readyText: "Engineering notes",
+    requiredButtonName: "Edit",
+    loadingText: /Loading folders|Loading document|Loading tree/i,
+    prepare: registerSyntheticDocsFolder,
+    description: "Docs workspace with a registered folder, Markdown file tree, rendered document, and outline.",
+  },
+  {
+    name: "docs-workspace",
+    theme: "dark",
+    path: "/docs?folder=engineering&doc=README.md",
+    readySelector: ".docs-detail",
+    readyText: "Engineering notes",
+    requiredButtonName: "Edit",
+    loadingText: /Loading folders|Loading document|Loading tree/i,
+    prepare: registerSyntheticDocsFolder,
+    description:
+      "Docs workspace in dark mode with a registered folder, Markdown file tree, rendered document, and outline.",
   },
   {
     name: "workspace-codex-session",
@@ -932,12 +994,42 @@ test.describe("docs workflow screenshots", () => {
       if (previousEndpoint === undefined) delete process.env.ROBOREV_ENDPOINT;
       else process.env.ROBOREV_ENDPOINT = previousEndpoint;
     }
+    syntheticDocsRoot = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-capture-"));
+    await mkdir(path.join(syntheticDocsRoot, "guides"), { recursive: true });
+    await writeFile(
+      path.join(syntheticDocsRoot, "README.md"),
+      [
+        "# Engineering notes",
+        "",
+        "Use this folder for decisions that need to stay close to the code.",
+        "",
+        "## Working agreements",
+        "",
+        "- Keep examples small and runnable.",
+        "- Link the pull request that changed a decision.",
+        "- Remove instructions that no longer match the product.",
+        "",
+        "## Guides",
+        "",
+        "Start with [[guides/reviewing]].",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(syntheticDocsRoot, "guides", "reviewing.md"),
+      ["# Reviewing changes", "", "Read the current behavior before changing the guide.", ""].join("\n"),
+    );
     await mkdir(outputDir, { recursive: true });
   });
 
   test.afterAll(async () => {
     await server?.stop();
     await roborevDaemon?.close();
+    if (syntheticDocsRoot) {
+      await rm(syntheticDocsRoot, { recursive: true, force: true });
+      syntheticDocsRoot = null;
+      syntheticDocsRegistered = false;
+    }
   });
 
   for (const capture of cases) {

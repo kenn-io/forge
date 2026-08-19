@@ -215,7 +215,6 @@ func apiConfig(basePath string) huma.Config {
 }
 
 func (s *Server) registerAPI(api huma.API) {
-	s.registerWorkflowStateAPI(api)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-version",
 		Method:      http.MethodGet,

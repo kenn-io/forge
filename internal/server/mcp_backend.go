@@ -265,7 +265,7 @@ func (b mcpBackend) ListWorkflowStates(
 		Items: make([]mcpserver.WorkflowItem, 0, len(rows)), NextCursor: next,
 	}
 	for _, row := range rows {
-		workflow := mcpserver.WorkflowState{Status: string(normalizeWorkflowStatusForAPI(row.Status))}
+		workflow := mcpserver.WorkflowState{Status: string(normalizeMCPWorkflowStatus(row.Status))}
 		if row.HasRow && row.UpdatedAt != nil {
 			workflow.UpdatedAt = formatUTCRFC3339(*row.UpdatedAt)
 			workflow.UpdatedSource = row.UpdatedSource
@@ -343,9 +343,9 @@ func (b mcpBackend) SetWorkflowState(
 		return mcpserver.WorkflowMutation{}, mcpBackendMutationError(err)
 	}
 	return mcpserver.WorkflowMutation{
-		PreviousStatus: string(normalizeWorkflowStatusForAPI(result.PreviousStatus)),
+		PreviousStatus: string(normalizeMCPWorkflowStatus(result.PreviousStatus)),
 		State: mcpserver.WorkflowState{
-			Status:        string(normalizeWorkflowStatusForAPI(result.State.Status)),
+			Status:        string(normalizeMCPWorkflowStatus(result.State.Status)),
 			UpdatedAt:     formatUTCRFC3339(result.State.UpdatedAt),
 			UpdatedSource: result.State.UpdatedSource,
 			UpdatedActor:  result.State.UpdatedActor,
@@ -563,6 +563,16 @@ func mcpBackendMutationError(err error) error {
 	copy.Retryable = false
 	copy.Details = cloneMCPErrorDetails(backendErr.Details)
 	return &copy
+}
+
+func normalizeMCPWorkflowStatus(status string) db.KanbanStatus {
+	switch db.KanbanStatus(status) {
+	case db.KanbanStatusNew, db.KanbanStatusReviewing,
+		db.KanbanStatusWaiting, db.KanbanStatusAwaitingMerge:
+		return db.KanbanStatus(status)
+	default:
+		return db.KanbanStatusNew
+	}
 }
 
 func repositoryIdentityFromResponse(repo httpapi.RepoRefResponse) mcpserver.RepositoryIdentity {

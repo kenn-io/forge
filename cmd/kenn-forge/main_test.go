@@ -371,7 +371,7 @@ func TestDegradedStartupSkipsArchiveLookupWithEmptyDatabase(t *testing.T) {
 	prepared := make(chan error, 1)
 	go func() {
 		prepared <- syncer.SetReposWithContextForDegradedHosts(
-			t.Context(), repos, false, degradedHosts,
+			t.Context(), repos, false, degradedHostLookup(degradedHosts),
 		)
 	}()
 

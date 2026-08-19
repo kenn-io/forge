@@ -66,8 +66,9 @@ func buildProviderStartupWithFallback(
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
 ) (providerStartup, error) {
-	providerSources, degradedProviderHosts, err := collectProviderTokenSourcesWithFallback(
-		ctx, cfg, set,
+	degradedProviderHosts := make(map[string]struct{})
+	providerSources, err := providerTokenSources(
+		ctx, cfg, set, true, degradedProviderHosts,
 	)
 	if err != nil {
 		return providerStartup{}, err

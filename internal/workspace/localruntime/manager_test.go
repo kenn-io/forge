@@ -2315,6 +2315,70 @@ func TestWaitForInitialMessageEchoIgnoresUnrelatedAndSplitOutput(t *testing.T) {
 	))
 }
 
+func TestWaitForInitialMessageEchoFailsWhenBracketedPasteDisables(t *testing.T) {
+	output := make(chan []byte, 3)
+	output <- []byte("redraw \x1b[?20")
+	output <- []byte("04l more redraw")
+	output <- []byte("Reply exactly: raw output probe")
+
+	err := waitForInitialMessageEcho(
+		t.Context(), output, "Reply exactly: raw output probe",
+	)
+	require.ErrorIs(t, err, errBracketedPasteDisabledMidDelivery)
+	assert.NotErrorIs(t, err, ErrBracketedPasteInactive)
+}
+
+func TestDrainForBracketedPasteDisableChecksBufferedOutputWithoutBlocking(t *testing.T) {
+	clean := make(chan []byte, 1)
+	clean <- []byte("prompt redraw")
+	require.NoError(t, drainForBracketedPasteDisable(clean))
+
+	disabled := make(chan []byte, 2)
+	disabled <- []byte("echo tail \x1b[?2")
+	disabled <- []byte("004l")
+	require.ErrorIs(
+		t, drainForBracketedPasteDisable(disabled),
+		errBracketedPasteDisabledMidDelivery,
+	)
+}
+
+func TestManagerSubmitInitialMessageAbortsWhenPasteModeDisablesMidDelivery(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	pty := &fakeRuntimePTY{
+		output: make(chan []byte), done: make(chan struct{}),
+		writeObserved: make(chan []byte, 2),
+	}
+	s := &session{
+		info: SessionInfo{
+			Key: "agent-1", WorkspaceID: "ws-1", Kind: LaunchTargetAgent,
+			Status: SessionStatusRunning,
+		},
+		pty:         pty,
+		subscribers: map[chan []byte]struct{}{},
+	}
+	mgr := NewManager(Options{})
+	mgr.sessions[s.info.Key] = s
+	s.broadcast([]byte("\x1b[?2004h"))
+
+	disableObserved := make(chan struct{})
+	go func() {
+		<-pty.writeObserved
+		s.broadcast([]byte("\x1b[?2004l"))
+		close(disableObserved)
+	}()
+
+	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "first\nsecond")
+	<-disableObserved
+	require.ErrorIs(err, errBracketedPasteDisabledMidDelivery)
+	assert.NotErrorIs(err, ErrBracketedPasteInactive)
+	pty.mu.Lock()
+	writeCalls := slices.Clone(pty.writeCalls)
+	pty.mu.Unlock()
+	require.Len(writeCalls, 1)
+	assert.Equal("\x1b[200~first\nsecond\x1b[201~", string(writeCalls[0]))
+}
+
 func TestManagerSubmitInitialMessageClassifiesMissingSessionAsNotWritten(t *testing.T) {
 	mgr := NewManager(Options{})
 

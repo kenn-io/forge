@@ -49,6 +49,13 @@ var (
 	ErrInitialMessageNotWritten = errors.New(
 		"initial message was not written",
 	)
+	// errBracketedPasteDisabledMidDelivery must stay distinct from
+	// ErrBracketedPasteInactive: the framed message bytes have already been
+	// written, so callers must treat the outcome as uncertain, never as a
+	// safe-to-retry rejection.
+	errBracketedPasteDisabledMidDelivery = errors.New(
+		"bracketed paste mode was disabled while delivering the initial message",
+	)
 	errWorkspaceStopping = errors.New(
 		"workspace is being stopped",
 	)
@@ -2842,6 +2849,8 @@ func attachToSession(
 	}, nil
 }
 
+var bracketedPasteDisableSequence = []byte("\x1b[?2004l")
+
 func waitForInitialMessageEcho(
 	ctx context.Context,
 	output <-chan []byte,
@@ -2872,10 +2881,16 @@ func waitForInitialMessageEcho(
 				return ErrSessionUnavailable
 			}
 			observed = append(observed, chunk...)
-			if bytes.Contains(observed, marker) {
+			disabledAt := bytes.Index(observed, bracketedPasteDisableSequence)
+			markerAt := bytes.Index(observed, marker)
+			if disabledAt >= 0 && (markerAt < 0 || disabledAt < markerAt) {
+				return errBracketedPasteDisabledMidDelivery
+			}
+			if markerAt >= 0 {
 				return nil
 			}
-			if keep := len(marker) - 1; len(observed) > keep {
+			keep := max(len(marker), len(bracketedPasteDisableSequence)) - 1
+			if len(observed) > keep {
 				observed = slices.Clone(observed[len(observed)-keep:])
 			}
 		case <-ctx.Done():
@@ -2884,7 +2899,37 @@ func waitForInitialMessageEcho(
 	}
 }
 
+// drainForBracketedPasteDisable inspects already-broadcast output without
+// blocking so a paste-mode disable observed after the echo still withholds
+// the submitting Enter keypress.
+func drainForBracketedPasteDisable(output <-chan []byte) error {
+	var observed []byte
+	for {
+		select {
+		case chunk, ok := <-output:
+			if !ok {
+				return ErrSessionUnavailable
+			}
+			observed = append(observed, chunk...)
+		default:
+			if bytes.Contains(observed, bracketedPasteDisableSequence) {
+				return errBracketedPasteDisabledMidDelivery
+			}
+			return nil
+		}
+	}
+}
+
 func (s *session) submitInitialMessage(ctx context.Context, message string) error {
+	// Subscribe before validating paste mode: broadcast updates input modes
+	// and delivers to subscribers under one lock, so every disable that
+	// happens after the check below is guaranteed to surface on this
+	// channel, where the echo wait and pre-Enter drain detect it. This
+	// orders the mode check with the write without holding the session
+	// lock across blocking terminal writes.
+	output, unsubscribe := s.subscribeLive()
+	defer unsubscribe()
+
 	s.mu.Lock()
 	if !s.inputModes.observed[2004] {
 		s.mu.Unlock()
@@ -2897,9 +2942,6 @@ func (s *session) submitInitialMessage(ctx context.Context, message string) erro
 	pty := s.pty
 	ptmx := s.ptmx
 	s.mu.Unlock()
-
-	output, unsubscribe := s.subscribeLive()
-	defer unsubscribe()
 
 	if err := context.Cause(ctx); err != nil {
 		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
@@ -2929,6 +2971,10 @@ func (s *session) submitInitialMessage(ctx context.Context, message string) erro
 			return
 		}
 		if err := waitForInitialMessageEcho(writeCtx, output, message); err != nil {
+			result <- err
+			return
+		}
+		if err := drainForBracketedPasteDisable(output); err != nil {
 			result <- err
 			return
 		}

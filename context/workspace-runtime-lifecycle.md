@@ -202,6 +202,10 @@ still exists.
 - Initial agent handoff waits for bracketed-paste mode and the prompt's terminal
   echo before sending Enter; adjacent bytes or a fixed delay do not establish
   separate TUI input events (`internal/workspace/localruntime/manager.go::waitForInitialMessageEcho`).
+- Subscribe to live session output before validating paste mode so every later
+  disable is observable in-stream; a disable seen after the framed write aborts
+  before Enter and reports uncertain delivery, never a safe-to-retry rejection
+  (`internal/workspace/localruntime/manager.go::session.submitInitialMessage`).
 - Mode transitions precede one session-wide UTF-8-aware VT tail even in the
   alternate screen; retain split-rune introducers and decoded C1 controls/ST
   (`internal/workspace/localruntime/terminal_sequence_tail.go::trailingIncompleteTerminalDataLen`).

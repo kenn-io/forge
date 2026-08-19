@@ -665,7 +665,19 @@ describe("DiffFile", () => {
     side: "left" | "right",
     options: { shiftKey?: boolean } = {},
   ): Promise<void> {
-    await clickLineCommentButton(line, side, options);
+    const lineNumber = await findPierreLineNumber(line, side);
+    await fireEvent.pointerDown(lineNumber, {
+      button: 0,
+      pointerId: 1,
+      pointerType: "mouse",
+      shiftKey: options.shiftKey,
+    });
+    await fireEvent.pointerUp(lineNumber, {
+      button: 0,
+      pointerId: 1,
+      pointerType: "mouse",
+      shiftKey: options.shiftKey,
+    });
   }
 
   async function clickLineCommentButton(
@@ -673,40 +685,66 @@ describe("DiffFile", () => {
     side: "left" | "right",
     options: { shiftKey?: boolean } = {},
   ): Promise<void> {
-    const button = await findLineCommentButton(line, side);
-    button.dispatchEvent(
-      new MouseEvent("pointerdown", {
-        bubbles: true,
-        button: 0,
-        shiftKey: options.shiftKey,
-      }),
-    );
-    await fireEvent.mouseDown(button, {
+    let button = findGutterUtilityButton();
+    const utilityLine = button?.closest<HTMLElement>("[data-column-number]");
+    if (
+      !utilityLine ||
+      utilityLine.getAttribute("data-column-number") !== String(line) ||
+      !utilityLine.hasAttribute(side === "left" ? "data-diff-old-line" : "data-diff-new-line")
+    ) {
+      await selectPierreLine(line, side, options);
+      button = await waitFor(() => {
+        const element = findGutterUtilityButton();
+        expect(element).toBeTruthy();
+        return element!;
+      });
+    }
+    await fireEvent.pointerDown(button!, {
       button: 0,
-      shiftKey: options.shiftKey,
-    });
-    await fireEvent.pointerUp(button, {
-      pointerId: 1,
+      pointerId: 2,
       pointerType: "mouse",
       shiftKey: options.shiftKey,
     });
-    await fireEvent.click(button, { shiftKey: options.shiftKey });
+    await fireEvent.pointerUp(button!, {
+      button: 0,
+      pointerId: 2,
+      pointerType: "mouse",
+      shiftKey: options.shiftKey,
+    });
   }
 
   async function keyboardActivateLineCommentButton(line: number, side: "left" | "right"): Promise<void> {
     const button = await findLineCommentButton(line, side);
     button.focus();
-    await fireEvent.click(button);
+    await fireEvent.click(button, { detail: 0 });
   }
 
   async function findLineCommentButton(line: number, side: "left" | "right"): Promise<HTMLButtonElement> {
-    const sideLabel = side === "left" ? "old" : "new";
     return await waitFor(() => {
-      const element = document
-        .querySelector(".pierre-diff")
-        ?.shadowRoot?.querySelector<HTMLButtonElement>(
-          `[data-kenn-forge-line-comment-button][aria-label="Comment on ${sideLabel} line ${line}"]`,
-        );
+      const element = findGutterUtilityButton();
+      const utilityLine = element?.closest<HTMLElement>("[data-column-number]");
+      expect(element).toBeTruthy();
+      expect(utilityLine?.getAttribute("data-column-number")).toBe(String(line));
+      expect(utilityLine?.hasAttribute(side === "left" ? "data-diff-old-line" : "data-diff-new-line")).toBe(true);
+      return element!;
+    });
+  }
+
+  function findGutterUtilityButton(): HTMLButtonElement | null | undefined {
+    return document
+      .querySelector(".pierre-diff")
+      ?.shadowRoot?.querySelector<HTMLButtonElement>("[data-utility-button]");
+  }
+
+  async function findPierreLineNumber(line: number, side: "left" | "right"): Promise<HTMLElement> {
+    return await waitFor(() => {
+      const sideAttribute = side === "left" ? "data-diff-old-line" : "data-diff-new-line";
+      const elements =
+        document
+          .querySelector(".pierre-diff")
+          ?.shadowRoot?.querySelectorAll<HTMLElement>(`[data-column-number="${line}"][${sideAttribute}="${line}"]`) ??
+        [];
+      const element = elements[0];
       expect(element).toBeTruthy();
       return element!;
     });
@@ -739,7 +777,13 @@ describe("DiffFile", () => {
     await selectPierreLine(1, "right");
     await selectPierreLine(2, "right", { shiftKey: true });
 
-    expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
+    });
+    expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+
+    await clickLineCommentButton(2, "right");
+    expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
 
     unmount();
     renderDiffFile(makeFile(), {
@@ -751,7 +795,12 @@ describe("DiffFile", () => {
     await selectPierreLine(1, "right");
     await selectPierreLine(2, "right", { shiftKey: true });
 
-    expect(selectedPierreLines()).toHaveLength(4);
+    await waitFor(() => {
+      expect(selectedPierreLines()).toHaveLength(2);
+      expect(
+        Array.from(selectedPierreLines() ?? []).every((line) => line.getAttribute("data-diff-new-line") === "2"),
+      ).toBe(true);
+    });
   });
 
   it("toggles an empty inline composer from the line comment button", async () => {
@@ -804,13 +853,12 @@ describe("DiffFile", () => {
     });
 
     async function assertRightSideComposer(line: number): Promise<void> {
-      const button = await findLineCommentButton(line, "right");
-      expect(splitColumnSide(button)).toBe("additions");
-
       await clickLineCommentButton(line, "right");
 
       await waitFor(() => {
         expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+        const button = findGutterUtilityButton();
+        expect(splitColumnSide(button)).toBe("additions");
         const slot = document
           .querySelector(".pierre-diff")
           ?.shadowRoot?.querySelector<HTMLSlotElement>(`slot[name="annotation-additions-${line}"]`);
@@ -885,27 +933,6 @@ describe("DiffFile", () => {
     expect(selectedPierreLines()).toHaveLength(0);
   });
 
-  it("keeps shift-click line comment button selection from collapsing active ranges", async () => {
-    renderDiffFile(makeFile(), {
-      reviewEnabled: true,
-      diffHeadSHA: "diff-head",
-      nativeMultilineRanges: true,
-    });
-
-    await selectPierreLine(1, "right");
-    await clickLineCommentButton(2, "right", { shiftKey: true });
-
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
-      expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
-    });
-
-    await clickLineCommentButton(2, "right", { shiftKey: true });
-
-    expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
-    expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
-  });
-
   it("toggles an active multiline composer from keyboard line comment button activation", async () => {
     renderDiffFile(makeFile(), {
       reviewEnabled: true,
@@ -915,6 +942,9 @@ describe("DiffFile", () => {
 
     await selectPierreLine(1, "right");
     await selectPierreLine(2, "right", { shiftKey: true });
+    expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+
+    await clickLineCommentButton(2, "right");
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
@@ -966,6 +996,9 @@ describe("DiffFile", () => {
 
     await selectPierreLine(1, "right");
     await selectPierreLine(20, "right", { shiftKey: true });
+    expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+
+    await clickLineCommentButton(20, "right");
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
@@ -2068,7 +2101,7 @@ describe("DiffFile", () => {
       diffHeadSHA: "diff-head",
     });
 
-    await selectPierreLine(1, "right");
+    await clickLineCommentButton(1, "right");
     expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
     expect(selectedPierreLines()).toHaveLength(4);
 
@@ -2095,7 +2128,7 @@ describe("DiffFile", () => {
       reviewEnabled: true,
       diffHeadSHA: "new-diff-head",
     });
-    await selectPierreLine(1, "right");
+    await clickLineCommentButton(1, "right");
     expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
 
     await rerender({

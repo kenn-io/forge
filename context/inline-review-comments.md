@@ -18,6 +18,9 @@ published review-thread ingestion, or review controls in shared diff UI.
   arbitrary range diffs remain disabled until their coordinate mapping is
   explicitly supported
   (`internal/server/pullapi/diff_review_handlers.go::dbReviewLineRange`).
+- Line-number click, drag, and Shift selection only change the active review
+  range. The gutter utility opens the composer for that range
+  (`frontend/src/lib/components/diff/DiffFile.svelte::handlePierreGutterUtility`).
 - Public routes use provider-aware pull paths and internal draft/thread IDs.
   Provider review, thread, and comment IDs remain persistence metadata unless a
   concrete public API need is introduced

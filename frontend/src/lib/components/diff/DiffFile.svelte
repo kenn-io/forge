@@ -118,6 +118,7 @@
 
   let selectedRange = $state<SelectedLineRange | null>(null);
   let composerRange = $state<DiffReviewLineRange | null>(null);
+  let suppressNextPierreSelection = false;
   const selectableLineRefs = $derived.by(() => ({
     left: selectableLines("left"),
     right: selectableLines("right"),
@@ -398,6 +399,10 @@
   }
 
   function handlePierreSelection(selection: SelectedLineRange | null): void {
+    if (suppressNextPierreSelection) {
+      suppressNextPierreSelection = false;
+      return;
+    }
     if (!selection) {
       closeComposer();
       return;
@@ -405,6 +410,23 @@
     const normalized = normalizedSelection(selection);
     if (!normalized) {
       closeComposer();
+      return;
+    }
+    if (composerRange && rangeKey(composerRange) !== rangeKey(normalized.range)) {
+      composerRange = null;
+    }
+    selectedRange = normalized.selected;
+  }
+
+  function handlePierreGutterUtility(selection: SelectedLineRange): void {
+    const normalized = normalizedSelection(selection);
+    if (!normalized) {
+      closeComposer();
+      return;
+    }
+    if (composerRange && rangeKey(composerRange) === rangeKey(normalized.range)) {
+      closeComposer();
+      suppressNextPierreSelection = true;
       return;
     }
     selectedRange = normalized.selected;
@@ -630,6 +652,7 @@
               selectedRanges={draftSelectedRanges}
               enableLineSelection={reviewEnabled && !!diffHeadSHA}
               onLineSelected={handlePierreSelection}
+              onGutterUtilityClick={handlePierreGutterUtility}
               renderAnnotation={renderUnknownAnnotation}
               {virtualizer}
             />

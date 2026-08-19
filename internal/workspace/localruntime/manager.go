@@ -1309,8 +1309,8 @@ func (m *Manager) AttachSessionWithOptions(
 }
 
 // SubmitInitialMessage writes one bounded, already-normalized initial prompt
-// through a live agent runtime. Multiline input is safe only while the
-// session's tracked terminal state has bracketed-paste mode enabled.
+// through a live agent runtime. It waits for bracketed-paste mode and a terminal
+// redraw before sending Enter so paste processing and submission stay ordered.
 func (m *Manager) SubmitInitialMessage(
 	ctx context.Context,
 	workspaceID string,
@@ -2183,44 +2183,53 @@ func trailingBytes(data []byte, maxLen int) []byte {
 }
 
 func (s *session) subscribe() (<-chan []byte, func()) {
-	return s.subscribeInternal(false)
+	return s.subscribeInternal(true, false)
 }
 
 func (s *session) subscribeWithReplayBoundary() (<-chan []byte, func()) {
-	return s.subscribeInternal(true)
+	return s.subscribeInternal(true, true)
 }
 
-func (s *session) subscribeInternal(replayBoundary bool) (<-chan []byte, func()) {
+func (s *session) subscribeLive() (<-chan []byte, func()) {
+	return s.subscribeInternal(false, false)
+}
+
+func (s *session) subscribeInternal(
+	includeReplay bool,
+	replayBoundary bool,
+) (<-chan []byte, func()) {
 	ch := make(chan []byte, 64)
 
 	s.mu.Lock()
 	info := s.info
-	replay := make([]byte, 0)
-	if !s.alternateScreenActive {
-		replay = append(replay, s.outputBuffer...)
-	}
-	var replayModes terminalInputModeState
-	replayModes.observe(replay)
-	if pendingLen := trailingIncompleteTerminalDataLen(replay); pendingLen > 0 {
-		stableLen := len(replay) - pendingLen
-		pending := slices.Clone(replay[stableLen:])
-		replay = slices.Clone(replay[:stableLen])
-		replay = s.inputModes.appendTransitions(replay, replayModes)
-		replay = append(replay, pending...)
-	} else {
-		replay = s.inputModes.appendTransitions(replay, replayModes)
-	}
-	if s.alternateScreenActive {
-		replay = append(replay, s.terminalSequenceTail...)
-	}
-	if len(replay) > 0 {
-		ch <- replay
-		slog.Debug(
-			"runtime terminal replay queued",
-			"workspace_id", info.WorkspaceID,
-			"session_key", info.Key,
-			"bytes", len(replay),
-		)
+	if includeReplay {
+		replay := make([]byte, 0)
+		if !s.alternateScreenActive {
+			replay = append(replay, s.outputBuffer...)
+		}
+		var replayModes terminalInputModeState
+		replayModes.observe(replay)
+		if pendingLen := trailingIncompleteTerminalDataLen(replay); pendingLen > 0 {
+			stableLen := len(replay) - pendingLen
+			pending := slices.Clone(replay[stableLen:])
+			replay = slices.Clone(replay[:stableLen])
+			replay = s.inputModes.appendTransitions(replay, replayModes)
+			replay = append(replay, pending...)
+		} else {
+			replay = s.inputModes.appendTransitions(replay, replayModes)
+		}
+		if s.alternateScreenActive {
+			replay = append(replay, s.terminalSequenceTail...)
+		}
+		if len(replay) > 0 {
+			ch <- replay
+			slog.Debug(
+				"runtime terminal replay queued",
+				"workspace_id", info.WorkspaceID,
+				"session_key", info.Key,
+				"bytes", len(replay),
+			)
+		}
 	}
 	if replayBoundary {
 		if s.outputClosed || len(s.terminalSequenceTail) == 0 {
@@ -2833,24 +2842,64 @@ func attachToSession(
 	}, nil
 }
 
+func waitForInitialMessageEcho(
+	ctx context.Context,
+	output <-chan []byte,
+	message string,
+) error {
+	var marker []byte
+	for line := range strings.SplitSeq(message, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		runes := []rune(line)
+		if len(runes) > 32 {
+			runes = runes[:32]
+		}
+		marker = []byte(string(runes))
+		break
+	}
+	if len(marker) == 0 {
+		return ErrInitialMessageNotWritten
+	}
+
+	observed := make([]byte, 0, len(marker)*2)
+	for {
+		select {
+		case chunk, ok := <-output:
+			if !ok {
+				return ErrSessionUnavailable
+			}
+			observed = append(observed, chunk...)
+			if bytes.Contains(observed, marker) {
+				return nil
+			}
+			if keep := len(marker) - 1; len(observed) > keep {
+				observed = slices.Clone(observed[len(observed)-keep:])
+			}
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+}
+
 func (s *session) submitInitialMessage(ctx context.Context, message string) error {
 	s.mu.Lock()
-	data := make([]byte, 0, len(message)+13)
-	if strings.Contains(message, "\n") {
-		if !s.inputModes.observed[2004] {
-			s.mu.Unlock()
-			return ErrBracketedPasteInactive
-		}
-		data = append(data, "\x1b[200~"...)
-		data = append(data, message...)
-		data = append(data, "\x1b[201~"...)
-	} else {
-		data = append(data, message...)
+	if !s.inputModes.observed[2004] {
+		s.mu.Unlock()
+		return ErrBracketedPasteInactive
 	}
-	data = append(data, '\r')
+	data := make([]byte, 0, len(message)+12)
+	data = append(data, "\x1b[200~"...)
+	data = append(data, message...)
+	data = append(data, "\x1b[201~"...)
 	pty := s.pty
 	ptmx := s.ptmx
 	s.mu.Unlock()
+
+	output, unsubscribe := s.subscribeLive()
+	defer unsubscribe()
 
 	if err := context.Cause(ctx); err != nil {
 		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
@@ -2868,12 +2917,22 @@ func (s *session) submitInitialMessage(ctx context.Context, message string) erro
 	}
 	result := make(chan error, 1)
 	go func() {
-		if pty != nil {
-			result <- pty.Write(data)
+		write := func(data []byte) error {
+			if pty != nil {
+				return pty.Write(data)
+			}
+			_, err := ptmx.Write(data)
+			return err
+		}
+		if err := write(data); err != nil {
+			result <- err
 			return
 		}
-		_, err := ptmx.Write(data)
-		result <- err
+		if err := waitForInitialMessageEcho(writeCtx, output, message); err != nil {
+			result <- err
+			return
+		}
+		result <- write([]byte{'\r'})
 	}()
 	select {
 	case err := <-result:

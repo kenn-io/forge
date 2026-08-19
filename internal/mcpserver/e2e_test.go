@@ -77,7 +77,10 @@ esac
 		}},
 		Agents: []config.Agent{{
 			Key: "codex", Label: "Codex",
-			Command: []string{"/bin/sh", "-c", "while :; do sleep 1; done"},
+			Command: []string{
+				"/bin/sh", "-c",
+				"printf '\033[?2004h'; while IFS= read -r _; do :; done",
+			},
 		}},
 		PullRequests: config.PullRequests{PreferGitHubNativeStacks: true},
 		Workspaces:   config.Workspaces{AutoAssignOnCreate: true},

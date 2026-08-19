@@ -173,16 +173,27 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 
 	requestContext, cancelRequest := context.WithCancel(ctx)
 	owner.pty.setOnWrite(cancelRequest)
-	serviceStatus, err := handler.SubmitInitialMessageService(requestContext, InitialMessageRequest{
-		WorkspaceID: workspaceID, RuntimeSessionKey: session.Key,
-		Agent: "CoDeX", SessionID: "coding-session", Message: "review this",
-	})
+	var serviceStatus InitialMessageResult
+	require.Eventually(func() bool {
+		var submitErr error
+		serviceStatus, submitErr = handler.SubmitInitialMessageService(
+			requestContext,
+			InitialMessageRequest{
+				WorkspaceID: workspaceID, RuntimeSessionKey: session.Key,
+				Agent: "CoDeX", SessionID: "coding-session", Message: "review this",
+			},
+		)
+		if errors.Is(submitErr, ErrInitialMessageInputModeNotReady) {
+			return false
+		}
+		require.NoError(submitErr)
+		return true
+	}, time.Second, 10*time.Millisecond)
 	owner.pty.setOnWrite(nil)
-	require.NoError(err)
 	assert.Equal(initialMessageDelivered, serviceStatus.State)
 	assert.Equal(11, serviceStatus.MessageBytes)
 	require.NotNil(serviceStatus.DeliveredAt)
-	assert.Equal("review this\r", string(owner.pty.written()))
+	assert.Equal("\x1b[200~review this\x1b[201~\r", string(owner.pty.written()))
 
 	response := post(endpoint, "codex", "coding-session", "review this")
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
@@ -200,15 +211,15 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 	assert.Equal(11, messageStatus.MessageBytes)
 	require.NotNil(messageStatus.DeliveredAt)
 	assert.Equal(time.UTC, messageStatus.DeliveredAt.Location())
-	assert.Equal("review this\r", string(owner.pty.written()))
+	assert.Equal("\x1b[200~review this\x1b[201~\r", string(owner.pty.written()))
 
 	response = post(endpoint, "codex", "coding-session", "review this")
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	assert.Equal("review this\r", string(owner.pty.written()))
+	assert.Equal("\x1b[200~review this\x1b[201~\r", string(owner.pty.written()))
 
 	response = post(endpoint, "codex", "coding-session", "review that")
 	require.Equal(http.StatusConflict, response.Code, response.Body.String())
-	assert.Equal("review this\r", string(owner.pty.written()))
+	assert.Equal("\x1b[200~review this\x1b[201~\r", string(owner.pty.written()))
 
 	launchSession := func(codingSession string, report bool) localruntime.SessionInfo {
 		t.Helper()
@@ -245,6 +256,7 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 	assert.Equal(initialMessageUncertain, failedAttempt.State)
 	owner.pty.setWriteError(nil)
 
+	owner.setEmitBracketedPaste(false)
 	inactivePasteSession := launchSession("coding-multiline", true)
 	writtenBefore := owner.pty.written()
 	response = post(
@@ -285,32 +297,69 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 }
 
 type initialMessagePTYOwner struct {
-	pty     *initialMessagePTY
-	started bool
+	mu                 sync.Mutex
+	pty                *initialMessagePTY
+	ptys               map[string]*initialMessagePTY
+	emitBracketedPaste bool
 }
 
 func newInitialMessagePTYOwner() *initialMessagePTYOwner {
-	return &initialMessagePTYOwner{pty: &initialMessagePTY{
-		output: make(chan []byte), done: make(chan struct{}),
-	}}
+	return &initialMessagePTYOwner{
+		ptys: make(map[string]*initialMessagePTY), emitBracketedPaste: true,
+	}
 }
 
-func (o *initialMessagePTYOwner) HasState(string) bool { return o.started }
+func (o *initialMessagePTYOwner) HasState(session string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.ptys[session] != nil
+}
 
-func (o *initialMessagePTYOwner) Attach(context.Context, string) (ptyownerruntime.PTY, error) {
-	return o.pty, nil
+func (o *initialMessagePTYOwner) Attach(
+	_ context.Context,
+	session string,
+) (ptyownerruntime.PTY, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.ptys[session], nil
 }
 
 func (o *initialMessagePTYOwner) Start(
-	context.Context, string, string, []string, []string,
+	_ context.Context,
+	session string,
+	_ string,
+	_ []string,
+	_ []string,
 ) (ptyownerruntime.PTY, error) {
-	o.started = true
-	return o.pty, nil
+	pty := &initialMessagePTY{
+		output: make(chan []byte, 8), done: make(chan struct{}),
+	}
+	o.mu.Lock()
+	o.pty = pty
+	o.ptys[session] = pty
+	emitBracketedPaste := o.emitBracketedPaste
+	o.mu.Unlock()
+	if emitBracketedPaste {
+		pty.output <- []byte("\x1b[?2004h")
+	}
+	return pty, nil
 }
 
-func (o *initialMessagePTYOwner) Stop(context.Context, string) error {
-	o.pty.Close()
+func (o *initialMessagePTYOwner) Stop(_ context.Context, session string) error {
+	o.mu.Lock()
+	pty := o.ptys[session]
+	delete(o.ptys, session)
+	o.mu.Unlock()
+	if pty != nil {
+		pty.Close()
+	}
 	return nil
+}
+
+func (o *initialMessagePTYOwner) setEmitBracketedPaste(enabled bool) {
+	o.mu.Lock()
+	o.emitBracketedPaste = enabled
+	o.mu.Unlock()
 }
 
 type initialMessagePTY struct {
@@ -336,7 +385,9 @@ func (p *initialMessagePTY) Write(data []byte) error {
 	}
 	p.writes = append(p.writes, data...)
 	onWrite := p.onWrite
+	output := p.output
 	p.mu.Unlock()
+	output <- bytes.Clone(data)
 	if onWrite != nil {
 		onWrite()
 	}

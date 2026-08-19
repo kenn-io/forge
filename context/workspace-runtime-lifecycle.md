@@ -199,6 +199,9 @@ still exists.
 - Local-runtime reconnects restore browser-generated cursor-key, mouse, focus,
   and paste DEC modes from session-wide PTY state, not bounded screen replay
   (`internal/workspace/localruntime/manager.go::session.subscribe`).
+- Initial agent handoff waits for bracketed-paste mode and the prompt's terminal
+  echo before sending Enter; adjacent bytes or a fixed delay do not establish
+  separate TUI input events (`internal/workspace/localruntime/manager.go::waitForInitialMessageEcho`).
 - Mode transitions precede one session-wide UTF-8-aware VT tail even in the
   alternate screen; retain split-rune introducers and decoded C1 controls/ST
   (`internal/workspace/localruntime/terminal_sequence_tail.go::trailingIncompleteTerminalDataLen`).

@@ -2262,7 +2262,10 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 func TestManagerSubmitInitialMessageFramesSingleAndMultilineInput(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	pty := &fakeRuntimePTY{output: make(chan []byte), done: make(chan struct{})}
+	pty := &fakeRuntimePTY{
+		output: make(chan []byte), done: make(chan struct{}),
+		writeObserved: make(chan []byte, 2),
+	}
 	s := &session{
 		info: SessionInfo{
 			Key: "agent-1", WorkspaceID: "ws-1", Kind: LaunchTargetAgent,
@@ -2274,13 +2277,42 @@ func TestManagerSubmitInitialMessageFramesSingleAndMultilineInput(t *testing.T) 
 	mgr := NewManager(Options{})
 	mgr.sessions[s.info.Key] = s
 
-	require.NoError(mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "review this"))
-	assert.Equal("review this\r", string(pty.written()))
+	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "review this")
+	require.ErrorIs(err, ErrBracketedPasteInactive)
+	assert.Empty(pty.written())
 
-	pty.resetWrites()
 	s.broadcast([]byte("\x1b[?2004h"))
-	require.NoError(mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "first\nsecond"))
-	assert.Equal("\x1b[200~first\nsecond\x1b[201~\r", string(pty.written()))
+	submit := func(message, framed string) {
+		pty.resetWrites()
+		promptObserved := make(chan struct{})
+		go func() {
+			assert.Equal(framed, string(<-pty.writeObserved))
+			s.broadcast([]byte(message))
+			close(promptObserved)
+		}()
+
+		require.NoError(mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", message))
+		<-promptObserved
+		assert.Equal("\r", string(<-pty.writeObserved))
+		pty.mu.Lock()
+		writeCalls := slices.Clone(pty.writeCalls)
+		pty.mu.Unlock()
+		assert.Equal([][]byte{[]byte(framed), []byte("\r")}, writeCalls)
+	}
+
+	submit("review this", "\x1b[200~review this\x1b[201~")
+	submit("first\nsecond", "\x1b[200~first\nsecond\x1b[201~")
+}
+
+func TestWaitForInitialMessageEchoIgnoresUnrelatedAndSplitOutput(t *testing.T) {
+	output := make(chan []byte, 3)
+	output <- []byte("unrelated status redraw")
+	output <- []byte("Reply exactly: raw ")
+	output <- []byte("output probe")
+
+	require.NoError(t, waitForInitialMessageEcho(
+		t.Context(), output, "Reply exactly: raw output probe",
+	))
 }
 
 func TestManagerSubmitInitialMessageClassifiesMissingSessionAsNotWritten(t *testing.T) {
@@ -2310,6 +2342,7 @@ func TestManagerSubmitInitialMessageHonorsContextWithoutHoldingSessionLock(t *te
 	}
 	mgr := NewManager(Options{})
 	mgr.sessions[s.info.Key] = s
+	s.broadcast([]byte("\x1b[?2004h"))
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 	result := make(chan error, 1)
@@ -2450,6 +2483,8 @@ type fakeRuntimePTY struct {
 	done          chan struct{}
 	resizeCalls   []terminalResize
 	writes        []byte
+	writeCalls    [][]byte
+	writeObserved chan []byte
 	writeErr      error
 	writeStarted  chan struct{}
 	writeRelease  chan struct{}
@@ -2484,7 +2519,12 @@ func (f *fakeRuntimePTY) Write(data []byte) error {
 	}
 	f.mu.Lock()
 	f.writes = append(f.writes, data...)
+	f.writeCalls = append(f.writeCalls, slices.Clone(data))
+	writeObserved := f.writeObserved
 	f.mu.Unlock()
+	if writeObserved != nil {
+		writeObserved <- slices.Clone(data)
+	}
 	if writeFinished != nil {
 		close(writeFinished)
 	}
@@ -2500,6 +2540,7 @@ func (f *fakeRuntimePTY) written() []byte {
 func (f *fakeRuntimePTY) resetWrites() {
 	f.mu.Lock()
 	f.writes = nil
+	f.writeCalls = nil
 	f.mu.Unlock()
 }
 

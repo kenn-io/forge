@@ -244,6 +244,50 @@ func TestGitHubAppFailedMintIsSingleFlight(t *testing.T) {
 	assert.Equal(t, int64(1), mints.Load())
 }
 
+func TestGitHubAppCallerDeadlineDoesNotPoisonSharedMint(t *testing.T) {
+	var mints atomic.Int64
+	firstEntered := make(chan struct{})
+	src := NewManagedSource(githubAppDescriptor(42), Options{
+		GitHubApp: func(ctx context.Context, _ Candidate) (string, time.Time, error) {
+			if mints.Add(1) == 1 {
+				close(firstEntered)
+				<-ctx.Done()
+				return "", time.Time{}, ctx.Err()
+			}
+			return "ghs_recovered", time.Now().Add(time.Hour), nil
+		},
+	})
+
+	firstCtx, cancelFirst := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancelFirst()
+	firstResult := make(chan error, 1)
+	go func() {
+		_, err := src.Token(firstCtx)
+		firstResult <- err
+	}()
+	<-firstEntered
+
+	secondCtx, cancelSecond := context.WithTimeout(t.Context(), time.Second)
+	defer cancelSecond()
+	secondResult := make(chan struct {
+		token string
+		err   error
+	}, 1)
+	go func() {
+		token, err := src.Token(secondCtx)
+		secondResult <- struct {
+			token string
+			err   error
+		}{token: token, err: err}
+	}()
+
+	require.ErrorIs(t, <-firstResult, context.DeadlineExceeded)
+	result := <-secondResult
+	require.NoError(t, result.err)
+	assert.Equal(t, "ghs_recovered", result.token)
+	assert.Equal(t, int64(2), mints.Load())
+}
+
 type retryDeadlineTestError struct {
 	at time.Time
 }
@@ -262,6 +306,7 @@ func TestGitHubAppFailedMintCachesBoundedRetryDeadline(t *testing.T) {
 	assert.Equal(now.Add(githubAppMintRetryDefault),
 		githubAppMintRetryDeadline(retryDeadlineTestError{at: now}, now))
 	assert.True(githubAppMintRetryDeadline(context.Canceled, now).IsZero())
+	assert.True(githubAppMintRetryDeadline(context.DeadlineExceeded, now).IsZero())
 
 	var mints atomic.Int64
 	store := newGitHubAppTokenStore()

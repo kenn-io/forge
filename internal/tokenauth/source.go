@@ -76,7 +76,8 @@ type retryDeadlineError interface {
 }
 
 func githubAppMintRetryDeadline(err error, now time.Time) time.Time {
-	if err == nil || errors.Is(err, context.Canceled) {
+	if err == nil || errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
 		return time.Time{}
 	}
 	var retryErr retryDeadlineError
@@ -144,6 +145,9 @@ func (s *githubAppTokenStore) resolve(
 		cached.exp = exp
 		cached.err = err
 		cached.retryAt = githubAppMintRetryDeadline(err, now)
+		if err != nil && cached.retryAt.IsZero() {
+			cached.invalidated = true
+		}
 		close(cached.mintDone)
 		cached.mintDone = nil
 		if s.tokens[key] == cached &&

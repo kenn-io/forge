@@ -2371,7 +2371,7 @@ func TestManagerSubmitInitialMessageAbortsWhenPasteModeDisablesMidDelivery(t *te
 	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "first\nsecond")
 	<-disableObserved
 	require.ErrorIs(err, errBracketedPasteDisabledMidDelivery)
-	assert.NotErrorIs(err, ErrBracketedPasteInactive)
+	require.NotErrorIs(err, ErrBracketedPasteInactive)
 	pty.mu.Lock()
 	writeCalls := slices.Clone(pty.writeCalls)
 	pty.mu.Unlock()

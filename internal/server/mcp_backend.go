@@ -56,8 +56,11 @@ func (b mcpBackend) ListActivity(
 	for _, row := range body.Items {
 		item := mcpserver.ActivityItem{
 			ID: row.ID, Cursor: row.Cursor, ActivityType: row.ActivityType,
-			Repository: repositoryIdentityFromResponse(row.Repo),
-			ItemType:   row.ItemType, ItemNumber: row.ItemNumber,
+			Repository: mcpserver.RepositoryIdentity{
+				Provider: row.Repo.Provider, PlatformHost: row.Repo.PlatformHost,
+				RepoPath: row.Repo.RepoPath, Owner: row.Repo.Owner, Name: row.Repo.Name,
+			},
+			ItemType: row.ItemType, ItemNumber: row.ItemNumber,
 			ItemTitle: row.ItemTitle, ItemURL: row.ItemURL, ItemState: row.ItemState,
 			Author: row.Author, ItemAuthor: row.ItemAuthor, CreatedAt: row.CreatedAt,
 			BodyPreview: row.BodyPreview, BranchName: row.BranchName,

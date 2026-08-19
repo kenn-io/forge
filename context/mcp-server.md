@@ -55,9 +55,12 @@
   session, and prompt; daemon restart permits a fresh attempt
   (`internal/server/workspaceapi/initial_message.go::initialMessageAttempt`).
 - Initial input requires exact live hook identity, LF or printable Unicode, and
-  tracked bracketed paste for multiline text. Proven no-write rejection releases
-  its reservation; possible writes finalize without client cancellation
-  (`internal/server/workspaceapi/initial_message.go::Handler.SubmitInitialMessageService`).
+  tracked bracketed paste for multiline text. Terminal writes honor the handoff
+  context and do not hold the session lock while waiting. Proven no-write
+  rejection releases its reservation; a timed-out write that may have started
+  remains uncertain
+  (`internal/workspace/localruntime/manager.go::Manager.SubmitInitialMessage`,
+  `internal/server/workspaceapi/initial_message.go::Handler.SubmitInitialMessageService`).
 - MCP-created pull-request and issue workspaces suppress optional automatic
   assignment; ordinary UI omission preserves configured self-assignment
   (`internal/server/workspaceapi/routes_handlers.go::Handler.CreatePullWorkspace`,

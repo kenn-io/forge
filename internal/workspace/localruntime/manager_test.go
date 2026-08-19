@@ -2274,22 +2274,72 @@ func TestManagerSubmitInitialMessageFramesSingleAndMultilineInput(t *testing.T) 
 	mgr := NewManager(Options{})
 	mgr.sessions[s.info.Key] = s
 
-	require.NoError(mgr.SubmitInitialMessage("ws-1", "agent-1", "review this"))
+	require.NoError(mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "review this"))
 	assert.Equal("review this\r", string(pty.written()))
 
 	pty.resetWrites()
 	s.broadcast([]byte("\x1b[?2004h"))
-	require.NoError(mgr.SubmitInitialMessage("ws-1", "agent-1", "first\nsecond"))
+	require.NoError(mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "first\nsecond"))
 	assert.Equal("\x1b[200~first\nsecond\x1b[201~\r", string(pty.written()))
 }
 
 func TestManagerSubmitInitialMessageClassifiesMissingSessionAsNotWritten(t *testing.T) {
 	mgr := NewManager(Options{})
 
-	err := mgr.SubmitInitialMessage("ws-1", "missing-agent", "review this")
+	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "missing-agent", "review this")
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInitialMessageNotWritten)
+}
+
+func TestManagerSubmitInitialMessageHonorsContextWithoutHoldingSessionLock(t *testing.T) {
+	writeStarted := make(chan struct{})
+	writeRelease := make(chan struct{})
+	writeFinished := make(chan struct{})
+	pty := &fakeRuntimePTY{
+		output: make(chan []byte), done: make(chan struct{}),
+		writeStarted: writeStarted, writeRelease: writeRelease, writeFinished: writeFinished,
+	}
+	s := &session{
+		info: SessionInfo{
+			Key: "agent-1", WorkspaceID: "ws-1", Kind: LaunchTargetAgent,
+			Status: SessionStatusRunning,
+		},
+		pty: pty, done: make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	mgr := NewManager(Options{})
+	mgr.sessions[s.info.Key] = s
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		result <- mgr.SubmitInitialMessage(ctx, "ws-1", "agent-1", "review this")
+	}()
+
+	<-writeStarted
+	snapshotDone := make(chan struct{})
+	go func() {
+		_ = s.snapshot()
+		close(snapshotDone)
+	}()
+	select {
+	case <-snapshotDone:
+	case <-time.After(time.Second):
+		require.FailNow(t, "session lock remained held during terminal write")
+	}
+	select {
+	case err := <-result:
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	case <-time.After(time.Second):
+		require.FailNow(t, "initial message write ignored context deadline")
+	}
+	close(writeRelease)
+	select {
+	case <-writeFinished:
+	case <-time.After(time.Second):
+		require.FailNow(t, "blocked test write did not finish")
+	}
 }
 
 func TestManagerSubmitInitialMessageRejectsMultilineWithoutBracketedPaste(t *testing.T) {
@@ -2306,7 +2356,7 @@ func TestManagerSubmitInitialMessageRejectsMultilineWithoutBracketedPaste(t *tes
 	mgr := NewManager(Options{})
 	mgr.sessions[s.info.Key] = s
 
-	err := mgr.SubmitInitialMessage("ws-1", "agent-1", "first\nsecond")
+	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "first\nsecond")
 	require.ErrorIs(err, ErrBracketedPasteInactive)
 	assert.Empty(t, pty.written())
 }
@@ -2395,12 +2445,16 @@ func (f *fakeRuntimePtyOwner) Stop(_ context.Context, session string) error {
 }
 
 type fakeRuntimePTY struct {
-	mu          sync.Mutex
-	output      chan []byte
-	done        chan struct{}
-	resizeCalls []terminalResize
-	writes      []byte
-	writeErr    error
+	mu            sync.Mutex
+	output        chan []byte
+	done          chan struct{}
+	resizeCalls   []terminalResize
+	writes        []byte
+	writeErr      error
+	writeStarted  chan struct{}
+	writeRelease  chan struct{}
+	writeFinished chan struct{}
+	writeOnce     sync.Once
 }
 
 type terminalResize struct {
@@ -2414,11 +2468,26 @@ func (f *fakeRuntimePTY) Done() <-chan struct{} { return f.done }
 
 func (f *fakeRuntimePTY) Write(data []byte) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.writeErr != nil {
-		return f.writeErr
+	writeErr := f.writeErr
+	writeStarted := f.writeStarted
+	writeRelease := f.writeRelease
+	writeFinished := f.writeFinished
+	f.mu.Unlock()
+	if writeErr != nil {
+		return writeErr
 	}
+	if writeStarted != nil {
+		f.writeOnce.Do(func() { close(writeStarted) })
+	}
+	if writeRelease != nil {
+		<-writeRelease
+	}
+	f.mu.Lock()
 	f.writes = append(f.writes, data...)
+	f.mu.Unlock()
+	if writeFinished != nil {
+		close(writeFinished)
+	}
 	return nil
 }
 

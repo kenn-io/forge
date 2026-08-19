@@ -181,7 +181,7 @@ func (s *Handler) SubmitInitialMessageService(
 	if !reserved {
 		return existingInitialMessageAttemptResult(attempt, proposed)
 	}
-	if err := s.runtime.SubmitInitialMessage(req.WorkspaceID, req.RuntimeSessionKey, message); err != nil {
+	if err := s.runtime.SubmitInitialMessage(ctx, req.WorkspaceID, req.RuntimeSessionKey, message); err != nil {
 		return s.handleInitialMessageSubmitError(
 			req.WorkspaceID, req.RuntimeSessionKey, proposed, err,
 		)

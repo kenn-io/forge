@@ -37,6 +37,8 @@ const (
 	SessionStatusError    SessionStatus = "error"
 )
 
+const initialMessageWriteTimeout = 30 * time.Second
+
 var (
 	errManagerShutdown    = errors.New("runtime manager is shut down")
 	ErrSessionNotFound    = errors.New("runtime session not found")
@@ -244,7 +246,7 @@ type Attachment struct {
 
 	info                 func() SessionInfo
 	write                func([]byte) error
-	submitInitialMessage func(string) error
+	submitInitialMessage func(context.Context, string) error
 	resize               func(cols, rows int) error
 	claimResize          func(cols, rows int) (bool, error)
 	resizeSettled        func()
@@ -1310,10 +1312,14 @@ func (m *Manager) AttachSessionWithOptions(
 // through a live agent runtime. Multiline input is safe only while the
 // session's tracked terminal state has bracketed-paste mode enabled.
 func (m *Manager) SubmitInitialMessage(
+	ctx context.Context,
 	workspaceID string,
 	sessionKey string,
 	message string,
 ) error {
+	if err := context.Cause(ctx); err != nil {
+		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
+	}
 	attachment, err := m.AttachSession(workspaceID, sessionKey)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
@@ -1322,7 +1328,7 @@ func (m *Manager) SubmitInitialMessage(
 	if attachment.Info().Kind != LaunchTargetAgent {
 		return fmt.Errorf("%w: runtime session is not an agent", ErrInitialMessageNotWritten)
 	}
-	return attachment.submitInitialMessage(message)
+	return attachment.submitInitialMessage(ctx, message)
 }
 
 func (a *Attachment) Write(data []byte) error {
@@ -2827,13 +2833,12 @@ func attachToSession(
 	}, nil
 }
 
-func (s *session) submitInitialMessage(message string) error {
+func (s *session) submitInitialMessage(ctx context.Context, message string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	data := make([]byte, 0, len(message)+13)
 	if strings.Contains(message, "\n") {
 		if !s.inputModes.observed[2004] {
+			s.mu.Unlock()
 			return ErrBracketedPasteInactive
 		}
 		data = append(data, "\x1b[200~"...)
@@ -2843,9 +2848,37 @@ func (s *session) submitInitialMessage(message string) error {
 		data = append(data, message...)
 	}
 	data = append(data, '\r')
-	if s.pty != nil {
-		return s.pty.Write(data)
+	pty := s.pty
+	ptmx := s.ptmx
+	s.mu.Unlock()
+
+	if err := context.Cause(ctx); err != nil {
+		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
 	}
-	_, err := s.ptmx.Write(data)
-	return err
+	writeTimeout := initialMessageWriteTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < writeTimeout {
+			writeTimeout = remaining
+		}
+	}
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeTimeout)
+	defer cancel()
+	if err := context.Cause(writeCtx); err != nil {
+		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
+	}
+	result := make(chan error, 1)
+	go func() {
+		if pty != nil {
+			result <- pty.Write(data)
+			return
+		}
+		_, err := ptmx.Write(data)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		return err
+	case <-writeCtx.Done():
+		return context.Cause(writeCtx)
+	}
 }

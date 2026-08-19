@@ -688,6 +688,7 @@ const (
 	UnsupportedCapability         ProblemErrorCode = "unsupportedCapability"
 	UpstreamError                 ProblemErrorCode = "upstreamError"
 	ValidationError               ProblemErrorCode = "validationError"
+	WorkspaceAlreadyExists        ProblemErrorCode = "workspaceAlreadyExists"
 	WorkspaceDeletionInProgress   ProblemErrorCode = "workspaceDeletionInProgress"
 	WorkspaceDirectoryNotReusable ProblemErrorCode = "workspaceDirectoryNotReusable"
 	WorkspaceNotFound             ProblemErrorCode = "workspaceNotFound"
@@ -751,6 +752,8 @@ func (e ProblemErrorCode) Valid() bool {
 	case UpstreamError:
 		return true
 	case ValidationError:
+		return true
+	case WorkspaceAlreadyExists:
 		return true
 	case WorkspaceDeletionInProgress:
 		return true

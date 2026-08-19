@@ -62,9 +62,20 @@ func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
 }
 
 func TestMCPPullWorkspaceDuplicateUsesStableConflictCode(t *testing.T) {
-	err := mcpPullWorkspaceCreateError(httpapi.Conflict(
-		httpapi.CodeConflict, "workspace already exists for this MR", nil,
-	))
+	_, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := t.Context()
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(t, err)
+	require.NotNil(t, repo)
+	item := mcpserver.ItemIdentity{
+		Type: "pr", Provider: "github", PlatformHost: "github.com",
+		PlatformRepoID: repo.PlatformRepoID,
+		Owner:          "acme", Name: "widget", Number: 1,
+	}
+
+	_, err = srv.MCPBackend().CreatePullWorkspace(ctx, item, true)
+	require.NoError(t, err)
+	_, err = srv.MCPBackend().CreatePullWorkspace(ctx, item, true)
 
 	var backendErr *mcpserver.Error
 	require.ErrorAs(t, err, &backendErr)
@@ -81,6 +92,41 @@ func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
 		PlatformRepoID: "replacement-repository",
 		Owner:          "acme", Name: "widget", Number: 42,
 	})
+
+	var backendErr *mcpserver.Error
+	require.ErrorAs(t, err, &backendErr)
+	assert.Equal(t, "not_found", backendErr.Kind)
+	assert.Equal(t, string(httpapi.CodeRepoNotFound), backendErr.Code)
+}
+
+func TestMCPBackendReadFailsClosedWhenRouteReassignedMidRead(t *testing.T) {
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 42)
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(t, err)
+	require.NotNil(t, repo)
+	backend, ok := srv.MCPBackend().(mcpBackend)
+	require.True(t, ok)
+
+	resolved, err := backend.resolveRepositoryFence(ctx, mcpserver.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com",
+		PlatformRepoID: repo.PlatformRepoID,
+		Owner:          "acme", Name: "widget",
+	})
+	require.NoError(t, err)
+
+	// Reassign route ownership between stable-identity validation and the
+	// route-addressed read, the window the fence exists to police.
+	_, accepted, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "replacement-repository",
+		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+	}, time.Now().UTC())
+	require.NoError(t, err)
+	require.True(t, accepted)
+
+	err = backend.confirmRepositoryRoute(ctx, resolved)
 
 	var backendErr *mcpserver.Error
 	require.ErrorAs(t, err, &backendErr)

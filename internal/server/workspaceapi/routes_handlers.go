@@ -251,6 +251,9 @@ func (s *Handler) createPullWorkspaceRouteCore(
 		input.Body.MRNumber,
 	)
 	if err != nil {
+		if problem := repositoryRouteFenceProblem(err); problem != nil {
+			return nil, problem
+		}
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, err.Error(), nil)
 		}
@@ -258,7 +261,7 @@ func (s *Handler) createPullWorkspaceRouteCore(
 			return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, err.Error(), nil)
 		}
 		if errors.Is(err, workspace.ErrWorkspaceDuplicate) {
-			return nil, httpapi.Conflict(httpapi.CodeConflict,
+			return nil, httpapi.Conflict(httpapi.CodeWorkspaceAlreadyExists,
 				"workspace already exists for this MR", nil)
 		}
 		return nil, httpapi.Internal("create workspace: " + err.Error())
@@ -618,6 +621,9 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 		},
 	)
 	if err != nil {
+		if problem := repositoryRouteFenceProblem(err); problem != nil {
+			return nil, problem
+		}
 		msg := err.Error()
 		var recoveryErr *workspace.WorkspaceDirectoryRecoveryError
 		if errors.As(err, &recoveryErr) {
@@ -865,9 +871,24 @@ func (s *Handler) adHocWorkspaceForBranch(
 	}, nil
 }
 
+// repositoryRouteFenceProblem fails workspace creation closed when repository
+// reconciliation reassigned the request's validated route mid-flight. The
+// fence-guarded write layer reports this before any row is persisted for the
+// replacement repository.
+func repositoryRouteFenceProblem(err error) error {
+	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+		return httpapi.NotFound(httpapi.CodeRepoNotFound,
+			"repository identity changed during workspace creation", nil)
+	}
+	return nil
+}
+
 func (s *Handler) adHocWorkspaceCreateError(
 	ctx context.Context, repo *db.Repo, itemKey string, err error,
 ) (*createWorkspaceOutput, error) {
+	if problem := repositoryRouteFenceProblem(err); problem != nil {
+		return nil, problem
+	}
 	msg := err.Error()
 	var branchConflict *workspace.WorkspaceBranchConflictError
 	if errors.As(err, &branchConflict) {

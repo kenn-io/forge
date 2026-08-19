@@ -65,6 +65,7 @@ const (
 	CodeUnsupportedCapability         ProblemCode = "unsupportedCapability"
 	CodeUpstreamError                 ProblemCode = "upstreamError"
 	CodeValidationError               ProblemCode = "validationError"
+	CodeWorkspaceAlreadyExists        ProblemCode = "workspaceAlreadyExists"
 	CodeWorkspaceDeletionInProgress   ProblemCode = "workspaceDeletionInProgress"
 	CodeWorkspaceDirectoryNotReusable ProblemCode = "workspaceDirectoryNotReusable"
 	CodeWorkspaceNotFound             ProblemCode = "workspaceNotFound"
@@ -104,6 +105,7 @@ func allProblemCodes() []ProblemCode {
 		CodeUnsupportedCapability,
 		CodeUpstreamError,
 		CodeValidationError,
+		CodeWorkspaceAlreadyExists,
 		CodeWorkspaceDeletionInProgress,
 		CodeWorkspaceDirectoryNotReusable,
 		CodeWorkspaceNotFound,
@@ -148,7 +150,7 @@ type ProblemError struct {
 
 	// Code is the machine-readable error code drawn from the closed enum
 	// in allProblemCodes(). Frontend logic branches on this value.
-	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,hookFailed,internalError,issueNotFound,mutationOutcomeUnknown,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,resyncRequired,serviceUnavailable,settingsUnavailable,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceDeletionInProgress,workspaceDirectoryNotReusable,workspaceNotFound,workspaceSetupInProgress,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
+	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,hookFailed,internalError,issueNotFound,mutationOutcomeUnknown,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,resyncRequired,serviceUnavailable,settingsUnavailable,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceAlreadyExists,workspaceDeletionInProgress,workspaceDirectoryNotReusable,workspaceNotFound,workspaceSetupInProgress,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
 
 	// Details is a free-form map of machine-readable context for this
 	// occurrence (e.g. {capability: "merge_mutation"} or

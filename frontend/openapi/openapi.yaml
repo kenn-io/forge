@@ -4867,6 +4867,7 @@ components:
             - unsupportedCapability
             - upstreamError
             - validationError
+            - workspaceAlreadyExists
             - workspaceDeletionInProgress
             - workspaceDirectoryNotReusable
             - workspaceNotFound

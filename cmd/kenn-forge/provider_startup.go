@@ -242,18 +242,6 @@ func collectProviderTokenSources(
 	return providerTokenSources(ctx, cfg, set, true, nil)
 }
 
-func collectProviderTokenSourcesWithFallback(
-	ctx context.Context,
-	cfg *config.Config,
-	set *tokenauth.SourceSet,
-) (map[string]tokenauth.Source, map[string]struct{}, error) {
-	degradedProviderHosts := make(map[string]struct{})
-	sources, err := providerTokenSources(
-		ctx, cfg, set, true, degradedProviderHosts,
-	)
-	return sources, degradedProviderHosts, err
-}
-
 func registerProviderTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,

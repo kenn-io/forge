@@ -598,7 +598,7 @@ func run(opts serve.Options) error {
 	archiveService.SetWake(syncer.WakeArchive)
 	syncer.SetArchiveService(archiveService)
 	if err := syncer.SetReposWithContextForDegradedHosts(
-		ctx, repos, false, startup.degradedProviderHosts,
+		ctx, repos, false, degradedHostLookup(startup.degradedProviderHosts),
 	); err != nil {
 		return fmt.Errorf("prepare archive repositories: %w", err)
 	}
@@ -925,6 +925,19 @@ func resolveStartupRepos(
 
 func providerHostKey(platformName, host string) string {
 	return strings.ToLower(platformName) + "\x00" + strings.ToLower(host)
+}
+
+// degradedHostLookup adapts a degraded provider-host set into the membership
+// predicate consumed by internal/github, keeping the key encoding private to
+// this package.
+func degradedHostLookup(hosts map[string]struct{}) func(platformName, host string) bool {
+	if len(hosts) == 0 {
+		return nil
+	}
+	return func(platformName, host string) bool {
+		_, degraded := hosts[providerHostKey(platformName, host)]
+		return degraded
+	}
 }
 
 func splitProviderHostKey(key string) (string, string) {

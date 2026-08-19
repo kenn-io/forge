@@ -4474,28 +4474,28 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 // SetReposWithContextForDegradedHosts defers startup archive reconciliation
 // when a degraded provider-host has an identity-less fallback ref. The first
 // successful background repository resolution reconciles archive state.
+// hostDegraded reports whether a platform/host pair is degraded; nil means no
+// host is degraded.
 func (s *Syncer) SetReposWithContextForDegradedHosts(
 	ctx context.Context,
 	repos []RepoRef,
 	retryAuthentication bool,
-	degradedProviderHosts map[string]struct{},
+	hostDegraded func(platformName, host string) bool,
 ) error {
-	return s.setReposWithContext(
-		ctx, repos, retryAuthentication, degradedProviderHosts,
-	)
+	return s.setReposWithContext(ctx, repos, retryAuthentication, hostDegraded)
 }
 
 func (s *Syncer) setReposWithContext(
 	ctx context.Context,
 	repos []RepoRef,
 	retryAuthentication bool,
-	degradedProviderHosts map[string]struct{},
+	hostDegraded func(platformName, host string) bool,
 ) error {
 	refs := make([]platform.RepoRef, 0, len(repos))
 	for _, repo := range repos {
 		refs = append(refs, platformRepoRef(repo))
 	}
-	deferArchiveSeed := degradedArchiveSeedNeedsProvider(repos, degradedProviderHosts)
+	deferArchiveSeed := degradedArchiveSeedNeedsProvider(repos, hostDegraded)
 	if s.SyncEnabled() && s.archiveLifecycle != nil && !deferArchiveSeed {
 		seeded, err := s.archiveLifecycle.EnsureConfigured(ctx, refs)
 		if err != nil {
@@ -4518,18 +4518,16 @@ func (s *Syncer) setReposWithContext(
 
 func degradedArchiveSeedNeedsProvider(
 	repos []RepoRef,
-	degradedProviderHosts map[string]struct{},
+	hostDegraded func(platformName, host string) bool,
 ) bool {
-	if len(degradedProviderHosts) == 0 {
+	if hostDegraded == nil {
 		return false
 	}
 	for _, repo := range repos {
 		if repo.PlatformRepoID != 0 || strings.TrimSpace(repo.PlatformExternalID) != "" {
 			continue
 		}
-		key := strings.ToLower(string(repoPlatform(repo))) + "\x00" +
-			strings.ToLower(repoHost(repo))
-		if _, degraded := degradedProviderHosts[key]; degraded {
+		if hostDegraded(string(repoPlatform(repo)), repoHost(repo)) {
 			return true
 		}
 	}

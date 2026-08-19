@@ -192,6 +192,7 @@ func TestRunMainShutdownBoundsMCPStoreCleanup(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	release := make(chan struct{})
+	databaseClosed := make(chan struct{})
 	done := make(chan []mainShutdownError, 1)
 	go func() {
 		done <- runMainShutdown(ctx, mainShutdownCallbacks{
@@ -199,20 +200,39 @@ func TestRunMainShutdownBoundsMCPStoreCleanup(t *testing.T) {
 				<-release
 				return nil
 			},
+			CloseDatabase: func() error {
+				close(databaseClosed)
+				return nil
+			},
 		})
 	}()
 
 	select {
 	case errs := <-done:
-		close(release)
-		require.Len(t, errs, 1)
+		// The canceled parent context may also record a canceled database
+		// bound even though the database callback ran; only the MCP entry is
+		// required.
+		require.NotEmpty(t, errs)
 		assert.Equal(t, "close MCP temp store", errs[0].message)
 		require.ErrorIs(t, errs[0].err, context.Canceled)
+		for _, shutdownErr := range errs[1:] {
+			assert.Equal(t, "close database", shutdownErr.message)
+			require.ErrorIs(t, shutdownErr.err, context.Canceled)
+		}
 	case <-time.After(100 * time.Millisecond):
 		close(release)
 		<-done
 		require.Fail(t, "MCP temp-store cleanup ignored the shutdown context")
 	}
+
+	// Later cleanup must still run after the MCP cleanup budget expires:
+	// the database closes while the abandoned MCP cleanup stays blocked.
+	select {
+	case <-databaseClosed:
+	case <-time.After(100 * time.Millisecond):
+		require.Fail(t, "database cleanup did not run after MCP cleanup timed out")
+	}
+	close(release)
 }
 
 func TestRunBoundedShutdownHonorsDeadline(t *testing.T) {

@@ -445,6 +445,8 @@ func run(opts serve.Options) error {
 
 	var mcpHTTPSrv *http.Server
 	var mcpSwitcher *server.SwitchHandler
+	mcpRequestsCtx, cancelMCPRequests := context.WithCancel(context.Background())
+	defer cancelMCPRequests()
 	if mcpLn != nil {
 		bind, parseErr := config.ParseHostKey(mcpListenAddr)
 		if parseErr != nil {
@@ -457,6 +459,9 @@ func run(opts serve.Options) error {
 				Bind: bind, Token: authToken, RequireAuth: cfg.API.RequireAuth,
 			}),
 			ReadHeaderTimeout: 5 * time.Second,
+			// Handlers inherit this context so shutdown can cancel
+			// long-running MCP requests once the grace period expires.
+			BaseContext: func(net.Listener) context.Context { return mcpRequestsCtx },
 		}
 	}
 
@@ -512,7 +517,16 @@ func run(opts serve.Options) error {
 					if mcpHTTPSrv == nil {
 						return nil
 					}
-					return mcpHTTPSrv.Shutdown(shutdownCtx)
+					// Stop admission and wait out the grace period, then
+					// cancel still-running MCP handlers and force-close
+					// their connections so later cleanup never closes
+					// shared services beneath an in-flight handoff.
+					err := mcpHTTPSrv.Shutdown(shutdownCtx)
+					cancelMCPRequests()
+					if closeErr := mcpHTTPSrv.Close(); err == nil {
+						err = closeErr
+					}
+					return err
 				},
 				ShutdownPrimaryHTTP: func(shutdownCtx context.Context) error {
 					if srv != nil {

@@ -10,6 +10,19 @@ Do not flag the absence of request-level authentication, authorization,
 or CSRF protection on API endpoints. This is an intentional architectural
 decision, not a missing feature.
 
+Repository-local skills under `skills/` are maintainer tools, not shipped
+kenn-forge features or hosted services. Review each skill against the trust
+boundary in its `SKILL.md`. A workflow that already executes a user-approved
+checkout does not create a new security boundary when it later renders output
+from that checkout in a loopback-only viewer. Do not demand sanitization or
+sandboxing for content inside that boundary.
+
+Report a skill security finding only when the change expands its declared
+authority, for example by accepting unapproved external input, binding outside
+loopback, publishing a local artifact, or reading or mutating undeclared state.
+Continue to report correctness, data-loss, and unsafe shell behavior on their
+own merits.
+
 The root-level kenn-forge package (forge.go) is the embedding API.
 It does not have a stable API and can be changed arbitrarily until it
 stabilizes. Do not flag breaking changes to its exported surface.

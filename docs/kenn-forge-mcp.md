@@ -30,7 +30,8 @@ http://127.0.0.1:8092/mcp
 The listener is loopback-only. It follows `[api].require_auth`: when API
 authentication is enabled, send the daemon bearer token; when it is disabled,
 the MCP endpoint does not require a token. Runtime discovery publishes the
-resolved MCP listener and URL.
+resolved MCP listener and URL, and `kenn-forge daemon status --json` shows both
+the listener address and the token file path.
 
 Configure your MCP client with the HTTP URL. For clients that accept a JSON
 server catalog, the shape is typically similar to:
@@ -45,6 +46,34 @@ server catalog, the shape is typically similar to:
   }
 }
 ```
+
+With `[api].require_auth` enabled, add the bearer token as an `Authorization`
+header. The daemon mints the token into the `auth_token` file in its data
+directory (mode 0600); read it from there rather than pasting it into shared
+configuration:
+
+```json
+{
+  "mcpServers": {
+    "kenn-forge": {
+      "type": "http",
+      "url": "http://127.0.0.1:8092/mcp",
+      "headers": {
+        "Authorization": "Bearer ${KENN_FORGE_API_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Set the referenced environment variable from the token file, for example
+`export KENN_FORGE_API_TOKEN="$(cat ~/.kenn/forge/auth_token)"`, using the
+`token_path` reported by `kenn-forge daemon status --json`.
+
+Earlier previews exposed a standalone `kenn-forge mcp` command with a stdio
+transport. That command and transport are removed without a compatibility
+shim: MCP is served only by the running daemon over the HTTP endpoint above,
+so update any client configuration that launched the old command.
 
 ## Review workflow
 

@@ -48,6 +48,7 @@ type githubAppTokenCache struct {
 	retryAt     time.Time
 	mintDone    chan struct{}
 	invalidated bool
+	abandoned   bool
 }
 
 // githubAppTokenStore is shared by every managed source in one SourceSet.
@@ -123,7 +124,7 @@ func (s *githubAppTokenStore) resolve(
 				return "", time.Time{}, ctx.Err()
 			case <-done:
 				s.mu.Lock()
-				if cached.invalidated {
+				if cached.invalidated || cached.abandoned {
 					s.mu.Unlock()
 					continue
 				}
@@ -140,6 +141,20 @@ func (s *githubAppTokenStore) resolve(
 		token, exp, err := minter(ctx, candidate)
 		now = s.now()
 		s.mu.Lock()
+		if mintAbortedByCaller(ctx, err) {
+			// The winning caller's own context expired mid-mint. That
+			// failure says nothing about GitHub, so it is neither cached
+			// for the retry window nor handed to waiters: they loop and
+			// re-mint with their own live contexts.
+			cached.abandoned = true
+			close(cached.mintDone)
+			cached.mintDone = nil
+			if s.tokens[key] == cached {
+				delete(s.tokens, key)
+			}
+			s.mu.Unlock()
+			return "", time.Time{}, err
+		}
 		cached.token = token
 		cached.exp = exp
 		cached.err = err
@@ -153,6 +168,16 @@ func (s *githubAppTokenStore) resolve(
 		s.mu.Unlock()
 		return token, exp, err
 	}
+}
+
+// mintAbortedByCaller reports whether a failed mint was caused by the minting
+// caller's context rather than by the upstream API.
+func mintAbortedByCaller(ctx context.Context, err error) bool {
+	if err == nil || ctx.Err() == nil {
+		return false
+	}
+	return errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded)
 }
 
 func (s *githubAppTokenStore) invalidate(candidates []Candidate) {

@@ -244,6 +244,75 @@ func TestGitHubAppFailedMintIsSingleFlight(t *testing.T) {
 	assert.Equal(t, int64(1), mints.Load())
 }
 
+func TestGitHubAppMintCancellationIsNotPublishedToWaiters(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var mints atomic.Int64
+	winnerEntered := make(chan struct{})
+	src := NewManagedSource(githubAppDescriptor(42), Options{
+		GitHubApp: func(ctx context.Context, _ Candidate) (string, time.Time, error) {
+			if mints.Add(1) == 1 {
+				close(winnerEntered)
+				<-ctx.Done()
+				return "", time.Time{}, ctx.Err()
+			}
+			return "ghs_recovered", time.Now().Add(time.Hour), nil
+		},
+	})
+
+	winnerCtx, cancel := context.WithCancel(context.Background())
+	winnerErr := make(chan error, 1)
+	go func() {
+		_, err := src.Token(winnerCtx)
+		winnerErr <- err
+	}()
+	<-winnerEntered
+	type result struct {
+		token string
+		err   error
+	}
+	waiterResult := make(chan result, 1)
+	go func() {
+		token, err := src.Token(context.Background())
+		waiterResult <- result{token: token, err: err}
+	}()
+	time.Sleep(50 * time.Millisecond) // let the waiter park on the in-flight mint
+	cancel()
+
+	require.ErrorIs(<-winnerErr, context.Canceled)
+	waiter := <-waiterResult
+	require.NoError(waiter.err)
+	assert.Equal("ghs_recovered", waiter.token)
+	assert.Equal(int64(2), mints.Load(),
+		"waiter must re-mint with its own context after the winner cancels")
+}
+
+func TestGitHubAppMintCallerDeadlineFailureIsNotCached(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var mints atomic.Int64
+	src := NewManagedSource(githubAppDescriptor(42), Options{
+		GitHubApp: func(ctx context.Context, _ Candidate) (string, time.Time, error) {
+			if mints.Add(1) == 1 {
+				<-ctx.Done()
+				return "", time.Time{}, ctx.Err()
+			}
+			return "ghs_recovered", time.Now().Add(time.Hour), nil
+		},
+	})
+
+	deadlineCtx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	_, err := src.Token(deadlineCtx)
+	require.ErrorIs(err, context.DeadlineExceeded)
+
+	token, err := src.Token(context.Background())
+	require.NoError(err)
+	assert.Equal("ghs_recovered", token)
+	assert.Equal(int64(2), mints.Load(),
+		"caller-caused deadline failure must not enter the retry window")
+}
+
 type retryDeadlineTestError struct {
 	at time.Time
 }

@@ -127,7 +127,9 @@ hit the same upstream resource. Prefer dedup over retry — it removes
 the cause, retry just absorbs the effect.
 
 GitHub App token mints share one in-flight result per canonical credential,
-cache headerless failures for five seconds, and cap server-directed retry deadlines at one hour
+cache headerless failures for five seconds, and cap server-directed retry deadlines at one hour;
+failures caused by the minting caller's own context are never cached or handed to
+waiters, who re-mint with their own live contexts
 (`internal/tokenauth/source.go::githubAppTokenStore.resolve`).
 
 Roborev configured-repository discovery retains successful inventory and

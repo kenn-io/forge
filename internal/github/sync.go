@@ -4468,11 +4468,35 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // configured repository set to sync workers. Credential reloads may also make
 // authentication-blocked work eligible without resetting archive progress.
 func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
+	return s.setReposWithContext(ctx, repos, retryAuthentication, nil)
+}
+
+// SetReposWithContextForDegradedHosts defers startup archive reconciliation
+// when a degraded provider-host has an identity-less fallback ref. The first
+// successful background repository resolution reconciles archive state.
+func (s *Syncer) SetReposWithContextForDegradedHosts(
+	ctx context.Context,
+	repos []RepoRef,
+	retryAuthentication bool,
+	degradedProviderHosts map[string]struct{},
+) error {
+	return s.setReposWithContext(
+		ctx, repos, retryAuthentication, degradedProviderHosts,
+	)
+}
+
+func (s *Syncer) setReposWithContext(
+	ctx context.Context,
+	repos []RepoRef,
+	retryAuthentication bool,
+	degradedProviderHosts map[string]struct{},
+) error {
 	refs := make([]platform.RepoRef, 0, len(repos))
 	for _, repo := range repos {
 		refs = append(refs, platformRepoRef(repo))
 	}
-	if s.SyncEnabled() && s.archiveLifecycle != nil {
+	deferArchiveSeed := degradedArchiveSeedNeedsProvider(repos, degradedProviderHosts)
+	if s.SyncEnabled() && s.archiveLifecycle != nil && !deferArchiveSeed {
 		seeded, err := s.archiveLifecycle.EnsureConfigured(ctx, refs)
 		if err != nil {
 			return fmt.Errorf("seed archive discovery: %w", err)
@@ -4490,6 +4514,26 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 	s.reposMu.Unlock()
 	s.WakeArchive()
 	return nil
+}
+
+func degradedArchiveSeedNeedsProvider(
+	repos []RepoRef,
+	degradedProviderHosts map[string]struct{},
+) bool {
+	if len(degradedProviderHosts) == 0 {
+		return false
+	}
+	for _, repo := range repos {
+		if repo.PlatformRepoID != 0 || strings.TrimSpace(repo.PlatformExternalID) != "" {
+			continue
+		}
+		key := strings.ToLower(string(repoPlatform(repo))) + "\x00" +
+			strings.ToLower(repoHost(repo))
+		if _, degraded := degradedProviderHosts[key]; degraded {
+			return true
+		}
+	}
+	return false
 }
 
 // Start runs an immediate sync then launches a background ticker.

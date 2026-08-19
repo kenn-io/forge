@@ -597,7 +597,9 @@ func run(opts serve.Options) error {
 	archiveService.SetMaintenanceInterval(cfg.SyncDuration())
 	archiveService.SetWake(syncer.WakeArchive)
 	syncer.SetArchiveService(archiveService)
-	if err := syncer.SetReposWithContext(ctx, repos, false); err != nil {
+	if err := syncer.SetReposWithContextForDegradedHosts(
+		ctx, repos, false, startup.degradedProviderHosts,
+	); err != nil {
 		return fmt.Errorf("prepare archive repositories: %w", err)
 	}
 

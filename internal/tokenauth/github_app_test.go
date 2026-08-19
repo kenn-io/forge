@@ -259,8 +259,9 @@ func TestGitHubAppFailedMintCachesBoundedRetryDeadline(t *testing.T) {
 	tooLate := now.Add(24 * time.Hour)
 	assert.Equal(now.Add(githubAppMintRetryMax),
 		githubAppMintRetryDeadline(retryDeadlineTestError{at: tooLate}, now))
-	assert.True(
-		githubAppMintRetryDeadline(retryDeadlineTestError{at: now}, now).IsZero())
+	assert.Equal(now.Add(githubAppMintRetryDefault),
+		githubAppMintRetryDeadline(retryDeadlineTestError{at: now}, now))
+	assert.True(githubAppMintRetryDeadline(context.Canceled, now).IsZero())
 
 	var mints atomic.Int64
 	store := newGitHubAppTokenStore()
@@ -282,6 +283,38 @@ func TestGitHubAppFailedMintCachesBoundedRetryDeadline(t *testing.T) {
 
 	now = now.Add(time.Minute)
 	token, err := src.Token(context.Background())
+	require.NoError(err)
+	assert.Equal("ghs_recovered", token)
+	assert.Equal(int64(2), mints.Load())
+}
+
+func TestGitHubAppHeaderlessMintFailureCooldownIsSharedAcrossRoutes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC)
+	var mints atomic.Int64
+	set := NewSourceSet(Options{
+		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+			if mints.Add(1) == 1 {
+				return "", time.Time{}, errors.New("upstream unavailable")
+			}
+			return "ghs_recovered", now.Add(time.Hour), nil
+		},
+	})
+	set.appTokens.now = func() time.Time { return now }
+	first := githubAppDescriptor(42)
+	first.Key.Scope = "repo:kenn-io/one"
+	second := githubAppDescriptor(42)
+	second.Key.Scope = "repo:kenn-io/two"
+
+	_, err := set.Upsert(first).Token(context.Background())
+	require.ErrorContains(err, "upstream unavailable")
+	_, err = set.Upsert(second).Token(context.Background())
+	require.ErrorContains(err, "upstream unavailable")
+	assert.Equal(int64(1), mints.Load(), "shared routes must retain the failure cooldown")
+
+	now = now.Add(githubAppMintRetryDefault)
+	token, err := set.Upsert(second).Token(context.Background())
 	require.NoError(err)
 	assert.Equal("ghs_recovered", token)
 	assert.Equal(int64(2), mints.Load())

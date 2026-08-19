@@ -66,20 +66,26 @@ func newGitHubAppTokenStore() *githubAppTokenStore {
 	}
 }
 
-const githubAppMintRetryMax = time.Hour
+const (
+	githubAppMintRetryDefault = 5 * time.Second
+	githubAppMintRetryMax     = time.Hour
+)
 
 type retryDeadlineError interface {
 	RetryDeadline(time.Time) time.Time
 }
 
 func githubAppMintRetryDeadline(err error, now time.Time) time.Time {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return time.Time{}
+	}
 	var retryErr retryDeadlineError
 	if !errors.As(err, &retryErr) {
-		return time.Time{}
+		return now.Add(githubAppMintRetryDefault)
 	}
 	retryAt := retryErr.RetryDeadline(now)
 	if !retryAt.After(now) {
-		return time.Time{}
+		return now.Add(githubAppMintRetryDefault)
 	}
 	maxRetryAt := now.Add(githubAppMintRetryMax)
 	if retryAt.After(maxRetryAt) {

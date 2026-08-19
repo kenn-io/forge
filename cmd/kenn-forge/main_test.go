@@ -20,6 +20,7 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -328,6 +329,59 @@ func TestResolveStartupReposSkipsNetworkForDegradedProviderHost(t *testing.T) {
 		}}, repos)
 	case <-time.After(time.Second):
 		require.Fail("degraded startup blocked on repository resolution")
+	}
+}
+
+func TestDegradedStartupSkipsArchiveLookupWithEmptyDatabase(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	reader := blockingStartupRepositoryReader{
+		mainTestRepositoryReader: mainTestRepositoryReader{
+			kind: platform.KindGitHub,
+			host: "github.com",
+		},
+		started: started,
+		release: release,
+	}
+	database := dbtest.Open(t)
+	registry := mustProviderRegistry(t, nil, reader)
+	cfg := &config.Config{
+		Repos: []config.Repo{{Owner: "acme", Name: "widgets"}},
+	}
+	degradedHosts := map[string]struct{}{
+		providerHostKey(string(platform.KindGitHub), "github.com"): {},
+	}
+	repos := resolveStartupRepos(
+		t.Context(), cfg, registry, database, nil, degradedHosts,
+	)
+	require.Len(repos, 1)
+	assert.Empty(repos[0].PlatformExternalID)
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, nil, time.Hour, nil, nil,
+	)
+	archiveService, err := archive.NewService(
+		database, registry, syncer, syncer, nil, nil,
+	)
+	require.NoError(err)
+	syncer.SetArchiveService(archiveService)
+	prepared := make(chan error, 1)
+	go func() {
+		prepared <- syncer.SetReposWithContextForDegradedHosts(
+			t.Context(), repos, false, degradedHosts,
+		)
+	}()
+
+	select {
+	case <-started:
+		require.Fail("degraded archive seeding attempted a provider repository read")
+	case err := <-prepared:
+		require.NoError(err)
+	case <-time.After(time.Second):
+		require.Fail("degraded archive seeding blocked startup")
 	}
 }
 

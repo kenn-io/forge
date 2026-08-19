@@ -4,31 +4,37 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { StartupSnapshot } from "../../app/startup-workflow.js";
 
-const { mockGetTerminalSettings, mockSetTerminalSettings, mockTerminalStore, mockUpdateSettings, runtime } = vi.hoisted(
-  () => {
-    const defaultTerminal = {
-      font_family: "",
-      font_size: 14,
-      scrollback: 1000,
-      line_height: 1,
-      letter_spacing: 0,
-      cursor_blink: true,
-      font_ligatures: false,
-      hide_tmux_status: false,
-      retained_sessions: 10,
-    };
-    const store = { terminal: { ...defaultTerminal } };
-    return {
-      mockGetTerminalSettings: vi.fn(() => store.terminal),
-      mockSetTerminalSettings: vi.fn((terminal: typeof defaultTerminal) => {
-        store.terminal = terminal;
-      }),
-      mockTerminalStore: { defaultTerminal, store },
-      mockUpdateSettings: vi.fn(),
-      runtime: { current: undefined as unknown as OwnedAppRuntime },
-    };
-  },
-);
+const {
+  mockEmbedded,
+  mockGetTerminalSettings,
+  mockSetTerminalSettings,
+  mockTerminalStore,
+  mockUpdateSettings,
+  runtime,
+} = vi.hoisted(() => {
+  const defaultTerminal = {
+    font_family: "",
+    font_size: 14,
+    scrollback: 1000,
+    line_height: 1,
+    letter_spacing: 0,
+    cursor_blink: true,
+    font_ligatures: false,
+    hide_tmux_status: false,
+    retained_sessions: 10,
+  };
+  const store = { terminal: { ...defaultTerminal } };
+  return {
+    mockEmbedded: { value: false },
+    mockGetTerminalSettings: vi.fn(() => store.terminal),
+    mockSetTerminalSettings: vi.fn((terminal: typeof defaultTerminal) => {
+      store.terminal = terminal;
+    }),
+    mockTerminalStore: { defaultTerminal, store },
+    mockUpdateSettings: vi.fn(),
+    runtime: { current: undefined as unknown as OwnedAppRuntime },
+  };
+});
 
 vi.mock("../../context.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../context.js")>();
@@ -59,7 +65,7 @@ vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../stores/embed-config.svelte.js")>();
   return {
     ...actual,
-    isEmbedded: () => false,
+    isEmbedded: () => mockEmbedded.value,
   };
 });
 
@@ -123,6 +129,7 @@ describe("TerminalSettings", () => {
       ...mockTerminalStore.defaultTerminal,
     };
     mockUpdateSettings.mockReset();
+    mockEmbedded.value = false;
   });
 
   beforeEach(() => {
@@ -678,7 +685,7 @@ describe("TerminalSettings", () => {
     });
   });
 
-  it("selects a common monospace font from the chooser", async () => {
+  it("filters fonts in the chooser", async () => {
     render(TerminalSettings, {
       props: {
         terminal: {
@@ -697,9 +704,85 @@ describe("TerminalSettings", () => {
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Choose" }));
-    await fireEvent.click(screen.getByRole("button", { name: /Fira Code/ }));
 
-    expect((screen.getByLabelText("Monospace font family") as HTMLInputElement).value).toBe('"Fira Code", monospace');
+    const filter = screen.getByRole("searchbox", { name: "Filter fonts" });
+    await fireEvent.input(filter, {
+      target: { value: "fira" },
+    });
+
+    expect(screen.getByRole("button", { name: /Fira Code/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /JetBrains Mono/ })).toBeNull();
+
+    await fireEvent.keyDown(filter, { key: "Escape" });
+
+    expect((filter as HTMLInputElement).value).toBe("");
+    expect(screen.getByRole("dialog", { name: "Choose monospace font" })).toBeTruthy();
+  });
+
+  it("persists a font selected from the chooser", async () => {
+    const selectedFontFamily = '"Fira Code", monospace';
+    mockUpdateSettings.mockResolvedValue({
+      terminal: {
+        ...mockTerminalStore.defaultTerminal,
+        font_family: selectedFontFamily,
+      },
+    });
+    const onUpdate = vi.fn();
+
+    render(TerminalSettings, {
+      props: {
+        terminal: { ...mockTerminalStore.defaultTerminal },
+        onUpdate,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Choose" }));
+    await fireEvent.click(screen.getByRole("button", { name: /Fira Code/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith({
+        terminal: {
+          ...mockTerminalStore.defaultTerminal,
+          font_family: selectedFontFamily,
+        },
+      });
+      expect(onUpdate).toHaveBeenCalledWith({
+        ...mockTerminalStore.defaultTerminal,
+        font_family: selectedFontFamily,
+      });
+    });
+  });
+
+  it("persists a selected font from an embedded terminal", async () => {
+    mockEmbedded.value = true;
+    const selectedFontFamily = '"Fira Code", monospace';
+    mockUpdateSettings.mockResolvedValue({
+      terminal: {
+        ...mockTerminalStore.defaultTerminal,
+        font_family: selectedFontFamily,
+      },
+    });
+
+    render(TerminalSettings, {
+      props: {
+        terminal: { ...mockTerminalStore.defaultTerminal },
+        onUpdate: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Choose" }));
+    await fireEvent.click(screen.getByRole("button", { name: /Fira Code/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith({
+        terminal: {
+          ...mockTerminalStore.defaultTerminal,
+          font_family: selectedFontFamily,
+        },
+      });
+    });
   });
 
   it("replaces the preferred font while preserving fallbacks", async () => {

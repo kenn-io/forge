@@ -14,6 +14,10 @@ the single requested workspace surface. It does not run standalone startup work:
 settings hydration, sync polling, pull/issue preloads, event-stream connection,
 container/sidebar setup, or global keyboard shortcuts.
 
+- Workspace embeds hydrate terminal settings before mount and persist terminal-option
+  saves through the daemon settings API; embed mode must not leave an active Save control
+  as a silent no-op (`frontend/src/lib/components/settings/TerminalSettings.svelte::save`).
+
 Hosts communicate with embeds through the `window.__kenn_forge_*` bridge on that
 isolated browsing context. Because the bridge and browser history are
 document-global, callers that need more than one embed at a time should allocate

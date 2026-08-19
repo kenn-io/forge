@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Checkbox } from "@kenn-io/kit-ui";
+  import { Checkbox, SearchInput } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import Modal from "../shared/Modal.svelte";
   import { onDestroy, untrack } from "svelte";
@@ -15,7 +15,6 @@
     supportsLocalFonts,
     type LocalFontData as FontData,
   } from "../../browser/local-fonts.js";
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import {
     previewTerminalSettings,
     restoreTerminalSettingsPreview,
@@ -42,7 +41,6 @@
   }: Props = $props();
 
   const { settings: settingsStore } = getStores();
-  const embedded = isEmbedded();
   const runtime = getAppRuntime();
   let localFontExecution: AppExecution<void, unknown> | null = null;
 
@@ -86,6 +84,7 @@
     DEFAULT_TERMINAL_SETTINGS.retained_sessions,
   );
   let fontDialogOpen = $state(false);
+  let fontFilterDraft = $state("");
   let localFonts = $state<FontData[] | null>(null);
   let fontLoadError = $state<string | null>(null);
   let loadingFonts = $state(false);
@@ -201,6 +200,12 @@
         DEFAULT_TERMINAL_SETTINGS.retained_sessions
   );
   const canSave = $derived(!saving && isDirty);
+  const normalizedFontFilter = $derived(fontFilterDraft.trim().toLowerCase());
+  const filteredCommonMonospaceFonts = $derived(
+    normalizedFontFilter === ""
+      ? commonMonospaceFonts
+      : commonMonospaceFonts.filter((family) => family.toLowerCase().includes(normalizedFontFilter)),
+  );
   const localMonospaceFonts = $derived.by(() => {
     if (!localFonts) return [];
     const fonts: FontData[] = [];
@@ -213,6 +218,15 @@
       left.family.localeCompare(right.family),
     );
   });
+  const filteredLocalMonospaceFonts = $derived(
+    normalizedFontFilter === ""
+      ? localMonospaceFonts
+      : localMonospaceFonts.filter((font) =>
+          `${font.family} ${font.fullName} ${font.postscriptName} ${font.style}`
+            .toLowerCase()
+            .includes(normalizedFontFilter),
+        ),
+  );
   const supportsLocalFontPicker = $derived(
     supportsLocalFonts(),
   );
@@ -290,6 +304,7 @@
   }
 
   function openFontDialog(): void {
+    fontFilterDraft = "";
     fontDialogOpen = true;
     if (localFonts === null) {
       loadLocalFonts();
@@ -298,17 +313,22 @@
 
   function selectFontFamily(family: string): void {
     fontFamilyDraft = replacePreferredFontFamily(fontFamilyDraft, family);
+    closeFontDialog();
+  }
+
+  function closeFontDialog(): void {
+    fontFilterDraft = "";
     fontDialogOpen = false;
   }
 
   function closeFontDialogForEscape(event: KeyboardEvent): void {
     if (!fontDialogOpen || event.key !== "Escape" || event.defaultPrevented) return;
+    if (fontFilterDraft !== "" && event.target instanceof HTMLInputElement && event.target.type === "search") return;
     event.preventDefault();
-    fontDialogOpen = false;
+    closeFontDialog();
   }
 
   function save(): void {
-    if (embedded) return;
     if (!isDirty) return;
 
     saving = true;
@@ -506,24 +526,36 @@
   title="Choose monospace font"
   width={560}
   showClose
-  onClose={() => (fontDialogOpen = false)}
+  onClose={closeFontDialog}
 >
   <div class="font-dialog-content">
+      <SearchInput
+        bind:value={fontFilterDraft}
+        placeholder="Filter fonts..."
+        ariaLabel="Filter fonts"
+        size="sm"
+        block
+        autofocus
+      />
       <div class="font-section">
         <div class="font-section-title">Common fonts</div>
-        <div class="font-list">
-          {#each commonMonospaceFonts as family (family)}
-            <button
-              class="font-option"
-              type="button"
-              style:font-family={quoteFontFamily(family)}
-              onclick={() => selectFontFamily(family)}
-            >
-              <span>{family}</span>
-              <code>abc 123</code>
-            </button>
-          {/each}
-        </div>
+        {#if filteredCommonMonospaceFonts.length > 0}
+          <div class="font-list">
+            {#each filteredCommonMonospaceFonts as family (family)}
+              <button
+                class="font-option"
+                type="button"
+                style:font-family={quoteFontFamily(family)}
+                onclick={() => selectFontFamily(family)}
+              >
+                <span>{family}</span>
+                <code>abc 123</code>
+              </button>
+            {/each}
+          </div>
+        {:else}
+          <p class="font-state">No common fonts match.</p>
+        {/if}
       </div>
 
       <div class="font-section">
@@ -541,9 +573,9 @@
               Try again
             </button>
           {/if}
-        {:else if localMonospaceFonts.length > 0}
+        {:else if filteredLocalMonospaceFonts.length > 0}
           <div class="font-list local">
-            {#each localMonospaceFonts as font (font.family)}
+            {#each filteredLocalMonospaceFonts as font (font.family)}
               <button
                 class="font-option"
                 type="button"
@@ -555,11 +587,13 @@
               </button>
             {/each}
           </div>
-        {:else}
+        {:else if localMonospaceFonts.length === 0}
           <p class="font-state">
             No local monospace fonts were found. You can still type a font
             family manually.
           </p>
+        {:else}
+          <p class="font-state">No local fonts match.</p>
         {/if}
       </div>
   </div>

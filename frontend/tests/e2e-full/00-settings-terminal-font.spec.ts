@@ -97,8 +97,11 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
   await letterSpacing.fill("1");
   await retainedSessions.fill("7");
   await cursorBlink.uncheck();
-  await input.click();
-  await input.pressSequentially('"Iosevka Term", monospace');
+  await page.getByRole("button", { name: "Choose" }).click();
+  const fontDialog = page.getByRole("dialog", { name: "Choose monospace font" });
+  await fontDialog.getByRole("searchbox", { name: "Filter fonts" }).fill("Iosevka");
+  await fontDialog.getByRole("button", { name: /Iosevka Term/ }).click();
+  await expect(input).toHaveValue('"Iosevka Term", monospace');
   await expect(saveButton).toBeEnabled();
   const saveResponsePromise = page.waitForResponse(
     (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",

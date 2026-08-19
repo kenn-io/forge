@@ -2283,6 +2283,15 @@ func TestManagerSubmitInitialMessageFramesSingleAndMultilineInput(t *testing.T) 
 	assert.Equal("\x1b[200~first\nsecond\x1b[201~\r", string(pty.written()))
 }
 
+func TestManagerSubmitInitialMessageClassifiesMissingSessionAsNotWritten(t *testing.T) {
+	mgr := NewManager(Options{})
+
+	err := mgr.SubmitInitialMessage("ws-1", "missing-agent", "review this")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInitialMessageNotWritten)
+}
+
 func TestManagerSubmitInitialMessageRejectsMultilineWithoutBracketedPaste(t *testing.T) {
 	require := require.New(t)
 	pty := &fakeRuntimePTY{output: make(chan []byte), done: make(chan struct{})}

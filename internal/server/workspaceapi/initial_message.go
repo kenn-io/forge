@@ -182,19 +182,36 @@ func (s *Handler) SubmitInitialMessageService(
 		return existingInitialMessageAttemptResult(attempt, proposed)
 	}
 	if err := s.runtime.SubmitInitialMessage(req.WorkspaceID, req.RuntimeSessionKey, message); err != nil {
-		if errors.Is(err, localruntime.ErrBracketedPasteInactive) {
-			s.releaseInitialMessageAttempt(req.WorkspaceID, req.RuntimeSessionKey, proposed)
-			return InitialMessageResult{}, httpapi.Validation("body.message", err.Error())
-		}
-		uncertain := s.finishInitialMessageAttempt(
-			req.WorkspaceID, req.RuntimeSessionKey, initialMessageUncertain,
+		return s.handleInitialMessageSubmitError(
+			req.WorkspaceID, req.RuntimeSessionKey, proposed, err,
 		)
-		return initialMessageAttemptResult(uncertain), httpapi.Internal("submit initial message failed")
 	}
 	delivered := s.finishInitialMessageAttempt(
 		req.WorkspaceID, req.RuntimeSessionKey, initialMessageDelivered,
 	)
 	return initialMessageAttemptResult(delivered), nil
+}
+
+func (s *Handler) handleInitialMessageSubmitError(
+	workspaceID string,
+	runtimeSessionKey string,
+	proposed initialMessageAttempt,
+	err error,
+) (InitialMessageResult, error) {
+	if errors.Is(err, localruntime.ErrBracketedPasteInactive) {
+		s.releaseInitialMessageAttempt(workspaceID, runtimeSessionKey, proposed)
+		return InitialMessageResult{}, httpapi.Validation("body.message", err.Error())
+	}
+	if errors.Is(err, localruntime.ErrInitialMessageNotWritten) {
+		s.releaseInitialMessageAttempt(workspaceID, runtimeSessionKey, proposed)
+		return InitialMessageResult{}, httpapi.Conflict(
+			httpapi.CodeConflict, err.Error(), nil,
+		)
+	}
+	uncertain := s.finishInitialMessageAttempt(
+		workspaceID, runtimeSessionKey, initialMessageUncertain,
+	)
+	return initialMessageAttemptResult(uncertain), httpapi.Internal("submit initial message failed")
 }
 
 func existingInitialMessageAttemptResult(

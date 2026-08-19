@@ -43,8 +43,11 @@ var (
 	ErrSessionUnavailable = errors.New(
 		"runtime session is temporarily unavailable",
 	)
-	ErrBracketedPasteInactive = errors.New("bracketed paste mode is not active")
-	errWorkspaceStopping      = errors.New(
+	ErrBracketedPasteInactive   = errors.New("bracketed paste mode is not active")
+	ErrInitialMessageNotWritten = errors.New(
+		"initial message was not written",
+	)
+	errWorkspaceStopping = errors.New(
 		"workspace is being stopped",
 	)
 )
@@ -1313,11 +1316,11 @@ func (m *Manager) SubmitInitialMessage(
 ) error {
 	attachment, err := m.AttachSession(workspaceID, sessionKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
 	}
 	defer attachment.Close()
 	if attachment.Info().Kind != LaunchTargetAgent {
-		return errors.New("runtime session is not an agent")
+		return fmt.Errorf("%w: runtime session is not an agent", ErrInitialMessageNotWritten)
 	}
 	return attachment.submitInitialMessage(message)
 }

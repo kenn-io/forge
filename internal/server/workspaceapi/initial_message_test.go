@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -60,6 +61,31 @@ func TestNormalizeInitialAgentMessage(t *testing.T) {
 			assert.Equal(tc.wantBytes, messageBytes)
 		})
 	}
+}
+
+func TestInitialMessageSubmitFailureReleasesPreWriteAttempt(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	handler := New(Deps{Now: func() time.Time {
+		return time.Date(2026, 8, 18, 17, 0, 0, 0, time.UTC)
+	}})
+	proposed := initialMessageAttempt{
+		Agent: "codex", SessionID: "coding-session", Message: "review this",
+	}
+	_, reserved := handler.reserveInitialMessageAttempt("ws-1", "runtime-1", proposed)
+	require.True(reserved)
+
+	result, err := handler.handleInitialMessageSubmitError(
+		"ws-1", "runtime-1", proposed, localruntime.ErrInitialMessageNotWritten,
+	)
+
+	require.Error(err)
+	assert.Empty(result.State)
+	var problem *httpapi.ProblemError
+	require.ErrorAs(err, &problem)
+	assert.Equal(http.StatusConflict, problem.Status)
+	_, found := handler.initialMessageAttempt("ws-1", "runtime-1")
+	assert.False(found)
 }
 
 func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t *testing.T) {

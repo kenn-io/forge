@@ -35,6 +35,7 @@ Returning users can jump to a task:
 - [Triage an issue](workflows/issue-triager.md)
 - [Review a pull request](workflows/code-reviewer.md)
 - [Run daily maintainer workflows](workflows.md)
+- [Connect Roborev, Kata, or Docs](integrations.md)
 - [Change repositories, tokens, or modes](configuration.md)
 - [Fix startup, authentication, or sync problems](troubleshooting.md)
 
@@ -48,8 +49,10 @@ and workspace creation. Unsupported provider actions remain visible but
 unavailable.
 
 **Workspaces** opens local shells and configured agents against repository
-worktrees. **Repos** browses configured source. Optional **Kata** and **Docs**
-modes connect external task daemons and local Markdown folders.
+worktrees. **Repos** browses configured source. **Reviews** connects to a
+running Roborev daemon. **Docs** works with registered Markdown folders. Kata
+issues appear where they are linked to a pull request, provider issue, or
+workspace rather than in a separate mode.
 
 ## Advanced use
 

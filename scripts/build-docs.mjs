@@ -14,6 +14,7 @@ const publishedFiles = new Set([
   "configuration.md",
   "federated-fleet.md",
   "index.md",
+  "integrations.md",
   "quickstart.md",
   path.join("overrides", "main.html"),
   path.join("stylesheets", "extra.css"),

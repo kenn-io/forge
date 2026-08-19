@@ -143,18 +143,27 @@ Unix-like kenn-forge host for that step.
 
 Press `?` to see shortcuts for the current view.
 
-## Enable Docs
+## Connect optional integrations
 
-Docs is hidden by default:
+Docs is hidden until you register a local Markdown folder:
 
 ```toml
 [modes]
 docs = true
 ```
 
-Kata issues appear inline when linked to provider items or workspaces, and are
-available as a source in the New Workspace dialog. Docs uses folders registered
-with `kenn-forge docs add-folder`.
+```sh
+kenn-forge docs add-folder --name Notes ~/notes
+```
+
+The **Reviews** page connects to a Roborev daemon. The default endpoint is
+`http://127.0.0.1:7373`. Kata has no top-level mode. Once kenn-forge finds a
+Kata daemon in `$KATA_HOME/config.toml` or `~/.kata/config.toml`, you can link
+Kata issues from pull requests, provider issues, and workspaces. You can also
+choose a Kata issue in the **New workspace** dialog.
+
+See [Integrations](integrations.md) for Roborev endpoints, Kata repository
+mappings, and Docs folder bindings.
 
 Continue with [daily workflows](workflows.md) or the
 [configuration reference](configuration.md).

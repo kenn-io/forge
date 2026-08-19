@@ -97,10 +97,21 @@ minutes without another event, then fall back to tmux activity.
 
 Link a Kata issue from a pull request, provider issue, or workspace to view its
 read-only detail inline. Use **New workspace → Kata issue** to search a selected
-daemon and create or reopen a mapped workspace. Open the task in Kata for its
-full workflow.
+daemon and create or reopen a mapped workspace. If kenn-forge cannot match the
+Kata project to a configured repository, open **Settings → Kata mappings** and
+add an override. Open the task in Kata when you need to edit it.
 
-Kata remains the source of truth for task data; Forge owns only its associations.
+Kata remains the source of truth for task data. kenn-forge owns only the links
+to pull requests, issues, and workspaces. There is no separate Kata mode.
+
+## Review Roborev jobs
+
+Start the Roborev daemon, then open **Reviews**. Filter the queue by repository,
+branch, status, or Git ref. Select a job to read the review, inspect its log and
+prompt, add a comment, or use the actions available for its current state.
+
+See [Integrations](integrations.md#review-roborev-jobs) for endpoint setup and a
+walkthrough of the Reviews page.
 
 ## Browse and edit Docs
 

@@ -35,6 +35,9 @@ screenshots, or the Zensical site.
 - Static Codex terminal overlays reproduce a one-off real Codex TUI capture,
   including its composer and model/path status; sanitize local paths to the
   public synthetic repository. (`docs/screenshots/docs-screenshots.spec.ts::embedSyntheticCodexTranscript`)
+- Roborev workflow captures use a synthetic loopback daemon through the
+  isolated server's real proxy, never an installed daemon or database.
+  (`docs/screenshots/docs-screenshots.spec.ts::startSyntheticRoborevDaemon`)
 - Vercel deployments build the complete site from the repository root. The
   remote build must compile `cmd/e2e-server` only after the frontend has been
   copied into `internal/web/dist`, then pass the prebuilt binary through

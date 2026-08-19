@@ -17,6 +17,7 @@ nav = [
     {"I am an issue triager" = "workflows/issue-triager.md"},
     {"I am a code reviewer" = "workflows/code-reviewer.md"},
   ]},
+  {"Integrations" = "integrations.md"},
   {"Configuration" = "configuration.md"},
   {"Commands" = "commands.md"},
   {"Advanced / experimental" = [

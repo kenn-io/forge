@@ -32,6 +32,8 @@ The generated files are:
 - `first-run-dark.svg`
 - `code-reviewer-agent-launch-light.svg`
 - `code-reviewer-agent-launch-dark.svg`
+- `roborev-reviews-light.svg`
+- `roborev-reviews-dark.svg`
 - `workspace-codex-session-light.svg`
 - `workspace-codex-session-dark.svg`
 
@@ -45,6 +47,10 @@ credentials.
 The maintainer overview opens the seeded pull request from Activity, hosts its
 ready workspace in the detail layout, and selects the running Codex session
 before export.
+
+The Roborev capture starts a synthetic daemon on a free loopback port, then
+opens its seeded job through kenn-forge's real status and proxy routes. It does
+not contact an installed Roborev daemon or read a Roborev database.
 
 The visible Codex pane contains a short static transcript derived from a
 one-time real Codex run in a synthetic widget-cache repository. The capture

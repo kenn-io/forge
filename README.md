@@ -31,7 +31,9 @@ Start with the [user guide](docs/index.md) for setup and workflows.
 - Review pull requests and merge requests with discussion, diffs, and CI context.
 - Work with issues without leaving the console.
 - Create local workspaces for hands-on review or implementation.
-- Connect optional Kata task daemons and local Markdown folders.
+- Read and respond to Roborev reviews from a running daemon.
+- Link Kata issues to provider work and local workspaces.
+- Browse and edit registered Markdown folders.
 - View and operate remote kenn-forge daemons through a federated fleet.
 
 Provider capabilities vary. kenn-forge shows unsupported actions as unavailable.
@@ -83,13 +85,14 @@ non-GitHub and explicit credentials through environment variables or
 `~/.kenn/forge/config.toml`; see [Configuration](docs/configuration.md).
 
 Local workspaces require Git and tmux on a Unix-like host. The Windows release
-supports the dashboard and provider actions. Use WSL or a remote Unix-like Kenn
-Forge host when you need workspace sessions.
+supports the dashboard and provider actions. Use WSL or a remote Unix-like
+kenn-forge host when you need workspace sessions.
 
 ## Documentation
 
 - [Quick Start](docs/quickstart.md)
 - [Workflows](docs/workflows.md)
+- [Integrations](docs/integrations.md)
 - [Configuration](docs/configuration.md)
 - [Commands](docs/commands.md)
 - [Troubleshooting](docs/troubleshooting.md)

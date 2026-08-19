@@ -1,6 +1,9 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { execFile } from "node:child_process";
+import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -12,6 +15,128 @@ import {
 
 const outputDir = process.env.KENN_FORGE_DOCS_SCREENSHOT_DIR;
 const execFileAsync = promisify(execFile);
+
+const syntheticRoborevJob = {
+  id: 501,
+  repo_id: 1,
+  repo_name: "widget-cache",
+  repo_path: "/repos/widget-cache",
+  git_ref: "feedfacecafebeef",
+  branch: "main",
+  agent: "codex",
+  model: "gpt-5.6-sol",
+  status: "done",
+  job_type: "review",
+  enqueued_at: "2026-08-18T14:00:00Z",
+  started_at: "2026-08-18T14:01:00Z",
+  finished_at: "2026-08-18T14:03:12Z",
+  agentic: false,
+  prompt_prebuilt: false,
+  retry_count: 0,
+  closed: false,
+  verdict: "P",
+  commit_subject: "Share concurrent cache loads",
+  review_type: "commit",
+  token_usage: JSON.stringify({
+    input_tokens: 18_420,
+    cached_input_tokens: 7_900,
+    total_output_tokens: 1_260,
+    peak_context_tokens: 31_800,
+    has_cost: true,
+    cost_usd: 0.42,
+  }),
+};
+
+function writeRoborevJSON(response: ServerResponse, body: unknown, status = 200): void {
+  response.writeHead(status, { "Content-Type": "application/json" });
+  response.end(JSON.stringify(body));
+}
+
+async function startSyntheticRoborevDaemon(): Promise<{ url: string; close: () => Promise<void> }> {
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    switch (url.pathname) {
+      case "/api/status":
+        writeRoborevJSON(response, {
+          version: "docs-fixture",
+          queued_jobs: 1,
+          running_jobs: 1,
+          completed_jobs: 24,
+          failed_jobs: 2,
+          canceled_jobs: 1,
+          active_workers: 1,
+          max_workers: 2,
+        });
+        return;
+      case "/api/jobs":
+        writeRoborevJSON(response, {
+          jobs: [syntheticRoborevJob],
+          has_more: false,
+          stats: { done: 24, closed: 8, open: 16 },
+        });
+        return;
+      case "/api/review":
+        writeRoborevJSON(response, {
+          id: 601,
+          job_id: syntheticRoborevJob.id,
+          agent: syntheticRoborevJob.agent,
+          prompt: "Review the cache coalescing change for correctness and failure handling.",
+          output:
+            "## Review\n\nNo blocking findings. Concurrent loads share one request, and a failed request clears the in-flight entry so the next call can retry.",
+          created_at: "2026-08-18T14:03:20Z",
+          closed: false,
+          verdict_bool: 1,
+          job: syntheticRoborevJob,
+        });
+        return;
+      case "/api/comments":
+        writeRoborevJSON(response, {
+          responses: [
+            {
+              id: 701,
+              job_id: syntheticRoborevJob.id,
+              responder: "maintainer",
+              response: "Checked the retry path locally. This is ready to merge.",
+              created_at: "2026-08-18T14:10:00Z",
+            },
+          ],
+        });
+        return;
+      case "/api/repos":
+        writeRoborevJSON(response, {
+          repos: [
+            {
+              id: 1,
+              root_path: syntheticRoborevJob.repo_path,
+              name: syntheticRoborevJob.repo_name,
+              count: 1,
+            },
+          ],
+          total_count: 1,
+        });
+        return;
+      case "/api/stream/events":
+        response.writeHead(204);
+        response.end();
+        return;
+      default:
+        writeRoborevJSON(response, { error: `unexpected ${url.pathname}` }, 404);
+    }
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: `http://127.0.0.1:${port}`,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      }),
+  };
+}
 
 type ThemeName = "light" | "dark";
 
@@ -60,6 +185,7 @@ type CaptureCase = {
     | "issue-triager"
     | "code-reviewer"
     | "code-reviewer-agent-launch"
+    | "roborev-reviews"
     | "workspace-codex-session"
     | "first-run";
   theme: ThemeName;
@@ -290,6 +416,28 @@ const cases: CaptureCase[] = [
     afterReady: openCodexLaunchMenu,
     description:
       "Code review view in dark mode with the Create Workspace menu open to launch a configured Codex agent.",
+  },
+  {
+    name: "roborev-reviews",
+    theme: "light",
+    path: "/reviews/501",
+    readySelector: ".review-drawer",
+    readyText: "widget-cache",
+    requiredSelector: ".review-content",
+    loadingText: /Loading review|Loading\.\.\./i,
+    description:
+      "Roborev review queue with a completed review selected beside its status, usage, and response controls.",
+  },
+  {
+    name: "roborev-reviews",
+    theme: "dark",
+    path: "/reviews/501",
+    readySelector: ".review-drawer",
+    readyText: "widget-cache",
+    requiredSelector: ".review-content",
+    loadingText: /Loading review|Loading\.\.\./i,
+    description:
+      "Roborev review queue in dark mode with a completed review selected beside its status, usage, and response controls.",
   },
   {
     name: "workspace-codex-session",
@@ -769,17 +917,27 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
 
 test.describe("docs workflow screenshots", () => {
   let server: Awaited<ReturnType<typeof startIsolatedWorkspaceE2EServer>> | null = null;
+  let roborevDaemon: Awaited<ReturnType<typeof startSyntheticRoborevDaemon>> | null = null;
 
   test.beforeAll(async () => {
     if (!outputDir) {
       throw new Error("KENN_FORGE_DOCS_SCREENSHOT_DIR must point to the staged docs asset directory");
     }
-    server = await startIsolatedWorkspaceE2EServer();
+    roborevDaemon = await startSyntheticRoborevDaemon();
+    const previousEndpoint = process.env.ROBOREV_ENDPOINT;
+    process.env.ROBOREV_ENDPOINT = roborevDaemon.url;
+    try {
+      server = await startIsolatedWorkspaceE2EServer();
+    } finally {
+      if (previousEndpoint === undefined) delete process.env.ROBOREV_ENDPOINT;
+      else process.env.ROBOREV_ENDPOINT = previousEndpoint;
+    }
     await mkdir(outputDir, { recursive: true });
   });
 
   test.afterAll(async () => {
     await server?.stop();
+    await roborevDaemon?.close();
   });
 
   for (const capture of cases) {

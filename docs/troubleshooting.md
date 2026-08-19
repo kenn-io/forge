@@ -125,6 +125,38 @@ kenn-forge does not store Kata daemon definitions. Check Kata's own config:
 
 or set `KATA_HOME` before starting kenn-forge.
 
+The catalog entry must be connected and report a supported Kata API schema.
+The UI keeps an incompatible daemon visible and explains whether Kata or
+kenn-forge needs an upgrade.
+
+## A Kata workspace has no repository
+
+Open **Settings → Kata mappings**. The effective mappings table shows how each
+project resolves and whether kenn-forge found an automatic match. Add a manual
+override for any project with no repository or the wrong repository.
+
+The target must be an exact repository already configured in kenn-forge.
+Repository globs are not valid mapping targets.
+
+## The Roborev daemon is not reachable
+
+kenn-forge does not start Roborev. Confirm the daemon is running, then check its
+status endpoint:
+
+```sh
+curl http://127.0.0.1:7373/api/status
+```
+
+If Roborev listens elsewhere, update the endpoint and restart kenn-forge:
+
+```toml
+[roborev]
+endpoint = "http://127.0.0.1:17373"
+```
+
+The Reviews page shows the configured scheme and host when the connection
+fails. It does not expose credentials or a path from the configured URL.
+
 ## The database will not migrate
 
 kenn-forge stores synced data in:
@@ -139,8 +171,8 @@ sidecars out of the data directory before starting again. Provider data will
 sync again from a fresh database, but local-only state such as stars, PR
 workflow statuses, and workspace links is only available in the saved copy.
 
-If startup reports that the database is newer than the binary, upgrade Kenn
-Forge.
+If startup reports that the database is newer than the binary, upgrade
+kenn-forge.
 
 ## Need more logs
 

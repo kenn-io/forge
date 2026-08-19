@@ -158,6 +158,21 @@ workspaces = true
 Set a mode to `false` to hide it. Docs starts hidden because it needs configured
 local folders. Kata integration is contextual rather than a top-level mode.
 
+## Roborev
+
+The Reviews page reads from a separately running Roborev daemon. The default
+endpoint is `http://127.0.0.1:7373`:
+
+```toml
+[roborev]
+endpoint = "http://127.0.0.1:7373"
+```
+
+Restart kenn-forge after changing this value. Set `reviews = false` under
+`[modes]` if you do not want the Reviews page. See
+[Integrations](integrations.md#review-roborev-jobs) for the current Reviews
+workflow.
+
 ## Workspace agents
 
 kenn-forge detects built-in agents on `PATH`. Add or override an agent with:
@@ -227,6 +242,29 @@ daemon = "kata-main"
 
 `daemon` is optional. Set it when task links in this folder always belong to
 one Kata daemon.
+
+## Kata daemons and repository mappings
+
+kenn-forge reads Kata daemon definitions from `$KATA_HOME/config.toml`, or
+`~/.kata/config.toml` when `KATA_HOME` is unset. Daemon credentials and URLs
+stay in Kata's catalog rather than kenn-forge configuration.
+
+Open **Settings → Kata mappings** to see which repository each Kata project
+will use for workspace creation. Add a manual mapping when automatic matching
+does not pick the right configured repository:
+
+```toml
+[[kata_projects]]
+daemon_id = "kata-main"
+project_uid = "widgets"
+provider = "github"
+platform_host = "github.com"
+repo_path = "acme/widgets"
+```
+
+`daemon_id` scopes the mapping to one daemon. Leave it out only for a mapping
+that should apply to the same project UID on every daemon. `repo_path` must name
+an exact configured repository, not a repository glob.
 
 ## Server and storage
 

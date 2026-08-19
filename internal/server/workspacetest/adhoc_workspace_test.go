@@ -132,9 +132,7 @@ func TestCreateAdHocWorkspaceRejectsUntrackedRepo(t *testing.T) {
 	require.Equal(http.StatusNotFound, resp.StatusCode(), string(resp.Body))
 }
 
-// An existing local branch must surface the typed conflict envelope with a
-// suggested alternative so the caller can retry without guessing.
-func TestCreateAdHocWorkspaceExistingBranchReturnsTypedConflict(t *testing.T) {
+func TestCreateAdHocWorkspaceExistingBranchIsUniquified(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -148,17 +146,15 @@ func TestCreateAdHocWorkspaceExistingBranchReturnsTypedConflict(t *testing.T) {
 		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &branch},
 	)
 	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON202)
+	assert.Equal(branch+"-2", resp.JSON202.GitHeadRef)
 
-	problem := resp.ApplicationproblemJSONDefault
-	require.NotNil(problem)
-	require.NotNil(problem.Type)
-	assert.Equal("urn:kenn-forge:error:workspace-branch-conflict", *problem.Type)
-	assert.Equal(generated.BranchConflict, problem.Code)
-	require.NotNil(problem.Details)
-	details := *problem.Details
-	assert.Equal(branch, details["branch"])
-	assert.Equal(branch+"-2", details["suggestedBranch"])
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+	assert.Equal(branch+"-2", ready.GitHeadRef)
+	assert.Equal(branch+"-2", workspaceGitOutput(
+		t, ready.WorktreePath, "rev-parse", "--abbrev-ref", "HEAD",
+	))
 }
 
 func TestCreateAdHocWorkspaceReusesExistingBranchWhenAsked(t *testing.T) {
@@ -244,9 +240,9 @@ func TestCreateAdHocWorkspaceReuseStartsFromDivergedBranchTip(t *testing.T) {
 }
 
 // Renaming the branch from inside the worktree is a shell action kenn-forge does
-// not observe, so the workspace keeps its creation-time identity: the old name
-// still resolves to it, and the new name cannot be turned into a second
-// workspace while this worktree holds the branch.
+// not observe, so the workspace keeps its creation-time identity. The old name
+// still resolves to it, while a new workspace request for the renamed branch
+// receives a unique branch.
 func TestCreateAdHocWorkspaceAfterInWorktreeBranchRename(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -277,18 +273,12 @@ func TestCreateAdHocWorkspaceAfterInWorktreeBranchRename(t *testing.T) {
 	require.NotNil(again.JSON202)
 	assert.Equal(created.JSON202.Id, again.JSON202.Id)
 
-	// New name: the renamed branch exists locally, so this is the ordinary
-	// branch conflict with a suggested alternative, not a second worktree on the
-	// same branch.
-	conflict, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
+	unique, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
 		t.Context(), "gh", "acme", "widget",
 		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &renamed},
 	)
 	require.NoError(err)
-	require.Equal(http.StatusConflict, conflict.StatusCode(), string(conflict.Body))
-	problem := conflict.ApplicationproblemJSONDefault
-	require.NotNil(problem)
-	assert.Equal(generated.BranchConflict, problem.Code)
-	require.NotNil(problem.Details)
-	assert.Equal(renamed+"-2", (*problem.Details)["suggestedBranch"])
+	require.Equal(http.StatusAccepted, unique.StatusCode(), string(unique.Body))
+	require.NotNil(unique.JSON202)
+	assert.Equal(renamed+"-2", unique.JSON202.GitHeadRef)
 }

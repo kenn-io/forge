@@ -49,8 +49,10 @@ embedder protocol for arbitrary host state.
   item key is `adhoc:<branch>` and `item_number` stays 0, so item-key fallbacks
   derived from the number must exclude this type
   (`internal/db/queries.go::workspaceItemTypeKeysByNumber`). Requesting the same
-  branch twice returns the existing workspace. Once its branch is pushed the
-  monitor links a PR into `associated_pr_number`
+  branch twice returns the existing workspace. Local branch and ref-namespace
+  conflicts use the first available `-N` variant as the persisted identity;
+  setup repeats allocation under the repository lock (`internal/workspace/manager.go::Manager.CreateAdHoc`).
+  Once its branch is pushed the monitor links a PR into `associated_pr_number`
   (`internal/workspace/monitor.go::workspacePRMonitorEligible`); that number is
   the workspace's item identity for display, links, and search, so surfaces must
   never gate PR affordances on `item_type == "pull_request"` alone.

@@ -126,7 +126,7 @@ func TestCreateAdHocDistinctBranchesGetDistinctWorktrees(t *testing.T) {
 	assert.NotEqual(first.WorktreePath, second.WorktreePath)
 }
 
-func TestCreateAdHocExistingLocalBranchConflicts(t *testing.T) {
+func TestCreateAdHocExistingLocalBranchIsUniquified(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -144,11 +144,53 @@ func TestCreateAdHocExistingLocalBranchConflicts(t *testing.T) {
 		CreateAdHocOptions{BranchName: branch},
 	)
 
-	require.Nil(ws)
-	var conflict *WorkspaceBranchConflictError
-	require.ErrorAs(err, &conflict)
-	assert.Equal(branch, conflict.Branch)
-	assert.Equal(branch+"-2", conflict.SuggestedBranch)
+	require.NoError(err)
+	require.NotNil(ws)
+	assert.Equal(branch+"-2", ws.GitHeadRef)
+	assert.Equal(branch+"-2", ws.WorkspaceBranch)
+	assert.Equal(db.AdHocWorkspaceItemKey(branch+"-2"), ws.ItemKey)
+}
+
+func TestNextAvailableBranchNameAvoidsRefNamespaceConflicts(t *testing.T) {
+	tests := []struct {
+		name      string
+		existing  []string
+		requested string
+		want      string
+	}{
+		{
+			name:      "descendant",
+			existing:  []string{"docs/agent-context-routing"},
+			requested: "docs",
+			want:      "docs-2",
+		},
+		{
+			name:      "numbered descendant",
+			existing:  []string{"docs/agent-context-routing", "docs-2/claimed"},
+			requested: "docs",
+			want:      "docs-3",
+		},
+		{
+			name:      "ancestor",
+			existing:  []string{"docs"},
+			requested: "docs/agent-context-routing",
+			want:      "docs-2/agent-context-routing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/other")
+			for _, branch := range tt.existing {
+				runWorkspaceTestGit(t, localRepo, "branch", branch)
+			}
+
+			got, err := nextAvailableBranchName(t.Context(), localRepo, tt.requested)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestCreateAdHocReuseExistingLocalBranch(t *testing.T) {
@@ -216,6 +258,42 @@ func TestSetupAdHocWorkspaceBranchesFromOriginHead(t *testing.T) {
 		t, got.WorktreePath, "rev-parse", "HEAD",
 	)))
 	assert.Equal(originHead, worktreeHead)
+}
+
+func TestSetupAdHocWorkspaceUniquifiesBranchPrefixConflict(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/other",
+	)
+	runWorkspaceTestGit(t, localRepo, "branch", "docs/agent-context-routing")
+	seedRepo(t, d, platformHost, "acme", "widget")
+
+	tmuxScript, _ := writeRecorderScript(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.CreateAdHoc(
+		t.Context(), "github", platformHost, "acme", "widget",
+		CreateAdHocOptions{BranchName: "docs"},
+	)
+	require.NoError(err)
+	require.NoError(mgr.Setup(t.Context(), ws))
+
+	got, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("ready", got.Status)
+	assert.Equal("docs-2", got.GitHeadRef)
+	assert.Equal("docs-2", got.WorkspaceBranch)
+
+	head := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, got.WorktreePath, "rev-parse", "--abbrev-ref", "HEAD",
+	)))
+	assert.Equal("docs-2", head)
 }
 
 func TestAgentContextForAdHocWorkspace(t *testing.T) {

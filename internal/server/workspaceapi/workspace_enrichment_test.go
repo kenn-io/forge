@@ -690,7 +690,8 @@ func TestWorkspaceEnrichmentThrottlesPublishedTmuxRecency(t *testing.T) {
 	assert.Equal(firstActivityAt.Format(time.RFC3339), *entry.response.TmuxLastOutputAt)
 
 	now = now.Add(10 * time.Second)
-	entry = record(suppressedActivityAt, "quiet title", false)
+	olderRemainingSessionAt := firstActivityAt.Add(-time.Minute)
+	entry = record(olderRemainingSessionAt, "quiet title", false)
 	require.NotNil(entry.response.TmuxLastOutputAt)
 	assert.Equal(suppressedActivityAt.Format(time.RFC3339), *entry.response.TmuxLastOutputAt)
 

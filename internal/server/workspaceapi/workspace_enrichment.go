@@ -167,10 +167,6 @@ func recordCachedWorkspaceTmux(
 		entry.tmuxRecencyPublishedAt = time.Time{}
 		return entry
 	}
-	if !entry.tmuxObservedOutputAt.IsZero() &&
-		observedAt.Before(entry.tmuxObservedOutputAt) {
-		return entry
-	}
 	if observedAt.After(entry.tmuxObservedOutputAt) {
 		entry.tmuxObservedOutputAt = observedAt
 	}

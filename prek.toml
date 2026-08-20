@@ -50,9 +50,6 @@ hooks = [
   { id = "font-size-token-check", name = "enforce font-size design tokens", language = "system", entry = "make font-size-token-check", files = "^(scripts/check-font-size-tokens\\.(ts|test\\.ts)|frontend/src/.*\\.(svelte|css|ts))$", pass_filenames = false, priority = 10 },
   { id = "script-tests", name = "script regression tests", language = "system", entry = "make script-tests", files = "^(scripts/.*\\.(mjs|ts|sh|py)|frontend/scripts/.*\\.ts|docs/screenshots/.*\\.(md|ts)|package\\.json|bun\\.lock)$", pass_filenames = false, priority = 10 },
   { id = "playwright-version-check", name = "browser CI image matches pinned toolchain", language = "system", entry = "make playwright-version-check", files = "^(scripts/check-playwright-version\\.mjs|\\.github/docker/playwright/Dockerfile|\\.github/workflows/ci\\.yml|package\\.json|frontend/package\\.json|packages/github-app-ui/package\\.json)$", pass_filenames = false, priority = 10 },
-  { id = "go-test", name = "go test (repository-wide)", language = "system", entry = "./scripts/run-hook-go.sh make test", stages = [
-    "pre-push",
-  ], always_run = true, pass_filenames = false, priority = 21 },
   { id = "testify-helper-check", name = "testify helper check", language = "system", entry = "./scripts/run-hook-go.sh make testify-helper-check", files = "^(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false, priority = 21 },
   { id = "huma-route-check", name = "prevent non-Huma Go routes", language = "system", entry = "./scripts/run-hook-go.sh make huma-route-check", files = "^(tools/nohttpmux/.*\\.go|cmd/.*\\.go|internal/.*\\.go|kenn-forge\\.go)$", pass_filenames = false, priority = 22 },
   { id = "migration-history-check", name = "enforce immutable history and one migration per PR", language = "system", entry = "./scripts/run-hook-go.sh make migration-history-check", files = "^internal/db/migrations/.*$", pass_filenames = false, priority = 23 },

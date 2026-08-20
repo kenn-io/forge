@@ -10,7 +10,7 @@ fixtures, or changing shell-script coverage.
   Go caches; `GO_TEST_P=` intentionally restores native package concurrency.
   (`scripts/run-hook-go.sh`, `prek.toml`)
 - Reduce scanner pressure at source, not by redirecting `GOTMPDIR`.
-- Repository-wide Go tests run at pre-push, not pre-commit. Any future fast hook
+- Repository-wide Go tests do not run from Git hooks. Any future fast hook
   lane must select a small set of packages rather than require per-test opt-outs.
 - `-short` must skip tests that build and launch real kenn-forge daemons or run
   load-sensitive sync E2Es; those flows belong in full Go lanes (`cmd/kenn-forge/lock_e2e_test.go::buildForgeWithLDFlags`, `internal/server/e2etest/sync_cooldown_test.go::TestTriggerSyncE2EPrioritizesNonDefaultHostFilter`).

@@ -111,6 +111,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	cmd.Env = append(os.Environ(),
 		"GITLAB_URL="+baseURL,
 		"GITLAB_ROOT_PASSWORD="+rootPassword,
+		"GITLAB_CONTAINER_ID="+container.GetContainerID(),
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -227,6 +228,10 @@ func TestGitLabContainerE2E(t *testing.T) {
 	issueEvents, err := database.ListIssueEvents(ctx, issue.ID)
 	require.NoError(err)
 	assert.NotEmpty(issueEvents)
+	referencedIssues, err := database.ListIssues(ctx, db.ListIssuesOpts{ReferencedByPR: true})
+	require.NoError(err)
+	require.Len(referencedIssues, 1)
+	assert.Equal(manifest.IssueIID, referencedIssues[0].Number)
 
 	summaries, err := database.ListRepoSummaries(ctx)
 	require.NoError(err)

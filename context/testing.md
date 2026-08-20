@@ -88,6 +88,9 @@ Provider container fixture image bumps must keep every launch default and baked
 image tag on one release, or local e2e and bake paths can test different
 provider versions (`internal/server/gitlab_container_e2e_test.go::TestGitLabContainerE2E`).
 
+- Container fixtures must advertise the host-mapped port in canonical provider URLs while
+  keeping the service listener on its internal container port (`scripts/e2e/gitlab/docker-compose.yml:10`).
+
 Regenerate OpenAPI and generated clients with `make api-generate` after Huma
 route or API type changes.
 

@@ -9,21 +9,23 @@ fi
 
 : "${GITLAB_URL:?GITLAB_URL is required}"
 : "${GITLAB_ROOT_PASSWORD:?GITLAB_ROOT_PASSWORD is required}"
+: "${GITLAB_CONTAINER_ID:?GITLAB_CONTAINER_ID is required}"
 
 python3 - "$MANIFEST_PATH" <<'PY'
 import base64
 import json
 import os
+import secrets
+import subprocess
 import sys
 import time
-from datetime import date, timedelta
 import urllib.error
 import urllib.parse
 import urllib.request
 
 manifest_path = sys.argv[1]
 base_url = os.environ["GITLAB_URL"].rstrip("/")
-root_password = os.environ["GITLAB_ROOT_PASSWORD"]
+container_id = os.environ["GITLAB_CONTAINER_ID"]
 api_url = f"{base_url}/api/v4"
 
 
@@ -76,39 +78,27 @@ def wait_for_gitlab():
     raise RuntimeError(f"GitLab did not become ready at {base_url}")
 
 
-def root_token():
-    deadline = time.monotonic() + 180
-    last_error = None
-    while time.monotonic() < deadline:
-        try:
-            token = request(
-                "POST",
-                f"{base_url}/oauth/token",
-                form={
-                    "grant_type": "password",
-                    "username": "root",
-                    "password": root_password,
-                },
-            )
-            return token["access_token"]
-        except Exception as exc:
-            last_error = exc
-            time.sleep(5)
-    raise RuntimeError(f"could not obtain root OAuth token: {last_error}")
-
-
-def create_personal_access_token(admin_token):
-    token = request(
-        "POST",
-        "/users/1/personal_access_tokens",
-        token=admin_token,
-        form={
-            "name": f"kenn-forge-e2e-{int(time.time())}",
-            "scopes[]": "api",
-            "expires_at": (date.today() + timedelta(days=30)).isoformat(),
-        },
+def create_personal_access_token():
+    token = secrets.token_hex(10)
+    script = (
+        "user = User.find_by_username('root'); "
+        "pat = user.personal_access_tokens.create(scopes: ['api'], name: 'kenn-forge-e2e', "
+        "expires_at: 30.days.from_now); "
+        "pat.set_token(ENV.fetch('KENN_FORGE_GITLAB_TOKEN')); "
+        "pat.save!"
     )
-    return token["token"]
+    result = subprocess.run(
+        [
+            "docker", "exec", "--env", f"KENN_FORGE_GITLAB_TOKEN={token}",
+            container_id, "gitlab-rails", "runner", script,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"could not create GitLab fixture token: {result.stderr[-800:]}")
+    return token
 
 
 def get_or_create_group(token, name, path, parent_id=None):
@@ -192,8 +182,9 @@ def ensure_branch_and_file(token, project):
         request("POST", f"/projects/{pid}/repository/files/{file_path}", token=token, data=payload)
 
 
-def ensure_merge_request(token, project, label):
+def ensure_merge_request(token, project, label, issue_iid):
     pid = project_path(project)
+    description = f"Merge request seeded by kenn-forge e2e.\n\nCloses #{issue_iid}"
     existing = request(
         "GET",
         f"/projects/{pid}/merge_requests?state=opened&source_branch=feature%2Fgitlab&target_branch=main",
@@ -201,6 +192,13 @@ def ensure_merge_request(token, project, label):
     )
     for mr in existing:
         if mr.get("title") == "GitLab container MR":
+            if mr.get("description") != description:
+                mr = request(
+                    "PUT",
+                    f"/projects/{pid}/merge_requests/{mr['iid']}",
+                    token=token,
+                    data={"description": description},
+                )
             return mr
     return request(
         "POST",
@@ -210,7 +208,7 @@ def ensure_merge_request(token, project, label):
             "source_branch": "feature/gitlab",
             "target_branch": "main",
             "title": "GitLab container MR",
-            "description": "Merge request seeded by kenn-forge e2e.",
+            "description": description,
             "labels": label,
         },
     )
@@ -267,25 +265,24 @@ def ensure_tag_and_release(token, project):
 
 
 wait_for_gitlab()
-token = root_token()
+token = create_personal_access_token()
 group = get_or_create_group(token, "kenn-forge-fixture", "kenn-forge-fixture")
 subgroup = get_or_create_group(token, "nested", "nested", group["id"])
 project = get_or_create_project(token, subgroup["id"], "kenn-forge-fixture/nested/project-special")
 label = ensure_label(token, project, "kenn-forge-fixture")
 ensure_branch_and_file(token, project)
-mr = ensure_merge_request(token, project, label["name"])
 issue = ensure_issue(token, project, label["name"])
+mr = ensure_merge_request(token, project, label["name"], issue["iid"])
 mr_note = ensure_note(token, project, mr, "mr", "MR note from GitLab container")
 issue_note = ensure_note(token, project, issue, "issue", "Issue note from GitLab container")
 release = ensure_tag_and_release(token, project)
-api_token = create_personal_access_token(token)
 
 parsed = urllib.parse.urlparse(base_url)
 manifest = {
     "base_url": base_url,
     "api_url": api_url,
     "host": parsed.netloc,
-    "token": api_token,
+    "token": token,
     "owner": "kenn-forge-fixture/nested",
     "name": "project-special",
     "repo_path": "kenn-forge-fixture/nested/project-special",

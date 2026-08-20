@@ -3,6 +3,7 @@ package forgejo
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -407,14 +408,26 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 func TestClientReadsIssuePullReferenceTimelineEvents(t *testing.T) {
 	assert := assert.New(t)
 	require := Require.New(t)
+	var timelinePages []string
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal("token forgejo-token", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/repos/owner/repo/issues/3/comments":
 			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
 		case "/api/v1/repos/owner/repo/issues/3/timeline":
+			page := r.URL.Query().Get("page")
+			timelinePages = append(timelinePages, page)
+			if page == "1" {
+				w.Header().Set("Link", fmt.Sprintf(
+					`<%s/api/v1/repos/owner/repo/issues/3/timeline?page=2&limit=100>; rel="next"`,
+					server.URL,
+				))
+				assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
+				return
+			}
 			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
 				"id": 13, "type": "pull_ref", "user": map[string]any{"login": "dana"},
 				"created_at": "2026-05-01T10:03:00Z",
@@ -442,6 +455,7 @@ func TestClientReadsIssuePullReferenceTimelineEvents(t *testing.T) {
 	assert.Contains(events[0].MetadataJSON, `"source_owner":"acme"`)
 	assert.Contains(events[0].MetadataJSON, `"source_repo":"tools"`)
 	assert.Contains(events[0].MetadataJSON, `"source_number":9`)
+	assert.Equal([]string{"1", "2"}, timelinePages)
 }
 
 func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {

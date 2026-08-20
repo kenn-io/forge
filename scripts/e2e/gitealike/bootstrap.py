@@ -60,14 +60,15 @@ class Fixture:
         self.ensure_file(token, branch)
         branch = self.get_branch(token, self.branch)
         self.ensure_status(token, branch["commit"]["id"])
-        pr = self.ensure_pull_request(token, label["id"])
-        review, review_comment = self.ensure_inline_review(token, pr, branch["commit"]["id"])
         issue = self.ensure_issue(token, label["id"])
+        pr = self.ensure_pull_request(token, label["id"], issue["number"])
+        review, review_comment = self.ensure_inline_review(token, pr, branch["commit"]["id"])
         self.ensure_comment(token, pr["number"], f"PR note from {self.title_prefix} container")
         self.ensure_comment(token, issue["number"], f"Issue note from {self.title_prefix} container")
         release = self.ensure_release(token)
-        parsed = urllib.parse.urlparse(self.base_url)
         repo_path = f"{self.owner}/{self.repo}"
+        web_url = repo["html_url"].rstrip("/")
+        parsed = urllib.parse.urlparse(web_url)
         return {
             "base_url": self.base_url,
             "api_url": self.api_url,
@@ -76,8 +77,8 @@ class Fixture:
             "owner": self.owner,
             "name": self.repo,
             "repo_path": repo_path,
-            "web_url": f"{self.base_url}/{repo_path}",
-            "clone_url": f"{self.base_url}/{repo_path}.git",
+            "web_url": web_url,
+            "clone_url": repo["clone_url"],
             "default_branch": "main",
             "repository_id": repo["id"],
             "repository_id_string": str(repo["id"]),
@@ -277,12 +278,20 @@ class Fixture:
             expected=(201,),
         )
 
-    def ensure_pull_request(self, token, label_id):
+    def ensure_pull_request(self, token, label_id, issue_number):
         pulls = self.request("GET", self.repo_path("/pulls?state=open"), token=token)
         title = f"{self.prefix.lower()} container PR"
+        body = f"Pull request seeded by kenn-forge e2e.\n\nFixes #{issue_number}"
         for pull in pulls:
             if pull.get("title") == title:
                 self.ensure_labels(token, pull["number"], [label_id])
+                if pull.get("body") != body:
+                    pull = self.request(
+                        "PATCH",
+                        self.repo_path(f"/pulls/{pull['number']}"),
+                        token=token,
+                        data={"body": body},
+                    )
                 return pull
         pull = self.request(
             "POST",
@@ -292,7 +301,7 @@ class Fixture:
                 "head": self.branch,
                 "base": "main",
                 "title": title,
-                "body": "Pull request seeded by kenn-forge e2e.",
+                "body": body,
             },
             expected=(201,),
         )

@@ -233,6 +233,10 @@ func assertGiteaLikeContainerSync(
 	issueEvents, err := database.ListIssueEvents(ctx, issue.ID)
 	require.NoError(err)
 	assert.NotEmpty(issueEvents)
+	referencedIssues, err := database.ListIssues(ctx, db.ListIssuesOpts{ReferencedByPR: true})
+	require.NoError(err)
+	require.Len(referencedIssues, 1)
+	assert.Equal(manifest.IssueIndex, referencedIssues[0].Number)
 
 	summaries, err := database.ListRepoSummaries(ctx)
 	require.NoError(err)

@@ -7,7 +7,8 @@ services:
     environment:
       GITLAB_ROOT_PASSWORD: ${GITLAB_ROOT_PASSWORD:-V9q!T3m#R7p-L2x@N6s}
       GITLAB_OMNIBUS_CONFIG: |
-        external_url 'http://localhost'
+        external_url 'http://localhost:${GITLAB_HTTP_PORT:-18080}'
+        nginx['listen_port'] = 80
         gitlab_rails['initial_root_password'] = '${GITLAB_ROOT_PASSWORD:-V9q!T3m#R7p-L2x@N6s}'
         letsencrypt['enable'] = false
         prometheus_monitoring['enable'] = false

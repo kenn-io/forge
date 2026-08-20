@@ -116,6 +116,8 @@ test("settings sidebar lists every panel in declaration order under group headin
       "Fleet federation",
       "Navigation",
       "Visible modes",
+      "System",
+      "MCP companion",
     ]);
 });
 

@@ -43,6 +43,8 @@ func TestGetStackContextPropagatesMissingPull(t *testing.T) {
 }
 
 func TestGetStackContextSortsMembersAndJoinsPagedWorkflowState(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var cursors []string
 	backend := &fakeBackend{
 		getPullStackFn: func(context.Context, ItemIdentity) (Stack, error) {
@@ -54,10 +56,10 @@ func TestGetStackContextSortsMembersAndJoinsPagedWorkflowState(t *testing.T) {
 		},
 		listWorkflowStatesFn: func(_ context.Context, query WorkflowQuery) (WorkflowPage, error) {
 			cursors = append(cursors, query.Cursor)
-			assert.Equal(t, testRepository(), query.Repository)
-			assert.Equal(t, []string{"pr"}, query.ItemTypes)
-			assert.True(t, query.IncludeClosed)
-			assert.Equal(t, 200, query.Limit)
+			assert.Equal(testRepository(), query.Repository)
+			assert.Equal([]string{"pr"}, query.ItemTypes)
+			assert.True(query.IncludeClosed)
+			assert.Equal(200, query.Limit)
 			if query.Cursor == "" {
 				return WorkflowPage{
 					Items:      []WorkflowItem{{Identity: testItemIdentity("pr", 41), Workflow: WorkflowState{Status: "waiting"}}},
@@ -79,12 +81,12 @@ func TestGetStackContextSortsMembersAndJoinsPagedWorkflowState(t *testing.T) {
 		},
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, []string{"", "next"}, cursors)
-	require.Len(t, out.Members, 3)
-	assert.Equal(t, 41, out.Members[0].Number)
-	assert.Equal(t, "waiting", out.Members[0].WorkflowStatus)
-	assert.True(t, out.Members[1].IsRequested)
-	assert.True(t, out.Members[1].IsDraft)
-	assert.Equal(t, "reviewing", out.Members[1].WorkflowStatus)
+	require.NoError(err)
+	assert.Equal([]string{"", "next"}, cursors)
+	require.Len(out.Members, 3)
+	assert.Equal(41, out.Members[0].Number)
+	assert.Equal("waiting", out.Members[0].WorkflowStatus)
+	assert.True(out.Members[1].IsRequested)
+	assert.True(out.Members[1].IsDraft)
+	assert.Equal("reviewing", out.Members[1].WorkflowStatus)
 }

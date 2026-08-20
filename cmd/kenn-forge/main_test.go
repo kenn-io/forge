@@ -189,6 +189,8 @@ func TestRunMainShutdownStopsSignalsBeforeLongCleanup(t *testing.T) {
 }
 
 func TestRunMainShutdownBoundsMCPStoreCleanup(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	release := make(chan struct{})
@@ -212,17 +214,17 @@ func TestRunMainShutdownBoundsMCPStoreCleanup(t *testing.T) {
 		// The canceled parent context may also record a canceled database
 		// bound even though the database callback ran; only the MCP entry is
 		// required.
-		require.NotEmpty(t, errs)
-		assert.Equal(t, "close MCP temp store", errs[0].message)
-		require.ErrorIs(t, errs[0].err, context.Canceled)
+		require.NotEmpty(errs)
+		assert.Equal("close MCP temp store", errs[0].message)
+		require.ErrorIs(errs[0].err, context.Canceled)
 		for _, shutdownErr := range errs[1:] {
-			assert.Equal(t, "close database", shutdownErr.message)
-			require.ErrorIs(t, shutdownErr.err, context.Canceled)
+			assert.Equal("close database", shutdownErr.message)
+			require.ErrorIs(shutdownErr.err, context.Canceled)
 		}
 	case <-time.After(100 * time.Millisecond):
 		close(release)
 		<-done
-		require.Fail(t, "MCP temp-store cleanup ignored the shutdown context")
+		require.Fail("MCP temp-store cleanup ignored the shutdown context")
 	}
 
 	// Later cleanup must still run after the MCP cleanup budget expires:
@@ -230,7 +232,7 @@ func TestRunMainShutdownBoundsMCPStoreCleanup(t *testing.T) {
 	select {
 	case <-databaseClosed:
 	case <-time.After(100 * time.Millisecond):
-		require.Fail(t, "database cleanup did not run after MCP cleanup timed out")
+		require.Fail("database cleanup did not run after MCP cleanup timed out")
 	}
 	close(release)
 }
@@ -294,38 +296,40 @@ func TestBindDaemonListenersOwnsOptionalMCPPortAndClosesPrimaryOnFailure(t *test
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
 			var occupied net.Listener
 			if tt.occupiedMCP {
 				var err error
 				occupied, err = net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(explicitMCPPort)))
-				require.NoError(t, err)
+				require.NoError(err)
 				defer occupied.Close()
 			}
 			cfg := &config.Config{Host: "127.0.0.1", Port: primaryPort, MCP: tt.mcp}
 
 			primary, mcpListener, err := bindDaemonListeners(cfg)
 			if tt.wantErr != "" {
-				require.ErrorContains(t, err, tt.wantErr)
+				require.ErrorContains(err, tt.wantErr)
 				probe, listenErr := net.Listen("tcp", cfg.ListenAddr())
-				require.NoError(t, listenErr, "primary listener must close after MCP bind failure")
-				require.NoError(t, probe.Close())
+				require.NoError(listenErr, "primary listener must close after MCP bind failure")
+				require.NoError(probe.Close())
 				return
 			}
-			require.NoError(t, err)
+			require.NoError(err)
 			t.Cleanup(func() {
-				require.NoError(t, primary.Close())
+				require.NoError(primary.Close())
 				if mcpListener != nil {
-					require.NoError(t, mcpListener.Close())
+					require.NoError(mcpListener.Close())
 				}
 			})
 			if tt.wantMCPPort == 0 {
-				assert.Nil(t, mcpListener)
+				assert.Nil(mcpListener)
 				return
 			}
-			require.NotNil(t, mcpListener)
+			require.NotNil(mcpListener)
 			_, portText, splitErr := net.SplitHostPort(mcpListener.Addr().String())
-			require.NoError(t, splitErr)
-			assert.Equal(t, strconv.Itoa(tt.wantMCPPort), portText)
+			require.NoError(splitErr)
+			assert.Equal(strconv.Itoa(tt.wantMCPPort), portText)
 		})
 	}
 }

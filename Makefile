@@ -223,7 +223,7 @@ migration-history-check:
 	go run ./tools/migrationhistorycheck
 
 guardrail-check: check-vite-plus-bin
-	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests docs-branding-check
+	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests testify-helper-check docs-branding-check
 
 
 # Regenerate the checked-in OpenAPI document and generated clients

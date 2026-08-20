@@ -13,11 +13,13 @@ import (
 )
 
 func TestSpawnWorkspaceWithAgentCallsDirectServicesAndUsesAuthoritativeEvidence(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	backend := successfulSpawnBackend("ws-new", "runtime-new", "coding-new")
 	workspaceReads := 0
 	backend.createPullWorkspaceFn = func(_ context.Context, item ItemIdentity, suppress bool) (Workspace, error) {
-		assert.Equal(t, testItemIdentity("pr", 42), item)
-		assert.True(t, suppress)
+		assert.Equal(testItemIdentity("pr", 42), item)
+		assert.True(suppress)
 		return Workspace{ID: "ws-new", Status: "creating", Created: true}, nil
 	}
 	backend.getWorkspaceFn = func(context.Context, string) (Workspace, error) {
@@ -29,7 +31,7 @@ func TestSpawnWorkspaceWithAgentCallsDirectServicesAndUsesAuthoritativeEvidence(
 		return Workspace{ID: "ws-new", Status: status}, nil
 	}
 	backend.submitInitialMessageFn = func(_ context.Context, req InitialMessageRequest) (InitialMessageStatus, error) {
-		assert.Equal(t, InitialMessageRequest{
+		assert.Equal(InitialMessageRequest{
 			WorkspaceID: "ws-new", RuntimeSessionKey: "runtime-new",
 			Agent: "codex", SessionID: "coding-new",
 			Message: "review this\nthen implement",
@@ -48,16 +50,16 @@ func TestSpawnWorkspaceWithAgentCallsDirectServicesAndUsesAuthoritativeEvidence(
 		AgentTarget: "codex", InitialMessage: "review this\r\nthen implement", Timeout: "2s",
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, "message_delivered", out.Stage)
-	assert.Equal(t, "delivered", out.InitialMessage.State)
-	assert.Equal(t, "ws-new", out.Workspace.ID)
-	assert.False(t, out.Workspace.Reused)
-	assert.Equal(t, "runtime-new", out.Runtime.SessionKey)
-	assert.Equal(t, "coding-new", out.CodingSession.SessionID)
+	require.NoError(err)
+	assert.Equal("message_delivered", out.Stage)
+	assert.Equal("delivered", out.InitialMessage.State)
+	assert.Equal("ws-new", out.Workspace.ID)
+	assert.False(out.Workspace.Reused)
+	assert.Equal("runtime-new", out.Runtime.SessionKey)
+	assert.Equal("coding-new", out.CodingSession.SessionID)
 	raw, err := json.Marshal(out)
-	require.NoError(t, err)
-	assert.NotContains(t, string(raw), `"message_delivered":`)
+	require.NoError(err)
+	assert.NotContains(string(raw), `"message_delivered":`)
 }
 
 func TestSpawnWorkspaceWithAgentReusesWorkspaceAndLaunchesFreshRuntime(t *testing.T) {
@@ -81,6 +83,7 @@ func TestSpawnWorkspaceWithAgentReusesWorkspaceAndLaunchesFreshRuntime(t *testin
 }
 
 func TestSpawnWorkspaceWithAgentReusesPRWorkspaceCreatedConcurrently(t *testing.T) {
+	assert := assert.New(t)
 	backend := successfulSpawnBackend("ws-raced", "runtime-raced", "coding-raced")
 	pullReads := 0
 	backend.getPullFn = func(context.Context, ItemIdentity) (PullDetail, error) {
@@ -102,12 +105,13 @@ func TestSpawnWorkspaceWithAgentReusesPRWorkspaceCreatedConcurrently(t *testing.
 	out, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("start"))
 
 	require.NoError(t, err)
-	assert.True(t, out.Workspace.Reused)
-	assert.Equal(t, "ws-raced", out.Workspace.ID)
-	assert.Equal(t, 2, pullReads)
+	assert.True(out.Workspace.Reused)
+	assert.Equal("ws-raced", out.Workspace.ID)
+	assert.Equal(2, pullReads)
 }
 
 func TestSpawnWorkspaceWithAgentTimeoutReturnsStageWithoutDeliveryClaim(t *testing.T) {
+	assert := assert.New(t)
 	backend := successfulSpawnBackend("ws-timeout", "runtime", "coding")
 	backend.createPullWorkspaceFn = func(context.Context, ItemIdentity, bool) (Workspace, error) {
 		return Workspace{ID: "ws-timeout", Status: "creating", Created: true}, nil
@@ -124,11 +128,11 @@ func TestSpawnWorkspaceWithAgentTimeoutReturnsStageWithoutDeliveryClaim(t *testi
 
 	var backendErr *Error
 	require.ErrorAs(t, err, &backendErr)
-	assert.Equal(t, "agent_handoff_timeout", backendErr.Kind)
-	assert.Equal(t, "workspace_created", backendErr.Details["last_completed_stage"])
-	assert.Equal(t, "workspace_ready", backendErr.Details["failed_stage"])
-	assert.Equal(t, "ws-timeout", backendErr.Details["workspace_id"])
-	assert.NotContains(t, backendErr.Details, "message_delivered")
+	assert.Equal("agent_handoff_timeout", backendErr.Kind)
+	assert.Equal("workspace_created", backendErr.Details["last_completed_stage"])
+	assert.Equal("workspace_ready", backendErr.Details["failed_stage"])
+	assert.Equal("ws-timeout", backendErr.Details["workspace_id"])
+	assert.NotContains(backendErr.Details, "message_delivered")
 }
 
 func TestSpawnWorkspaceWithAgentReportsWorkspaceError(t *testing.T) {
@@ -201,6 +205,7 @@ func TestSpawnWorkspaceWithAgentCreatesIssueAndAdHocWorkspaces(t *testing.T) {
 }
 
 func TestSpawnWorkspaceWithAgentRetriesMultilineMessageUntilInputModeIsReady(t *testing.T) {
+	assert := assert.New(t)
 	backend := successfulSpawnBackend("ws-paste", "runtime-paste", "coding-paste")
 	messagePosts := 0
 	backend.submitInitialMessageFn = func(context.Context, InitialMessageRequest) (InitialMessageStatus, error) {
@@ -218,12 +223,13 @@ func TestSpawnWorkspaceWithAgentRetriesMultilineMessageUntilInputModeIsReady(t *
 	out, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("first\nsecond"))
 
 	require.NoError(t, err)
-	assert.Equal(t, "message_delivered", out.Stage)
-	assert.Equal(t, "delivered", out.InitialMessage.State)
-	assert.Equal(t, 3, messagePosts)
+	assert.Equal("message_delivered", out.Stage)
+	assert.Equal("delivered", out.InitialMessage.State)
+	assert.Equal(3, messagePosts)
 }
 
 func TestSpawnWorkspaceWithAgentRecoversAmbiguousMessageFromSameBackend(t *testing.T) {
+	assert := assert.New(t)
 	backend := successfulSpawnBackend("ws-recovery", "runtime-recovery", "coding-recovery")
 	messagePosts := 0
 	statusReads := 0
@@ -243,13 +249,14 @@ func TestSpawnWorkspaceWithAgentRecoversAmbiguousMessageFromSameBackend(t *testi
 	out, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("start"))
 
 	require.NoError(t, err)
-	assert.Equal(t, "message_delivered", out.Stage)
-	assert.Equal(t, "delivered", out.InitialMessage.State)
-	assert.Equal(t, 1, messagePosts)
-	assert.Equal(t, 1, statusReads)
+	assert.Equal("message_delivered", out.Stage)
+	assert.Equal("delivered", out.InitialMessage.State)
+	assert.Equal(1, messagePosts)
+	assert.Equal(1, statusReads)
 }
 
 func TestSpawnWorkspaceWithAgentTreatsPendingMessageStateAsAmbiguous(t *testing.T) {
+	assert := assert.New(t)
 	backend := successfulSpawnBackend("ws-pending", "runtime-pending", "coding-pending")
 	backend.submitInitialMessageFn = func(context.Context, InitialMessageRequest) (InitialMessageStatus, error) {
 		return InitialMessageStatus{State: "pending", MessageBytes: 5}, nil
@@ -260,12 +267,13 @@ func TestSpawnWorkspaceWithAgentTreatsPendingMessageStateAsAmbiguous(t *testing.
 
 	var backendErr *Error
 	require.ErrorAs(t, err, &backendErr)
-	assert.True(t, backendErr.Ambiguous)
-	assert.Equal(t, "pending", backendErr.Details["initial_message_state"])
-	assert.NotContains(t, backendErr.Details, "message_delivered")
+	assert.True(backendErr.Ambiguous)
+	assert.Equal("pending", backendErr.Details["initial_message_state"])
+	assert.NotContains(backendErr.Details, "message_delivered")
 }
 
 func TestSpawnWorkspaceWithAgentKeepsUncertainRecoveryAmbiguous(t *testing.T) {
+	assert := assert.New(t)
 	backend := successfulSpawnBackend("ws-recovery", "runtime-recovery", "coding-recovery")
 	backend.submitInitialMessageFn = func(context.Context, InitialMessageRequest) (InitialMessageStatus, error) {
 		return InitialMessageStatus{}, &Error{Kind: "internal_error", Message: "result unknown", Ambiguous: true}
@@ -279,13 +287,14 @@ func TestSpawnWorkspaceWithAgentKeepsUncertainRecoveryAmbiguous(t *testing.T) {
 
 	var backendErr *Error
 	require.ErrorAs(t, err, &backendErr)
-	assert.True(t, backendErr.Ambiguous)
-	assert.Equal(t, "uncertain", backendErr.Details["initial_message_state"])
-	assert.Equal(t, "message_delivered", backendErr.Details["failed_stage"])
-	assert.NotContains(t, backendErr.Details, "message_delivered")
+	assert.True(backendErr.Ambiguous)
+	assert.Equal("uncertain", backendErr.Details["initial_message_state"])
+	assert.Equal("message_delivered", backendErr.Details["failed_stage"])
+	assert.NotContains(backendErr.Details, "message_delivered")
 }
 
 func TestSpawnWorkspaceWithAgentReportsRuntimeExitBeforeHookSession(t *testing.T) {
+	assert := assert.New(t)
 	backend := successfulSpawnBackend("ws-exit", "runtime-exit", "coding")
 	backend.listWorkspaceAgentSessionsFn = func(context.Context, string) ([]WorkspaceAgentSession, error) {
 		return nil, nil
@@ -304,9 +313,9 @@ func TestSpawnWorkspaceWithAgentReportsRuntimeExitBeforeHookSession(t *testing.T
 
 	var backendErr *Error
 	require.ErrorAs(t, err, &backendErr)
-	assert.Equal(t, "coding_session_observed", backendErr.Details["failed_stage"])
-	assert.Contains(t, backendErr.Message, "runtime exited")
-	assert.Equal(t, 0, messagePosts)
+	assert.Equal("coding_session_observed", backendErr.Details["failed_stage"])
+	assert.Contains(backendErr.Message, "runtime exited")
+	assert.Equal(0, messagePosts)
 }
 
 func TestSpawnWorkspaceWithAgentRejectsInvalidInputBeforeBackendCalls(t *testing.T) {

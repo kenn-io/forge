@@ -13,6 +13,8 @@ import (
 )
 
 func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var got ItemIdentity
 	backend := &fakeBackend{
 		getPullFn: func(_ context.Context, item ItemIdentity) (PullDetail, error) {
@@ -60,20 +62,22 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 
 	out, err := s.getItemContext(t.Context(), getItemContextInput{Item: inputItem, EventLimit: 2})
 
-	require.NoError(t, err)
-	assert.Equal(t, itemIdentity(inputItem), got)
-	assert.Equal(t, "full body", out.Body)
-	assert.Equal(t, "mcp", out.Workflow.UpdatedSource)
-	require.Len(t, out.Events, 2)
-	assert.Equal(t, "newest", out.Events[0].Author)
-	assert.Len(t, out.Events[0].BodyPreview, 500)
-	require.NotNil(t, out.Workspace)
-	assert.True(t, out.Stack.Present)
-	require.Len(t, out.Checks, 1)
-	assert.True(t, out.Cache.DetailLoaded)
+	require.NoError(err)
+	assert.Equal(itemIdentity(inputItem), got)
+	assert.Equal("full body", out.Body)
+	assert.Equal("mcp", out.Workflow.UpdatedSource)
+	require.Len(out.Events, 2)
+	assert.Equal("newest", out.Events[0].Author)
+	assert.Len(out.Events[0].BodyPreview, 500)
+	require.NotNil(out.Workspace)
+	assert.True(out.Stack.Present)
+	require.Len(out.Checks, 1)
+	assert.True(out.Cache.DetailLoaded)
 }
 
 func TestGetItemContextIssueCanOmitEvents(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	backend := &fakeBackend{getIssueFn: func(context.Context, ItemIdentity) (IssueDetail, error) {
 		return IssueDetail{
 			Issue: &Issue{
@@ -95,16 +99,18 @@ func TestGetItemContextIssueCanOmitEvents(t *testing.T) {
 		IncludeEvents: &includeEvents,
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, "full issue body", out.Body)
-	assert.Equal(t, "waiting", out.Workflow.Status)
-	assert.Empty(t, out.Events)
+	require.NoError(err)
+	assert.Equal("full issue body", out.Body)
+	assert.Equal("waiting", out.Workflow.Status)
+	assert.Empty(out.Events)
 	raw, err := json.Marshal(out)
-	require.NoError(t, err)
-	assert.NotContains(t, string(raw), `"events"`)
+	require.NoError(err)
+	assert.NotContains(string(raw), `"events"`)
 }
 
 func TestListItemsByWorkflowStateForwardsTypedQuery(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var got WorkflowQuery
 	backend := &fakeBackend{listWorkflowStatesFn: func(_ context.Context, query WorkflowQuery) (WorkflowPage, error) {
 		got = query
@@ -134,8 +140,8 @@ func TestListItemsByWorkflowStateForwardsTypedQuery(t *testing.T) {
 		IncludeClosed: true, Limit: 10, Cursor: "cursor",
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, WorkflowQuery{
+	require.NoError(err)
+	assert.Equal(WorkflowQuery{
 		Repository: RepositoryIdentity{
 			Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test",
 			RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
@@ -143,9 +149,9 @@ func TestListItemsByWorkflowStateForwardsTypedQuery(t *testing.T) {
 		ItemTypes: []string{"pr", "issue"}, States: []string{"reviewing", "waiting"},
 		IncludeClosed: true, Limit: 10, Cursor: "cursor",
 	}, got)
-	require.Len(t, out.Items, 1)
-	assert.Equal(t, "next", out.NextCursor)
-	assert.Equal(t, "group/sub/project", out.Items[0].Item.RepoPath)
+	require.Len(out.Items, 1)
+	assert.Equal("next", out.NextCursor)
+	assert.Equal("group/sub/project", out.Items[0].Item.RepoPath)
 }
 
 func TestListItemsByWorkflowStatePropagatesBackendError(t *testing.T) {

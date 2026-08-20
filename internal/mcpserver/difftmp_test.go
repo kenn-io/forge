@@ -36,79 +36,85 @@ func TestDiffFileStoreWriteAtomicallyReplacesExistingFile(t *testing.T) {
 }
 
 func TestDiffFileStoreFailedReplacementPreservesExistingEntries(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	store, err := newDiffFileStore(1024)
-	require.NoError(t, err)
+	require.NoError(err)
 	t.Cleanup(func() {
 		_ = os.Chmod(store.dir, 0o700)
-		require.NoError(t, store.Close())
+		require.NoError(store.Close())
 	})
 
 	existingPath, _, err := store.write("evidence.diff", []byte("old evidence\n"))
-	require.NoError(t, err)
+	require.NoError(err)
 	otherPath, _, err := store.write("other.diff", []byte("other evidence\n"))
-	require.NoError(t, err)
+	require.NoError(err)
 	sizeBefore := store.totalBytes
 
-	require.NoError(t, os.Chmod(store.dir, 0o500))
+	require.NoError(os.Chmod(store.dir, 0o500))
 	_, _, err = store.write("evidence.diff", []byte("replacement evidence\n"))
-	require.Error(t, err)
+	require.Error(err)
 
 	existing, err := os.ReadFile(existingPath)
-	require.NoError(t, err)
-	assert.Equal(t, "old evidence\n", string(existing))
+	require.NoError(err)
+	assert.Equal("old evidence\n", string(existing))
 	other, err := os.ReadFile(otherPath)
-	require.NoError(t, err)
-	assert.Equal(t, "other evidence\n", string(other))
-	assert.Equal(t, sizeBefore, store.totalBytes)
-	assert.Equal(t, 2, store.lru.Len())
+	require.NoError(err)
+	assert.Equal("other evidence\n", string(other))
+	assert.Equal(sizeBefore, store.totalBytes)
+	assert.Equal(2, store.lru.Len())
 
-	require.NoError(t, os.Chmod(store.dir, 0o700))
+	require.NoError(os.Chmod(store.dir, 0o700))
 	replaced, _, err := store.write("evidence.diff", []byte("new evidence\n"))
-	require.NoError(t, err)
-	assert.Equal(t, existingPath, replaced)
+	require.NoError(err)
+	assert.Equal(existingPath, replaced)
 }
 
 func TestDiffFileStoreReplacementAccountsForReplacedEntrySize(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	store, err := newDiffFileStore(64)
-	require.NoError(t, err)
+	require.NoError(err)
 	t.Cleanup(func() {
-		require.NoError(t, store.Close())
+		require.NoError(store.Close())
 	})
 
 	_, _, err = store.write("big.diff", make([]byte, 40))
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// Replacing the only entry with a larger payload must reuse the replaced
 	// entry's budget instead of evicting it (or failing with no evictable
 	// files) while it is still published.
 	path, size, err := store.write("big.diff", make([]byte, 63))
-	require.NoError(t, err)
-	assert.Equal(t, int64(63), size)
-	assert.Equal(t, int64(63), store.totalBytes)
+	require.NoError(err)
+	assert.Equal(int64(63), size)
+	assert.Equal(int64(63), store.totalBytes)
 	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	assert.Len(t, data, 63)
+	require.NoError(err)
+	assert.Len(data, 63)
 }
 
 func TestDiffFileStoreReplacementEvictsOthersButNeverItself(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	store, err := newDiffFileStore(64)
-	require.NoError(t, err)
+	require.NoError(err)
 	t.Cleanup(func() {
-		require.NoError(t, store.Close())
+		require.NoError(store.Close())
 	})
 
 	bigPath, _, err := store.write("big.diff", make([]byte, 40))
-	require.NoError(t, err)
+	require.NoError(err)
 	smallPath, _, err := store.write("small.diff", make([]byte, 10))
-	require.NoError(t, err)
+	require.NoError(err)
 
 	replaced, _, err := store.write("big.diff", make([]byte, 60))
-	require.NoError(t, err)
-	assert.Equal(t, bigPath, replaced)
-	assert.Equal(t, int64(60), store.totalBytes)
+	require.NoError(err)
+	assert.Equal(bigPath, replaced)
+	assert.Equal(int64(60), store.totalBytes)
 	_, err = os.Stat(smallPath)
-	require.ErrorIs(t, err, os.ErrNotExist)
+	require.ErrorIs(err, os.ErrNotExist)
 	data, err := os.ReadFile(replaced)
-	require.NoError(t, err)
-	assert.Len(t, data, 60)
+	require.NoError(err)
+	assert.Len(data, 60)
 }

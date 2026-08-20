@@ -17,6 +17,8 @@ import (
 )
 
 func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	database := dbtest.Open(t)
 	ctx := t.Context()
 	repoIdentity := db.RepoIdentity{
@@ -24,7 +26,7 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
 	}
 	repoID, err := database.UpsertRepo(ctx, repoIdentity)
-	require.NoError(t, err)
+	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, PlatformID: 7000, Number: 7,
@@ -33,10 +35,10 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 		HeadBranch: "feature", BaseBranch: "main",
 		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 	provider := &autoAssignProvider{pull: platform.MergeRequest{}}
 	registry, err := platform.NewRegistry(provider)
-	require.NoError(t, err)
+	require.NoError(err)
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Hour, nil, nil)
 	t.Cleanup(syncer.Stop)
 	handler := New(Deps{
@@ -49,7 +51,7 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 	t.Cleanup(func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		require.NoError(t, handler.Shutdown(shutdownCtx))
+		require.NoError(handler.Shutdown(shutdownCtx))
 	})
 
 	result, err := handler.CreatePullWorkspace(ctx, CreatePullWorkspaceRequest{
@@ -57,18 +59,20 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 		Owner: "acme", Name: "widget", Number: 7, SuppressAutoAssign: true,
 	})
 
-	require.NoError(t, err)
-	assert.NotEmpty(t, result.Workspace.ID)
-	assert.True(t, result.Workspace.Created)
-	assert.Empty(t, provider.pullAssigned)
+	require.NoError(err)
+	assert.NotEmpty(result.Workspace.ID)
+	assert.True(result.Workspace.Created)
+	assert.Empty(provider.pullAssigned)
 }
 
 func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	database := dbtest.Open(t)
 	ctx := t.Context()
 	worktree := t.TempDir()
 	workspaceID := "ws-runtime-service"
-	require.NoError(t, database.InsertWorkspace(ctx, &db.Workspace{
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
 		ID: workspaceID, Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
 		ItemKey: db.AdHocWorkspaceItemKey("work/service"), GitHeadRef: "work/service",
@@ -94,12 +98,12 @@ func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
 		ctx, workspaceID, string(localruntime.LaunchTargetPlainShell),
 	)
 
-	require.NoError(t, err)
-	assert.NotEmpty(t, session.Key)
-	assert.Equal(t, workspaceID, session.WorkspaceID)
-	assert.Equal(t, string(localruntime.LaunchTargetPlainShell), session.TargetKey)
+	require.NoError(err)
+	assert.NotEmpty(session.Key)
+	assert.Equal(workspaceID, session.WorkspaceID)
+	assert.Equal(string(localruntime.LaunchTargetPlainShell), session.TargetKey)
 	stored, err := workspaceManager.RuntimeSessionsForWorkspace(ctx, workspaceID)
-	require.NoError(t, err)
-	require.Len(t, stored, 1)
-	assert.Equal(t, session.Key, stored[0].SessionKey)
+	require.NoError(err)
+	require.Len(stored, 1)
+	assert.Equal(session.Key, stored[0].SessionKey)
 }

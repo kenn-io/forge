@@ -11,6 +11,8 @@ import (
 )
 
 func TestFindReviewCandidatesGroupsActivityAndEnrichesItems(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var activityQuery ActivityQuery
 	backend := &fakeBackend{
 		listActivityFn: func(_ context.Context, query ActivityQuery) (ActivityPage, error) {
@@ -37,7 +39,7 @@ func TestFindReviewCandidatesGroupsActivityAndEnrichesItems(t *testing.T) {
 			}}, nil
 		},
 		listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
-			assert.Equal(t, ItemListQuery{Repository: testRepository(), State: "all", Limit: 200}, query)
+			assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200}, query)
 			return []Pull{{
 				Number: 42, Title: "Retry budget", State: "open", Author: "alice",
 				Repository: testRepository(), Workspace: &WorkspaceRef{ID: "ws-pr", Status: "ready"},
@@ -45,7 +47,7 @@ func TestFindReviewCandidatesGroupsActivityAndEnrichesItems(t *testing.T) {
 			}}, nil
 		},
 		listIssuesFn: func(_ context.Context, query ItemListQuery) ([]Issue, error) {
-			assert.Equal(t, ItemListQuery{Repository: testRepository(), State: "all", Limit: 200}, query)
+			assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200}, query)
 			return []Issue{{
 				Number: 7, Title: "Retry docs", State: "open", Author: "dave",
 				WorkflowStatus: "waiting", Repository: testRepository(),
@@ -55,7 +57,7 @@ func TestFindReviewCandidatesGroupsActivityAndEnrichesItems(t *testing.T) {
 			return WorkflowPage{}, nil
 		},
 		getPullStackFn: func(_ context.Context, item ItemIdentity) (Stack, error) {
-			assert.Equal(t, testItemIdentity("pr", 42), item)
+			assert.Equal(testItemIdentity("pr", 42), item)
 			return Stack{Position: 2, Size: 4, Health: "blocked"}, nil
 		},
 	}
@@ -65,25 +67,27 @@ func TestFindReviewCandidatesGroupsActivityAndEnrichesItems(t *testing.T) {
 		Since: "2026-07-01T00:00:00Z", ActivityTypes: []string{"comment"},
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, []string{"comment"}, activityQuery.ActivityTypes)
-	require.Len(t, out.Candidates, 2)
+	require.NoError(err)
+	assert.Equal([]string{"comment"}, activityQuery.ActivityTypes)
+	require.Len(out.Candidates, 2)
 	issue := out.Candidates[0]
-	assert.Equal(t, 7, issue.Item.Number)
-	assert.Equal(t, "waiting", issue.Workflow.Status)
-	assert.Equal(t, []string{"carol commented"}, issue.Activity.Reasons)
+	assert.Equal(7, issue.Item.Number)
+	assert.Equal("waiting", issue.Workflow.Status)
+	assert.Equal([]string{"carol commented"}, issue.Activity.Reasons)
 	pr := out.Candidates[1]
-	assert.Equal(t, 2, pr.Activity.EventCount)
-	assert.Equal(t, []string{"bob", "alice"}, pr.Activity.Actors)
-	assert.True(t, pr.Workspace.Exists)
-	assert.True(t, pr.Stack.Present)
-	assert.True(t, pr.Cache.DetailLoaded)
+	assert.Equal(2, pr.Activity.EventCount)
+	assert.Equal([]string{"bob", "alice"}, pr.Activity.Actors)
+	assert.True(pr.Workspace.Exists)
+	assert.True(pr.Stack.Present)
+	assert.True(pr.Cache.DetailLoaded)
 	raw, err := json.Marshal(out)
-	require.NoError(t, err)
-	assert.NotContains(t, string(raw), "EventCount")
+	require.NoError(err)
+	assert.NotContains(string(raw), "EventCount")
 }
 
 func TestFindReviewCandidatesUsesWorkflowMetadataAndFiltersBeforeStackLookup(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	stackCalls := 0
 	backend := candidateBackendForPull(42)
 	backend.listWorkflowStatesFn = func(_ context.Context, query WorkflowQuery) (WorkflowPage, error) {
@@ -104,20 +108,22 @@ func TestFindReviewCandidatesUsesWorkflowMetadataAndFiltersBeforeStackLookup(t *
 	excluded, err := s.findReviewCandidates(t.Context(), findCandidatesInput{
 		ExcludeWorkflowStates: []string{"reviewing"},
 	})
-	require.NoError(t, err)
-	assert.Empty(t, excluded.Candidates)
-	assert.Equal(t, 0, stackCalls)
+	require.NoError(err)
+	assert.Empty(excluded.Candidates)
+	assert.Equal(0, stackCalls)
 
 	included, err := s.findReviewCandidates(t.Context(), findCandidatesInput{
 		WorkflowStates: []string{"reviewing"},
 	})
-	require.NoError(t, err)
-	require.Len(t, included.Candidates, 1)
-	assert.Equal(t, "2026-07-01T14:10:00Z", included.Candidates[0].Workflow.UpdatedAt)
-	assert.Equal(t, 1, stackCalls)
+	require.NoError(err)
+	require.Len(included.Candidates, 1)
+	assert.Equal("2026-07-01T14:10:00Z", included.Candidates[0].Workflow.UpdatedAt)
+	assert.Equal(1, stackCalls)
 }
 
 func TestFindReviewCandidatesDefaultsTo25AndCapsAt100(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	backend := &fakeBackend{
 		listActivityFn: func(context.Context, ActivityQuery) (ActivityPage, error) {
 			items := make([]ActivityItem, 102)
@@ -142,16 +148,16 @@ func TestFindReviewCandidatesDefaultsTo25AndCapsAt100(t *testing.T) {
 	s := newMCPTestServer(t, backend)
 
 	defaultOut, err := s.findReviewCandidates(t.Context(), findCandidatesInput{ItemTypes: []string{"issue"}})
-	require.NoError(t, err)
-	assert.Len(t, defaultOut.Candidates, 25)
-	assert.True(t, defaultOut.Capped)
+	require.NoError(err)
+	assert.Len(defaultOut.Candidates, 25)
+	assert.True(defaultOut.Capped)
 
 	maxOut, err := s.findReviewCandidates(t.Context(), findCandidatesInput{
 		ItemTypes: []string{"issue"}, Limit: 500,
 	})
-	require.NoError(t, err)
-	assert.Len(t, maxOut.Candidates, 100)
-	assert.True(t, maxOut.Capped)
+	require.NoError(err)
+	assert.Len(maxOut.Candidates, 100)
+	assert.True(maxOut.Capped)
 }
 
 func TestFindReviewCandidatesPropagatesStackFailure(t *testing.T) {

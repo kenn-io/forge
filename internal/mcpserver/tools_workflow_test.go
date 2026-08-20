@@ -9,6 +9,7 @@ import (
 )
 
 func TestSetItemWorkflowStateForwardsTypedMutation(t *testing.T) {
+	assert := assert.New(t)
 	var gotItem ItemIdentity
 	var gotUpdate WorkflowUpdate
 	backend := &fakeBackend{setWorkflowStateFn: func(
@@ -36,17 +37,18 @@ func TestSetItemWorkflowStateForwardsTypedMutation(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, testItemIdentity("pr", 42), gotItem)
-	assert.Equal(t, WorkflowUpdate{
+	assert.Equal(testItemIdentity("pr", 42), gotItem)
+	assert.Equal(WorkflowUpdate{
 		Status: "reviewing", ExpectedStatus: "new", Source: "mcp",
 		Actor: "agent", Reason: "checking docs",
 	}, gotUpdate)
-	assert.Equal(t, "new", out.PreviousStatus)
-	assert.Equal(t, "reviewing", out.Status)
-	assert.Equal(t, "agent", out.UpdatedActor)
+	assert.Equal("new", out.PreviousStatus)
+	assert.Equal("reviewing", out.Status)
+	assert.Equal("agent", out.UpdatedActor)
 }
 
 func TestSetItemWorkflowStateForwardsForce(t *testing.T) {
+	assert := assert.New(t)
 	var got WorkflowUpdate
 	backend := &fakeBackend{setWorkflowStateFn: func(
 		_ context.Context, _ ItemIdentity, update WorkflowUpdate,
@@ -62,9 +64,9 @@ func TestSetItemWorkflowStateForwardsForce(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	assert.True(t, got.Force)
-	assert.Empty(t, got.ExpectedStatus)
-	assert.Equal(t, "waiting", out.Status)
+	assert.True(got.Force)
+	assert.Empty(got.ExpectedStatus)
+	assert.Equal("waiting", out.Status)
 }
 
 func TestSetItemWorkflowStateRequiresOneMutationGuard(t *testing.T) {

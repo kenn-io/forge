@@ -11,6 +11,8 @@ import (
 )
 
 func TestListAgentTargetsFiltersSupportedHookAgentsWithoutCommands(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	backend := &fakeBackend{listLaunchTargetsFn: func(context.Context) ([]LaunchTarget, error) {
 		return []LaunchTarget{
 			{Key: "gemini", Label: "Gemini", Kind: "agent", Source: "builtin", Available: true},
@@ -24,17 +26,19 @@ func TestListAgentTargetsFiltersSupportedHookAgentsWithoutCommands(t *testing.T)
 
 	out, err := s.listAgentTargets(t.Context(), listAgentTargetsInput{})
 
-	require.NoError(t, err)
-	require.Len(t, out.Targets, 2)
-	assert.Equal(t, "codex", out.Targets[0].Key)
-	assert.False(t, out.Targets[0].Available)
-	assert.Equal(t, "gemini", out.Targets[1].Key)
+	require.NoError(err)
+	require.Len(out.Targets, 2)
+	assert.Equal("codex", out.Targets[0].Key)
+	assert.False(out.Targets[0].Available)
+	assert.Equal("gemini", out.Targets[1].Key)
 	raw, err := json.Marshal(out)
-	require.NoError(t, err)
-	assert.NotContains(t, string(raw), "command")
+	require.NoError(err)
+	assert.NotContains(string(raw), "command")
 }
 
 func TestListWorkspaceAgentSessionsMapsLiveProjectionDeterministically(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	deliveredAt := time.Date(2026, 8, 7, 14, 59, 1, 0, time.UTC)
 	var workspaceID string
 	backend := &fakeBackend{listWorkspaceAgentSessionsFn: func(
@@ -63,12 +67,12 @@ func TestListWorkspaceAgentSessionsMapsLiveProjectionDeterministically(t *testin
 		t.Context(), listWorkspaceAgentSessionsInput{WorkspaceID: "ws-1"},
 	)
 
-	require.NoError(t, err)
-	assert.Equal(t, "ws-1", workspaceID)
-	require.Len(t, out.Sessions, 2)
-	assert.Equal(t, "claude", out.Sessions[0].Agent)
-	require.NotNil(t, out.Sessions[0].InitialMessage)
-	assert.Equal(t, "delivered", out.Sessions[0].InitialMessage.State)
-	assert.Equal(t, "2026-08-07T14:59:01Z", out.Sessions[0].InitialMessage.DeliveredAt)
-	assert.Equal(t, "codex", out.Sessions[1].Agent)
+	require.NoError(err)
+	assert.Equal("ws-1", workspaceID)
+	require.Len(out.Sessions, 2)
+	assert.Equal("claude", out.Sessions[0].Agent)
+	require.NotNil(out.Sessions[0].InitialMessage)
+	assert.Equal("delivered", out.Sessions[0].InitialMessage.State)
+	assert.Equal("2026-08-07T14:59:01Z", out.Sessions[0].InitialMessage.DeliveredAt)
+	assert.Equal("codex", out.Sessions[1].Agent)
 }

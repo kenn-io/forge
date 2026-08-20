@@ -30,14 +30,16 @@ func TestDaemonPingPublishesMCPURL(t *testing.T) {
 }
 
 func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 	pullID := seedPR(t, database, "acme", "widget", 42)
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(t, err)
-	require.NotNil(t, repo)
+	require.NoError(err)
+	require.NotNil(repo)
 	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
-	require.NoError(t, database.UpsertMREvents(ctx, []db.MREvent{{
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
 		MergeRequestID: pullID, EventType: "issue_comment", Author: "reviewer",
 		Body: "review this", CreatedAt: base, DedupeKey: "mcp-item-filter-comment",
 	}}))
@@ -51,27 +53,29 @@ func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
 			Subject: "repository activity", CreatedAt: at, UpdatedAt: at,
 		}
 	}
-	require.NoError(t, database.UpsertBranchCommits(ctx, commits))
+	require.NoError(database.UpsertBranchCommits(ctx, commits))
 
 	page, err := srv.MCPBackend().ListActivity(ctx, mcpserver.ActivityQuery{
 		Since: base.Add(-time.Minute).Format(time.RFC3339), ItemTypes: []string{"pr"},
 	})
 
-	require.NoError(t, err)
-	require.NotEmpty(t, page.Items)
+	require.NoError(err)
+	require.NotEmpty(page.Items)
 	for _, item := range page.Items {
-		assert.Equal(t, "pr", item.ItemType)
-		assert.Equal(t, repo.PlatformRepoID, item.Repository.PlatformRepoID)
+		assert.Equal("pr", item.ItemType)
+		assert.Equal(repo.PlatformRepoID, item.Repository.PlatformRepoID)
 	}
-	assert.False(t, page.Capped)
+	assert.False(page.Capped)
 }
 
 func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	ctx := t.Context()
 	database := dbtest.Open(t)
 	worktree := t.TempDir()
 	workspaceID := "ws-mcp-initial-message"
-	require.NoError(t, database.InsertWorkspace(ctx, &db.Workspace{
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
 		ID: workspaceID, Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widgets",
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
@@ -92,9 +96,9 @@ func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
 	})
 	t.Cleanup(runtime.Shutdown)
 	session, err := runtime.Launch(ctx, workspaceID, worktree, "codex")
-	require.NoError(t, err)
+	require.NoError(err)
 	activity := agentactivity.NewStore(t.TempDir())
-	require.NoError(t, activity.HandleEvent("codex", agentactivity.HookEvent{
+	require.NoError(activity.HandleEvent("codex", agentactivity.HookEvent{
 		SessionID: "coding-session", CWD: worktree,
 		HookEventName: "UserPromptSubmit",
 	}, session.Key))
@@ -109,19 +113,21 @@ func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
 	})
 
 	var backendErr *mcpserver.Error
-	require.ErrorAs(t, err, &backendErr)
-	assert.Equal(t, mcpserver.ErrorCodeInitialMessageInputModeNotReady, backendErr.Code)
-	assert.Equal(t, "unavailable", backendErr.Kind)
-	assert.True(t, backendErr.Retryable)
-	assert.False(t, backendErr.Ambiguous)
+	require.ErrorAs(err, &backendErr)
+	assert.Equal(mcpserver.ErrorCodeInitialMessageInputModeNotReady, backendErr.Code)
+	assert.Equal("unavailable", backendErr.Kind)
+	assert.True(backendErr.Retryable)
+	assert.False(backendErr.Ambiguous)
 }
 
 func TestMCPPullWorkspaceDuplicateUsesStableConflictCode(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	_, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ctx := t.Context()
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(t, err)
-	require.NotNil(t, repo)
+	require.NoError(err)
+	require.NotNil(repo)
 	item := mcpserver.ItemIdentity{
 		Type: "pr", Provider: "github", PlatformHost: "github.com",
 		PlatformRepoID: repo.PlatformRepoID,
@@ -129,13 +135,13 @@ func TestMCPPullWorkspaceDuplicateUsesStableConflictCode(t *testing.T) {
 	}
 
 	_, err = srv.MCPBackend().CreatePullWorkspace(ctx, item, true)
-	require.NoError(t, err)
+	require.NoError(err)
 	_, err = srv.MCPBackend().CreatePullWorkspace(ctx, item, true)
 
 	var backendErr *mcpserver.Error
-	require.ErrorAs(t, err, &backendErr)
-	assert.Equal(t, "conflict", backendErr.Kind)
-	assert.Equal(t, mcpserver.ErrorCodeWorkspaceAlreadyExists, backendErr.Code)
+	require.ErrorAs(err, &backendErr)
+	assert.Equal("conflict", backendErr.Kind)
+	assert.Equal(mcpserver.ErrorCodeWorkspaceAlreadyExists, backendErr.Code)
 }
 
 func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
@@ -155,21 +161,23 @@ func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
 }
 
 func TestMCPBackendReadFailsClosedWhenRouteReassignedMidRead(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 	seedPR(t, database, "acme", "widget", 42)
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(t, err)
-	require.NotNil(t, repo)
+	require.NoError(err)
+	require.NotNil(repo)
 	backend, ok := srv.MCPBackend().(mcpBackend)
-	require.True(t, ok)
+	require.True(ok)
 
 	resolved, err := backend.resolveRepositoryFence(ctx, mcpserver.RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com",
 		PlatformRepoID: repo.PlatformRepoID,
 		Owner:          "acme", Name: "widget",
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// Reassign route ownership between stable-identity validation and the
 	// route-addressed read, the window the fence exists to police.
@@ -178,26 +186,28 @@ func TestMCPBackendReadFailsClosedWhenRouteReassignedMidRead(t *testing.T) {
 		PlatformRepoID: "replacement-repository",
 		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
 	}, time.Now().UTC())
-	require.NoError(t, err)
-	require.True(t, accepted)
+	require.NoError(err)
+	require.True(accepted)
 
 	err = backend.confirmRepositoryRoute(ctx, resolved)
 
 	var backendErr *mcpserver.Error
-	require.ErrorAs(t, err, &backendErr)
-	assert.Equal(t, "not_found", backendErr.Kind)
-	assert.Equal(t, string(httpapi.CodeRepoNotFound), backendErr.Code)
+	require.ErrorAs(err, &backendErr)
+	assert.Equal("not_found", backendErr.Kind)
+	assert.Equal(string(httpapi.CodeRepoNotFound), backendErr.Code)
 }
 
 func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 	seedPR(t, database, "acme", "widget", 1)
 	seedPR(t, database, "acme", "widget", 2)
 	seedIssue(t, database, "acme", "widget", 3, "open")
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(t, err)
-	require.NotNil(t, repo)
+	require.NoError(err)
+	require.NotNil(repo)
 	markArchiveItemRemovedUpstreamForServerTest(
 		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 1,
 	)
@@ -215,10 +225,10 @@ func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.
 		Repository: repository, IncludeClosed: true,
 	})
 
-	require.NoError(t, err)
-	require.Len(t, page.Items, 1)
-	assert.Equal(t, 2, page.Items[0].Identity.Number)
-	assert.Equal(t, repo.PlatformRepoID, page.Items[0].Identity.PlatformRepoID)
+	require.NoError(err)
+	require.Len(page.Items, 1)
+	assert.Equal(2, page.Items[0].Identity.Number)
+	assert.Equal(repo.PlatformRepoID, page.Items[0].Identity.PlatformRepoID)
 
 	_, err = backend.SetWorkflowState(ctx, mcpserver.ItemIdentity{
 		Type: "pr", Provider: "github", PlatformHost: "github.com",
@@ -228,12 +238,12 @@ func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.
 		Status: "reviewing", ExpectedStatus: "new", Source: "mcp",
 	})
 	var backendErr *mcpserver.Error
-	require.ErrorAs(t, err, &backendErr)
-	assert.Equal(t, "not_found", backendErr.Kind)
-	assert.Equal(t, string(httpapi.CodePullNotFound), backendErr.Code)
+	require.ErrorAs(err, &backendErr)
+	assert.Equal("not_found", backendErr.Kind)
+	assert.Equal(string(httpapi.CodePullNotFound), backendErr.Code)
 
 	stored, err := database.GetItemWorkflowState(ctx, repo.ID, db.ItemTypePR, 1)
-	require.NoError(t, err)
-	require.NotNil(t, stored)
-	assert.Equal(t, "new", stored.Status)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("new", stored.Status)
 }

@@ -58,21 +58,23 @@ func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
 }
 
 func TestMCPConfigDefaultsToBackendPortPlusOne(t *testing.T) {
+	assert := assert.New(t)
 	cfg, err := Load(writeConfig(t, "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\n"))
 	require.NoError(t, err)
-	assert.Equal(t, 8092, cfg.MCPPort())
-	assert.Equal(t, "127.0.0.1:8092", cfg.MCPListenAddr())
-	assert.Equal(t, int64(128<<20), cfg.MCPDiffCacheBytes())
+	assert.Equal(8092, cfg.MCPPort())
+	assert.Equal("127.0.0.1:8092", cfg.MCPListenAddr())
+	assert.Equal(int64(128<<20), cfg.MCPDiffCacheBytes())
 }
 
 func TestMCPConfigRoundTrip(t *testing.T) {
+	require := require.New(t)
 	cfg, err := Load(writeConfig(t, ""))
-	require.NoError(t, err)
+	require.NoError(err)
 	cfg.MCP = MCP{Enabled: true, Port: 9192, DiffCacheMB: 256}
 	path := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(t, cfg.Save(path))
+	require.NoError(cfg.Save(path))
 	reloaded, err := Load(path)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(t, MCP{Enabled: true, Port: 9192, DiffCacheMB: 256}, reloaded.MCP)
 }
 

@@ -13,6 +13,8 @@ import (
 )
 
 func TestGetItemDiffSummaryUsesBackendWithoutReturningPatches(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var got ItemIdentity
 	var includePatches bool
 	backend := &fakeBackend{getPullDiffFn: func(_ context.Context, item ItemIdentity, patches bool) (Diff, error) {
@@ -35,23 +37,25 @@ func TestGetItemDiffSummaryUsesBackendWithoutReturningPatches(t *testing.T) {
 		Item: itemRefInput{Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 42},
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, ItemIdentity{Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 42}, got)
-	assert.False(t, includePatches)
-	assert.True(t, out.Stale)
-	assert.Equal(t, 8, out.TotalAdditions)
-	assert.Equal(t, 3, out.TotalDeletions)
-	assert.True(t, out.Files[1].IsBinary)
+	require.NoError(err)
+	assert.Equal(ItemIdentity{Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 42}, got)
+	assert.False(includePatches)
+	assert.True(out.Stale)
+	assert.Equal(8, out.TotalAdditions)
+	assert.Equal(3, out.TotalDeletions)
+	assert.True(out.Files[1].IsBinary)
 	raw, err := json.Marshal(out)
-	require.NoError(t, err)
-	assert.NotContains(t, string(raw), "must not leak")
-	assert.NotContains(t, string(raw), `"diff_file"`)
+	require.NoError(err)
+	assert.NotContains(string(raw), "must not leak")
+	assert.NotContains(string(raw), `"diff_file"`)
 }
 
 func TestGetItemDiffEmitWritesOneBackendSnapshotAndOverwrites(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	calls := 0
 	backend := &fakeBackend{getPullDiffFn: func(_ context.Context, _ ItemIdentity, patches bool) (Diff, error) {
-		assert.True(t, patches)
+		assert.True(patches)
 		calls++
 		if calls == 1 {
 			return Diff{Stale: true, Files: []DiffFile{
@@ -80,22 +84,22 @@ func TestGetItemDiffEmitWritesOneBackendSnapshotAndOverwrites(t *testing.T) {
 	}
 
 	first, err := s.getItemDiff(t.Context(), input)
-	require.NoError(t, err)
-	require.NotNil(t, first.DiffFile)
+	require.NoError(err)
+	require.NotNil(first.DiffFile)
 	firstData, err := os.ReadFile(first.DiffFile.Path)
-	require.NoError(t, err)
-	assert.Equal(t, 2, strings.Count(string(firstData), "diff --git "))
+	require.NoError(err)
+	assert.Equal(2, strings.Count(string(firstData), "diff --git "))
 	info, err := os.Stat(first.DiffFile.Path)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	require.NoError(err)
+	assert.Equal(os.FileMode(0o600), info.Mode().Perm())
 
 	second, err := s.getItemDiff(t.Context(), input)
-	require.NoError(t, err)
-	require.NotNil(t, second.DiffFile)
-	assert.Equal(t, first.DiffFile.Path, second.DiffFile.Path)
+	require.NoError(err)
+	require.NotNil(second.DiffFile)
+	assert.Equal(first.DiffFile.Path, second.DiffFile.Path)
 	secondData, err := os.ReadFile(second.DiffFile.Path)
-	require.NoError(t, err)
-	assert.Equal(t, "diff --git a/src/new.go b/src/new.go\nnew file mode 100644\n", string(secondData))
+	require.NoError(err)
+	assert.Equal("diff --git a/src/new.go b/src/new.go\nnew file mode 100644\n", string(secondData))
 }
 
 func TestGetItemDiffClassifiesUnavailableIdentityAndLocalFailures(t *testing.T) {
@@ -136,6 +140,8 @@ func TestGetItemDiffClassifiesUnavailableIdentityAndLocalFailures(t *testing.T) 
 }
 
 func TestGetItemDiffEmitSynthesizesEvidenceForFilesWithoutTextPatches(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	backend := &fakeBackend{getPullDiffFn: func(context.Context, ItemIdentity, bool) (Diff, error) {
 		return Diff{Files: []DiffFile{
 			{Path: "assets/logo.png", Status: "modified", IsBinary: true},
@@ -156,20 +162,20 @@ func TestGetItemDiffEmitSynthesizesEvidenceForFilesWithoutTextPatches(t *testing
 		EmitDiffFile: true,
 	})
 
-	require.NoError(t, err)
-	require.NotNil(t, out.DiffFile)
+	require.NoError(err)
+	require.NotNil(out.DiffFile)
 	data, err := os.ReadFile(out.DiffFile.Path)
-	require.NoError(t, err)
+	require.NoError(err)
 	patch := string(data)
-	assert.Contains(t, patch, "diff --git a/assets/logo.png b/assets/logo.png\n")
-	assert.Contains(t, patch, "Binary files a/assets/logo.png and b/assets/logo.png differ\n")
-	assert.Contains(t, patch, "diff --git a/src/old.go b/src/new.go\n")
-	assert.Contains(t, patch, "rename from src/old.go\nrename to src/new.go\n")
-	assert.Contains(t, patch, "diff --git a/scripts/run.sh b/scripts/run.sh\n")
-	assert.Contains(t, patch, "diff --git a/docs/empty.md b/docs/empty.md\n--- /dev/null\n+++ b/docs/empty.md\n")
-	assert.Contains(t, patch, "diff --git a/legacy/empty.cfg b/legacy/empty.cfg\n--- a/legacy/empty.cfg\n+++ /dev/null\n")
-	assert.Contains(t, patch, "rename from assets/original.png\nrename to assets/moved.png\nBinary files a/assets/original.png and b/assets/moved.png differ\n")
-	assert.Contains(t, patch, "copy from assets/original.png\ncopy to assets/copy.png\nBinary files a/assets/original.png and b/assets/copy.png differ\n")
+	assert.Contains(patch, "diff --git a/assets/logo.png b/assets/logo.png\n")
+	assert.Contains(patch, "Binary files a/assets/logo.png and b/assets/logo.png differ\n")
+	assert.Contains(patch, "diff --git a/src/old.go b/src/new.go\n")
+	assert.Contains(patch, "rename from src/old.go\nrename to src/new.go\n")
+	assert.Contains(patch, "diff --git a/scripts/run.sh b/scripts/run.sh\n")
+	assert.Contains(patch, "diff --git a/docs/empty.md b/docs/empty.md\n--- /dev/null\n+++ b/docs/empty.md\n")
+	assert.Contains(patch, "diff --git a/legacy/empty.cfg b/legacy/empty.cfg\n--- a/legacy/empty.cfg\n+++ /dev/null\n")
+	assert.Contains(patch, "rename from assets/original.png\nrename to assets/moved.png\nBinary files a/assets/original.png and b/assets/moved.png differ\n")
+	assert.Contains(patch, "copy from assets/original.png\ncopy to assets/copy.png\nBinary files a/assets/original.png and b/assets/copy.png differ\n")
 }
 
 func TestGetItemDiffRejectsOversizedTempFile(t *testing.T) {
@@ -210,6 +216,7 @@ func TestGetItemDiffRejectsFileLargerThanConfiguredCache(t *testing.T) {
 }
 
 func TestDiffFileNameCanonicalizesAndSeparatesIdentities(t *testing.T) {
+	assert := assert.New(t)
 	omittedHost := diffFileName(itemRefInput{
 		Type: "pr", Provider: "gh", PlatformRepoID: "repo-acme-widget",
 		Owner: "Acme", Name: "Widget", Number: 7,
@@ -237,36 +244,38 @@ func TestDiffFileNameCanonicalizesAndSeparatesIdentities(t *testing.T) {
 		Type: "pr", Provider: "gitea", PlatformRepoID: "gitea-widget", PlatformHost: "git.example.test",
 		Owner: "team", Name: "widget", Number: 7,
 	})
-	assert.Equal(t, omittedHost, explicitHost)
-	assert.NotEqual(t, omittedHost, collisionCandidate)
-	assert.NotEqual(t, forgejoUpper, forgejoLower)
-	assert.NotEqual(t, giteaUpper, giteaLower)
-	assert.NotContains(t, omittedHost, "/")
-	assert.LessOrEqual(t, len(omittedHost), maxMCPDiffFileNameBytes)
-	assert.True(t, strings.HasSuffix(omittedHost, ".diff"))
+	assert.Equal(omittedHost, explicitHost)
+	assert.NotEqual(omittedHost, collisionCandidate)
+	assert.NotEqual(forgejoUpper, forgejoLower)
+	assert.NotEqual(giteaUpper, giteaLower)
+	assert.NotContains(omittedHost, "/")
+	assert.LessOrEqual(len(omittedHost), maxMCPDiffFileNameBytes)
+	assert.True(strings.HasSuffix(omittedHost, ".diff"))
 }
 
 func TestDiffFileStoreEvictsLeastRecentlyRequestedFiles(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	store, err := newDiffFileStore(8)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(store.Close()) })
 
 	firstPath, _, err := store.write("first.diff", []byte("1111"))
-	require.NoError(t, err)
+	require.NoError(err)
 	secondPath, _, err := store.write("second.diff", []byte("2222"))
-	require.NoError(t, err)
+	require.NoError(err)
 	refreshedPath, _, err := store.write("first.diff", []byte("1111"))
-	require.NoError(t, err)
-	assert.Equal(t, firstPath, refreshedPath)
+	require.NoError(err)
+	assert.Equal(firstPath, refreshedPath)
 	thirdPath, _, err := store.write("third.diff", []byte("3333"))
-	require.NoError(t, err)
+	require.NoError(err)
 
 	_, err = os.Stat(firstPath)
-	require.NoError(t, err)
+	require.NoError(err)
 	_, err = os.Stat(secondPath)
-	assert.True(t, os.IsNotExist(err), "expected least recently requested diff to be evicted, got %v", err)
+	assert.True(os.IsNotExist(err), "expected least recently requested diff to be evicted, got %v", err)
 	_, err = os.Stat(thirdPath)
-	require.NoError(t, err)
+	require.NoError(err)
 }
 
 func TestDiffFileStoreRejectsFileLargerThanCache(t *testing.T) {
@@ -281,11 +290,12 @@ func TestDiffFileStoreRejectsFileLargerThanCache(t *testing.T) {
 }
 
 func TestDiffFileStoreCloseRemovesDirectory(t *testing.T) {
+	require := require.New(t)
 	store, err := newDiffFileStore(64)
-	require.NoError(t, err)
+	require.NoError(err)
 	path, _, err := store.write("one.diff", []byte("diff --git a/a b/a\n"))
-	require.NoError(t, err)
-	require.NoError(t, store.Close())
+	require.NoError(err)
+	require.NoError(store.Close())
 	_, err = os.Stat(filepath.Dir(path))
 	assert.True(t, os.IsNotExist(err), "expected temp dir to be removed, got %v", err)
 }

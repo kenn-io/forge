@@ -2307,6 +2307,7 @@ func TestManagerSubmitInitialMessageClassifiesMissingSessionAsNotWritten(t *test
 }
 
 func TestManagerSubmitInitialMessageHonorsContextWithoutHoldingSessionLock(t *testing.T) {
+	require := require.New(t)
 	writeStarted := make(chan struct{})
 	writeRelease := make(chan struct{})
 	writeFinished := make(chan struct{})
@@ -2341,19 +2342,19 @@ func TestManagerSubmitInitialMessageHonorsContextWithoutHoldingSessionLock(t *te
 	select {
 	case <-snapshotDone:
 	case <-time.After(time.Second):
-		require.FailNow(t, "session lock remained held during terminal write")
+		require.FailNow("session lock remained held during terminal write")
 	}
 	select {
 	case err := <-result:
-		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.ErrorIs(err, context.DeadlineExceeded)
 	case <-time.After(time.Second):
-		require.FailNow(t, "initial message write ignored context deadline")
+		require.FailNow("initial message write ignored context deadline")
 	}
 	close(writeRelease)
 	select {
 	case <-writeFinished:
 	case <-time.After(time.Second):
-		require.FailNow(t, "blocked test write did not finish")
+		require.FailNow("blocked test write did not finish")
 	}
 }
 

@@ -24,7 +24,8 @@ fixtures, or changing shell-script coverage.
   `t.Errorf`, `t.Fail`, or `t.FailNow`.
 - Import `github.com/stretchr/testify/assert` without an alias. When a test has
   more than three assertions, create `assert := assert.New(t)` and use the
-  helper methods thereafter.
+  helper methods thereafter. CI enforces this through `guardrail-check`
+  (`Makefile::guardrail-check`).
 - Prefer the generated Go API client for integration-style API tests.
 - Use established package fixtures instead of opening databases directly. Use
   `t.TempDir()` when a test needs filesystem isolation.

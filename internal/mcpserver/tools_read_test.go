@@ -57,6 +57,8 @@ func TestRepoFilterInputRepositoryIdentity(t *testing.T) {
 }
 
 func TestListReposUsesBackendSummaries(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	backend := &fakeBackend{listRepositoriesFn: func(context.Context) ([]RepositorySummary, error) {
 		return []RepositorySummary{
 			{Repository: testRepository(), OpenPRCount: 3, OpenIssueCount: 2, LastSyncCompletedAt: "2026-07-01T10:00:00Z"},
@@ -67,15 +69,17 @@ func TestListReposUsesBackendSummaries(t *testing.T) {
 
 	out, err := s.listRepos(t.Context(), listReposInput{Limit: 1})
 
-	require.NoError(t, err)
-	require.Len(t, out.Repos, 1)
-	assert.Equal(t, "repo-acme-widget", out.Repos[0].PlatformRepoID)
-	assert.Equal(t, "acme/widget", out.Repos[0].RepoPath)
-	assert.Equal(t, 3, out.Repos[0].OpenPRCount)
-	assert.Equal(t, 2, out.Repos[0].OpenIssueCount)
+	require.NoError(err)
+	require.Len(out.Repos, 1)
+	assert.Equal("repo-acme-widget", out.Repos[0].PlatformRepoID)
+	assert.Equal("acme/widget", out.Repos[0].RepoPath)
+	assert.Equal(3, out.Repos[0].OpenPRCount)
+	assert.Equal(2, out.Repos[0].OpenIssueCount)
 }
 
 func TestSearchItemsForwardsTypedQueriesAndOrdersResults(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var pullQuery, issueQuery ItemListQuery
 	backend := &fakeBackend{
 		listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
@@ -103,26 +107,28 @@ func TestSearchItemsForwardsTypedQueriesAndOrdersResults(t *testing.T) {
 		Query: "retry", Repo: repoFilterInput{Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget"},
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, ItemListQuery{
+	require.NoError(err)
+	assert.Equal(ItemListQuery{
 		Repository: testRepository(), State: "open", Text: "retry", Limit: 26,
 	}, pullQuery)
-	assert.Equal(t, pullQuery, issueQuery)
-	require.Len(t, out.Results, 2)
-	assert.Equal(t, "issue", out.Results[0].Item.Type)
-	assert.Equal(t, "new", out.Results[0].WorkflowStatus)
-	assert.Equal(t, "reviewing", out.Results[1].WorkflowStatus)
+	assert.Equal(pullQuery, issueQuery)
+	require.Len(out.Results, 2)
+	assert.Equal("issue", out.Results[0].Item.Type)
+	assert.Equal("new", out.Results[0].WorkflowStatus)
+	assert.Equal("reviewing", out.Results[1].WorkflowStatus)
 	raw, err := json.Marshal(out)
-	require.NoError(t, err)
-	assert.NotContains(t, string(raw), "must not be returned")
+	require.NoError(err)
+	assert.NotContains(string(raw), "must not be returned")
 }
 
 func TestSearchItemsPagesMergedPullsAndReportsCaps(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var offsets []int
 	backend := &fakeBackend{listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
 		offsets = append(offsets, query.Offset)
-		assert.Equal(t, "all", query.State)
-		assert.Equal(t, 2, query.Limit)
+		assert.Equal("all", query.State)
+		assert.Equal(2, query.Limit)
 		if query.Offset == 0 {
 			return []Pull{
 				{Number: 1, State: "open", Repository: testRepository()},
@@ -140,14 +146,16 @@ func TestSearchItemsPagesMergedPullsAndReportsCaps(t *testing.T) {
 		Query: "change", State: "merged", ItemTypes: []string{"pr"}, Limit: 1,
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, []int{0, 2}, offsets)
-	require.Len(t, out.Results, 1)
-	assert.Equal(t, 3, out.Results[0].Item.Number)
-	assert.True(t, out.Capped)
+	require.NoError(err)
+	assert.Equal([]int{0, 2}, offsets)
+	require.Len(out.Results, 1)
+	assert.Equal(3, out.Results[0].Item.Number)
+	assert.True(out.Capped)
 }
 
 func TestListActivityForwardsTypedFiltersAndAppliesOutputLimit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var got ActivityQuery
 	backend := &fakeBackend{listActivityFn: func(_ context.Context, query ActivityQuery) (ActivityPage, error) {
 		got = query
@@ -170,12 +178,12 @@ func TestListActivityForwardsTypedFiltersAndAppliesOutputLimit(t *testing.T) {
 		Types: []string{"comment", "commit"}, Search: "retry", Limit: 1, After: "cursor-1",
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, ActivityQuery{
+	require.NoError(err)
+	assert.Equal(ActivityQuery{
 		Since: "2026-07-01T00:00:00Z", Repository: testRepository(),
 		ActivityTypes: []string{"comment", "commit"}, Search: "retry", After: "cursor-1",
 	}, got)
-	require.Len(t, out.Items, 1)
-	assert.True(t, out.Capped)
-	assert.Equal(t, "please retry", out.Items[0].BodyPreview)
+	require.Len(out.Items, 1)
+	assert.True(out.Capped)
+	assert.Equal("please retry", out.Items[0].BodyPreview)
 }

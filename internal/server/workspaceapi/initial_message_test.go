@@ -89,6 +89,8 @@ func TestInitialMessageSubmitFailureReleasesPreWriteAttempt(t *testing.T) {
 }
 
 func TestInitialMessageInactivePasteModeReturnsRetryableServiceSignal(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	handler := New(Deps{Now: func() time.Time {
 		return time.Date(2026, 8, 18, 17, 0, 0, 0, time.UTC)
 	}})
@@ -96,16 +98,16 @@ func TestInitialMessageInactivePasteModeReturnsRetryableServiceSignal(t *testing
 		Agent: "codex", SessionID: "coding-session", Message: "first\nsecond",
 	}
 	_, reserved := handler.reserveInitialMessageAttempt("ws-1", "runtime-1", proposed)
-	require.True(t, reserved)
+	require.True(reserved)
 
 	result, err := handler.handleInitialMessageSubmitError(
 		"ws-1", "runtime-1", proposed, localruntime.ErrBracketedPasteInactive,
 	)
 
-	require.ErrorIs(t, err, ErrInitialMessageInputModeNotReady)
-	assert.Empty(t, result.State)
+	require.ErrorIs(err, ErrInitialMessageInputModeNotReady)
+	assert.Empty(result.State)
 	_, found := handler.initialMessageAttempt("ws-1", "runtime-1")
-	assert.False(t, found)
+	assert.False(found)
 }
 
 func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t *testing.T) {

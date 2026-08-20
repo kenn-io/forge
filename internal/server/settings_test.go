@@ -389,7 +389,7 @@ port = 9092
 diff_cache_mb = 256
 `, &mockGH{}, ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
-		MCPURL:                       "http://127.0.0.1:9092/mcp",
+		MCPURL:                        "http://127.0.0.1:9092/mcp",
 	})
 	srv.bootCfgSnapshot.RequireAuth = true
 
@@ -417,11 +417,11 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	assert.Equal(mcp, config.MCP{
+	assert.Equal(config.MCP{
 		Enabled:     resp.MCP.Enabled,
 		Port:        resp.MCP.Port,
 		DiffCacheMB: resp.MCP.DiffCacheMB,
-	})
+	}, mcp)
 	assert.True(resp.MCP.RestartRequired)
 	assert.Empty(resp.MCP.ActiveURL)
 

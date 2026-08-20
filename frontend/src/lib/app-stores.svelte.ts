@@ -145,6 +145,15 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   if (hs.getGlobalRepo) {
     issuesOpts.getGlobalRepo = hs.getGlobalRepo;
   }
+  issuesOpts.supportsIssuePRReferences = () => {
+    const capableRepos = settingsStore.getConfiguredRepos().filter((repo) => repo.issue_pr_references);
+    if (capableRepos.length === 0) return false;
+    const selectedRepos = hs.getGlobalRepo?.();
+    if (!selectedRepos) return true;
+    return selectedRepos
+      .split(",")
+      .some((selected) => capableRepos.some((repo) => selected.startsWith(`${repo.provider}|${repo.platform_host}/`)));
+  };
   issuesOpts.getGroupByRepo = hs.getGroupByRepo ?? grouping.getGroupByRepo;
   const issuesStore = createIssuesStore(issuesOpts);
 

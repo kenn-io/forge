@@ -61,6 +61,11 @@
     loadList();
   }
 
+  function toggleReferencedByPR(): void {
+    issues.setReferencedByPR(!issues.getReferencedByPR());
+    loadList();
+  }
+
   const repoLabel = $derived(repo ?? "All repositories");
 
   const repoParams = $derived(
@@ -266,6 +271,15 @@
           >All</button>
         </div>
       {:else}
+        {#if issues.canFilterReferencedByPR()}
+          <button
+            type="button"
+            class="visibility-btn"
+            class:visibility-btn--active={issues.getReferencedByPR()}
+            aria-pressed={issues.getReferencedByPR()}
+            onclick={toggleReferencedByPR}
+          >Referenced by PR</button>
+        {/if}
         <button
           type="button"
           class="visibility-btn"

@@ -70,11 +70,12 @@ type ConfiguredRepoStatus struct {
 	// differs from the configured RepoPath, and clients need it to release
 	// state keyed to the current route (for example filter selections of a
 	// repository being hidden). Empty for globs and untracked entries.
-	TrackedRepoPath  string `json:"tracked_repo_path,omitempty"`
-	WorktreeBasePath string `json:"worktree_base_path,omitempty"`
-	IsGlob           bool   `json:"is_glob"`
-	MatchedRepoCount int    `json:"matched_repo_count"`
-	HiddenFromUI     bool   `json:"hidden_from_ui"`
+	TrackedRepoPath   string `json:"tracked_repo_path,omitempty"`
+	WorktreeBasePath  string `json:"worktree_base_path,omitempty"`
+	IsGlob            bool   `json:"is_glob"`
+	MatchedRepoCount  int    `json:"matched_repo_count"`
+	HiddenFromUI      bool   `json:"hidden_from_ui"`
+	IssuePRReferences bool   `json:"issue_pr_references"`
 }
 
 type ResolveConfiguredReposResult struct {

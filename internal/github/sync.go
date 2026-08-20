@@ -2004,6 +2004,7 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadRepositories:            true,
 		ReadMergeRequests:           true,
 		ReadIssues:                  true,
+		ReadIssuePRReferences:       true,
 		ReadComments:                true,
 		ReadReleases:                true,
 		ReadCI:                      true,

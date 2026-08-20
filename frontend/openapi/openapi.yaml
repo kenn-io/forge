@@ -1216,6 +1216,8 @@ components:
           type: boolean
         is_glob:
           type: boolean
+        issue_pr_references:
+          type: boolean
         matched_repo_count:
           format: int64
           type: integer
@@ -1244,6 +1246,7 @@ components:
         - is_glob
         - matched_repo_count
         - hidden_from_ui
+        - issue_pr_references
       type: object
     CreateAdHocWorkspaceHostInputBody:
       additionalProperties: false
@@ -5088,6 +5091,8 @@ components:
           type: boolean
         read_comments:
           type: boolean
+        read_issue_pr_references:
+          type: boolean
         read_issues:
           type: boolean
         read_labels:
@@ -5132,6 +5137,7 @@ components:
         - read_repositories
         - read_merge_requests
         - read_issues
+        - read_issue_pr_references
         - read_comments
         - read_releases
         - read_ci
@@ -14529,6 +14535,13 @@ paths:
           name: involves_me
           schema:
             description: Only include issues involving the authenticated viewer.
+            type: boolean
+        - description: Only include issues referenced by a pull request.
+          explode: false
+          in: query
+          name: referenced_by_pr
+          schema:
+            description: Only include issues referenced by a pull request.
             type: boolean
         - explode: false
           in: query

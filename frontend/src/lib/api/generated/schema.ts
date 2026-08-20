@@ -5177,6 +5177,7 @@ export interface components {
         ConfiguredRepoStatus: {
             hidden_from_ui: boolean;
             is_glob: boolean;
+            issue_pr_references: boolean;
             /** Format: int64 */
             matched_repo_count: number;
             name: string;
@@ -6950,6 +6951,7 @@ export interface components {
             read_authenticated_user: boolean;
             read_ci: boolean;
             read_comments: boolean;
+            read_issue_pr_references: boolean;
             read_issues: boolean;
             read_labels: boolean;
             read_markdown_images: boolean;
@@ -13380,6 +13382,8 @@ export interface operations {
                 starred?: boolean;
                 /** @description Only include issues involving the authenticated viewer. */
                 involves_me?: boolean;
+                /** @description Only include issues referenced by a pull request. */
+                referenced_by_pr?: boolean;
                 q?: string;
                 assignee?: string;
                 limit?: number;

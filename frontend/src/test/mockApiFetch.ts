@@ -18,6 +18,7 @@ const defaultProviderCapabilities = {
   read_repositories: true,
   read_merge_requests: true,
   read_issues: true,
+  read_issue_pr_references: true,
   read_comments: true,
   read_releases: true,
   read_ci: true,
@@ -266,6 +267,7 @@ export const mockSettings = {
     {
       provider: "github",
       platform_host: "github.com",
+      issue_pr_references: true,
       owner: "acme",
       name: "widgets",
       repo_path: "acme/widgets",

@@ -1646,17 +1646,18 @@ type CommitsResponse struct {
 
 // ConfiguredRepoStatus defines model for ConfiguredRepoStatus.
 type ConfiguredRepoStatus struct {
-	HiddenFromUi     bool    `json:"hidden_from_ui"`
-	IsGlob           bool    `json:"is_glob"`
-	MatchedRepoCount int64   `json:"matched_repo_count"`
-	Name             string  `json:"name"`
-	Owner            string  `json:"owner"`
-	PlatformHost     string  `json:"platform_host"`
-	PlatformRepoId   *string `json:"platform_repo_id,omitempty"`
-	Provider         string  `json:"provider"`
-	RepoPath         string  `json:"repo_path"`
-	TrackedRepoPath  *string `json:"tracked_repo_path,omitempty"`
-	WorktreeBasePath *string `json:"worktree_base_path,omitempty"`
+	HiddenFromUi      bool    `json:"hidden_from_ui"`
+	IsGlob            bool    `json:"is_glob"`
+	IssuePrReferences bool    `json:"issue_pr_references"`
+	MatchedRepoCount  int64   `json:"matched_repo_count"`
+	Name              string  `json:"name"`
+	Owner             string  `json:"owner"`
+	PlatformHost      string  `json:"platform_host"`
+	PlatformRepoId    *string `json:"platform_repo_id,omitempty"`
+	Provider          string  `json:"provider"`
+	RepoPath          string  `json:"repo_path"`
+	TrackedRepoPath   *string `json:"tracked_repo_path,omitempty"`
+	WorktreeBasePath  *string `json:"worktree_base_path,omitempty"`
 }
 
 // CreateAdHocWorkspaceHostInputBody defines model for CreateAdHocWorkspaceHostInputBody.
@@ -3410,6 +3411,7 @@ type ProviderCapabilitiesResponse struct {
 	ReadAuthenticatedUser       bool      `json:"read_authenticated_user"`
 	ReadCi                      bool      `json:"read_ci"`
 	ReadComments                bool      `json:"read_comments"`
+	ReadIssuePrReferences       bool      `json:"read_issue_pr_references"`
 	ReadIssues                  bool      `json:"read_issues"`
 	ReadLabels                  bool      `json:"read_labels"`
 	ReadMarkdownImages          bool      `json:"read_markdown_images"`
@@ -5211,11 +5213,14 @@ type ListIssuesParams struct {
 	Starred *bool   `form:"starred,omitempty" json:"starred,omitempty"`
 
 	// InvolvesMe Only include issues involving the authenticated viewer.
-	InvolvesMe *bool   `form:"involves_me,omitempty" json:"involves_me,omitempty"`
-	Q          *string `form:"q,omitempty" json:"q,omitempty"`
-	Assignee   *string `form:"assignee,omitempty" json:"assignee,omitempty"`
-	Limit      *int64  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset     *int64  `form:"offset,omitempty" json:"offset,omitempty"`
+	InvolvesMe *bool `form:"involves_me,omitempty" json:"involves_me,omitempty"`
+
+	// ReferencedByPr Only include issues referenced by a pull request.
+	ReferencedByPr *bool   `form:"referenced_by_pr,omitempty" json:"referenced_by_pr,omitempty"`
+	Q              *string `form:"q,omitempty" json:"q,omitempty"`
+	Assignee       *string `form:"assignee,omitempty" json:"assignee,omitempty"`
+	Limit          *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset         *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ResolveKataIssueReferenceParams defines parameters for ResolveKataIssueReference.
@@ -25612,6 +25617,18 @@ func NewListIssuesRequest(server string, params *ListIssuesParams) (*http.Reques
 		if params.InvolvesMe != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "involves_me", *params.InvolvesMe, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ReferencedByPr != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "referenced_by_pr", *params.ReferencedByPr, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

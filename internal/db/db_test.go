@@ -215,6 +215,41 @@ func TestOpenAndSchema(t *testing.T) {
 	require.Error(err)
 }
 
+func TestOpenBackfillsIssuePRReferences(t *testing.T) {
+	require := require.New(t)
+	dbPath := filepath.Join(t.TempDir(), "issue-pr-reference-backfill.db")
+	openAtVersionForTest(t, dbPath, 51, func(*sql.DB) {})
+
+	previous, err := OpenPreparedForTest(dbPath)
+	require.NoError(err)
+	repoID, err := previous.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+		"github", "github.com", "acme", "widget",
+	))
+	require.NoError(err)
+	issueID, err := previous.UpsertIssue(t.Context(), testIssue(repoID, 7))
+	require.NoError(err)
+	_, err = previous.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_issue_events (
+			issue_id, event_type, metadata_json, created_at, dedupe_key
+		) VALUES (?, 'cross_referenced', ?, ?, ?)`,
+		issueID,
+		`{"source_type":"PullRequest","source_owner":"acme","source_repo":"client","source_number":42,"source_url":"https://github.com/acme/client/pull/42"}`,
+		baseTime(),
+		"cross-reference-42",
+	)
+	require.NoError(err)
+	require.NoError(previous.Close())
+
+	migrated, err := Open(dbPath)
+	require.NoError(err)
+	t.Cleanup(func() { migrated.Close() })
+	issues, err := migrated.ListIssues(t.Context(), ListIssuesOpts{ReferencedByPR: true})
+	require.NoError(err)
+	require.Len(issues, 1)
+	require.Equal(issueID, issues[0].ID)
+	assertDatabaseIntegrityForTest(t, migrated.ReadDB())
+}
+
 func TestKataIssueLinksMigration48IsReversible(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

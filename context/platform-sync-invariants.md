@@ -190,12 +190,16 @@ registry helpers return typed errors for missing providers or capabilities.
 - A PR reference is historical evidence that a provider observed a pull or merge
   request cross-reference to an issue. It survives upstream mention removal and
   does not depend on repository tracking, repository boundary, or PR lifecycle.
+  (`internal/db/queries.go::upsertIssueEventsTx`)
 - Persist normalized PR references and query that graph for list filters. A missing
   edge means no reference; never parse Markdown during list reads.
+  (`internal/db/queries.go::DB.ListIssues`)
 - Each edge keeps provider-supplied source identity and URL without requiring a
   tracked source repository or local PR row.
+  (`internal/db/migrations/000052_issue_pr_references.up.sql:1`)
 - Ingest only regular-sync payloads and backfill stored events; reference tracking
   must not add provider reads or content scans.
+  (`internal/db/queries.go::issuePRReferenceFromEvent`)
 - Historical references cannot prove a current issue-PR relationship. A current-link
   capability requires an authoritative replaceable provider snapshot.
 

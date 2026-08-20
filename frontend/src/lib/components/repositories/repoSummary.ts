@@ -31,6 +31,7 @@ export const defaultProviderCapabilities: ProviderCapabilities = {
   read_repositories: true,
   read_merge_requests: true,
   read_issues: true,
+  read_issue_pr_references: false,
   read_comments: true,
   read_releases: true,
   read_ci: true,

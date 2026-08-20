@@ -509,6 +509,7 @@ type Capabilities struct {
 	ReadRepositories      bool
 	ReadMergeRequests     bool
 	ReadIssues            bool
+	ReadIssuePRReferences bool
 	ReadComments          bool
 	ReadReleases          bool
 	ReadCI                bool

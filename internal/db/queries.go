@@ -3370,6 +3370,12 @@ func (d *DB) ListIssues(
 	if opts.ViewerLogins != nil {
 		conds = append(conds, issueInvolvementCondition("i", opts.ViewerLogins, &args))
 	}
+	if opts.ReferencedByPR {
+		conds = append(conds, `EXISTS (
+			SELECT 1 FROM forge_issue_pr_references ref
+			WHERE ref.issue_id = i.id
+		)`)
+	}
 
 	where := ""
 	if len(conds) > 0 {
@@ -3846,6 +3852,28 @@ func upsertIssueEventsTx(ctx context.Context, tx *sql.Tx, events []IssueEvent) e
 		return fmt.Errorf("prepare upsert issue events: %w", err)
 	}
 	defer stmt.Close()
+	refStmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO forge_issue_pr_references (
+			issue_id, source_provider, source_platform_host,
+			source_owner, source_repo, source_number, source_url,
+			observed_event_key, observed_at
+		)
+		SELECT
+			i.id, r.platform, r.platform_host, ?, ?, ?, ?, ?, ?
+		FROM forge_issues i
+		JOIN forge_repos r ON r.id = i.repo_id
+		WHERE i.id = ?
+		ON CONFLICT (
+			issue_id, source_provider, source_platform_host,
+			source_owner, source_repo, source_number
+		) DO UPDATE SET
+			source_url = excluded.source_url,
+			observed_event_key = excluded.observed_event_key,
+			observed_at = MAX(observed_at, excluded.observed_at)`)
+	if err != nil {
+		return fmt.Errorf("prepare materialize issue PR references: %w", err)
+	}
+	defer refStmt.Close()
 
 	for i := range events {
 		e := &events[i]
@@ -3857,8 +3885,41 @@ func upsertIssueEventsTx(ctx context.Context, tx *sql.Tx, events []IssueEvent) e
 		); err != nil {
 			return fmt.Errorf("insert issue event (dedupe_key=%s): %w", e.DedupeKey, err)
 		}
+		ref, ok := issuePRReferenceFromEvent(*e)
+		if !ok {
+			continue
+		}
+		if _, err := refStmt.ExecContext(
+			ctx, ref.SourceOwner, ref.SourceRepo, ref.SourceNumber,
+			ref.SourceURL, e.DedupeKey, e.CreatedAt, e.IssueID,
+		); err != nil {
+			return fmt.Errorf("materialize issue PR reference (dedupe_key=%s): %w", e.DedupeKey, err)
+		}
 	}
 	return nil
+}
+
+type issuePRReferenceMetadata struct {
+	SourceType   string `json:"source_type"`
+	SourceOwner  string `json:"source_owner"`
+	SourceRepo   string `json:"source_repo"`
+	SourceNumber int    `json:"source_number"`
+	SourceURL    string `json:"source_url"`
+}
+
+func issuePRReferenceFromEvent(event IssueEvent) (issuePRReferenceMetadata, bool) {
+	if event.EventType != "cross_referenced" {
+		return issuePRReferenceMetadata{}, false
+	}
+	var metadata issuePRReferenceMetadata
+	if err := json.Unmarshal([]byte(event.MetadataJSON), &metadata); err != nil {
+		return issuePRReferenceMetadata{}, false
+	}
+	valid := metadata.SourceType == "PullRequest" &&
+		strings.TrimSpace(metadata.SourceOwner) != "" &&
+		strings.TrimSpace(metadata.SourceRepo) != "" &&
+		metadata.SourceNumber > 0 && strings.TrimSpace(metadata.SourceURL) != ""
+	return metadata, valid
 }
 
 func (d *DB) IssueCommentEventExists(

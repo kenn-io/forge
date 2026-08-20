@@ -354,6 +354,7 @@ command = ["codex", "--full-auto"]
 	assert.Equal("acme", resp.Repos[0].Owner)
 	assert.Equal("repo-acme-widget", resp.Repos[0].PlatformRepoID)
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
+	assert.True(resp.Repos[0].IssuePRReferences)
 	assert.Equal("threaded", resp.Activity.ViewMode)
 	assert.True(resp.Notifications.Enabled)
 	assert.Empty(resp.Terminal.FontFamily)

@@ -1,0 +1,2 @@
+DROP INDEX idx_forge_issue_pr_references_issue;
+DROP TABLE forge_issue_pr_references;

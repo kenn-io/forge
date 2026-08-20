@@ -4,6 +4,7 @@ type ProviderCapabilitiesResponse struct {
 	ReadRepositories            bool     `json:"read_repositories"`
 	ReadMergeRequests           bool     `json:"read_merge_requests"`
 	ReadIssues                  bool     `json:"read_issues"`
+	ReadIssuePRReferences       bool     `json:"read_issue_pr_references"`
 	ReadComments                bool     `json:"read_comments"`
 	ReadReleases                bool     `json:"read_releases"`
 	ReadCI                      bool     `json:"read_ci"`

@@ -98,20 +98,25 @@
   }
 
   function resetCompactView(): void {
-    const reloadIssues = issues.getIssueFilterState() !== "open" || issues.getInvolvesMe();
+    const reloadIssues = issues.getIssueFilterState() !== "open"
+      || issues.getInvolvesMe()
+      || issues.getReferencedByPR();
     if (issues.getIssueFilterState() !== "open") issues.setIssueFilterState("open");
     grouping.setGroupByRepo(true);
     grouping.setHideOrgName(false);
     if (issues.getHideBots()) void issues.setHideBots(false);
     issues.setInvolvesMe(false);
+    issues.setReferencedByPR(false);
     if (reloadIssues) issues.loadIssues();
   }
 
   function resetVisibility(): void {
     grouping.setHideOrgName(false);
     if (issues.getHideBots()) void issues.setHideBots(false);
-    if (issues.getInvolvesMe()) {
-      issues.setInvolvesMe(false);
+    const reloadIssues = issues.getInvolvesMe() || issues.getReferencedByPR();
+    issues.setInvolvesMe(false);
+    issues.setReferencedByPR(false);
+    if (reloadIssues) {
       issues.loadIssues();
     }
   }
@@ -128,6 +133,15 @@
           issues.loadIssues();
         },
       },
+      ...(issues.canFilterReferencedByPR() ? [{
+        id: "referenced-by-pr",
+        label: "Referenced by PR",
+        active: issues.getReferencedByPR(),
+        onSelect: () => {
+          issues.setReferencedByPR(!issues.getReferencedByPR());
+          issues.loadIssues();
+        },
+      }] : []),
       {
         id: "hide-org-name",
         label: "Hide org name",
@@ -170,7 +184,8 @@
       || !grouping.getGroupByRepo()
       || grouping.getHideOrgName()
       || issues.getHideBots()
-      || issues.getInvolvesMe(),
+      || issues.getInvolvesMe()
+      || issues.getReferencedByPR(),
   );
   const useCompactFilters = $derived(
     sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
@@ -250,7 +265,10 @@
       <FilterDropdown
         label="Visibility"
         title="Issue visibility"
-        active={grouping.getHideOrgName() || issues.getHideBots() || issues.getInvolvesMe()}
+        active={grouping.getHideOrgName()
+          || issues.getHideBots()
+          || issues.getInvolvesMe()
+          || issues.getReferencedByPR()}
         showBadge={false}
         sections={[visibilityFilterSection]}
         resetLabel="Reset visibility"

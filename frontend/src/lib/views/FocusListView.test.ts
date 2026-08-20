@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import FocusListView from "./FocusListViewRuntimeHarness.svelte";
 import {
   getIssueInvolvesMe,
+  getIssueReferencedByPR,
   getIssueSearch,
   getPullInvolvesMe,
   getPullSearch,
   resetFocusListViewState,
   setIssueInvolvesMe,
+  setIssueReferencedByPR,
   setIssueSearch,
   setPullInvolvesMe,
   setPullSearch,
@@ -20,6 +22,7 @@ const loadPulls = vi.hoisted(() => vi.fn());
 const loadIssues = vi.hoisted(() => vi.fn());
 const setPullsInvolvesMe = vi.hoisted(() => vi.fn());
 const setIssuesInvolvesMe = vi.hoisted(() => vi.fn());
+const setIssuesReferencedByPR = vi.hoisted(() => vi.fn());
 const unsubscribeSync = vi.hoisted(() => vi.fn());
 const subscribeSyncComplete = vi.hoisted(() => vi.fn(() => unsubscribeSync));
 vi.mock("../context.js", () => ({
@@ -33,6 +36,8 @@ vi.mock("../context.js", () => ({
     },
     issues: {
       getInvolvesMe: getIssueInvolvesMe,
+      getReferencedByPR: getIssueReferencedByPR,
+      canFilterReferencedByPR: () => true,
       getIssueSearchQuery: getIssueSearch,
       getHideBots: () => false,
       getIssueFilterState: () => "open",
@@ -44,6 +49,10 @@ vi.mock("../context.js", () => ({
       setInvolvesMe: (value: boolean) => {
         setIssuesInvolvesMe(value);
         setIssueInvolvesMe(value);
+      },
+      setReferencedByPR: (value: boolean) => {
+        setIssuesReferencedByPR(value);
+        setIssueReferencedByPR(value);
       },
       setIssueFilterState: vi.fn(),
       setIssueSearchQuery: (value: string | undefined) => {
@@ -89,6 +98,7 @@ describe("FocusListView search", () => {
     loadIssues.mockClear();
     setPullsInvolvesMe.mockClear();
     setIssuesInvolvesMe.mockClear();
+    setIssuesReferencedByPR.mockClear();
     unsubscribeSync.mockClear();
     subscribeSyncComplete.mockClear();
     resetFocusListViewState();
@@ -153,6 +163,19 @@ describe("FocusListView search", () => {
 
     expect(setInvolvesMe).toHaveBeenCalledWith(true);
     expect(loadList).toHaveBeenCalledTimes(1);
+    expect(control.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("filters issues by pull request references", async () => {
+    render(FocusListView, { props: { listType: "issues", repo: "acme/one" } });
+    loadIssues.mockClear();
+
+    const control = screen.getByRole("button", { name: "Referenced by PR" });
+    expect(control.getAttribute("aria-pressed")).toBe("false");
+    await fireEvent.click(control);
+
+    expect(setIssuesReferencedByPR).toHaveBeenCalledWith(true);
+    expect(loadIssues).toHaveBeenCalledTimes(1);
     expect(control.getAttribute("aria-pressed")).toBe("true");
   });
 });

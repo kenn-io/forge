@@ -9,6 +9,7 @@ import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 import { createIssuesStore as createRuntimeIssuesStore, type IssuesStoreOptions } from "./issues.svelte.js";
 import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
+import { issuePRReferenceFilterStorageKey } from "./issue-pr-reference-filter.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -222,6 +223,47 @@ describe("createIssuesStore", () => {
       "/issues",
       expect.objectContaining({
         params: { query: expect.objectContaining({ involves_me: true }) },
+      }),
+    );
+  });
+
+  it("persists and sends the Referenced by PR filter when the scope supports it", async () => {
+    const get = vi.fn(async () => ({ data: [], error: undefined }));
+    const store = createIssuesStore({
+      client: { GET: get } as unknown as GeneratedClient,
+      supportsIssuePRReferences: () => true,
+    });
+
+    store.setReferencedByPR(true);
+    store.loadIssues();
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+
+    expect(localStorage.getItem(issuePRReferenceFilterStorageKey())).toBe("1");
+    expect(get).toHaveBeenCalledWith(
+      "/issues",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ referenced_by_pr: true }) },
+      }),
+    );
+  });
+
+  it("keeps the preference dormant in an unsupported provider scope", async () => {
+    localStorage.setItem(issuePRReferenceFilterStorageKey(), "1");
+    const get = vi.fn(async () => ({ data: [], error: undefined }));
+    const store = createIssuesStore({
+      client: { GET: get } as unknown as GeneratedClient,
+      supportsIssuePRReferences: () => false,
+    });
+
+    store.loadIssues();
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+
+    expect(store.getReferencedByPR()).toBe(true);
+    expect(store.canFilterReferencedByPR()).toBe(false);
+    expect(get).toHaveBeenCalledWith(
+      "/issues",
+      expect.objectContaining({
+        params: { query: expect.not.objectContaining({ referenced_by_pr: true }) },
       }),
     );
   });

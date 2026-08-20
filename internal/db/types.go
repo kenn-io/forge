@@ -969,6 +969,7 @@ type ListIssuesOpts struct {
 	Offset            int
 	WorkspaceActivity []ItemActivityOverride
 	ViewerLogins      []RepoViewerLogin
+	ReferencedByPR    bool
 }
 
 type Notification struct {

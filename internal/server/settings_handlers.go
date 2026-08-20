@@ -126,18 +126,22 @@ func (s *Server) buildLocalSettingsResponse(
 		if err != nil {
 			return settingsResponse{}, err
 		}
+		caps := s.repoResolver.Capabilities(
+			platform.Kind(raw.PlatformOrDefault()), raw.PlatformHostOrDefault(),
+		)
 		configured[i] = ghclient.ConfiguredRepoStatus{
-			Provider:         raw.PlatformOrDefault(),
-			PlatformHost:     raw.PlatformHostOrDefault(),
-			PlatformRepoID:   trackedPlatformRepoIDForConfig(raw, tracked),
-			Owner:            raw.Owner,
-			Name:             raw.Name,
-			RepoPath:         configRepoPath(raw),
-			TrackedRepoPath:  trackedPathForConfig(raw, tracked),
-			WorktreeBasePath: raw.WorktreeBasePath,
-			IsGlob:           raw.HasNameGlob(),
-			MatchedRepoCount: matchedRepoCount(raw, tracked),
-			HiddenFromUI:     hiddenFromUI,
+			Provider:          raw.PlatformOrDefault(),
+			PlatformHost:      raw.PlatformHostOrDefault(),
+			PlatformRepoID:    trackedPlatformRepoIDForConfig(raw, tracked),
+			Owner:             raw.Owner,
+			Name:              raw.Name,
+			RepoPath:          configRepoPath(raw),
+			TrackedRepoPath:   trackedPathForConfig(raw, tracked),
+			WorktreeBasePath:  raw.WorktreeBasePath,
+			IsGlob:            raw.HasNameGlob(),
+			MatchedRepoCount:  matchedRepoCount(raw, tracked),
+			HiddenFromUI:      hiddenFromUI,
+			IssuePRReferences: caps.ReadIssuePRReferences,
 		}
 	}
 	return settingsResponse{

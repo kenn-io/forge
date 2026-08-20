@@ -2,6 +2,7 @@ let pullSearch = $state<string | undefined>(undefined);
 let issueSearch = $state<string | undefined>(undefined);
 let pullInvolvesMe = $state(false);
 let issueInvolvesMe = $state(false);
+let issueReferencedByPR = $state(false);
 
 export function getPullSearch(): string | undefined {
   return pullSearch;
@@ -35,9 +36,18 @@ export function setIssueInvolvesMe(value: boolean): void {
   issueInvolvesMe = value;
 }
 
+export function getIssueReferencedByPR(): boolean {
+  return issueReferencedByPR;
+}
+
+export function setIssueReferencedByPR(value: boolean): void {
+  issueReferencedByPR = value;
+}
+
 export function resetFocusListViewState(): void {
   pullSearch = undefined;
   issueSearch = undefined;
   pullInvolvesMe = false;
   issueInvolvesMe = false;
+  issueReferencedByPR = false;
 }

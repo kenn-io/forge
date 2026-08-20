@@ -816,6 +816,99 @@ func TestUpsertIssueEventsUpdatesExistingEventBody(t *testing.T) {
 	assert.Equal("edited body", events[0].Body)
 }
 
+func TestIssuePRReferencesMaterializeAndFilterIssues(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	referencedID := insertTestIssue(t, d, repoID, 1, "referenced", base)
+	insertTestIssue(t, d, repoID, 2, "not referenced", base.Add(time.Minute))
+
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:   referencedID,
+		EventType: "cross_referenced",
+		MetadataJSON: `{
+			"source_type":"PullRequest",
+			"source_owner":"acme",
+			"source_repo":"client",
+			"source_number":42,
+			"source_url":"https://github.com/acme/client/pull/42"
+		}`,
+		CreatedAt: base,
+		DedupeKey: "cross-reference-1",
+	}}))
+
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{ReferencedByPR: true})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(referencedID, issues[0].ID)
+
+	// A second observation of the same graph edge refreshes its evidence
+	// instead of manufacturing a duplicate edge.
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:   referencedID,
+		EventType: "cross_referenced",
+		MetadataJSON: `{
+			"source_type":"PullRequest",
+			"source_owner":"acme",
+			"source_repo":"client",
+			"source_number":42,
+			"source_url":"https://github.com/acme/client/pulls/42"
+		}`,
+		CreatedAt: base.Add(time.Hour),
+		DedupeKey: "cross-reference-2",
+	}}))
+
+	var count int
+	var sourceURL, observedKey string
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT COUNT(*), source_url, observed_event_key
+		FROM forge_issue_pr_references
+		WHERE issue_id = ?`, referencedID,
+	).Scan(&count, &sourceURL, &observedKey))
+	assert.Equal(1, count)
+	assert.Equal("https://github.com/acme/client/pulls/42", sourceURL)
+	assert.Equal("cross-reference-2", observedKey)
+
+	// Reference rows are historical evidence. Removing an event does not
+	// reconcile the graph until provider unlink detection is implemented.
+	_, err = d.WriteDB().ExecContext(ctx,
+		`DELETE FROM forge_issue_events WHERE issue_id = ?`, referencedID,
+	)
+	require.NoError(err)
+	issues, err = d.ListIssues(ctx, ListIssuesOpts{ReferencedByPR: true})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(referencedID, issues[0].ID)
+}
+
+func TestIssuePRReferenceMaterializationIgnoresIncompleteEvidence(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	issueID := insertTestIssue(t, d, repoID, 1, "issue", baseTime())
+
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{
+		{
+			IssueID: issueID, EventType: "cross_referenced",
+			MetadataJSON: "not-json", CreatedAt: baseTime(), DedupeKey: "malformed",
+		},
+		{
+			IssueID: issueID, EventType: "cross_referenced",
+			MetadataJSON: `{"source_type":"Issue","source_owner":"acme","source_repo":"client","source_number":2,"source_url":"https://github.com/acme/client/issues/2"}`,
+			CreatedAt:    baseTime(), DedupeKey: "issue-source",
+		},
+	}))
+
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{ReferencedByPR: true})
+	require.NoError(err)
+	require.Empty(issues)
+}
+
 func TestIssueEventsDedupeIsScopedToIssue(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

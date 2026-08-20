@@ -58,6 +58,7 @@ func (s *Handler) listIssuesRouteCore(ctx context.Context, input *listIssuesInpu
 		Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 		RepoFilters:       parseRepoFilters(input.Repo),
 		WorkspaceActivity: overrides,
+		ReferencedByPR:    input.ReferencedByPR,
 	}
 	if input.InvolvesMe {
 		if s.viewerLogins == nil {

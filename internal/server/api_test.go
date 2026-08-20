@@ -1977,6 +1977,33 @@ func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
 		"viewer identity should be shared by concurrent view requests during the cache TTL")
 }
 
+func TestAPIListIssuesFiltersPullRequestReferences(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	referencedID := seedIssue(t, database, "acme", "widget", 1, "open")
+	seedIssue(t, database, "acme", "widget", 2, "open")
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID:   referencedID,
+		EventType: "cross_referenced",
+		MetadataJSON: `{
+			"source_type":"PullRequest",
+			"source_owner":"acme",
+			"source_repo":"client",
+			"source_number":42,
+			"source_url":"https://github.com/acme/client/pull/42"
+		}`,
+		CreatedAt: time.Now().UTC(),
+		DedupeKey: "cross-reference-42",
+	}}))
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&referenced_by_pr=true", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var issues []issueapi.IssueResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &issues))
+	require.Len(issues, 1)
+	require.Equal(1, issues[0].Number)
+}
+
 func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

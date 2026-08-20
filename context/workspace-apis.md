@@ -116,6 +116,9 @@ embedder protocol for arbitrary host state.
   affordance after its work resolves to a PR, while that PR receives the tmux recency
   candidate and uses it only when workspace recency is enabled
   (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
+- Tmux recency publishes immediately, then at most once per rolling minute per workspace;
+  existing enrichment lazily publishes suppressed activity while live state stays
+  responsive. Nil resets the throttle; older samples never regress it (`internal/server/workspaceapi/workspace_enrichment.go::recordCachedWorkspaceTmux`).
 - Aggregate enrichment is fresh only after divergence and tmux both complete;
   partial results remain pending or stale
   (`internal/server/workspaceapi/workspace_enrichment.go::workspaceResponseFromEnrichmentCacheEntry`).

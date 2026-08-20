@@ -635,6 +635,155 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 	assert.Equal(lastGood.response.TmuxPaneTitle, synchronousEntry.response.TmuxPaneTitle)
 }
 
+func TestWorkspaceEnrichmentThrottlesPublishedTmuxRecency(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	srv := &Handler{
+		now:                            func() time.Time { return now },
+		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
+		workspaceEnrichmentGenerations: map[string]uint64{"ws-recency": 1},
+	}
+	record := func(activityAt time.Time, title string, working bool) workspaceEnrichmentCacheEntry {
+		formatted := activityAt.UTC().Format(time.RFC3339)
+		entry, recorded, _ := srv.recordWorkspaceEnrichmentResult(
+			"ws-recency",
+			1,
+			workspaceEnrichmentProbeResult{
+				response: workspaceResponse{
+					TmuxPaneTitle:      &title,
+					TmuxWorking:        working,
+					TmuxActivitySource: tmuxActivitySourceOutput,
+					TmuxLastOutputAt:   &formatted,
+				},
+				tmuxComplete: true,
+				kind:         workspaceEnrichmentTmux,
+			},
+		)
+		require.True(recorded)
+		return entry
+	}
+
+	firstActivityAt := now
+	entry := record(firstActivityAt, "first title", true)
+	require.NotNil(entry.response.TmuxLastOutputAt)
+	assert.Equal(firstActivityAt.Format(time.RFC3339), *entry.response.TmuxLastOutputAt)
+
+	now = now.Add(30 * time.Second)
+	suppressedActivityAt := now
+	entry = record(suppressedActivityAt, "updated title", false)
+	require.NotNil(entry.response.TmuxLastOutputAt)
+	assert.Equal(firstActivityAt.Format(time.RFC3339), *entry.response.TmuxLastOutputAt)
+	require.NotNil(entry.response.TmuxPaneTitle)
+	assert.Equal("updated title", *entry.response.TmuxPaneTitle)
+	assert.False(entry.response.TmuxWorking)
+
+	now = now.Add(20 * time.Second)
+	entry, recorded, _ := srv.recordWorkspaceEnrichmentResult(
+		"ws-recency", 1, workspaceEnrichmentProbeResult{
+			tmuxErr: errors.New("tmux probe failed"),
+			kind:    workspaceEnrichmentTmux,
+		},
+	)
+	require.True(recorded)
+	require.NotNil(entry.response.TmuxLastOutputAt)
+	assert.Equal(firstActivityAt.Format(time.RFC3339), *entry.response.TmuxLastOutputAt)
+
+	now = now.Add(10 * time.Second)
+	entry = record(suppressedActivityAt, "quiet title", false)
+	require.NotNil(entry.response.TmuxLastOutputAt)
+	assert.Equal(suppressedActivityAt.Format(time.RFC3339), *entry.response.TmuxLastOutputAt)
+
+	now = now.Add(time.Minute)
+	latestActivityAt := now
+	entry = record(latestActivityAt, "working again", true)
+	require.NotNil(entry.response.TmuxLastOutputAt)
+	assert.Equal(latestActivityAt.Format(time.RFC3339), *entry.response.TmuxLastOutputAt)
+}
+
+func TestWorkspaceEnrichmentDoesNotRegressPublishedTmuxRecency(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 8, 20, 13, 0, 0, 0, time.UTC)
+	srv := &Handler{
+		now:                            func() time.Time { return now },
+		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
+		workspaceEnrichmentGenerations: map[string]uint64{"ws-regression": 1},
+	}
+	record := func(activityAt time.Time, title string) workspaceEnrichmentCacheEntry {
+		formatted := activityAt.UTC().Format(time.RFC3339)
+		entry, recorded, _ := srv.recordWorkspaceEnrichmentResult(
+			"ws-regression", 1, workspaceEnrichmentProbeResult{
+				response: workspaceResponse{
+					TmuxPaneTitle:      &title,
+					TmuxActivitySource: tmuxActivitySourceNone,
+					TmuxLastOutputAt:   &formatted,
+				},
+				tmuxComplete: true,
+				kind:         workspaceEnrichmentTmux,
+			},
+		)
+		require.True(recorded)
+		return entry
+	}
+
+	newerActivityAt := now
+	record(newerActivityAt, "newer session")
+	now = now.Add(time.Minute)
+	entry := record(newerActivityAt.Add(-time.Minute), "older remaining session")
+
+	require.NotNil(entry.response.TmuxLastOutputAt)
+	assert.Equal(newerActivityAt.Format(time.RFC3339), *entry.response.TmuxLastOutputAt)
+	require.NotNil(entry.response.TmuxPaneTitle)
+	assert.Equal("older remaining session", *entry.response.TmuxPaneTitle)
+}
+
+func TestWorkspaceEnrichmentAbsentTmuxRecencyClearsAndResetsThrottle(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 8, 20, 14, 0, 0, 0, time.UTC)
+	srv := &Handler{
+		now:                            func() time.Time { return now },
+		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
+		workspaceEnrichmentGenerations: map[string]uint64{"ws-reset": 1},
+	}
+	initial := now
+	formatted := initial.Format(time.RFC3339)
+	_, recorded, _ := srv.recordWorkspaceEnrichmentResult(
+		"ws-reset", 1, workspaceEnrichmentProbeResult{
+			response:     workspaceResponse{TmuxLastOutputAt: &formatted},
+			tmuxComplete: true,
+			kind:         workspaceEnrichmentTmux,
+		},
+	)
+	require.True(recorded)
+
+	now = now.Add(10 * time.Second)
+	entry, recorded, _ := srv.recordWorkspaceEnrichmentResult(
+		"ws-reset", 1, workspaceEnrichmentProbeResult{
+			response:     workspaceResponse{TmuxActivitySource: tmuxActivitySourceNone},
+			tmuxComplete: true,
+			kind:         workspaceEnrichmentTmux,
+		},
+	)
+	require.True(recorded)
+	assert.Nil(entry.response.TmuxLastOutputAt)
+
+	now = now.Add(time.Second)
+	olderAfterReset := initial.Add(-time.Minute)
+	formatted = olderAfterReset.Format(time.RFC3339)
+	entry, recorded, _ = srv.recordWorkspaceEnrichmentResult(
+		"ws-reset", 1, workspaceEnrichmentProbeResult{
+			response:     workspaceResponse{TmuxLastOutputAt: &formatted},
+			tmuxComplete: true,
+			kind:         workspaceEnrichmentTmux,
+		},
+	)
+	require.True(recorded)
+	require.NotNil(entry.response.TmuxLastOutputAt)
+	assert.Equal(formatted, *entry.response.TmuxLastOutputAt)
+}
+
 func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 	assert := assert.New(t)
 	srv := &Handler{

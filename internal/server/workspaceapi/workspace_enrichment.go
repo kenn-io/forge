@@ -13,6 +13,7 @@ const (
 	workspaceEnrichmentTTL            = 5 * time.Second
 	workspaceEnrichmentRefreshTimeout = 2 * time.Second
 	workspaceTmuxPruneInterval        = 5 * time.Second
+	workspaceTmuxRecencyMinInterval   = time.Minute
 	workspaceEnrichmentNotApplicable  = "not_applicable"
 	workspaceEnrichmentPending        = "pending"
 	workspaceEnrichmentFresh          = "fresh"
@@ -24,16 +25,19 @@ const (
 const EnrichmentTTL = workspaceEnrichmentTTL
 
 type workspaceEnrichmentCacheEntry struct {
-	response              workspaceResponse
-	hasDivergence         bool
-	hasTmux               bool
-	divergenceRefreshedAt time.Time
-	tmuxRefreshedAt       time.Time
-	lastAttemptAt         time.Time
-	divergenceError       string
-	tmuxError             string
-	divergenceAttemptAt   time.Time
-	tmuxAttemptAt         time.Time
+	response               workspaceResponse
+	hasDivergence          bool
+	hasTmux                bool
+	divergenceRefreshedAt  time.Time
+	tmuxRefreshedAt        time.Time
+	tmuxObservedOutputAt   time.Time
+	tmuxPublishedOutputAt  time.Time
+	tmuxRecencyPublishedAt time.Time
+	lastAttemptAt          time.Time
+	divergenceError        string
+	tmuxError              string
+	divergenceAttemptAt    time.Time
+	tmuxAttemptAt          time.Time
 }
 
 type workspaceEnrichmentKind uint8
@@ -144,6 +148,56 @@ func applyCachedWorkspaceTmux(
 	resp.TmuxWorking = cached.TmuxWorking
 	resp.TmuxActivitySource = cached.TmuxActivitySource
 	resp.TmuxLastOutputAt = cached.TmuxLastOutputAt
+}
+
+func recordCachedWorkspaceTmux(
+	entry *workspaceEnrichmentCacheEntry,
+	observed workspaceResponse,
+	now time.Time,
+) {
+	entry.response.TmuxPaneTitle = observed.TmuxPaneTitle
+	entry.response.TmuxWorking = observed.TmuxWorking
+	entry.response.TmuxActivitySource = observed.TmuxActivitySource
+
+	observedAt := parseWorkspaceTmuxOutputAt(observed.TmuxLastOutputAt)
+	if observedAt.IsZero() {
+		entry.response.TmuxLastOutputAt = nil
+		entry.tmuxObservedOutputAt = time.Time{}
+		entry.tmuxPublishedOutputAt = time.Time{}
+		entry.tmuxRecencyPublishedAt = time.Time{}
+		return
+	}
+	if !entry.tmuxObservedOutputAt.IsZero() &&
+		observedAt.Before(entry.tmuxObservedOutputAt) {
+		return
+	}
+	if observedAt.After(entry.tmuxObservedOutputAt) {
+		entry.tmuxObservedOutputAt = observedAt
+	}
+
+	now = now.UTC()
+	publish := entry.tmuxPublishedOutputAt.IsZero()
+	if !publish && entry.tmuxObservedOutputAt.After(entry.tmuxPublishedOutputAt) {
+		publish = entry.tmuxRecencyPublishedAt.IsZero() ||
+			!now.Before(entry.tmuxRecencyPublishedAt.Add(workspaceTmuxRecencyMinInterval))
+	}
+	if publish {
+		entry.tmuxPublishedOutputAt = entry.tmuxObservedOutputAt
+		entry.tmuxRecencyPublishedAt = now
+	}
+	formatted := entry.tmuxPublishedOutputAt.Format(time.RFC3339)
+	entry.response.TmuxLastOutputAt = &formatted
+}
+
+func parseWorkspaceTmuxOutputAt(value *string) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, *value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed.UTC()
 }
 
 func applyWorkspaceEnrichmentCacheEntry(
@@ -431,7 +485,7 @@ func (s *Handler) recordWorkspaceEnrichmentResult(
 		}
 	}
 	if result.tmuxComplete {
-		applyCachedWorkspaceTmux(&entry.response, result.response)
+		recordCachedWorkspaceTmux(&entry, result.response, now)
 		entry.hasTmux = true
 		entry.tmuxRefreshedAt = now
 	}
